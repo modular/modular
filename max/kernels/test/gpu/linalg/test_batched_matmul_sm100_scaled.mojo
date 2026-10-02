@@ -25,15 +25,7 @@ from internal_utils import (
 )
 from std.random import rand
 from internal_utils._measure import relative_difference
-from layout import (
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-    UNKNOWN_VALUE,
-)
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from linalg.bmm import (
     bmm_sm100_blockwise_scaled_fp8,
     batched_matmul_dynamic_scaled_fp8_naive,
@@ -123,17 +115,6 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         Coord(batch_size, Idx[N_SCALES], Idx[K_SCALES])
     )
 
-    var a_shape_2D = row_major(Coord(m, k))
-    var b_shape_2D = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
-    )
-    var c_shape_2D = row_major(Coord(m, n))
-    var a_scales_shape_2D = row_major(Coord(Idx[K_SCALES], m))
-    var b_scales_shape_2d = row_major(Coord(Idx[N_SCALES], Idx[K_SCALES]))
-
     var a_size = bs * M * K
     var b_size = bs * N * K if transpose_b else bs * K * N
     var c_size = bs * M * N
@@ -144,18 +125,12 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
+    var c_host_managed = HostDeviceTileTensor[c_type](row_major((c_size,)), ctx)
+    var c_host = c_host_managed.host_tensor()
+    var c_host_ref_managed = HostDeviceTileTensor[c_type](
+        row_major((c_size,)), ctx
     )
-    var c_host = TileTensor(c_host_managed.tensor[update=False]().ptr, c_shape)
-    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
-    )
-    var c_host_ref = TileTensor(
-        c_host_ref_managed.tensor[update=False]().ptr, c_shape
-    )
+    var c_host_ref = c_host_ref_managed.host_tensor()
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, a_shape)
@@ -350,18 +325,12 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
+    var c_host_managed = HostDeviceTileTensor[c_type](row_major((c_size,)), ctx)
+    var c_host = c_host_managed.host_tensor()
+    var c_host_ref_managed = HostDeviceTileTensor[c_type](
+        row_major((c_size,)), ctx
     )
-    var c_host = TileTensor(c_host_managed.tensor[update=False]().ptr, c_shape)
-    var c_host_ref_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
-        ctx,
-    )
-    var c_host_ref = TileTensor(
-        c_host_ref_managed.tensor[update=False]().ptr, c_shape
-    )
+    var c_host_ref = c_host_ref_managed.host_tensor()
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, a_shape)
@@ -466,7 +435,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 256, 32),
+            umma_shape=[64, 256, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -480,7 +449,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 32, 32),
+            umma_shape=[64, 32, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -495,7 +464,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .float32,
-            umma_shape=Index(64, 128, 32),
+            umma_shape=[64, 128, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -510,7 +479,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .float32,
-            umma_shape=Index(64, 64, 32),
+            umma_shape=[64, 64, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -525,7 +494,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 16, 32),
+            umma_shape=[64, 16, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -540,7 +509,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 8, 32),
+            umma_shape=[64, 8, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -555,7 +524,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 64, 32),
+            umma_shape=[64, 64, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -570,7 +539,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 64, 32),
+            umma_shape=[64, 64, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -584,7 +553,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 64, 32),
+            umma_shape=[64, 64, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             use_epilogue=True,
@@ -600,7 +569,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 128, 32),
+            umma_shape=[64, 128, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -614,7 +583,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 128, 32),
+            umma_shape=[64, 128, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
         ](
@@ -630,7 +599,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 64, 32),
+            umma_shape=[64, 64, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             B=Int(128),
@@ -642,7 +611,7 @@ def main() raises:
             .float8_e4m3fn,
             .float8_e4m3fn,
             .bfloat16,
-            umma_shape=Index(64, 64, 32),
+            umma_shape=[64, 64, 32],
             swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             B=Int(128),
