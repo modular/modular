@@ -1101,24 +1101,48 @@ class MultiGraphPipelineModelWithKVCache(
 class ModuleV3PipelineModelWithKVCache(
     PipelineModelWithKVCache[BaseContextType]
 ):
-    """ModuleV3 pipeline model with shared compile template.
+    """The base class for a ModuleV3 model architecture that uses a KV cache.
 
-    Subclasses override :meth:`_instantiate_module` (and optionally
-    :meth:`_create_model_config`, :meth:`_prepare_state_dict`,
-    :meth:`_init_distributed_runtime`, :meth:`_module_default_dtype`,
-    :meth:`_get_compile_input_types`) rather than duplicating weight loading,
-    timing, and ``nn.compile`` wiring.
+    A subclass implements ``_create_model_config()``, which builds the
+    architecture's config, and ``_instantiate_module()``, which constructs the
+    root module and places it on a device or device mesh. :meth:`load_model`
+    loads and adapts the checkpoint weights, builds the module under
+    ``F.lazy()``, and compiles it with those weights. A subclass can also
+    override ``_prepare_state_dict()``, ``_init_distributed_runtime()``,
+    ``_module_default_dtype()``, or ``_get_compile_input_types()``.
 
-    Graph-API models should inherit :class:`GraphPipelineModelWithKVCache`
-    instead. Encoder models without KV cache should inherit
-    :class:`ModuleV3PipelineModel` instead. Multi-graph VLMs should inherit
-    :class:`MultiGraphPipelineModelWithKVCache` (graph API) or
-    :class:`ModuleV3MultiGraphPipelineModelWithKVCache` (ModuleV3).
-    ``ComponentModel`` types and unified spec-decode pipelines should override
-    :meth:`load_model` entirely.
+    An encoder model without a KV cache subclasses
+    :class:`ModuleV3PipelineModel`, and a vision-language model that compiles
+    several modules subclasses
+    :class:`ModuleV3MultiGraphPipelineModelWithKVCache`.
+    Component models and unified speculative-decoding pipelines override
+    :meth:`load_model`.
 
     The constructor compiles the model into :attr:`model`, and the default
-    :meth:`execute` feeds it ``model_inputs.buffers``.
+    :meth:`execute` passes it ``model_inputs.buffers``.
+
+    Args:
+        pipeline_config: The pipeline configuration, including the model path
+            and its Hugging Face config.
+        session: The inference session the pipeline runs in.
+        devices: The devices to run the model on.
+        kv_cache_config: The KV cache configuration.
+        weights: The checkpoint weights to load.
+        memory_plan: The memory plan that sizes the KV cache.
+        adapter: The weight adapter that renames checkpoint keys to the root
+            module's parameter names. Defaults to ``None``, which loads the
+            checkpoint keys unchanged.
+        return_logits: Which logits the model returns. Defaults to
+            :obj:`ReturnLogits.LAST_TOKEN`.
+        return_hidden_states: Which hidden states the model returns. Defaults
+            to :obj:`ReturnHiddenStates.NONE`.
+        max_batch_size: The maximum number of requests in one batch. Defaults
+            to ``1``.
+
+    Raises:
+        ValueError: If the pipeline config enables LoRA while the KV cache
+            config enables prefix caching, or enables LoRA for a subclass
+            that doesn't set ``lora_modulev3``.
     """
 
     model: Callable[..., Any]
