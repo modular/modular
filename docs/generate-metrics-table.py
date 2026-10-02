@@ -65,6 +65,9 @@ TYPE_LABEL = {
 # absent from the rendered tables and from --report.
 UNDOCUMENTED_ON_PURPOSE = {
     "maxserve_dkv_": "The dKV connector is available only in Modular Cloud.",
+    "maxserve_tokenizer_chat_encoder_": (
+        "Emitted only when --tokenizer-impl names a chat encoder."
+    ),
 }
 
 

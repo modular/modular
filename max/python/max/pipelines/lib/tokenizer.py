@@ -19,6 +19,7 @@ import asyncio
 import io
 import json
 import logging
+from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
@@ -34,6 +35,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.exceptions import InputError, PromptTooLongError
+from max.pipelines.lib._chat_encoder import ChatEncoder, load_chat_encoder
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
@@ -400,6 +402,12 @@ def replace_unpaired_surrogates(prompt: str) -> str:
     return prompt
 
 
+def _encode_with(encoder: ChatEncoder, prompt: str) -> npt.NDArray[np.int64]:
+    """Encodes ``prompt`` with ``encoder``, as :meth:`TextTokenizer.encode` would."""
+    ids = encoder.encode(replace_unpaired_surrogates(prompt))
+    return np.frombuffer(ids, dtype="<u4").astype(np.int64)
+
+
 def _as_token_id_set(eos_token_id: object) -> set[int]:
     if isinstance(eos_token_id, int):
         return {eos_token_id}
@@ -501,6 +509,8 @@ class TextTokenizer(
                         customizing the prompt formatting for different use cases.
     """
 
+    _chat_encoder: ChatEncoder | None = None
+
     def __init__(
         self,
         model_path: str,
@@ -546,6 +556,17 @@ class TextTokenizer(
 
         self.max_length = max_length or self.delegate.model_max_length
 
+        self._chat_encoder = load_chat_encoder(
+            pipeline_config.tokenizer_impl
+            if pipeline_config is not None
+            else None,
+            self.delegate,
+            model_path,
+            revision,
+        )
+        self._chat_encoder_outcomes: Counter[str] = Counter()
+        self._chat_encoder_failed = False
+
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
             enable_llama_whitespace_fix and self._strips_leading_whitespace
@@ -558,6 +579,17 @@ class TextTokenizer(
         self._eos_token_ids = resolve_eos_token_ids(
             self.delegate.eos_token_id, pipeline_config
         )
+
+    def __getstate__(self) -> dict[str, Any]:
+        """Pickles without the chat encoder, which may not be picklable.
+
+        The pipeline factory carries this tokenizer into the spawned model
+        worker (see ``PIPELINE_REGISTRY.retrieve_factory``), which builds no
+        contexts from chats; should it encode one, HuggingFace serves it.
+        """
+        state = self.__dict__.copy()
+        state["_chat_encoder"] = None
+        return state
 
     @property
     def eos_token_ids(self) -> set[int]:
@@ -696,11 +728,55 @@ class TextTokenizer(
             prompt = self.apply_chat_template(
                 messages, tools, **chat_template_options
             )
-            return prompt, await self.encode(prompt, add_special_tokens=False)
+            return prompt, await self._encode_chat_prompt(prompt)
         else:
             raise ValueError(
                 "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TextGenerationRequestMessage]"
             )
+
+    async def _encode_chat_prompt(
+        self, prompt: str
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Encodes a rendered chat prompt, with the chat encoder if one is set.
+
+        An encoder error sends the prompt to HuggingFace instead.
+        """
+        encoder = self._chat_encoder
+        if encoder is None:
+            return await self.encode(prompt, add_special_tokens=False)
+        try:
+            ids = await run_with_default_executor(_encode_with, encoder, prompt)
+        except Exception:
+            self._chat_encoder_outcomes["fallback"] += 1
+            # Every request may hit the same error, so only the first warns.
+            first = not self._chat_encoder_failed
+            self._chat_encoder_failed = True
+            logger.log(
+                logging.WARNING if first else logging.DEBUG,
+                "%s failed to encode a chat prompt, so HuggingFace encodes "
+                "it%s",
+                type(encoder).__name__,
+                "; later failures log at DEBUG." if first else ".",
+                exc_info=True,
+            )
+            return await self.encode(prompt, add_special_tokens=False)
+        self._chat_encoder_outcomes["custom"] += 1
+        if self.max_length and len(ids) > self.max_length:
+            raise PromptTooLongError(len(ids), self.max_length)
+        return ids
+
+    def take_chat_encoder_outcomes(self) -> dict[str, int]:
+        """Returns the chats encoded since the last call, and forgets them.
+
+        ``custom`` counts the chats the ``--tokenizer-impl`` encoder served,
+        and ``fallback`` the ones it failed on, which HuggingFace encoded.
+        Chats are not counted when no encoder is in use.
+        """
+        if self._chat_encoder is None:
+            return {}
+        outcomes = dict(self._chat_encoder_outcomes)
+        self._chat_encoder_outcomes.clear()
+        return outcomes
 
     async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
         """Encodes ``stop`` to be used as stop criteria during generation."""

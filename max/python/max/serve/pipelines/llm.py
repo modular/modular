@@ -37,6 +37,9 @@ from max.pipelines.modeling.types import (
     TextGenerationRequest,
 )
 from max.profiler import Tracer
+from max.serve.pipelines._chat_encoder_stats import (
+    ChatEncoderOutcomesRecorder,
+)
 from max.serve.pipelines.incremental_detokenizer import (
     BufferedDetokenizer,
     create_buffered_detokenizer,
@@ -238,6 +241,9 @@ class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):
         self._preprocess_cache_stats = PreprocessCacheStatsRecorder(
             self.tokenizer
         )
+        self._chat_encoder_outcomes = ChatEncoderOutcomesRecorder(
+            self.tokenizer
+        )
 
 
 class TokenGeneratorPipeline(
@@ -358,6 +364,7 @@ class TokenGeneratorPipeline(
             self._preprocess_cache_stats.record(
                 carried_media=bool(request.images or request.videos)
             )
+            self._chat_encoder_outcomes.record()
             inject_trace_carrier(context)
 
             # Create buffered detokenizers for proper UTF-8 handling.

@@ -113,6 +113,16 @@ def test_cascade_field_round_trips_through_flat_kwargs() -> None:
     assert PipelineArgs.from_flat_kwargs(cascade=True).cascade is True
 
 
+def test_tokenizer_impl_reaches_the_pipeline_config() -> None:
+    # Standard serving reads it off the config the tokenizer is built from;
+    # dropping it would silently serve the HuggingFace tokenizer.
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(tokenizer_impl="pkg.module:Encoder")
+    )
+    assert config.tokenizer_impl == "pkg.module:Encoder"
+    assert PipelineConfig.from_args(PipelineArgs()).tokenizer_impl is None
+
+
 def test_cascade_skips_huggingface_manifest_probe() -> None:
     # Cascade accepts Cascade-only model paths (e.g. ``echo:``) that the
     # HuggingFace manifest probe rejects. With ``--cascade`` set, the probe

@@ -968,6 +968,18 @@ class PipelineConfig(ConfigFileModel):
     )
     """Whether to run eager verification before device graph replay."""
 
+    tokenizer_impl: str | None = Field(
+        default=None,
+        description=(
+            "Import path of an alternative tokenizer implementation, as "
+            "``'module.path:ClassName'``, that encodes rendered chat prompts "
+            "for a checkpoint whose ``tokenizer.json`` it reproduces. Left "
+            "unset, or when it cannot be imported or does not match the "
+            "checkpoint, uses the HuggingFace tokenizer."
+        ),
+    )
+    """Import path of an alternative tokenizer implementation, if any."""
+
     models: _ModelsType = Field(
         default_factory=ModelManifest,
         description="The model manifest containing all model configs keyed by role.",
@@ -1672,6 +1684,7 @@ class PipelineConfig(ConfigFileModel):
             speculative=speculative,
             task=args.task,
             debug_verify_replay=args.debug_verify_replay,
+            tokenizer_impl=args.tokenizer_impl,
             **top_level,
         )
 

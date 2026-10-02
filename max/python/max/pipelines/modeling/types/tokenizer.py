@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 __all__ = [
+    "ChatEncoderOutcomesProbe",
     "PipelineTokenizer",
     "PreprocessCacheStatsProbe",
     "PreprocessedImageProbe",
@@ -121,6 +122,29 @@ class VisionPreprocessCacheStats:
     capacity_bytes: int
     """The byte budget, which ``size_bytes`` is evicted down to (``0``:
     caching is disabled)."""
+
+
+@runtime_checkable
+class ChatEncoderOutcomesProbe(Protocol):
+    """Optional tokenizer capability: report how its chat prompts encoded.
+
+    A tokenizer that can encode chats with a ``--tokenizer-impl`` encoder
+    implements this so the server can count the chats that encoder served
+    and the ones that fell back to HuggingFace. A separate protocol for the
+    reasons given on :class:`PreprocessCacheStatsProbe`.
+    """
+
+    def take_chat_encoder_outcomes(self) -> Mapping[str, int]:
+        """Returns the chats encoded since the last call, and forgets them.
+
+        Must be cheap: the server calls it per request on the event loop.
+
+        Returns:
+            A count per outcome: ``custom`` for a chat the encoder served, or
+            ``fallback`` for one it failed on, which HuggingFace encoded
+            instead.
+        """
+        ...
 
 
 @runtime_checkable

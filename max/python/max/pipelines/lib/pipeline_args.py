@@ -170,8 +170,7 @@ class PipelineArgs(ConfigFileModel):
     tokenizer_impl: str | None = Field(
         default=None,
         description=(
-            "Cascade only: import path of the TokenizerWorker subclass to "
-            "construct for text-generation pipelines, as "
+            "Import path of an alternative tokenizer implementation, as "
             "``'module.path:ClassName'``. Left unset, uses the HuggingFace "
             "tokenizer."
         ),

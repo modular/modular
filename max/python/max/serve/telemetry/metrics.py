@@ -794,6 +794,15 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "'maxserve.structured_output.grammar_rejections' still counts."
         ),
     ),  # type: ignore
+    "maxserve.tokenizer.chat_encoder_requests": _meter.create_counter(
+        "maxserve.tokenizer.chat_encoder_requests",
+        description=(
+            "Count of chat requests a --tokenizer-impl encoder was asked to "
+            "encode, split by the 'outcome' tag: 'custom' when it served the "
+            "request, 'fallback' when it failed and HuggingFace encoded the "
+            "request instead."
+        ),
+    ),  # type: ignore
 }
 
 
@@ -2064,6 +2073,15 @@ class _AsyncMetrics:
                 "maxserve.structured_output.requests",
                 1,
                 {**self.extra_attributes, "kind": kind},
+            ),
+        )
+
+    def tokenizer_chat_encoder_requests(self, count: int, outcome: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.tokenizer.chat_encoder_requests",
+                count,
+                {**self.extra_attributes, "outcome": outcome},
             ),
         )
 

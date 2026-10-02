@@ -434,6 +434,7 @@ async def _recorded_preprocess_cache_media(
     order = Mock()
     order.attach_mock(pipeline.tokenizer.new_context, "new_context")
     order.attach_mock(pipeline._preprocess_cache_stats.record, "record")
+    order.attach_mock(pipeline._chat_encoder_outcomes.record, "outcomes")
 
     with patch("max.serve.pipelines.llm.METRICS", MagicMock()):
         bound = TokenGeneratorPipeline.next_token_chunk.__get__(
@@ -441,7 +442,11 @@ async def _recorded_preprocess_cache_media(
         )
         [chunk async for chunk in await bound(mock_request)]
 
-    assert [call[0] for call in order.mock_calls] == ["new_context", "record"]
+    assert [call[0] for call in order.mock_calls] == [
+        "new_context",
+        "record",
+        "outcomes",
+    ]
     pipeline._preprocess_cache_stats.record.assert_called_once()
     return pipeline._preprocess_cache_stats.record.call_args.kwargs[
         "carried_media"
