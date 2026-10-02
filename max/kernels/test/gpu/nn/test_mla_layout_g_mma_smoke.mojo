@@ -85,14 +85,14 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
 )
 from layout import (
+    ComptimeInt,
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
+    RowMajorLayout,
     TileTensor,
     row_major,
 )
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -192,8 +192,10 @@ def qk_smoke_kernel[
 ](
     a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
-    c_output: LayoutTensor[
-        ACC_TYPE, Layout.row_major(QK_M, QK_N), MutAnyOrigin
+    c_output: TileTensor[
+        ACC_TYPE,
+        RowMajorLayout[ComptimeInt[QK_M], ComptimeInt[QK_N]],
+        MutAnyOrigin,
     ],
 ):
     """SS .ws MMA: C [32,64] = A [32,576] x B [64,576]^T (FP8 e4m3)."""
@@ -205,18 +207,8 @@ def qk_smoke_kernel[
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
-    var a_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(QK_M, QK_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](a_smem_ptr)
-    var b_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(QK_N, QK_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](b_smem_ptr)
+    var a_smem_tile = TileTensor(a_smem_ptr, row_major[QK_M, QK_K]())
+    var b_smem_tile = TileTensor(b_smem_ptr, row_major[QK_N, QK_K]())
 
     # ---- Metadata ----
     var metadata_ptr = (smem_base + QK_META_OFFSET).bitcast[UInt32]()
@@ -361,8 +353,10 @@ def pv_smoke_kernel[
 ](
     a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
-    c_output: LayoutTensor[
-        ACC_TYPE, Layout.row_major(PV_M, PV_N), MutAnyOrigin
+    c_output: TileTensor[
+        ACC_TYPE,
+        RowMajorLayout[ComptimeInt[PV_M], ComptimeInt[PV_N]],
+        MutAnyOrigin,
     ],
 ):
     """SS .ws MMA: C [32,512] = A [32,64] x B [512,64] (mn-major B, FP8)."""
@@ -373,20 +367,10 @@ def pv_smoke_kernel[
     var a_smem_ptr = (smem_base + PV_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + PV_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
-    var a_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(PV_M, PV_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](a_smem_ptr)
+    var a_smem_tile = TileTensor(a_smem_ptr, row_major[PV_M, PV_K]())
     # B is mn-major: [PV_N rows, PV_K cols] but the descriptor will treat
     # N as the major axis (same as PV_K from the A side via transpose_b=False).
-    var b_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(PV_N, PV_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](b_smem_ptr)
+    var b_smem_tile = TileTensor(b_smem_ptr, row_major[PV_N, PV_K]())
 
     var metadata_ptr = (smem_base + PV_META_OFFSET).bitcast[UInt32]()
     var ptr_tmem_addr = metadata_ptr
@@ -508,9 +492,7 @@ def pv_smoke_kernel[
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-def fill_random_fp8[
-    dtype: DType
-](ptr: MutPointer[Scalar[dtype], MutAnyOrigin], n: Int):
+def fill_random_fp8[dtype: DType](ptr: MutPointer[Scalar[dtype], _], n: Int):
     """Generates random FP8 values via float32 RNG -> cast.
 
     randn doesn't directly support float8_e4m3fn, so we draw float32
@@ -555,14 +537,14 @@ def test_qk_smoke(ctx: DeviceContext) raises:
     seed(42)
 
     # ---- Inputs (host) ----
-    var a_inp = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(QK_M, QK_K)](ctx)
-    var b_inp = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(QK_N, QK_K)](ctx)
+    var a_inp = HostDeviceTileTensor[FP8_TYPE](row_major[QK_M, QK_K](), ctx)
+    var b_inp = HostDeviceTileTensor[FP8_TYPE](row_major[QK_N, QK_K](), ctx)
 
-    var a_host = a_inp.tensor[update=False]()
-    var b_host = b_inp.tensor[update=False]()
+    var a_host = a_inp.host_tensor()
+    var b_host = b_inp.host_tensor()
 
-    fill_random_fp8[FP8_TYPE](a_host.ptr, QK_M * QK_K)
-    fill_random_fp8[FP8_TYPE](b_host.ptr, QK_N * QK_K)
+    fill_random_fp8[FP8_TYPE](a_host.unsafe_ptr(), QK_M * QK_K)
+    fill_random_fp8[FP8_TYPE](b_host.unsafe_ptr(), QK_N * QK_K)
 
     # BF16 dequantized copies for the GPU naive reference.
     var a_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_M * QK_K)
@@ -571,16 +553,21 @@ def test_qk_smoke(ctx: DeviceContext) raises:
     var a_ref_host = alloc[Scalar[REF_TYPE]](QK_M * QK_K)
     var b_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
 
-    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](a_host.ptr, a_ref_host, QK_M * QK_K)
-    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](b_host.ptr, b_ref_host, QK_N * QK_K)
+    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
+        a_host.unsafe_ptr(), a_ref_host, QK_M * QK_K
+    )
+    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
+        b_host.unsafe_ptr(), b_ref_host, QK_N * QK_K
+    )
 
     ctx.enqueue_copy(a_ref_dev, a_ref_host)
     ctx.enqueue_copy(b_ref_dev, b_ref_host)
 
     # Output buffer for the FP8 MMA result.
-    var c_out_buf = ManagedLayoutTensor[ACC_TYPE, Layout.row_major(QK_M, QK_N)](
-        ctx
-    )
+    var c_out_buf = HostDeviceTileTensor[ACC_TYPE](row_major[QK_M, QK_N](), ctx)
+
+    a_inp.to_device()
+    b_inp.to_device()
 
     # ---- TMA descriptors ----
     var a_tma_op = create_tensor_tile[
@@ -668,8 +655,8 @@ def test_qk_smoke(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ---- Compare ----
-    var c_out_host = c_out_buf.tensor()
-    var c_out_ptr = c_out_host.ptr
+    c_out_buf.to_host()
+    var c_out_ptr = c_out_buf.host_tensor().unsafe_ptr()
 
     print(
         "  C_gpu[0,0]="
@@ -749,14 +736,14 @@ def test_pv_smoke(ctx: DeviceContext) raises:
 
     seed(43)
 
-    var a_inp = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(PV_M, PV_K)](ctx)
-    var b_inp = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(PV_N, PV_K)](ctx)
+    var a_inp = HostDeviceTileTensor[FP8_TYPE](row_major[PV_M, PV_K](), ctx)
+    var b_inp = HostDeviceTileTensor[FP8_TYPE](row_major[PV_N, PV_K](), ctx)
 
-    var a_host = a_inp.tensor[update=False]()
-    var b_host = b_inp.tensor[update=False]()
+    var a_host = a_inp.host_tensor()
+    var b_host = b_inp.host_tensor()
 
-    fill_random_fp8[FP8_TYPE](a_host.ptr, PV_M * PV_K)
-    fill_random_fp8[FP8_TYPE](b_host.ptr, PV_N * PV_K)
+    fill_random_fp8[FP8_TYPE](a_host.unsafe_ptr(), PV_M * PV_K)
+    fill_random_fp8[FP8_TYPE](b_host.unsafe_ptr(), PV_N * PV_K)
 
     var a_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](PV_M * PV_K)
     var b_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](PV_N * PV_K)
@@ -764,15 +751,20 @@ def test_pv_smoke(ctx: DeviceContext) raises:
     var a_ref_host = alloc[Scalar[REF_TYPE]](PV_M * PV_K)
     var b_ref_host = alloc[Scalar[REF_TYPE]](PV_N * PV_K)
 
-    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](a_host.ptr, a_ref_host, PV_M * PV_K)
-    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](b_host.ptr, b_ref_host, PV_N * PV_K)
+    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
+        a_host.unsafe_ptr(), a_ref_host, PV_M * PV_K
+    )
+    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
+        b_host.unsafe_ptr(), b_ref_host, PV_N * PV_K
+    )
 
     ctx.enqueue_copy(a_ref_dev, a_ref_host)
     ctx.enqueue_copy(b_ref_dev, b_ref_host)
 
-    var c_out_buf = ManagedLayoutTensor[ACC_TYPE, Layout.row_major(PV_M, PV_N)](
-        ctx
-    )
+    var c_out_buf = HostDeviceTileTensor[ACC_TYPE](row_major[PV_M, PV_N](), ctx)
+
+    a_inp.to_device()
+    b_inp.to_device()
 
     var a_tma_op = create_tensor_tile[
         Index(PV_M, PV_K),
@@ -862,8 +854,8 @@ def test_pv_smoke(ctx: DeviceContext) raises:
     ctx.enqueue_copy(c_ref_host, c_ref_dev)
     ctx.synchronize()
 
-    var c_out_host = c_out_buf.tensor()
-    var c_out_ptr = c_out_host.ptr
+    c_out_buf.to_host()
+    var c_out_ptr = c_out_buf.host_tensor().unsafe_ptr()
 
     print(
         "  C_gpu[0,0]="

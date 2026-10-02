@@ -97,9 +97,9 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_st,
     tcgen05_store_wait,
 )
-from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
-from layout.tensor_core_async import tile_layout_mn_major
+from layout import ComptimeInt, RowMajorLayout, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout.tensor_core_async import tile_layout_mn_major_typed
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -147,12 +147,12 @@ comptime A_TMEM_OFFSET: UInt32 = 0
 comptime C_TMEM_OFFSET: UInt32 = 128
 
 # One depth-tile's V region in SMEM is the mn-major B-tile [BMN=MMA_N=256,
-# BK=PART_KEYS=64] (`tile_layout_mn_major[bf16, 256, 64, SWIZZLE_128B]`), i.e.
-# 256*64 elements. Its four N-bands (each `tile_layout_mn_major[bf16, 64, 64]`)
+# BK=PART_KEYS=64] (`tile_layout_mn_major_typed[bf16, 256, 64, SWIZZLE_128B]`), i.e.
+# 256*64 elements. Its four N-bands (each `tile_layout_mn_major_typed[bf16, 64, 64]`)
 # are byte-identical, standalone 64x64 mn-major tiles laid contiguously at
 # element offset `g * DEPTH_TILE * PART_KEYS` (band g). Verified by the layout
-# algebra: `tile_layout_mn_major[bf16,256,64](64g, 0) == 4096*g` and the band
-# sub-block matches `tile_layout_mn_major[bf16,64,64]` bit-for-bit -- so each
+# algebra: `tile_layout_mn_major_typed[bf16,256,64](64g, 0) == 4096*g` and the band
+# sub-block matches `tile_layout_mn_major_typed[bf16,64,64]` bit-for-bit -- so each
 # quarter's natural `[64,64]` block TMAs cleanly into its band.
 comptime V_REGION_ELEMS = MMA_N * PART_KEYS  # 16384 (one depth-tile region)
 comptime BAND_ELEMS = DEPTH_TILE * PART_KEYS  # 4096 (one quarter band)
@@ -175,11 +175,15 @@ def pv_ts_batched_kernel[
     v_desc_shape: IndexList[v_tile_rank],
 ](
     v_tma_op: TMATensorTile[OP_TYPE, v_tile_rank, v_tile_shape, v_desc_shape],
-    p_input: LayoutTensor[
-        OP_TYPE, Layout.row_major(MMA_M, BN_KEYS), MutAnyOrigin
+    p_input: TileTensor[
+        OP_TYPE,
+        RowMajorLayout[ComptimeInt[MMA_M], ComptimeInt[BN_KEYS]],
+        MutAnyOrigin,
     ],
-    o_output: LayoutTensor[
-        ACC_TYPE, Layout.row_major(MMA_M, M_PACK * depth), MutAnyOrigin
+    o_output: TileTensor[
+        ACC_TYPE,
+        RowMajorLayout[ComptimeInt[MMA_M], ComptimeInt[M_PACK * depth]],
+        MutAnyOrigin,
     ],
 ):
     """4 warps write 4 distinct P_g into TMEM; `depth//DEPTH_TILE` depth-tiled TS
@@ -198,14 +202,14 @@ def pv_ts_batched_kernel[
 
     # SMEM V region t is the mn-major B-tile; band g of it is a standalone
     # 64x64 mn-major tile at element offset g * BAND_ELEMS.
-    comptime v_band_layout = tile_layout_mn_major[
+    comptime v_band_layout = tile_layout_mn_major_typed[
         OP_TYPE, DEPTH_TILE, PART_KEYS, swizzle_mode=SWIZZLE
-    ]()
+    ]
     # Whole-region natural chunk: one [256 keys, 64 depth] block as
     # mn_major[mn=depth=64, k=keys=256] (the kernel's kv_desc_v orientation).
-    comptime nat_chunk_layout = tile_layout_mn_major[
+    comptime nat_chunk_layout = tile_layout_mn_major_typed[
         OP_TYPE, DEPTH_TILE, BN_KEYS, swizzle_mode=SWIZZLE
-    ]()
+    ]
 
     # P@V accumulators (mn-major V, transpose_b=False -- mirrors UMMA1Type in
     # mma_warp.mojo). `use_ws` fires (cta_group=1, MMA_M<=64). PVAcc2 has
@@ -283,12 +287,9 @@ def pv_ts_batched_kernel[
                 # ONE whole [256 keys, 64 depth] TMA -> mn_major[depth=64, keys=256]
                 # region t. All 256 keys land on the k axis (no per-quarter banding);
                 # the [256,64] descriptor reads them banded via the byte coincidence.
-                var chunk_tile = LayoutTensor[
-                    OP_TYPE,
-                    nat_chunk_layout,
-                    address_space=.SHARED,
-                    alignment=128,
-                ](v_smem_ptr + t * V_REGION_ELEMS)
+                var chunk_tile = TileTensor(
+                    v_smem_ptr + t * V_REGION_ELEMS, nat_chunk_layout
+                )
                 v_tma_op.async_copy(
                     chunk_tile,
                     v_mbar[t],
@@ -296,12 +297,10 @@ def pv_ts_batched_kernel[
                 )
             else:
                 for gq in range(M_PACK):
-                    var band_tile = LayoutTensor[
-                        OP_TYPE,
+                    var band_tile = TileTensor(
+                        v_smem_ptr + t * V_REGION_ELEMS + gq * BAND_ELEMS,
                         v_band_layout,
-                        address_space=.SHARED,
-                        alignment=128,
-                    ](v_smem_ptr + t * V_REGION_ELEMS + gq * BAND_ELEMS)
+                    )
                     v_tma_op.async_copy(
                         band_tile,
                         v_mbar[t],
@@ -316,8 +315,8 @@ def pv_ts_batched_kernel[
     # single packed P feeds ALL depth-tile MMAs (P is depth-independent).
     def frag_at(j: Int) {imm} -> UInt32:
         var pair = SIMD[OP_TYPE, 2]()
-        pair[0] = p_input[row, g * PART_KEYS + 2 * j][0]
-        pair[1] = p_input[row, g * PART_KEYS + 2 * j + 1][0]
+        pair[0] = p_input[row, g * PART_KEYS + 2 * j]
+        pair[1] = p_input[row, g * PART_KEYS + 2 * j + 1]
         return bitcast[.uint32, 1](pair)
 
     var frag = Array[_, P_FRAG_U32](fill_with=frag_at)
@@ -439,23 +438,19 @@ def test_pv_ts_batched[
 
     # ---- Inputs (host) ----
     # P: [32, 256] bf16. Partition g == columns [g*64, g*64+64).
-    var p_inp = ManagedLayoutTensor[OP_TYPE, Layout.row_major(MMA_M, BN_KEYS)](
-        ctx
-    )
+    var p_inp = HostDeviceTileTensor[OP_TYPE](row_major[MMA_M, BN_KEYS](), ctx)
     # V: NATURAL [BN_KEYS=256 keys, depth] bf16 (keys x depth), NOT pre-shuffled.
     # Quarter g reads keys [g*PART_KEYS, +PART_KEYS); depth d is read directly.
-    var v_inp = ManagedLayoutTensor[OP_TYPE, Layout.row_major(BN_KEYS, depth)](
-        ctx
+    var v_inp = HostDeviceTileTensor[OP_TYPE](row_major[BN_KEYS, depth](), ctx)
+
+    var p_host = p_inp.host_tensor()
+    var v_host = v_inp.host_tensor()
+    randn[OP_TYPE](p_host.unsafe_ptr(), MMA_M * BN_KEYS)
+    randn[OP_TYPE](v_host.unsafe_ptr(), BN_KEYS * depth)
+
+    var o_out_buf = HostDeviceTileTensor[ACC_TYPE](
+        row_major[MMA_M, out_cols](), ctx
     )
-
-    var p_host = p_inp.tensor[update=False]()
-    var v_host = v_inp.tensor[update=False]()
-    randn[OP_TYPE](p_host.ptr, MMA_M * BN_KEYS)
-    randn[OP_TYPE](v_host.ptr, BN_KEYS * depth)
-
-    var o_out_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(MMA_M, out_cols)
-    ](ctx)
 
     # ---- V TMA descriptor. Banded: box = one quarter block [PART_KEYS keys,
     # DEPTH_TILE depth] (kernel lands each (quarter g, depth-tile t) sub-block in
@@ -464,6 +459,8 @@ def test_pv_ts_batched[
     comptime v_box = Index(BN_KEYS, DEPTH_TILE) if natural_load else Index(
         PART_KEYS, DEPTH_TILE
     )
+    p_inp.to_device()
+    v_inp.to_device()
     var v_tma_op = create_tensor_tile[
         v_box,
         swizzle_mode=SWIZZLE,
@@ -494,8 +491,8 @@ def test_pv_ts_batched[
     # band g (output cols [g*depth, +depth)) should equal O_g:
     #   O_g[m, dd] = sum_{k<PART_KEYS} P[m, g*PART_KEYS + k] * V[g*PART_KEYS+k, dd]
     # read straight from the natural V tensor; sum_g O_g == full attention P @ V.
-    var o_out_host = o_out_buf.tensor()
-    var o_out_ptr = o_out_host.ptr
+    o_out_buf.to_host()
+    var o_out_ptr = o_out_buf.host_tensor().unsafe_ptr()
 
     print(
         "  O_gpu[0,0]="
@@ -518,8 +515,8 @@ def test_pv_ts_batched[
             for dd in range(depth):
                 var acc: Float32 = 0.0
                 for k in range(PART_KEYS):
-                    var pv = p_host[m, gg * PART_KEYS + k][0].cast[ACC_TYPE]()
-                    var vv = v_host[gg * PART_KEYS + k, dd][0].cast[ACC_TYPE]()
+                    var pv = p_host[m, gg * PART_KEYS + k].cast[ACC_TYPE]()
+                    var vv = v_host[gg * PART_KEYS + k, dd].cast[ACC_TYPE]()
                     acc += pv * vv
                 var gpu_val = o_out_ptr[m * out_cols + (gg * depth + dd)]
                 var abs_err = abs(gpu_val - acc)
@@ -568,8 +565,8 @@ def test_pv_ts_batched[
                 gpu_sum += o_out_ptr[m * out_cols + (gg * depth + dd)]
                 for k in range(PART_KEYS):
                     ref_sum += (
-                        p_host[m, gg * PART_KEYS + k][0].cast[ACC_TYPE]()
-                        * v_host[gg * PART_KEYS + k, dd][0].cast[ACC_TYPE]()
+                        p_host[m, gg * PART_KEYS + k].cast[ACC_TYPE]()
+                        * v_host[gg * PART_KEYS + k, dd].cast[ACC_TYPE]()
                     )
             var rel = abs(gpu_sum - ref_sum) / max(abs(ref_sum), Float32(1.0))
             if rel > sum_max_rel:

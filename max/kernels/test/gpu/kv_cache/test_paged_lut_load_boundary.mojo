@@ -27,12 +27,10 @@ memory via a poisoned-padding stress test.
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_memset_zero
 from std.sys.defines import get_defined_int
-from std.utils import IndexList
 
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, Idx, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import (
     KVCacheStaticParams,
     KVCacheT,
@@ -103,45 +101,42 @@ def run_one[
     var lut_columns = padded_lut_cols(num_used)
 
     # LUT [batch=1, lut_columns] uint32. Fill: valid IDs then sentinel.
-    comptime lut_layout = Layout.row_major[2]()
-    var lut_shape = IndexList[2](1, lut_columns)
-    var lut_runtime = RuntimeLayout[lut_layout].row_major(lut_shape)
-    var lut = ManagedLayoutTensor[.uint32, lut_layout](lut_runtime, ctx)
-    var lut_host = lut.tensor[update=False]()
+    var lut = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(1), Int64(lut_columns))), ctx
+    )
+    var lut_host = lut.host_tensor()
     for c in range(lut_columns):
         if c < num_used:
             lut_host[0, c] = UInt32(c)
         else:
             lut_host[0, c] = _SENTINEL
+    lut.to_device()
 
     # cache_lengths [batch=1] uint32. Cover all valid blocks so the kernel
     # treats every `base_kv_row` as in-cache.
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_shape = IndexList[1](1)
-    var cache_lengths_runtime = RuntimeLayout[cache_lengths_layout].row_major(
-        cache_lengths_shape
+    var cache_lengths = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(1))), ctx
     )
-    var cache_lengths = ManagedLayoutTensor[.uint32, cache_lengths_layout](
-        cache_lengths_runtime, ctx
-    )
-    var cache_lengths_host = cache_lengths.tensor[update=False]()
-    cache_lengths_host[0] = UInt32(num_used * page_size)
+    cache_lengths.host_tensor()[0] = UInt32(num_used * page_size)
+    cache_lengths.to_device()
 
     # Minimum-size blocks tensor (we never read it; populate is index-only).
-    comptime blocks_layout = Layout.row_major[6]()
     var num_paged_blocks = max(num_used, 1)
-    var blocks_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        1,  # num_layers
-        page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
+    var blocks = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(
+                Int64(num_paged_blocks),
+                Idx[2],
+                Int64(1),  # num_layers
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
+        ctx,
     )
-    var blocks_runtime = RuntimeLayout[blocks_layout].row_major(blocks_shape)
-    var blocks = ManagedLayoutTensor[dtype, blocks_layout](blocks_runtime, ctx)
-    var blocks_host = blocks.tensor[update=False]()
-    unsafe_memset_zero(blocks_host.ptr, blocks_runtime.size())
+    _ = blocks.host_tensor().fill(0)
+    blocks.to_device()
 
     # Output buffer: enough for the largest `num_pages` we'll ever request.
     comptime _MAX_PAGES = 16
@@ -151,10 +146,24 @@ def run_one[
         output_init[i] = UInt32(0xCDCDCDCD)
     ctx.enqueue_copy(output_buf, output_init)
 
-    var collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        blocks.device_tensor(),
-        cache_lengths.device_tensor(),
-        lut.device_tensor(),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    # The collection spells its block strides symbolically in `kv_params`,
+    # which the compiler cannot fold against `row_major`'s for a generic
+    # `kv_params`; the two layouts are structurally identical.
+    var collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            blocks.device_tensor().as_unsafe_any_origin()
+        ),
+        cache_lengths.device_tensor().as_imm().as_unsafe_any_origin(),
+        lut.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(num_used * page_size),
         UInt32(num_used * page_size),
     )

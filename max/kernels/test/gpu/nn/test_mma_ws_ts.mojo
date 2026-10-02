@@ -65,17 +65,15 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
+    ComptimeInt,
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    RowMajorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from layout._utils import ManagedLayoutTensor
-from layout.tensor_core_async import tile_layout_k_major, tile_to_descriptor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -117,27 +115,26 @@ comptime NUM_GROUP_PAIRS = (COLS // SW_K) // 2  # 4
 comptime NUM_STRIPS = NUM_GROUP_PAIRS * STRIPS_PER_PAIR  # 16
 
 # Q SMEM layout: k-major 64x512 BF16 with SWIZZLE_128B.
-comptime Q_SMEM_LAYOUT = tile_layout_k_major[
+comptime Q_SMEM_LAYOUT = tile_layout_k_major_typed[
     OP_TYPE, ROWS, COLS, TensorMapSwizzle.SWIZZLE_128B
+]
+comptime Q_SMEM_BYTES = type_of(Q_SMEM_LAYOUT).static_cosize * size_of[
+    OP_TYPE
 ]()
-comptime Q_SMEM_BYTES = Q_SMEM_LAYOUT.size() * size_of[OP_TYPE]()
 
 # K SMEM layout: same k-major 64x512 BF16 with SWIZZLE_128B.
-comptime K_SMEM_LAYOUT = tile_layout_k_major[
+comptime K_SMEM_LAYOUT = tile_layout_k_major_typed[
     OP_TYPE, K_ROWS, K_COLS, TensorMapSwizzle.SWIZZLE_128B
+]
+comptime K_SMEM_BYTES = type_of(K_SMEM_LAYOUT).static_cosize * size_of[
+    OP_TYPE
 ]()
-comptime K_SMEM_BYTES = K_SMEM_LAYOUT.size() * size_of[OP_TYPE]()
 
-# Derive SBO/LBO from the canonical layout (same pattern as
-# test_tma_mma_sm100.mojo and production matmul code).
-comptime CANONICAL_LAYOUT = tile_to_descriptor[
-    OP_TYPE, Q_SMEM_LAYOUT, is_k_major=True
-]()
-comptime STRIDE_01 = CANONICAL_LAYOUT[0].stride[1].value()
-comptime STRIDE_11 = CANONICAL_LAYOUT[1].stride[1].value()
-# For k-major: SBO = stride01 * sizeof, LBO = stride11 * sizeof.
-comptime SBO = STRIDE_01 * size_of[OP_TYPE]()
-comptime LBO = STRIDE_11 * size_of[OP_TYPE]()
+# The k-major SMEM layout is ((8, ROWS/8), (sw_K, COLS/sw_K)): SBO is the
+# stride between 8-row core-matrix groups and LBO the stride between swizzle
+# atoms along K, i.e. flattened strides 1 and 3.
+comptime SBO = type_of(Q_SMEM_LAYOUT).static_stride[1] * size_of[OP_TYPE]()
+comptime LBO = type_of(Q_SMEM_LAYOUT).static_stride[3] * size_of[OP_TYPE]()
 
 # Total TMEM columns: 16 strips * 8 cols/strip = 128.
 comptime TOTAL_TMEM_COLS = NUM_STRIPS * U32_PER_STRIP  # 128
@@ -216,8 +213,10 @@ def dense_mma_ws_ts_kernel[
 ](
     q_tma_op: TMATensorTile[OP_TYPE, q_tile_rank, q_tile_shape, q_desc_shape],
     k_tma_op: TMATensorTile[OP_TYPE, k_tile_rank, k_tile_shape, k_desc_shape],
-    p_output: LayoutTensor[
-        ACCUM_TYPE, Layout.row_major(P_ROWS, P_COLS), MutAnyOrigin
+    p_output: TileTensor[
+        ACCUM_TYPE,
+        RowMajorLayout[ComptimeInt[P_ROWS], ComptimeInt[P_COLS]],
+        MutAnyOrigin,
     ],
 ):
     """Q: TMA -> SMEM -> TMEM (MMA reads from here).
@@ -232,21 +231,11 @@ def dense_mma_ws_ts_kernel[
 
     # ---- Q SMEM region ----
     var q_smem_ptr = smem_base.bitcast[Scalar[OP_TYPE]]()
-    var q_smem_tile = LayoutTensor[
-        OP_TYPE,
-        Q_SMEM_LAYOUT,
-        address_space=.SHARED,
-        alignment=128,
-    ](q_smem_ptr.as_unsafe_any_origin())
+    var q_smem_tile = TileTensor(q_smem_ptr, Q_SMEM_LAYOUT)
 
     # ---- K SMEM region (starts after Q) ----
     var k_smem_ptr = (smem_base + K_SMEM_OFFSET).bitcast[Scalar[OP_TYPE]]()
-    var k_smem_tile = LayoutTensor[
-        OP_TYPE,
-        K_SMEM_LAYOUT,
-        address_space=.SHARED,
-        alignment=128,
-    ](k_smem_ptr.as_unsafe_any_origin())
+    var k_smem_tile = TileTensor(k_smem_ptr, K_SMEM_LAYOUT)
 
     # ---- Metadata region (after both SMEM tiles) ----
     var metadata_ptr = (smem_base + METADATA_OFFSET).bitcast[UInt32]()
@@ -444,8 +433,10 @@ def sparse_mma_ws_ts_kernel[
         op_type, k_tile_rank, k_tile_shape, k_desc_shape
     ],
     d_indices: MutPointer[Int32, MutAnyOrigin],
-    p_output: LayoutTensor[
-        .float32, Layout.row_major(rows, 2 * rows), MutAnyOrigin
+    p_output: TileTensor[
+        .float32,
+        RowMajorLayout[ComptimeInt[rows], ComptimeInt[2 * rows]],
+        MutAnyOrigin,
     ],
 ):
     """Q [rows, cols]: TMA bulk -> SMEM (SWIZZLE_128B) -> TMEM.
@@ -471,22 +462,16 @@ def sparse_mma_ws_ts_kernel[
     comptime total_tmem_cols = num_strips * u32_per_strip
     comptime max_tmem_cols: UInt32 = 512
 
-    comptime q_smem_layout = tile_layout_k_major[
+    comptime q_smem_layout = tile_layout_k_major_typed[
         op_type, rows, cols, TensorMapSwizzle.SWIZZLE_128B
+    ]
+    comptime q_smem_bytes = type_of(q_smem_layout).static_cosize * size_of[
+        op_type
     ]()
-    comptime q_smem_bytes = q_smem_layout.size() * size_of[op_type]()
-    comptime k_smem_layout = tile_layout_k_major[
-        op_type, rows, cols, TensorMapSwizzle.SWIZZLE_128B
-    ]()
-    comptime k_smem_bytes = k_smem_layout.size() * size_of[op_type]()
+    comptime k_smem_bytes = q_smem_bytes
 
-    comptime canonical_layout = tile_to_descriptor[
-        op_type, q_smem_layout, is_k_major=True
-    ]()
-    comptime stride_01 = canonical_layout[0].stride[1].value()
-    comptime stride_11 = canonical_layout[1].stride[1].value()
-    comptime sbo = stride_01 * size_of[op_type]()
-    comptime lbo = stride_11 * size_of[op_type]()
+    comptime sbo = type_of(q_smem_layout).static_stride[1] * size_of[op_type]()
+    comptime lbo = type_of(q_smem_layout).static_stride[3] * size_of[op_type]()
 
     comptime k_smem_offset = q_smem_bytes
     comptime metadata_offset = k_smem_offset + k_smem_bytes
@@ -511,12 +496,7 @@ def sparse_mma_ws_ts_kernel[
 
     # ---- Q SMEM region ----
     var q_smem_ptr = smem_base.bitcast[Scalar[op_type]]()
-    var q_smem_tile = LayoutTensor[
-        op_type,
-        q_smem_layout,
-        address_space=.SHARED,
-        alignment=128,
-    ](q_smem_ptr.as_unsafe_any_origin())
+    var q_smem_tile = TileTensor(q_smem_ptr, q_smem_layout)
 
     # ---- K SMEM region (starts after Q) ----
     var k_smem_ptr = (smem_base + k_smem_offset).bitcast[Scalar[op_type]]()
@@ -697,21 +677,19 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
 
     # ---- Allocate and fill Q input with random values ----
     seed(42)
-    var q_inp = ManagedLayoutTensor[OP_TYPE, Layout.row_major(ROWS, COLS)](ctx)
-    var q_inp_host = q_inp.tensor[update=False]()
-    randn[OP_TYPE](q_inp_host.ptr, ROWS * COLS)
+    var q_inp = HostDeviceTileTensor[OP_TYPE](row_major[ROWS, COLS](), ctx)
+    randn[OP_TYPE](q_inp.host_tensor().unsafe_ptr(), ROWS * COLS)
+    q_inp.to_device()
 
     # ---- Allocate and fill K input with random values ----
-    var k_inp = ManagedLayoutTensor[OP_TYPE, Layout.row_major(K_ROWS, K_COLS)](
-        ctx
-    )
-    var k_inp_host = k_inp.tensor[update=False]()
-    randn[OP_TYPE](k_inp_host.ptr, K_ROWS * K_COLS)
+    var k_inp = HostDeviceTileTensor[OP_TYPE](row_major[K_ROWS, K_COLS](), ctx)
+    randn[OP_TYPE](k_inp.host_tensor().unsafe_ptr(), K_ROWS * K_COLS)
+    k_inp.to_device()
 
     # ---- Allocate P output buffer (MMA result) ----
-    var p_out_buf = ManagedLayoutTensor[
-        ACCUM_TYPE, Layout.row_major(P_ROWS, P_COLS)
-    ](ctx)
+    var p_out_buf = HostDeviceTileTensor[ACCUM_TYPE](
+        row_major[P_ROWS, P_COLS](), ctx
+    )
 
     # ---- Create TMA descriptors: k-major, SWIZZLE_128B ----
     var q_tma_op = create_tensor_tile[
@@ -752,10 +730,8 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
     #   P[:, 64:128] = Q_odd_k_blocks * K_odd_k_blocks^T (partial)
     # Summing P[:, 0:64] + P[:, 64:128] gives the full 64x64 Q x K^T.
     print("  Verifying P = Q x K^T (MMA TS .ws, dual GEMM fold)...")
-    var p_out_host = p_out_buf.tensor()
-
-    # Print some raw P values for debugging.
-    var p_out_ptr = p_out_host.ptr
+    p_out_buf.to_host()
+    var p_out_ptr = p_out_buf.host_tensor().unsafe_ptr()
     print(
         "  P raw[0,0]="
         + String(p_out_ptr[0])
@@ -779,8 +755,8 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
     # Build TileTensors for the naive kernel.
     # C (output) is mutable; A and B are immutable to match the
     # ImmutAnyOrigin parameters that matmul_kernel_naive expects.
-    var q_device_ptr = q_inp.device_data.value().unsafe_ptr()
-    var k_device_ptr = k_inp.device_data.value().unsafe_ptr()
+    var q_device_ptr = q_inp.device_tensor().unsafe_ptr()
+    var k_device_ptr = k_inp.device_tensor().unsafe_ptr()
 
     var c_ref_tt = TileTensor(
         p_ref_device,
@@ -897,10 +873,12 @@ def test_sparse_mma_ws_ts[
     comptime naive_block_dim = 16
 
     # SMEM layout and sizes (derived from parameters).
-    comptime q_smem_layout = tile_layout_k_major[
+    comptime q_smem_layout = tile_layout_k_major_typed[
         op_type, rows, cols, TensorMapSwizzle.SWIZZLE_128B
+    ]
+    comptime q_smem_bytes = type_of(q_smem_layout).static_cosize * size_of[
+        op_type
     ]()
-    comptime q_smem_bytes = q_smem_layout.size() * size_of[op_type]()
     comptime k_smem_bytes = q_smem_bytes  # Same shape
     comptime k_smem_offset = q_smem_bytes
     comptime metadata_offset = k_smem_offset + k_smem_bytes
@@ -932,16 +910,17 @@ def test_sparse_mma_ws_ts[
 
     # ---- Allocate and fill Q input [rows, cols] with random values ----
     seed(42)
-    var q_inp = ManagedLayoutTensor[op_type, Layout.row_major(rows, cols)](ctx)
-    var q_inp_host = q_inp.tensor[update=False]()
-    randn[op_type](q_inp_host.ptr, rows * cols)
+    var q_inp = HostDeviceTileTensor[op_type](row_major[rows, cols](), ctx)
+    randn[op_type](q_inp.host_tensor().unsafe_ptr(), rows * cols)
+    q_inp.to_device()
 
     # ---- Allocate the full K buffer [total_tokens, cols] ----
-    var k_full = ManagedLayoutTensor[
-        op_type, Layout.row_major(total_tokens, cols)
-    ](ctx)
-    var k_full_host = k_full.tensor[update=False]()
-    randn[op_type](k_full_host.ptr, total_tokens * cols)
+    var k_full = HostDeviceTileTensor[op_type](
+        row_major[total_tokens, cols](), ctx
+    )
+    var k_full_host = k_full.host_tensor()
+    randn[op_type](k_full_host.unsafe_ptr(), total_tokens * cols)
+    k_full.to_device()
 
     # ---- Build non-contiguous indices into the full K buffer ----
     var h_indices = ctx.enqueue_create_host_buffer[.int32](rows)
@@ -956,15 +935,15 @@ def test_sparse_mma_ws_ts[
     for i in range(rows):
         var src_row = Int(h_indices[i])
         for c in range(cols):
-            k_ref_host[i * cols + c] = k_full_host.ptr[src_row * cols + c]
+            k_ref_host[i * cols + c] = k_full_host[src_row, c]
 
     var k_ref_device = ctx.enqueue_create_buffer[op_type](rows * cols)
     ctx.enqueue_copy(k_ref_device, k_ref_host)
 
     # ---- Allocate P output buffer [rows, 2*rows] ----
-    var p_out_buf = ManagedLayoutTensor[
-        .float32, Layout.row_major(p_rows, p_cols)
-    ](ctx)
+    var p_out_buf = HostDeviceTileTensor[.float32](
+        row_major[p_rows, p_cols](), ctx
+    )
 
     # ---- Create Q TMA descriptor ----
     var q_tma_op = create_tensor_tile[
@@ -973,10 +952,9 @@ def test_sparse_mma_ws_ts[
     ](ctx, q_inp.device_tensor())
 
     # ---- Create K gather4 TMA tile ----
-    _ = k_full.device_tensor()
     var k_gather4_tma = create_tma_tile_gather4[
         op_type, tile_width=cols, swizzle_mode=TensorMapSwizzle.SWIZZLE_128B
-    ](ctx, k_full.device_data.value(), total_tokens)
+    ](ctx, k_full.device_tensor().unsafe_ptr().as_imm(), total_tokens)
 
     # ---- Launch sparse kernel ----
     comptime kernel = sparse_mma_ws_ts_kernel[
@@ -1009,8 +987,8 @@ def test_sparse_mma_ws_ts[
         "  Verifying P = Q x K_gathered^T"
         " (MMA TS .ws, sparse + dual GEMM fold)..."
     )
-    var p_out_host = p_out_buf.tensor()
-    var p_out_ptr = p_out_host.ptr
+    p_out_buf.to_host()
+    var p_out_ptr = p_out_buf.host_tensor().unsafe_ptr()
     print(
         "  P raw[0,0]="
         + String(p_out_ptr[0])
@@ -1025,7 +1003,7 @@ def test_sparse_mma_ws_ts[
         p_ref_rows * p_ref_cols
     )
 
-    var q_device_ptr = q_inp.device_data.value().unsafe_ptr()
+    var q_device_ptr = q_inp.device_tensor().unsafe_ptr()
 
     var c_ref_tt = TileTensor(
         p_ref_device,
@@ -1157,10 +1135,12 @@ def test_sparse_paged_mma_ws_ts[
     comptime naive_block_dim = 16
 
     # SMEM layout and sizes (derived from parameters).
-    comptime q_smem_layout = tile_layout_k_major[
+    comptime q_smem_layout = tile_layout_k_major_typed[
         op_type, rows, cols, TensorMapSwizzle.SWIZZLE_128B
+    ]
+    comptime q_smem_bytes = type_of(q_smem_layout).static_cosize * size_of[
+        op_type
     ]()
-    comptime q_smem_bytes = q_smem_layout.size() * size_of[op_type]()
     comptime k_smem_bytes = q_smem_bytes  # Same shape
     comptime k_smem_offset = q_smem_bytes
     comptime metadata_offset = k_smem_offset + k_smem_bytes
@@ -1198,54 +1178,70 @@ def test_sparse_paged_mma_ws_ts[
         num_heads,
         head_size,
     )
-    comptime pg_layout_6d = Layout.row_major[6]()
-    var blocks = ManagedLayoutTensor[op_type, pg_layout_6d](
-        RuntimeLayout[pg_layout_6d].row_major(pg_shape_6d), ctx
-    )
-    var blocks_host = blocks.tensor[update=False]()
-
-    # Fill entire blocks buffer with random data.
-    seed(42)
-    var block_elems = (
-        num_blocks * kv_dim * num_layers * page_size * num_heads * head_size
-    )
-    rand[op_type](blocks_host.ptr, block_elems)
-
-    # ---- Build cache_lengths ----
-    comptime cache_len_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cache_len_layout](
-        RuntimeLayout[cache_len_layout].row_major(IndexList[1](batch_size)),
-        ctx,
-    )
-    var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
-    for i in range(batch_size):
-        cache_lengths_host[i] = UInt32(total_tokens)
-
-    # ---- Build lookup_table with shuffled page assignments ----
-    comptime lut_layout = Layout.row_major[2]()
-    var max_pages_per_seq = (total_tokens + page_size - 1) // page_size
-    var lut_managed = ManagedLayoutTensor[.uint32, lut_layout](
-        RuntimeLayout[lut_layout].row_major(
-            IndexList[2](batch_size, num_blocks)
-        ),
-        ctx,
-    )
-    var lut_host = lut_managed.tensor[update=False]()
-    var lut_ptr = lut_host.ptr
-    for s in range(batch_size):
-        for p in range(max_pages_per_seq):
-            var blk = ((s * max_pages_per_seq + p) * 37 + 13) % num_blocks
-            lut_ptr[s * num_blocks + p] = UInt32(blk)
-
-    # ---- Construct PagedKVCacheCollection and extract key cache ----
     comptime kv_params = KVCacheStaticParams(
         num_heads=num_heads,
         head_size=head_size,
     )
-    var collection = PagedKVCacheCollection[op_type, kv_params, page_size](
-        blocks.device_tensor(),
-        cache_lengths_managed.device_tensor(),
-        lut_managed.device_tensor(),
+    comptime Collection = PagedKVCacheCollection[
+        op_type,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_stride = Coord[*BlocksLayout.stride_types]()
+    blocks_stride[0] = Int64(paged_stride * row_width)
+    blocks_stride[1] = Int64(num_layers * page_size * row_width)
+    var blocks = HostDeviceTileTensor[op_type](
+        BlocksLayout(blocks_shape, blocks_stride), ctx
+    )
+    var blocks_host = blocks.host_tensor()
+
+    # Fill entire blocks buffer with random data.
+    seed(42)
+    var block_elems = pg_shape_6d.flattened_length()
+    rand[op_type](blocks_host.unsafe_ptr(), block_elems)
+    blocks.to_device()
+
+    # ---- Build cache_lengths ----
+    var cache_lengths_managed = HostDeviceTileTensor[.uint32](
+        Collection.CacheType.cache_lengths_tt_layout(
+            Coord(Int64(batch_size)), Coord(Idx[1])
+        ),
+        ctx,
+    )
+    var cache_lengths_host = cache_lengths_managed.host_tensor()
+    for i in range(batch_size):
+        cache_lengths_host[i] = UInt32(total_tokens)
+    cache_lengths_managed.to_device()
+
+    # ---- Build lookup_table with shuffled page assignments ----
+    var max_pages_per_seq = (total_tokens + page_size - 1) // page_size
+    var lut_managed = HostDeviceTileTensor[.uint32](
+        Collection.CacheType.lookup_table_tt_layout(
+            Coord(Int64(batch_size), Int64(num_blocks)),
+            Coord(Int64(num_blocks), Idx[1]),
+        ),
+        ctx,
+    )
+    var lut_host = lut_managed.host_tensor()
+    for s in range(batch_size):
+        for p in range(max_pages_per_seq):
+            var blk = ((s * max_pages_per_seq + p) * 37 + 13) % num_blocks
+            lut_host[s, p] = UInt32(blk)
+    lut_managed.to_device()
+
+    # ---- Construct PagedKVCacheCollection and extract key cache ----
+    var collection = Collection(
+        blocks.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_managed.device_tensor().as_unsafe_any_origin().as_imm(),
+        lut_managed.device_tensor().as_unsafe_any_origin().as_imm(),
         UInt32(total_tokens),
         UInt32(total_tokens),
     )
@@ -1253,16 +1249,16 @@ def test_sparse_paged_mma_ws_ts[
 
     # ---- Allocate and fill Q input [rows, cols] with random values ----
     seed(42)
-    var q_inp = ManagedLayoutTensor[op_type, Layout.row_major(rows, cols)](ctx)
-    var q_inp_host = q_inp.tensor[update=False]()
-    randn[op_type](q_inp_host.ptr, rows * cols)
+    var q_inp = HostDeviceTileTensor[op_type](row_major[rows, cols](), ctx)
+    randn[op_type](q_inp.host_tensor().unsafe_ptr(), rows * cols)
+    q_inp.to_device()
 
     # ---- Build gather indices from the paged cache ----
     var h_indices = ctx.enqueue_create_host_buffer[.int32](topk)
     for i in range(topk):
         var tok_idx = (i * 37 + 13) % total_tokens
         var page_within_seq, offset_in_page = divmod(tok_idx, page_size)
-        var phys_block = Int(lut_ptr[0 * num_blocks + page_within_seq])
+        var phys_block = Int(lut_host[0, page_within_seq])
         var phys_row = phys_block * paged_stride + offset_in_page
         h_indices[i] = Int32(phys_row)
 
@@ -1274,7 +1270,7 @@ def test_sparse_paged_mma_ws_ts[
     for i in range(topk):
         var src_row = Int(h_indices[i])
         for c in range(row_width):
-            k_ref_host[i * row_width + c] = blocks_host.ptr[
+            k_ref_host[i * row_width + c] = blocks_host.unsafe_ptr()[
                 src_row * row_width + c
             ]
 
@@ -1282,9 +1278,9 @@ def test_sparse_paged_mma_ws_ts[
     ctx.enqueue_copy(k_ref_device, k_ref_host)
 
     # ---- Allocate P output buffer [rows, 2*rows] ----
-    var p_out_buf = ManagedLayoutTensor[
-        .float32, Layout.row_major(p_rows, p_cols)
-    ](ctx)
+    var p_out_buf = HostDeviceTileTensor[.float32](
+        row_major[p_rows, p_cols](), ctx
+    )
 
     # ---- Create Q TMA descriptor ----
     var q_tma_op = create_tensor_tile[
@@ -1328,8 +1324,8 @@ def test_sparse_paged_mma_ws_ts[
         "  Verifying P = Q x K_gathered^T"
         " (MMA TS .ws, sparse paged + dual GEMM fold)..."
     )
-    var p_out_host = p_out_buf.tensor()
-    var p_out_ptr = p_out_host.ptr
+    p_out_buf.to_host()
+    var p_out_ptr = p_out_buf.host_tensor().unsafe_ptr()
     print(
         "  P raw[0,0]="
         + String(p_out_ptr[0])
@@ -1344,7 +1340,7 @@ def test_sparse_paged_mma_ws_ts[
         p_ref_rows * p_ref_cols
     )
 
-    var q_device_ptr = q_inp.device_data.value().unsafe_ptr()
+    var q_device_ptr = q_inp.device_tensor().unsafe_ptr()
 
     var c_ref_tt = TileTensor(
         p_ref_device,
