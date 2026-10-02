@@ -5091,7 +5091,7 @@ index da8b516..9210133 100644
 +  }
 +  const std::string char_class = ctx.framing == GenerationContext::Framing::kTokenDelimited
 +                                     ? "[^" + StringPatternForbiddenChars(ctx) + "]"
-+                                     : "[^\"\\\\\\r\\n]";
++                                     : "[^\\0-\\x1f\\\"\\\\\\r\\n]";
 +  const std::string repetition = max_length == -1
 +                                     ? "{" + std::to_string(min_length) + ",}"
 +                                     : "{" + std::to_string(min_length) + "," +
