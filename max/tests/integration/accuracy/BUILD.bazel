@@ -452,6 +452,21 @@ modular_py_test(
     deps = [":llm_fuzz_constrained_stream"],
 )
 
+modular_py_library(
+    name = "llm_fuzz_needle",
+    testonly = True,
+    srcs = ["llm_fuzz/scenarios/_needle.py"],
+    imports = ["llm_fuzz"],
+)
+
+modular_py_test(
+    name = "test_llm_fuzz_needle",
+    size = "small",
+    srcs = ["llm_fuzz/test_needle.py"],
+    imports = ["llm_fuzz"],
+    deps = [":llm_fuzz_needle"],
+)
+
 modular_py_binary(
     name = "llm-fuzz",
     testonly = True,
@@ -460,6 +475,7 @@ modular_py_binary(
         exclude = [
             "llm_fuzz/.venv/**",
             "llm_fuzz/scenarios/_constrained_stream.py",
+            "llm_fuzz/scenarios/_needle.py",
             "llm_fuzz/test_*.py",
         ],
     ),
@@ -473,6 +489,7 @@ modular_py_binary(
     visibility = ["//max_private:__subpackages__"],
     deps = [
         ":llm_fuzz_constrained_stream",
+        ":llm_fuzz_needle",
         requirement("openai"),
         requirement("jsonschema"),
         requirement("pydantic"),
