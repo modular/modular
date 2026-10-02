@@ -1,0 +1,25 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+filegroup(
+    name = "testdata",
+    srcs = glob(["testdata/**"]),
+)
+
+# hf_config_shims.py is shared by many models, so this catches an edit to
+# another shim, or a transformers upgrade that ships native muse_glimmer
+# configs, changing how the published config parses.
+modular_py_test(
+    name = "test_hf_config_shim",
+    srcs = ["test_hf_config_shim.py"],
+    data = [":testdata"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("transformers"),
+    ],
+)

@@ -17,7 +17,8 @@ HuggingFace AutoConfig shims for model_types that the installed version of
 transformers does not recognize natively.
 """
 
-from typing import Any
+import copy
+from typing import Any, ClassVar
 
 from transformers import AutoConfig, DeepseekV3Config, PretrainedConfig
 
@@ -576,3 +577,134 @@ class _Qwen4ExpHFConfig(PretrainedConfig):
 
 AutoConfig.register("qwen4_exp_text", _Qwen4ExpTextHFConfig, exist_ok=True)
 AutoConfig.register("qwen4_exp", _Qwen4ExpHFConfig, exist_ok=True)
+
+
+# TODO: drop these shims once transformers >= 5.15, which ships native
+# muse_glimmer configs. Before switching, note two differences from the
+# native 5.17 classes: the vision config's default rope_type is "axial" (it
+# overrides the checkpoint's "default"), which _rope_theta in
+# muse_glimmer/model_config.py rejects; and a text config without
+# rope_parameters defaults to theta 10000 there, 500000 here.
+class _MuseGlimmerSubHFConfig(PretrainedConfig):
+    """A Muse Glimmer config that keeps every field and fills reference defaults.
+
+    ``muse_glimmer`` landed in transformers 5.15.0; the defaults follow its
+    5.17.0 config classes except where the TODO above says otherwise.
+    """
+
+    _defaults: ClassVar[dict[str, Any]] = {}
+
+    def __init__(self, **kwargs: Any) -> None:
+        kwargs = {**copy.deepcopy(self._defaults), **kwargs}
+        super().__init__(**kwargs)
+
+
+class _MuseGlimmerTextHFConfig(_MuseGlimmerSubHFConfig):
+    model_type = "muse_glimmer_text"
+    _defaults: ClassVar[dict[str, Any]] = {
+        "head_dim": 128,
+        "num_key_value_heads": 2,
+        "sliding_window": 2048,
+        "qk_scale_factor": 3.87,
+        "output_multiplier": 0.19611613513818404,
+        "post_norm_eps": 1e-8,
+        "final_logit_softcapping": 20.0,
+        "rms_norm_eps": 1e-5,
+        "hidden_activation": "silu",
+        "tie_word_embeddings": False,
+        "rope_parameters": {"rope_theta": 500000.0, "rope_type": "default"},
+    }
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        # Derived as in the reference's __post_init__. Guarded because
+        # transformers instantiates a declared sub-config with no kwargs.
+        n = getattr(self, "num_hidden_layers", None)
+        if getattr(self, "layer_types", None) is None and n:
+            self.layer_types = [
+                "full_attention"
+                if (n - 1 - i) % 4 == 0
+                else "sliding_attention"
+                for i in range(n)
+            ]
+        if getattr(self, "layer_rope_theta", None) is None and n:
+            self.layer_rope_theta = [
+                0 if t == "full_attention" else self.rope_theta
+                for t in self.layer_types
+            ]
+
+    @property
+    def rope_theta(self) -> float:
+        return self.rope_parameters["rope_theta"]
+
+
+class _MuseGlimmerVisionHFConfig(_MuseGlimmerSubHFConfig):
+    model_type = "muse_glimmer_vision"
+    _defaults: ClassVar[dict[str, Any]] = {
+        "hidden_size": 1536,
+        "intermediate_size": 8960,
+        "num_hidden_layers": 50,
+        "num_attention_heads": 16,
+        "hidden_act": "gelu",
+        "layer_norm_eps": 1e-5,
+        "patch_size": 14,
+        "patch_temporal": 2,
+        "merge_size": 2,
+        "pos_emb_height": 32,
+        "pos_emb_width": 32,
+        "max_position_embeddings": 1024,
+        "rope_parameters": {"rope_theta": 10000.0, "rope_type": "default"},
+    }
+
+    def __init__(
+        self, layer_types: list[str] | None = None, **kwargs: Any
+    ) -> None:
+        # Set after the base init: its `validate_layer_type` rejects
+        # "window_attention", which predates this model in transformers.
+        super().__init__(**kwargs)
+        n = self.num_hidden_layers
+        self.layer_types = layer_types or [
+            "full_attention"
+            if (i + 1) % 4 == 0 or i == n - 1
+            else "window_attention"
+            for i in range(n)
+        ]
+
+
+class MuseGlimmerHFConfig(_MuseGlimmerSubHFConfig):
+    """Local config class for Muse Glimmer (``model_type: muse_glimmer``)."""
+
+    model_type = "muse_glimmer"
+    sub_configs = {
+        "text_config": _MuseGlimmerTextHFConfig,
+        "vision_config": _MuseGlimmerVisionHFConfig,
+    }
+    _defaults: ClassVar[dict[str, Any]] = {
+        "image_token_id": 200092,
+        "video_token_id": 200091,
+        "out_hidden_size": 6144,
+        "projector_hidden_size": 4096,
+        "projector_hidden_act": "gelu",
+    }
+
+    def __init__(
+        self,
+        text_config: dict[str, Any] | _MuseGlimmerTextHFConfig | None = None,
+        vision_config: dict[str, Any]
+        | _MuseGlimmerVisionHFConfig
+        | None = None,
+        **kwargs: Any,
+    ) -> None:
+        if isinstance(text_config, dict) or text_config is None:
+            text_config = _MuseGlimmerTextHFConfig(**(text_config or {}))
+        if isinstance(vision_config, dict) or vision_config is None:
+            vision_config = _MuseGlimmerVisionHFConfig(**(vision_config or {}))
+        self.text_config = text_config
+        self.vision_config = vision_config
+        super().__init__(**kwargs)
+
+
+AutoConfig.register("muse_glimmer", MuseGlimmerHFConfig, exist_ok=True)
+AutoConfig.register(
+    "muse_glimmer_text", _MuseGlimmerTextHFConfig, exist_ok=True
+)
