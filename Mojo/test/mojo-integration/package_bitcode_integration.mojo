@@ -27,17 +27,18 @@
 # RUN: llvm-as %t_impl.ll -o %t_impl.bc
 
 # Step 2: Package the bitcode_package with the bitcode library
-# RUN: mojo precompile %S/inputs/bitcode_package --bitcode-libs=%t_impl.bc -o %S/bitcode_package.mojoc
+# RUN: rm -rf %t.pkg && mkdir -p %t.pkg
+# RUN: mojo precompile %S/inputs/bitcode_package --bitcode-libs=%t_impl.bc -o %t.pkg/bitcode_package.mojoc
 
 # Step 3: Verify the package was created and contains bitcode modules
-# RUN: kgen-opt %S/bitcode_package.mojoc | FileCheck %s --check-prefix=CHECK-PACKAGE
+# RUN: kgen-opt %t.pkg/bitcode_package.mojoc | FileCheck %s --check-prefix=CHECK-PACKAGE
 # CHECK-PACKAGE: lit.package
 # CHECK-PACKAGE-SAME: externLLVMBitcodeModules = #lit<dense_resource_elements_array[dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]
 # CHECK-PACKAGE: dialect_resources:
 # CHECK-PACKAGE: [[LLVM_BITCODE_NAME]]
 
 # Step 4: Compile and run this test file that imports and uses the package
-# RUN: mojo %s -I %S | FileCheck %s --check-prefix=CHECK-OUTPUT
+# RUN: mojo -I %t.pkg %s | FileCheck %s --check-prefix=CHECK-OUTPUT
 
 # Main program that imports and uses the packaged extern functions
 from bitcode_package import double_add, extern_add, extern_multiply
