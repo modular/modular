@@ -19,6 +19,7 @@ types used by both prefill and decode attention kernels.
 
 from std.math import align_up, ceildiv
 from std.math.uutils import ufloordiv, ualign_up
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import OptionalReg
 from std.sys import (
     CompilationTarget,
@@ -955,8 +956,11 @@ def _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
     return int_t.static_value.or_else(0) == 1
 
 
-trait OptionalPointer(Copyable, TrivialRegisterPassable):
+trait OptionalPointer(Copyable, DevicePassable, TrivialRegisterPassable):
     """Abstracts over nullable pointers, providing a uniform interface for `NonNullPointer` and `NullPointer`.
+
+    Implementors are `DevicePassable`, so a generic `OptionalPointer` can be
+    passed straight to a kernel; a `NullPointer` adds no kernel argument.
     """
 
     comptime dtype: DType
@@ -992,6 +996,21 @@ struct NonNullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
 
     @__allow_legacy_any_origin_fields
     var ptr: Self.PtrType
+
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "NonNullPointer"
+
+    @staticmethod
+    def get_device_type_name() -> String:
+        return Self.get_type_name()
 
     @inline(.always)
     def __init__(out self, ptr: Self.PtrType):
@@ -1029,6 +1048,21 @@ struct NullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
         Scalar[Self.dtype], ImmutAnyOrigin, address_space=Self.address_space
     ]
 
+    comptime device_type: AnyType = Self
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        return "NullPointer"
+
+    @staticmethod
+    def get_device_type_name() -> String:
+        return Self.get_type_name()
+
     @inline(.always)
     def __init__(out self):
         pass
@@ -1038,6 +1072,111 @@ struct NullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
         # NullPointer.value() should never be called at runtime — it exists
         # only for trait conformance. Return dangling as a safe sentinel.
         return Self.PtrType.unsafe_dangling()
+
+
+comptime MaybeNullPointer[dtype: DType, present: Bool] = NonNullPointer[
+    dtype
+] if present else NullPointer[dtype]
+"""`NonNullPointer[dtype]` when `present`, else `NullPointer[dtype]`."""
+
+
+@inline(.always)
+def maybe_null_pointer[
+    dtype: DType, //, present: Bool
+](ptr: UnsafePointer[Scalar[dtype], _]) -> MaybeNullPointer[dtype, present]:
+    """Wraps `ptr` as a `NonNullPointer` when `present`, else drops it.
+
+    Lets a caller that knows at compile time whether an optional operand is
+    supplied turn it into an `OptionalPointer`, so the kernels it reaches are
+    specialized on the operand's presence rather than branching on null.
+
+    Parameters:
+        dtype: Element type of the pointed-to values (inferred).
+        present: Whether `ptr` is a live operand.
+
+    Args:
+        ptr: The operand's pointer; ignored when `present` is False.
+
+    Returns:
+        The `OptionalPointer` for `ptr`.
+    """
+    comptime if present:
+        return rebind[MaybeNullPointer[dtype, present]](
+            NonNullPointer[dtype](ptr.as_imm().as_unsafe_any_origin())
+        )
+    else:
+        return rebind[MaybeNullPointer[dtype, present]](NullPointer[dtype]())
+
+
+@inline(.always)
+def null_pointer[T: OptionalPointer]() -> T:
+    """Returns the null value of `T`, for defaulting an `OptionalPointer` argument.
+
+    Parameters:
+        T: The `OptionalPointer` type; must be a `NullPointer`.
+
+    Returns:
+        A `NullPointer` typed as `T`.
+    """
+    comptime assert T.is_null, "a defaulted OptionalPointer must be null"
+    return rebind[T](NullPointer[T.dtype, T.address_space]())
+
+
+@inline(.always)
+def unread_pointer[T: OptionalPointer]() -> T:
+    """Returns a placeholder `T` for an operand that will never be dereferenced.
+
+    For defaulting an argument whose pointer type is shared with another
+    operand but which the comptime configuration never reads, e.g.
+    `extra_topk_lengths` without an extra KV cache. A non-null `T` gets a
+    dangling pointer.
+
+    Parameters:
+        T: The `OptionalPointer` type.
+
+    Returns:
+        A null or dangling value typed as `T`.
+    """
+    comptime if T.is_null:
+        return null_pointer[T]()
+    else:
+        return rebind[T](
+            NonNullPointer[T.dtype, T.address_space](
+                NonNullPointer[
+                    T.dtype, T.address_space
+                ].PtrType.unsafe_dangling()
+            )
+        )
+
+
+@inline(.always)
+def as_optional_reg[
+    T: OptionalPointer
+](ptr: T) -> OptionalReg[
+    UnsafePointer[Scalar[T.dtype], MutAnyOrigin, address_space=T.address_space]
+]:
+    """Converts an `OptionalPointer` to the runtime-nullable `OptionalReg` form.
+
+    For handing a typed optional operand to code that still branches on null
+    at runtime.
+
+    Parameters:
+        T: The `OptionalPointer` type (inferred).
+
+    Args:
+        ptr: The pointer to convert.
+
+    Returns:
+        `None` when `T` is null, else the wrapped pointer.
+    """
+    comptime if T.is_null:
+        return None
+    else:
+        return rebind[
+            UnsafePointer[
+                Scalar[T.dtype], MutAnyOrigin, address_space=T.address_space
+            ]
+        ](ptr.value())
 
 
 trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):

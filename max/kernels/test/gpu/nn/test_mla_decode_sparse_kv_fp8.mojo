@@ -60,7 +60,7 @@ from layout import (
 )
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import KVCacheMHAOperand
-from nn.attention.mha_utils import MHAConfig
+from nn.attention.mha_utils import MHAConfig, NonNullPointer
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
@@ -1253,9 +1253,7 @@ def run_test_sparse_kv_fp8_variable_topk[
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
-            topk_lengths_device.unsafe_ptr()
-        ),
+        topk_lengths=NonNullPointer[DType.int32](topk_lengths_device),
     )
     ctx.synchronize()
 
@@ -1609,9 +1607,7 @@ def run_test_sparse_kv_fp8_attn_sink[
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        attn_sink_ptr=rebind[MutPointer[Float32, origin=MutAnyOrigin]](
-            attn_sink_device.unsafe_ptr()
-        ),
+        attn_sink_ptr=NonNullPointer[DType.float32](attn_sink_device),
     )
     ctx.synchronize()
 
@@ -2174,6 +2170,7 @@ def run_test_sparse_kv_fp8_extra_kv[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        has_extra_k=True,
     ](
         out_tt,
         q_tt,
@@ -2187,16 +2184,14 @@ def run_test_sparse_kv_fp8_extra_kv[
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=max_topk,
-        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
-            topk_lengths_device.unsafe_ptr()
-        ),
+        topk_lengths=NonNullPointer[DType.int32](topk_lengths_device),
         extra_k=extra_kv_cache,
         extra_d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](
             extra_d_indices_device.unsafe_ptr()
         ),
         extra_indices_stride=max_extra_topk,
-        extra_topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
-            extra_topk_lengths_device.unsafe_ptr()
+        extra_topk_lengths=NonNullPointer[DType.int32](
+            extra_topk_lengths_device
         ),
     )
     ctx.synchronize()
@@ -2589,9 +2584,7 @@ def run_test_sparse_kv_fp8_topk_clamping[
             d_indices_device.unsafe_ptr()
         ),
         indices_stride=indices_stride,
-        topk_lengths=rebind[MutPointer[Int32, MutAnyOrigin]](
-            topk_lengths_device.unsafe_ptr()
-        ),
+        topk_lengths=NonNullPointer[DType.int32](topk_lengths_device),
     )
     ctx.synchronize()
 

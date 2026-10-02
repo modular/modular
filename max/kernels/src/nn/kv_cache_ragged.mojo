@@ -76,9 +76,13 @@ from nn.attention.gpu.mha import (
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_utils import (
     MHAConfig,
+    NullPointer,
+    OptionalPointer,
     as_dynamic_row_major_1d,
     dispatch_mask,
     dispatch_relative_logits_mask,
+    null_pointer,
+    unread_pointer,
 )
 from nn.attention.gpu.mla import (
     _k_cache_to_buffer,
@@ -4094,6 +4098,10 @@ def generic_flare_mla_decode_kv_cache_ragged[
     sparse_mla: Bool = False,
     # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding.
     fold_shared_index: Bool = False,
+    # Whether `extra_k` is supplied; see flare_mla_decoding.
+    has_extra_k: Bool = False,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
     q: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -4108,12 +4116,14 @@ def generic_flare_mla_decode_kv_cache_ragged[
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     extra_k: OptionalReg[collection_t.CacheType] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
+        TopkLengthsPtrType
+    ](),
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar: forwarded from the MoGG op so SM100 grid
     # sizing matches the kernel's divmod on scalar_args_buf[2].
@@ -4140,6 +4150,11 @@ def generic_flare_mla_decode_kv_cache_ragged[
             physical KV row indices via gather4 TMA (defaults to `False`).
         fold_shared_index: Whether to use the read-once shared-index MTP
             fold threaded to `flare_mla_decoding` (defaults to `False`).
+        has_extra_k: Whether `extra_k` is supplied (defaults to `False`).
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred).
+        TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
+            `extra_topk_lengths` (inferred).
 
     Args:
         q: Query tile tensor with shape (batch_size, num_heads, q_head_size).
@@ -4209,6 +4224,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             per_token_scale_rope_aware=per_token_scale_rope_aware,
             sparse_mla=sparse_mla,
             fold_shared_index=fold_shared_index,
+            has_extra_k=has_extra_k,
         ](
             q,
             input_row_offsets,
@@ -4245,6 +4261,10 @@ def _flare_mla_decode_kv_cache_ragged[
     sparse_mla: Bool = False,
     # Read-once shared-index MTP fold (KERN-3141); threaded to flare_mla_decoding.
     fold_shared_index: Bool = False,
+    # Whether `extra_k` is supplied; see flare_mla_decoding.
+    has_extra_k: Bool = False,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
     q: TileTensor[mut=False, q_dtype, address_space=.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -4260,12 +4280,14 @@ def _flare_mla_decode_kv_cache_ragged[
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     extra_k: OptionalReg[collection_t.CacheType] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
+        TopkLengthsPtrType
+    ](),
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar from the dispatcher input list. Optional[Int]
     # is not @__copy_capture-able, so we unpack to (has, value) before the
@@ -4357,6 +4379,7 @@ def _flare_mla_decode_kv_cache_ragged[
             per_token_scale_rope_aware=per_token_scale_rope_aware,
             sparse=sparse_mla,
             fold_shared_index=fold_shared_index,
+            has_extra_k=has_extra_k,
         ](
             output,
             q,

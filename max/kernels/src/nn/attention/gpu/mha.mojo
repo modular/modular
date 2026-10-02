@@ -3385,7 +3385,7 @@ def mha_single_batch[
                                 p_reg_vec2[mma_id, i] * log2e
                             )
 
-                        if not not_last_iter:
+                        comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
                                 IndexList[2, element_type=.uint32](
                                     Int(score_row), Int(score_col)
@@ -4124,7 +4124,7 @@ def mha_single_batch_pipelined[
                                 p_reg_vec2[mma_id, i] * log2e
                             )
 
-                        if not not_last_iter:
+                        comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
                                 IndexList[
                                     2,

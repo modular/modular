@@ -65,6 +65,7 @@ from layout import (
     TileTensor,
 )
 from nn.attention.gpu.nvidia.common import (
+    NullPointer,
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask
@@ -121,11 +122,15 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
-    has_attn_sink: Bool = False,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     has_extra_kv: Bool = False,
-    has_variable_topk: Bool = False,
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     Engine: TensorEngine = DefaultEngine[element_width=1],
 ](TrivialRegisterPassable):
+    # Presence of the optional operands is carried by their pointer types.
+    comptime has_attn_sink = not Self.AttnSinkPtrType.is_null
+    comptime has_variable_topk = not Self.TopkLengthsPtrType.is_null
+
     comptime kv_type = Self.KVLUTType.dtype
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
@@ -244,8 +249,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_stride: Int32,
-        topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
+        topk_lengths: Self.TopkLengthsPtrType,
+        attn_sink_ptr: Self.AttnSinkPtrType,
         # Extra KV TMA: BF16, SWIZZLE_128B, tile_width=padded_q_depth=576,
         # box_w=_gather4_box_width[bfloat16, 576, SWIZZLE_128B]()=64.
         # Same descriptor shape as the main K_TMA.
@@ -257,7 +262,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        extra_topk_lengths: Self.TopkLengthsPtrType,
         extra_indices_stride: Int32,
         scalar_args: TileTensor[
             .int64,
@@ -311,7 +316,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ](
             kv_lut,
             rebind[
@@ -335,18 +340,14 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         # inside the kernel loop.
         var topk: Int
         comptime if Self.has_variable_topk:
-            topk = Int(
-                topk_lengths.unsafe_value()[Int(offset_position.batch_idx)]
-            )
+            topk = Int(topk_lengths.value()[Int(offset_position.batch_idx)])
         else:
             topk = _indices_stride
         var extra_topk: Int = 0
         comptime if Self.has_extra_kv:
             comptime if Self.has_variable_topk:
                 extra_topk = Int(
-                    extra_topk_lengths.unsafe_value()[
-                        Int(offset_position.batch_idx)
-                    ]
+                    extra_topk_lengths.value()[Int(offset_position.batch_idx)]
                 )
             else:
                 extra_topk = _extra_indices_stride
@@ -512,9 +513,9 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 var row = lane_idx & 0x3F
                 var head_idx_local = Int(block_idx.x) * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
-                    attn_sink_log2 = attn_sink_ptr.unsafe_value()[
-                        head_idx_local
-                    ] * Float32(log2e)
+                    attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
+                        DType.float32
+                    ]() * Float32(log2e)
 
             Self.Common_MLA_Op.Softmax[has_attn_sink=Self.has_attn_sink,](
                 ptr_tmem_addr[0],
@@ -756,7 +757,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
         idx_smem_base: SharedMemPointer[Int32],
         topk: Int,
@@ -889,7 +890,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -964,7 +965,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)

@@ -66,7 +66,7 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 from nn.attention.mha_mask import MHAMask
-from nn.attention.mha_utils import dispatch_mask
+from nn.attention.mha_utils import dispatch_mask, maybe_null_pointer
 from nn.attention.gpu.mla_graph import (
     mla_prefill_branch_fp8,
     mla_prefill_branch_bf16,
@@ -3305,6 +3305,11 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         # byte-identical). Forwarded to the decode dispatch as
         # `fold_shared_index`.
         index_share: Bool = False,
+        # Set by the Python wrapper from whether each operand was supplied.
+        # An absent operand arrives as a placeholder tensor that is never
+        # read; the decode kernels are specialized on its absence.
+        has_topk_lengths: Bool = True,
+        has_attn_sink: Bool = True,
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
@@ -3356,8 +3361,12 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
-        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
+        var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
+            topk_lengths.to_layout_tensor().ptr
+        )
+        var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
+            attn_sink.to_layout_tensor().ptr
+        )
         # `sparse_indices` still holds the logical key positions here; the
         # remap below produces the physical gather buffer and drops them.
         # Capture them for position-based causal masking (see
@@ -3600,6 +3609,11 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         mask_str: StaticString,
         target: StaticString,
         indices_stride: Int,
+        # Set by the Python wrapper from whether each operand was supplied.
+        # An absent operand arrives as a placeholder tensor that is never
+        # read; the decode kernels are specialized on its absence.
+        has_topk_lengths: Bool = True,
+        has_attn_sink: Bool = True,
     ](
         output: OutputTensor[dtype=.bfloat16, rank=3, ...],
         q: InputTensor[dtype=.bfloat16, rank=3, ...],
@@ -3649,8 +3663,12 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
-        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
+        var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
+            topk_lengths.to_layout_tensor().ptr
+        )
+        var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
+            attn_sink.to_layout_tensor().ptr
+        )
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.sparse",
@@ -3832,6 +3850,11 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         # byte-identical). Forwarded to the decode dispatch as
         # `fold_shared_index`.
         index_share: Bool = False,
+        # Set by the Python wrapper from whether each operand was supplied.
+        # An absent operand arrives as a placeholder tensor that is never
+        # read; the decode kernels are specialized on its absence.
+        has_topk_lengths: Bool = True,
+        has_attn_sink: Bool = True,
     ](
         output: OutputTensor[dtype=dtype, rank=3, ...],
         q: InputTensor[dtype=dtype, rank=3, ...],
@@ -3889,8 +3912,12 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
-        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
+        var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
+            topk_lengths.to_layout_tensor().ptr
+        )
+        var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
+            attn_sink.to_layout_tensor().ptr
+        )
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.fp8.sparse",
@@ -4279,6 +4306,11 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         mask_str: StaticString,
         target: StaticString,
         indices_stride: Int,
+        # Set by the Python wrapper from whether each operand was supplied.
+        # An absent operand arrives as a placeholder tensor that is never
+        # read; the decode kernels are specialized on its absence.
+        has_topk_lengths: Bool = True,
+        has_attn_sink: Bool = True,
     ](
         output: OutputTensor[dtype=.bfloat16, rank=3, ...],
         q: InputTensor[dtype=.bfloat16, rank=3, ...],
@@ -4332,8 +4364,12 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         var dev_ctx = context
         var num_indices_sparse = sparse_indices.size()
 
-        var topk_lengths_ptr = topk_lengths.to_layout_tensor().ptr
-        var attn_sink_ptr = attn_sink.to_layout_tensor().ptr
+        var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
+            topk_lengths.to_layout_tensor().ptr
+        )
+        var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
+            attn_sink.to_layout_tensor().ptr
+        )
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.prefill.decode.paged.sparse",

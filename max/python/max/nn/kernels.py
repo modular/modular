@@ -5180,7 +5180,9 @@ def mla_decode_graph(
             with logical token indices into each sequence's KV; MOGG remaps them to
             physical ``block * page_size + offset`` rows before the kernel.
         sparse_topk_lengths: Per-batch valid top-k counts, ``int32`` rank-1.
+            ``None`` means every row uses the full ``sparse_indices_stride``.
         sparse_attn_sink: Per-batch attention sink weights, ``float32`` rank-1.
+            ``None`` means no sink.
         sparse_indices_stride: Row stride in ``sparse_indices`` (max top-k across
             the batch). Required when ``sparse_indices`` is set.
 
@@ -5224,25 +5226,30 @@ def mla_decode_graph(
     input_values.append(scalar_args)
 
     if sparse_indices is not None:
-        if (
-            sparse_topk_lengths is None
-            or sparse_attn_sink is None
-            or sparse_indices_stride is None
-        ):
-            raise ValueError(
-                "sparse_indices requires sparse_topk_lengths, sparse_attn_sink,"
-                " and sparse_indices_stride."
-            )
+        if sparse_indices_stride is None:
+            raise ValueError("sparse_indices requires sparse_indices_stride.")
         if sparse_indices.dtype != DType.int32:
             raise ValueError(
                 f"sparse_indices must be int32, got {sparse_indices.dtype}"
             )
-        if sparse_topk_lengths.dtype != DType.int32:
+        # An absent operand is a comptime op parameter, so the kernels are
+        # specialized on it; the op still takes a tensor, which it never reads.
+        if sparse_topk_lengths is None:
+            parameters["has_topk_lengths"] = False
+            sparse_topk_lengths = ops.constant(
+                [0], dtype=DType.int32, device=q.device
+            )
+        elif sparse_topk_lengths.dtype != DType.int32:
             raise ValueError(
                 "sparse_topk_lengths must be int32, got"
                 f" {sparse_topk_lengths.dtype}"
             )
-        if sparse_attn_sink.dtype != DType.float32:
+        if sparse_attn_sink is None:
+            parameters["has_attn_sink"] = False
+            sparse_attn_sink = ops.constant(
+                [0], dtype=DType.float32, device=q.device
+            )
+        elif sparse_attn_sink.dtype != DType.float32:
             raise ValueError(
                 "sparse_attn_sink must be float32, got"
                 f" {sparse_attn_sink.dtype}"
@@ -5345,7 +5352,9 @@ def mla_prefill_decode_graph(
         sparse_indices: Optional ``int32`` tensor for sparse decode (same semantics
             as :func:`mla_decode_graph`). Used only when the decode branch runs.
         sparse_topk_lengths: Per-batch valid top-k counts for sparse decode.
+            ``None`` means every row uses the full ``sparse_indices_stride``.
         sparse_attn_sink: Per-batch attention sink weights for sparse decode.
+            ``None`` means no sink.
         sparse_indices_stride: Row stride in ``sparse_indices``. Required when
             ``sparse_indices`` is set.
 
@@ -5397,25 +5406,30 @@ def mla_prefill_decode_graph(
     input_values.append(scalar_args)
 
     if sparse_indices is not None:
-        if (
-            sparse_topk_lengths is None
-            or sparse_attn_sink is None
-            or sparse_indices_stride is None
-        ):
-            raise ValueError(
-                "sparse_indices requires sparse_topk_lengths, sparse_attn_sink,"
-                " and sparse_indices_stride."
-            )
+        if sparse_indices_stride is None:
+            raise ValueError("sparse_indices requires sparse_indices_stride.")
         if sparse_indices.dtype != DType.int32:
             raise ValueError(
                 f"sparse_indices must be int32, got {sparse_indices.dtype}"
             )
-        if sparse_topk_lengths.dtype != DType.int32:
+        # An absent operand is a comptime op parameter, so the kernels are
+        # specialized on it; the op still takes a tensor, which it never reads.
+        if sparse_topk_lengths is None:
+            parameters["has_topk_lengths"] = False
+            sparse_topk_lengths = ops.constant(
+                [0], dtype=DType.int32, device=q.device
+            )
+        elif sparse_topk_lengths.dtype != DType.int32:
             raise ValueError(
                 "sparse_topk_lengths must be int32, got"
                 f" {sparse_topk_lengths.dtype}"
             )
-        if sparse_attn_sink.dtype != DType.float32:
+        if sparse_attn_sink is None:
+            parameters["has_attn_sink"] = False
+            sparse_attn_sink = ops.constant(
+                [0], dtype=DType.float32, device=q.device
+            )
+        elif sparse_attn_sink.dtype != DType.float32:
             raise ValueError(
                 "sparse_attn_sink must be float32, got"
                 f" {sparse_attn_sink.dtype}"

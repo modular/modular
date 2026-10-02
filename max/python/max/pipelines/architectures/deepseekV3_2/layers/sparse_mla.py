@@ -214,8 +214,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
         *,
         sparse_indices: TensorValue | None = None,
-        sparse_topk_lengths: TensorValue | None = None,
-        sparse_attn_sink: TensorValue | None = None,
         sparse_indices_stride: int | None = None,
         index_share: bool = False,
     ) -> TensorValue:
@@ -305,8 +303,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         if sparse_indices is not None:
             sparse_kw = {
                 "sparse_indices": sparse_indices,
-                "sparse_topk_lengths": sparse_topk_lengths,
-                "sparse_attn_sink": sparse_attn_sink,
                 "sparse_indices_stride": sparse_indices_stride,
                 # Read-once shared-KV fold (KERN-3141); only True when the
                 # caller has a shared top-k across folded MTP positions.
@@ -383,19 +379,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 )
             topk_indices = prev_topk_indices
 
-        sparse_topk_lengths = ops.broadcast_to(
-            ops.constant(
-                self.index_topk,
-                dtype=DType.int32,
-                device=xq.device,
-            ),
-            (xq.shape[0],),
-        )
-        sparse_attn_sink = ops.broadcast_to(
-            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
-            (self.n_heads,),
-        )
-
         # Read-once shared-index MTP fold (KERN-3141). Enable the fold only for
         # a *full* indexer layer (``skip_topk`` is False) that reuses a prior
         # selection: there the reused list is the single shared MTP top-k
@@ -416,8 +399,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
             sparse_indices=topk_indices,
-            sparse_topk_lengths=sparse_topk_lengths,
-            sparse_attn_sink=sparse_attn_sink,
             sparse_indices_stride=self.index_topk,
             index_share=index_share,
         )
@@ -886,8 +867,6 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         epsilon: float = 1e-6,
         *,
         sparse_indices: TensorValue | None = None,
-        sparse_topk_lengths: TensorValue | None = None,
-        sparse_attn_sink: TensorValue | None = None,
         sparse_indices_stride: int | None = None,
     ) -> TensorValue:
         attn_kwargs: dict[str, Any] = {
@@ -966,8 +945,6 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         if sparse_indices is not None:
             sparse_kw = {
                 "sparse_indices": sparse_indices,
-                "sparse_topk_lengths": sparse_topk_lengths,
-                "sparse_attn_sink": sparse_attn_sink,
                 "sparse_indices_stride": sparse_indices_stride,
             }
 
@@ -1025,19 +1002,6 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 )
             topk_indices = prev_topk_indices
 
-        sparse_topk_lengths = ops.broadcast_to(
-            ops.constant(
-                self.index_topk,
-                dtype=DType.int32,
-                device=xq.device,
-            ),
-            (xq.shape[0],),
-        )
-        sparse_attn_sink = ops.broadcast_to(
-            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
-            (self.n_heads,),
-        )
-
         attn_out = self._mla_impl_sparse(
             xq,
             kv,
@@ -1048,8 +1012,6 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
             sparse_indices=topk_indices,
-            sparse_topk_lengths=sparse_topk_lengths,
-            sparse_attn_sink=sparse_attn_sink,
             sparse_indices_stride=self.index_topk,
         )
 

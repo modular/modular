@@ -111,7 +111,7 @@ modular_py_test(
     per_test_shard_count = {
         # Each sparse decode test compiles its own graph (~120-220s under CI
         # contention); shard so those compiles run in parallel.
-        "test_mla_sparse_decode_graph_gpu.py": 3,
+        "test_mla_sparse_decode_graph_gpu.py": 5,
     },
     tags = [
         "gpu",
@@ -130,6 +130,7 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
         requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),

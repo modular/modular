@@ -60,9 +60,11 @@ from layout.tma_async import (
 )
 from std.memory import bitcast
 from nn.attention.gpu.nvidia.common import (
+    NullPointer,
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask, MASK_VALUE
+from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
@@ -899,7 +901,7 @@ struct OffsetPosition[
     decoding_warp_split_k: Bool = False,
     sparse: Bool = False,
     has_extra_kv: Bool = False,
-    has_variable_topk: Bool = False,
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](TrivialRegisterPassable):
     """Computes and stores per-CTA row offsets and KV key ranges for the decode kernel.
 
@@ -922,10 +924,13 @@ struct OffsetPosition[
             (defaults to `False`).
         has_extra_kv: When `True`, sparse attention additionally attends
             to a separate extra-KV cache (defaults to `False`).
-        has_variable_topk: When `True`, the sparse top-k length is read
-            per batch from `sparse_topk_lengths` instead of using the
-            fixed stride (defaults to `False`).
+        TopkLengthsPtrType: `OptionalPointer` type of the per-batch sparse
+            top-k lengths. When non-null, the top-k length is read per batch
+            from `sparse_topk_lengths` instead of using the fixed stride
+            (defaults to `NullPointer`).
     """
+
+    comptime has_variable_topk = not Self.TopkLengthsPtrType.is_null
 
     var seq_len: Int
     var max_seq_len: Int  # q_max_seq_len (padded seq dimension for all batches)
@@ -955,13 +960,13 @@ struct OffsetPosition[
         batch_size: Int,
         # Sparse attention parameters — only used when sparse=True (comptime).
         sparse_indices_stride: Int = 0,
-        sparse_topk_lengths: OptionalReg[
-            UnsafePointer[Int32, MutAnyOrigin]
-        ] = None,
+        sparse_topk_lengths: Self.TopkLengthsPtrType = null_pointer[
+            Self.TopkLengthsPtrType
+        ](),
         sparse_extra_indices_stride: Int = 0,
-        sparse_extra_topk_lengths: OptionalReg[
-            UnsafePointer[Int32, MutAnyOrigin]
-        ] = None,
+        sparse_extra_topk_lengths: Self.TopkLengthsPtrType = unread_pointer[
+            Self.TopkLengthsPtrType
+        ](),
     ):
         self.seq_len = 0
         self.max_seq_len = max_seq_len
@@ -1098,9 +1103,7 @@ struct OffsetPosition[
 
             var topk: Int
             comptime if Self.has_variable_topk:
-                topk = Int(
-                    sparse_topk_lengths.unsafe_value()[Int(self.batch_idx)]
-                )
+                topk = Int(sparse_topk_lengths.value()[Int(self.batch_idx)])
             else:
                 topk = sparse_indices_stride
 
@@ -1112,9 +1115,7 @@ struct OffsetPosition[
             comptime if Self.has_extra_kv:
                 comptime if Self.has_variable_topk:
                     extra_topk = Int(
-                        sparse_extra_topk_lengths.unsafe_value()[
-                            Int(self.batch_idx)
-                        ]
+                        sparse_extra_topk_lengths.value()[Int(self.batch_idx)]
                     )
                 else:
                     extra_topk = sparse_extra_indices_stride
@@ -3768,7 +3769,7 @@ struct MLA_SM100_Decode_Common[
         has_attn_sink: Bool = False,
         _op_sparse: Bool = False,
         _op_has_extra_kv: Bool = False,
-        _op_has_variable_topk: Bool = False,
+        _OpTopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
         # When True, per-row score_row decomposes via integer
         # division by num_q_heads to select the causal horizon per q_token.
         fold_q: Bool = False,
@@ -3820,7 +3821,7 @@ struct MLA_SM100_Decode_Common[
             Self.config.decoding_warp_split_k,
             _op_sparse,
             _op_has_extra_kv,
-            _op_has_variable_topk,
+            _OpTopkLengthsPtrType,
         ],
         scale: Float32,
         mask: Self.MaskType,
@@ -4493,7 +4494,7 @@ struct MLA_SM100_Decode_Common[
     def Correction[
         _op_sparse: Bool = False,
         _op_has_extra_kv: Bool = False,
-        _op_has_variable_topk: Bool = False,
+        _OpTopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     ](
         tmem_addr: UInt32,
         o_bars: DecodeSM100MiscMBars[
@@ -4518,7 +4519,7 @@ struct MLA_SM100_Decode_Common[
             Self.config.decoding_warp_split_k,
             _op_sparse,
             _op_has_extra_kv,
-            _op_has_variable_topk,
+            _OpTopkLengthsPtrType,
         ],
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)
@@ -4648,7 +4649,7 @@ struct MLA_SM100_Decode_Common[
     def store[
         _op_sparse: Bool = False,
         _op_has_extra_kv: Bool = False,
-        _op_has_variable_topk: Bool = False,
+        _OpTopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
         # When True, the fold caller strides the output-store
         # TMA per-q_token via a dedicated out_row_offset_at(q_local) accessor.
         fold_q: Bool = False,
@@ -4681,7 +4682,7 @@ struct MLA_SM100_Decode_Common[
             Self.config.decoding_warp_split_k,
             _op_sparse,
             _op_has_extra_kv,
-            _op_has_variable_topk,
+            _OpTopkLengthsPtrType,
         ],
     ):
         comptime DecodeOutConsumerType = DecodeOutConsumer[
