@@ -49,6 +49,7 @@ from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
     KVConnector,
     KVConnectorTransfer,
+    KVLoadFailed,
     KVLoadRefused,
     KVTransfer,
 )
@@ -803,6 +804,22 @@ def _drain(transfers: Sequence[KVTransfer]) -> None:
         raise first
 
 
+def _as_load_failure(err: BaseException) -> BaseException:
+    """Types a transport error from the client as :class:`KVLoadFailed`.
+
+    The binding raises a plain ``RuntimeError`` for a transport or transfer
+    condition and ``ValueError`` for a caller bug. Anything else comes back
+    unchanged, a ``RuntimeError`` subclass included, so a bug in the shim or
+    the binding still crashes rather than reading as a copy the manager can
+    recompute.
+    """
+    if type(err) is not RuntimeError:
+        return err
+    failure = KVLoadFailed(str(err))
+    failure.__cause__ = err
+    return failure
+
+
 class _DkvBatchTransfer:
     """One :class:`DKVConnector` call's transfers, polled as one.
 
@@ -828,9 +845,9 @@ class _DkvBatchTransfer:
         )
         # A terminal failure, kept so every later poll reports it too. The
         # scheduler's cordon sweep and the block manager poll the SAME object,
-        # and the cordon runs first: if the failure were consumed there, the
-        # manager's next poll would read complete and commit blocks the copy
-        # never filled into the device prefix cache.
+        # in either order: if the failure were consumed by the first, the
+        # second would read complete and commit blocks the copy never filled
+        # into the device prefix cache.
         self._failure: BaseException | None = None
 
     @property
@@ -843,10 +860,10 @@ class _DkvBatchTransfer:
 
         Polls every outstanding leaf rather than stopping at the first one
         still in flight, since settling is what releases a read's reader pin
-        and marks a write readable. A read whose transfer failed raises rather
-        than reading complete, because its destination blocks hold garbage; a
-        write's failure is kept local, since the engine cannot remediate a
-        batch that was not cached.
+        and marks a write readable. A read whose transfer failed raises
+        :class:`KVLoadFailed` rather than reading complete, because its
+        destination blocks hold garbage; a write's failure is kept local,
+        since the engine cannot remediate a batch that was not cached.
 
         A failure is sticky: it is re-raised to every later caller, so a
         transfer cannot report failure to one poller and completion to the
@@ -872,7 +889,7 @@ class _DkvBatchTransfer:
             # The caller unpins this transfer's blocks on the failure, so a
             # leaf still in flight has to be waited out first or its copy
             # lands in a page that has been freed and reused.
-            self._failure = first
+            self._failure = _as_load_failure(first)
             still_flying = self._pending
             self._pending = []
             try:
@@ -881,7 +898,7 @@ class _DkvBatchTransfer:
                 _logger.exception(
                     "draining the surviving leaves of a failed dkv load failed"
                 )
-            raise first
+            raise self._failure
         return not self._pending
 
     def synchronize(self) -> None:
@@ -897,8 +914,7 @@ class _DkvBatchTransfer:
             _drain(pending)
         except BaseException as err:
             if self._failure is None:
-                self._failure = err
-            raise
+                self._failure = _as_load_failure(err)
         if self._failure is not None:
             raise self._failure
 
@@ -1511,6 +1527,9 @@ class DKVConnector(KVConnector):
                 disagree about where they end.
             KVLoadRefused: If a leaf delivered less than its own lease
                 promised.
+            KVLoadFailed: If posting a leaf's copy failed, or a copy that a
+                short delivery drained did. Every leaf that posted has been
+                drained by then.
         """
         clients = self._clients[replica_idx]
         leaf_ids = list(self._leaves)
@@ -1574,8 +1593,11 @@ class DKVConnector(KVConnector):
                 # What is left is a fault -- degraded mid-request, an expired
                 # lease, or a hinted peer leaving the table. Drain the
                 # leaves that posted, and only those: each transfer covers one
-                # request's own reads, so this waits on nothing else.
-                _drain(posted_transfers)
+                # request's own reads, so this waits on nothing else. They
+                # come off the list first so the unwind does not drain them
+                # again, since a failed transfer re-raises on every drain.
+                drained, posted_transfers = posted_transfers, []
+                _drain(drained)
                 raise KVLoadRefused(
                     "dkv load_prepared fell short of its own lease: leaves "
                     f"{short_leaves} delivered "
@@ -1585,14 +1607,13 @@ class DKVConnector(KVConnector):
                     "hinted peer left the table."
                 )
             return _DkvBatchTransfer(posted_transfers)
-        except BaseException:
+        except BaseException as err:
             # Every leaf leased before anything was decided, so any raise
             # above has to hand those pins back rather than wait for the TTL.
             self._abandon_leases(replica_idx)
             # A leaf that posted has reads landing into rows the caller frees
             # as soon as this raises. Swallowing: the original exception is
-            # the one worth propagating. A drain that already ran above is a
-            # no-op here, since a synchronized transfer holds nothing.
+            # the one worth propagating.
             try:
                 _drain(posted_transfers)
             except BaseException:
@@ -1600,7 +1621,10 @@ class DKVConnector(KVConnector):
                     "dkv transfer drain failed while unwinding a load; its "
                     "reads may still be landing"
                 )
-            raise
+            failure = _as_load_failure(err)
+            if failure is err:
+                raise
+            raise failure from err
 
     def offload(
         self,

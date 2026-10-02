@@ -103,7 +103,10 @@ class PendingDecodeRequest:
     phase: DecodeRequestPhase
     # The admission-time KV onload (a reused-prefix H2D copy). Release
     # and TG-enqueue sites must wait for this too, not just the prefill
-    # transfer.
+    # transfer. A copy that fails raises KVLoadFailed from those polls and
+    # is not recovered here: the rollback ``alloc`` gives an aggregated
+    # request cannot apply, since prefill already writes past the cached
+    # prefix this onload was filling.
     onload_event: KVTransfer
     phase_entered_at: float = field(default_factory=time.monotonic)
     transfer: TransferReqData | None = None

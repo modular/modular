@@ -252,6 +252,10 @@ class BatchMetrics:
     connector_loads_refused: int = 0
     connector_offload_blocks_dropped: int = 0
 
+    # Connector loads whose copy failed, counted by the cache manager for any
+    # connector. Each is served by recomputing the request's prefix.
+    connector_load_failures: int = 0
+
     # How many of ``cache_hit_tokens`` the KV connector served. The remainder
     # came from the device prefix cache, which is how ``cache_hits`` splits per
     # ``tier``. Always 0 without a connector.
@@ -381,6 +385,7 @@ class BatchMetrics:
         dkv_hints_rejected = 0
         connector_loads_refused = 0
         connector_offload_blocks_dropped = 0
+        connector_load_failures = 0
         num_replicas = sch_config.data_parallel_degree
 
         # Data-parallel balance, along two axes: active tokens (compute load
@@ -452,6 +457,7 @@ class BatchMetrics:
             connector_offload_blocks_dropped = (
                 metrics_agg.connector_offload_blocks_dropped
             )
+            connector_load_failures = metrics_agg.connector_load_failures
 
             disk_byte_count = kv_cache.disk_byte_count()
             total_disk_kv_bytes = disk_byte_count.total
@@ -612,6 +618,7 @@ class BatchMetrics:
             dkv_hints_rejected=dkv_hints_rejected,
             connector_loads_refused=connector_loads_refused,
             connector_offload_blocks_dropped=connector_offload_blocks_dropped,
+            connector_load_failures=connector_load_failures,
             nixl_read_latency_max_ms=nixl_read_latency_max_ms,
             overlap_active=overlap_active,
             completed=completed_batch_stats,
@@ -959,6 +966,10 @@ class BatchMetrics:
                 self.connector_offload_blocks_dropped
             )
 
+        # Outside the host tier's guard: dKV reports no host tier.
+        if self.connector_load_failures:
+            extra["connector_load_failures"] = self.connector_load_failures
+
         if self.total_disk_kv_bytes != 0:
             extra["total_disk_kv_bytes"] = self.total_disk_kv_bytes
             extra["used_disk_kv_pct"] = self.used_disk_kv_pct
@@ -1163,6 +1174,10 @@ class BatchMetrics:
             METRICS.cache_connector_offload_blocks_dropped(
                 self.connector_offload_blocks_dropped
             )
+
+        # Outside the host tier's guard: dKV reports no host tier.
+        if self.connector_load_failures:
+            METRICS.cache_connector_load_failures(self.connector_load_failures)
 
         if self.total_disk_kv_bytes != 0:
             METRICS.cache_used_disk_kv_pct(self.used_disk_kv_pct * 100)

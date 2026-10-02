@@ -1983,3 +1983,53 @@ def test_batch_metrics_create_reports_shared_tiers_once_under_dp() -> None:
     assert metrics.used_host_kv_pct == 0.25
     assert metrics.total_disk_kv_bytes == 5000
     assert metrics.used_disk_kv_pct == 0.2
+
+
+def test_create_carries_connector_load_failures_through() -> None:
+    """The managers' failed-load count reaches the batch, with no host tier.
+
+    dKV reports no host tier, so a count read only alongside the host tier's
+    would never leave a dKV deployment.
+    """
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        connector_load_failures=2
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    assert metrics.connector_load_failures == 2
+
+
+def test_connector_load_failures_reach_the_log_and_the_counter() -> None:
+    """Published on its own guard, not the host tier's, which dKV never sets."""
+    metrics = _make_metrics(connector_load_failures=3, total_host_kv_bytes=0)
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_connector_load_failures.assert_called_once_with(3)
+    assert metrics.to_log_extra()["connector_load_failures"] == 3
+
+
+def test_connector_load_failures_are_silent_while_none_fail() -> None:
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_connector_load_failures.assert_not_called()
+    assert "connector_load_failures" not in metrics.to_log_extra()

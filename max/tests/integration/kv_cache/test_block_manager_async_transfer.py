@@ -26,6 +26,8 @@ transfer completing on its first poll never exercises:
   completes, commits the onloaded blocks and unpins them; it gives the
   connector its own drain either way, and a poll that raises unpins without
   committing rather than leaving its entry to be drained twice,
+- a load that fails at post time is served as a miss, and its request skips
+  the connector for the rest of its claim,
 - an in-flight offload pins its source blocks without a deferred commit, and
 - pinned blocks are held out of the free queue (the primitive behind the
   scheduler's "defer instead of OOM while transfers are in flight" guard).
@@ -44,6 +46,8 @@ from max.pipelines.context import TextContext
 from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     KVConnectorTransfer,
+    KVLoadFailed,
+    KVLoadRefused,
     KVTransfer,
 )
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
@@ -100,6 +104,9 @@ class _AsyncConnector:
         self.loads: list[_ControllableTransfer] = []
         self.offload_events: list[_ControllableTransfer] = []
         self.polls = 0
+        self.lookups = 0
+        # Raised by the next `load` in place of posting anything.
+        self.load_error: Exception | None = None
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
@@ -115,6 +122,7 @@ class _AsyncConnector:
         replica_idx: int = 0,
         hint: bytes | None = None,
     ) -> Mapping[str, Sequence[bool]]:
+        self.lookups += 1
         held = min(len(block_hashes), self.num_blocks_to_load)
         return {
             "full": [idx < held for idx in range(len(block_hashes))],
@@ -127,6 +135,8 @@ class _AsyncConnector:
         replica_idx: int = 0,
         hint: bytes | None = None,
     ) -> KVTransfer:
+        if self.load_error is not None:
+            raise self.load_error
         event = _ControllableTransfer(list(block_ids["full"]))
         self.loads.append(event)
         return event
@@ -371,6 +381,60 @@ def test_a_failure_the_scheduler_already_saw_still_blocks_the_commit() -> None:
     assert not bm.pending_transfers_exist()
     for block in blocks:
         assert block.ref_cnt == 1, "the failed transfer's pin is released"
+
+
+def test_a_load_that_fails_to_post_is_served_as_a_miss() -> None:
+    """A transport fault at post time costs a hit, not the worker.
+
+    Nothing is in flight into the blocks the manager drew, so they go straight
+    back. The request then skips the connector for the rest of its claim: a
+    transport that keeps failing would otherwise fail it again on every
+    admission.
+    """
+    bm, connector = _make_block_manager()
+    connector.num_blocks_to_load = 2
+    connector.load_error = KVLoadFailed("memory transfer failed")
+    pool = bm.device_block_pool
+    free_before = pool.num_free_blocks
+    rid = RequestID("req-post-fails")
+    bm.req_to_hashes[rid] = [_b(1), _b(2)]
+    ctx = _make_ctx(bm, rid)
+
+    blocks, event, num_external = bm.get_full_blocks_from_prefix_cache(ctx)
+
+    assert blocks == [] and num_external == 0
+    assert event.is_complete()
+    assert pool.num_free_blocks == free_before, "the drawn rows go back"
+    assert not bm.pending_transfers_exist()
+    assert _b(1) not in pool.prefix_cache
+    assert bm.take_metrics().connector_load_failures == 1
+
+    bm.get_full_blocks_from_prefix_cache(ctx)
+    assert connector.lookups == 1, "the request skips the connector now"
+
+    # The skip lasts as long as the claim and no longer.
+    bm.release(ctx)
+    bm.claim(ctx)
+    bm.req_to_hashes[rid] = [_b(1), _b(2)]
+    connector.load_error = None
+    bm.get_full_blocks_from_prefix_cache(ctx)
+    assert connector.lookups == 2
+
+
+def test_a_refused_load_keeps_using_the_connector() -> None:
+    """A refusal is a race the next lookup may win, not a broken transport."""
+    bm, connector = _make_block_manager()
+    connector.num_blocks_to_load = 2
+    connector.load_error = KVLoadRefused("evicted between lookup and load")
+    rid = RequestID("req-refused")
+    bm.req_to_hashes[rid] = [_b(1), _b(2)]
+    ctx = _make_ctx(bm, rid)
+
+    bm.get_full_blocks_from_prefix_cache(ctx)
+    bm.get_full_blocks_from_prefix_cache(ctx)
+
+    assert connector.lookups == 2
+    assert bm.take_metrics().connector_load_failures == 0
 
 
 def test_a_partial_hit_allocates_no_surplus_blocks() -> None:

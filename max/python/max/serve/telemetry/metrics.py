@@ -542,6 +542,15 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "deliver."
         ),
     ),  # type: ignore
+    "maxserve.cache.connector_load_failures": _meter.create_counter(
+        "maxserve.cache.connector_load_failures",
+        unit="loads",
+        description=(
+            "Cumulative KV connector loads whose copy failed. Each is served "
+            "by recomputing the request's prefix without the connector, so "
+            "any of these is a transport fault rather than a cache miss."
+        ),
+    ),  # type: ignore
     "maxserve.cache.connector_offload_blocks_dropped": _meter.create_counter(
         "maxserve.cache.connector_offload_blocks_dropped",
         unit="blocks",
@@ -1972,6 +1981,15 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.cache.connector_loads_refused",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_load_failures(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_load_failures",
                 count,
                 self.extra_attributes,
             ),

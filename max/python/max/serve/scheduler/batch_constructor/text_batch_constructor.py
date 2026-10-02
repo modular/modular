@@ -27,7 +27,7 @@ from max.pipelines.kv_cache import (
     InsufficientBlocksError,
     PagedKVCacheManagerInterface,
 )
-from max.pipelines.kv_cache.kv_connector import KVTransfer
+from max.pipelines.kv_cache.kv_connector import KVLoadFailed, KVTransfer
 from max.pipelines.lora import LoRAManagerV3, get_lora_manager
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -121,6 +121,18 @@ class _OnloadingRequest:
     ctx: TextContext
     replica_idx: int
     event: KVTransfer
+
+
+def _onload_settled(event: KVTransfer) -> bool:
+    """Whether a cordoned request's onload has stopped writing its pages.
+
+    A failed copy has settled too. The request then goes back for an
+    ``alloc``, which rolls the failed prefix back rather than reading it.
+    """
+    try:
+        return event.is_complete()
+    except KVLoadFailed:
+        return True
 
 
 @dataclass
@@ -1304,8 +1316,15 @@ class TextBatchConstructor:
 
                 # Cordon the request if its KV onload has not landed: hold it
                 # out of the batch (keeping its allocated/pinned blocks) so the
-                # GPU runs other ready work while the H2D completes.
-                if not onload_event.is_complete():
+                # GPU runs other ready work while the H2D completes. A copy
+                # that already failed is cordoned too, since its pages hold no
+                # valid KV; the sweep re-admits it to an alloc that rolls them
+                # back.
+                try:
+                    landed = onload_event.is_complete()
+                except KVLoadFailed:
+                    landed = False
+                if not landed:
                     self._onloading_reqs[req_id] = _OnloadingRequest(
                         ctx=ctx, replica_idx=replica_idx, event=onload_event
                     )
@@ -1802,18 +1821,20 @@ class TextBatchConstructor:
             }
 
     def _readmit_completed_onloads(self) -> None:
-        """Re-admits cordoned requests whose KV onload has completed.
+        """Re-admits cordoned requests whose KV onload has completed or failed.
 
         Runs once per iteration. Completed requests return to the front of their
         replica's CE queue (FIFO by arrival) so the next batch pass can schedule
-        them; their onloaded prefix is now device-resident.
+        them; their onloaded prefix is now device-resident. A request whose
+        copy failed returns the same way, and its next ``alloc`` rolls the
+        onloaded prefix back so it recomputes it.
         """
         if not self._onloading_reqs:
             return
         completed = [
             req_id
             for req_id, onloading in self._onloading_reqs.items()
-            if onloading.event.is_complete()
+            if _onload_settled(onloading.event)
         ]
         for req_id in completed:
             onloading = self._onloading_reqs.pop(req_id)

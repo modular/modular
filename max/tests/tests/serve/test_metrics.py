@@ -520,10 +520,11 @@ def test_disk_byte_counters_record() -> None:
 
 
 def test_connector_refusal_counters_record() -> None:
-    """The tiered connector's refusal counters exist and record."""
+    """The connector refusal and failure counters exist and record."""
     common.configure_metrics(Settings())
     for name in (
         "maxserve.cache.connector_loads_refused",
+        "maxserve.cache.connector_load_failures",
         "maxserve.cache.connector_offload_blocks_dropped",
     ):
         assert name in metrics.SERVE_METRICS

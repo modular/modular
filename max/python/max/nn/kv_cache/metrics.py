@@ -66,6 +66,13 @@ class KVCacheMetrics:
     A refused load is served by recomputing its blocks, so a steady rate of
     these is hit rate the tiers reported and then could not deliver.
     """
+    connector_load_failures: int = 0
+    """Number of connector loads whose copy failed.
+
+    Counted by the cache manager, which serves each one by recomputing the
+    request's prefix. A transport fault rather than a miss, so any of these is
+    worth chasing.
+    """
     connector_offload_blocks_dropped: int = 0
     """Number of offloaded blocks the connector's host pool had no room for.
 
@@ -273,6 +280,8 @@ class KVCacheMetrics:
             disk_bytes_read=self.disk_bytes_read + other.disk_bytes_read,
             connector_loads_refused=self.connector_loads_refused
             + other.connector_loads_refused,
+            connector_load_failures=self.connector_load_failures
+            + other.connector_load_failures,
             connector_offload_blocks_dropped=self.connector_offload_blocks_dropped
             + other.connector_offload_blocks_dropped,
             inflight_disk_ops=self.inflight_disk_ops + other.inflight_disk_ops,

@@ -40,6 +40,7 @@ from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     KVConnector,
     KVConnectorTransfer,
+    KVLoadFailed,
     KVLoadRefused,
     KVTransfer,
 )
@@ -64,19 +65,20 @@ STATE = "state"
 class FakeTransfer:
     """A transfer that reports complete only once ``synchronize`` is called.
 
-    Setting ``fails`` makes every poll raise, as a terminal transfer failure
-    does: the destination blocks hold no valid KV, and the failure is sticky so
-    a second poller cannot see completion instead.
+    Setting ``fails`` makes every poll raise ``error``, as a terminal transfer
+    failure does: the destination blocks hold no valid KV, and the failure is
+    sticky so a second poller cannot see completion instead.
     """
 
     def __init__(self, g0: Mapping[str, Sequence[int]] | None = None) -> None:
         self.g0_blocks_per_leaf = {} if g0 is None else g0
         self.done = False
         self.fails = False
+        self.error: Exception = KVLoadFailed("transfer failed")
 
     def is_complete(self) -> bool:
         if self.fails:
-            raise RuntimeError("transfer failed")
+            raise self.error
         return self.done
 
     def synchronize(self) -> None:
@@ -100,6 +102,10 @@ class FakeConnector:
         )
         self.held: dict[str, set[bytes]] = {leaf: set() for leaf in self.leaves}
         self.evict_before_load: set[bytes] = set()
+        # Raised by the next `load` in place of posting anything.
+        self.load_error: Exception | None = None
+        # Whether the next load's transfer fails on its very first poll.
+        self.fail_on_first_poll = False
         self.asynchronous = asynchronous
         self.lookups: list[tuple[list[bytes], int, bytes | None]] = []
         self.loads: list[
@@ -158,7 +164,10 @@ class FakeConnector:
                 assert block_hash in self.held[leaf_id], (
                     f"asked for {block_hash!r}, which lookup never reported"
                 )
+        if self.load_error is not None:
+            raise self.load_error
         transfer = FakeTransfer()
+        transfer.fails = self.fail_on_first_poll
         if not self.asynchronous:
             transfer.done = True
         self.transfers.append(transfer)
@@ -705,7 +714,8 @@ def test_a_failed_poll_unpins_without_publishing() -> None:
     The transfer settled itself on the way to failing, and the pages it was
     filling hold no valid KV, so publishing them would let any later request
     hit garbage. The pin still has to come off, or those pages are lost to the
-    pool for the rest of the process.
+    pool for the rest of the process. An error that is not ``KVLoadFailed`` is
+    a bug rather than a copy that failed, so it still reaches the caller.
     """
     connector = FakeConnector([FULL])
     manager = make_manager(connector)
@@ -733,6 +743,7 @@ def test_a_failed_poll_unpins_without_publishing() -> None:
     assert asked, "no onload issued"
     assert isinstance(transfer, FakeTransfer)
     transfer.fails = True
+    transfer.error = RuntimeError("transfer failed")
 
     pool = manager.pools[0]
     onloaded = [
@@ -751,6 +762,296 @@ def test_a_failed_poll_unpins_without_publishing() -> None:
     assert all(block.ref_cnt == 1 for block in onloaded), (
         "the failed transfer's pin is released, leaving the allocation's own"
     )
+
+
+def _hold_only_in_the_connector(
+    manager: JengaBlockManager,
+    connector: FakeConnector,
+    tokens: Sequence[int],
+) -> list[bytes]:
+    """Leaves ``tokens``' KV in the connector and nowhere on the device.
+
+    Runs one forward over them, lands its offload, then empties the device
+    tier, so the same prompt can only come back over an onload. Returns the
+    run of hashes the full-attention leaf holds.
+    """
+    first = make_ctx(tokens)
+    manager.claim(first)
+    manager.alloc(first)
+    first.update(9)
+    manager.step(first)
+    manager.offload(0)
+    _, offloaded = connector.offloads[-1]
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.release(first)
+    manager.reset_prefix_cache()
+    for leaf_id, hashes in offloaded.items():
+        connector.held[leaf_id].update(hashes)
+    return offloaded[FULL]
+
+
+@pytest.mark.parametrize("fails_at", ["post", "first_poll"])
+def test_a_load_that_fails_to_post_is_served_as_a_miss(fails_at: str) -> None:
+    """A transport fault before anything is spliced costs a hit, not the worker.
+
+    The load can raise while posting, or the manager's own poll right after it
+    can see the copy fail. Nothing is in flight into the rows either way, so
+    they go straight back, and the request skips the connector for the rest of
+    its claim rather than failing the same way on every admission.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    pool = manager.pools[0]
+    free_before = pool.num_free_blocks(FULL)
+    if fails_at == "post":
+        connector.load_error = KVLoadFailed("memory transfer failed")
+    else:
+        connector.fail_on_first_poll = True
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+
+    assert transfer.is_complete()
+    assert ctx.tokens.processed_length == 0
+    assert ctx.cached_prefix_length == 0
+    assert not manager.pending_transfers_exist(0)
+    assert not pool.prefix_caches[FULL]
+    assert manager.take_metrics().connector_load_failures == 1
+
+    lookups = len(connector.lookups)
+    manager.alloc(ctx)
+    assert len(connector.lookups) == lookups, (
+        "the request skips the connector now"
+    )
+
+    manager.release(ctx)
+    assert pool.num_free_blocks(FULL) == free_before, "the rows went back"
+
+
+def _hold_in_connector_with_a_device_hit(
+    manager: JengaBlockManager,
+    connector: FakeConnector,
+    tokens: Sequence[int],
+    num_device_blocks: int,
+) -> list[bytes]:
+    """Puts ``tokens``' KV in the connector and its first blocks on device.
+
+    Returns the hashes the connector holds, in prefix order.
+    """
+    held = _hold_only_in_the_connector(manager, connector, tokens)
+    by_leaf = {
+        leaf_id: set(hashes) for leaf_id, hashes in connector.held.items()
+    }
+    connector.reset_prefix_cache()
+    device = make_ctx(tokens[:num_device_blocks])
+    manager.claim(device)
+    manager.alloc(device)
+    device.update(9)
+    manager.step(device)
+    manager.release(device)
+    for leaf_id, hashes in by_leaf.items():
+        connector.held[leaf_id].update(hashes)
+    return held
+
+
+def test_a_failed_onload_recomputes_from_the_device_hit() -> None:
+    """The failed copy costs the onload and nothing else.
+
+    The scheduler's cordon sweep sees the failure first here. The request's
+    next ``alloc`` still undoes the splice and takes the device hit back
+    without the connector: the onloaded pages go back unpublished, and the
+    request recomputes from where its device hit ends.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector, num_huge_blocks=32)
+    tokens = [1, 2, 3, 4, 5, 6, 7, 8]
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    pool = manager.pools[0]
+    free_before = pool.num_free_blocks(FULL)
+    device_bids = [pool.prefix_caches[FULL][h].bid for h in held[:3]]
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert ctx.cached_prefix_external_length == 4
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    with pytest.raises(KVLoadFailed):
+        transfer.is_complete()
+
+    lookups = len(connector.lookups)
+    resumed = manager.alloc(ctx)
+
+    assert resumed.is_complete()
+    assert len(connector.lookups) == lookups, (
+        "the recompute skips the connector"
+    )
+    assert ctx.tokens.processed_length == 3
+    assert ctx.cached_prefix_length == 3
+    assert ctx.cached_prefix_external_length == 0
+    assert manager.get_req_blocks_per_leaf(ctx)[FULL][:3] == device_bids
+    assert all(h not in pool.prefix_caches[FULL] for h in held[3:7]), (
+        "a failed copy's pages must not be published"
+    )
+    assert not manager.pending_transfers_exist(0)
+    assert manager.take_metrics().connector_load_failures == 1
+
+    manager.release(ctx)
+    assert pool.num_free_blocks(FULL) == free_before, "every page went back"
+
+
+def test_a_failed_windowed_onload_takes_back_the_window_it_freed() -> None:
+    """A sliding leaf cannot just be trimmed back to the device hit.
+
+    Splicing an onload that reaches past the window frees the device hit's
+    windowed pages and nulls their slots, so the window ending at the device
+    hit is gone from the row. Rolling back means taking it from the device
+    tier again.
+    """
+    groups = {
+        FULL: KVCacheGroupId.full(),
+        SLIDING: KVCacheGroupId("sliding_window", 4),
+    }
+    connector = FakeConnector(groups)
+    manager = make_manager(
+        connector,
+        num_huge_blocks=64,
+        leaf_infos={
+            FULL: KVLeafInfo(1, groups[FULL]),
+            SLIDING: KVLeafInfo(1, groups[SLIDING]),
+        },
+    )
+    tokens = list(range(1, 11))
+    held = _hold_in_connector_with_a_device_hit(manager, connector, tokens, 3)
+    pool = manager.pools[0]
+    window_bids = [pool.prefix_caches[SLIDING][h].bid for h in held[:3]]
+
+    ctx = make_ctx(tokens)
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    sliding_row = manager.get_req_blocks_per_leaf(ctx)[SLIDING]
+    assert sliding_row[:3] == [0, 0, 0], "the device window was nulled"
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    manager.poll_transfers()
+
+    manager.alloc(ctx)
+
+    assert ctx.tokens.processed_length == 3
+    assert manager.get_req_blocks_per_leaf(ctx)[SLIDING][:3] == window_bids
+    assert all(h not in pool.prefix_caches[SLIDING] for h in held[3:9])
+    assert manager.take_metrics().connector_load_failures == 1
+
+
+def test_a_request_released_before_its_onload_fails_leaves_nothing() -> None:
+    """A request cancelled mid-onload has nothing left to roll back."""
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+    pool = manager.pools[0]
+    free_before = pool.num_free_blocks(FULL)
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    manager.release(ctx)
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    manager.poll_transfers()
+
+    assert not manager.pending_transfers_exist(0)
+    assert pool.num_free_blocks(FULL) == free_before
+    assert manager.take_metrics().connector_load_failures == 1
+
+
+def test_a_failed_onload_leaves_the_state_row_a_fresh_admission_holds() -> None:
+    """A recurrent leaf cannot be trimmed back to its device hit either.
+
+    Trimming keeps its live block, so taking the device hit again would land
+    the device checkpoint behind a live block that never ran. The rollback
+    hands the request a fresh claim instead: it resumes from the device
+    checkpoint and runs in one live block.
+    """
+    connector = hybrid_connector()
+    manager = make_hybrid_manager(connector)
+    pool = manager.pools[0]
+
+    # The connector holds two pages, and the state at the second boundary.
+    first = make_ctx(list(range(1, 2 * PAGE + 1)))
+    manager.claim(first)
+    forward_to_boundary(manager, first)
+    manager.offload(0)
+    _, offloaded = connector.offloads[-1]
+    manager.release(first)
+    for pending in connector.transfers:
+        pending.synchronize()
+    manager.poll_transfers()
+    manager.reset_prefix_cache()
+
+    # The device holds the first page, and the state at its boundary.
+    device = make_ctx(list(range(1, PAGE + 2)))
+    manager.claim(device)
+    forward_to_boundary(manager, device)
+    (device_hash,) = pool.prefix_caches[STATE]
+    device_state = pool.prefix_caches[STATE][device_hash]
+    for leaf_id, hashes in offloaded.items():
+        connector.held[leaf_id].update(hashes)
+    free_before = pool.num_free_blocks(STATE)
+
+    ctx = make_ctx(list(range(1, 3 * PAGE + 1)))
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    assert ctx.tokens.processed_length == 2 * PAGE, "device page plus onload"
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+    manager.poll_transfers()
+
+    manager.alloc(ctx)
+
+    state_group = manager.groups[STATE]
+    assert isinstance(state_group, RecurrentKVGroupCoordinator)
+    assert ctx.tokens.processed_length == PAGE
+    runs_in = state_group.live_blocks(ctx.request_id)
+    assert runs_in is not None
+    assert state_group.resume(ctx, 0) == {
+        STATE: (device_state.bid, runs_in[STATE])
+    }
+    null_bid = pool.null_little_blocks[STATE].bid
+    row = manager.get_req_blocks_per_leaf(ctx)[STATE]
+    assert [bid for bid in row if bid != null_bid] == [
+        device_state.bid,
+        runs_in[STATE],
+    ], "one device checkpoint, then one live block"
+
+    manager.release(ctx)
+    assert pool.num_free_blocks(STATE) == free_before
+
+
+def test_a_request_that_ran_past_a_failed_onload_is_not_recomputed() -> None:
+    """A caller that never held the request back has already read the pages.
+
+    There is no clean prefix to go back to by then, so the next ``alloc``
+    fails loudly instead of recomputing over KV it cannot trust.
+    """
+    connector = FakeConnector([FULL])
+    manager = make_manager(connector)
+    _hold_only_in_the_connector(manager, connector, [1, 2, 3, 4])
+
+    ctx = make_ctx([1, 2, 3, 4])
+    manager.claim(ctx)
+    transfer = manager.alloc(ctx)
+    ctx.update(9)
+    manager.step(ctx)
+    assert isinstance(transfer, FakeTransfer)
+    transfer.fails = True
+
+    with pytest.raises(RuntimeError, match="ran past") as excinfo:
+        manager.alloc(ctx)
+    assert isinstance(excinfo.value.__cause__, KVLoadFailed)
 
 
 def test_step_without_a_connector_still_commits() -> None:
