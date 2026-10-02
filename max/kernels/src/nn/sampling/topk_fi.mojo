@@ -1317,6 +1317,16 @@ def _coop_sum(x: SIMD, y: type_of(x)) -> type_of(x):
 
 
 @inline(.always)
+def _coop_first_argmax(x: SIMD, y: type_of(x)) -> type_of(x):
+    """Combines (maximum, index) pairs held in lanes 0 and 1.
+
+    Ranks fold in token order, so the strict comparison keeps the lowest index
+    among tied maxima.
+    """
+    return y if y[0] > x[0] else x
+
+
+@inline(.always)
 def _coop_cutoff_stats(x: SIMD, y: type_of(x)) -> type_of(x):
     """Combines cutoff statistics.
 
@@ -1966,6 +1976,36 @@ def TopKTopPSamplingFromProbKernel[
         var probs_ptr = probs.ptr + row_idx * _d
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1], _d))
 
+        comptime if is_apple_gpu() and coop_size == 1:
+            # A k=1 draw returns a row maximum whatever the temperature, top-p
+            # or min-p, so greedy rows skip the Apple search below, which runs
+            # on one thread. Ties take the lowest index (`numpy.argmax`); the
+            # search would draw one of them with the row's seed. NaN never
+            # wins, even at index 0, and a row with nothing above -inf reports
+            # 0. `k` is uniform per block, so the collectives stay legal.
+            if k == 1:
+                var best = Float32.MIN
+                var best_id = Int32.MAX
+                for i in range(vec_begin + Int(tx), vec_end, block_size):
+                    var v = probs_row.load[width=vec_size](
+                        (Idx[0], i * vec_size)
+                    ).cast[.float32]()
+                    comptime for j in range(vec_size):
+                        if v[j] > best:
+                            best = v[j]
+                            best_id = Int32(i * vec_size + j)
+                var row_best = block.max[block_size=block_size, broadcast=True](
+                    best
+                )
+                var first_id = block.min[
+                    block_size=block_size, broadcast=False
+                ](best_id if best == row_best else Int32.MAX)
+                if tx == 0:
+                    output[bx] = Scalar[out_idx_type](
+                        0 if first_id == Int32.MAX else Int(first_id)
+                    )
+                return
+
         # From-logits mode: resolve per-row temperature / min-p and compute
         # the row max and total unnormalized softmax mass z in two uniform
         # passes. z defaults to 1.0 in from-prob mode so the CDF budget and
@@ -2482,17 +2522,17 @@ def TopKTopPSamplingFromProbKernel[
                 )
                 sampled_id = best.p
                 comptime if coop_size > 1:
-                    # Only the blocks holding the row maximum offer an index;
+                    # The blocks combine their own NaN-free maxima: `row_max`
+                    # is NaN on an all-NaN row, which no `best.u` matches.
                     # Float32 holds every vocabulary index exactly.
-                    var offer = Float32(_d)
-                    if best.u.cast[.float32]() == row_max:
-                        offer = Float32(best.p)
                     sampled_id = Int(
-                        -coop.combine[1, _coop_max](
+                        coop.combine[2, _coop_first_argmax](
                             coop_ws.unsafe_value(),
                             coop_table,
-                            SIMD[.float32, 1](-offer),
-                        )[0]
+                            SIMD[.float32, 2](
+                                best.u.cast[.float32](), Float32(best.p)
+                            ),
+                        )[1]
                     )
 
         if tx == 0 and rank == 0:

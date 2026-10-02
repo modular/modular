@@ -12,41 +12,43 @@ This version is still a work in progress.
 
 - Added experimental `__match` / `case` pattern matching for early testing,
   including `comptime __match` for compile-time subjects. Patterns include
-  literals, or-patterns (`|`), guards (`if`), `as` / bare name bindings,
-  tuples, structs, and `EnumLike` types such as `Optional`. Dynamic match also
-  supports `var` / `ref` bindings; comptime match binds names as parameter
-  values and rejects `var` / `ref`. Nested patterns can dig through several
-  layers in one case — for example matching an optional point at runtime, or
-  specializing a kernel path on a compile-time tile size:
+  literals, contextual initializer lists such as `{}` and `{1, offset=2}`,
+  or-patterns (`|`), guards (`if`), `as` / bare name bindings, tuples, structs,
+  and `EnumLike` types such as `Optional`. An initializer-list pattern
+  constructs a value of the subject type and compares it to the subject.
+  Dynamic match also supports `var` / `ref` bindings; comptime match binds
+  names as parameter values and rejects `var` / `ref`. Nested patterns can dig
+  through several layers in one case—for example, matching an optional point
+  at runtime or specializing a kernel path on a compile-time tile size:
 
   ```mojo
   def describe(p: Optional[Point]) -> String:
       __match p:
-      case .Some(Point(x=0, y=0)):
-          return "origin"
-      case .Some(Point(x=var x, y=0)) | .Some(Point(x=0, y=var x)):
-          return String("axis:", x)
-      case .Some(Point(x=x, y=y)) if x == y:
-          return "diagonal"
-      case .None:
-          return "missing"
-      case _:
-          return "unreachable"
+          case .Some(Point(x=0, y=0)):
+              return "origin"
+          case .Some(Point(x=var x, y=0)) | .Some(Point(x=0, y=var x)):
+              return String("axis:", x)
+          case .Some(Point(x=x, y=y)) if x == y:
+              return "diagonal"
+          case .None:
+              return "missing"
+          case _:
+              return "unreachable"
 
   # comptime match is guaranteed evaluated at compile time.  The subject must be
   # a parameter and the bound names are also parameters. var and ref specifiers
   # are not allowed in comptime match, because they are not meaningful.
   def matmul_tile[m: Int, n: Int, k: Int](...):
       comptime __match (m, n, k):
-      case (16, 16, 16):
-          # Hand-tuned 16³ path.
-          ...
-      case (m_tile, n_tile, k_tile) if m_tile * n_tile <= 256:
-          # Small-tile path; bound sizes stay available as parameters.
-          ...
-      case _:
-          # Generic fallback.
-          ...
+          case (16, 16, 16):
+              # Hand-tuned 16³ path.
+              ...
+          case (m_tile, n_tile, k_tile) if m_tile * n_tile <= 256:
+              # Small-tile path; bound sizes stay available as parameters.
+              ...
+          case _:
+              # Generic fallback.
+              ...
   ```
 
   Both forms warn on non-exhaustive `EnumLike` subjects (including `Bool` and
@@ -101,6 +103,18 @@ This version is still a work in progress.
   t.first_of[String]() += "!"
   ```
 
+- `SIMD.from_bytes()` and `SIMD.as_bytes()` now take an `endian` parameter of
+  the new `Endian` type (`Endian.big` or `Endian.little`) instead of the
+  `big_endian` `Bool`:
+
+  ```mojo
+  var port = UInt16.from_bytes[endian=.big](bytes)  # was: big_endian=True
+  ```
+
+  The default is still the target's byte order, which `Endian.native()`
+  returns. `is_big_endian()` and `is_little_endian()` are deprecated; compare
+  `Endian.native()` with `.big` or `.little` instead.
+
 - Hashing a byte sequence is now spelled `hash_bytes()`, which takes an
   `ImmSpan[Byte]`. The pointer-and-length `hash()` overload is deprecated:
 
@@ -140,6 +154,15 @@ This version is still a work in progress.
 
   - `CompilationTarget.current_accelerator()` — the default accelerator target,
     either determined automatically or as specified by `--target-accelerator`.
+
+  Additionally, `CompilationTarget` provides predicate methods for checking the
+  vendor identity of a given target. (The preexisting free functions with the
+  same name are now implemented in terms of these new methods.) These include:
+
+  - `.is_nvidia_gpu()` for checking whether a compilation target is an NVIDIA
+    GPU.
+  - `.is_amd_gpu()` and `.is_apple_gpu()` provide the equivalent checks for AMD
+    and Apple GPUs respectively.
 
 - Added new `TargetAccelerator` type for representing accelerator metadata at
   compile time, combining `GPUInfo` and `CompilationTarget` values.

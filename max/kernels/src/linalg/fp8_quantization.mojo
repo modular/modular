@@ -26,6 +26,7 @@ from max.gpu import (
     WARP_SIZE,
     block_idx,
     global_idx,
+    grid_dim,
     thread_idx,
 )
 from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
@@ -349,6 +350,7 @@ def quantize_tensor_dynamic_scaled_fp8[
                 scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
                 0.0,
+                None,
             )
 
             ctx.enqueue_function(
@@ -374,6 +376,7 @@ def quantize_dynamic_scaled_fp8[
     group_size_or_per_token: Int,
     num_cols: Int,
     pdl_level: PDLLevel = PDLLevel.ON,
+    row_bounded: Bool = False,
 ](
     input_fn: InputFnType,
     scaled_output: TileTensor[mut=True, out_dtype, ...],
@@ -382,6 +385,7 @@ def quantize_dynamic_scaled_fp8[
     ctx: DeviceContext,
     num_rows: Int,
     amax_floor: Float32 = 0.0,
+    row_limit: OptionalPointer[UInt32, ImmUntrackedOrigin] = None,
 ) raises:
     """TileTensor primary implementation of dynamic scaled FP8 quantization.
 
@@ -390,6 +394,11 @@ def quantize_dynamic_scaled_fp8[
     keep near-zero activation groups on the scale grid the checkpoint was
     trained against. It is only honored on the `float8_e8m0fnu` scale path;
     `0` (the default) leaves the scale unchanged.
+
+    When `row_bounded`, `row_limit` points at a device-resident count of live
+    rows and the kernel grid-strides over `[0, row_limit)` instead of covering
+    all `num_rows`. Rows at or past that count keep whatever the output and
+    scales buffers already held.
     """
     comptime assert scaled_output.rank == 2, "expected rank-2 output"
     comptime assert scales.rank == 2, "expected rank-2 scales"
@@ -436,6 +445,12 @@ def quantize_dynamic_scaled_fp8[
             return
 
         comptime if get_defined_bool["ENABLE_PER_TENSOR_FP8_QUANTIZE", False]():
+            # Per-tensor scaling reduces across every row, so a row bound would
+            # change the scale itself rather than just skip work.
+            comptime assert not row_bounded, (
+                "row_bounded is not supported with"
+                " ENABLE_PER_TENSOR_FP8_QUANTIZE"
+            )
             quantize_tensor_dynamic_scaled_fp8[
                 in_dtype=in_dtype,
                 group_size_or_per_token=group_size_or_per_token,
@@ -455,17 +470,34 @@ def quantize_dynamic_scaled_fp8[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
+                row_bounded=row_bounded,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
                 scales.address_space_cast[.GENERIC](),
                 scale_ub.cast[scales_dtype](),
                 amax_floor,
+                row_limit,
             )
+
+            comptime num_groups = num_cols // group_size
+            var grid_rows = num_rows
+            comptime if row_bounded:
+                # Cover the device several times over so a bounded launch still
+                # saturates it, while keeping the decode shape (a few live rows
+                # in a worst-case-sized buffer) off the empty-block floor a
+                # full-height grid would pay. Purely a launch-geometry choice:
+                # the kernel grid-strides to the device-side live count, so any
+                # cap computes the same result.
+                comptime grid_row_cap = max(
+                    1,
+                    ceildiv(ctx.default_device_info.sm_count * 64, num_groups),
+                )
+                grid_rows = min(num_rows, grid_row_cap)
 
             ctx.enqueue_function(
                 kernel,
-                grid_dim=(num_rows, num_cols // group_size, 1),
+                grid_dim=(grid_rows, num_groups, 1),
                 block_dim=num_threads,
                 attributes=pdl_launch_attributes(pdl_level),
             )
@@ -489,6 +521,7 @@ struct _QuantizeFp8Kernel[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
+    row_bounded: Bool = False,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var output: TileTensor[
@@ -509,6 +542,11 @@ struct _QuantizeFp8Kernel[
     ]
     var scale_ub: Scalar[Self.scales_type]
     var amax_floor: Float32
+    # Device-resident live row count, read once per block when `row_bounded`.
+    # It cannot be a launch parameter: on the EP path the dispatch that fills
+    # the activation buffer publishes this count from the GPU, so the host has
+    # no safe value for it at enqueue time.
+    var row_limit: OptionalPointer[UInt32, ImmUntrackedOrigin]
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -532,66 +570,90 @@ struct _QuantizeFp8Kernel[
             " type"
         )
 
-        var input_vec = SIMD[accum_type, Self.simd_width](0)
-        var thread_max = Scalar[accum_type](0)
-
         var tid = thread_idx.x
-        var row = block_idx.x
         var group_idx = block_idx.y
 
+        # Both bounds are block-uniform, so every thread runs the same trip
+        # count and the `block.max` barrier below stays convergent. Unbounded
+        # launches keep one row per block, exactly as before.
+        var row_start = Int(block_idx.x)
+        var row_end: Int
+        var row_step: Int
+        comptime if Self.row_bounded:
+            # The count comes from device memory, so clamp it rather than
+            # trust it: a malformed prefix sum would otherwise write past the
+            # end of both output buffers.
+            row_end = min(Int(self.row_limit.value()[]), Int(output.dim[0]()))
+            row_step = Int(grid_dim.x)
+        else:
+            row_end = row_start + 1
+            row_step = 1
+
         with PDL():
-            for i in range(
-                tid, Self.group_size // Self.simd_width, Self.num_threads
-            ):
-                var idx: Int = i * Self.simd_width + group_idx * Self.group_size
-                input_vec = input_fn.__call__[
-                    width=Self.simd_width,
-                    alignment=Self.simd_width,
-                ](row, idx).cast[accum_type]()
-                thread_max = max(thread_max, abs(input_vec).reduce_max())
+            for row in range(row_start, row_end, row_step):
+                var input_vec = SIMD[accum_type, Self.simd_width](0)
+                var thread_max = Scalar[accum_type](0)
 
-            var group_max = block.max[
-                block_size=Self.num_threads, broadcast=True
-            ](thread_max)
-
-            var scale_factor: Scalar[Self.scales_type]
-            var scale_factor_recip: Scalar[accum_type]
-
-            comptime if Self.scales_type == .float8_e8m0fnu:
-                scale_factor = max(
-                    max(group_max, amax_floor.cast[accum_type]())
-                    / fp8_max.cast[accum_type](),
-                    Scalar[accum_type](1e-10),
-                ).cast[Self.scales_type]()
-                scale_factor_recip = (
-                    0.0 if group_max
-                    == 0.0 else 1.0 / scale_factor.cast[accum_type]()
-                )
-            else:
-                scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
-                    Self.out_type
-                ](group_max, scale_ub)
-
-            if tid == 0:
-                scales.store_linear(Index(group_idx, row), scale_factor)
-
-            for i in range(
-                tid, Self.group_size // Self.simd_width, Self.num_threads
-            ):
-                var idx: Int = i * Self.simd_width + group_idx * Self.group_size
-
-                comptime if use_warp_tiling:
-                    pass
-                else:
+                for i in range(
+                    tid, Self.group_size // Self.simd_width, Self.num_threads
+                ):
+                    var idx: Int = (
+                        i * Self.simd_width + group_idx * Self.group_size
+                    )
                     input_vec = input_fn.__call__[
                         width=Self.simd_width,
                         alignment=Self.simd_width,
                     ](row, idx).cast[accum_type]()
+                    thread_max = max(thread_max, abs(input_vec).reduce_max())
 
-                output.store_linear(
-                    Index(row, idx),
-                    fp8_quantize[Self.out_type](input_vec, scale_factor_recip),
-                )
+                var group_max = block.max[
+                    block_size=Self.num_threads, broadcast=True
+                ](thread_max)
+
+                var scale_factor: Scalar[Self.scales_type]
+                var scale_factor_recip: Scalar[accum_type]
+
+                comptime if Self.scales_type == .float8_e8m0fnu:
+                    scale_factor = max(
+                        max(group_max, amax_floor.cast[accum_type]())
+                        / fp8_max.cast[accum_type](),
+                        Scalar[accum_type](1e-10),
+                    ).cast[Self.scales_type]()
+                    scale_factor_recip = (
+                        0.0 if group_max
+                        == 0.0 else 1.0 / scale_factor.cast[accum_type]()
+                    )
+                else:
+                    scale_factor, scale_factor_recip = (
+                        compute_dynamic_fp8_scale[Self.out_type](
+                            group_max, scale_ub
+                        )
+                    )
+
+                if tid == 0:
+                    scales.store_linear(Index(group_idx, row), scale_factor)
+
+                for i in range(
+                    tid, Self.group_size // Self.simd_width, Self.num_threads
+                ):
+                    var idx: Int = (
+                        i * Self.simd_width + group_idx * Self.group_size
+                    )
+
+                    comptime if use_warp_tiling:
+                        pass
+                    else:
+                        input_vec = input_fn.__call__[
+                            width=Self.simd_width,
+                            alignment=Self.simd_width,
+                        ](row, idx).cast[accum_type]()
+
+                    output.store_linear(
+                        Index(row, idx),
+                        fp8_quantize[Self.out_type](
+                            input_vec, scale_factor_recip
+                        ),
+                    )
 
 
 @fieldwise_init

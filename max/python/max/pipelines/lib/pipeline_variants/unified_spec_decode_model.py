@@ -41,6 +41,24 @@ class _UnifiedSpecDecodeModelMixin:
         # self.model by default; Kimi wrappers override to self.language_model.
         return self.model
 
+    @property
+    def sampled_draft_vocab_size(self) -> int | None:
+        """The vocabulary the draft's proposal distributions span.
+
+        ``None`` when the compiled graph drafts by argmax. Read off the
+        compiled graph's ``next_draft_probs_full`` output rather than the
+        config, so the pipeline binds ``draft_probs_full`` exactly when the
+        graph declares it.
+        """
+        outputs = self._spec_decode_model.output_metadata
+        if len(outputs) != 4:
+            return None
+        shape = outputs[3].shape
+        assert shape is not None and isinstance(shape[-1], int), (
+            f"next_draft_probs_full needs a static vocab dim, got {shape}"
+        )
+        return shape[-1]
+
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         model_outputs = self._spec_decode_model.execute(*model_inputs.buffers)
         if len(model_outputs) not in (3, 4):

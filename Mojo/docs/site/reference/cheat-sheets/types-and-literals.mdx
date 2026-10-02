@@ -4,50 +4,78 @@ sidebar_label: Types and literals
 description: "Numbers, SIMD, conversions, and how to write values."
 hide_title: true
 hide_table_of_contents: true
-compiler_verified: "2026-08-17, Mojo 1.0.0 (ed45d567)"
-last_updated: "2026-08-17 (1.0.0 audit)"
-build_version: "1.1.0dev"
+compiler_verified: "2026-10-01, Mojo 1.2.0.dev2026100105 (f262223d)"
+last_updated: "2026-10-01 (1.2.0.dev nightly update)"
+build_version: "1.2.0.dev"
 ---
 
 import {
   Sheet,
   Panel,
+  Intro,
 } from '@site/src/components/CheatSheets/sheet';
 
-{/* markdownlint-disable MD033 MD034 */}
+{/* markdownlint-disable MD013 MD033 MD034 */}
 
 <Sheet slug="types-and-literals">
 
+## Mojo numbers are SIMD vectors
+
 <Panel title="SIMD is the foundation">
 
-```mojo
-# Every fixed-width number is a 1-lane SIMD
-# Float32 = Scalar[DType.float32]
-#         = SIMD[DType.float32, 1]
+Every fixed-width number is a 1-lane `SIMD`.
+A `Float32` is a `Scalar[DType.float32]` is a
+`SIMD[DType.float32, 1]`.
 
-var v = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
-var d = v * 2.0 # [2, 4, 6, 8], all lanes
-v[0] = 5.0 # write one lane
-print(v.reduce_add()) # sum of lanes (14.0)
+Operations on `SIMD` (such as `cast()`) work on `Scalar` and items
+declared with named type aliases (like `Float64`, `Int16`):
+
+```mojo
+var float: Float64 = 42.0 # 64b 42.0
+var float32 = float.cast[.float32]() # 32b 42.0
+var scalar = Scalar[.float64](float)
+var scalar16 = scalar.cast[.float16]() # 16b 42.0
 ```
 
-Width must be a power of two and is part of the type; its parameter type is **SIMDLength**.
+<Intro>SIMD vectors have fixed widths</Intro>
+
+Widths must be powers of two and are part of the type (`SIMDLength`).
+
+```mojo
+var vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
+var double = vec * 2.0 # [2.0, 4.0, 6.0, 8.0], all lanes
+vec[0] = 5.0 # write one lane [5.0, 2.0, 3.0, 4.0]
+print(vec.reduce_add()) # sum of lanes (14.0)
+```
 
 </Panel>
 
-<Panel title="DType: what a lane holds">
+<Panel title="DType: what a SIMD lane holds">
 
 ```mojo
 SIMD[DType.float32, 4] # DType picks the lane type
-Scalar[DType.int] # == Int
+SIMD[.float32, 4] # the same; DType inferred from context
+Scalar[.int] # == Int
 ```
 
-Names mirror the types: **DType.float32** ↔ **Float32**,
-**DType.int8** ↔ **Int8**, **DType.bool** ↔ **Bool**. A
-**DType** is a name, not a type. It parameterizes **SIMD**, which
+Names mirror the types: `DType.float32` ↔ `Float32`,
+`DType.int8` ↔ `Int8`, `DType.bool` ↔ `Bool`. A
+`DType` is a name, not a type. It parameterizes `SIMD`, which
 stores the data.
 
 </Panel>
+
+<Panel title="SIMD construction" table="zebra">
+
+```mojo
+var broadcast = SIMD[.float64, 2](42.0) # broadcast all lanes
+var specific = SIMD[.float64, 2](1.0, 2.0) # specific values
+var zeros = SIMD[.float64, 2]() # zero-initialized vector
+```
+
+</Panel>
+
+## Numbers
 
 <Panel title="Integers" table="types">
 
@@ -60,12 +88,13 @@ var big: Int64 = -9_000_000_000
 
 | Type            | Meaning                         |
 |-----------------|---------------------------------|
-| Int / UInt      | machine word (typically 64-bit) |
+| Int and UInt    | machine word (typically 64-bit) |
 | Int8 … Int256   | sized signed                    |
 | UInt8 … UInt256 | sized unsigned                  |
 | Byte            | alias for UInt8                 |
 
-Use **Int** for counts and indices; sized types when bit width is part of the contract. Each is an alias for a 1-lane SIMD.
+Use `Int` for counts and indices; sized types when bit width is part of the
+contract. Each is an alias for a 1-lane SIMD.
 
 </Panel>
 
@@ -80,9 +109,33 @@ Use **Int** for counts and indices; sized types when bit width is part of the co
 | Float8_e4m3fn … | 8-bit (GPU, ML)           |
 | Float4_e2m1fn   | 4-bit (Blackwell+)        |
 
-No bare **Float** type. Each is an alias for a 1-lane SIMD.
+No bare `Float` type. Each is an alias for a 1-lane SIMD.
 
 </Panel>
+
+## Operations
+
+<Panel title="Element operations" table="zebra">
+
+| Type           | Operations                                |
+|----------------|-------------------------------------------|
+| Arithmetic     | `+`, `-`, `*`, `/`, `%`, `//`             |
+| Comparison     | `==`, `!=`, `<`, `<=`, `>`, `>=`          |
+| Math functions | `sqrt()`, `sin()`, `cos()`, `fma()`, etc. |
+| Bit operations | `&`, `\|`, `^`, `~`, `<<`, `>>`           |
+
+</Panel>
+
+<Panel title="Vector operations" table="zebra">
+
+| Type                  | Operations                                                     |
+|-----------------------|----------------------------------------------------------------|
+| Horizontal reductions | `reduce_add()`, `reduce_mul()`, `reduce_min()`, `reduce_max()` |
+| Vector manipulation   | `shuffle()`, `slice()`, `join()`, `split()`                    |
+
+</Panel>
+
+## Number facts
 
 <Panel title="Bounds & special values" table="types">
 
@@ -92,26 +145,27 @@ No bare **Float** type. Each is an alias for a 1-lane SIMD.
 | UInt8.MAX             | 255                                      |
 | Int8.MIN              | -128                                     |
 | Float32.MAX_FINITE    | largest finite                           |
-| Float32.MAX           | may be inf                               |
+| Float32.MAX           | inf                                      |
 
-IEEE floats carry **inf**, **-inf**, **nan**, **-0.0**.
+IEEE floats carry `inf`, `-inf`, `nan`, `-0.0`. Make them with
+`inf[DType.float64]()` and `nan[DType.float64]()` from `std.math`.
 
 </Panel>
 
-<Panel title="Conversions are explicit">
+<Panel title="Number conversions are explicit">
+
+In addition to `cast()`, you can use named type aliases:
 
 ```mojo
-var i = 42
-var f = Float64(i) # Int -> Float64
-var s = Int8(i) # Int -> Int8
-var back = Int(Int64(i)) # round trip
-
-# between SIMD-based types: .cast[]
-var g = f.cast[DType.int32]()
+var int = 42 # Int
+var f64 = Float64(int) # Int -> Float64
+var i8 = Int8(int) # Int -> Int8
+var back = Int(Int64(int)) # round trip
 ```
 
-Variables never convert implicitly; the compiler enforces it. Literals
-convert only when it can prove the result is exact.
+- Without explicit typing, integer literals are `Int`.
+- Without explicit typing, float literals are `Float64`.
+- Float literals can't become integers, even with explicit typing.
 
 </Panel>
 
@@ -126,24 +180,67 @@ convert only when it can prove the result is exact.
 | 2 ** 200             | comptime IntLiteral, comptime arbitrary precision |
 
 Leading zeros on base-10 integers are rejected. At runtime literals
-materialize to **Int** / **Float64**.
+materialize to `Int` / `Float64`.
 
 </Panel>
 
+## Collections
+
 <Panel title="Collection literals">
+
+<Intro>Collection types</Intro>
 
 ```mojo
 [1, 2, 3] # Array, length in the type
 {"id": 1, "qty": 9} # Dict
 (1, "a", 2.0) # Tuple, mixed types
+{1, 2, 3} # Set
 ```
 
-Unannotated, a bracket literal defaults to **Array**. It adapts to the
-type you ask for: **var x: List[Int] = [1, 2, 3]**.
+Bracket literals default to `Array`.
+For lists, use: `var x: List = [ ... ]` or `var x: List[Type] = [ ... ]`.
+
+<Intro>Empty collections</Intro>
+For empty collections, specify explicit types before the literal.
+
+- `var list: List[ElementType] = []`
+- `var dict: Dict[KeyType, ValueType] = {}`
+- `var set: Set[ElementType] = {}`
+
+An empty `Array` has no use; arrays are fixed size.
+
+You must import for the empty `Set`:
+`from std.collections import Set`
 
 </Panel>
 
+<Panel title="Optionals" table="types">
+
+Optionals represent values that may or may not be present.
+
+```mojo
+# Initialize
+var foo: Optional[Int] = None
+var bar: Optional[Int] = 42
+
+# Access with default fallback
+print(foo.or_else(0))
+print(bar.or_else(0))
+
+# Check then access the value
+if foo:
+    print(foo.value())
+if bar:
+    print(bar.value())
+```
+
+</Panel>
+
+## Strings
+
 <Panel title="String literals" table="types">
+
+Mojo strings use UTF-8 encoding. A `String` is mutable.
 
 ```mojo
 "double"   'single'
@@ -165,37 +262,64 @@ r"C:\raw\path" # raw: no escape processing
 
 Escapes:
 
-| Escape     | Meaning                |
-|------------|------------------------|
-| \n  \t     | newline, tab           |
-| \\"  \\\\  | quote, backslash       |
-| \xHH       | byte (2 hex digits)    |
-| \uHHHH     | Unicode (4 hex digits) |
-| \UHHHHHHHH | Unicode (8 hex digits) |
+| Escape            | Meaning                        |
+|-------------------|--------------------------------|
+| \n  \t  \\"  \\\\ | newline, tab, quote, backslash |
+| \xHH              | byte (2 hex digits)            |
+| \uHHHH            | Unicode (4 hex digits)         |
+| \UHHHHHHHH        | Unicode (8 hex digits)         |
 
-Source is UTF-8. **\u** and **\U** reject surrogate code points (U+D800 to U+DFFF); code points above U+FFFF need **\U**, not a surrogate pair.
+`\u` and `\U` reject surrogate code points (U+D800 to U+DFFF).
+
+Code points above U+FFFF need `\U`, not a surrogate pair.
 
 </Panel>
 
-<Panel title="T-strings">
+<Panel title="String length">
+
+```mojo
+var s = "héllo"
+s.byte_length() # 6: UTF-8 bytes
+len(s.codepoints()) # 5: Unicode code points
+len(s.graphemes()) # 5: user-visible characters
+```
+
+`len(string)` won't compile. Name the strategy you mean:
+
+```mojo
+var text = "café"
+text.byte_length() # 5, é is 2 bytes
+text.count_codepoints() # 4, é is 1 codepoint
+text.count_graphemes() # 4, é is 1 user-visible character
+```
+
+Counting codepoints and graphemes are O(n) operations,
+where n is the string length in bytes.
+
+</Panel>
+
+<Panel title="TStrings">
+
+TStrings are not strings. They are templates that generate
+strings at runtime by interpolating expressions within curly
+braces:
 
 ```mojo
 var who = "Mojo"
-
 t"Hi, {who}!" # interpolation
-
 t"sum = {1 + 2}" # any expression
-
 t"{{literal braces}}" # -> {literal braces}
-
-rt"raw\path {who}" # raw t-string: \ literal, still interpolates
-
+rt"raw\path {who}" # raw TString: \ literal
+                   # still interpolates
 String(t"x = {who}") # cast to String
 ```
 
-Interpolations evaluate at runtime.
+Other than `print()`, cast to `String` for any context expecting
+a string value.
 
 </Panel>
+
+## Takeaways
 
 <Panel title="Other things" table="types">
 
@@ -209,36 +333,46 @@ Interpolations evaluate at runtime.
 
 </Panel>
 
+<Panel title="Worth knowing">
+
+<Intro>No character type</Intro>
+
+`'A'` is a one-letter string, the same as `"A"`.
+Use `ord("A")` (`65`) and `chr(66)` (`"B"`) for code points.
+
+<Intro>Formatting</Intro>
+
+TStrings don't take format specifiers: `t"{x:.2f}"` won't compile.
+Use `std.math` utilities like `round()` or `String` utilities like
+`ascii_rjust()` instead.
+
+<Intro>Division</Intro>
+
+`/` is true division on floats and truncates toward zero on
+integer values.
+
+`//` floors for all numbers. With `a = -7`, `a / 2` is
+`-3` and `a // 2` is `-4`.
+
+The literal expression `7 / 2` is `3.5`.
+
+</Panel>
+
 <Panel title="Sharp edges">
 
-- **Int width is platform-dependent** — use Int64 for a fixed width.
-- **Integer overflow wraps** — Int8(127) + 1 is -128.
-- **Float-to-int truncates toward zero** — Int(Float64(3.9)) is 3.
-- **Float8 needs a GPU** — no runtime CPU arithmetic.
-- **Int128 / Int256 are software-emulated.**
+Int width is platform-dependent: use `Int64` for a fixed width.
 
-</Panel>
+Integer overflows wrap: `Int8(127) + 1` is `-128`.
+Shifts at or above the bit width are undefined.
+Integer literals wrap silently: `var b: Int8 = 300` is `44`, and
+`var u: UInt8 = -1` is `255`.
 
-<Panel title="Coming from Python">
+Float-to-integer truncates toward zero: `Int(Float64(3.9))` is `3`.
 
-- No implicit numeric conversion: `Int + Float64` is an error. Cast with
-  `Float64(n)`, `Int(x)`.
-- Numbers are fixed-width SIMD scalars, not arbitrary-precision `int`; only
-  a **comptime** **IntLiteral** is unbounded.
-- No bare `float` or `int` — pick **Int**, **Float64**, or a
-  sized type.
-
-</Panel>
-
-<Panel title="Coming from C++ / Rust">
-
-- Every scalar is a 1-lane **SIMD**; vectorizing widens the lane count, not a new
-  type.
-- Integer overflow **wraps** (defined), not C++ undefined behavior or a Rust debug
-  panic.
-- **DType** is a value-level tag that parameterizes **SIMD**, not a type alias.
-- **Int** is C++ `ssize_t` / Rust `isize`, not C++ `int`, which is usually 32-bit.
+Int128 / Int256 are software-emulated.
 
 </Panel>
 
 </Sheet>
+
+{/* markdownlint-enable MD013 MD033 MD034 */}

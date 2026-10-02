@@ -173,20 +173,20 @@ struct Level(
             writer: The writer to write to.
         """
         __match self:
-        case .NOTSET:
-            writer.write("NOTSET")
-        case .TRACE:
-            writer.write("TRACE")
-        case .DEBUG:
-            writer.write("DEBUG")
-        case .INFO:
-            writer.write("INFO")
-        case .WARNING:
-            writer.write("WARNING")
-        case .ERROR:
-            writer.write("ERROR")
-        case .CRITICAL:
-            writer.write("CRITICAL")
+            case .NOTSET:
+                writer.write("NOTSET")
+            case .TRACE:
+                writer.write("TRACE")
+            case .DEBUG:
+                writer.write("DEBUG")
+            case .INFO:
+                writer.write("INFO")
+            case .WARNING:
+                writer.write("WARNING")
+            case .ERROR:
+                writer.write("ERROR")
+            case .CRITICAL:
+                writer.write("CRITICAL")
 
 
 # ===-----------------------------------------------------------------------===#

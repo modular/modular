@@ -3431,18 +3431,18 @@ def _get_type_mnemonic[dtype: DType]() -> StaticString:
     corresponding string mnemonics used in GPU assembly instructions.
     """
     __match dtype:
-    case .float32:
-        return "f32"
-    case .float16:
-        return "f16"
-    case .bfloat16:
-        return "bf16"
-    case .float64:
-        return "f64"
-    case .float8_e4m3fn:
-        return "e4m3"
-    case .float8_e5m2:
-        return "e5m2"
+        case .float32:
+            return "f32"
+        case .float16:
+            return "f16"
+        case .bfloat16:
+            return "bf16"
+        case .float64:
+            return "f64"
+        case .float8_e4m3fn:
+            return "e4m3"
+        case .float8_e5m2:
+            return "e5m2"
 
     return "unknown dtype mnemonic"
 

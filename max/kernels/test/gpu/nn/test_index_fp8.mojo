@@ -14,6 +14,7 @@
 from max.gpu.host import DeviceContext
 from std.sys.info import _has_blackwell_tcgen05
 from nn.index_fp8 import fp8_index, fp8_index_naive
+from nn.attention.gpu.sparse_index_fp8_sm100_prefill import _FOLD_DTYPE
 from std.random import rand
 from layout import Idx, TileTensor, row_major
 from std.testing import assert_almost_equal
@@ -161,6 +162,18 @@ def test_index_fp8[
     ctx.enqueue_copy(o_ref_ptr, o_device_ref_ptr)
     ctx.synchronize()
 
+    # `fp8_index_naive` accumulates in f32; the scorer folds in `_FOLD_DTYPE`,
+    # which at the bf16 default rounds each of `num_heads` steps to an 8-bit
+    # mantissa, so a chain that long drifts ~1% by design and the tolerance has
+    # to follow the knob. It stays tight at `float32`, where the two paths
+    # differ only in summation order.
+    #
+    # It cannot judge whether the fold changed which keys a top-k picks -- that
+    # needs grading against an exact top-k. Read the printed `max_rel`, do not
+    # just watch the assert pass.
+    comptime score_rtol = 1e-3 if _FOLD_DTYPE == DType.float32 else 1e-1
+    var max_rel = Float32(0)
+
     for b in range(batch_size):
         for s in range(seq_len):
             for k in range(num_keys):
@@ -169,9 +182,17 @@ def test_index_fp8[
                 ]
                 var actual = o_ptr[b * seq_len * num_keys + s * num_keys + k]
 
-                if abs((actual - expect)) > 1e-2:
-                    print(b, s, k, actual, expect)
-                assert_almost_equal(actual, expect, atol=1e-2, rtol=1e-3)
+                if abs(expect) > 1e-6:
+                    max_rel = max(max_rel, abs(actual - expect) / abs(expect))
+                assert_almost_equal(actual, expect, atol=1e-2, rtol=score_rtol)
+
+    print(
+        "  scores vs naive reference: fold=",
+        _FOLD_DTYPE,
+        " max_rel=",
+        max_rel,
+        sep="",
+    )
 
     _ = q_device_ptr
     _ = qs_device_ptr

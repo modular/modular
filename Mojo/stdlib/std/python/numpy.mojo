@@ -41,30 +41,30 @@ comptime _PY_WRITEABLE = "WRITEABLE"
 def _numpy_dtype_name[dtype: DType]() -> Optional[StaticString]:
     """Returns the NumPy dtype string for `dtype`, or `None` if unsupported."""
     __match dtype:
-    case .int8:
-        return StaticString("int8")
-    case .int16:
-        return StaticString("int16")
-    case .int32:
-        return StaticString("int32")
-    case .int64:
-        return StaticString("int64")
-    case .uint8:
-        return StaticString("uint8")
-    case .uint16:
-        return StaticString("uint16")
-    case .uint32:
-        return StaticString("uint32")
-    case .uint64:
-        return StaticString("uint64")
-    case .float16:
-        return StaticString("float16")
-    case .float32:
-        return StaticString("float32")
-    case .float64:
-        return StaticString("float64")
-    case _:
-        return None
+        case .int8:
+            return StaticString("int8")
+        case .int16:
+            return StaticString("int16")
+        case .int32:
+            return StaticString("int32")
+        case .int64:
+            return StaticString("int64")
+        case .uint8:
+            return StaticString("uint8")
+        case .uint16:
+            return StaticString("uint16")
+        case .uint32:
+            return StaticString("uint32")
+        case .uint64:
+            return StaticString("uint64")
+        case .float16:
+            return StaticString("float16")
+        case .float32:
+            return StaticString("float32")
+        case .float64:
+            return StaticString("float64")
+        case _:
+            return None
 
 
 def _is_numpy_dtype[dtype: DType]() -> Bool:

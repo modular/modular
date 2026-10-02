@@ -20,7 +20,12 @@
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.random import seed
-from std.sys.info import size_of
+from std.sys.info import (
+    has_amd_gpu_accelerator,
+    has_apple_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    size_of,
+)
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -36,7 +41,7 @@ from comm import Signal
 from extensibility import StaticTensorSpec
 from max.gpu.host import CompletionFlag, DeviceContext, DeviceContextArray
 from layout.tile_tensor import row_major
-from max.gpu.host.info import B200, is_cpu, is_gpu, is_valid_target
+from max.gpu.host.info import is_cpu, is_gpu, is_valid_target
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     ComptimeInt,
@@ -89,6 +94,7 @@ from nn.mhc import hyper_connection_gates
 from nn.moe import (
     eplb_remap,
     moe_create_indices,
+    moe_finalize,
     router_group_limited,
     sink_gate_router,
     single_group_router,
@@ -2010,6 +2016,34 @@ struct Struct_moe_create_indices:
             expert_ids.to_tile_tensor[.int64](),
             expert_usage_stats.to_tile_tensor[.int64](),
             topk_ids.to_tile_tensor[.int64](),
+            context,
+        )
+
+
+@extensibility.register("mo.moe.finalize")
+struct Struct_moe_finalize:
+    """Registers the `mo.moe.finalize` graph op with the graph compiler."""
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        out_type: DType,
+        down_type: DType,
+        weight_type: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_type, rank=2, ...],
+        down: InputTensor[dtype=down_type, rank=2, ...],
+        restore_token_order: InputTensor[dtype=.uint32, rank=1, ...],
+        router_weight: InputTensor[dtype=weight_type, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        moe_finalize[target=target](
+            output.to_tile_tensor[.int64](),
+            down.to_tile_tensor[.int64](),
+            restore_token_order.to_tile_tensor[.int64](),
+            router_weight.to_tile_tensor[.int64](),
             context,
         )
 
@@ -3987,186 +4021,6 @@ def gated_delta_recurrence_fwd_shape(
     return IndexList[2](total_seq_len, value_dim)
 
 
-@extensibility.register("gated_delta_recurrence_rollback")
-struct GatedDeltaRecurrenceRollback:
-    """`gated_delta_recurrence_fwd` as a speculative rollback's replay.
-
-    The verify width `K` is the length of `verify_width`, whose contents are
-    never read. At `K == 0` the verify's forward already landed the state, so
-    nothing is launched and `recurrence_output` is left unwritten.
-
-    Tensor Shapes:
-        As `gated_delta_recurrence_fwd`, plus
-        - verify_width      : [K]                                   int64
-    """
-
-    @staticmethod
-    def execute[
-        work_dtype: DType,
-        state_dtype: DType,
-        target: StaticString,
-    ](
-        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        verify_width: InputTensor[dtype=.int64, rank=1, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        if verify_width.dim_size(0) == 0:
-            return
-        GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
-            recurrence_output,
-            qkv_conv_output,
-            decay_per_token,
-            beta_per_token,
-            recurrent_state,
-            slot_idx,
-            input_row_offsets,
-            ctx,
-        )
-
-
-@extensibility.register_shape_function("gated_delta_recurrence_rollback")
-def gated_delta_recurrence_rollback_shape(
-    qkv_conv_output: Some[Tensor],
-    decay_per_token: Some[Tensor],
-    beta_per_token: Some[Tensor],
-    recurrent_state: Some[Tensor],
-    slot_idx: Some[Tensor],
-    input_row_offsets: Some[Tensor],
-    verify_width: Some[Tensor],
-) -> IndexList[2]:
-    """Computes the output shape for `gated_delta_recurrence_rollback`.
-
-    Args:
-        qkv_conv_output: Ragged conv output, `[total_seq_len, conv_dim]`.
-        decay_per_token: Per-token decays, `[total_seq_len, nv]`.
-        beta_per_token: Per-token beta gates, `[total_seq_len, nv]`.
-        recurrent_state: State pool, `[max_slots, nv, KD, VD]`.
-        slot_idx: Pool row per batch item, `[batch_size]`.
-        input_row_offsets: Ragged offsets, `[batch_size + 1]`.
-        verify_width: `[K]`, read for its shape only.
-    """
-    comptime assert (
-        type_of(verify_width).rank == 1
-    ), "verify_width must be rank 1"
-    return gated_delta_recurrence_fwd_shape(
-        qkv_conv_output,
-        decay_per_token,
-        beta_per_token,
-        recurrent_state,
-        slot_idx,
-        input_row_offsets,
-    )
-
-
-@extensibility.register("gated_delta_recurrence_shadow_fwd")
-struct GatedDeltaRecurrenceShadowFwd:
-    """`gated_delta_recurrence_fwd` over a speculative verify on a shadow pool.
-
-    The verify width `K` is the length of `verify_width`, whose contents are
-    never read. At `K > 0` this runs on `shadow_state` at `shadow_slot_idx`,
-    leaving `recurrent_state` at its pre-verify state for the rollback. At
-    `K == 0` there is no draft to reject, so it runs on `recurrent_state` at
-    `slot_idx` and the rollback skips at the same width.
-
-    Tensor Shapes:
-        As `gated_delta_recurrence_fwd`, plus
-        - shadow_state      : [shadow_slots, num_value_heads, KD, VD]   (MUT)
-        - shadow_slot_idx   : [batch_size]                          uint32
-        - verify_width      : [K]                                   int64
-    """
-
-    @staticmethod
-    def execute[
-        work_dtype: DType,
-        state_dtype: DType,
-        target: StaticString,
-    ](
-        recurrence_output: OutputTensor[dtype=work_dtype, rank=2, ...],
-        qkv_conv_output: InputTensor[dtype=work_dtype, rank=2, ...],
-        decay_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        beta_per_token: InputTensor[dtype=work_dtype, rank=2, ...],
-        recurrent_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        shadow_state: MutableInputTensor[dtype=state_dtype, rank=4, ...],
-        slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        shadow_slot_idx: InputTensor[dtype=.uint32, rank=1, ...],
-        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        verify_width: InputTensor[dtype=.int64, rank=1, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        if verify_width.dim_size(0) == 0:
-            GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
-                recurrence_output,
-                qkv_conv_output,
-                decay_per_token,
-                beta_per_token,
-                recurrent_state,
-                slot_idx,
-                input_row_offsets,
-                ctx,
-            )
-        else:
-            GatedDeltaRecurrenceFwd.execute[work_dtype, state_dtype, target](
-                recurrence_output,
-                qkv_conv_output,
-                decay_per_token,
-                beta_per_token,
-                shadow_state,
-                shadow_slot_idx,
-                input_row_offsets,
-                ctx,
-            )
-
-
-@extensibility.register_shape_function("gated_delta_recurrence_shadow_fwd")
-def gated_delta_recurrence_shadow_fwd_shape(
-    qkv_conv_output: Some[Tensor],
-    decay_per_token: Some[Tensor],
-    beta_per_token: Some[Tensor],
-    recurrent_state: Some[Tensor],
-    shadow_state: Some[Tensor],
-    slot_idx: Some[Tensor],
-    shadow_slot_idx: Some[Tensor],
-    input_row_offsets: Some[Tensor],
-    verify_width: Some[Tensor],
-) -> IndexList[2]:
-    """Computes the output shape for `gated_delta_recurrence_shadow_fwd`.
-
-    Args:
-        qkv_conv_output: Ragged conv output, `[total_seq_len, conv_dim]`.
-        decay_per_token: Per-token decays, `[total_seq_len, nv]`.
-        beta_per_token: Per-token beta gates, `[total_seq_len, nv]`.
-        recurrent_state: Live pool, `[max_slots, nv, KD, VD]`.
-        shadow_state: Shadow pool, `[shadow_slots, nv, KD, VD]`.
-        slot_idx: Live pool row per batch item, `[batch_size]`.
-        shadow_slot_idx: Shadow pool row per batch item, `[batch_size]`.
-        input_row_offsets: Ragged offsets, `[batch_size + 1]`.
-        verify_width: `[K]`, read for its shape only.
-    """
-    comptime assert (
-        type_of(shadow_state).rank == 4
-    ), "shadow_state must be rank 4"
-    comptime assert (
-        type_of(shadow_slot_idx).dtype == .uint32
-    ), "shadow_slot_idx dtype must be uint32"
-    comptime assert (
-        type_of(verify_width).rank == 1
-    ), "verify_width must be rank 1"
-    return gated_delta_recurrence_fwd_shape(
-        qkv_conv_output,
-        decay_per_token,
-        beta_per_token,
-        recurrent_state,
-        slot_idx,
-        input_row_offsets,
-    )
-
-
 @extensibility.register("gated_delta_recurrence_verify_ring_fwd")
 struct GatedDeltaRecurrenceVerifyRingFwd:
     """Gated DeltaNet recurrence over a speculative verify window.
@@ -4736,24 +4590,24 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
 
         comptime if is_cpu[target]():
             __match dstate:
-            case 256:
-                launch_cpu[256]()
-            case 128:
-                launch_cpu[128]()
-            case 64:
-                launch_cpu[64]()
-            case _:
-                launch_cpu[16]()
+                case 256:
+                    launch_cpu[256]()
+                case 128:
+                    launch_cpu[128]()
+                case 64:
+                    launch_cpu[64]()
+                case _:
+                    launch_cpu[16]()
         elif is_gpu[target]():
             __match dstate:
-            case 256:
-                launch_gpu[256]()
-            case 128:
-                launch_gpu[128]()
-            case 64:
-                launch_gpu[64]()
-            case _:
-                launch_gpu[16]()
+                case 256:
+                    launch_gpu[256]()
+                case 128:
+                    launch_gpu[128]()
+                case 64:
+                    launch_gpu[64]()
+                case _:
+                    launch_gpu[16]()
         else:
             raise Error("Unsupported target device")
 
@@ -5001,49 +4855,48 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
 
         @inline(.always)
         def launch_gpu[DSTATE_VAL: Int]() raises {imm}:
-            # NVIDIA B200 (sm_100) gets the cooperative DSTATE-split
-            # decode-occupancy variant (r7); every other device (AMD MI355
-            # gfx950, Hopper, Apple, ...) runs the portable v1
-            # one-thread-per-channel kernel. The split uses a `lane_group_sum`
-            # full-warp shuffle + 2D block that assume warp width 32, which is
-            # invalid on AMD's wavefront-64 (it failed 2/9 MI355 tests, why
-            # round-2 was reverted in 07c5e0b7533). The gate keeps AMD/non-B200
-            # byte-identical to main. Predicate is `== B200` (not `version ==
-            # "sm_100"`: B200's version string is "sm_100a"; the split was
-            # measured and validated on B200 only, so B100/B300 stay on v1 too).
-            # Gate on `ctx.default_device_info == B200` (the comptime device
-            # `GPUInfo` for the accelerator arch): the wrapper `target` is a
-            # `StaticString`, so `GPUInfo.from_target[target]()` is ill-typed
-            # (`from_target` wants a `!kgen.target`) and hard-errors the
-            # `builtin_kernels` build on every arch.
-            comptime use_dstate_split = ctx.default_device_info == B200
-            # Apple silicon GPU (Metal, cc==5) gets the vectorized-contiguous
-            # dstate I/O variant: same one-thread-per-channel mapping/launch as
-            # v1, but the scalar dstate load/store loops (mem-pipe-bound on M5)
-            # become VEC-wide SIMD chunk loads/stores. Gate on the comptime
-            # device API, which identifies the vendor (matching the `== B200`
-            # gate rationale above).
-            comptime use_apple_vec = ctx.default_device_info.api == "metal"
+            # CUDA and HIP GPUs get the cooperative DSTATE-split kernel. Apple
+            # silicon GPU (Metal) gets the vectorized-contiguous dstate I/O
+            # variant: one thread per channel, with the dstate load/store loops
+            # (mem-pipe-bound on M5) done as VEC-wide SIMD chunks. Any other
+            # accelerator runs the portable v1 one-thread-per-channel kernel.
+            comptime use_dstate_split = (
+                has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+            )
+            comptime use_apple_vec = has_apple_gpu_accelerator()
             # bf16 SSM state is only wired on the Apple vectorized kernel; the
-            # B200 dstate-split and portable v1 kernels are fp32-state. The
-            # Python side only allocates a bf16 pool on Apple (nemotron_h
+            # dstate-split and portable v1 kernels are fp32-state. The Python
+            # side only allocates a bf16 pool on Apple (nemotron_h
             # `_ssm_state_dtype`), so this guard is defensive.
             comptime assert (
                 state_dtype == .float32 or use_apple_vec
             ), "non-fp32 SSM state is only supported on the Apple GPU kernel"
 
             comptime if use_dstate_split:
+                # The split kernel moves each thread's dstate run as one SIMD
+                # access, so it needs unit dstate strides.
+                if (
+                    B_strides[2] != 1
+                    or C_strides[2] != 1
+                    or ssm_pool_strides[3] != 1
+                ):
+                    raise Error(
+                        "the split Mamba-2 SSD scan needs unit strides on the"
+                        " dstate axis of B, C and ssm_pool"
+                    )
                 # Cooperative DSTATE-split: DSTATE_SPLIT threads cooperate on
                 # each head_dim channel's DSTATE recurrence (lifts decode bs=1
                 # occupancy; v1 one-thread-per-channel was ~4% achieved occupancy
                 # on B200). The block holds CH_PER_BLOCK channels x DSTATE_SPLIT
-                # threads = 128 threads (4 warps). DSTATE_SPLIT must divide both
-                # DSTATE and 32 (warp) so each channel's lane group stays
-                # warp-aligned for the lane_group_sum reduction; it divides every
-                # dispatched DSTATE (16/64/128/256) cleanly.
+                # threads = 128 threads. DSTATE_SPLIT must divide both DSTATE
+                # and 32 (the smallest warp width) so each channel's lane group
+                # stays inside one warp for the lane_group_sum reduction; it
+                # divides every dispatched DSTATE (16/64/128/256) cleanly.
                 # Sweep (decode-shape microbench, B200, bf16, dstate=128):
                 #   per-launch us @ bs=1: split1=46.8, split4=22.5, split8=16.6
                 #   (-64.6% vs split1). split8 wins at bs=1/16/32.
+                # On MI355X split8 is within 20% of the best split for both
+                # batch 64 decode and 8 x 512 prefill.
                 comptime DSTATE_SPLIT = 8
                 comptime BLOCK_THREADS = 128
                 comptime CH_PER_BLOCK = BLOCK_THREADS // DSTATE_SPLIT
@@ -5207,24 +5060,24 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
 
         comptime if is_cpu[target]():
             __match dstate:
-            case 256:
-                launch_cpu[256]()
-            case 128:
-                launch_cpu[128]()
-            case 64:
-                launch_cpu[64]()
-            case _:
-                launch_cpu[16]()
+                case 256:
+                    launch_cpu[256]()
+                case 128:
+                    launch_cpu[128]()
+                case 64:
+                    launch_cpu[64]()
+                case _:
+                    launch_cpu[16]()
         elif is_gpu[target]():
             __match dstate:
-            case 256:
-                launch_gpu[256]()
-            case 128:
-                launch_gpu[128]()
-            case 64:
-                launch_gpu[64]()
-            case _:
-                launch_gpu[16]()
+                case 256:
+                    launch_gpu[256]()
+                case 128:
+                    launch_gpu[128]()
+                case 64:
+                    launch_gpu[64]()
+                case _:
+                    launch_gpu[16]()
         else:
             raise Error("Unsupported target device")
 
@@ -5601,19 +5454,19 @@ struct CausalConv1DVarlenFwd[
                 )
 
             __match width:
-            case 1:
-                launch_gpu[1]()
-            case 2:
-                launch_gpu[2]()
-            case 3:
-                launch_gpu[3]()
-            case 4:
-                launch_gpu[4]()
-            case _:
-                raise Error(
-                    "Unsupported kernel width: only widths 1, 2, 3, 4 are"
-                    " supported"
-                )
+                case 1:
+                    launch_gpu[1]()
+                case 2:
+                    launch_gpu[2]()
+                case 3:
+                    launch_gpu[3]()
+                case 4:
+                    launch_gpu[4]()
+                case _:
+                    raise Error(
+                        "Unsupported kernel width: only widths 1, 2, 3, 4 are"
+                        " supported"
+                    )
         else:
             raise Error("Unsupported target device")
 
@@ -5751,14 +5604,13 @@ struct GatedGroupRMSNorm[group_size: Int]:
                 eps,
             )
         elif is_gpu[target]():
-            gated_group_rmsnorm_gpu[dtype, gate_dtype](
+            gated_group_rmsnorm_gpu[dtype, gate_dtype, gs](
                 output_tt,
                 y_tt,
                 gate_tt,
                 weight_tt,
                 n_rows,
                 num_groups,
-                gs,
                 eps,
                 ctx,
             )

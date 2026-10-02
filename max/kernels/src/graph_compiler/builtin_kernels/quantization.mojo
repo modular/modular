@@ -1458,3 +1458,67 @@ struct QuantizeDynamicScaledFloat8:
             num_rows=input.dim_size(0),
             amax_floor=amax_floor_f32,
         )
+
+
+@extensibility.register("mo.quantize_dynamic_scaled_float8.row_bounded")
+struct QuantizeDynamicScaledFloat8RowBounded:
+    """Registers the `mo.quantize_dynamic_scaled_float8.row_bounded` graph op.
+
+    Same numerics as `mo.quantize_dynamic_scaled_float8`, but the rows it
+    touches stop at a count the GPU publishes rather than at the height of the
+    input tensor. The EP MoE down projection needs this: its activation buffer
+    is sized for the worst-case dispatch, the dispatch kernel writes the live
+    row count into `row_offsets`, and the host never learns that count.
+
+    A separate symbol rather than an operand on the shared op, because the
+    graph compiler's RMS-norm and all-reduce fusion patterns match the shared
+    op by its two-operand signature.
+    """
+
+    @__parameter
+    @inline(.always)
+    @staticmethod
+    def execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType,
+        //,
+        group_size_or_per_token: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        scale_ub: Float32,
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
+
+        # `row_offsets` is the grouped-matmul prefix sum, so its last entry is
+        # the total row count across all groups.
+        var offsets = row_offsets.to_tile_tensor[.int64]()
+        var row_limit = offsets.ptr.unsafe_offset(row_offsets.dim_size(0) - 1)
+
+        quantize_dynamic_scaled_fp8[
+            in_dtype=input_type,
+            group_size_or_per_token=group_size_or_per_token,
+            num_cols=Int(input.static_spec.shape_tuple[1]),
+            row_bounded=True,
+        ](
+            input_fn,
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            scale_ub,
+            ctx,
+            num_rows=input.dim_size(0),
+            row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](row_limit),
+        )

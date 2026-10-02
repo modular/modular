@@ -26,14 +26,14 @@ parts of a tuple and bind others:
 ```mojo
 def inspect(point: Tuple[Int, Int]):
     match point:
-    case 0, 0:
-        print("origin")
-    case x, 0:
-        print("on the x axis:", x)
-    case 0, y:
-        print("on the y axis:", y)
-    case x, y:
-        print("point:", x, y)
+        case 0, 0:
+            print("origin")
+        case x, 0:
+            print("on the x axis:", x)
+        case 0, y:
+            print("on the y axis:", y)
+        case x, y:
+            print("point:", x, y)
 ```
 
 The essential operation here is structural: compare parts of a value against
@@ -157,11 +157,11 @@ match get_pair():
 ```
 
 Match patterns intentionally use a restricted grammar rather than treating
-arbitrary Mojo expressions as equality tests. They can include literals and
-other explicitly supported pattern forms, but not arbitrary calls, operators,
-subscripts, or generalized lvalues. This avoids surprising interactions with
-expressions that produce lvalues or references and keeps patterns statically
-understandable.
+arbitrary Mojo expressions as equality tests. They can include literals,
+contextual initializer lists, and other explicitly supported pattern forms, but
+not arbitrary calls, operators, subscripts, or generalized lvalues. This avoids
+surprising interactions with expressions that produce lvalues or references
+and keeps patterns statically understandable.
 
 Ordinary assignment continues to use Mojo's existing assignment-target rules:
 
@@ -185,17 +185,17 @@ the `[a, b, c]` pattern which matches against a list of a specific length:
 
 ```mojo
 match values:
-case []:
-    print("empty")
+    case []:
+        print("empty")
 
-case [x]:
-    print("one element:", x)
+    case [x]:
+        print("one element:", x)
 
-case [x, y]:
-    print("two elements:", x, y)
+    case [x, y]:
+        print("two elements:", x, y)
 
-case _:
-    print("many elements")
+    case _:
+        print("many elements")
 ```
 
 Conceptually, `match` evaluates its subject once and considers its cases in
@@ -232,11 +232,11 @@ Value patterns are another important refutable form:
 
 ```mojo
 match point:
-case 0, 0:
-    print("origin")
+    case 0, 0:
+        print("origin")
 
-case x, 0:
-    print("on the x axis:", x)
+    case x, 0:
+        print("on the x axis:", x)
 ```
 
 Here `var x, 0` first decomposes the tuple, binds its first element to `x`,
@@ -248,14 +248,14 @@ Patterns compose recursively, so refutability naturally composes as well:
 
 ```mojo
 match values:
-case [(x, 0), a_pair]:
-    handle_special_value(x, a_pair)
+    case [(x, 0), a_pair]:
+        handle_special_value(x, a_pair)
 
-case [x]:
-    handle_one_value(x)
+    case [x]:
+        handle_one_value(x)
 
-case _:
-    handle_other_lengths(values)
+    case _:
+        handle_other_lengths(values)
 ```
 
 A pattern is therefore **irrefutable when the compiler can prove that it matches
@@ -329,28 +329,28 @@ space. After the space is closed, every subsequent case is unreachable.
 ```mojo
 # Finite EnumLike: both ctors required (or a catch-all).
 match flag:  # warning: not exhaustive; missing case for 'False'
-case True:
-    ...
+    case True:
+        ...
 
 # Product of EnumLike: correlated wildcards can finish the space.
 match flag, flag:
-case True, True:
-    ...
-case False, True:
-    ...
-case _, False:
-    ...
-case _:  # warning: unreachable; previous cases cover every value
-    ...
+    case True, True:
+        ...
+    case False, True:
+        ...
+    case _, False:
+        ...
+    case _:  # warning: unreachable; previous cases cover every value
+        ...
 
 # Open literals: duplicates warn; no exhaustivity requirement.
 match n:
-case 0:
-    ...
-case 0:  # warning: '0' is already covered by a previous case
-    ...
-case 1:
-    ...
+    case 0:
+        ...
+    case 0:  # warning: '0' is already covered by a previous case
+        ...
+    case 1:
+        ...
 ```
 
 #### Intentional Limitations
@@ -396,7 +396,21 @@ forms to follow Python's precedent:
     `case Int:` would bind a new value named `Int`, not test against the type
     `Int`. See “Future Directions” for how we can address that.
 
-2. **Sequence patterns** decompose sequence-like values:
+2. **Initializer-list patterns** construct a value of the subject type and
+   compare it to the subject with `==`:
+
+    ```mojo
+    case {}:
+    case {1, offset=2}:
+    ```
+
+    As in a return statement or call argument, the subject provides the
+    contextual type for the initializer list. This is a value pattern, not a
+    destructuring pattern: the braces invoke the contextual type's initializer,
+    and the resulting value is passed as the right-hand operand of the
+    subject's `__eq__()` method.
+
+3. **Sequence patterns** decompose sequence-like values:
 
     ```mojo
     case []:
@@ -409,7 +423,7 @@ forms to follow Python's precedent:
     destructuring assignments. This should be tied into some trait that the
     collection conforms to.
 
-3. **Variable-length sequence patterns** capture a prefix, suffix, or remainder,
+4. **Variable-length sequence patterns** capture a prefix, suffix, or remainder,
    tied into the same trait (only a single `*` pattern is allowed):
 
     ```mojo
@@ -417,7 +431,7 @@ forms to follow Python's precedent:
     case [first, *middle, last]:
     ```
 
-4. **OR patterns** match when any of several alternatives match:
+5. **OR patterns** match when any of several alternatives match:
 
     ```mojo
     case 0 | 1:
@@ -427,7 +441,7 @@ forms to follow Python's precedent:
     Alternatives that introduce bindings must introduce compatible bindings on
     each path.
 
-5. **AS patterns** apply a pattern while also retaining the complete matched
+6. **AS patterns** apply a pattern while also retaining the complete matched
    value, producing an `imm` binding:
 
     ```mojo
@@ -435,7 +449,7 @@ forms to follow Python's precedent:
         ...
     ```
 
-6. **Struct patterns** decompose struct-like values:
+7. **Struct patterns** decompose struct-like values:
 
     ```mojo
     case Point(x=x_value, y=y_value):
@@ -445,7 +459,7 @@ forms to follow Python's precedent:
     Each element of the pattern must be a keyword argument denoting a valid
     field name of the struct. Field names may be omitted but not duplicated.
 
-7. **Mapping patterns** match particular keys and decompose their values:
+8. **Mapping patterns** match particular keys and decompose their values:
 
     ```mojo
     case {"name": name, "age": age}:
@@ -567,9 +581,10 @@ normal `if` / `while` syntax and the same match-pattern language used by `case`.
 ## Implementation status
 
 The nightlies include a prototype (currently hidden under the experimental
-`__match` keyword). It supports literal and value patterns, tuple and struct
-patterns, `EnumLike` case patterns, OR patterns, `as` patterns, `var` / `ref` /
-`_` bindings, match guards, and basic exhaustivity / unreachability checking.
+`__match` keyword). It supports literal, initializer-list, and value patterns;
+tuple and struct patterns; `EnumLike` case patterns; OR patterns; `as`
+patterns; `var` / `ref` / `_` bindings; match guards; and basic exhaustivity /
+unreachability checking.
 
 Still missing relative to this proposal:
 

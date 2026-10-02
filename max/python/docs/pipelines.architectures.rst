@@ -36,6 +36,7 @@ family.
    pipelines.architectures.gemma4
    pipelines.architectures.gemma4_assistant
    pipelines.architectures.glm5_1
+   pipelines.architectures.glm5_next
    pipelines.architectures.gpt_oss
    pipelines.architectures.granite
    pipelines.architectures.hy_v3
@@ -108,6 +109,7 @@ Text generation
    ~max.pipelines.architectures.gemma4
    ~max.pipelines.architectures.gemma4_assistant
    ~max.pipelines.architectures.glm5_1
+   ~max.pipelines.architectures.glm5_next
    ~max.pipelines.architectures.gpt_oss
    ~max.pipelines.architectures.granite
    ~max.pipelines.architectures.hy_v3

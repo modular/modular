@@ -482,44 +482,44 @@ def nan[dtype: DType]() -> Scalar[dtype]:
     ), "Only floating point dtypes support NaN."
 
     comptime __match dtype:
-    case .float8_e4m3fn:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fn>`,
-        )
-    case .float8_e4m3fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fnuz>`,
-        )
-    case .float8_e5m2:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2>`,
-        )
-    case .float8_e5m2fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2fnuz>`,
-        )
-    case .float8_e8m0fnu:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e8m0fnu>`,
-        )
-    case .bfloat16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<bf16>`,
-        )
-    case .float16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f16>`,
-        )
-    case .float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f32>`,
-        )
-    case .float64:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f64>`,
-        )
-    case _:
-        comptime assert False, "unsupported float type"
+        case .float8_e4m3fn:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fn>`,
+            )
+        case .float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e4m3fnuz>`,
+            )
+        case .float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2>`,
+            )
+        case .float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e5m2fnuz>`,
+            )
+        case .float8_e8m0fnu:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f8e8m0fnu>`,
+            )
+        case .bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<bf16>`,
+            )
+        case .float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f16>`,
+            )
+        case .float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f32>`,
+            )
+        case .float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"nan"> : !kgen.scalar<f64>`,
+            )
+        case _:
+            comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -600,36 +600,36 @@ def inf[dtype: DType]() -> Scalar[dtype]:
     ), "Only floating point dtypes support +inf."
 
     comptime __match dtype:
-    case .float8_e4m3fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e4m3fnuz>`,
-        )
-    case .float8_e5m2:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2>`,
-        )
-    case .float8_e5m2fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2fnuz>`,
-        )
-    case .bfloat16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<bf16>`,
-        )
-    case .float16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f16>`,
-        )
-    case .float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f32>`,
-        )
-    case .float64:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f64>`,
-        )
-    case _:
-        comptime assert False, "unsupported float type"
+        case .float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e4m3fnuz>`,
+            )
+        case .float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2>`,
+            )
+        case .float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f8e5m2fnuz>`,
+            )
+        case .bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<bf16>`,
+            )
+        case .float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f16>`,
+            )
+        case .float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f32>`,
+            )
+        case .float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"inf"> : !kgen.scalar<f64>`,
+            )
+        case _:
+            comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -655,40 +655,40 @@ def neg_inf[dtype: DType]() -> Scalar[dtype]:
     ), "Only floating point dtypes support -inf."
 
     comptime __match dtype:
-    case .float8_e4m3fn:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fn>`,
-        )
-    case .float8_e4m3fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fnuz>`,
-        )
-    case .float8_e5m2:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2>`,
-        )
-    case .float8_e5m2fnuz:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2fnuz>`,
-        )
-    case .bfloat16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<bf16>`,
-        )
-    case .float16:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f16>`,
-        )
-    case .float32:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f32>`,
-        )
-    case .float64:
-        return rebind[Scalar[dtype]](
-            __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f64>`,
-        )
-    case _:
-        comptime assert False, "unsupported float type"
+        case .float8_e4m3fn:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fn>`,
+            )
+        case .float8_e4m3fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e4m3fnuz>`,
+            )
+        case .float8_e5m2:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2>`,
+            )
+        case .float8_e5m2fnuz:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f8e5m2fnuz>`,
+            )
+        case .bfloat16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<bf16>`,
+            )
+        case .float16:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f16>`,
+            )
+        case .float32:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f32>`,
+            )
+        case .float64:
+            return rebind[Scalar[dtype]](
+                __mlir_attr.`#kgen.simd<"-inf"> : !kgen.scalar<f64>`,
+            )
+        case _:
+            comptime assert False, "unsupported float type"
 
 
 # ===----------------------------------------------------------------------=== #

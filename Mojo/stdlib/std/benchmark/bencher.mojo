@@ -249,22 +249,22 @@ struct Format(ImplicitlyCopyable, Writable):
             value: The format to print results.
         """
         __match value:
-        case Format.csv.value:
-            self.value = Format.csv.value
-        case Format.tabular.value:
-            self.value = Format.tabular.value
-        case Format.table.value:
-            self.value = Format.table.value
-        case _:
-            var valid_formats = String(
-                " valid formats: ",
-                Format.csv,
-                ", ",
-                Format.tabular,
-                ", ",
-                Format.table,
-            )
-            abort(t"Invalid format option: {value}{valid_formats}")
+            case Format.csv.value:
+                self.value = Format.csv.value
+            case Format.tabular.value:
+                self.value = Format.tabular.value
+            case Format.table.value:
+                self.value = Format.table.value
+            case _:
+                var valid_formats = String(
+                    " valid formats: ",
+                    Format.csv,
+                    ", ",
+                    Format.tabular,
+                    ", ",
+                    Format.table,
+                )
+                abort(t"Invalid format option: {value}{valid_formats}")
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the format to a writer.
@@ -401,30 +401,30 @@ struct BenchConfig(Copyable):
             var i = 1
             while i < len(args):
                 __match args[i]:
-                case "-o":
-                    if i + 1 >= len(args):
-                        raise Error("Missing value for -o option")
-                    self.out_file = Path(args[i + 1])
-                    i += 2
-                case "-r":
-                    if i + 1 >= len(args):
-                        raise Error("Missing value for -r option")
-                    self.num_repetitions = Int(args[i + 1])
-                    i += 2
-                case "--format":
-                    if i + 1 >= len(args):
-                        raise Error("Missing value for --format option")
-                    self.format = Format(args[i + 1])
-                    i += 2
-                case "--no-progress":
-                    self.show_progress = False
-                    i += 1
-                case "--verbose":
-                    self.verbose_timing = True
-                    i += 1
-                # TODO: add an arg for bench batchsize
-                case _:
-                    i += 1
+                    case "-o":
+                        if i + 1 >= len(args):
+                            raise Error("Missing value for -o option")
+                        self.out_file = Path(args[i + 1])
+                        i += 2
+                    case "-r":
+                        if i + 1 >= len(args):
+                            raise Error("Missing value for -r option")
+                        self.num_repetitions = Int(args[i + 1])
+                        i += 2
+                    case "--format":
+                        if i + 1 >= len(args):
+                            raise Error("Missing value for --format option")
+                        self.format = Format(args[i + 1])
+                        i += 2
+                    case "--no-progress":
+                        self.show_progress = False
+                        i += 1
+                    case "--verbose":
+                        self.verbose_timing = True
+                        i += 1
+                    # TODO: add an arg for bench batchsize
+                    case _:
+                        i += 1
 
             # KBENCH_OUTFILE overrides -o (used by kbench driver mode).
             comptime if get_defined_bool["KBENCH_USE_ENV_ARGS", False]():

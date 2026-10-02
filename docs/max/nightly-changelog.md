@@ -29,6 +29,13 @@ This version is still a work in progress.
   (`UnifiedDflashMiMoV2ForCausalLM`), with greedy and per-row sampled
   acceptance.
 
+- GLM-5.3-Flash (`Glm5NextForConditionalGeneration`) now serves
+  `/v1/chat/completions` on 8 B200s, text-only. It pairs Kimi Delta Attention
+  with sparse MLA whose indexer scores pools of four tokens rather than single
+  tokens, and manifold-constrained hyper-connections in place of a plain
+  residual add. Only the blockwise-FP8 checkpoint
+  (`zai-org/GLM-5.3-Flash`) is supported.
+
 - The fused Qwen3.5 speculative-decoding graph
   (`qwen3_5_with_mtp_graph`) now accepts M-RoPE positions, so speculative
   decoding composes with the vision path instead of excluding it. Without
@@ -74,6 +81,18 @@ This version is still a work in progress.
   running, so one run lists every offending load instead of stopping at the
   first. The default, `abort`, is unchanged. On Apple GPUs, `report`
   currently aborts without printing.
+- Improved out-of-memory error messages for the VMM defragmenting device
+  allocator. An allocation failure is now classified by cause -- genuinely out
+  of memory, a shortfall recoverable from memory awaiting a stream synchronize
+  or stranded in partially-used pages, memory held outside the manager's own
+  accounting, virtual-address fragmentation, an unreserved arena, or a request
+  that reached an unbacked region during a graph capture, where mapping is
+  illegal -- and the message reports what each recovery lever may return, and
+  names the setting that turns it, instead of a single often-misleading `free`
+  figure. This applies to allocations that fall through to the device driver
+  as well: such a failure previously surfaced the driver's refusal alone, and
+  now leads with why the memory manager missed, carrying the driver's refusal
+  as a note.
 - `max serve` gained a `--cascade` flag that routes the request to the
   experimental Cascade server (`max.experimental.cascade.serve.main.serve`)
   instead of the standard API server + model worker. The resolved `PipelineArgs`
@@ -105,6 +124,9 @@ This version is still a work in progress.
 
 - `max.experimental.random.uniform()` and `gaussian()` accept a
   `DeviceMapping`.
+
+- `max.experimental.nn.Module.to()` now only moves a module to one device.
+  Build a multi-device module inside `default_device(mesh)` instead.
 
 - `max.experimental.sharding` no longer re-exports `P`, `R`, `Action`,
   `PerShard`, `PerShardDim`, `Collective`, `ReduceOp`, `get_active_mesh`,
@@ -205,6 +227,13 @@ This version is still a work in progress.
   are renamed `fraction` and `turn` to match
   `augment_samples_with_response_format`; the `--image-fraction` and
   `--image-turn` flags are unchanged.
+- `max benchmark` now reports its realized request mix in its own "Request
+  Mix" section and `result_groups.request_mix`, rather than among the headline
+  metrics in `result_groups.summary`. The group holds the structured-output and
+  tool-calling rates, plus two new ones: `image_request_rate`, the share of
+  requests whose payload carried an image (including images resent with a
+  session's earlier turns), and `lora_request_rate`, the share routed to a LoRA
+  adapter. Existing top-level keys in the result JSON are unchanged.
 - Added a `Cat(v1:w1, v2:w2, ...)` categorical distribution for every
   `max benchmark` config field that accepts a distribution string (for
   example `--image-long-side`, `--image-count`, `--random-input-len`), so an
@@ -230,6 +259,17 @@ This version is still a work in progress.
   Float32, GPU-only.
 
 ### Inference server
+
+- `--draft-proposal sampled` now works with block speculative decoding
+  (DFlash, DFlash2 and DSpark drafts). The draft samples each proposal at the
+  request's temperature, top-k and top-p and hands the verifier the
+  distribution it sampled from, so acceptance runs true speculative sampling
+  instead of typical acceptance. Previously these drafts ignored the flag and
+  kept proposing their argmax.
+
+- A speculative architecture that can't sample its draft now refuses
+  `--draft-proposal sampled` at startup rather than silently drafting by
+  argmax.
 
 - Added `--prefill-coalesce-min-pending` (default 0, off): under in-flight
   batching, hold pending fresh prefills until that many can share one mixed
@@ -273,6 +313,11 @@ This version is still a work in progress.
   `http/protobuf`, so existing deployments are unchanged, and metrics and
   logs still export over HTTP.
 
+- The scheduler's `max.phase.prefill` and `max.phase.decode` spans now nest
+  under the request's `max.request` span on non-streaming chat and completions
+  requests, instead of beside it or, without a `traceparent`, in a trace of
+  their own.
+
 - Added `--prefill-schedule-interval` (default 1, every step): admit prefill
   work only on every Nth scheduler step, leaving the steps in between entirely
   to decode. Data-parallel ranks advance in lockstep, so prefill on any one
@@ -292,6 +337,12 @@ This version is still a work in progress.
   `usage.completion_tokens_details.reasoning_tokens`. A request that sends
   `reasoning_split: false` skips the parser, so `text` and `logprobs` cover
   every generated token, reasoning span included, as in vLLM.
+
+- Added correlation IDs to structured log records on every route:
+  `request_id`, previously always empty, and, while tracing is enabled with
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set, `dd.trace_id` when the request
+  carries a `traceparent`. Structured logging is on by default in the MAX
+  container images; elsewhere, set `MODULAR_STRUCTURED_LOGGING=1`.
 
 ### Server metrics
 
@@ -328,6 +379,12 @@ This version is still a work in progress.
   tokenizer's own cache lookup after tokenization rather than from the
   admission peek, so the two windows differ and the rate isn't comparable
   across architectures.
+- Added `maxserve.cache.connector_loads_refused` and
+  `maxserve.cache.connector_offload_blocks_dropped` for the tiered KV
+  connector. The first counts loads its host and disk tiers refused, each
+  served by recomputing the blocks instead. The second counts offloaded
+  blocks the host pool had no room for, which rises when blocks pinned for
+  in-flight transfers starve the pool, before the hit rate falls.
 
 ### `max` CLI
 
@@ -420,6 +477,32 @@ This version is still a work in progress.
   fused op). It dequantizes NVFP4 activations that were quantized with a
   per-token tensor scale. NVFP4 on SM100 only.
 
+- Added `layout.tmem_engine.TMemEngine`, a `TensorEngine` that lets a
+  `TileTensor` view Blackwell Tensor Memory (TMEM). A TMEM tile's layout places
+  elements on the 128-lane by 512-column grid lane-first: a lane stride of `1`
+  and a column stride of `TMEM_NUM_LANES` (`128`), so the whole accumulator is
+  `(128, 512):(1, 128)` and nested layouts express the lane placement of other
+  MMA shapes. The engine encodes grid positions into the hardware's
+  lane-and-column addresses itself. TMEM has no pointer, so the engine's data
+  path is `TileTensor.copy_from` in either direction: a copy between a TMEM row
+  and a register or shared-memory tile moves consecutive columns of the lane the
+  calling thread owns through the warp-collective `tcgen05.ld` or `tcgen05.st`
+  in the `32x32b` shape, one instruction per power-of-two chunk of at most 64
+  registers, and one wait per 64-column slice. The `copy_from_async` and
+  `copy_to_async` engine methods and the tile-level `tmem_copy_async` issue the
+  same instructions without waiting, so several copies can share one
+  `TMemEngine.wait_store` or `wait_load`; an async row is capped at 64 columns,
+  so a wider row is tiled into one copy per slice. A thread's view of a warp's
+  `(32, N)` tile is its row 0, since the hardware adds the lane to the warp base
+  address. The engine supports 4-byte element types and requires an SM100
+  target.
+
+- Added `TensorEngine.copy_to`, the source side of a copy.
+  `TileTensor.copy_from` now calls it on the source tensor's engine, and its
+  default forwards to the destination engine's `copy_from`, so existing
+  engines are unaffected. An engine whose storage has no pointer, such as
+  `TMemEngine`, overrides it to run its own load loop.
+
 ## Breaking changes
 
 - `max.gpu.primitives.warp.reduce()` and `lane_group_reduce()` now take the
@@ -504,6 +587,10 @@ This version is still a work in progress.
   applies the floor correction for the promoted signed dtype, so `7 // -2`
   returns `-4` instead of `-3`.
 
+- Fixed `max serve` with `MAX_SERVE_KERNEL_TRACE_LEVEL=kernel` never writing
+  its libkineto kernel trace. The trace is now written when the server stops,
+  provided the model worker shuts down within its 5 second grace period.
+
 - Fixed a regression where indexing a buffer -- loading it and then gathering
   rows out of it, as a paged KV cache does -- allocated and copied the entire
   source buffer on every execution instead of reading only the rows requested.
@@ -536,6 +623,11 @@ This version is still a work in progress.
 
 - The functional kernel wrappers in `max.experimental.nn.common_layers` now
   open a realization context, so eager attention with a paged KV cache runs.
+
+- Fixed streaming `/v1/completions` sending an unreadable frame, or ending
+  the response abruptly, when a request failed part-way through a stream.
+  The error now arrives as an `error` object the OpenAI client surfaces as
+  an `APIError`, matching `/v1/chat/completions`.
 
 - Fixed `sampling_params.seed` not reproducing. The batch-slot fix above
   briefly salted each request's RNG key with a hash of its request id, which
@@ -655,5 +747,16 @@ This version is still a work in progress.
   example by creating a second multi-GPU `InferenceSession`. MAX accepted the
   repeat as success but left HIP's last error set, and PyTorch reported it from
   its next kernel launch. MAX now clears that error.
+
+- Fixed `max.phase.prefill` spans never ending and `max.phase.decode` spans
+  never starting, so with tracing enabled neither was exported for a completed
+  request and the model worker kept every such request's prefill span in
+  memory.
+
+- Fixed `DeviceContext.execution_time()` and `execution_time_iter()` on Apple
+  GPUs reading the host clock without waiting for the timed work, so GPU
+  benchmarks on Metal reported enqueue time instead of execution time. They now
+  return the GPU time between the start and stop points, as on NVIDIA and AMD
+  GPUs.
 
 ## Mojo language

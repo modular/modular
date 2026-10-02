@@ -1399,6 +1399,17 @@ def test_format_ipv4_enforced() -> None:
     assert not _accepts(compiled, '"a"')
 
 
+def test_format_email_quoted_local_part() -> None:
+    # The format regex matches the decoded string, so a quoted local part is
+    # spelled with one JSON escape per quote.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "email"}'
+    )
+    assert _accepts(compiled, json.dumps('"john"@example.com'))
+    assert _accepts(compiled, json.dumps('"a b"@x.com'))
+    assert not _accepts(compiled, json.dumps('\\"john\\"@example.com'))
+
+
 def test_format_ipv4_octet_range_enforced() -> None:
     compiled = _compiler().compile_json_schema(
         '{"type": "string", "format": "ipv4"}'
@@ -1770,6 +1781,156 @@ def test_dot_excludes_forbidden() -> None:
     assert _accepts(compiled, '"axb"')
     assert not _accepts(compiled, '"a\x01b"')
     assert not _accepts(compiled, '"a"b"')
+
+
+def test_dot_admits_json_escapes() -> None:
+    # A pattern matches the decoded string, so the characters `.` admits but
+    # JSON must escape are admitted as their escapes.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^.+$"}'
+    )
+    for s in ('say "hi"', "a\\b", "a\tb", "a\x01b"):
+        assert _accepts(compiled, json.dumps(s))
+    assert not _accepts(compiled, '"a\x01b"')
+
+
+def test_dot_refuses_line_terminators() -> None:
+    # ECMA-262 `.` matches no line terminator, raw or spelled as an escape.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^.+$"}'
+    )
+    for s in ("a\nb", "a\rb", "a\u2028b", "a\u2029b"):
+        assert not _accepts(compiled, json.dumps(s, ensure_ascii=False)), s
+    for text in ('"a\\u000ab"', '"a\\u2028b"'):
+        assert not _accepts(compiled, text), text
+
+
+def test_negated_class_refuses_its_own_escapes() -> None:
+    # A negated class admits the escape of each JSON-unsafe character it
+    # admits, and not the escape of a character it excludes.
+    for pattern, refused, admitted in (
+        ('^[^"]+$', 'a"b', "a\\b"),
+        ("^[^\\\\]+$", "a\\b", 'a"b'),
+        ("^[^\\n]+$", "a\nb", "a\tb"),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        assert not _accepts(compiled, json.dumps(refused)), pattern
+        assert _accepts(compiled, json.dumps(admitted)), pattern
+
+
+def test_negated_shorthands_admit_escapes() -> None:
+    for pattern, admitted, refused in (
+        ("^\\D+$", ('a"b', "a\\b", "a\nb"), ("a1b",)),
+        ("^\\W+$", ('"', "\\", "\n"), ("a",)),
+        ("^\\S+$", ('a"b', "a\\b", "a[b"), ("a\nb", "a b")),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        for s in admitted:
+            assert _accepts(compiled, json.dumps(s)), (pattern, s)
+        for s in refused:
+            assert not _accepts(compiled, json.dumps(s)), (pattern, s)
+
+
+def test_counted_repeat_admits_only_escape_free_text() -> None:
+    # Under a counted repeat these atoms keep the escape-free class: plain
+    # text passes and a character that needs an escape does not.
+    for pattern, admitted, refused in (
+        ("^.{1,100}$", "plain text", 'say "hi"'),
+        ('^[^"]{1,100}$', "plain text", "a\\b"),
+        ("^\\S{1,8}$", "a[b", "a\\b"),
+        ("^(a.){1,3}$", "abac", 'a"'),
+        ("^((.)+){2}$", "ab", "a\\b"),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        assert _accepts(compiled, json.dumps(admitted)), pattern
+        assert not _accepts(compiled, json.dumps(refused)), pattern
+
+
+def _pair_vocab() -> list[str]:
+    # Every printable ASCII character and pair of them, so a fill the
+    # precomputed masks do not cover costs far more than one they do.
+    printable = [chr(c) for c in range(0x20, 0x7F)]
+    return ["<eos>", *printable, *(a + b for a in printable for b in printable)]
+
+
+def _fill_cpu_seconds(
+    compiler: xgr.GrammarCompiler, pattern: str, vocab_size: int
+) -> float:
+    compiled = compiler.compile_json_schema(
+        json.dumps({"type": "string", "pattern": pattern})
+    )
+    matcher = xgr.GrammarMatcher(compiled)
+    assert matcher.accept_string('"')
+    bitmask = xgr.allocate_token_bitmask(1, vocab_size)
+    started = time.process_time()
+    for _ in range(50):
+        assert matcher.fill_next_token_bitmask(bitmask)
+        assert matcher.accept_string("a")
+    return time.process_time() - started
+
+
+def test_counted_repeat_fill_costs_what_an_unbounded_fill_costs() -> None:
+    # Escape alternatives under a counted repeat defeat the precomputed token
+    # masks, and each fill then cost about 100x an unbounded one here. CPU
+    # time and the best of three runs keep host noise out of the ratio.
+    vocab = _pair_vocab()
+    compiler = xgr.GrammarCompiler(
+        xgr.TokenizerInfo(
+            vocab, vocab_type=xgr.VocabType.RAW, stop_token_ids=[0]
+        )
+    )
+    counted = min(
+        _fill_cpu_seconds(compiler, "^.{1,100}$", len(vocab)) for _ in range(3)
+    )
+    unbounded = min(
+        _fill_cpu_seconds(compiler, "^.+$", len(vocab)) for _ in range(3)
+    )
+    assert unbounded > 0
+    assert counted / unbounded < 10, (counted, unbounded)
+
+
+def test_top_level_alternation_keeps_the_quotes() -> None:
+    # Each branch of a top-level alternation opens and closes the string.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^[a-z]+$|^[0-9]+$"}'
+    )
+    assert _accepts(compiled, '"abc"')
+    assert _accepts(compiled, '"123"')
+    assert not _accepts(compiled, '"12a"')
+
+
+def test_top_level_alternation_in_a_key_pattern_keeps_the_quotes() -> None:
+    # The key of a patternProperties or propertyNames pattern is a quoted
+    # string too, so each branch opens and closes the key.
+    for schema in (
+        {
+            "type": "object",
+            "patternProperties": {"^a$|^b$": {"type": "integer"}},
+        },
+        {"type": "object", "propertyNames": {"pattern": "^a$|^b$"}},
+    ):
+        compiled = _compiler().compile_json_schema(json.dumps(schema))
+        assert _accepts(compiled, '{"a": 1}'), schema
+        assert _accepts(compiled, '{"b": 2}'), schema
+        assert not _accepts(compiled, '{"c": 1}'), schema
+
+
+def test_alternation_with_branch_anchors_is_measured() -> None:
+    # The length analysis drops the anchors that start and end each branch,
+    # so the pattern's lengths are measured against the bound.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^a$|^bb$", "maxLength": 5}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, '"bb"')
+    assert not _accepts(compiled, '"ab"')
 
 
 def test_pattern_allowed_escape_compiles() -> None:
@@ -4001,14 +4162,36 @@ def test_xml_properties_beside_pattern_properties_unchanged(
         assert isinstance(compiled, xgr.CompiledGrammar)
 
 
+@pytest.mark.parametrize("style", ["minimax_xml", "glm_xml", "deepseek_xml"])
 @pytest.mark.parametrize("pattern", ["^.+$", "^[^/]+$", "^[a-z</>]+$"])
 def test_xml_nested_key_pattern_that_can_spell_the_close_is_refused(
-    pattern: str,
+    style: _XmlStyle, pattern: str
 ) -> None:
-    # A reader may scan a parameter's value to its first `</parameter>`, so
-    # no key below the tag may spell it.
+    # These styles' readers may scan a parameter's value to its first close
+    # delimiter, so no key below the tag may spell it.
     with pytest.raises(Exception, match="closing delimiter"):
-        _compile_xml_arguments(_one_parameter(_pattern_keyed(pattern)))
+        _compile_xml_arguments(
+            _one_parameter(_pattern_keyed(pattern)), style=style
+        )
+
+
+@pytest.mark.parametrize(
+    "pattern,key",
+    [
+        ("^.*$", "</parameter>"),
+        ("^.+$", "</parameter>"),
+        ("^[^/]+$", "<parameter=m>"),
+        ("^[a-z</>]+$", "</parameter>"),
+    ],
+)
+def test_xml_qwen_nested_key_pattern_may_spell_the_close(
+    pattern: str, key: str
+) -> None:
+    # FormatSpec's Qwen reader reads an object-valued parameter as one
+    # balanced JSON value, so a key inside it may spell `</parameter>`, as a
+    # string value already may.
+    compiled = _compile_xml_arguments(_one_parameter(_pattern_keyed(pattern)))
+    assert _accepts(compiled, f'<parameter=m>\n{{"{key}":"x"}}\n</parameter>')
 
 
 @pytest.mark.parametrize(

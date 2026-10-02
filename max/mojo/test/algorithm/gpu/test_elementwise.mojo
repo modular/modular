@@ -76,9 +76,9 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     )
 
     @inline(.always)
-    @__copy_capture(in_buffer, out_buffer, shape)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var in_buffer, var out_buffer, var shape}:
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
@@ -87,7 +87,8 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             + 42,
         )
 
-    elementwise[func, pack_size, target="gpu"](
+    elementwise[pack_size, target="gpu"](
+        func,
         (2, 8),
         ctx,
     )
@@ -153,9 +154,9 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
     )
 
     @inline(.always)
-    @__copy_capture(in_buffer, out_buffer, shape)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var in_buffer, var out_buffer, var shape}:
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
@@ -164,7 +165,8 @@ def run_elementwise_uneven_simd[dtype: DType](ctx: DeviceContext) raises:
             + 42,
         )
 
-    elementwise[func, pack_size, target="gpu"](
+    elementwise[pack_size, target="gpu"](
+        func,
         (3, 3),
         ctx,
     )
@@ -211,16 +213,16 @@ def run_elementwise_exact_boundary_uses_simd[
     var shape = IndexList[2](pack_size, pack_size + 1)
 
     @inline(.always)
-    @__copy_capture(out_buffer, shape)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var out_buffer, var shape}:
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             linear_idx, SIMD[dtype, simd_width](simd_width)
         )
 
-    elementwise[func, pack_size, target="gpu"](Coord(shape), ctx)
+    elementwise[pack_size, target="gpu"](func, Coord(shape), ctx)
     out_device.enqueue_copy_to(out_host.unsafe_ptr())
     ctx.synchronize()
 
@@ -268,9 +270,11 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
     )
 
     @inline(.always)
-    @__copy_capture(in_buffer, out_buffer, in_strides, out_shape)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {
+        var in_buffer, var out_buffer, var in_strides, var out_shape
+    }:
         var idx = rebind[IndexList[3]](coord_to_index_list(idx0))
 
         # We need to perform unaligned loads because the non-uniform strides
@@ -284,7 +288,7 @@ def run_elementwise_transpose_copy[dtype: DType](ctx: DeviceContext) raises:
             ),
         )
 
-    elementwise[func, 1, target="gpu"](Coord(out_shape), ctx)
+    elementwise[1, target="gpu"](func, Coord(out_shape), ctx)
 
     out_device.enqueue_copy_to(out_host)
     ctx.synchronize()
@@ -360,9 +364,9 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
     var shape = IndexList[3](0, 4, 4)
 
     @inline(.always)
-    @__copy_capture(input_buffer, output_buffer, shape)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var input_buffer, var output_buffer, var shape}:
         var idx = rebind[IndexList[3]](coord_to_index_list(idx0))
         var linear_idx = _linear_index(idx, shape)
         output_buffer.unsafe_ptr().unsafe_store[width=simd_width](
@@ -370,21 +374,24 @@ def _test_elementwise_zero_dimension_3d(ctx: DeviceContext) raises:
             input_buffer.unsafe_ptr().unsafe_load[width=simd_width](linear_idx),
         )
 
-    elementwise[func, pack_size, target="gpu"](
+    elementwise[pack_size, target="gpu"](
+        func,
         (0, 4, 4),
         ctx,
     )
     ctx.synchronize()
 
     # Test with zero in second dimension
-    elementwise[func, pack_size, target="gpu"](
+    elementwise[pack_size, target="gpu"](
+        func,
         (2, 0, 4),
         ctx,
     )
     ctx.synchronize()
 
     # Test with zero in third dimension
-    elementwise[func, pack_size, target="gpu"](
+    elementwise[pack_size, target="gpu"](
+        func,
         (2, 4, 0),
         ctx,
     )

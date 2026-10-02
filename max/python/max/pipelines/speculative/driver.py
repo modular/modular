@@ -417,12 +417,16 @@ class SequentialDriver(
         enable_structured_output: bool = False,
         use_greedy_acceptance: bool = False,
         num_draft_steps: int | None = None,
-        draft_proposal: Literal["argmax", "sampled"] = "argmax",
         vocab_size: int | None = None,
     ) -> None:
         super().__init__()
         self._target = target
         self._proposer = proposer
+        draft_proposal: Literal["argmax", "sampled"] = (
+            speculative_config.draft_proposal
+            if speculative_config is not None
+            else "argmax"
+        )
         self._draft_proposal = draft_proposal
         self._vocab_size = vocab_size
         self._input_spec = replace(
@@ -484,8 +488,10 @@ class SequentialDriver(
         if draft_proposal == "sampled":
             if vocab_size is None:
                 raise ValueError(
-                    "vocab_size is required when draft_proposal='sampled':"
-                    " draft_probs_full's trailing dim has to be static"
+                    f"{type(self).__name__} does not support"
+                    " draft_proposal='sampled': it does not pass SequentialDriver"
+                    " the target vocab_size, which draft_probs_full's trailing"
+                    " dim needs statically"
                 )
             if use_greedy_acceptance:
                 raise ValueError(

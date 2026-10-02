@@ -50,6 +50,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
@@ -57,6 +58,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/unified_dflash2_qwen3_5",
         "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
     ],
 )

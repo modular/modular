@@ -97,23 +97,23 @@ def _open_file(path: String, mode: String) raises -> Int:
     var create_dirs = False
 
     __match mode:
-    case "r":
-        flags = O_RDONLY | O_CLOEXEC
-    case "w":
-        flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
-        create_dirs = True
-    case "rw":
-        flags = O_RDWR | O_CREAT | O_CLOEXEC
-        create_dirs = True
-    case "a":
-        flags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
-        create_dirs = True
-    case _:
-        raise Error(
-            'invalid mode: "'
-            + mode
-            + '". Can only be one of: {"r", "w", "rw", "a"}'
-        )
+        case "r":
+            flags = O_RDONLY | O_CLOEXEC
+        case "w":
+            flags = O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC
+            create_dirs = True
+        case "rw":
+            flags = O_RDWR | O_CREAT | O_CLOEXEC
+            create_dirs = True
+        case "a":
+            flags = O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC
+            create_dirs = True
+        case _:
+            raise Error(
+                'invalid mode: "'
+                + mode
+                + '". Can only be one of: {"r", "w", "rw", "a"}'
+            )
 
     # Create parent directories if needed
     if create_dirs:

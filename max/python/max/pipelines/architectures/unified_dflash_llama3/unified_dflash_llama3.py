@@ -59,6 +59,7 @@ class UnifiedDflashLlama3(BlockDriver[TensorValue, TensorValue]):
                 devices=config.target.devices, distributed=False
             ),
             speculative_config=config.speculative_config,
+            vocab_size=config.target.vocab_size,
         )
         self.config = config
         self.target_layer_ids = list(config.target_layer_ids)

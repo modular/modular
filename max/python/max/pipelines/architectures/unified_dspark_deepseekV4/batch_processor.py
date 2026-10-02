@@ -60,7 +60,9 @@ class UnifiedDSparkDeepseekV4Inputs(UnifiedSpecDecodeInputs):
             *self.signal_buffers,
             *tree.leaves(self.kv_cache_inputs),
         ) + (
-            *self._spec_decode_tail_buffers(include_in_thinking_phase=False),
+            *self._spec_decode_tail_buffers(
+                include_in_thinking_phase=False,
+            ),
             *self.window_rows,
         )
 

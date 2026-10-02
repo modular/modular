@@ -10,23 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides networking support.
 
-from std.sys import Vendor
-from std.testing import TestSuite, assert_equal, assert_not_equal
-
-
-def test_vendor_write_to() raises:
-    assert_equal(String(Vendor.NO_GPU), "no_gpu")
-    assert_equal(String(Vendor.AMD_GPU), "amd_gpu")
-    assert_equal(String(Vendor.NVIDIA_GPU), "nvidia_gpu")
-    assert_equal(String(Vendor.APPLE_GPU), "apple_gpu")
-
-
-def test_vendor_equality() raises:
-    assert_equal(Vendor.AMD_GPU, Vendor.AMD_GPU)
-    assert_not_equal(Vendor.AMD_GPU, Vendor.NVIDIA_GPU)
-    assert_not_equal(Vendor.NO_GPU, Vendor.APPLE_GPU)
-
-
-def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+This package currently contains only internal building blocks, its public
+types are not yet available.
+"""

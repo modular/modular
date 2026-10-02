@@ -62,7 +62,7 @@ def _get_gcn_idx[offset: Int, dtype: DType]() -> Int:
         Pointer[Scalar[dtype], MutUntrackedOrigin, address_space=.CONSTANT],
         has_side_effect=False,
     ]()
-    return Int(ptr.unsafe_load[alignment=4](offset))
+    return Int(ptr.unsafe_load(offset))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -323,13 +323,13 @@ struct _BlockDim(Defaultable, TrivialRegisterPassable):
 
             def _get_offset() -> Int:
                 comptime __match dim:
-                case "x":
-                    return 6
-                case "y":
-                    return 7
-                case _:
-                    comptime assert dim == "z"
-                    return 8
+                    case "x":
+                        return 6
+                    case "y":
+                        return 7
+                    case _:
+                        comptime assert dim == "z"
+                        return 8
 
             return Int(_get_gcn_idx[_get_offset(), DType.uint16]())
 
@@ -377,13 +377,13 @@ struct _GridDim(Defaultable, TrivialRegisterPassable):
 
             def _get_offset() -> Int:
                 comptime __match dim:
-                case "x":
-                    return 0
-                case "y":
-                    return 1
-                case _:
-                    comptime assert dim == "z"
-                    return 2
+                    case "x":
+                        return 0
+                    case "y":
+                        return 1
+                    case _:
+                        comptime assert dim == "z"
+                        return 2
 
             return Int(_get_gcn_idx[_get_offset(), DType.uint32]())
         elif is_apple_gpu():

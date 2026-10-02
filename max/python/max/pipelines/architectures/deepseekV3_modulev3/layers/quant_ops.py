@@ -792,6 +792,7 @@ def grouped_matmul(
     *,
     scales_offset: Tensor | None = None,
     out_type: DType = DType.bfloat16,
+    estimated_total_m: Tensor | None = None,
 ) -> Tensor:
     """Grouped (MoE) matmul dispatching on the stacked-weight type.
 
@@ -815,6 +816,9 @@ def grouped_matmul(
             :func:`moe_create_indices` with ``needs_scales_offset=True``;
             required for the NVFP4 branch, ignored otherwise.
         out_type: Output dtype for the FP8/NVFP4 branch (bf16 by default).
+        estimated_total_m: Host scalar estimate of the non-padded token-expert
+            row count. The SM100 NVFP4 dispatch picks its tile regime from it;
+            ignored by the bf16/FP8 branches.
     """
     if isinstance(weight, NVFP4Tensor):
         if isinstance(x, NVFP4Activation):
@@ -849,6 +853,7 @@ def grouped_matmul(
             expert_start_indices,
             expert_ids,
             expert_scales,
+            estimated_total_m=estimated_total_m,
             out_type=out_type,
         )
     if isinstance(weight, FP8BlockTensor):
@@ -903,6 +908,7 @@ def _nvfp4_grouped_matmul(
     expert_ids: Tensor,
     expert_scales: Tensor,
     *,
+    estimated_total_m: Tensor | None = None,
     out_type: DType = DType.bfloat16,
 ) -> Tensor:
     """Block-scaled NVFP4 grouped matmul on already-quantized activations."""
@@ -922,6 +928,9 @@ def _nvfp4_grouped_matmul(
         expert_scales,
         usage_stats_host,
         out_type=out_type,
+        estimated_total_m=TensorValue(estimated_total_m)
+        if estimated_total_m is not None
+        else None,
     )
 
 
@@ -963,6 +972,8 @@ def grouped_matmul_swiglu_nvfp4_ep(
     expert_ids: Tensor,
     expert_scales: Tensor,
     down_input_scale: Tensor,
+    *,
+    estimated_total_m: Tensor | None = None,
 ) -> tuple[Tensor, Tensor]:
     """Fused NVFP4 gate/up grouped matmul + SwiGLU + re-quantize (EP path)."""
     b_scales = _interleave_grouped_scales(weight.weight_scale)
@@ -985,6 +996,9 @@ def grouped_matmul_swiglu_nvfp4_ep(
         TensorValue(usage_stats_host),
         expert_scales=TensorValue(expert_scales.to(tokens.device)),
         c_input_scales=TensorValue(c_input_scales.to(tokens.device)),
+        estimated_total_m=TensorValue(estimated_total_m)
+        if estimated_total_m is not None
+        else None,
     )
     return Tensor.from_graph_value(c_packed), Tensor.from_graph_value(c_scales)
 
@@ -998,6 +1012,7 @@ def grouped_matmul_silu(
     expert_usage_stats: Tensor | None,
     quant_config: QuantConfig | None,
     scales_offset: Tensor | None = None,
+    estimated_total_m: Tensor | None = None,
 ) -> QuantAwareTensor:
     """Gate/up grouped matmul + SwiGLU, returning the down-projection input."""
     # Pre-quantized EP activations carry their own per-expert scale offset;
@@ -1028,6 +1043,7 @@ def grouped_matmul_silu(
             expert_ids,
             gate_up_scale,
             down.input_scale,
+            estimated_total_m=estimated_total_m,
         )
         return NVFP4Activation(
             data=c_packed,

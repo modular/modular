@@ -34,6 +34,7 @@ from max.benchmark.benchmark_shared.serving_metrics import (
     build_text_generation_result,
     calculate_metrics,
     calculate_pixel_generation_metrics,
+    compute_output_len,
 )
 from max.profiler.cpu import CPUMetrics
 from max.profiler.gpu import GPUStats, MemoryStats, UtilizationStats
@@ -170,6 +171,54 @@ def test_tpot_both_definitions() -> None:
     assert math.isclose(
         metrics.text_data.step_tpot_ms.mean, 125.0, rel_tol=1e-6
     )
+
+
+def test_output_len_prefers_server_completion_tokens() -> None:
+    """The server's completion count drives TPOT, not the re-tokenized text.
+
+    With ``ignore_eos``, tokens past EOS can stream no text, so the text
+    re-tokenizes to fewer tokens than the server generated.
+    """
+    # 10 generated tokens whose text re-tokenizes to 4, latency 1.0s, ttft
+    # 0.1s -> tpot = 0.9 / 9 = 0.1 s.
+    output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="four tok",
+        itl=[0.1] * 9,
+        tpot=[0.1] * 9,
+        server_token_stats=ServerTokenStats(completion_tokens=10),
+    )
+    tokenizer = _make_mock_tokenizer({"four tok": 4})
+
+    metrics = calculate_metrics(
+        outputs=[output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        kv_block_size=128,
+    )
+
+    assert metrics.text_data is not None
+    assert metrics.text_data.total_output == 10
+    assert metrics.text_data.tpot_ms is not None
+    assert math.isclose(metrics.text_data.tpot_ms.mean, 100.0, rel_tol=1e-6)
+
+
+def test_output_len_falls_back_to_text_without_usage() -> None:
+    """A server that reports no usage is counted from its text."""
+    output = RequestFuncOutput(success=True, generated_text="four tok")
+    tokenizer = _make_mock_tokenizer({"four tok": 4})
+
+    assert compute_output_len(tokenizer, output) == 4
 
 
 def test_tpot_zero_decode_tokens() -> None:
@@ -1857,8 +1906,9 @@ def test_constrained_split_reaches_result_groups() -> None:
     assert latency is not None
     assert latency.ttft_ms_constrained is not None
     assert latency.tpot_ms_unconstrained is not None
-    summary = metrics.result_groups.summary  # type: ignore[attr-defined]
-    assert summary.constrained_request_rate == 0.5
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.constrained_request_rate == 0.5
 
 
 def test_constrained_split_reaches_the_flat_result_dict() -> None:
@@ -1930,7 +1980,9 @@ def test_conformance_rate_reaches_the_summary_group() -> None:
             )
         ]
     )
-    assert metrics.result_groups.summary.constrained_conformance_rate == 0.0  # type: ignore[attr-defined]
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.constrained_conformance_rate == 0.0
 
 
 def test_aggregate_gpu_stats_disabled_or_empty() -> None:
@@ -2018,16 +2070,17 @@ def test_tool_rates_count_offers_and_calls_separately() -> None:
 
 
 def test_tool_rates_reach_result_groups_and_the_flat_result_dict() -> None:
-    """The console summary and stored JSON read ``result_groups`` and the
-    flat dict, not the aggregates."""
+    """The console and stored JSON read ``result_groups`` and the flat dict,
+    not the aggregates."""
     outputs = _constrained_split_outputs()
     for o in outputs:
         o.tools_offered = True
     outputs[0].tool_call_returned = True
     metrics = _calculate_for(outputs)
-    summary = metrics.result_groups.summary  # type: ignore[attr-defined]
-    assert summary.tool_request_rate == 1.0
-    assert summary.tool_call_response_rate == 0.25
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.tool_request_rate == 1.0
+    assert mix.tool_call_response_rate == 0.25
     d = metrics.text_data.to_result_dict()  # type: ignore[attr-defined]
     assert d["tool_request_rate"] == 1.0
     assert d["tool_call_response_rate"] == 0.25
@@ -2043,3 +2096,22 @@ def test_tool_call_rate_is_none_without_tool_requests() -> None:
     assert text is not None
     assert text.tool_request_rate == 0.0
     assert text.tool_call_response_rate is None
+
+
+def test_image_and_lora_rates_count_over_measured_requests() -> None:
+    outputs = _constrained_split_outputs(pairs=4)
+    for i, o in enumerate(outputs):
+        o.carries_image = i < 2
+        o.lora_id = "adapter-a" if i < 6 else None
+    metrics = _calculate_for(outputs)
+    text = metrics.text_data  # type: ignore[attr-defined]
+    assert text is not None
+    assert text.image_request_rate == 2 / len(outputs)
+    assert text.lora_request_rate == 6 / len(outputs)
+    mix = metrics.result_groups.request_mix  # type: ignore[attr-defined]
+    assert mix is not None
+    assert mix.image_request_rate == text.image_request_rate
+    assert mix.lora_request_rate == text.lora_request_rate
+    d = text.to_result_dict()
+    assert d["image_request_rate"] == text.image_request_rate
+    assert d["lora_request_rate"] == text.lora_request_rate

@@ -1,0 +1,33 @@
+load("//bazel:api.bzl", "modular_py_test")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_token_shard_degree",
+    srcs = ["test_token_shard_degree.py"],
+    deps = [
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/support",
+    ],
+)
+
+# Graph construction only: builds IR against GPU device refs, never compiles.
+modular_py_test(
+    name = "test_token_split_capture_safe",
+    srcs = ["test_token_split_capture_safe.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)

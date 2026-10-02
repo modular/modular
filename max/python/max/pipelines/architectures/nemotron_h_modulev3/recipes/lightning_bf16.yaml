@@ -10,22 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# 1x B200 recipe for Qwen3.8-27B NVFP4 with MTP (K=3), snapshot rollback of the
-# recurrent state.
 model:
-  model_path: RadixArk/Qwen3.8-27B-NVFP4
-  device_specs: [0]
-  trust_remote_code: true
-  max_length: 9216
-  kv_cache:
-    kv_cache_format: float8_e4m3fn
-    device_memory_utilization: 0.7
+  model_path: nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16
 
 runtime:
-  max_batch_size: 16
-  max_batch_input_tokens: 8192
-
-speculative:
-  speculative_method: mtp
-  num_speculative_tokens: 3
-  recurrent_state_rollback: snapshot
+  prefer_module_v3: true

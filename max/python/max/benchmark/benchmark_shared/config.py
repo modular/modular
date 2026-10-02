@@ -542,6 +542,19 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    disable_ignore_eos: bool = Field(
+        default=False,
+        description=(
+            "Let requests stop at EOS. By default requests ignore EOS and "
+            "generate their full target length, so every backend generates "
+            "the same number of tokens. With this flag the target length only "
+            "caps generation, which speculative decoding needs: a drafter "
+            "cannot predict tokens past a forced EOS. Matches SGLang's "
+            "--disable-ignore-eos."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
     temperature: float | None = Field(
         default=None,
         description="Temperature for sampling.",

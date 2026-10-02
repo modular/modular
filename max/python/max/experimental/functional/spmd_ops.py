@@ -43,6 +43,7 @@ from max.experimental.tensor import Tensor
 from max.graph import (
     BufferValue,
     ShapeLike,
+    TensorType,
     TensorValue,
     TensorValueLike,
     Type,
@@ -3736,6 +3737,71 @@ Args:
 
 Returns:
     The output values from the final loop iteration.
+"""
+
+
+def _side_stream_graph(
+    inputs: Sequence[TensorValueLike],
+    body_fn: Callable[..., Tensor | Iterable[Tensor]],
+    *,
+    result_types: Sequence[TensorType],
+    stream_id: int = 1,
+) -> list[TensorValue]:
+    """Wrap ``body_fn`` so it sees and returns :class:`Tensor`.
+
+    Mirrors :func:`_while_loop_graph`: ``ops.side_stream`` hands its body
+    :class:`TensorValue` block arguments and expects :class:`TensorValue`
+    results back.
+    """
+
+    def _body(*args: TensorValue) -> list[TensorValue]:
+        result = body_fn(*(Tensor.from_graph_value(a) for a in args))
+        if isinstance(result, Tensor):
+            return [TensorValue(result)]
+        return [TensorValue(t) for t in result]
+
+    return ops.side_stream(
+        [TensorValue(v) for v in inputs],
+        _body,
+        result_types=result_types,
+        stream_id=stream_id,
+    )
+
+
+side_stream = functional(_side_stream_graph)
+side_stream.__doc__ = """Runs a block of ops on a side device stream.
+
+The body executes on the device stream selected by ``stream_id``,
+overlapping independent work on the default stream. The graph compiler
+inserts the cross-stream synchronization at the region boundary, so
+callers never manage streams or events directly.
+
+``body_fn`` receives one :class:`Tensor` per input and returns one
+:class:`Tensor` per ``result_types`` entry. The inputs aren't sharded
+per device: one region may take shards from several devices, and it covers
+exactly the devices those shards live on.
+
+.. code-block:: python
+
+    from max.experimental import functional as F
+
+    (y,) = F.side_stream([x], lambda x: x * 2, result_types=[x.type])
+
+Args:
+    inputs: Non-distributed tensors passed to ``body_fn``, one argument
+        each.
+    body_fn: A callable that takes one :class:`Tensor` per input and
+        returns a :class:`Tensor` or a sequence of them.
+    result_types: The body's output types, one per result.
+    stream_id: The device stream to run the body on. ``0`` is the default
+        stream. Defaults to ``1``.
+
+Returns:
+    One :class:`Tensor` per ``result_types`` entry.
+
+Raises:
+    ValueError: If ``body_fn`` returns a different number of tensors than
+        ``result_types`` has entries.
 """
 
 

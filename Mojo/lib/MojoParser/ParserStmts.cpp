@@ -1984,9 +1984,9 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
       firstCommand->kind != PatternCommand::Kind::EnumTag)
     return 1;
 
-  // Member patterns (`.float16`, `Self.HOST`) are equality tests with no
-  // literal spelling. Clustering would assert in getLeadingTest; emit each
-  // one as its own case instead.
+  // Non-literal value patterns (`.float16`, `Self.HOST`, `{}`) are equality
+  // tests with no literal spelling. Clustering requires a stable sort key, so
+  // emit each one as its own case instead.
   if (firstCommand->kind == PatternCommand::Kind::Equal &&
       firstCommand->expr->getLiteralSpelling().empty())
     return 1;

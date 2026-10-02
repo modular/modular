@@ -26,7 +26,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.kernels import moe_sink_gate_router
+from max.nn.kernels import moe_finalize, moe_sink_gate_router
 from max.nn.layer import LayerList
 from max.nn.moe import MoEGate, MoEQuantized
 from max.nn.quant_config import fp4_packed_k
@@ -332,16 +332,11 @@ class InklingMoE(MoEQuantized):
     def _routed_experts(
         self, x: TensorValue, routing: InklingRouting
     ) -> TensorValue:
-        down_projs = self._expert_matmuls(
+        down, restore_order = self._expert_matmuls(
             x, ops.reshape(routing.expert_ids, [-1])
         )
-
-        return ops.squeeze(
-            ops.sum(
-                ops.unsqueeze(routing.expert_weights, axis=-1) * down_projs,
-                axis=1,
-            ),
-            axis=1,
+        return moe_finalize(
+            down, restore_order, routing.expert_weights, x.dtype
         )
 
     def _sink_experts(

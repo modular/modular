@@ -248,12 +248,12 @@ def _count_slice_dims[
     var count = 0
     comptime for i in range(slices.size):
         __match slices[i]:
-        case .slice:
-            count += 1
-        case .index:
-            pass
-        case .static:
-            pass
+            case .slice:
+                count += 1
+            case .index:
+                pass
+            case .static:
+                pass
     return count
 
 
@@ -269,14 +269,14 @@ def _kept_slice_axis_for_output[
     var kept_axes_seen = 0
     comptime for axis in range(slices.size):
         __match slices[axis]:
-        case .slice:
-            if kept_axes_seen == out_axis:
-                return axis
-            kept_axes_seen += 1
-        case .index:
-            pass
-        case .static:
-            pass
+            case .slice:
+                if kept_axes_seen == out_axis:
+                    return axis
+                kept_axes_seen += 1
+            case .index:
+                pass
+            case .static:
+                pass
     abort("invalid sliced-axis mapping")
 
 
@@ -308,12 +308,12 @@ def _slice_start[
     """Returns the first element of `axis` that the view selects: a slice's
     start, or the index a rank-reducing (`Int`) argument fixes the axis to."""
     __match slices[axis]:
-    case .slice:
-        return slices[axis].unsafe_get_slice().start.or_else(0)
-    case .index:
-        return slices[axis].unsafe_get_index()
-    case .static:
-        return slices[axis].unsafe_get_index()
+        case .slice:
+            return slices[axis].unsafe_get_slice().start.or_else(0)
+        case .index:
+            return slices[axis].unsafe_get_index()
+        case .static:
+            return slices[axis].unsafe_get_index()
 
 
 @inline(.nodebug)
@@ -1729,8 +1729,11 @@ struct TileTensor[
         the copy widens to SIMD load + cast + SIMD store,
         using the narrower of the two dtypes' native SIMD widths.
 
-        The copy loop lives in the engine (`Self.Engine.copy_from`);
-        this forwards `self` and `other` as `(storage, layout)` pairs.
+        The copy loop lives in the engines. This forwards `self` and
+        `other` as `(storage, layout)` pairs to the source engine's
+        `copy_to`, which by default hands them to `Self.Engine.copy_from`;
+        an engine whose storage has no pointer, such as `TMemEngine`,
+        overrides `copy_to` to run its own load loop.
 
         Constraints:
 
@@ -1745,9 +1748,9 @@ struct TileTensor[
         """
         # `other` may carry a different (e.g. offset-derived) engine;
         # the storage-level copy takes it as a distinct `OtherEngine` operand.
-        Self.Engine.copy_from(
-            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+        type_of(other).Engine.copy_to(
             (other._storage, other.layout),
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
         )
 
     @inline(.always)

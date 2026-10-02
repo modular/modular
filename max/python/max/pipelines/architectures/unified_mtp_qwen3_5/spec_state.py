@@ -13,11 +13,12 @@
 """Qwen3.5's linear-attention state across a speculative verify.
 
 Verifying a speculative window advances every Gated DeltaNet recurrence in the
-target, and no length pointer rewinds one. So the verify runs against a shadow
-copy of the recurrent pool and the accepted prefix is replayed into the live one
-once the accepted count is known.
+target, and no length pointer rewinds one. So the verify reads the live
+recurrent pool without writing it, records each token's update in a ring, and
+the accepted records are folded into the live pool once the accepted count is
+known.
 
-The conv pool needs no copy. Its window is the last ``kernel_size - 1`` raw
+The conv pool needs no ring. Its window is the last ``kernel_size - 1`` raw
 inputs, so the verify leaves it unwritten and the rollback writes it at the
 accepted position.
 
@@ -38,7 +39,15 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
+from max.dtype import DType
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    Dim,
+    TensorType,
+    TensorValue,
+)
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     MultiKVCacheParams,
@@ -55,15 +64,12 @@ from ..qwen3_5.state_cache import (
     RECURRENT_LEAF_ID,
     RING_LEAF_ID,
     STATE_CACHE_KEY,
-    shadowed_leaf_ids,
 )
 from .state_rollback import (
     accepted_lengths,
     accepted_row_plan,
     fold_state_pools,
-    replay_state_pools,
-    shadow_row_ids,
-    snapshot_state_pools,
+    replay_conv_pools,
 )
 
 __all__ = [
@@ -74,17 +80,16 @@ __all__ = [
     "POSITION_IDS",
     "RING_POOLS",
     "RING_ROW_IDS",
-    "SHADOW_RECURRENT_POOLS",
     "Qwen3_5RecurrentState",
     "graph_kv_params",
     "state_tail",
+    "state_tail_types",
 ]
 
 LIVE_CONV_POOLS = "live_conv_pools"
 LIVE_RECURRENT_POOLS = "live_recurrent_pools"
 LIVE_CONV_ROW_IDS = "live_conv_row_ids"
 LIVE_RECURRENT_ROW_IDS = "live_recurrent_row_ids"
-SHADOW_RECURRENT_POOLS = "shadow_recurrent_pools"
 RING_POOLS = "ring_pools"
 RING_ROW_IDS = "ring_row_ids"
 POSITION_IDS = "position_ids"
@@ -95,11 +100,8 @@ The tail is declared by the graph signature and read back by the model, so
 these name the one handoff between them that the driver does not understand.
 ``POSITION_IDS`` is ``None`` unless the target runs M-RoPE.
 
-``RING_POOLS`` and ``RING_ROW_IDS`` hold the ring's pool and rows per device,
-or ``None`` on the snapshot rollback. The ring is a scratch leaf of the state
-cache, so its rows come from the engine like the live leaves'.
-``SHADOW_RECURRENT_POOLS`` is ``None`` on the ring rollback. There is no conv
-shadow on either rollback.
+The ring is a scratch leaf of the state cache, so its rows come from the
+engine like the live leaves'.
 """
 
 
@@ -129,20 +131,54 @@ def graph_kv_params(kv_params: KVCacheParamInterface) -> MultiKVCacheParams:
     )
 
 
+def state_tail_types(
+    regions: Sequence[RecurrentStateRegion], devices: Sequence[DeviceRef]
+) -> list[TensorType | BufferType]:
+    """Returns the state tail a fused Qwen3.5 speculative graph declares.
+
+    A pool per region, then the ``[num_layers, batch_size]`` rows each layer
+    of each request occupies in it, every block region-major and
+    device-minor. One buffer per leaf rather than one per layer, so the
+    caller picks the row layout.
+
+    Args:
+        regions: The state regions, the ring included, in declaration order.
+        devices: Devices the target is sharded across.
+    """
+    tail: list[TensorType | BufferType] = []
+    for region in regions:
+        tail.extend(
+            BufferType(
+                region.dtype,
+                shape=[region.rows_dim, *region.row_shape],
+                device=device,
+            )
+            for device in devices
+        )
+    for region in regions:
+        tail.extend(
+            TensorType(
+                DType.uint32,
+                shape=[region.num_layers, "batch_size"],
+                device=device,
+            )
+            for device in devices
+        )
+    return tail
+
+
 def state_tail(
     trailing: Iterator[Any],
     regions: Sequence[RecurrentStateRegion],
-    ring_len: int,
     num_devices: int,
 ) -> dict[str, Any]:
-    """Reads the state tail :meth:`.UnifiedMTPQwen3_5.input_types` declares.
+    """Reads the state tail :func:`state_tail_types` declares.
 
     Consumes exactly the tail and leaves ``trailing`` at the next input.
 
     Args:
         trailing: The graph's trailing inputs, positioned at the first pool.
         regions: The state regions, in declaration order.
-        ring_len: Records one verify-ring row holds, or zero for no ring.
         num_devices: Devices the tail is declared across.
 
     Returns:
@@ -156,51 +192,42 @@ def state_tail(
         region.leaf_id: [next(trailing).tensor for _ in range(num_devices)]
         for region in regions
     }
-    shadows = {
-        region.leaf_id: [next(trailing).buffer for _ in range(num_devices)]
-        for region in regions
-        if region.leaf_id in shadowed_leaf_ids(ring_len)
-    }
-
     return {
         LIVE_CONV_POOLS: pools[CONV_LEAF_ID],
         LIVE_RECURRENT_POOLS: pools[RECURRENT_LEAF_ID],
         LIVE_CONV_ROW_IDS: rows[CONV_LEAF_ID],
         LIVE_RECURRENT_ROW_IDS: rows[RECURRENT_LEAF_ID],
-        SHADOW_RECURRENT_POOLS: shadows.get(RECURRENT_LEAF_ID),
-        RING_POOLS: pools.get(RING_LEAF_ID),
-        RING_ROW_IDS: rows.get(RING_LEAF_ID),
+        RING_POOLS: pools[RING_LEAF_ID],
+        RING_ROW_IDS: rows[RING_LEAF_ID],
     }
 
 
-_ShadowState = list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]]
-
-
 class Qwen3_5RecurrentState:
-    """The shadow-verify and accepted-prefix replay, for one target.
+    """The ring verify and the accepted-prefix rollback, for one target.
 
-    Used in three steps, in this order: :meth:`snapshot` before the verify,
-    :meth:`capturing` around it, and :meth:`roll_forward` once the accepted
-    count is known. Doing them out of order is a silent correctness bug --
-    replaying before the count settles rolls the state onto a prefix the row
-    never accepted -- so each method says what it depends on.
+    Used in three steps, in this order: :meth:`verify_state` for the verify's
+    state inputs, :meth:`capturing` around the verify, and
+    :meth:`roll_forward` once the accepted count is known. Rolling forward
+    before the count settles folds the state onto a prefix the row never
+    accepted, a silent correctness bug, so each method says what it depends
+    on.
     """
 
     def __init__(
         self,
         target: Qwen3_5,
         state_regions: Sequence[RecurrentStateRegion],
-        ring_len: int = 0,
     ) -> None:
+        if RING_LEAF_ID not in {region.leaf_id for region in state_regions}:
+            raise ValueError(
+                "a speculative Qwen3.5 verify needs the ring leaf among its"
+                " state regions"
+            )
         self.target = target
-        self.regions = {region.leaf_id: region for region in state_regions}
-        self.num_layers = len(target.linear_layer_indices)
-        self.ring_len = ring_len
-        """Records one ring row holds, or zero for snapshot-and-replay."""
         self.captures: list[list[GatedDeltaReplayInputs]] = []
         """Per-device, per-layer state-kernel inputs the verify recorded.
 
-        The replay re-runs the two state kernels over exactly these rather
+        The conv replay re-runs the conv kernel over exactly these rather
         than recomputing the projections, so the arithmetic it repeats is the
         arithmetic the verify did. Filled by :meth:`capturing` and read by
         :meth:`roll_forward`.
@@ -215,64 +242,32 @@ class Qwen3_5RecurrentState:
         :meth:`capturing`.
         """
 
-    def snapshot(
-        self, extra: Mapping[str, Any], devices: Sequence[DeviceRef]
-    ) -> _ShadowState:
-        """Returns the verify's state, copying the recurrent leaf to a shadow.
+    @staticmethod
+    def verify_state(
+        extra: Mapping[str, Any], n_devs: int
+    ) -> list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]]:
+        """Returns the verify's state inputs: the live leaves, then the ring.
 
-        Must run before the verify. Only the snapshot rollback copies, and
-        only the recurrent leaf. The live leaves come first either way, since
-        a verify with no drafts writes them. The shadow or the ring follows.
-        The shadow's rows are this graph's own, and the ring's rows are the
-        ones the engine supplied.
+        The live leaves come first, since a verify with no drafts writes
+        them.
         """
-        num_layers = self.num_layers
-        live_recurrent_rows = extra[LIVE_RECURRENT_ROW_IDS]
 
-        def live_leaves(
-            i: int,
-        ) -> tuple[RecurrentLeafInputs[TensorValue, BufferValue], ...]:
-            return (
-                RecurrentLeafInputs(
-                    pool=extra[LIVE_CONV_POOLS][i],
-                    live_row_ids=extra[LIVE_CONV_ROW_IDS][i],
-                ),
-                RecurrentLeafInputs(
-                    pool=extra[LIVE_RECURRENT_POOLS][i],
-                    live_row_ids=live_recurrent_rows[i],
-                ),
+        def leaf(
+            pools: str, rows: str, i: int
+        ) -> RecurrentLeafInputs[TensorValue, BufferValue]:
+            return RecurrentLeafInputs(
+                pool=extra[pools][i], live_row_ids=extra[rows][i]
             )
 
-        def verify_leaves(
-            i: int,
-        ) -> tuple[RecurrentLeafInputs[TensorValue, BufferValue], ...]:
-            if self.ring_len:
-                return (
-                    RecurrentLeafInputs(
-                        pool=extra[RING_POOLS][i],
-                        live_row_ids=extra[RING_ROW_IDS][i],
-                    ),
-                )
-            return (
-                RecurrentLeafInputs(
-                    pool=extra[SHADOW_RECURRENT_POOLS][i],
-                    live_row_ids=shadow_row_ids(num_layers, devices[i]),
-                ),
-            )
-
-        if not self.ring_len:
-            snapshot_state_pools(
-                extra[LIVE_RECURRENT_POOLS],
-                extra[SHADOW_RECURRENT_POOLS],
-                live_recurrent_rows,
-                ops.shape_to_tensor([live_recurrent_rows[0].shape[1]])[0]
-                * num_layers,
-            )
         return [
             RecurrentStateInputsPerDevice(
-                leaves=(*live_leaves(i), *verify_leaves(i)),
+                leaves=(
+                    leaf(LIVE_CONV_POOLS, LIVE_CONV_ROW_IDS, i),
+                    leaf(LIVE_RECURRENT_POOLS, LIVE_RECURRENT_ROW_IDS, i),
+                    leaf(RING_POOLS, RING_ROW_IDS, i),
+                ),
             )
-            for i in range(len(devices))
+            for i in range(n_devs)
         ]
 
     @contextmanager
@@ -306,7 +301,6 @@ class Qwen3_5RecurrentState:
             assert isinstance(block, Qwen3_5LinearAttentionBlock)
             block.replay_capture = capture
             block.verify_width = verify_width
-            block.verify_ring = bool(self.ring_len)
 
     def roll_forward(
         self,
@@ -319,15 +313,16 @@ class Qwen3_5RecurrentState:
         signal_buffers: Sequence[BufferValue],
         device: DeviceRef,
     ) -> None:
-        """Replays the accepted prefix into the live pools.
+        """Lands the live pools on the accepted prefix.
 
         Must run after the accepted count has been corrected for rows that
         carried no proposal, and before anything downstream reads the live
         pools.
 
-        This also writes the conv window, which the verify left unwritten.
-        A verify width of zero launches nothing, because the verify's forward
-        already landed both leaves.
+        Folds the ring's accepted records into the recurrent pool and writes
+        the conv window, which the verify left unwritten. A verify width of
+        zero launches nothing, because the verify's forward already landed
+        both leaves.
 
         Args:
             extra: The batch's model-owned inputs, holding the state tail.
@@ -352,20 +347,15 @@ class Qwen3_5RecurrentState:
             # not.
             plan_rows=Dim("batch_size") * (1 + self.num_draft_tokens),
         )
-        replay_state_pools(
+        replay_conv_pools(
             self.captures,
             extra[LIVE_CONV_POOLS],
-            None if self.ring_len else extra[LIVE_RECURRENT_POOLS],
             extra[LIVE_CONV_ROW_IDS],
-            None if self.ring_len else extra[LIVE_RECURRENT_ROW_IDS],
             row_indices,
             replay_offsets,
             signal_buffers,
             self.verify_width,
         )
-        if not self.ring_len:
-            return
-
         fold_state_pools(
             extra[LIVE_RECURRENT_POOLS],
             extra[LIVE_RECURRENT_ROW_IDS],

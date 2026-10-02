@@ -20,12 +20,13 @@ from std.memory import unsafe_stack_allocation
 
 from std.atomic import Atomic, Ordering
 from shmem.ep_comm import BLOCK_SCOPE
-from std.sys import has_apple_gpu_accelerator
+from std.sys import has_apple_gpu_accelerator, simd_width_of
 from std.sys.info import is_amd_gpu, is_nvidia_gpu
 
 import max.gpu.primitives.warp as warp
 import max.gpu.primitives.block as block
-from std.bit import pop_count, log2_floor
+from max.algorithm import elementwise
+from std.bit import log2_floor, next_power_of_two, pop_count
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -35,7 +36,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.primitives.grid_controls import (
     PDL,
     PDLLevel,
@@ -71,6 +72,12 @@ from max.gpu.memory import (
 # expert count in use today fits in a single chunk.
 comptime _BLOCK_THREADS = 512
 
+# A full Metal threadgroup. The kernel runs one threadgroup and strides both
+# token passes over it, once per chunk, so wider is faster: on M5 Max decode
+# sits at the ~8 us launch floor from 256 threads up, and 65536 ids over 896
+# experts take 104 us at 512 threads but 35 us at 1024.
+comptime _APPLE_BLOCK_THREADS = 1024
+
 
 @inline(.always)
 def _cta_atomic_scope() -> StaticString:
@@ -88,7 +95,7 @@ def _cta_atomic_scope() -> StaticString:
 
 
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(_BLOCK_THREADS))
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_threads))
 )
 @__name(t"moe_create_indices_{input_type}")
 def moe_create_indices_kernel[
@@ -99,6 +106,7 @@ def moe_create_indices_kernel[
     ExpertIdsLayoutType: TensorLayout,
     ExpertUsageStatsLayoutType: TensorLayout,
     TopkIdsLayoutType: TensorLayout,
+    block_threads: Int = _BLOCK_THREADS,
     _scale_alignment: UInt32 = 128,
 ](
     token_expert_order: TileTensor[
@@ -144,7 +152,7 @@ def moe_create_indices_kernel[
     var tid = Int(thread_idx.x)
 
     var counts = tensor_alloc[.uint32, address_space=.SHARED](
-        row_major[_BLOCK_THREADS]()
+        row_major[block_threads]()
     )
 
     # Tokens, and aligned scale slots, placed by the preceding expert chunks.
@@ -152,8 +160,8 @@ def moe_create_indices_kernel[
     var scale_carry = UInt32(0)
     var max_count = UInt32(0)
 
-    for base in range(0, num_experts, _BLOCK_THREADS):
-        var chunk_experts = min(_BLOCK_THREADS, num_experts - base)
+    for base in range(0, num_experts, block_threads):
+        var chunk_experts = min(block_threads, num_experts - base)
         var expert = base + tid
 
         counts[Coord(tid)] = 0
@@ -166,7 +174,7 @@ def moe_create_indices_kernel[
         # counts to their readers. That holds on NVIDIA, where the barrier
         # fences shared memory; on AMD it rests on the backend emitting
         # s_waitcnt lgkmcnt(0) ahead of s_barrier.
-        for i in range(tid, total_tokens, _BLOCK_THREADS):
+        for i in range(tid, total_tokens, block_threads):
             var e = Int(topk_ids[i]) - base
             if e < 0 or e >= chunk_experts:
                 continue
@@ -181,12 +189,12 @@ def moe_create_indices_kernel[
         # These collectives do not leave the block synchronized, so each needs
         # a barrier before the next reuses its scratch.
         var g_offset = token_carry + block.prefix_sum[
-            block_size=_BLOCK_THREADS, exclusive=True
+            block_size=block_threads, exclusive=True
         ](count_val)
         barrier()
 
         var aligned_g_offset = scale_carry + block.prefix_sum[
-            block_size=_BLOCK_THREADS, exclusive=True
+            block_size=block_threads, exclusive=True
         ](aligned_val)
         barrier()
 
@@ -196,7 +204,7 @@ def moe_create_indices_kernel[
         # changes which thread holds the result, that write has to follow.
         max_count = max(
             max_count,
-            block.max[block_size=_BLOCK_THREADS, broadcast=False](count_val),
+            block.max[block_size=block_threads, broadcast=False](count_val),
         )
 
         if expert < num_experts:
@@ -219,14 +227,14 @@ def moe_create_indices_kernel[
         # A block collective does not leave the block synchronized and its
         # scratch is private to the primitive, so every pair of them gets a
         # barrier between. That is what the three here are for.
-        if base + _BLOCK_THREADS < num_experts:
+        if base + block_threads < num_experts:
             barrier()
-            token_carry = block.broadcast[block_size=_BLOCK_THREADS](
-                g_offset + count_val, src_thread=_BLOCK_THREADS - 1
+            token_carry = block.broadcast[block_size=block_threads](
+                g_offset + count_val, src_thread=block_threads - 1
             )
             barrier()
-            scale_carry = block.broadcast[block_size=_BLOCK_THREADS](
-                aligned_g_offset + aligned_val, src_thread=_BLOCK_THREADS - 1
+            scale_carry = block.broadcast[block_size=block_threads](
+                aligned_g_offset + aligned_val, src_thread=block_threads - 1
             )
             barrier()
 
@@ -235,7 +243,7 @@ def moe_create_indices_kernel[
         counts[Coord(tid)] = g_offset
         barrier()
 
-        for i in range(tid, total_tokens, _BLOCK_THREADS):
+        for i in range(tid, total_tokens, block_threads):
             var e = Int(topk_ids[i]) - base
             if e < 0 or e >= chunk_experts:
                 continue
@@ -296,16 +304,9 @@ def moe_create_indices[
         target
     ](), "Creating MoE indices is only supported on GPU"
 
-    comptime if has_apple_gpu_accelerator():
-        # Above one chunk the kernel repeats its block collectives in a loop,
-        # which desynchronizes warps on Metal (see the Apple path in
-        # `nn/sampling/topk_fi.mojo`). Apple rejected these expert counts
-        # before this kernel existed too, so nothing that worked is lost.
-        if expert_ids.dim(0) > _BLOCK_THREADS:
-            raise Error(
-                t"Apple MoE: num_experts={expert_ids.dim(0)} exceeds the"
-                t" 512-expert single-chunk cap"
-            )
+    comptime block_threads = (
+        _APPLE_BLOCK_THREADS if has_apple_gpu_accelerator() else _BLOCK_THREADS
+    )
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.id())
@@ -318,6 +319,7 @@ def moe_create_indices[
             expert_ids.LayoutType,
             expert_usage_stats.LayoutType,
             topk_ids.LayoutType,
+            block_threads,
         ]
 
         context.enqueue_function[kernel](
@@ -329,7 +331,81 @@ def moe_create_indices[
             topk_ids,
             scales_offset_p,
             grid_dim=1,
-            block_dim=_BLOCK_THREADS,
+            block_dim=block_threads,
+        )
+
+
+def moe_finalize[
+    down_type: DType,
+    weight_type: DType,
+    out_type: DType,
+    //,
+    target: StaticString,
+](
+    output: TileTensor[mut=True, out_type, ...],
+    down: TileTensor[mut=False, down_type, ...],
+    restore_order: TileTensor[mut=False, .uint32, ...],
+    router_weight: TileTensor[mut=False, weight_type, ...],
+    context: DeviceContext,
+) raises:
+    """Fuses the MoE unpermute gather with the top-k weighted row sum.
+
+    Each output element reads its token's `num_experts_per_token` rows of
+    `down` through `restore_order`, scales each by its router weight and
+    accumulates in fp32, so the `[num_tokens, num_experts_per_token, hidden]`
+    unpermuted tensor never materializes.
+
+    Parameters:
+        down_type: DType of the permuted expert outputs.
+        weight_type: DType of the router weights.
+        out_type: DType of the combined output.
+        target: The target device to run the kernel on.
+
+    Args:
+        output: One combined row per token. Shape: [num_tokens, hidden].
+        down: Expert outputs in expert-permuted (`token_expert_order`) row
+            order. Shape: [num_tokens * num_experts_per_token, hidden].
+        restore_order: Maps token-major index
+            `i = token * num_experts_per_token + k` to its row in `down`.
+            Shape: [num_tokens * num_experts_per_token].
+        router_weight: Per-(token, expert) routing weight applied before the
+            sum. Shape: [num_tokens, num_experts_per_token].
+        context: The device context.
+    """
+    comptime assert is_gpu[target](), "MoE finalize is only supported on GPU"
+
+    var num_experts_per_token = Int(router_weight.dim(1))
+
+    @inline(.always)
+    def finalize[width: Int, alignment: Int = 1](idx: Coord) {var}:
+        var token = Int(idx[0].value())
+        var col = Int(idx[1].value())
+        var acc = SIMD[.float32, width](0)
+        for k in range(num_experts_per_token):
+            var row = Int(
+                restore_order[Coord(token * num_experts_per_token + k)]
+            )
+            var weight = router_weight.load[width=1](Coord(token, k)).cast[
+                .float32
+            ]()
+            acc += (
+                down.load[width=width](Coord(row, col)).cast[.float32]()
+                * weight
+            )
+        output.store[width=width](Coord(token, col), acc.cast[out_type]())
+
+    comptime simd_width = simd_width_of[down_type, target=get_gpu_target()]()
+    var shape = output.layout.shape_coord()
+
+    # `down` rows are only vector-aligned when the row width is a multiple of
+    # `simd_width`; every other shape runs scalar.
+    if Int(down.dim(1)) % simd_width == 0:
+        elementwise[
+            simd_width, target=target, _trace_description="mo.moe.finalize"
+        ](finalize, shape, context)
+    else:
+        elementwise[1, target=target, _trace_description="mo.moe.finalize"](
+            finalize, shape, context
         )
 
 
@@ -912,11 +988,9 @@ def single_group_router_kernel[
         num_threads == n_routed_experts
     ), "num_threads must be equal to n_routed_experts"
 
-    # The weight reduction below is a lane_group_sum over n_experts_per_tok
-    # lanes, which must be a power of two.
-    comptime assert (
-        n_experts_per_tok.is_power_of_two()
-    ), "n_experts_per_tok must be a power of two"
+    # Lanes past n_experts_per_tok hold zero weight, so the sum can span the
+    # next power of two.
+    comptime sum_lanes = next_power_of_two(n_experts_per_tok)
 
     var token_idx = Int(block_idx.x)
     var tid = Int(thread_idx.x)
@@ -953,7 +1027,7 @@ def single_group_router_kernel[
                         (token_idx, sorted_val3.p)
                     )
 
-            var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
+            var weights_sum = warp.lane_group_sum[num_lanes=sum_lanes](
                 original_weight
             )
 
@@ -1187,8 +1261,7 @@ def single_group_router[
         scores_type: DType of routing scores and output weights.
         bias_type: DType of the expert correction bias.
         n_routed_experts: Total number of experts (e.g. 384 for Kimi K2.5).
-        n_experts_per_tok: Experts selected per token, must be a power of 2
-            (e.g. 8 for Kimi K2.5).
+        n_experts_per_tok: Experts selected per token (e.g. 8 for Kimi K2.5).
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
         target: The target device to run the kernel on.

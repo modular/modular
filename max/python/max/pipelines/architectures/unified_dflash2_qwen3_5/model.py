@@ -16,14 +16,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any, ClassVar
 
-from max import tree
-from max.driver import Buffer, Device
+from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, DeviceRef, Graph, TensorValue
+from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter, load_weights
 from max.nn.kv_cache import MultiKVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -34,7 +32,6 @@ from max.pipelines.lib import (
     GraphPipelineModelWithKVCache,
     KVCacheConfig,
     PipelineConfig,
-    UnifiedSpecDecodeInputs,
 )
 from max.pipelines.lib._hf_config import PretrainedConfig
 from max.pipelines.lib.interfaces.pipeline_model import (
@@ -51,17 +48,15 @@ from ..llama3.weight_adapters import _convert_safetensor_with_model_config
 from ..qwen3_5.model import _SCALE_SUFFIXES
 from ..qwen3_5.model_config import Qwen3_5Config
 from ..qwen3_5.state_cache import attn_cache
-from ..unified_mtp_qwen3_5.spec_state import (
-    LIVE_CONV_POOLS,
-    LIVE_CONV_ROW_IDS,
-    LIVE_RECURRENT_POOLS,
-    LIVE_RECURRENT_ROW_IDS,
-    SHADOW_RECURRENT_POOLS,
+from ..unified_mtp_qwen3_5.batch_processor import (
+    UnifiedMTPQwen3_5BatchProcessor,
 )
-from .batch_processor import UnifiedDflash2Qwen3_5BatchProcessor
+from ..unified_mtp_qwen3_5.model_config import UnifiedMTPQwen3_5Config
+from ..unified_mtp_qwen3_5.spec_state import graph_kv_params, state_tail
 from .model_config import (
     UnifiedDflash2Qwen3_5Config,
     construct_dflash2_draft_kv_params,
+    dflash2_kv_params,
 )
 from .unified_dflash2_qwen3_5 import UnifiedDflash2Qwen3_5
 
@@ -74,54 +69,6 @@ _DRAFT_PREFIX = "draft."
 _TARGET_PREFIX = "target."
 
 
-@dataclass
-class UnifiedDflash2Qwen3_5Inputs(UnifiedSpecDecodeInputs):
-    """Inputs for the fused Qwen3.5 DFlash2 graph.
-
-    Identical to the Qwen3.5 MTP graph's packing: the canonical spec-decode
-    prefix and tail, then this target's state-pool tail. Only the draft KV
-    leaf's shapes differ between the two graphs.
-    """
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    host_input_row_offsets: Buffer
-    return_n_logits: Buffer
-    data_parallel_splits: Buffer
-    signal_buffers: list[Buffer]
-    batch_context_lengths: list[Buffer]
-    live_conv_pools: list[Buffer]
-    live_recurrent_pools: list[Buffer]
-    live_conv_row_ids: list[Buffer]
-    live_recurrent_row_ids: list[Buffer]
-    shadow_recurrent_pools: list[Buffer]
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        assert self.kv_cache_inputs is not None
-        prefix = (
-            self.tokens,
-            self.input_row_offsets,
-            self.host_input_row_offsets,
-            self.return_n_logits,
-            self.data_parallel_splits,
-            *self.signal_buffers,
-            *tree.leaves(self.kv_cache_inputs),
-            *self.batch_context_lengths,
-        )
-        return (
-            prefix
-            + self._spec_decode_tail_buffers(include_in_thinking_phase=True)
-            + (
-                *self.live_conv_pools,
-                *self.live_recurrent_pools,
-                *self.live_conv_row_ids,
-                *self.live_recurrent_row_ids,
-                *self.shadow_recurrent_pools,
-            )
-        )
-
-
 class UnifiedDflash2Qwen3_5Model(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
@@ -130,8 +77,10 @@ class UnifiedDflash2Qwen3_5Model(
     """Qwen3.5 with a DFlash2 block drafter, in one compiled graph."""
 
     model_config_cls: ClassVar[type[Any]] = UnifiedDflash2Qwen3_5Config
-    batch_processor_cls: ClassVar[type[UnifiedDflash2Qwen3_5BatchProcessor]] = (
-        UnifiedDflash2Qwen3_5BatchProcessor
+    # The Qwen3.5 MTP graph's batching: the two graphs take the same inputs,
+    # and this one never declares M-RoPE positions.
+    batch_processor_cls: ClassVar[type[UnifiedMTPQwen3_5BatchProcessor]] = (
+        UnifiedMTPQwen3_5BatchProcessor
     )
 
     model: Model
@@ -174,15 +123,16 @@ class UnifiedDflash2Qwen3_5Model(
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
-        """The target's full-attention leaf plus the drafter's windowed one.
+        """The target's attention and state beside the drafter's windowed leaf.
 
-        Called during memory planning, before ``_create_model_config``; both
-        must agree, so both go through the same two constructors.
+        Called before ``_create_model_config``, which must agree, so both go
+        through the same constructors. The target's comes from the
+        speculative config, whose state declares the verify ring.
         """
         assert pipeline_config.draft_model is not None
         draft_hf_config = pipeline_config.draft_model.huggingface_config
         assert draft_hf_config is not None
-        target_kv = Qwen3_5Config.construct_kv_params(
+        target_kv = UnifiedMTPQwen3_5Config.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,
@@ -198,13 +148,11 @@ class UnifiedDflash2Qwen3_5Model(
             max_seq_len=draft_max_length,
         )
         draft_config.devices = list(devices)
-        return MultiKVCacheParams.from_params(
-            {
-                "target": target_kv,
-                "draft": construct_dflash2_draft_kv_params(
-                    pipeline_config, draft_config, attn_cache(target_kv)
-                ),
-            }
+        return dflash2_kv_params(
+            target_kv,
+            construct_dflash2_draft_kv_params(
+                pipeline_config, draft_config, attn_cache(target_kv)
+            ),
         )
 
     def _load_state_dict(self) -> dict[str, Any]:
@@ -300,8 +248,9 @@ class UnifiedDflash2Qwen3_5Model(
         weights_registry = nn_model.state_dict()
         self.state_dict = weights_registry
 
-        kv_params = self.kv_params
-        assert isinstance(kv_params, MultiKVCacheParams)
+        # The allocated cache keeps the state child, and the tail declares
+        # the state, so the signature is built without it.
+        kv_params = graph_kv_params(self.kv_params)
         num_devices = len(self.devices)
 
         with Graph(
@@ -310,20 +259,9 @@ class UnifiedDflash2Qwen3_5Model(
             graph_inputs = nn_model.decode_inputs(graph.inputs, kv_params)
             # Qwen3.5 declares no sparse-attention budget, so
             # batch_context_lengths goes unread.
-            trailing = iter(graph_inputs.trailing)
-
-            # The state tail, in the order ``input_types`` declares it.
-            def per_device_buffers() -> list[BufferValue]:
-                return [next(trailing).buffer for _ in range(num_devices)]
-
-            def per_device_tensors() -> list[TensorValue]:
-                return [next(trailing).tensor for _ in range(num_devices)]
-
-            live_conv_pools = per_device_buffers()
-            live_recurrent_pools = per_device_buffers()
-            live_conv_row_ids = per_device_tensors()
-            live_recurrent_row_ids = per_device_tensors()
-            shadow_recurrent_pools = per_device_buffers()
+            state = state_tail(
+                iter(graph_inputs.trailing), nn_model.state_regions, num_devices
+            )
 
             outputs = nn_model(
                 tokens=graph_inputs.tokens,
@@ -341,17 +279,12 @@ class UnifiedDflash2Qwen3_5Model(
                 max_k=graph_inputs.max_k,
                 top_p=graph_inputs.top_p,
                 min_top_p=graph_inputs.min_top_p,
+                draft_probs_full=graph_inputs.draft_probs_full,
                 in_thinking_phase=graph_inputs.thinking_phase,
                 pinned_bitmask=graph_inputs.pinned_bitmask,
                 wait_payload=graph_inputs.wait_payload,
                 device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
-                extra={
-                    LIVE_CONV_POOLS: live_conv_pools,
-                    LIVE_RECURRENT_POOLS: live_recurrent_pools,
-                    LIVE_CONV_ROW_IDS: live_conv_row_ids,
-                    LIVE_RECURRENT_ROW_IDS: live_recurrent_row_ids,
-                    SHADOW_RECURRENT_POOLS: shadow_recurrent_pools,
-                },
+                extra=state,
             )
             graph.output(*outputs)
 

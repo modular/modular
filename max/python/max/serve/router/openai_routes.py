@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
@@ -152,6 +151,7 @@ from max.serve.schemas.openai import (
     TopLogprob,
     UnloadLoraRequest,
 )
+from max.serve.telemetry._trace_context import set_phase_parent
 from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
@@ -173,7 +173,6 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
-from opentelemetry import propagate as otel_propagate
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -219,6 +218,17 @@ async def _start_stream(
             yield item
 
     return None, chained()
+
+
+def _in_stream_error(status_code: int, message: str) -> str:
+    """Serializes an error for a stream whose 200 is already committed.
+
+    The OpenAI client raises ``APIError`` off a frame with an ``error`` key, and
+    otherwise parses it as a completion.
+    """
+    return ErrorResponse(
+        error=Error(code=str(status_code), message=message, param="", type="")
+    ).model_dump_json()
 
 
 router = APIRouter(prefix="/v1")
@@ -428,7 +438,7 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
     @abstractmethod
     async def stream(
         self, request: TextGenerationRequest
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         """Submits ``request`` and returns an SSE payload generator.
 
         Awaiting this coroutine submits the request to the pipeline (which
@@ -1162,6 +1172,7 @@ class OpenAIChatResponseGenerator(
                 "max.request_id": str(request.request_id),
             },
         )
+        set_phase_parent(request_span)
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
@@ -2207,7 +2218,6 @@ async def openai_create_chat_completion(
     request: Request,
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, request_id, CreateChatCompletionRequest
@@ -2709,7 +2719,6 @@ async def openai_create_embeddings(
     request: Request,
 ) -> CreateEmbeddingResponse | Response:
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
 
     # First try-catch: request parsing (client fault → 400)
     try:
@@ -2899,7 +2908,6 @@ async def openai_create_speech(request: Request) -> Response:
     no streaming.
     """
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
 
     # Request parsing and validation (client fault -> 400).
     try:
@@ -3142,7 +3150,7 @@ class OpenAICompletionResponseGenerator(
 
     async def stream(
         self, request: TextGenerationRequest
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         # Submit the request before returning the response stream. Awaiting
         # next_token_chunk tokenizes and hands the request off to the model
         # worker, so a failed submission (e.g. a dead worker) raises here —
@@ -3157,7 +3165,7 @@ class OpenAICompletionResponseGenerator(
         self,
         request: TextGenerationRequest,
         token_generator: AsyncGenerator[TokenGeneratorOutput, None],
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_span = _tracer.start_span(
@@ -3181,6 +3189,9 @@ class OpenAICompletionResponseGenerator(
         # token_ids.
         pending_token_ids: list[int] = []
         pending_prompt_token_ids: list[int] | None = None
+        # Until a payload is emitted the response is not yet a 200, so a
+        # failure can still be reported as an HTTP status.
+        emitted = False
         try:
             async for chunk in token_generator:
                 if chunk.batch_id is not None:
@@ -3267,6 +3278,7 @@ class OpenAICompletionResponseGenerator(
 
                 payload = response.model_dump_json()
 
+                emitted = True
                 yield payload
 
             logger.debug(
@@ -3299,33 +3311,41 @@ class OpenAICompletionResponseGenerator(
                     object="text_completion",
                     usage=final_usage,
                 )
+                emitted = True
                 yield final_response.model_dump_json()
 
+            emitted = True
             yield "[DONE]"
-        except queue.Full:
-            logger.exception("Request queue full %s", request.request_id)
-            yield JSONResponse(
-                status_code=529,
-                content={"detail": "Too Many Requests"},
-                headers={"Retry-After": "30"},
-            )
-        except InputError as e:
-            logger.warning(
-                "Input validation error in request %s: %s",
-                request.request_id,
-                str(e),
-            )
-            yield JSONResponse(
-                status_code=400,
-                content={"detail": "Input validation error", "message": str(e)},
-            )
-        except ValueError as e:
-            logger.exception("Exception in request %s", request.request_id)
-            # TODO (SI-722) - propagate better errors back.
-            yield JSONResponse(
-                status_code=500,
-                content={"detail": "Value error", "message": str(e)},
-            )
+        except Exception as e:
+            if isinstance(e, InputError):
+                logger.warning(
+                    "Input validation error in request %s: %s",
+                    request.request_id,
+                    str(e),
+                )
+                status_code, detail, message = (
+                    400,
+                    "Input validation error",
+                    str(e),
+                )
+            elif isinstance(e, ValueError):
+                logger.exception("Exception in request %s", request.request_id)
+                # TODO (SI-722) - propagate better errors back.
+                status_code, detail, message = 500, "Value error", str(e)
+            elif emitted:
+                logger.exception("Exception in request %s", request.request_id)
+                status_code, detail, message = 500, "", "Internal server error."
+            else:
+                # Before the 200, the route's handlers and the request
+                # middleware answer other types without echoing their text.
+                raise
+            if emitted:
+                yield _in_stream_error(status_code, message)
+            else:
+                yield JSONResponse(
+                    status_code=status_code,
+                    content={"detail": detail, "message": message},
+                )
         finally:
             request_span.set_attribute(
                 "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
@@ -3365,6 +3385,7 @@ class OpenAICompletionResponseGenerator(
                 "max.request_id": str(requests[0].request_id),
             },
         )
+        set_phase_parent(request_span)
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
@@ -3523,7 +3544,6 @@ async def openai_create_completion(
     Public benchmarking such as vLLM use this endpoint.
     """
     http_req_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, http_req_id, CreateCompletionRequest

@@ -309,21 +309,27 @@ struct Struct_kv_cache_store_k_scales_paged:
             var input_row_offsets,
             var input_k_scales,
         }:
+            var row = Int(idx[0].value())
+            # Same bound as the value store: a row past the last offset
+            # belongs to no request, and the search below would answer with
+            # the last one and write it past the end of that request's span.
+            if row >= Int(
+                input_row_offsets_tt[input_row_offsets_tt.num_elements() - 1]
+            ):
+                return
             var loaded_val = input_k_scales._lambda_load[
                 width=width, element_alignment=alignment
             ](
                 IndexList[3](
-                    Int(idx[0].value()),
+                    row,
                     Int(idx[1].value()),
                     Int(idx[2].value()),
                 ),
             )
             var batch_idx = get_batch_from_row_offsets(
-                input_row_offsets_tt, Int(idx[0].value())
+                input_row_offsets_tt, row
             )
-            var token_idx = Int(
-                UInt32(idx[0].value()) - input_row_offsets[batch_idx]
-            )
+            var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
             var h_idx = Int(idx[1].value())
             var hd_idx = Int(idx[2].value())
             var cache_length = k_cache.cache_length(batch_idx)

@@ -38,7 +38,7 @@ Semantics the caller (the unified graph) must uphold:
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
@@ -357,6 +357,7 @@ class DSparkSpeculatorsDraft(Module):
         self,
         base_logits: TensorValue,
         anchor_tokens: TensorValue,
+        sampler: Callable[[TensorValue, int], TensorValue] | None = None,
     ) -> TensorValue:
         """Greedily samples the markov-corrected draft tokens.
 
@@ -371,6 +372,9 @@ class DSparkSpeculatorsDraft(Module):
                 with a static slot axis (slot 0 = the first drafted position,
                 i.e. after the caller's anchor-slot drop).
             anchor_tokens: Anchor/bonus token ids ``[batch]``, target vocab.
+            sampler: Draws step ``k``'s ``[batch]`` DRAFT-vocab id from its
+                ``[batch, draft_vocab]`` corrected logits in place of the
+                argmax.
 
         Returns:
             The drafted TARGET-vocab token ids ``[batch, num_slots]`` (int64).
@@ -382,7 +386,12 @@ class DSparkSpeculatorsDraft(Module):
             step_logits = base_logits[:, k, :] + (
                 self.markov_head.compute_step_bias(prev)
             )
-            draft_ids = ops.squeeze(ops.argmax(step_logits, axis=-1), axis=-1)
+            if sampler is None:
+                draft_ids = ops.squeeze(
+                    ops.argmax(step_logits, axis=-1), axis=-1
+                )
+            else:
+                draft_ids = sampler(step_logits, k)
             prev = map_draft_to_target_vocab(draft_ids, TensorValue(self.d2t))
             sampled.append(ops.unsqueeze(prev, axis=1))
         return ops.concat(sampled, axis=1)

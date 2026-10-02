@@ -27,7 +27,7 @@ from ..comm.ep.ep_kernels import (
     uses_mx_ep_token_format,
 )
 from ..kernels import moe_create_indices
-from .moe import MoE, _InterleavedGatedActivation
+from .moe import ClampedSwiGLU, MoE, _InterleavedGatedActivation
 from .quant_strategy import (
     BlockScaledStrategy,
     Fp8Strategy,
@@ -386,10 +386,17 @@ class MoEQuantized(MoE):
         the output went straight to the peers and there is no local tensor for
         the caller to hand to a combine.
         """
-        if self.gated_activation_fn is not None:
+        clamped = (
+            self.gated_activation_fn
+            if isinstance(self.gated_activation_fn, ClampedSwiGLU)
+            else None
+        )
+        if self.gated_activation_fn is not None and clamped is None:
             raise ValueError(
                 "Custom gated_activation_fn is not supported in the EP"
-                " quantized path due to a specialized fused kernel."
+                " quantized path due to a specialized fused kernel, except"
+                " ClampedSwiGLU, which the fused kernel implements"
+                " natively."
             )
         # The dynamic dispatch's per-row global scales belong to the gate/up
         # matmul alone; everything after it reads the usual tuple.
@@ -527,6 +534,20 @@ class MoEQuantized(MoE):
                 # down-proj A-scale folds (KS64) when it's on OR, for OAI-SwiGLU,
                 # via the local down-slot stride; else the standalone preshuffle
                 # runs.
+                #
+                # ClampedSwiGLU is not wired into this kernel's fused
+                # epilogue (only plain SiLU and swigluoai are). Rather than
+                # silently running plain SiLU, fail loudly. A
+                # `BLOCKSCALED_FP8` checkpoint resolves to `Fp8Strategy` and
+                # never reaches here; an MXFP4 or MXFP6 model that wants this
+                # activation needs the epilogue extended first.
+                if clamped is not None:
+                    raise NotImplementedError(
+                        "ClampedSwiGLU is not supported on the MXFP4 EP"
+                        " fused activation+quantize kernel"
+                        " (BlockScaledStrategy/Mxfp6Strategy); only plain"
+                        " SiLU and swigluoai are wired there today."
+                    )
                 gate_up = strategy.grouped_matmul(
                     self.gate_up_proj,
                     gate_up_scales,
@@ -557,24 +578,33 @@ class MoEQuantized(MoE):
                     estimated_total_m=estimated_total_m,
                 )
 
-                if self.use_swigluoai:
-                    gate_up = self._swigluoai_activation(gate_up)
+                if self.use_swigluoai or clamped is not None:
+                    if self.use_swigluoai:
+                        gate_up = self._swigluoai_activation(gate_up)
+                    else:
+                        assert clamped is not None
+                        gate_up = clamped(gate_up, self.moe_dim)
+                    # Both dispatch layouts put the row prefix sum third; only
+                    # the block-scaled one also carries per-expert scale
+                    # offsets. Going through `grouped_quantize` either way
+                    # keeps the quantize bounded by the rows the dispatch
+                    # actually received, instead of the worst-case height of
+                    # the receive buffer.
+                    scales_offset: TensorValue | None = None
                     if self._uses_nvidia_block_scaled_ep_layout:
                         _, _, expert_start, scales_offset, expert_ids, _ = (
                             expert_inputs
                         )
-                        down_in, silu_scales = strategy.grouped_quantize(
-                            gate_up,
-                            self._token_group_size,
-                            nvfp4.down_input if nvfp4 else None,
-                            expert_start,
-                            scales_offset,
-                            expert_ids,
-                        )
                     else:
-                        down_in, silu_scales = strategy.quantize(
-                            gate_up, self._token_group_size
-                        )
+                        _, _, expert_start, expert_ids, _ = expert_inputs
+                    down_in, silu_scales = strategy.grouped_quantize(
+                        gate_up,
+                        self._token_group_size,
+                        nvfp4.down_input if nvfp4 else None,
+                        expert_start,
+                        scales_offset,
+                        expert_ids,
+                    )
                 else:
                     down_in, silu_scales = strategy.fused_silu_quantize(
                         gate_up,
@@ -611,7 +641,7 @@ class MoEQuantized(MoE):
         x: TensorValue,
         router_idx: TensorValue,
         router_weight: TensorValue | None = None,
-    ) -> TensorValue:
+    ) -> tuple[TensorValue, TensorValue]:
         """Runs the quantized expert matmuls for one flat expert assignment.
 
         Overrides :meth:`MoE._expert_matmuls`; same contract. Without a
@@ -628,8 +658,6 @@ class MoEQuantized(MoE):
 
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
-
-        seq_len = x.shape[0]
 
         create_indices_result = moe_create_indices(
             ops.cast(router_idx, DType.int32),
@@ -744,6 +772,4 @@ class MoEQuantized(MoE):
             estimated_total_m=total_m,
         )
 
-        return ops.gather(down, restore_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, down.shape[-1]]
-        )
+        return down, restore_order

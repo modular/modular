@@ -701,6 +701,7 @@ async def benchmark(
                 lora_manager=session.lora_manager,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                disable_ignore_eos=args.disable_ignore_eos,
             )
         elif args.max_concurrent_conversations is not None:
             # KV-cache stress benchmark: two independent concurrency knobs.
@@ -741,6 +742,7 @@ async def benchmark(
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
+                disable_ignore_eos=args.disable_ignore_eos,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -791,6 +793,7 @@ async def benchmark(
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
+                disable_ignore_eos=args.disable_ignore_eos,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs

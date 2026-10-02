@@ -31,7 +31,7 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
 )
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_device
 
 # Small dimensions for fast graph-trace tests.
 _HIDDEN_DIM = 256
@@ -104,12 +104,13 @@ def test_tensor_parallel_layer(mock_accelerator: MagicMock) -> None:
         mesh = DeviceMesh(tuple(devices), (num_devices,), (TP,))
         replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
-        layer = TensorParallelMoE(
-            hidden_dim=_HIDDEN_DIM,
-            num_experts=_NUM_EXPERTS,
-            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
-            moe_dim=_MOE_DIM,
-        ).to(mesh)
+        with default_device(mesh):
+            layer = TensorParallelMoE(
+                hidden_dim=_HIDDEN_DIM,
+                num_experts=_NUM_EXPERTS,
+                num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+                moe_dim=_MOE_DIM,
+            )
 
         # Each device holds a slice of every expert: 2*moe_dim is split along
         # the output axis by num_devices. The weights are a per-device bundle

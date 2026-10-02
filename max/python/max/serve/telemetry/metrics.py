@@ -532,6 +532,25 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "tier."
         ),
     ),  # type: ignore
+    "maxserve.cache.connector_loads_refused": _meter.create_counter(
+        "maxserve.cache.connector_loads_refused",
+        unit="loads",
+        description=(
+            "Cumulative loads the KV connector's host and disk tiers refused. "
+            "Each refused load is served by recomputing its blocks, so a "
+            "steady rate is hit rate the tiers reported and could not "
+            "deliver."
+        ),
+    ),  # type: ignore
+    "maxserve.cache.connector_offload_blocks_dropped": _meter.create_counter(
+        "maxserve.cache.connector_offload_blocks_dropped",
+        unit="blocks",
+        description=(
+            "Cumulative offloaded KV blocks the connector's host pool had no "
+            "room for. A pool starved by blocks pinned for in-flight transfers "
+            "drops offloads before its hit rate falls."
+        ),
+    ),  # type: ignore
     "maxserve.cache.disk_bytes_read": _meter.create_counter(
         "maxserve.cache.disk_bytes_read",
         unit="bytes",
@@ -1935,6 +1954,24 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.cache.d2h_bytes_copied",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_loads_refused(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_loads_refused",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_offload_blocks_dropped(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_offload_blocks_dropped",
                 count,
                 self.extra_attributes,
             ),

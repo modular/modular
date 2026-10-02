@@ -2233,20 +2233,19 @@ struct Struct_router_gate_mixed_gemv:
         var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
         var a_f32_tt = TileTensor(a_f32, row_major(Coord(M, Idx[K])))
 
-        @__parameter
         @inline(.always)
-        @__copy_capture(a_bf16_tt, a_f32_tt)
-        def _cast_bf16_to_fp32[width: Int, alignment: Int = 1](idx: Coord):
+        def _cast_bf16_to_fp32[
+            width: Int, alignment: Int = 1
+        ](idx: Coord) {var a_bf16_tt, var a_f32_tt}:
             var il = coord_to_index_list(idx)
             a_f32_tt.store_linear(
                 il, a_bf16_tt.load_linear[width](il).cast[.float32]()
             )
 
         elementwise[
-            _cast_bf16_to_fp32,
             simd_width_of[DType.bfloat16, target=get_gpu_target()](),
             target=target,
-        ](Coord(M, Idx[K]), context)
+        ](_cast_bf16_to_fp32, Coord(M, Idx[K]), context)
 
         matmul[transpose_b=True, target=target](
             c_tt, a_f32_tt.as_imm(), b_tt.as_imm(), context

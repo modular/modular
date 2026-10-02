@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import Coord, Layout, RuntimeLayout, TileTensor, row_major
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.slice import sliced_add
 
 from std.utils import IndexList
@@ -33,19 +33,12 @@ def test_sliced_add[
     # Create managed buffers and host views.
     var shape = IndexList[2](rows, cols)
     var layout = row_major(Coord(shape))
-    var managed_shape = IndexList[2](rows, cols)
-    var a = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
-        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
-    )
-    var b = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
-        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
-    )
-    var c = ManagedLayoutTensor[dtype, Layout.row_major[2]()](
-        RuntimeLayout[Layout.row_major[2]()].row_major(managed_shape), ctx
-    )
-    var a_host = TileTensor(a.tensor[update=False]().ptr, layout)
-    var b_host = TileTensor(b.tensor[update=False]().ptr, layout)
-    var c_host = TileTensor(c.tensor[update=False]().ptr, layout)
+    var a = HostDeviceTileTensor[dtype](layout, ctx)
+    var b = HostDeviceTileTensor[dtype](layout, ctx)
+    var c = HostDeviceTileTensor[dtype](layout, ctx)
+    var a_host = a.host_tensor()
+    var b_host = b.host_tensor()
+    var c_host = c.host_tensor()
 
     # Initialize with known patterns
     # a: all ones, b: all twos, c: zeros
@@ -57,19 +50,18 @@ def test_sliced_add[
             c_host.raw_store(idx, 0.0)
 
     # Keep lora_end_idx on host; sliced_add reads this scalar on host.
-    var lora_end_idx = ManagedLayoutTensor[.int64, Layout.row_major[1]()](
-        RuntimeLayout[Layout.row_major[1]()].row_major(IndexList[1](1)),
-        ctx,
+    var lora_end_idx = HostDeviceTileTensor[.int64](
+        row_major(Coord(IndexList[1](1)))
     )
-    var lora_end_idx_host = TileTensor(
-        lora_end_idx.tensor[update=False]().ptr,
-        row_major(Coord(IndexList[1](1))),
-    )
+    var lora_end_idx_host = lora_end_idx.host_tensor()
     lora_end_idx_host.raw_store(0, Int64(batch_end_idx))
 
-    var a_device_tensor = TileTensor(a.device_tensor().ptr, layout)
-    var b_device_tensor = TileTensor(b.device_tensor().ptr, layout)
-    var c_device_tensor = TileTensor(c.device_tensor().ptr, layout)
+    a.to_device()
+    b.to_device()
+    c.to_device()
+    var a_device_tensor = a.device_tensor()
+    var b_device_tensor = b.device_tensor()
+    var c_device_tensor = c.device_tensor()
 
     # Execute sliced_add directly
     sliced_add[target="gpu"](
@@ -80,8 +72,7 @@ def test_sliced_add[
         ctx,
     )
 
-    # Pull device results back via managed host view.
-    c_host = TileTensor(c.tensor().ptr, layout)
+    c.to_host()
 
     # Verify results
     for i in range(rows):

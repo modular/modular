@@ -166,6 +166,7 @@ from max.profiler import Tracer, traced
 from ..memory_estimation import MemoryPlan
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
+from .unified_spec_decode_model import _UnifiedSpecDecodeModelMixin
 from .utils import (
     CommittedSpanSnapshot,
     StructuredOutputHelper,
@@ -329,6 +330,34 @@ def _contiguous_prefix_2d(buffer: Buffer, rows: int, cols: int) -> Buffer:
     return flat[:num_elements].view(buffer.dtype, (rows, cols))
 
 
+def _sampled_draft_vocab_size(
+    model: object, speculative: SpeculativeConfig
+) -> int | None:
+    """The vocabulary the compiled graph's draft distributions span.
+
+    ``None`` under ``draft_proposal="argmax"``. The size comes from the
+    compiled graph.
+
+    Raises:
+        ValueError: If the config asks for a sampled proposal the graph does
+            not implement, or the reverse.
+    """
+    vocab_size = (
+        model.sampled_draft_vocab_size
+        if isinstance(model, _UnifiedSpecDecodeModelMixin)
+        else None
+    )
+    sampled = speculative.draft_proposal == "sampled"
+    if sampled != (vocab_size is not None):
+        raise ValueError(
+            f"{type(model).__name__} does not support"
+            f" draft_proposal='{speculative.draft_proposal}': its compiled graph"
+            f" {'does not return' if sampled else 'returns'} the draft's"
+            " proposal distributions"
+        )
+    return vocab_size
+
+
 def _contiguous_prefix_3d(
     buffer: Buffer, rows: int, cols: int, depth: int
 ) -> Buffer:
@@ -429,6 +458,15 @@ def _host_mirror_realized_drafts(
     return realized
 
 
+def _is_constrained(ctx: TextGenerationContextType) -> bool:
+    """Whether a request decodes under a grammar or JSON schema."""
+    return (
+        ctx.matcher is not None
+        or ctx.grammar is not None
+        or ctx.json_schema is not None
+    )
+
+
 def _should_verify_drafts(
     inputs: TextGenerationInputs[TextGenerationContextType],
     *,
@@ -441,12 +479,7 @@ def _should_verify_drafts(
         return False
     has_decode_row = False
     for ctx in inputs.flat_batch:
-        if (
-            ctx.matcher is not None
-            or ctx.grammar is not None
-            or ctx.json_schema is not None
-            or getattr(ctx, "needs_vision_encoding", False)
-        ):
+        if _is_constrained(ctx) or getattr(ctx, "needs_vision_encoding", False):
             return False
         has_decode_row = has_decode_row or ctx.tokens.generated_length > 0
     return has_decode_row
@@ -659,24 +692,23 @@ class SpecDecodeState:
         )
         persistent_draft_probs_full: Buffer | None = None
         draft_probs_full_zero_row: Buffer | None = None
-        if pipeline_config.speculative.draft_proposal == "sampled":
-            draft_vocab_size = getattr(
-                model.huggingface_config, "vocab_size", None
+        draft_vocab_size = _sampled_draft_vocab_size(
+            model, pipeline_config.speculative
+        )
+        if draft_vocab_size is not None:
+            persistent_draft_probs_full = Buffer(
+                dtype=DType.float32,
+                shape=(
+                    total_max_batch,
+                    num_speculative_tokens,
+                    draft_vocab_size,
+                ),
+                device=buffer_device,
             )
-            if draft_vocab_size is not None:
-                persistent_draft_probs_full = Buffer(
-                    dtype=DType.float32,
-                    shape=(
-                        total_max_batch,
-                        num_speculative_tokens,
-                        draft_vocab_size,
-                    ),
-                    device=buffer_device,
-                )
-                zero_shape = (num_speculative_tokens, draft_vocab_size)
-                draft_probs_full_zero_row = Buffer.from_numpy(
-                    np.zeros(zero_shape, dtype=np.float32)
-                ).to(buffer_device)
+            zero_shape = (num_speculative_tokens, draft_vocab_size)
+            draft_probs_full_zero_row = Buffer.from_numpy(
+                np.zeros(zero_shape, dtype=np.float32)
+            ).to(buffer_device)
 
         # The packed-int32 bitmask the async FSM callback fills lives in
         # :class:`StructuredOutputOverlapState`'s ``pinned_bitmask`` (allocated
@@ -3867,7 +3899,9 @@ class OverlapTextGenerationPipeline(
             and self._prev_batch.spec_decode.num_draft_tokens_to_verify > 0
         )
 
-    def _should_early_sync_prev_batch(self) -> bool:
+    def _should_early_sync_prev_batch(
+        self, curr_flat_batch: Sequence[TextGenerationContextType]
+    ) -> bool:
         """Return True iff the previous batch must be early-synced.
 
         Checked at the head of `execute`, just after
@@ -3904,6 +3938,11 @@ class OverlapTextGenerationPipeline(
         callback is ever enqueued, so `fsm_advanced_by_callback` is always
         False. Without this gate the guard would fire every decode step.
 
+        Also gated on a constrained request in the previous or current batch.
+        With none, there is no FSM to advance and every bitmask row allows
+        every token, so syncing would only stall the GPU at each prefill
+        boundary.
+
         IMPORTANT: even when this returns True, `_prev_batch` is NOT cleared
         by the caller. `_run_forward` needs it so `realize_future_tokens` can
         scatter the previous batch's GPU-side EAGLE draft tokens into the
@@ -3921,6 +3960,13 @@ class OverlapTextGenerationPipeline(
             and self._prev_batch is not None
             and self._prev_batch.spec_decode is not None
             and not self._prev_batch.spec_decode.fsm_advanced_by_callback
+            and any(
+                _is_constrained(ctx)
+                for ctx in (
+                    *self._prev_batch.inputs.flat_batch,
+                    *curr_flat_batch,
+                )
+            )
         )
 
     @traced
@@ -4028,7 +4074,7 @@ class OverlapTextGenerationPipeline(
                     curr_verify_width=curr_verify_width,
                 )
 
-                if self._should_early_sync_prev_batch():
+                if self._should_early_sync_prev_batch(inputs.flat_batch):
                     assert self._prev_batch is not None
                     _early_sync_start_monotonic = time.monotonic()
                     _early_sync_outputs = (

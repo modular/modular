@@ -51,6 +51,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     mark_cancelled_if_past_deadline,
     progressbar_request_driver,
+    tag_lora_route,
     tag_response_format_outcome,
 )
 from max.benchmark.benchmark_shared.utils import (
@@ -118,6 +119,7 @@ def build_single_turn_request_input(
     max_output_len: int | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
+    disable_ignore_eos: bool = False,
 ) -> BaseRequestFuncInput:
     request_model_id = model_id if lora_id is None else lora_id
     if benchmark_task == "text-generation":
@@ -139,9 +141,10 @@ def build_single_turn_request_input(
             api_url=api_url,
             prompt_len=prompt_len,
             max_tokens=max_tokens,
-            ignore_eos=request.ignore_eos,
+            ignore_eos=request.ignore_eos and not disable_ignore_eos,
             response_format=request.response_format,
             tools=request.tools,
+            lora_id=lora_id,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:
         if not isinstance(request, PixelGenerationSampledRequest):
@@ -245,6 +248,7 @@ async def run_single_turn_benchmark(
     lora_manager: LoRABenchmarkManager | None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
+    disable_ignore_eos: bool = False,
 ) -> list[BaseRequestFuncOutput]:
     """Run single-turn benchmark scenario."""
     if timing_data is None:
@@ -272,6 +276,7 @@ async def run_single_turn_benchmark(
                     cancelled=True, request_submit_time=time.perf_counter()
                 )
             tag_response_format_outcome(output, request_func_input)
+            tag_lora_route(output, request_func_input)
             return mark_cancelled_if_past_deadline(
                 output, benchmark_should_end_time
             )
@@ -305,6 +310,7 @@ async def run_single_turn_benchmark(
             max_output_len=max_output_len,
             run_prefix=run_prefix,
             run_prefix_len=run_prefix_len,
+            disable_ignore_eos=disable_ignore_eos,
         )
         tasks.append(
             asyncio.create_task(limited_request_func(request_func_input))

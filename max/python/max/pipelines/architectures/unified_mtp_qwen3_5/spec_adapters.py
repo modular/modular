@@ -52,19 +52,18 @@ _TargetHidden = list[TensorValue]
 
 
 class Qwen3_5Target:
-    """The verify pass, run against the state :meth:`snapshot` returns."""
+    """The verify pass, recording the recurrence into the ring."""
 
     def __init__(
         self,
         target: Qwen3_5,
         state_regions: tuple[RecurrentStateRegion, ...],
-        ring_len: int = 0,
     ) -> None:
         self.target = target
-        self.state = Qwen3_5RecurrentState(target, state_regions, ring_len)
+        self.state = Qwen3_5RecurrentState(target, state_regions)
 
     def verify(self, batch: SequentialBatch) -> Verified[_TargetHidden]:
-        shadow_state = self.state.snapshot(batch.extra, batch.devices)
+        verify_state = self.state.verify_state(batch.extra, batch.n_devs)
         with self.state.capturing(batch.n_devs, batch.num_draft_tokens):
             # The positions cover the merged window, so they line up with
             # ``merged_tokens`` rather than with the real tokens. ``None``
@@ -76,7 +75,7 @@ class Qwen3_5Target:
                 batch.return_n_logits,
                 batch.merged_offsets,
                 batch.signal_buffers,
-                shadow_state,
+                verify_state,
                 position_ids=batch.extra[POSITION_IDS],
             )
 

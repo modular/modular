@@ -275,26 +275,35 @@ class LineGenerator(Visitor[Line]):
     def visit_match_stmt(self, node: Node) -> Iterator[Line]:
         """Visit a match / __match statement.
 
-        In Mojo mode, cases share the match indent (no extra indent around the
-        case blocks). Skip the Python-style INDENT/DEDENT wrapper when present.
+        Cases are indented under the header. Input written with cases at the
+        header's own indent is reindented on the way out.
         """
         normalize_invisible_parens(
             node, parens_after=set(), preview=self.mode.preview
         )
 
         yield from self.line()
+        yield from self._visit_match_children(node)
+
+    def _visit_match_children(self, node: Node) -> Iterator[Line]:
+        """Emit a match statement's children, indenting flat case lists."""
+        has_indent = any(
+            isinstance(child, Leaf) and child.type == token.INDENT
+            for child in node.children
+        )
+        opened = False
         for child in node.children:
             if (
-                self.mode.is_mojo
-                and isinstance(child, Leaf)
-                and child.type in (token.INDENT, token.DEDENT)
+                not has_indent
+                and not opened
+                and isinstance(child, Node)
+                and child.type == syms.case_block
             ):
-                # Preserve any comments carried on DEDENT without changing depth.
-                if child.type == token.DEDENT and child.prefix:
-                    yield from self.line()
-                    yield from self.visit_default(child)
-                continue
+                yield from self.line(+1)
+                opened = True
             yield from self.visit(child)
+        if opened:
+            yield from self.line(-1)
 
     def visit_case_block(self, node: Node) -> Iterator[Line]:
         """Visit a case block."""
@@ -362,21 +371,16 @@ class LineGenerator(Visitor[Line]):
                 break
 
         internal_stmt = next(children)
-        if internal_stmt.type in (syms.if_stmt, syms.for_stmt, syms.match_stmt):
+        assert isinstance(internal_stmt, Node)
+        if internal_stmt.type == syms.match_stmt:
+            # Visit the match children directly to avoid the initial line
+            # break that visit_match_stmt adds. Cases are indented under the
+            # header, including input that was written flat.
+            yield from self._visit_match_children(internal_stmt)
+        elif internal_stmt.type in (syms.if_stmt, syms.for_stmt):
             # Visit child statement's children directly to avoid the
-            # initial line break that visit_if_stmt/for_stmt/match_stmt add.
-            # For match, also skip Mojo-mode INDENT/DEDENT wrappers around cases.
+            # initial line break that visit_if_stmt/for_stmt add.
             for child in internal_stmt.children:
-                if (
-                    internal_stmt.type == syms.match_stmt
-                    and self.mode.is_mojo
-                    and isinstance(child, Leaf)
-                    and child.type in (token.INDENT, token.DEDENT)
-                ):
-                    if child.type == token.DEDENT and child.prefix:
-                        yield from self.line()
-                        yield from self.visit_default(child)
-                    continue
                 yield from self.visit(child)
         else:
             # Simple case (alias_stmt_body, comptime_assert_stmt_body):

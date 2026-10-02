@@ -32,7 +32,7 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor, default_dtype
+from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import (
     BufferType,
     BufferValue,
@@ -428,13 +428,14 @@ def test_mla_fp8_tensor_parallel(
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
         replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
-        layer = tensor_parallel_latent_attention_with_rope(
-            _make_layer(
-                kv_params,
-                q_lora_rank=q_lora_rank,
-                quant_config=fp8_quant_config,
+        with default_device(mesh):
+            layer = tensor_parallel_latent_attention_with_rope(
+                _make_layer(
+                    kv_params,
+                    q_lora_rank=q_lora_rank,
+                    quant_config=fp8_quant_config,
+                )
             )
-        ).to(mesh)
 
         # Rowwise weights co-shard data and scales on axis 0.
         assert isinstance(layer.kv_b_proj, FP8BlockTensor)
@@ -602,13 +603,14 @@ def test_mla_nvfp4_tensor_parallel(
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
         replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
-        layer = tensor_parallel_latent_attention_with_rope(
-            _make_layer(
-                kv_params,
-                q_lora_rank=None,
-                quant_config=nvfp4_quant_config,
+        with default_device(mesh):
+            layer = tensor_parallel_latent_attention_with_rope(
+                _make_layer(
+                    kv_params,
+                    q_lora_rank=None,
+                    quant_config=nvfp4_quant_config,
+                )
             )
-        ).to(mesh)
 
         weight = layer.o_proj.weight
         assert isinstance(weight, NVFP4Tensor)

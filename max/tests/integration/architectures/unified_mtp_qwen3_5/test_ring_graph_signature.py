@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests the fused MTP graph's state-tail signature on each rollback.
+"""Tests the fused MTP graph's state-tail signature.
 
-An engine driving the exported graph binds this tail by position, so the
-order and the arity of each rollback are pinned here.
+An engine driving the exported graph binds this tail by position, so its
+order and arity are pinned here.
 """
 
 from __future__ import annotations
@@ -44,7 +44,6 @@ from max.pipelines.architectures.qwen3_5.state_cache import (
     attn_cache,
     linear_state_regions,
     ring_len_for_window,
-    shadowed_leaf_ids,
 )
 from max.pipelines.architectures.unified_mtp_qwen3_5.model import (
     UnifiedMTPQwen3_5Model,
@@ -61,7 +60,7 @@ from max.pipelines.architectures.unified_mtp_qwen3_5.unified_mtp_qwen3_5 import 
     UnifiedMTPQwen3_5,
 )
 from max.pipelines.lib import PipelineConfig
-from max.pipelines.speculative import RecurrentStateRollback, SpeculativeConfig
+from max.pipelines.speculative import SpeculativeConfig
 
 NUM_DRAFTS = 3
 
@@ -114,22 +113,19 @@ def _config(num_devices: int) -> Qwen3_5Config:
     )
 
 
-def _input_types(
-    rollback: RecurrentStateRollback, num_devices: int = 1
-) -> tuple[TensorType | BufferType, ...]:
+def _speculative() -> SpeculativeConfig:
+    return SpeculativeConfig(
+        speculative_method="mtp", num_speculative_tokens=NUM_DRAFTS
+    )
+
+
+def _input_types(num_devices: int = 1) -> tuple[TensorType | BufferType, ...]:
     config = _config(num_devices)
     attn = attn_cache(config.kv_params)
     spec_kv = MultiKVCacheParams.from_params(
         {"target": attn, "draft": replace(attn, num_layers=1)}
     )
-    driver = UnifiedMTPQwen3_5(
-        config,
-        speculative_config=SpeculativeConfig(
-            speculative_method="mtp",
-            num_speculative_tokens=NUM_DRAFTS,
-            recurrent_state_rollback=rollback,
-        ),
-    )
+    driver = UnifiedMTPQwen3_5(config, speculative_config=_speculative())
     return tuple(driver.input_types(spec_kv))
 
 
@@ -153,64 +149,35 @@ def _tail_dims(
     return pools, tables
 
 
-def test_the_ring_arm_trades_the_recurrent_shadow_for_a_ring() -> None:
-    """Checks the ring arm adds a ring pool and drops the shadow."""
-    snapshot, _ = _tail_dims(_input_types("snapshot"))
-    ring, _ = _tail_dims(_input_types("ring"))
+def test_the_tail_is_the_live_leaves_then_the_ring() -> None:
+    """Checks the pools come in declaration order, the ring last."""
+    pools, _ = _tail_dims(_input_types())
 
     def rows(leaf: str) -> str:
         return f"{leaf.replace('/', '_')}_rows"
 
-    assert snapshot == [
-        rows(CONV_LEAF_ID),
-        rows(RECURRENT_LEAF_ID),
-        f"shadow_{rows(RECURRENT_LEAF_ID)}",
-    ]
-    assert ring == [
+    assert pools == [
         rows(CONV_LEAF_ID),
         rows(RECURRENT_LEAF_ID),
         rows(RING_LEAF_ID),
     ]
 
 
-def test_every_cache_leaf_takes_a_row_table_and_no_shadow_does() -> None:
+def test_every_leaf_takes_a_row_table() -> None:
     """Checks the ring takes engine rows, like the live leaves."""
-    _, snapshot = _tail_dims(_input_types("snapshot"))
-    _, ring = _tail_dims(_input_types("ring"))
-    assert len(snapshot) == 2, f"snapshot: got {snapshot}"
-    assert len(ring) == 3, f"ring: got {ring}"
-
-
-def test_the_ring_arm_adds_one_slot_per_device() -> None:
-    """Checks the ring arm's pool and row table replace one shadow, per
-    device, after the same prefix."""
-    num_devices = 1
-    snapshot = _input_types("snapshot", num_devices)
-    ring = _input_types("ring", num_devices)
-    assert len(ring) - len(snapshot) == num_devices
-    first_pool = next(
-        i
-        for i, t in enumerate(snapshot)
-        if isinstance(t, BufferType) and str(t.shape[0]).endswith("_rows")
-    )
-    assert ring[:first_pool] == snapshot[:first_pool]
+    _, tables = _tail_dims(_input_types())
+    assert len(tables) == 3, f"got {tables}"
 
 
 def test_the_ring_is_float32_whatever_the_pool_dtype() -> None:
     """Checks the ring is float32."""
-    types = _input_types("ring")
+    types = _input_types()
     rings = [
         t.dtype
         for t in types
         if isinstance(t, BufferType) and str(t.shape[0]).endswith("_ring_rows")
     ]
     assert rings == [DType.float32]
-
-
-def test_only_the_leaves_the_verify_writes_are_shadowed() -> None:
-    """Checks only the recurrent leaf is shadowed, and only without a ring."""
-    assert shadowed_leaf_ids(0) == (RECURRENT_LEAF_ID,)
-    assert shadowed_leaf_ids(4) == ()
 
 
 def test_the_verify_window_rounds_up_to_a_compiled_ring() -> None:
@@ -245,25 +212,17 @@ def test_the_ring_page_divides_the_live_pages(
         ring_len=ring_len,
     )
     *live, ring = regions
-    assert ring.leaf_id == RING_LEAF_ID
+    assert ring.leaf_id == RING_LEAF_ID and ring.scratch
     assert ring.row_shape == (16 // num_devices, ring_len, 640)
     live_lcm = math.lcm(*(region.bytes_per_page for region in live))
     assert live_lcm % ring.bytes_per_page == 0
 
 
-def _build_graph(
-    rollback: RecurrentStateRollback,
-) -> tuple[Graph, dict[str, Any]]:
+def _build_graph() -> tuple[Graph, dict[str, Any]]:
     """Builds the fused graph the way the model does."""
     config = _config(1)
     driver = UnifiedMTPQwen3_5(
-        config,
-        speculative_config=SpeculativeConfig(
-            speculative_method="mtp",
-            num_speculative_tokens=NUM_DRAFTS,
-            recurrent_state_rollback=rollback,
-        ),
-        enable_structured_output=True,
+        config, speculative_config=_speculative(), enable_structured_output=True
     )
     raw = driver.raw_state_dict()
     driver.load_state_dict(
@@ -280,12 +239,10 @@ def _build_graph(
     spec_kv = MultiKVCacheParams.from_params(
         {"target": attn, "draft": replace(attn, num_layers=1)}
     )
-    with Graph(
-        f"mtp_{rollback}_rollback", input_types=driver.input_types(spec_kv)
-    ) as graph:
+    with Graph("mtp_ring", input_types=driver.input_types(spec_kv)) as graph:
         graph_inputs = driver.decode_inputs(graph.inputs, spec_kv)
         trailing = iter(graph_inputs.trailing)
-        state = state_tail(trailing, driver.state_regions, driver.ring_len, 1)
+        state = state_tail(trailing, driver.state_regions, 1)
         outputs = driver(
             graph_inputs.tokens,
             graph_inputs.input_row_offsets,
@@ -312,12 +269,9 @@ def _build_graph(
     return graph, driver.state_dict()
 
 
-@pytest.mark.parametrize("rollback", ["snapshot", "ring"])
-def test_the_fused_graph_compiles_on_either_rollback(
-    rollback: RecurrentStateRollback,
-) -> None:
-    """Checks the fused graph builds and compiles on each rollback."""
-    graph, weights = _build_graph(rollback)
+def test_the_fused_graph_compiles() -> None:
+    """Checks the fused graph builds and compiles."""
+    graph, weights = _build_graph()
     session = InferenceSession(devices=[Accelerator()])
     assert session.load(graph, weights_registry=weights) is not None
 
@@ -358,37 +312,22 @@ def test_the_graph_drops_the_state_child_the_cache_holds() -> None:
     assert set(graph_kv_params(served).children) == {"target", "draft"}
 
 
-@pytest.mark.parametrize("rollback", ["snapshot", "ring"])
-def test_the_state_child_does_not_move_the_signature(
-    rollback: RecurrentStateRollback,
-) -> None:
+def test_the_state_child_does_not_move_the_signature() -> None:
     """Checks the allocated cache yields the attention-only signature."""
-    config = _config(1)
-    driver = UnifiedMTPQwen3_5(
-        config,
-        speculative_config=SpeculativeConfig(
-            speculative_method="mtp",
-            num_speculative_tokens=NUM_DRAFTS,
-            recurrent_state_rollback=rollback,
-        ),
-    )
+    driver = UnifiedMTPQwen3_5(_config(1), speculative_config=_speculative())
 
     view = graph_kv_params(_served_kv_params())
 
-    assert tuple(driver.input_types(view)) == _input_types(rollback)
+    assert tuple(driver.input_types(view)) == _input_types()
 
 
 def test_the_model_allocates_its_cache_with_the_ring() -> None:
     """Checks the model builds its cache from the config that declares the
     ring, so the cache it allocates holds the leaves the graph reads."""
     assert UnifiedMTPQwen3_5Model.model_config_cls is UnifiedMTPQwen3_5Config
-    ring = SimpleNamespace(
-        speculative=SpeculativeConfig(
-            speculative_method="mtp",
-            num_speculative_tokens=NUM_DRAFTS,
-            recurrent_state_rollback="ring",
-        )
-    )
+    ring = SimpleNamespace(speculative=_speculative())
     assert UnifiedMTPQwen3_5Config._verify_ring_len(
         cast("PipelineConfig", ring)
     ) == ring_len_for_window(1 + NUM_DRAFTS)
+    # The unspeculated base declares no ring.
+    assert Qwen3_5Config._verify_ring_len(cast("PipelineConfig", ring)) == 0

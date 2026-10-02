@@ -17,6 +17,7 @@ These classes need to be cleaned up before moving to `max.nn`.
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 
 from max.driver import CPU, Device
@@ -39,7 +40,12 @@ from max.experimental.sharding import (
     DeviceMesh,
     Partial,
 )
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import (
+    Tensor,
+    default_device,
+    default_dtype,
+    defaults,
+)
 from typing_extensions import Self
 
 
@@ -153,7 +159,8 @@ class MoE(Module[[Tensor], Tensor]):
         mesh = _mesh(target)
         if mesh.num_devices > 1:
             raise ValueError(
-                "Cannot transfer MoE Layer to multi-device mesh. Use TensorParallelMoE or ExpertParallelMoE instead."
+                "Cannot move an MoE layer to a multi-device mesh. Build a "
+                "TensorParallelMoE inside default_device(mesh) instead."
             )
         super().to(target)
         return self
@@ -293,31 +300,42 @@ class MoE(Module[[Tensor], Tensor]):
 
 
 class TensorParallelMoE(MoE):
-    """MoE layer with tensor parallelism."""
+    """MoE layer with tensor parallelism.
+
+    Shards the experts across the mesh from
+    :func:`~max.experimental.tensor.default_device` at construction.
+    """
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._initial_moe_dim = self.moe_dim
-        self.mesh = DeviceMesh.single(self.device)
+        _, mesh = defaults()
+        self._set_mesh(mesh)
+
+    def _init_experts(self) -> None:
+        dtype, mesh = defaults()
+        # With multiple devices, build the experts on CPU: ``shard_and_stack``
+        # transfers each device its slice of them.
+        placement = (
+            contextlib.nullcontext()
+            if mesh.num_devices == 1
+            else default_device(CPU())
+        )
+        with placement, default_dtype(dtype):
+            super()._init_experts()
+
+    def _set_mesh(self, mesh: DeviceMesh) -> None:
+        if mesh.ndim != 1:
+            raise ValueError(
+                f"Mesh used with TensorParallelMoE must have exactly one device axis, but got {mesh}"
+            )
+        self.mesh = mesh
+        self.moe_dim = self._initial_moe_dim // mesh.num_devices
 
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
-        """Transfer the MoE layer to the target device."""
-        self.mesh = _mesh(target)
-        if self.mesh.ndim != 1:
-            raise ValueError(
-                f"Mesh used with TensorParallelMoE must have exactly one device axis, but got {self.mesh}"
-            )
-        self.moe_dim = self._initial_moe_dim // self.mesh.num_devices
-
-        self.gate.to(target)
-        if self.shared_experts is not None:
-            self.shared_experts.to(target)
-
-        # If there are multiple devices, keep expert weights on CPU because
-        # the weights will be transferred via the `shard_and_stack` operation.
-        device = CPU() if self.mesh.num_devices > 1 else self.mesh.devices[0]
-        for expert in self.experts:
-            expert.to(device)
+        """Moves the MoE layer to a single device."""
+        super().to(target)
+        self._set_mesh(_mesh(target))
         return self
 
     @property

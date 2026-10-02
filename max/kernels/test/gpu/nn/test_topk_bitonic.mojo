@@ -32,6 +32,7 @@ from layout import TileTensor, row_major
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
     _phi,
+    _phi_of,
     persistent_topk_block,
     persistent_topk_block_split,
 )
@@ -40,6 +41,23 @@ from nn.topk_bitonic import (
 # ===----------------------------------------------------------------------=== #
 # CPU reference
 # ===----------------------------------------------------------------------=== #
+
+
+def _as_read[in_dtype: DType](scores: List[Float32]) -> List[Float32]:
+    """The scores as the kernel will actually see them.
+
+    The kernel reads `in_dtype` and widens exactly, so what it selects over is
+    the f32 image of the ROUNDED value, not the value the generator produced.
+    Every checker below has to be handed this list rather than the original:
+    rounding to bf16 creates ties that did not exist in the input, and an
+    oracle run on the unrounded scores reports each of them as a selection bug.
+    """
+    comptime if in_dtype == .float32:
+        return scores.copy()
+    var out = List[Float32](capacity=len(scores))
+    for v in scores:
+        out.append(Float32(v.cast[in_dtype]()))
+    return out^
 
 
 def _cpu_topk_set(scores: List[Float32], K: Int) -> Set[Int]:
@@ -720,7 +738,9 @@ def test_split_tree_s13(ctx: DeviceContext) raises:
 # ===----------------------------------------------------------------------=== #
 
 
-def _run_and_check_block_multirow(
+def _run_and_check_block_multirow[
+    in_dtype: DType = .float32
+](
     ctx: DeviceContext,
     scores_host: List[Float32],  # B * N flat, row-major
     N: Int,
@@ -732,16 +752,18 @@ def _run_and_check_block_multirow(
     assert K <= PERSISTENT_TOPK_MAX_N, "K exceeds champion width"
     assert len(scores_host) == B * N, "scores_host length mismatch"
 
-    var scores_dev = ctx.enqueue_create_buffer[.float32](B * N)
+    var scores_dev = ctx.enqueue_create_buffer[in_dtype](B * N)
     var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
     idxs_dev.enqueue_fill(Int32(-2))
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
-            buf[i] = Float32(scores_host[i])
+            buf[i] = scores_host[i].cast[in_dtype]()
 
     persistent_topk_block(
         ctx,
-        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            scores_dev.unsafe_ptr()
+        ),
         rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
@@ -753,10 +775,11 @@ def _run_and_check_block_multirow(
     ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
     ctx.synchronize()
 
+    var seen_scores = _as_read[in_dtype](scores_host)
     for b in range(B):
         var row_scores = List[Float32](capacity=N)
         for i in range(N):
-            row_scores.append(scores_host[b * N + i])
+            row_scores.append(seen_scores[b * N + i])
         var row_idxs = List[Int](capacity=K)
         for k in range(K):
             row_idxs.append(Int(idxs_host[b * K + k]))
@@ -989,7 +1012,9 @@ def _check_score_valid_row(
 
 
 def _run_split[
-    ordered: Bool = True, deterministic: Bool = True
+    ordered: Bool = True,
+    deterministic: Bool = True,
+    in_dtype: DType = .float32,
 ](
     ctx: DeviceContext,
     scores_host: List[Float32],
@@ -1003,16 +1028,18 @@ def _run_split[
     in what they promise about order, so a launch that differed anywhere else would
     be comparing two things at once.
     """
-    var scores_dev = ctx.enqueue_create_buffer[.float32](B * N)
+    var scores_dev = ctx.enqueue_create_buffer[in_dtype](B * N)
     var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
     idxs_dev.enqueue_fill(Int32(-2))
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
-            buf[i] = Float32(scores_host[i])
+            buf[i] = scores_host[i].cast[in_dtype]()
 
     persistent_topk_block_split[ordered=ordered, deterministic=deterministic](
         ctx,
-        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            scores_dev.unsafe_ptr()
+        ),
         rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
@@ -1146,6 +1173,105 @@ def test_unordered_resident_band(ctx: DeviceContext) raises:
         var scores = _lcg_scores(B, N, 0x51EED000 + UInt32(N), 100.0)
         _check_both(ctx, scores, N, K, B, String("band_n", N))
     print("PASS test_unordered_resident_band")
+
+
+def test_phi16_identity() raises:
+    """`_phi_of` at a 16-bit payload is the top half of the 32-bit one. All 65536.
+
+    This is the whole basis for narrowing the payload, so it is proven rather
+    than argued, and it is proven exhaustively because the domain is small
+    enough to enumerate. Three claims, and each rules out a different way the
+    narrowing could be wrong:
+
+    - **The identity.** `phi16(b) == phi32(widen(b)) >> 16` for every pattern.
+      Widening is a 16-bit shift, and `_phi` xors with `0x80000000` above a
+      positive and `0xFFFFFFFF` above a negative, whose top halves are `0x8000`
+      and `0xFFFF`.
+    - **Bijectivity.** Two patterns never share a `phi16`. This is what makes
+      the identity enough: an equality test on `phi16` decides the same thing an
+      equality test on `phi32` would, so the plateau tests and the column half's
+      `phi == t_phi` do not move.
+    - **Monotonicity.** Walking `phi16` from 0 to 65535 walks the bf16 values
+      non-decreasingly. Non-decreasing rather than increasing because `-0.0` and
+      `+0.0` are two patterns of one value; bijectivity supplies the strictness
+      of the map itself. NaN patterns are skipped -- `_phi` orders finite values
+      and the f32 path makes no claim about NaN either.
+
+    And the padding sentinel: `phi16(0xFFFF) == 0` is the same minimum the wide
+    form gets from `0xFFFFFFFF`, which is what lets the select count padding as
+    an ordinary candidate at either width.
+    """
+    comptime NPAT = 1 << 16
+    var value = List[Float32](capacity=NPAT)
+    var seen = List[Int](capacity=NPAT)
+    var inverse = List[Int](capacity=NPAT)
+    for _ in range(NPAT):
+        value.append(0.0)
+        seen.append(0)
+        inverse.append(-1)
+
+    var nan_pats = 0
+    for b in range(NPAT):
+        var pat = SIMD[.uint16, 1](UInt16(b))
+        var score = bitcast[.bfloat16, 1](pat)
+        var p16 = Int(_phi_of[.bfloat16, .uint16, 1](pat)[0])
+        var p32 = Int(_phi_of[.bfloat16, .uint32, 1](pat)[0])
+
+        assert_equal(p16, p32 >> 16, String("phi16 identity at pattern ", b))
+        assert_equal(
+            p32,
+            Int(_phi(Float32(score[0]))),
+            String("phi32 of a widened bf16 is _phi of its f32 at ", b),
+        )
+        assert_equal(seen[p16], 0, String("phi16 collision at pattern ", b))
+        seen[p16] = 1
+        inverse[p16] = b
+        # An exponent field of all ones with a non-zero mantissa: bf16 shares
+        # f32's 8-bit exponent, so the test is the f32 one on the top half.
+        var is_nan = (b & 0x7F80) == 0x7F80 and (b & 0x007F) != 0
+        if is_nan:
+            nan_pats += 1
+        value[b] = Float32(score[0])
+
+    assert_equal(
+        _phi_of[.bfloat16, .uint16, 1](SIMD[.uint16, 1](0xFFFF))[0],
+        UInt16(0),
+        "the padding sentinel's phi16 image must be the minimum",
+    )
+
+    # Bijectivity was checked as "no collision"; with 65536 patterns into 65536
+    # slots that already forces surjectivity, but assert it rather than infer
+    # it, because a mis-typed accumulator would break exactly this.
+    var covered = 0
+    for i in range(NPAT):
+        covered += seen[i]
+    assert_equal(covered, NPAT, "phi16 must be a bijection on 16 bits")
+
+    var prev = Float32(0.0)
+    var have_prev = False
+    for p in range(NPAT):
+        var b = inverse[p]
+        if (b & 0x7F80) == 0x7F80 and (b & 0x007F) != 0:
+            continue
+        if have_prev:
+            assert_true(
+                prev <= value[b],
+                String(
+                    "phi16 order must follow score order: phi ",
+                    p,
+                    " gave ",
+                    value[b],
+                    " after ",
+                    prev,
+                ),
+            )
+        prev = value[b]
+        have_prev = True
+
+    # 2 * 127 patterns (both signs, mantissa 1..127) are NaN. Stated so the
+    # skip above cannot quietly grow to swallow the finite values.
+    assert_equal(nan_pats, 254, "bf16 has exactly 254 NaN patterns")
+    print("PASS test_phi16_identity")
 
 
 def test_unord_nd_predicate_bites() raises:
@@ -1517,7 +1643,9 @@ def test_unordered_small_n(ctx: DeviceContext) raises:
 # ===----------------------------------------------------------------------=== #
 
 
-def _run_and_check_bounded(
+def _run_and_check_bounded[
+    in_dtype: DType = .float32
+](
     ctx: DeviceContext,
     scores_host: List[Float32],  # B * N flat, poisoned at/past each bound
     N: Int,
@@ -1542,21 +1670,23 @@ def _run_and_check_bounded(
     assert len(scores_host) == B * N, "scores_host length mismatch"
     assert len(bounds) == B, "bounds length mismatch"
 
-    var scores_dev = ctx.enqueue_create_buffer[.float32](B * N)
+    var scores_dev = ctx.enqueue_create_buffer[in_dtype](B * N)
     var idxs_dev = ctx.enqueue_create_buffer[.int32](B * K)
     idxs_dev.enqueue_fill(Int32(-2))  # sentinel to catch unwritten slots
     var bounds_dev = ctx.enqueue_create_buffer[.int32](B)
 
     with scores_dev.map_to_host() as buf:
         for i in range(B * N):
-            buf[i] = Float32(scores_host[i])
+            buf[i] = scores_host[i].cast[in_dtype]()
     with bounds_dev.map_to_host() as buf:
         for b in range(B):
             buf[b] = Int32(bounds[b])
 
     persistent_topk_block_split[ordered=True, deterministic=True](
         ctx,
-        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_dev.unsafe_ptr()),
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            scores_dev.unsafe_ptr()
+        ),
         rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
         N,
         K,
@@ -1571,6 +1701,7 @@ def _run_and_check_bounded(
     ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
     ctx.synchronize()
 
+    var seen_scores = _as_read[in_dtype](scores_host)
     for b in range(B):
         var bound = bounds[b]
         var live = min(K, bound)
@@ -1598,7 +1729,7 @@ def _run_and_check_bounded(
             continue
         var row_scores = List[Float32](capacity=bound)
         for i in range(bound):
-            row_scores.append(scores_host[b * N + i])
+            row_scores.append(seen_scores[b * N + i])
         var row_idxs = List[Int](capacity=live)
         for k in range(live):
             row_idxs.append(Int(idxs_host[b * K + k]))
@@ -1690,6 +1821,575 @@ def test_bounded_histsel_fills_gpu(ctx: DeviceContext) raises:
     print("PASS test_bounded_histsel_fills_gpu")
 
 
+# ===----------------------------------------------------------------------=== #
+# bf16 score input
+# ===----------------------------------------------------------------------=== #
+#
+# Every read widens exactly to f32 on the way in, so the arithmetic below the
+# load is dtype-blind. The load arms here only cover each load helper against
+# its paths -- vector, scalar tail, past-`count` padding; mirroring the whole
+# f32 suite would double this file's compile time to re-test dtype-blind logic.
+#
+# The ROUND SCHEDULE is the exception, and the last three arms cover it. A bf16
+# score occupies 16 bits of the 32-bit key half, so `_hsel_sig_bits` gives it a
+# two-round score half where f32 takes three, and its last round leaves the
+# key's low 16 bits uniform. `_hsel_exact_key` recovers them from the sign, and
+# only a NEGATIVE score needs it -- above a positive one those bits are already
+# zero, so a positive plateau cannot fail. Every schedule arm therefore puts a
+# negative value at the threshold, paired with the same data at f32 as a
+# control: f32 resolves every bit, so a failure there means the case or the
+# oracle is wrong, not the schedule.
+#
+# These arms go vacuous under a 16-bit payload, where `_hsel_exact_key`'s pad is
+# zero and the helper folds to the identity. If `_hsel_phi_dtype` is ever
+# narrowed, they stop testing anything while still passing.
+#
+# `[False, False]` is not missing from the load coverage -- `deterministic` is
+# consumed after the append and never touches `in_scores`, so `[False, True]`
+# covers the same loads. It has an arm anyway, `test_bf16_unord_nd_streaming`,
+# because it is the only contract whose scan GROUP WIDTH follows the payload and
+# the only one the fp8 indexer launches. It is held to the score-valid predicate
+# rather than to the exact oracle, which is all that contract promises.
+
+
+def _check_split_bf16[
+    ordered: Bool = False, in_dtype: DType = .bfloat16
+](
+    ctx: DeviceContext,
+    scores_host: List[Float32],
+    N: Int,
+    K: Int,
+    B: Int,
+    label: String,
+) raises:
+    """Run the split launcher at `in_dtype` and check the exact oracle set.
+
+    The oracle runs on `_as_read`, not on the generated scores: bf16 rounding
+    manufactures ties, and `_expected_topk_set` resolves ties exactly, so an
+    unrounded oracle would disagree with a perfectly correct kernel.
+
+    `ordered` picks the contract, because the two reach different kernels at the
+    same shape and the score half's handoff feeds both. `deterministic` stays
+    `True` throughout: the relaxed contract does not promise which members of a
+    tie plateau survive, so it cannot hold an exact set -- and a plateau is
+    exactly what the schedule arms below are made of.
+    """
+    var idxs = _run_split[ordered, True, in_dtype=in_dtype](
+        ctx, scores_host, N, K, B
+    )
+    var seen = _as_read[in_dtype](scores_host)
+    for b in range(B):
+        var row_scores = List[Float32](capacity=N)
+        for i in range(N):
+            row_scores.append(seen[b * N + i])
+        var row = List[Int](capacity=K)
+        for k in range(K):
+            row.append(idxs[b * K + k])
+        _check_set_row(row_scores, row, N, K, label, b)
+
+
+def test_bf16_block_multirow(ctx: DeviceContext) raises:
+    """`_load4_scores` at bf16, both paths, across both single-block kernels.
+
+    Odd `N` leaves most rows' bases off the 4-element multiple the width-4 load
+    tests, so each row exercises the vector path or the scalar tail depending on
+    its own base -- the same split the f32 twins rely on.
+    """
+    for shape in [(1025, 512), (8193, 2048)]:
+        var N = shape[0]
+        var K = shape[1]
+        comptime B = 8
+        var scores = _lcg_scores(B, N, 0xBF160000 + UInt32(N), 40.0)
+        _run_and_check_block_multirow[.bfloat16](
+            ctx, scores, N, K, B, String("bf16_block_n", N)
+        )
+    print("PASS test_bf16_block_multirow")
+
+
+def test_bf16_resident(ctx: DeviceContext) raises:
+    """`_phi4` at bf16: vector path, scalar tail, and the past-the-end branch.
+
+    `B` under the SM count is what keeps the register-resident select chosen.
+    2560 is below the `K + K // 2` crossover so it takes the `bin_digit`
+    instantiation; 4093 is not a multiple of 4, so its tail rows reach both the
+    scalar branch and the group-entirely-past-the-row-end branch.
+    """
+    comptime K = 2048
+    comptime B = 48
+    for N in [2560, 4093, 4096]:
+        var scores = _lcg_scores(B, N, 0xBF16A000 + UInt32(N), 100.0)
+        _check_split_bf16(ctx, scores, N, K, B, String("bf16_resident_n", N))
+    print("PASS test_bf16_resident")
+
+
+def test_bf16_histsel(ctx: DeviceContext) raises:
+    """`_load_scan_group` at bf16 -- including its 16-byte-aligned fast path.
+
+    These are the only shapes that reach `parked`, so they are also the only
+    ones that run the four scalar `in_scores[row + col]` reads in the refine
+    loop. The `N` values are chosen for the alignment test, which at bf16 asks
+    for an 8-element multiple rather than f32's 4: 32769 and 8193 are `1 mod 8`
+    and take the scalar tail, while 32768 is the one that takes the 16-byte
+    vector path. Without it that path would be compiled and never run.
+    """
+    comptime K = 2048
+    for shape in [(32769, 8), (32768, 8), (8193, 192)]:
+        var N = shape[0]
+        var B = shape[1]
+        var scores = _lcg_scores(B, N, 0xBF16B000 + UInt32(N), 100.0)
+        _check_split_bf16(
+            ctx, scores, N, K, B, String("bf16_histsel_n", N, "_b", B)
+        )
+    print("PASS test_bf16_histsel")
+
+
+def test_bf16_bounded(ctx: DeviceContext) raises:
+    """The bound contract at bf16, across all three load helpers.
+
+    `_poisoned_bounded_scores` puts values larger than any live score at and
+    past each bound, so a read past a bound displaces a live selection and
+    surfaces as an out-of-bound index. The poison is 1.0e30, which bf16
+    represents (approximately, but far above every live score), so the trap
+    still springs at this width.
+    """
+    comptime K = 2048
+    for N in [2048, 4096, 32769]:
+        var bounds: List[Int] = [N, N - 1, 4096, 2048, 1000, 1, 0, N]
+        var B = len(bounds)
+        for b in range(B):
+            if bounds[b] > N:
+                bounds[b] = N
+        var scores = _poisoned_bounded_scores(
+            B, N, bounds, 0xBF16C000 + UInt32(N)
+        )
+        _run_and_check_bounded[.bfloat16](
+            ctx, scores, N, K, B, bounds, String("bf16_bounded_n", N)
+        )
+    print("PASS test_bf16_bounded")
+
+
+def test_bf16_rounding_plateau(ctx: DeviceContext) raises:
+    """Scores distinct in f32 that collapse to one bf16 value across `K`.
+
+    A monotone ramp will not do this, which is worth stating because it is the
+    obvious construction and it is inert: the total order breaks ties by
+    ASCENDING column, so on a ramp the rounded selection reproduces the
+    unrounded one exactly and the case tests nothing.
+
+    What separates them is a group whose f32 order runs OPPOSITE to its column
+    order. Sixteen columns straddling the cut hold `1.0 + j/16384` increasing
+    with the column; bf16 keeps 8 significand bits, so all sixteen are inside
+    one rounding interval of 1.0 and tie. Exactly eight are wanted. The exact
+    order takes the eight LARGEST -- the last eight columns; the rounded order
+    sees one plateau and takes the eight LOWEST columns. The two selections are
+    disjoint, so the arms cannot coincide by luck.
+
+    The second assertion is the point of the test: the oracle on the UNROUNDED
+    scores must disagree with the kernel. Without it this case would pass just
+    as happily if `_as_read` were the identity, and the rounding discipline the
+    rest of these arms depend on would be untested.
+    """
+    comptime N = 4096
+    comptime K = 2048
+    comptime B = 4
+    comptime group_lo = K - 8
+    comptime group_hi = K + 8
+    var scores = List[Float32](capacity=B * N)
+    for _ in range(B):
+        for c in range(N):
+            if c < group_lo:
+                scores.append(Float32(10.0))
+            elif c < group_hi:
+                # Distinct in f32, one value in bf16: the step is 2**-14 and
+                # bf16's rounding interval around 1.0 is 2**-9 wide.
+                scores.append(
+                    Float32(1.0) + Float32(c - group_lo) / Float32(16384.0)
+                )
+            else:
+                scores.append(Float32(-1.0))
+
+    _check_split_bf16(ctx, scores, N, K, B, "bf16_rounding_plateau")
+
+    var row_raw = List[Float32](capacity=N)
+    var row_seen = List[Float32](capacity=N)
+    var seen = _as_read[.bfloat16](scores)
+    for i in range(N):
+        row_raw.append(scores[i])
+        row_seen.append(seen[i])
+    assert_true(
+        _expected_topk_set(row_raw, K) != _expected_topk_set(row_seen, K),
+        (
+            "the plateau is supposed to exist only after bf16 rounding, but the"
+            " rounded and unrounded oracles agree -- this case no longer tests"
+            " that the reference is rounded, so widen the run or shrink the"
+            " step"
+        ),
+    )
+    print("PASS test_bf16_rounding_plateau")
+
+
+def _wide_negative_plateau(
+    B: Int, N: Int, n_above: Int, plateau: Int
+) -> List[Float32]:
+    """Rows whose threshold sits inside a wide NEGATIVE tie plateau.
+
+    Three things make it the shape that reaches the score half's handoff, and
+    all three are load-bearing:
+
+    - The plateau value is NEGATIVE, which is the only sign for which
+      `_hsel_exact_key` does any work.
+    - It is WIDER than the select's slack. A round hands over as soon as the
+      columns at or above its bracket fit `sel_cap` (`_HSEL_SEL_CAP`, twice
+      `K`), and handing over sets the threshold from the bracket FLOOR, where
+      the floor is the right answer at any width. Only a plateau too wide to
+      hand over runs the score half out of rounds, which is the path that needs
+      the key itself.
+    - Every value is exactly representable in bf16, so `_as_read` is the
+      identity and the tie is the f32 tie -- no rounding confound between the
+      two arms of the control.
+    """
+    var scores = List[Float32](capacity=B * N)
+    for _ in range(B):
+        for c in range(N):
+            if c < n_above:
+                scores.append(Float32(-0.5))
+            elif c < n_above + plateau:
+                scores.append(Float32(-1.0))
+            else:
+                scores.append(Float32(-1.0e30))
+    return scores^
+
+
+def test_bf16_unord_nd_streaming(ctx: DeviceContext) raises:
+    """The relaxed contract at bf16, on the arm production actually launches.
+
+    `_check_split_bf16` pins `deterministic=True` because the relaxed contract
+    cannot hold an exact set -- which left the ONE arm the fp8 indexer launches
+    with no bf16 coverage at all. It is also the only arm whose scan group width
+    follows the payload (see `_hsel_prefetch_scan_items`), so a change to the row
+    scan lands here and nowhere a bf16 test looked.
+
+    Held to `_check_score_valid_row`, the strongest predicate that does not
+    over-promise: `deterministic=False` does not say WHICH members of a
+    threshold plateau survive, only that everything strictly above it is in.
+
+    The shapes pick the arm and then both of its load paths. `rows` below the SM
+    count and `N` past the wide resident payload is the prefetching streaming
+    select; `N = 32768` is a whole number of 8-element bf16 vectors so every
+    thread takes the wide load, and `32769` and `20481` leave the last group
+    short so the scalar tail runs too. Each is paired with the same data at f32,
+    which reaches the same arm at the narrow group width -- so a failure there
+    means the case or the checker is wrong rather than the group width.
+    """
+    comptime K = 2048
+    comptime B = 8
+    for N in [32768, 32769, 20481]:
+        var scores = _lcg_scores(B, N, 0xC1000000 + UInt32(N), 100.0)
+        var seen = _as_read[.bfloat16](scores)
+        for arm in range(2):
+            var idxs: List[Int]
+            if arm == 0:
+                idxs = _run_split[False, False, .bfloat16](ctx, scores, N, K, B)
+            else:
+                idxs = _run_split[False, False, .float32](ctx, scores, N, K, B)
+            for b in range(B):
+                var row_scores = List[Float32](capacity=N)
+                for i in range(N):
+                    if arm == 0:
+                        row_scores.append(seen[b * N + i])
+                    else:
+                        row_scores.append(scores[b * N + i])
+                var row = List[Int](capacity=K)
+                for k in range(K):
+                    row.append(idxs[b * K + k])
+                _check_score_valid_row(
+                    row_scores,
+                    row,
+                    N,
+                    K,
+                    String("unord_nd_bf16_n", N, "_arm", arm),
+                    b,
+                )
+    print("PASS test_bf16_unord_nd_streaming")
+
+
+def test_bf16_negative_plateau_streaming(ctx: DeviceContext) raises:
+    """The two-round score half's handoff, on the streaming select.
+
+    `N` past `_HSEL_RES_MAX` with `B` under the SM count is what streams; 32769
+    is also `1 mod 8`, so the rows take the bf16 scalar tail as well. 2040
+    columns sit above a 4096-wide plateau, so `need` falls to 8 and the plateau
+    is 6136 at-or-above against a 4096 slack -- no round can hand over and the
+    column half has to break the tie, which it can only do against the exact
+    threshold key.
+    """
+    comptime N = 32769
+    comptime K = 2048
+    comptime B = 8
+    var scores = _wide_negative_plateau(B, N, 2040, 4096)
+    _check_split_bf16[ordered=False](ctx, scores, N, K, B, "bf16_negplat_str")
+    _check_split_bf16[ordered=True](
+        ctx, scores, N, K, B, "bf16_negplat_str_ord"
+    )
+    # f32 control: three rounds resolve the key outright, so this arm passes
+    # with or without the sign fill. A failure here is the case, not the fix.
+    _check_split_bf16[ordered=False, in_dtype=.float32](
+        ctx, scores, N, K, B, "f32_negplat_str"
+    )
+    print("PASS test_bf16_negative_plateau_streaming")
+
+
+def test_bf16_negative_plateau_resident(ctx: DeviceContext) raises:
+    """The same handoff on the register-resident select, ordered contract.
+
+    Ordered on purpose: under the cheap contract this kernel folds a
+    single-valued bracket into its threshold directly (`ctl[6] == ctl[7]`) and
+    never reaches the handoff, so the arm that looks most production-like is
+    the one that cannot fail. `N` at `_HSEL_RES_MAX` and `B` under the SM count
+    is what keeps the row in registers.
+    """
+    comptime N = 8192
+    comptime K = 2048
+    comptime B = 48
+    var scores = _wide_negative_plateau(B, N, 2040, 4096)
+    _check_split_bf16[ordered=True](ctx, scores, N, K, B, "bf16_negplat_res")
+    _check_split_bf16[ordered=False](
+        ctx, scores, N, K, B, "bf16_negplat_res_un"
+    )
+    _check_split_bf16[ordered=True, in_dtype=.float32](
+        ctx, scores, N, K, B, "f32_negplat_res"
+    )
+    print("PASS test_bf16_negative_plateau_resident")
+
+
+def test_bf16_negative_levels_masked(ctx: DeviceContext) raises:
+    """The indexer's own shape with the levels pushed negative.
+
+    A per-row valid prefix, a `-3.0e38` masked tail, and four coarse score
+    levels -- coarse so the top level alone holds several times `K`, which is
+    what runs the score half out of rounds on real data rather than on a
+    hand-built plateau. The mask sentinel is negative and bf16-representable
+    (~-2.996e38), and the past-`count` padding maps to a `phi` of 0, which sits
+    in a different round-0 bin from every live score.
+    """
+    comptime N = 32769
+    comptime K = 2048
+    comptime B = 8
+    var scores = List[Float32](capacity=B * N)
+    var state = UInt32(0xBF16D000)
+    for b in range(B):
+        var valid = N - 1500 * b
+        for c in range(N):
+            state = 1664525 * state + 1013904223
+            if c < valid:
+                scores.append(
+                    Float32(-1.0) - Float32(Int((state >> 16) % 4)) / 8.0
+                )
+            else:
+                scores.append(Float32(-3.0e38))
+    _check_split_bf16[ordered=False](ctx, scores, N, K, B, "bf16_neglevels")
+    _check_split_bf16[ordered=True](ctx, scores, N, K, B, "bf16_neglevels_ord")
+    _check_split_bf16[ordered=False, in_dtype=.float32](
+        ctx, scores, N, K, B, "f32_neglevels"
+    )
+    print("PASS test_bf16_negative_levels_masked")
+
+
+# ===----------------------------------------------------------------------=== #
+# Short row beside a long one, unordered + bf16 — the `select_all` pad overrun.
+# ===----------------------------------------------------------------------=== #
+
+
+def _run_short_row_overrun[
+    in_dtype: DType, ordered: Bool, deterministic: Bool
+](
+    ctx: DeviceContext,
+    N: Int,
+    K: Int,
+    B: Int,
+    bounds: List[Int],
+    label: String,
+) raises:
+    """Assert a row with `bound < K` writes only into its own `K` slots.
+
+    A row whose live count is below `K` takes the select-all path, which has
+    nothing to resolve and appends every live column. The append's "greater
+    than the threshold" branch writes without a slot bound -- only its "equal"
+    sibling checks -- so whether the padding past the row end lands in the
+    greater branch decides whether the write stays inside the row.
+
+    That is dtype-dependent. `_score_pad` is all-ones in the BITS domain, whose
+    `phi` image is 0 at f32 but `0x0000FFFF` once a bf16 pattern is widened.
+    The select-all threshold is 0, so an f32 pad ties and is bounds-checked
+    while a bf16 pad compares strictly greater and is not.
+
+    The buffer is over-allocated and the slack poisoned, so an overrun is a
+    failed assertion here rather than whatever it would corrupt in production.
+    """
+    assert len(bounds) == B, "bounds length mismatch"
+
+    # Room for the worst case (the last row appending all `N` of its columns)
+    # so the check reports the overrun instead of faulting on it.
+    var slack = 2 * N
+    var total_slots = B * K + slack
+
+    var scores_dev = ctx.enqueue_create_buffer[in_dtype](B * N)
+    var idxs_dev = ctx.enqueue_create_buffer[.int32](total_slots)
+    var bounds_dev = ctx.enqueue_create_buffer[.int32](B)
+
+    var scores_host = List[Float32](capacity=B * N)
+    for b in range(B):
+        for c in range(N):
+            # Descending within a row, so the top-`K` of a long row is a
+            # prefix and any pad that displaces one is visible as a big index.
+            scores_host.append(Float32(1.0) - Float32(c) * Float32(1e-4))
+        _ = b
+
+    with scores_dev.map_to_host() as buf:
+        for i in range(B * N):
+            buf[i] = scores_host[i].cast[in_dtype]()
+    with bounds_dev.map_to_host() as buf:
+        for b in range(B):
+            buf[b] = Int32(bounds[b])
+
+    comptime GUARD = Int32(0x5A5A5A5A)
+    with idxs_dev.map_to_host() as buf:
+        for i in range(B * K):
+            buf[i] = Int32(-2)  # catches an unwritten in-row slot
+        for i in range(B * K, total_slots):
+            buf[i] = GUARD
+
+    persistent_topk_block_split[ordered=ordered, deterministic=deterministic](
+        ctx,
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+            scores_dev.unsafe_ptr()
+        ),
+        rebind[MutPointer[Int32, MutAnyOrigin]](idxs_dev.unsafe_ptr()),
+        N,
+        K,
+        total_seq_len=B,
+        row_bounds=Optional(
+            rebind[ImmPointer[Int32, ImmutAnyOrigin]](bounds_dev.unsafe_ptr())
+        ),
+    )
+    ctx.synchronize()
+
+    var idxs_host = ctx.enqueue_create_host_buffer[.int32](total_slots)
+    ctx.enqueue_copy(dst_buf=idxs_host, src_buf=idxs_dev)
+    ctx.synchronize()
+
+    var trespass = 0
+    var first_bad = -1
+    for i in range(B * K, total_slots):
+        if idxs_host[i] != GUARD:
+            trespass += 1
+            if first_bad < 0:
+                first_bad = i
+    assert_true(
+        trespass == 0,
+        String(
+            "[",
+            label,
+            "] wrote past the index buffer: ",
+            trespass,
+            " of ",
+            slack,
+            " guard slots clobbered, first at flat slot ",
+            first_bad,
+            " (buffer holds B*K = ",
+            B * K,
+            ")",
+        ),
+    )
+
+    for b in range(B):
+        var bound = bounds[b]
+        var live = min(K, bound)
+        for k in range(K):
+            var idx = Int(idxs_host[b * K + k])
+            if k < live:
+                assert_true(
+                    idx >= 0 and idx < bound,
+                    String(
+                        "[",
+                        label,
+                        "] row ",
+                        b,
+                        " (bound ",
+                        bound,
+                        ") slot ",
+                        k,
+                        " holds ",
+                        idx,
+                        ", which is not a live column",
+                    ),
+                )
+            else:
+                assert_true(
+                    idx == -1,
+                    String(
+                        "[",
+                        label,
+                        "] row ",
+                        b,
+                        " (bound ",
+                        bound,
+                        ") tail slot ",
+                        k,
+                        " holds ",
+                        idx,
+                        ", expected -1",
+                    ),
+                )
+
+        # A short row selects every live column exactly once, so its set is
+        # forced and a displaced pad shows up as a missing column.
+        if bound <= K:
+            var seen = Set[Int]()
+            for k in range(live):
+                seen.add(Int(idxs_host[b * K + k]))
+            assert_true(
+                len(seen) == live,
+                String(
+                    "[",
+                    label,
+                    "] row ",
+                    b,
+                    " selected ",
+                    len(seen),
+                    " distinct columns, expected ",
+                    live,
+                ),
+            )
+
+
+def test_short_row_beside_long_row_bf16(ctx: DeviceContext) raises:
+    """GLM's decode shape: a freshly admitted short request beside a long one.
+
+    `N` sits in the wide register-resident window (`8192 < N <= 16384`, taken
+    only by the unordered contract) and `B` is under the SM count, which is
+    what routes these rows to the resident select at all. One row is shorter
+    than `K`; the rest are full length.
+    """
+    comptime N = 12288
+    comptime K = 2048
+    comptime B = 4
+    var bounds: List[Int] = [N, N, 500, N]
+
+    _run_short_row_overrun[.bfloat16, ordered=False, deterministic=False](
+        ctx, N, K, B, bounds, "bf16 unord nd short-row"
+    )
+    _run_short_row_overrun[.bfloat16, ordered=False, deterministic=True](
+        ctx, N, K, B, bounds, "bf16 unord det short-row"
+    )
+    # f32 is the control: the pad ties at the threshold there, so this arm
+    # passing while bf16 fails localizes the fault to the pad's image.
+    _run_short_row_overrun[.float32, ordered=False, deterministic=False](
+        ctx, N, K, B, bounds, "f32 unord nd short-row"
+    )
+    print("PASS test_short_row_beside_long_row_bf16")
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_full_sort_n2048(ctx)
@@ -1721,6 +2421,7 @@ def main() raises:
         test_block_odd_n_multirow(ctx)
         test_block_streaming_odd_n_multirow(ctx)
         test_unordered_resident_band(ctx)
+        test_phi16_identity()
         test_unord_nd_predicate_bites()
         test_unordered_wide_payload_band(ctx)
         test_unordered_prime_lengths(ctx)
@@ -1741,4 +2442,14 @@ def main() raises:
         test_bounded_resident_bin_digit(ctx)
         test_bounded_histsel_prefetch(ctx)
         test_bounded_histsel_fills_gpu(ctx)
+        test_bf16_block_multirow(ctx)
+        test_bf16_resident(ctx)
+        test_bf16_histsel(ctx)
+        test_bf16_bounded(ctx)
+        test_bf16_rounding_plateau(ctx)
+        test_bf16_unord_nd_streaming(ctx)
+        test_bf16_negative_plateau_streaming(ctx)
+        test_bf16_negative_plateau_resident(ctx)
+        test_bf16_negative_levels_masked(ctx)
+        test_short_row_beside_long_row_bf16(ctx)
     print("ALL TESTS PASSED")

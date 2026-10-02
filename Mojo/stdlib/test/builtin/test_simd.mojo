@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import size_of
-from std.sys.info import CompilationTarget, is_64bit
+from std.sys.info import CompilationTarget, Endian, is_64bit
 
 from std.bit import count_leading_zeros
 from std.memory import alloc, dealloc, ThinAllocation, Layout
@@ -2203,54 +2203,55 @@ def test_float_conversion() raises:
 def test_from_bytes_as_bytes() raises:
     # Test scalar types with specific byte patterns
 
-    assert_equal(Int16.from_bytes[big_endian=True]([0, 16]), 16)
-    assert_equal(Int16.from_bytes[big_endian=False]([0, 16]), 4096)
-    assert_equal(Int16.from_bytes[big_endian=True]([252, 0]), -1024)
-    assert_equal(UInt16.from_bytes[big_endian=True]([252, 0]), 64512)
-    assert_equal(Int16.from_bytes[big_endian=False]([252, 0]), 252)
-    assert_equal(Int32.from_bytes[big_endian=True]([0, 0, 0, 1]), 1)
+    assert_equal(Int16.from_bytes[endian=.big]([0, 16]), 16)
+    assert_equal(Int16.from_bytes[endian=.little]([0, 16]), 4096)
+    assert_equal(Int16.from_bytes[endian=.big]([252, 0]), -1024)
+    assert_equal(UInt16.from_bytes[endian=.big]([252, 0]), 64512)
+    assert_equal(Int16.from_bytes[endian=.little]([252, 0]), 252)
+    assert_equal(Int32.from_bytes[endian=.big]([0, 0, 0, 1]), 1)
     assert_equal(
-        Int32.from_bytes[big_endian=False]([0, 0, 0, 1]),
+        Int32.from_bytes[endian=.little]([0, 0, 0, 1]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True]([1, 0, 0, 0]),
+        Int32.from_bytes[endian=.big]([1, 0, 0, 0]),
         16777216,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True]([1, 0, 0, 1]),
+        Int32.from_bytes[endian=.big]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=False]([1, 0, 0, 1]),
+        Int32.from_bytes[endian=.little]([1, 0, 0, 1]),
         16777217,
     )
     assert_equal(
-        Int32.from_bytes[big_endian=True]([255, 0, 0, 0]),
+        Int32.from_bytes[endian=.big]([255, 0, 0, 0]),
         -16777216,
     )
 
     # Test scalar roundtrip conversions
+    def roundtrip[endian: Endian](x: Int16) raises:
+        assert_equal(
+            Int16.from_bytes[endian=endian](x.as_bytes[endian=endian]()), x
+        )
+
     for x in [Int16(10), 100, -12, 0, 1, -1, 1000, -1000]:
-        comptime for b in range(2):
-            assert_equal(
-                Int16.from_bytes[big_endian=Bool(b)](
-                    Int16(x).as_bytes[big_endian=Bool(b)]()
-                ),
-                x,
-            )
+        roundtrip[.native()](x)
+        roundtrip[.big](x)
+        roundtrip[.little](x)
 
     # Test SIMD vector roundtrip conversions (from test_comprehensive_from_bytes)
     var original_int32 = SIMD[.int32, 2](1, 2)
 
     # Test little endian roundtrip
-    var bytes_le = original_int32.as_bytes[big_endian=False]()
-    var int32_from_le = SIMD[.int32, 2].from_bytes[big_endian=False](bytes_le)
+    var bytes_le = original_int32.as_bytes[endian=.little]()
+    var int32_from_le = SIMD[.int32, 2].from_bytes[endian=.little](bytes_le)
     assert_equal(int32_from_le, original_int32)
 
     # Test big endian roundtrip
-    var bytes_be = original_int32.as_bytes[big_endian=True]()
-    var int32_from_be = SIMD[.int32, 2].from_bytes[big_endian=True](bytes_be)
+    var bytes_be = original_int32.as_bytes[endian=.big]()
+    var int32_from_be = SIMD[.int32, 2].from_bytes[endian=.big](bytes_be)
     assert_equal(int32_from_be, original_int32)
 
     # Test with float64 roundtrip (using default endianness)
@@ -2261,8 +2262,8 @@ def test_from_bytes_as_bytes() raises:
 
     # Test as_bytes conversion with specific byte patterns (from test_comprehensive_as_bytes)
     var int32_vals = SIMD[.int32, 2](0x12345678, 0x87654321)
-    var bytes_le_vals = int32_vals.as_bytes[big_endian=False]()
-    var bytes_be_vals = int32_vals.as_bytes[big_endian=True]()
+    var bytes_le_vals = int32_vals.as_bytes[endian=.little]()
+    var bytes_be_vals = int32_vals.as_bytes[endian=.big]()
 
     # Little endian: least significant byte first
     assert_equal(bytes_le_vals[0], 0x78)
@@ -2277,10 +2278,10 @@ def test_from_bytes_as_bytes() raises:
     assert_equal(bytes_be_vals[3], 0x78)
 
     # Test roundtrip conversion
-    var reconstructed_le = SIMD[.int32, 2].from_bytes[big_endian=False](
+    var reconstructed_le = SIMD[.int32, 2].from_bytes[endian=.little](
         bytes_le_vals
     )
-    var reconstructed_be = SIMD[.int32, 2].from_bytes[big_endian=True](
+    var reconstructed_be = SIMD[.int32, 2].from_bytes[endian=.big](
         bytes_be_vals
     )
     assert_equal(reconstructed_le, int32_vals)
@@ -2298,7 +2299,7 @@ def test_vector_from_bytes_as_bytes() raises:
         0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8,
     ]
     # fmt: on
-    var actual_v8_u16_be_bytes = v8_u16.as_bytes[big_endian=True]()
+    var actual_v8_u16_be_bytes = v8_u16.as_bytes[endian=.big]()
     for i, expected in enumerate(expected_v8_u16_be_bytes):
         assert_equal(Int(actual_v8_u16_be_bytes[i]), expected)
     # fmt: off
@@ -2306,22 +2307,20 @@ def test_vector_from_bytes_as_bytes() raises:
         1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8, 0,
     ]
     # fmt: on
-    var actual_v8_u16_le_bytes = v8_u16.as_bytes[big_endian=False]()
+    var actual_v8_u16_le_bytes = v8_u16.as_bytes[endian=.little]()
     for i, expected in enumerate(expected_v8_u16_le_bytes):
         assert_equal(Int(actual_v8_u16_le_bytes[i]), expected)
 
     var v8_i64 = SIMD[.int64, 8](1, -2, 3, -4, 5, -6, 7, -8)
     assert_equal(
         v8_i64,
-        SIMD[.int64, 8].from_bytes[big_endian=False](
-            v8_i64.as_bytes[big_endian=False]()
+        SIMD[.int64, 8].from_bytes[endian=.little](
+            v8_i64.as_bytes[endian=.little]()
         ),
     )
     assert_equal(
         v8_i64,
-        SIMD[.int64, 8].from_bytes[big_endian=True](
-            v8_i64.as_bytes[big_endian=True]()
-        ),
+        SIMD[.int64, 8].from_bytes[endian=.big](v8_i64.as_bytes[endian=.big]()),
     )
 
     var v8_f64 = SIMD[.float64, 8](1.1, -2.2, 3.3, -4.4, 5.5, -6.6, 7.7, -8.8)
@@ -2331,6 +2330,16 @@ def test_vector_from_bytes_as_bytes() raises:
         True, True, False, True, False, True, True, True
     )
     assert_equal(v8_bool, SIMD[.bool, 8].from_bytes(v8_bool.as_bytes()))
+
+
+def test_native_endian_is_target_order() raises:
+    comptime target_order = Endian.native()
+    var x = UInt32(0x12345678)
+    var native = x.as_bytes()
+    var explicit = x.as_bytes[endian=target_order]()
+    for i in range(4):
+        assert_equal(native[i], explicit[i])
+    assert_equal(UInt32.from_bytes(explicit), x)
 
 
 def test_reversed() raises:

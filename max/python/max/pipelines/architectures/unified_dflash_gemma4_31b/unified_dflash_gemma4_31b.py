@@ -93,6 +93,7 @@ class UnifiedDflashGemma4_31B(BlockDriver[TensorValue, TensorValue]):
             speculative_config=config.speculative_config,
             enable_structured_output=enable_structured_output,
             relaxed_acceptance=True,
+            vocab_size=config.target.text_config.vocab_size,
         )
         self.config = config
         self.target_layer_ids = list(config.target_layer_ids)

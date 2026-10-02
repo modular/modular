@@ -603,24 +603,24 @@ def _write_hex[
     comptime `U` = Byte(ord("U"))
 
     comptime __match amnt_hex_bytes:
-    case 2:
-        var chars = _hex_digits_to_hex_chars(UInt8(decimal))
-        var buf = Array[Byte, 4](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `x`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
-    case 4:
-        var chars = _hex_digits_to_hex_chars(UInt16(decimal))
-        var buf = Array[Byte, 6](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `u`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
-    case _:
-        var chars = _hex_digits_to_hex_chars(UInt32(decimal))
-        var buf = Array[Byte, 10](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `U`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+        case 2:
+            var chars = _hex_digits_to_hex_chars(UInt8(decimal))
+            var buf = Array[Byte, 4](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `x`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+        case 4:
+            var chars = _hex_digits_to_hex_chars(UInt16(decimal))
+            var buf = Array[Byte, 6](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `u`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+        case _:
+            var chars = _hex_digits_to_hex_chars(UInt32(decimal))
+            var buf = Array[Byte, 10](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `U`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))

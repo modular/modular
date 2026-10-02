@@ -35,7 +35,6 @@ from max.pipelines.architectures.qwen3_5.model import Qwen3_5Inputs
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.qwen3_5.state_cache import (
     STATE_CACHE_KEY,
-    Qwen3_5SpecShadowPools,
     attn_cache,
 )
 from max.pipelines.architectures.unified_mtp_qwen3_5.batch_processor import (
@@ -53,7 +52,7 @@ from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
     ragged_token_descriptors,
 )
-from max.pipelines.speculative import RecurrentStateRollback, SpeculativeConfig
+from max.pipelines.speculative import SpeculativeConfig
 from max.tree import leaves as tree_leaves
 
 NUM_DRAFTS = 3
@@ -116,7 +115,7 @@ def _dummy() -> Buffer:
 
 
 def _inputs_matching(
-    config: Qwen3_5Config, num_kv_leaves: int, *, ring: bool
+    config: Qwen3_5Config, num_kv_leaves: int
 ) -> UnifiedMTPQwen3_5Inputs:
     """Returns inputs with one buffer per slot the graph declares."""
     return UnifiedMTPQwen3_5Inputs(
@@ -136,9 +135,8 @@ def _inputs_matching(
         live_recurrent_pools=[_dummy()],
         live_conv_row_ids=[_dummy()],
         live_recurrent_row_ids=[_dummy()],
-        shadow_recurrent_pools=[] if ring else [_dummy()],
-        ring_pools=[_dummy()] if ring else [],
-        ring_row_ids=[_dummy()] if ring else [],
+        ring_pools=[_dummy()],
+        ring_row_ids=[_dummy()],
         draft_tokens=_dummy(),
         seed=_dummy(),
         temperature=_dummy(),
@@ -154,10 +152,7 @@ def _inputs_matching(
     )
 
 
-@pytest.mark.parametrize("rollback", ["snapshot", "ring"])
-def test_the_batch_fills_every_slot_the_graph_declares(
-    rollback: RecurrentStateRollback,
-) -> None:
+def test_the_batch_fills_every_slot_the_graph_declares() -> None:
     """Checks the batch packs one buffer per declared input."""
     config = _config()
     spec_kv = _spec_kv(config)
@@ -166,16 +161,13 @@ def test_the_batch_fills_every_slot_the_graph_declares(
         speculative_config=SpeculativeConfig(
             speculative_method="mtp",
             num_speculative_tokens=NUM_DRAFTS,
-            recurrent_state_rollback=rollback,
         ),
         enable_structured_output=True,
     )
     declared = driver.input_types(spec_kv)
     num_kv_leaves = len(spec_kv.flattened_kv_inputs())
 
-    packed = _inputs_matching(
-        config, num_kv_leaves, ring=(rollback == "ring")
-    ).buffers
+    packed = _inputs_matching(config, num_kv_leaves).buffers
 
     assert len(packed) == len(declared)
 
@@ -248,8 +240,7 @@ def test_the_inputs_satisfy_the_qwen3_5_overrides() -> None:
     assert issubclass(UnifiedMTPQwen3_5Inputs, Qwen3_5Inputs)
 
 
-@pytest.mark.parametrize("ring", [False, True])
-def test_a_batch_stages_through_the_shared_ragged_path(ring: bool) -> None:
+def test_a_batch_stages_through_the_shared_ragged_path() -> None:
     """Checks a real batch reaches the graph inputs through the base stager.
 
     The other tests stand in for the processor, so a call that drifts from
@@ -271,18 +262,12 @@ def test_a_batch_stages_through_the_shared_ragged_path(ring: bool) -> None:
     processor._batch_context_lengths = [
         Buffer.zeros(shape=[1], dtype=DType.int32)
     ]
-    processor.bind_runtime_state(
-        cast(
-            "Qwen3_5SpecShadowPools",
-            SimpleNamespace(shadow_pools=lambda _: []),
-        ),
-        mrope_enabled=False,
-    )
+    processor.mrope_enabled = False
 
     def leaf() -> RecurrentLeafInputs[Buffer, Buffer]:
         return RecurrentLeafInputs(pool=_dummy(), live_row_ids=_dummy())
 
-    leaves = (leaf(), leaf(), leaf()) if ring else (leaf(), leaf())
+    leaves = (leaf(), leaf(), leaf())
     kv = cast(
         "KVCacheInputs[Buffer, Buffer]",
         OrderedDict(
@@ -307,4 +292,4 @@ def test_a_batch_stages_through_the_shared_ragged_path(ring: bool) -> None:
     np.testing.assert_array_equal(
         inputs.input_row_offsets.to_numpy(), [0, 4, 7]
     )
-    assert len(inputs.ring_pools) == (1 if ring else 0)
+    assert len(inputs.ring_pools) == 1

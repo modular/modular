@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import atexit
 import dataclasses
 import json
 import logging
@@ -20,11 +21,13 @@ import logging.handlers
 import math
 import os
 import platform
+import signal
 import uuid
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from time import time
+from types import FrameType
 from urllib.parse import urlparse
 
 import numpy as np
@@ -35,6 +38,7 @@ from max.serve.telemetry.metrics import (
     HISTOGRAM_SHADOW_SUFFIX,
     configure_histogram_shadow_emission,
 )
+from opentelemetry import trace
 from opentelemetry._logs import set_logger_provider
 from opentelemetry.context import Context as OtelContext
 from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
@@ -105,11 +109,34 @@ request_trace_ctx: ContextVar[OtelContext | None] = ContextVar(
     "max.serve.request_trace_ctx", default=None
 )
 """The OTel context extracted from the current request's inbound W3C
-traceparent/tracestate headers (or None). Set once per request by the route
-handler in openai_routes.py before it calls into the pipeline, so it is
-already populated by the time TextContext is constructed in llm.py — even
-though route handlers and the pipeline live in different modules, ContextVar
-values propagate through the whole async call chain within the same task."""
+traceparent/tracestate headers (or None). Set by the ``request_session``
+middleware while tracing is on, so it is already populated by the time
+TextContext is constructed in llm.py — ``call_next`` runs the route in a
+child task, which inherits a copy of the context set here."""
+
+_request_id_ctx: ContextVar[str | None] = ContextVar(
+    "max.serve.request_id_ctx", default=None
+)
+"""The HTTP request's ID. ``/v1/completions`` and ``/v1/embeddings`` take one
+pipeline request per prompt, whose ``RequestID`` and ``max.request_id`` span
+attribute append ``_<index>`` to this."""
+
+
+def _tracing_enabled() -> bool:
+    """Whether a real TracerProvider is installed, vs. the OTel no-op default."""
+    return not isinstance(
+        trace.get_tracer_provider(), trace.ProxyTracerProvider
+    )
+
+
+def _capture_request_context(request_id: str, inbound: OtelContext) -> None:
+    """Sets the ambient correlation IDs for the request being handled.
+
+    ``request_session`` calls this before ``call_next``, so the downstream
+    task's context copy carries them onto every route's records.
+    """
+    _request_id_ctx.set(request_id)
+    request_trace_ctx.set(inbound)
 
 
 def _getCloudProvider() -> str:
@@ -378,12 +405,72 @@ class PrefixFormatter(logging.Formatter):
         return f"{self.prefix} {formatted_message}"
 
 
+def _correlation_fields() -> dict[str, str]:
+    """Returns the ambient request correlation IDs for a log line.
+
+    ``dd.trace_id`` is the key Datadog's correlator reads, as 32 hex digits.
+    No span ID: ``request_trace_ctx`` holds the caller's context, so one
+    would attach MAX's logs to the caller's span.
+    """
+    fields: dict[str, str] = {}
+    request_id = _request_id_ctx.get()
+    if request_id is not None:
+        fields["request_id"] = request_id
+    context = request_trace_ctx.get()
+    if context is not None:
+        span_context = trace.get_current_span(context).get_span_context()
+        if span_context.is_valid:
+            fields["dd.trace_id"] = trace.format_trace_id(span_context.trace_id)
+    return fields
+
+
+class _CorrelatedJsonFormatter(jsonlogger.JsonFormatter):
+    """Renders the request correlation IDs into this handler's JSON only.
+
+    ``configure_logging`` uses it only with tracing on. The IDs go into the
+    output dict, never onto the record: every handler shares one record, and
+    the OTLP handler exports its attributes to Modular, where an inbound
+    trace ID is the caller's data.
+    """
+
+    def add_fields(
+        self,
+        log_record: dict[str, object],
+        record: logging.LogRecord,
+        message_dict: dict[str, object],
+    ) -> None:
+        super().add_fields(log_record, record, message_dict)
+        log_record.update(_correlation_fields())
+
+
+class _RequestIdJsonFormatter(jsonlogger.JsonFormatter):
+    """Renders only ``request_id``, the same way, for tracing off."""
+
+    def add_fields(
+        self,
+        log_record: dict[str, object],
+        record: logging.LogRecord,
+        message_dict: dict[str, object],
+    ) -> None:
+        super().add_fields(log_record, record, message_dict)
+        request_id = _request_id_ctx.get()
+        if request_id is not None:
+            log_record["request_id"] = request_id
+
+
 # Configure logging to console and OTEL.  This should be called before any
 # 3rd party imports whose logging you wish to capture.
 # Note that the color is not propagated to subprocesses. eg: ModelWorker
 def configure_logging(
     settings: Settings, color: str | None = None, silent: bool = True
 ) -> None:
+    # Structured logs carry request_id; only traced requests capture the
+    # trace context, so without tracing there is no dd.trace_id field.
+    correlate = _tracing_enabled()
+    json_formatter = (
+        _CorrelatedJsonFormatter if correlate else _RequestIdJsonFormatter
+    )
+    trace_id_field = " %(dd.trace_id)s" if correlate else ""
     otlp_level = get_log_level(settings)
     egress_enabled = not _telemetry_disabled(settings)
 
@@ -434,8 +521,8 @@ def configure_logging(
         console_handler = logging.StreamHandler()
         console_formatter: logging.Formatter
         if settings.structured_logging:
-            console_formatter = jsonlogger.JsonFormatter(
-                f"{color_code}%(levelname)s: %(message)s %(request_id)s %(batch_id)s{color_terminator}",
+            console_formatter = json_formatter(
+                f"{color_code}%(levelname)s: %(message)s %(request_id)s %(batch_id)s{trace_id_field}{color_terminator}",
                 timestamp=True,
             )
         else:
@@ -466,8 +553,8 @@ def configure_logging(
         file_handler = logging.FileHandler(settings.logs_file_path)
         file_formatter: logging.Formatter
         if settings.structured_logging:
-            file_formatter = jsonlogger.JsonFormatter(
-                "%(levelname)s %(message)s %(request_id)s %(batch_id)s",
+            file_formatter = json_formatter(
+                f"%(levelname)s %(message)s %(request_id)s %(batch_id)s{trace_id_field}",
                 timestamp=True,
             )
         else:
@@ -860,13 +947,23 @@ def batch_spans_enabled() -> bool:
     return _kernel_trace_level >= KernelTraceLevel.BATCH
 
 
+def _exit_on_sigterm(signum: int, frame: FrameType | None) -> None:
+    """Raises ``SystemExit`` so that SIGTERM runs the process's exit hooks.
+
+    The profiler plugin writes the libkineto trace from an exit hook, which
+    SIGTERM's default action skips.
+    """
+    raise SystemExit(128 + signum)
+
+
 def configure_kernel_tracing(settings: Settings) -> None:
     """Configures GPU kernel-trace capture based on ``kernel_trace_level``.
 
     Must be called in the model worker process before ``InferenceSession``
     is constructed so that the libkineto auto-start picks up the enabled
     flag. Also records the level read by :func:`batch_spans_enabled`, so it
-    must run before the scheduler starts.
+    must run before the scheduler starts. At ``kernel`` level it installs a
+    SIGTERM handler, so it must run on the main thread.
 
     Args:
         settings: Server settings carrying ``kernel_trace_level``.
@@ -882,6 +979,10 @@ def configure_kernel_tracing(settings: Settings) -> None:
         # the libkineto auto-start that fires on InferenceSession construction.
         set_gpu_profiling_state("detailed")
         os.environ.setdefault("MODULAR_MAX_DEBUG_PROFILING_ENABLED", "true")
+        signal.signal(signal.SIGTERM, _exit_on_sigterm)
+        # Once exit starts, SIGTERM must not interrupt the trace write.
+        # Finalization resets a Python handler to SIG_DFL but keeps SIG_IGN.
+        atexit.register(signal.signal, signal.SIGTERM, signal.SIG_IGN)
     else:
         # OP level: op-level NVTX user-annotation ranges only.
         set_gpu_profiling_state("on")

@@ -494,4 +494,4 @@ def test_null_connector_holds_nothing() -> None:
 
 # The host/disk tier's own host-then-disk walk lives in Rust now; it is covered
 # by the kv-tier-connector crate's unit tests and
-# ``internal/dkv/test_rust_tiered_connector_gpu.py``.
+# ``internal/dkv/test_tiered_connector_gpu.py``.

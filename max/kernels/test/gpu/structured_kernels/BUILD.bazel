@@ -22,7 +22,12 @@ _EXTRA_CONSTRAINTS = {
         "//:has_gpu",
         "//:amd_gpu",
     ],
-    "test_producer_consumer_pipeline.mojo": ["//:has_gpu"],
+    # Only NVIDIA (mbarrier) and AMD (atomic-counter) backends exist; Apple
+    # GPUs would fall through to the NVIDIA-only mbarrier path.
+    "test_producer_consumer_pipeline.mojo": ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 # Per-file compile defines. The test compiles the reference-cadence /

@@ -143,20 +143,20 @@ struct GEMVAlgorithm(
     @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         __match self:
-        case .GemvKernel:
-            writer.write("GEMV")
-        case .GemvKernelVector:
-            writer.write("GEMV_KERNEL_VECTOR")
-        case .GemvSplitK:
-            writer.write("GEMV_SPLIT_K")
-        case .GevmKernelVector:
-            writer.write("GEVM_KERNEL_VECTOR")
-        case .GevmKernel:
-            writer.write("GEVM_KERNEL")
-        case .MatmulNaive:
-            writer.write("MATMUL_NAIVE")
-        case .GemmMmaCpasync:
-            writer.write("GEMM_MMA_CPASYNC")
+            case .GemvKernel:
+                writer.write("GEMV")
+            case .GemvKernelVector:
+                writer.write("GEMV_KERNEL_VECTOR")
+            case .GemvSplitK:
+                writer.write("GEMV_SPLIT_K")
+            case .GevmKernelVector:
+                writer.write("GEVM_KERNEL_VECTOR")
+            case .GevmKernel:
+                writer.write("GEVM_KERNEL")
+            case .MatmulNaive:
+                writer.write("MATMUL_NAIVE")
+            case .GemmMmaCpasync:
+                writer.write("GEMM_MMA_CPASYNC")
 
 
 @inline(.always)
@@ -1180,59 +1180,73 @@ def gemv_gpu_dispatch[
     comptime static_K = a.static_shape[1]
 
     __match kernel_func:
-    case GEMVAlgorithm.GemvSplitK:
-        logger.info("Executing: GEMV_SPLIT_K kernel")
+        case GEMVAlgorithm.GemvSplitK:
+            logger.info("Executing: GEMV_SPLIT_K kernel")
 
-        def _gemv_split_k_dispatch[
-            num_threads: Int,
-            tile_n: Int,
-            unroll_factor: Int = 2,
-            weight_non_temporal: Bool = True,
-        ]() raises {imm}:
-            comptime kernel = gemv_split_k[
-                c_type,
-                a_type,
-                b_type,
-                type_of(c).LayoutType,
-                type_of(a).LayoutType,
-                type_of(b).LayoutType,
-                type_of(c).Engine,
-                type_of(a).Engine,
-                type_of(b).Engine,
-                simd_width=simd_width,
-                tile_m=tile_m,
-                tile_n=tile_n,
-                num_threads=num_threads,
-                unroll_factor=unroll_factor,
-                weight_non_temporal=weight_non_temporal,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                check_bounds_m=tile_m > 1,
-                check_bounds_n=static_N % tile_n != 0,
-                pdl_level=pdl_level,
-            ]
-            ctx.enqueue_function[kernel](
-                c,
-                a,
-                b,
-                Int32(m),
-                Int32(n),
-                Int32(k),
-                grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
-                block_dim=num_threads,
-                attributes=pdl_launch_attributes(pdl_level),
-            )
+            def _gemv_split_k_dispatch[
+                num_threads: Int,
+                tile_n: Int,
+                unroll_factor: Int = 2,
+                weight_non_temporal: Bool = True,
+            ]() raises {imm}:
+                comptime kernel = gemv_split_k[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    type_of(c).Engine,
+                    type_of(a).Engine,
+                    type_of(b).Engine,
+                    simd_width=simd_width,
+                    tile_m=tile_m,
+                    tile_n=tile_n,
+                    num_threads=num_threads,
+                    unroll_factor=unroll_factor,
+                    weight_non_temporal=weight_non_temporal,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    check_bounds_m=tile_m > 1,
+                    check_bounds_n=static_N % tile_n != 0,
+                    pdl_level=pdl_level,
+                ]
+                ctx.enqueue_function[kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+                    block_dim=num_threads,
+                    attributes=pdl_launch_attributes(pdl_level),
+                )
 
-        comptime if has_amd_gpu_accelerator():
-            comptime if is_minimax_router_gemm[
-                c_type, a_type, b_type, static_N, static_K
-            ]():
-                # MiniMax-M3 router gate: M row blocks reread the same 3 MB
-                # weight. Cached loads turn those rereads into L2/MALL hits.
-                _gemv_split_k_dispatch[128, 2, 2, False]()
+            comptime if has_amd_gpu_accelerator():
+                comptime if is_minimax_router_gemm[
+                    c_type, a_type, b_type, static_N, static_K
+                ]():
+                    # MiniMax-M3 router gate: M row blocks reread the same 3 MB
+                    # weight. Cached loads turn those rereads into L2/MALL hits.
+                    _gemv_split_k_dispatch[128, 2, 2, False]()
+                else:
+                    comptime config = _amd_gemv_config[
+                        simd_width,
+                        ctx.default_device_info.max_thread_block_size,
+                        static_K,
+                        has_N,
+                        static_N,
+                    ]()
+                    _gemv_split_k_dispatch[
+                        config[0],
+                        config[1],
+                        config[2],
+                    ]()
             else:
-                comptime config = _amd_gemv_config[
+                # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
+                comptime config = _nvidia_gemv_config[
+                    a_type,
                     simd_width,
-                    ctx.default_device_info.max_thread_block_size,
                     static_K,
                     has_N,
                     static_N,
@@ -1242,223 +1256,231 @@ def gemv_gpu_dispatch[
                     config[1],
                     config[2],
                 ]()
-        else:
-            # NVIDIA B200: shape-dependent dispatch for FP8 and BF16.
-            comptime config = _nvidia_gemv_config[
-                a_type,
-                simd_width,
-                static_K,
-                has_N,
-                static_N,
-            ]()
-            _gemv_split_k_dispatch[
-                config[0],
-                config[1],
-                config[2],
-            ]()
 
-    case GEMVAlgorithm.GemvKernelVector:
-        logger.info("Executing: GEMV_KERNEL_VECTOR kernel")
+        case GEMVAlgorithm.GemvKernelVector:
+            logger.info("Executing: GEMV_KERNEL_VECTOR kernel")
 
-        comptime check_bounds_k = static_K % (WARP_SIZE * simd_width) != 0
-        var block_dim = min(
-            align_up(k // simd_width, WARP_SIZE),
-            WARP_SIZE * WARPS_PER_BLOCK,
-        )
-        if n == 1:
+            comptime check_bounds_k = static_K % (WARP_SIZE * simd_width) != 0
+            var block_dim = min(
+                align_up(k // simd_width, WARP_SIZE),
+                WARP_SIZE * WARPS_PER_BLOCK,
+            )
+            if n == 1:
+                comptime if transpose_b:
+                    comptime kernel = gemv_kernel_vector[
+                        c_type,
+                        a_type,
+                        b_type,
+                        type_of(c).LayoutType,
+                        type_of(a).LayoutType,
+                        type_of(b).LayoutType,
+                        type_of(c).Engine,
+                        type_of(a).Engine,
+                        type_of(b).Engine,
+                        simd_width=simd_width,
+                        transpose_b=False,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        check_bounds=check_bounds_k,
+                        pdl_level=pdl_level,
+                    ]
+                    ctx.enqueue_function[kernel](
+                        c,
+                        a,
+                        b,
+                        Int32(m),
+                        Int32(n),
+                        Int32(k),
+                        grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                        block_dim=block_dim,
+                        attributes=pdl_launch_attributes(pdl_level),
+                    )
+                else:
+                    # Runtime transpose (TileTensor.transpose needs a static
+                    # shape). `reshape` reuses b's storage, so the view keeps b's
+                    # engine.
+                    var b_tile_n_major = b.reshape(row_major(Coord(n, k)))
+
+                    comptime kernel = gemv_kernel_vector[
+                        c_type,
+                        a_type,
+                        b_type,
+                        type_of(c).LayoutType,
+                        type_of(a).LayoutType,
+                        type_of(b_tile_n_major).LayoutType,
+                        type_of(c).Engine,
+                        type_of(a).Engine,
+                        type_of(b_tile_n_major).Engine,
+                        simd_width=simd_width,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        check_bounds=check_bounds_k,
+                        pdl_level=pdl_level,
+                    ]
+                    ctx.enqueue_function[kernel](
+                        c,
+                        a,
+                        b_tile_n_major,
+                        Int32(m),
+                        Int32(n),
+                        Int32(k),
+                        grid_dim=ceildiv(m, block_dim // WARP_SIZE),
+                        block_dim=block_dim,
+                        attributes=pdl_launch_attributes(pdl_level),
+                    )
+            elif m == 1:
+
+                def _one_row_per_warp() raises {imm}:
+                    comptime kernel = gemv_kernel_vector[
+                        c_type,
+                        b_type,
+                        a_type,
+                        type_of(c).LayoutType,
+                        type_of(b).LayoutType,
+                        type_of(a).LayoutType,
+                        type_of(c).Engine,
+                        type_of(b).Engine,
+                        type_of(a).Engine,
+                        simd_width=simd_width,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        check_bounds=check_bounds_k,
+                        pdl_level=pdl_level,
+                    ]
+                    ctx.enqueue_function[kernel](
+                        c,
+                        b,
+                        a,
+                        Int32(n),
+                        Int32(m),
+                        Int32(k),
+                        grid_dim=ceildiv(n, block_dim // WARP_SIZE),
+                        block_dim=block_dim,
+                        attributes=pdl_launch_attributes(pdl_level),
+                    )
+
+                def _rows_per_warp[rows: Int]() raises {imm}:
+                    logger.info("Rows per warp: ", rows)
+                    # 128-thread blocks measured slightly ahead of 256 and stay
+                    # clear of the 64K-register-per-block ceiling that a wide row
+                    # tile runs into.
+                    comptime warps_per_block = 4
+                    comptime kernel = gemv_kernel_vector_multirow[
+                        c_type,
+                        b_type,
+                        a_type,
+                        type_of(c).LayoutType,
+                        type_of(b).LayoutType,
+                        type_of(a).LayoutType,
+                        type_of(c).Engine,
+                        type_of(b).Engine,
+                        type_of(a).Engine,
+                        simd_width=simd_width,
+                        rows_per_warp=rows,
+                        transpose_b=transpose_b,
+                        elementwise_lambda_fn=elementwise_lambda_fn,
+                        check_bounds=check_bounds_k,
+                        pdl_level=pdl_level,
+                    ]
+                    ctx.enqueue_function[kernel](
+                        c,
+                        b,
+                        a,
+                        Int32(n),
+                        Int32(m),
+                        Int32(k),
+                        grid_dim=ceildiv(n, rows * warps_per_block),
+                        block_dim=WARP_SIZE * warps_per_block,
+                        attributes=pdl_launch_attributes(pdl_level),
+                    )
+
+                def _grid_outruns_chip() {imm} -> Bool:
+                    # One warp per output row needs `n` resident warps. Once that
+                    # is several times what the chip can hold, the grid drains at
+                    # the CTA launch/retire rate and never reaches HBM bandwidth,
+                    # so the tile is worth widening. The 4x margin also keeps the
+                    # widened grid above one block per SM.
+                    var resident_warps = (
+                        ctx.default_device_info.sm_count
+                        * ctx.default_device_info.threads_per_multiprocessor
+                        // WARP_SIZE
+                    )
+                    return n > 4 * resident_warps
+
+                comptime multirow_max_k = (
+                    _GEMV_MULTIROW_MAX_K_ITERS * WARP_SIZE * simd_width
+                )
+
+                comptime if static_K <= 0:
+                    # A graph that leaves K symbolic still gets the fix; testing
+                    # `k` here costs one extra instantiation, missing it costs 10x.
+                    if k <= multirow_max_k and _grid_outruns_chip():
+                        _rows_per_warp[_GEMV_MULTIROW_ROWS]()
+                    else:
+                        _one_row_per_warp()
+                elif static_K <= multirow_max_k:
+                    if _grid_outruns_chip():
+                        _rows_per_warp[_GEMV_MULTIROW_ROWS]()
+                    else:
+                        _one_row_per_warp()
+                else:
+                    _one_row_per_warp()
+
+        case GEMVAlgorithm.GemvKernel:
             comptime if transpose_b:
-                comptime kernel = gemv_kernel_vector[
+                logger.info("Executing: GEMV_KERNEL (with transpose)")
+
+                comptime kernel = gemv_kernel[
                     c_type,
-                    a_type,
                     b_type,
-                    type_of(c).LayoutType,
-                    type_of(a).LayoutType,
-                    type_of(b).LayoutType,
-                    type_of(c).Engine,
-                    type_of(a).Engine,
-                    type_of(b).Engine,
-                    simd_width=simd_width,
-                    transpose_b=False,
+                    a_type,
+                    transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                    check_bounds=check_bounds_k,
                     pdl_level=pdl_level,
                 ]
                 ctx.enqueue_function[kernel](
-                    c,
-                    a,
-                    b,
-                    Int32(m),
+                    c.to_device_buffer(ctx),
+                    b.to_device_buffer(ctx),
+                    a.to_device_buffer(ctx),
                     Int32(n),
+                    Int32(m),
                     Int32(k),
-                    grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                    block_dim=block_dim,
+                    grid_dim=ceildiv(n, WARPS_PER_BLOCK),
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                     attributes=pdl_launch_attributes(pdl_level),
                 )
             else:
-                # Runtime transpose (TileTensor.transpose needs a static
-                # shape). `reshape` reuses b's storage, so the view keeps b's
-                # engine.
-                var b_tile_n_major = b.reshape(row_major(Coord(n, k)))
+                logger.info("Executing: GEMV_KERNEL (no transpose)")
 
-                comptime kernel = gemv_kernel_vector[
+                comptime kernel = gemv_kernel[
                     c_type,
                     a_type,
                     b_type,
-                    type_of(c).LayoutType,
-                    type_of(a).LayoutType,
-                    type_of(b_tile_n_major).LayoutType,
-                    type_of(c).Engine,
-                    type_of(a).Engine,
-                    type_of(b_tile_n_major).Engine,
-                    simd_width=simd_width,
-                    transpose_b=transpose_b,
                     elementwise_lambda_fn=elementwise_lambda_fn,
-                    check_bounds=check_bounds_k,
                     pdl_level=pdl_level,
                 ]
+
                 ctx.enqueue_function[kernel](
-                    c,
-                    a,
-                    b_tile_n_major,
+                    c.to_device_buffer(ctx),
+                    a.to_device_buffer(ctx),
+                    b.to_device_buffer(ctx),
                     Int32(m),
                     Int32(n),
                     Int32(k),
-                    grid_dim=ceildiv(m, block_dim // WARP_SIZE),
-                    block_dim=block_dim,
-                    attributes=pdl_launch_attributes(pdl_level),
-                )
-        elif m == 1:
-
-            def _one_row_per_warp() raises {imm}:
-                comptime kernel = gemv_kernel_vector[
-                    c_type,
-                    b_type,
-                    a_type,
-                    type_of(c).LayoutType,
-                    type_of(b).LayoutType,
-                    type_of(a).LayoutType,
-                    type_of(c).Engine,
-                    type_of(b).Engine,
-                    type_of(a).Engine,
-                    simd_width=simd_width,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    check_bounds=check_bounds_k,
-                    pdl_level=pdl_level,
-                ]
-                ctx.enqueue_function[kernel](
-                    c,
-                    b,
-                    a,
-                    Int32(n),
-                    Int32(m),
-                    Int32(k),
-                    grid_dim=ceildiv(n, block_dim // WARP_SIZE),
-                    block_dim=block_dim,
+                    grid_dim=ceildiv(m, WARPS_PER_BLOCK),
+                    block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                     attributes=pdl_launch_attributes(pdl_level),
                 )
 
-            def _rows_per_warp[rows: Int]() raises {imm}:
-                logger.info("Rows per warp: ", rows)
-                # 128-thread blocks measured slightly ahead of 256 and stay
-                # clear of the 64K-register-per-block ceiling that a wide row
-                # tile runs into.
-                comptime warps_per_block = 4
-                comptime kernel = gemv_kernel_vector_multirow[
-                    c_type,
-                    b_type,
-                    a_type,
-                    type_of(c).LayoutType,
-                    type_of(b).LayoutType,
-                    type_of(a).LayoutType,
-                    type_of(c).Engine,
-                    type_of(b).Engine,
-                    type_of(a).Engine,
-                    simd_width=simd_width,
-                    rows_per_warp=rows,
-                    transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_fn,
-                    check_bounds=check_bounds_k,
-                    pdl_level=pdl_level,
-                ]
-                ctx.enqueue_function[kernel](
-                    c,
-                    b,
-                    a,
-                    Int32(n),
-                    Int32(m),
-                    Int32(k),
-                    grid_dim=ceildiv(n, rows * warps_per_block),
-                    block_dim=WARP_SIZE * warps_per_block,
-                    attributes=pdl_launch_attributes(pdl_level),
-                )
-
-            def _grid_outruns_chip() {imm} -> Bool:
-                # One warp per output row needs `n` resident warps. Once that
-                # is several times what the chip can hold, the grid drains at
-                # the CTA launch/retire rate and never reaches HBM bandwidth,
-                # so the tile is worth widening. The 4x margin also keeps the
-                # widened grid above one block per SM.
-                var resident_warps = (
-                    ctx.default_device_info.sm_count
-                    * ctx.default_device_info.threads_per_multiprocessor
-                    // WARP_SIZE
-                )
-                return n > 4 * resident_warps
-
-            comptime multirow_max_k = (
-                _GEMV_MULTIROW_MAX_K_ITERS * WARP_SIZE * simd_width
-            )
-
-            comptime if static_K <= 0:
-                # A graph that leaves K symbolic still gets the fix; testing
-                # `k` here costs one extra instantiation, missing it costs 10x.
-                if k <= multirow_max_k and _grid_outruns_chip():
-                    _rows_per_warp[_GEMV_MULTIROW_ROWS]()
-                else:
-                    _one_row_per_warp()
-            elif static_K <= multirow_max_k:
-                if _grid_outruns_chip():
-                    _rows_per_warp[_GEMV_MULTIROW_ROWS]()
-                else:
-                    _one_row_per_warp()
-            else:
-                _one_row_per_warp()
-
-    case GEMVAlgorithm.GemvKernel:
-        comptime if transpose_b:
-            logger.info("Executing: GEMV_KERNEL (with transpose)")
-
-            comptime kernel = gemv_kernel[
-                c_type,
-                b_type,
-                a_type,
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                pdl_level=pdl_level,
-            ]
-            ctx.enqueue_function[kernel](
-                c.to_device_buffer(ctx),
-                b.to_device_buffer(ctx),
-                a.to_device_buffer(ctx),
-                Int32(n),
-                Int32(m),
-                Int32(k),
-                grid_dim=ceildiv(n, WARPS_PER_BLOCK),
-                block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-                attributes=pdl_launch_attributes(pdl_level),
-            )
-        else:
-            logger.info("Executing: GEMV_KERNEL (no transpose)")
-
-            comptime kernel = gemv_kernel[
+        case GEMVAlgorithm.GevmKernel:
+            logger.info("Executing: GEVM_KERNEL")
+            comptime kernel = gevm_kernel[
                 c_type,
                 a_type,
                 b_type,
+                tile_size=WARP_SIZE * WARPS_PER_BLOCK,
                 elementwise_lambda_fn=elementwise_lambda_fn,
                 pdl_level=pdl_level,
             ]
-
             ctx.enqueue_function[kernel](
                 c.to_device_buffer(ctx),
                 a.to_device_buffer(ctx),
@@ -1466,61 +1488,39 @@ def gemv_gpu_dispatch[
                 Int32(m),
                 Int32(n),
                 Int32(k),
-                grid_dim=ceildiv(m, WARPS_PER_BLOCK),
+                grid_dim=ceildiv(n, WARP_SIZE),
                 block_dim=WARP_SIZE * WARPS_PER_BLOCK,
                 attributes=pdl_launch_attributes(pdl_level),
             )
 
-    case GEMVAlgorithm.GevmKernel:
-        logger.info("Executing: GEVM_KERNEL")
-        comptime kernel = gevm_kernel[
-            c_type,
-            a_type,
-            b_type,
-            tile_size=WARP_SIZE * WARPS_PER_BLOCK,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            pdl_level=pdl_level,
-        ]
-        ctx.enqueue_function[kernel](
-            c.to_device_buffer(ctx),
-            a.to_device_buffer(ctx),
-            b.to_device_buffer(ctx),
-            Int32(m),
-            Int32(n),
-            Int32(k),
-            grid_dim=ceildiv(n, WARP_SIZE),
-            block_dim=WARP_SIZE * WARPS_PER_BLOCK,
-            attributes=pdl_launch_attributes(pdl_level),
-        )
+        case _:
+            logger.info("Executing: MATMUL_NAIVE kernel")
+            comptime BLOCK_DIM = 16
 
-    case _:
-        logger.info("Executing: MATMUL_NAIVE kernel")
-        comptime BLOCK_DIM = 16
-
-        comptime kernel = matmul_kernel_naive[
-            c_type,
-            a_type,
-            b_type,
-            type_of(c).LayoutType,
-            type_of(a).LayoutType,
-            type_of(b).LayoutType,
-            BLOCK_DIM,
-            transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            c_engine=type_of(c).Engine,
-            a_engine=type_of(a).Engine,
-            b_engine=type_of(b).Engine,
-        ]
-        ctx.enqueue_function[kernel](
-            c,
-            a,
-            b,
-            Int32(m),
-            Int32(n),
-            Int32(k),
-            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_DIM),
-        )
+            comptime kernel = matmul_kernel_naive[
+                c_type,
+                a_type,
+                b_type,
+                type_of(c).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
+                BLOCK_DIM,
+                transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                c_engine=type_of(c).Engine,
+                a_engine=type_of(a).Engine,
+                b_engine=type_of(b).Engine,
+            ]
+            ctx.enqueue_function[kernel](
+                c,
+                a,
+                b,
+                Int32(m),
+                Int32(n),
+                Int32(k),
+                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+                block_dim=(BLOCK_DIM, BLOCK_DIM),
+            )
 
 
 def log_shape[

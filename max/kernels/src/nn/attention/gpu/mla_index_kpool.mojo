@@ -25,7 +25,10 @@ The softmax runs per channel, not per member. One weight per member would be a
 different function.
 
 Pool `p` covers absolute positions `[p * kpool, (p + 1) * kpool)` of one
-request. Only pools whose members all arrive in the same call are written.
+request. `kpool_compress_kernel` writes only pools whose members all arrive in
+the same call; a pool split across calls (some members cached in the tail
+ring by an earlier call, the rest arriving now) is `kpool_ring_close_kernel`'s
+job instead.
 """
 
 from std.math import exp, max
@@ -482,6 +485,191 @@ def kpool_seed_tail_kernel[
             tail_base + (kpool + slot) * head_dim + c,
             gate.raw_load(row * head_dim + c),
         )
+
+
+@__name(t"mla_kpool_ring_close_{kpool}_{head_dim}")
+def kpool_ring_close_kernel[
+    dtype: DType,
+    OutLayoutType: TensorLayout,
+    out_origin: MutOrigin,
+    ClosedLayoutType: TensorLayout,
+    closed_origin: MutOrigin,
+    TailLayoutType: TensorLayout,
+    tail_origin: ImmOrigin,
+    KLayoutType: TensorLayout,
+    k_origin: ImmOrigin,
+    GateLayoutType: TensorLayout,
+    gate_origin: ImmOrigin,
+    ApeLayoutType: TensorLayout,
+    ape_origin: ImmOrigin,
+    IROLayoutType: TensorLayout,
+    iro_origin: ImmOrigin,
+    CacheLenLayoutType: TensorLayout,
+    SlotLayoutType: TensorLayout,
+    slot_origin: ImmOrigin,
+    OutEngine: TensorEngine,
+    ClosedEngine: TensorEngine,
+    TailEngine: TensorEngine,
+    KEngine: TensorEngine,
+    GateEngine: TensorEngine,
+    ApeEngine: TensorEngine,
+    IROEngine: TensorEngine,
+    CacheLenEngine: TensorEngine,
+    SlotEngine: TensorEngine,
+    head_dim: Int,
+    kpool: Int,
+](
+    pooled: TileTensor[dtype, OutLayoutType, out_origin, Engine=OutEngine],
+    closed_pool: TileTensor[
+        .int32, ClosedLayoutType, closed_origin, Engine=ClosedEngine
+    ],
+    tail: TileTensor[
+        mut=False, dtype, TailLayoutType, tail_origin, Engine=TailEngine
+    ],
+    k: TileTensor[mut=False, dtype, KLayoutType, k_origin, Engine=KEngine],
+    gate: TileTensor[
+        mut=False, dtype, GateLayoutType, gate_origin, Engine=GateEngine
+    ],
+    ape: TileTensor[
+        mut=False, .float32, ApeLayoutType, ape_origin, Engine=ApeEngine
+    ],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, IROLayoutType, iro_origin, Engine=IROEngine
+    ],
+    cache_lengths: TileTensor[
+        mut=False,
+        .uint32,
+        CacheLenLayoutType,
+        ImmutAnyOrigin,
+        Engine=CacheLenEngine,
+    ],
+    slot_idx: TileTensor[
+        mut=False, .uint32, SlotLayoutType, slot_origin, Engine=SlotEngine
+    ],
+    num_requests: Int32,
+):
+    """Closes each request's pending tail-ring pool, ragged and unconditional.
+
+    A cached prefix ending mid-pool leaves that pool's earlier members in
+    `tail` (see `kpool_seed_tail_kernel`), and neither `kpool_compress_kernel`
+    nor `kpool_seed_tail_kernel` reads them back -- `kpool_compress_kernel`
+    only ever builds pools entirely from this call's own tokens, skipping the
+    leading remainder the ring already holds. This kernel is the one that
+    reads that remainder, so a request whose new tokens complete it is not
+    stuck forever.
+
+    Unlike `kpool_tail_update_kernel`, this takes a ragged, arbitrary-width
+    chunk per request (`input_row_offsets`, not a compile-time `next_n`), and
+    closes at most one pool per request per call -- the ring never holds more
+    than `kpool - 1` members between calls, so there is never a second one to
+    close. Any further pools this call completes are entirely new tokens and
+    belong to `kpool_compress_kernel`, which already derives its own pool
+    count and starting row by skipping exactly the tokens this kernel
+    consumes (`align` below, computed the same way in both).
+
+    Parameters:
+        dtype: Element type of `tail`, `k`, `gate` and `pooled`.
+        OutLayoutType: Layout of `pooled`.
+        out_origin: Origin of `pooled`.
+        ClosedLayoutType: Layout of `closed_pool`.
+        closed_origin: Origin of `closed_pool`.
+        TailLayoutType: Layout of `tail`.
+        tail_origin: Origin of `tail`.
+        KLayoutType: Layout of `k`.
+        k_origin: Origin of `k`.
+        GateLayoutType: Layout of `gate`.
+        gate_origin: Origin of `gate`.
+        ApeLayoutType: Layout of `ape`.
+        ape_origin: Origin of `ape`.
+        IROLayoutType: Layout of `input_row_offsets`.
+        iro_origin: Origin of `input_row_offsets`.
+        CacheLenLayoutType: Layout of `cache_lengths`.
+        SlotLayoutType: Layout of `slot_idx`.
+        slot_origin: Origin of `slot_idx`.
+        OutEngine: Engine of `pooled`.
+        ClosedEngine: Engine of `closed_pool`.
+        TailEngine: Engine of `tail`.
+        KEngine: Engine of `k`.
+        GateEngine: Engine of `gate`.
+        ApeEngine: Engine of `ape`.
+        IROEngine: Engine of `input_row_offsets`.
+        CacheLenEngine: Engine of `cache_lengths`.
+        SlotEngine: Engine of `slot_idx`.
+        head_dim: Channels per key; also the block width.
+        kpool: Tokens per pool.
+
+    Args:
+        pooled: Output `[batch, head_dim]`, meaningful only where
+            `closed_pool` is non-negative.
+        closed_pool: Output `[batch]`. The pool id this call closed for that
+            request, or -1.
+        tail: Per-slot ring, `[max_slots, 2, kpool, head_dim]`. Index 0 holds
+            keys, index 1 holds gate scores. Read only -- `slot_idx[r]`'s
+            entry is only ever written by `kpool_seed_tail_kernel`.
+        k: This call's layer-normed keys, `[total_tokens, head_dim]`.
+        gate: This call's gate scores, `[total_tokens, head_dim]`.
+        ape: Within-pool position embedding, `[kpool, head_dim]`, f32.
+        input_row_offsets: Token row offsets per request, `[batch + 1]`.
+        cache_lengths: Cached-prefix length per request, `[batch]`. A pool
+            covers absolute positions, so this is what tells each request
+            whether it has a pending pool and how much of it the ring holds.
+        slot_idx: Ring slot owned by each batch row, `[batch]`, `uint32`.
+        num_requests: Requests actually present.
+    """
+    var r = block_idx.x
+    if r >= Int(num_requests):
+        return
+
+    var c = thread_idx.x
+    if c >= head_dim:
+        return
+
+    var cache_len = Int(cache_lengths[r])
+    var ring_members = cache_len % kpool
+    if ring_members == 0:
+        # Nothing pending: this request's cache already sits on a pool
+        # boundary, so there is no partial pool for this call to close.
+        if c == 0:
+            closed_pool.raw_store(r, Int32(-1))
+        return
+
+    var row_start = Int(input_row_offsets.raw_load(r))
+    var row_end = Int(input_row_offsets.raw_load(r + 1))
+    var align = kpool - ring_members
+    if row_end - row_start < align:
+        # Not enough new tokens yet to finish the pending pool; it stays in
+        # the ring, extended by `kpool_seed_tail_kernel`, for a later call.
+        if c == 0:
+            closed_pool.raw_store(r, Int32(-1))
+        return
+
+    # The pending pool runs from `(cache_len // kpool) * kpool` to
+    # `cache_len - 1`: its first `ring_members` members already sit in the
+    # ring at slots `[0, ring_members)`, and this call's first `align` new
+    # tokens are its remaining members, at slots `[ring_members, kpool)`.
+    var ring_base = Int(slot_idx.raw_load(r)) * 2 * kpool * head_dim
+    var logits = Array[Float32, kpool]()
+    var vals = Array[Float32, kpool]()
+    for m in range(kpool):
+        if m < ring_members:
+            logits[m] = tail.raw_load(
+                ring_base + (kpool + m) * head_dim + c
+            ).cast[.float32]() + ape.raw_load(m * head_dim + c)
+            vals[m] = tail.raw_load(ring_base + m * head_dim + c).cast[
+                .float32
+            ]()
+        else:
+            var new_row = row_start + (m - ring_members)
+            logits[m] = gate.raw_load(new_row * head_dim + c).cast[
+                .float32
+            ]() + ape.raw_load(m * head_dim + c)
+            vals[m] = k.raw_load(new_row * head_dim + c).cast[.float32]()
+
+    pooled.raw_store(
+        r * head_dim + c, pool_channel[kpool](logits, vals).cast[dtype]()
+    )
+    if c == 0:
+        closed_pool.raw_store(r, Int32(cache_len // kpool))
 
 
 @__name(t"mla_kpool_expand_topk_{kpool}_{pool_topk}_{always_select_tail}")

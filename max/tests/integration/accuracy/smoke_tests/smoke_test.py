@@ -109,6 +109,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_rust_tiered_kvconnector.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__mojo_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_mojo_tiered_kvconnector.yaml",
     "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
     "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
@@ -120,13 +121,15 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
+    "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": "max/pipelines/architectures/kimik2_5_modulev3/recipes/nvfp4_kimi_k2_7_code_b200.yaml",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
-    "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/unified_mtp_qwen3_5/recipes/qwen38_27b_nvfp4_mtp_snapshot.yaml",
-    "RadixArk/Qwen3.8-27B-NVFP4__mtp_ring": "max/pipelines/architectures/unified_mtp_qwen3_5/recipes/qwen38_27b_nvfp4_mtp_ring.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/unified_mtp_qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/unified_dflash2_qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
 })
 # fmt: on
 

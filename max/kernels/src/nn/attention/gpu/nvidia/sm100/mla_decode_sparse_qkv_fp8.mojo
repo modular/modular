@@ -111,7 +111,7 @@ from layout import (
     TileTensor,
 )
 from layout.tile_layout import row_major as tt_row_major
-from nn.attention.gpu.nvidia.common import OptionalPointer
+from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
 from std.utils.index import IndexList
@@ -160,9 +160,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
-    has_attn_sink: Bool = False,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     has_extra_kv: Bool = False,
-    has_variable_topk: Bool = False,
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     fold_shared_index: Bool = False,
     q_len_fold: Int = 1,
     Engine: TensorEngine = DefaultEngine[element_width=1],
@@ -175,6 +175,10 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
     operand expects. QK^T and PV MMA are unchanged from the single-buffer
     native-FP8 kernel this supersedes.
     """
+
+    # Presence of the optional operands is carried by their pointer types.
+    comptime has_attn_sink = not Self.AttnSinkPtrType.is_null
+    comptime has_variable_topk = not Self.TopkLengthsPtrType.is_null
 
     comptime kv_type = Self.KVLUTType.dtype
     comptime fp8_type = DType.float8_e4m3fn
@@ -307,9 +311,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         # Logical sparse indices (same layout as `d_indices`, -1 padding) for
         # position-based causal masking. See mla_decode_utils.mojo.
         logical_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        topk_lengths: Self.TopkLengthsPtrType,
         scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
-        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
+        attn_sink_ptr: Self.AttnSinkPtrType,
         extra_k_tma: TMATensorTile[
             DType.int64,
             2,
@@ -318,7 +322,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        extra_topk_lengths: Self.TopkLengthsPtrType,
         extra_indices_stride_dev: Int32,
         extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]],
         scalar_args: TileTensor[
@@ -366,7 +370,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ](
             kv_lut,
             rebind[
@@ -387,18 +391,14 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
         var topk: Int
         comptime if Self.has_variable_topk:
-            topk = Int(
-                topk_lengths.unsafe_value()[Int(offset_position.batch_idx)]
-            )
+            topk = Int(topk_lengths.value()[Int(offset_position.batch_idx)])
         else:
             topk = indices_stride
         var extra_topk: Int = 0
         comptime if Self.has_extra_kv:
             comptime if Self.has_variable_topk:
                 extra_topk = Int(
-                    extra_topk_lengths.unsafe_value()[
-                        Int(offset_position.batch_idx)
-                    ]
+                    extra_topk_lengths.value()[Int(offset_position.batch_idx)]
                 )
             else:
                 extra_topk = extra_indices_stride
@@ -593,9 +593,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 var row = lane_idx & 0x3F
                 var head_idx_local = Int(block_idx.x) * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
-                    attn_sink_log2 = attn_sink_ptr.unsafe_value()[
-                        head_idx_local
-                    ] * Float32(log2e)
+                    attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
+                        DType.float32
+                    ]() * Float32(log2e)
 
             Self.Common_MLA_Op.Softmax[
                 native_fp8=True,
@@ -774,7 +774,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
         num_orig_blocks: Int,
         extra_kv_lut: Self.KVLUTType,
@@ -909,7 +909,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
         idx_bars: DecodeSM100MiscMBars[
             num_stages=Self.num_stages,
@@ -1151,7 +1151,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         """Re-swizzles one KV tile per iteration: FP8 linear -> FP8 SW64.
@@ -1268,7 +1268,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -1348,7 +1348,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)

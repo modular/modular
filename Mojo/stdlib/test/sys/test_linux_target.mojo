@@ -15,15 +15,18 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import CompilationTarget
+from std.sys import CompilationTarget, Endian
 
-from std.testing import assert_false, assert_true
+from std.testing import assert_equal, assert_false, assert_true
 from std.testing import TestSuite
 
 
 def test_os_query() raises:
     assert_false(CompilationTarget.is_macos())
     assert_true(CompilationTarget.is_linux())
+
+    # The supported Linux targets, x86-64 and aarch64, are both little endian.
+    assert_equal(Endian.native(), Endian.little)
 
 
 def main() raises:

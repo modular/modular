@@ -16,12 +16,13 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from max.graph import BufferType, TensorType, TensorValue, ops
+from max.graph import BufferType, TensorType, TensorValue
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.transformer.transformer import captures_by_device
 from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockBatch,
+    DraftSampler,
     block_kv_with_dispatch,
 )
 from max.pipelines.speculative.spec_target import Verified
@@ -140,7 +141,11 @@ class DFlashMiMoV2Proposer:
         )
 
     def head(
-        self, batch: BlockBatch, block_hs: list[TensorValue], accepted: Accepted
+        self,
+        batch: BlockBatch,
+        block_hs: list[TensorValue],
+        accepted: Accepted,
+        sampler: DraftSampler,
     ) -> TensorValue:
         del accepted
         block, drafts = self.block_size, self.num_speculative_tokens
@@ -153,8 +158,11 @@ class DFlashMiMoV2Proposer:
             )
             drafted.append(per_row[:, 1 : 1 + drafts, :])
         logits = self.target.lm_head(drafted, batch.signal_buffers)[0]
+        vocab_size = int(logits.shape[-1])
         # A padding id could never be accepted, so it would waste a slot.
-        tokens = ops.argmax(logits[:, :, : self.sampleable_vocab_size], axis=-1)
-        return tokens.rebind(["batch_size", drafts, 1]).reshape(
-            ("batch_size", drafts)
+        logits = mask_padded_tail(
+            logits, vocab_size, self.sampleable_vocab_size
+        )
+        return sampler.sample_all(
+            logits.rebind(["batch_size", drafts, vocab_size])
         )

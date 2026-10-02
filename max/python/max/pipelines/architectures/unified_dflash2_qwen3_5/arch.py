@@ -22,7 +22,9 @@ from ..qwen3_5.model_config import Qwen3_5Config
 from ..qwen3_5.reasoning import Qwen3_5ReasoningParser  # noqa: F401
 from ..qwen3_5.tokenizer import Qwen3_5Tokenizer
 from ..qwen3_5.tool_parser import Qwen3_5ToolParser  # noqa: F401
-from .batch_processor import UnifiedDflash2Qwen3_5BatchProcessor
+from ..unified_mtp_qwen3_5.batch_processor import (
+    UnifiedMTPQwen3_5BatchProcessor,
+)
 from .memory_planner import UnifiedDflash2Qwen3_5MemoryPlanner
 from .model import UnifiedDflash2Qwen3_5Model
 from .model_config import UnifiedDflash2Qwen3_5Config, dflash2_draft_width
@@ -51,16 +53,13 @@ unified_dflash2_qwen3_5_arch = SupportedArchitecture(
     # The checkpoint fixes the width, so an omitted --num-speculative-tokens
     # resolves here rather than staying None while the graph runs at seven.
     checkpoint_draft_width=dflash2_draft_width,
-    batching=UnifiedDflash2Qwen3_5BatchProcessor,
+    batching=UnifiedMTPQwen3_5BatchProcessor,
     multi_gpu_supported=False,
     tool_parser="qwen3_5",
     reasoning_parser="qwen3_5",
-    # The base Qwen3.5 planner, unwrapped onto the target half. It counts one
-    # state set per request and nothing for the recurrent shadow this graph
-    # declares, which MAX does not allocate since it does not serve the graph.
+    # The Qwen3.5 MTP planner, unwrapped onto the target half. It counts the
+    # verify ring per request when it infers a batch size.
     memory_planner=UnifiedDflash2Qwen3_5MemoryPlanner,
-    # MAX does not serve this graph, since `batch_processor` refuses to
-    # build a batch.
+    # Off until validated, as for the Qwen3.5 MTP graph.
     supports_device_graph_capture=False,
-    supports_overlap_scheduler=False,
 )

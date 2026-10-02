@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for the fused Qwen3.5 MTP graph."""
+"""Input batching for the fused Qwen3.5 MTP and DFlash2 graphs."""
 
 from __future__ import annotations
 
@@ -37,11 +37,7 @@ from ..qwen3_5.batch_processor import (
     Qwen3_5BatchProcessor,
     context_position_rows,
 )
-from ..qwen3_5.state_cache import (
-    RECURRENT_LEAF_ID,
-    STATE_CACHE_KEY,
-    Qwen3_5SpecShadowPools,
-)
+from ..qwen3_5.state_cache import STATE_CACHE_KEY
 from .inputs import UnifiedMTPQwen3_5Inputs
 
 
@@ -79,32 +75,23 @@ def merged_position_rows(
 
 
 class UnifiedMTPQwen3_5BatchProcessor(Qwen3_5BatchProcessor):
-    """Builds a batch for the fused graph.
+    """Builds a batch for either fused Qwen3.5 speculative graph.
 
-    The cache's attention children go in the KV slice and its state child
-    goes in the trailing tail, along with the verify's shadow pools.
-    Image prompts are rejected because the graph has no vision encoder.
+    The MTP and DFlash2 graphs take the same inputs, and only MTP can declare
+    M-RoPE positions. The cache's attention children go in the KV slice and
+    its state child, the verify ring included, goes in the trailing tail.
+    Image prompts are rejected because neither graph has a vision encoder.
     """
 
     def __init__(
         self, config: ArchConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
-        self._shadows: Qwen3_5SpecShadowPools | None = None
         # Required by the signature but unused by this graph.
         self._batch_context_lengths = [
             Buffer.zeros(shape=[1], dtype=DType.int32)
             for _ in range(len(runtime.devices))
         ]
-
-    def bind_runtime_state(
-        self,
-        shadows: Qwen3_5SpecShadowPools | None,
-        mrope_enabled: bool,
-    ) -> None:
-        """Sets the shadow pools and M-RoPE flag after ``load_model``."""
-        self._shadows = shadows
-        self.mrope_enabled = mrope_enabled
 
     def _reject_image_prompts(self, contexts: Sequence[TextContext]) -> None:
         """Raises if any request carries images.
@@ -117,8 +104,8 @@ class UnifiedMTPQwen3_5BatchProcessor(Qwen3_5BatchProcessor):
         # preparation.
         if any(getattr(ctx, "images", None) for ctx in contexts):
             raise ValueError(
-                "Qwen3.5 MTP cannot serve image prompts because its"
-                " speculative graph has no vision encoder. Drop"
+                "Speculative Qwen3.5 cannot serve image prompts because its"
+                " fused graph has no vision encoder. Drop"
                 " --speculative-method to serve images on Qwen3_5."
             )
 
@@ -164,21 +151,17 @@ class UnifiedMTPQwen3_5BatchProcessor(Qwen3_5BatchProcessor):
 
         assert kv_cache_inputs is not None
         attention, state = self._state_tail(kv_cache_inputs)
-        assert self._shadows is not None, (
-            "`bind_runtime_state` must run before a batch is prepared"
-        )
-        shadows = self._shadows
 
         tokens, row_offsets, host_row_offsets = self._stage_ragged_token_inputs(
             contexts
         )
 
         # ``linear_state_regions`` declares conv, then recurrent, then the
-        # ring on the ring rollback. The graph takes each leaf's pools and
-        # rows region-major, device-minor.
+        # ring. The graph takes each leaf's pools and rows region-major,
+        # device-minor.
         conv = [per_device.leaves[0] for per_device in state]
         recurrent = [per_device.leaves[1] for per_device in state]
-        rings = [leaf for per_device in state for leaf in per_device.leaves[2:]]
+        rings = [per_device.leaves[2] for per_device in state]
 
         return UnifiedMTPQwen3_5Inputs(
             tokens=tokens,
@@ -198,7 +181,6 @@ class UnifiedMTPQwen3_5BatchProcessor(Qwen3_5BatchProcessor):
             live_recurrent_pools=[leaf.pool for leaf in recurrent],
             live_conv_row_ids=[leaf.live_row_ids for leaf in conv],
             live_recurrent_row_ids=[leaf.live_row_ids for leaf in recurrent],
-            shadow_recurrent_pools=shadows.shadow_pools(RECURRENT_LEAF_ID),
             ring_pools=[leaf.pool for leaf in rings],
             ring_row_ids=[leaf.live_row_ids for leaf in rings],
             position_ids=(

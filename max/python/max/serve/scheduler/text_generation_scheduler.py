@@ -72,12 +72,14 @@ def _tracing_enabled() -> bool:
 
 
 def _parent_trace_context(context: TextContext) -> OtelContext | None:
-    """Re-extract the caller's OTel context from ``context.trace_carrier``.
+    """Re-extracts the phase spans' parent from ``context.trace_carrier``.
 
-    ``trace_carrier`` was serialized by the API process (see
-    ``llm._inject_trace_carrier``) since a live ``Context`` can't cross the
-    process boundary. Returns None (a root span) when the request carried no
-    inbound traceparent, or arrived before this propagation existed.
+    That is the request's ``max.request`` span where the handler set one,
+    otherwise the inbound caller's context. ``trace_carrier`` was serialized
+    by the API process (see ``_trace_context.inject_trace_carrier``) since a
+    live ``Context`` can't cross the process boundary. Returns None (a root
+    span) when neither was present, or the request arrived before this
+    propagation existed.
     """
     if context.trace_carrier is None:
         return None
@@ -295,12 +297,21 @@ class TokenGenerationScheduler(Scheduler):
         batch_id = self._batch_counter
         self._batch_counter += 1
 
-        # Capture which requests are currently in the CE (prefill) phase so we
-        # can detect the CE→TG transition and end their prefill spans below.
-        # Skipped when tracing is disabled: computing this set costs real
-        # CPU every batch even though the spans it feeds would be no-ops.
+        # This pass's CE (prefill) requests: those not already decoding, less
+        # DP padding. They feed the batch span's counts and the CE→TG
+        # prefill-span transition below. all_ce_reqs no longer holds them, as
+        # construct_batch() popped them. Skipped when tracing is disabled:
+        # building the set costs CPU every pass.
         ce_ids_before = (
-            set(self.batch_constructor.all_ce_reqs.keys())
+            {
+                ctx.request_id
+                for batch, replica in zip(
+                    inputs.batches, self.batch_constructor.replicas, strict=True
+                )
+                for ctx in batch
+                if not ctx._is_padding_ctx
+                and ctx.request_id not in replica.tg_reqs
+            }
             if tracing_enabled
             else None
         )
@@ -309,12 +320,13 @@ class TokenGenerationScheduler(Scheduler):
         # too much export volume to be always-on.
         batch_span: otel_trace.Span = otel_trace.INVALID_SPAN
         if tracing_enabled and batch_spans_enabled():
+            assert ce_ids_before is not None
             batch_span = _tracer.start_span(
                 "max.batch",
                 attributes={
                     "max.batch_id": batch_id,
-                    "max.ce_count": len(self.batch_constructor.all_ce_reqs),
-                    "max.tg_count": len(self.batch_constructor.all_tg_reqs),
+                    "max.ce_count": len(ce_ids_before),
+                    "max.tg_count": inputs.batch_size - len(ce_ids_before),
                 },
             )
 
@@ -342,10 +354,9 @@ class TokenGenerationScheduler(Scheduler):
 
             # Any request that was CE before and is now TG just completed
             # prefill. Skipped when tracing is disabled: see ce_ids_before.
-            if tracing_enabled:
-                assert ce_ids_before is not None
-                tg_ids_after = set(self.batch_constructor.all_tg_reqs.keys())
-                for req_id in ce_ids_before & tg_ids_after:
+            if ce_ids_before:
+                tg_reqs_after = self.batch_constructor.all_tg_reqs
+                for req_id in ce_ids_before & tg_reqs_after.keys():
                     if req_id in self._prefill_spans:
                         span = self._prefill_spans.pop(req_id)
                         span.set_attribute("max.batch_id", batch_id)
@@ -358,9 +369,7 @@ class TokenGenerationScheduler(Scheduler):
                         self._decode_spans.pop(req_id).end()
                     self._decode_spans[req_id] = _tracer.start_span(
                         "max.phase.decode",
-                        context=_parent_trace_context(
-                            self.batch_constructor.all_tg_reqs[req_id]
-                        ),
+                        context=_parent_trace_context(tg_reqs_after[req_id]),
                         attributes={
                             "max.request_id": str(req_id),
                             "max.batch_id": batch_id,

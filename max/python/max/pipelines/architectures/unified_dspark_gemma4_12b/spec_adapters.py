@@ -16,7 +16,11 @@ from __future__ import annotations
 
 from max.graph import TensorValue, ops
 from max.nn.kv_cache import PagedCacheValues
-from max.pipelines.speculative.block_driver import Accepted, BlockBatch
+from max.pipelines.speculative.block_driver import (
+    Accepted,
+    BlockBatch,
+    DraftSampler,
+)
 
 from ..gemma4.gemma4 import Gemma4TextModel
 from .dspark_gemma4 import DSparkGemma4
@@ -82,7 +86,11 @@ class DSparkGemma4_12BProposer:
         )
 
     def head(
-        self, batch: BlockBatch, block_hs: TensorValue, accepted: Accepted
+        self,
+        batch: BlockBatch,
+        block_hs: TensorValue,
+        accepted: Accepted,
+        sampler: DraftSampler,
     ) -> TensorValue:
         block_hs_2d = block_hs.reshape(
             ("batch_size", self.block_size, self.hidden_size)
@@ -93,6 +101,8 @@ class DSparkGemma4_12BProposer:
         softcap = self.final_logit_softcapping
         if softcap is not None:
             base_logits = ops.tanh(base_logits / softcap) * softcap
-        # Sequential Markov correction seeded by the anchor token, greedy.
+        # Sequential Markov correction seeded by the anchor token.
         assert self.draft.markov_head is not None
-        return self.draft.markov_head(base_logits, accepted.next_tokens)
+        return self.draft.markov_head(
+            base_logits, accepted.next_tokens, sampler=sampler.sample_next
+        )

@@ -72,6 +72,7 @@ class UnifiedDSparkDeepseekV4(BlockDriver[TrunkHidden, TensorValue]):
             ),
             speculative_config=speculative_config,
             enable_structured_output=enable_structured_output,
+            vocab_size=config.vocab_size,
         )
         self.config = config
         self._verifier = verifier

@@ -115,9 +115,13 @@ from nn.attention.mha_operand import (
 from nn.attention.mha_utils import (
     FlashAttentionAlgorithm,
     MHAConfig,
+    NullPointer,
+    OptionalPointer,
     _copy_frag_to_smem,
     _kernel_mask,
     DynamicInt,
+    null_pointer,
+    unread_pointer,
 )
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -235,6 +239,12 @@ def flare_mla_decoding[
     # identical topk list, so the sparse fp8 decode gathers it ONCE. False
     # (default) -> unchanged per-position behavior.
     fold_shared_index: Bool = False,
+    # Whether `extra_k` is supplied; must match `extra_k is not None`.
+    has_extra_k: Bool = False,
+    # Presence of `attn_sink_ptr` / `topk_lengths` + `extra_topk_lengths`
+    # (inferred from those arguments).
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -263,14 +273,16 @@ def flare_mla_decoding[
     # Per-batch topk lengths: when non-null, topk_lengths[batch_idx] gives
     # the actual number of valid sparse indices for that batch. indices_stride
     # is the allocation stride (max topk across all batches).
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Extra KV: separate always-attend cache. Tokens from extra_k are
     # appended after the topk tokens in a unified attention loop.
     extra_k: OptionalReg[cache_t] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
+        TopkLengthsPtrType
+    ](),
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar from the Python resolver. When set, the
     # SM100 dispatcher uses this instead of recomputing num_partitions
@@ -328,6 +340,13 @@ def flare_mla_decoding[
         fold_shared_index: Whether to use the read-once shared-index fold
             that packs folded output/LSE slots into one CTA (defaults to
             `False`).
+        has_extra_k: Whether `extra_k` is supplied (defaults to `False`).
+            Must match `extra_k is not None`; comptime so callers without an
+            extra cache do not build the extra-KV sparse kernels.
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred, defaults to `NullPointer`).
+        TopkLengthsPtrType: `OptionalPointer` type shared by `topk_lengths`
+            and `extra_topk_lengths` (inferred, defaults to `NullPointer`).
 
     Args:
         output: Output tensor with shape `[batch, num_heads, depth_v]`
@@ -364,9 +383,9 @@ def flare_mla_decoding[
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
         topk_lengths: Optional per-batch array of actual valid sparse
-            index counts; `None` for non-sparse.
+            index counts; null means every batch uses `indices_stride`.
         attn_sink_ptr: Optional attention-sink scale pointer
-            (`float32`); `None` to disable.
+            (`float32`); null to disable.
         extra_k: Optional separate always-attend KV cache operand,
             appended after the topk tokens in the attention loop; `None`
             to disable.
@@ -375,7 +394,7 @@ def flare_mla_decoding[
         extra_indices_stride: Allocation stride for `extra_d_indices`
             (defaults to 0).
         extra_topk_lengths: Optional per-batch valid index counts for
-            `extra_k`; `None` for non-sparse extra KV.
+            `extra_k`; null means every batch uses `extra_indices_stride`.
         extra_scales_ptr: Optional per-token scale pointer for
             `extra_k`; `None` to disable.
         num_partitions_in: Optional capturable-graph scalar from the
@@ -453,6 +472,7 @@ def flare_mla_decoding[
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
+                has_extra_k=has_extra_k,
             ](
                 output,
                 q,
@@ -494,6 +514,7 @@ def flare_mla_decoding[
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
+                has_extra_k=has_extra_k,
             ](
                 output,
                 q,
@@ -609,6 +630,10 @@ def flare_mla_decoding_dispatch[
     rope_aware_kv_sparse: Bool = False,
     # Read-once shared-index MTP fold (KERN-3141); see flare_mla_decoding.
     fold_shared_index: Bool = False,
+    # See flare_mla_decoding.
+    has_extra_k: Bool = False,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
     output: TileTensor[mut=True, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -629,13 +654,15 @@ def flare_mla_decoding_dispatch[
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Extra KV: separate always-attend cache operand.
     extra_k: OptionalReg[k_t] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
+        TopkLengthsPtrType
+    ](),
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar: forwarded by the Python resolver so grid-time
     # dispatch matches the kernel's device-side divmod.
@@ -688,6 +715,13 @@ def flare_mla_decoding_dispatch[
         fold_shared_index: Whether to use the read-once shared-index fold
             that packs folded output/LSE slots into one CTA (defaults to
             `False`).
+        has_extra_k: Whether `extra_k` is supplied (defaults to `False`).
+            Must match `extra_k is not None`; comptime so callers without an
+            extra cache do not build the extra-KV sparse kernels.
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred, defaults to `NullPointer`).
+        TopkLengthsPtrType: `OptionalPointer` type shared by `topk_lengths`
+            and `extra_topk_lengths` (inferred, defaults to `NullPointer`).
 
     Args:
         output: Output tensor with shape `[batch, num_heads, depth_v]`
@@ -725,9 +759,9 @@ def flare_mla_decoding_dispatch[
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
         topk_lengths: Optional per-batch array of actual valid sparse
-            index counts; `None` for non-sparse.
+            index counts; null means every batch uses `indices_stride`.
         attn_sink_ptr: Optional attention-sink scale pointer
-            (`float32`); `None` to disable.
+            (`float32`); null to disable.
         extra_k: Optional separate always-attend KV cache operand,
             appended after the topk tokens in the attention loop; `None`
             to disable.
@@ -736,7 +770,7 @@ def flare_mla_decoding_dispatch[
         extra_indices_stride: Allocation stride for `extra_d_indices`
             (defaults to 0).
         extra_topk_lengths: Optional per-batch valid index counts for
-            `extra_k`; `None` for non-sparse extra KV.
+            `extra_k`; null means every batch uses `extra_indices_stride`.
         extra_scales_ptr: Optional per-token scale pointer for
             `extra_k`; `None` to disable.
         num_partitions_in: Optional capturable-graph scalar from the
@@ -865,6 +899,7 @@ def flare_mla_decoding_dispatch[
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
+                has_extra_k=has_extra_k,
             ](
                 q,
                 k,
@@ -924,6 +959,7 @@ def flare_mla_decoding_dispatch[
                 sparse=sparse,
                 rope_aware_kv_sparse=rope_aware_kv_sparse,
                 fold_shared_index=fold_shared_index,
+                has_extra_k=has_extra_k,
             ](
                 q,
                 k,
@@ -2409,7 +2445,7 @@ def mla_decoding_single_batch[
                                 p_reg_vec2[mma_id, i] * log2e
                             )
 
-                        if not not_last_iter:
+                        comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
                                 IndexList[2, element_type=.uint32](
                                     score_row, score_col
@@ -4238,7 +4274,7 @@ def mla_prefill_single_batch[
                                 p_reg_vec2[mma_id, i] * log2e
                             )
 
-                        if not not_last_iter:
+                        comptime if not not_last_iter:
                             p_reg_vec2[mma_id, i] = _kernel_mask(
                                 IndexList[2, element_type=.uint32](
                                     Int(score_row), Int(score_col)

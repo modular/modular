@@ -176,6 +176,9 @@ def register_all_models() -> None:
             ".gemma4_modulev3",
             "gemma4_unified_modulev3_arch",
         ),
+        _LazyArch(
+            "Glm5NextForConditionalGeneration", ".glm5_next", "glm5_next_arch"
+        ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
         _LazyArch("GptOssForCausalLM", ".gpt_oss", "gpt_oss_arch"),
         _LazyArch(

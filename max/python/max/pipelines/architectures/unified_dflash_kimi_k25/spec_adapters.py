@@ -30,6 +30,7 @@ from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 from max.pipelines.speculative.block_driver import (
     Accepted,
     BlockBatch,
+    DraftSampler,
     local_row_offsets,
 )
 from max.pipelines.speculative.spec_target import Verified
@@ -179,7 +180,11 @@ class DFlashKimiK25Proposer:
         )
 
     def head(
-        self, batch: BlockBatch, block_hs: _TargetHidden, accepted: Accepted
+        self,
+        batch: BlockBatch,
+        block_hs: _TargetHidden,
+        accepted: Accepted,
+        sampler: DraftSampler,
     ) -> TensorValue:
         del accepted
         k = self.block_size
@@ -196,5 +201,6 @@ class DFlashKimiK25Proposer:
             # back.
             drafted = ops.allgather(drafted, batch.signal_buffers, axis=0)
         logits = self.target.lm_head(drafted, batch.signal_buffers)[0]
-        argmax = ops.argmax(logits, axis=-1).rebind(["batch_size", k - 1, 1])
-        return argmax.reshape(("batch_size", k - 1))
+        return sampler.sample_all(
+            logits.rebind(["batch_size", k - 1, logits.shape[-1]])
+        )

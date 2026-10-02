@@ -151,6 +151,8 @@ _FILECHECK_EXTRA_DEPS = {
             # targets below so they are not coupled to `nn`/`linalg`.
             "test_device_pointer_tile_storage_kernel.mojo",
             "test_optional_device_pointer_tile.mojo",
+            # Blackwell-only `TmemEngine` probe; dedicated target below.
+            "test_tmem_engine.mojo",
         ],
     )
 ]
@@ -176,6 +178,24 @@ _FILECHECK_EXTRA_DEPS = {
         "test_optional_device_pointer_tile.mojo",
     ]
 ]
+
+# `TmemEngine` needs `tcgen05`, so it only runs on B200-class hardware.
+mojo_test(
+    name = "test_tmem_engine.mojo.test",
+    size = "large",
+    srcs = ["test_tmem_engine.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
 
 [
     mojo_filecheck_test(

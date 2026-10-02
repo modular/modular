@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from max import tree
 from max.driver import Buffer
@@ -44,12 +44,9 @@ class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs, Qwen3_5Inputs):
     live_recurrent_pools: list[Buffer]
     live_conv_row_ids: list[Buffer]
     live_recurrent_row_ids: list[Buffer]
-    #: Empty on the ring rollback.
-    shadow_recurrent_pools: list[Buffer]
-    #: The ring pool per device. Empty on the snapshot rollback.
-    ring_pools: list[Buffer] = field(default_factory=list)
+    ring_pools: list[Buffer]
     #: The ring's ``[num_layers, batch_size]`` rows per device.
-    ring_row_ids: list[Buffer] = field(default_factory=list)
+    ring_row_ids: list[Buffer]
     #: ``[3, merged_total_seq_len]`` M-RoPE positions for the merged
     #: ``[real, draft_1..draft_k]`` window. ``None`` on a text-only graph,
     #: whose rotary stays on the static cache-derived table.
@@ -78,7 +75,6 @@ class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs, Qwen3_5Inputs):
                 *self.live_conv_row_ids,
                 *self.live_recurrent_row_ids,
                 *self.ring_row_ids,
-                *self.shadow_recurrent_pools,
             )
             + (() if self.position_ids is None else (self.position_ids,))
         )

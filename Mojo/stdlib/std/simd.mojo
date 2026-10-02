@@ -53,12 +53,12 @@ from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.math.math import _call_ptx_intrinsic, trunc
 from std.sys import (
     CompilationTarget,
+    Endian,
     _RegisterPackType,
     align_of,
     bit_width_of,
     is_amd_gpu,
     is_apple_gpu,
-    is_big_endian,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -2525,53 +2525,62 @@ struct SIMD[dtype: DType, length: SIMDLength](
     @staticmethod
     def from_bytes[
         *,
-        big_endian: Bool = is_big_endian(),
+        endian: Endian = .native(),
     ](bytes: Array[Byte, _]) -> SIMD[Self.dtype, Self.length]:
         """Converts a byte array to a vector.
+
+        Parameters:
+            endian: The byte order of `bytes`.
 
         Args:
             bytes: The byte array to convert.
 
-        Parameters:
-            big_endian: Whether the byte array is big-endian.
-
         Returns:
-            The integer value.
+            The vector stored in `bytes`.
+
+        Example:
+
+        ```mojo
+        var port = UInt16.from_bytes[endian=.big]([0x1F, 0x90])  # 8080
+        ```
         """
         comptime assert bytes.length == size_of[Self]()
-        var ptr = bytes.unsafe_ptr().unsafe_bitcast[Self]()
-        var value = ptr[]
 
-        comptime if is_big_endian() != big_endian:
+        var value = Pointer(to=bytes).unsafe_bitcast[Self]()[]
+
+        comptime if endian != .native():
             return byte_swap(value)
 
         return value
 
     def as_bytes[
         *,
-        big_endian: Bool = is_big_endian(),
-    ](self) -> Array[Byte, size_of[Self]()]:
-        """Convert the vector to a byte array.
+        endian: Endian = .native(),
+    ](self, out result: Array[Byte, size_of[Self]()]):
+        """Converts the vector to a byte array.
 
         Parameters:
-            big_endian: Whether the byte array should be big-endian.
+            endian: The byte order of the returned bytes.
 
         Returns:
-            The byte array.
+            The vector's bytes, in `endian` byte order.
+
+        Example:
+
+        ```mojo
+        var bytes = UInt16(8080).as_bytes[endian=.big]()  # [0x1F, 0x90]
+        ```
         """
         var value = self
 
-        comptime if is_big_endian() != big_endian:
+        comptime if endian != .native():
             value = byte_swap(value)
 
-        var ptr = Pointer(to=value)
-        var array = Array[Byte, size_of[Self]()](uninitialized=True)
-        unsafe_memcpy(
-            dest=array.unsafe_ptr(),
-            src=ptr.unsafe_bitcast[Byte](),
-            count=size_of[Self](),
+        result = (
+            Pointer(to=value)
+            .unsafe_bitcast[type_of(result)]()
+            .unsafe_take_pointee()
         )
-        return array^
 
     def clamp(self, lower_bound: Self, upper_bound: Self) -> Self:
         """Clamps the values in a SIMD vector to be in a certain range.
@@ -4385,61 +4394,61 @@ def _scalar_repr_alias[dtype: DType]() -> Optional[StaticString]:
         no scalar alias.
     """
     comptime __match dtype:
-    case .int:
-        return StaticString("Int")
-    case .uint:
-        return StaticString("UInt")
-    case .int8:
-        return StaticString("Int8")
-    case .uint8:
-        return StaticString("UInt8")
-    case .int16:
-        return StaticString("Int16")
-    case .uint16:
-        return StaticString("UInt16")
-    case .int32:
-        return StaticString("Int32")
-    case .uint32:
-        return StaticString("UInt32")
-    case .int64:
-        return StaticString("Int64")
-    case .uint64:
-        return StaticString("UInt64")
-    case .int128:
-        return StaticString("Int128")
-    case .uint128:
-        return StaticString("UInt128")
-    case .int256:
-        return StaticString("Int256")
-    case .uint256:
-        return StaticString("UInt256")
-    case .float4_e2m1fn:
-        return StaticString("Float4_e2m1fn")
-    case .float8_e5m2:
-        return StaticString("Float8_e5m2")
-    case .float8_e5m2fnuz:
-        return StaticString("Float8_e5m2fnuz")
-    case .float8_e4m3fn:
-        return StaticString("Float8_e4m3fn")
-    case .float8_e4m3fnuz:
-        return StaticString("Float8_e4m3fnuz")
-    case .float8_e8m0fnu:
-        return StaticString("Float8_e8m0fnu")
-    case .bfloat16:
-        return StaticString("BFloat16")
-    case .float16:
-        return StaticString("Float16")
-    case .float32:
-        return StaticString("Float32")
-    case .float64:
-        return StaticString("Float64")
-    case .bool | .float8_e3m4:
-        return None
-    case _:
-        comptime assert False, (
-            "unhandled dtype in `_scalar_repr_alias`: add a `Scalar` alias"
-            " branch or an explicit `None` case"
-        )
+        case .int:
+            return StaticString("Int")
+        case .uint:
+            return StaticString("UInt")
+        case .int8:
+            return StaticString("Int8")
+        case .uint8:
+            return StaticString("UInt8")
+        case .int16:
+            return StaticString("Int16")
+        case .uint16:
+            return StaticString("UInt16")
+        case .int32:
+            return StaticString("Int32")
+        case .uint32:
+            return StaticString("UInt32")
+        case .int64:
+            return StaticString("Int64")
+        case .uint64:
+            return StaticString("UInt64")
+        case .int128:
+            return StaticString("Int128")
+        case .uint128:
+            return StaticString("UInt128")
+        case .int256:
+            return StaticString("Int256")
+        case .uint256:
+            return StaticString("UInt256")
+        case .float4_e2m1fn:
+            return StaticString("Float4_e2m1fn")
+        case .float8_e5m2:
+            return StaticString("Float8_e5m2")
+        case .float8_e5m2fnuz:
+            return StaticString("Float8_e5m2fnuz")
+        case .float8_e4m3fn:
+            return StaticString("Float8_e4m3fn")
+        case .float8_e4m3fnuz:
+            return StaticString("Float8_e4m3fnuz")
+        case .float8_e8m0fnu:
+            return StaticString("Float8_e8m0fnu")
+        case .bfloat16:
+            return StaticString("BFloat16")
+        case .float16:
+            return StaticString("Float16")
+        case .float32:
+            return StaticString("Float32")
+        case .float64:
+            return StaticString("Float64")
+        case .bool | .float8_e3m4:
+            return None
+        case _:
+            comptime assert False, (
+                "unhandled dtype in `_scalar_repr_alias`: add a `Scalar` alias"
+                " branch or an explicit `None` case"
+            )
 
 
 def _write_scalar[

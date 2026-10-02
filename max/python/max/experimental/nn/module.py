@@ -493,36 +493,34 @@ class Module(Generic[_P, _R]):
         object.__setattr__(self, "_module_target_device", value)
 
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
-        """Transfers all module parameters to a device, mesh, or mapping.
-
-        See :meth:`~max.experimental.Tensor.to` for details about using
-        ``Device`` vs ``DeviceMesh`` vs ``DeviceMapping``.
+        """Transfers all module parameters to a single device.
 
         Records the target as :attr:`device`. Build the input types you pass
         to :meth:`compile` from it, so that the computation runs where the
         parameters are.
 
         Args:
-            target: The target for all module parameters. Can be:
-
-                - :class:`~max.driver.Device`: Target device for transfer.
-                - :class:`~max.experimental.sharding.DeviceMesh`: New mesh,
-                  keeping existing placements (or fully replicated for
-                  unsharded parameters).
-                - :class:`~max.experimental.sharding.DeviceMapping`: New mesh
-                  and placements; triggers shard collective for multi-device.
+            target: The device for all module parameters.
 
         Returns:
             A reference to the model. The transfer is applied mutably; the
             module's :attr:`device` property and all internal parameters are
             updated in place.
+
+        Raises:
+            ValueError: If ``target`` spans more than one device.
         """
         if isinstance(target, Device):
             device = target
-        elif isinstance(target, DeviceMesh):
-            device = target.devices[0]
-        elif isinstance(target, DeviceMapping):
-            device = target.mesh.devices[0]
+        elif isinstance(target, (DeviceMesh, DeviceMapping)):
+            mesh = target if isinstance(target, DeviceMesh) else target.mesh
+            if not mesh.num_devices == 1:
+                raise ValueError(
+                    f"Module.to() moves a module to one device, but {target} "
+                    "spans several. Construct the module inside "
+                    "default_device(mesh) instead."
+                )
+            device = mesh.devices[0]
         else:
             raise TypeError(
                 "to() expects Device, DeviceMesh, or DeviceMapping, "

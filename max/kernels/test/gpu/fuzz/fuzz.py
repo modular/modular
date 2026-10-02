@@ -141,6 +141,22 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "gated_group_rmsnorm": FuzzTarget(
+        name="gated_group_rmsnorm",
+        bazel_target=(
+            "//max/kernels/test/gpu/fuzz:fuzz_gated_group_rmsnorm.mojo.test"
+        ),
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_gated_group_rmsnorm.mojo.test"
+        ),
+        description=(
+            "gated_group_rmsnorm_gpu: Mamba-2 silu-gated group RMSNorm over a"
+            " strided, possibly misaligned gate view (vector and scalar"
+            " paths); memcheck/ref"
+        ),
+        default_oracle="ref",
+    ),
     "rms_norm": FuzzTarget(
         name="rms_norm",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_rms_norm.mojo.test",
@@ -166,6 +182,35 @@ _TARGETS: dict[str, FuzzTarget] = {
             " determinism + batch_variance negative control)"
         ),
         default_oracle="memcheck",
+    ),
+    "mamba2_ssd_scan": FuzzTarget(
+        name="mamba2_ssd_scan",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_mamba2_ssd_scan.mojo.test",
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/fuzz_mamba2_ssd_scan.mojo.test"
+        ),
+        description=(
+            "B200 Mamba-2 SSD scan (Nemotron-H SSM): decode + short ragged"
+            " prefill over strided views, scattered slots and mixed initial"
+            " states; ref checks y and the whole state pool vs the CPU"
+            " reference"
+        ),
+        default_oracle="ref",
+    ),
+    "causal_conv1d_varlen": FuzzTarget(
+        name="causal_conv1d_varlen",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_causal_conv1d_varlen.mojo.test",
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_causal_conv1d_varlen.mojo.test"
+        ),
+        description=(
+            "Varlen causal conv1d (Nemotron-H conv, channels last): decode +"
+            " ragged prefill over a column-range input view, scattered slots"
+            " and mixed initial states; ref checks the output and the whole"
+            " state pool vs the CPU reference"
+        ),
+        default_oracle="ref",
     ),
     "gemv_split_k": FuzzTarget(
         name="gemv_split_k",

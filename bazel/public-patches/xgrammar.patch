@@ -767,7 +767,7 @@ index 5cf140d..679ed93 100644
  }
 
 diff --git a/cpp/grammar_functor.cc b/cpp/grammar_functor.cc
-index 4424aca..e1e2e7e 100644
+index 4424aca..517d35c 100644
 --- a/cpp/grammar_functor.cc
 +++ b/cpp/grammar_functor.cc
 @@ -7,6 +7,8 @@
@@ -1587,7 +1587,7 @@ index 8cfc6fd..b8e8cec 100644
  }
 
 diff --git a/cpp/json_schema_converter.cc b/cpp/json_schema_converter.cc
-index da8b516..b54ad0c 100644
+index da8b516..9210133 100644
 --- a/cpp/json_schema_converter.cc
 +++ b/cpp/json_schema_converter.cc
 @@ -5,15 +5,20 @@
@@ -4062,13 +4062,11 @@ index da8b516..b54ad0c 100644
 +    spec.schemas.push_back(std::move(sub_result).Unwrap());
      ++idx;
    }
-   return ResultOk(std::move(spec));
- }
-
--Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object& schema) {
--  AllOfSpec spec;
--  if (!schema.at("allOf").is<picojson::array>()) {
--    return ResultErr<SchemaError>(SchemaErrorType::kInvalidSchema, "allOf must be an array");
+-  return ResultOk(std::move(spec));
+-}
++  return ResultOk(std::move(spec));
++}
++
 +std::optional<SchemaError> AllOfFlattener::Collect(const picojson::object& schema) {
 +  picojson::object own = schema;
 +  own.erase("allOf");
@@ -4178,14 +4176,19 @@ index da8b516..b54ad0c 100644
 +      if (!SameJson(merged.at(key), *combined)) key_source[key] = kSeveralSources;
 +      merged[key] = std::move(*combined);
 +    }
-   }
++  }
+
+-Result<AllOfSpec, SchemaError> SchemaParser::ParseAllOf(const picojson::object& schema) {
+-  AllOfSpec spec;
+-  if (!schema.at("allOf").is<picojson::array>()) {
+-    return ResultErr<SchemaError>(SchemaErrorType::kInvalidSchema, "allOf must be an array");
+-  }
 -  int idx = 0;
 -  for (const auto& sub_schema : schema.at("allOf").get<picojson::array>()) {
 -    auto sub_result = Parse(sub_schema, "all_" + std::to_string(idx));
 -    if (sub_result.IsErr()) return ResultErr(std::move(sub_result).UnwrapErr());
 -    spec.schemas.push_back(std::move(sub_result).Unwrap());
 -    ++idx;
-+
 +  // No string-tier check here: the merged text carries every tier, and
 +  // ReconcileStringTiers judges the combination once ParseString reaches it, so
 +  // the allOf spelling and the plain one give the same verdict.
@@ -4809,7 +4812,7 @@ index da8b516..b54ad0c 100644
    // Generate EBNF body
    std::string inner = BuildTrieBody(root);
    std::string ws = GetWhitespacePattern();
-@@ -1346,24 +3828,65 @@ std::string JSONSchemaConverter::GetKeyPatternExcluding(
+@@ -1346,24 +3828,68 @@ std::string JSONSchemaConverter::GetKeyPatternExcluding(
    return ebnf_script_creator_.AddRule(rule_name + "_addl_key", body);
  }
 
@@ -4827,7 +4830,10 @@ index da8b516..b54ad0c 100644
 +  if (key_ctx.framing == GenerationContext::Framing::kBare) {
 +    return "(" + RegexToEBNF(pattern, false, bare_key_pattern_forbidden_) + ")";
 +  }
-+  return "\"\\\"\"" + RegexToEBNF(pattern, false, StringPatternForbiddenChars(key_ctx)) + "\"\\\"\"";
++  const bool json_escapes = key_ctx.framing == GenerationContext::Framing::kQuotedJSON;
++  return "\"\\\"\" (" +
++         RegexToEBNF(pattern, false, StringPatternForbiddenChars(key_ctx), "", json_escapes) +
++         ") \"\\\"\"";
 +}
 +
 +std::string JSONSchemaConverter::CreatePropertyNameKeyRule(
@@ -4878,7 +4884,7 @@ index da8b516..b54ad0c 100644
  ) {
    // Only check cache for basic rules (pre-populated in AddBasicRules)
    // Don't cache other rules to match original behavior
-@@ -1373,46 +3896,57 @@ std::string JSONSchemaConverter::CreateRule(
+@@ -1373,46 +3899,57 @@ std::string JSONSchemaConverter::CreateRule(
    }
 
    std::string rule_name = ebnf_script_creator_.AllocateRuleName(rule_name_hint);
@@ -4953,7 +4959,7 @@ index da8b516..b54ad0c 100644
          } else {
            XGRAMMAR_LOG(FATAL) << "Unknown spec type";
            return "";
-@@ -1425,7 +3959,7 @@ std::string JSONSchemaConverter::GenerateFromSpec(
+@@ -1425,7 +3962,7 @@ std::string JSONSchemaConverter::GenerateFromSpec(
  // ==================== Generate Methods ====================
 
  std::string JSONSchemaConverter::GenerateInteger(
@@ -4962,7 +4968,7 @@ index da8b516..b54ad0c 100644
  ) {
    std::optional<int64_t> start, end;
    if (spec.minimum.has_value()) {
-@@ -1453,11 +3987,18 @@ std::string JSONSchemaConverter::GenerateInteger(
+@@ -1453,11 +3990,18 @@ std::string JSONSchemaConverter::GenerateInteger(
      std::string range_regex = GenerateRangeRegex(start, end);
      return RegexToEBNF(range_regex, false);
    }
@@ -4983,7 +4989,7 @@ index da8b516..b54ad0c 100644
  ) {
    std::optional<double> start, end;
    bool exclusive_start = false;
-@@ -1491,55 +4032,220 @@ std::string JSONSchemaConverter::GenerateNumber(
+@@ -1491,55 +4035,224 @@ std::string JSONSchemaConverter::GenerateNumber(
    return "\"-\"? (\"0\" | [1-9] [0-9]*) (\".\" [0-9]+)? ([eE] [+-]? [0-9]+)?";
  }
 
@@ -5061,8 +5067,9 @@ index da8b516..b54ad0c 100644
 +  if (ctx.framing == GenerationContext::Framing::kBare) {
 +    return "(" + body + ")";
 +  }
++  // The body may be an alternation, which must not bind to a delimiter.
 +  auto [open_delim, close_delim] = StringDelimiters(ctx);
-+  return open_delim + " " + body + " " + close_delim;
++  return open_delim + " (" + body + ") " + close_delim;
 +}
 +
 +std::string JSONSchemaConverter::GenerateStringLengthBody(
@@ -5157,6 +5164,7 @@ index da8b516..b54ad0c 100644
 +  const bool has_pattern = ctx.pattern.has_value();
 +  const std::string allowed = has_pattern ? ctx.pattern->rest_body : "";
 +  const std::string forbidden = has_pattern ? "" : StringPatternForbiddenChars(ctx);
++  const bool json_escapes = !has_pattern && ctx.framing == GenerationContext::Framing::kQuotedJSON;
 +
    // Check for format
    if (spec.format.has_value()) {
@@ -5167,7 +5175,9 @@ index da8b516..b54ad0c 100644
      if (regex_pattern.has_value()) {
 -      std::string converted_regex = RegexToEBNF(regex_pattern.value(), false);
 -      return "\"\\\"\" " + converted_regex + " \"\\\"\"";
-+      return WrapStringBody(RegexToEBNF(*regex_pattern, false, forbidden, allowed), ctx);
++      return WrapStringBody(
++          RegexToEBNF(*regex_pattern, false, forbidden, allowed, json_escapes), ctx
++      );
 +    }
 +    if (has_pattern) {
 +      XGRAMMAR_LOG(FATAL) << "unsupported format for an alphabet-constrained string: "
@@ -5179,7 +5189,7 @@ index da8b516..b54ad0c 100644
    if (spec.pattern.has_value()) {
 -    std::string converted_regex = RegexToEBNF(*spec.pattern, false);
 -    return "\"\\\"\" " + converted_regex + " \"\\\"\"";
-+    return WrapStringBody(RegexToEBNF(*spec.pattern, false, forbidden, allowed), ctx);
++    return WrapStringBody(RegexToEBNF(*spec.pattern, false, forbidden, allowed, json_escapes), ctx);
    }
 
    // Check for length constraints
@@ -5226,7 +5236,7 @@ index da8b516..b54ad0c 100644
  ) {
    indent_manager_.StartIndent();
 
-@@ -1554,13 +4260,13 @@ std::string JSONSchemaConverter::GenerateArray(
+@@ -1554,13 +4267,13 @@ std::string JSONSchemaConverter::GenerateArray(
    // Handle prefix items
    for (size_t i = 0; i < spec.prefix_items.size(); ++i) {
      item_rule_names.push_back(
@@ -5242,7 +5252,7 @@ index da8b516..b54ad0c 100644
    }
 
    indent_manager_.EndIndent();
-@@ -1641,6 +4347,11 @@ std::string JSONSchemaConverter::GenerateArray(
+@@ -1641,6 +4354,11 @@ std::string JSONSchemaConverter::GenerateArray(
  }
 
  std::string JSONSchemaConverter::FormatPropertyKey(const std::string& key) {
@@ -5254,7 +5264,7 @@ index da8b516..b54ad0c 100644
    return "\"" + JSONStrToPrintableStr(picojson::value(key).serialize()) + "\"";
  }
 
-@@ -1687,6 +4398,7 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
+@@ -1687,6 +4405,7 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
      const std::string& additional_suffix,
      int min_properties,
      int max_properties,
@@ -5262,7 +5272,7 @@ index da8b516..b54ad0c 100644
      const std::string& additional_prop_pattern_override
  ) {
    std::string first_sep = NextSeparator();
-@@ -1698,16 +4410,16 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
+@@ -1698,16 +4417,16 @@ std::string JSONSchemaConverter::GetAnyOrderRuleForProperties(
    std::vector<std::string> item_patterns;
    for (size_t idx = 0; idx < properties.size(); ++idx) {
      const auto& prop = properties[idx];
@@ -5282,7 +5292,7 @@ index da8b516..b54ad0c 100644
            add_value_rule,
            rule_name,
            additional_suffix
-@@ -1742,6 +4454,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1742,6 +4461,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
      const std::string& additional_suffix,
      int min_properties,
      int max_properties,
@@ -5290,7 +5300,7 @@ index da8b516..b54ad0c 100644
      const std::string& additional_prop_pattern_override
  ) {
    if (max_properties == 0) {
-@@ -1757,6 +4470,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1757,6 +4477,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
          additional_suffix,
          min_properties,
          max_properties,
@@ -5298,7 +5308,7 @@ index da8b516..b54ad0c 100644
          additional_prop_pattern_override
      );
    }
-@@ -1770,7 +4484,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1770,7 +4491,7 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
    std::vector<std::string> prop_patterns;
    for (size_t idx = 0; idx < properties.size(); ++idx) {
      const auto& prop = properties[idx];
@@ -5307,7 +5317,7 @@ index da8b516..b54ad0c 100644
      prop_patterns.push_back(FormatProperty(prop.name, value_rule, rule_name, idx));
    }
 
-@@ -1786,9 +4500,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1786,9 +4507,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
@@ -5319,7 +5329,7 @@ index da8b516..b54ad0c 100644
              add_value_rule,
              rule_name,
              additional_suffix
-@@ -1850,9 +4564,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1850,9 +4571,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
@@ -5331,7 +5341,7 @@ index da8b516..b54ad0c 100644
              add_value_rule,
              rule_name,
              additional_suffix
-@@ -1969,9 +4683,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -1969,9 +4690,9 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
        if (!additional_prop_pattern_override.empty()) {
          additional_prop_pattern = additional_prop_pattern_override;
        } else {
@@ -5343,7 +5353,7 @@ index da8b516..b54ad0c 100644
              add_value_rule,
              rule_name,
              additional_suffix
-@@ -2094,8 +4808,10 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
+@@ -2094,8 +4815,10 @@ std::string JSONSchemaConverter::GetPartialRuleForProperties(
  }
 
  std::string JSONSchemaConverter::GenerateObject(
@@ -5355,7 +5365,7 @@ index da8b516..b54ad0c 100644
    std::string result = "";
    if (need_braces) {
      result += "\"{\"";
-@@ -2127,21 +4843,24 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2127,21 +4850,24 @@ std::string JSONSchemaConverter::GenerateObject(
      std::string effective_suffix = additional_suffix;
      std::string pp_override = "";
 
@@ -5384,7 +5394,7 @@ index da8b516..b54ad0c 100644
          std::string add_prop =
              FormatOtherProperty(GetKeyPattern(), add_value_rule, rule_name, effective_suffix);
          pp_body += " | " + add_prop;
-@@ -2156,8 +4875,9 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2156,8 +4882,9 @@ std::string JSONSchemaConverter::GenerateObject(
        // propertyNames constrains keys of additional properties.
        // Only apply when additional properties are allowed — when additionalProperties
        // is false, no extra keys beyond named properties should be permitted.
@@ -5396,7 +5406,7 @@ index da8b516..b54ad0c 100644
        pp_override = key_pattern + " " + colon_pattern_ + " " + val_rule;
        effective_suffix = "pn";
      }
-@@ -2170,6 +4890,7 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2170,6 +4897,7 @@ std::string JSONSchemaConverter::GenerateObject(
                          effective_suffix,
                          spec.min_properties,
                          spec.max_properties,
@@ -5404,7 +5414,7 @@ index da8b516..b54ad0c 100644
                          pp_override
                      );
      could_be_empty = spec.required.empty() && spec.min_properties == 0;
-@@ -2179,12 +4900,14 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2179,12 +4907,14 @@ std::string JSONSchemaConverter::GenerateObject(
 
      std::string property_rule_body = "(";
      if (spec.max_properties != 0) {
@@ -5422,7 +5432,7 @@ index da8b516..b54ad0c 100644
            if (i != 0) {
              property_rule_body += " | ";
            }
-@@ -2192,9 +4915,13 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2192,9 +4922,13 @@ std::string JSONSchemaConverter::GenerateObject(
          }
          property_rule_body += ")";
        } else {
@@ -5438,7 +5448,7 @@ index da8b516..b54ad0c 100644
        }
 
        auto prop_rule_name = ebnf_script_creator_.AllocateRuleName(rule_name + "_prop");
-@@ -2217,16 +4944,21 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2217,16 +4951,21 @@ std::string JSONSchemaConverter::GenerateObject(
                          rule_name,
                          additional_suffix,
                          spec.min_properties,
@@ -5464,7 +5474,7 @@ index da8b516..b54ad0c 100644
        result += " " + NextSeparator() + " " + other_property_pattern + " ";
        result += GetPropertyWithNumberConstraints(
                      NextSeparator() + " " + other_property_pattern,
-@@ -2260,117 +4992,143 @@ std::string JSONSchemaConverter::GenerateObject(
+@@ -2260,117 +4999,143 @@ std::string JSONSchemaConverter::GenerateObject(
      }
    }
 
@@ -5661,7 +5671,17 @@ index da8b516..b54ad0c 100644
    }
    return result;
  }
-@@ -2391,12 +5149,18 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+@@ -2384,19 +5149,27 @@ std::optional<std::string> JSONSchemaConverter::JSONFormatToRegexPattern(const s
+
+     std::string atext = "[\\w!#$%&'*+/=?^`{|}~-]";
+     std::string dot_string = "(" + atext + "+(\\." + atext + "+)*)";
++    // The regex matches the decoded string, so the quotes are bare and a quoted-pair
++    // is one backslash; the converter spells both as JSON escapes.
+     std::string quoted_string =
+-        "\\\\\"(\\\\[\\x20-\\x7E]|[\\x20\\x21\\x23-\\x5B\\x5D-\\x7E])*\\\\\"";
++        "\"(\\\\[\\x20-\\x7E]|[\\x20\\x21\\x23-\\x5B\\x5D-\\x7E])*\"";
+     std::string domain =
+         "([A-Za-z0-9]([\\-A-Za-z0-9]*[A-Za-z0-9])?)((\\.[A-Za-z0-9][\\-A-Za-z0-9]*[A-Za-z0-9])*"
          ")";
      m["email"] = "^(" + dot_string + "|" + quoted_string + ")@" + domain + "$";
 
@@ -5684,7 +5704,7 @@ index da8b516..b54ad0c 100644
      m["duration"] =
          "^P((\\d+D|\\d+M(\\d+D)?|\\d+Y(\\d+M(\\d+D)?)?)(T(\\d+S|\\d+M(\\d+S)?|\\d+H(\\d+M(\\d+"
          "S)?"
-@@ -3328,7 +6092,16 @@ std::string JSONSchemaToEBNF(
+@@ -3328,7 +6101,16 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -5702,7 +5722,7 @@ index da8b516..b54ad0c 100644
  ) {
    picojson::value schema_value;
    std::string err = picojson::parse(schema_value, schema);
-@@ -3342,7 +6115,16 @@ std::string JSONSchemaToEBNF(
+@@ -3342,7 +6124,16 @@ std::string JSONSchemaToEBNF(
        strict_mode,
        max_whitespace_cnt,
        json_format,
@@ -5720,7 +5740,7 @@ index da8b516..b54ad0c 100644
    );
  }
 
-@@ -3354,11 +6136,58 @@ std::string JSONSchemaToEBNF(
+@@ -3354,11 +6145,58 @@ std::string JSONSchemaToEBNF(
      bool strict_mode,
      std::optional<int> max_whitespace_cnt,
      JSONFormat json_format,
@@ -5783,7 +5803,7 @@ index da8b516..b54ad0c 100644
    if (spec_result.IsErr()) {
      XGRAMMAR_LOG(FATAL) << std::move(spec_result).UnwrapErr().what();
    }
-@@ -3372,18 +6201,36 @@ std::string JSONSchemaToEBNF(
+@@ -3372,18 +6210,36 @@ std::string JSONSchemaToEBNF(
      return std::move(r).Unwrap();
    };
 
@@ -5822,7 +5842,7 @@ index da8b516..b54ad0c 100644
        XMLToolCallingConverter converter(
            indent,
            separators,
-@@ -3391,7 +6238,14 @@ std::string JSONSchemaToEBNF(
+@@ -3391,7 +6247,14 @@ std::string JSONSchemaToEBNF(
            max_whitespace_cnt,
            ref_resolver,
            json_format,
@@ -5838,7 +5858,7 @@ index da8b516..b54ad0c 100644
        );
        return converter.Convert(spec);
      }
-@@ -3414,7 +6268,9 @@ std::string GenerateFloatRangeRegex(
+@@ -3414,7 +6277,9 @@ std::string GenerateFloatRangeRegex(
    );
  }
 
@@ -5849,7 +5869,7 @@ index da8b516..b54ad0c 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3428,11 +6284,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
+@@ -3428,11 +6293,16 @@ std::string QwenXMLToolCallingToEBNF(const std::string& schema, bool any_order)
        true,
        std::nullopt,
        JSONFormat::kQwenXML,
@@ -5868,7 +5888,7 @@ index da8b516..b54ad0c 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3446,11 +6307,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
+@@ -3446,11 +6316,16 @@ std::string MiniMaxXMLToolCallingToEBNF(const std::string& schema, bool any_orde
        true,
        std::nullopt,
        JSONFormat::kMiniMaxXML,
@@ -5887,7 +5907,7 @@ index da8b516..b54ad0c 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3464,11 +6330,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
+@@ -3464,11 +6339,16 @@ std::string DeepSeekXMLToolCallingToEBNF(const std::string& schema, bool any_ord
        true,
        std::nullopt,
        JSONFormat::kDeepSeekXML,
@@ -5906,7 +5926,7 @@ index da8b516..b54ad0c 100644
    picojson::value json_value;
    std::string err = picojson::parse(json_value, schema);
    if (!err.empty()) {
-@@ -3482,7 +6353,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
+@@ -3482,7 +6362,10 @@ std::string GlmXMLToolCallingToEBNF(const std::string& schema, bool any_order) {
        true,
        std::nullopt,
        JSONFormat::kGlmXML,
@@ -6420,7 +6440,7 @@ index f0175ba..aa11492 100644
  }  // namespace xgrammar
 
 diff --git a/cpp/json_schema_converter_ext.cc b/cpp/json_schema_converter_ext.cc
-index 4f1cc65..b58ead8 100644
+index 4f1cc65..fc159f2 100644
 --- a/cpp/json_schema_converter_ext.cc
 +++ b/cpp/json_schema_converter_ext.cc
 @@ -5,10 +5,20 @@
@@ -6444,7 +6464,7 @@ index 4f1cc65..b58ead8 100644
 
  namespace xgrammar {
 
-@@ -17,9 +27,28 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,9 +27,29 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
@@ -6470,11 +6490,12 @@ index 4f1cc65..b58ead8 100644
 +          /*array_item_tag=*/"",
 +          /*value_framing_stripped=*/true,
 +          /*bare_value_regex_exact=*/true,
-+          /*any_string_is_json=*/true}},
++          /*any_string_is_json=*/true,
++          /*container_value_balanced=*/true}},
          {JSONFormat::kMiniMaxXML, {"<parameter name=\\\"", "\\\">", "", "</parameter>"}},
          {JSONFormat::kDeepSeekXML,
           {"<｜DSML｜parameter name=\\\"",
-@@ -28,6 +57,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
+@@ -28,6 +58,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
            // TODO(Linzhang): we do not validate the string's value, and we accept both.
            "</｜DSML｜parameter>"}},
          {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
@@ -6489,7 +6510,7 @@ index 4f1cc65..b58ead8 100644
  };
 
  XMLToolCallingConverter::XMLToolCallingConverter(
-@@ -37,19 +74,250 @@ XMLToolCallingConverter::XMLToolCallingConverter(
+@@ -37,19 +75,250 @@ XMLToolCallingConverter::XMLToolCallingConverter(
      std::optional<int> max_whitespace_cnt,
      RefResolver ref_resolver,
      JSONFormat json_format,
@@ -6744,7 +6765,7 @@ index 4f1cc65..b58ead8 100644
    ebnf_script_creator_.AddRuleWithAllocatedName(root_rule_name, root_body);
 
    return ebnf_script_creator_.GetScript();
-@@ -63,41 +331,65 @@ void XMLToolCallingConverter::AddBasicRules() {
+@@ -63,41 +332,65 @@ void XMLToolCallingConverter::AddBasicRules() {
    JSONSchemaConverter::AddBasicRules();
    nested_object_level_ = 1;
    // The outer part, xml format, is at level 1.
@@ -6828,7 +6849,7 @@ index 4f1cc65..b58ead8 100644
  }
 
  std::string XMLToolCallingConverter::GetKeyPattern() const {
-@@ -114,13 +406,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
+@@ -114,13 +407,26 @@ std::string XMLToolCallingConverter::GetBasicAnyRuleName() const {
    return kBasicAny;
  }
 
@@ -6858,7 +6879,7 @@ index 4f1cc65..b58ead8 100644
  }
 
  std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
-@@ -131,19 +436,34 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
+@@ -131,19 +437,34 @@ std::string XMLToolCallingConverter::NextSeparator(bool is_end) {
  }
 
  std::string XMLToolCallingConverter::GenerateString(
@@ -6894,7 +6915,7 @@ index 4f1cc65..b58ead8 100644
          std::string converted_regex = RegexToEBNF(regex_pattern.value(), false);
          return converted_regex;
        }
-@@ -151,86 +471,338 @@ std::string XMLToolCallingConverter::GenerateString(
+@@ -151,86 +472,338 @@ std::string XMLToolCallingConverter::GenerateString(
 
      // Check for pattern
      if (spec.pattern.has_value()) {
@@ -7263,7 +7284,7 @@ index 4f1cc65..b58ead8 100644
    }
    return JSONSchemaConverter::FormatPropertyKey(key);
  }
-@@ -239,15 +811,16 @@ std::string XMLToolCallingConverter::FormatProperty(
+@@ -239,15 +812,16 @@ std::string XMLToolCallingConverter::FormatProperty(
      const std::string& key, const std::string& value_rule, const std::string& rule_name, int64_t idx
  ) {
    if (nested_object_level_ <= 1) {
@@ -7288,7 +7309,7 @@ index 4f1cc65..b58ead8 100644
    }
    return JSONSchemaConverter::FormatProperty(key, value_rule, rule_name, idx);
  }
-@@ -259,16 +832,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -259,16 +833,16 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
      const std::string& rule_name_suffix
  ) {
    if (nested_object_level_ <= 1) {
@@ -7314,7 +7335,7 @@ index 4f1cc65..b58ead8 100644
    }
    return JSONSchemaConverter::FormatOtherProperty(
        key_pattern, value_rule, rule_name, rule_name_suffix
-@@ -276,12 +849,86 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
+@@ -276,12 +850,86 @@ std::string XMLToolCallingConverter::FormatOtherProperty(
  }
 
  std::string XMLToolCallingConverter::GenerateObject(
@@ -7332,7 +7353,7 @@ index 4f1cc65..b58ead8 100644
 +        XGRAMMAR_LOG(FATAL)
 +            << "patternProperties with empty properties on an XML object is not supported";
 +      }
-+    } else {
++    } else if (!xml_wrapper_.container_value_balanced) {
 +      // Below the root the keys are JSON strings inside a parameter's value, and a
 +      // reader may take the value to its first close delimiter, so no key may spell it.
 +      for (const auto& pattern_property : spec.pattern_properties) {
@@ -7405,7 +7426,7 @@ index 4f1cc65..b58ead8 100644
    return result;
  }
 
-@@ -289,14 +936,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
+@@ -289,14 +937,14 @@ void XMLToolCallingConverter::AddCache(const std::string& key, const std::string
    if (key.empty()) {
      return;
    }
@@ -7423,7 +7444,7 @@ index 4f1cc65..b58ead8 100644
 
  }  // namespace xgrammar
 diff --git a/cpp/json_schema_converter_ext.h b/cpp/json_schema_converter_ext.h
-index 8d778e0..e740785 100644
+index 8d778e0..2592d6a 100644
 --- a/cpp/json_schema_converter_ext.h
 +++ b/cpp/json_schema_converter_ext.h
 @@ -7,8 +7,12 @@
@@ -7526,7 +7547,7 @@ index 8d778e0..e740785 100644
 
    std::string NextSeparator(bool is_end = false) override;
 
-@@ -76,13 +126,32 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -76,13 +126,38 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    void AddCache(const std::string& key, const std::string& value) override;
    std::optional<std::string> GetCache(const std::string& key) const override;
 
@@ -7557,10 +7578,16 @@ index 8d778e0..e740785 100644
 +    // arm. Otherwise it takes the bare-value string, which runs to the close delimiter and so
 +    // admits any text after it.
 +    bool any_string_is_json = false;
++    // Whether the style's reader takes an object or array value as one balanced JSON value
++    // rather than scanning it to the close delimiter, so a key inside it may spell that
++    // delimiter, as its string values already may. FormatSpec's parameter_tags reader does.
++    // MAX's Python qwen3_5 parser scans to the first close instead, but MAX compiles without
++    // reject_unsupported, so the guard this flag skips never ran on its path.
++    bool container_value_balanced = false;
    };
 
    static const std::unordered_map<JSONFormat, XMLWrapper> kKeyWrapperMap;
-@@ -90,10 +159,78 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
+@@ -90,10 +165,78 @@ class XMLToolCallingConverter : public JSONSchemaConverter {
    static const std::string kXMLAny;
    static const std::string kXMLObject;
    static const std::string kXMLVariableName;
@@ -7642,7 +7669,7 @@ index 8d778e0..e740785 100644
 
  }  // namespace xgrammar
 diff --git a/cpp/regex_converter.cc b/cpp/regex_converter.cc
-index 76a0f4c..bbfbb68 100644
+index 76a0f4c..ef3a8b8 100644
 --- a/cpp/regex_converter.cc
 +++ b/cpp/regex_converter.cc
 @@ -4,11 +4,15 @@
@@ -7661,19 +7688,24 @@ index 76a0f4c..bbfbb68 100644
  #include "support/encoding.h"
  #include "support/logging.h"
  #include "support/utils.h"
-@@ -22,7 +26,10 @@ namespace xgrammar {
+@@ -22,7 +26,15 @@ namespace xgrammar {
   */
  class RegexConverter {
   public:
 -  explicit RegexConverter(const std::string& regex) : regex_(regex) {
-+  explicit RegexConverter(const std::string& regex, const std::string& forbidden_alphabet = "")
++  explicit RegexConverter(
++      const std::string& regex,
++      const std::string& forbidden_alphabet = "",
++      bool json_string_escapes = false
++  )
 +      : regex_(regex),
 +        forbidden_alphabet_(forbidden_alphabet),
-+        quote_is_delim_(forbidden_alphabet.find('"') != std::string::npos) {
++        quote_is_delim_(forbidden_alphabet.find('"') != std::string::npos),
++        json_string_escapes_(json_string_escapes && !forbidden_alphabet.empty()) {
      if (!regex.empty()) {
        regex_codepoints_ = ParseUTF8(regex_.c_str(), false);
        if (regex_codepoints_[0] == kInvalidUTF8) {
-@@ -31,9 +38,17 @@ class RegexConverter {
+@@ -31,9 +43,17 @@ class RegexConverter {
        }
      }
      regex_codepoints_.push_back(0);  // Add a null terminator
@@ -7691,7 +7723,7 @@ index 76a0f4c..bbfbb68 100644
   private:
    /**
     * \brief Add a segment string to the result EBNF string. It especially adds a space if needed
-@@ -46,16 +61,43 @@ class RegexConverter {
+@@ -46,16 +66,55 @@ class RegexConverter {
 
    std::string HandleCharacterClass();
    std::string HandleRepetitionRange();
@@ -7713,6 +7745,14 @@ index 76a0f4c..bbfbb68 100644
 +  // negated classes (already confined via forbidden_alphabet_), or when nothing is
 +  // unsafe.
 +  std::string MakeCharClassJsonSafe(const std::string& char_class);
++  // A class that admits every codepoint except `members` and the forbidden set. In a
++  // JSON-string body, the JSON-unsafe codepoints it would admit but for the forbidden set
++  // are added back as their escape spellings, except under a counted repeat.
++  std::string NegatedClass(const std::string& members);
++  // Whether a JSON string must spell codepoint c as an escape.
++  bool IsJsonUnsafe(TCodepoint c) const {
++    return c <= 0x1F || c == '\\' || (c == '"' && quote_is_delim_);
++  }
    /**
     * \brief Handle group modifier. The general format is "(?" + modifier + content + ")". E.g.
     * "(?:abc)" is a non-capturing group.
@@ -7729,6 +7769,10 @@ index 76a0f4c..bbfbb68 100644
 +  std::string forbidden_alphabet_;
 +  // Precomputed: is `"` in forbidden_alphabet_ (a delimiter that must be escaped)?
 +  bool quote_is_delim_;
++  // Whether the grammar spells a JSON string's content (see RegexToEBNF).
++  bool json_string_escapes_;
++  // Whether the atom being converted lies inside the operand of a counted repeat.
++  bool in_counted_repeat_ = false;
 +  // Parsed [lo, hi] ranges of forbidden_alphabet_ (empty if none).
 +  std::vector<std::pair<TCodepoint, TCodepoint>> forbidden_ranges_;
 +  // Set when a positive literal / positive class member is in forbidden_ranges_.
@@ -7736,23 +7780,24 @@ index 76a0f4c..bbfbb68 100644
    std::vector<TCodepoint> regex_codepoints_;
    TCodepoint* start_;
    TCodepoint* current_;
-@@ -99,9 +141,14 @@ std::string RegexConverter::HandleCharacterClass() {
+@@ -99,9 +158,14 @@ std::string RegexConverter::HandleCharacterClass() {
    if (current_ == end_) {
      RaiseError("Unclosed '['");
    }
+-  char_class += ']';
+   ++current_;
+-  return char_class;
 +  // A negated class (`[^...]`) must also exclude the forbidden characters, else
 +  // it can match the delimiter/escape/control bytes of an enclosing string.
 +  if (!forbidden_alphabet_.empty() && char_class.size() >= 2 && char_class[1] == '^') {
-+    char_class += forbidden_alphabet_;
++    return NegatedClass(char_class.substr(2));
 +  }
-   char_class += ']';
-   ++current_;
--  return char_class;
++  char_class += ']';
 +  return MakeCharClassJsonSafe(char_class);
  }
 
  // {x}: Match exactly x occurrences of the preceding regular expression.
-@@ -141,7 +188,210 @@ std::string RegexConverter::HandleRepetitionRange() {
+@@ -141,7 +205,267 @@ std::string RegexConverter::HandleRepetitionRange() {
    return result;
  }
 
@@ -7885,9 +7930,7 @@ index 76a0f4c..bbfbb68 100644
 +      char_class.back() != ']' || char_class[1] == '^') {
 +    return char_class;
 +  }
-+  auto is_unsafe = [&](TCodepoint c) {
-+    return c <= 0x1F || c == '\\' || (c == '"' && quote_is_delim_);
-+  };
++  auto is_unsafe = [&](TCodepoint c) { return IsJsonUnsafe(c); };
 +
 +  const char* p = char_class.data() + 1;
 +  const char* end = char_class.data() + char_class.size() - 1;
@@ -7960,11 +8003,70 @@ index 76a0f4c..bbfbb68 100644
 +  return result;
 +}
 +
++std::string RegexConverter::NegatedClass(const std::string& members) {
++  const std::string char_class = "[^" + members + forbidden_alphabet_ + "]";
++  // TODO(kevinbi): under a counted repeat ({n}, {n,} or {n,m}) the escape alternatives
++  // stop xgrammar precomputing token masks, and each fill costs hundreds of times more
++  // (^.{1,100}$ goes from about 0.15 ms to 100 ms on a 248k vocab). There these atoms
++  // admit no escape, so they never match `"`, `\` or a control character. Lift this once
++  // the matcher counts an escape-aware repeat as cheaply as a plain class.
++  if (!json_string_escapes_ || in_counted_repeat_) return char_class;
++  std::vector<std::pair<TCodepoint, TCodepoint>> member_ranges;
++  if (!ScanCharClassBody(
++          members.data(), members.data() + members.size(), /*stop_on_error=*/true,
++          [&](TCodepoint lo, TCodepoint hi) { member_ranges.emplace_back(lo, hi); }
++      )) {
++    return char_class;  // members unparsed: admit no escape, which only narrows
++  }
++  // One spelling per character: the short escape where JSON has one, else lowercase
++  // \u00XX, as FormatCharLiteral spells a literal.
++  std::string short_escapes;
++  std::string hex_low[2];  // low hex digit of \u000X, \u001X
++  for (TCodepoint c = 0; c <= '\\'; ++c) {
++    if (!IsJsonUnsafe(c)) continue;
++    bool is_member = false;
++    for (const auto& [lo, hi] : member_ranges) is_member = is_member || (c >= lo && c <= hi);
++    if (is_member) continue;
++    switch (c) {
++      case '"':
++        short_escapes += "\\\"";
++        break;
++      case '\\':
++        short_escapes += "\\\\";
++        break;
++      case '\b':
++        short_escapes += 'b';
++        break;
++      case '\f':
++        short_escapes += 'f';
++        break;
++      case '\n':
++        short_escapes += 'n';
++        break;
++      case '\r':
++        short_escapes += 'r';
++        break;
++      case '\t':
++        short_escapes += 't';
++        break;
++      default:
++        hex_low[c >> 4] += "0123456789abcdef"[c & 0xF];
++    }
++  }
++  std::string result = "(" + char_class;
++  if (!short_escapes.empty()) result += R"( | "\\" [)" + short_escapes + "]";
++  for (int high = 0; high < 2; ++high) {
++    if (hex_low[high].empty()) continue;
++    result += R"( | "\\u00)" + std::string(1, "01"[high]) + "\" [" + hex_low[high] + "]";
++  }
++  return result + ")";
++}
++
 +std::string RegexConverter::HandleCharEscape(bool json_escape) {
    // clang-format off
    static const std::unordered_map<char, TCodepoint> CUSTOM_ESCAPE_MAP = {
        {'^', '^'}, {'$', '$'}, {'.', '.'}, {'*', '*'}, {'+', '+'}, {'?', '?'}, {'\\', '\\'},
-@@ -156,7 +406,7 @@ std::string RegexConverter::HandleCharEscape() {
+@@ -156,7 +480,7 @@ std::string RegexConverter::HandleCharEscape() {
    auto [codepoint, len] = ParseNextEscaped(current_, CUSTOM_ESCAPE_MAP);
    if (codepoint != CharHandlingError::kInvalidEscape) {
      current_ += len;
@@ -7973,7 +8075,7 @@ index 76a0f4c..bbfbb68 100644
    } else if (current_[1] == 'u' && current_[2] == '{') {
      current_ += 3;
      int len = 0;
-@@ -169,21 +419,21 @@ std::string RegexConverter::HandleCharEscape() {
+@@ -169,21 +493,21 @@ std::string RegexConverter::HandleCharEscape() {
        RaiseError("Invalid Unicode escape sequence.");
      }
      current_ += len + 1;
@@ -7998,19 +8100,19 @@ index 76a0f4c..bbfbb68 100644
    }
  }
 
-@@ -235,19 +485,19 @@ std::string RegexConverter::HandleEscape() {
+@@ -235,19 +559,19 @@ std::string RegexConverter::HandleEscape() {
      return "[0-9]";
    } else if (current_[1] == 'D') {
      current_ += 2;
 -    return "[^0-9]";
-+    return "[^0-9" + forbidden_alphabet_ + "]";
++    return NegatedClass("0-9");
    } else if (current_[1] == 'w') {
      current_ += 2;
      return "[a-zA-Z0-9_]";
    } else if (current_[1] == 'W') {
      current_ += 2;
 -    return "[^a-zA-Z0-9_]";
-+    return "[^a-zA-Z0-9_" + forbidden_alphabet_ + "]";
++    return NegatedClass("a-zA-Z0-9_");
    } else if (current_[1] == 's') {
      current_ += 2;
 -    return R"([\f\n\r\t\v\u0020\u00a0])";
@@ -8018,11 +8120,11 @@ index 76a0f4c..bbfbb68 100644
    } else if (current_[1] == 'S') {
      current_ += 2;
 -    return R"([^[\f\n\r\t\v\u0020\u00a0])";
-+    return R"([^[\f\n\r\t\v\u0020\u00a0)" + forbidden_alphabet_ + "]";
++    return NegatedClass(R"(\f\n\r\t\v\u0020\u00a0)");
    } else if ((current_[1] >= '1' && current_[1] <= '9') || current_[1] == 'k') {
      RaiseError("Backreference is not supported yet.");
    } else if (current_[1] == 'p' || current_[1] == 'P') {
-@@ -255,7 +505,7 @@ std::string RegexConverter::HandleEscape() {
+@@ -255,7 +579,7 @@ std::string RegexConverter::HandleEscape() {
    } else if (current_[1] == 'b' || current_[1] == 'B') {
      RaiseError("Word boundary is not supported yet.");
    } else {
@@ -8031,13 +8133,188 @@ index 76a0f4c..bbfbb68 100644
    }
  }
 
-@@ -371,12 +621,14 @@ std::string RegexConverter::Convert() {
+@@ -289,21 +613,170 @@ void RegexConverter::HandleGroupModifier() {
+   }
+ }
+
++// Marks each `^` / `$` that stands where whole-string matching already anchors: a `^`
++// that nothing can precede (the start of the regex, or of a branch of a group that itself
++// starts the match) and a `$` that nothing can follow. Both are no-ops for the converter,
++// which matches whole strings. An anchor inside a quantified group is not at the boundary
++// on every repetition, so it is left unmarked, as is any anchor in an unbalanced regex.
++template <typename Seq>
++static std::vector<bool> BoundaryAnchors(const Seq& s, size_t n) {
++  std::vector<bool> result(n, false);
++  auto skip_class = [&](size_t i) {
++    for (++i; i < n && s[i] != ']'; ++i) {
++      if (s[i] == '\\') ++i;
++    }
++    return i;
++  };
++  std::vector<size_t> close_of(n, n);
++  std::vector<size_t> opens;
++  for (size_t i = 0; i < n; ++i) {
++    if (s[i] == '\\') {
++      ++i;
++    } else if (s[i] == '[') {
++      i = skip_class(i);
++    } else if (s[i] == '(') {
++      opens.push_back(i);
++    } else if (s[i] == ')') {
++      if (opens.empty()) return result;
++      close_of[opens.back()] = i;
++      opens.pop_back();
++    }
++  }
++  if (!opens.empty()) return result;
++  auto quantified = [&](size_t close) {
++    return close + 1 < n && (s[close + 1] == '*' || s[close + 1] == '+' ||
++                             s[close + 1] == '?' || s[close + 1] == '{');
++  };
++  struct Group {
++    size_t open;
++    bool at_start;
++  };
++  std::vector<Group> groups;
++  auto at_end = [&](size_t i) {
++    size_t level = groups.size();
++    for (size_t j = i + 1;; ++j) {
++      if (j >= n) return true;
++      if (s[j] == '$') continue;
++      if (s[j] == '|') {
++        if (level == 0) return true;
++        j = close_of[groups[level - 1].open];
++      }
++      if (s[j] != ')' || level == 0 || quantified(j)) return false;
++      --level;
++    }
++  };
++  bool at_start = true;
++  for (size_t i = 0; i < n; ++i) {
++    const auto c = s[i];
++    if (c == '^') {
++      result[i] = at_start;
++    } else if (c == '$') {
++      result[i] = at_end(i);
++    } else if (c == '(') {
++      at_start = at_start && !quantified(close_of[i]);
++      groups.push_back({i, at_start});
++      if (i + 1 < n && s[i + 1] == '?') {
++        // Step over the group modifier, `?:` or `?<name>`.
++        size_t j = i + 2;
++        if (j < n && s[j] == '<') {
++          while (j < n && s[j] != '>') ++j;
++        }
++        i = j;
++      }
++    } else if (c == '|') {
++      at_start = groups.empty() || groups.back().at_start;
++    } else if (c == ')') {
++      groups.pop_back();
++      at_start = false;
++    } else if (c == '{') {
++      while (i < n && s[i] != '}') ++i;
++    } else if (c != '*' && c != '+' && c != '?') {
++      if (c == '\\') ++i;
++      if (c == '[') i = skip_class(i);
++      at_start = false;
++    }
++  }
++  return result;
++}
++
++// Marks each position inside the operand of a counted repeat (`{n}`, `{n,}` or `{n,m}`):
++// the atom just before the brace, or the whole group its `)` closes, so that every atom
++// nested in a counted group is marked too. A brace that does not open a valid count
++// marks nothing.
++template <typename Seq>
++static std::vector<bool> CountedRepeatOperands(const Seq& s, size_t n) {
++  std::vector<bool> result(n, false);
++  auto count_end = [&](size_t i) {
++    size_t j = i + 1;
++    auto digits = [&] {
++      const size_t from = j;
++      while (j < n && s[j] >= '0' && s[j] <= '9') ++j;
++      return j > from;
++    };
++    if (!digits()) return n;
++    if (j < n && s[j] == ',') {
++      ++j;
++      digits();
++    }
++    return j < n && s[j] == '}' ? j : n;
++  };
++  std::vector<size_t> opens;
++  size_t operand = n;  // start of the atom or group that ends just before i
++  for (size_t i = 0; i < n;) {
++    const auto c = s[i];
++    size_t next = i + 1;
++    size_t start = n;
++    if (c == '\\') {
++      start = i;
++      next = i + 2;
++      if (i + 2 < n && s[i + 1] == 'u' && s[i + 2] == '{') {
++        while (next < n && s[next] != '}') ++next;
++        ++next;
++      }
++    } else if (c == '[') {
++      start = i;
++      for (; next < n && s[next] != ']'; ++next) {
++        if (s[next] == '\\') ++next;
++      }
++      ++next;
++    } else if (c == '(') {
++      opens.push_back(i);
++    } else if (c == ')') {
++      if (opens.empty()) return result;
++      start = opens.back();
++      opens.pop_back();
++    } else if (const size_t close = c == '{' ? count_end(i) : n; close != n) {
++      if (operand != n) std::fill(result.begin() + operand, result.begin() + i, true);
++      next = close + 1;
++    } else if (c != '*' && c != '+' && c != '?' && c != '|' && c != '^' && c != '$') {
++      start = i;
++    }
++    operand = start;
++    i = next;
++  }
++  return result;
++}
++
+ std::string RegexConverter::Convert() {
+   start_ = regex_codepoints_.data();
+   current_ = start_;
+   end_ = start_ + regex_codepoints_.size() - 1;
++  const std::vector<bool> boundary_anchor =
++      BoundaryAnchors(regex_codepoints_, regex_codepoints_.size() - 1);
++  const std::vector<bool> counted_repeat =
++      CountedRepeatOperands(regex_codepoints_, regex_codepoints_.size() - 1);
+   bool is_empty = true;
+   while (current_ != end_) {
++    in_counted_repeat_ = counted_repeat[current_ - start_];
+     if (*current_ == '^') {
+-      if (current_ != start_) {
++      if (!boundary_anchor[current_ - start_]) {
+         RaiseWarning(
+             "'^' should be at the start of the regex, but found in the middle. It is ignored."
+         );
+       }
+       ++current_;
+     } else if (*current_ == '$') {
+-      if (current_ != end_ - 1) {
++      if (!boundary_anchor[current_ - start_]) {
+         RaiseWarning(
+             "'$' should be at the end of the regex, but found in the middle. It is ignored."
+         );
+@@ -371,12 +844,16 @@ std::string RegexConverter::Convert() {
        AddEBNFSegment(HandleEscape());
      } else if (*current_ == '.') {
        is_empty = false;
 -      AddEBNFSegment(R"([\u0000-\U0010FFFF])");
++      // ECMA `.` matches no line terminator. A plain regex grammar keeps upstream's `.`.
 +      AddEBNFSegment(
-+          forbidden_alphabet_.empty() ? R"([\u0000-\U0010FFFF])" : ("[^" + forbidden_alphabet_ + "]")
++          forbidden_alphabet_.empty() ? R"([\u0000-\U0010FFFF])"
++                                      : NegatedClass(R"(\n\r\u2028\u2029)")
 +      );
        ++current_;
      } else {
@@ -8048,7 +8325,7 @@ index 76a0f4c..bbfbb68 100644
        ++current_;
      }
    }
-@@ -393,8 +645,14 @@ std::string RegexConverter::Convert() {
+@@ -393,8 +870,15 @@ std::string RegexConverter::Convert() {
    return result_ebnf_;
  }
 
@@ -8056,16 +8333,17 @@ index 76a0f4c..bbfbb68 100644
 -  RegexConverter converter(regex);
 +std::string RegexToEBNF(
 +    const std::string& regex, bool with_rule_name, const std::string& forbidden_alphabet,
-+    const std::string& allowed_alphabet
++    const std::string& allowed_alphabet, bool json_string_escapes
 +) {
 +  RegexConverter converter(
 +      regex,
-+      allowed_alphabet.empty() ? forbidden_alphabet : ComplementCharClassBody(allowed_alphabet)
++      allowed_alphabet.empty() ? forbidden_alphabet : ComplementCharClassBody(allowed_alphabet),
++      json_string_escapes
 +  );
    if (with_rule_name) {
      return "root ::= " + converter.Convert() + "\n";
    } else {
-@@ -402,4 +660,208 @@ std::string RegexToEBNF(const std::string& regex, bool with_rule_name) {
+@@ -402,4 +886,221 @@ std::string RegexToEBNF(const std::string& regex, bool with_rule_name) {
    }
  }
 
@@ -8084,8 +8362,20 @@ index 76a0f4c..bbfbb68 100644
 +  return false;
 +}
 +
++// RegexFSMBuilder skips only a leading `^` and a trailing `$` and reads any other anchor
++// as a literal, so drop the interior anchors the converter treats as no-ops.
++static std::string StripBoundaryAnchors(const std::string& regex) {
++  const std::vector<bool> boundary_anchor = BoundaryAnchors(regex, regex.size());
++  std::string stripped;
++  for (size_t i = 0; i < regex.size(); ++i) {
++    if (boundary_anchor[i] && i != 0 && i + 1 != regex.size()) continue;
++    stripped += regex[i];
++  }
++  return stripped;
++}
++
 +bool RegexMatchesEmptyString(const std::string& regex) {
-+  auto fsm = RegexFSMBuilder::Build(regex);
++  auto fsm = RegexFSMBuilder::Build(StripBoundaryAnchors(regex));
 +  // Unanalyzable: assume it can match empty, so callers fail closed.
 +  if (fsm.IsErr()) return true;
 +  return std::move(fsm).Unwrap().AcceptString("");
@@ -8125,8 +8415,9 @@ index 76a0f4c..bbfbb68 100644
 +}
 +
 +std::optional<std::pair<int, int>> RegexMatchLengthRange(
-+    const std::string& regex, int64_t* remaining_work
++    const std::string& raw_regex, int64_t* remaining_work
 +) {
++  const std::string regex = StripBoundaryAnchors(raw_regex);
 +  if (!RegexFSMBuilderSupportsLengthAnalysis(regex)) return std::nullopt;
 +  auto built = RegexFSMBuilder::Build(regex, remaining_work);
 +  if (built.IsErr()) return std::nullopt;
@@ -8275,10 +8566,10 @@ index 76a0f4c..bbfbb68 100644
 +
  }  // namespace xgrammar
 diff --git a/cpp/regex_converter.h b/cpp/regex_converter.h
-index fcb3442..a6aaa3c 100644
+index fcb3442..329bd77 100644
 --- a/cpp/regex_converter.h
 +++ b/cpp/regex_converter.h
-@@ -7,14 +7,88 @@
+@@ -7,14 +7,97 @@
  #ifndef XGRAMMAR_REGEX_CONVERTER_H_
  #define XGRAMMAR_REGEX_CONVERTER_H_
 
@@ -8302,11 +8593,20 @@ index fcb3442..a6aaa3c 100644
 + *   forbidden_alphabet: when non-empty it is applied as its complement,
 + *   confining `.` and negated classes to the alphabet. Used to confine a pattern
 + *   key to a bare-key / XML tag-name alphabet.
++ * \param json_string_escapes Whether the grammar spells a JSON string's content, so
++ *   the regex (which matches the decoded string) must match its JSON encoding: an
++ *   atom that admits `"`, `\` or a control character admits that character's escape
++ *   (`\"`, `\\`, `\n` ..., `\u00XX` where JSON has no short form) and not its
++ *   raw byte. Requires a forbidden_alphabet that lists those characters. Inside the
++ *   operand of a counted repeat (`{n}`, `{n,}`, `{n,m}`) the negated atoms (`.`,
++ *   `[^...]`, `\D`, `\W`, `\S`) admit no escape, since the escape alternatives there
++ *   defeat the precomputed token masks.
   */
 -std::string RegexToEBNF(const std::string& regex, bool with_rule_name = true);
 +std::string RegexToEBNF(
 +    const std::string& regex, bool with_rule_name = true,
-+    const std::string& forbidden_alphabet = "", const std::string& allowed_alphabet = ""
++    const std::string& forbidden_alphabet = "", const std::string& allowed_alphabet = "",
++    bool json_string_escapes = false
 +);
 +
 +/*!

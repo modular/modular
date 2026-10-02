@@ -99,22 +99,22 @@ struct UMMAKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
             writer: The writer to write the UMMA kind to.
         """
         __match self:
-        case .KIND_TF32:
-            writer.write("kind::tf32")
-        case .KIND_F16:
-            writer.write("kind::f16")
-        case .KIND_F8F6F4:
-            writer.write("kind::f8f6f4")
-        case .KIND_MXF8F6F4:
-            writer.write("kind::mxf8f6f4")
-        case .KIND_I8:
-            writer.write("kind::i8")
-        case .KIND_MXF4:
-            writer.write("kind::mxf4")
-        case .KIND_MXF4NVF4:
-            writer.write("kind::mxf4nvf4")
-        case _:
-            writer.write("kind::unknown")
+            case .KIND_TF32:
+                writer.write("kind::tf32")
+            case .KIND_F16:
+                writer.write("kind::f16")
+            case .KIND_F8F6F4:
+                writer.write("kind::f8f6f4")
+            case .KIND_MXF8F6F4:
+                writer.write("kind::mxf8f6f4")
+            case .KIND_I8:
+                writer.write("kind::i8")
+            case .KIND_MXF4:
+                writer.write("kind::mxf4")
+            case .KIND_MXF4NVF4:
+                writer.write("kind::mxf4nvf4")
+            case _:
+                writer.write("kind::unknown")
 
 
 @inline(.always)
@@ -1052,18 +1052,18 @@ struct MMASmemDescriptor(MMAOperandDescriptor, TrivialRegisterPassable):
         # WGMMA enumerates these as 0, 3, 2, 1.
         def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
             comptime __match mode:
-            case .SWIZZLE_NONE:
-                return 0
-            case .SWIZZLE_32B:
-                return 6
-            case .SWIZZLE_64B:
-                return 4
-            case .SWIZZLE_128B:
-                return 2
-            case _:
-                comptime assert False, String(
-                    "Unsupported swizzle mode: ", mode
-                )
+                case .SWIZZLE_NONE:
+                    return 0
+                case .SWIZZLE_32B:
+                    return 6
+                case .SWIZZLE_64B:
+                    return 4
+                case .SWIZZLE_128B:
+                    return 2
+                case _:
+                    comptime assert False, String(
+                        "Unsupported swizzle mode: ", mode
+                    )
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 
@@ -1212,18 +1212,18 @@ struct MMASmemDescriptorPair(TrivialRegisterPassable):
         # WGMMA enumerates these as 0, 3, 2, 1.
         def _convert_swizzle_enum[mode: TensorMapSwizzle]() -> Int64:
             comptime __match mode:
-            case .SWIZZLE_NONE:
-                return 0
-            case .SWIZZLE_32B:
-                return 6
-            case .SWIZZLE_64B:
-                return 4
-            case .SWIZZLE_128B:
-                return 2
-            case _:
-                comptime assert False, String(
-                    "Unsupported swizzle mode: ", mode
-                )
+                case .SWIZZLE_NONE:
+                    return 0
+                case .SWIZZLE_32B:
+                    return 6
+                case .SWIZZLE_64B:
+                    return 4
+                case .SWIZZLE_128B:
+                    return 2
+                case _:
+                    comptime assert False, String(
+                        "Unsupported swizzle mode: ", mode
+                    )
 
         comptime swizzle = _convert_swizzle_enum[swizzle_mode._value]()
 

@@ -41,16 +41,13 @@ from layout import (
     CoordLike,
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
     TileTensor,
     row_major,
-    lt_to_tt,
 )
 
-from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import Swizzle, make_swizzle
-from layout.tensor_core_async import tile_layout_k_major, tile_layout_mn_major
+from layout.tensor_core_async import tile_layout_k_major_typed
+from structured_kernels.tile_types import SMemTileArray
 from layout.tma_async import (
     _idx_product,
     create_tensor_tile,
@@ -122,8 +119,6 @@ def load_AB[
     b_tile_shape: IndexList[b_tma_rank],
     a_desc_shape: IndexList[a_tma_rank],
     b_desc_shape: IndexList[b_tma_rank],
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     num_pipeline_stages: Int,
     /,
     *,
@@ -133,22 +128,8 @@ def load_AB[
 ](
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
-    a_smem: LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-        circular=False,
-    ],
-    b_smem: LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-        circular=False,
-    ],
+    a_smem: SMemTileArray[a_type, _, _, num_pipeline_stages],
+    b_smem: SMemTileArray[b_type, _, _, num_pipeline_stages],
     mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     tma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     producer_phase: PipelineState[num_pipeline_stages],
@@ -166,8 +147,8 @@ def load_AB[
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
 
-    comptime a_expected_bytes = a_smem_layout.size() * size_of[a_type]()
-    comptime b_expected_bytes = b_smem_layout.size() * size_of[b_type]()
+    comptime a_expected_bytes = type_of(a_smem).tile_size * size_of[a_type]()
+    comptime b_expected_bytes = type_of(b_smem).tile_size * size_of[b_type]()
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
@@ -192,14 +173,16 @@ def load_AB[
         + work_tile_coord[1] * MMA_N
     )
 
-    var a_smem_tile = a_smem.next(stage)[]
-    var b_smem_tile = b_smem.next(stage)[]
+    var a_smem_tile = a_smem[stage]
+    var b_smem_tile = b_smem[stage]
 
-    var a_smem_slice = type_of(a_smem_tile)(
-        a_smem_tile.ptr + peer_cta_coord[2] * a_tma_load_size
+    var a_smem_slice = TileTensor(
+        a_smem_tile.unsafe_ptr() + peer_cta_coord[2] * a_tma_load_size,
+        a_smem_tile.layout,
     )
-    var b_smem_slice = type_of(b_smem_tile)(
-        b_smem_tile.ptr + peer_cta_coord[1] * b_tma_load_size
+    var b_smem_slice = TileTensor(
+        b_smem_tile.unsafe_ptr() + peer_cta_coord[1] * b_tma_load_size,
+        b_smem_tile.layout,
     )
 
     a_tma_op.async_multicast_load[cta_group](
@@ -223,8 +206,6 @@ def consumer_main_loop[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    a_smem_layout: Layout,
-    b_smem_layout: Layout,
     a_swizzle: TensorMapSwizzle,
     b_swizzle: TensorMapSwizzle,
     transpose_b: Bool,
@@ -237,22 +218,8 @@ def consumer_main_loop[
     cluster_shape: IndexList[3] = Index(1, 1, 1),
 ](
     tmem_addr: UInt32,
-    a_smem_iter: LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-        circular=False,
-    ],
-    b_smem_iter: LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-        circular=False,
-    ],
+    a_smem_iter: SMemTileArray[a_type, _, _, pipeline_stages],
+    b_smem_iter: SMemTileArray[b_type, _, _, pipeline_stages],
     mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     tma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
     consumer_phase: PipelineState[pipeline_stages],
@@ -277,17 +244,13 @@ def consumer_main_loop[
 
     tma_mbar[stage].wait(phase)
 
-    var a_smem_tile = a_smem_iter.next_unsafe(
-        rebind[a_smem_iter.linear_uint_type](stage)
-    )[]
-    var b_smem_tile = b_smem_iter.next_unsafe(
-        rebind[b_smem_iter.linear_uint_type](stage)
-    )[]
+    var a_smem_tile = a_smem_iter[stage]
+    var b_smem_tile = b_smem_iter[stage]
 
     if elect_one_sync():
         mma_op.mma(
-            lt_to_tt(a_smem_tile),
-            lt_to_tt(b_smem_tile),
+            a_smem_tile,
+            b_smem_tile,
             tmem_addr,
             init_c=(iter_idx == 0),  # Initialize C on first iteration
         )
@@ -302,7 +265,7 @@ def stsm_helper[
     vec_size: Int,
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[mut=True, _, _, address_space=.SHARED, ...],
+    dst: TileTensor[mut=True, address_space=.SHARED, ...],
 ):
     # Number of elements in one row per stsmx4 tile, a row is 32B.
     comptime stsmx4_row_size = 32 // size_of[dst.dtype]()
@@ -312,8 +275,8 @@ def stsm_helper[
     # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
     # row-major(16, 32). The map should use tile's stride to calculate
     # the dst row offset.
-    comptime stride0 = dst.layout.stride[0].value()
-    comptime shape0 = dst.layout.shape[1].value()
+    comptime stride0 = type_of(dst).static_stride[0]
+    comptime shape0 = type_of(dst).static_shape[1]
 
     var lane = lane_id()
     var stsm_lane_offset = (lane & 15) * stride0 + (lane >> 4) * 8
@@ -332,13 +295,14 @@ def stsm_helper[
             var casted = pair.cast[dst.dtype]()
             v[2 * k] = casted[0]
             v[2 * k + 1] = casted[1]
-        st_matrix[simd_width=4](dst.ptr + offset, bitcast[.float32, 4](v))
+        st_matrix[simd_width=4](
+            dst.unsafe_ptr() + offset, bitcast[.float32, 4](v)
+        )
 
 
 @inline(.always)
 def multi_stage_store_C[
     c_type: DType,
-    c_smem_layout: Layout,
     c_tma_rank: Int,
     c_tile_shape: IndexList[c_tma_rank],
     c_desc_shape: IndexList[c_tma_rank],
@@ -352,13 +316,7 @@ def multi_stage_store_C[
     num_output_warps: Int = 4,
     max_tmem_cols: Int = 512,
 ](
-    c_iter: LayoutTensorIter[
-        c_type,
-        c_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ],
+    c_iter: SMemTileArray[c_type, _, _, _],
     c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[Int, Int],
@@ -379,8 +337,8 @@ def multi_stage_store_C[
     # We break down the output tile BM x MMA_N to BM x stageN tiles
     # and output one tile per stage.
     # For MMA_M=128, we use 64x16 tiles, otherwise 64x32
-    comptime stageM = c_smem_layout.shape[0].value()  # 128
-    comptime stageN = c_smem_layout.shape[1].value()  # 32
+    comptime stageM = type_of(c_iter).Tile.static_shape[0]  # 128
+    comptime stageN = type_of(c_iter).Tile.static_shape[1]  # 32
     # For MMA_M=128, we have 8 logical stages (128/16) but process left and right separately
     comptime num_stages = MMA_N // stageN if MMA_M == 256 else MMA_N // stageN // 2
     comptime tmem_cell_bytes = 4
@@ -423,8 +381,8 @@ def multi_stage_store_C[
         tcgen05_load_wait()
 
         # Assume double-buffer for shared memory packing
-        var c_smem_tile = c_iter.next(stage % 2)[]
-        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](warp_id, 0)
+        var c_smem_tile = c_iter[stage % 2]
+        var c_smem_warp_tile = c_smem_tile.tile[32, stageN](Int(warp_id), 0)
 
         # Pack the upper frag to shared memory
         comptime frag_width = rep * data_paths * (bits // 32) // WARP_SIZE
@@ -524,18 +482,34 @@ def kernel_7[
     comptime b_tma_load_size = _idx_product[b_tma_rank, b_desc_shape]()
     comptime a_tma_rows = a_desc_shape[0]
     comptime b_tma_rows = b_desc_shape[0]
-    comptime c_smem_layout = Layout.row_major(BM, MMA_N)
-
-    # keep the physical SMEM buffer BM x MMA_N
-
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK, swizzle_mode=a_swizzle
+    comptime assert transpose_b, "Only support transposed B"
+    comptime a_smem_layout = tile_layout_k_major_typed[
+        a_type, BM, BK, a_swizzle
+    ]
+    comptime b_smem_layout = tile_layout_k_major_typed[
+        b_type, BN, BK, b_swizzle
+    ]
+    comptime ATileArray = SMemTileArray[
+        a_type,
+        type_of(a_smem_layout).shape_types,
+        type_of(a_smem_layout).stride_types,
+        num_pipeline_stages,
+    ]
+    comptime BTileArray = SMemTileArray[
+        b_type,
+        type_of(b_smem_layout).shape_types,
+        type_of(b_smem_layout).stride_types,
+        num_pipeline_stages,
+    ]
+    comptime c_stage_layout = row_major[
+        output_tile_shape[0], output_tile_shape[1]
     ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]() if transpose_b else tile_layout_mn_major[
-        b_type, BN, BK, swizzle_mode=b_swizzle
-    ]()
+    comptime CTileArray = SMemTileArray[
+        c_type,
+        type_of(c_stage_layout).shape_types,
+        type_of(c_stage_layout).stride_types,
+        num_output_stages,
+    ]
 
     var base_ptr_smem = rebind[
         MutPointer[Scalar[a_type], address_space=.SHARED, MutUntrackedOrigin]
@@ -547,8 +521,8 @@ def kernel_7[
         ]()
     )  # pointer to first byte of scratchpad
 
-    comptime a_smem_size = a_smem_layout.size()
-    comptime b_smem_size = b_smem_layout.size()
+    comptime a_smem_size = BM * BK
+    comptime b_smem_size = BN * BK
     comptime c_smem_size = output_tile_shape[0] * output_tile_shape[
         1
     ] * num_output_stages
@@ -558,37 +532,13 @@ def kernel_7[
         Scalar[b_type]
     ]()
 
-    var a_smem = LayoutTensorIter[
-        a_type,
-        a_smem_layout,
-        address_space=.SHARED,
-        alignment=128,
-        circular=False,
-    ](
-        a_smem_base,
-        a_smem_size * num_pipeline_stages,
-    )
-
-    var b_smem = LayoutTensorIter[
-        b_type,
-        b_smem_layout,
-        address_space=.SHARED,
-        alignment=128,
-        circular=False,
-    ](
-        b_smem_base,
-        b_smem_size * num_pipeline_stages,
-    )
+    var a_smem = ATileArray(a_smem_base)
+    var b_smem = BTileArray(b_smem_base)
 
     var c_smem_base = (b_smem_base + b_smem_size * num_pipeline_stages).bitcast[
         Scalar[c_type]
     ]()
-    var c_smem_iter = LayoutTensorIter[
-        c_type,
-        Layout.row_major(output_tile_shape[0], output_tile_shape[1]),
-        address_space=.SHARED,
-        alignment=128,
-    ](c_smem_base, c_smem_size)
+    var c_smem_iter = CTileArray(c_smem_base)
 
     var smem_pool = (c_smem_base + c_smem_size).bitcast[Int64]()
 
@@ -759,11 +709,8 @@ def kernel_7[
 
 def blackwell_kernel_7[
     c_type: DType,
-    c_layout: Layout,
     a_type: DType,
-    a_layout: Layout,
     b_type: DType,
-    b_layout: Layout,
     *,
     transpose_b: Bool,
     umma_shape: IndexList[3],
@@ -773,14 +720,14 @@ def blackwell_kernel_7[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 1,
 ](
-    c: LayoutTensor[c_type, c_layout, _],
-    a: LayoutTensor[a_type, a_layout, _],
-    b: LayoutTensor[b_type, b_layout, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    var M = c.dim[0]()
-    var N = c.dim[1]()
-    var K = a.dim[1]()
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
+    var K = Int(a.dim[1]())
 
     comptime assert transpose_b, "Only support transposed B"
 
@@ -970,9 +917,9 @@ def test_blackwell_kernel_7[
         b_swizzle=b_swizzle,
         cta_group=2,
     ](
-        c_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_tt,
+        a_tt,
+        b_tt,
         ctx,
     )
 
@@ -991,9 +938,9 @@ def test_blackwell_kernel_7[
                 b_swizzle=b_swizzle,
                 cta_group=2,
             ](
-                c_tt.to_layout_tensor(),
-                a_tt.to_layout_tensor(),
-                b_tt.to_layout_tensor(),
+                c_tt,
+                a_tt,
+                b_tt,
                 ctx,
             )
 

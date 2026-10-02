@@ -48,6 +48,12 @@ from max.pipelines.weights.fp6_quantization import (
     mxfp6_quantization_config,
     quantize_mxfp6,
 )
+from max.pipelines.weights.rounding_error import (
+    CheckpointErrorReport,
+    TensorError,
+    compare_written,
+    format_report,
+)
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 # The torch backend, not the numpy one: numpy has no bfloat16, and safetensors
@@ -148,7 +154,7 @@ def _parse_format(value: str) -> QuantFormat:
 
 def _quantize_tensor(
     name: str, tensor: torch.Tensor, fmt: QuantFormat
-) -> dict[str, torch.Tensor] | None:
+) -> tuple[dict[str, torch.Tensor], TensorError] | None:
     """Quantizes one 2D weight onto checkpoint keys, or returns ``None``.
 
     An already-quantized or integer tensor is rejected rather than reinterpreted
@@ -171,7 +177,7 @@ def _quantize_tensor(
         scales = torch.from_numpy(
             np.ascontiguousarray(np.squeeze(block_scales, axis=-1))
         ).view(torch.float8_e4m3fn)
-        return {
+        written = {
             name: torch.from_numpy(np.ascontiguousarray(packed)),
             f"{name}_scale": scales,
             f"{name}_scale_2": torch.tensor(
@@ -183,13 +189,17 @@ def _quantize_tensor(
                 1.0, dtype=torch.float32
             ),
         }
+        error = compare_written(name, values, written, fmt)
+        return written, error
 
     # MXFP6: packed E2M3/E3M2 codes plus one E8M0 scale per 32-element block.
     packed, scales = quantize_mxfp6(values, fmt)
-    return {
+    written = {
         name: torch.from_numpy(packed),
         f"{name}_scale": torch.from_numpy(scales),
     }
+    error = compare_written(name, values, written, fmt)
+    return written, error
 
 
 def _quantization_config(
@@ -228,19 +238,20 @@ def _process_shard(
     dry_run: bool,
     dst: Path,
     n_shards: int,
-) -> tuple[dict[str, str], int, int, int, int]:
+) -> tuple[dict[str, str], int, int, int, int, tuple[TensorError, ...]]:
     shard_idx, shard = numbered_shard
     out_name = f"model-{shard_idx:05d}-of-{n_shards:05d}.safetensors"
     out_tensors: dict[str, torch.Tensor] = {}
     quantized = 0
     copied = 0
     bytes_saved = 0
+    errors: list[TensorError] = []
 
     for name, array in _iter_shard_tensors(Path(shard)):
-        written = None
+        encoded = None
         if _should_quantize(name, patterns, ignored):
-            written = _quantize_tensor(name, array, fmt)
-            if written is None:
+            encoded = _quantize_tensor(name, array, fmt)
+            if encoded is None:
                 logger.warning(
                     "%s matched a target pattern but its shape %s is not "
                     "%s-quantizable; copying verbatim",
@@ -249,12 +260,14 @@ def _process_shard(
                     fmt.value,
                 )
 
-        if written is None:
+        if encoded is None:
             out_tensors[name] = array
             copied += 1
             continue
 
+        written, error = encoded
         out_tensors.update(written)
+        errors.append(error)
         quantized += 1
         bytes_saved += array.nbytes - sum(
             tensor.nbytes for tensor in written.values()
@@ -270,18 +283,26 @@ def _process_shard(
             out_name,
             len(out_tensors),
         )
-        return weight_map, total_size, quantized, copied, bytes_saved
+        return (
+            weight_map,
+            total_size,
+            quantized,
+            copied,
+            bytes_saved,
+            tuple(errors),
+        )
 
     save_file(out_tensors, dst / out_name)
     logger.info(
-        "wrote %s (%d/%d), %d quantized, %d copied",
+        "wrote %s (%d/%d), %d quantized, %d copied, mse: %f",
         out_name,
         shard_idx,
         n_shards,
         quantized,
         copied,
+        CheckpointErrorReport(tuple(errors)).mean_rel_l2,
     )
-    return weight_map, total_size, quantized, copied, bytes_saved
+    return weight_map, total_size, quantized, copied, bytes_saved, tuple(errors)
 
 
 def quantize_checkpoint(
@@ -293,7 +314,7 @@ def quantize_checkpoint(
     extra_targets: Sequence[str] = (),
     dry_run: bool = False,
     max_workers: int = 32,
-) -> dict[str, int]:
+) -> dict[str, int | float]:
     """Requantizes a checkpoint to MXFP6 or NVFP4, shard by shard.
 
     Args:
@@ -332,9 +353,14 @@ def quantize_checkpoint(
     if not dry_run:
         dst.mkdir(parents=True, exist_ok=True)
 
-    stats = {"quantized": 0, "copied": 0, "bytes_saved": 0}
+    stats: dict[str, int | float] = {
+        "quantized": 0,
+        "copied": 0,
+        "bytes_saved": 0,
+    }
     weight_map: dict[str, str] = {}
     total_size = 0
+    errors: list[TensorError] = []
 
     with ProcessPoolExecutor(max_workers=max_workers) as pool:
         results = pool.map(
@@ -349,12 +375,17 @@ def quantize_checkpoint(
             ),
             enumerate(shards, start=1),
         )
-        for shard_map, size, quantized, copied, saved in results:
+        for shard_map, size, quantized, copied, saved, errors_ in results:
             weight_map.update(shard_map)
             total_size += size
             stats["quantized"] += quantized
             stats["copied"] += copied
             stats["bytes_saved"] += saved
+            errors.extend(errors_)
+        report = CheckpointErrorReport(tensors=tuple(errors))
+        stats["mean_rel_l2"] = report.mean_rel_l2
+        stats["max_rel_l2"] = report.max_rel_l2
+        logger.info("%s", format_report(report))
 
     if dry_run:
         return stats

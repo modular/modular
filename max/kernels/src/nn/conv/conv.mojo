@@ -3898,14 +3898,14 @@ def get_cudnn_dtype[dtype: DType]() raises -> cudnnDataType_t:
     """
 
     comptime __match dtype:
-    case .float32:
-        return cudnnDataType_t.CUDNN_DATA_FLOAT
-    case .float16:
-        return cudnnDataType_t.CUDNN_DATA_HALF
-    case .bfloat16:
-        return cudnnDataType_t.CUDNN_DATA_BFLOAT16
-    case _:
-        raise Error(t"unsupported dtype {dtype} for cuDNN")
+        case .float32:
+            return cudnnDataType_t.CUDNN_DATA_FLOAT
+        case .float16:
+            return cudnnDataType_t.CUDNN_DATA_HALF
+        case .bfloat16:
+            return cudnnDataType_t.CUDNN_DATA_BFLOAT16
+        case _:
+            raise Error(t"unsupported dtype {dtype} for cuDNN")
 
 
 struct CachedCuDNNMetaNHWCFull(ImplicitlyCopyable):

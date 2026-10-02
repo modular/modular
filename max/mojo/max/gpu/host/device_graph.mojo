@@ -1870,14 +1870,14 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         var value: UInt64
 
         comptime __match bitwidth:
-        case 8:
-            value = UInt64(Int(bitcast[.uint8, 1](val)))
-        case 16:
-            value = UInt64(Int(bitcast[.uint16, 1](val)))
-        case 32:
-            value = UInt64(bitcast[.uint32, 1](val))
-        case _:
-            value = bitcast[.uint64, 1](val)
+            case 8:
+                value = UInt64(Int(bitcast[.uint8, 1](val)))
+            case 16:
+                value = UInt64(Int(bitcast[.uint16, 1](val)))
+            case 32:
+                value = UInt64(bitcast[.uint32, 1](val))
+            case _:
+                value = bitcast[.uint64, 1](val)
 
         dependencies = self._merge_implicit(dependencies^)
         var dep_args = _pack_dep_args(dependencies)

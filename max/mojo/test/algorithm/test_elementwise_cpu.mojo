@@ -61,9 +61,9 @@ def test_elementwise() raises:
             x += 1.0
 
         @inline(.always)
-        @__copy_capture(buffer1, buffer2, out_buffer, shape)
-        @__parameter
-        def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+        def func[
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var buffer1, var buffer2, var out_buffer}:
             var index = rebind[IndexList[outer_rank]](coord_to_index_list(idx))
             var linear_idx = _linear_index(index, shape)
             var in1 = buffer1.unsafe_ptr().unsafe_load[width=simd_width](
@@ -76,7 +76,8 @@ def test_elementwise() raises:
                 linear_idx, in1 * in2
             )
 
-        elementwise[func, simd_width=1](
+        elementwise[simd_width=1](
+            func,
             Coord(shape),
             ctx,
         )
@@ -104,12 +105,10 @@ def test_elementwise_implicit_runtime() raises:
         vector.unsafe_ptr()[unsafe_offset=i] = Int(i)
 
     @inline(.always)
-    @__copy_capture(vector)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var vector}:
         vector.unsafe_ptr()[unsafe_offset=idx[0].value()] = 42
 
-    elementwise[func, simd_width=1](20, ctx)
+    elementwise[simd_width=1](func, Coord(20), ctx)
 
     for i in range(len(vector)):
         assert_equal(vector.unsafe_ptr()[unsafe_offset=i], 42)

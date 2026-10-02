@@ -48,9 +48,9 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
     var out_buffer = Span(unsafe_ptr=out.unsafe_ptr(), length=length)
 
     @inline(.always)
-    @__copy_capture(in_buffer, out_buffer)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx0: Coord):
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx0: Coord) {var in_buffer, var out_buffer}:
         var idx = rebind[IndexList[2]](coord_to_index_list(idx0))
         out_buffer.unsafe_ptr().unsafe_store(
             idx[0] * dim_y + idx[1],
@@ -60,7 +60,8 @@ def run_elementwise[dtype: DType](ctx: DeviceContext) raises:
             + 42,
         )
 
-    elementwise[func, pack_size, target="gpu"](
+    elementwise[pack_size, target="gpu"](
+        func,
         (2, 8),
         ctx,
     )

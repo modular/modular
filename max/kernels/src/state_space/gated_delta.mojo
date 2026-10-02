@@ -594,7 +594,7 @@ def gated_delta_recurrence_verify_ring_gpu[
         work_dtype: `DType` of the per-token input and output tensors.
         state_dtype: `DType` of the `recurrent_state` pool.
         ring_dtype: `DType` of the ring pool. The fold is bit-exact against a
-            replay only for `float32`.
+            forward over the accepted prefix only for `float32`.
         KEY_HEAD_DIM: Compile-time key head dimension.
         VALUE_HEAD_DIM: Compile-time value head dimension, equal to
             `KEY_HEAD_DIM`.

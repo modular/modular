@@ -48,7 +48,6 @@ from .state_cache import (
     STATE_CACHE_KEY,
     attn_cache,
     linear_state_regions,
-    spec_shadow_bytes_per_request,
 )
 
 _POOL_DTYPE_MAP = {
@@ -405,6 +404,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         page_size = kv_cache_config.kv_cache_page_size
         if text_config.head_dim > 128:
             page_size = max(page_size, text_config.head_dim)
+        speculative = pipeline_config.speculative
         params = kv_cache_config.to_params(
             allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
@@ -414,6 +414,14 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             page_size=page_size,
+            # A speculative step writes its whole verify window, and the cache
+            # reserves a request's pages for it from this. Without it a window
+            # that crosses a page writes past them, and the next step loses an
+            # accepted token's K/V. The method stays unset, since it adds a
+            # draft attention input this graph does not take.
+            num_draft_tokens=(
+                speculative.num_speculative_tokens or 0 if speculative else 0
+            ),
         )
         return params
 
@@ -552,15 +560,6 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         """
         return sum(region.bytes_per_page for region in self._linear_regions())
 
-    def _per_request_shadow_bytes(self, ring_len: int) -> int:
-        """Returns the per-request bytes of a verify's shadow pools.
-
-        These pools are allocated outside the state cache.
-        """
-        return spec_shadow_bytes_per_request(
-            self._linear_regions(ring_len), ring_len
-        )
-
     def _per_request_ring_bytes(self, ring_len: int) -> int:
         """Returns the per-request bytes of a verify's ring, padding included.
 
@@ -596,7 +595,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             device_memory_utilization: Headroom factor.
             extra_per_request_bytes: Per-request state the architecture holds
                 beyond the pool set this config declares -- a speculative
-                arch's shadow set, for one. Added to the divisor so the
+                arch's verify ring, for one. Added to the divisor so the
                 inferred batch fits what will really be allocated.
         """
         per_req = self._per_request_state_bytes() + extra_per_request_bytes
@@ -674,7 +673,9 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         ]
 
         # Override KV params and attention multiplier
-        kv_params = Qwen3_5Config.construct_kv_params(
+        # Through ``cls`` so a speculative subclass's verify ring reaches
+        # memory planning, not only the cache the pipeline model allocates.
+        kv_params = cls.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=device_refs,

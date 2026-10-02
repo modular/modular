@@ -101,7 +101,8 @@ class UnifiedDSparkGemma4_12BInputs(UnifiedSpecDecodeInputs):
             ),
         )
         return buffers + self._spec_decode_tail_buffers(
-            include_in_thinking_phase=False, supports_structured_output=False
+            include_in_thinking_phase=False,
+            supports_structured_output=False,
         )
 
 
@@ -314,6 +315,7 @@ class UnifiedDSparkGemma4_12BModel(
                 max_k=graph_inputs.max_k,
                 top_p=graph_inputs.top_p,
                 min_top_p=graph_inputs.min_top_p,
+                draft_probs_full=graph_inputs.draft_probs_full,
             )
             graph.output(*outputs)
 

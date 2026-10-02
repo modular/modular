@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Tests that a verify with no drafts lands the linear state on its forward.
 
-Each case runs one Gated DeltaNet block through the speculative snapshot,
-verify and rollback, and the same block through the base forward on its own
-copy of the pools. A verify width of zero is the committed path.
+Each case runs one Gated DeltaNet block through the speculative verify and
+rollback, and the same block through the base forward on its own copy of the
+pools. A verify width of zero is the committed path.
 """
 
 from __future__ import annotations
@@ -51,11 +51,7 @@ from max.pipelines.architectures.unified_mtp_qwen3_5.spec_state import (
     LIVE_RECURRENT_ROW_IDS,
     RING_POOLS,
     RING_ROW_IDS,
-    SHADOW_RECURRENT_POOLS,
     Qwen3_5RecurrentState,
-)
-from max.pipelines.architectures.unified_mtp_qwen3_5.state_rollback import (
-    shadow_row_ids,
 )
 
 NUM_DRAFTS = 3
@@ -68,7 +64,7 @@ NUM_K_HEADS = 1
 NUM_V_HEADS = 2
 CONV_KERNEL = 4
 POOL_ROWS = 7
-SCRATCH_ROWS = 4
+RING_ROWS = 4
 
 
 def _config() -> Qwen3_5Config:
@@ -115,16 +111,13 @@ def _config() -> Qwen3_5Config:
 
 
 class _Harness:
-    """One compiled graph for an arm and a pair of verify widths."""
+    """One compiled graph for a pair of verify widths."""
 
-    def __init__(
-        self, ring: bool, forward_width: int, rollback_width: int
-    ) -> None:
+    def __init__(self, forward_width: int, rollback_width: int) -> None:
         config = _config()
         target = Qwen3_5(config)
         block = target.layers[target.linear_layer_indices[0]]
         assert isinstance(block, Qwen3_5LinearAttentionBlock)
-        ring_len = ring_len_for_window(1 + NUM_DRAFTS) if ring else 0
         regions = linear_state_regions(
             num_linear_layers=1,
             key_head_dim=KEY_HEAD_DIM,
@@ -134,17 +127,13 @@ class _Harness:
             conv_kernel_dim=CONV_KERNEL,
             dtype=config.state_dtype,
             num_devices=1,
-            ring_len=ring_len,
+            ring_len=ring_len_for_window(1 + NUM_DRAFTS),
         )
         self.pool_shapes = {
             "conv": (POOL_ROWS, *regions[0].row_shape),
             "recurrent": (POOL_ROWS, *regions[1].row_shape),
         }
-        self.scratch_shapes = (
-            [(SCRATCH_ROWS, *region.row_shape) for region in regions[2:]]
-            if ring
-            else [(SCRATCH_ROWS, *regions[1].row_shape)]
-        )
+        self.ring_shape = (RING_ROWS, *regions[2].row_shape)
 
         rng = np.random.default_rng(3)
         raw = target.raw_state_dict()
@@ -180,32 +169,34 @@ class _Harness:
                     self.pool_shapes["recurrent"],
                 )
             ),
-            *(
-                BufferType(
-                    DType.float32 if ring else dtype, list(shape), device=gpu
-                )
-                for shape in self.scratch_shapes
-            ),
+            BufferType(DType.float32, list(self.ring_shape), device=gpu),
         ]
         with Graph("commit_on_forward", input_types=types) as graph:
             x, offsets, accepted, conv_rows, rec_rows = (
                 v.tensor for v in graph.inputs[:5]
             )
-            signals, conv, rec, base_conv, base_rec, *scratch = (
+            signals, conv, rec, base_conv, base_rec, ring = (
                 v.buffer for v in graph.inputs[5:]
             )
-            state = Qwen3_5RecurrentState(target, regions, ring_len)
+            # Any rows the ring holds work, and request ``r`` at row ``r`` is
+            # one.
+            ring_rows = ops.range(
+                start=0,
+                stop=Dim("batch_size"),
+                out_dim="batch_size",
+                device=gpu,
+                dtype=DType.uint32,
+            ).reshape([1, "batch_size"])
+            state = Qwen3_5RecurrentState(target, regions)
             extra: dict[str, Any] = {
                 LIVE_CONV_POOLS: [conv],
                 LIVE_RECURRENT_POOLS: [rec],
                 LIVE_CONV_ROW_IDS: [conv_rows],
                 LIVE_RECURRENT_ROW_IDS: [rec_rows],
-                SHADOW_RECURRENT_POOLS: None if ring else scratch,
-                RING_POOLS: scratch if ring else None,
-                # Any rows the pool holds work, and the dense layout is one.
-                RING_ROW_IDS: [shadow_row_ids(1, gpu)] if ring else None,
+                RING_POOLS: [ring],
+                RING_ROW_IDS: [ring_rows],
             }
-            leaves = state.snapshot(extra, [gpu])
+            leaves = state.verify_state(extra, 1)
             with state.capturing(1, Dim(forward_width)):
                 spec_out = block(
                     [x], [signals], layer_state_access(leaves, 0), [offsets]
@@ -251,16 +242,13 @@ class _Harness:
         rec = (0.1 * rng.standard_normal(self.pool_shapes["recurrent"])).astype(
             np.float32
         )
-        scratch = [
-            rng.standard_normal(shape).astype(np.float32)
-            for shape in self.scratch_shapes
-        ]
+        ring = rng.standard_normal(self.ring_shape).astype(np.float32)
         return {
             "conv": self._buf(conv),
             "recurrent": self._buf(rec),
             "base_conv": self._buf(conv),
             "base_recurrent": self._buf(rec),
-            **{f"scratch{i}": self._buf(s) for i, s in enumerate(scratch)},
+            "ring": self._buf(ring),
         }
 
     def _buf(self, values: np.ndarray) -> Buffer:
@@ -296,25 +284,23 @@ def _host(value: Any) -> np.ndarray:
     return np.array(value.to(CPU()).to_numpy())
 
 
-_HARNESSES: dict[tuple[bool, int, int], _Harness] = {}
+_HARNESSES: dict[tuple[int, int], _Harness] = {}
 
 
-def _harness(ring: bool, forward_width: int, rollback_width: int) -> _Harness:
-    key = (ring, forward_width, rollback_width)
+def _harness(forward_width: int, rollback_width: int) -> _Harness:
+    key = (forward_width, rollback_width)
     if key not in _HARNESSES:
-        _HARNESSES[key] = _Harness(ring, forward_width, rollback_width)
+        _HARNESSES[key] = _Harness(forward_width, rollback_width)
     return _HARNESSES[key]
 
 
 def _run(
-    ring: bool,
     chunks: list[list[int]],
     forward_width: int = 0,
     rollback_width: int | None = None,
 ) -> dict[str, np.ndarray]:
     """Runs ``chunks`` as consecutive zero-draft steps on the same pools."""
     harness = _harness(
-        ring,
         forward_width,
         forward_width if rollback_width is None else rollback_width,
     )
@@ -344,37 +330,24 @@ _CASES = [
 ]
 
 
-@pytest.mark.parametrize("ring", [True, False], ids=["ring", "snapshot"])
 @pytest.mark.parametrize("chunks", _CASES)
 def test_a_committed_step_matches_the_base_forward(
-    ring: bool, chunks: list[list[int]]
+    chunks: list[list[int]],
 ) -> None:
     """Checks the pools and readout equal the base forward's, bit for bit."""
-    out = _run(ring, chunks)
+    out = _run(chunks)
     np.testing.assert_array_equal(out["conv"], out["base_conv"])
     np.testing.assert_array_equal(out["recurrent"], out["base_recurrent"])
     np.testing.assert_array_equal(out["readout"], out["base_readout"])
 
 
-@pytest.mark.parametrize("ring", [True, False], ids=["ring", "snapshot"])
 # A width-one plan holds two rows per request, so longer prompts would replay
 # past it.
 @pytest.mark.parametrize("length", [1, 2])
-def test_rolling_back_a_committed_step_is_detectable(
-    ring: bool, length: int
-) -> None:
+def test_rolling_back_a_committed_step_is_detectable(length: int) -> None:
     """Checks a rollback left enabled at width zero corrupts the pools."""
-    out = _run(ring, [[length]], forward_width=0, rollback_width=1)
+    out = _run([[length]], forward_width=0, rollback_width=1)
     assert not (
         np.array_equal(out["conv"], out["base_conv"])
         and np.array_equal(out["recurrent"], out["base_recurrent"])
     )
-
-
-@pytest.mark.parametrize("chunks", _CASES)
-def test_both_rollbacks_commit_the_same_state(chunks: list[list[int]]) -> None:
-    """Checks the ring and snapshot arms leave identical pools and readouts."""
-    ring = _run(True, chunks)
-    snapshot = _run(False, chunks)
-    for key in ("conv", "recurrent", "readout"):
-        np.testing.assert_array_equal(ring[key], snapshot[key])

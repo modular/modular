@@ -13,39 +13,27 @@
 """Recurrent-state rollback for Qwen3.5 speculative decoding.
 
 Rejecting a draft token has to un-advance 48 Gated DeltaNet recurrences, and
-neither pool has a length pointer to move. This module implements the
-snapshot-and-replay design of ``mach/docs/qwen38_27b/mtp-spec-design.md``,
-in the cheap form the measurements allow:
+neither pool has a length pointer to move. The two leaves roll back by
+different mechanisms:
 
-- **Snapshot.** Before the verify, each request's live recurrent slot is
-  copied into a batch-indexed shadow pool. The verify's recurrence then runs
-  on the shadow, so the live pool still holds the pre-verify state when
-  acceptance is known. The conv leaf takes no copy. With drafts to reject,
-  the verify leaves the conv window unwritten and the replay writes it.
-- **Replay.** Every op feeding the two state kernels is causal or pointwise,
-  so rows ``[0, j)`` of the verify's own conv input, decay and beta are
-  bit-identical to what a forward over the accepted prefix alone would have
-  produced. Re-running just the two state kernels over those rows, from the
-  untouched live pool, lands the live pool exactly where the verify pass was
-  at length ``j`` — without a second pass over the model's weights.
+- **Recurrent.** The verify reads the live pool without writing it and
+  records each token's update in a ring, a scratch leaf of the state cache.
+  Once acceptance is known, :func:`fold_state_pools` applies the accepted
+  records to the live pool in one launch per device.
+- **Conv.** The window is the last ``kernel_size - 1`` raw inputs, so the
+  verify leaves it unwritten and :func:`replay_conv_pools` re-runs the conv
+  kernel over the accepted rows of the verify's own input. Every op feeding it
+  is causal or pointwise, so those rows are bit-identical to what a forward
+  over the accepted prefix alone would have produced.
 
-The replay is therefore ~2 kernels per linear layer instead of a whole extra
-target forward, which is what makes the TPOT win survive the rollback. A
-window with no drafts has nothing to roll back, so at a verify width of zero
-the verify's forward lands both leaves on the live pools and every rollback
-op launches nothing.
-
-With ``speculative_config.recurrent_state_rollback == "ring"``, the verify
-reads the live recurrent pool and records each token's update in a ring, and
-:func:`fold_state_pools` replaces that leaf's snapshot and replay. A window
-with no drafts has nothing to roll back, so there the verify runs the plain
-recurrence on the live pool and the fold launches nothing. A window with
-drafts is ``K + 1`` tokens, which the ring is sized to hold.
+A window with no drafts has nothing to roll back, so at a verify width of zero
+the verify's forward lands both leaves on the live pools and every rollback op
+launches nothing. A window with drafts is ``K + 1`` tokens, which the ring is
+sized to hold.
 
 Every pool is addressed as one buffer per leaf plus a
-``[num_layers, batch_size]`` tensor of the rows each layer occupies. The engine
-supplies the live and ring rows, and a shadow is this graph's own scratch, so
-:func:`shadow_row_ids` picks that layout here.
+``[num_layers, batch_size]`` tensor of the rows each layer occupies, and the
+engine supplies both for the live leaves and the ring alike.
 """
 
 from __future__ import annotations
@@ -56,7 +44,6 @@ from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
 from max.nn.state_space import (
     gated_delta_conv1d_verify_fwd,
-    gated_delta_recurrence_rollback,
     gated_delta_state_fold,
 )
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
@@ -67,55 +54,8 @@ __all__ = [
     "accepted_lengths",
     "accepted_row_plan",
     "fold_state_pools",
-    "replay_state_pools",
-    "shadow_row_ids",
-    "snapshot_state_pools",
+    "replay_conv_pools",
 ]
-
-
-_SHADOW_SPAN = "shadow_span"
-"""Name of the shadow slice a snapshot fills: ``batch_size * num_layers``."""
-
-
-def shadow_row_ids(num_layers: int, device: DeviceRef) -> TensorValue:
-    """Returns the ``[num_layers, batch_size]`` uint32 shadow-pool rows.
-
-    Request ``r``'s layer ``l`` sits at row ``l * batch_size + r``, matching
-    where the snapshot's layer-major flatten of the live rows lands it.
-    """
-    span = num_layers * Dim("batch_size")
-    rows = ops.range(
-        start=0, stop=span, out_dim=span, device=device, dtype=DType.uint32
-    )
-    return rows.reshape([num_layers, "batch_size"])
-
-
-def snapshot_state_pools(
-    live_pools: Sequence[BufferValue],
-    shadow_pools: Sequence[BufferValue],
-    live_row_ids: Sequence[TensorValue],
-    shadow_span: TensorValue,
-) -> None:
-    """Copies each request's live rows into the shadow pool.
-
-    Args:
-        live_pools: One persistent pool per device, for a single leaf.
-        shadow_pools: One scratch pool per device, at least
-            ``max_batch_size * num_layers`` rows deep.
-        live_row_ids: Per-device ``[num_layers, batch_size]`` live rows.
-        shadow_span: Scalar ``batch_size * num_layers``, the slice filled.
-    """
-    for live, shadow, rows in zip(
-        live_pools, shadow_pools, live_row_ids, strict=True
-    ):
-        gathered = ops.gather(
-            ops.buffer_load(live), ops.reshape(rows, [-1]), axis=0
-        )
-        ops.buffer_store_slice(
-            shadow,
-            ops.rebind(gathered, [_SHADOW_SPAN, *gathered.shape[1:]]),
-            [(slice(0, shadow_span), _SHADOW_SPAN)],
-        )
 
 
 def accepted_lengths(
@@ -165,8 +105,8 @@ def accepted_row_plan(
     length is only known on the device, and materializing it as a shape would
     cost a device-to-host sync every step. Instead the index vector is
     ``plan_rows`` long and the trailing entries repeat the last accepted row.
-    ``replay_offsets`` stops at the accepted total, so the state kernels never
-    reach those trailing entries.
+    ``replay_offsets`` stops at the accepted total, so the conv kernel never
+    reaches those trailing entries.
 
     Args:
         merged_offsets: ``[batch + 1]`` offsets of the verified sequence.
@@ -236,43 +176,30 @@ def accepted_row_plan(
     )
 
 
-def replay_state_pools(
+def replay_conv_pools(
     captures: Sequence[Sequence[GatedDeltaReplayInputs]],
     live_conv_pools: Sequence[BufferValue],
-    live_recurrent_pools: Sequence[BufferValue] | None,
     conv_row_ids: Sequence[TensorValue],
-    recurrent_row_ids: Sequence[TensorValue] | None,
     row_indices: TensorValue,
     replay_offsets: TensorValue,
     signal_buffers: Sequence[BufferValue],
     verify_width: TensorValue,
 ) -> None:
-    """Re-runs the state kernels over the accepted prefix.
+    """Writes each conv window at the accepted length.
 
-    Reuses the verify pass's own per-token inputs rather than recomputing the
-    projections, so the replayed arithmetic is the same arithmetic — not
-    merely a close approximation of it.
-
-    The conv replay writes the conv window at the accepted length, carrying
-    forward from the pre-verify window still in the pool. The recurrence
-    replays over the verify's own activated conv output.
+    Re-runs the conv kernel over the accepted rows of the verify pass's own
+    input, carrying forward from the pre-verify window still in the pool.
 
     Args:
         captures: Per-device, per-layer inputs captured by the verify pass.
         live_conv_pools: Per-device conv pool, still pre-verify.
-        live_recurrent_pools: Per-device recurrent pool, or ``None`` on the
-            ring rollback, which folds the recurrence instead of replaying
-            it.
         conv_row_ids: Per-device ``[num_layers, batch_size]`` conv rows.
-        recurrent_row_ids: Per-device ``[num_layers, batch_size]`` state
-            rows, ``None`` with ``live_recurrent_pools``.
         row_indices: Rows of the verify tensors the replay consumes.
         replay_offsets: ``[batch + 1]`` ragged offsets over those rows.
         signal_buffers: Used only to place the plan on each device.
         verify_width: The verify's width operand, which skips every launch
             at width zero.
     """
-    assert (live_recurrent_pools is None) == (recurrent_row_ids is None)
     offsets_per_dev = (
         ops.distributed_broadcast(replay_offsets, list(signal_buffers))
         if len(captures) > 1
@@ -289,13 +216,8 @@ def replay_state_pools(
         offsets = offsets_per_dev[device_idx].cast(DType.uint32)
         conv_pool = live_conv_pools[device_idx]
         conv_row_id = conv_row_ids[device_idx].cast(DType.uint32)
-        recurrent_row_id = (
-            None
-            if recurrent_row_ids is None
-            else recurrent_row_ids[device_idx].cast(DType.uint32)
-        )
         for layer_idx, capture in enumerate(device_captures):
-            # No resume row: the live rows still hold the pre-verify state.
+            # No resume row: the live rows still hold the pre-verify window.
             gated_delta_conv1d_verify_fwd(
                 qkv_input_ragged=ops.gather(capture.qkv, rows, axis=0),
                 conv_weight=capture.conv_weight,
@@ -304,17 +226,6 @@ def replay_state_pools(
                 input_row_offsets=offsets,
                 verify_width=verify_width,
                 rollback=True,
-            )
-            if live_recurrent_pools is None or recurrent_row_id is None:
-                continue
-            gated_delta_recurrence_rollback(
-                qkv_conv_output=ops.gather(capture.conv_output, rows, axis=0),
-                decay_per_token=ops.gather(capture.decay, rows, axis=0),
-                beta_per_token=ops.gather(capture.beta, rows, axis=0),
-                recurrent_state=live_recurrent_pools[device_idx],
-                slot_idx=recurrent_row_id[layer_idx],
-                input_row_offsets=offsets,
-                verify_width=verify_width,
             )
 
 

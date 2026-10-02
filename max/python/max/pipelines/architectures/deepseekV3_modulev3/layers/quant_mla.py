@@ -16,7 +16,6 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
 from typing import Any
 
 from max.driver import CPU, Device
@@ -30,14 +29,12 @@ from max.experimental.nn.common_layers.functional_kernels import (
     mla_prefill_graph,
 )
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
-    assign_columnwise_mapping,
-    assign_replicated_mapping,
-    assign_rowwise_mapping,
 )
 from max.experimental.nn.norm import RMSNorm
-from max.experimental.sharding import DeviceMapping, DeviceMesh
+from max.experimental.sharding import DeviceMapping, DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import KVCacheParams
@@ -391,40 +388,26 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
         return self.o_proj(attn_out)
 
 
-def _assign_quant_aware(
-    weight: QuantAwareTensor, assign: Callable[[Tensor], None]
-) -> None:
-    """Apply a placement-assignment to a (possibly quantized) weight."""
-    if isinstance(weight, FP8BlockTensor):
-        assign(weight.data)
-        assign(weight.weight_scale_inv)
-    elif isinstance(weight, NVFP4Tensor):
-        assign(weight.data)
-        assign(weight.weight_scale)
-        assign_replicated_mapping(weight.weight_scale_2)
-        assign_replicated_mapping(weight.input_scale)
-    else:
-        assert isinstance(weight, Tensor)
-        assign(weight)
-
-
 def tensor_parallel_latent_attention_with_rope(
     layer: QuantizedLatentAttentionWithRope,
 ) -> QuantizedLatentAttentionWithRope:
-    """Modifies latent attention layer to be tensor parallel along the TP axis."""
-    # Replicated weights: q_a_proj, q_a_layernorm
-    if layer.q_lora_rank is not None:
-        assert isinstance(layer.q_a_layernorm.weight, Tensor)
-        _assign_quant_aware(layer.q_a_proj, assign_replicated_mapping)
-        assign_replicated_mapping(layer.q_a_layernorm.weight)
-        _assign_quant_aware(layer.q_b_proj, assign_rowwise_mapping)
-    else:
-        _assign_quant_aware(layer.q_proj, assign_rowwise_mapping)
+    """Modifies latent attention layer to be tensor parallel along the TP axis.
 
-    assert isinstance(layer.kv_a_proj_layernorm, Tensor)
-    assign_replicated_mapping(layer.kv_a_proj_layernorm)
-    _assign_quant_aware(layer.kv_a_proj_with_mqa, assign_replicated_mapping)
-    _assign_quant_aware(layer.kv_b_proj, assign_rowwise_mapping)
-    _assign_quant_aware(layer.o_proj.weight, assign_columnwise_mapping)
+    The weights not sharded here stay replicated.
+    """
+    if layer.q_lora_rank is not None:
+        layer.q_b_proj = layer.q_b_proj.to(
+            NamedMapping(layer.q_b_proj.mesh, (TP, None))
+        )
+    else:
+        layer.q_proj = layer.q_proj.to(
+            NamedMapping(layer.q_proj.mesh, (TP, None))
+        )
+    layer.kv_b_proj = layer.kv_b_proj.to(
+        NamedMapping(layer.kv_b_proj.mesh, (TP, None))
+    )
+    layer.o_proj.weight = layer.o_proj.weight.to(
+        NamedMapping(layer.o_proj.weight.mesh, (None, TP))
+    )
 
     return layer

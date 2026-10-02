@@ -56,6 +56,7 @@ from layout import (
     stack_allocation as tt_stack_allocation,
 )
 from nn.attention.gpu.nvidia.common import (
+    NullPointer,
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask
@@ -124,9 +125,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
-    has_attn_sink: Bool = False,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     has_extra_kv: Bool = False,
-    has_variable_topk: Bool = False,
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     # Read-once shared-index q-fold (KERN-3141). When True, pack the
     # q_len_fold * num_q_heads query rows of one MTP decode step into the
     # BM=64 M tile so grid.y collapses to 1, gather the ONE shared top-k list
@@ -146,6 +147,10 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
     q_len_fold: Int = 1,
     Engine: TensorEngine = DefaultEngine[element_width=1],
 ](TrivialRegisterPassable):
+    # Presence of the optional operands is carried by their pointer types.
+    comptime has_attn_sink = not Self.AttnSinkPtrType.is_null
+    comptime has_variable_topk = not Self.TopkLengthsPtrType.is_null
+
     comptime kv_type = Self.KVLUTType.dtype
     # KV type is FP8 for both nope and rope (all-FP8 KV variant).
     comptime fp8_type = DType.float8_e4m3fn
@@ -356,9 +361,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_stride_dev: Int32,
-        topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        topk_lengths: Self.TopkLengthsPtrType,
         scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
-        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
+        attn_sink_ptr: Self.AttnSinkPtrType,
         # Extra KV parameters: separate cache for always-attend tokens.
         # Single TMA covering full 576-byte row (all-FP8).
         extra_k_tma: TMATensorTile[
@@ -369,7 +374,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        extra_topk_lengths: Self.TopkLengthsPtrType,
         extra_indices_stride_dev: Int32,
         extra_scales_ptr: OptionalReg[
             UnsafePointer[Float32, origin=MutAnyOrigin]
@@ -427,7 +432,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ](
             kv_lut,
             rebind[
@@ -451,18 +456,14 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
         # cache vs the extra cache in the kernel loop.
         var topk: Int
         comptime if Self.has_variable_topk:
-            topk = Int(
-                topk_lengths.unsafe_value()[Int(offset_position.batch_idx)]
-            )
+            topk = Int(topk_lengths.value()[Int(offset_position.batch_idx)])
         else:
             topk = indices_stride
         var extra_topk: Int = 0
         comptime if Self.has_extra_kv:
             comptime if Self.has_variable_topk:
                 extra_topk = Int(
-                    extra_topk_lengths.unsafe_value()[
-                        Int(offset_position.batch_idx)
-                    ]
+                    extra_topk_lengths.value()[Int(offset_position.batch_idx)]
                 )
             else:
                 extra_topk = extra_indices_stride
@@ -753,9 +754,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 var row = lane_idx & 0x3F
                 var head_idx_local = Int(block_idx.x) * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
-                    attn_sink_log2 = attn_sink_ptr.unsafe_value()[
-                        head_idx_local
-                    ] * Float32(log2e)
+                    attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
+                        DType.float32
+                    ]() * Float32(log2e)
 
             # Shared-index fold: drive the shared utils fold-Q layout — BM=64
             # packs q_len_fold * num_q_heads rows and each row keeps its own
@@ -962,7 +963,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
         num_orig_blocks: Int,
         extra_kv_lut: Self.KVLUTType,
@@ -1161,7 +1162,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
         idx_bars: DecodeSM100MiscMBars[
             num_stages=2,
@@ -1822,7 +1823,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -1921,7 +1922,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)

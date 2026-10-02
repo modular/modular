@@ -304,7 +304,8 @@ def test_replay_guard_report_warns_once_and_keeps_replaying(
         r for r in caplog.records if "changed since capture" in r.message
     ]
     assert len(reports) == 1
-    assert captured.to_numpy()[0] == 8
+    # Replay does not refresh host inputs, so the captured value stays.
+    assert captured.to_numpy()[0] == 1
     assert len(capture_model.model.replay_calls) == 2
 
 

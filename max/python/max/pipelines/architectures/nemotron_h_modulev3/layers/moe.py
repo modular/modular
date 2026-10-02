@@ -20,6 +20,7 @@ from max.experimental.nn import Linear, Module
 from max.experimental.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_router_group_limited,
 )
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
@@ -91,8 +92,11 @@ def _nvfp4_expert_matmul(
         ),
         DType.bfloat16,
     )
+    # Float32 division is slow when the numerator is zero, and relu2 makes
+    # about half of these zero, so multiply by the reciprocal instead.
     scaled = ops.cast(
-        ops.cast(x, DType.float32) / ops.cast(row_scales, DType.float32),
+        ops.cast(x, DType.float32)
+        * (1.0 / ops.cast(row_scales, DType.float32)),
         DType.bfloat16,
     )
     row_scales = ops.reshape(row_scales, [-1])
@@ -156,6 +160,7 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
     """
 
     def __init__(self, config: NemotronHConfig) -> None:
+        self.num_experts = config.num_experts
         self.num_experts_per_tok = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
         self.routed_scaling_factor = config.routed_scaling_factor
@@ -168,17 +173,16 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
         scores = F.sigmoid(F.cast(x, DType.float32) @ self.weight.T)
-        bias = self.e_score_correction_bias
-        biased, experts = F.top_k(
-            scores + bias, k=self.num_experts_per_tok, axis=-1
+        return moe_router_group_limited(
+            scores,
+            self.e_score_correction_bias,
+            self.num_experts,
+            self.num_experts_per_tok,
+            n_groups=1,
+            topk_group=1,
+            norm_weights=self.norm_topk_prob,
+            routed_scaling_factor=self.routed_scaling_factor,
         )
-        # The weights are the unbiased scores of the selected experts. Gathers
-        # from the [num_experts] bias rather than the [seq, num_experts]
-        # scores.
-        weights = biased - F.gather(bias, experts, axis=0)
-        if self.norm_topk_prob:
-            weights = weights / F.sum(weights, axis=-1)
-        return experts, weights * self.routed_scaling_factor
 
 
 class NemotronHMoE(Module[[Tensor], Tensor]):
