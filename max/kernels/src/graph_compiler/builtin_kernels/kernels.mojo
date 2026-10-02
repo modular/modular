@@ -4457,37 +4457,6 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
             DType.int32
         ]()
 
-        var x_strides = IndexList[3](
-            x.strides()[0], x.strides()[1], x.strides()[2]
-        )
-        var dt_strides = IndexList[2](dt.strides()[0], dt.strides()[1])
-        var A_strides = IndexList[1](A.strides()[0])
-        var B_strides = IndexList[3](
-            B.strides()[0], B.strides()[1], B.strides()[2]
-        )
-        var C_strides = IndexList[3](
-            C.strides()[0], C.strides()[1], C.strides()[2]
-        )
-        var D_strides = IndexList[1](D.strides()[0] if D.dim_size(0) > 0 else 1)
-        var dt_bias_strides = IndexList[1](
-            dt_bias.strides()[0] if dt_bias.dim_size(0) > 0 else 1
-        )
-        var initial_states_strides = IndexList[4](
-            initial_states.strides()[0],
-            initial_states.strides()[1],
-            initial_states.strides()[2],
-            initial_states.strides()[3],
-        )
-        var y_strides = IndexList[3](
-            y.strides()[0], y.strides()[1], y.strides()[2]
-        )
-        var final_states_strides = IndexList[4](
-            final_states.strides()[0],
-            final_states.strides()[1],
-            final_states.strides()[2],
-            final_states.strides()[3],
-        )
-
         comptime dt_softplus_int8: Int8 = Int8(1) if Self.dt_softplus else Int8(
             0
         )
@@ -4520,16 +4489,6 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
                 final_states_tt,
                 query_start_loc_tt,
                 has_initial_state_tt,
-                x_strides,
-                dt_strides,
-                A_strides,
-                B_strides,
-                C_strides,
-                D_strides,
-                dt_bias_strides,
-                initial_states_strides,
-                y_strides,
-                final_states_strides,
                 Optional[DeviceContext](ctx),
             )
 
@@ -4574,16 +4533,6 @@ struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
                 final_states_tt,
                 query_start_loc_tt,
                 has_initial_state_tt,
-                x_strides,
-                dt_strides,
-                A_strides,
-                B_strides,
-                C_strides,
-                D_strides,
-                dt_bias_strides,
-                initial_states_strides,
-                y_strides,
-                final_states_strides,
                 grid_dim=(num_p_blocks, nheads, batch),
                 block_dim=(BLOCK_SIZE, 1, 1),
             )
@@ -4766,31 +4715,6 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         ]()
         var cache_indices_tt = cache_indices.to_tile_tensor[.uint32]()
 
-        var x_strides = IndexList[3](
-            x.strides()[0], x.strides()[1], x.strides()[2]
-        )
-        var dt_strides = IndexList[2](dt.strides()[0], dt.strides()[1])
-        var A_strides = IndexList[1](A.strides()[0])
-        var B_strides = IndexList[3](
-            B.strides()[0], B.strides()[1], B.strides()[2]
-        )
-        var C_strides = IndexList[3](
-            C.strides()[0], C.strides()[1], C.strides()[2]
-        )
-        var D_strides = IndexList[1](D.strides()[0] if D.dim_size(0) > 0 else 1)
-        var dt_bias_strides = IndexList[1](
-            dt_bias.strides()[0] if dt_bias.dim_size(0) > 0 else 1
-        )
-        var ssm_pool_strides = IndexList[4](
-            ssm_pool.strides()[0],
-            ssm_pool.strides()[1],
-            ssm_pool.strides()[2],
-            ssm_pool.strides()[3],
-        )
-        var y_strides = IndexList[3](
-            y.strides()[0], y.strides()[1], y.strides()[2]
-        )
-
         comptime dt_softplus_int8: Int8 = Int8(1) if Self.dt_softplus else Int8(
             0
         )
@@ -4837,15 +4761,6 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt,
                     has_initial_state_tt,
                     cache_indices_tt,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    dt_bias_strides,
-                    y_strides,
-                    ssm_pool_strides,
                 )
             else:
                 raise Error(
@@ -4876,9 +4791,9 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 # The split kernel moves each thread's dstate run as one SIMD
                 # access, so it needs unit dstate strides.
                 if (
-                    B_strides[2] != 1
-                    or C_strides[2] != 1
-                    or ssm_pool_strides[3] != 1
+                    B.strides()[2] != 1
+                    or C.strides()[2] != 1
+                    or ssm_pool.strides()[3] != 1
                 ):
                     raise Error(
                         "the split Mamba-2 SSD scan needs unit strides on the"
@@ -4940,15 +4855,6 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt,
                     has_initial_state_tt,
                     cache_indices_tt,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    dt_bias_strides,
-                    y_strides,
-                    ssm_pool_strides,
                     grid_dim=(num_p_blocks, nheads, batch),
                     block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
                 )
@@ -4993,15 +4899,6 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt,
                     has_initial_state_tt,
                     cache_indices_tt,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    dt_bias_strides,
-                    y_strides,
-                    ssm_pool_strides,
                     grid_dim=(num_p_blocks, nheads, batch),
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
@@ -5045,15 +4942,6 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt,
                     has_initial_state_tt,
                     cache_indices_tt,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    dt_bias_strides,
-                    y_strides,
-                    ssm_pool_strides,
                     grid_dim=(num_p_blocks, nheads, batch),
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
@@ -5218,8 +5106,8 @@ struct CausalConv1DVarlenFwd[
         ctx: DeviceContext,
     ) capturing raises:
         # Axis of `x`/`output` holding channels vs. tokens (see
-        # `channels_last`). The GPU/CPU kernels take dim/seqlen strides as
-        # runtime arguments, so both layouts run the same code.
+        # `channels_last`). The kernels order their coordinates by
+        # `channels_last`, so both layouts run the same code.
         comptime dim_axis = 1 if Self.channels_last else 0
         comptime seq_axis = 0 if Self.channels_last else 1
         var dim = x.dim_size(dim_axis)
@@ -5237,18 +5125,6 @@ struct CausalConv1DVarlenFwd[
             DType.int32
         ]()
         var conv_states_tt = conv_states.to_tile_tensor[.int32]()
-
-        # Get strides as UInt32
-        var x_strides = x.strides()
-        var weight_strides = weight.strides()
-        var output_strides = output.strides()
-
-        var x_dim_stride = UInt32(x_strides[dim_axis])
-        var x_seqlen_stride = UInt32(x_strides[seq_axis])
-        var weight_dim_stride = UInt32(weight_strides[0])
-        var weight_width_stride = UInt32(weight_strides[1])
-        var out_dim_stride = UInt32(output_strides[dim_axis])
-        var out_seqlen_stride = UInt32(output_strides[seq_axis])
 
         var has_conv_states = conv_states.dim_size(0) > 0
 
@@ -5270,6 +5146,7 @@ struct CausalConv1DVarlenFwd[
                 has_initial_state_tt.dtype,
                 conv_states_tt.dtype,
                 use_residual=Self.use_residual,
+                channels_last=Self.channels_last,
             ](
                 dim,
                 total_seqlen,
@@ -5283,12 +5160,6 @@ struct CausalConv1DVarlenFwd[
                 has_initial_state_tt,
                 conv_states_tt,
                 output_tt,
-                x_dim_stride,
-                x_seqlen_stride,
-                weight_dim_stride,
-                weight_width_stride,
-                out_dim_stride,
-                out_seqlen_stride,
                 silu_activation,
                 PAD_SLOT_ID,
                 has_cache_indices,
@@ -5347,6 +5218,7 @@ struct CausalConv1DVarlenFwd[
                             conv_states_tt.Engine,
                             output_tt.Engine,
                             use_residual=Self.use_residual,
+                            channels_last=Self.channels_last,
                         ]
                     ]()
                     # Host-side safe upper bound on the per-sequence tile
@@ -5372,12 +5244,6 @@ struct CausalConv1DVarlenFwd[
                         has_initial_state_tt,
                         conv_states_tt,
                         output_tt,
-                        UInt32(x_dim_stride),
-                        UInt32(x_seqlen_stride),
-                        UInt32(weight_dim_stride),
-                        UInt32(weight_width_stride),
-                        UInt32(out_dim_stride),
-                        UInt32(out_seqlen_stride),
                         silu_activation_int8,
                         Int32(PAD_SLOT_ID),
                         Int8(has_cache_indices),
@@ -5422,6 +5288,7 @@ struct CausalConv1DVarlenFwd[
                         conv_states_tt.Engine,
                         output_tt.Engine,
                         use_residual=Self.use_residual,
+                        channels_last=Self.channels_last,
                     ]
                 ]()
                 gpu_ctx.enqueue_function(
@@ -5437,12 +5304,6 @@ struct CausalConv1DVarlenFwd[
                     has_initial_state_tt,
                     conv_states_tt,
                     output_tt,
-                    UInt32(x_dim_stride),
-                    UInt32(x_seqlen_stride),
-                    UInt32(weight_dim_stride),
-                    UInt32(weight_width_stride),
-                    UInt32(out_dim_stride),
-                    UInt32(out_seqlen_stride),
                     silu_activation_int8,
                     Int32(PAD_SLOT_ID),
                     Int8(has_cache_indices),

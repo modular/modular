@@ -27,13 +27,9 @@ from std.memory import alloc
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
-from layout import TileTensor, row_major
+from layout import MixedLayout, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from state_space.mamba2_ssd_scan import (
-    Strides1D,
-    Strides2D,
-    Strides3D,
-    Strides4D,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
 )
@@ -48,6 +44,7 @@ comptime BLOCK_THREADS = 128
 comptime CH_PER_BLOCK = BLOCK_THREADS // DSTATE_SPLIT
 comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
 comptime budget = get_defined_int["budget", 16]()
+
 
 # Row padding is a multiple of 16 elements so the kernel's 32-byte B/C loads
 # stay aligned, as they are for the model's conv output.
@@ -189,15 +186,10 @@ def run_one_case(
     # as "no sequence has an initial state".
     var his_len = 0 if spec.init_mode == 0 else batch
 
-    var x_strides: Strides3D = (x_row, head_dim, 1)
-    var dt_strides: Strides2D = (dt_row, 1)
-    var A_strides: Strides1D = (1,)
-    var B_strides: Strides3D = (bc_row, DSTATE, 1)
-    var C_strides: Strides3D = (bc_row, DSTATE, 1)
-    var D_strides: Strides1D = (1,)
-    var dt_bias_strides: Strides1D = (1,)
-    var y_strides: Strides3D = (nheads * head_dim, head_dim, 1)
-    var pool_strides: Strides4D = (head_row, state_row, DSTATE, 1)
+    var x_strides = (x_row, head_dim, 1)
+    var dt_strides = (dt_row, 1)
+    var B_strides = (bc_row, DSTATE, 1)
+    var C_strides = (bc_row, DSTATE, 1)
 
     var x_d = ctx.enqueue_create_buffer[dtype](total * x_row)
     var dt_d = ctx.enqueue_create_buffer[dtype](total * dt_row)
@@ -223,11 +215,11 @@ def run_one_case(
     ctx.enqueue_copy(slot_d, slot_h)
     ctx.enqueue_copy(pool_d, pool_h)
 
-    var x_g = TileTensor(x_d, row_major(total, nheads, head_dim))
-    var dt_g = TileTensor(dt_d, row_major(total, nheads))
+    var x_g = TileTensor(x_d, MixedLayout((total, nheads, head_dim), x_strides))
+    var dt_g = TileTensor(dt_d, MixedLayout((total, nheads), dt_strides))
     var A_g = TileTensor(A_d, row_major(nheads))
-    var B_g = TileTensor(B_d, row_major(total, NGROUPS, DSTATE))
-    var C_g = TileTensor(C_d, row_major(total, NGROUPS, DSTATE))
+    var B_g = TileTensor(B_d, MixedLayout((total, NGROUPS, DSTATE), B_strides))
+    var C_g = TileTensor(C_d, MixedLayout((total, NGROUPS, DSTATE), C_strides))
     var D_g = TileTensor(D_d, row_major(nheads))
     var dt_bias_g = TileTensor(dt_bias_d, row_major(nheads))
     var y_g = TileTensor(y_d, row_major(total, nheads, head_dim))
@@ -277,26 +269,23 @@ def run_one_case(
         qsl_g,
         his_g,
         slot_g,
-        x_strides,
-        dt_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        dt_bias_strides,
-        y_strides,
-        pool_strides,
         grid_dim=(ceildiv(head_dim, CH_PER_BLOCK), nheads, batch),
         block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
     )
     ctx.synchronize()
 
     if check:
-        var x_t = TileTensor(x_h, row_major(total, nheads, head_dim))
-        var dt_t = TileTensor(dt_h, row_major(total, nheads))
+        var x_t = TileTensor(
+            x_h, MixedLayout((total, nheads, head_dim), x_strides)
+        )
+        var dt_t = TileTensor(dt_h, MixedLayout((total, nheads), dt_strides))
         var A_t = TileTensor(A_h, row_major(nheads))
-        var B_t = TileTensor(B_h, row_major(total, NGROUPS, DSTATE))
-        var C_t = TileTensor(C_h, row_major(total, NGROUPS, DSTATE))
+        var B_t = TileTensor(
+            B_h, MixedLayout((total, NGROUPS, DSTATE), B_strides)
+        )
+        var C_t = TileTensor(
+            C_h, MixedLayout((total, NGROUPS, DSTATE), C_strides)
+        )
         var D_t = TileTensor(D_h, row_major(nheads))
         var dt_bias_t = TileTensor(dt_bias_h, row_major(nheads))
         var y_t = TileTensor(y_ref_h, row_major(total, nheads, head_dim))
@@ -325,15 +314,6 @@ def run_one_case(
             qsl_t,
             his_t,
             slot_t,
-            x_strides,
-            dt_strides,
-            A_strides,
-            B_strides,
-            C_strides,
-            D_strides,
-            dt_bias_strides,
-            y_strides,
-            pool_strides,
         )
         ctx.enqueue_copy(y_gpu_h, y_d)
         ctx.enqueue_copy(pool_h, pool_d)

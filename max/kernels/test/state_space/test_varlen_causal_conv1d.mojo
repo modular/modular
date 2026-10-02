@@ -178,12 +178,6 @@ def run_varlen_causal_conv1d_fwd[
         has_initial_state_tt,
         conv_states_tt,
         output_tt,
-        x_dim_stride,
-        x_seqlen_stride,
-        weight_dim_stride,
-        weight_width_stride,
-        out_dim_stride,
-        out_seqlen_stride,
         silu_activation,
         PAD_SLOT_ID,
         True,  # has_cache_indices
@@ -378,17 +372,6 @@ def run_varlen_causal_conv1d_update[
         cache_seqlens_tt,
         conv_state_indices_tt,
         output_tt2,
-        x_batch_stride,
-        x_dim_stride,
-        x_seqlen_stride,
-        weight_dim_stride,
-        weight_width_stride,
-        conv_state_batch_stride,
-        conv_state_dim_stride,
-        conv_state_seqlen_stride,
-        out_batch_stride,
-        out_dim_stride,
-        out_seqlen_stride,
         silu_activation,
         PAD_SLOT_ID,
         True,  # has_conv_state_indices
@@ -575,11 +558,6 @@ def run_varlen_causal_conv1d_states[
         x_tt3,
         cu_seqlens_tt,
         states_tt,
-        x_seqlen_stride,
-        x_dim_stride,
-        states_batch_stride,
-        states_dim_stride,
-        states_seqlen_stride,
     )
 
     # Reference implementation
@@ -704,12 +682,6 @@ def run_conv_state_writeback[
         has_initial_state_tt,
         conv_states_tt,
         output_tt,
-        UInt32(total_seqlen),  # x_dim_stride
-        UInt32(1),  # x_seqlen_stride
-        UInt32(width),  # weight_dim_stride
-        UInt32(1),  # weight_width_stride
-        UInt32(total_seqlen),  # out_dim_stride
-        UInt32(1),  # out_seqlen_stride
         False,  # silu_activation
         PAD_SLOT_ID,
         True,  # has_cache_indices

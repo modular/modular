@@ -21,13 +21,9 @@ a packed ragged batch must equal independent per-sequence runs.
 """
 
 from max.gpu.host import DeviceContext
-from layout import TileTensor, row_major
+from layout import MixedLayout, TileTensor, row_major
 from std.random import rand
 from state_space.mamba2_ssd_scan import (
-    Strides1D,
-    Strides2D,
-    Strides3D,
-    Strides4D,
     mamba2_ssd_chunk_scan_varlen_fwd_cpu,
     mamba2_ssd_chunk_scan_varlen_fwd_gpu,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
@@ -126,21 +122,6 @@ def run_mamba2_ssd_fwd_gpu_vs_cpu[
         fs_cpu_h, row_major(batch, nheads, head_dim, dstate)
     )
 
-    var x_strides = IndexList[3](nheads * head_dim, head_dim, 1)
-    var dt_strides = IndexList[2](nheads, 1)
-    var A_strides = IndexList[1](1)
-    var B_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var C_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var D_strides = IndexList[1](1)
-    var dt_bias_strides = IndexList[1](1)
-    var is_strides = IndexList[4](
-        nheads * head_dim * dstate, head_dim * dstate, dstate, 1
-    )
-    var y_strides = IndexList[3](nheads * head_dim, head_dim, 1)
-    var fs_strides = IndexList[4](
-        nheads * head_dim * dstate, head_dim * dstate, dstate, 1
-    )
-
     comptime dt_sp_int8 = Int8(1) if dt_softplus else Int8(0)
 
     # CPU reference.
@@ -163,16 +144,6 @@ def run_mamba2_ssd_fwd_gpu_vs_cpu[
         fs_cpu_tt,
         qsl_tt,
         his_tt,
-        x_strides,
-        dt_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        dt_bias_strides,
-        is_strides,
-        y_strides,
-        fs_strides,
     )
 
     # Device allocations + copies.
@@ -257,16 +228,6 @@ def run_mamba2_ssd_fwd_gpu_vs_cpu[
         fs_gtt,
         qsl_gtt,
         his_gtt,
-        x_strides,
-        dt_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        dt_bias_strides,
-        is_strides,
-        y_strides,
-        fs_strides,
         grid_dim=(num_p_blocks, nheads, batch),
         block_dim=(BLOCK_SIZE, 1, 1),
     )
@@ -338,15 +299,6 @@ def run_varlen_no_bleed_cpu[
     for i in range(total_len * nheads):
         dt_h.store(i, Scalar[dtype](Float32(dt_h.load(i)) - 0.5))
 
-    var x_strides = IndexList[3](nheads * head_dim, head_dim, 1)
-    var dt_strides = IndexList[2](nheads, 1)
-    var A_strides = IndexList[1](1)
-    var B_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var C_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var D_strides = IndexList[1](1)
-    var dt_bias_strides = IndexList[1](1)
-    var is_strides = IndexList[4](0, 0, 0, 0)
-
     var A_tt = TileTensor(A_h, row_major(nheads))
     var D_tt = TileTensor(D_h, row_major(nheads))
     var dt_bias_tt = TileTensor(dt_bias_h, row_major(nheads))
@@ -374,10 +326,6 @@ def run_varlen_no_bleed_cpu[
         fs_packed, row_major(batch, nheads, head_dim, dstate)
     )
     var qsl_tt = TileTensor(qsl_h, row_major(batch + 1))
-    var y_strides = IndexList[3](nheads * head_dim, head_dim, 1)
-    var fs_strides = IndexList[4](
-        nheads * head_dim * dstate, head_dim * dstate, dstate, 1
-    )
 
     mamba2_ssd_chunk_scan_varlen_fwd_cpu[dtype, DSTATE](
         nheads,
@@ -398,16 +346,6 @@ def run_varlen_no_bleed_cpu[
         fs_packed_tt,
         qsl_tt,
         his_tt,
-        x_strides,
-        dt_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        dt_bias_strides,
-        is_strides,
-        y_strides,
-        fs_strides,
     )
 
     # ---- Independent per-sequence runs ----
@@ -460,16 +398,6 @@ def run_varlen_no_bleed_cpu[
             fs_s,
             qsl_s,
             his_tt,
-            x_strides,
-            dt_strides,
-            A_strides,
-            B_strides,
-            C_strides,
-            D_strides,
-            dt_bias_strides,
-            is_strides,
-            y_strides,
-            fs_strides,
         )
         qsl_s_h.free()
         off += slen
@@ -701,33 +629,27 @@ def run_mamba2_ssd_inplace_vs_functional[
         cum += seq_lengths[i]
         qsl_h.store(i + 1, Int32(cum))
 
-    var x_strides: Strides3D = (x_row, head_dim, 1)
-    var dt_strides: Strides2D = (nheads, 1)
-    var A_strides: Strides1D = (1,)
-    var B_strides: Strides3D = (bc_row, dstate, 1)
-    var C_strides: Strides3D = (bc_row, dstate, 1)
-    var D_strides: Strides1D = (1,)
-    var dt_bias_strides: Strides1D = (1,)
-    var y_strides: Strides3D = (nheads * head_dim, head_dim, 1)
-    var state_strides: Strides4D = (
-        nheads * head_dim * dstate,
-        head_dim * dstate,
-        dstate,
-        1,
-    )
-    var fs_strides = state_strides
-    var pool_strides = state_strides
-    var is_strides = state_strides
+    var x_strides = (x_row, head_dim, 1)
+    var B_strides = (bc_row, dstate, 1)
+    var C_strides = (bc_row, dstate, 1)
 
     # ---- Functional variant (CPU reference) ----
     var y_ref_h = alloc[Scalar[dtype]](total_len * nheads * head_dim)
     var fs_ref_h = alloc[Float32](batch * nheads * head_dim * dstate)
 
-    var x_tt = TileTensor(x_h, row_major(total_len, nheads, head_dim))
+    # x, B and C carry the padded token stride that `row_pad` gives their
+    # buffers.
+    var x_tt = TileTensor(
+        x_h, MixedLayout((total_len, nheads, head_dim), x_strides)
+    )
     var dt_tt = TileTensor(dt_h, row_major(total_len, nheads))
     var A_tt = TileTensor(A_h, row_major(nheads))
-    var B_tt = TileTensor(B_h, row_major(total_len, ngroups, dstate))
-    var C_tt = TileTensor(C_h, row_major(total_len, ngroups, dstate))
+    var B_tt = TileTensor(
+        B_h, MixedLayout((total_len, ngroups, dstate), B_strides)
+    )
+    var C_tt = TileTensor(
+        C_h, MixedLayout((total_len, ngroups, dstate), C_strides)
+    )
     var D_tt = TileTensor(D_h, row_major(nheads))
     var dt_bias_tt = TileTensor(dt_bias_h, row_major(nheads))
     # Empty (dim0 == 0) when init_state is False — the kernels key "has an
@@ -762,16 +684,6 @@ def run_mamba2_ssd_inplace_vs_functional[
         fs_ref_tt,
         qsl_tt,
         func_his_tt,
-        x_strides,
-        dt_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        dt_bias_strides,
-        is_strides,
-        y_strides,
-        fs_strides,
     )
 
     # ---- Inplace CPU variant ----
@@ -804,15 +716,6 @@ def run_mamba2_ssd_inplace_vs_functional[
         qsl_tt,
         his_tt,
         slot_tt,
-        x_strides,
-        dt_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        dt_bias_strides,
-        y_strides,
-        pool_strides,
     )
 
     # y output must be numerically identical.
@@ -880,11 +783,17 @@ def run_mamba2_ssd_inplace_vs_functional[
     ctx.enqueue_copy(his_d, his_h)
     ctx.enqueue_copy(slot_d, slot_idx_h)
 
-    var x_gtt = TileTensor(x_d, row_major(total_len, nheads, head_dim))
+    var x_gtt = TileTensor(
+        x_d, MixedLayout((total_len, nheads, head_dim), x_strides)
+    )
     var dt_gtt = TileTensor(dt_d, row_major(total_len, nheads))
     var A_gtt = TileTensor(A_d, row_major(nheads))
-    var B_gtt = TileTensor(B_d, row_major(total_len, ngroups, dstate))
-    var C_gtt = TileTensor(C_d, row_major(total_len, ngroups, dstate))
+    var B_gtt = TileTensor(
+        B_d, MixedLayout((total_len, ngroups, dstate), B_strides)
+    )
+    var C_gtt = TileTensor(
+        C_d, MixedLayout((total_len, ngroups, dstate), C_strides)
+    )
     var D_gtt = TileTensor(D_d, row_major(nheads))
     var dt_bias_gtt = TileTensor(dt_bias_d, row_major(nheads))
     var qsl_gtt = TileTensor(qsl_d, row_major(batch + 1))
@@ -943,15 +852,6 @@ def run_mamba2_ssd_inplace_vs_functional[
             qsl_gtt,
             his_gtt,
             slot_gtt,
-            x_strides,
-            dt_strides,
-            A_strides,
-            B_strides,
-            C_strides,
-            D_strides,
-            dt_bias_strides,
-            y_strides,
-            pool_strides,
             grid_dim=(num_p_blocks, nheads, batch),
             block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
         )
@@ -1002,15 +902,6 @@ def run_mamba2_ssd_inplace_vs_functional[
             qsl_gtt,
             his_gtt,
             slot_gtt,
-            x_strides,
-            dt_strides,
-            A_strides,
-            B_strides,
-            C_strides,
-            D_strides,
-            dt_bias_strides,
-            y_strides,
-            pool_strides,
             grid_dim=(num_p_blocks, nheads, batch),
             block_dim=(BLOCK_SIZE, 1, 1),
         )
@@ -1057,15 +948,6 @@ def run_mamba2_ssd_inplace_vs_functional[
             qsl_gtt,
             his_gtt,
             slot_gtt,
-            x_strides,
-            dt_strides,
-            A_strides,
-            B_strides,
-            C_strides,
-            D_strides,
-            dt_bias_strides,
-            y_strides,
-            pool_strides,
             grid_dim=(num_p_blocks, nheads, batch),
             block_dim=(BLOCK_SIZE, 1, 1),
         )

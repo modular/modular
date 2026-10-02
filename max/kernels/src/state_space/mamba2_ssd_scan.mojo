@@ -77,6 +77,15 @@ comptime Strides3D = IndexList[3]
 comptime Strides4D = IndexList[4]
 
 
+@always_inline
+def _strides[rank: Int](t: TileTensor[...]) -> IndexList[rank]:
+    """Returns the strides of `t`, read from its layout."""
+    var result = IndexList[rank]()
+    comptime for i in range(rank):
+        result[i] = Int(t.layout.stride[i]().value())
+    return result
+
+
 def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     kernel_dtype: DType,
     DSTATE: Int,
@@ -140,16 +149,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     has_initial_state: TileTensor[
         .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
     ],  # (batch,) optional
-    x_strides: Strides3D,  # (total_len, nheads, head_dim)
-    dt_strides: Strides2D,  # (total_len, nheads)
-    A_strides: Strides1D,  # (nheads,)
-    B_strides: Strides3D,  # (total_len, ngroups, dstate)
-    C_strides: Strides3D,  # (total_len, ngroups, dstate)
-    D_strides: Strides1D,  # (nheads,)
-    dt_bias_strides: Strides1D,  # (nheads,)
-    initial_states_strides: Strides4D,  # (batch, nheads, head_dim, dstate)
-    y_strides: Strides3D,  # (total_len, nheads, head_dim)
-    final_states_strides: Strides4D,  # (batch, nheads, head_dim, dstate)
 ):
     """GPU kernel: Mamba-2 SSD varlen prefill scan, one thread per (head, channel).
 
@@ -177,29 +176,27 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     var group_id = h // nheads_ngroups_ratio
 
     # Sequence bounds for this batch element.
-    var seq_start = Int(query_start_loc.raw_load(b))
-    var seq_end = Int(query_start_loc.raw_load(b + 1))
+    var seq_start = Int(query_start_loc.load[width=1]((b,)))
+    var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
     var seq_len = seq_end - seq_start
     if seq_len <= 0:
         return
 
     # Per-head scalar A, pre-multiplied by LOG2E for exp2.
     var A_val = (
-        Scalar[kernel_dtype](A.raw_load(UInt32(h * A_strides[0]))).cast[
-            DType.float32
-        ]()
+        Scalar[kernel_dtype](A.load[width=1]((h,))).cast[DType.float32]()
         * LOG2E
     )
 
     var dt_bias_val = Float32(0.0)
     if has_dt_bias:
-        dt_bias_val = Scalar[kernel_dtype](
-            dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-        ).cast[.float32]()
+        dt_bias_val = Scalar[kernel_dtype](dt_bias.load[width=1]((h,))).cast[
+            .float32
+        ]()
 
     var D_val = Float32(0.0)
     if has_D:
-        D_val = Scalar[kernel_dtype](D.raw_load(UInt32(h * D_strides[0]))).cast[
+        D_val = Scalar[kernel_dtype](D.load[width=1]((h,))).cast[
             DType.float32
         ]()
 
@@ -207,32 +204,24 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
     var state = SIMD[.float32, MAX_DSTATE](0.0)
     var use_initial = False
     if has_init_tensor:
-        use_initial = Bool(has_initial_state.raw_load(b))
+        use_initial = Bool(has_initial_state.load[width=1]((b,)))
     if use_initial:
         comptime for n in range(DSTATE):
-            var off = UInt32(
-                b * initial_states_strides[0]
-                + h * initial_states_strides[1]
-                + p * initial_states_strides[2]
-                + n * initial_states_strides[3]
-            )
-            state[n] = initial_states.raw_load(off)
+            state[n] = initial_states.load[width=1]((b, h, p, n))
 
     # Sequential recurrence over the sequence.
     for t in range(seq_len):
         var gt = seq_start + t  # global (packed) time index
 
         # x[gt, h, p]
-        var x_val = Scalar[kernel_dtype](
-            x.raw_load(
-                UInt32(gt * x_strides[0] + h * x_strides[1] + p * x_strides[2])
-            )
-        ).cast[.float32]()
+        var x_val = Scalar[kernel_dtype](x.load[width=1]((gt, h, p))).cast[
+            .float32
+        ]()
 
         # dt[gt, h] (+ dt_bias), softplus -> per-(t,h) scalar (broadcast over p).
-        var dt_val = Scalar[kernel_dtype](
-            dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-        ).cast[.float32]()
+        var dt_val = Scalar[kernel_dtype](dt.load[width=1]((gt, h))).cast[
+            .float32
+        ]()
         if has_dt_bias:
             dt_val += dt_bias_val
         if dt_softplus_bool:
@@ -247,22 +236,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
         var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
         comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
-                B.raw_load(
-                    UInt32(
-                        gt * B_strides[0]
-                        + group_id * B_strides[1]
-                        + n * B_strides[2]
-                    )
-                )
+                B.load[width=1]((gt, group_id, n))
             ).cast[.float32]()
             C_vals[n] = Scalar[kernel_dtype](
-                C.raw_load(
-                    UInt32(
-                        gt * C_strides[0]
-                        + group_id * C_strides[1]
-                        + n * C_strides[2]
-                    )
-                )
+                C.load[width=1]((gt, group_id, n))
             ).cast[.float32]()
 
         # state_n = state_n * dA + (dt * x) * B_n   (vector over dstate)
@@ -273,20 +250,14 @@ def mamba2_ssd_chunk_scan_varlen_fwd_gpu[
         if has_D:
             y_val += D_val * x_val
 
-        y.raw_store(
-            UInt32(gt * y_strides[0] + h * y_strides[1] + p * y_strides[2]),
+        y.store[width=1](
+            (gt, h, p),
             Scalar[kernel_dtype](y_val.cast[kernel_dtype]()),
         )
 
     # Write final state (fp32) for chunked-prefill continuation / decode handoff.
     comptime for n in range(DSTATE):
-        var off = UInt32(
-            b * final_states_strides[0]
-            + h * final_states_strides[1]
-            + p * final_states_strides[2]
-            + n * final_states_strides[3]
-        )
-        final_states.raw_store(off, state[n])
+        final_states.store[width=1]((b, h, p, n), state[n])
 
 
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
@@ -339,15 +310,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
     cache_indices: TileTensor[
         .uint32, cache_indices_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    x_strides: Strides3D,
-    dt_strides: Strides2D,
-    A_strides: Strides1D,
-    B_strides: Strides3D,
-    C_strides: Strides3D,
-    D_strides: Strides1D,
-    dt_bias_strides: Strides1D,
-    y_strides: Strides3D,
-    ssm_pool_strides: Strides4D,
 ):
     """GPU kernel: Mamba-2 SSD varlen prefill scan with in-place SSM-pool write.
 
@@ -412,16 +374,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
             load the initial state from `ssm_pool[cache_indices[b]]`.
         cache_indices: Slot index per sequence of shape `(batch,)` into
             `ssm_pool` for the initial and final state.
-        x_strides: Strides of `x` along `(total_len, nheads, head_dim)`.
-        dt_strides: Strides of `dt` along `(total_len, nheads)`.
-        A_strides: Strides of `A` along `(nheads,)`.
-        B_strides: Strides of `B` along `(total_len, ngroups, dstate)`.
-        C_strides: Strides of `C` along `(total_len, ngroups, dstate)`.
-        D_strides: Strides of `D` along `(nheads,)`.
-        dt_bias_strides: Strides of `dt_bias` along `(nheads,)`.
-        y_strides: Strides of `y` along `(total_len, nheads, head_dim)`.
-        ssm_pool_strides: Strides of `ssm_pool` along `(max_slots, nheads,
-            head_dim, dstate)`.
     """
     var nheads = Int(nheads_dev)
     var head_dim = Int(head_dim_dev)
@@ -441,60 +393,50 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
 
     var group_id = h // nheads_ngroups_ratio
 
-    var seq_start = Int(query_start_loc.raw_load(b))
-    var seq_end = Int(query_start_loc.raw_load(b + 1))
+    var seq_start = Int(query_start_loc.load[width=1]((b,)))
+    var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
     var seq_len = seq_end - seq_start
     if seq_len <= 0:
         return
 
     var A_val = (
-        Scalar[kernel_dtype](A.raw_load(UInt32(h * A_strides[0]))).cast[
-            DType.float32
-        ]()
+        Scalar[kernel_dtype](A.load[width=1]((h,))).cast[DType.float32]()
         * LOG2E
     )
 
     var dt_bias_val = Float32(0.0)
     if has_dt_bias:
-        dt_bias_val = Scalar[kernel_dtype](
-            dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-        ).cast[.float32]()
+        dt_bias_val = Scalar[kernel_dtype](dt_bias.load[width=1]((h,))).cast[
+            .float32
+        ]()
 
     var D_val = Float32(0.0)
     if has_D:
-        D_val = Scalar[kernel_dtype](D.raw_load(UInt32(h * D_strides[0]))).cast[
+        D_val = Scalar[kernel_dtype](D.load[width=1]((h,))).cast[
             DType.float32
         ]()
 
     # Load initial state from ssm_pool at the slot for this sequence.
-    var slot = Int(cache_indices.raw_load(b))
+    var slot = Int(cache_indices.load[width=1]((b,)))
     var state = SIMD[.float32, MAX_DSTATE](0.0)
     var use_initial = False
     if has_init_tensor:
-        use_initial = Bool(has_initial_state.raw_load(b))
+        use_initial = Bool(has_initial_state.load[width=1]((b,)))
     if use_initial:
         # Read initial state from ssm_pool[slot, h, p, n].
         comptime for n in range(DSTATE):
-            var off = Int(
-                slot * ssm_pool_strides[0]
-                + h * ssm_pool_strides[1]
-                + p * ssm_pool_strides[2]
-                + n * ssm_pool_strides[3]
-            )
-            state[n] = ssm_pool.raw_load(off)
+            state[n] = ssm_pool.load[width=1]((slot, h, p, n))
 
     for t in range(seq_len):
         var gt = seq_start + t
 
-        var x_val = Scalar[kernel_dtype](
-            x.raw_load(
-                UInt32(gt * x_strides[0] + h * x_strides[1] + p * x_strides[2])
-            )
-        ).cast[.float32]()
+        var x_val = Scalar[kernel_dtype](x.load[width=1]((gt, h, p))).cast[
+            .float32
+        ]()
 
-        var dt_val = Scalar[kernel_dtype](
-            dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-        ).cast[.float32]()
+        var dt_val = Scalar[kernel_dtype](dt.load[width=1]((gt, h))).cast[
+            .float32
+        ]()
         if has_dt_bias:
             dt_val += dt_bias_val
         if dt_softplus_bool:
@@ -507,22 +449,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
         var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
         comptime for n in range(DSTATE):
             B_vals[n] = Scalar[kernel_dtype](
-                B.raw_load(
-                    UInt32(
-                        gt * B_strides[0]
-                        + group_id * B_strides[1]
-                        + n * B_strides[2]
-                    )
-                )
+                B.load[width=1]((gt, group_id, n))
             ).cast[.float32]()
             C_vals[n] = Scalar[kernel_dtype](
-                C.raw_load(
-                    UInt32(
-                        gt * C_strides[0]
-                        + group_id * C_strides[1]
-                        + n * C_strides[2]
-                    )
-                )
+                C.load[width=1]((gt, group_id, n))
             ).cast[.float32]()
 
         state = state * dA + B_vals * dt_x
@@ -531,20 +461,14 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
         if has_D:
             y_val += D_val * x_val
 
-        y.raw_store(
-            UInt32(gt * y_strides[0] + h * y_strides[1] + p * y_strides[2]),
+        y.store[width=1](
+            (gt, h, p),
             Scalar[kernel_dtype](y_val.cast[kernel_dtype]()),
         )
 
     # Write final state directly into ssm_pool at slot cache_indices[b].
     comptime for n in range(DSTATE):
-        var off = Int(
-            slot * ssm_pool_strides[0]
-            + h * ssm_pool_strides[1]
-            + p * ssm_pool_strides[2]
-            + n * ssm_pool_strides[3]
-        )
-        ssm_pool.raw_store(off, state[n])
+        ssm_pool.store[width=1]((slot, h, p, n), state[n])
 
 
 # NVIDIA B200 (sm_100) launch bounds. This kernel is only ever launched with a
@@ -614,15 +538,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     cache_indices: TileTensor[
         .uint32, cache_indices_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    x_strides: Strides3D,
-    dt_strides: Strides2D,
-    A_strides: Strides1D,
-    B_strides: Strides3D,
-    C_strides: Strides3D,
-    D_strides: Strides1D,
-    dt_bias_strides: Strides1D,
-    y_strides: Strides3D,
-    ssm_pool_strides: Strides4D,
 ):
     """GPU kernel: Mamba-2 SSD varlen in-place scan, cooperative DSTATE-split.
 
@@ -669,6 +584,13 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
       not depend on ``tx`` or ``ty``), so the warp agrees and the shuffle is not
       reached divergently.
     """
+    # Indexing these per-token loads by coordinate made a 4x1024 prefill 57%
+    # slower, so they keep 32-bit offsets built from the layout's strides.
+    var x_strides = _strides[3](x)
+    var dt_strides = _strides[2](dt)
+    var B_strides = _strides[3](B)
+    var C_strides = _strides[3](C)
+    var y_strides = _strides[3](y)
     var nheads = Int(nheads_dev)
     var head_dim = Int(head_dim_dev)
     var nheads_ngroups_ratio = Int(nheads_ngroups_ratio_dev)
@@ -702,45 +624,38 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
 
     var group_id = h // nheads_ngroups_ratio
 
-    var seq_start = Int(query_start_loc.raw_load(b))
-    var seq_end = Int(query_start_loc.raw_load(b + 1))
+    var seq_start = Int(query_start_loc.load[width=1]((b,)))
+    var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
     var seq_len = seq_end - seq_start
     if seq_len <= 0:
         return
 
     var A_val = (
-        Scalar[kernel_dtype](A.raw_load(UInt32(h * A_strides[0]))).cast[
-            DType.float32
-        ]()
+        Scalar[kernel_dtype](A.load[width=1]((h,))).cast[DType.float32]()
         * LOG2E
     )
 
     var dt_bias_val = Float32(0.0)
     if has_dt_bias:
-        dt_bias_val = Scalar[kernel_dtype](
-            dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-        ).cast[.float32]()
+        dt_bias_val = Scalar[kernel_dtype](dt_bias.load[width=1]((h,))).cast[
+            .float32
+        ]()
 
     var D_val = Float32(0.0)
     if has_D:
-        D_val = Scalar[kernel_dtype](D.raw_load(UInt32(h * D_strides[0]))).cast[
+        D_val = Scalar[kernel_dtype](D.load[width=1]((h,))).cast[
             DType.float32
         ]()
 
     # Load this thread's DSTATE sub-tile of the initial state from ssm_pool.
-    var slot = Int(cache_indices.raw_load(b))
+    var slot = Int(cache_indices.load[width=1]((b,)))
     var state = SIMD[.float32, L](0.0)
     var use_initial = False
     if has_init_tensor:
-        use_initial = Bool(has_initial_state.raw_load(b))
+        use_initial = Bool(has_initial_state.load[width=1]((b,)))
     if active and use_initial:
-        state = ssm_pool.raw_load[width=L, alignment=pool_align](
-            Int(
-                slot * ssm_pool_strides[0]
-                + h * ssm_pool_strides[1]
-                + p * ssm_pool_strides[2]
-                + n_base
-            )
+        state = ssm_pool.load[width=L, alignment=pool_align](
+            (slot, h, p, n_base)
         )
 
     for t in range(seq_len):
@@ -802,14 +717,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     # Write this thread's DSTATE sub-tile of the final state into ssm_pool at
     # slot cache_indices[b] (the DSTATE_SPLIT threads cover disjoint lanes).
     if active:
-        ssm_pool.raw_store[width=L, alignment=pool_align](
-            Int(
-                slot * ssm_pool_strides[0]
-                + h * ssm_pool_strides[1]
-                + p * ssm_pool_strides[2]
-                + n_base
-            ),
-            state,
+        ssm_pool.store[width=L, alignment=pool_align](
+            (slot, h, p, n_base), state
         )
 
 
@@ -832,7 +741,7 @@ struct DStateVecLoader[
     ``Engine``), but is not wired to it here (Apple-scoped change).
 
     Every DRAM <-> register transition on the innermost (dstate) axis has an
-    owner here instead of a ``raw_load`` / ``raw_store`` scattered across the
+    owner here instead of a ``load`` / ``store`` scattered across the
     kernel body -- the owner-per-transition pattern (see ``VarlenConvIO`` in
     ``varlen_causal_conv1d.mojo``, ``Fp4WeightLoader`` in ``matmul2d_fp4.mojo``,
     and ``new-primitives/amd-tile-io-expert-objects``). Three verbs:
@@ -842,9 +751,9 @@ struct DStateVecLoader[
       - ``load_bc``: widen one ``VEC``-lane B and C chunk -> fp32.
       - ``store_state``: round the fp32 state chunks -> ``ssm_pool`` storage.
 
-    Each verb owns the ``VEC``-wide aligned ``raw_load`` / ``raw_store`` and the
+    Each verb owns the ``VEC``-wide aligned ``load`` / ``store`` and the
     scalar fallback, so the recurrence in the kernel body indexes only fp32
-    registers and issues no raw load/store. ``load_state`` / ``store_state``
+    registers and issues no load/store. ``load_state`` / ``store_state``
     each own their contig branch, which wraps the whole ``NCHUNK`` loop (a
     verbatim relocation of the prior inline loops). ``load_bc`` runs inside the
     fused recurrence loop, so it takes the contig decision as a COMPTIME
@@ -878,10 +787,6 @@ struct DStateVecLoader[
     var C: TileTensor[
         Self.kernel_dtype, Self.C_LT, MutUntrackedOrigin, Engine=Self.Engine
     ]
-    # Innermost (dstate) strides for the scalar fallback gather/scatter.
-    var pool_dstate_stride: Int
-    var b_dstate_stride: Int
-    var c_dstate_stride: Int
     # Row-major contiguity of the dstate axis (unit innermost stride). Runtime
     # because strides are runtime; a non-unit stride selects the scalar path.
     var pool_contig: Bool
@@ -907,26 +812,24 @@ struct DStateVecLoader[
             MutUntrackedOrigin,
             Engine=Self.Engine,
         ],
-        pool_dstate_stride: Int,
-        b_dstate_stride: Int,
-        c_dstate_stride: Int,
     ):
         self.ssm_pool = ssm_pool
         self.B = B
         self.C = C
-        self.pool_dstate_stride = pool_dstate_stride
-        self.b_dstate_stride = b_dstate_stride
-        self.c_dstate_stride = c_dstate_stride
-        self.pool_contig = pool_dstate_stride == 1
-        self.bc_contig = (b_dstate_stride == 1) and (c_dstate_stride == 1)
+        self.pool_contig = Int(ssm_pool.layout.stride[3]().value()) == 1
+        self.bc_contig = (Int(B.layout.stride[2]().value()) == 1) and (
+            Int(C.layout.stride[2]().value()) == 1
+        )
 
     @inline(.always)
     def load_state(
         self,
         mut state: Array[SIMD[.float32, Self.VEC], Self.NCHUNK],
-        pool_base: Int,
+        slot: Int,
+        h: Int,
+        p: Int,
     ):
-        """Fill fp32 ``state`` from ``ssm_pool[.., pool_base + n]`` (widening).
+        """Fill fp32 ``state`` from ``ssm_pool[slot, h, p, :]`` (widening).
 
         The load widens to fp32 (a no-op when ``state_dtype`` is fp32); the
         recurrence downstream runs on the fp32 register copy.
@@ -934,15 +837,15 @@ struct DStateVecLoader[
         comptime pool_align = align_of[SIMD[Self.state_dtype, Self.VEC]]()
         if self.pool_contig:
             comptime for c in range(Self.NCHUNK):
-                state[c] = self.ssm_pool.raw_load[
+                state[c] = self.ssm_pool.load[
                     width=Self.VEC, alignment=pool_align
-                ](pool_base + c * Self.VEC).cast[.float32]()
+                ]((slot, h, p, c * Self.VEC)).cast[.float32]()
         else:
             comptime for c in range(Self.NCHUNK):
                 var chunk = SIMD[.float32, Self.VEC](0.0)
                 comptime for i in range(Self.VEC):
-                    chunk[i] = self.ssm_pool.raw_load(
-                        pool_base + (c * Self.VEC + i) * self.pool_dstate_stride
+                    chunk[i] = self.ssm_pool.load[width=1](
+                        (slot, h, p, c * Self.VEC + i)
                     ).cast[.float32]()
                 state[c] = chunk
 
@@ -951,8 +854,8 @@ struct DStateVecLoader[
         c: Int, contig: Bool
     ](
         self,
-        b_base: UInt32,
-        c_base: UInt32,
+        gt: Int,
+        group_id: Int,
         mut b_c: SIMD[.float32, Self.VEC],
         mut c_c: SIMD[.float32, Self.VEC],
     ):
@@ -968,27 +871,29 @@ struct DStateVecLoader[
         """
         comptime bc_align = align_of[SIMD[Self.kernel_dtype, Self.VEC]]()
         comptime if contig:
-            b_c = self.B.raw_load[width=Self.VEC, alignment=bc_align](
-                b_base + UInt32(c * Self.VEC)
+            b_c = self.B.load[width=Self.VEC, alignment=bc_align](
+                (gt, group_id, c * Self.VEC)
             ).cast[.float32]()
-            c_c = self.C.raw_load[width=Self.VEC, alignment=bc_align](
-                c_base + UInt32(c * Self.VEC)
+            c_c = self.C.load[width=Self.VEC, alignment=bc_align](
+                (gt, group_id, c * Self.VEC)
             ).cast[.float32]()
         else:
             comptime for i in range(Self.VEC):
                 var n = c * Self.VEC + i
                 b_c[i] = Scalar[Self.kernel_dtype](
-                    self.B.raw_load(b_base + UInt32(n * self.b_dstate_stride))
+                    self.B.load[width=1]((gt, group_id, n))
                 ).cast[.float32]()
                 c_c[i] = Scalar[Self.kernel_dtype](
-                    self.C.raw_load(c_base + UInt32(n * self.c_dstate_stride))
+                    self.C.load[width=1]((gt, group_id, n))
                 ).cast[.float32]()
 
     @inline(.always)
     def store_state(
         self,
         state: Array[SIMD[.float32, Self.VEC], Self.NCHUNK],
-        pool_wb: Int,
+        slot: Int,
+        h: Int,
+        p: Int,
     ):
         """Round fp32 ``state`` to ``state_dtype`` and write back to ``ssm_pool``.
 
@@ -998,15 +903,15 @@ struct DStateVecLoader[
         comptime pool_align = align_of[SIMD[Self.state_dtype, Self.VEC]]()
         if self.pool_contig:
             comptime for c in range(Self.NCHUNK):
-                self.ssm_pool.raw_store[width=Self.VEC, alignment=pool_align](
-                    pool_wb + c * Self.VEC,
+                self.ssm_pool.store[width=Self.VEC, alignment=pool_align](
+                    (slot, h, p, c * Self.VEC),
                     state[c].cast[Self.state_dtype](),
                 )
         else:
             comptime for c in range(Self.NCHUNK):
                 comptime for i in range(Self.VEC):
-                    self.ssm_pool.raw_store(
-                        pool_wb + (c * Self.VEC + i) * self.pool_dstate_stride,
+                    self.ssm_pool.store[width=1](
+                        (slot, h, p, c * Self.VEC + i),
                         state[c][i].cast[Self.state_dtype](),
                     )
 
@@ -1069,15 +974,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     cache_indices: TileTensor[
         .uint32, cache_indices_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    x_strides: Strides3D,
-    dt_strides: Strides2D,
-    A_strides: Strides1D,
-    B_strides: Strides3D,
-    C_strides: Strides3D,
-    D_strides: Strides1D,
-    dt_bias_strides: Strides1D,
-    y_strides: Strides3D,
-    ssm_pool_strides: Strides4D,
 ):
     """GPU kernel: Mamba-2 SSD varlen in-place scan, Apple-M5 vectorized I/O.
 
@@ -1089,7 +985,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
 
     The only change from v1 is the state / B / C I/O. v1 walks the ``dstate``
     axis with a ``comptime for n in range(DSTATE)`` loop of scalar
-    ``raw_load`` / ``raw_store`` (128 dependent scalar fp32 loads/thread for
+    scalar ``load`` / ``store`` (128 dependent scalar fp32 loads/thread for
     the state read + 128 for B + 128 for C + 128 scalar stores at the served
     decode shape), which is per-thread scalar-load latency bound on M5 (the
     scan realized ~15-17% of HBM at c32, flat across batch). This variant moves
@@ -1165,34 +1061,32 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
 
     var group_id = h // nheads_ngroups_ratio
 
-    var seq_start = Int(query_start_loc.raw_load(b))
-    var seq_end = Int(query_start_loc.raw_load(b + 1))
+    var seq_start = Int(query_start_loc.load[width=1]((b,)))
+    var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
     var seq_len = seq_end - seq_start
     if seq_len <= 0:
         return
 
     var A_val = (
-        Scalar[kernel_dtype](A.raw_load(UInt32(h * A_strides[0]))).cast[
-            DType.float32
-        ]()
+        Scalar[kernel_dtype](A.load[width=1]((h,))).cast[DType.float32]()
         * LOG2E
     )
 
     var dt_bias_val = Float32(0.0)
     if has_dt_bias:
-        dt_bias_val = Scalar[kernel_dtype](
-            dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
-        ).cast[.float32]()
+        dt_bias_val = Scalar[kernel_dtype](dt_bias.load[width=1]((h,))).cast[
+            .float32
+        ]()
 
     var D_val = Float32(0.0)
     if has_D:
-        D_val = Scalar[kernel_dtype](D.raw_load(UInt32(h * D_strides[0]))).cast[
+        D_val = Scalar[kernel_dtype](D.load[width=1]((h,))).cast[
             DType.float32
         ]()
 
     comptime NCHUNK = DSTATE // VEC
     # This loader owns every width=VEC state / B / C DRAM<->register transition
-    # (the raw_load/raw_store + the scalar fallback), so the kernel body below
+    # (the load/store + the scalar fallback), so the kernel body below
     # indexes only fp32 registers. The innermost (dstate) strides pick the
     # vectorized fast path (unit stride, every row-major caller) or the exact
     # v1 scalar fallback (non-unit stride, bit-identical). The B/C `bc_contig`
@@ -1207,39 +1101,32 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         Engine,
         VEC,
         NCHUNK,
-    ](ssm_pool, B, C, ssm_pool_strides[3], B_strides[2], C_strides[2])
+    ](ssm_pool, B, C)
 
     # Per-thread dstate state as native VEC-wide fp32 chunks (see docstring).
     var state = Array[SIMD[.float32, VEC], NCHUNK](
         fill=SIMD[.float32, VEC](0.0)
     )
 
-    var slot = Int(cache_indices.raw_load(b))
+    var slot = Int(cache_indices.load[width=1]((b,)))
     var use_initial = False
     if has_init_tensor:
-        use_initial = Bool(has_initial_state.raw_load(b))
+        use_initial = Bool(has_initial_state.load[width=1]((b,)))
     if use_initial:
-        var pool_base = Int(
-            slot * ssm_pool_strides[0]
-            + h * ssm_pool_strides[1]
-            + p * ssm_pool_strides[2]
-        )
         # Widen to fp32 at the load boundary (no-op when state_dtype is fp32);
         # all recurrence math below runs on the fp32 register copy.
-        loader.load_state(state, pool_base)
+        loader.load_state(state, slot, h, p)
 
     for t in range(seq_len):
         var gt = seq_start + t
 
-        var x_val = Scalar[kernel_dtype](
-            x.raw_load(
-                UInt32(gt * x_strides[0] + h * x_strides[1] + p * x_strides[2])
-            )
-        ).cast[.float32]()
+        var x_val = Scalar[kernel_dtype](x.load[width=1]((gt, h, p))).cast[
+            .float32
+        ]()
 
-        var dt_val = Scalar[kernel_dtype](
-            dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-        ).cast[.float32]()
+        var dt_val = Scalar[kernel_dtype](dt.load[width=1]((gt, h))).cast[
+            .float32
+        ]()
         if has_dt_bias:
             dt_val += dt_bias_val
         if dt_softplus_bool:
@@ -1258,13 +1145,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         # branch measured ~18% slower on M5 (33.6 vs 28.4 us at the decode
         # shape) by interleaving cold scalar-gather code into the hot loop.
         var y_acc = SIMD[.float32, VEC](0.0)
-        var B_base = UInt32(gt * B_strides[0] + group_id * B_strides[1])
-        var C_base = UInt32(gt * C_strides[0] + group_id * C_strides[1])
         if loader.bc_contig:
             comptime for c in range(NCHUNK):
                 var b_c = SIMD[.float32, VEC](0.0)
                 var c_c = SIMD[.float32, VEC](0.0)
-                loader.load_bc[c, True](B_base, C_base, b_c, c_c)
+                loader.load_bc[c, True](gt, group_id, b_c, c_c)
                 var s_c = state[c] * dA + b_c * dt_x
                 state[c] = s_c
                 y_acc += s_c * c_c
@@ -1272,7 +1157,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
             comptime for c in range(NCHUNK):
                 var b_c = SIMD[.float32, VEC](0.0)
                 var c_c = SIMD[.float32, VEC](0.0)
-                loader.load_bc[c, False](B_base, C_base, b_c, c_c)
+                loader.load_bc[c, False](gt, group_id, b_c, c_c)
                 var s_c = state[c] * dA + b_c * dt_x
                 state[c] = s_c
                 y_acc += s_c * c_c
@@ -1281,20 +1166,15 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
         if has_D:
             y_val += D_val * x_val
 
-        y.raw_store(
-            UInt32(gt * y_strides[0] + h * y_strides[1] + p * y_strides[2]),
+        y.store[width=1](
+            (gt, h, p),
             Scalar[kernel_dtype](y_val.cast[kernel_dtype]()),
         )
 
     # Write final state back into ssm_pool at slot cache_indices[b].
-    var pool_wb = Int(
-        slot * ssm_pool_strides[0]
-        + h * ssm_pool_strides[1]
-        + p * ssm_pool_strides[2]
-    )
     # Round to state_dtype only here, at the final write-back (no-op when
     # state_dtype is fp32); the recurrent accumulator itself never leaves fp32.
-    loader.store_state(state, pool_wb)
+    loader.store_state(state, slot, h, p)
 
 
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
@@ -1322,15 +1202,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
     query_start_loc: TileTensor[mut=False, .int32, ...],
     has_initial_state: TileTensor[mut=False, .bool, ...],
     cache_indices: TileTensor[mut=False, .uint32, ...],
-    x_strides: Strides3D,
-    dt_strides: Strides2D,
-    A_strides: Strides1D,
-    B_strides: Strides3D,
-    C_strides: Strides3D,
-    D_strides: Strides1D,
-    dt_bias_strides: Strides1D,
-    y_strides: Strides3D,
-    ssm_pool_strides: Strides4D,
     ctx: Optional[DeviceContext] = None,
 ):
     """CPU reference: Mamba-2 SSD varlen scan with in-place SSM-pool write.
@@ -1375,16 +1246,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
             load the initial state from `ssm_pool[cache_indices[b]]`.
         cache_indices: Slot index per sequence of shape `(batch,)` into
             `ssm_pool` for the initial and final state.
-        x_strides: Strides of `x` along `(total_len, nheads, head_dim)`.
-        dt_strides: Strides of `dt` along `(total_len, nheads)`.
-        A_strides: Strides of `A` along `(nheads,)`.
-        B_strides: Strides of `B` along `(total_len, ngroups, dstate)`.
-        C_strides: Strides of `C` along `(total_len, ngroups, dstate)`.
-        D_strides: Strides of `D` along `(nheads,)`.
-        dt_bias_strides: Strides of `dt_bias` along `(nheads,)`.
-        y_strides: Strides of `y` along `(total_len, nheads, head_dim)`.
-        ssm_pool_strides: Strides of `ssm_pool` along `(max_slots, nheads,
-            head_dim, dstate)`.
         ctx: Device context for the parallel worker pool (defaults to
             `None`).
     """
@@ -1399,61 +1260,47 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
 
         var group_id = h // nheads_ngroups_ratio
 
-        var seq_start = Int(query_start_loc.raw_load(b))
-        var seq_end = Int(query_start_loc.raw_load(b + 1))
+        var seq_start = Int(query_start_loc.load[width=1]((b,)))
+        var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
         var seq_len = seq_end - seq_start
         if seq_len <= 0:
             return
 
         var A_val = (
-            Scalar[kernel_dtype](A.raw_load(UInt32(h * A_strides[0]))).cast[
-                DType.float32
-            ]()
+            Scalar[kernel_dtype](A.load[width=1]((h,))).cast[DType.float32]()
             * LOG2E
         )
 
         var dt_bias_val = Float32(0.0)
         if has_dt_bias:
             dt_bias_val = Scalar[kernel_dtype](
-                dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
+                dt_bias.load[width=1]((h,))
             ).cast[.float32]()
 
         var D_val = Float32(0.0)
         if has_D:
-            D_val = Scalar[kernel_dtype](
-                D.raw_load(UInt32(h * D_strides[0]))
-            ).cast[.float32]()
+            D_val = Scalar[kernel_dtype](D.load[width=1]((h,))).cast[.float32]()
 
-        var slot = Int(cache_indices.raw_load(b))
+        var slot = Int(cache_indices.load[width=1]((b,)))
         var state = SIMD[.float32, MAX_DSTATE](0.0)
         var use_initial = False
         if has_init_tensor:
-            use_initial = Bool(has_initial_state.raw_load(b))
+            use_initial = Bool(has_initial_state.load[width=1]((b,)))
         if use_initial:
             # Read initial state from ssm_pool[slot, h, p, n].
             comptime for n in range(DSTATE):
-                var off = Int(
-                    slot * ssm_pool_strides[0]
-                    + h * ssm_pool_strides[1]
-                    + p * ssm_pool_strides[2]
-                    + n * ssm_pool_strides[3]
-                )
-                state[n] = ssm_pool.raw_load(off)
+                state[n] = ssm_pool.load[width=1]((slot, h, p, n))
 
         for t in range(seq_len):
             var gt = seq_start + t
 
-            var x_val = Scalar[kernel_dtype](
-                x.raw_load(
-                    UInt32(
-                        gt * x_strides[0] + h * x_strides[1] + p * x_strides[2]
-                    )
-                )
-            ).cast[.float32]()
+            var x_val = Scalar[kernel_dtype](x.load[width=1]((gt, h, p))).cast[
+                .float32
+            ]()
 
-            var dt_val = Scalar[kernel_dtype](
-                dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-            ).cast[.float32]()
+            var dt_val = Scalar[kernel_dtype](dt.load[width=1]((gt, h))).cast[
+                .float32
+            ]()
             if has_dt_bias:
                 dt_val += dt_bias_val
             if dt_softplus_bool:
@@ -1466,22 +1313,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
             var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
             comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
-                    B.raw_load(
-                        UInt32(
-                            gt * B_strides[0]
-                            + group_id * B_strides[1]
-                            + n * B_strides[2]
-                        )
-                    )
+                    B.load[width=1]((gt, group_id, n))
                 ).cast[.float32]()
                 C_vals[n] = Scalar[kernel_dtype](
-                    C.raw_load(
-                        UInt32(
-                            gt * C_strides[0]
-                            + group_id * C_strides[1]
-                            + n * C_strides[2]
-                        )
-                    )
+                    C.load[width=1]((gt, group_id, n))
                 ).cast[.float32]()
 
             state = state * dA + B_vals * dt_x
@@ -1490,20 +1325,14 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
             if has_D:
                 y_val += D_val * x_val
 
-            y.raw_store(
-                UInt32(gt * y_strides[0] + h * y_strides[1] + p * y_strides[2]),
+            y.store[width=1](
+                (gt, h, p),
                 Scalar[kernel_dtype](y_val.cast[kernel_dtype]()),
             )
 
         # Write final state into ssm_pool at slot cache_indices[b].
         comptime for n in range(DSTATE):
-            var off = Int(
-                slot * ssm_pool_strides[0]
-                + h * ssm_pool_strides[1]
-                + p * ssm_pool_strides[2]
-                + n * ssm_pool_strides[3]
-            )
-            ssm_pool.raw_store(off, state[n])
+            ssm_pool.store[width=1]((slot, h, p, n), state[n])
 
     sync_parallelize(worker, batch * nheads * head_dim, ctx)
 
@@ -1530,16 +1359,6 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
     final_states: TileTensor[mut=True, .float32, ...],
     query_start_loc: TileTensor[mut=False, .int32, ...],
     has_initial_state: TileTensor[mut=False, .bool, ...],
-    x_strides: Strides3D,
-    dt_strides: Strides2D,
-    A_strides: Strides1D,
-    B_strides: Strides3D,
-    C_strides: Strides3D,
-    D_strides: Strides1D,
-    dt_bias_strides: Strides1D,
-    initial_states_strides: Strides4D,
-    y_strides: Strides3D,
-    final_states_strides: Strides4D,
     ctx: Optional[DeviceContext] = None,
 ):
     """CPU reference for the Mamba-2 SSD varlen prefill scan.
@@ -1558,59 +1377,45 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
 
         var group_id = h // nheads_ngroups_ratio
 
-        var seq_start = Int(query_start_loc.raw_load(b))
-        var seq_end = Int(query_start_loc.raw_load(b + 1))
+        var seq_start = Int(query_start_loc.load[width=1]((b,)))
+        var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
         var seq_len = seq_end - seq_start
         if seq_len <= 0:
             return
 
         var A_val = (
-            Scalar[kernel_dtype](A.raw_load(UInt32(h * A_strides[0]))).cast[
-                DType.float32
-            ]()
+            Scalar[kernel_dtype](A.load[width=1]((h,))).cast[DType.float32]()
             * LOG2E
         )
 
         var dt_bias_val = Float32(0.0)
         if has_dt_bias:
             dt_bias_val = Scalar[kernel_dtype](
-                dt_bias.raw_load(UInt32(h * dt_bias_strides[0]))
+                dt_bias.load[width=1]((h,))
             ).cast[.float32]()
 
         var D_val = Float32(0.0)
         if has_D:
-            D_val = Scalar[kernel_dtype](
-                D.raw_load(UInt32(h * D_strides[0]))
-            ).cast[.float32]()
+            D_val = Scalar[kernel_dtype](D.load[width=1]((h,))).cast[.float32]()
 
         var state = SIMD[.float32, MAX_DSTATE](0.0)
         var use_initial = False
         if has_init_tensor:
-            use_initial = Bool(has_initial_state.raw_load(b))
+            use_initial = Bool(has_initial_state.load[width=1]((b,)))
         if use_initial:
             comptime for n in range(DSTATE):
-                var off = UInt32(
-                    b * initial_states_strides[0]
-                    + h * initial_states_strides[1]
-                    + p * initial_states_strides[2]
-                    + n * initial_states_strides[3]
-                )
-                state[n] = initial_states.raw_load(off)
+                state[n] = initial_states.load[width=1]((b, h, p, n))
 
         for t in range(seq_len):
             var gt = seq_start + t
 
-            var x_val = Scalar[kernel_dtype](
-                x.raw_load(
-                    UInt32(
-                        gt * x_strides[0] + h * x_strides[1] + p * x_strides[2]
-                    )
-                )
-            ).cast[.float32]()
+            var x_val = Scalar[kernel_dtype](x.load[width=1]((gt, h, p))).cast[
+                .float32
+            ]()
 
-            var dt_val = Scalar[kernel_dtype](
-                dt.raw_load(UInt32(gt * dt_strides[0] + h * dt_strides[1]))
-            ).cast[.float32]()
+            var dt_val = Scalar[kernel_dtype](dt.load[width=1]((gt, h))).cast[
+                .float32
+            ]()
             if has_dt_bias:
                 dt_val += dt_bias_val
             if dt_softplus_bool:
@@ -1623,22 +1428,10 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
             var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
             comptime for n in range(DSTATE):
                 B_vals[n] = Scalar[kernel_dtype](
-                    B.raw_load(
-                        UInt32(
-                            gt * B_strides[0]
-                            + group_id * B_strides[1]
-                            + n * B_strides[2]
-                        )
-                    )
+                    B.load[width=1]((gt, group_id, n))
                 ).cast[.float32]()
                 C_vals[n] = Scalar[kernel_dtype](
-                    C.raw_load(
-                        UInt32(
-                            gt * C_strides[0]
-                            + group_id * C_strides[1]
-                            + n * C_strides[2]
-                        )
-                    )
+                    C.load[width=1]((gt, group_id, n))
                 ).cast[.float32]()
 
             state = state * dA + B_vals * dt_x
@@ -1647,18 +1440,12 @@ def mamba2_ssd_chunk_scan_varlen_fwd_cpu[
             if has_D:
                 y_val += D_val * x_val
 
-            y.raw_store(
-                UInt32(gt * y_strides[0] + h * y_strides[1] + p * y_strides[2]),
+            y.store[width=1](
+                (gt, h, p),
                 Scalar[kernel_dtype](y_val.cast[kernel_dtype]()),
             )
 
         comptime for n in range(DSTATE):
-            var off = UInt32(
-                b * final_states_strides[0]
-                + h * final_states_strides[1]
-                + p * final_states_strides[2]
-                + n * final_states_strides[3]
-            )
-            final_states.raw_store(off, state[n])
+            final_states.store[width=1]((b, h, p, n), state[n])
 
     sync_parallelize(worker, batch * nheads * head_dim, ctx)

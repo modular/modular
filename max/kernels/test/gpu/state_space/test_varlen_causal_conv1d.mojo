@@ -17,12 +17,16 @@ from max.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
+    MixedLayout,
     RuntimeLayout,
     TileTensor,
     row_major,
 )
+from std.memory import alloc
 from std.random import rand
 from state_space.varlen_causal_conv1d import (
+    causal_conv1d_varlen_states_cpu,
+    causal_conv1d_varlen_states_gpu,
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
     causal_conv1d_varlen_fwd_gpu,
@@ -177,14 +181,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
     var output_gpu_buf = output_gpu_h
     var output_cpu_buf = output_cpu_h
 
-    # Strides for row-major layout
-    var x_dim_stride: UInt32 = UInt32(total_seqlen)
-    var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = UInt32(width)
-    var weight_width_stride: UInt32 = 1
-    var out_dim_stride: UInt32 = UInt32(total_seqlen)
-    var out_seqlen_stride: UInt32 = 1
-
     var silu_activation = activation == "silu"
     var silu_activation_int8 = Int8(silu_activation)
 
@@ -302,12 +298,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
             has_initial_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            weight_width_stride,
-            out_dim_stride,
-            out_seqlen_stride,
             silu_activation_int8,
             PAD_SLOT_ID,
             Int8(1),  # has_cache_indices
@@ -364,12 +354,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
             has_initial_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            weight_width_stride,
-            out_dim_stride,
-            out_seqlen_stride,
             silu_activation_int8,
             PAD_SLOT_ID,
             Int8(1),  # has_cache_indices
@@ -426,12 +410,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
             has_initial_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            weight_width_stride,
-            out_dim_stride,
-            out_seqlen_stride,
             silu_activation_int8,
             PAD_SLOT_ID,
             Int8(1),  # has_cache_indices
@@ -488,12 +466,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
             has_initial_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            weight_width_stride,
-            out_dim_stride,
-            out_seqlen_stride,
             silu_activation_int8,
             PAD_SLOT_ID,
             Int8(1),  # has_cache_indices
@@ -626,12 +598,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt,
                 conv_states_seqpar_device_tt,
                 output_seqpar_device_tt,
-                x_dim_stride,
-                x_seqlen_stride,
-                weight_dim_stride,
-                weight_width_stride,
-                out_dim_stride,
-                out_seqlen_stride,
                 silu_activation_int8,
                 PAD_SLOT_ID,
                 Int8(1),  # has_cache_indices
@@ -737,12 +703,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
         has_initial_state_cpu_tt,
         conv_states_cpu_tt,
         output_cpu_tt,
-        x_dim_stride,
-        x_seqlen_stride,
-        weight_dim_stride,
-        weight_width_stride,
-        out_dim_stride,
-        out_seqlen_stride,
         silu_activation,
         PAD_SLOT_ID,
         True,  # has_cache_indices
@@ -911,17 +871,6 @@ def run_varlen_causal_conv1d_update_gpu[
     var output_cpu_buf = output_cpu_h
 
     # Strides for row-major layout
-    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var x_dim_stride: UInt32 = UInt32(seqlen)
-    var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = UInt32(width)
-    var weight_width_stride: UInt32 = 1
-    var conv_state_batch_stride: UInt32 = UInt32(dim * state_len)
-    var conv_state_dim_stride: UInt32 = UInt32(state_len)
-    var conv_state_seqlen_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var out_dim_stride: UInt32 = UInt32(seqlen)
-    var out_seqlen_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
     var silu_activation_int8 = Int8(silu_activation)
@@ -1026,17 +975,6 @@ def run_varlen_causal_conv1d_update_gpu[
             cache_seqlens_device_tt,
             conv_state_indices_device_tt,
             output_upd_device_tt,
-            x_batch_stride,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            weight_width_stride,
-            conv_state_batch_stride,
-            conv_state_dim_stride,
-            conv_state_seqlen_stride,
-            out_batch_stride,
-            out_dim_stride,
-            out_seqlen_stride,
             silu_activation_int8,
             PAD_SLOT_ID,
             Int8(1),  # has_conv_state_indices
@@ -1087,17 +1025,6 @@ def run_varlen_causal_conv1d_update_gpu[
             cache_seqlens_device_tt,
             conv_state_indices_device_tt,
             output_upd_device_tt,
-            x_batch_stride,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            weight_width_stride,
-            conv_state_batch_stride,
-            conv_state_dim_stride,
-            conv_state_seqlen_stride,
-            out_batch_stride,
-            out_dim_stride,
-            out_seqlen_stride,
             silu_activation_int8,
             PAD_SLOT_ID,
             Int8(1),  # has_conv_state_indices
@@ -1148,17 +1075,6 @@ def run_varlen_causal_conv1d_update_gpu[
             cache_seqlens_device_tt,
             conv_state_indices_device_tt,
             output_upd_device_tt,
-            x_batch_stride,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            weight_width_stride,
-            conv_state_batch_stride,
-            conv_state_dim_stride,
-            conv_state_seqlen_stride,
-            out_batch_stride,
-            out_dim_stride,
-            out_seqlen_stride,
             silu_activation_int8,
             PAD_SLOT_ID,
             Int8(1),  # has_conv_state_indices
@@ -1209,17 +1125,6 @@ def run_varlen_causal_conv1d_update_gpu[
             cache_seqlens_device_tt,
             conv_state_indices_device_tt,
             output_upd_device_tt,
-            x_batch_stride,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            weight_width_stride,
-            conv_state_batch_stride,
-            conv_state_dim_stride,
-            conv_state_seqlen_stride,
-            out_batch_stride,
-            out_dim_stride,
-            out_seqlen_stride,
             silu_activation_int8,
             PAD_SLOT_ID,
             Int8(1),  # has_conv_state_indices
@@ -1291,17 +1196,6 @@ def run_varlen_causal_conv1d_update_gpu[
         cache_seqlens_cpu_tt,
         conv_state_indices_cpu_tt,
         output_upd_cpu_tt,
-        x_batch_stride,
-        x_dim_stride,
-        x_seqlen_stride,
-        weight_dim_stride,
-        weight_width_stride,
-        conv_state_batch_stride,
-        conv_state_dim_stride,
-        conv_state_seqlen_stride,
-        out_batch_stride,
-        out_dim_stride,
-        out_seqlen_stride,
         silu_activation,
         PAD_SLOT_ID,
         True,  # has_conv_state_indices
@@ -1761,12 +1655,6 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
         has_initial_state_device_tt,
         conv_states_device_tt,
         output_device_tt,
-        UInt32(total_seqlen),  # x_dim_stride
-        UInt32(1),  # x_seqlen_stride
-        UInt32(width),  # weight_dim_stride
-        UInt32(1),  # weight_width_stride
-        UInt32(total_seqlen),  # out_dim_stride
-        UInt32(1),  # out_seqlen_stride
         Int8(0),  # silu_activation ("none")
         PAD_SLOT_ID,
         Int8(1),  # has_cache_indices
@@ -1800,6 +1688,131 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
 
     # The deep row itself must carry the write.
     assert_equal(deep_readback_h.raw_load(0), Scalar[conv_states_dtype](x_val))
+
+
+def run_varlen_states_padded(
+    seq_lengths: IndexList,
+    dim: Int,
+    state_len: Int,
+    x_pad: Int,
+    states_pad: Int,
+    ctx: DeviceContext,
+) raises:
+    """The states kernels read a padded `x` and write padded `states`.
+
+    The padding makes the strides differ from the row-major ones, so the
+    kernels must take them from the tensors' layouts.
+    """
+    comptime dtype = DType.bfloat16
+    var batch = len(seq_lengths)
+    var total = 0
+    for i in range(batch):
+        total += seq_lengths[i]
+    var x_row = dim + x_pad
+    var s_row = state_len + states_pad
+    var states_size = batch * dim * s_row
+    var x_strides = (x_row, 1)
+    var states_strides = (dim * s_row, s_row, 1)
+
+    var x_h = alloc[Scalar[dtype]](total * x_row)
+    rand(x_h, total * x_row)
+    var cu_h = alloc[Int32](batch + 1)
+    cu_h.store(0, Int32(0))
+    var cum = 0
+    for i in range(batch):
+        cum += seq_lengths[i]
+        cu_h.store(i + 1, Int32(cum))
+
+    # Expected: the last state_len tokens of each sequence, zero-padded in
+    # front, as states[b, d, s].
+    var expected = alloc[Scalar[dtype]](states_size)
+    for i in range(states_size):
+        expected.store(i, Scalar[dtype](0))
+    for b in range(batch):
+        var end = Int(cu_h.load(b + 1))
+        var first = max(Int(cu_h.load(b)), end - state_len)
+        for t in range(first, end):
+            for d in range(dim):
+                expected.store(
+                    b * dim * s_row + d * s_row + (state_len - end + t),
+                    x_h.load(t * x_row + d),
+                )
+
+    var cu_tt = TileTensor(cu_h, row_major(batch + 1))
+    var x_tt = TileTensor(x_h, MixedLayout((total, dim), x_strides))
+
+    var cpu_h = alloc[Scalar[dtype]](states_size)
+    for i in range(states_size):
+        cpu_h.store(i, Scalar[dtype](0))
+    var cpu_tt = TileTensor(
+        cpu_h, MixedLayout((batch, dim, state_len), states_strides)
+    )
+    causal_conv1d_varlen_states_cpu[dtype, DType.int32, dtype](
+        total, dim, batch, state_len, x_tt, cu_tt, cpu_tt
+    )
+
+    var x_d = ctx.enqueue_create_buffer[dtype](total * x_row)
+    var cu_d = ctx.enqueue_create_buffer[.int32](batch + 1)
+    var s_d = ctx.enqueue_create_buffer[dtype](states_size)
+    ctx.enqueue_copy(x_d, x_h)
+    ctx.enqueue_copy(cu_d, cu_h)
+    ctx.enqueue_memset(s_d, Scalar[dtype](0))
+    var x_g = TileTensor(x_d, MixedLayout((total, dim), x_strides))
+    var cu_g = TileTensor(cu_d, row_major(batch + 1))
+    var s_g = TileTensor(
+        s_d, MixedLayout((batch, dim, state_len), states_strides)
+    )
+    comptime BLOCK_M = 8
+    comptime BLOCK_N = 16
+    var compiled = ctx.compile_function[
+        causal_conv1d_varlen_states_gpu[
+            dtype,
+            DType.int32,
+            dtype,
+            BLOCK_M,
+            BLOCK_N,
+            x_g.LayoutType,
+            cu_g.LayoutType,
+            s_g.LayoutType,
+            x_g.Engine,
+            cu_g.Engine,
+            s_g.Engine,
+        ]
+    ]()
+    ctx.enqueue_function(
+        compiled,
+        Int32(total),
+        Int32(dim),
+        Int32(batch),
+        Int32(state_len),
+        x_g,
+        cu_g,
+        s_g,
+        grid_dim=(ceildiv(dim, BLOCK_N), ceildiv(state_len, BLOCK_M), batch),
+        block_dim=(BLOCK_N, BLOCK_M),
+    )
+    var gpu_h = alloc[Scalar[dtype]](states_size)
+    ctx.enqueue_copy(gpu_h, s_d)
+    ctx.synchronize()
+
+    for b in range(batch):
+        for d in range(dim):
+            for s in range(state_len):
+                var off = b * dim * s_row + d * s_row + s
+                assert_equal(cpu_h.load(off), expected.load(off))
+                assert_equal(gpu_h.load(off), expected.load(off))
+
+    x_h.free()
+    cu_h.free()
+    expected.free()
+    cpu_h.free()
+    gpu_h.free()
+
+
+def test_varlen_states_padded() raises:
+    with DeviceContext() as ctx:
+        run_varlen_states_padded(Index(5, 1, 9), 40, 3, 7, 5, ctx)
+        run_varlen_states_padded(Index(2, 2), 17, 4, 0, 3, ctx)
 
 
 def main() raises:

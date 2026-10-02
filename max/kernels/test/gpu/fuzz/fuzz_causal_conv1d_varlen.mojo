@@ -28,9 +28,8 @@ from std.math import ceildiv
 from std.memory import alloc
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
-from std.utils.index import IndexList
 
-from layout import TileTensor, row_major
+from layout import MixedLayout, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
@@ -164,11 +163,7 @@ def run_one_case(
     # as "no sequence has an initial state".
     var his_len = 0 if spec.init_mode == 0 else batch
 
-    var x_dim_stride = UInt32(1)
-    var x_seqlen_stride = UInt32(proj_row)
-    var weight_dim_stride = UInt32(WIDTH)
-    var out_dim_stride = UInt32(1)
-    var out_seqlen_stride = UInt32(dim)
+    var x_strides = (proj_row, 1)
 
     var proj_d = ctx.enqueue_create_buffer[dtype](total * proj_row)
     var weight_d = ctx.enqueue_create_buffer[dtype](dim * WIDTH)
@@ -189,7 +184,7 @@ def run_one_case(
     var x_d = proj_d.create_sub_buffer[dtype](
         spec.x_off, total * proj_row - spec.x_off
     )
-    var x_g = TileTensor(x_d, row_major(total, dim))
+    var x_g = TileTensor(x_d, MixedLayout((total, dim), x_strides))
     var weight_g = TileTensor(weight_d, row_major(dim, WIDTH))
     var bias_g = TileTensor(bias_d, row_major(dim))
     var qsl_g = TileTensor(qsl_d, row_major(batch + 1))
@@ -229,6 +224,7 @@ def run_one_case(
             his_g.Engine,
             pool_g.Engine,
             y_g.Engine,
+            channels_last=True,
         ]
         var compiled = ctx.compile_function[kernel]()
         ctx.enqueue_function(
@@ -244,12 +240,6 @@ def run_one_case(
             his_g,
             pool_g,
             y_g,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            UInt32(1),
-            out_dim_stride,
-            out_seqlen_stride,
             Int8(1),
             PAD_SLOT_ID,
             Int8(1),
@@ -292,6 +282,7 @@ def run_one_case(
             his_g.Engine,
             pool_g.Engine,
             y_g.Engine,
+            channels_last=True,
         ]
         var compiled = ctx.compile_function[kernel]()
         ctx.enqueue_function(
@@ -307,12 +298,6 @@ def run_one_case(
             his_g,
             pool_g,
             y_g,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            UInt32(1),
-            out_dim_stride,
-            out_seqlen_stride,
             Int8(1),
             PAD_SLOT_ID,
             Int8(1),
@@ -325,7 +310,9 @@ def run_one_case(
     ctx.synchronize()
 
     if check:
-        var x_t = TileTensor(proj_h + spec.x_off, row_major(total, dim))
+        var x_t = TileTensor(
+            proj_h + spec.x_off, MixedLayout((total, dim), x_strides)
+        )
         var weight_t = TileTensor(weight_h, row_major(dim, WIDTH))
         var bias_t = TileTensor(bias_h, row_major(dim))
         var qsl_t = TileTensor(qsl_h, row_major(batch + 1))
@@ -344,6 +331,7 @@ def run_one_case(
             DType.int32,
             DType.bool,
             dtype,
+            channels_last=True,
         ](
             dim,
             total,
@@ -357,12 +345,6 @@ def run_one_case(
             his_t,
             pool_t,
             y_t,
-            x_dim_stride,
-            x_seqlen_stride,
-            weight_dim_stride,
-            UInt32(1),
-            out_dim_stride,
-            out_seqlen_stride,
             True,
             PAD_SLOT_ID,
             True,
