@@ -153,6 +153,15 @@ public:
   /// skip extension lookups entirely in scopes that have none.
   const mlir::StringAttr extensionsScopeMarker;
 
+  /// Returns the name a scope registers extensions of `targetName` under
+  /// ("extension:<targetName>"). Distinct targets with the same leaf name share
+  /// it, so lookups must still check the extension's target symbol.
+  mlir::StringAttr getExtensionName(llvm::StringRef targetName) const {
+    return mlir::StringAttr::get(extensionsScopeMarker.getContext(),
+                                 llvm::Twine(extensionsScopeMarker.getValue()) +
+                                     targetName);
+  }
+
   /// This is used to efficiently walk MLIR types to find embedded origins.
   CachedOriginFinder cachedOriginFinder;
 

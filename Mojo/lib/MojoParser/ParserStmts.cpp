@@ -4920,8 +4920,8 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
 
   auto loc = translateLocation(nameSMLoc);
 
-  std::string nameStr = "extension:" + targetStructNameAttr.getValue().str();
-  auto nameAttr = StringAttr::get(getContext(), nameStr);
+  StringAttr nameAttr =
+      shared.getExtensionName(targetStructNameAttr.getValue());
 
   // Note that this is using the unique name, not the base name.
   // Further below, we'll still add it to the parent ASTDecl with the base name.
@@ -4948,13 +4948,7 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
     ASTDecl &decl = getDeclResolver().addDecl(
         extensionDeclOp, nameSMLoc, nameAttr, curDeclScope, startCursor,
         getLexer().getCursor(), curIndent);
-
-    // The extension should also be known to its parent as "extension:". Some
-    // places look up that string when they want to find all extensions in a
-    // particular scope.
-    // TODO(MOCO-522): Arcana docs on this.
-    StringAttr extensionsNameAttr = StringAttr::get(getContext(), "extension:");
-    getDeclResolver().aliasDeclInParent(&decl, extensionsNameAttr);
+    getDeclResolver().registerExtensionDecl(decl);
   }
   return success();
 }
