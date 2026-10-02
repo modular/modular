@@ -2,9 +2,18 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
+filegroup(
+    name = "recipe_configs",
+    srcs = glob(
+        ["**/recipes/**/*.yaml"],
+        allow_empty = True,
+    ),
+)
+
 modular_py_library(
     name = "muse_glimmer",
     srcs = glob(["**/*.py"]),
+    data = [":recipe_configs"],
     deps = [
         requirement("huggingface-hub"),
         requirement("numpy"),

@@ -45,7 +45,8 @@ DISABLE: set[str] = set()
 # To add a model, trigger the smoke test with it first:
 # https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
 # then list it below with the HW it passed on. VLMs also go in is_vision_model
-# and reasoning models in is_reasoning_model, both in smoke_test.py.
+# in smoke_test.py, and reasoning models in is_reasoning_model in
+# eval_runner.py.
 # Every entry is exactly one line. The only comment allowed is an existing
 # Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off
@@ -67,6 +68,7 @@ HF_MODELS: Mapping[str, set[str]] = {
     "nvidia/diffusiongemma-26B-A4B-it-NVFP4": DISABLE,
     "nvidia/Gemma-4-31B-IT-NVFP4": _1xB200 | _2xB200,
     "meta-llama/Llama-3.1-8B-Instruct": _1xB200 | _1xMI355,
+    "meta-models/Muse-Glimmer-30B": _1xB200,
     "microsoft/Phi-3.5-mini-instruct": _1xB200 | _1xMI355,
     "microsoft/phi-4": _1xB200 | _1xMI355,
     "MiniMaxAI/MiniMax-M3-MXFP8": _8xMI355,  # TODO(MODELS-1611)
@@ -164,6 +166,7 @@ NIGHTLY_MODELS = frozenset(
         "RadixArk/Qwen3.8-27B-NVFP4__mtp",
         "RadixArk/Qwen3.8-27B-NVFP4__dflash2",
         "deepseek-ai/DeepSeek-V4-Flash-0731__tp2",
+        "meta-models/Muse-Glimmer-30B",
     }
 )
 
