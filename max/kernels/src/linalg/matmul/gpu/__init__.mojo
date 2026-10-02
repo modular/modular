@@ -293,6 +293,78 @@ def matmul_kernel_naive[
     n: Int32,
     k: Int32,
 ):
+    _matmul_kernel_naive_impl[
+        BLOCK_DIM=BLOCK_DIM,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=False,
+        s_type=s_type,
+    ](c, a, b, m, n, k, no_epilogue_fn)
+
+
+@__name(
+    t"matmul_kernel_naive_epilogue_fn_{c_type}_{a_type}_{b_type}_{transpose_b}_{BLOCK_DIM}",
+)
+def matmul_kernel_naive_epilogue_fn[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout_type: TensorLayout,
+    a_layout_type: TensorLayout,
+    b_layout_type: TensorLayout,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    BLOCK_DIM: Int,
+    transpose_b: Bool = False,
+    s_type: DType = get_accum_type[c_type](),
+    c_engine: TensorEngine = DefaultEngine[element_width=1],
+    a_engine: TensorEngine = DefaultEngine[element_width=1],
+    b_engine: TensorEngine = DefaultEngine[element_width=1],
+](
+    c: TileTensor[c_type, c_layout_type, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin, Engine=b_engine],
+    m: Int32,
+    n: Int32,
+    k: Int32,
+    epilogue_fn: EpilogueFnType,
+):
+    _matmul_kernel_naive_impl[
+        BLOCK_DIM=BLOCK_DIM,
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=None,
+        has_epilogue_fn=True,
+        s_type=s_type,
+    ](c, a, b, m, n, k, epilogue_fn)
+
+
+@inline(.always)
+def _matmul_kernel_naive_impl[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout_type: TensorLayout,
+    a_layout_type: TensorLayout,
+    b_layout_type: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    BLOCK_DIM: Int,
+    transpose_b: Bool,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+    s_type: DType,
+](
+    c: TileTensor[c_type, c_layout_type, MutAnyOrigin, Engine=c_engine],
+    a: TileTensor[a_type, a_layout_type, ImmutAnyOrigin, Engine=a_engine],
+    b: TileTensor[b_type, b_layout_type, ImmutAnyOrigin, Engine=b_engine],
+    m: Int32,
+    n: Int32,
+    k: Int32,
+    epilogue_fn: EpilogueFnType,
+):
     var _m = Int(m)
     var _n = Int(n)
     var _k = Int(k)
@@ -321,11 +393,102 @@ def matmul_kernel_naive[
                 rebind[Scalar[a_type]](a[x, i]).cast[s_type]()
                 * rebind[Scalar[b_type]](b[i, y]).cast[s_type]()
             )
-    comptime if elementwise_lambda_fn:
-        comptime elementwise_lambda = elementwise_lambda_fn.value()
-        elementwise_lambda[c_type, 1](Index(x, y), accum.cast[c_type]())
+    comptime if Bool(elementwise_lambda_fn) or has_epilogue_fn:
+        apply_elementwise_epilogue[elementwise_lambda_fn](
+            epilogue_fn, Index(x, y), accum.cast[c_type]()
+        )
     else:
         c[x, y] = accum.cast[c_type]()
+
+
+@inline(.always)
+def enqueue_matmul_kernel_naive[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    transpose_b: Bool,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[mut=False, ...],
+    b: TileTensor[mut=False, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Enqueues `matmul_kernel_naive`, storing through `epilogue_fn` when
+    `has_epilogue_fn` is set.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        transpose_b: Whether `b` is stored as (N, K).
+        elementwise_lambda_fn: Legacy epilogue lambda.
+        has_epilogue_fn: Whether `epilogue_fn` stores the output.
+
+    Args:
+        c: Rank-2 output tensor.
+        a: Rank-2 left operand.
+        b: Rank-2 right operand.
+        epilogue_fn: Value epilogue, used when `has_epilogue_fn` is set.
+        ctx: Device context for the launch.
+    """
+    comptime BLOCK_DIM = 16
+    var shape = GemmShape.get[transpose_b=False](c, a, b)
+    var m = shape.M
+    var n = shape.N
+    var k = shape.K
+
+    comptime if has_epilogue_fn:
+        comptime kernel = matmul_kernel_naive_epilogue_fn[
+            c.dtype,
+            a.dtype,
+            b.dtype,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
+            EpilogueFnType,
+            BLOCK_DIM,
+            transpose_b,
+            c_engine=type_of(c).Engine,
+            a_engine=type_of(a).Engine,
+            b_engine=type_of(b).Engine,
+        ]
+        ctx.enqueue_function[kernel](
+            c,
+            a,
+            b,
+            Int32(m),
+            Int32(n),
+            Int32(k),
+            host_arg=epilogue_fn,
+            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
+    else:
+        comptime kernel = matmul_kernel_naive[
+            c.dtype,
+            a.dtype,
+            b.dtype,
+            type_of(c).LayoutType,
+            type_of(a).LayoutType,
+            type_of(b).LayoutType,
+            BLOCK_DIM,
+            transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            c_engine=type_of(c).Engine,
+            a_engine=type_of(a).Engine,
+            b_engine=type_of(b).Engine,
+        ]
+        ctx.enqueue_function[kernel](
+            c,
+            a,
+            b,
+            Int32(m),
+            Int32(n),
+            Int32(k),
+            grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
+            block_dim=(BLOCK_DIM, BLOCK_DIM),
+        )
 
 
 def _amdgpu_get_mma_shape[dtype: DType, transpose_b: Bool]() -> IndexList[3]:
