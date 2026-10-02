@@ -1200,7 +1200,10 @@ modular_cc_library(
 
 modular_cc_library(
     name = "Transforms",
-    srcs = glob(["lib/Transforms/*.cpp"]),
+    srcs = glob([
+        "lib/Transforms/*.cpp",
+        "lib/Transforms/*.h",
+    ]),
     deps = [
         ":CODialect",
         ":HLCFDialect",
