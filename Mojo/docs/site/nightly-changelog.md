@@ -101,6 +101,18 @@ This version is still a work in progress.
   t.first_of[String]() += "!"
   ```
 
+- `SIMD.from_bytes()` and `SIMD.as_bytes()` now take an `endian` parameter of
+  the new `Endian` type (`Endian.big` or `Endian.little`) instead of the
+  `big_endian` `Bool`:
+
+  ```mojo
+  var port = UInt16.from_bytes[endian=.big](bytes)  # was: big_endian=True
+  ```
+
+  The default is still the target's byte order, which `Endian.native()`
+  returns. `is_big_endian()` and `is_little_endian()` are deprecated; compare
+  `Endian.native()` with `.big` or `.little` instead.
+
 - Hashing a byte sequence is now spelled `hash_bytes()`, which takes an
   `ImmSpan[Byte]`. The pointer-and-length `hash()` overload is deprecated:
 

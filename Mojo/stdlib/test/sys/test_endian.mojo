@@ -10,23 +10,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-#
-# This file is only run on linux targets.
-#
-# ===----------------------------------------------------------------------=== #
 
-from std.sys import CompilationTarget, Endian
-
-from std.testing import assert_equal, assert_false, assert_true
-from std.testing import TestSuite
+from std.sys import Endian
+from std.testing import TestSuite, assert_equal, assert_not_equal
 
 
-def test_os_query() raises:
-    assert_false(CompilationTarget.is_macos())
-    assert_true(CompilationTarget.is_linux())
+def test_equality() raises:
+    assert_equal(Endian.big, Endian.big)
+    assert_equal(Endian.little, Endian.little)
+    assert_not_equal(Endian.big, Endian.little)
 
-    # The supported Linux targets, x86-64 and aarch64, are both little endian.
-    assert_equal(Endian.native(), Endian.little)
+
+def test_write_to() raises:
+    assert_equal(String(Endian.big), "Endian.big")
+    assert_equal(String(Endian.little), "Endian.little")
+
+    __match Endian.native():
+    case .big:
+        assert_equal(String(Endian.native()), "Endian.big")
+    case .little:
+        assert_equal(String(Endian.native()), "Endian.little")
 
 
 def main() raises:

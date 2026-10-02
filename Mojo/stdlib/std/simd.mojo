@@ -53,12 +53,12 @@ from std.math import Ceilable, CeilDivable, Floorable, Truncable
 from std.math.math import _call_ptx_intrinsic, trunc
 from std.sys import (
     CompilationTarget,
+    Endian,
     _RegisterPackType,
     align_of,
     bit_width_of,
     is_amd_gpu,
     is_apple_gpu,
-    is_big_endian,
     is_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -2525,53 +2525,62 @@ struct SIMD[dtype: DType, length: SIMDLength](
     @staticmethod
     def from_bytes[
         *,
-        big_endian: Bool = is_big_endian(),
+        endian: Endian = .native(),
     ](bytes: Array[Byte, _]) -> SIMD[Self.dtype, Self.length]:
         """Converts a byte array to a vector.
+
+        Parameters:
+            endian: The byte order of `bytes`.
 
         Args:
             bytes: The byte array to convert.
 
-        Parameters:
-            big_endian: Whether the byte array is big-endian.
-
         Returns:
-            The integer value.
+            The vector stored in `bytes`.
+
+        Example:
+
+        ```mojo
+        var port = UInt16.from_bytes[endian=.big]([0x1F, 0x90])  # 8080
+        ```
         """
         comptime assert bytes.length == size_of[Self]()
-        var ptr = bytes.unsafe_ptr().unsafe_bitcast[Self]()
-        var value = ptr[]
 
-        comptime if is_big_endian() != big_endian:
+        var value = Pointer(to=bytes).unsafe_bitcast[Self]()[]
+
+        comptime if endian != .native():
             return byte_swap(value)
 
         return value
 
     def as_bytes[
         *,
-        big_endian: Bool = is_big_endian(),
-    ](self) -> Array[Byte, size_of[Self]()]:
-        """Convert the vector to a byte array.
+        endian: Endian = .native(),
+    ](self, out result: Array[Byte, size_of[Self]()]):
+        """Converts the vector to a byte array.
 
         Parameters:
-            big_endian: Whether the byte array should be big-endian.
+            endian: The byte order of the returned bytes.
 
         Returns:
-            The byte array.
+            The vector's bytes, in `endian` byte order.
+
+        Example:
+
+        ```mojo
+        var bytes = UInt16(8080).as_bytes[endian=.big]()  # [0x1F, 0x90]
+        ```
         """
         var value = self
 
-        comptime if is_big_endian() != big_endian:
+        comptime if endian != .native():
             value = byte_swap(value)
 
-        var ptr = Pointer(to=value)
-        var array = Array[Byte, size_of[Self]()](uninitialized=True)
-        unsafe_memcpy(
-            dest=array.unsafe_ptr(),
-            src=ptr.unsafe_bitcast[Byte](),
-            count=size_of[Self](),
+        result = (
+            Pointer(to=value)
+            .unsafe_bitcast[type_of(result)]()
+            .unsafe_take_pointee()
         )
-        return array^
 
     def clamp(self, lower_bound: Self, upper_bound: Self) -> Self:
         """Clamps the values in a SIMD vector to be in a certain range.

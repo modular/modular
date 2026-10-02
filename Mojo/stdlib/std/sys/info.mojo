@@ -21,6 +21,7 @@ print(CompilationTarget.is_x86())
 ```
 """
 
+from std.builtin.variadics import _MLIR
 from std.collections.string.string_span import _get_kgen_string
 from std.ffi import _external_call_const, external_call
 
@@ -1276,6 +1277,7 @@ def is_gpu() -> Bool:
     return is_nvidia_gpu() or is_amd_gpu() or is_apple_gpu()
 
 
+@deprecated("Use `Endian.native() == .little` instead.")
 @inline(.nodebug)
 def is_little_endian[
     target: CompilationTarget = CompilationTarget.current()
@@ -1288,20 +1290,10 @@ def is_little_endian[
     Returns:
         True if the target is little endian and False otherwise.
     """
-    return __mlir_attr[
-        `#kgen.param.identical<`,
-        __mlir_attr[
-            `#kgen.param.expr<target_get_field,`,
-            target._mlir_value,
-            `, "endianness" : !kgen.string`,
-            `> : !kgen.string`,
-        ],
-        `,`,
-        `"little" : !kgen.string`,
-        `> : !kgen.scalar<bool>`,
-    ]
+    return Endian.native[target]() == .little
 
 
+@deprecated("Use `Endian.native() == .big` instead.")
 @inline(.nodebug)
 def is_big_endian[
     target: CompilationTarget = CompilationTarget.current()
@@ -1314,18 +1306,84 @@ def is_big_endian[
     Returns:
         True if the target is big endian and False otherwise.
     """
-    return __mlir_attr[
-        `#kgen.param.identical<`,
-        __mlir_attr[
-            `#kgen.param.expr<target_get_field,`,
-            target._mlir_value,
-            `, "endianness" : !kgen.string`,
-            `> : !kgen.string`,
-        ],
-        `,`,
-        `"big" : !kgen.string`,
-        `> : !kgen.scalar<bool>`,
-    ]
+    return Endian.native[target]() == .big
+
+
+struct Endian(EnumLike, Equatable, TrivialRegisterPassable, Writable):
+    """A byte order: the order in which a multi-byte value's bytes are stored.
+
+    `big` stores the most significant byte first, which is also the network
+    byte order, and `little` stores the least significant byte first.
+    `Endian.native()` returns whichever of the two the compilation target
+    uses, so data in that order needs no conversion.
+
+    Example:
+
+    ```mojo
+    var bytes = UInt16(8080).as_bytes[endian=.big]()  # [0x1F, 0x90]
+    ```
+    """
+
+    var _value: Int8
+
+    @doc_hidden
+    @inline(.always)
+    def __init__(out self, *, _value: Int8):
+        self._value = _value
+
+    @staticmethod
+    @inline(.always)
+    def native[
+        target: CompilationTarget = CompilationTarget.current()
+    ]() -> Self:
+        """Returns the byte order of a compilation target.
+
+        Parameters:
+            target: The target whose byte order to return.
+
+        Returns:
+            `Endian.big` or `Endian.little`.
+        """
+        var is_big: Bool = __mlir_attr[
+            `#kgen.param.identical<`,
+            __mlir_attr[
+                `#kgen.param.expr<target_get_field,`,
+                target._mlir_value,
+                `, "endianness" : !kgen.string`,
+                `> : !kgen.string`,
+            ],
+            `,`,
+            `"big" : !kgen.string`,
+            `> : !kgen.scalar<bool>`,
+        ]
+        return .big if is_big else .little
+
+    comptime big = Self(_value=0)
+    """Most significant byte first."""
+
+    comptime little = Self(_value=1)
+    """Least significant byte first."""
+
+    # Case names are listed in `_value` order, so `_value` is the
+    # discriminant.
+    comptime _enum_case_names = ParameterList.of[
+        "big".value, "little".value
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[
+        AnyType
+    ] = TypeList.splat[2, NoneType].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Endian does not have a payload"
 
 
 @inline(.nodebug)

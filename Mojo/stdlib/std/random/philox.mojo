@@ -37,7 +37,7 @@ from std.random.philox import Random
 ```
 """
 
-from std.sys import is_little_endian
+from std.sys import Endian
 
 from std.math import cos, fma, log, pi, sin, sqrt
 
@@ -145,7 +145,7 @@ struct Random[rounds: Int = 10](Copyable):
             n: Amount to increment the counter by.
         """
         var hilo = bitcast[.uint32, 2](n)
-        var hi, lo = (hilo[1], hilo[0]) if is_little_endian() else (
+        var hi, lo = (hilo[1], hilo[0]) if Endian.native() == .little else (
             hilo[0],
             hilo[1],
         )
