@@ -23,6 +23,7 @@ from std._plugin import CurrentPlugin
 
 
 struct AddressSpace(
+    EnumLike,
     Equatable,
     ImplicitlyCopyable,
     Intable,
@@ -62,6 +63,53 @@ struct AddressSpace(
     """Shared cluster GPU memory address space (NVIDIA-specific)."""
     comptime BUFFER_RESOURCE = AddressSpace(8)
     """Buffer resource GPU memory address space (AMD-specific)."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "GENERIC".value,
+        "GLOBAL".value,
+        "SHARED".value,
+        "CONSTANT".value,
+        "LOCAL".value,
+        "SHARED_CLUSTER".value,
+        "BUFFER_RESOURCE".value,
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType,
+        NoneType,
+        NoneType,
+        NoneType,
+        NoneType,
+        NoneType,
+        NoneType,
+        NoneType,
+    ].values
+    comptime _enum_is_exhaustive = False
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        __match Int(self._value):
+            case 0:
+                return 0
+            case 1:
+                return 1
+            case 3:
+                return 2
+            case 4:
+                return 3
+            case 5:
+                return 4
+            case 7:
+                return 5
+            case 8:
+                return 6
+            case _:
+                return -1
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        comptime assert False, "AddressSpace does not have a payload"
 
     @inline(.nodebug)
     @staticmethod

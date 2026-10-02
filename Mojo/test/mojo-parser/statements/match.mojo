@@ -362,6 +362,51 @@ struct Color(ImplicitlyCopyable, EnumLike):
             pass
 
 
+struct OpenColor(ImplicitlyCopyable, EnumLike):
+    comptime _enum_case_names = ParameterList.of[
+        "red".value, "green".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, NoneType, NoneType
+    ].values
+    comptime _enum_is_exhaustive = False
+
+    def __init__(out self):
+        pass
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        while True:
+            pass
+
+
+# An open enum does not require every known case to appear.
+# CHECK-LABEL: lit.fn @"match_open_enum_partial
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
+def match_open_enum_partial(color: OpenColor):
+    __match color:
+    case .red:
+        case_callee[0]()
+
+
+# Covering every known case does not make the catch-all unreachable.
+# CHECK-LABEL: lit.fn @"match_open_enum_catch_all
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 2
+def match_open_enum_catch_all(color: OpenColor):
+    __match color:
+    case .red:
+        case_callee[1]()
+    case .green:
+        case_callee[1]()
+    case _:
+        case_callee[2]()
+
+
 # CHECK-LABEL: lit.fn @"match_color
 # The three color tags share one discriminant; trailing `_` is unreachable
 # after red/green/blue, so the elif else is `hlcf.unreachable`.

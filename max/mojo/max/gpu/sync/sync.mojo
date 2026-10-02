@@ -498,16 +498,19 @@ def _mbarrier_impl[
         address: Pointer to the memory barrier object location.
     """
 
-    comptime if address_space == .SHARED:
-        llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType](
-            address
-        )
-    elif (address_space == .GLOBAL or address_space == .GENERIC):
-        llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
-            address.unsafe_address_space_cast[.GENERIC]()._get_kgen_pointer()
-        )
-    else:
-        comptime assert False, "invalid address space"
+    comptime __match address_space:
+        case .SHARED:
+            llvm_intrinsic[
+                "llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType
+            ](address)
+        case .GLOBAL | .GENERIC:
+            llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
+                address.unsafe_address_space_cast[
+                    .GENERIC
+                ]()._get_kgen_pointer()
+            )
+        case _:
+            comptime assert False, "invalid address space"
 
 
 @inline(.nodebug)

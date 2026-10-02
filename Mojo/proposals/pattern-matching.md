@@ -292,32 +292,41 @@ subject's type and the pattern command list for each case:
    constructor tags (for example `True`/`False`, `Optional.Some`/`None`). Simple
    root tag / Bool-style equal patterns clear one constructor. A match that
    leaves any constructor open is non-exhaustive; repeating an already-cleared
-   constructor is unreachable.
+   constructor is unreachable. `EnumLike._enum_is_exhaustive` defaults to
+   `True` for this closed-enum behavior.
 
-2. **Products of `EnumLike` leaves.** Tuples and structs whose leaves are all
+2. **Open `EnumLike` roots.** A conforming type can set
+   `_enum_is_exhaustive = False` when `_enum_case_names` lists known
+   alternatives but other values may exist. Known alternatives remain
+   mutually exclusive and duplicate cases are still diagnosed, but covering
+   every known alternative does not make the match exhaustive or a following
+   catch-all unreachable. A product containing an open `EnumLike` leaf is also
+   open.
+
+3. **Products of `EnumLike` leaves.** Tuples and structs whose leaves are all
    `EnumLike` are flattened into a cartesian cell bitset so correlated patterns
    cover the right combinations. Independent per-field bitsets would wrongly
    treat `True, True` plus `False, False` as total for a `Bool × Bool` subject;
    the cell model does not. Omitted struct fields and `_` in a position are
    wildcards over that dimension.
 
-3. **OR patterns.** An `a | b` case expands to a union of alternatives. Each
+4. **OR patterns.** An `a | b` case expands to a union of alternatives. Each
    alternative is covered independently; the case is credited with the union.
    An irrefutable alternative (for example `_` or bind-only) closes the whole
    space.
 
-4. **Enum payload refinements.** Nested tests under a matched constructor
+5. **Enum payload refinements.** Nested tests under a matched constructor
    (for example `Optional.Some(0)`) still credit the **tag** only. v1 treats
    the `EnumLike` tag set as the universe, not the payload domain: `Some(0)`
    plus `None` is exhaustive for `Optional`, and a later `Some(_)` is
    unreachable at tag level.
 
-5. **Oversized products.** If the flattened cell count exceeds a fixed cap
+6. **Oversized products.** If the flattened cell count exceeds a fixed cap
    (currently 1024), the subject is **too complex** to track cell-by-cell. The
    compiler does not silently give up: it warns that exhaustivity cannot be
    checked and requires a catch-all `_` (or other irrefutable case).
 
-6. **Open literal subjects (`Int`, `String`, …).** These are an open universe.
+7. **Open literal subjects (`Int`, `String`, …).** These are an open universe.
    The analysis tracks root equal-literal spellings (`4`, `"foo"`, …) so
    duplicate / already-covered literal cases warn, but covering literals never
    proves exhaustivity and never requires `_` by itself. A trailing irrefutable
@@ -351,6 +360,15 @@ match n:
         ...
     case 1:
         ...
+
+# Open EnumLike: known cases do not cover unknown values.
+match status:
+    case .ready:
+        ...
+    case .stopped:
+        ...
+    case _:
+        ...  # reachable because Status._enum_is_exhaustive is False
 ```
 
 #### Intentional Limitations

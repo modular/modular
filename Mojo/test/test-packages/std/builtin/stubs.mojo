@@ -929,6 +929,7 @@ comptime KGENString = __mlir_type.`!kgen.string`
 trait EnumLike:
     comptime _enum_case_names: _MLIR.KGENParamListType[KGENString]
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType]
+    comptime _enum_is_exhaustive: Bool = True
 
     comptime _enum_elt_type_for_case[id: Int]: AnyType = TypeList[
         Self._enum_case_types
@@ -1327,7 +1328,7 @@ struct VariadicPack[
             pass
 
 
-struct AddressSpace(TrivialRegisterPassable):
+struct AddressSpace(EnumLike, TrivialRegisterPassable):
     """Address space of the pointer."""
 
     # Stored as `SIMDLength` (a raw `index` wrapper) so it folds to a constant
@@ -1348,6 +1349,45 @@ struct AddressSpace(TrivialRegisterPassable):
     comptime CONSTANT = AddressSpace(4)
     comptime LOCAL = AddressSpace(5)
     comptime SHARED_CLUSTER = AddressSpace(7)
+    comptime BUFFER_RESOURCE = AddressSpace(8)
+
+    comptime _enum_case_names = ParameterList.of[
+        "GENERIC".value,
+        "GLOBAL".value,
+        "SHARED".value,
+        "CONSTANT".value,
+        "LOCAL".value,
+        "SHARED_CLUSTER".value,
+        "BUFFER_RESOURCE".value,
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[
+        AnyType
+    ] = TypeList.splat[7, NoneType].values
+    comptime _enum_is_exhaustive = False
+
+    def _get_enum_discriminant(self) -> Int:
+        __match Int(mlir_value=self._value.__mlir_index__()):
+            case 0:
+                return 0
+            case 1:
+                return 1
+            case 3:
+                return 2
+            case 4:
+                return 3
+            case 5:
+                return 4
+            case 7:
+                return 5
+            case 8:
+                return 6
+            case _:
+                return -1
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        comptime assert False, "AddressSpace does not have a payload"
 
     @always_inline("builtin")
     def __mlir_index__(self) -> __mlir_type.index:

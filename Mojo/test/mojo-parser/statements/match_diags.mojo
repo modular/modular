@@ -273,6 +273,37 @@ struct BoolPair:
     var b: Bool
 
 
+struct OpenColor(ImplicitlyCopyable, EnumLike):
+    comptime _enum_case_names = ParameterList.of[
+        "red".value, "green".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, NoneType, NoneType
+    ].values
+    comptime _enum_is_exhaustive = False
+
+    def __init__(out self):
+        pass
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        while True:
+            pass
+
+
+def match_open_enum_duplicate(color: OpenColor):
+    __match color:
+    case .red:
+        pass
+    # expected-warning @+1 {{case is unreachable; 'red' is already covered by a previous case}}
+    case .red:
+        pass
+
+
 def match_exhaustivity_diags(flag: Bool, opt: Optional[Int], pair: BoolPair):
     # Bool is EnumLike: True/False must both be covered (or a catch-all used).
     __match flag: # expected-warning {{'match' is not exhaustive; missing case for 'False'}}

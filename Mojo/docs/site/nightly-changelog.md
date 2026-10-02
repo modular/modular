@@ -56,6 +56,45 @@ This version is still a work in progress.
   subjects such as `Int` and `String` diagnose duplicate literal cases but are
   not required to be exhaustive.
 
+  `EnumLike` types can now set `_enum_is_exhaustive` to `False` when their
+  known cases do not cover every possible value. This is useful for extensible
+  domains such as error codes, where an operating system or library can add
+  values that the type does not know about:
+
+  ```mojo
+  struct ErrorCode(EnumLike):
+      comptime FileNotFound = Self(2)
+      comptime PermissionDenied = Self(13)
+      comptime OutOfMemory = Self(12)
+      comptime TimedOut = Self(110)
+      comptime Unavailable = Self(503)
+
+      comptime _enum_is_exhaustive = False
+
+      # EnumLike metadata and methods omitted.
+      ...
+
+  def describe(error: ErrorCode) -> String:
+      __match error:
+          case .FileNotFound:
+              return "file not found"
+          case .PermissionDenied:
+              return "permission denied"
+          case .OutOfMemory:
+              return "out of memory"
+          case .TimedOut:
+              return "operation timed out"
+          case .Unavailable:
+              return "service unavailable"
+          case _:
+              return "unknown error"
+  ```
+
+  Open enums preserve separate compilation between libraries and their
+  clients. A library can add a known case without breaking previously compiled
+  client matches when they compile against a new version of the package that
+  adds a case they didn't know about.
+
 - The message on a `where` clause can now be written
   `where <condition> else "<message>"`, as the preferred alternative to the
   existing `where (<condition>, "<message>")`, which will be deprecated over
