@@ -15,3 +15,9 @@ from . import foo
 
 def hello() -> Int:
     return foo.hello() + 1
+
+
+def rel_fn() -> Int:
+    from .foo import hello as foo_hello
+
+    return foo_hello()

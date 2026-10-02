@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from struct_only_package import MyStruct
+from simple_struct_package import MyStruct
 
 
 __extension MyStruct:
     def get_speed(self) -> Int:
-        return self.speed
+        return self.value
