@@ -317,3 +317,5 @@ def main() raises:
         # single_group router (Kimi K2.5)
         test_single_group_router[384, 8, 1.0, 1.0](ctx)
         test_single_group_router_raw_score_used_for_weights[384, 8](ctx)
+        # Nemotron-H: a top-k that is not a power of two.
+        test_single_group_router_raw_score_used_for_weights[128, 6](ctx)

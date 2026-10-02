@@ -62,7 +62,7 @@ comptime scores_type = DType.float32
 comptime bias_type = DType.float32
 
 # COMPTIME router geometry (default = MiniMax-M3). n_routed_experts must be a
-# multiple of WARP_SIZE; n_experts_per_tok must be a power of two.
+# multiple of WARP_SIZE.
 comptime N_EXPERTS = get_defined_int["n_routed_experts", 128]()
 comptime TOPK = get_defined_int["n_experts_per_tok", 4]()
 comptime NORM = get_defined_bool["norm_weights", True]()

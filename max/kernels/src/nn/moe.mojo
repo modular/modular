@@ -26,7 +26,7 @@ from std.sys.info import is_amd_gpu, is_nvidia_gpu
 import max.gpu.primitives.warp as warp
 import max.gpu.primitives.block as block
 from max.algorithm import elementwise
-from std.bit import pop_count, log2_floor
+from std.bit import log2_floor, next_power_of_two, pop_count
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
@@ -987,11 +987,9 @@ def single_group_router_kernel[
         num_threads == n_routed_experts
     ), "num_threads must be equal to n_routed_experts"
 
-    # The weight reduction below is a lane_group_sum over n_experts_per_tok
-    # lanes, which must be a power of two.
-    comptime assert (
-        n_experts_per_tok.is_power_of_two()
-    ), "n_experts_per_tok must be a power of two"
+    # Lanes past n_experts_per_tok hold zero weight, so the sum can span the
+    # next power of two.
+    comptime sum_lanes = next_power_of_two(n_experts_per_tok)
 
     var token_idx = Int(block_idx.x)
     var tid = Int(thread_idx.x)
@@ -1028,7 +1026,7 @@ def single_group_router_kernel[
                         (token_idx, sorted_val3.p)
                     )
 
-            var weights_sum = warp.lane_group_sum[num_lanes=n_experts_per_tok](
+            var weights_sum = warp.lane_group_sum[num_lanes=sum_lanes](
                 original_weight
             )
 
@@ -1262,8 +1260,7 @@ def single_group_router[
         scores_type: DType of routing scores and output weights.
         bias_type: DType of the expert correction bias.
         n_routed_experts: Total number of experts (e.g. 384 for Kimi K2.5).
-        n_experts_per_tok: Experts selected per token, must be a power of 2
-            (e.g. 8 for Kimi K2.5).
+        n_experts_per_tok: Experts selected per token (e.g. 8 for Kimi K2.5).
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
         target: The target device to run the kernel on.
