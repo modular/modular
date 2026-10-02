@@ -11,22 +11,4 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Muse Glimmer vision-language architecture (ModuleV3 API)."""
-
-from .arch import muse_glimmer_arch
-from .inputs import MuseGlimmerInputs
-from .model import MuseGlimmerModel
-from .model_config import (
-    MuseGlimmerConfig,
-    MuseGlimmerTextConfig,
-    MuseGlimmerVisionConfig,
-)
-
-__all__ = [
-    "MuseGlimmerConfig",
-    "MuseGlimmerInputs",
-    "MuseGlimmerModel",
-    "MuseGlimmerTextConfig",
-    "MuseGlimmerVisionConfig",
-    "muse_glimmer_arch",
-]
+"""Muse Glimmer layers."""

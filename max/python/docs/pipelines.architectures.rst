@@ -56,6 +56,7 @@ family.
    pipelines.architectures.mistral
    pipelines.architectures.mistral3
    pipelines.architectures.mpnet
+   pipelines.architectures.muse_glimmer
    pipelines.architectures.nemotron_h
    pipelines.architectures.olmo
    pipelines.architectures.olmo2
@@ -126,6 +127,7 @@ Text generation
    ~max.pipelines.architectures.minimax_m2
    ~max.pipelines.architectures.mistral
    ~max.pipelines.architectures.mistral3
+   ~max.pipelines.architectures.muse_glimmer
    ~max.pipelines.architectures.nemotron_h
    ~max.pipelines.architectures.olmo
    ~max.pipelines.architectures.olmo2

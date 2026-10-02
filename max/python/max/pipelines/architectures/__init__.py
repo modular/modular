@@ -276,6 +276,11 @@ def register_all_models() -> None:
             ".mpnet_modulev3",
             "mpnet_modulev3_arch",
         ),
+        _LazyArch(
+            "MuseGlimmerForConditionalGeneration_ModuleV3",
+            ".muse_glimmer",
+            "muse_glimmer_arch",
+        ),
         _LazyArch("OlmoForCausalLM", ".olmo", "olmo_arch"),
         _LazyArch("Olmo2ForCausalLM", ".olmo2", "olmo2_arch"),
         _LazyArch(

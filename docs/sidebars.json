@@ -505,6 +505,7 @@
                 "api/python/pipelines.architectures.mistral",
                 "api/python/pipelines.architectures.mistral3",
                 "api/python/pipelines.architectures.mpnet",
+                "api/python/pipelines.architectures.muse_glimmer",
                 "api/python/pipelines.architectures.nemotron_h",
                 "api/python/pipelines.architectures.olmo",
                 "api/python/pipelines.architectures.olmo2",

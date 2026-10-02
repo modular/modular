@@ -23,3 +23,20 @@ modular_py_test(
         requirement("transformers"),
     ],
 )
+
+modular_py_test(
+    name = "test_weight_adapters",
+    srcs = ["test_weight_adapters.py"],
+    data = [":testdata"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/muse_glimmer",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
