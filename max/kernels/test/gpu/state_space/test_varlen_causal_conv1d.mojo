@@ -15,10 +15,7 @@ from std.math import ceildiv, exp
 
 from max.gpu.host import DeviceContext
 from layout import (
-    Layout,
-    LayoutTensor,
     MixedLayout,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -488,17 +485,11 @@ def run_varlen_causal_conv1d_fwd_gpu[
     # Copy back the serial kernel's final conv_states now, before the CPU
     # reference below mutates the shared host seed buffer (`conv_states_buf`)
     # in place.
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_2d = Layout.row_major[2]()
     var conv_states_serial_heap = ctx.enqueue_create_host_buffer[dtype](
         batch * dim * state_len
     )
-    var conv_states_serial_h = LayoutTensor[dtype, layout_3d, _](
-        conv_states_serial_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
-    )
     with ctx.push_context():
-        ctx.enqueue_copy(conv_states_serial_h.ptr, conv_states_device)
+        ctx.enqueue_copy(conv_states_serial_heap, conv_states_device)
     ctx.synchronize()
 
     # Check the state against the CONTRACT, not against the other kernel: after
@@ -524,7 +515,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
                             (b * dim + d) * state_len + state_len + offset
                         ]
                     assert_almost_equal(
-                        conv_states_serial_h.ptr[(b * dim + d) * state_len + s],
+                        conv_states_serial_heap[(b * dim + d) * state_len + s],
                         expected,
                         rtol=rtol,
                     )
@@ -628,20 +619,12 @@ def run_varlen_causal_conv1d_fwd_gpu[
     var output_seqpar_heap = ctx.enqueue_create_host_buffer[dtype](
         dim * total_seqlen
     )
-    var output_seqpar_h = LayoutTensor[dtype, layout_2d, _](
-        output_seqpar_heap,
-        RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
-    )
     var conv_states_seqpar_heap = ctx.enqueue_create_host_buffer[dtype](
         batch * dim * state_len
     )
-    var conv_states_seqpar_h = LayoutTensor[dtype, layout_3d, _](
-        conv_states_seqpar_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
-    )
     with ctx.push_context():
-        ctx.enqueue_copy(output_seqpar_h.ptr, output_seqpar_device)
-        ctx.enqueue_copy(conv_states_seqpar_h.ptr, conv_states_seqpar_device)
+        ctx.enqueue_copy(output_seqpar_heap, output_seqpar_device)
+        ctx.enqueue_copy(conv_states_seqpar_heap, conv_states_seqpar_device)
     ctx.synchronize()
 
     # Create TileTensors for CPU reference
@@ -725,18 +708,18 @@ def run_varlen_causal_conv1d_fwd_gpu[
     # kernel is the trusted baseline for the recurrent conv_states contract;
     # the CPU reference's conv_states buffer was already overwritten in
     # place by the CPU call above, which is why we compare against the
-    # earlier-captured `conv_states_serial_h` instead).
+    # earlier-captured `conv_states_serial_heap` instead).
     for i in range(flattened_size):
         assert_almost_equal(
-            output_seqpar_h.ptr[i],
+            output_seqpar_heap[i],
             output_cpu_h._storage[i],
             rtol=rtol,
         )
     var state_flattened_size = batch * dim * state_len
     for i in range(state_flattened_size):
         assert_almost_equal(
-            conv_states_seqpar_h.ptr[i],
-            conv_states_serial_h.ptr[i],
+            conv_states_seqpar_heap[i],
+            conv_states_serial_heap[i],
             rtol=rtol,
         )
 

@@ -17,11 +17,7 @@ from std.math import sqrt
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from max.gpu.host import DeviceBuffer
@@ -53,9 +49,6 @@ def run_slot_indexed_gpu[
     (b) only the pool slots named in ``slot_assignments`` are mutated; the
     remaining slots must equal their initial random fill.
     """
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     var key_dim = num_key_heads * KEY_HEAD_DIM
     var value_dim = num_value_heads * VALUE_HEAD_DIM
@@ -66,93 +59,53 @@ def run_slot_indexed_gpu[
     var qkv_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * conv_dim
     )
-    var qkv_h = LayoutTensor[work_dtype, layout_2d, _](
-        qkv_heap,
-        RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
-    )
-    rand[work_dtype](qkv_h.ptr, qkv_h.size())
+    rand[work_dtype](qkv_heap.unsafe_ptr(), len(qkv_heap))
 
     # decay_per_token: [total_seq_len, num_value_heads], values in (0, 1)
     var decay_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * num_value_heads
     )
-    var decay_h = LayoutTensor[work_dtype, layout_2d, _](
-        decay_heap,
-        RuntimeLayout[layout_2d].row_major(
-            Index(total_seq_len, num_value_heads)
-        ),
-    )
-    rand[work_dtype](decay_h.ptr, decay_h.size())
+    rand[work_dtype](decay_heap.unsafe_ptr(), len(decay_heap))
     # Decay in (0, 1): use |x| / (|x| + 1) to keep values in (0, 1)
     for i in range(total_seq_len * num_value_heads):
-        var v = abs(Float32(decay_h.ptr[i]))
-        decay_h.ptr.store(i, Scalar[work_dtype](v / (v + Float32(1.0))))
+        var v = abs(Float32(decay_heap[i]))
+        decay_heap[i] = Scalar[work_dtype](v / (v + Float32(1.0)))
 
     # beta_per_token: [total_seq_len, num_value_heads], values in (0, 1)
     var beta_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * num_value_heads
     )
-    var beta_h = LayoutTensor[work_dtype, layout_2d, _](
-        beta_heap,
-        RuntimeLayout[layout_2d].row_major(
-            Index(total_seq_len, num_value_heads)
-        ),
-    )
-    rand[work_dtype](beta_h.ptr, beta_h.size())
+    rand[work_dtype](beta_heap.unsafe_ptr(), len(beta_heap))
     # Beta in (0, 1): same trick
     for i in range(total_seq_len * num_value_heads):
-        var v = abs(Float32(beta_h.ptr[i]))
-        beta_h.ptr.store(i, Scalar[work_dtype](v / (v + Float32(1.0))))
+        var v = abs(Float32(beta_heap[i]))
+        beta_heap[i] = Scalar[work_dtype](v / (v + Float32(1.0)))
 
     # input_row_offsets: [batch_size + 1]
     var offsets_heap = ctx.enqueue_create_host_buffer[.uint32](batch_size + 1)
-    var offsets_h = LayoutTensor[.uint32, layout_1d, _](
-        offsets_heap,
-        RuntimeLayout[layout_1d].row_major(Index(batch_size + 1)),
-    )
     var cumsum = 0
-    offsets_h.ptr.store(0, UInt32(0))
+    offsets_heap[0] = UInt32(0)
     for b in range(batch_size):
         cumsum += seq_lengths[b]
-        offsets_h.ptr.store(b + 1, UInt32(cumsum))
+        offsets_heap[b + 1] = UInt32(cumsum)
 
     # Pool [max_slots, nv, KD, VD] zeroed so initial state for any slot is 0.
     var pool_size = max_slots * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
     var pool_initial_heap = ctx.enqueue_create_host_buffer[state_dtype](
         pool_size
     )
-    var pool_initial_h = LayoutTensor[state_dtype, layout_4d, _](
-        pool_initial_heap,
-        RuntimeLayout[layout_4d].row_major(
-            Index(max_slots, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM)
-        ),
-    )
     for i in range(pool_size):
-        pool_initial_h.ptr.store(i, Scalar[state_dtype](0))
+        pool_initial_heap[i] = Scalar[state_dtype](0)
 
     var slot_idx_heap = ctx.enqueue_create_host_buffer[.uint32](batch_size)
-    var slot_idx_h = LayoutTensor[.uint32, layout_1d, _](
-        slot_idx_heap,
-        RuntimeLayout[layout_1d].row_major(Index(batch_size)),
-    )
     for b in range(batch_size):
-        slot_idx_h.ptr.store(b, UInt32(slot_assignments[b]))
+        slot_idx_heap[b] = UInt32(slot_assignments[b])
 
     var recur_out_gpu_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * value_dim
     )
-    var recur_out_gpu_h = LayoutTensor[work_dtype, layout_2d, _](
-        recur_out_gpu_heap,
-        RuntimeLayout[layout_2d].row_major(Index(total_seq_len, value_dim)),
-    )
     var pool_after_gpu_heap = ctx.enqueue_create_host_buffer[state_dtype](
         pool_size
-    )
-    var pool_after_gpu_h = LayoutTensor[state_dtype, layout_4d, _](
-        pool_after_gpu_heap,
-        RuntimeLayout[layout_4d].row_major(
-            Index(max_slots, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM)
-        ),
     )
 
     # ── Device buffers ──────────────────────────────────────────────────────
@@ -173,12 +126,12 @@ def run_slot_indexed_gpu[
     )
 
     with ctx.push_context():
-        ctx.enqueue_copy(qkv_device, qkv_h.ptr)
-        ctx.enqueue_copy(decay_device, decay_h.ptr)
-        ctx.enqueue_copy(beta_device, beta_h.ptr)
-        ctx.enqueue_copy(offsets_device, offsets_h.ptr)
-        ctx.enqueue_copy(pool_device, pool_initial_h.ptr)
-        ctx.enqueue_copy(slot_idx_device, slot_idx_h.ptr)
+        ctx.enqueue_copy(qkv_device, qkv_heap)
+        ctx.enqueue_copy(decay_device, decay_heap)
+        ctx.enqueue_copy(beta_device, beta_heap)
+        ctx.enqueue_copy(offsets_device, offsets_heap)
+        ctx.enqueue_copy(pool_device, pool_initial_heap)
+        ctx.enqueue_copy(slot_idx_device, slot_idx_heap)
 
     var qkv_tt = TileTensor(qkv_device, row_major(total_seq_len, conv_dim))
     var decay_tt = TileTensor(
@@ -207,7 +160,7 @@ def run_slot_indexed_gpu[
     var per_token_seqlen_stride: UInt32 = UInt32(num_value_heads)
     var per_token_head_stride: UInt32 = 1
     # Not passed to the kernel (it indexes `pool_tt` via `Coord`), but the
-    # CPU reference below still addresses `pool_ref_h` by hand.
+    # CPU reference below still addresses `pool_ref_heap` by hand.
     var pool_slot_stride: UInt32 = UInt32(
         num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
     )
@@ -262,29 +215,19 @@ def run_slot_indexed_gpu[
         )
 
     with ctx.push_context():
-        ctx.enqueue_copy(recur_out_gpu_h.ptr, recur_out_device)
-        ctx.enqueue_copy(pool_after_gpu_h.ptr, pool_device)
+        ctx.enqueue_copy(recur_out_gpu_heap, recur_out_device)
+        ctx.enqueue_copy(pool_after_gpu_heap, pool_device)
     ctx.synchronize()
 
     # ── CPU reference: scalar implementation of the five-step gated delta rule ─
     # Mirrors the GPU kernel logic exactly, iterating over every
     # (batch, value_head, vd_element) thread and every token.
     var pool_ref_heap = ctx.enqueue_create_host_buffer[state_dtype](pool_size)
-    var pool_ref_h = LayoutTensor[state_dtype, layout_4d, _](
-        pool_ref_heap,
-        RuntimeLayout[layout_4d].row_major(
-            Index(max_slots, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM)
-        ),
-    )
     for i in range(pool_size):
-        pool_ref_h.ptr.store(i, pool_initial_h.ptr[i])
+        pool_ref_heap[i] = pool_initial_heap[i]
 
     var recur_out_ref_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * value_dim
-    )
-    var recur_out_ref_h = LayoutTensor[work_dtype, layout_2d, _](
-        recur_out_ref_heap,
-        RuntimeLayout[layout_2d].row_major(Index(total_seq_len, value_dim)),
     )
 
     var heads_expansion_ratio = num_value_heads // num_key_heads
@@ -292,8 +235,8 @@ def run_slot_indexed_gpu[
 
     for b in range(batch_size):
         var slot = slot_assignments[b]
-        var seq_start = Int(offsets_h.ptr.load(b))
-        var seq_end = Int(offsets_h.ptr.load(b + 1))
+        var seq_start = Int(offsets_heap[b])
+        var seq_end = Int(offsets_heap[b + 1])
         var seq_len = seq_end - seq_start
 
         for vh in range(num_value_heads):
@@ -303,7 +246,7 @@ def run_slot_indexed_gpu[
                 var state_col = SIMD[.float32, KEY_HEAD_DIM](0.0)
                 comptime for kd in range(KEY_HEAD_DIM):
                     state_col[kd] = Float32(
-                        pool_ref_h.ptr[
+                        pool_ref_heap.unsafe_ptr()[
                             UInt32(slot) * pool_slot_stride
                             + UInt32(vh) * pool_value_head_stride
                             + UInt32(kd) * pool_key_dim_stride
@@ -326,13 +269,13 @@ def run_slot_indexed_gpu[
                     var k_sq = Float32(0.0)
                     comptime for kd in range(KEY_HEAD_DIM):
                         var q_val = Float32(
-                            qkv_h.ptr[
+                            qkv_heap.unsafe_ptr()[
                                 token_row
                                 + (q_base + UInt32(kd)) * qkv_channel_stride
                             ]
                         )
                         var k_val = Float32(
-                            qkv_h.ptr[
+                            qkv_heap.unsafe_ptr()[
                                 token_row
                                 + (k_base + UInt32(kd)) * qkv_channel_stride
                             ]
@@ -353,15 +296,17 @@ def run_slot_indexed_gpu[
 
                     # Load V element
                     var v_elem = Float32(
-                        qkv_h.ptr[token_row + v_off_const * qkv_channel_stride]
+                        qkv_heap.unsafe_ptr()[
+                            token_row + v_off_const * qkv_channel_stride
+                        ]
                     )
                     # Load decay and beta
                     var head_off = (
                         UInt32(token) * per_token_seqlen_stride
                         + UInt32(vh) * per_token_head_stride
                     )
-                    var dec = Float32(decay_h.ptr[head_off])
-                    var bet = Float32(beta_h.ptr[head_off])
+                    var dec = Float32(decay_heap[Int(head_off)])
+                    var bet = Float32(beta_heap[Int(head_off)])
 
                     # Step 1+2: decay state, accumulate kv_memory
                     var kv_mem = Float32(0.0)
@@ -378,7 +323,7 @@ def run_slot_indexed_gpu[
                         state_col[kd] = state_col[kd] + k_n[kd] * delta
                         out_val = out_val + state_col[kd] * q_ns[kd]
 
-                    recur_out_ref_h.ptr.store(
+                    recur_out_ref_heap.unsafe_ptr().store(
                         UInt32(token) * output_seqlen_stride
                         + UInt32(vh * VALUE_HEAD_DIM + vd)
                         * output_valuedim_stride,
@@ -387,7 +332,7 @@ def run_slot_indexed_gpu[
 
                 # Write final state column
                 comptime for kd in range(KEY_HEAD_DIM):
-                    pool_ref_h.ptr.store(
+                    pool_ref_heap.unsafe_ptr().store(
                         UInt32(slot) * pool_slot_stride
                         + UInt32(vh) * pool_value_head_stride
                         + UInt32(kd) * pool_key_dim_stride
@@ -398,12 +343,10 @@ def run_slot_indexed_gpu[
     # ── Compare GPU vs CPU ─────────────────────────────────────────────────────
     for i in range(total_seq_len * value_dim):
         assert_almost_equal(
-            recur_out_gpu_h.ptr[i], recur_out_ref_h.ptr[i], rtol=rtol
+            recur_out_gpu_heap[i], recur_out_ref_heap[i], rtol=rtol
         )
     for i in range(pool_size):
-        assert_almost_equal(
-            pool_after_gpu_h.ptr[i], pool_ref_h.ptr[i], rtol=rtol
-        )
+        assert_almost_equal(pool_after_gpu_heap[i], pool_ref_heap[i], rtol=rtol)
 
 
 def test_slot_indexed_single_sequence_targets_chosen_slot() raises:

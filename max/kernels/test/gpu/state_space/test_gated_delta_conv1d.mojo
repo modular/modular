@@ -18,13 +18,9 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TensorEngine,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.random import rand
@@ -209,9 +205,6 @@ def run_slot_indexed_gpu[
     the pool comparison checks the kernel wrote nothing.
     """
     comptime CONV1D_BLOCK_DIM = 128
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     var state_len = KERNEL_SIZE - 1
 
@@ -220,18 +213,10 @@ def run_slot_indexed_gpu[
     var qkv_input_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * conv_dim
     )
-    var qkv_input_h = LayoutTensor[work_dtype, layout_2d, _](
-        qkv_input_heap,
-        RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
-    )
 
     # conv_weight: [conv_dim, KERNEL_SIZE]
     var conv_weight_heap = ctx.enqueue_create_host_buffer[work_dtype](
         conv_dim * KERNEL_SIZE
-    )
-    var conv_weight_h = LayoutTensor[work_dtype, layout_2d, _](
-        conv_weight_heap,
-        RuntimeLayout[layout_2d].row_major(Index(conv_dim, KERNEL_SIZE)),
     )
 
     # Pool: [max_slots, conv_dim, K-1]. Filled with a recognisable pattern so
@@ -241,74 +226,40 @@ def run_slot_indexed_gpu[
     var conv_state_initial_h_heap = ctx.enqueue_create_host_buffer[state_dtype](
         pool_size
     )
-    var conv_state_initial_h = LayoutTensor[state_dtype, layout_3d, _](
-        conv_state_initial_h_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(max_slots, conv_dim, state_len)
-        ),
-    )
-    rand[state_dtype](conv_state_initial_h.ptr, pool_size)
+    rand[state_dtype](conv_state_initial_h_heap.unsafe_ptr(), pool_size)
 
     # Slot assignments device buffer.
     var slot_idx_heap = ctx.enqueue_create_host_buffer[.uint32](batch_size)
-    var slot_idx_h = LayoutTensor[.uint32, layout_1d, _](
-        slot_idx_heap,
-        RuntimeLayout[layout_1d].row_major(Index(batch_size)),
-    )
     for b in range(batch_size):
-        slot_idx_h.ptr.store(b, UInt32(slot_assignments[b]))
+        slot_idx_heap[b] = UInt32(slot_assignments[b])
 
     # input_row_offsets: [batch_size + 1]
     var input_row_offsets_heap = ctx.enqueue_create_host_buffer[.uint32](
         batch_size + 1
     )
-    var input_row_offsets_h = LayoutTensor[.uint32, layout_1d, _](
-        input_row_offsets_heap,
-        RuntimeLayout[layout_1d].row_major(Index(batch_size + 1)),
-    )
     var cumsum = 0
-    input_row_offsets_h.ptr.store(0, UInt32(0))
+    input_row_offsets_heap[0] = UInt32(0)
     for b in range(batch_size):
         cumsum += seq_lengths[b]
-        input_row_offsets_h.ptr.store(b + 1, UInt32(cumsum))
+        input_row_offsets_heap[b + 1] = UInt32(cumsum)
 
     var conv_output_gpu_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * conv_dim
-    )
-    var conv_output_gpu_h = LayoutTensor[work_dtype, layout_2d, _](
-        conv_output_gpu_heap,
-        RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
     )
 
     var pool_after_gpu_heap = ctx.enqueue_create_host_buffer[state_dtype](
         pool_size
     )
-    var pool_after_gpu_h = LayoutTensor[state_dtype, layout_3d, _](
-        pool_after_gpu_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(max_slots, conv_dim, state_len)
-        ),
-    )
 
     var conv_output_ref_gpu_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * conv_dim
     )
-    var conv_output_ref_gpu_h = LayoutTensor[work_dtype, layout_2d, _](
-        conv_output_ref_gpu_heap,
-        RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
-    )
     var pool_after_ref_gpu_heap = ctx.enqueue_create_host_buffer[state_dtype](
         pool_size
     )
-    var pool_after_ref_gpu_h = LayoutTensor[state_dtype, layout_3d, _](
-        pool_after_ref_gpu_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(max_slots, conv_dim, state_len)
-        ),
-    )
 
-    rand[work_dtype](qkv_input_h.ptr, qkv_input_h.size())
-    rand[work_dtype](conv_weight_h.ptr, conv_weight_h.size())
+    rand[work_dtype](qkv_input_heap.unsafe_ptr(), len(qkv_input_heap))
+    rand[work_dtype](conv_weight_heap.unsafe_ptr(), len(conv_weight_heap))
 
     # ── Device buffers ──────────────────────────────────────────────────────
     var qkv_input_device = ctx.enqueue_create_buffer[work_dtype](
@@ -333,12 +284,12 @@ def run_slot_indexed_gpu[
     )
 
     with ctx.push_context():
-        ctx.enqueue_copy(qkv_input_device, qkv_input_h.ptr)
-        ctx.enqueue_copy(conv_weight_device, conv_weight_h.ptr)
-        ctx.enqueue_copy(conv_state_device, conv_state_initial_h.ptr)
-        ctx.enqueue_copy(conv_state_ref_device, conv_state_initial_h.ptr)
-        ctx.enqueue_copy(slot_idx_device, slot_idx_h.ptr)
-        ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_h.ptr)
+        ctx.enqueue_copy(qkv_input_device, qkv_input_heap)
+        ctx.enqueue_copy(conv_weight_device, conv_weight_heap)
+        ctx.enqueue_copy(conv_state_device, conv_state_initial_h_heap)
+        ctx.enqueue_copy(conv_state_ref_device, conv_state_initial_h_heap)
+        ctx.enqueue_copy(slot_idx_device, slot_idx_heap)
+        ctx.enqueue_copy(input_row_offsets_device, input_row_offsets_heap)
 
     var qkv_input_tt = TileTensor(
         qkv_input_device, row_major(total_seq_len, conv_dim)
@@ -370,7 +321,7 @@ def run_slot_indexed_gpu[
     var conv_weight_channel_stride: UInt32 = UInt32(KERNEL_SIZE)
     var conv_weight_offset_stride: UInt32 = 1
     # Not passed to the kernel (it indexes `conv_state_tt` via `Coord`), but
-    # the CPU reference below still addresses `pool_ref_h` by hand.
+    # the CPU reference below still addresses `pool_ref_heap` by hand.
     var conv_state_pool_stride: UInt32 = UInt32(conv_dim * state_len)
     var conv_state_channel_stride: UInt32 = UInt32(state_len)
     var conv_state_window_stride: UInt32 = 1
@@ -457,22 +408,22 @@ def run_slot_indexed_gpu[
         )
 
     with ctx.push_context():
-        ctx.enqueue_copy(conv_output_gpu_h.ptr, conv_output_device)
-        ctx.enqueue_copy(pool_after_gpu_h.ptr, conv_state_device)
-        ctx.enqueue_copy(conv_output_ref_gpu_h.ptr, conv_output_ref_device)
-        ctx.enqueue_copy(pool_after_ref_gpu_h.ptr, conv_state_ref_device)
+        ctx.enqueue_copy(conv_output_gpu_heap, conv_output_device)
+        ctx.enqueue_copy(pool_after_gpu_heap, conv_state_device)
+        ctx.enqueue_copy(conv_output_ref_gpu_heap, conv_output_ref_device)
+        ctx.enqueue_copy(pool_after_ref_gpu_heap, conv_state_ref_device)
     ctx.synchronize()
 
     for i in range(total_seq_len * conv_dim):
-        assert_equal(conv_output_gpu_h.ptr[i], conv_output_ref_gpu_h.ptr[i])
+        assert_equal(conv_output_gpu_heap[i], conv_output_ref_gpu_heap[i])
 
     for i in range(pool_size):
         comptime if WRITE_STATE:
-            assert_equal(pool_after_gpu_h.ptr[i], pool_after_ref_gpu_h.ptr[i])
+            assert_equal(pool_after_gpu_heap[i], pool_after_ref_gpu_heap[i])
         else:
             # The reference always writes the window; here the pool must be
             # unchanged.
-            assert_equal(pool_after_gpu_h.ptr[i], conv_state_initial_h.ptr[i])
+            assert_equal(pool_after_gpu_heap[i], conv_state_initial_h_heap[i])
 
     if not cpu_reference:
         return
@@ -480,29 +431,19 @@ def run_slot_indexed_gpu[
     # ── CPU reference: scalar gather/scatter to the same pool. ───────────────
     # Only the slots referenced by slot_assignments should change.
     var pool_ref_heap = ctx.enqueue_create_host_buffer[state_dtype](pool_size)
-    var pool_ref_h = LayoutTensor[state_dtype, layout_3d, _](
-        pool_ref_heap,
-        RuntimeLayout[layout_3d].row_major(
-            Index(max_slots, conv_dim, state_len)
-        ),
-    )
     for i in range(pool_size):
-        pool_ref_h.ptr.store(i, conv_state_initial_h.ptr[i])
+        pool_ref_heap[i] = conv_state_initial_h_heap[i]
 
     var conv_output_ref_heap = ctx.enqueue_create_host_buffer[work_dtype](
         total_seq_len * conv_dim
-    )
-    var conv_output_ref_h = LayoutTensor[work_dtype, layout_2d, _](
-        conv_output_ref_heap,
-        RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
     )
 
     comptime KERNEL_SIZE_MINUS_ONE = KERNEL_SIZE - 1
 
     for b in range(batch_size):
         var slot = slot_assignments[b]
-        var seq_start = Int(input_row_offsets_h.ptr.load(b))
-        var seq_end = Int(input_row_offsets_h.ptr.load(b + 1))
+        var seq_start = Int(input_row_offsets_heap[b])
+        var seq_end = Int(input_row_offsets_heap[b + 1])
         var seq_len = seq_end - seq_start
 
         for c in range(conv_dim):
@@ -513,7 +454,7 @@ def run_slot_indexed_gpu[
                     var input_value = Float32(0.0)
                     if lookback >= 0:
                         input_value = Float32(
-                            qkv_input_h.ptr[
+                            qkv_input_heap.unsafe_ptr()[
                                 UInt32(seq_start + lookback)
                                 * qkv_input_seqlen_stride
                                 + UInt32(c) * qkv_input_channel_stride
@@ -523,7 +464,7 @@ def run_slot_indexed_gpu[
                         var slot_pos = KERNEL_SIZE_MINUS_ONE + lookback
                         if slot_pos >= 0:
                             input_value = Float32(
-                                pool_ref_h.ptr[
+                                pool_ref_heap.unsafe_ptr()[
                                     UInt32(slot) * conv_state_pool_stride
                                     + UInt32(c) * conv_state_channel_stride
                                     + UInt32(slot_pos)
@@ -531,14 +472,14 @@ def run_slot_indexed_gpu[
                                 ]
                             )
                     var w = Float32(
-                        conv_weight_h.ptr[
+                        conv_weight_heap.unsafe_ptr()[
                             UInt32(c) * conv_weight_channel_stride
                             + UInt32(k) * conv_weight_offset_stride
                         ]
                     )
                     conv_sum = conv_sum + input_value * w
 
-                conv_output_ref_h.ptr.store(
+                conv_output_ref_heap.unsafe_ptr().store(
                     UInt32(seq_start + t) * conv_output_seqlen_stride
                     + UInt32(c) * conv_output_channel_stride,
                     Scalar[work_dtype](conv_sum),
@@ -553,7 +494,7 @@ def run_slot_indexed_gpu[
                     Scalar[state_dtype], KERNEL_SIZE_MINUS_ONE
                 ](fill=0)
                 comptime for j in range(KERNEL_SIZE_MINUS_ONE):
-                    old_window[j] = pool_ref_h.ptr[
+                    old_window[j] = pool_ref_heap.unsafe_ptr()[
                         UInt32(slot) * conv_state_pool_stride
                         + UInt32(c) * conv_state_channel_stride
                         + UInt32(j) * conv_state_window_stride
@@ -564,7 +505,7 @@ def run_slot_indexed_gpu[
                     var v: Scalar[state_dtype] = 0
                     if src >= 0:
                         v = Scalar[state_dtype](
-                            qkv_input_h.ptr[
+                            qkv_input_heap.unsafe_ptr()[
                                 UInt32(seq_start + src)
                                 * qkv_input_seqlen_stride
                                 + UInt32(c) * qkv_input_channel_stride
@@ -574,7 +515,7 @@ def run_slot_indexed_gpu[
                         var old_slot = KERNEL_SIZE_MINUS_ONE + src
                         if old_slot >= 0:
                             v = old_window[old_slot]
-                    pool_ref_h.ptr.store(
+                    pool_ref_heap.unsafe_ptr().store(
                         UInt32(slot) * conv_state_pool_stride
                         + UInt32(c) * conv_state_channel_stride
                         + UInt32(j) * conv_state_window_stride,
@@ -584,15 +525,15 @@ def run_slot_indexed_gpu[
     # ── Compare ──────────────────────────────────────────────────────────────
     for i in range(total_seq_len * conv_dim):
         assert_almost_equal(
-            conv_output_gpu_h.ptr[i],
-            conv_output_ref_h.ptr[i],
+            conv_output_gpu_heap[i],
+            conv_output_ref_heap[i],
             rtol=rtol,
         )
 
     for i in range(pool_size):
         assert_almost_equal(
-            pool_after_gpu_h.ptr[i],
-            pool_ref_h.ptr[i],
+            pool_after_gpu_heap[i],
+            pool_ref_heap[i],
             rtol=rtol,
         )
 
@@ -780,13 +721,13 @@ def run_deferred_window_write(accepted: Int) raises:
     var window_offsets = ctx.enqueue_create_buffer[DType.uint32](2)
     var accepted_offsets = ctx.enqueue_create_buffer[DType.uint32](2)
     var conv_out = ctx.enqueue_create_buffer[DType.float32](WINDOW * CONV_DIM)
-    ctx.enqueue_copy(qkv, qkv_h.unsafe_ptr())
-    ctx.enqueue_copy(weight, weight_h.unsafe_ptr())
-    ctx.enqueue_copy(pool, pool_h.unsafe_ptr())
-    ctx.enqueue_copy(reference_pool, pool_h.unsafe_ptr())
-    ctx.enqueue_copy(slot, slot_h.unsafe_ptr())
-    ctx.enqueue_copy(window_offsets, window_offsets_h.unsafe_ptr())
-    ctx.enqueue_copy(accepted_offsets, accepted_offsets_h.unsafe_ptr())
+    ctx.enqueue_copy(qkv, qkv_h)
+    ctx.enqueue_copy(weight, weight_h)
+    ctx.enqueue_copy(pool, pool_h)
+    ctx.enqueue_copy(reference_pool, pool_h)
+    ctx.enqueue_copy(slot, slot_h)
+    ctx.enqueue_copy(window_offsets, window_offsets_h)
+    ctx.enqueue_copy(accepted_offsets, accepted_offsets_h)
     ctx.synchronize()
 
     _launch_conv[False](
@@ -810,8 +751,8 @@ def run_deferred_window_write(accepted: Int) raises:
     var reference_after = ctx.enqueue_create_host_buffer[DType.float32](
         POOL_ELEMS
     )
-    ctx.enqueue_copy(pool_after.unsafe_ptr(), pool)
-    ctx.enqueue_copy(reference_after.unsafe_ptr(), reference_pool)
+    ctx.enqueue_copy(pool_after, pool)
+    ctx.enqueue_copy(reference_after, reference_pool)
     ctx.synchronize()
     for i in range(POOL_ELEMS):
         assert_equal(

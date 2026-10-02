@@ -14,11 +14,7 @@
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.random import rand
@@ -57,9 +53,6 @@ def run_varlen_selective_scan_fwd_gpu[
         total_length += seq_lengths[i]
 
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     var ssm_states_cpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
     var ssm_states_gpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
@@ -81,53 +74,18 @@ def run_varlen_selective_scan_fwd_gpu[
     var cache_indices_h = alloc[Int32](batch)
     var has_initial_state_h = alloc[Scalar[.bool]](batch)
 
-    # Create LayoutTensors for initialization
-    var u_init = LayoutTensor[dtype, layout_2d](
-        u_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
-    )
-    var delta_init = LayoutTensor[dtype, layout_2d](
-        delta_h, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
-    )
-    var A_init = LayoutTensor[dtype, layout_2d](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_init = LayoutTensor[dtype, layout_3d](
-        B_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(ngroups, dstate, total_length)
-        ),
-    )
-    var C_init = LayoutTensor[dtype, layout_3d](
-        C_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(ngroups, dstate, total_length)
-        ),
-    )
-    var D_init = LayoutTensor[dtype, layout_1d](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_init = LayoutTensor[dtype, layout_2d](
-        z_cpu_h,
-        RuntimeLayout[layout_2d].row_major(
-            Index(dim if has_z else 0, total_length if has_z else 0)
-        ),
-    )
-    var delta_bias_init = LayoutTensor[dtype, layout_1d](
-        delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
-    )
-
     # Initialize input data
-    rand(u_init.ptr, u_init.size())
-    rand(delta_init.ptr, delta_init.size())
-    rand(A_init.ptr, A_init.size())
-    rand(B_init.ptr, B_init.size())
-    rand(C_init.ptr, C_init.size())
+    rand(u_h, dim * total_length)
+    rand(delta_h, dim * total_length)
+    rand(A_h, dim * dstate)
+    rand(B_h, ngroups * dstate * total_length)
+    rand(C_h, ngroups * dstate * total_length)
     if has_D:
-        rand(D_init.ptr, D_init.size())
+        rand(D_h, D_size)
     if has_z:
-        rand(z_init.ptr, z_init.size())
+        rand(z_cpu_h, z_size)
     if has_delta_bias:
-        rand(delta_bias_init.ptr, delta_bias_init.size())
+        rand(delta_bias_h, delta_bias_size)
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
@@ -162,66 +120,6 @@ def run_varlen_selective_scan_fwd_gpu[
     # Copy ssm_states for GPU
     for i in range(batch * dim * dstate):
         ssm_states_gpu_h.store(i, ssm_states_cpu_h.load(i))
-
-    # Create LayoutTensors for CPU kernel
-    var ssm_states_cpu = LayoutTensor[dtype, layout_3d](
-        ssm_states_cpu_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    )
-    var output_cpu = LayoutTensor[dtype, layout_2d](
-        output_cpu_h,
-        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
-    )
-    var u_cpu = LayoutTensor[dtype, layout_2d](
-        u_h,
-        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
-    )
-    var delta_cpu = LayoutTensor[dtype, layout_2d](
-        delta_h,
-        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
-    )
-    var A_cpu = LayoutTensor[dtype, layout_2d](
-        A_h,
-        RuntimeLayout[layout_2d].row_major(Index(dim, dstate)),
-    )
-    var B_cpu = LayoutTensor[dtype, layout_3d](
-        B_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(ngroups, dstate, total_length)
-        ),
-    )
-    var C_cpu = LayoutTensor[dtype, layout_3d](
-        C_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(ngroups, dstate, total_length)
-        ),
-    )
-    var D_cpu = LayoutTensor[dtype, layout_1d](
-        D_h,
-        RuntimeLayout[layout_1d].row_major(Index(D_size)),
-    )
-    var z_cpu = LayoutTensor[dtype, layout_2d](
-        z_cpu_h,
-        RuntimeLayout[layout_2d].row_major(
-            Index(dim if has_z else 0, total_length if has_z else 0)
-        ),
-    )
-    var delta_bias_cpu = LayoutTensor[dtype, layout_1d](
-        delta_bias_h,
-        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
-    )
-    var query_start_loc_cpu = LayoutTensor[.int32, layout_1d](
-        query_start_loc_h,
-        RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
-    )
-    var cache_indices_cpu = LayoutTensor[.int32, layout_1d](
-        cache_indices_h,
-        RuntimeLayout[layout_1d].row_major(Index(batch)),
-    )
-    var has_initial_state_cpu = LayoutTensor[.bool, layout_1d](
-        has_initial_state_h,
-        RuntimeLayout[layout_1d].row_major(Index(batch)),
-    )
 
     # Strides for row-major layout using IndexList types
     var u_strides = IndexList[2](total_length, 1)
@@ -353,58 +251,6 @@ def run_varlen_selective_scan_fwd_gpu[
     ctx.enqueue_copy(cache_indices_d, cache_indices_h)
     ctx.enqueue_copy(has_initial_state_d, has_initial_state_h)
     ctx.enqueue_copy(ssm_states_gpu_d, ssm_states_gpu_h)
-
-    # Create LayoutTensors for GPU kernel
-    var ssm_states_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        ssm_states_gpu_d,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    )
-    var output_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        output_gpu_d,
-        RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
-    )
-    var u_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        u_d, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
-    )
-    var delta_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        delta_d, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
-    )
-    var A_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        A_d, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        B_d,
-        RuntimeLayout[layout_3d].row_major(
-            Index(ngroups, dstate, total_length)
-        ),
-    )
-    var C_gpu_lt = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        C_d,
-        RuntimeLayout[layout_3d].row_major(
-            Index(ngroups, dstate, total_length)
-        ),
-    )
-    var D_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        D_d, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_gpu_lt = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
-        z_d,
-        RuntimeLayout[layout_2d].row_major(
-            Index(dim if has_z else 0, total_length if has_z else 0)
-        ),
-    )
-    var delta_bias_gpu_lt = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
-        delta_bias_d, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
-    )
-    var query_start_loc_gpu_lt = LayoutTensor[.int32, layout_1d, MutAnyOrigin](
-        query_start_loc_d, RuntimeLayout[layout_1d].row_major(Index(batch + 1))
-    )
-    var cache_indices_gpu_lt = LayoutTensor[.int32, layout_1d, MutAnyOrigin](
-        cache_indices_d, RuntimeLayout[layout_1d].row_major(Index(batch))
-    )
-    var _has_initial_state_gpu_lt = LayoutTensor[
-        .bool, layout_1d, MutAnyOrigin
-    ](has_initial_state_d, RuntimeLayout[layout_1d].row_major(Index(batch)))
 
     # Create TileTensors for GPU kernel
     var u_gpu_tt = TileTensor(

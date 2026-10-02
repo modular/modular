@@ -48,7 +48,7 @@ def test_argsort[
     var device_input = ctx.enqueue_create_buffer[dtype](N)
     ctx.enqueue_copy(device_input, input_host_ptr)
 
-    # Create device LayoutTensors
+    # Create device TileTensors
     var device_indices_tensor = TileTensor(
         device_indices,
         row_major(N),

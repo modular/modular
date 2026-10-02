@@ -15,11 +15,7 @@ from std.math import ceildiv
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.random import rand
@@ -34,8 +30,6 @@ from state_space.selective_scan import (
     Strides4D,
 )
 from std.testing import TestSuite, assert_almost_equal
-
-from std.utils.index import Index
 
 
 def main() raises:
@@ -66,10 +60,6 @@ def run_selective_scan_gpu[
     var n_chunks = (seqlen + chunk_size - 1) // chunk_size
 
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     var output_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
     var output_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
@@ -99,57 +89,18 @@ def run_selective_scan_gpu[
     var delta_bias_size = dim if has_delta_bias else 0
     var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
 
-    # Create LayoutTensors for initialization
-    var u_init = LayoutTensor[dtype, layout_3d](
-        u_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var delta_init = LayoutTensor[dtype, layout_3d](
-        delta_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var A_init = LayoutTensor[dtype, layout_2d](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_init = LayoutTensor[dtype, layout_4d](
-        B_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var C_init = LayoutTensor[dtype, layout_4d](
-        C_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var D_init = LayoutTensor[dtype, layout_1d](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_init = LayoutTensor[dtype, layout_3d](
-        z_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
-                batch if has_z else 0,
-                dim if has_z else 0,
-                seqlen if has_z else 0,
-            )
-        ),
-    )
-    var delta_bias_init = LayoutTensor[dtype, layout_1d](
-        delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
-    )
-
     # Initialize input data
-    rand[dtype](u_init.ptr, u_init.size())
-    rand[dtype](delta_init.ptr, delta_init.size())
-    rand[dtype](A_init.ptr, A_init.size())
-    rand[dtype](B_init.ptr, B_init.size())
-    rand[dtype](C_init.ptr, C_init.size())
+    rand[dtype](u_h, batch * dim * seqlen)
+    rand[dtype](delta_h, batch * dim * seqlen)
+    rand[dtype](A_h, dim * dstate)
+    rand[dtype](B_h, batch * n_groups * dstate * seqlen)
+    rand[dtype](C_h, batch * n_groups * dstate * seqlen)
     if has_D:
-        rand[dtype](D_init.ptr, D_init.size())
+        rand[dtype](D_h, D_size)
     if has_z:
-        rand[dtype](z_init.ptr, z_init.size())
+        rand[dtype](z_h, z_size)
     if has_delta_bias:
-        rand[dtype](delta_bias_init.ptr, delta_bias_init.size())
+        rand[dtype](delta_bias_h, delta_bias_size)
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
@@ -197,66 +148,6 @@ def run_selective_scan_gpu[
         ctx.enqueue_copy(z_d, z_h)
     if has_delta_bias:
         ctx.enqueue_copy(delta_bias_d, delta_bias_h)
-
-    # Create LayoutTensors for CPU
-    # Create CPU LayoutTensors with MutAnyOrigin for CPU function (using host memory)
-    var _delta_bias_cpu_buf = LayoutTensor[dtype, layout_1d](
-        delta_bias_h,
-        RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
-    )
-
-    # Create LayoutTensors for GPU
-    var _output_gpu_buf = LayoutTensor[dtype, layout_3d](
-        output_gpu_d,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var _x_gpu_buf = LayoutTensor[dtype, layout_4d](
-        x_gpu_d,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, dim, n_chunks, 2 * dstate)
-        ),
-    )
-    var _out_z_gpu_buf = LayoutTensor[dtype, layout_3d](
-        out_z_gpu_d,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var _u_gpu_buf = LayoutTensor[dtype, layout_3d](
-        u_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var _delta_gpu_buf = LayoutTensor[dtype, layout_3d](
-        delta_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var _A_gpu_buf = LayoutTensor[dtype, layout_2d](
-        A_d, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var _B_gpu_buf = LayoutTensor[dtype, layout_4d](
-        B_d,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var _C_gpu_buf = LayoutTensor[dtype, layout_4d](
-        C_d,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var _D_gpu_buf = LayoutTensor[dtype, layout_1d](
-        D_d, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var _z_gpu_buf = LayoutTensor[dtype, layout_3d](
-        z_d,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
-                batch if has_z else 0,
-                dim if has_z else 0,
-                seqlen if has_z else 0,
-            )
-        ),
-    )
-    var _delta_bias_gpu_buf = LayoutTensor[dtype, layout_1d](
-        delta_bias_d, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
-    )
 
     # Strides for row-major layout
     var output_strides = Strides3D(dim * seqlen, seqlen, 1)
@@ -520,9 +411,6 @@ def run_selective_scan_update_gpu[
     var group_size = dim // n_groups
 
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     var state_in_h = alloc[Scalar[dtype]](batch * dim * dstate)
     var state_out_gpu_h = alloc[Scalar[dtype]](batch * dim * dstate)
@@ -549,52 +437,19 @@ def run_selective_scan_update_gpu[
         output_gpu_h[i] = Scalar[dtype](0)
         output_cpu_h[i] = Scalar[dtype](0)
 
-    # Create LayoutTensors for initialization
-    var state_in_init = LayoutTensor[dtype, layout_3d](
-        state_in_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    )
-    var x_init = LayoutTensor[dtype, layout_2d](
-        x_h, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
-    )
-    var dt_init = LayoutTensor[dtype, layout_2d](
-        dt_h, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
-    )
-    var A_init = LayoutTensor[dtype, layout_2d](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_init = LayoutTensor[dtype, layout_3d](
-        B_h, RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate))
-    )
-    var C_init = LayoutTensor[dtype, layout_3d](
-        C_h, RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate))
-    )
-    var D_init = LayoutTensor[dtype, layout_1d](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_init = LayoutTensor[dtype, layout_2d](
-        z_h,
-        RuntimeLayout[layout_2d].row_major(
-            Index(batch if has_z else 0, dim if has_z else 0)
-        ),
-    )
-    var dt_bias_init = LayoutTensor[dtype, layout_1d](
-        dt_bias_h, RuntimeLayout[layout_1d].row_major(Index(dt_bias_size))
-    )
-
     # Initialize input data
-    rand[dtype](state_in_init.ptr, state_in_init.size())
-    rand[dtype](x_init.ptr, x_init.size())
-    rand[dtype](dt_init.ptr, dt_init.size())
-    rand[dtype](A_init.ptr, A_init.size())
-    rand[dtype](B_init.ptr, B_init.size())
-    rand[dtype](C_init.ptr, C_init.size())
+    rand[dtype](state_in_h, batch * dim * dstate)
+    rand[dtype](x_h, batch * dim)
+    rand[dtype](dt_h, batch * dim)
+    rand[dtype](A_h, dim * dstate)
+    rand[dtype](B_h, batch * n_groups * dstate)
+    rand[dtype](C_h, batch * n_groups * dstate)
     if has_D:
-        rand[dtype](D_init.ptr, D_init.size())
+        rand[dtype](D_h, D_size)
     if has_z:
-        rand[dtype](z_init.ptr, z_init.size())
+        rand[dtype](z_h, z_size)
     if has_delta_bias:
-        rand[dtype](dt_bias_init.ptr, dt_bias_init.size())
+        rand[dtype](dt_bias_h, dt_bias_size)
 
     # Scale A to be negative for stability
     for i in range(dim * dstate):
@@ -636,10 +491,6 @@ def run_selective_scan_update_gpu[
             ctx.enqueue_copy(dt_bias_device, dt_bias_h)
 
     # Create device tensors
-    var _dt_bias_device_tensor = LayoutTensor[dtype, layout_1d](
-        dt_bias_device,
-        RuntimeLayout[layout_1d].row_major(Index(dt_bias_size)),
-    )
 
     # Strides for row-major layout
     var state_out_strides = Strides3D(dim * dstate, dstate, 1)
