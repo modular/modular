@@ -35,7 +35,7 @@ from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
 )
-from max.gpu.host.info import B200
+from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
 
@@ -618,11 +618,10 @@ def run_mamba2_ssd_inplace_vs_functional[
 
     ``DSTATE_SPLIT == 0`` runs the portable v1 one-thread-per-channel kernel
     (``mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu``) with its ``(64, 1, 1)``
-    launch. ``DSTATE_SPLIT > 0`` runs the B200 cooperative-split kernel
+    launch. ``DSTATE_SPLIT > 0`` runs the cooperative-split kernel
     (``..._gpu_dstate_split``) with the production ``(DSTATE_SPLIT,
     CH_PER_BLOCK, 1)`` launch; the split kernel's output must equal the v1 /
-    functional reference. The split path is only invoked from a B200-gated
-    caller because its full-warp shuffle assumes warp width 32.
+    functional reference.
 
     ``state_dtype`` sets the GPU pool's storage dtype (the CPU references stay
     fp32); ``init_state`` seeds the pool and enables has_initial_state so the
@@ -897,7 +896,7 @@ def run_mamba2_ssd_inplace_vs_functional[
     )
 
     comptime if DSTATE_SPLIT > 0:
-        # Mirror the production B200 split launch (kernels.mojo): DSTATE_SPLIT
+        # Mirror the production split launch (kernels.mojo): DSTATE_SPLIT
         # threads cooperate per channel, CH_PER_BLOCK channels per 128-thread
         # block.
         comptime BLOCK_THREADS = 128
@@ -1157,22 +1156,20 @@ def test_mamba2_ssd_inplace_vs_functional_production() raises:
 
 
 def test_mamba2_ssd_inplace_dstate_split_vs_functional() raises:
-    """B200 cooperative DSTATE-split kernel: output must equal the functional
+    """Cooperative DSTATE-split kernel: output must equal the functional
     reference across the DSTATE_SPLIT factors that the wrapper may pick.
 
-    Gated to B200 (sm_100) because the split path uses a full-warp shuffle that
-    assumes warp width 32; on AMD (wavefront 64) the split kernel is neither
-    compiled nor launched, so this test is a no-op there (the v1 correctness
-    tests above still cover AMD). Sweeps the production 96h/8g/dstate128 grouping
-    plus the exact seqlen-1 decode shape the split targets, over DSTATE_SPLIT in
-    {2, 4, 8} (8 = the production wrapper choice; 2/4 exercise other tile widths
+    Runs on every CUDA and HIP GPU, where the wrapper dispatches the split
+    kernel. Sweeps the production 96h/8g/dstate128 grouping plus the exact
+    seqlen-1 decode shape the split targets, over DSTATE_SPLIT in {2, 4, 8}
+    (8 = the production wrapper choice; 2/4 exercise other tile widths
     L = DSTATE / DSTATE_SPLIT).
     """
     with DeviceContext() as ctx:
         if not ctx.is_compatible():
             return
 
-        comptime if ctx.default_device_info == B200:
+        comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
             # Production grouping, ragged batch.
             run_mamba2_ssd_inplace_vs_functional[.bfloat16, 128, 2](
                 nheads=96,

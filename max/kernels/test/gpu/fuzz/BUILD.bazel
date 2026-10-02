@@ -117,7 +117,7 @@ mojo_test(
     ],
 )
 
-# Target: B200 Mamba-2 SSD scan (`mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split`),
+# Target: split Mamba-2 SSD scan (`mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split`),
 # the Nemotron-H SSM layer. Decode and short ragged prefill over strided x/B/C/dt
 # views, scattered `cache_indices`, and a random mix of initial states. DSTATE is
 # compile-time (`-D ssd_dstate=16|64|128|256`); `ref` (--check 1) checks y and the
@@ -138,10 +138,11 @@ mojo_test(
         "gpu",
         "manual",
     ],
-    target_compatible_with = [
-        "//:has_gpu",
-        "//:b200_gpu",
-    ],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//max/kernels/src/state_space",
         "@mojo//:std",

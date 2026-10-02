@@ -626,14 +626,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
 ):
     """GPU kernel: Mamba-2 SSD varlen in-place scan, cooperative DSTATE-split.
 
-    NVIDIA B200 (sm_100) decode-occupancy variant. Numerically equivalent to
-    ``mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu`` (the portable v1 kernel);
-    it is gated on B200 in the wrapper because its output reduction uses a
-    ``lane_group_sum`` full-warp shuffle butterfly and a 2D
-    ``(DSTATE_SPLIT, CH_PER_BLOCK)`` block that assume a warp width of 32. On
-    AMD (wavefront width 64) the lane-group layout is invalid, so AMD/non-B200
-    runs the v1 kernel instead (this is why the round-2 split was reverted in
-    07c5e0b7533; the gate is the portable restore).
+    The production kernel on CUDA and HIP GPUs. Numerically equivalent to
+    ``mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu`` (the portable v1 kernel).
+    Each ``DSTATE_SPLIT`` lane group is contiguous and ``DSTATE_SPLIT``
+    divides 32, so the ``lane_group_sum`` reduction stays inside one warp on
+    both warp-32 and wavefront-64 devices.
 
     Grid: (ceildiv(head_dim, CH_PER_BLOCK), nheads, batch), where one block
     holds ``block_dim.y`` head_dim channels and ``block_dim.x == DSTATE_SPLIT``

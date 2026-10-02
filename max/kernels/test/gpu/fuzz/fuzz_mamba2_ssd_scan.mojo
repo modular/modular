@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-# Fuzz target: the B200 Mamba-2 SSD scan
+# Fuzz target: the split Mamba-2 SSD scan
 # (`mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split`).
 #
 # Covers decode (one token per sequence) and short ragged prefill, with the
