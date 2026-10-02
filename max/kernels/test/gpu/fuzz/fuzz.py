@@ -181,6 +181,21 @@ _TARGETS: dict[str, FuzzTarget] = {
         ),
         default_oracle="ref",
     ),
+    "causal_conv1d_varlen": FuzzTarget(
+        name="causal_conv1d_varlen",
+        bazel_target="//max/kernels/test/gpu/fuzz:fuzz_causal_conv1d_varlen.mojo.test",
+        binary=(
+            "bazel-bin/max/kernels/test/gpu/fuzz/"
+            "fuzz_causal_conv1d_varlen.mojo.test"
+        ),
+        description=(
+            "Varlen causal conv1d (Nemotron-H conv, channels last): decode +"
+            " ragged prefill over a column-range input view, scattered slots"
+            " and mixed initial states; ref checks the output and the whole"
+            " state pool vs the CPU reference"
+        ),
+        default_oracle="ref",
+    ),
     "gemv_split_k": FuzzTarget(
         name="gemv_split_k",
         bazel_target="//max/kernels/test/gpu/fuzz:fuzz_gemv_split_k.mojo.test",

@@ -23,6 +23,7 @@ build_test(
     targets = [
         ":fuzz_block_scaled_fp4.mojo.test",
         ":fuzz_block_scaled_mxfp8.mojo.test",
+        ":fuzz_causal_conv1d_varlen.mojo.test",
         ":fuzz_ep_combine.mojo.test",
         ":fuzz_fused_qk_rms_norm.mojo.test",
         ":fuzz_fused_qk_rope.mojo.test",
@@ -141,6 +142,34 @@ mojo_test(
         "//:has_gpu",
         "//:b200_gpu",
     ],
+    deps = [
+        "//max/kernels/src/state_space",
+        "@mojo//:std",
+    ],
+)
+
+# Target: varlen causal conv1d (Nemotron-H conv, channels last). The input is a
+# column range of a wider row, like a slice of a fused in_proj output. Decode
+# and ragged prefill, scattered `cache_indices`, a random mix of initial states. `ref`
+# (--check 1) checks the output and the whole conv-state pool against the CPU
+# reference.
+mojo_test(
+    name = "fuzz_causal_conv1d_varlen.mojo.test",
+    size = "large",
+    srcs = [
+        "_fuzz.mojo",
+        "fuzz_causal_conv1d_varlen.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "fuzz_causal_conv1d_varlen.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max/kernels/src/state_space",
         "@mojo//:std",
