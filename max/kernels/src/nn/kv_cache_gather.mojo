@@ -31,7 +31,7 @@ from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu
 
 from kv_cache.types import KVCacheT
-from layout import Coord, LayoutTensor
+from layout import Coord, TileTensor
 from std.utils import IndexList
 
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -43,9 +43,9 @@ def kv_cache_gather_rows_ragged[
     //,
     target: StaticString,
 ](
-    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    slots: LayoutTensor[mut=False, .int32, address_space=.GENERIC, ...],
-    row_offsets: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    slots: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    row_offsets: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     cache: cache_t,
     ctx: DeviceContext,
 ) raises:
@@ -72,51 +72,33 @@ def kv_cache_gather_rows_ragged[
     comptime assert (
         cache_t.kv_params.num_heads == 1
     ), "gather_rows reads caches that hold one head per slot"
-    comptime assert output.layout.rank() == 3 and slots.layout.rank() == 2
-    comptime assert row_offsets.layout.rank() == 1
+    comptime assert output.flat_rank == 3 and slots.flat_rank == 2
+    comptime assert row_offsets.flat_rank == 1
 
-    var num_rows = slots.dim(0)
-    var num_slots = slots.dim(1)
+    var num_rows = Int(slots.dim[0]())
+    var num_slots = Int(slots.dim[1]())
     debug_assert(
-        Int(output.runtime_layout.stride.value[2]) == 1,
+        Int(output.dynamic_stride(2)) == 1,
         "output must be contiguous along head_dim",
     )
     if num_rows == 0 or num_slots == 0:
         return
 
-    var out_ptr = rebind[Pointer[Scalar[cache_t.dtype], MutAnyOrigin]](
-        output.ptr
-    )
-    var slots_ptr = rebind[Pointer[Int32, MutAnyOrigin]](slots.ptr)
-    var out_stride0 = Int(output.runtime_layout.stride.value[0])
-    var out_stride1 = Int(output.runtime_layout.stride.value[1])
-    var slots_stride0 = Int(slots.runtime_layout.stride.value[0])
-    var slots_stride1 = Int(slots.runtime_layout.stride.value[1])
-
     # Same closure form as `kv_cache_store_ragged`: a KV cache view cannot be
     # captured by a unified closure yet.
     @__parameter
-    @__copy_capture(
-        cache,
-        row_offsets,
-        out_ptr,
-        slots_ptr,
-        out_stride0,
-        out_stride1,
-        slots_stride0,
-        slots_stride1,
-    )
+    @__copy_capture(cache, row_offsets, output, slots)
     def copy_row[width: Int, alignment: Int = 1](idx: Coord) capturing:
         var r = Int(idx[0].value())
         var j = Int(idx[1].value())
         var d = Int(idx[2].value())
         var b = get_batch_from_row_offsets(row_offsets, r)
-        var slot = Int(
-            slots_ptr[unsafe_offset=r * slots_stride0 + j * slots_stride1]
-        )
-        out_ptr.unsafe_store(
-            r * out_stride0 + j * out_stride1 + d,
-            cache.load[width=width](b, 0, slot, d),
+        var slot = Int(slots[r, j])
+        # `dtype == cache_t.dtype` is asserted above; the two are still
+        # distinct symbols to the type checker.
+        output.store[width=width, alignment=alignment](
+            (r, j, d),
+            rebind[SIMD[dtype, width]](cache.load[width=width](b, 0, slot, d)),
         )
 
     comptime simd_width = (

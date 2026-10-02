@@ -58,6 +58,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     UNKNOWN_VALUE,
+    row_major,
 )
 from layout.tile_tensor import TileTensor
 
@@ -1590,14 +1591,8 @@ def blackwell_tma_umma_warp_specialized_kernel[
     # rather than taken as a host scalar. (`[0]` = max tokens, unused here.)
     var num_active_experts = Int(expert_usage_stats[1])
 
-    comptime _offsets_layout = Layout.row_major(UNKNOWN_VALUE)
-    var b_offsets_tensor = LayoutTensor[
-        .uint32,
-        _offsets_layout,
-        ImmutAnyOrigin,
-    ](
-        b_offsets,
-        RuntimeLayout[_offsets_layout].row_major(Index(num_active_experts + 1)),
+    var b_offsets_tensor = TileTensor(
+        ptr=b_offsets, layout=row_major(Coord(num_active_experts + 1))
     )
     var scheduler = TileScheduler[
         static_MN=expert_m,
@@ -1809,11 +1804,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
                         transpose_c=transpose_c,
                     ](
                         work_tile_coord=(Int(work_info.m), Int(work_info.n)),
-                        group_end_idx=rebind[UInt32](
-                            scheduler.group_offsets[
-                                Int(scheduler.current_group_idx + 1)
-                            ]
-                        ),
+                        group_end_idx=scheduler.group_offsets[
+                            Int(scheduler.current_group_idx + 1)
+                        ],
                     )
                 else:
                     # c_stride == c_N == expert_m for contiguous row-major C.
@@ -1824,11 +1817,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
                     ](
                         c_ptr,
                         (work_info.m, work_info.n),
-                        rebind[UInt32](
-                            scheduler.group_offsets[
-                                Int(scheduler.current_group_idx + 1)
-                            ]
-                        ),
+                        scheduler.group_offsets[
+                            Int(scheduler.current_group_idx + 1)
+                        ],
                     )
                 work_info = scheduler.fetch_next_work()
                 continue
@@ -1857,11 +1848,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
                 accum_empty_mbar,
                 tmem_addr,
                 work_tile_coord=(Int(work_info.m), Int(work_info.n)),
-                group_end_idx=rebind[UInt32](
-                    scheduler.group_offsets[
-                        Int(scheduler.current_group_idx + 1)
-                    ]
-                ),
+                group_end_idx=scheduler.group_offsets[
+                    Int(scheduler.current_group_idx + 1)
+                ],
                 elect_one_warp=elect_one_warp,
                 M=mnk[0],
                 N=mnk[1],

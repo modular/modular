@@ -21,7 +21,13 @@ iteration strategies used by prefill and decode kernels.
 from std.utils import StaticTuple
 from std.math import align_down, iota, ceildiv
 from std.sys import is_nvidia_gpu
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout import (
+    ImmTileTensor,
+    Layout,
+    LayoutTensor,
+    TensorLayout,
+    UNKNOWN_VALUE,
+)
 from std.collections import OptionalReg
 from std.utils.index import IndexList, Index
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -1628,7 +1634,7 @@ struct SlidingWindowNonCausalMask[window_size: Int](
 # ===-----------------------------------------------------------------------===#
 
 
-struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
+struct CausalPaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
     MHAMask, TrivialRegisterPassable
 ):
     """Causal mask combined with padding: a position (seq_id, head, q, k) is
@@ -1645,7 +1651,7 @@ struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
     comptime mask_safe_out_of_bounds: Bool = True
     comptime check_mask_during_decoding: Bool = True
 
-    var valid_lengths: LayoutTensor[.uint32, Self.layout_, Self.origin_]
+    var valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_]
 
     comptime device_type: AnyType = Self
 
@@ -1664,7 +1670,7 @@ struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
 
     def __init__(
         out self,
-        valid_lengths: LayoutTensor[.uint32, Self.layout_, Self.origin_],
+        valid_lengths: ImmTileTensor[.uint32, Self.LayoutType, Self.origin_],
     ):
         self.valid_lengths = valid_lengths
 
@@ -1685,7 +1691,9 @@ struct CausalPaddingMask[layout_: Layout, origin_: ImmOrigin](
 
         comptime index_type = coord.element_type
         var k_idx = coord[3]
-        var valid_len = Scalar[index_type](Int(self.valid_lengths[coord[0]]))
+        var valid_len = Scalar[index_type](
+            Int(self.valid_lengths[Int(coord[0])])
+        )
         var k_positions = iota[index_type, width](Scalar[index_type](k_idx))
 
         return k_positions.lt(valid_len).select(causal_result, MASK_VALUE)

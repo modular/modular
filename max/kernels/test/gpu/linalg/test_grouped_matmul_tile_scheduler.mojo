@@ -13,20 +13,30 @@
 
 from max.gpu import block_idx
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import (
+    ComptimeInt,
+    ImmTileTensor,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+)
 from linalg.grouped_matmul_tile_scheduler import TileScheduler
 from std.utils.index import Index
 
 
 def test_kernel[
-    swizzle: Bool, layout: Layout
-](group_offsets: LayoutTensor[.uint32, layout, MutAnyOrigin]):
+    swizzle: Bool, num_offsets: Int
+](
+    group_offsets: ImmTileTensor[
+        .uint32, RowMajorLayout[ComptimeInt[num_offsets]], ImmutAnyOrigin
+    ]
+):
     var scheduler = TileScheduler[
         static_MN=20,
         tile_shape=Index(4, 8, 16),
         cluster=Index(1, 1, 1),
         swizzle=swizzle,
-    ](group_offsets.dim(0) - 1, group_offsets)
+    ](num_offsets - 1, group_offsets)
 
     while True:
         var work_info = scheduler.fetch_next_work()
@@ -51,11 +61,9 @@ def test(ctx: DeviceContext) raises:
     var dev_group_offsets_buffer = ctx.enqueue_create_buffer[.uint32](
         group_len + 1
     )
-    comptime offset_layout = Layout(group_len + 1)
-    var dev_group_offsets = LayoutTensor[
-        .uint32,
-        offset_layout,
-    ](dev_group_offsets_buffer)
+    var dev_group_offsets = TileTensor(
+        dev_group_offsets_buffer, row_major[group_len + 1]()
+    ).as_imm()
 
     ctx.enqueue_copy(dev_group_offsets_buffer, host_group_offsets_ptr)
 
@@ -90,7 +98,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function[test_kernel[False, offset_layout]](
+    ctx.enqueue_function[test_kernel[False, group_len + 1]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),
@@ -129,7 +137,7 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function[test_kernel[True, offset_layout]](
+    ctx.enqueue_function[test_kernel[True, group_len + 1]](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),

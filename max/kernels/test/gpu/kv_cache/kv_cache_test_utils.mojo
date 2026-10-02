@@ -17,10 +17,20 @@ from std.random import shuffle
 from std.utils.numerics import isinf, isnan
 
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Coord,
+    Layout,
+    LayoutTensor,
+    RowMajorLayout,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
 from layout._utils import ManagedLayoutTensor
 
 from std.utils import Index, IndexList
+from std.utils.coord import DynamicCoord
 
 
 # Mirror of `_LUT_TAIL_PAD` in
@@ -138,6 +148,13 @@ def assert_no_nan_inf[
 
 struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
     comptime tensor_type = LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
+    # TODO(GPUA-6): make this the only tensor type once every caller takes a
+    # `TileTensor`.
+    comptime tile_tensor_type = TileTensor[
+        Self.dtype,
+        RowMajorLayout[*DynamicCoord[.int64, Self.rank].element_types],
+        ImmutAnyOrigin,
+    ]
 
     var shape: IndexList[Self.rank]
     var host_ptr: MutPointer[Scalar[Self.dtype], MutUntrackedOrigin]
@@ -162,6 +179,20 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
 
     def device_tensor(self) -> Self.tensor_type:
         return self._tensor(self.device_buf.value().unsafe_ptr())
+
+    def host_tile_tensor(self) -> Self.tile_tensor_type:
+        return self._tile_tensor(self.host_ptr)
+
+    def device_tile_tensor(self) -> Self.tile_tensor_type:
+        return self._tile_tensor(self.device_buf.value().unsafe_ptr())
+
+    def _tile_tensor(
+        self, ptr: Pointer[Scalar[Self.dtype], _]
+    ) -> Self.tile_tensor_type:
+        return Self.tile_tensor_type(
+            ptr=ptr.as_imm().as_unsafe_any_origin(),
+            layout=row_major(Coord(self.shape)),
+        )
 
     def _runtime_layout(self) -> RuntimeLayout[Self.layout]:
         return RuntimeLayout[Self.layout].row_major(self.shape)
@@ -335,3 +366,9 @@ struct PagedLookupTable[page_size: Int](Copyable):
 
     def device_tensor(self) -> type_of(self.paged_lut).tensor_type:
         return self.paged_lut.device_tensor()
+
+    def host_tile_tensor(self) -> type_of(self.paged_lut).tile_tensor_type:
+        return self.paged_lut.host_tile_tensor()
+
+    def device_tile_tensor(self) -> type_of(self.paged_lut).tile_tensor_type:
+        return self.paged_lut.device_tile_tensor()

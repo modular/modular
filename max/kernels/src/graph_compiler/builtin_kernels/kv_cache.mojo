@@ -185,9 +185,9 @@ struct Struct_kv_cache_gather_rows_ragged_paged:
             cache = paged_kv_collection.get_value_cache(Int(layer_idx))
 
         kv_cache_gather_rows_ragged[target=target](
-            output.to_layout_tensor(),
-            slots.to_layout_tensor(),
-            row_offsets.to_layout_tensor(),
+            output.to_tile_tensor(),
+            slots.to_tile_tensor(),
+            row_offsets.to_tile_tensor(),
             cache,
             context,
         )

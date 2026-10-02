@@ -20,35 +20,18 @@ the value side of a K/V leaf, and ragged rows including a request with none.
 """
 
 from std.math import ceildiv
-from std.memory import unsafe_memset_zero
 from std.random import randn_float64, random_ui64, seed
-from std.utils.index import IndexList
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, Idx, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.kv_cache_gather import kv_cache_gather_rows_ragged
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
 comptime NUM_LAYERS = 3
 comptime LAYER = 1
-
-
-def _managed[
-    dt: DType, L: Layout, rank: Int
-](shape: IndexList[rank], ctx: DeviceContext) raises -> ManagedLayoutTensor[
-    dt, L
-]:
-    """Builds a managed tensor whose runtime layout matches its index types."""
-    comptime M = ManagedLayoutTensor[dt, L]
-    return M(
-        RuntimeLayout[
-            L, element_type=M.element_type, linear_idx_type=M.index_type
-        ].row_major(shape),
-        ctx,
-    )
 
 
 def run_case[
@@ -80,33 +63,39 @@ def run_case[
     var lut = PagedLookupTable[slots_per_page].build(
         live_slots, zeros, lengths.max_full_context_length, num_pages, ctx
     )
-    comptime blocks_layout = Layout.row_major[6]()
-    var blocks = _managed[dtype, blocks_layout](
-        IndexList[6](
-            num_pages, kv_dim, NUM_LAYERS, slots_per_page, 1, head_dim
+    var blocks = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(
+                Int64(num_pages),
+                Idx[kv_dim],
+                Int64(NUM_LAYERS),
+                Idx[slots_per_page],
+                Idx[1],
+                Idx[head_dim],
+            )
         ),
         ctx,
     )
-    var blocks_host = blocks.tensor()
-    for i in range(blocks_host.size()):
-        blocks_host.ptr.unsafe_store(i, Scalar[dtype](randn_float64()))
+    var blocks_host = blocks.host_tensor()
+    for i in range(blocks_host.num_elements()):
+        blocks_host.unsafe_ptr().unsafe_store(i, Scalar[dtype](randn_float64()))
+    blocks.to_device()
 
-    comptime offsets_layout = Layout(UNKNOWN_VALUE)
-    var offsets = _managed[DType.uint32, offsets_layout](
-        IndexList[1](batch_size + 1), ctx
+    var offsets = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size + 1))), ctx
     )
-    var offsets_host = offsets.tensor()
+    var offsets_host = offsets.host_tensor()
     var num_rows = 0
     for b in range(batch_size):
         offsets_host[b] = UInt32(num_rows)
         num_rows += row_counts[b]
     offsets_host[batch_size] = UInt32(num_rows)
+    offsets.to_device()
 
-    comptime slots_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    var slots = _managed[DType.int32, slots_layout](
-        IndexList[2](num_rows, num_slots), ctx
+    var slots = HostDeviceTileTensor[.int32](
+        row_major(Coord(Int64(num_rows), Int64(num_slots))), ctx
     )
-    var slots_host = slots.tensor()
+    var slots_host = slots.host_tensor()
     var row_batch = List[Int]()
     for b in range(batch_size):
         for _ in range(row_counts[b]):
@@ -116,39 +105,50 @@ def run_case[
             slots_host[r, j] = Int32(
                 random_ui64(0, UInt64(live_slots[row_batch[r]] - 1))
             )
+    slots.to_device()
 
-    comptime out_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, head_dim
+    var out_layout = row_major(
+        Coord(Int64(num_rows), Int64(num_slots), Idx[head_dim])
     )
-    var out_shape = IndexList[3](num_rows, num_slots, head_dim)
-    var gpu_out = _managed[dtype, out_layout](out_shape, ctx)
-    var cpu_out = _managed[dtype, out_layout](out_shape, ctx)
-    unsafe_memset_zero(gpu_out.tensor().ptr, gpu_out.tensor().size())
-    # The CPU path writes host memory only; never sync it from the device.
-    var cpu_host = cpu_out.tensor[update=False]()
-    unsafe_memset_zero(cpu_host.ptr, cpu_host.size())
+    var gpu_out = HostDeviceTileTensor[dtype](out_layout, ctx)
+    _ = gpu_out.host_tensor().fill(0)
+    gpu_out.to_device()
+    # The CPU path writes host memory only.
+    var cpu_out = HostDeviceTileTensor[dtype](out_layout)
+    var cpu_host = cpu_out.host_tensor().fill(0)
 
-    var device_collection = PagedKVCacheCollection[
-        dtype, kv_params, slots_per_page
-    ](
-        blocks.device_tensor(),
-        lengths.cache_lengths.device_tensor(),
-        lut.device_tensor(),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        slots_per_page,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    # The collection spells its block strides symbolically in `kv_params`,
+    # which the compiler cannot fold against `row_major`'s for a generic
+    # `kv_params`; the two layouts are structurally identical.
+    var device_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            blocks.device_tensor().as_unsafe_any_origin()
+        ),
+        lengths.cache_lengths.device_tile_tensor(),
+        lut.device_tile_tensor(),
         UInt32(lengths.max_seq_length_batch),
         UInt32(lengths.max_full_context_length),
     )
-    var host_collection = PagedKVCacheCollection[
-        dtype, kv_params, slots_per_page
-    ](
-        blocks.tensor(),
-        lengths.cache_lengths.host_tensor(),
-        lut.host_tensor(),
+    var host_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            blocks.host_tensor().as_unsafe_any_origin()
+        ),
+        lengths.cache_lengths.host_tile_tensor(),
+        lut.host_tile_tensor(),
         UInt32(lengths.max_seq_length_batch),
         UInt32(lengths.max_full_context_length),
     )
-    var lut_host = lut.host_tensor()
+    var lut_host = lut.host_tile_tensor()
     var cpu_ctx = DeviceContext(api="cpu")
-    blocks_host = blocks.tensor()
 
     comptime for kv in range(kv_dim):
         comptime if kv == 0:
@@ -161,8 +161,8 @@ def run_case[
             )
             kv_cache_gather_rows_ragged[target="cpu"](
                 cpu_host,
-                slots.tensor(),
-                offsets.tensor(),
+                slots_host,
+                offsets_host,
                 host_collection.get_key_cache(LAYER),
                 cpu_ctx,
             )
@@ -176,42 +176,31 @@ def run_case[
             )
             kv_cache_gather_rows_ragged[target="cpu"](
                 cpu_host,
-                slots.tensor(),
-                offsets.tensor(),
+                slots_host,
+                offsets_host,
                 host_collection.get_value_cache(LAYER),
                 cpu_ctx,
             )
         ctx.synchronize()
+        gpu_out.to_host()
 
-        var gpu_host = gpu_out.tensor()
+        var gpu_host = gpu_out.host_tensor()
         for r in range(num_rows):
             var b = row_batch[r]
             for j in range(num_slots):
-                var slot = Int(slots_host[r, j][0])
-                var page = Int(lut_host[b, slot // slots_per_page][0])
+                var slot = Int(slots_host[r, j])
+                var page = Int(lut_host[b, slot // slots_per_page])
                 var in_page = slot % slots_per_page
                 for d in range(head_dim):
-                    var want = blocks_host[page, kv, LAYER, in_page, 0, d][0]
-                    if (
-                        gpu_host[r, j, d][0] != want
-                        or cpu_host[r, j, d][0] != want
-                    ):
+                    var want = blocks_host[page, kv, LAYER, in_page, 0, d]
+                    if gpu_host[r, j, d] != want or cpu_host[r, j, d] != want:
                         raise Error(
-                            "mismatch at kv "
-                            + String(kv)
-                            + " row "
-                            + String(r)
-                            + " slot "
-                            + String(j)
-                            + " dim "
-                            + String(d)
+                            t"mismatch at kv {kv} row {r} slot {j} dim {d}"
                         )
 
+    # The collections hold untracked views of `blocks`, so pin it past the
+    # launches above.
     _ = blocks^
-    _ = offsets^
-    _ = slots^
-    _ = gpu_out^
-    _ = cpu_out^
 
 
 def main() raises:

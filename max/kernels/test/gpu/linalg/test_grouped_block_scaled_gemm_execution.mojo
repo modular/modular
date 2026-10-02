@@ -1357,6 +1357,12 @@ def test_grouped_kernel_two_groups_different_ptrs[
     )
     ctx.synchronize()
     print("  Kernel completed")
+    # The kernel reaches group 1 only through the raw addresses in the pointer
+    # arrays, so these buffers would otherwise be freed before it runs.
+    _ = a1_device^
+    _ = b1_device^
+    _ = sfa1_device^
+    _ = sfb1_device^
 
     # Copy results back
     ctx.enqueue_copy(c0_host, c0_device)
