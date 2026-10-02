@@ -153,6 +153,7 @@ NIGHTLY_MODELS = frozenset(
         "modularai/MiniMax-M3-MXFP6",
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
+        "zai-org/GLM-5.3-Flash__tpep",
         "amd/Kimi-K2.7-Code-MXFP4",
         "nvidia/Kimi-K2.7-Code-NVFP4",
         "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3",
@@ -160,6 +161,8 @@ NIGHTLY_MODELS = frozenset(
         "thinkingmachines/Inkling-Small-NVFP4",
         "thinkingmachines/Inkling-Small-NVFP4__mtp",
         "Qwen/Qwen3.8-27B",
+        "RadixArk/Qwen3.8-27B-NVFP4__mtp",
+        "RadixArk/Qwen3.8-27B-NVFP4__dflash2",
         "deepseek-ai/DeepSeek-V4-Flash-0731__tp2",
     }
 )
