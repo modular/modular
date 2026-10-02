@@ -3781,6 +3781,10 @@ callers never manage streams or events directly.
 per device: one region may take shards from several devices, and it covers
 exactly the devices those shards live on.
 
+.. Skipped: Metal device contexts expose only the default stream, so
+   ``stream_id=1`` fails with "invalid stream id".
+.. skip: next if(__import__("sys").platform == "darwin", "no side streams on Metal")
+
 .. code-block:: python
 
     from max.experimental import functional as F
