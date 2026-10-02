@@ -38,23 +38,27 @@ LSPServerStdioFiles::LSPServerStdioFiles(const std::filesystem::path &parentDir)
 
 LSPBatchClient::LSPBatchClient(
     bool attachDebugger,
-    std::function<void(const ExecutionResult &)> onExecuteCallback)
+    std::function<void(const ExecutionResult &)> onExecuteCallback,
+    bool workDoneProgress)
     : onExecuteCallback(std::move(onExecuteCallback)),
       serverJSONInputOS(serverJSONInput), attachDebugger(attachDebugger),
       checkDocstrings(false) {
+  // Note: the nested capabilities must be explicit json::Objects. Brace-init
+  // pairs would otherwise construct a json::Array
+  // ("capabilities":[["window",["workDoneProgress",...]]]), which the server's
+  // capabilities parser reads as an absent object and silently defaults.
   llvm::json::Value initialize =
-      llvm::json::Object{{"processId", 123},
-                         {"rootPath", "mojo"},
-                         {
-                             "capabilities",
-                             {
-                                 {
-                                     "window",
-                                     {"workDoneProgress", false},
-                                 },
-                             },
-                         },
-                         {"trace", "off"}};
+      llvm::json::Object{
+          {"processId", 123},
+          {"rootPath", "mojo"},
+          {"capabilities",
+           llvm::json::Object{
+               {"window",
+                llvm::json::Object{
+                    {"workDoneProgress", workDoneProgress},
+                }},
+           }},
+          {"trace", "off"}};
   request("initialize", initialize, std::function(doNothing));
 }
 

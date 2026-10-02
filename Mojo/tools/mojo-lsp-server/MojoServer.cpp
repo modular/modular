@@ -54,6 +54,7 @@
 #include "llvm/Support/LSP/Protocol.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <chrono>
+#include <future>
 #include <optional>
 #include <random>
 
@@ -494,39 +495,52 @@ public:
       return callback();
 
     auto token = generateToken();
-    std::string tokenCopy = token;
+
+    // The response to 'window/workDoneProgress/create' is dispatched on the
+    // transport thread. Running the callback there would race the caller's
+    // task chain (e.g. 'definition' requests enqueued behind a parse), so
+    // instead block here until the token handshake resolves and then run the
+    // callback inline. The promise is shared so that a late response arriving
+    // after the timeout still resolves against live state.
+    auto createdPromise = std::make_shared<std::promise<bool>>();
+    std::future<bool> created = createdPromise->get_future();
 
     {
       std::lock_guard<std::mutex> respondersLock(respondersMutex);
-      responders[token] =
-          [&, callback = std::move(callback), token = std::move(tokenCopy),
-           title = std::move(title),
-           message = std::move(message)](LogicalResult result) mutable {
-            if (result.succeeded()) {
-              // Send the initial progress notification now.
-              startProgressFn({
-                  token,
-                  {
-                      title,
-                      message,
-                  },
-              });
-            }
-
-            callback();
-
-            if (result.succeeded()) {
-              endProgressFn({
-                  token,
-                  {
-                      std::nullopt,
-                  },
-              });
-            }
-          };
+      responders[token] = [createdPromise](LogicalResult result) {
+        createdPromise->set_value(result.succeeded());
+      };
     }
 
     createTokenFn(llvm::lsp::WorkDoneProgressParams{token}, token);
+
+    // If the client never answers the token creation request, run the work
+    // without progress reporting rather than stalling the task chain.
+    bool reporting = created.wait_for(std::chrono::seconds(5)) ==
+                         std::future_status::ready &&
+                     created.get();
+
+    if (reporting) {
+      // Send the initial progress notification now.
+      startProgressFn({
+          token,
+          {
+              title,
+              message,
+          },
+      });
+    }
+
+    callback();
+
+    if (reporting) {
+      endProgressFn({
+          token,
+          {
+              std::nullopt,
+          },
+      });
+    }
   }
 
   void setEnabled(bool newEnabled) { enabled = newEnabled; }

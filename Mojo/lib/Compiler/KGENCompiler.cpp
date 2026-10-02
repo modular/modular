@@ -38,6 +38,7 @@
 #include "Support/Config.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
+#include "Support/Preprocessor.h"
 #include "Target/TargetTraits.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/CAPI/IR.h"
@@ -58,6 +59,20 @@
 
 #define DEBUG_TYPE "kgen-compiler"
 #define KGEN_DEBUG_TYPE "kgen-compiler"
+
+// DEFINE_OR_RETURN_ERROR(Type, name, expr) evaluates the ErrorOr-producing
+// `expr`, returns its error if it holds one, otherwise declares `Type name`
+// bound to the value.
+#ifndef DEFINE_OR_RETURN_ERROR
+#define DEFINE_OR_RETURN_ERROR_IMPL(TMP, TYPE, NAME, ...)                  \
+  auto TMP = (__VA_ARGS__);                                                \
+  if (TMP.isError())                                                       \
+    return TMP.takeError();                                                \
+  TYPE NAME = TMP.takeValue()
+#define DEFINE_OR_RETURN_ERROR(TYPE, NAME, ...)                            \
+  DEFINE_OR_RETURN_ERROR_IMPL(M_UNIQUE_NAME(errorOrTmp), TYPE, NAME,       \
+                              __VA_ARGS__)
+#endif
 
 using namespace M;
 using namespace KGEN;

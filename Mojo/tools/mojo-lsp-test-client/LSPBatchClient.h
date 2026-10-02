@@ -91,10 +91,16 @@ public:
     std::optional<LSPServerStdioFiles> serverIOFiles = std::nullopt;
   };
 
+  /// `workDoneProgress` controls whether the client's initialize
+  /// capabilities advertise support for window/workDoneProgress. When enabled
+  /// the server will issue a window/workDoneProgress/create request, which a
+  /// batch client never answers, exercising the server's unanswered-token
+  /// fallback path.
   LSPBatchClient(
       bool attachDebugger = false,
       std::function<void(const ExecutionResult &)> onExecuteCallback =
-          [](const ExecutionResult &) {});
+          [](const ExecutionResult &) {},
+      bool workDoneProgress = false);
 
   /// When called before execute(), passes -check-docstrings to the server so
   /// that code blocks inside doc strings are parsed and type-checked. Disabled
