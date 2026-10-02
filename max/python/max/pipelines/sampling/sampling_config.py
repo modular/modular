@@ -59,40 +59,77 @@ DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE = False
 
 
 class ToolCallPolicy(str, Enum):
-    """Policy controlling constrained decoding for tool calls."""
+    """Policy controlling constrained decoding for tool calls.
+
+    A best-effort policy enforces as much of a schema as the grammar can; a
+    reject policy rejects the request when the grammar can't enforce the whole
+    schema. Under ``FORCE_UNCONSTRAINED``, ``tool_choice=required`` cannot force
+    a call.
+    """
 
     # Move to StrEnum in Python 3.11. This is for Python 3.10 compatibility.
     __str__ = str.__str__
 
     FORCE_UNCONSTRAINED = "force_unconstrained"
-    """Build no tool-call grammar. Arguments are unconstrained and
-    ``tool_choice=required`` cannot force a call."""
+    """Do not compile a tool-call grammar, leaving tool calls unconstrained."""
 
     FORCE_STRICT_FALSE = "force_strict_false"
-    """Constrain every tool to an envelope-only grammar with free-form
-    arguments, regardless of the request ``strict`` field."""
+    """Constrain every tool to only the envelope, ignoring ``strict``."""
 
-    FORCE_STRICT_TRUE = "force_strict_true"
-    """Constrain every tool to its full argument schema, regardless of the
-    request ``strict`` field."""
+    FORCE_STRICT_TRUE_AND_BEST_EFFORT = "force_strict_true_and_best_effort"
+    """Enforce every tool's schema best-effort, ignoring ``strict``."""
 
-    DEFAULT_STRICT_FALSE = "default_strict_false"
-    """Constrain only the envelope unless a request sends ``strict: true`` for
-    a tool, which raises that tool to its full argument schema."""
+    FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED = (
+        "force_strict_true_and_reject_unsupported"
+    )
+    """Enforce every tool's schema or reject it, ignoring ``strict``."""
 
-    DEFAULT_STRICT_TRUE = "default_strict_true"
-    """Enforce the full argument schema unless a request sends ``strict: false``
-    for a tool, which lowers that tool to an envelope-only grammar."""
+    DEFAULT_STRICT_FALSE_AND_BEST_EFFORT = (
+        "default_strict_false_and_best_effort"
+    )
+    """Enforce a tool's schema best-effort only if ``strict`` is true."""
+
+    DEFAULT_STRICT_FALSE_AND_REJECT_UNSUPPORTED = (
+        "default_strict_false_and_reject_unsupported"
+    )
+    """Enforce a tool's schema or reject it only if ``strict`` is true."""
+
+    DEFAULT_STRICT_TRUE_AND_BEST_EFFORT = "default_strict_true_and_best_effort"
+    """Enforce a tool's schema best-effort unless ``strict`` is false."""
+
+    DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED = (
+        "default_strict_true_and_reject_unsupported"
+    )
+    """Enforce a tool's schema or reject it unless ``strict`` is false."""
 
     def resolve_strict(self, requested: bool | None) -> bool:
         """Return the effective per-tool ``strict`` under this policy."""
-        if self is ToolCallPolicy.FORCE_STRICT_TRUE:
+        if self in (
+            ToolCallPolicy.FORCE_STRICT_TRUE_AND_BEST_EFFORT,
+            ToolCallPolicy.FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+        ):
             return True
         if self is ToolCallPolicy.FORCE_STRICT_FALSE:
             return False
         if requested is not None:
             return requested
-        return self is ToolCallPolicy.DEFAULT_STRICT_TRUE
+        return self in (
+            ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+            ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+        )
+
+    @property
+    def reject_unsupported(self) -> bool:
+        """Whether to raise an error when a tool's schema cannot be enforced.
+
+        Otherwise, the schema is enforced best-effort. The error is raised
+        during grammar compilation.
+        """
+        return self in (
+            ToolCallPolicy.FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+            ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_REJECT_UNSUPPORTED,
+            ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+        )
 
 
 class SamplingConfig(ConfigFileModel):
@@ -147,16 +184,19 @@ class SamplingConfig(ConfigFileModel):
     )
 
     tool_call_policy: ToolCallPolicy = Field(
-        default=ToolCallPolicy.DEFAULT_STRICT_FALSE,
+        default=ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT,
         description=(
-            "Policy applied to tool-call constrained decoding. "
-            "force_unconstrained builds no grammar, so tool_choice=required "
-            "cannot force a call. force_strict_false pins every tool to an "
-            "envelope-only grammar with free-form arguments. force_strict_true "
-            "pins every tool to its full argument schema. default_strict_true "
-            "enforces the full schema unless a request sends strict false. "
-            "default_strict_false constrains only the envelope unless a request "
-            "sends strict true."
+            "Controls how tool calls are constrained: whether each tool's "
+            "arguments must match its schema, and what happens when the "
+            "grammar can't enforce that schema. A strict tool's arguments are "
+            "constrained to its argument schema; a non-strict tool's arguments "
+            "are free-form within the tool-call envelope. force_strict_true_* "
+            "and force_strict_false ignore the request's strict; "
+            "default_strict_true_* and default_strict_false_* honor it, and "
+            "default to true or false when it is omitted. When the grammar "
+            "can't enforce a whole schema, _and_best_effort enforces what it "
+            "can and _and_reject_unsupported rejects the request. "
+            "force_unconstrained compiles no tool-call grammar."
         ),
     )
 

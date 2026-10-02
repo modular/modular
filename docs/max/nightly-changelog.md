@@ -284,25 +284,30 @@ This version is still a work in progress.
   `--draft-proposal sampled` at startup rather than silently drafting by
   argmax.
 
-- Added `--tool-call-policy`, which controls how tool-call constrained decoding
-  is applied. The accepted values are `force_unconstrained` (no tool-call
-  grammar is compiled or enforced, regardless of any per-tool `strict` field),
-  `force_strict_false` (every tool's arguments are envelope-only, ignoring the
-  tool's `strict` field), `force_strict_true` (every tool's arguments are fully
-  schema-constrained, ignoring `strict`), `default_strict_false` (the per-tool
-  `strict` field decides, defaulting to envelope-only when absent), and
-  `default_strict_true` (the per-tool `strict` field decides, defaulting to
-  full-schema enforcement when absent).
+- Added `--tool-call-policy`, which sets how tool-call arguments are
+  constrained:
+
+  - `force_unconstrained`: no tool-call grammar.
+  - `force_strict_false`: only the tool-call envelope is constrained;
+    arguments are free-form, ignoring each tool's `strict` field.
+  - `force_strict_true_*`: every tool is constrained to its argument schema.
+  - `default_strict_true_*`: tools are constrained to their argument schema
+    unless the request sends `strict: false`.
+  - `default_strict_false_*` (default): tools are constrained to their
+    argument schema only when the request sends `strict: true`.
+
+  The `*` suffix is one of `and_best_effort` or `and_reject_unsupported`, which
+  controls what happens to a schema that the grammar cannot enforce.
+
+  The default, `default_strict_false_and_best_effort`, matches OpenAI's Chat
+  Completions API.
+
+- By default, Kimi, MiniMax-M2, GLM-4.7, and Gemma-4 no longer fail a request
+  whose `strict: true` tool schema has unenforceable keywords; they compile it
+  best-effort, unless the tool-call policy selects different behavior.
 
 - Removed `--enable-tool-call-constrained-decode`. Use
-  `--tool-call-policy=force_unconstrained` for tool calls without a grammar.
-
-- The default tool-call policy is now `default_strict_false`: tool-call
-  arguments are constrained only to the tool-call envelope (free-form
-  arguments) unless a request sends `strict: true` for a tool or the server
-  is configured with a stricter `--tool-call-policy`. This aligns with the
-  behavior of OpenAI, vLLM, and sglang. Deployments that require full
-  argument-schema enforcement should set `--tool-call-policy force_strict_true`.
+  `--tool-call-policy=force_unconstrained` instead of setting it to false.
 
 - Added `--prefill-coalesce-min-pending` (default 0, off): under in-flight
   batching, hold pending fresh prefills until that many can share one mixed

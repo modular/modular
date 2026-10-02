@@ -513,6 +513,7 @@ def build_xgrammar_tool_grammar(
     tools: list[dict[str, Any]],
     tool_choice: str | dict[str, Any],
     response_format_schema: dict[str, Any] | None = None,
+    reject_unsupported: bool = False,
 ) -> str:
     """Build a serialized xgrammar tool-call grammar (StructuralTag JSON).
 
@@ -532,6 +533,9 @@ def build_xgrammar_tool_grammar(
         response_format_schema: Optional JSON schema for a ``response_format``
             json_schema response. When set, the grammar allows a
             schema-conforming JSON response as an alternative to a tool call.
+        reject_unsupported: Whether to raise an error during grammar compilation
+            when a tool's schema cannot be enforced. Otherwise, the schema is
+            enforced best-effort.
 
     Returns:
         The StructuralTag serialized as a JSON string.
@@ -549,6 +553,7 @@ def build_xgrammar_tool_grammar(
         tools=tools,
         tool_choice=effective_tool_choice,
         reasoning=False,
+        reject_unsupported=reject_unsupported,
     )
     if response_format_schema is not None:
         json_branch: Format = JSONSchemaFormat(

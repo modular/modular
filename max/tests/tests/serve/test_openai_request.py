@@ -14,9 +14,11 @@
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.sampling import ToolCallPolicy
 from max.serve.config import Settings
+from max.serve.pipelines.echo_gen import EchoPipelineTokenizer
 from max.serve.router.openai_routes import (
     _convert_chat_completion_tools_to_token_generator_tools,
     _create_response_format,
+    openai_create_chat_completion,
     openai_parse_chat_completion_request,
 )
 
@@ -26,7 +28,10 @@ bazel+mypy complain about this import not being available even though it is part
 Explicitly importing //max/python/max/serve/schemas in the test's BUILD file hasn't worked either.
 """
 
+import json
+from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from max.pipelines.request.open_responses import (
@@ -1707,15 +1712,48 @@ def test_merge_tool_call_deltas_empty_string_arg_is_present_not_absent() -> (
         (ToolCallPolicy.FORCE_STRICT_FALSE, True, False),
         (ToolCallPolicy.FORCE_STRICT_FALSE, False, False),
         (ToolCallPolicy.FORCE_STRICT_FALSE, "absent", False),
-        (ToolCallPolicy.FORCE_STRICT_TRUE, True, True),
-        (ToolCallPolicy.FORCE_STRICT_TRUE, False, True),
-        (ToolCallPolicy.FORCE_STRICT_TRUE, "absent", True),
-        (ToolCallPolicy.DEFAULT_STRICT_FALSE, True, True),
-        (ToolCallPolicy.DEFAULT_STRICT_FALSE, False, False),
-        (ToolCallPolicy.DEFAULT_STRICT_FALSE, "absent", False),
-        (ToolCallPolicy.DEFAULT_STRICT_TRUE, True, True),
-        (ToolCallPolicy.DEFAULT_STRICT_TRUE, False, False),
-        (ToolCallPolicy.DEFAULT_STRICT_TRUE, "absent", True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_BEST_EFFORT, True, True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_BEST_EFFORT, False, True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_BEST_EFFORT, "absent", True),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT, True, True),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT, False, False),
+        (ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT, "absent", False),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT, True, True),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT, False, False),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT, "absent", True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED, True, True),
+        (ToolCallPolicy.FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED, False, True),
+        (
+            ToolCallPolicy.FORCE_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+            "absent",
+            True,
+        ),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_REJECT_UNSUPPORTED,
+            True,
+            True,
+        ),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_REJECT_UNSUPPORTED,
+            False,
+            False,
+        ),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_REJECT_UNSUPPORTED,
+            "absent",
+            False,
+        ),
+        (ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED, True, True),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+            False,
+            False,
+        ),
+        (
+            ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_REJECT_UNSUPPORTED,
+            "absent",
+            True,
+        ),
     ],
 )
 def test_tool_call_policy_resolves_strict(
@@ -1746,3 +1784,116 @@ def test_tool_call_policy_resolves_strict(
     converted = tools[0]["function"]
     assert converted["strict"] is expected
     assert list(converted) == ["description", "name", "parameters", "strict"]
+
+
+class _GrammarBlockPassedProbe(Exception):
+    """Raised once the handler reaches the response generator.
+
+    It ends the request before any downstream backend or streaming work runs.
+    """
+
+
+class _FakeGrammarToolParser:
+    """Stand-in ``ToolParser`` that records its grammar-builder kwargs.
+
+    These are the kwargs ``openai_create_chat_completion`` passes to
+    ``generate_tool_call_grammar``.
+    """
+
+    def __init__(self) -> None:
+        self.received_kwargs: dict[str, Any] | None = None
+
+    def generate_tool_call_grammar(self, **kwargs: Any) -> str:
+        self.received_kwargs = kwargs
+        return "{}"
+
+
+@pytest.mark.parametrize("requested", [True, False, "absent"])
+@pytest.mark.parametrize("policy", list(ToolCallPolicy))
+async def test_tool_call_policy_reaches_grammar_generation(
+    policy: ToolCallPolicy, requested: object
+) -> None:
+    """The handler skips the tool-call grammar only for ``force_unconstrained``.
+
+    Otherwise, it passes the policy's resolved ``strict`` and
+    ``reject_unsupported`` to the parser's grammar builder.
+    """
+    fake_parser = _FakeGrammarToolParser()
+
+    function: dict[str, Any] = {
+        "name": "f",
+        "parameters": {"type": "object", "properties": {}},
+    }
+    if requested != "absent":
+        function["strict"] = requested
+    request_body = json.dumps(
+        {
+            "model": "test",
+            "messages": [{"role": "user", "content": "hi"}],
+            "tools": [{"type": "function", "function": function}],
+        }
+    ).encode("utf-8")
+
+    mock_request = Mock()
+    mock_request.headers = {}
+    mock_request.body = AsyncMock(return_value=request_body)
+    mock_request.state = SimpleNamespace(
+        request_id="test-tool-call-policy-wiring"
+    )
+    mock_request.url = SimpleNamespace(path="/v1/chat/completions")
+    pipeline_config = SimpleNamespace(
+        runtime=SimpleNamespace(
+            allow_extra_request_fields=False,
+            tool_parser=None,
+            reasoning_parser=None,
+            emit_reasoning_content=False,
+        ),
+        sampling=SimpleNamespace(
+            tool_call_policy=policy,
+            enable_structured_output=False,
+            structured_output_backend="xgrammar",
+        ),
+    )
+    mock_request.app = SimpleNamespace(
+        state=SimpleNamespace(
+            pipeline=SimpleNamespace(
+                model_name="test",
+                lora_queue=None,
+                tokenizer=EchoPipelineTokenizer(),
+            ),
+            settings=Settings(),
+        )
+    )
+
+    with (
+        patch(
+            "max.serve.router.openai_routes.get_tool_parser",
+            return_value=fake_parser,
+        ),
+        patch(
+            "max.serve.router.openai_routes.get_app_pipeline_config",
+            return_value=pipeline_config,
+        ),
+        patch(
+            "max.serve.router.openai_routes.OpenAIChatResponseGenerator",
+            side_effect=_GrammarBlockPassedProbe,
+        ),
+        patch("max.serve.router.openai_routes.METRICS", MagicMock()),
+        pytest.raises(_GrammarBlockPassedProbe),
+    ):
+        await openai_create_chat_completion(mock_request)
+
+    if policy is ToolCallPolicy.FORCE_UNCONSTRAINED:
+        assert fake_parser.received_kwargs is None
+        return
+    assert fake_parser.received_kwargs is not None
+    assert (
+        fake_parser.received_kwargs["reject_unsupported"]
+        is policy.reject_unsupported
+    )
+    requested_strict = None if requested == "absent" else requested
+    assert isinstance(requested_strict, bool | None)
+    tools = fake_parser.received_kwargs["tools"]
+    assert tools[0]["function"]["strict"] is policy.resolve_strict(
+        requested_strict
+    )

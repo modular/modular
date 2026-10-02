@@ -351,15 +351,35 @@ class TestNeedsBitmaskConstraints:
         [
             # No structured output, no parser: never needs the bitmask path.
             (False, None, ToolCallPolicy.FORCE_UNCONSTRAINED, False),
-            (False, None, ToolCallPolicy.DEFAULT_STRICT_TRUE, False),
+            (
+                False,
+                None,
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                False,
+            ),
             # User structured output on: always needs it, regardless of the
             # tool-call policy.
             (True, None, ToolCallPolicy.FORCE_UNCONSTRAINED, True),
-            (True, None, ToolCallPolicy.DEFAULT_STRICT_TRUE, True),
+            (
+                True,
+                None,
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
             # Parser configured + any constrained policy (default): bitmask
             # path wires in for server-generated tool grammars.
-            (False, "kimik2_5", ToolCallPolicy.DEFAULT_STRICT_TRUE, True),
-            (True, "kimik2_5", ToolCallPolicy.DEFAULT_STRICT_TRUE, True),
+            (
+                False,
+                "kimik2_5",
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
+            (
+                True,
+                "kimik2_5",
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
             # Parser configured but force_unconstrained: the parser still
             # parses output, but no grammar or bitmask on its account.
             (False, "kimik2_5", ToolCallPolicy.FORCE_UNCONSTRAINED, False),
@@ -385,6 +405,16 @@ class TestNeedsBitmaskConstraints:
             runtime=PipelineRuntimeConfig(tool_parser=tool_parser),
         )
         assert config.needs_bitmask_constraints is expected
+
+
+class TestToolCallPolicy:
+    """Tests for ``ToolCallPolicy.reject_unsupported``."""
+
+    @pytest.mark.parametrize("policy", list(ToolCallPolicy))
+    def test_reject_unsupported(self, policy: ToolCallPolicy) -> None:
+        assert policy.reject_unsupported is policy.value.endswith(
+            "_and_reject_unsupported"
+        )
 
 
 class TestSpeculativeArchitectureOverride:

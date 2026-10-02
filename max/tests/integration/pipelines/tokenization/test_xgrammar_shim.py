@@ -4980,6 +4980,7 @@ def _gemma_compile(params: dict[str, Any]) -> xgr.CompiledGrammar:
         tools=_gemma_tool_with_params(params),
         tool_choice="required",
         reasoning=False,
+        reject_unsupported=True,
     )
     return _gemma_compiler().compile_structural_tag(tag)
 

@@ -2339,6 +2339,7 @@ async def openai_create_chat_completion(
                         tokenizer=pipeline.tokenizer,
                         backend=pipeline_config.sampling.structured_output_backend,
                         tool_choice=completion_request.tool_choice,
+                        reject_unsupported=pipeline_config.sampling.tool_call_policy.reject_unsupported,
                     )
                 # Create the response format.
                 # Note:
@@ -2557,7 +2558,7 @@ async def openai_create_chat_completion(
 def _convert_chat_completion_tools_to_token_generator_tools(
     chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
     valid_tool_name_re: re.Pattern[str] = _DEFAULT_VALID_TOOL_NAME_RE,
-    policy: ToolCallPolicy = ToolCallPolicy.DEFAULT_STRICT_FALSE,
+    policy: ToolCallPolicy = ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT,
 ) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:

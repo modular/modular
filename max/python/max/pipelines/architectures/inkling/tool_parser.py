@@ -279,6 +279,7 @@ class InklingToolParser(StructuralTagToolParser):
         tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
         backend: str = "xgrammar",
         tool_choice: str | dict[str, Any] | None = None,
+        reject_unsupported: bool = False,
         **kwargs: Any,
     ) -> str:
         """Builds the decode-time grammar that constrains tool calls."""
@@ -293,4 +294,5 @@ class InklingToolParser(StructuralTagToolParser):
             tools or [],
             normalized_choice,
             response_format_schema=response_format_schema,
+            reject_unsupported=reject_unsupported,
         )
