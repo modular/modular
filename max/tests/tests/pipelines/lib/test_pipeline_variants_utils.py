@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import max.pipelines.lib.pipeline_variants.structured_output_backend as _sob
 import numpy as np
@@ -404,6 +405,127 @@ class TestSpecDecodeStopsExactlyAtPerRequestCap:
         )
         assert len(ctx.tokens) == max_seq_len
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
+
+
+class TestUpdateSpecDecodeContextAndPrepareResponses:
+    """``update_spec_decode_context_and_prepare_responses``."""
+
+    def test_update_spec_decode_skip_fsm_advance_does_not_call_advance_fsm(
+        self,
+    ) -> None:
+        """With skip_fsm_advance=True, advance_fsm is never called for committed tokens.
+
+        When a CUDA host callback has already advanced the FSM, the Python-side
+        update should skip FSM calls to avoid double-advancing.
+        """
+        ctx = TextContext(
+            request_id=RequestID(),
+            max_length=2048,
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+        )
+        ctx.update_with_future_token()  # sets generated_length=1 so the loop runs
+
+        mock_matcher = MagicMock()
+        ctx._matcher = mock_matcher
+
+        with patch.object(ctx, "advance_fsm") as mock_advance_fsm:
+            update_spec_decode_context_and_prepare_responses(
+                draft_tokens=np.array([[1, 2]], dtype=np.int32),
+                next_draft_tokens=np.array([[3, 4]], dtype=np.int32),
+                num_accepted_draft_tokens=np.array([1], dtype=np.int32),
+                next_tokens=np.array([5], dtype=np.int32),
+                context_batch=[ctx],
+                max_seq_len=2048,
+                skip_fsm_advance=True,
+            )
+
+        mock_advance_fsm.assert_not_called()
+
+    def test_update_spec_decode_without_skip_fsm_advance_calls_advance_fsm(
+        self,
+    ) -> None:
+        """Without skip_fsm_advance, advance_fsm is called for each committed token.
+
+        Verifies the baseline (skip_fsm_advance=False) so the skip test has
+        a meaningful contrast.
+        """
+        ctx = TextContext(
+            request_id=RequestID(),
+            max_length=2048,
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+        )
+        ctx.update_with_future_token()
+
+        mock_matcher = MagicMock()
+        ctx._matcher = mock_matcher
+
+        with patch.object(ctx, "advance_fsm") as mock_advance_fsm:
+            update_spec_decode_context_and_prepare_responses(
+                draft_tokens=np.array([[1, 2]], dtype=np.int32),
+                next_draft_tokens=np.array([[3, 4]], dtype=np.int32),
+                num_accepted_draft_tokens=np.array([1], dtype=np.int32),
+                next_tokens=np.array([5], dtype=np.int32),
+                context_batch=[ctx],
+                max_seq_len=2048,
+                skip_fsm_advance=False,
+            )
+
+        # advance_fsm called for the first token (realize_future_token path)
+        # and subsequent tokens go through update() which also calls advance_fsm
+        assert mock_advance_fsm.call_count >= 1
+
+    def test_update_spec_decode_does_not_early_stop_near_max_seq_len(
+        self,
+    ) -> None:
+        """update_spec_decode_context_and_prepare_responses keeps a near-limit
+        context live as long as there is room for at least one more token.
+
+        MAX-615 was originally mitigated by reserving worst-case
+        (num_spec_tokens + 1) growth in build_response, which stopped a sequence
+        up to num_spec_tokens tokens short of the cap. Now the KV pool carries
+        num_draft_tokens slack beyond max_seq_len (see overlap_text_generation
+        ``_effective_max_cache_length``), so a step may over-speculate into that
+        slack and the per-token commit loop truncates to the cap. A context that
+        still has room must therefore NOT be early-stopped here.
+        """
+        num_spec_tokens = 3
+
+        # At prompt_len=96 / max_seq_len=100 the old worst-case reservation
+        # (96 + 1 + 4 > 100) marked this MAXIMUM_LENGTH; it must no longer do so
+        # because there is still room for more tokens (97 < 100).
+        max_seq_len = 100
+        prompt_len = max_seq_len - (num_spec_tokens + 1)  # = 96
+        output_len = max_seq_len - prompt_len  # = 4
+
+        ctx = create_text_context(
+            prompt_len=prompt_len, max_length=prompt_len + output_len
+        )
+        assert ctx.max_length == max_seq_len
+
+        # Prepare the context for spec dec: add future token placeholder
+        ctx.update_with_future_token()
+        assert not ctx.is_done, "Context should not be done before the test"
+
+        next_draft = [4, 5, 6]
+        update_spec_decode_context_and_prepare_responses(
+            draft_tokens=np.array([[1, 2, 3]], dtype=np.int32),
+            next_draft_tokens=np.array([next_draft], dtype=np.int32),
+            num_accepted_draft_tokens=np.array([0], dtype=np.int32),
+            next_tokens=np.array([99], dtype=np.int32),
+            context_batch=[ctx],
+            max_seq_len=max_seq_len,
+        )
+
+        # Only the bonus token committed (current_position=97 < 100), so the
+        # context stays live and keeps its drafts for the next verify step.
+        assert ctx.status != GenerationStatus.MAXIMUM_LENGTH, (
+            "Context with room for more tokens must not be early-stopped: "
+            f"current_position={ctx.tokens.current_position}, "
+            f"max_seq_len={max_seq_len}"
+        )
+        assert ctx.spec_decoding_state.draft_tokens_to_verify == next_draft, (
+            "A still-active context must retain its next-step draft tokens"
+        )
 
 
 class TestTokensForConsume:
