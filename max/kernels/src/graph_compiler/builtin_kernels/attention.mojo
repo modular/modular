@@ -76,6 +76,7 @@ from nn.attention.gpu.mla_graph import (
     mla_prefill_decode_graph_bf16,
 )
 from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
+from nn.attention.indexer_score import indexer_score_ragged_paged
 from nn.attention.latent_sparse_attention import (
     latent_sparse_attention_ragged_paged,
 )
@@ -4650,5 +4651,58 @@ struct Struct_latent_sparse_attention_ragged_paged:
             swa_collection.get_key_cache(Int(layer_swa)),
             comp_collection.get_key_cache(Int(layer_comp)),
             scale,
+            context,
+        )
+
+
+@extensibility.register("mo.indexer_score.ragged.paged")
+struct Struct_indexer_score_ragged_paged:
+    """Registers the `mo.indexer_score.ragged.paged` graph op with the graph compiler.
+
+    DeepSeek-V4 lightning-indexer scores: every query row against the live
+    entries of one layer of a paged compressed leaf, relu'd, weighted per
+    head and summed over the given heads. See `nn.attention.indexer_score`.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        q_type: DType,
+        kv_type: DType,
+        //,
+        num_heads: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=.float32, rank=2, ...],
+        q: InputTensor[dtype=q_type, rank=3, ...],
+        weights: InputTensor[dtype=.float32, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        base: InputTensor[dtype=.int32, rank=1, ...],
+        cutoff: InputTensor[dtype=.int32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        layer: UInt32,
+        context: DeviceContext,
+    ) raises:
+        var collection = generic_get_paged_cache(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+        )
+        indexer_score_ragged_paged[target=target, num_heads=num_heads](
+            output.to_layout_tensor(),
+            q.to_layout_tensor(),
+            weights.to_layout_tensor(),
+            input_row_offsets.to_layout_tensor(),
+            base.to_layout_tensor(),
+            cutoff.to_layout_tensor(),
+            collection.get_key_cache(Int(layer)),
             context,
         )

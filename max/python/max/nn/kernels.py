@@ -11891,6 +11891,87 @@ def apply_qk_rms_norm(
     return q_out.tensor, k_out.tensor
 
 
+def indexer_score_ragged(
+    q: TensorValue,
+    weights: TensorValue,
+    input_row_offsets: TensorValue,
+    base: TensorValue,
+    cutoff: TensorValue,
+    collection: PagedCacheValues,
+    layer: TensorValue,
+    *,
+    num_candidates: int,
+) -> TensorValue:
+    """Scores queries against the entries of a paged compressed leaf.
+
+    DeepSeek-V4's lightning indexer: ``score[t, c] = sum_h relu(q[t, h] .
+    k[e]) * weights[t, h]`` over the heads in ``q``. The candidate axis is
+    ``cap = num_candidates // 2`` columns of entries closed before the chunk
+    (column ``c`` is entry ``c``, live while ``c < base[b]``) followed by
+    ``cap`` columns of the chunk's windows (column ``cap + w`` is entry
+    ``base[b] + w``, live while that entry is below ``cutoff[t]``). Dead
+    columns are 0. Every live entry must already be in the leaf; issue the
+    store before this op.
+
+    Args:
+        q: ``[total_rows, num_heads, head_dim]`` indexer queries, ragged
+            over the batch.
+        weights: ``[total_rows, num_heads]`` float32 per-head weights.
+        input_row_offsets: ``[batch + 1]`` uint32 row offsets of ``q``.
+        base: ``[batch]`` int32 entries each request closed before this
+            chunk.
+        cutoff: ``[total_rows]`` int32 entries each query may see.
+        collection: The compressed leaf (single head, paged by entry
+            through ``slots_per_page``).
+        layer: uint32 scalar, this layer's index in the leaf.
+        num_candidates: Width of the candidate axis, even.
+
+    Returns:
+        ``[total_rows, num_candidates]`` float32 scores.
+    """
+    _check_rank(3, q=q)
+    _check_rank(2, weights=weights)
+    _check_rank(
+        1, input_row_offsets=input_row_offsets, base=base, cutoff=cutoff
+    )
+    _check_dtype(DType.float32, weights=weights)
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets, layer=layer)
+    _check_dtype(DType.int32, base=base, cutoff=cutoff)
+    _check_rank(6, kv_blocks=collection.kv_blocks)
+    if num_candidates <= 0 or num_candidates % 2:
+        raise ValueError(
+            f"num_candidates must be positive and even, got {num_candidates}"
+        )
+    if collection.kv_blocks.shape[5] != q.shape[2]:
+        raise ValueError(
+            f"q head_dim {q.shape[2]} does not match the leaf's"
+            f" {collection.kv_blocks.shape[5]}"
+        )
+
+    return ops.inplace_custom(
+        "mo.indexer_score.ragged.paged",
+        device=q.device,
+        values=[
+            q,
+            weights,
+            input_row_offsets,
+            base,
+            cutoff,
+            collection.kv_blocks,
+            collection.page_stride,
+            collection.cache_lengths,
+            collection.lookup_table,
+            collection.max_prompt_length,
+            collection.max_cache_length,
+            layer,
+        ],
+        out_types=[
+            TensorType(DType.float32, [q.shape[0], num_candidates], q.device)
+        ],
+        parameters={"num_heads": int(q.shape[1])},
+    )[0].tensor
+
+
 def latent_sparse_attention_ragged(
     q: TensorValue,
     input_row_offsets: TensorValue,

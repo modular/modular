@@ -56,10 +56,12 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   `cache_lengths`, zone by the entry numbers `CompressedStream.entries`
   resolves, both leaves already holding the chunk's rows. Window-only layers
   pass the window leaf as the compressed operand with a `[rows, 0]` entry list.
-  The compressor state and indexer candidate reads are still `buffer_load` +
-  `gather_nd` per layer -- a copy of the leaf per read; do not size a real
-  deployment on them. The cache-less path (`cache=None`) keeps the
-  gathered-table attention as the gates' reference.
+  The indexer scores its zone leaf in place through
+  `mo.indexer_score.ragged.paged` (`max.nn.kernels.indexer_score_ragged`), so
+  no per-token candidate table exists on the cached path. The compressor state
+  reads are still `buffer_load` + `gather_nd` per layer -- a copy of the leaf
+  per read; do not size a real deployment on them. The cache-less path
+  (`cache=None`) keeps the gathered-table attention as the gates' reference.
 - **Routed experts: grouped W4A8 for native weights, dense otherwise.**
   Native fp4 experts run `DeepseekV4RoutedExperts` (tokens sorted by expert);
   wide-dtype (dequantized) weights still take the dense every-expert path,

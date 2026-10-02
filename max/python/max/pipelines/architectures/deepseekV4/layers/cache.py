@@ -36,11 +36,12 @@ page ``j // slots_per_page``, slot ``j % slots_per_page``, which is the same
 page the token page table already names.
 
 Attention reads the window leaf and the zone leaf through the fused
-``mo.latent_sparse_attention.ragged.paged`` kernel. The remaining graph-side
-reads -- the compressor's open state and the indexer's candidate table --
-gather rows out of the block buffer by ``(lookup_table[b, slot //
-slots_per_page], slot % slots_per_page)``; each copies the leaf
-(``buffer_load``), which is fine at bringup sizes and nowhere else.
+``mo.latent_sparse_attention.ragged.paged`` kernel, and the indexer scores its
+zone leaf through ``mo.indexer_score.ragged.paged``. The remaining graph-side
+read -- the compressor's open state -- gathers rows out of the block buffer by
+``(lookup_table[b, slot // slots_per_page], slot % slots_per_page)``; it
+copies the leaf (``buffer_load``), which is fine at bringup sizes and nowhere
+else.
 """
 
 from __future__ import annotations
