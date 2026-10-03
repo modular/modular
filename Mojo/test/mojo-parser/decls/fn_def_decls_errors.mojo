@@ -200,6 +200,10 @@ def ref_result_invalid8(a: Int) -> ref [a] MemoryType:
 def ref_result_invalid9() -> ref [_] MemoryType:
     pass
 
+# expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+def ref_result_invalid10() -> ref [String("lit")] MemoryType:
+    pass
+
 def valid_ref_result(x: MemoryType) -> ref [x] MemoryType: return x
 
 def ref_invalid():
@@ -230,6 +234,10 @@ def valid_sbvalue_borrow(value: SBValue):
 
 # expected-error @+1 {{address space must be specified once; remove duplicate address space specifications}}
 def bad_ref_as[a: AddressSpace](ref [a, a] x: Int):
+    pass
+
+# expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+def bad_ref_temporary(ref [String("lit")] x: Int):
     pass
 
 struct HasOwnedOverloadedMethod(Movable where False):

@@ -151,7 +151,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     TypedAttr thisOrigin;
     bool isError = false;
     emitter.emitExpressionWithoutEvaluatingIt(
-        expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+        expr, EC_Origin,
+        [&](CValue result, IREmitter &emitter, Block &exprBlock) {
           // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
             if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
@@ -167,7 +168,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
           }
           // Otherwise it must be a !lit.origin and Origin struct.
           thisOrigin = emitter.extractOriginOf(expr, result);
-          isError = !thisOrigin;
+          isError = !thisOrigin || failed(emitter.checkRootOriginsOutliveBlock(
+                                       thisOrigin, exprBlock, expr));
         });
 
     if (isError)
