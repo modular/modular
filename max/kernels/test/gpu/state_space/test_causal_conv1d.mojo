@@ -103,17 +103,6 @@ def run_causal_conv1d_gpu[
     var bias_buf = bias_h
     var result_cpu_buf = result_cpu_h
 
-    # Strides for channel-first layout (B, C, L)
-    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var x_c_stride: UInt32 = UInt32(seqlen)
-    var x_l_stride: UInt32 = 1
-    var weight_c_stride: UInt32 = UInt32(width)
-    var weight_width_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
-    var out_c_stride: UInt32 = UInt32(seqlen)
-    var out_l_stride: UInt32 = 1
-    var bias_stride: UInt32 = 1
-
     var silu_activation = activation == "silu"
 
     # Create TileTensors for CPU reference
@@ -144,15 +133,6 @@ def run_causal_conv1d_gpu[
         weight_tt,
         result_cpu_tt,
         bias_tt,
-        x_batch_stride,
-        x_c_stride,
-        x_l_stride,
-        weight_c_stride,
-        weight_width_stride,
-        out_batch_stride,
-        out_c_stride,
-        out_l_stride,
-        bias_stride,
         silu_activation,
     )
 
@@ -225,15 +205,6 @@ def run_causal_conv1d_gpu[
                 weight_device_tt,
                 output_device_tt,
                 bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
                 silu_activation_int8,
                 grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
                 block_dim=(kNThreads),
@@ -271,15 +242,6 @@ def run_causal_conv1d_gpu[
                 weight_device_tt,
                 output_device_tt,
                 bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
                 silu_activation_int8,
                 grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
                 block_dim=(kNThreads),
@@ -317,15 +279,6 @@ def run_causal_conv1d_gpu[
                 weight_device_tt,
                 output_device_tt,
                 bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
                 silu_activation_int8,
                 grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
                 block_dim=(kNThreads),
@@ -363,15 +316,6 @@ def run_causal_conv1d_gpu[
                 weight_device_tt,
                 output_device_tt,
                 bias_device_tt,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
                 silu_activation_int8,
                 grid_dim=(ceildiv(seqlen, kNThreads * kNElts), dim, batch),
                 block_dim=(kNThreads),

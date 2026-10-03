@@ -116,7 +116,6 @@ def run_causal_conv1d[
     var out_batch_stride: UInt32 = UInt32(dim * seqlen)
     var out_c_stride: UInt32 = UInt32(seqlen)
     var out_l_stride: UInt32 = 1
-    var bias_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
 
@@ -135,15 +134,6 @@ def run_causal_conv1d[
         weight_tt,
         result_fused_tt,
         bias_tt,
-        x_batch_stride,
-        x_c_stride,
-        x_l_stride,
-        weight_c_stride,
-        weight_width_stride,
-        out_batch_stride,
-        out_c_stride,
-        out_l_stride,
-        bias_stride,
         silu_activation,
     )
 
