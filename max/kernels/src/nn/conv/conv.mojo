@@ -126,12 +126,7 @@ from linalg.utils import partition_work
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
-from std.sys import (
-    has_amd_gpu_accelerator,
-    has_amd_rdna_gpu_accelerator,
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import has_amd_rdna_gpu_accelerator
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -5201,7 +5196,7 @@ def conv_gpu[
         # kernel > 1x1, K >= 16, N >= 16, compute_capability == 5); on decline
         # (incl. non-M5) it falls through to the materialised matmul below.
         # Hardware-agnostic path -- no SM100 TMA / swizzle machinery involved.
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             from nn.conv.gpu.im2col_matmul_2d import (
                 dispatch_fused_im2col_conv2d_apple,
                 dispatch_im2col_matmul_conv2d,
@@ -5275,7 +5270,7 @@ def conv_gpu[
         # on MI355X (see `bench_amd_4wave_conv_vs_miopen.mojo`). When
         # `has_residual` is set, the dispatcher routes to the in-kernel
         # fused residual path (`amd_4wave_conv[has_residual=True]`).
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             from nn.conv.gpu.amd.dispatch import dispatch_amd_4wave_conv2d
             from linalg.utils import elementwise_epilogue_type as _ew_2d_t
 
@@ -5508,7 +5503,7 @@ def conv_gpu[
                     return
 
         # AMD GPU path: fall back to MIOpen for conv2d.
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             _conv_miopen[
                 maybe_epilogue_func=maybe_epilogue_func,
                 filter_is_fcrs=filter_is_fcrs,
@@ -5529,7 +5524,7 @@ def conv_gpu[
             # The FCRS-filter fallback runs only on cuDNN (NVIDIA). On any
             # other GPU, guard here rather than silently entering cuDNN and
             # failing later with a confusing driver-level error. See MOCO-4172.
-            comptime if not has_nvidia_gpu_accelerator():
+            comptime if not ctx.target.is_nvidia_gpu():
                 raise Error(
                     "conv2d: no GPU kernel for this convolution on this"
                     " device; the FCRS-filter fallback path is implemented"
@@ -5724,7 +5719,7 @@ def conv_gpu[
             # simd_width, C_out<64, non-square stride, FCQRS filter,
             # grouped, dilated); caller then falls through to the
             # im2col path below.
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 from linalg.utils import (
                     elementwise_epilogue_type as _ew_3d_t,
                 )

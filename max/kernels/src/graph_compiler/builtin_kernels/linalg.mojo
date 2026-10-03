@@ -24,7 +24,6 @@ from std.sys.info import simd_width_of, _accelerator_arch
 from std.sys.info import (
     simd_width_of,
     _accelerator_arch,
-    has_apple_gpu_accelerator,
 )
 import extensibility
 
@@ -1456,7 +1455,7 @@ struct Struct_matmul_weight_only_block_scaled_apple:
         comptime assert is_gpu[
             target
         ](), "Apple weight-only block-scaled matmul only supports GPUs"
-        comptime assert has_apple_gpu_accelerator(), (
+        comptime assert context.target.is_apple_gpu(), (
             "mo.matmul.weight.only.block.scaled.apple requires an Apple"
             " (Metal) GPU accelerator"
         )
@@ -1500,7 +1499,7 @@ struct Struct_matmul_weight_only_scaled_float8_apple:
         comptime assert is_gpu[
             target
         ](), "Apple weight-only scaled FP8 matmul only supports GPUs"
-        comptime assert has_apple_gpu_accelerator(), (
+        comptime assert context.target.is_apple_gpu(), (
             "mo.matmul.weight.only.scaled.float8.apple requires an Apple"
             " (Metal) GPU accelerator"
         )
@@ -1539,7 +1538,7 @@ def _apple_int8_w8a8_dispatch[
         target
     ](), "Apple int8 W8A8 matmul only supports GPUs"
     comptime assert (
-        has_apple_gpu_accelerator()
+        context.target.is_apple_gpu()
     ), "mo.matmul.int8.w8a8.apple requires an Apple (Metal) GPU accelerator"
 
     var M = Int(a_tt.dim[0]())

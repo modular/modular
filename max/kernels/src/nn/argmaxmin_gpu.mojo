@@ -22,7 +22,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, simd_width_of, size_of
-from std.sys.info import has_apple_gpu_accelerator
 
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -399,7 +398,7 @@ def argmaxmin_gpu[
         )
         block_size = max(block_size, WARP_SIZE)
         var combine_block_size = max(next_power_of_two(num_splits), WARP_SIZE)
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             block_size = WARP_SIZE
             combine_block_size = WARP_SIZE
 

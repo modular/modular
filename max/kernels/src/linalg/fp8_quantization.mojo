@@ -17,7 +17,7 @@ from std.collections.string.string_span import get_static_string
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 from std.atomic import Atomic
-from std.sys import simd_width_of, has_nvidia_gpu_accelerator
+from std.sys import simd_width_of
 from std.sys import align_of, size_of, get_defined_bool
 import max.gpu.primitives.block as block
 from max.algorithm.functional import _elementwise_impl_gpu
@@ -2156,7 +2156,7 @@ def blockwise_scaled_fp8_with_epilogue[
             # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
             # arch support 32B load/store to global memory, see KERN-2037.
             comptime use_32b_simd = (
-                has_nvidia_gpu_accelerator()
+                ctx.target.is_nvidia_gpu()
                 and ctx.default_device_info.compute >= B200.compute
             )
             comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (

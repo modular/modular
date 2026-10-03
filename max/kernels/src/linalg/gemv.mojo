@@ -17,7 +17,6 @@ from std.collections import Optional
 from std.math import align_down, align_up, ceildiv
 from std.math.uutils import umod, ufloordiv
 from std.sys import (
-    has_amd_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     llvm_intrinsic,
@@ -1959,7 +1958,7 @@ def _gemv_gpu_dispatch_impl[
                         attributes=pdl_launch_attributes(pdl_level),
                     )
 
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 comptime if is_minimax_router_gemm[
                     c_type, a_type, b_type, static_N, static_K
                 ]():

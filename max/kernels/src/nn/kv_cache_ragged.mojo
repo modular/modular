@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements KV-cache kernels for ragged (variable-length) sequences used in continuous batching."""
 
-from std.sys.info import (
-    CompilationTarget,
-    has_amd_gpu_accelerator,
-    simd_width_of,
-)
+from std.sys.info import CompilationTarget, simd_width_of
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory import ThinAllocation, dealloc
@@ -2460,7 +2456,7 @@ def _matmul_blockwise_scaled_fp4_common[
     # The callee bottoms out in `cdna4_block_scaled_mfma`, so this needs CDNA4
     # (gfx950) in practice; the gate is any-AMD to match the predicate used
     # across the rest of the AMD kernels.
-    comptime if has_amd_gpu_accelerator():
+    comptime if context.target.is_amd_gpu():
         if tensor_sf != 1.0:
             raise Error(
                 "CDNA4 block-scaled fused QKV+index expects a unit tensor"

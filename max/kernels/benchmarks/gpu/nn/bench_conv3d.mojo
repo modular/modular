@@ -31,7 +31,6 @@ Usage (kbench):
 from std.math import ceildiv
 from std.random import rand
 from std.sys import get_defined_dtype, get_defined_int
-from std.sys.info import has_amd_gpu_accelerator
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
@@ -318,7 +317,7 @@ def bench_conv3d[
                 "dispatch_1x1x1_matmul_conv3d declined: " + bench_input_id
             )
     elif impl == "qslice":
-        comptime if not has_amd_gpu_accelerator():
+        comptime if not ctx.target.is_amd_gpu():
             var accepted = dispatch_qslice_conv3d_sm100(
                 input_tt,
                 filter_qrscf_tt,
@@ -340,7 +339,7 @@ def bench_conv3d[
                 + bench_input_id
             )
     elif impl == "native_3d":
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             # Autotune-override knobs (0 = use the dispatcher's
             # built-in heuristic). Pass via `-D BM_OVERRIDE=64` etc
             # to sweep configs for the per-shape dispatch table.
@@ -426,7 +425,7 @@ def bench_conv3d[
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )
     elif impl == "qslice":
-        comptime if not has_amd_gpu_accelerator():
+        comptime if not ctx.target.is_amd_gpu():
 
             @inline(.always)
             def qslice_bench(
@@ -453,7 +452,7 @@ def bench_conv3d[
                 [ThroughputMeasure(BenchMetric.flops, flops)],
             )
     elif impl == "native_3d":
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             comptime _BM_OVERRIDE = get_defined_int["BM_OVERRIDE", 0]()
             comptime _BN_OVERRIDE = get_defined_int["BN_OVERRIDE", 0]()
             comptime _BK_OVERRIDE = get_defined_int["BK_OVERRIDE", 0]()
@@ -491,7 +490,7 @@ def bench_conv3d[
                 [ThroughputMeasure(BenchMetric.flops, flops)],
             )
     elif impl == "cudnn":
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             # Capturing `input_buf` / `output_buf` here would alias the
             # `input_tt` / `output_tt` views this arm launches through.
             @inline(.always)
@@ -594,7 +593,7 @@ def bench_conv3d[
 
     # Optional correctness cross-check against cuDNN.
     if verify:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             conv_miopen(
                 input_tt,
                 filter_qrscf_tt,

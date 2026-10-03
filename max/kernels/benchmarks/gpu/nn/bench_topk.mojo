@@ -911,7 +911,7 @@ def main() raises:
             num_blocks_per_input=num_blocks_per_input,
         )
 
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             if masked_probs or use_dist:
                 raise Error(
                     "the masked_probs and topp_dist benchmarks require"

@@ -20,12 +20,7 @@
 from std.collections import OptionalReg
 from std.math import align_up, ceildiv, iota
 from std.random import seed
-from std.sys.info import (
-    has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-    size_of,
-)
+from std.sys.info import size_of
 import extensibility
 
 # ===-----------------------------------------------------------------------===#
@@ -4788,9 +4783,9 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
             # (mem-pipe-bound on M5) done as VEC-wide SIMD chunks. Any other
             # accelerator runs the portable v1 one-thread-per-channel kernel.
             comptime use_dstate_split = (
-                has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+                ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()
             )
-            comptime use_apple_vec = has_apple_gpu_accelerator()
+            comptime use_apple_vec = ctx.target.is_apple_gpu()
             # bf16 SSM state is only wired on the Apple vectorized kernel; the
             # dstate-split and portable v1 kernels are fp32-state. The Python
             # side only allocates a bf16 pool on Apple (nemotron_h

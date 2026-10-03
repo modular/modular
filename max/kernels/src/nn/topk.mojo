@@ -38,7 +38,6 @@ from max.gpu.host.info import is_cpu
 from max.gpu.memory import external_memory
 from std.sys.info import (
     has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
     is_apple_gpu,
 )
 from std.random import Random
@@ -1724,7 +1723,7 @@ def _topk_gpu[
     # top-k kernels stay within Apple's static shared-memory budget, then
     # recompute blocks.
     var effective_block_size = block_size
-    comptime if has_apple_gpu_accelerator():
+    comptime if ctx.target.is_apple_gpu():
         effective_block_size = WARP_SIZE
 
     # Define the number of blocks per grid
@@ -1774,7 +1773,7 @@ def _topk_gpu[
     )
     # align to warp size
     shared_mem_bytes_2 = align_up(shared_mem_bytes_2, WARP_SIZE)
-    comptime if has_apple_gpu_accelerator():
+    comptime if ctx.target.is_apple_gpu():
         if shared_mem_bytes_2 > _APPLE_STATIC_SHMEM_MAX_BYTES:
             raise Error(
                 t"shared memory of {shared_mem_bytes_2} exceeds static"
@@ -1974,7 +1973,7 @@ def topk_gpu[
 
         # On Apple GPUs, clamp block_size to a single warp so the shared-memory
         # top-k kernels stay within Apple's static shared-memory budget.
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             block_size_ = min(block_size_, WARP_SIZE)
 
         # This section handles different input ranks by reshaping to a 2D tensor

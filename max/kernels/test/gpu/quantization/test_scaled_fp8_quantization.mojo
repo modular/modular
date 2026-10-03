@@ -20,7 +20,6 @@ from linalg.fp8_quantization import (
     quantize_static_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
 )
-from std.sys import has_nvidia_gpu_accelerator
 from std.testing import assert_equal, assert_true, assert_almost_equal
 
 from std.utils.numerics import (
@@ -1157,7 +1156,7 @@ def main() raises:
         ](ctx, Int(7), Int(1000), Idx[576])
 
         # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu():
             test_dynamic_fp8_quant[
                 DType.float8_e4m3fn,
                 DType.bfloat16,

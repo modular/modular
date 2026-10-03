@@ -88,7 +88,6 @@ post-fix, 0/24 seeds fail, every element bit-exact.
 from std.math import ceildiv, sqrt
 from std.memory import UnsafePointer, alloc
 from std.random import randn, randn_float64, seed
-from std.sys import has_nvidia_gpu_accelerator
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext
@@ -700,7 +699,7 @@ def test_garbage_head_canary(ctx: DeviceContext, rng_seed: Int) raises:
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             var failures = List[String]()

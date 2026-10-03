@@ -30,7 +30,6 @@ from std.sys import (
     get_defined_int,
     has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
-    has_apple_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -680,9 +679,7 @@ def flash_attention[
         q.dtype.is_float8()
         and cache_t.dtype.is_float8()
         and output.dtype == .bfloat16
-        and (
-            _is_sm10x_gpu(ctx.default_device_info) or has_amd_gpu_accelerator()
-        )
+        and (_is_sm10x_gpu(ctx.default_device_info) or ctx.target.is_amd_gpu())
     )
 
     comptime assert (
@@ -694,7 +691,7 @@ def flash_attention[
     comptime assert (
         q.dtype == .float32
         or q.dtype.is_half_float()
-        or (q.dtype.is_float8() and has_amd_gpu_accelerator())
+        or (q.dtype.is_float8() and ctx.target.is_amd_gpu())
         or is_native_fp8_bf16_out
     ), (
         "Only support single, half, float8 (AMD), and float8->bfloat16"
@@ -1434,7 +1431,7 @@ def flash_attention_dispatch[
                     ceildiv(max_prompt_len, BM),
                     config.num_heads,
                     batch_size,
-                ) if has_nvidia_gpu_accelerator() else LaunchDim(
+                ) if ctx.target.is_nvidia_gpu() else LaunchDim(
                     config.num_heads,
                     ceildiv(max_prompt_len, BM),
                     batch_size,
@@ -1464,12 +1461,12 @@ def flash_attention_dispatch[
         # for fp32 as well.
         elif (
             q_half_float_or_fp32
-            or (dtype.is_float8() and has_amd_gpu_accelerator())
+            or (dtype.is_float8() and ctx.target.is_amd_gpu())
             or (dtype.is_float8() and is_sm100)
         ) and is_token_generation:
             comptime if depth <= 576 and (
                 not dtype.is_float8()
-                or has_amd_gpu_accelerator()
+                or ctx.target.is_amd_gpu()
                 or (dtype.is_float8() and is_sm100 and depth <= 512)
             ):
                 # AMD bf16: 4 warps (256 threads) with 16x16 MMA.
@@ -1480,15 +1477,15 @@ def flash_attention_dispatch[
                 )
                 comptime BM = (
                     (16 if _fp8_small_mma else 32) if (
-                        dtype.is_float8() and has_amd_gpu_accelerator()
+                        dtype.is_float8() and ctx.target.is_amd_gpu()
                     ) else 16
                 )
-                comptime BN = 128 if has_amd_gpu_accelerator() else (
-                    depth if has_nvidia_gpu_accelerator() else 128
+                comptime BN = 128 if ctx.target.is_amd_gpu() else (
+                    depth if ctx.target.is_nvidia_gpu() else 128
                 )
                 comptime BK = (
                     (128 if _fp8_small_mma else 64) if dtype.is_float8() else 32
-                ) if has_amd_gpu_accelerator() else (
+                ) if ctx.target.is_amd_gpu() else (
                     16 if q.dtype == .float32 else 32
                 )
                 comptime WM = BM
@@ -1777,13 +1774,13 @@ def flash_attention_dispatch[
                                             batch_size,
                                         ),
                                         block_dim=(num_threads_S, 1, 1),
-                                        shared_mem_bytes=shared_mem_bytes if has_nvidia_gpu_accelerator() else 0,
+                                        shared_mem_bytes=shared_mem_bytes if ctx.target.is_nvidia_gpu() else 0,
                                         func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                                             UInt32(
                                                 (
                                                     ctx.default_device_info.shared_memory_per_multiprocessor
                                                     - 4096
-                                                ) if has_nvidia_gpu_accelerator() else 0
+                                                ) if ctx.target.is_nvidia_gpu() else 0
                                             )
                                         ),
                                     )
@@ -1962,7 +1959,7 @@ def flash_attention_dispatch[
 
                         # AMD decoding kernels always use exp2 for softmax,
                         # while NVIDIA uses exp2 only with FA3 kernels.
-                        comptime reduce_use_exp2 = use_fa3_kernel or has_amd_gpu_accelerator()
+                        comptime reduce_use_exp2 = use_fa3_kernel or ctx.target.is_amd_gpu()
                         comptime kernel_reduce = mha_splitk_reduce[
                             intermediate_dtype,
                             output.dtype,
@@ -2046,7 +2043,7 @@ def flash_attention_dispatch[
     # Not supported by fast flash attention kernel.
     else:
         # Assumes BSHD.
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             # Apple attention. Decode (1 query row) -> `naive_fa_decode_apple`
             # (head dim split across lanes; that kernel owns which head dims it
             # can specialize). Prefill ->
@@ -2547,7 +2544,7 @@ def flash_attention_ragged[
     comptime assert (
         q.dtype == .float32
         or q.dtype.is_half_float()
-        or (q.dtype.is_float8() and has_amd_gpu_accelerator())
+        or (q.dtype.is_float8() and ctx.target.is_amd_gpu())
     ), "Only support single, half, and float8 (AMD only) precision."
 
     # Runtime dimensions.

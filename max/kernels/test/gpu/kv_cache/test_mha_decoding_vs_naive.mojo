@@ -40,7 +40,6 @@ from layout._utils import ManagedLayoutTensor
 from std.memory import unsafe_memcpy, unsafe_memset_zero
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from std.sys import has_amd_gpu_accelerator
 from std.testing import assert_almost_equal, assert_true
 
 from std.utils import IndexList
@@ -288,7 +287,7 @@ def main() raises:
         # The split-K case also pins the partition count: partials are summed
         # per partition, so re-targeting `hip_mha_decoding_num_partitions`
         # re-associates that sum and moves the hash.
-        comptime amd = has_amd_gpu_accelerator()
+        comptime amd = ctx.target.is_amd_gpu()
         comptime group4_hash = UInt64(9912283832381023013) if amd else UInt64(0)
         comptime group16_small_hash = UInt64(
             13849357457032651557

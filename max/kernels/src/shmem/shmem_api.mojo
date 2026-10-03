@@ -212,7 +212,7 @@ def shmem_init_thread_mpi(ctx: DeviceContext, gpus_per_node: Int = -1) raises:
         If SHMEM initialization fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if ctx.target.is_nvidia_gpu():
         nvshmemx_init_thread(ctx, gpus_per_node)
     else:
         CompilationTarget.unsupported_target_error[
@@ -316,7 +316,7 @@ def shmem_init_thread_tcp(
     if server_port == -1:
         server_port = atol(getenv("SHMEM_SERVER_PORT", "44434"))
 
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         var uid = shmem_create_uniqueid(server_ip, c_int(server_port))
         rocshmem_init_thread_tcp(
             ctx,

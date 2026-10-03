@@ -20,7 +20,6 @@ single reduce phase plus a per-row `emit` — and runs on both CPU and GPU.
 """
 
 from max.gpu.host import DeviceContext
-from std.sys.info import has_apple_gpu_accelerator
 from std.utils.coord import Coord
 
 from algorithm import rowwise
@@ -433,7 +432,7 @@ def reduce_mean[
             var total = acc.slice[params.emit_tile_width]()
 
             comptime if dtype.is_floating_point():
-                comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+                comptime float_type = DType.float32 if context.T.target.is_apple_gpu() else DType.float64
                 # `axis_size == 0` gives `recip = inf` and `total` (the
                 # `ReduceSum` identity) is `0`, so `total * recip` is the
                 # IEEE-754 `0 * inf = NaN` — the same "no data" signal

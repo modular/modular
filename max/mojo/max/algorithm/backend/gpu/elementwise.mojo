@@ -43,7 +43,7 @@ from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import unsafe_stack_allocation
 from std.sys._assembly import inlined_assembly
 from std.sys.defines import get_defined_bool, get_defined_int
-from std.sys.info import _has_sm_100x_or_newer, has_nvidia_gpu_accelerator
+from std.sys.info import _has_sm_100x_or_newer
 from std.utils.coord import Coord, CoordLike, coord_to_index_list
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -882,7 +882,7 @@ def _elementwise_impl_gpu[
     ]()
     comptime elems_per_thread = get_defined_int[
         "MOJO_ELEMENTWISE_ELEMS_PER_THREAD",
-        4 if has_nvidia_gpu_accelerator() else 1,
+        4 if ctx.target.is_nvidia_gpu() else 1,
     ]()
     comptime clc_min_packed_per_row = get_defined_int[
         "MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9
@@ -1036,7 +1036,7 @@ def _dual_elementwise_impl_gpu[
     ]()
     comptime elems_per_thread = get_defined_int[
         "MOJO_ELEMENTWISE_ELEMS_PER_THREAD",
-        4 if has_nvidia_gpu_accelerator() else 1,
+        4 if ctx.target.is_nvidia_gpu() else 1,
     ]()
 
     var max_length = Int(shape_0.product())

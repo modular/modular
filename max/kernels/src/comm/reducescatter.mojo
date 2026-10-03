@@ -44,7 +44,6 @@ from std.sys import (
     simd_width_of,
     size_of,
     align_of,
-    has_amd_gpu_accelerator,
     is_amd_gpu,
 )
 
@@ -1369,7 +1368,7 @@ def reducescatter[
     # AMD P2P reduce-scatter is PCIe-fabric-bound: ~128 blocks saturate it
     # (CDNA4: 166.5 vs 148.8 GB/s at 1024); more only adds barrier overhead.
     comptime _default_num_blocks = (
-        128 if has_amd_gpu_accelerator() else MAX_NUM_BLOCKS_UPPER_BOUND
+        128 if ctx.target.is_amd_gpu() else MAX_NUM_BLOCKS_UPPER_BOUND
     )
     var max_num_blocks = (
         _max_num_blocks.value() if _max_num_blocks else _default_num_blocks

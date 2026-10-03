@@ -14,7 +14,6 @@
 from std.math import ceildiv, isclose
 from std.os import abort
 from std.random import random_float64
-from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from max.gpu import WARP_SIZE, global_idx
 from max.gpu.host import DeviceContext
@@ -159,7 +158,7 @@ def test_layout_mma[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu():
             comptime shape_884 = IndexList[3](8, 8, 4)
             comptime shape_1684 = IndexList[3](16, 8, 4)
             comptime shape_1688 = IndexList[3](16, 8, 8)
@@ -193,7 +192,7 @@ def main() raises:
             test_layout_mma[.float32, DType.float16, shape_1688, 16, 8, 8](
                 ctx, rtol=1e-01
             )
-        elif has_amd_gpu_accelerator():
+        elif ctx.target.is_amd_gpu():
             comptime shape_161616 = IndexList[3](16, 16, 16)
             comptime shape_16164 = IndexList[3](16, 16, 4)
 

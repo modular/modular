@@ -38,7 +38,6 @@ Layout:
 
 from std.math import ceildiv, nan
 from std.random import randn, seed
-from std.sys import has_nvidia_gpu_accelerator
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import (
@@ -1455,7 +1454,7 @@ def main() raises:
     seed(42)
     print("Starting test_mla_decode_qkv_fp8_per_token_scale_rope_aware...")
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             print("=" * 72)

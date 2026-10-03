@@ -154,7 +154,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             # - "mma_tile_buffers": A matrix multiplication using tile buffers and AMD Tensor Core instructions.
 
             comptime if Self.algorithm == "naive_tensor":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 64
                     comptime BN = 64
                     comptime BK = 8
@@ -186,7 +186,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "basic_shared_mem":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 64
                     comptime BN = 64
                     comptime BK = 8
@@ -218,7 +218,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "multi_block_tiled":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64
@@ -254,7 +254,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "scheduler_hints":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64
@@ -290,7 +290,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "double_buffer":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 128
                     comptime BN = 128
                     comptime BK = 32
@@ -326,7 +326,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "mma_tile_buffers":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64

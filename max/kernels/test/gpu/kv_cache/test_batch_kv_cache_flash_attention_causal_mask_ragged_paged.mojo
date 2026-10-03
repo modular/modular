@@ -32,7 +32,6 @@ from std.memory import unsafe_memcpy, unsafe_memset_zero
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
 from std.testing import assert_almost_equal, assert_equal
-from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from std.utils import IndexList
 

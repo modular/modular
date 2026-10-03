@@ -346,7 +346,7 @@ def bench_conv2d[
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )
     comptime if resolved == "cudnn":
-        comptime assert has_nvidia_gpu_accelerator(), (
+        comptime assert ctx.target.is_nvidia_gpu(), (
             "impl=cudnn requires an NVIDIA target. Build for an NVIDIA"
             " accelerator (e.g. cuda:b200) or pick a different impl."
         )
@@ -557,7 +557,7 @@ def bench_conv2d[
     # is not available on AMD. The AMD `amd_4wave` arm has its own
     # dedicated correctness tests under max/kernels/test/gpu/nn/.
     var do_verify = verify
-    comptime if not has_nvidia_gpu_accelerator():
+    comptime if not ctx.target.is_nvidia_gpu():
         if verify:
             print("verify: skipped (requires NVIDIA cuDNN as the reference)")
         do_verify = False

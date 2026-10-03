@@ -18,9 +18,7 @@ from std.bit import count_trailing_zeros
 from std.math import ceildiv
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import (
-    has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
-    has_apple_gpu_accelerator,
 )
 
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -700,7 +698,7 @@ def grouped_matmul[
     comptime amd_bk = _bk_base[a_type, amd_kernel=True]()
     comptime static_K = b.static_shape[2]
     comptime is_amd_kernel_applicable = (
-        has_amd_gpu_accelerator()
+        ctx.target.is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         and is_expert_shape_static
         and static_K >= 2 * amd_bk
@@ -714,9 +712,9 @@ def grouped_matmul[
     # A fused epilogue is not applied by the tiled interior store, so shapes with
     # one fall through to naive (the MoE decode path passes none). Pre-M5 Apple
     # also falls through (the M5 native-fp8 MMA is unvalidated pre-M5). CUDA/AMD
-    # builds compile this branch out (`has_apple_gpu_accelerator()` is comptime).
+    # builds compile this branch out (`ctx.target.is_apple_gpu()` is comptime).
     comptime is_apple_fp8_moe_applicable = (
-        has_apple_gpu_accelerator()
+        ctx.target.is_apple_gpu()
         and a_type == .bfloat16
         and b_type == .float8_e4m3fn
         and is_expert_shape_static
@@ -727,7 +725,7 @@ def grouped_matmul[
     # the plane select is only implemented by the naive kernel. Compiled out
     # off Apple.
     comptime is_apple_grouped_matmul_applicable = (
-        has_apple_gpu_accelerator()
+        ctx.target.is_apple_gpu()
         and a_type == b_type
         and (a_type == .bfloat16 or a_type == .float16)
         and is_expert_shape_static
@@ -768,7 +766,7 @@ def grouped_matmul[
             # use host-known upper bounds instead: no group has more rows than
             # `a`, and `moe_create_indices` always reports every expert active.
             comptime if (
-                has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator()
+                ctx.target.is_amd_gpu() and not has_amd_rdna_gpu_accelerator()
             ):
                 return (Int(a.dim(0)), Int(expert_ids.dim(0)))
             var host_buf = ctx.enqueue_create_host_buffer[.uint32](2)

@@ -32,7 +32,7 @@ these values are exact.
 
 from std.math import ceildiv
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import argv
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -1005,7 +1005,7 @@ def main() raises:
     seed(42)
 
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             if is_benchmark():

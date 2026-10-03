@@ -26,7 +26,7 @@ from layout.tile_tensor import row_major
 from std.utils.index import IndexList
 
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from std.sys.info import size_of, has_amd_gpu_accelerator
+from std.sys.info import size_of
 from extensibility import (
     InputTensor,
     InputVariadicTensors,
@@ -238,7 +238,7 @@ struct Struct_ep_init:
 
         comptime if n_nodes > 1:
             # Initialize the SHMEM library for this GPU
-            comptime if has_amd_gpu_accelerator():
+            comptime if gpu_ctx.target.is_amd_gpu():
                 shmem_init_thread_tcp(gpu_ctx, gpus_per_node=n_gpus_per_node)
             else:
                 shmem_init_thread_mpi(gpu_ctx, gpus_per_node=n_gpus_per_node)

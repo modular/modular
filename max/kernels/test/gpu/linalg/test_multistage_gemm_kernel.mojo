@@ -15,7 +15,7 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from std.collections import Optional
 from std.math import ceildiv
 from std.random import rand
-from std.sys import align_of, has_nvidia_gpu_accelerator
+from std.sys import align_of
 
 from internal_utils import assert_almost_equal
 from layout import (
@@ -224,7 +224,7 @@ def main() raises:
         # every other row, and an N that is not a multiple of the block tile
         # leaves the trailing block running past the last column. NVIDIA-only,
         # since only that path vectorizes C along N.
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu():
             # Odd N.
             multistage_gemm_fp32_run[M=20, N=257, K=768](ctx)
             multistage_gemm_fp32_run[M=20, N=257, K=768, use_epilogue=True](ctx)

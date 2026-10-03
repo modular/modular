@@ -38,7 +38,7 @@ kernel they must still agree AND both be finite. A finite reference + NaN kernel
 
 from std.collections import Optional
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -376,7 +376,7 @@ def sweep_q[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # Two per-rank head counts: 16 (e.g. 128 heads at TP=8), 32 (TP=4).

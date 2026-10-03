@@ -20,7 +20,7 @@ from std.memory import unsafe_stack_allocation
 
 from std.atomic import Atomic, Ordering
 from shmem.ep_comm import BLOCK_SCOPE
-from std.sys import has_apple_gpu_accelerator, simd_width_of
+from std.sys import simd_width_of
 from std.sys.info import is_amd_gpu, is_nvidia_gpu
 
 import max.gpu.primitives.warp as warp
@@ -305,7 +305,7 @@ def moe_create_indices[
     ](), "Creating MoE indices is only supported on GPU"
 
     comptime block_threads = (
-        _APPLE_BLOCK_THREADS if has_apple_gpu_accelerator() else _BLOCK_THREADS
+        _APPLE_BLOCK_THREADS if context.target.is_apple_gpu() else _BLOCK_THREADS
     )
 
     with Trace[TraceLevel.OP, target=target](

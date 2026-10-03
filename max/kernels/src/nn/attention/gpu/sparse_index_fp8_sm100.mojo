@@ -89,7 +89,7 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.math import align_up, ceildiv
-from std.sys import get_defined_int, has_nvidia_gpu_accelerator, size_of
+from std.sys import get_defined_int, size_of
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 

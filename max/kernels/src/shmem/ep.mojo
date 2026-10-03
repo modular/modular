@@ -23,7 +23,7 @@ from std.math import ceildiv
 from layout import DefaultEngine, TensorLayout, TileTensor, Idx
 from layout.tile_tensor import row_major
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
-from std.sys.info import has_amd_gpu_accelerator, simd_width_of, size_of
+from std.sys.info import simd_width_of, size_of
 from max.gpu import WARP_SIZE
 from std.ffi import external_call, _get_global_or_null
 
@@ -433,7 +433,7 @@ def ep_dispatch_wait_kernel_api[
 
         var smem_size = UInt32(token_fmt_type.dispatch_smem_size)
         var grid_dim_x: Int
-        comptime if has_amd_gpu_accelerator():
+        comptime if gpu_ctx.target.is_amd_gpu():
             if num_input_tokens >= 0:
                 grid_dim_x = _ep_dispatch_wait_grid_dim(
                     num_input_tokens, n_local_experts, hw_info.sm_count
@@ -651,7 +651,7 @@ def ep_fused_dispatch_kernel_api[
         comptime n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
         var num_input_tokens = Int(input_tokens.dim(0))
         var grid_dim_x: Int
-        comptime if has_amd_gpu_accelerator():
+        comptime if gpu_ctx.target.is_amd_gpu():
             grid_dim_x = _ep_dispatch_wait_grid_dim(
                 num_input_tokens, n_local_experts, hw_info.sm_count
             )
@@ -968,7 +968,7 @@ def ep_combine_wait_kernel_api[
             hw_info.max_thread_block_size // WARP_SIZE
         )
         var grid_dim_x: Int
-        comptime if has_amd_gpu_accelerator():
+        comptime if gpu_ctx.target.is_amd_gpu():
             if num_input_tokens >= 0:
                 grid_dim_x = _ep_combine_wait_grid_dim(
                     num_input_tokens,
@@ -1185,7 +1185,7 @@ def ep_fused_combine_kernel_api[
         )
         var num_input_tokens = Int(input_tokens.dim(0))
         var grid_dim_x: Int
-        comptime if has_amd_gpu_accelerator():
+        comptime if gpu_ctx.target.is_amd_gpu():
             grid_dim_x = _ep_combine_wait_grid_dim(
                 num_input_tokens,
                 n_chunks_per_tok,

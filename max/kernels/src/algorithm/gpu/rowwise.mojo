@@ -62,7 +62,6 @@ from std.memory import UnsafePointer, stack_allocation
 from std.sys import simd_width_of, size_of, get_defined_int
 from std.sys.info import (
     has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
     is_apple_gpu,
 )
 from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
@@ -1680,7 +1679,7 @@ def launch[
     comptime if (
         supports_splitk
         and effective_simd <= _SPLITK_MAX_SIMD
-        and not has_apple_gpu_accelerator()
+        and not ctx.target.is_apple_gpu()
     ):
         if num_rows < sm_count and row_size >= _SPLITK_MIN_ROW:
             # Cap `blocks_per_row` at `_SPLITK_ROW_BLOCK_SIZE`: the

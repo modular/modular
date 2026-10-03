@@ -35,11 +35,7 @@ Dispatch logic relevant to coverage (from mla_decode_dispatch.mojo):
 """
 
 from std.random import randn
-from std.sys import (
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -539,7 +535,7 @@ def test_sliding_window_batch_variations(ctx: DeviceContext) raises:
 def main() raises:
     print("Starting test_mla_decode_qkv_fp8_sliding_window...")
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             test_sliding_window_small_cache(ctx)

@@ -35,7 +35,6 @@ test_mla_decode_sparse_kv_fp8.mojo for numerics).
 from std.builtin._closure import __ownership_keepalive
 from std.math import ceildiv
 from std.random import seed
-from std.sys import has_nvidia_gpu_accelerator
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
@@ -353,7 +352,7 @@ def bench_sparse_kv_fp8[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             seed(42)

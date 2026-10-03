@@ -33,7 +33,7 @@ This test:
 from std.math import ceildiv, exp
 from std.memory import alloc, bitcast
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator, size_of
+from std.sys import argv, size_of
 
 from max.gpu import *
 from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
@@ -3582,7 +3582,7 @@ def run_test_sparse_topk_clamping[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # topk=64 out of 257 tokens, batch=1, 16 heads.

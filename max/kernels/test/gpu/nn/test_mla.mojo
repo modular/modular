@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import randn
-from std.sys import (
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -630,7 +626,7 @@ def test_prefill[
 
     # compare output with reference
     comptime atol: Float64 = 2e-2
-    comptime rtol: Float64 = 2e-2 if has_nvidia_gpu_accelerator() else 3e-2
+    comptime rtol: Float64 = 2e-2 if ctx.target.is_nvidia_gpu() else 3e-2
     for b in range(batch_size):
         for s in range(seq_len):
             for h in range(num_heads):
@@ -1093,7 +1089,7 @@ def main() raises:
             # partials, which the combine kernel then folds into the output.
             test_decoding_partial_head_group[1, 2, True](ctx, False)
 
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             test_decoding[1, 4, False](ctx, False)
             test_decoding[27, 2, False](ctx, False)
             # Default (None) — exercise the AMD heuristic.
@@ -1129,7 +1125,7 @@ def main() raises:
             # into the next head's output.
             test_decoding_k3_head_counts[1, 2, True](ctx, 1, 4096)
 
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             # 12 heads needs BM rounded up to 16; 24 leaves a partial last
             # head tile at BM=16.
             test_decoding_k3_head_counts[2, 1, False](ctx, 1, 512)

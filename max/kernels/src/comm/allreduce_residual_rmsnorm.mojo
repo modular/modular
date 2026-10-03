@@ -63,7 +63,6 @@ from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
     get_defined_int,
-    has_amd_gpu_accelerator,
     simd_width_of,
     size_of,
 )
@@ -1127,13 +1126,13 @@ def _dispatch_fused_kernel[
     #   B200  4GPU: 512 KB non-res, 256 KB residual
     #   B200  8GPU:  80 KB non-res, 80/100 KB residual (column-aware, see below)
     def _rank_4_per_rank_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return 128 * 1024 if not has_residual else 96 * 1024
         else:
             return 512 * 1024 if not has_residual else 256 * 1024
 
     def _rank_8_per_rank_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return 80 * 1024 if not has_residual else 96 * 1024
         else:
             return 80 * 1024
@@ -1150,7 +1149,7 @@ def _dispatch_fused_kernel[
     # columns (>= 6144, the large-hidden regime), 80 KB otherwise (matches the
     # validated narrow-column crossover; cols=4096 crosses near 72 KB).
     def _rank_8_residual_thresh_for_cols(c: Int) -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_8_per_rank_thresh()
         else:
             return 100 * 1024 if c >= 6144 else 80 * 1024
@@ -1164,7 +1163,7 @@ def _dispatch_fused_kernel[
         threshold = Int.MAX
     elif ngpus <= 4:
         threshold = _rank_4_per_rank_thresh()
-    elif has_residual and not has_amd_gpu_accelerator():
+    elif has_residual and not ctx.target.is_amd_gpu():
         threshold = _rank_8_residual_thresh_for_cols(cols)
     else:
         threshold = _rank_8_per_rank_thresh()
@@ -1177,7 +1176,7 @@ def _dispatch_fused_kernel[
     #   B200 4GPU: 1536 KB per-rank crossover
     #   B200 8GPU: conservative, same as 2-stage threshold
     def _rank_4_split_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_4_per_rank_thresh()
         else:
             return 1536 * 1024
@@ -1191,7 +1190,7 @@ def _dispatch_fused_kernel[
         # Benchmarks show the split (2-kernel) path is always faster than
         # fused 2-stage with residual at 8-GPU scale because the extra
         # bf16 scratch traffic in Stage 2 outweighs the launch overhead.
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_8_per_rank_thresh()
         else:
             return _rank_8_per_rank_thresh()
@@ -1211,7 +1210,7 @@ def _dispatch_fused_kernel[
             use_split = True
     else:
         comptime if has_residual and quantize:
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 # MI355: 2-stage fused beats split for cols <= 8192,
                 # split beats 2-stage for wider columns (16384+).
                 if per_rank_bytes >= threshold:

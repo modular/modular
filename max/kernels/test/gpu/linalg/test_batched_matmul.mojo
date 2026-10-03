@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from std.sys import has_nvidia_gpu_accelerator, simd_width_of
+from std.sys import simd_width_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from max.algorithm.functional import elementwise
@@ -155,7 +155,7 @@ def run_bmm_and_check_result[
     # Skip equality check if N or K are 0 (causes error in vendor_blas).
     if n == 0 or k == 0:
         return
-    if not has_nvidia_gpu_accelerator() and m == 0:
+    if not ctx.target.is_nvidia_gpu() and m == 0:
         # AMD doesn't support matmul with M=0
         return
 
@@ -483,7 +483,7 @@ def main() raises:
             K=Int(128),
         ](ctx, 2, 3, 64)
 
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu():
             # NOTE: these tests should be run on a100 and above
 
             # tests kernels.ampere_128x128_4

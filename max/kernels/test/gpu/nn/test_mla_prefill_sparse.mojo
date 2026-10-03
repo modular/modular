@@ -35,7 +35,7 @@ from std.math import ceildiv, exp2, sqrt
 from std.math.constants import log2e
 from std.memory import UnsafePointer, alloc
 from std.random import randn
-from std.sys import has_nvidia_gpu_accelerator, size_of
+from std.sys import size_of
 
 from max.gpu import *
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -925,7 +925,7 @@ def run_test_prefill_sparse[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # ===============================================================

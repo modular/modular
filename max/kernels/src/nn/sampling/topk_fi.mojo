@@ -35,8 +35,6 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import external_memory
 from std.sys.info import (
-    has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
     is_amd_gpu,
     is_apple_gpu,
 )
@@ -2772,7 +2770,7 @@ def topk_topp_sampling_from_prob[
                 raise Error("out_dist shape must match probs shape")
             dist_ptr = out_dist.unsafe_value().ptr
 
-        comptime coop_capable = from_logits and has_amd_gpu_accelerator()
+        comptime coop_capable = from_logits and ctx.target.is_amd_gpu()
         var coop = 1
         comptime if coop_capable:
             coop = coop_group_size(ctx, batch_size, block_size, d // vec_size)
@@ -3174,7 +3172,7 @@ def topk_softmax_sample[
 
         var k_rounded = align_up(top_k_val, WARP_SIZE)
         var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             if shared_mem_bytes > _APPLE_STATIC_SHMEM_CACHE_BYTES:
                 raise Error(
                     t"shared memory of {shared_mem_bytes} exceeds static"
@@ -3567,7 +3565,7 @@ def topk_topp_masked_probs[
         if temperature:
             temperature_ptr = temperature.unsafe_value().ptr
 
-        comptime coop_capable = has_amd_gpu_accelerator()
+        comptime coop_capable = ctx.target.is_amd_gpu()
         var coop = 1
         comptime if coop_capable:
             coop = coop_group_size(ctx, batch_size, block_size, d // vec_size)

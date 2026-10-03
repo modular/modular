@@ -13,7 +13,7 @@
 
 """Vendor-backed matrix multiplication dispatch for TileTensor operands."""
 
-from std.sys import simd_width_of, size_of, has_nvidia_gpu_accelerator
+from std.sys import simd_width_of, size_of
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext, get_gpu_target
@@ -84,7 +84,7 @@ def matmul[
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
         comptime use_32b_simd = (
-            has_nvidia_gpu_accelerator()
+            ctx.target.is_nvidia_gpu()
             and ctx.default_device_info.compute >= B200.compute
         )
         comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (

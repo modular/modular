@@ -662,7 +662,7 @@ def naive_fa_decode_apple[
     """
     # No `is_apple_gpu()` assert here — this launcher compiles for the host
     # target, where that target-query is always False. The Apple gate is the
-    # caller's (`has_apple_gpu_accelerator()` in dispatch).
+    # caller's (`ctx.target.is_apple_gpu()` in dispatch).
     comptime q_type = q.dtype
 
     var num_keys = max_cache_size

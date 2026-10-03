@@ -17,7 +17,6 @@ from std.sys import (
     get_defined_int,
     simd_width_of,
 )
-from std.sys.info import has_amd_gpu_accelerator
 
 from layout import Coord, TileTensor, row_major, CoordLike, Idx
 import linalg.matmul.vendor.blas as vendor_blas
@@ -191,7 +190,7 @@ def bench_bmm[
         @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             comptime if use_vendor_blas:
-                comptime if has_amd_gpu_accelerator():
+                comptime if ctx.target.is_amd_gpu():
                     var c_buffer = TileTensor(
                         c_device.ptr, row_major(Coord(m, n))
                     )

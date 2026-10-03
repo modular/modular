@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import has_nvidia_gpu_accelerator
-
 from std.benchmark import Bench
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Layout, LayoutTensor, RuntimeLayout
@@ -198,8 +196,8 @@ def main() raises:
         ]
 
         comptime MMA_M = 16
-        comptime MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
-        comptime MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
+        comptime MMA_N = 8 if ctx.target.is_nvidia_gpu() else 16
+        comptime MMA_K = 8 if ctx.target.is_nvidia_gpu() else 4
 
         comptime k_tc = run_gemm_kernel_tc[
             DType.float32,

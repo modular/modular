@@ -35,11 +35,7 @@ The test:
 """
 
 from std.random import randn
-from std.sys import (
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -978,8 +974,8 @@ def test_decoding_sw[
 def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
-        comptime if has_amd_gpu_accelerator() or (
-            has_nvidia_gpu_accelerator()
+        comptime if ctx.target.is_amd_gpu() or (
+            ctx.target.is_nvidia_gpu()
             and _is_sm10x_gpu(ctx.default_device_info)
         ):
             # Basic functionality tests
@@ -1050,7 +1046,7 @@ def main() raises:
             # struct fold_q comptime branch).  AMD backend does not yet support
             # the fold path — gate this block to NVIDIA SM10x at comptime so AMD
             # skips it cleanly.
-            comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
                 ctx.default_device_info
             ):
                 print(
@@ -1286,7 +1282,7 @@ def main() raises:
             # row-keyed split-K) is unreachable from the NVIDIA configs. Hence the
             # shared helpers, arch-specific config lists.
             # ===-------------------------------------------------=== #
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 print("=== AMD MTP token-fold (M = H*S <= 128) ===")
 
                 # --- H=8/S=2 → M=16 (legacy (1,4)) ---

@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: max/gpu/fundamentals.mdx
 
-from std.sys import (
-    exit,
-    has_accelerator,
-    has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
-)
+from std.sys import exit, has_accelerator
 
 from max.gpu.host import DeviceAttribute, DeviceContext
 
@@ -48,7 +43,7 @@ def main() raises:
             ctx.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK),
         )
 
-        comptime if not has_apple_gpu_accelerator():
+        comptime if not ctx.target.is_apple_gpu():
             # Not currently defined for Apple GPUs
 
             print(
@@ -76,9 +71,7 @@ def main() raises:
                 ctx.get_attribute(DeviceAttribute.MAX_REGISTERS_PER_BLOCK),
             )
 
-        comptime if not (
-            has_amd_gpu_accelerator() or has_apple_gpu_accelerator()
-        ):
+        comptime if not ctx.target.is_amd_gpu() or ctx.target.is_apple_gpu():
             # Not currently defined for AMD and Apple GPUs
 
             print(

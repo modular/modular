@@ -26,7 +26,6 @@ from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
 from std.sys import (
     align_of,
-    has_nvidia_gpu_accelerator,
     has_amd_gpu_accelerator,
     get_defined_int,
     simd_width_of,
@@ -820,7 +819,7 @@ def flare_mla_decoding_dispatch[
         kv_num_heads == 1
     ), "flareMLA_decoding only supports kv_num_heads == 1."
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()
     ), "flareMLA_decoding currently only supports Nvidia and AMD GPUs."
 
     comptime assert (
@@ -836,7 +835,7 @@ def flare_mla_decoding_dispatch[
     # so it fires in every build). A `debug_assert` backstop would be wrong: under
     # `-D ASSERT=all` it aborts before the catchable `raise` and breaks the
     # `assert_raises` unsupported-fold tests.
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         # Hard launch-time rejection, and the single source of truth for the
         # fold envelope. Supported: S == 1 (any), or S > 1 with FP8 Q, num_heads
         # <= 16, S <= MLA_DECODE_MAX_SEQ_LEN, and num_heads*S <= 128. The other
@@ -1013,7 +1012,7 @@ def flare_mla_decoding_dispatch[
         # kernel reaches the bandwidth-bound regime; otherwise BM=64's 2×
         # per-block compute (more MFMAs, more SMEM round-trip) loses out.
         # See heuristic dispatch below.
-        comptime amd_fp8 = has_amd_gpu_accelerator() and q.dtype.is_float8()
+        comptime amd_fp8 = ctx.target.is_amd_gpu() and q.dtype.is_float8()
 
         @inline(.always)
         @__parameter
@@ -1021,14 +1020,14 @@ def flare_mla_decoding_dispatch[
             BM: Int,
             q_seq_len: Int = 1,
             WM: Int = BM,
-            WN: Int = (16 if has_nvidia_gpu_accelerator() else 32),
+            WN: Int = (16 if ctx.target.is_nvidia_gpu() else 32),
         ]() raises:
             # `q_seq_len` (S) folds H*S query rows into the MMA M dimension.
             # Default 1 = single-token decode. `WM`/`WN` default to the legacy
             # (1,4) geometry (WM=BM, WN=32 AMD / 16 NVIDIA), so S=1 call sites are
             # byte-identical; warp-local passes `WM=16, WN=128` (num_warps_m=
             # BM//16, num_warps_n=1, one 16-row tile per warp).
-            comptime BN = 64 if has_nvidia_gpu_accelerator() else 128
+            comptime BN = 64 if ctx.target.is_nvidia_gpu() else 128
             # AMD-structured config picks 16x16x128 for MLA decode when
             # `num_heads <= 16` (Kimi-K2.5 TP=4) or `depth % 128 == 0`;
             # both need BK=128 so each MFMA call consumes 128 elements
@@ -1038,7 +1037,7 @@ def flare_mla_decoding_dispatch[
                 num_heads <= 16 or depth % 128 == 0
             )
             comptime BK = 128 if amd_fp8_16x16x128 else (
-                64 if (has_nvidia_gpu_accelerator() or amd_fp8) else 32
+                64 if (ctx.target.is_nvidia_gpu() or amd_fp8) else 32
             )  # 8 mma_tile per row resolves bank conflict on nvidia
             # num warps in M and N, multiplied by warp size.
             comptime num_threads = (BM // WM) * (BN // WN) * WARP_SIZE
@@ -1059,7 +1058,7 @@ def flare_mla_decoding_dispatch[
             )
 
             shared_mem_bytes = (
-                shared_mem_bytes if has_nvidia_gpu_accelerator() else 0
+                shared_mem_bytes if ctx.target.is_nvidia_gpu() else 0
             )
 
             # M-based, not num_heads-based: the fold makes M = num_heads *
@@ -1109,7 +1108,7 @@ def flare_mla_decoding_dispatch[
             if num_partitions:
                 num_partitions_value = num_partitions.value()
             else:
-                comptime if has_amd_gpu_accelerator():
+                comptime if ctx.target.is_amd_gpu():
                     # MLA: kv_num_heads == 1, so heads_per_group == num_heads.
                     num_partitions_value = mha_decoding_num_partitions(
                         batch_size,
@@ -1213,8 +1212,8 @@ def flare_mla_decoding_dispatch[
                 )
 
                 # AMD softmax always uses exp2; CUDA non-FA3 path uses exp.
-                comptime reduce_use_exp2 = has_amd_gpu_accelerator()
-                comptime if has_amd_gpu_accelerator():
+                comptime reduce_use_exp2 = ctx.target.is_amd_gpu()
+                comptime if ctx.target.is_amd_gpu():
                     # W per kernel: target parts_per_warp = MAX_PARTITIONS/W
                     # = 8, the sweet spot for step-2 software pipelining
                     # (~HBM_latency / FMA_throughput loads in flight). So
@@ -1428,7 +1427,7 @@ def flare_mla_decoding_dispatch[
         else:
             # BF16 AMD or non-AMD: keep original BM choice.
             comptime preferred_BM_default = (
-                16 if (not has_enough_smem or has_amd_gpu_accelerator()) else 32
+                16 if (not has_enough_smem or ctx.target.is_amd_gpu()) else 32
             )
             # Round up, not clamp: the kernel asserts `BM % 16 == 0`, so e.g.
             # 12 heads per device must use BM=16.
@@ -3463,7 +3462,7 @@ def flare_mla_prefill_dispatch[
     comptime assert q_depth == type_of(q).static_shape[rank - 1]
     comptime assert num_heads == type_of(q).static_shape[rank - 2]
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()
     ), "flareMLA_prefill currently only supports Nvidia and AMD GPUs."
 
     var batch_size: Int = Int(valid_length.dim[0]()) - 1
@@ -3483,7 +3482,7 @@ def flare_mla_prefill_dispatch[
 
     comptime smem_use = (q_smem + k_smem + v_smem) * size_of[
         config.dtype
-    ]() if has_nvidia_gpu_accelerator() else 0
+    ]() if ctx.target.is_nvidia_gpu() else 0
 
     comptime if _is_sm10x_gpu(ctx.default_device_info):
         comptime assert (
@@ -3513,7 +3512,7 @@ def flare_mla_prefill_dispatch[
 
     else:
         comptime assert (
-            k_rope_t.dtype == .bfloat16 or has_amd_gpu_accelerator()
+            k_rope_t.dtype == .bfloat16 or ctx.target.is_amd_gpu()
         ), (
             "Only support bfloat16 for non-SM100 Nvidia GPUs; AMD supports"
             " bfloat16 and float8_e4m3fn"
@@ -3544,7 +3543,7 @@ def flare_mla_prefill_dispatch[
             ceildiv(max_prompt_len, BM),
             config.num_heads,
             batch_size,
-        ) if has_nvidia_gpu_accelerator() else LaunchDim(
+        ) if ctx.target.is_nvidia_gpu() else LaunchDim(
             config.num_heads,
             ceildiv(max_prompt_len, BM),
             batch_size,

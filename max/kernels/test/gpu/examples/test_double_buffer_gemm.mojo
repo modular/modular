@@ -14,7 +14,7 @@
 from std.math import ceildiv, isclose
 from std.math.uutils import udivmod
 from std.sys import argv, simd_width_of
-from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
+from std.sys.info import is_nvidia_gpu
 
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
@@ -319,7 +319,7 @@ def test(ctx: DeviceContext) raises:
     comptime BN = 128
     comptime BK = 16
     comptime WM = 32
-    comptime WN = 64 if has_nvidia_gpu_accelerator() else 128
+    comptime WN = 64 if ctx.target.is_nvidia_gpu() else 128
     comptime TM = 8
     comptime TN = 8
 

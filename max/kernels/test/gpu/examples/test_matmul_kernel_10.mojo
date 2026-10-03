@@ -14,7 +14,6 @@
 from std.collections import Optional
 from std.math import ceildiv
 from std.math.uutils import udivmod, umod
-from std.sys import has_amd_gpu_accelerator
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
@@ -310,7 +309,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # TODO: Find best for target GPU.
     #       For A100 see below (based on siboehm repo).
     #       For MI300X we need to further autotune (below is a working version).
-    # alias K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
+    # alias K10_NUM_THREADS = 256 if ctx.target.is_amd_gpu() else 128
     # alias K10_BN = 128
     # alias K10_BM = 64
     # alias K10_BK = 16
@@ -320,12 +319,12 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # alias K10_TN = 4
     # alias K10_TM = 4
     # Settings for A6000
-    comptime K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_NUM_THREADS = 256 if ctx.target.is_amd_gpu() else 128
     comptime K10_BN = 128
-    comptime K10_BM = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_BM = 256 if ctx.target.is_amd_gpu() else 128
     comptime K10_BK = 16
     comptime K10_WN = 64
-    comptime K10_WM = 128 if has_amd_gpu_accelerator() else 64
+    comptime K10_WM = 128 if ctx.target.is_amd_gpu() else 64
     comptime K10_WNITER = 4
     comptime K10_TN = 4
     comptime K10_TM = 8

@@ -17,10 +17,7 @@ from std.sys import (
     get_defined_bool,
     get_defined_int,
     has_accelerator,
-    has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
 )
@@ -676,7 +673,7 @@ def _matmul_gpu[
     comptime assert (
         use_tf32
         or a_type != .float32
-        or (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05())
+        or (ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05())
     ), "use_tf32=False is only implemented for the SM100 matmul dispatch"
 
     var shape = GemmShape.get[transpose_b=False](c, a, b)
@@ -717,7 +714,7 @@ def _matmul_gpu[
         and not has_amd_rdna_gpu_accelerator()
     )
 
-    comptime matmul_supported_format = matmul_supported_format_amd if has_amd_gpu_accelerator() else matmul_supported_format_nvidia
+    comptime matmul_supported_format = matmul_supported_format_amd if ctx.target.is_amd_gpu() else matmul_supported_format_nvidia
 
     # Capture the raw pointer: `@__copy_capture` byte-copies, so a
     # `DeviceBuffer`-backed tile would reach the device as a host reference.
@@ -761,20 +758,18 @@ def _matmul_gpu[
         and n % 8 == 0
         and a_type == .bfloat16
     )
-    var amdgpu_matmul_cond = has_amd_gpu_accelerator() and n % 4 == 0
+    var amdgpu_matmul_cond = ctx.target.is_amd_gpu() and n % 4 == 0
     # AMD matmul kernels require K % BK == 0 and K >= 2*BK due to the
     # 2-deep software pipeline prologue. BK = _bk_base (128 for FP8,
     # 64 for BF16 on AMD). Use that as the minimum alignment/size gate
     # so unsupported K values fall through to vendor BLAS.
-    comptime amd_bk = _bk_base[
-        a_type, True
-    ]() if has_amd_gpu_accelerator() else 1
+    comptime amd_bk = _bk_base[a_type, True]() if ctx.target.is_amd_gpu() else 1
     var amd_k_cond = (
         k % amd_bk == 0 and k >= 2 * amd_bk
-    ) if has_amd_gpu_accelerator() else True
+    ) if ctx.target.is_amd_gpu() else True
 
     var multi_gemm_cond = (
-        (m > 1 or has_amd_gpu_accelerator())
+        (m > 1 or ctx.target.is_amd_gpu())
         and (n % 128 == 0 or h100_matmul_cond or amdgpu_matmul_cond)
         and k % 32 == 0
         and k >= 128
@@ -793,7 +788,7 @@ def _matmul_gpu[
     # fp32 a/b are lossy on Apple (simdgroup MMA truncates to fp19), so gated
     # behind MODULAR_APPLE_M5_ALLOW_LOSSY_F32_MATMUL.
     comptime apple_supported = (
-        has_apple_gpu_accelerator()
+        ctx.target.is_apple_gpu()
         and a_type == b_type
         and a_type in (DType.float16, DType.bfloat16, DType.float32)
         and c_type in (DType.float16, DType.bfloat16, DType.float32)
@@ -904,7 +899,7 @@ def _matmul_gpu[
             elementwise_lambda_fn=elementwise_lambda_wrapper,
         ](c, a, b, ctx)
 
-    comptime if (has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()):
+    comptime if (ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05()):
         comptime if elementwise_compute_lambda_fn:
             comptime compute_lambda = elementwise_compute_lambda_fn.value()
 
@@ -951,7 +946,7 @@ def _matmul_gpu[
     comptime if (
         matmul_supported_format
         and has_accelerator()
-        and not has_apple_gpu_accelerator()
+        and not ctx.target.is_apple_gpu()
         and use_tensor_core
         and has_static_NK
     ):
@@ -989,7 +984,7 @@ def _matmul_gpu[
             comptime static_N = c.static_shape[1]
             comptime static_K = a.static_shape[1]
 
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
 
                 @inline(.always)
                 @__parameter
@@ -1594,7 +1589,7 @@ def _matmul_gpu[
         a_type in vendor_blas_fallback_dtypes
         and b_type in vendor_blas_fallback_dtypes
         and c_type in vendor_blas_fallback_dtypes
-        and not has_apple_gpu_accelerator()
+        and not ctx.target.is_apple_gpu()
         and not has_amd_rdna_gpu_accelerator()
         # `MODULAR_DISABLE_VENDOR_FALLBACK=1` disables this, but it is a
         # kernel-compile define rather than an environment read: pass
@@ -1850,7 +1845,7 @@ def _multistage_gemm_amd[
 ) raises:
     """Launches the AMD CDNA `transpose_b` multistage GEMM kernels."""
     comptime assert (
-        has_amd_gpu_accelerator()
+        ctx.target.is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ), "_multistage_gemm_amd requires an AMD CDNA GPU and transpose_b"
@@ -2048,7 +2043,7 @@ def multistage_gemm[
     logger.info(config)
 
     comptime if (
-        has_amd_gpu_accelerator()
+        ctx.target.is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):
@@ -2227,7 +2222,7 @@ def multistage_gemm[
             split-K workspace.
     """
     comptime assert (
-        has_amd_gpu_accelerator()
+        ctx.target.is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ), "epilogue_fn requires the AMD CDNA transpose_b path"
@@ -2306,7 +2301,7 @@ def _multistage_gemm_runtime_impl[
             elementwise_lambda_fn,
         ]
 
-        comptime if has_amd_gpu_accelerator() and not has_amd_rdna_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu() and not has_amd_rdna_gpu_accelerator():
             ctx.enqueue_function[gemm_kernel_type](
                 tensor_c,
                 tensor_a,
@@ -2351,7 +2346,7 @@ def _multistage_gemm_runtime_impl[
 
     # Dispatch w/o split K
     comptime if (
-        has_amd_gpu_accelerator()
+        ctx.target.is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):

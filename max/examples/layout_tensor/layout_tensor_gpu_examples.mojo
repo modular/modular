@@ -28,8 +28,6 @@ from std.memory import Pointer
 from std.sys import has_accelerator
 from std.sys.info import (
     has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-    is_apple_gpu,
     is_nvidia_gpu,
     simd_width_of,
 )

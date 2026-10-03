@@ -18,8 +18,6 @@ from std.sys import align_of, size_of
 from std.sys.info import (
     _has_blackwell_tcgen05,
     _is_amd_rdna,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -785,7 +783,7 @@ def _batched_matmul_gpu[
 
     # SM100 (B200+) batched BF16 matmul dispatch
     comptime use_SM100_kernels = (
-        has_nvidia_gpu_accelerator() and _has_blackwell_tcgen05()
+        ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05()
     )
     comptime if use_SM100_kernels and has_static_NK and transpose_b:
         logger.info(
@@ -840,7 +838,7 @@ def _batched_matmul_gpu[
     )
 
     comptime use_A100_kernels = (
-        has_nvidia_gpu_accelerator()
+        ctx.target.is_nvidia_gpu()
         and ctx.default_device_info.compute >= A100.compute
     )
 
@@ -875,7 +873,7 @@ def _batched_matmul_gpu[
                 UInt32(kernels.ampere_128x128_4.shared_mem_usage())
             ),
         )
-    elif has_static_NK and has_amd_gpu_accelerator() and transpose_b:
+    elif has_static_NK and ctx.target.is_amd_gpu() and transpose_b:
 
         @inline(.always)
         def kernel_helper[block_m: Int, block_n: Int]() raises {imm}:

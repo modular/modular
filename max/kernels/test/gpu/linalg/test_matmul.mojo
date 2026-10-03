@@ -16,7 +16,6 @@
 from std.sys import (
     align_of,
     bit_width_of,
-    has_nvidia_gpu_accelerator,
     simd_width_of,
     size_of,
 )
@@ -364,7 +363,7 @@ def main() raises:
         test[.bfloat16, N=Int(3072), K=Int(32768)](ctx, 1024, 3072, 32768)
         test[.bfloat16, N=Int(3072), K=Int(3072)](ctx, 1024, 3072, 3072)
 
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu():
             test[
                 .bfloat16,
                 transpose_b=True,
