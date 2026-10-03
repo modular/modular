@@ -119,3 +119,29 @@ def main():
       .onDiagnostics(doc, [](auto diags) { EXPECT_TRUE(diags.empty()); })
       .execute();
 }
+
+TEST(RegressionTest, DefinitionResolvesWithWorkDoneProgress) {
+  // Regression test: when the client advertises window/workDoneProgress, the
+  // server issues a window/workDoneProgress/create request before reporting
+  // progress, and the document parse used to be deferred until the client
+  // answered that request — on a thread outside the document's task chain. A
+  // definition request queued behind the parse could then observe a null
+  // document context and crash (or silently return no results).
+  //
+  // This batch client never answers the create request, so the server must
+  // fall back to running the parse inline and still resolve the definition.
+  Document doc("test:///foo.mojo", R"(def function():
+  var foo = 420
+  var bar = 1 + foo
+  print(bar))");
+
+  createTestClient(/*attachDebugger=*/false, /*workDoneProgress=*/true)
+      .open(doc)
+      .definition(doc, lsp::Position(2, 17),
+                  [](const std::vector<lsp::Location> &response) {
+                    ASSERT_EQ(response.size(), 1u);
+                    EXPECT_EQ(response[0].range, lsp::Range({1, 6}, {1, 9}));
+                    EXPECT_EQ(response[0].uri.uri(), "test:///foo.mojo");
+                  })
+      .execute();
+}

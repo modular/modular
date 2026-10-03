@@ -22,7 +22,11 @@ namespace M {
 
 /// Create a test client that asserts the execution doesn't fail and also dumps
 /// the contents of server IO files upon errors.
-LSPBatchClient createTestClient(bool attachDebugger = false);
+///
+/// `workDoneProgress` advertises window/workDoneProgress support in the
+/// client's initialize capabilities.
+LSPBatchClient createTestClient(bool attachDebugger = false,
+                                bool workDoneProgress = false);
 
 /// Create a document from a file located in the `/inputs` folder.
 Document createDocumentFromInputFile(StringRef fileName);

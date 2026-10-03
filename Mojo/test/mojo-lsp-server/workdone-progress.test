@@ -1,0 +1,55 @@
+// RUN: mojo-lsp-server -mojo-test < %s | FileCheck -strict-whitespace %s
+//
+// Regression test: with window.workDoneProgress enabled, a definition request
+// queued behind the initial document parse must still resolve even when the
+// client never answers window/workDoneProgress/create. Previously the parse
+// callback was deferred to the transport response thread, so a definition
+// running on the document's task chain could dereference a null `context`
+// (crash, or an empty result in a live session). The server now waits for the
+// token handshake on the task chain and runs the parse inline regardless.
+
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"processId":123,"rootUri":"test:///workspace","capabilities":{"window":{"workDoneProgress":true}},"trace":"off"}}
+//      CHECK-LABEL: "id": 0
+//      CHECK: "definitionProvider": true
+// -----
+{"jsonrpc":"2.0","method":"initialized","params":{}}
+// -----
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+  "uri":"test:///foo.mojo",
+  "languageId":"mojo",
+  "version":1,
+  "text":"def function():\n  var foo = 420\n  var bar = 1 + foo\n  print(bar)"
+}}}
+// The server must ask the client to create the progress token before
+// reporting on it (LSP: window/workDoneProgress/create).
+//      CHECK: "method": "window/workDoneProgress/create"
+// -----
+{"jsonrpc":"2.0","id":2,"method":"textDocument/definition","params":{
+  "textDocument":{"uri":"test:///foo.mojo"},
+  "position":{"line":2,"character":17}
+}}
+// The create request is never answered, so no $/progress notification may be
+// emitted for the unconfirmed token, but the definition must still resolve.
+//      CHECK-NOT: "$/progress"
+//      CHECK-LABEL: "id": 2
+//      CHECK-NEXT: "jsonrpc": "2.0"
+//      CHECK-NEXT: "result": [
+//      CHECK-NEXT: {
+//      CHECK-NEXT: "range": {
+//      CHECK-NEXT: "end": {
+//      CHECK-NEXT: "character": 9,
+//      CHECK-NEXT: "line": 1
+//      CHECK-NEXT: },
+//      CHECK-NEXT: "start": {
+//      CHECK-NEXT: "character": 6,
+//      CHECK-NEXT: "line": 1
+//      CHECK-NEXT: }
+//      CHECK-NEXT: },
+//      CHECK-NEXT: "uri": "test:///foo.mojo"
+// -----
+{"jsonrpc":"2.0","id":3,"method":"shutdown"}
+//      CHECK-LABEL: "id": 3
+//      CHECK-NEXT: "jsonrpc": "2.0"
+//      CHECK-NEXT: "result": null
+// -----
+{"jsonrpc":"2.0","method":"exit"}
