@@ -189,9 +189,9 @@ def fused_silu_rule(x: TensorLayout, row_offsets: TensorLayout) -> ActionSet:
 
 
 fused_silu = F.functional(_fused_silu, rule=fused_silu_rule)
-# Fused SiLU+FP8-quantize. The EP grouped_silu routes through this so the
-# down-projection reads an already-quantized activation instead of a separate
-# quantize pass; the per-128-block scale is shard-invariant.
+# Fused SiLU+quantize for the FP4 and MX formats. The EP grouped_silu routes
+# through this so the down-projection reads an already-quantized activation
+# instead of a separate quantize pass; the block scale is shard-invariant.
 fused_silu_quantized = F.functional(_fused_silu_quantized)
 
 # Routing decisions must match the placement of the (replicated) router

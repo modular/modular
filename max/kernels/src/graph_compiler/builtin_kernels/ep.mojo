@@ -70,7 +70,6 @@ from shmem.ep_comm import (
     NVBlockScaledTokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
-    fused_silu_fp8_kernel,
     fused_silu_mx_kernel,
     fused_silu_mxfp6_kernel,
     fused_silu_nvfp4_kernel,
@@ -2939,91 +2938,6 @@ struct Struct_ep_fused_silu:
         ):
             gpu_ctx.enqueue_function[fused_silu](
                 output_tensor,
-                input_tensor,
-                row_offsets_tensor,
-                grid_dim=hw_info.sm_count,
-                block_dim=hw_info.max_thread_block_size,
-                attributes=pdl_launch_attributes(PDLLevel.ON),
-            )
-
-
-@extensibility.register("ep.fused_silu.fp8")
-struct Struct_ep_fused_silu_fp8:
-    """Registers the `ep.fused_silu.fp8` graph op with the graph compiler."""
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        fp8_dtype: DType,
-        scales_dtype: DType,
-        input_dtype: DType,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=fp8_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
-        input: InputTensor[dtype=input_dtype, rank=2, ...],
-        row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
-        context: DeviceContext,
-    ) raises:
-        """Execute the Expert Parallelism fused SILU kernel with FP8
-        quantization.
-
-        This function launches the fused_silu_fp8 kernel to perform the SILU
-        operation for all the MLPs in the EP MoE module.
-
-        This kernel will read the row offsets to determine the actual number of
-        received tokens in the input tensor, and then only perform the SILU
-        operation on the received tokens. Once the SILU operation is performed,
-        the output will be quantized to the FP8 format. The scales tensor
-        will be stored in a transposed way.
-        """
-        # Ensure this kernel only runs on GPU targets
-        comptime assert is_gpu[target](), "EP is only supported on GPU."
-
-        comptime group_size = 128
-
-        var output_tensor = output.to_tile_tensor[.int64]()
-        var scales_tensor = scales.to_tile_tensor[.int64]()
-        var input_tensor = input.to_tile_tensor[.int64]().as_imm()
-        var row_offsets_tensor = row_offsets.to_tile_tensor[
-            DType.int64
-        ]().as_imm()
-
-        var gpu_ctx = context
-        comptime hw_info = gpu_ctx.default_device_info
-
-        comptime fused_silu_fp8 = fused_silu_fp8_kernel[
-            fp8_dtype,
-            scales_dtype,
-            input_dtype,
-            output_tensor.LayoutType,
-            scales_tensor.LayoutType,
-            input_tensor.LayoutType,
-            row_offsets_tensor.LayoutType,
-            hw_info.max_thread_block_size,
-            hw_info.sm_count,
-            group_size,
-        ]
-
-        @inline(.always)
-        def description_fn() {imm} -> String:
-            # fmt: off
-            return String(
-                "fp8_dtype=", fp8_dtype,
-                ";scales_dtype=", scales_dtype,
-                ";input_dtype=", input_dtype,
-                ";group_size=", group_size,
-            )
-            # fmt: on
-
-        with Trace[TraceLevel.OP, target=target](
-            "ep.fused_silu.fp8",
-            Trace[TraceLevel.OP]._get_detail_str(description_fn),
-            task_id=get_safe_task_id(context),
-        ):
-            gpu_ctx.enqueue_function[fused_silu_fp8](
-                output_tensor,
-                scales_tensor,
                 input_tensor,
                 row_offsets_tensor,
                 grid_dim=hw_info.sm_count,

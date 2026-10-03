@@ -957,6 +957,79 @@ def main() raises:
             128,
         ](ctx, Int(129), Idx[512], live_rows=33)
 
+        test_dynamic_fp8_quant_row_bounded[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.float32,
+            128,
+        ](ctx, Int(1000), Idx[2048], live_rows=333)
+
+        # A group of 3 lanes does not divide the warp, so this stays on the
+        # block-per-group fallback (and its larger bounded-grid cap).
+        test_dynamic_fp8_quant_row_bounded[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            48,
+        ](ctx, Int(300), Idx[192], live_rows=111)
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            48,
+        ](ctx, Int(37), Idx[192])
+
+        # Warp-per-several-groups path: row counts that leave a partial tile,
+        # several group sizes, 16-bit inputs, and e8m0 scales.
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+        ](ctx, Int(37), Idx[2048])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float32,
+            DType.float32,
+            128,
+        ](ctx, Int(129), Idx[7168])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float16,
+            DType.float16,
+            128,
+        ](ctx, Int(21), Idx[512])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.float8_e8m0fnu,
+            128,
+        ](ctx, Int(33), Idx[1024])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            32,
+        ](ctx, Int(35), Idx[512])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            64,
+        ](ctx, Int(35), Idx[512])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            256,
+        ](ctx, Int(35), Idx[1024])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            512,
+        ](ctx, Int(5), Idx[1024])
+
         # Regression: FP8 dynamic-quant must not emit NaN on a near-zero group
         # (the 0*Inf / denormal-scale-reciprocal bug). Run first.
         #
@@ -1154,6 +1227,28 @@ def main() raises:
             DType.float32,
             128,
         ](ctx, Int(7), Int(1000), Idx[576])
+
+        # AMD serves FP8 weights as float8_e4m3fnuz (max finite 240, no -0), so
+        # the activation quantize must produce that encoding too.
+        comptime if ctx.target.is_amd_gpu():
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fnuz,
+                DType.bfloat16,
+                DType.float32,
+                128,
+            ](ctx, Int(37), Idx[2048])
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fnuz,
+                DType.float32,
+                DType.float32,
+                64,
+            ](ctx, Int(35), Idx[512])
+            test_dynamic_fp8_quant_row_bounded[
+                DType.float8_e4m3fnuz,
+                DType.bfloat16,
+                DType.bfloat16,
+                128,
+            ](ctx, Int(1000), Idx[1024], live_rows=333)
 
         # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
         comptime if ctx.target.is_nvidia_gpu():
