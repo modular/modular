@@ -54,3 +54,35 @@ def is_profiling_enabled() -> bool:
 
 def set_gpu_profiling_state(arg: str, /) -> None:
     """Sets the GPU profiling state."""
+
+def range_begin_with_id(correlation_id: int, name: str) -> int:
+    """
+    Begins a CPU range whose libkineto ``External id`` is ``correlation_id``.
+
+    Kernels launched on this thread inside the range, outside any nested
+    range, carry the ID. Work launched from other threads, such as AsyncRT
+    workers, relates to it only by time. The ID is stored in 32 bits, and
+    libkineto omits an ID of 0.
+
+    Pass the result to :func:`range_end` on the same thread.
+
+    Args:
+        correlation_id: Caller-supplied join key, such as a batch ID.
+        name: The range's label in the trace.
+
+    Returns:
+        A nonzero range ID, or 0 if no libkineto trace is live, in which
+        case nothing is recorded.
+    """
+
+def range_end(range_id: int) -> None:
+    """
+    Ends a range that :func:`range_begin_with_id` opened.
+
+    Does nothing for an ID of 0. Otherwise warns and ends nothing unless
+    the range is the innermost one :func:`range_begin_with_id` opened on
+    this thread. Ranges opened inside it by other APIs must end first.
+
+    Args:
+        range_id: The ID :func:`range_begin_with_id` returned.
+    """

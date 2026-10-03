@@ -18,6 +18,7 @@ import time
 
 import opentelemetry.trace as otel_trace
 from max._core import request_context as _request_context
+from max._core.profiler import range_begin_with_id, range_end
 from max.pipelines.context import (
     TextAndVisionContext,
     TextContext,
@@ -156,6 +157,9 @@ class TokenGenerationScheduler(Scheduler):
         self._prefill_spans: dict[RequestID, otel_trace.Span] = {}
         self._decode_spans: dict[RequestID, otel_trace.Span] = {}
         self._batch_counter: int = 0
+        # Also gates the libkineto max.batch range. The model worker
+        # configures kernel tracing before it builds the scheduler.
+        self._batch_spans_enabled = batch_spans_enabled()
 
     @traced
     def _retrieve_pending_requests(self) -> None:
@@ -324,7 +328,7 @@ class TokenGenerationScheduler(Scheduler):
         # root span per forward pass escapes parent-based sampling, which is
         # too much export volume to be always-on.
         batch_span: otel_trace.Span = otel_trace.INVALID_SPAN
-        if tracing_enabled and batch_spans_enabled():
+        if tracing_enabled and self._batch_spans_enabled:
             assert ce_ids_before is not None
             batch_span = _tracer.start_span(
                 "max.batch",
@@ -344,9 +348,16 @@ class TokenGenerationScheduler(Scheduler):
             batch_id_token = (
                 _batch_id_ctx.set(batch_id) if self._tracing else None
             )
+            range_id = (
+                range_begin_with_id(batch_id, "max.batch")
+                if self._batch_spans_enabled
+                else 0
+            )
             try:
                 responses = self.pipeline.execute(inputs)
             finally:
+                if range_id:
+                    range_end(range_id)
                 if batch_id_token is not None:
                     _batch_id_ctx.reset(batch_id_token)
                 _request_context.clear_batch_id()
