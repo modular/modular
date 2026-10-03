@@ -17,10 +17,13 @@ from layout import (
     TileTensor,
     row_major,
 )
+from std.math import ceildiv
 from std.random import rand
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_scan_fwd_gpu,
+    varlen_selective_state_update_cpu,
+    varlen_selective_state_update_gpu,
 )
 from std.testing import TestSuite, assert_almost_equal
 
@@ -465,6 +468,225 @@ def test_varlen_selective_scan_fwd_gpu_with_delta_softplus() raises:
             has_delta_bias=True,
             delta_softplus=True,
         ](batch=2, dim=4, ngroups=1, seq_lengths=Index(8, 8), ctx=ctx)
+
+
+def run_varlen_selective_state_update_gpu[
+    dtype: DType,
+    DSTATE: Int,
+    dt_softplus: Bool = False,
+](
+    batch: Int,
+    nheads: Int,
+    dim: Int,
+    ngroups: Int,
+    ctx: DeviceContext,
+    rtol: Float64 = 0.01,
+) raises:
+    """Checks the updated state and the output of state update, GPU vs CPU."""
+    comptime dstate = DSTATE
+    var ratio = nheads // ngroups
+    var n_state = batch * nheads * dim * dstate
+    var n_x = batch * nheads * dim
+    var n_A = nheads * dim * dstate
+    var n_B = batch * ngroups * dstate
+    var n_D = nheads * dim
+
+    var state_cpu_h = alloc[Scalar[dtype]](n_state)
+    var state_gpu_h = alloc[Scalar[dtype]](n_state)
+    var out_cpu_h = alloc[Scalar[dtype]](n_x)
+    var out_gpu_h = alloc[Scalar[dtype]](n_x)
+    var x_h = alloc[Scalar[dtype]](n_x)
+    var dt_h = alloc[Scalar[dtype]](n_x)
+    var A_h = alloc[Scalar[dtype]](n_A)
+    var B_h = alloc[Scalar[dtype]](n_B)
+    var C_h = alloc[Scalar[dtype]](n_B)
+    var D_h = alloc[Scalar[dtype]](n_D)
+    var z_h = alloc[Scalar[dtype]](n_x)
+    var dt_bias_h = alloc[Scalar[dtype]](n_D)
+    var sbi_h = alloc[Int32](batch)
+
+    rand(state_cpu_h, n_state)
+    rand(x_h, n_x)
+    rand(dt_h, n_x)
+    rand(A_h, n_A)
+    rand(B_h, n_B)
+    rand(C_h, n_B)
+    rand(D_h, n_D)
+    rand(z_h, n_x)
+    rand(dt_bias_h, n_D)
+    for i in range(n_state):
+        state_gpu_h.store(i, state_cpu_h.load(i))
+    for i in range(n_A):
+        A_h.store(i, Scalar[dtype](Float32(A_h.load(i)) * -0.5))
+    for i in range(n_x):
+        dt_h.store(i, Scalar[dtype](abs(Float32(dt_h.load(i))) * 0.5))
+    # Reversed mapping exercises the state_batch_indices indirection.
+    for i in range(batch):
+        sbi_h.store(i, Int32(batch - 1 - i))
+
+    var state_cpu_tt = TileTensor(
+        state_cpu_h, row_major(batch, nheads, dim, dstate)
+    )
+    var out_cpu_tt = TileTensor(out_cpu_h, row_major(batch, nheads, dim))
+    var x_cpu_tt = TileTensor(x_h, row_major(batch, nheads, dim))
+    var dt_cpu_tt = TileTensor(dt_h, row_major(batch, nheads, dim))
+    var A_cpu_tt = TileTensor(A_h, row_major(nheads, dim, dstate))
+    var B_cpu_tt = TileTensor(B_h, row_major(batch, ngroups, dstate))
+    var C_cpu_tt = TileTensor(C_h, row_major(batch, ngroups, dstate))
+    var D_cpu_tt = TileTensor(D_h, row_major(nheads, dim))
+    var z_cpu_tt = TileTensor(z_h, row_major(batch, nheads, dim))
+    var dt_bias_cpu_tt = TileTensor(dt_bias_h, row_major(nheads, dim))
+    var sbi_cpu_tt = TileTensor(sbi_h, row_major(batch))
+
+    varlen_selective_state_update_cpu[dtype, DSTATE](
+        batch,
+        nheads,
+        dim,
+        ratio,
+        Int32(-1),
+        Int8(1) if dt_softplus else Int8(0),
+        Int8(1),
+        state_cpu_tt,
+        x_cpu_tt,
+        dt_cpu_tt,
+        A_cpu_tt,
+        B_cpu_tt,
+        C_cpu_tt,
+        D_cpu_tt,
+        z_cpu_tt,
+        out_cpu_tt,
+        dt_bias_cpu_tt,
+        sbi_cpu_tt,
+    )
+
+    var state_d = ctx.enqueue_create_buffer[dtype](n_state)
+    var out_d = ctx.enqueue_create_buffer[dtype](n_x)
+    var x_d = ctx.enqueue_create_buffer[dtype](n_x)
+    var dt_d = ctx.enqueue_create_buffer[dtype](n_x)
+    var A_d = ctx.enqueue_create_buffer[dtype](n_A)
+    var B_d = ctx.enqueue_create_buffer[dtype](n_B)
+    var C_d = ctx.enqueue_create_buffer[dtype](n_B)
+    var D_d = ctx.enqueue_create_buffer[dtype](n_D)
+    var z_d = ctx.enqueue_create_buffer[dtype](n_x)
+    var dt_bias_d = ctx.enqueue_create_buffer[dtype](n_D)
+    var sbi_d = ctx.enqueue_create_buffer[.int32](batch)
+    ctx.enqueue_copy(state_d, state_gpu_h)
+    ctx.enqueue_copy(x_d, x_h)
+    ctx.enqueue_copy(dt_d, dt_h)
+    ctx.enqueue_copy(A_d, A_h)
+    ctx.enqueue_copy(B_d, B_h)
+    ctx.enqueue_copy(C_d, C_h)
+    ctx.enqueue_copy(D_d, D_h)
+    ctx.enqueue_copy(z_d, z_h)
+    ctx.enqueue_copy(dt_bias_d, dt_bias_h)
+    ctx.enqueue_copy(sbi_d, sbi_h)
+
+    var state_tt = TileTensor(state_d, row_major(batch, nheads, dim, dstate))
+    var out_tt = TileTensor(out_d, row_major(batch, nheads, dim))
+    var x_tt = TileTensor(x_d, row_major(batch, nheads, dim))
+    var dt_tt = TileTensor(dt_d, row_major(batch, nheads, dim))
+    var A_tt = TileTensor(A_d, row_major(nheads, dim, dstate))
+    var B_tt = TileTensor(B_d, row_major(batch, ngroups, dstate))
+    var C_tt = TileTensor(C_d, row_major(batch, ngroups, dstate))
+    var D_tt = TileTensor(D_d, row_major(nheads, dim))
+    var z_tt = TileTensor(z_d, row_major(batch, nheads, dim))
+    var dt_bias_tt = TileTensor(dt_bias_d, row_major(nheads, dim))
+    var sbi_tt = TileTensor(sbi_d, row_major(batch))
+
+    comptime BLOCK_M = 4  # dims handled per thread in the kernel
+    var num_dim_blocks = ceildiv(dim, BLOCK_M)
+
+    var compiled_kernel = ctx.compile_function[
+        varlen_selective_state_update_gpu[
+            dtype,
+            DSTATE,
+            state_tt.LayoutType,
+            x_tt.LayoutType,
+            dt_tt.LayoutType,
+            A_tt.LayoutType,
+            B_tt.LayoutType,
+            C_tt.LayoutType,
+            D_tt.LayoutType,
+            z_tt.LayoutType,
+            out_tt.LayoutType,
+            dt_bias_tt.LayoutType,
+            sbi_tt.LayoutType,
+        ]
+    ]()
+    ctx.enqueue_function(
+        compiled_kernel,
+        Int32(batch * nheads * num_dim_blocks),
+        Int32(batch),
+        Int32(nheads),
+        Int32(dim),
+        Int32(ratio),
+        Int32(-1),
+        Int8(1) if dt_softplus else Int8(0),
+        Int8(1),
+        state_tt,
+        x_tt,
+        dt_tt,
+        A_tt,
+        B_tt,
+        C_tt,
+        D_tt,
+        z_tt,
+        out_tt,
+        dt_bias_tt,
+        sbi_tt,
+        grid_dim=(num_dim_blocks, batch, nheads),
+        block_dim=(1,),
+    )
+    ctx.enqueue_copy(state_gpu_h, state_d)
+    ctx.enqueue_copy(out_gpu_h, out_d)
+    ctx.synchronize()
+
+    for i in range(n_state):
+        assert_almost_equal(
+            Float32(state_cpu_h.load(i)),
+            Float32(state_gpu_h.load(i)),
+            rtol=rtol,
+        )
+    for i in range(n_x):
+        assert_almost_equal(
+            Float32(out_cpu_h.load(i)),
+            Float32(out_gpu_h.load(i)),
+            rtol=rtol,
+        )
+
+    state_cpu_h.free()
+    state_gpu_h.free()
+    out_cpu_h.free()
+    out_gpu_h.free()
+    x_h.free()
+    dt_h.free()
+    A_h.free()
+    B_h.free()
+    C_h.free()
+    D_h.free()
+    z_h.free()
+    dt_bias_h.free()
+    sbi_h.free()
+
+
+def test_varlen_selective_state_update_gpu() raises:
+    """Test varlen selective state update GPU against the CPU kernel."""
+    with DeviceContext() as ctx:
+        if not ctx.is_compatible():
+            return
+        run_varlen_selective_state_update_gpu[DType.float32, 4](
+            batch=3, nheads=4, dim=10, ngroups=2, ctx=ctx
+        )
+
+
+def test_varlen_selective_state_update_gpu_softplus() raises:
+    """Test varlen selective state update GPU with dt softplus."""
+    with DeviceContext() as ctx:
+        if not ctx.is_compatible():
+            return
+        run_varlen_selective_state_update_gpu[
+            DType.float32, 8, dt_softplus=True
+        ](batch=2, nheads=2, dim=7, ngroups=1, ctx=ctx)
 
 
 def main() raises:
