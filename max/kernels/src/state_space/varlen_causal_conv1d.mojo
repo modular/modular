@@ -41,7 +41,6 @@ from max.gpu import block_idx, thread_idx
 
 
 from layout import TensorLayout, TileTensor
-from layout.coord import Coord
 from layout.tensor_engine import TensorEngine
 
 from nn.activations import silu
@@ -128,7 +127,7 @@ def _channel_weights[
     """
     var weights = SIMD[weight_dtype, _TAP_LANES[WIDTH]](0)
     comptime for w_idx in range(WIDTH):
-        weights[w_idx] = weight.load[width=1, alignment=1](Coord(d, w_idx))
+        weights[w_idx] = weight.load[width=1, alignment=1]((d, w_idx))
     return weights
 
 
@@ -261,9 +260,9 @@ struct VarlenConvIO[
             s: The sequence position index into the `(dim, seqlen)` input view.
         """
         comptime if Self.channels_last:
-            return self.x.load((s, d))[0]
+            return self.x.load[width=1]((s, d))
         else:
-            return self.x.load((d, s))[0]
+            return self.x.load[width=1]((d, s))
 
     @inline(.always)
     def load_weight(self, d: Int, w: Int) -> Scalar[Self.weight_dtype]:
@@ -273,8 +272,7 @@ struct VarlenConvIO[
             d: The channel index into the `(dim, width)` weight view.
             w: The convolution tap index in `[0, width)`.
         """
-        # `[0]` extracts lane 0: generic `Storage` makes `load()` non-scalar.
-        return self.weight.load(Coord(d, w))[0]
+        return self.weight.load[width=1]((d, w))
 
     @inline(.always)
     def load_bias(self, d: Int) -> Scalar[Self.bias_dtype]:
@@ -283,8 +281,7 @@ struct VarlenConvIO[
         Args:
             d: The channel index into the `(dim,)` bias view.
         """
-        # `[0]` extracts lane 0 (generic `Storage`, as in `load_weight`).
-        return self.bias.load(Coord(d))[0]
+        return self.bias.load[width=1]((d,))
 
     @inline(.always)
     def store_out(self, d: Int, s: Int, val: Scalar[Self.out_dtype]):
@@ -525,9 +522,9 @@ def causal_conv1d_varlen_fwd_cpu[
                         )  # Maps negative to state index
                         if state_idx >= 0:
                             input_val = Scalar[x_dtype](
-                                conv_states.load(
-                                    Coord(cache_idx, d, state_idx)
-                                )[0]
+                                conv_states.load[width=1](
+                                    (cache_idx, d, state_idx)
+                                )
                             )
 
                     conv_sum += Scalar[accum_dtype](input_val) * Scalar[
@@ -564,11 +561,11 @@ def causal_conv1d_varlen_fwd_cpu[
                         # `src_l >= -width_minus_1`.
                         var state_idx = width_minus_1 + src_l
                         if state_idx >= 0:
-                            val = conv_states.load(
-                                Coord(cache_idx, d, state_idx)
-                            )[0]
+                            val = conv_states.load[width=1](
+                                (cache_idx, d, state_idx)
+                            )
 
-                    conv_states.store(Coord(cache_idx, d, s), val)
+                    conv_states.store((cache_idx, d, s), val)
 
 
 def causal_conv1d_varlen_update_cpu[
@@ -636,7 +633,7 @@ def causal_conv1d_varlen_update_cpu[
             # Load weights
             var weights = List[Scalar[weight_dtype]]()
             for w_idx in range(width):
-                weights.append(weight.load[width=1]((d, w_idx))[0])
+                weights.append(weight.load[width=1]((d, w_idx)))
 
             for l in range(seqlen):
                 # Gather input values from state and current x
@@ -672,7 +669,7 @@ def causal_conv1d_varlen_update_cpu[
                         # Read from current x
                         var x_l = rel_pos + l
                         if x_l >= 0 and x_l < seqlen:
-                            input_val = x.load[width=1]((b, d, x_l))[0]
+                            input_val = x.load[width=1]((b, d, x_l))
 
                     input_vals.append(input_val)
 
@@ -693,7 +690,7 @@ def causal_conv1d_varlen_update_cpu[
 
             # Update state with new x values
             for l in range(seqlen):
-                var x_val = x.load[width=1]((b, d, l))[0]
+                var x_val = x.load[width=1]((b, d, l))
 
                 var state_pos: Int
                 if has_cache_seqlens:
@@ -781,9 +778,7 @@ def causal_conv1d_varlen_states_gpu[
         cu_seqlens: Cumulative sequence lengths.
         states: Output states tensor.
     """
-    var _total_tokens = Int(total_tokens)
     var _dim = Int(dim)
-    var _batch = Int(batch)
     var _state_len = Int(state_len)
     var batch_idx = block_idx.z
     var block_row = block_idx.y
@@ -903,8 +898,6 @@ def causal_conv1d_varlen_fwd_gpu[
     comptime accum_dtype = get_accum_type[output_dtype]()
 
     var _dim = Int(dim)
-    var _total_seqlen = Int(total_seqlen)
-    var _batch = Int(batch)
     var batch_idx = block_idx.x
     var dim_block_idx = block_idx.y
     var tid = thread_idx.x
@@ -966,7 +959,7 @@ def causal_conv1d_varlen_fwd_gpu[
                 var state_idx = WIDTH_MINUS_1 + input_l
                 if state_idx >= 0:
                     input_val = Scalar[x_dtype](
-                        conv_states.load(Coord(cache_idx, d, state_idx))[0]
+                        conv_states.load[width=1]((cache_idx, d, state_idx))
                     )
 
             conv_sum += Scalar[accum_dtype](input_val) * Scalar[accum_dtype](
@@ -1006,9 +999,9 @@ def causal_conv1d_varlen_fwd_gpu[
                 # entry.
                 var state_idx = WIDTH_MINUS_1 + src_l
                 if state_idx >= 0:
-                    val = conv_states.load(Coord(cache_idx, d, state_idx))[0]
+                    val = conv_states.load[width=1]((cache_idx, d, state_idx))
 
-            conv_states.store(Coord(cache_idx, d, s), val)
+            conv_states.store((cache_idx, d, s), val)
 
 
 # Outputs per steady-state trip of the seq-parallel prefill kernel below.
@@ -1153,7 +1146,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     # Grid-z tiling: each z-slice covers TILE_SEQ consecutive positions of
     # this sequence. Tile 0 is kept alive even for an empty sequence so it
     # can still reach the epilogue below and zero conv_states.
-    var local_tile = Int(block_idx.z)
+    var local_tile = block_idx.z
     var num_tiles_this_seq = ceildiv(seqlen, TILE_SEQ)
     if local_tile >= max(num_tiles_this_seq, 1):
         return
@@ -1178,7 +1171,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     # Load bias
     var bias_val: Scalar[accum_dtype] = 0
     if has_bias != 0:
-        bias_val = Scalar[accum_dtype](bias.load[width=1]((d,)))
+        bias_val = Scalar[accum_dtype](io.load_bias(d))
 
     # Load weights into registers
     var weights = _channel_weights[weight_dtype, WIDTH](weight, d)
@@ -1204,7 +1197,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
             var state_idx = WIDTH_MINUS_1 + pos
             if state_idx >= 0:
                 v = Scalar[x_dtype](
-                    conv_states.load(Coord(cache_idx, d, state_idx))[0]
+                    conv_states.load[width=1]((cache_idx, d, state_idx))
                 )
         win[i] = v
 
@@ -1262,9 +1255,9 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
                 # `seqlen + s`, ahead of the `s` written here.
                 var state_idx = WIDTH_MINUS_1 + src_l
                 if state_idx >= 0:
-                    val = conv_states.load(Coord(cache_idx, d, state_idx))[0]
+                    val = conv_states.load[width=1]((cache_idx, d, state_idx))
 
-            conv_states.store(Coord(cache_idx, d, s), val)
+            conv_states.store((cache_idx, d, s), val)
 
 
 def causal_conv1d_varlen_update_gpu[
@@ -1338,7 +1331,6 @@ def causal_conv1d_varlen_update_gpu[
     Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
     for DevicePassable compatibility on GPU.
     """
-    var _batch = Int(batch)
     var _dim = Int(dim)
     var _seqlen = Int(seqlen)
     var _state_len = Int(state_len)
@@ -1408,7 +1400,7 @@ def causal_conv1d_varlen_update_gpu[
                 # From x
                 var x_l = rel_pos + l
                 if x_l >= 0 and x_l < _seqlen:
-                    input_val = x.load[width=1]((batch_idx, d, x_l))[0]
+                    input_val = x.load[width=1]((batch_idx, d, x_l))
 
             conv_sum += Scalar[output_dtype](
                 input_val * Scalar[x_dtype](weights[w_idx])
@@ -1420,7 +1412,7 @@ def causal_conv1d_varlen_update_gpu[
         output.store[width=1]((batch_idx, d, l), out_val)
 
         # Update state
-        var x_val = x.load[width=1]((batch_idx, d, l))[0]
+        var x_val = x.load[width=1]((batch_idx, d, l))
 
         var state_pos: Int
         if has_cache_seqlens != 0:
