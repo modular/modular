@@ -405,6 +405,9 @@ This version is still a work in progress.
   trace ID without a `traceparent`. It ends when the response body finishes,
   so a streamed response's span covers the whole stream.
 
+- `max.batch` spans now link to the spans of their requests at
+  `MAX_SERVE_KERNEL_TRACE_LEVEL=batch` or higher, up to 128 per span.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured

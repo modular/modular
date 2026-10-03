@@ -173,6 +173,10 @@ class KernelCapture:
         self._traced[context.request_id] = level
         return True
 
+    def is_traced(self, request_id: RequestID) -> bool:
+        """Returns whether a request is traced."""
+        return request_id in self._traced
+
     @property
     def may_record(self) -> bool:
         """Whether a capture may be recording, so every pass needs a
@@ -227,7 +231,7 @@ class KernelCapture:
         level: RequestTraceLevel | None,
         batch_span: Span,
         host_start_ns: int,
-    ) -> None:
+    ) -> list[RequestID]:
         """Records a pass that ran while the capture was armed, stopping the
         capture at the pass cap.
 
@@ -238,9 +242,12 @@ class KernelCapture:
             host_start_ns: ``time.time_ns()`` taken before the pass's
                 ``max.batch`` span started, a few microseconds before its
                 ``max.batch`` range began.
+
+        Returns:
+            The requests the pass cap untraced, which are still running.
         """
         if not self._armed:
-            return
+            return []
         if level is not None:
             self._traced_passes.append(
                 TracedPass(
@@ -258,9 +265,14 @@ class KernelCapture:
                 "longer traced.",
                 self._max_passes,
             )
-            for request_id in self._members:
-                self._traced.pop(request_id, None)
+            untraced = [
+                r
+                for r in self._members
+                if self._traced.pop(r, None) is not None
+            ]
             self._stop()
+            return untraced
+        return []
 
     def untrace(self, request_id: RequestID) -> None:
         """Untraces a request that has left, stopping the capture if it was

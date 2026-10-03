@@ -48,6 +48,7 @@ from max.serve.scheduler.interface import Scheduler
 from max.serve.scheduler_result import SchedulerResult
 from max.serve.telemetry.common import (
     _batch_id_ctx,
+    _BatchLinks,
     batch_spans_enabled,
 )
 from opentelemetry import propagate as otel_propagate
@@ -65,6 +66,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("max.serve")
 _tracer = otel_trace.get_tracer("max.serve")
+
+# The OTel SDK's default span link limit; the SDK would build and then drop
+# any links beyond it.
+_MAX_BATCH_LINKS = 128
 
 
 def _tracing_enabled() -> bool:
@@ -167,6 +172,9 @@ class TokenGenerationScheduler(Scheduler):
         self._batch_spans_enabled = batch_spans_enabled()
         # None unless requests may arm kernel captures, which needs tracing.
         self._kernel_capture = kernel_capture
+        self._batch_links = _BatchLinks(
+            self._batch_spans_enabled, _MAX_BATCH_LINKS
+        )
 
     @traced
     def _retrieve_pending_requests(self) -> None:
@@ -202,17 +210,32 @@ class TokenGenerationScheduler(Scheduler):
             for context in items:
                 self.batch_constructor.enqueue_new_request(context)
                 if tracing_enabled:
+                    parent = _parent_trace_context(context)
                     self._prefill_spans[context.request_id] = (
                         _tracer.start_span(
                             "max.phase.prefill",
-                            context=_parent_trace_context(context),
+                            context=parent,
                             attributes={
                                 "max.request_id": str(context.request_id)
                             },
                         )
                     )
-                    if self._kernel_capture is not None:
-                        self._kernel_capture.admit(context)
+                    traced = (
+                        self._kernel_capture is not None
+                        and self._kernel_capture.admit(context)
+                    )
+                    self._batch_links.admit(context.request_id, parent, traced)
+
+    def _end_request_telemetry(self, request_id: RequestID) -> None:
+        """Ends a departing request's phase spans and drops its batch link
+        and kernel trace."""
+        if (span := self._prefill_spans.pop(request_id, None)) is not None:
+            span.end()
+        if (span := self._decode_spans.pop(request_id, None)) is not None:
+            span.end()
+        self._batch_links.drop(request_id)
+        if self._kernel_capture is not None:
+            self._kernel_capture.untrace(request_id)
 
     @traced
     def run_iteration(self) -> SchedulerProgress:
@@ -236,10 +259,8 @@ class TokenGenerationScheduler(Scheduler):
             self.response_queue.put_nowait(
                 {failed_id: SchedulerResult.failed(error)}
             )
-            if failed_id in self._prefill_spans:
-                self._prefill_spans.pop(failed_id).end()
-            if self._kernel_capture is not None:
-                self._kernel_capture.untrace(failed_id)
+            if self._tracing:
+                self._end_request_telemetry(failed_id)
 
         # Skip if there is no work to do.
         has_pending_outputs = (
@@ -304,12 +325,8 @@ class TokenGenerationScheduler(Scheduler):
                 self.response_queue.put_nowait(
                     {cancelled_id: SchedulerResult.cancelled()}
                 )
-            if cancelled_id in self._prefill_spans:
-                self._prefill_spans.pop(cancelled_id).end()
-            if cancelled_id in self._decode_spans:
-                self._decode_spans.pop(cancelled_id).end()
-            if self._kernel_capture is not None:
-                self._kernel_capture.untrace(cancelled_id)
+            if self._tracing:
+                self._end_request_telemetry(cancelled_id)
 
         return SchedulerProgress.MADE_PROGRESS
 
@@ -359,6 +376,7 @@ class TokenGenerationScheduler(Scheduler):
             assert ce_ids_before is not None
             batch_span = _tracer.start_span(
                 "max.batch",
+                links=self._batch_links.for_pass(inputs.flat_batch, capture),
                 attributes={
                     "max.batch_id": batch_id,
                     "max.ce_count": len(ce_ids_before),
@@ -389,9 +407,12 @@ class TokenGenerationScheduler(Scheduler):
                     _batch_id_ctx.reset(batch_id_token)
                 _request_context.clear_batch_id()
             if capture is not None:
-                capture.end_pass(
+                # Ahead of the releases below, since releasing the last traced
+                # request stops the capture and end_pass then drops this pass.
+                capped = capture.end_pass(
                     batch_id, traced_level, batch_span, host_start_ns
                 )
+                self._batch_links.drop_untraced(capped)
 
             # Filter out all responses for requests that are already released.
             # We can get a response for a request that is already released due to
@@ -436,10 +457,8 @@ class TokenGenerationScheduler(Scheduler):
                 if response.is_done:
                     self.batch_constructor.release_request(request_id)
                     num_terminated_requests += 1
-                    if request_id in self._decode_spans:
-                        self._decode_spans.pop(request_id).end()
-                    if capture is not None:
-                        capture.untrace(request_id)
+                    if self._tracing:
+                        self._end_request_telemetry(request_id)
 
             # send the responses to the API process
             if responses:

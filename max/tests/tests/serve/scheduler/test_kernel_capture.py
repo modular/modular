@@ -11,7 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Pins when the scheduler arms and stops a per-request kernel capture."""
+"""Pins when the scheduler arms and stops a per-request kernel capture, and
+what its ``max.batch`` spans link to."""
 
 from __future__ import annotations
 
@@ -56,11 +57,13 @@ from max.serve.telemetry._kernel_capture import (
     TracedPass,
 )
 from max.serve.telemetry._trace_context import RequestTraceLevel
+from opentelemetry import propagate, trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
+from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
 
 
 class _Pipeline(
@@ -104,14 +107,23 @@ class _Harness:
     # False while another capture holds the profiler.
     profiler_idle: bool = True
 
-    def add(self, level: str | None = None) -> RequestID:
+    def add(
+        self, level: str | None = None, parent: SpanContext | None = None
+    ) -> RequestID:
         ctx = TextContext(
             request_id=RequestID(),
             max_length=100,
             tokens=TokenBuffer(np.ones(8, dtype=np.int64)),
         )
+        carrier: dict[str, str] = {}
+        if parent is not None:
+            propagate.inject(
+                carrier,
+                context=trace.set_span_in_context(NonRecordingSpan(parent)),
+            )
         if level is not None:
-            ctx.trace_carrier = {"x-max-trace-level": level}
+            carrier["x-max-trace-level"] = level
+        ctx.trace_carrier = carrier or None
         self.request_queue.put_nowait(ctx)
         return ctx.request_id
 
@@ -122,6 +134,28 @@ class _Harness:
     @property
     def starts(self) -> int:
         return self.events.count(("start",))
+
+    @property
+    def batch_links(self) -> list[list[SpanContext]]:
+        return [
+            [link.context for link in span.links]
+            for span in self.exporter.get_finished_spans()
+            if span.name == "max.batch"
+        ]
+
+    @property
+    def linked(self) -> list[RequestID]:
+        """The requests the scheduler keeps ``max.batch`` links to."""
+        return list(self.scheduler._batch_links._links)
+
+
+def _request_span(n: int) -> SpanContext:
+    return SpanContext(
+        trace_id=n,
+        span_id=n,
+        is_remote=True,
+        trace_flags=TraceFlags(TraceFlags.SAMPLED),
+    )
 
 
 def _harness(
@@ -139,6 +173,10 @@ def _harness(
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
+    # The scheduler reads it once, as it is built.
+    monkeypatch.setattr(
+        text_generation_scheduler, "_tracing_enabled", lambda: tracing
+    )
     harness = _Harness(
         scheduler=TokenGenerationScheduler(
             scheduler_config=TokenGenerationSchedulerConfig(
@@ -172,9 +210,6 @@ def _harness(
             harness.events.append(("stop",))
             harness.stops.append(passes)
 
-    monkeypatch.setattr(
-        text_generation_scheduler, "_tracing_enabled", lambda: tracing
-    )
     monkeypatch.setattr(
         text_generation_scheduler, "_tracer", provider.get_tracer("test")
     )
@@ -445,8 +480,9 @@ def test_no_binding_call_unless_traced(
     level: str | None,
 ) -> None:
     h = _harness(monkeypatch, tracing=tracing, kernel_capture=kernel_capture)
-    request = h.add(level)
+    request = h.add(level, parent=_request_span(1))
     h.step()
+    assert h.linked == []
     h.step(request)
     assert h.events == []
     capture = h.scheduler._kernel_capture
@@ -454,6 +490,138 @@ def test_no_binding_call_unless_traced(
     assert not [
         s for s in h.exporter.get_finished_spans() if s.name == "max.batch"
     ]
+
+
+def test_global_batch_links_every_member(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        text_generation_scheduler, "batch_spans_enabled", lambda: True
+    )
+    h = _harness(monkeypatch, kernel_capture=False)
+    a = h.add(parent=_request_span(1))
+    b = h.add(parent=_request_span(2))
+    c = h.add(parent=_request_span(3))
+    h.add()
+    h.step()
+    h.cancel_queue.put_nowait([c])
+    h.step(a)
+    h.step(b)
+    all_three = [_request_span(1), _request_span(2), _request_span(3)]
+    assert h.batch_links == [all_three, all_three, [_request_span(2)]]
+    assert h.linked == []
+
+
+@pytest.mark.parametrize("exit_by", ["release", "cancel", "grammar"])
+def test_batch_links_dropped_when_a_request_leaves(
+    monkeypatch: pytest.MonkeyPatch, exit_by: str
+) -> None:
+    monkeypatch.setattr(
+        text_generation_scheduler, "batch_spans_enabled", lambda: True
+    )
+    h = _harness(monkeypatch, kernel_capture=False)
+    staying = h.add(parent=_request_span(1))
+    leaving = h.add(parent=_request_span(2))
+    bc = h.scheduler.batch_constructor
+
+    if exit_by == "release":
+        h.step(leaving)
+    elif exit_by == "cancel":
+        h.cancel_queue.put_nowait([leaving])
+        h.step()
+    else:
+        admit = bc.enqueue_new_request
+
+        def enqueue(ctx: TextContext, replica_idx: int | None = None) -> None:
+            if ctx.request_id == leaving:
+                bc._fail_grammar_request(ctx, "bad schema")
+            else:
+                admit(ctx, replica_idx)
+
+        monkeypatch.setattr(bc, "enqueue_new_request", enqueue)
+        h.step()
+    assert not bc.contains(leaving)
+    assert h.linked == [staying]
+
+
+def test_batch_links_keep_traced_then_first_members_up_to_the_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        text_generation_scheduler, "batch_spans_enabled", lambda: True
+    )
+    monkeypatch.setattr(text_generation_scheduler, "_MAX_BATCH_LINKS", 2)
+    h = _harness(monkeypatch)
+    ids = [h.add(parent=_request_span(n)) for n in (1, 2, 3)]
+    ids.append(h.add("kernel", parent=_request_span(4)))
+    h.step(*ids)
+    assert h.batch_links == [[_request_span(4), _request_span(1)]]
+
+
+def test_batch_links_skip_unsampled_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        text_generation_scheduler, "batch_spans_enabled", lambda: True
+    )
+    h = _harness(monkeypatch, kernel_capture=False)
+    unsampled = SpanContext(
+        trace_id=2,
+        span_id=2,
+        is_remote=True,
+        trace_flags=TraceFlags(TraceFlags.DEFAULT),
+    )
+    ids = [h.add(parent=_request_span(1)), h.add(parent=unsampled)]
+    h.step(*ids)
+    assert h.batch_links == [[_request_span(1)]]
+
+
+def test_traced_pass_links_only_traced_members(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    h = _harness(monkeypatch)
+    traced = h.add("kernel", parent=_request_span(1))
+    untraced = h.add(parent=_request_span(2))
+    cancelled = h.add("batch", parent=_request_span(3))
+    h.step()
+    h.cancel_queue.put_nowait([cancelled])
+    h.step(traced)
+    h.step(untraced)
+    assert h.batch_links == [
+        [_request_span(1), _request_span(3)],
+        [_request_span(1), _request_span(3)],
+    ]
+    assert h.linked == []
+
+
+def test_pass_cap_drops_the_links_of_requests_it_untraces(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    h = _harness(monkeypatch, max_passes=2)
+    capped = h.add("kernel", parent=_request_span(1))
+    h.step()
+    h.step()
+    later = h.add("kernel", parent=_request_span(2))
+    h.step()
+    h.step(capped, later)
+    assert h.batch_links == [
+        [_request_span(1)],
+        [_request_span(1)],
+        [_request_span(2)],
+        [_request_span(2)],
+    ]
+
+
+@pytest.mark.parametrize("link_every_member", [True, False])
+def test_a_link_outlives_its_trace_only_when_every_member_is_linked(
+    link_every_member: bool,
+) -> None:
+    links = common._BatchLinks(link_every_member, max_links=128)
+    request = RequestID()
+    parent = trace.set_span_in_context(NonRecordingSpan(_request_span(1)))
+    links.admit(request, parent, traced=True)
+    links.drop_untraced([request])
+    assert list(links._links) == ([request] if link_every_member else [])
 
 
 def test_capture_thread_stops_off_the_calling_thread(
