@@ -1047,30 +1047,10 @@ struct KVCacheCopyPagesD2H:
         var gpu_ctx = ctx
 
         copy_kv_pages_d2h(
-            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-                device_kv_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    device_kv_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-                host_kv_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    host_kv_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), MutAnyOrigin](
-                src_page_ids.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    src_page_ids.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), MutAnyOrigin](
-                dst_page_ids.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    dst_page_ids.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
+            device_kv_blocks.to_tile_tensor(),
+            host_kv_blocks.to_tile_tensor(),
+            src_page_ids.to_tile_tensor(),
+            dst_page_ids.to_tile_tensor(),
             Int(layer_idx),
             gpu_ctx,
         )

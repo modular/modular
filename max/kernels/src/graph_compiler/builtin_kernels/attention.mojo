@@ -1249,21 +1249,13 @@ struct Struct_fused_qkv_matmul_padded_paged:
             max_cache_length,
         )
 
-        var valid_lengths_lt = valid_lengths.to_layout_tensor()
         generic_fused_qkv_matmul_kv_cache_bshd_paged[target=target](
-            hidden_state.to_layout_tensor(),
-            weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor(),
+            weight.to_tile_tensor(),
             kv_collection,
             layer_idx,
-            LayoutTensor[
-                .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                valid_lengths_lt.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    valid_lengths_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
-            output.to_layout_tensor(),
+            valid_lengths.to_tile_tensor(),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -2406,25 +2398,17 @@ struct Struct_mha_padded_paged:
             max_cache_length,
         )
 
-        var valid_lengths_lt = valid_lengths.to_layout_tensor()
         generic_flash_attention_kv_cache_padded[
             target=target,
             mask_str=mask_str,
             local_window_size=local_window_size,
         ](
-            q.to_layout_tensor(),
+            q.to_tile_tensor(),
             kv_collection,
             layer_idx,
-            LayoutTensor[
-                .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ](
-                valid_lengths_lt.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    valid_lengths_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            valid_lengths.to_tile_tensor(),
             scale,
-            output.to_layout_tensor(),
+            output.to_tile_tensor(),
             context,
         )
 

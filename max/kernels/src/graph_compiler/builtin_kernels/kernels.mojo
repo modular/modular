@@ -2536,7 +2536,7 @@ def print_kv_cache_paged_generic_kernel_api[
     """
     comptime if is_gpu[target]():
         print_kv_cache_paged_generic_gpu[target](
-            valid_lengths.to_layout_tensor(),
+            valid_lengths.to_tile_tensor(),
             kv_collection,
             layer_idx,
             True,
@@ -2544,7 +2544,7 @@ def print_kv_cache_paged_generic_kernel_api[
         )
     elif is_cpu[target]():
         print_kv_cache_paged_generic_cpu[target](
-            valid_lengths.to_layout_tensor(),
+            valid_lengths.to_tile_tensor(),
             kv_collection,
             layer_idx,
             is_print_compact[0],
