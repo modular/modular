@@ -86,3 +86,54 @@ def range_end(range_id: int) -> None:
     Args:
         range_id: The ID :func:`range_begin_with_id` returned.
     """
+
+def load_profiler_plugin() -> bool:
+    """
+    Loads the profiler plugin if it can be found.
+
+    On AMD, call it before any device is created; loaded later, the plugin
+    can't record.
+
+    Returns:
+        True if a profiler is available.
+    """
+
+def start_capture() -> bool:
+    """
+    Starts a libkineto capture if the profiler is idle.
+
+    Call it on a thread with a current device context, such as the thread
+    that created the devices; otherwise the capture doesn't start until a
+    device is next initialized. The capture runs until :func:`stop_capture`,
+    ignoring the session's profiling step-window settings. Blocks while a
+    :func:`stop_capture` is saving.
+
+    Returns:
+        True if this call started a capture. False if no profiler is
+        available, or if a capture or a Dynolog on-demand trace is already
+        running, which this call leaves alone.
+    """
+
+def stop_capture(output_path: str) -> str:
+    """
+    Stops the capture :func:`start_capture` started, saving its trace.
+
+    Leaves any other capture running, such as one the session's profiling
+    config started. May be called from any thread.
+
+    Args:
+        output_path: File to write the trace to, expanded like
+            ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH``.
+
+    Returns:
+        An empty string on success, otherwise why the trace is missing or
+        incomplete.
+    """
+
+def is_capture_recording() -> bool:
+    """
+    Returns whether a capture is recording.
+
+    Covers a capture from :func:`start_capture` or the session's profiling
+    config.
+    """
