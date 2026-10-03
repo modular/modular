@@ -71,7 +71,7 @@ from max.gpu import (
     lane_id,
     thread_idx,
 )
-from layout import TensorEngine, TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from std.utils.index import IndexList
 
 
@@ -147,6 +147,33 @@ def gated_delta_conv1d_fwd_gpu[
             (channel_read_idx, kernel_offset_k)
         )
 
+    # The ragged input and output are addressed as row * stride + channel in
+    # 32 bits, instead of resolving a full 64-bit coordinate per access, so
+    # their linear offsets must stay below 2**32 (the host launcher checks
+    # this). The state pool uses coordinate access, which is 64-bit.
+    # TODO(bez): return to coordinate access for the ragged tensors once
+    # TileTensor coordinate loads/stores stop costing extra registers here.
+    var input_row_stride = UInt32(
+        qkv_input_ragged.layout[
+            linear_idx_type=qkv_input_ragged.linear_idx_type
+        ](Coord(1, 0))
+    )
+    var input_channel_offset = UInt32(
+        qkv_input_ragged.layout[
+            linear_idx_type=qkv_input_ragged.linear_idx_type
+        ](Coord(0, channel_read_idx))
+    )
+    var output_row_stride = UInt32(
+        conv_output_ragged.layout[
+            linear_idx_type=conv_output_ragged.linear_idx_type
+        ](Coord(1, 0))
+    )
+    var output_channel_offset = UInt32(
+        conv_output_ragged.layout[
+            linear_idx_type=conv_output_ragged.linear_idx_type
+        ](Coord(0, conv_channel_idx))
+    )
+
     # Cached across the consecutive tokens this thread owns.
     var batch_item_idx = 0
     var sequence_start_flat_idx = 0
@@ -216,18 +243,19 @@ def gated_delta_conv1d_fwd_gpu[
                 var lookback_position = token_position_in_sequence - (
                     KERNEL_SIZE_MINUS_ONE - kernel_offset_k
                 )
+                var tap_offset = (
+                    UInt32(sequence_start_flat_idx + lookback_position)
+                    * input_row_stride
+                    + input_channel_offset
+                )
                 conv_sum += Float32(
-                    qkv_input_ragged.load[width=1](
-                        (
-                            sequence_start_flat_idx + lookback_position,
-                            channel_read_idx,
-                        )
-                    )
+                    qkv_input_ragged.raw_load(tap_offset)
                 ) * Float32(weight_register[kernel_offset_k])
 
             if active:
-                conv_output_ragged.store(
-                    (flat_token_idx, conv_channel_idx),
+                conv_output_ragged.raw_store(
+                    UInt32(flat_token_idx) * output_row_stride
+                    + output_channel_offset,
                     Scalar[work_dtype](conv_sum),
                 )
             continue
@@ -255,11 +283,10 @@ def gated_delta_conv1d_fwd_gpu[
 
                 if lookback_position >= 0:
                     input_value = Float32(
-                        qkv_input_ragged.load[width=1](
-                            (
-                                sequence_start_flat_idx + lookback_position,
-                                channel_read_idx,
-                            )
+                        qkv_input_ragged.raw_load(
+                            UInt32(sequence_start_flat_idx + lookback_position)
+                            * input_row_stride
+                            + input_channel_offset
                         )
                     )
                 else:
@@ -277,8 +304,10 @@ def gated_delta_conv1d_fwd_gpu[
                 )
 
             if active:
-                conv_output_ragged.store(
-                    (sequence_start_flat_idx + head_position, conv_channel_idx),
+                conv_output_ragged.raw_store(
+                    UInt32(sequence_start_flat_idx + head_position)
+                    * output_row_stride
+                    + output_channel_offset,
                     Scalar[work_dtype](conv_sum),
                 )
 
@@ -293,12 +322,13 @@ def gated_delta_conv1d_fwd_gpu[
                 var state_value: Scalar[state_dtype] = 0
                 if source_position_in_sequence >= 0:
                     state_value = Scalar[state_dtype](
-                        qkv_input_ragged.load[width=1](
-                            (
+                        qkv_input_ragged.raw_load(
+                            UInt32(
                                 sequence_start_flat_idx
-                                + source_position_in_sequence,
-                                channel_read_idx,
+                                + source_position_in_sequence
                             )
+                            * input_row_stride
+                            + input_channel_offset
                         )
                     )
                 else:
@@ -312,6 +342,5 @@ def gated_delta_conv1d_fwd_gpu[
 
                 if active:
                     conv_state.store(
-                        (slot, conv_channel_idx, state_slot_j),
-                        state_value,
+                        (slot, conv_channel_idx, state_slot_j), state_value
                     )

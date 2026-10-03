@@ -3461,6 +3461,23 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
         if batch_size == 0 or total_seq_len == 0:
             return
 
+        # The kernel addresses the ragged input and output with 32-bit linear
+        # offsets (the conv_state pool keeps 64-bit offsets).
+        var qkv_input_strides = qkv_input_ragged.strides()
+        var conv_output_strides = conv_output_ragged.strides()
+        var max_input_offset = (total_seq_len - 1) * qkv_input_strides[0] + (
+            conv_dim - 1
+        ) * qkv_input_strides[1]
+        var max_output_offset = (total_seq_len - 1) * conv_output_strides[0] + (
+            conv_dim - 1
+        ) * conv_output_strides[1]
+        if max(max_input_offset, max_output_offset) > Int(UInt32.MAX):
+            raise Error(
+                t"gated_delta_conv1d_fwd: ragged input/output linear offsets"
+                t" must be below 2**32 elements, got"
+                t" total_seq_len={total_seq_len}, conv_dim={conv_dim}"
+            )
+
         var gpu_ctx = ctx
         # Average-row-length tiles keep short rows' state updates parallel.
         var tokens_per_block = min(
