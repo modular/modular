@@ -33,13 +33,6 @@ from state_space.varlen_selective_scan import (
     varlen_selective_state_update_gpu,
 )
 
-# Stride types for kernel calls
-comptime Strides1D = IndexList[1]
-comptime Strides2D = IndexList[2]
-comptime Strides3D = IndexList[3]
-comptime Strides4D = IndexList[4]
-
-
 # ============================================================================
 # Varlen Selective Scan Forward Registration
 # ============================================================================
@@ -113,31 +106,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
             DType.int32
         ]()
 
-        # Get strides
-        var u_strides = Strides2D(u.strides()[0], u.strides()[1])
-        var delta_strides = Strides2D(delta.strides()[0], delta.strides()[1])
-        var A_strides = Strides2D(A.strides()[0], A.strides()[1])
-        var B_strides = Strides3D(
-            B.strides()[0], B.strides()[1], B.strides()[2]
-        )
-        var C_strides = Strides3D(
-            C.strides()[0], C.strides()[1], C.strides()[2]
-        )
-        var D_strides = Strides1D(D.strides()[0] if D.dim_size(0) > 0 else 1)
-        var z_strides = Strides2D(
-            z.strides()[0] if z.dim_size(0) > 0 else 1,
-            z.strides()[1] if z.dim_size(0) > 0 else 1,
-        )
-        var delta_bias_strides = Strides1D(
-            delta_bias.strides()[0] if delta_bias.dim_size(0) > 0 else 1
-        )
-        var ssm_states_strides = Strides3D(
-            ssm_states.strides()[0],
-            ssm_states.strides()[1],
-            ssm_states.strides()[2],
-        )
-        var out_strides = Strides2D(output.strides()[0], output.strides()[1])
-
         comptime PAD_SLOT_ID: Int32 = -1
         comptime delta_softplus_int8: Int8 = Int8(
             1
@@ -174,16 +142,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     query_start_loc_tt,
                     cache_indices_tt,
                     has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
                     Optional[DeviceContext](ctx),
                 )
             elif dstate == 8:
@@ -209,16 +167,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     query_start_loc_tt,
                     cache_indices_tt,
                     has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
                 )
             else:  # dstate == 4
                 varlen_selective_scan_fwd_cpu[
@@ -243,16 +191,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     query_start_loc_tt,
                     cache_indices_tt,
                     has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
                     Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
@@ -302,16 +240,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     query_start_loc_tt,
                     cache_indices_tt,
                     has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
                     grid_dim=(num_dim_blocks, batch, 1),
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
@@ -357,16 +285,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     query_start_loc_tt,
                     cache_indices_tt,
                     has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
                     grid_dim=(num_dim_blocks, batch, 1),
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
@@ -412,16 +330,6 @@ struct VarlenSelectiveScanFwd[delta_softplus: Bool = False]:
                     query_start_loc_tt,
                     cache_indices_tt,
                     has_initial_state_tt,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
-                    ssm_states_strides,
-                    out_strides,
                     grid_dim=(num_dim_blocks, batch, 1),
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
@@ -538,45 +446,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
             DType.int32
         ]()
 
-        # Get strides
-        var state_strides = Strides4D(
-            state.strides()[0],
-            state.strides()[1],
-            state.strides()[2],
-            state.strides()[3],
-        )
-        var x_strides = Strides3D(
-            x.strides()[0], x.strides()[1], x.strides()[2]
-        )
-        var dt_strides = Strides3D(
-            dt.strides()[0], dt.strides()[1], dt.strides()[2]
-        )
-        var dt_bias_strides = Strides2D(
-            dt_bias.strides()[0] if dt_bias.dim_size(0) > 0 else 1,
-            dt_bias.strides()[1] if dt_bias.dim_size(0) > 0 else 1,
-        )
-        var A_strides = Strides3D(
-            A.strides()[0], A.strides()[1], A.strides()[2]
-        )
-        var B_strides = Strides3D(
-            B.strides()[0], B.strides()[1], B.strides()[2]
-        )
-        var C_strides = Strides3D(
-            C.strides()[0], C.strides()[1], C.strides()[2]
-        )
-        var D_strides = Strides2D(
-            D.strides()[0] if D.dim_size(0) > 0 else 1,
-            D.strides()[1] if D.dim_size(0) > 0 else 1,
-        )
-        var z_strides = Strides3D(
-            z.strides()[0] if z.dim_size(0) > 0 else 1,
-            z.strides()[1] if z.dim_size(0) > 0 else 1,
-            z.strides()[2] if z.dim_size(0) > 0 else 1,
-        )
-        var out_strides = Strides3D(
-            output.strides()[0], output.strides()[1], output.strides()[2]
-        )
-
         var has_state_batch_indices = state_batch_indices.dim_size(0) > 0
         comptime PAD_SLOT_ID: Int32 = -1
         comptime dt_softplus_int8: Int8 = Int8(1) if Self.dt_softplus else Int8(
@@ -614,16 +483,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     output_tt,
                     dt_bias_tt,
                     state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
                     Optional[DeviceContext](ctx),
                 )
             elif dstate == 8:
@@ -649,16 +508,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     output_tt,
                     dt_bias_tt,
                     state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
                 )
             else:  # dstate == 4
                 varlen_selective_state_update_cpu[
@@ -683,16 +532,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     output_tt,
                     dt_bias_tt,
                     state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
                     Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
@@ -741,16 +580,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     output_tt,
                     dt_bias_tt,
                     state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
                     grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
                     block_dim=(1,),
                 )
@@ -795,16 +624,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     output_tt,
                     dt_bias_tt,
                     state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
                     grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
                     block_dim=(1,),
                 )
@@ -849,16 +668,6 @@ struct VarlenSelectiveStateUpdate[dt_softplus: Bool = False]:
                     output_tt,
                     dt_bias_tt,
                     state_batch_indices_tt,
-                    state_strides,
-                    x_strides,
-                    dt_strides,
-                    dt_bias_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    out_strides,
                     grid_dim=(ceildiv(dim, BLOCK_SIZE_M), batch, nheads),
                     block_dim=(1,),
                 )

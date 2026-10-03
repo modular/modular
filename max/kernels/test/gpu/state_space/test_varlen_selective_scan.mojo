@@ -121,18 +121,6 @@ def run_varlen_selective_scan_fwd_gpu[
     for i in range(batch * dim * dstate):
         ssm_states_gpu_h.store(i, ssm_states_cpu_h.load(i))
 
-    # Strides for row-major layout using IndexList types
-    var u_strides = IndexList[2](total_length, 1)
-    var delta_strides = IndexList[2](total_length, 1)
-    var A_strides = IndexList[2](dstate, 1)
-    var B_strides = IndexList[3](dstate * total_length, total_length, 1)
-    var C_strides = IndexList[3](dstate * total_length, total_length, 1)
-    var D_strides = IndexList[1](1)
-    var z_strides = IndexList[2](total_length, 1)
-    var delta_bias_strides = IndexList[1](1)
-    var ssm_states_strides = IndexList[3](dim * dstate, dstate, 1)
-    var out_strides = IndexList[2](total_length, 1)
-
     # Create TileTensors for CPU kernel
     var u_cpu_tt = TileTensor(u_h, row_major(dim, total_length))
     var delta_cpu_tt = TileTensor(delta_h, row_major(dim, total_length))
@@ -206,16 +194,6 @@ def run_varlen_selective_scan_fwd_gpu[
         query_start_loc_cpu_tt,
         cache_indices_cpu_tt,
         has_initial_state_cpu_tt,
-        u_strides,
-        delta_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        delta_bias_strides,
-        ssm_states_strides,
-        out_strides,
     )
 
     # Allocate device memory
@@ -365,16 +343,6 @@ def run_varlen_selective_scan_fwd_gpu[
         query_start_loc_gpu_tt,
         cache_indices_gpu_tt,
         has_initial_state_gpu_tt,
-        u_strides,
-        delta_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        delta_bias_strides,
-        ssm_states_strides,
-        out_strides,
         grid_dim=(num_dim_blocks, batch, 1),
         block_dim=(BLOCK_SIZE, 1, 1),
     )

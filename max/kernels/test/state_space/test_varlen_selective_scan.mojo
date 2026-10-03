@@ -287,18 +287,6 @@ def run_varlen_selective_scan_fwd[
     var z_buf = z_h
     var output_buf = output_h
 
-    # Strides for row-major layout using IndexList types
-    var u_strides = IndexList[2](total_length, 1)
-    var delta_strides = IndexList[2](total_length, 1)
-    var A_strides = IndexList[2](dstate, 1)
-    var B_strides = IndexList[3](dstate * total_length, total_length, 1)
-    var C_strides = IndexList[3](dstate * total_length, total_length, 1)
-    var D_strides = IndexList[1](1)
-    var z_strides = IndexList[2](total_length, 1)
-    var delta_bias_strides = IndexList[1](1)
-    var ssm_states_strides = IndexList[3](dim * dstate, dstate, 1)
-    var out_strides = IndexList[2](total_length, 1)
-
     # Call kernel
     varlen_selective_scan_fwd_cpu[
         dtype,
@@ -322,16 +310,6 @@ def run_varlen_selective_scan_fwd[
         query_start_loc_tt,
         cache_indices_tt,
         has_initial_state_tt,
-        u_strides,
-        delta_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        delta_bias_strides,
-        ssm_states_strides,
-        out_strides,
     )
 
     # Basic sanity check: output should not be all zeros
@@ -536,20 +514,6 @@ def run_varlen_selective_state_update[
         ),
     )
 
-    # Strides for row-major layout using IndexList types
-    var state_strides = IndexList[4](
-        nheads * dim * dstate, dim * dstate, dstate, 1
-    )
-    var x_strides = IndexList[3](nheads * dim, dim, 1)
-    var dt_strides = IndexList[3](nheads * dim, dim, 1)
-    var dt_bias_strides = IndexList[2](dim, 1)
-    var A_strides = IndexList[3](dim * dstate, dstate, 1)
-    var B_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var C_strides = IndexList[3](ngroups * dstate, dstate, 1)
-    var D_strides = IndexList[2](dim, 1)
-    var z_strides = IndexList[3](nheads * dim, dim, 1)
-    var out_strides = IndexList[3](nheads * dim, dim, 1)
-
     # Call kernel
     varlen_selective_state_update_cpu[
         dtype,
@@ -573,16 +537,6 @@ def run_varlen_selective_state_update[
         output_tt2,
         dt_bias_tt2,
         state_batch_indices_tt,
-        state_strides,
-        x_strides,
-        dt_strides,
-        dt_bias_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        out_strides,
     )
 
     # Basic sanity check: output should not be all zeros
