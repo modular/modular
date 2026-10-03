@@ -120,13 +120,8 @@ def _check_decomposition[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s for a generic
-    # `kv_params`; the two layouts are structurally identical.
     var collection = Collection(
-        rebind[Collection.blocks_tt_type](
-            blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        blocks.device_tensor().as_unsafe_any_origin(),
         cache_lengths.device_tensor().as_imm().as_unsafe_any_origin(),
         lut.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(num_used * page_size),

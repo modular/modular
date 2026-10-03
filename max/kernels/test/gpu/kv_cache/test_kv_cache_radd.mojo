@@ -105,13 +105,8 @@ def test_kv_cache_radd[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s for a generic
-    # `kv_params`; the two layouts are structurally identical.
     var kv_collection_device = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block_paged.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_block_paged.device_tensor().as_unsafe_any_origin(),
         cache_lengths.device_tensor().as_imm().as_unsafe_any_origin(),
         paged_lut.device_tile_tensor(),
         UInt32(max_prompt_length),
@@ -142,9 +137,7 @@ def test_kv_cache_radd[
     kv_block_paged.to_host()
 
     var kv_collection_host = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block_paged.host_tensor().as_unsafe_any_origin()
-        ),
+        kv_block_paged.host_tensor().as_unsafe_any_origin(),
         cache_lengths.host_tensor().as_imm().as_unsafe_any_origin(),
         paged_lut.host_tile_tensor(),
         UInt32(max_prompt_length),

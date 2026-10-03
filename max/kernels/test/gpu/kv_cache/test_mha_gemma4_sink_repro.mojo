@@ -160,13 +160,8 @@ def execute_sink_prefill_repro[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the two layouts
-    # are structurally identical.
     var kv_collection_paged_device = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block_paged.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_block_paged.device_tensor().as_unsafe_any_origin(),
         cache_lengths_managed.device_tensor().as_imm().as_unsafe_any_origin(),
         paged_lut.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_length),

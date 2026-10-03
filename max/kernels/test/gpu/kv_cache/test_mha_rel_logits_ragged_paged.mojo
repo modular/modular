@@ -132,13 +132,8 @@ def execute_rel_logits_flash_attention_test[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the two layouts
-    # are structurally identical.
     var kv_collection = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_blocks.device_tensor().as_unsafe_any_origin(),
         cache_table.cache_lengths.device_tile_tensor(),
         paged_lut.device_tile_tensor(),
         UInt32(max_valid_length),

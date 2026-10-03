@@ -180,9 +180,6 @@ def execute_pack_gqa_test[
     var out_fp8 = HostDeviceTileTensor[bf16_dtype](q_layout, ctx)
     var out_ref = HostDeviceTileTensor[bf16_dtype](q_layout, ctx)
 
-    # The collections spell their block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the layouts are
-    # structurally identical.
     comptime Fp8Collection = PagedKVCacheCollection[
         fp8_dtype,
         kv_params,
@@ -208,18 +205,14 @@ def execute_pack_gqa_test[
         paged_lut.device_tensor().as_imm().as_unsafe_any_origin()
     )
     var coll_fp8 = Fp8Collection(
-        rebind[Fp8Collection.blocks_tt_type](
-            kv_fp8.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_fp8.device_tensor().as_unsafe_any_origin(),
         cache_lengths_device,
         paged_lut_device,
         UInt32(max_prompt),
         UInt32(max_ctx),
     )
     var coll_bf16 = Bf16Collection(
-        rebind[Bf16Collection.blocks_tt_type](
-            kv_bf16.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_bf16.device_tensor().as_unsafe_any_origin(),
         cache_lengths_device,
         paged_lut_device,
         UInt32(max_prompt),

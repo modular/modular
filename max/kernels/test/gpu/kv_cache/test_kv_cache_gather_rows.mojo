@@ -126,22 +126,15 @@ def run_case[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s for a generic
-    # `kv_params`; the two layouts are structurally identical.
     var device_collection = Collection(
-        rebind[Collection.blocks_tt_type](
-            blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        blocks.device_tensor().as_unsafe_any_origin(),
         lengths.cache_lengths.device_tile_tensor(),
         lut.device_tile_tensor(),
         UInt32(lengths.max_seq_length_batch),
         UInt32(lengths.max_full_context_length),
     )
     var host_collection = Collection(
-        rebind[Collection.blocks_tt_type](
-            blocks.host_tensor().as_unsafe_any_origin()
-        ),
+        blocks.host_tensor().as_unsafe_any_origin(),
         lengths.cache_lengths.host_tile_tensor(),
         lut.host_tile_tensor(),
         UInt32(lengths.max_seq_length_batch),

@@ -132,13 +132,8 @@ def execute_flash_attention[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the two layouts
-    # are structurally identical.
     var kv_collection_device = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_block.device_tensor().as_unsafe_any_origin(),
         cache_lengths_managed.device_tensor().as_imm().as_unsafe_any_origin(),
         lookup_table.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_len),

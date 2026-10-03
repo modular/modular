@@ -175,24 +175,17 @@ def run_case(
     idx.to_device()
 
     # --- device run --------------------------------------------------------
-    # The collections spell their block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the two layouts
-    # are structurally identical.
     comptime SwaCollection = Collection[PAGE_SIZE]
     comptime CompCollection = Collection[COMP_SLOTS]
     var swa_dev = SwaCollection(
-        rebind[SwaCollection.blocks_tt_type](
-            swa_blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        swa_blocks.device_tensor().as_unsafe_any_origin(),
         swa_lengths.cache_lengths.device_tile_tensor(),
         swa_lut.device_tile_tensor(),
         UInt32(swa_lengths.max_seq_length_batch),
         UInt32(swa_lengths.max_full_context_length),
     )
     var comp_dev = CompCollection(
-        rebind[CompCollection.blocks_tt_type](
-            comp_blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        comp_blocks.device_tensor().as_unsafe_any_origin(),
         comp_lengths.cache_lengths.device_tile_tensor(),
         comp_lut.device_tile_tensor(),
         UInt32(comp_lengths.max_seq_length_batch),
@@ -216,18 +209,14 @@ def run_case(
 
     # --- host reference: plain two-pass softmax ------------------------------
     var swa_host = SwaCollection(
-        rebind[SwaCollection.blocks_tt_type](
-            swa_blocks.host_tensor().as_unsafe_any_origin()
-        ),
+        swa_blocks.host_tensor().as_unsafe_any_origin(),
         swa_lengths.cache_lengths.host_tile_tensor(),
         swa_lut.host_tile_tensor(),
         UInt32(swa_lengths.max_seq_length_batch),
         UInt32(swa_lengths.max_full_context_length),
     ).get_key_cache(layer_swa)
     var comp_host = CompCollection(
-        rebind[CompCollection.blocks_tt_type](
-            comp_blocks.host_tensor().as_unsafe_any_origin()
-        ),
+        comp_blocks.host_tensor().as_unsafe_any_origin(),
         comp_lengths.cache_lengths.host_tile_tensor(),
         comp_lut.host_tile_tensor(),
         UInt32(comp_lengths.max_seq_length_batch),

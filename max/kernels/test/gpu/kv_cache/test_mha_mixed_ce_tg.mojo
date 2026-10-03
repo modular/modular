@@ -153,12 +153,7 @@ def execute_ragged_flash_attention[
         ctx,
     )
 
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the two layouts
-    # are structurally identical.
-    var kv_blocks_device = rebind[PagedCollectionType.blocks_tt_type](
-        kv_block_paged.device_tensor().as_unsafe_any_origin()
-    )
+    var kv_blocks_device = kv_block_paged.device_tensor().as_unsafe_any_origin()
     var true_ce_kv_collection_device = PagedCollectionType(
         kv_blocks_device,
         true_ce_cache_lengths_table.cache_lengths.device_tile_tensor(),

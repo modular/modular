@@ -45,7 +45,7 @@ comptime _Collection[
 def _create_kv_collection[
     dtype: DType, //, num_heads: Int, head_dim: Int, page_size: Int
 ](
-    kv_block_paged: TileTensor[mut=True, dtype, ...],
+    kv_block_paged: TileTensor[mut=True, dtype, _, _, linear_idx_type=_],
     cache_lengths: ImmTileTensor[
         .uint32, RowMajorLayout[Int64], ImmutAnyOrigin
     ],
@@ -56,13 +56,8 @@ def _create_kv_collection[
     max_full_context_length: Int,
 ) -> _Collection[dtype, num_heads, head_dim, page_size]:
     comptime Collection = _Collection[dtype, num_heads, head_dim, page_size]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s for a generic
-    # `kv_params`; the two layouts are structurally identical.
     return Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block_paged.as_unsafe_any_origin()
-        ),
+        kv_block_paged.as_unsafe_any_origin(),
         cache_lengths,
         paged_lut,
         UInt32(max_prompt_length),

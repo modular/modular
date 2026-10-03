@@ -220,9 +220,6 @@ def _run_ragged_at[
     kv_block_continuous.to_device()
     lookup_table.to_device()
 
-    # The collections spell their block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the layouts are
-    # structurally identical.
     comptime ContinuousCollection = ContinuousBatchingKVCacheCollection[
         dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
     ]
@@ -230,9 +227,7 @@ def _run_ragged_at[
         cache_lengths_managed.device_tensor().as_imm().as_unsafe_any_origin()
     )
     var kv_collection_continuous_device = ContinuousCollection(
-        rebind[ContinuousCollection.blocks_tt_type](
-            kv_block_continuous.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_block_continuous.device_tensor().as_unsafe_any_origin(),
         cache_lengths_device,
         lookup_table.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_length),
@@ -330,9 +325,7 @@ def _run_ragged_at[
         MutAnyOrigin,
     ]
     var kv_collection_paged_device = PagedCollection(
-        rebind[PagedCollection.blocks_tt_type](
-            kv_block_paged.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_block_paged.device_tensor().as_unsafe_any_origin(),
         cache_lengths_device,
         paged_lut.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_length),
