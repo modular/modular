@@ -476,6 +476,21 @@ def test_ssd_combined_gpu_basic() raises:
     ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
 
 
+def test_ssd_combined_gpu_odd_seqlen_multi_channel() raises:
+    """Odd seqlen makes rows start at unaligned element offsets."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_ssd_combined_gpu[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=9, n_groups=1, ctx=ctx)
+
+
 def test_ssd_combined_gpu_without_D() raises:
     """Test ssd_combined on GPU without D."""
     var ctx = DeviceContext()

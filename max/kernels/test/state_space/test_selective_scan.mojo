@@ -26,10 +26,6 @@ from layout._fillers import random
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_update_cpu,
-    Strides1D,
-    Strides2D,
-    Strides3D,
-    Strides4D,
 )
 from std.testing import TestSuite, assert_almost_equal
 
@@ -248,25 +244,6 @@ def run_selective_scan_fwd[
         ),
     )
 
-    # Strides for row-major layout
-    var output_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var x_strides = Strides4D(
-        dim * n_chunks * 2 * dstate, n_chunks * 2 * dstate, 2 * dstate, 1
-    )
-    var out_z_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var u_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var delta_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var A_strides = Strides2D(dstate, 1)
-    var B_strides = Strides4D(
-        n_groups * dstate * seqlen, dstate * seqlen, seqlen, 1
-    )
-    var C_strides = Strides4D(
-        n_groups * dstate * seqlen, dstate * seqlen, seqlen, 1
-    )
-    var D_strides = Strides1D(1)
-    var z_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var delta_bias_strides = Strides1D(1)
-
     # Call fused kernel
     selective_scan_fwd_cpu[
         dtype,
@@ -288,17 +265,6 @@ def run_selective_scan_fwd[
         D_tt,
         z_tt,
         delta_bias_tt,
-        output_strides,
-        x_strides,
-        out_z_strides,
-        u_strides,
-        delta_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        delta_bias_strides,
     )
 
     # For now, just verify the kernel executes without errors
@@ -488,19 +454,6 @@ def run_selective_scan_update[
     var z_buf = z_h
     var dt_bias_buf = dt_bias_h
 
-    # Strides for row-major layout
-    var state_out_strides = Strides3D(dim * dstate, dstate, 1)
-    var output_strides = Strides2D(dim, 1)
-    var state_in_strides = Strides3D(dim * dstate, dstate, 1)
-    var x_strides = Strides2D(dim, 1)
-    var dt_strides = Strides2D(dim, 1)
-    var A_strides = Strides2D(dstate, 1)
-    var B_strides = Strides3D(n_groups * dstate, dstate, 1)
-    var C_strides = Strides3D(n_groups * dstate, dstate, 1)
-    var D_strides = Strides1D(1)
-    var z_strides = Strides2D(dim, 1)
-    var dt_bias_strides = Strides1D(1)
-
     # Run kernel
     selective_scan_update_cpu[
         dtype,
@@ -521,17 +474,6 @@ def run_selective_scan_update[
         D_tt2,
         z_tt2,
         dt_bias_tt,
-        state_out_strides,
-        output_strides,
-        state_in_strides,
-        x_strides,
-        dt_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        dt_bias_strides,
     )
 
     # Reference implementation
