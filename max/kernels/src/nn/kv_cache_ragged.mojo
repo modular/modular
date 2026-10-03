@@ -5086,9 +5086,9 @@ def generic_kv_cache_radd_dispatch[
     //,
     target: StaticString,
 ](
-    a: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    a: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     cache: collection_t,
-    input_row_offsets: LayoutTensor[
+    input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     batch_offset: UInt32,
@@ -5128,12 +5128,12 @@ def generic_kv_cache_radd_dispatch[
     comptime assert (
         dtype == collection_t.dtype
     ), "Mismatch in dtype between computation and KV tensors"
-    comptime assert (
-        a.layout.shape[1] != UNKNOWN_VALUE
-    ), "Input tensor must have known shape in last dim"
-    comptime assert Int(a.layout.shape[1]) == hidden_size * 2, (
+    comptime assert a.LayoutType._shape_types[
+        1
+    ].is_static_value, "Input tensor must have known shape in last dim"
+    comptime assert a.static_shape[1] == hidden_size * 2, (
         "Mismatch in hidden size between input "
-        + String(Int(a.layout.shape[1]))
+        + String(a.static_shape[1])
         + " and KV tensors "
         + String(hidden_size)
     )
@@ -5147,7 +5147,7 @@ def generic_kv_cache_radd_dispatch[
     # element-type verification). Keep using the deprecated parameter-closure
     # overload until cache captures in unified closures are supported.
     @__parameter
-    @__copy_capture(k_cache, v_cache, input_row_offsets)
+    @__copy_capture(a, k_cache, v_cache, input_row_offsets)
     def do_radd[width: Int, alignment: Int = 1](idx: Coord):
         comptime assert idx.rank == 2, "Rank must be 2"
 
@@ -5180,9 +5180,7 @@ def generic_kv_cache_radd_dispatch[
         var old_val = cache.load[width=width](
             Int(corrected_batch_idx), h_idx, cache_token_idx, hd_idx
         )
-        var a_val = rebind[type_of(old_val)](
-            a.load[width=width](coord_to_index_list(idx))
-        )
+        var a_val = rebind[type_of(old_val)](a.load[width=width](idx))
 
         cache.store(
             Int(corrected_batch_idx),
@@ -5197,14 +5195,14 @@ def generic_kv_cache_radd_dispatch[
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
-            Coord(a.runtime_layout.shape.value), ctx
+            a.layout.shape_coord(), ctx
         )
     else:
         comptime compile_target = CompilationTarget.current()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
         elementwise[do_radd, simd_width, target=target](
-            Coord(a.runtime_layout.shape.value), ctx
+            a.layout.shape_coord(), ctx
         )
 
 
@@ -5218,7 +5216,7 @@ def kv_cache_store_ragged[
 ](
     cache: cache_t,
     input_shape: IndexList[3],
-    input_row_offsets: LayoutTensor[
+    input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     context: DeviceContext,
@@ -5245,7 +5243,7 @@ def kv_cache_store_ragged[
             start of each sequence along the ragged sequence dimension.
         context: The call context pointer, passed by the graph compiler.
     """
-    comptime assert input_row_offsets.layout.rank() == 1, (
+    comptime assert input_row_offsets.flat_rank == 1, (
         "Expected input_row_offsets to be a 1D tensor of shape `(batch_size"
         " + 1,)`"
     )
@@ -5268,7 +5266,7 @@ def kv_cache_store_ragged[
         # answers with the last request for every one of them, which would
         # write them past the end of that request's span and into whatever
         # pages follow.
-        if row >= Int(input_row_offsets[input_row_offsets.size() - 1]):
+        if row >= Int(input_row_offsets[input_row_offsets.num_elements() - 1]):
             return
         var input_idx = IndexList[3](
             row, Int(idx[1].value()), Int(idx[2].value())
@@ -5314,9 +5312,7 @@ def kv_cache_store_padded[
 ](
     cache: cache_t,
     input_shape: IndexList[4],
-    valid_lengths: LayoutTensor[
-        mut=False, .uint32, address_space=.GENERIC, ...
-    ],
+    valid_lengths: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
     context: DeviceContext,
 ) raises:
     """Stores padded input values into a paged KV cache via an elementwise kernel.
@@ -5342,7 +5338,7 @@ def kv_cache_store_padded[
         context: The call context pointer, passed by the graph compiler.
     """
     comptime assert (
-        valid_lengths.layout.rank() == 1
+        valid_lengths.flat_rank == 1
     ), "Expected valid_lengths to be a 1D tensor of shape `(batch_size,)`"
 
     # TODO: This elementwise body captures a KV cache view (`CacheType`), which
@@ -5404,13 +5400,13 @@ def kv_cache_2m_iadd_dispatch[
     //,
     target: StaticString,
 ](
-    kv: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    kv: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     cache: collection_t,
-    input_row_offsets: LayoutTensor[
+    input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    lora_end_idx: LayoutTensor[mut=False, .int64, address_space=.GENERIC, ...],
-    batch_seq_len: LayoutTensor[mut=False, .int64, address_space=.GENERIC, ...],
+    lora_end_idx: TileTensor[mut=False, .int64, address_space=.GENERIC, ...],
+    batch_seq_len: TileTensor[mut=False, .int64, address_space=.GENERIC, ...],
     layer_idx: UInt32,
     ctx: DeviceContext,
 ) raises:
@@ -5450,16 +5446,15 @@ def kv_cache_2m_iadd_dispatch[
         ctx: The call context pointer, passed by the graph compiler.
     """
     comptime hidden_size = collection_t.kv_params.head_size * collection_t.kv_params.num_heads
-    var kv_shape = kv.runtime_layout.shape.value.canonicalize()
     comptime assert (
         dtype == collection_t.dtype
     ), "Mismatch in dtype between computation and KV tensors"
-    comptime assert (
-        kv.layout.shape[1] != UNKNOWN_VALUE
-    ), "Input tensor must have known shape in last dim"
-    comptime assert Int(kv.layout.shape[1]) == hidden_size, (
+    comptime assert kv.LayoutType._shape_types[
+        1
+    ].is_static_value, "Input tensor must have known shape in last dim"
+    comptime assert kv.static_shape[1] == hidden_size, (
         "Mismatch in hidden size between input "
-        + String(Int(kv.layout.shape[1]))
+        + String(kv.static_shape[1])
         + " and KV tensors "
         + String(hidden_size)
     )
@@ -5471,7 +5466,7 @@ def kv_cache_2m_iadd_dispatch[
     var M = Int(batch_seq_len[0])
 
     # [2m, N]
-    var elementwise_shape = IndexList[2](2 * m, kv_shape[1])
+    var elementwise_shape = IndexList[2](2 * m, Int(kv.dim[1]()))
 
     # TODO: This elementwise body captures KV cache views (`CacheType`), which
     # fail codegen when stored into a unified closure ('pop.store' pointer
@@ -5507,9 +5502,7 @@ def kv_cache_2m_iadd_dispatch[
         var old_val = cache.load[width=width](
             batch_idx, h_idx, cache_token_idx, hd_idx
         )
-        var a_val = rebind[type_of(old_val)](
-            kv.load[width=width](Int(idx[0].value()), Int(idx[1].value()))
-        )
+        var a_val = rebind[type_of(old_val)](kv.load[width=width](idx))
 
         cache.store(
             batch_idx,

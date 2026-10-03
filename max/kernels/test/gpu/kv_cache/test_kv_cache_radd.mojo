@@ -15,11 +15,11 @@ from std.math import ceildiv
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, Idx, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.kv_cache_ragged import generic_kv_cache_radd_dispatch
 
-from std.utils import Index, IndexList
+from std.utils import IndexList
 
 from kv_cache_test_utils import PagedLookupTable
 
@@ -40,22 +40,14 @@ def test_kv_cache_radd[
     assert (
         num_active_loras <= batch_size
     ), "num_active_loras must be less than or equal to batch_size"
-    var cache_lengths = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
-        ctx,
+    var cache_lengths = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size))), ctx
     )
-    var input_row_offsets_slice = ManagedLayoutTensor[
-        .uint32, Layout(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-            Index(num_active_loras + 1)
-        ),
-        ctx,
+    var input_row_offsets_slice = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(num_active_loras + 1))), ctx
     )
-    var cache_lengths_host = cache_lengths.tensor[update=False]()
-    var input_row_offsets_slice_host = input_row_offsets_slice.tensor[
-        update=False
-    ]()
+    var cache_lengths_host = cache_lengths.host_tensor()
+    var input_row_offsets_slice_host = input_row_offsets_slice.host_tensor()
     var num_active_loras_slice_start = batch_size - num_active_loras
     var running_total = 0
     var total_slice_length = 0
@@ -77,63 +69,69 @@ def test_kv_cache_radd[
         running_total += prompt_lens[i]
 
     input_row_offsets_slice_host[num_active_loras] = UInt32(running_total)
+    cache_lengths.to_device()
+    input_row_offsets_slice.to_device()
 
     var num_paged_blocks = ceildiv(
         batch_size * max_full_context_length * 2, page_size
     )
 
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        num_heads,
-        head_dim,
-    )
-    var kv_block_paged = ManagedLayoutTensor[dtype, Layout.row_major[6]()](
-        RuntimeLayout[Layout.row_major[6]()].row_major(kv_block_paged_shape),
+    var kv_block_paged = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(
+                Int64(num_paged_blocks),
+                Idx[2],
+                Int64(num_layers),
+                Idx[page_size],
+                Idx[num_heads],
+                Idx[head_dim],
+            )
+        ),
         ctx,
     )
-    var kv_block_paged_host = kv_block_paged.tensor[update=False]()
-    for i in range(kv_block_paged_shape.flattened_length()):
-        kv_block_paged_host.ptr[i] = Scalar[dtype](1)
+    _ = kv_block_paged.host_tensor().fill(1)
+    kv_block_paged.to_device()
 
     var paged_lut = PagedLookupTable[page_size].build(
         prompt_lens, cache_lens, max_full_context_length, num_paged_blocks, ctx
     )
 
-    var kv_collection_device = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         page_size,
-    ](
-        kv_block_paged.device_tensor(),
-        cache_lengths.device_tensor(),
-        paged_lut.device_tensor(),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    # The collection spells its block strides symbolically in `kv_params`,
+    # which the compiler cannot fold against `row_major`'s for a generic
+    # `kv_params`; the two layouts are structurally identical.
+    var kv_collection_device = Collection(
+        rebind[Collection.blocks_tt_type](
+            kv_block_paged.device_tensor().as_unsafe_any_origin()
+        ),
+        cache_lengths.device_tensor().as_imm().as_unsafe_any_origin(),
+        paged_lut.device_tile_tensor(),
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
 
-    var a_shape = IndexList[2](total_slice_length, num_heads * head_dim * 2)
-    var a = ManagedLayoutTensor[
-        dtype, Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim * 2)
-    ](
-        RuntimeLayout[
-            Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim * 2)
-        ].row_major(a_shape),
+    var a = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(Int64(total_slice_length), Idx[num_heads * head_dim * 2])
+        ),
         ctx,
     )
-    var a_host = a.tensor[update=False]()
-    for i in range(a_shape.flattened_length()):
-        a_host.ptr[i] = Scalar[dtype](i)
+    var a_host = a.host_tensor()
+    for i in range(a_host.num_elements()):
+        a_host.unsafe_ptr().unsafe_store(i, Scalar[dtype](i))
+    a.to_device()
 
     var layer_idx = 1
     generic_kv_cache_radd_dispatch[target="gpu"](
-        LayoutTensor[
-            dtype,
-            Layout.row_major(UNKNOWN_VALUE, num_heads * head_dim * 2),
-            MutAnyOrigin,
-        ](a.device_tensor().ptr, a.device_tensor().runtime_layout),
+        a.device_tensor(),
         kv_collection_device,
         input_row_offsets_slice.device_tensor(),
         UInt32(num_active_loras_slice_start),
@@ -141,17 +139,14 @@ def test_kv_cache_radd[
         ctx,
     )
     ctx.synchronize()
-    kv_block_paged_host = kv_block_paged.tensor()
-    a_host = a.tensor()
+    kv_block_paged.to_host()
 
-    var kv_collection_host = PagedKVCacheCollection[
-        dtype,
-        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
-        page_size,
-    ](
-        kv_block_paged_host,
-        cache_lengths.tensor(),
-        paged_lut.host_tensor(),
+    var kv_collection_host = Collection(
+        rebind[Collection.blocks_tt_type](
+            kv_block_paged.host_tensor().as_unsafe_any_origin()
+        ),
+        cache_lengths.host_tensor().as_imm().as_unsafe_any_origin(),
+        paged_lut.host_tile_tensor(),
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
@@ -239,7 +234,9 @@ def test_kv_cache_radd[
                         )
                     arange_counter += 1
 
-    # Keep helper ownership explicit until helper internals are migrated.
+    # The collections hold untracked views of these buffers.
+    _ = kv_block_paged^
+    _ = cache_lengths^
     _ = paged_lut^
 
 

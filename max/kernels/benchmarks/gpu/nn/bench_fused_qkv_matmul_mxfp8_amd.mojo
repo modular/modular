@@ -186,6 +186,7 @@ def bench_shape[
             IndexList[1](batch_size + 1)
         ),
     )
+    var iro_tt = TileTensor(iro_dev, row_major(Coord(Int64(batch_size + 1))))
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
@@ -510,20 +511,20 @@ def bench_shape[
         kv_cache_store_ragged[target="gpu", input_fn=k_in](
             main_collection.get_key_cache(layer_idx),
             IndexList[3](total_seq, MAIN_KV_HEADS, HEAD_SIZE),
-            iro_tensor,
+            iro_tt,
             ctx,
         )
         kv_cache_store_ragged[target="gpu", input_fn=v_in](
             main_collection.get_value_cache(layer_idx),
             IndexList[3](total_seq, MAIN_KV_HEADS, HEAD_SIZE),
-            iro_tensor,
+            iro_tt,
             ctx,
         )
         comptime if HAS_INDEXER:
             kv_cache_store_ragged[target="gpu", input_fn=ik_in](
                 index_collection.get_key_cache(layer_idx),
                 IndexList[3](total_seq, 1, HEAD_SIZE),
-                iro_tensor,
+                iro_tt,
                 ctx,
             )
 

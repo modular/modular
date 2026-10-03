@@ -135,7 +135,7 @@ struct Struct_kv_cache_store_paged:
         kv_cache_store_ragged[input_fn=input_fn, target=target](
             cache,
             inputs.shape(),
-            input_row_offsets.to_layout_tensor(),
+            input_row_offsets.to_tile_tensor(),
             context,
         )
 
@@ -406,7 +406,7 @@ struct Struct_kv_cache_store_padded:
         kv_cache_store_padded[input_fn=input_fn, target=target](
             cache,
             inputs.shape(),
-            valid_lengths.to_layout_tensor(),
+            valid_lengths.to_tile_tensor(),
             context,
         )
 
@@ -1013,9 +1013,9 @@ struct Struct_kv_cache_ragged_paged_radd:
         )
 
         generic_kv_cache_radd_dispatch[target=target,](
-            a.to_layout_tensor(),
+            a.to_tile_tensor(),
             kv_collection,
-            input_row_offsets.to_layout_tensor(),
+            input_row_offsets.to_tile_tensor(),
             batch_offset,
             layer_idx,
             context,
@@ -1056,17 +1056,17 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
             max_cache_length,
         )
 
-        var kv_layout_tensor = kv.to_layout_tensor()
+        var kv_tensor = kv.to_tile_tensor()
 
-        if kv_layout_tensor.shape[0]() == 0:
+        if kv_tensor.dim[0]() == 0:
             return
 
         kv_cache_2m_iadd_dispatch[target=target,](
-            kv_layout_tensor,
+            kv_tensor,
             kv_collection,
-            input_row_offsets.to_layout_tensor(),
-            lora_end_idx.to_layout_tensor(),
-            batch_seq_len.to_layout_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            lora_end_idx.to_tile_tensor(),
+            batch_seq_len.to_tile_tensor(),
             layer_idx,
             context,
         )

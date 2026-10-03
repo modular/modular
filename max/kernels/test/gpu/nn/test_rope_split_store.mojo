@@ -26,13 +26,13 @@ from std.random import random_ui64, seed
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
-    Idx,
-    Layout,
     LayoutTensor,
+    Layout,
     RuntimeLayout,
+    Idx,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
+    UNKNOWN_VALUE,
 )
 from layout._fillers import random
 from std.testing import assert_almost_equal
@@ -277,14 +277,9 @@ def execute_test[
     var v_stride0 = combined_dim
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
-    var row_offsets_lt = LayoutTensor[
-        .uint32,
-        Layout(UNKNOWN_VALUE),
-    ](
+    var row_offsets = TileTensor(
         row_offsets_device,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+        row_major((Int64(batch_size + 1),)),
     )
 
     @__parameter
@@ -306,13 +301,13 @@ def execute_test[
     kv_cache_store_ragged[target="gpu", input_fn=k_load_fn](
         unfused_k_cache,
         IndexList[3](total_length, num_kv_heads, head_dim),
-        row_offsets_lt,
+        row_offsets,
         ctx,
     )
     kv_cache_store_ragged[target="gpu", input_fn=v_load_fn](
         unfused_v_cache,
         IndexList[3](total_length, num_kv_heads, head_dim),
-        row_offsets_lt,
+        row_offsets,
         ctx,
     )
 
@@ -694,14 +689,8 @@ def execute_test_with_position_ids[
     var v_stride0 = combined_dim
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
-    var row_offsets_lt = LayoutTensor[
-        .uint32,
-        Layout(UNKNOWN_VALUE),
-    ](
-        row_offsets_device,
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var row_offsets = TileTensor(
+        row_offsets_device, row_major((Int64(batch_size + 1),))
     )
 
     @__parameter
@@ -723,13 +712,13 @@ def execute_test_with_position_ids[
     kv_cache_store_ragged[target="gpu", input_fn=k_load_fn](
         unfused_k_cache,
         IndexList[3](total_length, num_kv_heads, head_dim),
-        row_offsets_lt,
+        row_offsets,
         ctx,
     )
     kv_cache_store_ragged[target="gpu", input_fn=v_load_fn](
         unfused_v_cache,
         IndexList[3](total_length, num_kv_heads, head_dim),
-        row_offsets_lt,
+        row_offsets,
         ctx,
     )
 
