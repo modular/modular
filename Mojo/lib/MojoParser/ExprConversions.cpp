@@ -1189,7 +1189,7 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
       auto toMut = toOrigin.getIsMutable();
       auto result =
           ParamOperatorAttr::get(POC::And, toMut, fromOrigin.getIsMutable());
-      if (result == toMut)
+      if (isEqualCanon(result, toMut))
         return TriBool::yes();
     }
 

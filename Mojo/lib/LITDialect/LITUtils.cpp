@@ -23,13 +23,13 @@
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
+#include "Mojo/KGENDialect/PropositionFold.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/IR/SymbolTable.h"
-#include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -1010,254 +1010,32 @@ Attribute NameToImplicitOriginRefRemapper::tryReplace(Attribute attr,
 // Constraint Implication
 //===----------------------------------------------------------------------===//
 
-/// Normalize a `conforms_to` for structural comparison: strip identity wrappers
-/// (rebind/upcast/downcast) from the type value so `conforms_to(upcast<T>, X)`
-/// matches `conforms_to(T, X)`, and decompose concrete variadic lists and
-/// multi-trait checks into an AND of scalar, single-trait `conforms_to`
-/// propositions. Returns null if \p prop is not a `conforms_to`, or if it is
-/// already normalized and cannot be decomposed.
-static TypedAttr decomposeConformsTo(TypedAttr prop) {
-  auto conformsTo = dyn_cast<TypeConformsToTraitAttr>(prop);
-  if (!conformsTo)
-    return {};
-
-  TypedAttr typeValue = stripIdentityWrappers(conformsTo.getTypeValue());
-
-  std::optional<ArrayRef<TraitSymbolAttr>> traitSymbolsOr =
-      conformsTo.getTraitSymbols();
-  // Not yet resolved.
-  if (!traitSymbolsOr)
-    return {};
-
-  ArrayRef<TraitSymbolAttr> traitSymbols = *traitSymbolsOr;
-  auto concreteList = sugarDynCast<ParamListAttr>(typeValue);
-  bool hasMultipleElements =
-      concreteList && concreteList.getValues().size() > 1;
-  assert(!traitSymbols.empty());
-  if (traitSymbols.size() == 1 && !hasMultipleElements) {
-    // Nothing to split. Only rebuild when stripping changed the type value;
-    // otherwise report "not decomposable" so callers use the prop unchanged.
-    if (typeValue == conformsTo.getTypeValue())
-      return {};
-    return TypeConformsToTraitAttr::get(typeValue, conformsTo.getTraitType());
-  }
-  // An empty concrete pack is vacuously true; callers handle that via the
-  // earlier simplifier paths. Guard here so we never feed an empty operand
-  // list to `ParamOperatorAttr::get(POC::And, ...)` (which asserts).
-  if (concreteList && concreteList.getValues().empty())
-    return {};
-
-  SmallVector<TypedAttr> operands;
-  if (concreteList) {
-    operands.reserve(concreteList.getValues().size() * traitSymbols.size());
-    for (TypedAttr element : concreteList.getValues()) {
-      element = stripIdentityWrappers(element);
-      for (TraitSymbolAttr sym : traitSymbols) {
-        auto singleTrait = TraitType::get(conformsTo.getContext(), {sym});
-        operands.push_back(
-            TypeConformsToTraitAttr::get(element, singleTrait.getPValue()));
-      }
-    }
-  } else {
-    operands.reserve(traitSymbols.size());
-    for (TraitSymbolAttr sym : traitSymbols) {
-      auto singleTrait = TraitType::get(conformsTo.getContext(), {sym});
-      operands.push_back(
-          TypeConformsToTraitAttr::get(typeValue, singleTrait.getPValue()));
-    }
-  }
-  return ParamOperatorAttr::get(POC::And, operands);
+static TypedAttr conjunctionOf(ArrayRef<TypedAttr> propositions,
+                               MLIRContext *ctx) {
+  if (propositions.empty())
+    return SIMDAttr::getScalarBool(ctx, true);
+  if (propositions.size() == 1)
+    return propositions.front();
+  return ParamOperatorAttr::get(POC::And, propositions);
 }
 
-/// Check if prop is NOT(inner), i.e., XOR(inner, true). Returns inner if so.
-static TypedAttr getNotOperand(TypedAttr prop) {
-  auto xorOp = dyn_cast<ParamOperatorAttr>(prop);
-  if (!xorOp || xorOp.getOpcode() != POC::Xor ||
-      xorOp.getOperands().size() != 2)
-    return {};
-
-  // NOT is represented as XOR(x, true). Check both operand orderings.
-  for (auto [maybeInner, maybeTrue] :
-       {std::pair{xorOp.getOperand(0), xorOp.getOperand(1)},
-        std::pair{xorOp.getOperand(1), xorOp.getOperand(0)}}) {
-    if (isTriviallyTrueProposition(maybeTrue))
-      return maybeInner;
-  }
-  return {};
-}
-
-/// Ingest the top-level identity facts of `assumption` (and of its AND
-/// conjuncts).
-static void addEqualityFacts(TypedAttr assumption,
-                             llvm::EquivalenceClasses<TypedAttr> &classes) {
-  if (std::optional<std::pair<TypedAttr, TypedAttr>> identity =
-          getIdentityProposition(assumption)) {
-    classes.unionSets(
-        stripIdentityWrappers(getCanonicalAttr(identity->first)),
-        stripIdentityWrappers(getCanonicalAttr(identity->second)));
-  } else if (auto op = dyn_cast<ParamOperatorAttr>(assumption)) {
-    if (op.getOpcode() == POC::And)
-      for (TypedAttr operand : op.getOperands())
-        addEqualityFacts(operand, classes);
-  }
-}
-
-namespace {
-/// The identity facts of an assumption, closed under symmetry & transitivity.
-class AssumptionEqualities {
-  llvm::EquivalenceClasses<TypedAttr> classes;
-  TypedAttr builtFor;
-
-public:
-  /// True when `eq(lhs, rhs)` follows from the `eq` facts of `assumption`.
-  bool provesEqual(TypedAttr lhs, TypedAttr rhs, TypedAttr assumption) {
-    if (builtFor != assumption) {
-      classes = llvm::EquivalenceClasses<TypedAttr>();
-      addEqualityFacts(assumption, classes);
-      builtFor = assumption;
-    }
-    return classes.isEquivalent(stripIdentityWrappers(getCanonicalAttr(lhs)),
-                                stripIdentityWrappers(getCanonicalAttr(rhs)));
-  }
-};
-} // namespace
-
-static TriBool isPropositionImplied(TypedAttr proposition, TypedAttr assumption,
-                                    AssumptionEqualities &assumptionEqs) {
-  // Canonicalize and decompose multi-trait conforms_to into AND of single-trait
-  // ones so the general conjunction rules handle subsumption uniformly.
-  proposition = getCanonicalAttr(proposition);
-  assumption = getCanonicalAttr(assumption);
-  if (TypedAttr decomposed = decomposeConformsTo(proposition))
-    proposition = decomposed;
-  if (TypedAttr decomposed = decomposeConformsTo(assumption))
-    assumption = decomposed;
-
-  // Direct equality: A implies A.
-  if (assumption == proposition)
+TriBool LIT::isPropositionImplied(TypedAttr proposition, TypedAttr assumption) {
+  switch (
+      testClause(getCanonicalAttr(assumption), getCanonicalAttr(proposition))) {
+  case ClauseInsertResult::Redundant:
     return TriBool::yes();
-
-  // A trivially false assumption implies anything.
-  if (isTriviallyFalseProposition(assumption))
-    return TriBool::yes();
-
-  // Trivially true is implied by anything.
-  if (isTriviallyTrueProposition(proposition))
-    return TriBool::yes();
-  // Trivially false constraints are violated under any assumption. This is
-  // sound because we know the assumption is not also trivially false here.
-  if (isTriviallyFalseProposition(proposition))
+  case ClauseInsertResult::Contradiction:
     return TriBool::no();
-
-  if (auto assumptionConformance =
-          dyn_cast<TypeConformsToTraitAttr>(assumption)) {
-    if (auto propositionConformance =
-            dyn_cast<TypeConformsToTraitAttr>(proposition)) {
-      std::optional<ArrayRef<TraitSymbolAttr>> symbolsA =
-          assumptionConformance.getTraitSymbols();
-      std::optional<ArrayRef<TraitSymbolAttr>> symbolsB =
-          propositionConformance.getTraitSymbols();
-      bool traitsImply = false;
-      if (symbolsA && symbolsB) {
-        DenseSet<TraitSymbolAttr> symbols(symbolsA->begin(), symbolsA->end());
-        traitsImply = llvm::all_of(*symbolsB, [&](TraitSymbolAttr symbol) {
-          return symbols.contains(symbol);
-        });
-      }
-      if (traitsImply &&
-          isEqualCanon(stripIdentityWrappers(getCanonicalAttr(
-                           assumptionConformance.getTypeValue())),
-                       stripIdentityWrappers(getCanonicalAttr(
-                           propositionConformance.getTypeValue()))))
-        return TriBool::yes();
-    }
+  case ClauseInsertResult::Added:
+    return TriBool::unknown();
   }
-
-  if (std::optional<std::pair<TypedAttr, TypedAttr>> identity =
-          getIdentityProposition(proposition)) {
-    if (assumptionEqs.provesEqual(identity->first, identity->second,
-                                  assumption))
-      return TriBool::yes();
-  }
-
-  // Conjunction elimination: (A AND B) implies B if any conjunct implies B.
-  // AND decomposition: (A AND B) contradicts Z if any conjunct contradicts Z.
-  //
-  // Scan every conjunct instead of stopping at the first verdict, preferring a
-  // proof over a disproof. This must stay ahead of the negation rule below.
-  if (auto assumptionOp = dyn_cast<ParamOperatorAttr>(assumption)) {
-    if (assumptionOp.getOpcode() == POC::And) {
-      bool anyDisproves = false;
-      for (Attribute operand : assumptionOp.getOperands()) {
-        TriBool result =
-            LIT::isPropositionImplied(proposition, cast<TypedAttr>(operand));
-        if (result.isFalse())
-          anyDisproves = true;
-        else if (result.isTrue())
-          return TriBool::yes();
-      }
-      if (anyDisproves)
-        return TriBool::no();
-    }
-  }
-
-  // Negation rule: A contradicts NOT(A).
-  // If B = NOT(inner) and A implies inner, then A contradicts B.
-  if (TypedAttr innerProposition = getNotOperand(proposition))
-    if (isPropositionImplied(innerProposition, assumption, assumptionEqs)
-            .isTrue())
-      return TriBool::no();
-  // Symmetric: if A = NOT(inner) and B implies inner, then A contradicts B.
-  if (TypedAttr innerAssumption = getNotOperand(assumption))
-    if (isImplicationProven(innerAssumption, proposition))
-      return TriBool::no();
-
-  if (auto propositionOp = dyn_cast<ParamOperatorAttr>(proposition)) {
-    // Weakening: A implies (A OR B) for any B.
-    if (propositionOp.getOpcode() == POC::Or) {
-      for (Attribute operand : propositionOp.getOperands())
-        if (isPropositionImplied(cast<TypedAttr>(operand), assumption,
-                                 assumptionEqs)
-                .isTrue())
-          return TriBool::yes();
-    }
-    // Conjunction introduction: A implies (B AND C) iff A implies every
-    // conjunct. A contradicts (B AND C) if A contradicts any conjunct.
-    if (propositionOp.getOpcode() == POC::And) {
-      TriBool result = TriBool::yes();
-      for (Attribute operand : propositionOp.getOperands()) {
-        TriBool operandResult = isPropositionImplied(cast<TypedAttr>(operand),
-                                                     assumption, assumptionEqs);
-        if (operandResult.isFalse())
-          return TriBool::no();
-        if (operandResult.isUnknown())
-          result = TriBool::unknown();
-      }
-      return result;
-    }
-  }
-
-  // Fallback: A implies B iff AND(A, B) == A.
-  TypedAttr combined =
-      ParamOperatorAttr::get(POC::And, {assumption, proposition});
-  if (combined == assumption)
-    return TriBool::yes();
-
-  return TriBool::unknown();
+  llvm_unreachable("unhandled ClauseInsertResult");
 }
 
 TriBool LIT::isPropositionImplied(TypedAttr proposition,
                                   ArrayRef<TypedAttr> assumptions) {
-  TypedAttr combinedAssumption;
-  if (assumptions.empty())
-    combinedAssumption =
-        SIMDAttr::getScalarBool(proposition.getContext(), true);
-  else if (assumptions.size() == 1)
-    combinedAssumption = assumptions.front();
-  else
-    combinedAssumption = ParamOperatorAttr::get(POC::And, assumptions);
-
-  return isPropositionImplied(proposition, combinedAssumption);
+  return isPropositionImplied(
+      proposition, conjunctionOf(assumptions, proposition.getContext()));
 }
 
 TriBool LIT::isPropositionImplied(ConstraintAttr proposition,
@@ -1277,11 +1055,6 @@ TriBool LIT::isPropositionImplied(ConstraintAttr proposition,
   return isPropositionImplied(reboundProposition, canonAssumptions);
 }
 
-TriBool LIT::isPropositionImplied(TypedAttr proposition, TypedAttr assumption) {
-  AssumptionEqualities assumptionEqs;
-  return ::isPropositionImplied(proposition, assumption, assumptionEqs);
-}
-
 /// Visit each TypeConformsToTraitAttr found in a constraint proposition.
 /// Canonical AND is already flattened to a single n-ary node, so a single
 /// top-level loop over its operands is sufficient. OR / NOT are not visited
@@ -1299,7 +1072,7 @@ static void forEachConformsToInProposition(
   // Canonical AND is flattened to a single n-ary node, so iterate its
   // operands directly. Otherwise treat the proposition itself as a single
   // candidate.
-  if (auto op = dyn_cast<ParamOperatorAttr>(proposition);
+  if (auto op = sugarDynCast<ParamOperatorAttr>(proposition);
       op && op.getOpcode() == POC::And) {
     for (TypedAttr operand : op.getOperands())
       visit(operand);

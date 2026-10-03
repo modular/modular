@@ -20,6 +20,7 @@
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
+#include "Mojo/KGENDialect/PropositionFold.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Support/AssertStream.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -736,10 +737,14 @@ Type TypeConformsToTraitAttr::getType() const {
 
 TypedAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
                                        TypedAttr traitType) {
+  // An upcast only widens the metatype, so dropping it keeps the narrower
+  // metatype that conformance checking reads as evidence. Downcast, rebind and
+  // extension stay: their metatype can be what proves the conformance.
+  typeValue = UpcastAttr::strip(typeValue);
   SmallVector<TypedAttr> inputs;
-  if (auto lst = sugarDynCast<ParamListAttr>(UpcastAttr::strip(typeValue))) {
+  if (auto lst = sugarDynCast<ParamListAttr>(typeValue)) {
     for (TypedAttr input : lst.getValues())
-      inputs.push_back(input);
+      inputs.push_back(UpcastAttr::strip(input));
   } else {
     inputs.push_back(typeValue);
   }
@@ -748,12 +753,14 @@ TypedAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
   if (inputs.empty())
     return {SIMDAttr::getScalarBool(typeValue.getContext(), true)};
 
-  TypedAttr ret = Base::get(typeValue.getContext(), inputs.front(), traitType);
-  for (TypedAttr input : ArrayRef<TypedAttr>(inputs).drop_front())
-    ret = ParamOperatorAttr::get(
-        POC::And, ret, Base::get(typeValue.getContext(), input, traitType));
+  SmallVector<TypedAttr> conjuncts;
+  conjuncts.reserve(inputs.size());
+  for (TypedAttr input : inputs)
+    conjuncts.push_back(Base::get(typeValue.getContext(), input, traitType));
+  if (conjuncts.size() == 1)
+    return conjuncts.front();
 
-  return ret;
+  return ParamOperatorAttr::get(POC::And, conjuncts);
 }
 
 TypedAttr TypeConformsToTraitAttr::getChecked(
@@ -3001,11 +3008,12 @@ static Attribute simplifyGenericMul(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
-// FIXME(MOCO-4577): merge identity conjuncts sharing an operand into one n-ary
-// proposition, so `and(identical(a, b), identical(b, c))` becomes
-// `identical(a, b, c)`. Until then a source-level `T == U == V`, which lowers
-// to exactly that conjunction, never reaches the n-ary form.
-static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands,
+                             SIMDType resultType) {
+  // The fold covers the flatten, dedup, sort and True/False handling below for
+  // a scalar-bool AND, and also merges identity classes.
+  if (isScalarOf<KGENDType::kBool>(resultType))
+    return foldBoolConjunction(operands, resultType);
   return simplifyAssocOp(
       POC::And, operands, true,
       std::make_tuple(
@@ -4227,6 +4235,25 @@ constexpr POC migratedPOCs[] = {
     POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod,      POC::EQ,
     POC::LT,        POC::LE};
 
+TypedAttr KGEN::foldBoolConjunction(ArrayRef<TypedAttr> conjuncts,
+                                    Type boolType) {
+  SmallVector<TypedAttr> clauses;
+  for (TypedAttr conjunct : conjuncts) {
+    if (insertClause(clauses, getCanonicalAttr(conjunct)) ==
+        ClauseInsertResult::Contradiction)
+      return SIMDAttr::getScalarBool(boolType.getContext(), false);
+  }
+  if (clauses.empty())
+    return SIMDAttr::getScalarBool(boolType.getContext(), true);
+  if (clauses.size() == 1)
+    return clauses[0];
+  llvm::stable_sort(clauses, ParameterAttr::compare);
+  // `Base::get`, not `get`: the latter folds through `simplifyAnd`, which
+  // calls back here on the same clauses.
+  return ParamOperatorAttr::Base::get(boolType.getContext(), POC::And, clauses,
+                                      boolType);
+}
+
 /// Construct a arithmetic parameter operator attribute, folding it (in the form
 /// of SIMD) if possible. Return nullptr if the opcode is not an arithmetic
 /// POC.
@@ -4284,7 +4311,7 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
       result = simplifyGenericMul(operands, opcode);
       break;
     case POC::And:
-      result = simplifyAnd(operands);
+      result = simplifyAnd(operands, resultSIMDType);
       break;
     case POC::Or:
       result = simplifyOr(operands);
@@ -4710,9 +4737,15 @@ TypedAttr ParamIdenticalAttr::get(ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "identity needs an operand for its context");
   MLIRContext *ctx = operandsIn.front().getContext();
 
-  // Sorting first is what uniques `identical(t2, t1)` with `identical(t1, t2)`,
-  // and it makes the merge below independent of the order given.
-  SmallVector<TypedAttr> operands(operandsIn);
+  // Identity wrappers do not change which value an operand denotes, so members
+  // are compared bare. Sorting is what uniques `identical(t2, t1)` with
+  // `identical(t1, t2)`, and it makes the merge below independent of the order
+  // given. Equal attributes are not deduplicated here: two `?` need not be the
+  // same value, so only `decideIdenticalOperands` may merge members.
+  SmallVector<TypedAttr> operands;
+  operands.reserve(operandsIn.size());
+  for (TypedAttr operand : operandsIn)
+    operands.push_back(stripIdentityWrappers(operand));
   llvm::stable_sort(operands, ParameterAttr::compare);
 
   SmallVector<TypedAttr> representatives;
@@ -4720,6 +4753,11 @@ TypedAttr ParamIdenticalAttr::get(ArrayRef<TypedAttr> operandsIn) {
           decideIdenticalOperands(operands, representatives))
     return SIMDAttr::getScalarBool(ctx, *decided);
 
+  // Bare members of mixed metatypes are rebound to one type to satisfy the
+  // verifier.
+  Type reprType = representatives.front().getType();
+  for (TypedAttr &member : representatives)
+    member = ParamOperatorAttr::getRebind(member, reprType);
   return Base::get(ctx, representatives);
 }
 

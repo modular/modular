@@ -1722,6 +1722,12 @@ bool KGEN::isTypeExprType(Type type) {
 
 bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 
+std::optional<ArrayRef<TypedAttr>> KGEN::getIdentityClass(TypedAttr prop) {
+  if (auto identical = sugarDynCast<ParamIdenticalAttr>(prop))
+    return identical.getOperands();
+  return std::nullopt;
+}
+
 std::optional<std::pair<TypedAttr, TypedAttr>>
 KGEN::getIdentityProposition(TypedAttr prop) {
   // FIXME(MOCO-4577): a class of more than two is dropped rather than returning

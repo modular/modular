@@ -1141,15 +1141,32 @@ static TriBool doesNominalTypeConformToUncached(
     }
   }
 
-  // Check the provided symbols against the required symbols by the target
-  // trait: a definitively-missing required symbol keeps the whole thing `no`,
-  // an unproven one makes it `unknown`, and all-present makes it `yes`.
   ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
   SmallVector<TypedAttr> callerAssumptionProps =
       llvm::map_to_vector(callerAssumptions, [](ConstraintAttr constraint) {
         return constraint.getProposition();
       });
-  SmallVector<TypedAttr> scratch;
+  // Fold the caller conjunction on first use, not up front: most requirements
+  // are unconditionally provided and never consult the assumptions, and a
+  // scalar-bool AND now pays a full `insertClause` fold to build.
+  std::optional<TypedAttr> callerCanonicalCache;
+  auto callerCanonical = [&] {
+    if (!callerCanonicalCache) {
+      if (callerAssumptionProps.empty())
+        callerCanonicalCache =
+            SIMDAttr::getScalarBool(self->getContext(), true);
+      else if (callerAssumptionProps.size() == 1)
+        callerCanonicalCache = callerAssumptionProps.front();
+      else
+        callerCanonicalCache =
+            ParamOperatorAttr::get(POC::And, callerAssumptionProps);
+    }
+    return *callerCanonicalCache;
+  };
+
+  // Check the provided symbols against the required symbols by the target
+  // trait: a definitively-missing required symbol keeps the whole thing `no`,
+  // an unproven one makes it `unknown`, and all-present makes it `yes`.
 
   // With `details`, collect every provider constraint behind the verdict and
   // dedupe on (loc, proposition) so derived/ancestor copies of the same
@@ -1187,22 +1204,21 @@ static TriBool doesNominalTypeConformToUncached(
   for (auto [i, required] : llvm::enumerate(trait.getSymbols())) {
     // Assume each requirement's own condition while checking it. Remember that
     // an empty constraints array means every requirement is unconditional.
-    ArrayRef<TypedAttr> assumptions = callerAssumptionProps;
+    std::optional<TypedAttr> refined;
+    auto assumption = [&] { return refined ? *refined : callerCanonical(); };
     if (!requiredConstraints.empty()) {
       TypedAttr requiredCond = requiredConstraints[i].getProposition();
-      if (isPropositionImplied(requiredCond, callerAssumptionProps).isFalse())
+      if (isPropositionImplied(requiredCond, callerCanonical()).isFalse())
         continue;
-      scratch.assign(callerAssumptionProps.begin(),
-                     callerAssumptionProps.end());
-      scratch.push_back(requiredCond);
-      assumptions = scratch;
+      refined =
+          ParamOperatorAttr::get(POC::And, {callerCanonical(), requiredCond});
     }
 
     auto it = providedConditions.find(required);
     TriBool provided = it == providedConditions.end() ? TriBool::no()
                        : (!it->second || isTriviallyTrueProposition(it->second))
                            ? TriBool::yes()
-                           : isPropositionImplied(it->second, assumptions);
+                           : isPropositionImplied(it->second, assumption());
 
     if (provided.isTrue())
       continue; // Symbol is definitely provided.
@@ -1227,7 +1243,7 @@ static TriBool doesNominalTypeConformToUncached(
         if (isPropositionImplied(
                 TypeConformsToTraitAttr::get(PValue(concreteType).get(),
                                              singleTrait.getPValue()),
-                assumptions)
+                assumption())
                 .isTrue())
           continue;
         recordFailure(required, TriBool::unknown());
