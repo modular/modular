@@ -1021,7 +1021,7 @@ def _find_dylib[name: StaticString = ""](*paths: Path) -> OwnedDLHandle:
 # NOTE: This is vending shared mutable pointers to the client without locking.
 # This is not guaranteeing any sort of thread safety.
 struct _Global[
-    StorageType: Movable,
+    StorageType: Movable & Deinitable,
     //,
     name: StaticString,
     init_fn: def() thin -> StorageType,
@@ -1050,12 +1050,14 @@ struct _Global[
     ):
         # Deinitialize and deallocate the storage.
         if opaque_ptr:
+            var typed_ptr = opaque_ptr.unsafe_value().unsafe_bitcast[
+                Self.StorageType
+            ]()
+            typed_ptr.unsafe_deinit_pointee()
             dealloc(
-                ThinAllocation(
-                    unsafe_owned_ptr=opaque_ptr.unsafe_value().unsafe_bitcast[
-                        Self.StorageType
-                    ]()
-                ).unsafe_with_layout({count = 1})
+                ThinAllocation(unsafe_owned_ptr=typed_ptr).unsafe_with_layout(
+                    {count = 1}
+                )
             )
 
     @staticmethod
