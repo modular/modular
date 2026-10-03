@@ -3678,8 +3678,7 @@ def gated_delta_conv1d_verify_fwd_shape(
 
 @fieldwise_init
 struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
-    """The dims and strides a gated-delta recurrence launch reads off its
-    operands."""
+    """The dims a gated-delta recurrence launch reads off its operands."""
 
     var batch_size: Int
     var num_value_heads: Int
@@ -3687,12 +3686,6 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
     var key_dim: Int
     var key_head_dim: Int
     var value_head_dim: Int
-    var qkv_seqlen_stride: UInt32
-    var qkv_channel_stride: UInt32
-    var per_token_seqlen_stride: UInt32
-    var per_token_head_stride: UInt32
-    var output_seqlen_stride: UInt32
-    var output_valuedim_stride: UInt32
 
     @staticmethod
     def of[
@@ -3710,7 +3703,7 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
     ) raises -> Self:
         """Validates the operands of a recurrence launch and returns their
-        dims and strides.
+        dims.
 
         Parameters:
             work_dtype: `DType` of the per-token tensors.
@@ -3727,7 +3720,7 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
             input_row_offsets: `[batch_size + 1]` ragged offsets.
 
         Returns:
-            The launch's dims and strides.
+            The launch's dims.
 
         Raises:
             If the operands' shapes disagree.
@@ -3764,20 +3757,19 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
             or recurrent_state.dim_size(1) != num_value_heads
             or decay_per_token.dim_size(0) != total_seq_len
             or beta_per_token.dim_size(0) != total_seq_len
-            or beta_per_token.strides() != decay_per_token.strides()
+            or beta_per_token.dim_size(1) != num_value_heads
+            or recurrence_output.dim_size(0) != total_seq_len
+            or recurrence_output.dim_size(1) != value_dim
         ):
             raise Error(
                 op_name,
                 ": expected batch_size + 1 row offsets, a nonempty pool of ",
                 num_value_heads,
-                " value heads, and decay and beta shaped and strided alike",
-                " over the ",
+                " value heads, and decay, beta and output shaped to match",
+                " the ",
                 total_seq_len,
                 " tokens",
             )
-        var qkv_strides = qkv_conv_output.strides()
-        var per_token_strides = decay_per_token.strides()
-        var output_strides = recurrence_output.strides()
         return Self(
             batch_size=batch_size,
             num_value_heads=num_value_heads,
@@ -3785,12 +3777,6 @@ struct _GatedDeltaRecurrenceShape(TrivialRegisterPassable):
             key_dim=key_dim,
             key_head_dim=key_head_dim,
             value_head_dim=value_head_dim,
-            qkv_seqlen_stride=UInt32(qkv_strides[0]),
-            qkv_channel_stride=UInt32(qkv_strides[1]),
-            per_token_seqlen_stride=UInt32(per_token_strides[0]),
-            per_token_head_stride=UInt32(per_token_strides[1]),
-            output_seqlen_stride=UInt32(output_strides[0]),
-            output_valuedim_stride=UInt32(output_strides[1]),
         )
 
 
@@ -3906,12 +3892,6 @@ struct GatedDeltaRecurrenceFwd:
                 decay_per_token_tt,
                 beta_per_token_tt,
                 input_row_offsets_tt,
-                shape.qkv_seqlen_stride,
-                shape.qkv_channel_stride,
-                shape.per_token_seqlen_stride,
-                shape.per_token_head_stride,
-                shape.output_seqlen_stride,
-                shape.output_valuedim_stride,
                 # One CTA per (batch_item, value_head).
                 grid_dim=(shape.batch_size * shape.num_value_heads,),
                 block_dim=(kVD,),
@@ -4152,13 +4132,6 @@ struct GatedDeltaRecurrenceVerifyRingFwd:
                         input_row_offsets_tt,
                         ring_tt,
                         ring_slot_idx_tt,
-                        Int32(ring.dim_size(3)),
-                        shape.qkv_seqlen_stride,
-                        shape.qkv_channel_stride,
-                        shape.per_token_seqlen_stride,
-                        shape.per_token_head_stride,
-                        shape.output_seqlen_stride,
-                        shape.output_valuedim_stride,
                         grid_dim=(shape.batch_size * shape.num_value_heads,),
                         block_dim=(128,),
                     )
@@ -4334,7 +4307,6 @@ struct GatedDeltaStateFold:
                         row_ids_tt,
                         ring_tt,
                         ring_row_ids_tt,
-                        Int32(ring.dim_size(3)),
                         num_accepted_tt,
                         grid_dim=(batch_size * num_layers * num_value_heads,),
                         block_dim=(128,),
