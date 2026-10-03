@@ -76,6 +76,55 @@ def outer_product_acc(
 
 
 @inline(.always)
+def outer_product_acc(
+    res: TileTensor[mut=True, ...],
+    lhs: TileTensor,
+    rhs: TileTensor,
+):
+    """Updates result tensor with the outer product of two vectors.
+
+    Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
+    `res` is a matrix. Vectorized tensors multiply element-wise, so the three
+    tensors must share one `element_size`.
+
+    Args:
+        res: The result matrix to accumulate into, shape (M, N).
+        lhs: The left-hand side vector, shape (M,).
+        rhs: The right-hand side vector, shape (N,).
+
+    Constraints:
+
+        All tensors must have statically known shapes.
+        `res` must be rank 2.
+        `lhs` and `rhs` must be rank 1.
+        `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
+    """
+    comptime assert (
+        res.all_dims_known and lhs.all_dims_known and rhs.all_dims_known
+    ), "outer_product_acc expects inputs with statically known shapes"
+    comptime assert res.flat_rank == 2, "Only rank 2 res is allowed."
+    comptime assert lhs.flat_rank == 1, "Only rank 1 lhs is allowed."
+    comptime assert rhs.flat_rank == 1, "Only rank 1 rhs is allowed."
+    comptime assert (
+        lhs.element_size == res.element_size
+        and rhs.element_size == res.element_size
+    ), "outer_product_acc expects inputs with the same element size"
+
+    comptime dtype = res.dtype
+    comptime M = res.static_shape[0]
+    comptime N = res.static_shape[1]
+
+    comptime assert lhs.static_shape[0] == M, "lhs shape mismatch"
+    comptime assert rhs.static_shape[0] == N, "rhs shape mismatch"
+
+    comptime for i in range(M):
+        comptime for j in range(N):
+            res[i, j] += rebind[res.ElementType](
+                lhs[Idx[i]].cast[dtype]()
+            ) * rebind[res.ElementType](rhs[Idx[j]].cast[dtype]())
+
+
+@inline(.always)
 def _reduce[
     axis: Int,
     init_func: def[dtype: DType, width: Int]() thin -> SIMD[dtype, width],
