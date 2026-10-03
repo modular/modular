@@ -524,6 +524,13 @@ def KGEN_QuoteAttr : KGEN_ExprAttr<"Quote", "quote",
 
     // A quote is a "deferred scope"
     ArrayRef<Type> getInputParamTypes() { return {};}
+
+    /// Returns the quoted parameter if `value` is a quote, otherwise `value`.
+    static TypedAttr unquote(TypedAttr value) {
+      if (auto quoted = ::llvm::dyn_cast_or_null<QuoteAttr>(value))
+        return quoted.getQuotedParam();
+      return value;
+    }
   }];
 }
 

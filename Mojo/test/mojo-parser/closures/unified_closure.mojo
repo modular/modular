@@ -39,6 +39,7 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=MIXED_KWARGS_FN_PTR < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=STAR_ARGS_KWARGS_FN_PTR < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S20 < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=S21 < %t.mlir
 # COM: Verify generated storage-struct structure. The closure's signature lives
 # COM: in the bindings of the one parametric closure trait, not in a
 # COM: per-signature trait, and no bridging wrapper is emitted.
@@ -228,7 +229,7 @@ def take_closures[
 # COM: itself a closure nests one closure trait inside the other's parameter
 # COM: list, both in the mangled symbol and in the declared bound.
 # S10: lit.fn @"nested[##__mojo_closure__##[#kgen.quote<trait<_\22##__mojo_closure__##\22<
-# S10-SAME: <"impl", pos_or_kw, not_vararg>, <"u", pos_or_kw, not_vararg>]>>, @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable> x, imm *"impl`"> imm_mem, %do_not_dce_int: !Int{{[0-9]*}}) capturing -> !kgen.none attributes {{{.*}}sourceName = "nested"
+# S10-SAME: <"impl", pos_or_kw, not_vararg>, <"u", pos_or_kw, not_vararg>]>>>, @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable> x, imm *"impl`"> imm_mem, %do_not_dce_int: !Int{{[0-9]*}}) capturing -> !kgen.none attributes {{{.*}}sourceName = "nested"
 
 
 # TODO: remove the 'do_not_dce_int' argument (MOCO 2461)
@@ -245,7 +246,7 @@ def nested[
 # S11-DAG: kgen.witness "__deinit__{{.*}}" : {{.*}} = @{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__deinit__
 # S11-DAG: kgen.conformance @{{.*}}::@Movable {
 # S11-DAG: kgen.witness "__init__(move:$0$)" : {{.*}} = @{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__init__(move:
-# S11-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"z", pos_or_kw, not_vararg>]>> {
+# S11-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"z", pos_or_kw, not_vararg>]>>> {
 # S11-DAG: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"closure$s11_bindIt{{.*}}::myclosure::__storage"::@"__call__
 
 
@@ -286,7 +287,7 @@ def nonemptyOriginSet(mut byRefMut: String):
 # COM: same signature positionally -- the two bindings differ, and conformance
 # COM: still holds.
 # S14-DAG: lit.struct.decl @"closure$s14_bindIt{{.*}}::myclosure::__storage"
-# S14-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>> {
+# S14-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>>> {
 # S14-DAG: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"closure$s14_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
 # S14-DAG: lit.fn @"s14_takeIt{{.*}}"<C: trait<@"##__mojo_closure__##"{{.*}}<"", pos, not_vararg>, <"", pos, not_vararg>]>>
 
@@ -307,7 +308,7 @@ def s14_bindIt(z: Int, mem: String):
 # COM: closure conforms under its own `x` while `s15_takeIt` asks for `y` as
 # COM: part of a `Copyable & ...` composition.
 # S15-DAG: lit.struct.decl @"closure$s15_bindIt{{.*}}::myclosure::__storage"
-# S15-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>> {
+# S15-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>>> {
 # S15-DAG: kgen.witness "__call__" : {{.*}} = @{{.*}}::@"closure$s15_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
 # S15-DAG: lit.fn @"s15_takeIt{{.*}}"<C: trait<@"##__mojo_closure__##"{{.*}}<"", pos, not_vararg>, <"y", pos_or_kw, not_vararg>]>>
 
@@ -328,7 +329,7 @@ def s15_bindIt(z: Int, mem: String):
 # COM: closure declares `[a](b: Int)` and `s17_takeIt` asks for `[x](y: Int)`.
 # COM: The witness keeps the closure's own names; the caller's binding renames.
 # S17-DAG: lit.struct.decl @"closure$s17_bindIt{{.*}}::myclosure::__storage"
-# S17-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"b", pos_or_kw, not_vararg>]>> {
+# S17-DAG: kgen.conformance @"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"b", pos_or_kw, not_vararg>]>>> {
 # S17-DAG: kgen.witness "__call__" : !lit.generator<<"a": !Int{{[0-9]*}}>{{.*}}, "b": !Int{{[0-9]*}}) capturing -> {{.*}} = @{{.*}}::@"closure$s17_bindIt{{.*}}::myclosure::__storage"::@"__call__$trait
 # S17-DAG: lit.fn @"s17_takeIt{{.*}}"<C: trait<@"##__mojo_closure__##"{{.*}}<"", pos, not_vararg>, <"y", pos_or_kw, not_vararg>]>>
 
@@ -349,7 +350,7 @@ def s17_bindIt(z: Int, mem: String):
 # COM: Ensure that structs can conform to the closure trait: a hand-written
 # COM: struct names the closure trait in its conformance list and picks up the
 # COM: same binding a synthesized storage struct would.
-# S18-DAG: lit.struct.decl @custom(trait<@"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>>, @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>)
+# S18-DAG: lit.struct.decl @custom(trait<@"##__mojo_closure__##"<{{.*}}<"", pos, not_vararg>, <"x", pos_or_kw, not_vararg>]>>>, @{{.*}}::@AnyType, @{{.*}}::@Deinitable, @{{.*}}::@Movable>)
 
 
 struct custom(def(x: Int) -> Int):
@@ -588,3 +589,20 @@ def s20_bindIt[X: S20_Bound]():
     #      to bind that value to but we assumed that the types were equal when in fact they only
     #      need to be canonically equal.
     s20_apply(reap)
+
+
+# COM: A parameter default that names an earlier parameter on a unified
+# COM: closure. The closure trait's pog list prepends `_Self`, so the default
+# COM: of `b` must be shifted to index `a` at (0,1) rather than (0,0), and
+# COM: `f[1]()` binds both `a` and `b` to 1.
+# S21: lit.struct.decl @"closure$s21_dependent_default{{.*}}::f::__storage"(trait<@"##__mojo_closure__##"<{{.*}}#kgen.pog_list<[<"_Self", inferred, not_vararg>, <"a", pos_or_kw, not_vararg>, <"b", pos_or_kw, not_vararg, default :!Int *(0,1)>]>>
+# S21: kgen.witness "__call__" : !lit.generator<<"a": !Int, "b": !Int = *(0,0)>
+# S21: lit.fn @"s21_dependent_default
+# S21: lit.call @{{.*}}::@"__call__$trait{{.*}}<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 1}>
+
+
+def s21_dependent_default(x: Int) -> Int:
+    def f[a: Int, b: Int = a]() {imm} -> Int:
+        return x + a + b
+
+    return f[1]()

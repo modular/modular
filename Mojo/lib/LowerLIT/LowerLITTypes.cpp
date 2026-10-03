@@ -808,7 +808,8 @@ static void populateTypeDomainRules(StructDecls &decls,
             UNI_CLOSURE_TRAIT_NAME)) {
       SmallVector<TypedAttr> params;
       for (auto param : attr.getParamValues()) {
-        if (isa<PogListAttr>(param)) // irrelevant after lower-lit
+        // Pog lists are irrelevant after lower-lit.
+        if (isa<PogListAttr>(QuoteAttr::unquote(param)))
           continue;
         auto replaced = replacer.asType.replaceParameter(param);
         if (failed(replaced))

@@ -2219,30 +2219,36 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // unquotes them when it folds into the generator type. A parameter's declared
   // type, an argument type and the result type are all encoded this way.
   SelfSlotShifter shifter(/*prepend=*/true);
-  auto quote = [&](Type type) -> TypedAttr {
+  auto shiftAndQuote = [&](auto typeOrAttr) -> TypedAttr {
     // Canonicalize the type value (as the previous `emitPValue` path did): the
     // closure trait it feeds into must stay canonical.
-    return QuoteAttr::get(TypeParamAttr::get(
-        getCanonicalType(shifter.replace(type)), TypeType::get(ctx)));
+    if constexpr (std::is_same_v<decltype(typeOrAttr), Type>) {
+      return QuoteAttr::get(TypeParamAttr::get(
+          getCanonicalType(shifter.replace(typeOrAttr)), TypeType::get(ctx)));
+    } else if constexpr (std::is_same_v<decltype(typeOrAttr), PogListAttr>) {
+      return QuoteAttr::get(shifter.replace(typeOrAttr));
+    } else {
+      static_assert(false);
+    }
   };
 
   // NOTE: this has to be in sync with `createParametricClosureTrait`.
 
   // 1st, the parameter decl list.
   SmallVector<TypedAttr> paramDecls =
-      llvm::map_to_vector(sig.getInputParamTypes(), quote);
+      llvm::map_to_vector(sig.getInputParamTypes(), shiftAndQuote);
 
   auto paramDeclList =
       ParamListAttr::get(paramDecls, ParamListType::get(TypeType::get(ctx)));
 
   // 2nd, the argument type list.
   SmallVector<TypedAttr> argTypes =
-      llvm::map_to_vector(sig.getBody().getArguments(), quote);
+      llvm::map_to_vector(sig.getBody().getArguments(), shiftAndQuote);
   auto argTypeList =
       ParamListAttr::get(argTypes, ParamListType::get(TypeType::get(ctx)));
 
   // 3rd, the result type.
-  auto resultType = quote(sig.getBody().getResultType());
+  auto resultType = shiftAndQuote(sig.getBody().getResultType());
 
   // 4th, the metadata. Adjust for the extra `mut self` argument (prepend a Mut
   // convention and one implicit origin decl); we can only do it here since we
@@ -2280,14 +2286,14 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   auto traitDeclOp = cast<TraitDeclOp>(closureTraitDecl->getIfOperation());
   return traitDeclOp.bindReference(
       {paramDeclList, argTypeList, resultType, metadata,
-       PogListAttr::get(
+       shiftAndQuote(PogListAttr::get(
            ctx, pogParams,
            /*bodyConstraints=*/{}, // Should we allow constraints on closure??
-           sig.getParamListAttrs().getOrigVariadicConvention()),
-       PogListAttr::get(
+           sig.getParamListAttrs().getOrigVariadicConvention())),
+       shiftAndQuote(PogListAttr::get(
            ctx, pogArgs,
            /*bodyConstraints=*/{}, // Should we allow constraints on closure??
-           sig.getArgListAttrs().getOrigVariadicConvention())});
+           sig.getArgListAttrs().getOrigVariadicConvention()))});
 }
 
 FnTypeGeneratorType
