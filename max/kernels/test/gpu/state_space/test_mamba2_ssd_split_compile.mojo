@@ -46,7 +46,9 @@ def compile_split[
     var asm = _compile_code[
         mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
             .bfloat16,
+            .float32,
             128,
+            8,
             T3.LayoutType,
             T2.LayoutType,
             T1.LayoutType,
@@ -60,7 +62,6 @@ def compile_split[
             His.LayoutType,
             Slots.LayoutType,
             T3.Engine,
-            8,
         ],
         target=get_gpu_target[target_name](),
     ]()

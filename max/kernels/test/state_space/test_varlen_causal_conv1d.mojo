@@ -95,7 +95,7 @@ def run_varlen_causal_conv1d_fwd[
         query_start_loc_tt.raw_store(i + 1, Int32(cumsum))
 
     # cache_indices: (batch,) - identity mapping
-    var cache_indices_heap = List(length=batch, fill=Int32(0))
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
     var cache_indices_tt = TileTensor(
         cache_indices_heap,
         row_major(
@@ -103,7 +103,7 @@ def run_varlen_causal_conv1d_fwd[
         ),
     )
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Int32(i))
+        cache_indices_tt.raw_store(i, UInt32(i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
@@ -153,23 +153,10 @@ def run_varlen_causal_conv1d_fwd[
     var out_dim_stride: UInt32 = UInt32(total_seqlen)
     var out_seqlen_stride: UInt32 = 1
 
-    var silu_activation = activation == "silu"
+    comptime silu_activation = activation == "silu"
 
     # Test kernel
-    causal_conv1d_varlen_fwd_cpu[
-        dtype,
-        dtype,
-        dtype,
-        dtype,
-        DType.int32,
-        DType.int32,
-        DType.bool,
-        dtype,
-    ](
-        dim,
-        total_seqlen,
-        width,
-        batch,
+    causal_conv1d_varlen_fwd_cpu[silu_activation,](
         x_tt,
         weight_tt,
         bias_tt,
@@ -178,12 +165,6 @@ def run_varlen_causal_conv1d_fwd[
         has_initial_state_tt,
         conv_states_tt,
         output_tt,
-        silu_activation,
-        PAD_SLOT_ID,
-        True,  # has_cache_indices
-        True,  # has_initial_state_flag
-        True,  # has_conv_states
-        True,  # has_bias
     )
 
     # Reference implementation
@@ -631,10 +612,10 @@ def run_conv_state_writeback[
     for i in range(batch + 1):
         query_start_loc_tt.raw_store(i, Int32(i * seqlen))
 
-    var cache_indices_heap = List(length=batch, fill=Int32(0))
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
     var cache_indices_tt = TileTensor(cache_indices_heap, row_major(batch))
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Int32(i))
+        cache_indices_tt.raw_store(i, UInt32(i))
 
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](True))
     var has_initial_state_tt = TileTensor(
@@ -660,20 +641,7 @@ def run_conv_state_writeback[
                 conv_states_tt.raw_store(idx, value)
                 initial_tt.raw_store(idx, value)
 
-    causal_conv1d_varlen_fwd_cpu[
-        dtype,
-        dtype,
-        dtype,
-        dtype,
-        DType.int32,
-        DType.int32,
-        DType.bool,
-        dtype,
-    ](
-        dim,
-        total_seqlen,
-        width,
-        batch,
+    causal_conv1d_varlen_fwd_cpu[False,](
         x_tt,
         weight_tt,
         bias_tt,
@@ -682,12 +650,6 @@ def run_conv_state_writeback[
         has_initial_state_tt,
         conv_states_tt,
         output_tt,
-        False,  # silu_activation
-        PAD_SLOT_ID,
-        True,  # has_cache_indices
-        True,  # has_initial_state_flag
-        True,  # has_conv_states
-        True,  # has_bias
     )
 
     # Expected: the last `state_len` of `initial ++ chunk`, per (b, d).

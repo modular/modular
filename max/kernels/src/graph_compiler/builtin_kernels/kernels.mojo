@@ -125,10 +125,7 @@ from state_space.gated_group_rmsnorm import (
     gated_group_rmsnorm_gpu,
 )
 from state_space.mamba2_ssd_scan import (
-    mamba2_ssd_chunk_scan_varlen_fwd_cpu,
-    mamba2_ssd_chunk_scan_varlen_fwd_gpu,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu,
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
 )
@@ -4360,279 +4357,19 @@ struct GatedDeltaStateFold:
             )
 
 
-@extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd")
-struct Mamba2SSDChunkScanVarlenFwd[dt_softplus: Bool = True]:
-    """Varlen Mamba-2 SSD chunked-scan prefill forward.
-
-    Matches `mamba_chunk_scan_combined` semantics for the Nemotron-H
-    `NemotronHMamba2Mixer`. Per-head scalar `A`, grouped `B`/`C`, per-head `dt`
-    + `dt_bias` softplus. State resets at each `query_start_loc` boundary (no
-    cross-sequence bleed). Gating `z` + `MambaRMSNormGated` are applied OUTSIDE
-    this op (`norm_before_gate=False`).
-
-    The registration lives here in the built-in kernel library (mirroring the
-    `gated_delta_conv1d_fwd` / `gated_delta_recurrence_fwd` precedent) so the
-    graph compiler / serve path can resolve the op with no out-of-tree
-    `custom_extensions`. The kernel math lives in
-    `state_space.mamba2_ssd_scan` (B200 / sm_100, bf16 in/out, fp32 states).
-
-    Parameters:
-        dt_softplus: If True (default), apply softplus to `dt + dt_bias`.
-
-    Tensor shapes (varlen / ragged; time dim is the packed `total_len`):
-        - y: (total_len, nheads, head_dim) - output (dtype)
-        - final_states: (batch, nheads, head_dim, dstate) - out, fp32
-        - x: (total_len, nheads, head_dim) - input (dtype)
-        - dt: (total_len, nheads) - per-head time deltas (dtype)
-        - A: (nheads,) - per-head scalar (dtype)
-        - B: (total_len, ngroups, dstate) - grouped input proj (dtype)
-        - C: (total_len, ngroups, dstate) - grouped output proj (dtype)
-        - D: (nheads,) - skip connection (dtype, optional / empty)
-        - dt_bias: (nheads,) - dt bias (dtype, optional / empty)
-        - initial_states: (batch, nheads, head_dim, dstate) - in, fp32
-          (optional / empty)
-        - query_start_loc: (batch + 1,) - cumulative sequence lengths (int32)
-        - has_initial_state: (batch,) - whether to load initial_states (bool,
-          optional / empty)
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        target: StaticString,
-    ](
-        y: OutputTensor[dtype=dtype, rank=3, ...],
-        final_states: OutputTensor[dtype=.float32, rank=4, ...],
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        dt: InputTensor[dtype=dtype, rank=2, ...],
-        A: InputTensor[dtype=dtype, rank=1, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
-        D: InputTensor[dtype=dtype, rank=1, ...],
-        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-        initial_states: InputTensor[dtype=.float32, rank=4, ...],
-        query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
-        has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        var nheads = x.dim_size(1)
-        var head_dim = x.dim_size(2)
-        var ngroups = B.dim_size(1)
-        var dstate = B.dim_size(2)
-        var batch = query_start_loc.dim_size(0) - 1
-        var nheads_ngroups_ratio = nheads // ngroups
-
-        # TileTensors: the layout-type placeholder dtype int32 follows the
-        # existing varlen_selective_scan_ops idiom; kernel_dtype is supplied
-        # separately. fp32 state tensors use a fp32 placeholder.
-        var y_tt = y.to_tile_tensor[.int32]()
-        var final_states_tt = final_states.to_tile_tensor[.float32]()
-        var x_tt = x.to_tile_tensor[.int32]()
-        var dt_tt = dt.to_tile_tensor[.int32]()
-        var A_tt = A.to_tile_tensor[.int32]()
-        var B_tt = B.to_tile_tensor[.int32]()
-        var C_tt = C.to_tile_tensor[.int32]()
-        var D_tt = D.to_tile_tensor[.int32]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
-        var initial_states_tt = initial_states.to_tile_tensor[.float32]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor[
-            DType.int32
-        ]()
-
-        comptime dt_softplus_int8: Int8 = Int8(1) if Self.dt_softplus else Int8(
-            0
-        )
-
-        if dstate != 16 and dstate != 64 and dstate != 128 and dstate != 256:
-            raise Error(
-                "Unsupported dstate: "
-                + String(dstate)
-                + ". Expected 16, 64, 128, or 256."
-            )
-
-        @inline(.always)
-        def launch_cpu[DSTATE_VAL: Int]() raises {imm}:
-            mamba2_ssd_chunk_scan_varlen_fwd_cpu[dtype, DSTATE_VAL](
-                nheads,
-                head_dim,
-                ngroups,
-                nheads_ngroups_ratio,
-                batch,
-                dt_softplus_int8,
-                x_tt,
-                dt_tt,
-                A_tt,
-                B_tt,
-                C_tt,
-                D_tt,
-                dt_bias_tt,
-                initial_states_tt,
-                y_tt,
-                final_states_tt,
-                query_start_loc_tt,
-                has_initial_state_tt,
-                Optional[DeviceContext](ctx),
-            )
-
-        @inline(.always)
-        def launch_gpu[DSTATE_VAL: Int]() raises {imm}:
-            comptime BLOCK_SIZE = 64
-            var num_p_blocks = ceildiv(head_dim, BLOCK_SIZE)
-            comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_gpu[
-                dtype,
-                DSTATE_VAL,
-                x_tt.LayoutType,
-                dt_tt.LayoutType,
-                A_tt.LayoutType,
-                B_tt.LayoutType,
-                C_tt.LayoutType,
-                D_tt.LayoutType,
-                dt_bias_tt.LayoutType,
-                initial_states_tt.LayoutType,
-                y_tt.LayoutType,
-                final_states_tt.LayoutType,
-                query_start_loc_tt.LayoutType,
-                has_initial_state_tt.LayoutType,
-            ]
-            var compiled = ctx.compile_function[kernel]()
-            ctx.enqueue_function(
-                compiled,
-                Int32(nheads),
-                Int32(head_dim),
-                Int32(ngroups),
-                Int32(nheads_ngroups_ratio),
-                Int32(batch),
-                dt_softplus_int8,
-                x_tt,
-                dt_tt,
-                A_tt,
-                B_tt,
-                C_tt,
-                D_tt,
-                dt_bias_tt,
-                initial_states_tt,
-                y_tt,
-                final_states_tt,
-                query_start_loc_tt,
-                has_initial_state_tt,
-                grid_dim=(num_p_blocks, nheads, batch),
-                block_dim=(BLOCK_SIZE, 1, 1),
-            )
-
-        comptime if is_cpu[target]():
-            __match dstate:
-                case 256:
-                    launch_cpu[256]()
-                case 128:
-                    launch_cpu[128]()
-                case 64:
-                    launch_cpu[64]()
-                case _:
-                    launch_cpu[16]()
-        elif is_gpu[target]():
-            __match dstate:
-                case 256:
-                    launch_gpu[256]()
-                case 128:
-                    launch_gpu[128]()
-                case 64:
-                    launch_gpu[64]()
-                case _:
-                    launch_gpu[16]()
-        else:
-            raise Error("Unsupported target device")
-
-
-@extensibility.register_shape_function("mamba2_ssd_chunk_scan_varlen_fwd")
-def mamba2_ssd_chunk_scan_varlen_fwd_shape(
-    x: Some[Tensor],
-    dt: Some[Tensor],
-    A: Some[Tensor],
-    B: Some[Tensor],
-    C: Some[Tensor],
-    D: Some[Tensor],
-    dt_bias: Some[Tensor],
-    initial_states: Some[Tensor],
-    query_start_loc: Some[Tensor],
-    has_initial_state: Some[Tensor],
-) -> IndexList[3]:
-    """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd` graph op.
-
-    Args:
-        x: Packed input tensor of shape
-            `(total_len, nheads, head_dim)`.
-        dt: Per-head time deltas of shape `(total_len, nheads)`.
-        A: Per-head scalar decay of shape `(nheads,)`.
-        B: Grouped input projection of shape
-            `(total_len, ngroups, dstate)`.
-        C: Grouped output projection of shape
-            `(total_len, ngroups, dstate)`.
-        D: Per-head skip connection of shape `(nheads,)`; may
-            be empty when unused.
-        dt_bias: Per-head bias added to `dt` of shape `(nheads,)`;
-            may be empty when unused.
-        initial_states: Optional initial SSM states of shape
-            `(batch, nheads, head_dim, dstate)` in `float32`; may
-            be empty when `has_initial_state` is all false.
-        query_start_loc: Cumulative sequence lengths of shape
-            `(batch + 1,)` in `int32`.
-        has_initial_state: Per-sequence flag of shape `(batch,)`
-            in `bool` indicating whether to load `initial_states`;
-            may be empty when no initial states are used.
-    """
-    comptime assert type_of(x).rank == 3, "x must be rank 3"
-    comptime assert type_of(dt).rank == 2, "dt must be rank 2"
-    comptime assert type_of(A).rank == 1, "A must be rank 1"
-    comptime assert type_of(B).rank == 3, "B must be rank 3"
-    comptime assert type_of(C).rank == 3, "C must be rank 3"
-    comptime assert type_of(D).rank == 1, "D must be rank 1"
-    comptime assert type_of(dt_bias).rank == 1, "dt_bias must be rank 1"
-    comptime assert (
-        type_of(initial_states).rank == 4
-    ), "initial_states must be rank 4"
-    comptime assert (
-        type_of(initial_states).dtype == .float32
-    ), "initial_states dtype must be float32"
-    comptime assert (
-        type_of(query_start_loc).rank == 1
-    ), "query_start_loc must be rank 1"
-    comptime assert (
-        type_of(query_start_loc).dtype == .int32
-    ), "query_start_loc dtype must be int32"
-    comptime assert (
-        type_of(has_initial_state).rank == 1
-    ), "has_initial_state must be rank 1"
-    comptime assert (
-        type_of(has_initial_state).dtype == .bool
-    ), "has_initial_state dtype must be bool"
-    comptime assert (
-        type_of(dt).dtype == type_of(x).dtype
-        and type_of(A).dtype == type_of(x).dtype
-        and type_of(B).dtype == type_of(x).dtype
-        and type_of(C).dtype == type_of(x).dtype
-        and type_of(D).dtype == type_of(x).dtype
-        and type_of(dt_bias).dtype == type_of(x).dtype
-    ), "x, dt, A, B, C, D, and dt_bias must share a dtype"
-    # y has the same shape as x: (total_len, nheads, head_dim).
-    return rebind[IndexList[3]](coord_to_index_list(x.shape().tuple()))
-
-
 @extensibility.register("mamba2_ssd_chunk_scan_varlen_fwd_inplace")
 struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
-    """Varlen Mamba-2 SSD chunked-scan: in-place SSM-pool write-back.
+    """Varlen Mamba-2 SSD chunked scan with an in-place SSM state pool.
 
-    Identical to `Mamba2SSDChunkScanVarlenFwd` except final states are
-    written **directly into** the `ssm_pool` buffer at
-    `ssm_pool[cache_indices[b], ...]` instead of producing a separate
-    `final_states` output tensor. This eliminates the graph-side
-    `buffer_load → gather → scatter_nd → buffer_store` whole-pool RMW that
-    otherwise dominates decode GPU time (~30 % wall-clock on B200).
+    Matches `mamba_chunk_scan_combined` semantics for the Nemotron-H
+    `NemotronHMamba2Mixer`: per-head scalar `A`, grouped `B`/`C`, per-head
+    `dt` + `dt_bias` softplus, and a state reset at each `query_start_loc`
+    boundary. Gating `z` and `MambaRMSNormGated` are applied outside this op.
 
-    The `ssm_pool` is declared as a `MutableInputTensor` (slot-indexed
-    in/out), matching the `causal_conv1d_varlen_fwd` / `gated_delta_recurrence_fwd`
-    precedent. `initial_states` is also read from `ssm_pool` when
-    `has_initial_state[b]` is true (no separate initial-states input needed).
+    Each sequence starts from `ssm_pool[cache_indices[b]]` when
+    `has_initial_state[b]` is set, and its final state is written back to the
+    same slot, so the graph never round-trips the pool. The kernel math lives
+    in `state_space.mamba2_ssd_scan`.
 
     Parameters:
         dt_softplus: If True (default), apply softplus to `dt + dt_bias`.
@@ -4667,67 +4404,52 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         C: InputTensor[dtype=dtype, rank=3, ...],
         D: InputTensor[dtype=dtype, rank=1, ...],
         dt_bias: InputTensor[dtype=dtype, rank=1, ...],
-        # ssm_pool is declared MutableInputTensor so the graph binds the
-        # caller's persistent pool buffer and routes it through the chain. Its
-        # storage dtype is independent of the working dtype (fp32 everywhere;
-        # bf16 on Apple GPUs — see the Apple kernel's numerics contract).
+        # The caller owns this pool and the kernel writes it in place.
         ssm_pool: MutableInputTensor[dtype=state_dtype, rank=4, ...],
         query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         cache_indices: InputTensor[dtype=.uint32, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        var nheads = x.dim_size(1)
-        var head_dim = x.dim_size(2)
-        var ngroups = B.dim_size(1)
-        var batch = query_start_loc.dim_size(0) - 1
-        var nheads_ngroups_ratio = nheads // ngroups
-
-        var y_tt = y.to_tile_tensor[.int32]()
-        var x_tt = x.to_tile_tensor[.int32]()
-        var dt_tt = dt.to_tile_tensor[.int32]()
-        var A_tt = A.to_tile_tensor[.int32]()
-        var B_tt = B.to_tile_tensor[.int32]()
-        var C_tt = C.to_tile_tensor[.int32]()
-        var D_tt = D.to_tile_tensor[.int32]()
-        var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
-        var ssm_pool_tt = ssm_pool.to_tile_tensor[.float32]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor[
-            DType.int32
-        ]()
-        var cache_indices_tt = cache_indices.to_tile_tensor[.uint32]()
-
-        comptime dt_softplus_int8: Int8 = Int8(1) if Self.dt_softplus else Int8(
-            0
-        )
-
-        var dstate = B.dim_size(2)
-        if dstate != 16 and dstate != 64 and dstate != 128 and dstate != 256:
+        # fp16 can overflow on the unbounded state, so only the two validated
+        # storage dtypes are accepted.
+        comptime assert (
+            state_dtype == .float32 or state_dtype == .bfloat16
+        ), "ssm_pool must be float32 or bfloat16"
+        # The kernels move each dstate run as one SIMD access.
+        if (
+            B.strides()[2] != 1
+            or C.strides()[2] != 1
+            or ssm_pool.strides()[3] != 1
+        ):
             raise Error(
-                "Unsupported dstate: "
-                + String(dstate)
-                + ". Expected 16, 64, 128, or 256."
+                "the Mamba-2 SSD scan needs unit strides on the dstate axis"
+                " of B, C and ssm_pool"
             )
 
+        var nheads = x.dim_size(1)
+        var head_dim = x.dim_size(2)
+        var batch = query_start_loc.dim_size(0) - 1
+
+        var y_tt = y.to_tile_tensor()
+        var x_tt = x.to_tile_tensor()
+        var dt_tt = dt.to_tile_tensor()
+        var A_tt = A.to_tile_tensor()
+        var B_tt = B.to_tile_tensor()
+        var C_tt = C.to_tile_tensor()
+        var D_tt = D.to_tile_tensor()
+        var dt_bias_tt = dt_bias.to_tile_tensor()
+        var ssm_pool_tt = ssm_pool.to_tile_tensor()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor()
+        var has_initial_state_tt = has_initial_state.to_tile_tensor()
+        var cache_indices_tt = cache_indices.to_tile_tensor()
+
         @inline(.always)
-        def launch_cpu[DSTATE_VAL: Int]() raises {imm}:
-            # The CPU kernel stores fp32 state only; bf16 state is wired on
-            # the Apple GPU kernel alone. The `comptime if` keeps the bf16
-            # instantiation from elaborating this branch, but the direct call
-            # below is still type-checked with `state_dtype` symbolic
-            # (`comptime if` does not narrow parameter types), so the pool is
-            # `rebind`-ed to its fp32 spelling — a compile-time promise the
-            # compiler verifies at instantiation, where this branch only
-            # exists with `state_dtype == float32`.
-            comptime if state_dtype == .float32:
-                mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[dtype, DSTATE_VAL](
-                    nheads,
-                    head_dim,
-                    ngroups,
-                    nheads_ngroups_ratio,
-                    batch,
-                    dt_softplus_int8,
+        def launch[DSTATE: Int]() raises {imm}:
+            comptime if is_cpu[target]():
+                mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
+                    DSTATE, Self.dt_softplus
+                ](
                     x_tt,
                     dt_tt,
                     A_tt,
@@ -4736,72 +4458,21 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     D_tt,
                     dt_bias_tt,
                     y_tt,
-                    rebind[
-                        TileTensor[
-                            .float32, ssm_pool_tt.LayoutType, ssm_pool_tt.origin
-                        ]
-                    ](ssm_pool_tt),
+                    ssm_pool_tt,
                     query_start_loc_tt,
                     has_initial_state_tt,
                     cache_indices_tt,
+                    Optional[DeviceContext](ctx),
                 )
-            else:
-                raise Error(
-                    "non-fp32 SSM state is only supported on the Apple GPU"
-                    " kernel"
-                )
-
-        @inline(.always)
-        def launch_gpu[DSTATE_VAL: Int]() raises {imm}:
-            # CUDA and HIP GPUs get the cooperative DSTATE-split kernel. Apple
-            # silicon GPU (Metal) gets the vectorized-contiguous dstate I/O
-            # variant: one thread per channel, with the dstate load/store loops
-            # (mem-pipe-bound on M5) done as VEC-wide SIMD chunks. Any other
-            # accelerator runs the portable v1 one-thread-per-channel kernel.
-            comptime use_dstate_split = (
-                ctx.target.is_nvidia_gpu() or ctx.target.is_amd_gpu()
-            )
-            comptime use_apple_vec = ctx.target.is_apple_gpu()
-            # bf16 SSM state is only wired on the Apple vectorized kernel; the
-            # dstate-split and portable v1 kernels are fp32-state. The Python
-            # side only allocates a bf16 pool on Apple (nemotron_h
-            # `_ssm_state_dtype`), so this guard is defensive.
-            comptime assert (
-                state_dtype == .float32 or use_apple_vec
-            ), "non-fp32 SSM state is only supported on the Apple GPU kernel"
-
-            comptime if use_dstate_split:
-                # The split kernel moves each thread's dstate run as one SIMD
-                # access, so it needs unit dstate strides.
-                if (
-                    B.strides()[2] != 1
-                    or C.strides()[2] != 1
-                    or ssm_pool.strides()[3] != 1
-                ):
-                    raise Error(
-                        "the split Mamba-2 SSD scan needs unit strides on the"
-                        " dstate axis of B, C and ssm_pool"
-                    )
-                # Cooperative DSTATE-split: DSTATE_SPLIT threads cooperate on
-                # each head_dim channel's DSTATE recurrence (lifts decode bs=1
-                # occupancy; v1 one-thread-per-channel was ~4% achieved occupancy
-                # on B200). The block holds CH_PER_BLOCK channels x DSTATE_SPLIT
-                # threads = 128 threads. DSTATE_SPLIT must divide both DSTATE
-                # and 32 (the smallest warp width) so each channel's lane group
-                # stays inside one warp for the lane_group_sum reduction; it
-                # divides every dispatched DSTATE (16/64/128/256) cleanly.
-                # Sweep (decode-shape microbench, B200, bf16, dstate=128):
-                #   per-launch us @ bs=1: split1=46.8, split4=22.5, split8=16.6
-                #   (-64.6% vs split1). split8 wins at bs=1/16/32.
-                # On MI355X split8 is within 20% of the best split for both
-                # batch 64 decode and 8 x 512 prefill.
-                comptime DSTATE_SPLIT = 8
-                comptime BLOCK_THREADS = 128
-                comptime CH_PER_BLOCK = BLOCK_THREADS // DSTATE_SPLIT
-                var num_p_blocks = ceildiv(head_dim, CH_PER_BLOCK)
-                comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
+            elif not is_gpu[target]():
+                raise Error("Unsupported target device")
+            elif ctx.target.is_apple_gpu():
+                # One thread per channel; see the kernel docstring.
+                comptime BLOCK_SIZE = 64
+                comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
                     dtype,
-                    DSTATE_VAL,
+                    state_dtype,
+                    DSTATE,
                     x_tt.LayoutType,
                     dt_tt.LayoutType,
                     A_tt.LayoutType,
@@ -4815,17 +4486,9 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     has_initial_state_tt.LayoutType,
                     cache_indices_tt.LayoutType,
                     x_tt.Engine,
-                    DSTATE_SPLIT,
+                    Self.dt_softplus,
                 ]
-                var compiled = ctx.compile_function[kernel]()
-                ctx.enqueue_function(
-                    compiled,
-                    Int32(nheads),
-                    Int32(head_dim),
-                    Int32(ngroups),
-                    Int32(nheads_ngroups_ratio),
-                    Int32(batch),
-                    dt_softplus_int8,
+                ctx.enqueue_function[kernel](
                     x_tt,
                     dt_tt,
                     A_tt,
@@ -4838,59 +4501,23 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt,
                     has_initial_state_tt,
                     cache_indices_tt,
-                    grid_dim=(num_p_blocks, nheads, batch),
-                    block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
-                )
-            elif use_apple_vec:
-                comptime BLOCK_SIZE = 64
-                var num_p_blocks = ceildiv(head_dim, BLOCK_SIZE)
-                comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
-                    dtype,
-                    DSTATE_VAL,
-                    x_tt.LayoutType,
-                    dt_tt.LayoutType,
-                    A_tt.LayoutType,
-                    B_tt.LayoutType,
-                    C_tt.LayoutType,
-                    D_tt.LayoutType,
-                    dt_bias_tt.LayoutType,
-                    y_tt.LayoutType,
-                    ssm_pool_tt.LayoutType,
-                    query_start_loc_tt.LayoutType,
-                    has_initial_state_tt.LayoutType,
-                    cache_indices_tt.LayoutType,
-                    state_dtype,
-                ]
-                var compiled = ctx.compile_function[kernel]()
-                ctx.enqueue_function(
-                    compiled,
-                    Int32(nheads),
-                    Int32(head_dim),
-                    Int32(ngroups),
-                    Int32(nheads_ngroups_ratio),
-                    Int32(batch),
-                    dt_softplus_int8,
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    dt_bias_tt,
-                    y_tt,
-                    ssm_pool_tt,
-                    query_start_loc_tt,
-                    has_initial_state_tt,
-                    cache_indices_tt,
-                    grid_dim=(num_p_blocks, nheads, batch),
+                    grid_dim=(ceildiv(head_dim, BLOCK_SIZE), nheads, batch),
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
             else:
-                comptime BLOCK_SIZE = 64
-                var num_p_blocks = ceildiv(head_dim, BLOCK_SIZE)
-                comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu[
+                # DSTATE_SPLIT threads cooperate on each channel, CH_PER_BLOCK
+                # channels per 128-thread block. Decode-shape sweep on B200
+                # (bf16, dstate=128), us per launch at batch 1: split1=46.8,
+                # split4=22.5, split8=16.6; split8 also wins at batch 16 and
+                # 32. On MI355X split8 is within 20% of the best split for
+                # batch-64 decode and 8 x 512 prefill.
+                comptime DSTATE_SPLIT = 8
+                comptime CH_PER_BLOCK = 128 // DSTATE_SPLIT
+                comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                     dtype,
-                    DSTATE_VAL,
+                    state_dtype,
+                    DSTATE,
+                    DSTATE_SPLIT,
                     x_tt.LayoutType,
                     dt_tt.LayoutType,
                     A_tt.LayoutType,
@@ -4903,16 +4530,10 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt.LayoutType,
                     has_initial_state_tt.LayoutType,
                     cache_indices_tt.LayoutType,
+                    x_tt.Engine,
+                    Self.dt_softplus,
                 ]
-                var compiled = ctx.compile_function[kernel]()
-                ctx.enqueue_function(
-                    compiled,
-                    Int32(nheads),
-                    Int32(head_dim),
-                    Int32(ngroups),
-                    Int32(nheads_ngroups_ratio),
-                    Int32(batch),
-                    dt_softplus_int8,
+                ctx.enqueue_function[kernel](
                     x_tt,
                     dt_tt,
                     A_tt,
@@ -4925,32 +4546,26 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     query_start_loc_tt,
                     has_initial_state_tt,
                     cache_indices_tt,
-                    grid_dim=(num_p_blocks, nheads, batch),
-                    block_dim=(BLOCK_SIZE, 1, 1),
+                    grid_dim=(ceildiv(head_dim, CH_PER_BLOCK), nheads, batch),
+                    block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
                 )
 
-        comptime if is_cpu[target]():
-            __match dstate:
-                case 256:
-                    launch_cpu[256]()
-                case 128:
-                    launch_cpu[128]()
-                case 64:
-                    launch_cpu[64]()
-                case _:
-                    launch_cpu[16]()
-        elif is_gpu[target]():
-            __match dstate:
-                case 256:
-                    launch_gpu[256]()
-                case 128:
-                    launch_gpu[128]()
-                case 64:
-                    launch_gpu[64]()
-                case _:
-                    launch_gpu[16]()
-        else:
-            raise Error("Unsupported target device")
+        var dstate = B.dim_size(2)
+        __match dstate:
+            case 16:
+                launch[16]()
+            case 64:
+                launch[64]()
+            case 128:
+                launch[128]()
+            case 256:
+                launch[256]()
+            case _:
+                raise Error(
+                    "Unsupported dstate: "
+                    + String(dstate)
+                    + ". Expected 16, 64, 128, or 256."
+                )
 
 
 @extensibility.register_shape_function(
@@ -4985,7 +4600,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
         dt_bias: Per-head bias added to `dt` of shape `(nheads,)`;
             may be empty when unused.
         ssm_pool: Mutable SSM state pool of shape
-            `(max_slots, nheads, head_dim, dstate)` in `float32`;
+            `(max_slots, nheads, head_dim, dstate)` in `float32` or
+            `bfloat16`;
             final states are written in place at the slots indexed
             by `cache_indices`.
         query_start_loc: Cumulative sequence lengths of shape
@@ -5088,53 +4704,23 @@ struct CausalConv1DVarlenFwd[
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
-        # Axis of `x`/`output` holding channels vs. tokens (see
-        # `channels_last`). The kernels order their coordinates by
-        # `channels_last`, so both layouts run the same code.
-        comptime dim_axis = 1 if Self.channels_last else 0
-        comptime seq_axis = 0 if Self.channels_last else 1
-        var dim = x.dim_size(dim_axis)
-        var total_seqlen = x.dim_size(seq_axis)
-        var width = weight.dim_size(1)
-        var batch = query_start_loc.dim_size(0) - 1
+        comptime silu_activation = Self.activation == "silu"
 
-        var output_tt = output.to_tile_tensor[.int32]()
-        var x_tt = x.to_tile_tensor[.int32]()
-        var weight_tt = weight.to_tile_tensor[.int32]()
-        var bias_tt = bias.to_tile_tensor[.int32]()
-        var query_start_loc_tt = query_start_loc.to_tile_tensor[.int32]()
-        var cache_indices_tt = cache_indices.to_tile_tensor[.int32]()
-        var has_initial_state_tt = has_initial_state.to_tile_tensor[
-            DType.int32
-        ]()
-        var conv_states_tt = conv_states.to_tile_tensor[.int32]()
-
-        var has_conv_states = conv_states.dim_size(0) > 0
-
-        var has_cache_indices = cache_indices.dim_size(0) > 0
-        var has_initial_state_flag = has_initial_state.dim_size(0) > 0
-        var has_bias = bias.dim_size(0) > 0
-
-        var silu_activation = Self.activation == "silu"
-        comptime PAD_SLOT_ID: Int32 = -1
+        var output_tt = output.to_tile_tensor()
+        var x_tt = x.to_tile_tensor()
+        var weight_tt = weight.to_tile_tensor()
+        var bias_tt = bias.to_tile_tensor()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor()
+        var cache_indices_tt = cache_indices.to_tile_tensor()
+        var has_initial_state_tt = has_initial_state.to_tile_tensor()
+        var conv_states_tt = conv_states.to_tile_tensor()
 
         comptime if is_cpu[target]():
             causal_conv1d_varlen_fwd_cpu[
-                x_tt.dtype,
-                weight_tt.dtype,
-                bias_tt.dtype,
-                output_tt.dtype,
-                query_start_loc_tt.dtype,
-                cache_indices_tt.dtype,
-                has_initial_state_tt.dtype,
-                conv_states_tt.dtype,
+                silu_activation,
                 use_residual=Self.use_residual,
                 channels_last=Self.channels_last,
             ](
-                dim,
-                total_seqlen,
-                width,
-                batch,
                 x_tt,
                 weight_tt,
                 bias_tt,
@@ -5143,117 +4729,27 @@ struct CausalConv1DVarlenFwd[
                 has_initial_state_tt,
                 conv_states_tt,
                 output_tt,
-                silu_activation,
-                PAD_SLOT_ID,
-                has_cache_indices,
-                has_initial_state_flag,
-                has_conv_states,
-                has_bias,
             )
         elif is_gpu[target]():
-            var gpu_ctx = ctx
             comptime BLOCK_DIM = 128
-            comptime BLOCK_SEQ = 1
-            # Sequence-tile size for the seq-parallel prefill kernel (slice 1
-            # of run7/designs/state-space-prefill-conv-seqparallel.md). Only
-            # used on the `total_seqlen > batch` (prefill/mixed) branch below;
-            # pure decode (`total_seqlen == batch`) keeps the untouched serial
-            # kernel + BLOCK_SEQ path so decode stays byte-identical.
             comptime TILE_SEQ = 128
-            var silu_activation_int8 = Int8(silu_activation)
+            comptime seq_axis = 0 if Self.channels_last else 1
+            var dim = x.dim_size(1 - seq_axis)
+            var total_seqlen = x.dim_size(seq_axis)
+            var batch = query_start_loc.dim_size(0) - 1
 
             @inline(.always)
-            def launch_gpu[kWidth: Int]() raises {imm}:
-                # Prefill/mixed segments (at least one sequence has >1
-                # token) route to the grid-z sequence-tiled kernel; pure
-                # decode (every sequence has exactly 1 token, so
-                # total_seqlen == batch) keeps the serial per-thread kernel
-                # unchanged below. This mirrors the shape-only heuristic
-                # already used for the Mamba-2 SSD chunked-prefill gate.
+            def launch_gpu[WIDTH: Int]() raises {imm}:
+                # Pure decode (every sequence one token long) keeps the serial
+                # kernel; anything with a multi-token sequence tiles the
+                # sequence axis across grid-z.
                 if total_seqlen > batch:
-                    var compiled_func = gpu_ctx.compile_function[
-                        causal_conv1d_varlen_fwd_seqparallel_gpu[
-                            x_tt.dtype,
-                            weight_tt.dtype,
-                            bias_tt.dtype,
-                            output_tt.dtype,
-                            query_start_loc_tt.dtype,
-                            cache_indices_tt.dtype,
-                            has_initial_state_tt.dtype,
-                            conv_states_tt.dtype,
-                            kWidth,
-                            BLOCK_DIM,
-                            TILE_SEQ,
-                            x_tt.LayoutType,
-                            weight_tt.LayoutType,
-                            bias_tt.LayoutType,
-                            query_start_loc_tt.LayoutType,
-                            cache_indices_tt.LayoutType,
-                            has_initial_state_tt.LayoutType,
-                            conv_states_tt.LayoutType,
-                            output_tt.LayoutType,
-                            x_tt.Engine,
-                            weight_tt.Engine,
-                            bias_tt.Engine,
-                            query_start_loc_tt.Engine,
-                            cache_indices_tt.Engine,
-                            has_initial_state_tt.Engine,
-                            conv_states_tt.Engine,
-                            output_tt.Engine,
-                            use_residual=Self.use_residual,
-                            channels_last=Self.channels_last,
-                        ]
-                    ]()
-                    # Host-side safe upper bound on the per-sequence tile
-                    # count, avoiding a host max-reduction over ragged
-                    # seqlens: grid-z indexes each sequence's LOCAL tile, and
-                    # no sequence is longer than total_seqlen, so
-                    # `ceildiv(total_seqlen, TILE_SEQ)` bounds every
-                    # sequence's tile count (tile 0 stays alive for every
-                    # sequence, including empty ones, since the dispatcher
-                    # only reaches this kernel when total_seqlen > batch > 0).
-                    # Blocks whose z-index exceeds a given sequence's actual
-                    # tile count early-return inside the kernel.
-                    gpu_ctx.enqueue_function(
-                        compiled_func,
-                        Int32(dim),
-                        Int32(total_seqlen),
-                        Int32(batch),
-                        x_tt,
-                        weight_tt,
-                        bias_tt,
-                        query_start_loc_tt,
-                        cache_indices_tt,
-                        has_initial_state_tt,
-                        conv_states_tt,
-                        output_tt,
-                        silu_activation_int8,
-                        Int32(PAD_SLOT_ID),
-                        Int8(has_cache_indices),
-                        Int8(has_initial_state_flag),
-                        Int8(has_conv_states),
-                        Int8(has_bias),
-                        grid_dim=(
-                            batch,
-                            ceildiv(dim, BLOCK_DIM),
-                            ceildiv(total_seqlen, TILE_SEQ),
-                        ),
-                        block_dim=(BLOCK_DIM, 1),
-                    )
-                    return
-                var compiled_func = gpu_ctx.compile_function[
-                    causal_conv1d_varlen_fwd_gpu[
-                        x_tt.dtype,
-                        weight_tt.dtype,
-                        bias_tt.dtype,
-                        output_tt.dtype,
-                        query_start_loc_tt.dtype,
-                        cache_indices_tt.dtype,
-                        has_initial_state_tt.dtype,
-                        conv_states_tt.dtype,
-                        kWidth,
+                    comptime kernel = causal_conv1d_varlen_fwd_seqparallel_gpu[
+                        dtype,
+                        conv_states_dtype,
+                        WIDTH,
                         BLOCK_DIM,
-                        BLOCK_SEQ,
+                        TILE_SEQ,
                         x_tt.LayoutType,
                         weight_tt.LayoutType,
                         bias_tt.LayoutType,
@@ -5263,41 +4759,59 @@ struct CausalConv1DVarlenFwd[
                         conv_states_tt.LayoutType,
                         output_tt.LayoutType,
                         x_tt.Engine,
-                        weight_tt.Engine,
-                        bias_tt.Engine,
-                        query_start_loc_tt.Engine,
-                        cache_indices_tt.Engine,
-                        has_initial_state_tt.Engine,
-                        conv_states_tt.Engine,
-                        output_tt.Engine,
-                        use_residual=Self.use_residual,
-                        channels_last=Self.channels_last,
+                        silu_activation,
+                        Self.use_residual,
+                        Self.channels_last,
                     ]
-                ]()
-                gpu_ctx.enqueue_function(
-                    compiled_func,
-                    Int32(dim),
-                    Int32(total_seqlen),
-                    Int32(batch),
-                    x_tt,
-                    weight_tt,
-                    bias_tt,
-                    query_start_loc_tt,
-                    cache_indices_tt,
-                    has_initial_state_tt,
-                    conv_states_tt,
-                    output_tt,
-                    silu_activation_int8,
-                    Int32(PAD_SLOT_ID),
-                    Int8(has_cache_indices),
-                    Int8(has_initial_state_flag),
-                    Int8(has_conv_states),
-                    Int8(has_bias),
-                    grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-                    block_dim=(BLOCK_DIM, BLOCK_SEQ),
-                )
+                    ctx.enqueue_function[kernel](
+                        x_tt,
+                        weight_tt,
+                        bias_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                        conv_states_tt,
+                        output_tt,
+                        grid_dim=(
+                            batch,
+                            ceildiv(dim, BLOCK_DIM),
+                            ceildiv(total_seqlen, TILE_SEQ),
+                        ),
+                        block_dim=BLOCK_DIM,
+                    )
+                else:
+                    comptime kernel = causal_conv1d_varlen_fwd_gpu[
+                        dtype,
+                        conv_states_dtype,
+                        WIDTH,
+                        BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
+                        x_tt.Engine,
+                        silu_activation,
+                        Self.use_residual,
+                        Self.channels_last,
+                    ]
+                    ctx.enqueue_function[kernel](
+                        x_tt,
+                        weight_tt,
+                        bias_tt,
+                        query_start_loc_tt,
+                        cache_indices_tt,
+                        has_initial_state_tt,
+                        conv_states_tt,
+                        output_tt,
+                        grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
+                        block_dim=BLOCK_DIM,
+                    )
 
-            __match width:
+            __match weight.dim_size(1):
                 case 1:
                     launch_gpu[1]()
                 case 2:

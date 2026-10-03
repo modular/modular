@@ -136,7 +136,7 @@ def run_one_case(
     var bias_h = alloc[Scalar[dtype]](dim)
     var his_h = alloc[Scalar[.bool]](batch)
     var qsl_h = alloc[Int32](batch + 1)
-    var slot_h = alloc[Int32](batch)
+    var slot_h = alloc[UInt32](batch)
     var pool_h = alloc[Scalar[dtype]](pool_slots * dim * state_len)
     var pool_ref_h = alloc[Scalar[dtype]](pool_slots * dim * state_len)
     var y_ref_h = alloc[Scalar[dtype]](total * dim)
@@ -153,7 +153,7 @@ def run_one_case(
     for b in range(batch):
         cum += lens[b]
         qsl_h.store(b + 1, Int32(cum))
-        slot_h.store(b, Int32(slots[b]))
+        slot_h.store(b, UInt32(slots[b]))
         var has_init = spec.init_mode == 1 or (
             spec.init_mode == 2 and random_ui64(0, 1) == 1
         )
@@ -170,7 +170,7 @@ def run_one_case(
     var bias_d = ctx.enqueue_create_buffer[dtype](dim)
     var his_d = ctx.enqueue_create_buffer[.bool](batch)
     var qsl_d = ctx.enqueue_create_buffer[.int32](batch + 1)
-    var slot_d = ctx.enqueue_create_buffer[.int32](batch)
+    var slot_d = ctx.enqueue_create_buffer[.uint32](batch)
     var pool_d = ctx.enqueue_create_buffer[dtype](pool_slots * dim * state_len)
     var y_d = ctx.enqueue_create_buffer[dtype](total * dim)
     ctx.enqueue_copy(proj_d, proj_h)
@@ -193,17 +193,9 @@ def run_one_case(
     var pool_g = TileTensor(pool_d, row_major(pool_slots, dim, state_len))
     var y_g = TileTensor(y_d, row_major(total, dim))
 
-    comptime PAD_SLOT_ID = Int32(-1)
-
     if total > batch:
         comptime kernel = causal_conv1d_varlen_fwd_seqparallel_gpu[
             dtype,
-            dtype,
-            dtype,
-            dtype,
-            DType.int32,
-            DType.int32,
-            DType.bool,
             dtype,
             WIDTH,
             BLOCK_DIM,
@@ -217,21 +209,12 @@ def run_one_case(
             pool_g.LayoutType,
             y_g.LayoutType,
             x_g.Engine,
-            weight_g.Engine,
-            bias_g.Engine,
-            qsl_g.Engine,
-            slot_g.Engine,
-            his_g.Engine,
-            pool_g.Engine,
-            y_g.Engine,
+            silu_activation=True,
             channels_last=True,
         ]
         var compiled = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             compiled,
-            Int32(dim),
-            Int32(total),
-            Int32(batch),
             x_g,
             weight_g,
             bias_g,
@@ -240,32 +223,19 @@ def run_one_case(
             his_g,
             pool_g,
             y_g,
-            Int8(1),
-            PAD_SLOT_ID,
-            Int8(1),
-            Int8(1),
-            Int8(1),
-            Int8(1),
             grid_dim=(
                 batch,
                 ceildiv(dim, BLOCK_DIM),
                 ceildiv(total, TILE_SEQ),
             ),
-            block_dim=(BLOCK_DIM, 1),
+            block_dim=BLOCK_DIM,
         )
     else:
         comptime kernel = causal_conv1d_varlen_fwd_gpu[
             dtype,
             dtype,
-            dtype,
-            dtype,
-            DType.int32,
-            DType.int32,
-            DType.bool,
-            dtype,
             WIDTH,
             BLOCK_DIM,
-            1,
             x_g.LayoutType,
             weight_g.LayoutType,
             bias_g.LayoutType,
@@ -275,21 +245,12 @@ def run_one_case(
             pool_g.LayoutType,
             y_g.LayoutType,
             x_g.Engine,
-            weight_g.Engine,
-            bias_g.Engine,
-            qsl_g.Engine,
-            slot_g.Engine,
-            his_g.Engine,
-            pool_g.Engine,
-            y_g.Engine,
+            silu_activation=True,
             channels_last=True,
         ]
         var compiled = ctx.compile_function[kernel]()
         ctx.enqueue_function(
             compiled,
-            Int32(dim),
-            Int32(total),
-            Int32(batch),
             x_g,
             weight_g,
             bias_g,
@@ -298,14 +259,8 @@ def run_one_case(
             his_g,
             pool_g,
             y_g,
-            Int8(1),
-            PAD_SLOT_ID,
-            Int8(1),
-            Int8(1),
-            Int8(1),
-            Int8(1),
             grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, 1),
+            block_dim=BLOCK_DIM,
         )
     ctx.synchronize()
 
@@ -323,20 +278,9 @@ def run_one_case(
         )
         var y_t = TileTensor(y_ref_h, row_major(total, dim))
         causal_conv1d_varlen_fwd_cpu[
-            dtype,
-            dtype,
-            dtype,
-            dtype,
-            DType.int32,
-            DType.int32,
-            DType.bool,
-            dtype,
+            True,
             channels_last=True,
         ](
-            dim,
-            total,
-            WIDTH,
-            batch,
             x_t,
             weight_t,
             bias_t,
@@ -345,12 +289,6 @@ def run_one_case(
             his_t,
             pool_t,
             y_t,
-            True,
-            PAD_SLOT_ID,
-            True,
-            True,
-            True,
-            True,
         )
         ctx.enqueue_copy(y_gpu_h, y_d)
         ctx.enqueue_copy(pool_h, pool_d)

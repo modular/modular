@@ -24,7 +24,7 @@ Key Functions:
 vLLM Interface:
     - x: (dim, cu_seq_len) for varlen - sequences concatenated left to right
     - query_start_loc: (batch + 1) int32 - cumulative sequence lengths
-    - cache_indices: (batch) int32 - indices into conv_states
+    - cache_indices: (batch) uint32 - indices into conv_states
     - has_initial_state: (batch) bool - whether to use initial state
     - conv_states: (..., dim, width - 1) - states updated in-place
     - activation: None or "silu" or "swish"
@@ -40,7 +40,7 @@ from std.utils.numerics import get_accum_type
 from max.gpu import block_idx, thread_idx
 
 
-from layout import TensorLayout, TileTensor
+from layout import DefaultEngine, TensorLayout, TileTensor
 from layout.tensor_engine import TensorEngine
 
 from nn.activations import silu
@@ -70,8 +70,7 @@ def _apply_silu[
     """Optionally apply the SiLU activation, preserving the accumulator dtype.
 
     Floating-point outputs run SiLU in place; integral outputs promote to f32
-    for the activation then cast back. Factored out of the fwd / update / states
-    paths (CPU and GPU) which each open-coded this block identically.
+    for the activation then cast back.
 
     Parameters:
         output_dtype: The output element type.
@@ -105,11 +104,6 @@ def _channel_weights[
 ) -> SIMD[weight_dtype, _TAP_LANES[WIDTH]]:
     """Load channel `d`'s `WIDTH` conv weights into a register vector.
 
-    Factored out of the fwd / update GPU kernels, which each preloaded the
-    per-channel weights into a fixed 8-wide SIMD. The vector is now the
-    padded `WIDTH` (no magic 8), so it holds the taps used plus at most one
-    power-of-two rounding lane.
-
     Parameters:
         weight_dtype: The weight element type.
         WIDTH: The convolution width (number of taps).
@@ -131,6 +125,35 @@ def _channel_weights[
     return weights
 
 
+@inline(.always)
+def _use_initial_state(
+    has_initial_state: TileTensor[DType.bool, ...],
+    conv_states: TileTensor[...],
+    b: Int,
+) -> Bool:
+    """Whether sequence `b` continues from its stored conv state.
+
+    An empty `has_initial_state` or `conv_states` means no sequence does.
+    """
+    return (
+        Int(conv_states.dim[0]()) > 0
+        and Int(has_initial_state.dim[0]()) > 0
+        and Bool(has_initial_state.load[width=1]((b,)))
+    )
+
+
+@inline(.always)
+def _cache_slot(cache_indices: TileTensor[...], b: Int) -> Int:
+    """Returns sequence `b`'s conv-state pool slot.
+
+    An empty `cache_indices` maps sequence `b` to slot `b`. A slot equal to
+    `PAD_SLOT_ID` marks a padded entry.
+    """
+    if Int(cache_indices.dim[0]()) == 0:
+        return b
+    return Int(Int32(cache_indices.load[width=1]((b,))))
+
+
 # ============================================================================
 # Forward-path DRAM I/O owner
 # ============================================================================
@@ -142,10 +165,7 @@ struct VarlenConvIO[
     weight_origin: Origin,
     bias_origin: Origin,
     out_origin: MutOrigin,
-    x_dtype: DType,
-    weight_dtype: DType,
-    bias_dtype: DType,
-    out_dtype: DType,
+    dtype: DType,
     x_layout: TensorLayout,
     weight_layout: TensorLayout,
     bias_layout: TensorLayout,
@@ -167,41 +187,29 @@ struct VarlenConvIO[
 ](ImplicitlyCopyable, Movable):
     """Owner of the forward-path DRAM reads/writes for varlen causal conv1d.
 
-    Holds the `(dim, seqlen)` input `x`, `(dim, width)` `weight`, `(dim,)`
-    `bias`, and `(dim, seqlen)` `output` TileTensor views and exposes one
-    method per access verb.
+    Holds the input `x`, `(dim, width)` `weight`, `(dim,)` `bias`, and
+    `output` TileTensor views and exposes one method per access verb.
 
     `x` and `output` are the caller's physical tensors: `(dim, seqlen)`, or
-    `(seqlen, dim)` when `channels_last`. `load_x`/`store_out` take the logical
-    `(d, s)` and order the `Coord` by `channels_last`, so the axis order that
-    flips under the `channels_last` builtin parameter (`kernels.mojo`'s
-    `CausalConv1DVarlenFwd`) stays out of the kernels.
+    `(seqlen, dim)` when `channels_last`. The methods take the logical
+    `(d, s)` and order the coordinates by `channels_last`, so the axis order stays
+    out of the kernels.
 
-    Every view parameter (dtype, layout, origin, storage, address space, index
-    type) is inferred from the constructor arguments, so the owner adapts to
-    whatever tensor storage the caller's views carry -- the CPU reference and
-    GPU kernel pass differently-parameterized views. The read views (`x`,
-    `weight`, `bias`) carry origins with a free `mut` (the CPU reference passes
-    them immutable, the GPU kernel mutable; reads need no mutability proof); the
-    store target `output` pins `MutOrigin` so `store` type-checks. Modeled on
-    the owner-per-transition pattern (see `Fp4WeightLoader` in
-    `matmul2d_fp4.mojo`), constructed by direct field init so no origin rebase
-    is needed. Stateless: the circular conv-state position is not owned here, so
-    the same owner serves any path.
+    Every view parameter is inferred from the constructor arguments, so the
+    owner adapts to whatever storage the caller's views carry; the CPU
+    reference and the GPU kernels pass differently-parameterized views. Only
+    the store target `output` pins a mutable origin.
 
     Parameters:
         x_origin: Inferred origin of the input view.
         weight_origin: Inferred origin of the weight view.
         bias_origin: Inferred origin of the bias view.
         out_origin: Inferred mutable origin of the output view.
-        x_dtype: Input element type.
-        weight_dtype: Weight element type.
-        bias_dtype: Bias element type.
-        out_dtype: Output element type.
-        x_layout: Layout type of the `(dim, seqlen)` input view.
+        dtype: Element type of `x`, `weight`, `bias` and `output`.
+        x_layout: Layout type of the input view.
         weight_layout: Layout type of the `(dim, width)` weight view.
         bias_layout: Layout type of the `(dim,)` bias view.
-        out_layout: Layout type of the `(dim, seqlen)` output view.
+        out_layout: Layout type of the output view.
         x_engine: Inferred engine of the input view.
         weight_engine: Inferred engine of the weight view.
         bias_engine: Inferred engine of the bias view.
@@ -219,7 +227,7 @@ struct VarlenConvIO[
     """
 
     var x: TileTensor[
-        Self.x_dtype,
+        Self.dtype,
         Self.x_layout,
         Self.x_origin,
         Engine=Self.x_engine,
@@ -227,7 +235,7 @@ struct VarlenConvIO[
         linear_idx_type=Self.x_idx,
     ]
     var weight: TileTensor[
-        Self.weight_dtype,
+        Self.dtype,
         Self.weight_layout,
         Self.weight_origin,
         Engine=Self.weight_engine,
@@ -235,7 +243,7 @@ struct VarlenConvIO[
         linear_idx_type=Self.weight_idx,
     ]
     var bias: TileTensor[
-        Self.bias_dtype,
+        Self.dtype,
         Self.bias_layout,
         Self.bias_origin,
         Engine=Self.bias_engine,
@@ -243,7 +251,7 @@ struct VarlenConvIO[
         linear_idx_type=Self.bias_idx,
     ]
     var output: TileTensor[
-        Self.out_dtype,
+        Self.dtype,
         Self.out_layout,
         Self.out_origin,
         Engine=Self.out_engine,
@@ -252,12 +260,18 @@ struct VarlenConvIO[
     ]
 
     @inline(.always)
-    def load_x(self, d: Int, s: Int) -> Scalar[Self.x_dtype]:
+    def dim(self) -> Int:
+        """Returns the number of channels."""
+        comptime dim_axis = 1 if Self.channels_last else 0
+        return Int(self.x.dim[dim_axis]())
+
+    @inline(.always)
+    def load_x(self, d: Int, s: Int) -> Scalar[Self.dtype]:
         """Load `x[d, s]`: windowed history read of the input.
 
         Args:
-            d: The channel index into the `(dim, seqlen)` input view.
-            s: The sequence position index into the `(dim, seqlen)` input view.
+            d: The channel index.
+            s: The packed sequence position.
         """
         comptime if Self.channels_last:
             return self.x.load[width=1]((s, d))
@@ -265,7 +279,7 @@ struct VarlenConvIO[
             return self.x.load[width=1]((d, s))
 
     @inline(.always)
-    def load_weight(self, d: Int, w: Int) -> Scalar[Self.weight_dtype]:
+    def load_weight(self, d: Int, w: Int) -> Scalar[Self.dtype]:
         """Load `weight[d, w]`: per-channel conv tap.
 
         Args:
@@ -275,28 +289,74 @@ struct VarlenConvIO[
         return self.weight.load[width=1]((d, w))
 
     @inline(.always)
-    def load_bias(self, d: Int) -> Scalar[Self.bias_dtype]:
-        """Load `bias[d]`: per-channel bias.
+    def load_bias(self, d: Int) -> Scalar[Self.dtype]:
+        """Load `bias[d]`, or zero when `bias` is empty.
 
         Args:
             d: The channel index into the `(dim,)` bias view.
         """
+        if Int(self.bias.dim[0]()) == 0:
+            return 0
         return self.bias.load[width=1]((d,))
 
     @inline(.always)
-    def store_out(self, d: Int, s: Int, val: Scalar[Self.out_dtype]):
+    def store_out(self, d: Int, s: Int, val: Scalar[Self.dtype]):
         """Store `output[d, s] = val`: convolution output.
 
         Args:
-            d: The channel index into the `(dim, seqlen)` output view.
-            s: The sequence position index into the `(dim, seqlen)` output
-                view.
+            d: The channel index.
+            s: The packed sequence position.
             val: The convolution result to store at `output[d, s]`.
         """
         comptime if Self.channels_last:
             self.output.store((s, d), val)
         else:
             self.output.store((d, s), val)
+
+    @inline(.always)
+    def store_final_state[
+        state_len: Int
+    ](
+        self,
+        conv_states: TileTensor[mut=True, ...],
+        slot: Int,
+        d: Int,
+        seq_start: Int,
+        seqlen: Int,
+        use_initial_state: Bool,
+    ):
+        """Write the last `state_len` inputs of a sequence to its pool slot.
+
+        A chunk shorter than `state_len` does not hold the whole new state: its
+        oldest entries come from the state being continued, under the same
+        negative-position mapping the convolution uses. Zero there would
+        restart the sequence on every decode step.
+
+        This reads the pool it is writing. That is safe because the carried
+        index simplifies to `seqlen + s`, strictly ahead of the `s` being
+        written, and `s` runs upwards. Reordering the loop would turn the
+        carry-over into a read of a just-written entry.
+
+        Parameters:
+            state_len: Conv-state length, `width - 1`.
+
+        Args:
+            conv_states: The `(max_slots, dim, state_len)` conv-state pool.
+            slot: The sequence's pool slot.
+            d: The channel index.
+            seq_start: Packed position of the sequence's first token.
+            seqlen: The sequence length.
+            use_initial_state: Whether the sequence continues its stored state.
+        """
+        comptime state_dtype = type_of(conv_states).dtype
+        comptime for s in range(state_len):
+            var src_l = seqlen - state_len + s
+            var val = Scalar[state_dtype](0)
+            if src_l >= 0:
+                val = self.load_x(d, seq_start + src_l).cast[state_dtype]()
+            elif use_initial_state:
+                val = conv_states.load[width=1]((slot, d, state_len + src_l))
+            conv_states.store((slot, d, s), val)
 
 
 # ============================================================================
@@ -370,47 +430,20 @@ def causal_conv1d_varlen_states_cpu[
 
 
 def causal_conv1d_varlen_fwd_cpu[
-    x_dtype: DType,
-    weight_dtype: DType,
-    bias_dtype: DType,
-    output_dtype: DType,
-    cu_seqlens_dtype: DType,
-    cache_indices_dtype: DType,
-    has_initial_state_dtype: DType,
-    conv_states_dtype: DType,
+    dtype: DType,
+    //,
+    silu_activation: Bool,
     use_residual: Bool = False,
     channels_last: Bool = False,
 ](
-    dim: Int,
-    total_seqlen: Int,
-    width: Int,
-    batch: Int,
-    x: TileTensor[
-        mut=False, x_dtype, ...
-    ],  # Shape (dim, total_seqlen) for varlen
-    weight: TileTensor[mut=False, weight_dtype, ...],  # Shape (dim, width)
-    bias: TileTensor[mut=False, bias_dtype, ...],  # Shape (dim,)
-    query_start_loc: TileTensor[
-        mut=False, cu_seqlens_dtype, ...
-    ],  # Shape (batch + 1,)
-    cache_indices: TileTensor[
-        mut=False, cache_indices_dtype, ...
-    ],  # Shape (batch,)
-    has_initial_state: TileTensor[
-        mut=False, has_initial_state_dtype, ...
-    ],  # Shape (batch,)
-    conv_states: TileTensor[
-        mut=True, conv_states_dtype, ...
-    ],  # Shape (..., dim, width - 1)
-    output: TileTensor[
-        mut=True, output_dtype, ...
-    ],  # Shape (dim, total_seqlen)
-    silu_activation: Bool,
-    pad_slot_id: Int32,
-    has_cache_indices: Bool,
-    has_initial_state_flag: Bool,
-    has_conv_states: Bool,
-    has_bias: Bool,
+    x: TileTensor[mut=False, dtype, ...],
+    weight: TileTensor[mut=False, dtype, ...],
+    bias: TileTensor[mut=False, dtype, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    cache_indices: TileTensor[mut=False, .uint32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
+    conv_states: TileTensor[mut=True, ...],
+    output: TileTensor[mut=True, dtype, ...],
 ):
     """Forward pass for causal conv1d with variable length sequences.
 
@@ -421,151 +454,95 @@ def causal_conv1d_varlen_fwd_cpu[
     This is the CPU reference implementation for causal_conv1d_varlen_fwd.
 
     Parameters:
-        x_dtype: Data type of the input tensor.
-        weight_dtype: Data type of the weight tensor.
-        bias_dtype: Data type of the bias tensor.
-        output_dtype: Data type of the output tensor.
-        cu_seqlens_dtype: Data type of the cumulative sequence lengths.
-        cache_indices_dtype: Data type of the cache indices.
-        has_initial_state_dtype: Data type of the initial-state flags.
-        conv_states_dtype: Data type of the convolution states.
+        dtype: Element type of `x`, `weight`, `bias` and `output`.
+        silu_activation: Whether to apply the SiLU activation to the output.
         use_residual: If True, adds `x[d, s]` to the convolution sum at each
             output position, before the activation.
         channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
             rather than `(dim, total_seqlen)`.
 
     Args:
-        dim: Number of channels in the convolution.
-        total_seqlen: Total length of the concatenated sequences.
-        width: Convolution width (number of taps).
-        batch: Number of sequences in the batch.
         x: Input tensor of shape `(dim, total_seqlen)`.
         weight: Weight tensor of shape `(dim, width)`.
-        bias: Bias tensor of shape `(dim,)`.
+        bias: Bias tensor of shape `(dim,)`, or empty.
         query_start_loc: Cumulative sequence lengths of shape `(batch + 1,)`.
-        cache_indices: Per-sequence indices into `conv_states` of shape
-            `(batch,)`.
-        has_initial_state: Per-sequence flags of shape `(batch,)` indicating
-            whether to use the initial state.
-        conv_states: Convolution states of shape `(..., dim, width - 1)`,
-            updated in place.
-        output: Output tensor of shape `(dim, total_seqlen)`.
-        silu_activation: Whether to apply the SiLU activation to the output.
-        pad_slot_id: Slot ID identifying padded entries to skip.
-        has_cache_indices: Whether to consult `cache_indices` for slot lookup.
-        has_initial_state_flag: Whether to consult `has_initial_state` per
+        cache_indices: Per-sequence slots in `conv_states` of shape
+            `(batch,)`, or empty to use slot `b`. `PAD_SLOT_ID` skips the
             sequence.
-        has_conv_states: Whether `conv_states` is provided and should be
-            updated.
-        has_bias: Whether to add `bias` to the convolution sum.
+        has_initial_state: Per-sequence flags of shape `(batch,)` selecting
+            whether to continue the stored state, or empty.
+        conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
+            updated in place, or empty.
+        output: Output tensor of shape `(dim, total_seqlen)`.
     """
-    comptime accum_dtype = get_accum_type[output_dtype]()
+    comptime accum_dtype = get_accum_type[dtype]()
+    comptime state_dtype = type_of(conv_states).dtype
 
+    var width = Int(weight.dim[1]())
     var width_minus_1 = width - 1
+    var batch = Int(query_start_loc.dim[0]()) - 1
+    var has_conv_states = Int(conv_states.dim[0]()) > 0
 
-    # Forward-path DRAM I/O owner. `load_x`/`store_out` take the logical
-    # `(d, s)` and order the coordinates by `channels_last`. `conv_states` is
-    # indexed, not addressed: the pool outgrows a 32-bit offset, and TileTensor
-    # forms this one at 64 bits.
+    # `conv_states` is indexed, not addressed: the pool outgrows a 32-bit
+    # offset, and TileTensor forms this one at 64 bits.
     var io = VarlenConvIO[channels_last](x, weight, bias, output)
 
-    # Process each sequence in the batch
     for b in range(batch):
-        # Check if this is a padded entry
-        if has_cache_indices:
-            var cache_idx_val = Int32(cache_indices.load[width=1]((b,)))
-            if cache_idx_val == pad_slot_id:
-                continue
+        var slot = _cache_slot(cache_indices, b)
+        if slot == Int(PAD_SLOT_ID):
+            continue
 
         var seq_start = Int(query_start_loc.load[width=1]((b,)))
-        var seq_end = Int(query_start_loc.load[width=1]((b + 1,)))
-        var seqlen = seq_end - seq_start
+        var seqlen = Int(query_start_loc.load[width=1]((b + 1,))) - seq_start
+        var use_initial_state = _use_initial_state(
+            has_initial_state, conv_states, b
+        )
 
-        # Determine if we should use initial state
-        var use_initial_state = False
-        if has_initial_state_flag:
-            use_initial_state = Bool(has_initial_state.load[width=1]((b,)))
+        for d in range(io.dim()):
+            var bias_val = io.load_bias(d).cast[accum_dtype]()
 
-        # Get cache index for this batch
-        var cache_idx: Int = b
-        if has_cache_indices:
-            cache_idx = Int(cache_indices.load[width=1]((b,)))
-
-        # Process each channel
-        for d in range(dim):
-            # Load bias
-            var bias_val: Scalar[accum_dtype] = 0
-            if has_bias:
-                bias_val = Scalar[accum_dtype](io.load_bias(d))
-
-            # Load weights for this channel
-            var weights = List[Scalar[weight_dtype]]()
-            for w_idx in range(width):
-                weights.append(io.load_weight(d, w_idx))
-
-            # Process each position in the sequence
             for l in range(seqlen):
                 var conv_sum = bias_val
-
-                # Convolution sum
                 for w_idx in range(width):
+                    # Positions before the sequence start map to state index
+                    # `width_minus_1 + input_l`.
                     var input_l = l - (width_minus_1 - w_idx)
-                    var input_val: Scalar[x_dtype] = 0
-
+                    var input_val = Scalar[dtype](0)
                     if input_l >= 0:
-                        # Within current sequence
                         input_val = io.load_x(d, seq_start + input_l)
-                    elif use_initial_state and has_conv_states:
-                        # Use initial state from conv_states
-                        var state_idx = (
-                            width_minus_1 + input_l
-                        )  # Maps negative to state index
-                        if state_idx >= 0:
-                            input_val = Scalar[x_dtype](
-                                conv_states.load[width=1](
-                                    (cache_idx, d, state_idx)
-                                )
-                            )
-
-                    conv_sum += Scalar[accum_dtype](input_val) * Scalar[
-                        accum_dtype
-                    ](weights[w_idx])
+                    elif use_initial_state:
+                        input_val = conv_states.load[width=1](
+                            (slot, d, width_minus_1 + input_l)
+                        ).cast[dtype]()
+                    conv_sum += (
+                        input_val.cast[accum_dtype]()
+                        * io.load_weight(d, w_idx).cast[accum_dtype]()
+                    )
 
                 comptime if use_residual:
-                    conv_sum += Scalar[accum_dtype](io.load_x(d, seq_start + l))
+                    conv_sum += io.load_x(d, seq_start + l).cast[accum_dtype]()
 
-                var out_val_accum = _apply_silu[accum_dtype](
-                    conv_sum, silu_activation
+                io.store_out(
+                    d,
+                    seq_start + l,
+                    _apply_silu[accum_dtype](conv_sum, silu_activation).cast[
+                        dtype
+                    ](),
                 )
-                var out_val = out_val_accum.cast[output_dtype]()
 
-                # Store output
-                io.store_out(d, seq_start + l, out_val)
-
-            # Update conv_states with final state if provided
             if has_conv_states:
-                # Copy last (width-1) elements to conv_states
                 for s in range(width_minus_1):
                     var src_l = seqlen - width_minus_1 + s
-                    var val: Scalar[conv_states_dtype] = 0
-
+                    var val = Scalar[state_dtype](0)
                     if src_l >= 0:
-                        val = Scalar[conv_states_dtype](
-                            io.load_x(d, seq_start + src_l)
-                        )
+                        val = io.load_x(d, seq_start + src_l).cast[
+                            state_dtype
+                        ]()
                     elif use_initial_state:
-                        # Carry over from initial state. `src_l` is negative
-                        # here, and the same mapping the convolution above uses
-                        # for negative positions applies: state index
-                        # `width_minus_1 + src_l`, which is in range because
-                        # `src_l >= -width_minus_1`.
-                        var state_idx = width_minus_1 + src_l
-                        if state_idx >= 0:
-                            val = conv_states.load[width=1](
-                                (cache_idx, d, state_idx)
-                            )
-
-                    conv_states.store((cache_idx, d, s), val)
+                        val = conv_states.load[width=1](
+                            (slot, d, width_minus_1 + src_l)
+                        )
+                    conv_states.store((slot, d, s), val)
 
 
 def causal_conv1d_varlen_update_cpu[
@@ -809,17 +786,10 @@ def causal_conv1d_varlen_states_gpu[
 
 
 def causal_conv1d_varlen_fwd_gpu[
-    x_dtype: DType,
-    weight_dtype: DType,
-    bias_dtype: DType,
-    output_dtype: DType,
-    cu_seqlens_dtype: DType,
-    cache_indices_dtype: DType,
-    has_initial_state_dtype: DType,
+    dtype: DType,
     conv_states_dtype: DType,
     WIDTH: Int,
     BLOCK_DIM: Int,
-    BLOCK_SEQ: Int,
     x_LT: TensorLayout,
     weight_LT: TensorLayout,
     bias_LT: TensorLayout,
@@ -828,180 +798,124 @@ def causal_conv1d_varlen_fwd_gpu[
     has_initial_state_LT: TensorLayout,
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
-    x_engine: TensorEngine,
-    weight_engine: TensorEngine,
-    bias_engine: TensorEngine,
-    query_start_loc_engine: TensorEngine,
-    cache_indices_engine: TensorEngine,
-    has_initial_state_engine: TensorEngine,
-    conv_states_engine: TensorEngine,
-    output_engine: TensorEngine,
+    # All operands come from one source (graph tensors in production, device
+    # buffers in the tests), so a single engine binds every tile argument.
+    Engine: TensorEngine = DefaultEngine[element_width=1],
+    silu_activation: Bool = False,
     use_residual: Bool = False,
     channels_last: Bool = False,
 ](
-    dim: Int32,
-    total_seqlen: Int32,
-    batch: Int32,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine],
-    weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
-    ],
-    bias: TileTensor[
-        bias_dtype, bias_LT, MutUntrackedOrigin, Engine=bias_engine
-    ],
+    x: TileTensor[dtype, x_LT, MutUntrackedOrigin, Engine=Engine],
+    weight: TileTensor[dtype, weight_LT, MutUntrackedOrigin, Engine=Engine],
+    bias: TileTensor[dtype, bias_LT, MutUntrackedOrigin, Engine=Engine],
     query_start_loc: TileTensor[
-        cu_seqlens_dtype,
-        query_start_loc_LT,
-        MutUntrackedOrigin,
-        Engine=query_start_loc_engine,
+        .int32, query_start_loc_LT, MutUntrackedOrigin, Engine=Engine
     ],
     cache_indices: TileTensor[
-        cache_indices_dtype,
-        cache_indices_LT,
-        MutUntrackedOrigin,
-        Engine=cache_indices_engine,
+        .uint32, cache_indices_LT, MutUntrackedOrigin, Engine=Engine
     ],
     has_initial_state: TileTensor[
-        has_initial_state_dtype,
-        has_initial_state_LT,
-        MutUntrackedOrigin,
-        Engine=has_initial_state_engine,
+        .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
     ],
     conv_states: TileTensor[
-        conv_states_dtype,
-        conv_states_LT,
-        MutUntrackedOrigin,
-        Engine=conv_states_engine,
+        conv_states_dtype, conv_states_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    output: TileTensor[
-        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
-    ],
-    silu_activation: Int8,
-    pad_slot_id: Int32,
-    has_cache_indices: Int8,
-    has_initial_state_flag: Int8,
-    has_conv_states: Int8,
-    has_bias: Int8,
+    output: TileTensor[dtype, output_LT, MutUntrackedOrigin, Engine=Engine],
 ):
     """GPU kernel for causal conv1d forward with variable length sequences.
 
-    Grid: (batch, ceildiv(dim, BLOCK_DIM))
-    Block: (BLOCK_DIM, BLOCK_SEQ)
+    Each thread walks one `(sequence, channel)` serially; the dispatcher uses
+    it for decode, where every sequence is one token long.
 
-    Each block processes BLOCK_DIM channels for one sequence.
+    Grid: `(batch, ceildiv(dim, BLOCK_DIM))`, block: `(BLOCK_DIM,)`.
 
-    `use_residual` adds `x[d, s]` to the convolution sum before the activation.
+    Parameters:
+        dtype: Element type of `x`, `weight`, `bias` and `output`.
+        conv_states_dtype: Element type of `conv_states`.
+        WIDTH: Convolution width (number of taps).
+        BLOCK_DIM: Channels per block.
+        x_LT: Layout type of `x`.
+        weight_LT: Layout type of `weight`.
+        bias_LT: Layout type of `bias`.
+        query_start_loc_LT: Layout type of `query_start_loc`.
+        cache_indices_LT: Layout type of `cache_indices`.
+        has_initial_state_LT: Layout type of `has_initial_state`.
+        conv_states_LT: Layout type of `conv_states`.
+        output_LT: Layout type of `output`.
+        Engine: Engine shared by all tile operands.
+        silu_activation: Whether to apply SiLU to the output.
+        use_residual: If True, adds `x[d, s]` to the convolution sum before
+            the activation.
+        channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
+            rather than `(dim, total_seqlen)`.
 
-    Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
-    for DevicePassable compatibility on GPU.
+    Args:
+        x: Input tensor of shape `(dim, total_seqlen)`.
+        weight: Weight tensor of shape `(dim, width)`.
+        bias: Bias tensor of shape `(dim,)`, or empty.
+        query_start_loc: Cumulative sequence lengths of shape `(batch + 1,)`.
+        cache_indices: Per-sequence slots in `conv_states` of shape
+            `(batch,)`, or empty to use slot `b`.
+        has_initial_state: Per-sequence flags of shape `(batch,)`, or empty.
+        conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
+            updated in place, or empty.
+        output: Output tensor of shape `(dim, total_seqlen)`.
     """
-    comptime accum_dtype = get_accum_type[output_dtype]()
-
-    var _dim = Int(dim)
-    var batch_idx = block_idx.x
-    var dim_block_idx = block_idx.y
-    var tid = thread_idx.x
-
-    var d = dim_block_idx * BLOCK_DIM + tid
-
-    # Check for padding
-    if has_cache_indices != 0:
-        var cache_idx_val = Int32(cache_indices.load[width=1]((batch_idx,)))
-        if cache_idx_val == pad_slot_id:
-            return
-
-    # Get sequence bounds
-    var seq_start = Int(query_start_loc.load[width=1]((batch_idx,)))
-    var seq_end = Int(query_start_loc.load[width=1]((batch_idx + 1,)))
-    var seqlen = seq_end - seq_start
-
-    if d >= _dim:
-        return
-
-    # Check for initial state
-    var use_initial_state = False
-    if has_initial_state_flag != 0:
-        use_initial_state = Bool(has_initial_state.load[width=1]((batch_idx,)))
-
-    # Get cache index
-    var cache_idx: Int = batch_idx
-    if has_cache_indices != 0:
-        cache_idx = Int(cache_indices.load[width=1]((batch_idx,)))
-
-    # Forward-path DRAM I/O owner. `load_x`/`store_out` take the logical
-    # `(d, s)` and order the coordinates by `channels_last`. `conv_states` is
-    # indexed, not addressed: the pool outgrows a 32-bit offset, and TileTensor
-    # forms this one at 64 bits.
-    var io = VarlenConvIO[channels_last](x, weight, bias, output)
-
-    # Load bias
-    var bias_val: Scalar[accum_dtype] = 0
-    if has_bias != 0:
-        bias_val = Scalar[accum_dtype](io.load_bias(d))
-
-    # Load weights into registers
-    var weights = _channel_weights[weight_dtype, WIDTH](weight, d)
-
+    comptime accum_dtype = get_accum_type[dtype]()
     comptime WIDTH_MINUS_1 = WIDTH - 1
 
-    # Process sequence
+    var batch_idx = block_idx.x
+    var d = block_idx.y * BLOCK_DIM + thread_idx.x
+    # `conv_states` is indexed, not addressed: the pool outgrows a 32-bit
+    # offset, and TileTensor forms this one at 64 bits.
+    var io = VarlenConvIO[channels_last](x, weight, bias, output)
+    if d >= io.dim():
+        return
+
+    var slot = _cache_slot(cache_indices, batch_idx)
+    if slot == Int(PAD_SLOT_ID):
+        return
+
+    var seq_start = Int(query_start_loc.load[width=1]((batch_idx,)))
+    var seqlen = (
+        Int(query_start_loc.load[width=1]((batch_idx + 1,))) - seq_start
+    )
+    var use_initial_state = _use_initial_state(
+        has_initial_state, conv_states, batch_idx
+    )
+
+    var bias_val = io.load_bias(d).cast[accum_dtype]()
+    var weights = _channel_weights[dtype, WIDTH](weight, d)
+
     for l in range(seqlen):
         var conv_sum = bias_val
-
-        # Gather inputs and compute convolution
         comptime for w_idx in range(WIDTH):
             var input_l = l - (WIDTH_MINUS_1 - w_idx)
-            var input_val: Scalar[x_dtype] = 0
-
+            var input_val = Scalar[dtype](0)
             if input_l >= 0:
                 input_val = io.load_x(d, seq_start + input_l)
-            elif use_initial_state and has_conv_states != 0:
-                var state_idx = WIDTH_MINUS_1 + input_l
-                if state_idx >= 0:
-                    input_val = Scalar[x_dtype](
-                        conv_states.load[width=1]((cache_idx, d, state_idx))
-                    )
-
-            conv_sum += Scalar[accum_dtype](input_val) * Scalar[accum_dtype](
-                weights[w_idx]
+            elif use_initial_state:
+                input_val = conv_states.load[width=1](
+                    (slot, d, WIDTH_MINUS_1 + input_l)
+                ).cast[dtype]()
+            conv_sum += (
+                input_val.cast[accum_dtype]()
+                * weights[w_idx].cast[accum_dtype]()
             )
 
         comptime if use_residual:
-            conv_sum += Scalar[accum_dtype](io.load_x(d, seq_start + l))
+            conv_sum += io.load_x(d, seq_start + l).cast[accum_dtype]()
 
-        var out_val_accum = _apply_silu[accum_dtype](
-            conv_sum, silu_activation != 0
+        io.store_out(
+            d,
+            seq_start + l,
+            _apply_silu[accum_dtype](conv_sum, silu_activation).cast[dtype](),
         )
-        var out_val = out_val_accum.cast[output_dtype]()
 
-        # Store output
-        io.store_out(d, seq_start + l, out_val)
-
-    # Update conv_states
-    if has_conv_states != 0:
-        comptime for s in range(WIDTH_MINUS_1):
-            var src_l = seqlen - WIDTH_MINUS_1 + s
-            var val: Scalar[conv_states_dtype] = 0
-
-            if src_l >= 0:
-                val = Scalar[conv_states_dtype](io.load_x(d, seq_start + src_l))
-            elif use_initial_state:
-                # A chunk shorter than WIDTH_MINUS_1 does not contain the whole
-                # new state: the oldest entries have to come from the state
-                # being continued, under the same negative-position mapping the
-                # convolution above uses. Zero here would silently restart the
-                # sequence on every decode step.
-                #
-                # This reads the pool it is writing, which is safe because the
-                # index read simplifies to `seqlen + s` -- strictly AHEAD of the
-                # `s` being written, and this loop runs `s` upwards. Reordering
-                # it would turn the carry-over into a read of a just-written
-                # entry.
-                var state_idx = WIDTH_MINUS_1 + src_l
-                if state_idx >= 0:
-                    val = conv_states.load[width=1]((cache_idx, d, state_idx))
-
-            conv_states.store((cache_idx, d, s), val)
+    if Int(conv_states.dim[0]()) > 0:
+        io.store_final_state[WIDTH_MINUS_1](
+            conv_states, slot, d, seq_start, seqlen, use_initial_state
+        )
 
 
 # Outputs per steady-state trip of the seq-parallel prefill kernel below.
@@ -1013,13 +927,7 @@ comptime _CONV1D_SEQPARALLEL_UNROLL: Int = 16
 
 
 def causal_conv1d_varlen_fwd_seqparallel_gpu[
-    x_dtype: DType,
-    weight_dtype: DType,
-    bias_dtype: DType,
-    output_dtype: DType,
-    cu_seqlens_dtype: DType,
-    cache_indices_dtype: DType,
-    has_initial_state_dtype: DType,
+    dtype: DType,
     conv_states_dtype: DType,
     WIDTH: Int,
     BLOCK_DIM: Int,
@@ -1032,174 +940,124 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     has_initial_state_LT: TensorLayout,
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
-    x_engine: TensorEngine,
-    weight_engine: TensorEngine,
-    bias_engine: TensorEngine,
-    query_start_loc_engine: TensorEngine,
-    cache_indices_engine: TensorEngine,
-    has_initial_state_engine: TensorEngine,
-    conv_states_engine: TensorEngine,
-    output_engine: TensorEngine,
+    Engine: TensorEngine = DefaultEngine[element_width=1],
+    silu_activation: Bool = False,
     use_residual: Bool = False,
     channels_last: Bool = False,
 ](
-    dim_dev: Int32,
-    total_seqlen_dev: Int32,
-    batch_dev: Int32,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine],
-    weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
-    ],
-    bias: TileTensor[
-        bias_dtype, bias_LT, MutUntrackedOrigin, Engine=bias_engine
-    ],
+    x: TileTensor[dtype, x_LT, MutUntrackedOrigin, Engine=Engine],
+    weight: TileTensor[dtype, weight_LT, MutUntrackedOrigin, Engine=Engine],
+    bias: TileTensor[dtype, bias_LT, MutUntrackedOrigin, Engine=Engine],
     query_start_loc: TileTensor[
-        cu_seqlens_dtype,
-        query_start_loc_LT,
-        MutUntrackedOrigin,
-        Engine=query_start_loc_engine,
+        .int32, query_start_loc_LT, MutUntrackedOrigin, Engine=Engine
     ],
     cache_indices: TileTensor[
-        cache_indices_dtype,
-        cache_indices_LT,
-        MutUntrackedOrigin,
-        Engine=cache_indices_engine,
+        .uint32, cache_indices_LT, MutUntrackedOrigin, Engine=Engine
     ],
     has_initial_state: TileTensor[
-        has_initial_state_dtype,
-        has_initial_state_LT,
-        MutUntrackedOrigin,
-        Engine=has_initial_state_engine,
+        .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
     ],
     conv_states: TileTensor[
-        conv_states_dtype,
-        conv_states_LT,
-        MutUntrackedOrigin,
-        Engine=conv_states_engine,
+        conv_states_dtype, conv_states_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    output: TileTensor[
-        output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
-    ],
-    silu_activation: Int8,
-    pad_slot_id: Int32,
-    has_cache_indices: Int8,
-    has_initial_state_flag: Int8,
-    has_conv_states: Int8,
-    has_bias: Int8,
+    output: TileTensor[dtype, output_LT, MutUntrackedOrigin, Engine=Engine],
 ):
     """GPU kernel for causal conv1d forward with variable length sequences,
-    sequence-parallel prefill variant (NVIDIA B200/sm_100, generic elsewhere).
+    sequence-parallel prefill variant.
 
-    Grid: (batch, ceildiv(dim, BLOCK_DIM), num_tiles_ub)
-    Block: (BLOCK_DIM, 1)
+    Grid: `(batch, ceildiv(dim, BLOCK_DIM), ceildiv(total_seqlen, TILE_SEQ))`,
+    block: `(BLOCK_DIM,)`.
 
-    Each grid-(x,y,z) block handles one (sequence, channel-tile, seq-tile).
-    The z-dimension tiles the sequence into TILE_SEQ-sized chunks so a long
-    prefill sequence is spread across many blocks instead of walking the
-    whole sequence serially in one thread (see `causal_conv1d_varlen_fwd_gpu`,
-    which stays byte-identical and is reused verbatim for decode). Depthwise
-    conv (WIDTH<=4) has no cross-position recurrence: the causal gather reads
-    GLOBAL read-only `x` across tile boundaries, so tiles need no shared
-    memory or cross-block synchronization. `conv_states` is written exactly
-    once, by the tail tile of each sequence (`tile_end == seqlen`).
+    Grid-z tiles each sequence into `TILE_SEQ`-position chunks, so a long
+    prefill is spread across blocks instead of walked serially by one thread.
+    A depthwise conv has no cross-position recurrence: the causal gather reads
+    read-only `x` across tile boundaries, so tiles need no shared memory or
+    synchronization. `conv_states` is written once, by each sequence's tail
+    tile. No sequence is longer than `total_seqlen`, so the grid-z extent
+    bounds every sequence's tile count without a host-side reduction over the
+    ragged lengths; blocks past a sequence's last tile return early.
 
-    Dispatched from `CausalConv1DVarlenFwd.launch_gpu` only when
-    `total_seqlen > batch` (i.e. at least one multi-token prefill segment is
-    present); pure decode (`total_seqlen == batch`) keeps using the serial
-    kernel above unmodified. Per
-    `Kernels/claude_kb` patterns/kv-buffer-pipeline-style host-vs-device
-    tiling notes: `num_tiles_ub` is a safe host-side upper bound
-    (`ceildiv(total_seqlen, TILE_SEQ)`; grid-z indexes each sequence's LOCAL
-    tile and no sequence exceeds total_seqlen) that avoids a host-side
-    max-reduction over ragged per-sequence lengths; blocks whose z-index
-    exceeds a given sequence's actual tile count early-return.
+    Parameters:
+        dtype: Element type of `x`, `weight`, `bias` and `output`.
+        conv_states_dtype: Element type of `conv_states`.
+        WIDTH: Convolution width (number of taps).
+        BLOCK_DIM: Channels per block.
+        TILE_SEQ: Sequence positions per block.
+        x_LT: Layout type of `x`.
+        weight_LT: Layout type of `weight`.
+        bias_LT: Layout type of `bias`.
+        query_start_loc_LT: Layout type of `query_start_loc`.
+        cache_indices_LT: Layout type of `cache_indices`.
+        has_initial_state_LT: Layout type of `has_initial_state`.
+        conv_states_LT: Layout type of `conv_states`.
+        output_LT: Layout type of `output`.
+        Engine: Engine shared by all tile operands.
+        silu_activation: Whether to apply SiLU to the output.
+        use_residual: If True, adds `x[d, s]` to the convolution sum before
+            the activation.
+        channels_last: If True, `x` and `output` are `(total_seqlen, dim)`
+            rather than `(dim, total_seqlen)`.
 
-    `use_residual` adds `x[d, s]` to the convolution sum before the activation.
-
-    Note: silu_activation and flag parameters are Int8 (0 or 1) instead of Bool
-    for DevicePassable compatibility on GPU.
+    Args:
+        x: Input tensor of shape `(dim, total_seqlen)`.
+        weight: Weight tensor of shape `(dim, width)`.
+        bias: Bias tensor of shape `(dim,)`, or empty.
+        query_start_loc: Cumulative sequence lengths of shape `(batch + 1,)`.
+        cache_indices: Per-sequence slots in `conv_states` of shape
+            `(batch,)`, or empty to use slot `b`.
+        has_initial_state: Per-sequence flags of shape `(batch,)`, or empty.
+        conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
+            updated in place, or empty.
+        output: Output tensor of shape `(dim, total_seqlen)`.
     """
-    comptime accum_dtype = get_accum_type[output_dtype]()
-
-    # `Int` is not device-passable; widen the fixed-width args. Only `dim` is
-    # read in this variant; the other two match the serial kernel's signature.
-    var dim = Int(dim_dev)
-    _ = total_seqlen_dev
-    _ = batch_dev
-    var batch_idx = block_idx.x
-    var dim_block_idx = block_idx.y
-    var tid = thread_idx.x
-
-    var d = dim_block_idx * BLOCK_DIM + tid
-
-    # Check for padding
-    if has_cache_indices != 0:
-        var cache_idx_val = Int32(cache_indices.load[width=1]((batch_idx,)))
-        if cache_idx_val == pad_slot_id:
-            return
-
-    # Get sequence bounds
-    var seq_start = Int(query_start_loc.load[width=1]((batch_idx,)))
-    var seq_end = Int(query_start_loc.load[width=1]((batch_idx + 1,)))
-    var seqlen = seq_end - seq_start
-
-    # Grid-z tiling: each z-slice covers TILE_SEQ consecutive positions of
-    # this sequence. Tile 0 is kept alive even for an empty sequence so it
-    # can still reach the epilogue below and zero conv_states.
-    var local_tile = block_idx.z
-    var num_tiles_this_seq = ceildiv(seqlen, TILE_SEQ)
-    if local_tile >= max(num_tiles_this_seq, 1):
-        return
-    var tile_start = local_tile * TILE_SEQ
-    var tile_end = min(tile_start + TILE_SEQ, seqlen)
-
-    if d >= dim:
-        return
-
-    # Check for initial state
-    var use_initial_state = False
-    if has_initial_state_flag != 0:
-        use_initial_state = Bool(has_initial_state.load[width=1]((batch_idx,)))
-
-    # Get cache index
-    var cache_idx: Int = batch_idx
-    if has_cache_indices != 0:
-        cache_idx = Int(cache_indices.load[width=1]((batch_idx,)))
-
-    var io = VarlenConvIO[channels_last](x, weight, bias, output)
-
-    # Load bias
-    var bias_val: Scalar[accum_dtype] = 0
-    if has_bias != 0:
-        bias_val = Scalar[accum_dtype](io.load_bias(d))
-
-    # Load weights into registers
-    var weights = _channel_weights[weight_dtype, WIDTH](weight, d)
-
+    comptime accum_dtype = get_accum_type[dtype]()
     comptime WIDTH_MINUS_1 = WIDTH - 1
     comptime UNROLL = _CONV1D_SEQPARALLEL_UNROLL
     comptime TAP_LANES = _TAP_LANES[WIDTH]
-    var tap_weights = weights.cast[accum_dtype]()
+
+    var batch_idx = block_idx.x
+    var d = block_idx.y * BLOCK_DIM + thread_idx.x
+    var io = VarlenConvIO[channels_last](x, weight, bias, output)
+    if d >= io.dim():
+        return
+
+    var slot = _cache_slot(cache_indices, batch_idx)
+    if slot == Int(PAD_SLOT_ID):
+        return
+
+    var seq_start = Int(query_start_loc.load[width=1]((batch_idx,)))
+    var seqlen = (
+        Int(query_start_loc.load[width=1]((batch_idx + 1,))) - seq_start
+    )
+
+    # Tile 0 stays alive even for an empty sequence so it still reaches the
+    # epilogue below and zeroes conv_states.
+    var tile_start = block_idx.z * TILE_SEQ
+    if block_idx.z >= max(ceildiv(seqlen, TILE_SEQ), 1):
+        return
+    var tile_end = min(tile_start + TILE_SEQ, seqlen)
+
+    var use_initial_state = _use_initial_state(
+        has_initial_state, conv_states, batch_idx
+    )
+    var bias_val = io.load_bias(d).cast[accum_dtype]()
+    var tap_weights = _channel_weights[dtype, WIDTH](weight, d).cast[
+        accum_dtype
+    ]()
 
     # Register sliding window over the WIDTH-1 inputs preceding the current
     # position, so the steady state costs one global load per output instead
-    # of WIDTH. The window is preloaded once per tile: positions inside the
-    # sequence come from global read-only x (tiles may overlap reads, never
-    # writes), and negative positions fall back to the continuing sequence's
-    # initial state (state slot WIDTH_MINUS_1 + pos of its pool entry).
-    var win = Array[Scalar[x_dtype], WIDTH_MINUS_1](fill=0)
+    # of WIDTH. Negative positions fall back to the continued sequence's
+    # stored state.
+    var win = Array[Scalar[dtype], WIDTH_MINUS_1](fill=0)
     comptime for i in range(WIDTH_MINUS_1):
         var pos = tile_start - WIDTH_MINUS_1 + i
-        var v: Scalar[x_dtype] = 0
         if pos >= 0:
-            v = io.load_x(d, seq_start + pos)
-        elif use_initial_state and has_conv_states != 0:
-            var state_idx = WIDTH_MINUS_1 + pos
-            if state_idx >= 0:
-                v = Scalar[x_dtype](
-                    conv_states.load[width=1]((cache_idx, d, state_idx))
-                )
-        win[i] = v
+            win[i] = io.load_x(d, seq_start + pos)
+        elif use_initial_state:
+            win[i] = conv_states.load[width=1](
+                (slot, d, WIDTH_MINUS_1 + pos)
+            ).cast[dtype]()
 
     # One U-output trip. The steady state calls this with U=UNROLL so the U
     # loads share no dependencies and can all be in flight; the tile remainder
@@ -1209,7 +1067,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
         # Carried window followed by this trip's loads, so `taps[j]` is
         # position `l0 - WIDTH_MINUS_1 + j` throughout and output `u` folds
         # `taps[u ..< u + WIDTH]` against the taps.
-        var taps = Array[Scalar[x_dtype], WIDTH_MINUS_1 + U](fill=0)
+        var taps = Array[Scalar[dtype], WIDTH_MINUS_1 + U](fill=0)
         comptime for i in range(WIDTH_MINUS_1):
             taps[i] = win[i]
         comptime for u in range(U):
@@ -1226,13 +1084,13 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
                 # costs no extra load.
                 conv_sum += window[WIDTH - 1]
 
-            var out_val_accum = _apply_silu[accum_dtype](
-                conv_sum, silu_activation != 0
+            io.store_out(
+                d,
+                seq_start + l0 + u,
+                _apply_silu[accum_dtype](conv_sum, silu_activation).cast[
+                    dtype
+                ](),
             )
-            var out_val = out_val_accum.cast[output_dtype]()
-
-            # Store output
-            io.store_out(d, seq_start + l0 + u, out_val)
 
         # Carry the last WIDTH-1 taps into the next trip.
         comptime for i in range(WIDTH_MINUS_1):
@@ -1240,24 +1098,10 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
 
     vectorize[UNROLL](tile_end - tile_start, _emit_chunk)
 
-    # Update conv_states exactly once, from the tail tile of this sequence.
-    if has_conv_states != 0 and tile_end == seqlen:
-        comptime for s in range(WIDTH_MINUS_1):
-            var src_l = seqlen - WIDTH_MINUS_1 + s
-            var val: Scalar[conv_states_dtype] = 0
-
-            if src_l >= 0:
-                val = Scalar[conv_states_dtype](io.load_x(d, seq_start + src_l))
-            elif use_initial_state:
-                # See the same carry-over in `causal_conv1d_varlen_fwd_gpu`: a
-                # chunk shorter than WIDTH_MINUS_1 takes its oldest state
-                # entries from the state being continued, and the index read is
-                # `seqlen + s`, ahead of the `s` written here.
-                var state_idx = WIDTH_MINUS_1 + src_l
-                if state_idx >= 0:
-                    val = conv_states.load[width=1]((cache_idx, d, state_idx))
-
-            conv_states.store((cache_idx, d, s), val)
+    if Int(conv_states.dim[0]()) > 0 and tile_end == seqlen:
+        io.store_final_state[WIDTH_MINUS_1](
+            conv_states, slot, d, seq_start, seqlen, use_initial_state
+        )
 
 
 def causal_conv1d_varlen_update_gpu[

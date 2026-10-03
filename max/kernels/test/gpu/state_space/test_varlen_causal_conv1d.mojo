@@ -110,7 +110,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
         query_start_loc_h.raw_store(i + 1, Int32(cumsum))
 
     # cache_indices: (batch,) - identity mapping
-    var cache_indices_heap = List(length=batch, fill=Int32(0))
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
     var cache_indices_h = TileTensor(
         cache_indices_heap,
         row_major(
@@ -118,7 +118,7 @@ def run_varlen_causal_conv1d_fwd_gpu[
         ),
     )
     for i in range(batch):
-        cache_indices_h.raw_store(i, Int32(i))
+        cache_indices_h.raw_store(i, UInt32(i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
@@ -178,15 +178,14 @@ def run_varlen_causal_conv1d_fwd_gpu[
     var output_gpu_buf = output_gpu_h
     var output_cpu_buf = output_cpu_h
 
-    var silu_activation = activation == "silu"
-    var silu_activation_int8 = Int8(silu_activation)
+    comptime silu_activation = activation == "silu"
 
     # Allocate device buffers
     var x_device = ctx.enqueue_create_buffer[dtype](dim * total_seqlen)
     var weight_device = ctx.enqueue_create_buffer[dtype](dim * width)
     var bias_device = ctx.enqueue_create_buffer[dtype](dim)
     var query_start_loc_device = ctx.enqueue_create_buffer[.int32](batch + 1)
-    var cache_indices_device = ctx.enqueue_create_buffer[.int32](batch)
+    var cache_indices_device = ctx.enqueue_create_buffer[.uint32](batch)
     var has_initial_state_device = ctx.enqueue_create_buffer[.bool](batch)
     var conv_states_device = ctx.enqueue_create_buffer[dtype](
         batch * dim * state_len
@@ -246,7 +245,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
 
     # Run GPU kernel
     comptime BLOCK_DIM = 128
-    comptime BLOCK_SEQ = 1
 
     if width == 1:
         comptime kWidth = 1
@@ -254,15 +252,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
             causal_conv1d_varlen_fwd_gpu[
                 dtype,
                 dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
                 kWidth,
                 BLOCK_DIM,
-                BLOCK_SEQ,
                 x_device_tt.LayoutType,
                 weight_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
@@ -272,21 +263,12 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 x_device_tt.Engine,
-                weight_device_tt.Engine,
-                bias_device_tt.Engine,
-                query_start_loc_device_tt.Engine,
-                cache_indices_device_tt.Engine,
-                has_initial_state_device_tt.Engine,
-                conv_states_device_tt.Engine,
-                output_device_tt.Engine,
+                silu_activation,
                 use_residual,
             ]
         ]()
         ctx.enqueue_function(
             compiled_func,
-            Int32(dim),
-            Int32(total_seqlen),
-            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -295,14 +277,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
             has_initial_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
-            silu_activation_int8,
-            PAD_SLOT_ID,
-            Int8(1),  # has_cache_indices
-            Int8(1),  # has_initial_state_flag
-            Int8(1),  # has_conv_states
-            Int8(1),  # has_bias
             grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_SEQ),
+            block_dim=BLOCK_DIM,
         )
     elif width == 2:
         comptime kWidth = 2
@@ -310,15 +286,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
             causal_conv1d_varlen_fwd_gpu[
                 dtype,
                 dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
                 kWidth,
                 BLOCK_DIM,
-                BLOCK_SEQ,
                 x_device_tt.LayoutType,
                 weight_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
@@ -328,21 +297,12 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 x_device_tt.Engine,
-                weight_device_tt.Engine,
-                bias_device_tt.Engine,
-                query_start_loc_device_tt.Engine,
-                cache_indices_device_tt.Engine,
-                has_initial_state_device_tt.Engine,
-                conv_states_device_tt.Engine,
-                output_device_tt.Engine,
+                silu_activation,
                 use_residual,
             ]
         ]()
         ctx.enqueue_function(
             compiled_func,
-            Int32(dim),
-            Int32(total_seqlen),
-            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -351,14 +311,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
             has_initial_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
-            silu_activation_int8,
-            PAD_SLOT_ID,
-            Int8(1),  # has_cache_indices
-            Int8(1),  # has_initial_state_flag
-            Int8(1),  # has_conv_states
-            Int8(1),  # has_bias
             grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_SEQ),
+            block_dim=BLOCK_DIM,
         )
     elif width == 3:
         comptime kWidth = 3
@@ -366,15 +320,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
             causal_conv1d_varlen_fwd_gpu[
                 dtype,
                 dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
                 kWidth,
                 BLOCK_DIM,
-                BLOCK_SEQ,
                 x_device_tt.LayoutType,
                 weight_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
@@ -384,21 +331,12 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 x_device_tt.Engine,
-                weight_device_tt.Engine,
-                bias_device_tt.Engine,
-                query_start_loc_device_tt.Engine,
-                cache_indices_device_tt.Engine,
-                has_initial_state_device_tt.Engine,
-                conv_states_device_tt.Engine,
-                output_device_tt.Engine,
+                silu_activation,
                 use_residual,
             ]
         ]()
         ctx.enqueue_function(
             compiled_func,
-            Int32(dim),
-            Int32(total_seqlen),
-            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -407,14 +345,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
             has_initial_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
-            silu_activation_int8,
-            PAD_SLOT_ID,
-            Int8(1),  # has_cache_indices
-            Int8(1),  # has_initial_state_flag
-            Int8(1),  # has_conv_states
-            Int8(1),  # has_bias
             grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_SEQ),
+            block_dim=BLOCK_DIM,
         )
     elif width == 4:
         comptime kWidth = 4
@@ -422,15 +354,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
             causal_conv1d_varlen_fwd_gpu[
                 dtype,
                 dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
                 kWidth,
                 BLOCK_DIM,
-                BLOCK_SEQ,
                 x_device_tt.LayoutType,
                 weight_device_tt.LayoutType,
                 bias_device_tt.LayoutType,
@@ -440,21 +365,12 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 conv_states_device_tt.LayoutType,
                 output_device_tt.LayoutType,
                 x_device_tt.Engine,
-                weight_device_tt.Engine,
-                bias_device_tt.Engine,
-                query_start_loc_device_tt.Engine,
-                cache_indices_device_tt.Engine,
-                has_initial_state_device_tt.Engine,
-                conv_states_device_tt.Engine,
-                output_device_tt.Engine,
+                silu_activation,
                 use_residual,
             ]
         ]()
         ctx.enqueue_function(
             compiled_func,
-            Int32(dim),
-            Int32(total_seqlen),
-            Int32(batch),
             x_device_tt,
             weight_device_tt,
             bias_device_tt,
@@ -463,14 +379,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
             has_initial_state_device_tt,
             conv_states_device_tt,
             output_device_tt,
-            silu_activation_int8,
-            PAD_SLOT_ID,
-            Int8(1),  # has_cache_indices
-            Int8(1),  # has_initial_state_flag
-            Int8(1),  # has_conv_states
-            Int8(1),  # has_bias
             grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=(BLOCK_DIM, BLOCK_SEQ),
+            block_dim=BLOCK_DIM,
         )
     else:
         raise Error(
@@ -547,12 +457,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
             causal_conv1d_varlen_fwd_seqparallel_gpu[
                 dtype,
                 dtype,
-                dtype,
-                dtype,
-                DType.int32,
-                DType.int32,
-                DType.bool,
-                dtype,
                 kWidth,
                 BLOCK_DIM,
                 TILE_SEQ,
@@ -565,22 +469,13 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 conv_states_seqpar_device_tt.LayoutType,
                 output_seqpar_device_tt.LayoutType,
                 x_device_tt.Engine,
-                weight_device_tt.Engine,
-                bias_device_tt.Engine,
-                query_start_loc_device_tt.Engine,
-                cache_indices_device_tt.Engine,
-                has_initial_state_device_tt.Engine,
-                conv_states_seqpar_device_tt.Engine,
-                output_seqpar_device_tt.Engine,
+                silu_activation,
                 use_residual,
             ]
         ]()
         with ctx.push_context():
             ctx.enqueue_function(
                 compiled_func,
-                Int32(dim),
-                Int32(total_seqlen),
-                Int32(batch),
                 x_device_tt,
                 weight_device_tt,
                 bias_device_tt,
@@ -589,18 +484,12 @@ def run_varlen_causal_conv1d_fwd_gpu[
                 has_initial_state_device_tt,
                 conv_states_seqpar_device_tt,
                 output_seqpar_device_tt,
-                silu_activation_int8,
-                PAD_SLOT_ID,
-                Int8(1),  # has_cache_indices
-                Int8(1),  # has_initial_state_flag
-                Int8(1),  # has_conv_states
-                Int8(1),  # has_bias
                 grid_dim=(
                     batch,
                     ceildiv(dim, BLOCK_DIM),
                     ceildiv(total_seqlen, TILE_SEQ),
                 ),
-                block_dim=(BLOCK_DIM, 1),
+                block_dim=BLOCK_DIM,
             )
 
     if width == 1:
@@ -664,20 +553,9 @@ def run_varlen_causal_conv1d_fwd_gpu[
 
     # Run CPU reference
     causal_conv1d_varlen_fwd_cpu[
-        dtype,
-        dtype,
-        dtype,
-        dtype,
-        DType.int32,
-        DType.int32,
-        DType.bool,
-        dtype,
+        silu_activation,
         use_residual,
     ](
-        dim,
-        total_seqlen,
-        width,
-        batch,
         x_cpu_tt,
         weight_cpu_tt,
         bias_cpu_tt,
@@ -686,12 +564,6 @@ def run_varlen_causal_conv1d_fwd_gpu[
         has_initial_state_cpu_tt,
         conv_states_cpu_tt,
         output_cpu_tt,
-        silu_activation,
-        PAD_SLOT_ID,
-        True,  # has_cache_indices
-        True,  # has_initial_state_flag
-        True,  # has_conv_states
-        True,  # has_bias
     )
 
     # Compare results
@@ -1512,7 +1384,6 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
     comptime batch = 1
     comptime total_seqlen = 1
     comptime BLOCK_DIM = 128
-    comptime BLOCK_SEQ = 1
 
     # cache_idx_deep * batch_stride == 2**32 exactly: one past UInt32.MAX.
     var cache_idx_deep = 1 << 30
@@ -1536,7 +1407,7 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
         query_start_loc_heap, row_major(batch + 1)
     )
     query_start_loc_h.raw_store(1, Int32(total_seqlen))
-    var cache_indices_heap = List(length=batch, fill=Int32(cache_idx_deep))
+    var cache_indices_heap = List(length=batch, fill=UInt32(cache_idx_deep))
     var cache_indices_h = TileTensor(cache_indices_heap, row_major(batch))
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](True))
     var has_initial_state_h = TileTensor(
@@ -1551,7 +1422,7 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
     ctx.enqueue_copy(bias_device, bias_h._storage)
     var query_start_loc_device = ctx.enqueue_create_buffer[.int32](batch + 1)
     ctx.enqueue_copy(query_start_loc_device, query_start_loc_h._storage)
-    var cache_indices_device = ctx.enqueue_create_buffer[.int32](batch)
+    var cache_indices_device = ctx.enqueue_create_buffer[.uint32](batch)
     ctx.enqueue_copy(cache_indices_device, cache_indices_h._storage)
     var has_initial_state_device = ctx.enqueue_create_buffer[.bool](batch)
     ctx.enqueue_copy(has_initial_state_device, has_initial_state_h._storage)
@@ -1597,16 +1468,9 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
     var compiled_func = ctx.compile_function[
         causal_conv1d_varlen_fwd_gpu[
             dtype,
-            dtype,
-            dtype,
-            dtype,
-            DType.int32,
-            DType.int32,
-            DType.bool,
             conv_states_dtype,
             width,
             BLOCK_DIM,
-            BLOCK_SEQ,
             x_device_tt.LayoutType,
             weight_device_tt.LayoutType,
             bias_device_tt.LayoutType,
@@ -1616,20 +1480,11 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
             conv_states_device_tt.LayoutType,
             output_device_tt.LayoutType,
             x_device_tt.Engine,
-            weight_device_tt.Engine,
-            bias_device_tt.Engine,
-            query_start_loc_device_tt.Engine,
-            cache_indices_device_tt.Engine,
-            has_initial_state_device_tt.Engine,
-            conv_states_device_tt.Engine,
-            output_device_tt.Engine,
+            False,
         ]
     ]()
     ctx.enqueue_function(
         compiled_func,
-        Int32(dim),
-        Int32(total_seqlen),
-        Int32(batch),
         x_device_tt,
         weight_device_tt,
         bias_device_tt,
@@ -1638,14 +1493,8 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
         has_initial_state_device_tt,
         conv_states_device_tt,
         output_device_tt,
-        Int8(0),  # silu_activation ("none")
-        PAD_SLOT_ID,
-        Int8(1),  # has_cache_indices
-        Int8(1),  # has_initial_state_flag
-        Int8(1),  # has_conv_states
-        Int8(1),  # has_bias
         grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-        block_dim=(BLOCK_DIM, BLOCK_SEQ),
+        block_dim=BLOCK_DIM,
     )
 
     var output_readback_heap = List(

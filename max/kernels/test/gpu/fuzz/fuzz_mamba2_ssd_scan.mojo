@@ -108,7 +108,6 @@ def run_one_case(
     var batch = spec.batch
     var nheads = 8 * spec.nheads8
     var head_dim = spec.head_dim
-    var ratio = nheads // NGROUPS
     var pad = spec.pad_units * PAD_UNIT
     var pool_slots = 2 * batch
     var state_row = head_dim * DSTATE
@@ -232,7 +231,9 @@ def run_one_case(
 
     comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         dtype,
+        DType.float32,
         DSTATE,
+        DSTATE_SPLIT,
         x_g.LayoutType,
         dt_g.LayoutType,
         A_g.LayoutType,
@@ -246,17 +247,8 @@ def run_one_case(
         his_g.LayoutType,
         slot_g.LayoutType,
         x_g.Engine,
-        DSTATE_SPLIT,
     ]
-    var compiled = ctx.compile_function[kernel]()
-    ctx.enqueue_function(
-        compiled,
-        Int32(nheads),
-        Int32(head_dim),
-        Int32(NGROUPS),
-        Int32(ratio),
-        Int32(batch),
-        Int8(1),
+    ctx.enqueue_function[kernel](
         x_g,
         dt_g,
         A_g,
@@ -295,13 +287,7 @@ def run_one_case(
         var qsl_t = TileTensor(qsl_h, row_major(batch + 1))
         var his_t = TileTensor(his_h, row_major(his_len))
         var slot_t = TileTensor(slot_h, row_major(batch))
-        mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[dtype, DSTATE](
-            nheads,
-            head_dim,
-            NGROUPS,
-            ratio,
-            batch,
-            Int8(1),
+        mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[DSTATE](
             x_t,
             dt_t,
             A_t,
