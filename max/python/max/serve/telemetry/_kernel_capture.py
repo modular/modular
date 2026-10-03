@@ -15,13 +15,18 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 import logging
+import math
 import os
 import queue
+import re
 import tempfile
 import threading
 import time
-from collections.abc import Sequence
+from bisect import bisect_left, bisect_right
+from collections.abc import Mapping, Sequence
+from typing import NamedTuple
 
 from max._core.profiler import (
     load_profiler_plugin,
@@ -36,7 +41,16 @@ from max.serve.telemetry._trace_context import (
     TRACE_LEVEL_HEADER,
     RequestTraceLevel,
 )
-from opentelemetry.trace import Span, SpanContext
+from max.serve.telemetry.common import _span_exporter, logs_resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.trace import (
+    NonRecordingSpan,
+    Span,
+    SpanContext,
+    Tracer,
+    set_span_in_context,
+)
 
 _kernel_capture_permitted = False
 
@@ -299,7 +313,8 @@ class KernelCaptureThread:
 
     Saving holds the profiler's lock, so a start issued meanwhile would block
     the scheduler: :class:`KernelCapture` checks :attr:`busy` and defers
-    re-arming instead.
+    re-arming instead. The replay also runs while busy, since the next
+    capture overwrites its file.
     """
 
     def __init__(self) -> None:
@@ -314,7 +329,8 @@ class KernelCaptureThread:
 
     @property
     def busy(self) -> bool:
-        """Whether a submitted capture is still being stopped or saved."""
+        """Whether a submitted capture is still being stopped, saved or
+        replayed."""
         return not self._idle.is_set()
 
     def submit(self, output_path: str, passes: list[TracedPass]) -> None:
@@ -336,7 +352,247 @@ class KernelCaptureThread:
                         len(passes),
                         output_path,
                     )
+                    try:
+                        replay_kernel_capture(output_path, passes)
+                    except Exception:
+                        logger.exception("Kernel capture replay failed")
             except Exception:
                 logger.exception("Kernel capture failed")
             finally:
                 self._idle.set()
+
+
+_REPLAY_SPAN_CAP = 20_000
+# Parsing holds the GIL, roughly 12 ms per MiB, so this bounds the stall to
+# about 0.8 s; it peaks at about 6x the file size in memory.
+# TODO(MXTOOLS-651): at about 1.2 KB per kernel, 64 MiB is about 55k kernels
+# across all the worker's GPUs. A full 64-pass capture of an 8B-class model
+# (~500 kernels a pass) fits, but a large MoE's (~2k a pass) does not; replay
+# in chunks or parse off the GIL if those need spans.
+_REPLAY_MAX_CAPTURE_BYTES = 64 * 1024 * 1024
+_KINETO_GPU_CATEGORIES = frozenset({"kernel", "gpu_memcpy", "gpu_memset"})
+_KINETO_LAUNCH_CATEGORIES = frozenset({"cuda_driver", "cuda_runtime"})
+# libkineto stores range ids as 32-bit ints.
+_KINETO_ID_MASK = 0xFFFF_FFFF
+# Mojo kernel names end in a uniqueness hash, 8 hex digits, or 16 for a name
+# shortened to 32 characters; it only adds noise to a span name.
+_KERNEL_NAME_HASH = r"_[0-9a-f]{8}(?:[0-9a-f]{8})?$"
+_replay_provider: TracerProvider | None = None
+
+
+class _GpuActivity(NamedTuple):
+    """A kernel, memcpy or memset, in libkineto's microseconds."""
+
+    start_us: float
+    end_us: float
+    name: str
+
+
+def _replay_tracer() -> Tracer:
+    """Returns the replay's tracer, whose queue holds a whole capture.
+
+    A separate provider keeps a capture's burst of spans from overflowing the
+    worker's default 2,048-span queue and crowding out other requests' spans.
+    """
+    global _replay_provider
+    if _replay_provider is None:
+        _replay_provider = TracerProvider(resource=logs_resource)
+        _replay_provider.add_span_processor(
+            BatchSpanProcessor(
+                _span_exporter(), max_queue_size=_REPLAY_SPAN_CAP
+            )
+        )
+    return _replay_provider.get_tracer("max.serve.kernel_replay")
+
+
+def _kineto_clock_offset_ns(
+    ranges: Sequence[tuple[float, float, int]],
+    passes: Mapping[int, TracedPass],
+    base_ns: int,
+) -> int:
+    """Returns how far libkineto's clock runs ahead of ``time.time_ns()``.
+
+    Each traced pass's host times bracket its ``max.batch`` range, bounding
+    the offset. The bound's midpoint applies only when the bound excludes
+    zero; otherwise the clocks are taken to agree.
+    """
+    lo, hi = -math.inf, math.inf
+    for start_us, end_us, key in ranges:
+        p = passes.get(key)
+        if p is not None:
+            lo = max(lo, base_ns + round(end_us * 1000) - p.host_end_ns)
+            hi = min(hi, base_ns + round(start_us * 1000) - p.host_start_ns)
+    if lo <= hi and (lo > 0 or hi < 0):
+        return round((lo + hi) / 2)
+    return 0
+
+
+def replay_kernel_capture(
+    output_path: str, passes: Sequence[TracedPass]
+) -> None:
+    """Exports a stopped capture's GPU activity as spans of its traced passes.
+
+    An activity belongs to the pass whose ``max.batch`` range last started
+    at or before its launch record, joined on ``correlation``. Launch time
+    decides because under overlap scheduling a pass's GPU work trails its
+    host range. An activity with no launch record, such as a copy or a
+    device graph's kernel, takes the pass of the launch records either side
+    of it in ``correlation`` order. Where those lie in different passes, its
+    ``External id`` must name one of the passes between them, or it is
+    dropped. Each traced pass with captured activity gets a backdated
+    ``max.batch.gpu`` span under its ``max.batch`` span, and at the
+    ``kernel`` and ``full`` levels a span per activity beneath that.
+    Activities of untraced passes are dropped.
+
+    Args:
+        output_path: The libkineto Chrome-trace JSON the capture wrote.
+        passes: The capture's traced passes.
+    """
+    # A pass's replayed spans share its max.batch span's trace and sampler,
+    # so they'd be dropped wherever it was; parsing for them would hold the
+    # GIL for nothing.
+    passes = [p for p in passes if p.batch_span_context.trace_flags.sampled]
+    if not passes:
+        return
+    log = logging.getLogger("max.serve")
+    ranges: list[tuple[float, float, int]] = []
+    launch_us: dict[int, float] = {}
+    activities: list[tuple[_GpuActivity, int, int]] = []
+    try:
+        size = os.path.getsize(output_path)
+        if size > _REPLAY_MAX_CAPTURE_BYTES:
+            log.warning(
+                "Kernel capture %s is %d bytes, over the %d-byte replay"
+                " limit; not exporting its spans",
+                output_path,
+                size,
+                _REPLAY_MAX_CAPTURE_BYTES,
+            )
+            return
+        with open(output_path, encoding="utf-8") as f:
+            doc = json.load(f)
+        base_ns = int(doc.get("baseTimeNanoseconds", 0))
+        for e in doc["traceEvents"]:
+            if e.get("ph") != "X":
+                continue
+            cat = e.get("cat")
+            args = e.get("args") or {}
+            if cat in _KINETO_GPU_CATEGORIES:
+                ts = float(e["ts"])
+                activity = _GpuActivity(
+                    ts, ts + float(e.get("dur", 0)), str(e.get("name", ""))
+                )
+                activities.append(
+                    (
+                        activity,
+                        int(args.get("correlation", -1)),
+                        int(args.get("External id", 0)) & _KINETO_ID_MASK,
+                    )
+                )
+            elif cat in _KINETO_LAUNCH_CATEGORIES and "correlation" in args:
+                launch_us[int(args["correlation"])] = float(e["ts"])
+            elif cat == "user_annotation" and e.get("name") == "max.batch":
+                ts = float(e["ts"])
+                # libkineto omits an External id of 0.
+                ranges.append(
+                    (
+                        ts,
+                        ts + float(e.get("dur", 0)),
+                        int(args.get("External id", 0)) & _KINETO_ID_MASK,
+                    )
+                )
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as err:
+        log.warning("Cannot read kernel capture %s: %s", output_path, err)
+        return
+
+    by_key = {p.batch_id & _KINETO_ID_MASK: p for p in passes}
+    ranges.sort()
+    range_starts = [r[0] for r in ranges]
+    range_index = {key: k for k, (_, _, key) in enumerate(ranges)}
+    launches = sorted(launch_us.items())
+    launch_correlations = [c for c, _ in launches]
+    cut_off = len(ranges)
+
+    def pass_at(launched_us: float) -> int:
+        """Returns the index of the last range to start at or before a
+        launch, -1 if none did, or ``cut_off`` for a launch after the last
+        range's end, which belongs to a pass whose range the stop cut off."""
+        i = bisect_right(range_starts, launched_us) - 1
+        if i >= 0 and i + 1 == cut_off and launched_us > ranges[i][1]:
+            return cut_off
+        return i
+
+    grouped: dict[int, list[_GpuActivity]] = {}
+    for activity, correlation, external_id in activities:
+        launched = launch_us.get(correlation)
+        key: int | None = None
+        if launched is not None:
+            i = pass_at(launched)
+            if 0 <= i < cut_off:
+                key = ranges[i][2]
+        else:
+            # libkineto records kernel launches only, not graph launches or
+            # copies. With no launch record after it, the activity may be
+            # the cut-off pass's.
+            j = bisect_left(launch_correlations, correlation)
+            lo = pass_at(launches[j - 1][1]) if j > 0 else -1
+            hi = pass_at(launches[j][1]) if j < len(launches) else cut_off
+            lo, hi = min(lo, hi), max(lo, hi)
+            if lo == hi:
+                key = ranges[lo][2] if 0 <= lo < cut_off else None
+            elif max(lo, 0) <= range_index.get(external_id, -1) <= hi:
+                # Mojo op ranges reuse small External ids, so it is trusted
+                # only to pick among the passes the launches bracket.
+                key = external_id
+        if key is not None and key in by_key:
+            grouped.setdefault(key, []).append(activity)
+
+    if not grouped:
+        return
+    offset_ns = _kineto_clock_offset_ns(ranges, by_key, base_ns)
+
+    def to_ns(us: float) -> int:
+        return base_ns + round(us * 1000) - offset_ns
+
+    tracer = _replay_tracer()
+    keys = sorted(grouped, key=lambda k: by_key[k].batch_id)
+    kernel_levels = (RequestTraceLevel.KERNEL, RequestTraceLevel.FULL)
+    dropped = sum(
+        1 + (len(grouped[k]) if by_key[k].level in kernel_levels else 0)
+        for k in keys[_REPLAY_SPAN_CAP:]
+    )
+    keys = keys[:_REPLAY_SPAN_CAP]
+    kernel_budget = _REPLAY_SPAN_CAP - len(keys)
+    for key in keys:
+        p = by_key[key]
+        group = grouped[key]
+        gpu_span = tracer.start_span(
+            "max.batch.gpu",
+            context=set_span_in_context(NonRecordingSpan(p.batch_span_context)),
+            start_time=to_ns(min(a.start_us for a in group)),
+            attributes={"max.batch_id": p.batch_id},
+        )
+        if p.level in kernel_levels:
+            kernel_ctx = set_span_in_context(gpu_span)
+            for a in group:
+                if kernel_budget == 0:
+                    dropped += 1
+                    continue
+                kernel_budget -= 1
+                span = tracer.start_span(
+                    re.sub(_KERNEL_NAME_HASH, "", a.name),
+                    context=kernel_ctx,
+                    start_time=to_ns(a.start_us),
+                    attributes={
+                        "max.batch_id": p.batch_id,
+                        "max.kernel.name": a.name,
+                    },
+                )
+                span.end(end_time=to_ns(a.end_us))
+        gpu_span.end(end_time=to_ns(max(a.end_us for a in group)))
+    if dropped:
+        log.warning(
+            "Kernel capture replay hit its %d-span cap; dropped %d spans",
+            _REPLAY_SPAN_CAP,
+            dropped,
+        )
