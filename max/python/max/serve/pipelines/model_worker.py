@@ -40,7 +40,12 @@ from max.pipelines.kv_cache import (
     DummyKVCache,
     PagedKVCacheManagerInterface,
 )
-from max.pipelines.lib import MemoryPlan, PipelineConfig, PipelineModel
+from max.pipelines.lib import (
+    MemoryPlan,
+    PipelineConfig,
+    PipelineModel,
+    PipelineRole,
+)
 from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
     Pipeline,
@@ -60,6 +65,7 @@ from max.serve.pipelines.telemetry_worker import MetricClient
 from max.serve.process_control import subprocess_manager
 from max.serve.scheduler import load_scheduler
 from max.serve.scheduler.base import SchedulerProgress
+from max.serve.telemetry import common as telemetry
 from max.serve.telemetry.common import (
     configure_kernel_tracing,
     configure_logging,
@@ -85,6 +91,24 @@ from max.serve.worker_interface.lora_request_processor import (
 logger = logging.getLogger("max.serve")
 
 GiB = 1024 * 1024 * 1024
+
+
+def _configure_kernel_capture(
+    settings: Settings, pipeline_role: PipelineRole
+) -> None:
+    """Decides whether requests may arm kernel captures in this worker."""
+    # Only load_scheduler's prefill_and_decode scheduler takes a capture, so
+    # other roles skip the profiler plugin, though non-text pipelines in that
+    # role still load it, harmlessly.
+    if (
+        not telemetry._trace_level_header_enabled
+        or pipeline_role != "prefill_and_decode"
+    ):
+        return
+    # Lazy so default startup skips the capture module.
+    from max.serve.telemetry._kernel_capture import configure_kernel_capture
+
+    configure_kernel_capture(settings)
 
 
 @runtime_checkable
@@ -269,6 +293,9 @@ class ModelWorker:
         configure_tracing(settings)
         configure_logging(settings)
         configure_kernel_tracing(settings)
+        _configure_kernel_capture(
+            settings, pipeline_config.runtime.pipeline_role
+        )
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)
 

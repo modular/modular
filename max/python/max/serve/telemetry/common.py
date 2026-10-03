@@ -131,8 +131,9 @@ API process and the disaggregated workers never set it."""
 
 
 _trace_level_header_enabled = False
-"""Whether the API server reads the ``x-max-trace-level`` header. Set by
-:func:`configure_tracing` when it installs a provider and
+"""Whether per-request trace levels are honored in this process: the API
+server reads the ``x-max-trace-level`` header and the model worker may arm
+captures. Set by :func:`configure_tracing` when it installs a provider and
 ``kernel_trace_headers`` is on. Read it through the module: that call
 rebinds it."""
 
