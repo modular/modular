@@ -100,6 +100,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "google/gemma-4-12B-it__device_graph_synthesis": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_device_graph_synthesis.yaml",
     "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
+    "google/gemma-4-31B-it__cascade": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_cascade.yaml",
     "google/gemma-4-31B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_31b.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
@@ -172,6 +173,7 @@ class RecipeConfig(BaseModel):
 
         num_speculative_tokens: int | None = None
 
+    cascade: bool = False
     model: Model = Field(default_factory=Model)
     draft_model: Model | None = None
     runtime: Runtime = Field(default_factory=Runtime)
@@ -724,6 +726,9 @@ def smoke_test(
         result_dir.mkdir(parents=True, exist_ok=True)
 
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
+    cascade = recipe_path is not None and _load_recipe(recipe_path).cascade
+    if cascade and framework not in ("max", "max-ci"):
+        raise ValueError(f"Cascade is only supported for MAX, not {framework}")
     # A recipe can serve its weights under another name; requests must use it.
     served = hf_model_path
     if recipe_path:
@@ -740,7 +745,8 @@ def smoke_test(
 
     if override_tasks:
         tasks = list(override_tasks)
-    elif is_vision_model(model):
+    # TODO(SERVSYS-1330): Run the vision task with Cascade once it accepts images.
+    elif is_vision_model(model) and not cascade:
         tasks = [VISION_TASK, TEXT_TASK]
     else:
         tasks = [TEXT_TASK]
@@ -754,6 +760,8 @@ def smoke_test(
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
 
+    # TODO(SERVSYS-1318): Cascade serves no /metrics, so Cascade runs report
+    # no generated-token count.
     metrics_url = _metrics_url(framework)
     with start_server(cmd, timeout, env_overrides=server_env) as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")

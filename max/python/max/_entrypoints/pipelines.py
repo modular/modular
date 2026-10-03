@@ -490,6 +490,12 @@ def cli_serve(
 
     settings = Settings(**setting_kwargs)
 
+    if (
+        click.get_current_context().get_parameter_source("cascade")
+        is click.core.ParameterSource.DEFAULT
+    ):
+        config_kwargs.pop("cascade", None)
+
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
