@@ -66,13 +66,10 @@ from std.sys.defines import get_defined_int
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
     row_major,
+    TileTensor,
 )
 from std.utils.index import IndexList
 from nn.kv_cache import fused_qk_rms_norm_ragged_paged
@@ -431,45 +428,40 @@ def run_one_case(
     ctx.synchronize()
 
     # --- PagedKVCacheCollection ----------------------------------------------
-    var blocks_lt = LayoutTensor[dtype, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, PAGE_SIZE](
-        LayoutTensor[dtype, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
+    # The device buffers outlive the collection, so the views carry the
+    # untracked any-origins; `scales_origin` is the no-scales default.
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutUntrackedOrigin,
+    ]
+    var kv_collection = Collection(
+        TileTensor(
+            blocks_device,
+            row_major(
+                Coord(
+                    block_shape[0],
+                    block_shape[1],
+                    block_shape[2],
+                    block_shape[3],
+                    block_shape[4],
+                    block_shape[5],
+                )
             ),
         ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
+        TileTensor(cache_lengths_device, row_major(Coord(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(
+            lookup_table_device,
+            row_major(Coord(batch_size, max_pages_per_batch)),
+        )
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )

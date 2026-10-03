@@ -2495,44 +2495,12 @@ def generic_get_paged_cache[
         KVCacheStaticParams(num_heads, head_dim, is_mla),
         page_size,
     ](
-        LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](
-            blocks.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[6]()].row_major(blocks.shape()),
-        ),
-        LayoutTensor[page_stride.dtype, Layout.row_major[1](), ImmutAnyOrigin](
-            page_stride.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[1]()].row_major(page_stride.shape()),
-        ),
-        LayoutTensor[
-            cache_lengths.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths.unsafe_ptr(),
-            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                cache_lengths.shape()
-            ),
-        ),
-        LayoutTensor[lookup_table.dtype, Layout.row_major[2](), ImmutAnyOrigin](
-            lookup_table.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                lookup_table.shape()
-            ),
-        ),
-        LayoutTensor[
-            max_prompt_length.dtype, Layout.row_major[1](), ImmutAnyOrigin
-        ](
-            max_prompt_length.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[1]()].row_major(
-                max_prompt_length.shape()
-            ),
-        ),
-        LayoutTensor[
-            max_cache_length.dtype, Layout.row_major[1](), ImmutAnyOrigin
-        ](
-            max_cache_length.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[1]()].row_major(
-                max_cache_length.shape()
-            ),
-        ),
+        blocks.to_tile_tensor().as_unsafe_any_origin(),
+        page_stride.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        cache_lengths.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        max_prompt_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        max_cache_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
     )
 
 
@@ -2541,16 +2509,12 @@ def generic_get_paged_cache[
     kv_params: KVCacheStaticParams,
     page_size: Int,
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    page_stride: LayoutTensor[mut=False, .int64, Layout.row_major[1](), _],
-    cache_lengths: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
-    lookup_table: LayoutTensor[mut=False, .uint32, Layout.row_major[2](), _],
-    max_prompt_length: LayoutTensor[
-        mut=False, .uint32, Layout.row_major[1](), _
-    ],
-    max_cache_length: LayoutTensor[
-        mut=False, .uint32, Layout.row_major[1](), _
-    ],
+    blocks: TileTensor[mut=True, dtype, _, _, linear_idx_type=_],
+    page_stride: TileTensor[mut=False, .int64, _, _, linear_idx_type=_],
+    cache_lengths: TileTensor[mut=False, .uint32, _, _, linear_idx_type=_],
+    lookup_table: TileTensor[mut=False, .uint32, _, _, linear_idx_type=_],
+    max_prompt_length: TileTensor[mut=False, .uint32, _, _, linear_idx_type=_],
+    max_cache_length: TileTensor[mut=False, .uint32, _, _, linear_idx_type=_],
     out result: PagedKVCacheCollection[
         dtype,
         kv_params,
@@ -2569,9 +2533,9 @@ def generic_get_paged_cache[
         blocks = blocks,
         cache_lengths = cache_lengths,
         lookup_table = lookup_table,
-        max_seq_length = max_prompt_length[0][0],
-        max_cache_length = max_cache_length[0][0],
-        page_stride = Int(page_stride[0][0]),
+        max_seq_length = max_prompt_length[0],
+        max_cache_length = max_cache_length[0],
+        page_stride = Int(page_stride[0]),
     }
 
 
@@ -2582,25 +2546,17 @@ def generic_get_paged_cache_with_scales[
     page_size: Int,
     quantization_granularity: Int,
 ](
-    blocks: LayoutTensor[mut=True, dtype, Layout.row_major[6](), _],
-    page_stride: LayoutTensor[mut=False, .int64, Layout.row_major[1](), _],
-    cache_lengths: LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE), _],
-    lookup_table: LayoutTensor[mut=False, .uint32, Layout.row_major[2](), _],
-    max_prompt_length: LayoutTensor[
-        mut=False, .uint32, Layout.row_major[1](), _
+    blocks: TileTensor[mut=True, dtype, _, _, linear_idx_type=_],
+    page_stride: TileTensor[mut=False, .int64, _, _, linear_idx_type=_],
+    cache_lengths: TileTensor[mut=False, .uint32, _, _, linear_idx_type=_],
+    lookup_table: TileTensor[mut=False, .uint32, _, _, linear_idx_type=_],
+    max_prompt_length: TileTensor[mut=False, .uint32, _, _, linear_idx_type=_],
+    max_cache_length: TileTensor[mut=False, .uint32, _, _, linear_idx_type=_],
+    scales: TileTensor[mut=True, scale_dtype, _, _, linear_idx_type=_],
+    scales_page_stride: TileTensor[mut=False, .int64, _, _, linear_idx_type=_],
+    scales_lookup_table: TileTensor[
+        mut=False, .uint32, _, lookup_table.origin, linear_idx_type=_
     ],
-    max_cache_length: LayoutTensor[
-        mut=False, .uint32, Layout.row_major[1](), _
-    ],
-    scales: LayoutTensor[mut=True, scale_dtype, Layout.row_major[6](), _],
-    scales_page_stride: LayoutTensor[
-        mut=False, .int64, Layout.row_major[1](), _
-    ],
-    scales_lookup_table: OptionalReg[
-        LayoutTensor[
-            mut=False, .uint32, Layout.row_major[2](), lookup_table.origin
-        ]
-    ] = None,
     out result: PagedKVCacheCollection[
         dtype,
         kv_params,
@@ -2627,10 +2583,9 @@ def generic_get_paged_cache_with_scales[
         scales_page_stride: The same distance for `scales`, which is its own
             pool leaf and pads independently of the values.
         scales_lookup_table: Page lookup table for the scales [batch_size, max_pages].
-            Pass this when the scales are paged independently of the values, so
-            a request's scale pages carry their own ids. When absent the scales
-            resolve through `lookup_table`, which is correct only while the two
-            share one block-id space.
+            Pass `lookup_table` itself while the scales share the values'
+            block-id space, and a distinct table when the scales are paged
+            independently so a request's scale pages carry their own ids.
     """
     # Thread the input tensors' origins into the collection so the borrow
     # checker keeps the backing buffers alive across the collection's use.
@@ -2638,12 +2593,12 @@ def generic_get_paged_cache_with_scales[
         blocks = blocks,
         cache_lengths = cache_lengths,
         lookup_table = lookup_table,
-        max_seq_length = max_prompt_length[0][0],
-        max_cache_length = max_cache_length[0][0],
+        max_seq_length = max_prompt_length[0],
+        max_cache_length = max_cache_length[0],
         scales = scales,
         scales_lookup_table = scales_lookup_table,
-        page_stride = Int(page_stride[0][0]),
-        scales_page_stride = Int(scales_page_stride[0][0]),
+        page_stride = Int(page_stride[0]),
+        scales_page_stride = Int(scales_page_stride[0]),
     }
 
 

@@ -237,61 +237,15 @@ struct Struct_kv_cache_store_k_scales_paged:
             page_size,
             quantization_granularity,
         ](
-            LayoutTensor[cache_dtype, Layout.row_major[6](), MutAnyOrigin](
-                kv_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
-                page_stride.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    page_stride.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-                cache_lengths.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                    cache_lengths.to_layout_tensor().runtime_layout.shape.value,
-                    cache_lengths.to_layout_tensor().runtime_layout.stride.value,
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                kv_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
-                max_prompt_length.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    max_prompt_length.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
-                max_cache_length.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    max_cache_length.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
-                k_scales_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    k_scales_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
-                scales_page_stride.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    scales_page_stride.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                k_scales_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    k_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor(),
+            cache_lengths.to_tile_tensor(),
+            kv_lookup_table.to_tile_tensor(),
+            max_prompt_length.to_tile_tensor(),
+            max_cache_length.to_tile_tensor(),
+            k_scales_blocks.to_tile_tensor(),
+            scales_page_stride.to_tile_tensor(),
+            k_scales_lookup_table.to_tile_tensor(),
         )
 
         var k_cache = k_collection.get_key_cache(Int(layer_idx))

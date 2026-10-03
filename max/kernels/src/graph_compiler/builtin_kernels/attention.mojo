@@ -598,60 +598,15 @@ struct MLAIndexerRaggedFloat8Paged:
             page_size,
             quantization_granularity,
         ](
-            LayoutTensor[.float8_e4m3fn, Layout.row_major[6](), MutAnyOrigin](
-                k_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    k_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
-                page_stride.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    page_stride.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-                k_cache_lengths.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                    k_cache_lengths.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                k_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    k_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
-                k_max_prompt_length.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    k_max_prompt_length.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
-                k_max_cache_length.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    k_max_cache_length.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.float32, Layout.row_major[6](), MutAnyOrigin](
-                k_scales.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    k_scales.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
-                scales_page_stride.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    scales_page_stride.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                k_scales_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    k_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
+            k_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor(),
+            k_cache_lengths.to_tile_tensor(),
+            k_lookup_table.to_tile_tensor(),
+            k_max_prompt_length.to_tile_tensor(),
+            k_max_cache_length.to_tile_tensor(),
+            k_scales.to_tile_tensor(),
+            scales_page_stride.to_tile_tensor(),
+            k_scales_lookup_table.to_tile_tensor(),
         )
 
         mla_indexer_ragged_float8_paged[
@@ -2804,60 +2759,15 @@ struct Struct_mla_decode_ragged_paged_scaled:
             page_size,
             quantization_granularity,
         ](
-            LayoutTensor[kv_dtype, Layout.row_major[6](), MutAnyOrigin](
-                kv_blocks.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    kv_blocks.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
-                page_stride.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    page_stride.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin](
-                cache_lengths.to_layout_tensor().ptr,
-                RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                    cache_lengths.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                kv_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    kv_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
-                max_prompt_length.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    max_prompt_length.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[1](), ImmutAnyOrigin](
-                max_cache_length.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    max_cache_length.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.float32, Layout.row_major[6](), MutAnyOrigin](
-                kv_scales.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[6]()].row_major(
-                    kv_scales.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.int64, Layout.row_major[1](), ImmutAnyOrigin](
-                scales_page_stride.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[1]()].row_major(
-                    scales_page_stride.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
-            LayoutTensor[.uint32, Layout.row_major[2](), ImmutAnyOrigin](
-                kv_scales_lookup_table.to_layout_tensor().ptr,
-                RuntimeLayout[Layout.row_major[2]()].row_major(
-                    kv_scales_lookup_table.to_layout_tensor().runtime_layout.shape.value
-                ),
-            ),
+            kv_blocks.to_tile_tensor(),
+            page_stride.to_tile_tensor(),
+            cache_lengths.to_tile_tensor(),
+            kv_lookup_table.to_tile_tensor(),
+            max_prompt_length.to_tile_tensor(),
+            max_cache_length.to_tile_tensor(),
+            kv_scales.to_tile_tensor(),
+            scales_page_stride.to_tile_tensor(),
+            kv_scales_lookup_table.to_tile_tensor(),
         )
 
         # Get the q_scales raw pointer for per-token Q scaling.
