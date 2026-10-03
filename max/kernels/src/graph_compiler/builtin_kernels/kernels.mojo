@@ -3469,17 +3469,6 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
             DType.int64
         ]()
 
-        var qkv_input_strides = qkv_input_ragged.strides()
-        var conv_weight_strides = conv_weight.strides()
-        var conv_output_strides = conv_output_ragged.strides()
-
-        var qkv_input_seqlen_stride = UInt32(qkv_input_strides[0])
-        var qkv_input_channel_stride = UInt32(qkv_input_strides[1])
-        var conv_weight_channel_stride = UInt32(conv_weight_strides[0])
-        var conv_weight_offset_stride = UInt32(conv_weight_strides[1])
-        var conv_output_seqlen_stride = UInt32(conv_output_strides[0])
-        var conv_output_channel_stride = UInt32(conv_output_strides[1])
-
         comptime assert is_gpu[
             target
         ](), "gated_delta_conv1d_fwd is only supported on GPU."
@@ -3527,12 +3516,6 @@ struct GatedDeltaConv1dFwd[write_state: Bool = True]:
                 slot_idx_tt,
                 input_row_offsets_tt,
                 conv_output_ragged_tt,
-                qkv_input_seqlen_stride,
-                qkv_input_channel_stride,
-                conv_weight_channel_stride,
-                conv_weight_offset_stride,
-                conv_output_seqlen_stride,
-                conv_output_channel_stride,
                 grid_dim=(grid_dim_tokens, grid_dim_channels),
                 block_dim=(CONV1D_BLOCK_DIM,),
             )

@@ -323,12 +323,6 @@ def _bench(
             slot_tt,
             offsets_tt,
             out_new_tt,
-            UInt32(conv_dim),
-            UInt32(1),
-            UInt32(KERNEL_SIZE),
-            UInt32(1),
-            UInt32(conv_dim),
-            UInt32(1),
             grid_dim=(
                 ceildiv(total_T, tokens_per_block),
                 ceildiv(conv_dim, CONV1D_BLOCK_DIM),
