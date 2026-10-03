@@ -130,6 +130,13 @@ None. It is set around ``pipeline.execute`` only when tracing is enabled; the
 API process and the disaggregated workers never set it."""
 
 
+_trace_level_header_enabled = False
+"""Whether the API server reads the ``x-max-trace-level`` header. Set by
+:func:`configure_tracing` when it installs a provider and
+``kernel_trace_headers`` is on. Read it through the module: that call
+rebinds it."""
+
+
 def _tracing_enabled() -> bool:
     """Whether a real TracerProvider is installed, vs. the OTel no-op default."""
     return not isinstance(
@@ -928,6 +935,8 @@ def _span_exporter() -> SpanExporter:
 
 
 def configure_tracing(settings: Settings) -> None:
+    global _trace_level_header_enabled
+    _trace_level_header_enabled = False
     # Spans cost work on every request, so only the traces-specific variable
     # turns them on: the generic endpoint may be set for metrics alone.
     telemetry_on = not _telemetry_disabled(settings)
@@ -939,6 +948,7 @@ def configure_tracing(settings: Settings) -> None:
         exporter = _span_exporter()
         provider.add_span_processor(BatchSpanProcessor(exporter))
         set_tracer_provider(provider)
+        _trace_level_header_enabled = settings.kernel_trace_headers
 
     logger = logging.getLogger()
     if export_spans:

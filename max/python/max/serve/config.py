@@ -343,6 +343,15 @@ class Settings(BaseSettings):
         ),
         alias="MAX_SERVE_KERNEL_TRACE_LEVEL",
     )
+    kernel_trace_headers: bool = Field(
+        default=False,
+        description=(
+            "Honor the per-request x-max-trace-level header, passing its "
+            "level to the model worker. Ignored while tracing is off. Off "
+            "by default: the header is then never read."
+        ),
+        alias="MAX_SERVE_KERNEL_TRACE_HEADERS",
+    )
 
     # Model worker configuration
     use_heartbeat: bool = Field(
@@ -567,6 +576,7 @@ class Settings(BaseSettings):
         logger.info(
             f"    kernel_trace_level     : {self.kernel_trace_level.value}"
         )
+        logger.info(f"    kernel_trace_headers   : {self.kernel_trace_headers}")
 
         # Transaction recording (part of telemetry)
         if self.transaction_recording_file:

@@ -572,7 +572,8 @@ class TextContext:
     captured from the request's ``max.request`` span, or its HTTP server span
     where no handler set one. Threaded onto this context because it crosses
     into the model-worker process by value, so the scheduler can re-``extract``
-    it and parent its phase spans instead of starting new root spans."""
+    it and parent its phase spans instead of starting new root spans. May also
+    hold the request's ``x-max-trace-level`` level, which propagators ignore."""
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.

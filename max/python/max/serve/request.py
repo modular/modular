@@ -20,8 +20,10 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from max.serve._error_envelope import openai_error_body
+from max.serve.telemetry import common as telemetry
 from max.serve.telemetry._trace_context import (
     end_span_after,
+    read_trace_level_header,
     record_server_span_status,
     start_server_span,
 )
@@ -47,6 +49,7 @@ def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
     # Structured logs read the request ID. Only spans, directly or through
     # the worker's trace carrier, and dd.trace_id read the trace context.
     tracing = _tracing_enabled()
+    read_trace_levels = telemetry._trace_level_header_enabled
 
     @app.middleware("http")
     async def request_session(
@@ -64,6 +67,8 @@ def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
                 scheme=request.url.scheme,
                 headers=request.headers,
             )
+            if read_trace_levels:
+                read_trace_level_header(request.headers)
         elif structured_logging:
             _request_id_ctx.set(request_id)
         # Record the request against the final HTTP status code. This is the
