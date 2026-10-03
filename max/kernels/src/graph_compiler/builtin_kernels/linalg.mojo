@@ -481,6 +481,11 @@ struct LinalgBandPart:
 @extensibility.register("mo.grouped.matmul.ragged")
 struct Struct_grouped_matmul_ragged:
     """Registers the `mo.grouped.matmul.ragged` graph op with the graph compiler.
+
+    The output takes a fused elementwise epilogue, so a consumer such as an
+    activation runs in the matmul's store instead of as its own kernel. A
+    value-to-value consumer is applied before the matmul's own store, which
+    keeps the SM100 kernel's TMA store.
     """
 
     @inline(.always)
@@ -490,9 +495,10 @@ struct Struct_grouped_matmul_ragged:
         a_type: DType,
         b_type: DType,
         //,
+        has_epilogue_fusion: Bool,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
+        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=3, ...],
         expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
@@ -501,7 +507,48 @@ struct Struct_grouped_matmul_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
-        grouped_matmul(
+
+        @__parameter
+        @inline(.always)
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[c_type, _width]](val),
+            )
+
+        @__parameter
+        @inline(.always)
+        def output_compute_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return rebind[SIMD[_dtype, _width]](
+                c._fused_compute_output_lambda[element_alignment=alignment](
+                    coords, rebind[SIMD[c_type, _width]](val)
+                )
+            )
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if has_epilogue_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if has_epilogue_fusion and has_compute_lambda else None
+
+        grouped_matmul[
+            elementwise_lambda_fn=elementwise_lambda,
+            elementwise_compute_lambda_fn=compute_lambda,
+        ](
             c.to_tile_tensor[.int64](),
             a.to_tile_tensor[.int64](),
             b.to_tile_tensor[.int64](),

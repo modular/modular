@@ -21,7 +21,7 @@ from std.math import ceildiv
 from std.sys import size_of
 
 from max.gpu.globals import WARPGROUP_SIZE
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceBuffer, DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout,
@@ -36,7 +36,13 @@ from std.utils.static_tuple import StaticTuple
 from .matmul_kernels import HopperMatmulSM90Kernel
 from .matmul import _get_c_smem_layout
 
-from ....utils import elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    elementwise_epilogue_type,
+    no_compute_fn,
+    no_epilogue_fn,
+)
 from ....utils_gpu import MatmulConfig
 
 
@@ -81,6 +87,8 @@ def grouped_matmul_sm90[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+    ComputeFnType: ElementwiseComputeFn = type_of(no_compute_fn),
     //,
     *,
     transpose_b: Bool = True,
@@ -89,6 +97,8 @@ def grouped_matmul_sm90[
         a_type, b_type, c_type, transpose_b
     ] = default_config_sm90[a_type, b_type, c_type, transpose_b, wgmma_shape](),
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
     a: TileTensor[a_type, address_space=.GENERIC, ...],
@@ -98,6 +108,8 @@ def grouped_matmul_sm90[
     expert_ids: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_epilogue_fn,
+    compute_fn: ComputeFnType = no_compute_fn,
 ) raises:
     """Performs grouped GEMM for MoE routing on SM90 (Hopper) GPUs.
 
@@ -110,10 +122,15 @@ def grouped_matmul_sm90[
         c_type: Output element type.
         a_type: A-matrix (activations) element type.
         b_type: B-matrix (expert weights) element type.
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         transpose_b: Whether B is stored transposed (must be True).
         wgmma_shape: WGMMA instruction shape (M, N, K).
         config: Full SM90 kernel configuration.
         elementwise_lambda_fn: Optional epilogue applied to each output tile.
+        has_epilogue_fn: Whether `epilogue_fn` stores the output.
+        has_compute_fn: Whether `compute_fn` maps each output before it is
+            stored.
 
     Args:
         c: Output matrix `[total_tokens, N]`.
@@ -124,6 +141,8 @@ def grouped_matmul_sm90[
         expert_ids: Active expert indices `[num_active_experts]`.
         num_active_experts: Number of experts with non-zero token count.
         ctx: Device context for kernel launch.
+        epilogue_fn: Stores each output element at its `(row, col)` in `c`.
+        compute_fn: Maps each output element at its `(row, col)` in `c`.
     """
     # Early-exit for empty inputs to avoid creating invalid TMA descriptors.
     if num_active_experts == 0 or Int(a.dim[0]()) == 0 or Int(c.dim[0]()) == 0:
@@ -170,8 +189,19 @@ def grouped_matmul_sm90[
     )
 
     # Create a dummy TMA op for C, we don't support TMA store for output.
+    # When an epilogue owns every store, `c.ptr` may be dangling, which the
+    # descriptor encode rejects, so point it at a 1-element scratch buffer
+    # (its extent is never read), as the SM100 kernel does.
+    comptime epilogue_owns_stores = Bool(
+        elementwise_lambda_fn
+    ) or has_epilogue_fn
+    var c_desc_scratch = Optional[DeviceBuffer[c_type]](None)
+    var c_desc_ptr = c.ptr.as_unsafe_any_origin()
+    comptime if epilogue_owns_stores:
+        c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
+        c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
     var c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](
-        ctx, c
+        ctx, TileTensor(c_desc_ptr, c.layout)
     )
 
     comptime num_threads = WARPGROUP_SIZE * config.num_consumer + WARPGROUP_SIZE
@@ -221,6 +251,10 @@ def grouped_matmul_sm90[
         type_of(a_offsets).LayoutType,
         type_of(expert_ids).LayoutType,
         type_of(c).LayoutType,
+        EpilogueFnType,
+        has_epilogue_fn,
+        ComputeFnType,
+        has_compute_fn,
     ]
 
     ctx.enqueue_function[kernel](
@@ -230,6 +264,8 @@ def grouped_matmul_sm90[
         a_offsets,
         expert_ids,
         c.as_unsafe_any_origin(),
+        host_arg=epilogue_fn,
+        host_arg2=compute_fn,
         grid_dim=(
             ceildiv(N, BN),
             ceildiv(max_num_tokens_per_expert, BM),
@@ -241,3 +277,4 @@ def grouped_matmul_sm90[
             UInt32(smem_size)
         ),
     )
+    _ = c_desc_scratch^

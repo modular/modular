@@ -27,6 +27,7 @@ shrink and expand shapes (rank 16 on a 4096-wide layer).
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from layout import Coord, Idx, TileTensor, row_major
+
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 from linalg.matmul.gpu.apple.grouped_matmul import (
     enqueue_apple_grouped_gemv,
@@ -161,6 +162,37 @@ def _run_case[
     out_buf.enqueue_fill(Scalar[out_type](1234.0))
     grouped_matmul(out_c, a, b, off, eid, max_m, num_active, ctx)
     _check(ctx, out_buf, out_host, ref_host, N, atol, rtol, "dispatch")
+
+    # The dispatch with a fused epilogue, here `2 * x + 1`, which writes its
+    # own buffer.
+    var epi_buf = ctx.enqueue_create_buffer[out_type](c_size)
+    var epi_ptr = epi_buf.unsafe_ptr()
+
+    @inline(.always)
+    def epilogue_fn[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: IndexList[2], val: SIMD[dtype, width]) {var epi_ptr}:
+        var out = val.cast[.float32]() * 2 + 1
+        epi_ptr.unsafe_store[width=width](
+            idx[0] * N + idx[1], out.cast[out_type]()
+        )
+
+    grouped_matmul[has_epilogue_fn=True](
+        out_c, a, b, off, eid, max_m, num_active, ctx, epilogue_fn
+    )
+    ctx.enqueue_copy(out_host, epi_buf)
+    ctx.synchronize()
+    _ = epi_buf^
+    for i in range(c_size):
+        var expected = ref_host[i].cast[.float32]() * 2 + 1
+        assert_almost_equal(
+            out_host[i],
+            expected.cast[out_type](),
+            msg=String(t"dispatch_epilogue m={i // N} n={i % N}"),
+            atol=2 * atol,
+            rtol=rtol,
+        )
+    out_buf.enqueue_fill(Scalar[out_type](1234.0))
 
     enqueue_apple_grouped_mma(out_c, a, b, off, eid, max_m, num_active, ctx)
     _check(ctx, out_buf, out_host, ref_host, N, atol, rtol, "mma_g4")

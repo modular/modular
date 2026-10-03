@@ -20,6 +20,7 @@ from max.experimental.nn import Linear, Module
 from max.experimental.nn.common_layers.functional_kernels import (
     grouped_matmul_ragged,
     moe_create_indices,
+    moe_finalize,
     moe_router_group_limited,
 )
 from max.experimental.nn.sequential import ModuleList
@@ -225,7 +226,6 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
         )
 
     def forward(self, x: Tensor) -> Tensor:
-        seq_len, hidden_dim = x.shape
         experts, weights = self.gate(x)
         (
             token_expert_order,
@@ -265,6 +265,7 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
             )
         else:
             permuted = F.gather(x, token_rows, axis=0)
+            # relu2 becomes the up-projection's epilogue.
             up = grouped_matmul_ragged(
                 permuted,
                 F.stack([e.up_proj.weight for e in self.experts], axis=0),
@@ -279,8 +280,5 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
                 expert_ids,
                 expert_usage_stats,
             )
-        down = F.gather(down, restore_token_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_tok, hidden_dim]
-        )
-        routed = F.unsqueeze(F.cast(weights, x.dtype), axis=1) @ down
-        return F.squeeze(routed, axis=1) + self.shared_experts(x)
+        routed = moe_finalize(down, restore_token_order, weights, x.dtype)
+        return routed + self.shared_experts(x)
