@@ -22,8 +22,15 @@ from std.collections.string._unicode_lookups import (
     uppercase_mapping3,
 )
 
+from std.bit import byte_swap
 from std.builtin.globals import global_constant
 from std.collections import Span
+from std.collections.string._utf8 import _is_valid_utf8
+from std.sys.intrinsics import unlikely
+from std.sys.info import Endian, bit_width_of
+
+comptime BIGGEST_UNICODE_CODEPOINT = UInt32(0x10FFFF)
+"""Largest Unicode code point (U+10FFFF), inclusive."""
 
 
 def _uppercase_mapping_index(rune: Codepoint) -> Int:
@@ -238,3 +245,131 @@ def to_uppercase(s: StringSlice[_]) -> String:
 @inline(.always)
 def _estimate_needed_size(byte_len: Int) -> Int:
     return 3 * (byte_len >> 1) + 1
+
+
+@inline(.always)
+def _is_unicode_scalar_value[
+    dtype: DType, //
+](codepoint: Scalar[dtype]) -> Bool where dtype.is_unsigned():
+    """Returns True if `codepoint` is a valid Unicode scalar value.
+
+    Args:
+        codepoint: The unsigned codepoint integer value to check.
+
+    Returns:
+        True if `codepoint` is a valid Unicode scalar value; False otherwise.
+    """
+    comptime if bit_width_of[dtype]() <= 8:
+        return True
+    comptime S = type_of(codepoint)
+    var is_not_unpaired_surrogate = not (S(0xD800) <= codepoint <= S(0xDFFF))
+
+    comptime if bit_width_of[dtype]() == 16:
+        return is_not_unpaired_surrogate
+
+    return is_not_unpaired_surrogate and (
+        codepoint <= S(BIGGEST_UNICODE_CODEPOINT)
+    )
+
+
+@inline(.always)
+def _invalid_codepoint_strict(idx: UInt) raises Error -> Codepoint:
+    raise Error("Invalid unicode codepoint at index: ", idx)
+
+
+@inline(.always)
+def _invalid_codepoint_replace[
+    replace: Codepoint = Codepoint.ord("�"),
+](idx: UInt) -> Codepoint:
+    return replace
+
+
+def _decode_codepoints[
+    dtype: DType,
+    //,
+    ErrorType: AnyType,
+    *,
+    detect_bom: Bool = False,
+](
+    from_codepoints: Span[mut=False, Scalar[dtype], ...],
+    on_invalid: def(idx: UInt) thin raises ErrorType -> Codepoint,
+    *,
+    endian: Endian = Endian.native(),
+) raises ErrorType -> String where dtype.is_unsigned():
+    """Decode a buffer of Unicode scalar values into a UTF-8 `String`.
+
+    Each element is one Unicode scalar value. This is not a UTF-8 or UTF-16
+    encoding: `UInt8` is Latin-1 / ISO-8859-1 (not UTF-8), `UInt16` is a
+    single BMP scalar (not a UTF-16 surrogate code unit), and wider unsigned
+    elements are full Unicode scalars, as in UTF-32.
+
+    Parameters:
+        dtype: Unsigned integral dtype of each codepoint element.
+        ErrorType: Inferred from `on_invalid`'s raises clause.
+        detect_bom: If True, detect endianness from a leading U+FEFF and skip
+            that BOM element from the output.
+
+    Args:
+        from_codepoints: Span of unsigned integer Unicode scalar values (one
+            codepoint per element).
+        on_invalid: Called for invalid scalar values; may raise or return a
+            replacement `Codepoint`.
+        endian: Byte order of the stored integer elements. Used as-is when
+            `detect_bom` is False; used as the fallback when no BOM is found.
+
+    Returns:
+        A UTF-8 encoded `String`.
+    """
+    var codepoints_ptr = from_codepoints.unsafe_ptr()
+    var start = UInt(0)
+    var use_endian = endian
+
+    comptime if detect_bom and bit_width_of[dtype]() >= 16:
+        if len(from_codepoints) > 0:
+            var first = codepoints_ptr[]
+            if first.cast[DType.uint32]() == UInt32(0xFEFF):
+                # FEFF in host order -> stream endianness matches the host.
+                use_endian = Endian.native()
+                start = 1
+            elif byte_swap(first).cast[DType.uint32]() == UInt32(0xFEFF):
+                use_endian = .little if Endian.native() == .big else .big
+                start = 1
+
+    # Pre-size for the worst case (4 UTF-8 bytes per remaining codepoint).
+    # Capacity is fixed so the output pointer stays stable and can be hoisted.
+    var length = 4 * (UInt(len(from_codepoints)) - start)
+    var result = String(capacity_bytes=Int(length))
+    var utf8_ptr_base = result.unsafe_ptr_mut()
+    var c_idx = start
+    var utf8_offset = UInt(0)
+
+    while c_idx < UInt(len(from_codepoints)):
+        var utf8_ptr = utf8_ptr_base.unsafe_offset(Int(utf8_offset))
+        var c_og = codepoints_ptr[unsafe_offset=c_idx]
+        # No-op when endianness matches the host, or for single-byte dtypes.
+        if Endian.native() != use_endian:
+            c_og = byte_swap(c_og)
+
+        var codepoint: Codepoint
+        comptime if bit_width_of[dtype]() >= 16:
+            if unlikely(not _is_unicode_scalar_value(c_og)):
+                codepoint = on_invalid(c_idx)
+            else:
+                codepoint = Codepoint(
+                    unsafe_unchecked_codepoint=c_og.cast[DType.uint32]()
+                )
+        else:
+            codepoint = Codepoint(
+                unsafe_unchecked_codepoint=c_og.cast[DType.uint32]()
+            )
+
+        utf8_offset += UInt(
+            codepoint.unsafe_write_utf8[optimize_ascii=True, branchless=False](
+                utf8_ptr
+            )
+        )
+        c_idx += 1
+
+    result._set_byte_length(Int(utf8_offset))
+    assert _is_valid_utf8(result.as_bytes()), "decoder produced invalid UTF-8"
+    return result^
