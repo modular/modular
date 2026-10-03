@@ -255,6 +255,9 @@ build:remote-b200 --spawn_strategy=remote,worker,sandboxed,standalone
 build:remote-b200 --repo_env=MODULAR_TARGET=linux:x86_64
 build:remote-b200 --build_metadata=TAG_GPU=b200
 build:remote-b200 --build_metadata=TAG_TARGET_OS=linux
+# The executors show 384 cores but grant an 86-CPU cgroup quota; see the
+# remote-mi355 config for why OpenMP must not size itself from the cores.
+build:remote-b200 --test_env=OMP_NUM_THREADS=32
 
 build:ci-remote-b200 --config=ci-gpu-common
 build:ci-remote-b200 --config=remote-b200
@@ -276,6 +279,11 @@ build:remote-mi355 --spawn_strategy=remote,worker,sandboxed,standalone
 build:remote-mi355 --repo_env=MODULAR_TARGET=linux:x86_64
 build:remote-mi355 --build_metadata=TAG_GPU=mi355
 build:remote-mi355 --build_metadata=TAG_TARGET_OS=linux
+# The executors show 128 cores but grant a 14-CPU cgroup quota, and OpenMP sizes
+# its pool from the cores it sees. Tiny CPU torch ops can then exhaust the quota
+# and stall until the next CFS period; one torch reference took minutes. Kept
+# under the quota to leave room for the test's other threads.
+build:remote-mi355 --test_env=OMP_NUM_THREADS=12
 
 build:ci-remote-mi355 --config=ci-gpu-common
 build:ci-remote-mi355 --config=remote-mi355
