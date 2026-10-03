@@ -107,17 +107,18 @@ def split_kv_by_flavor(
 
 def draft_row_inputs(
     row_offsets: Sequence[TensorValue],
-) -> list[list[TensorValue]]:
-    """Rows the draft convolves in: every batch item reads the single zero
-    slot of :class:`InklingConvScratchPools`."""
-    rows: list[list[TensorValue]] = []
+) -> tuple[list[list[TensorValue]], list[TensorValue]]:
+    """Returns the draft's slot tables and layer rows: every batch item reads
+    the single zero slot of :class:`InklingConvScratchPools`."""
+    tables: list[list[TensorValue]] = []
     for offsets in row_offsets:
-        row = ops.broadcast_to(
+        table = ops.broadcast_to(
             ops.constant(0, DType.uint32, device=offsets.device),
-            [offsets.shape[0] - 1],
+            [1, offsets.shape[0] - 1],
         )
-        rows.append([row] * len(ConvSite))
-    return rows
+        tables.append([table] * len(ConvSite))
+    zero_row = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
+    return tables, [zero_row] * len(ConvSite)
 
 
 def merge_positions(
@@ -315,7 +316,9 @@ class InklingMTPProposer:
         tokens: TensorValue,
         target_hidden: _TargetHidden,
     ) -> Proposed:
-        draft_rows = draft_row_inputs(batch.query_offsets_per_dev)
+        draft_rows, draft_layer_rows = draft_row_inputs(
+            batch.query_offsets_per_dev
+        )
         hidden = self.draft.forward_depth(
             0,
             self.draft.embed_tokens(tokens, batch.signal_buffers),
@@ -325,6 +328,7 @@ class InklingMTPProposer:
             self.target.merged_positions(batch),
             batch.extra[DRAFT_CONV_POOLS],
             draft_rows,
+            draft_layer_rows,
             batch.signal_buffers,
         )
         return Proposed(
@@ -336,7 +340,9 @@ class InklingMTPProposer:
         self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
     ) -> Proposed:
         step_dim = f"{self.carry_dim_names.prefix}{index}_batch"
-        draft_rows = draft_row_inputs(batch.query_offsets_per_dev)
+        draft_rows, draft_layer_rows = draft_row_inputs(
+            batch.query_offsets_per_dev
+        )
         embeds = [
             embed.rebind([step_dim, self.hidden_dim])
             for embed in self.draft.embed_tokens(
@@ -352,6 +358,7 @@ class InklingMTPProposer:
             self._decode_positions(batch, index).rebind([step_dim]),
             batch.extra[DRAFT_CONV_POOLS],
             draft_rows,
+            draft_layer_rows,
             batch.signal_buffers,
         )
         return Proposed(
