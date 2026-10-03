@@ -26,6 +26,12 @@ from std.collections.string.string_span import (
     _to_string_list,
     _unsafe_strlen,
 )
+from std.collections.string._unicode import (
+    _decode_codepoints,
+    _invalid_codepoint_replace,
+    _invalid_codepoint_strict,
+)
+from std.sys.info import Endian
 from std.builtin.builtin_slice import ContiguousSlice
 from std.hashlib.hasher import Hasher
 from std.reflection import call_location
@@ -402,6 +408,81 @@ struct String(
             dest=self.unsafe_ptr_mut(),
             src=unsafe_from_utf8.unsafe_ptr(),
             count=length,
+        )
+
+    def __init__[
+        dtype: DType, //, *, detect_bom: Bool = False
+    ](
+        out self,
+        *,
+        from_codepoints: Span[mut=False, Scalar[dtype], ...],
+        endian: Endian = Endian.native(),
+        errors: type_of("strict") = "strict",
+    ) raises where dtype.is_unsigned():
+        """Construct a new `String` from a buffer of Unicode codepoint values.
+
+        Parameters:
+            dtype: The unsigned dtype of each codepoint element.
+            detect_bom: If True, detect endianness from a leading U+FEFF and
+                skip that BOM element. `endian` is used when no BOM is found.
+
+        Args:
+            from_codepoints: A span of unsigned integer Unicode scalar values
+                (one codepoint per element). This is not a UTF-8 or UTF-16
+                encoding: `UInt8` elements are Latin-1 / ISO-8859-1 (not
+                UTF-8 bytes), `UInt16` elements are single BMP scalars (not
+                UTF-16 code units that may form surrogate pairs), and wider
+                unsigned elements are full Unicode scalars, as in UTF-32.
+            endian: Byte order of the stored integer elements. Defaults to the
+                host byte order. With `detect_bom=True`, used as the fallback
+                when no BOM is present.
+            errors: The action to take when encountering a decoding error.
+
+        Raises:
+            An exception is raised if the provided values are not valid Unicode
+            scalar values.
+        """
+        self = _decode_codepoints[detect_bom=detect_bom](
+            from_codepoints, _invalid_codepoint_strict, endian=endian
+        )
+
+    def __init__[
+        dtype: DType,
+        //,
+        *,
+        detect_bom: Bool = False,
+        replace: Codepoint = Codepoint.ord("�"),
+    ](
+        out self,
+        *,
+        from_codepoints: Span[mut=False, Scalar[dtype], ...],
+        endian: Endian = Endian.native(),
+        errors: type_of("replace"),
+    ) where dtype.is_unsigned():
+        """Construct a new `String` from a buffer of Unicode codepoint values.
+
+        Parameters:
+            dtype: The unsigned dtype of each codepoint element.
+            detect_bom: If True, detect endianness from a leading U+FEFF and
+                skip that BOM element. `endian` is used when no BOM is found.
+            replace: What codepoint to replace the invalid codepoints with.
+
+        Args:
+            from_codepoints: A span of unsigned integer Unicode scalar values
+                (one codepoint per element). This is not a UTF-8 or UTF-16
+                encoding: `UInt8` elements are Latin-1 / ISO-8859-1 (not
+                UTF-8 bytes), `UInt16` elements are single BMP scalars (not
+                UTF-16 code units that may form surrogate pairs), and wider
+                unsigned elements are full Unicode scalars, as in UTF-32.
+            endian: Byte order of the stored integer elements. Defaults to the
+                host byte order. With `detect_bom=True`, used as the fallback
+                when no BOM is present.
+            errors: The action to take when encountering a decoding error.
+        """
+        self = _decode_codepoints[detect_bom=detect_bom](
+            from_codepoints,
+            _invalid_codepoint_replace[replace],
+            endian=endian,
         )
 
     @stable(since="1.0")
