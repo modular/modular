@@ -245,7 +245,7 @@ size_of[T](); align_of[T]()
 
 # ask about another target: for example,
 # the accelerator, from host code
-comptime gpu = CompilationTarget.current_accelerator()
+comptime gpu = CompilationTarget.default_accelerator()
 simd_width_of[DType.float32, gpu]()
 ```
 

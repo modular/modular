@@ -175,7 +175,7 @@ struct TargetAccelerator[
     def __init__(out self):
         pass
 
-    comptime current_accelerator = Self.from_arch[_accelerator_arch()]
+    comptime default_accelerator = Self.from_arch[_accelerator_arch()]
 
     # Note:
     #   These parametric aliases can't instead be a static methods like:
@@ -390,7 +390,7 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         return Self.from_name[target._arch()]()
 
     @staticmethod
-    def current_accelerator() -> Self:
+    def default_accelerator() -> Self:
         """Gets `GPUInfo` for the default target accelerator.
 
         Returns:

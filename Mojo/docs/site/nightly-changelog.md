@@ -196,12 +196,13 @@ This version is still a work in progress.
   - `CompilationTarget.current()` — either the current host target, or
     accelerator target in an offload compilation.
 
-  - `CompilationTarget.current_accelerator()` — the default accelerator target,
+  - `CompilationTarget.default_accelerator()` — the default accelerator target,
     either determined automatically or as specified by `--target-accelerator`.
 
-  Additionally, `CompilationTarget` provides predicate methods for checking the
-  vendor identity of a given target. (The preexisting free functions with the
-  same name are now implemented in terms of these new methods.) These include:
+  Additionally, `CompilationTarget` now provides predicate methods for checking
+  the vendor identity of a given target. (The preexisting free functions with
+  the same name are now implemented in terms of these new methods.) These
+  include:
 
   - `.is_nvidia_gpu()` for checking whether a compilation target is an NVIDIA
     GPU.

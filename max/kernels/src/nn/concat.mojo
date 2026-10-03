@@ -115,7 +115,7 @@ def preferred_simd_width[dtype: DType]() -> Int:
     """
     return (
         32
-        // size_of[dtype]() if CompilationTarget.current_accelerator()._is_arch[
+        // size_of[dtype]() if CompilationTarget.default_accelerator()._is_arch[
             "sm_100a"
         ]() else simd_width_of[dtype, target=get_gpu_target()]()
     )

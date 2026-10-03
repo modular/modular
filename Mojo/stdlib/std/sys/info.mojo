@@ -66,7 +66,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         such as `--target-triple`, `--target-cpu`, and `--target-features`.
 
     * Within an accelerator "offload" compilation, this is the accelerator
-        target, equivalent to `CompilationTarget.current_accelerator()`.
+        target, equivalent to `CompilationTarget.default_accelerator()`.
 
     Returns:
         A value representing the current compilation target.
@@ -74,7 +74,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
 
     @staticmethod
     @inline(.nodebug)
-    def current_accelerator() -> type_of(get_gpu_target()):
+    def default_accelerator() -> type_of(get_gpu_target()):
         """Get the accelerator target.
 
         This value is derived from the `--target-accelerator` command line flag.
@@ -1696,7 +1696,7 @@ def has_amd_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an AMD GPU.
     """
-    return is_amd_gpu() or CompilationTarget.current_accelerator().is_amd_gpu()
+    return is_amd_gpu() or CompilationTarget.default_accelerator().is_amd_gpu()
 
 
 @inline(.nodebug)
@@ -1721,7 +1721,7 @@ def has_nvidia_gpu_accelerator() -> Bool:
     """
     return (
         is_nvidia_gpu()
-        or CompilationTarget.current_accelerator().is_nvidia_gpu()
+        or CompilationTarget.default_accelerator().is_nvidia_gpu()
     )
 
 
@@ -1763,5 +1763,5 @@ def has_apple_gpu_accelerator() -> Bool:
         True if the host system has a Metal GPU.
     """
     return (
-        is_apple_gpu() or CompilationTarget.current_accelerator().is_apple_gpu()
+        is_apple_gpu() or CompilationTarget.default_accelerator().is_apple_gpu()
     )

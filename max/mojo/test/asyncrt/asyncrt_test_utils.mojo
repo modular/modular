@@ -22,7 +22,7 @@ def api() -> String:
         comptime api = get_defined_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
         comptime if api == "gpu":
-            return String(GPUInfo.current_accelerator().api)
+            return String(GPUInfo.default_accelerator().api)
         return String(api)
     return "default"
 

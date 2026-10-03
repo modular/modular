@@ -40,7 +40,7 @@ def _compile_code[
     /,
     *,
     emission_kind: StaticString = "asm",
-    target: CompilationTarget = CompilationTarget.current_accelerator(),
+    target: CompilationTarget = CompilationTarget.default_accelerator(),
     compile_options: StaticString = target.default_compile_options(),
     link_options: StaticString = "",
 ]() -> CompiledFunctionInfo[func_type, func, target]:
@@ -60,7 +60,7 @@ def _compile_code[
 
 @inline(.never)
 def _to_sass[
-    target: CompilationTarget = CompilationTarget.current_accelerator()
+    target: CompilationTarget = CompilationTarget.default_accelerator()
 ](asm: String, *, nvdisasm_opts: String = "") raises -> String:
     comptime nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
     if not nvdisasm_path.exists():
@@ -86,7 +86,7 @@ def _to_sass[
 
 @inline(.never)
 def _ptxas_compile[
-    target: CompilationTarget = CompilationTarget.current_accelerator()
+    target: CompilationTarget = CompilationTarget.default_accelerator()
 ](
     asm: String, *, options: String = "", output_file: Optional[Path] = None
 ) raises -> String:

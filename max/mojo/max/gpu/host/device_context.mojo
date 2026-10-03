@@ -2921,7 +2921,7 @@ struct DeviceFunction[
     func: func_type,
     declared_arg_types: TypeList[Trait=AnyType, ...],
     *,
-    target: CompilationTarget = CompilationTarget.current_accelerator(),
+    target: CompilationTarget = CompilationTarget.default_accelerator(),
     compile_options: StaticString = target.default_compile_options(),
     link_options: StaticString = "",
     _ptxas_info_verbose: Bool = False,
@@ -4383,10 +4383,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ```
     """
 
-    comptime target = TargetAccelerator.current_accelerator.target
+    comptime target = TargetAccelerator.default_accelerator.target
     """`CompilationTarget` for the accelerator targeted by this device context."""
 
-    comptime default_device_info = TargetAccelerator.current_accelerator.gpu_info
+    comptime default_device_info = TargetAccelerator.default_accelerator.gpu_info
     """`GPUInfo` object for the default accelerator."""
 
     var _handle: _DeviceContextPtr[mut=True]

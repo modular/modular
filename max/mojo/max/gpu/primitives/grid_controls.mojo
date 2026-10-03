@@ -53,7 +53,7 @@ def _support_pdl_launch() -> Bool:
 
     comptime if (
         has_nvidia_gpu_accelerator()
-        and GPUInfo.current_accelerator().compute >= H100.compute
+        and GPUInfo.default_accelerator().compute >= H100.compute
     ):
         return True
     else:
