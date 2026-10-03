@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Iterable, Sequence
+from typing import Any, TypeVar, overload
 
 import numpy as np
 import numpy.typing as npt
@@ -69,6 +69,29 @@ from .ep_kernels import (
 )
 
 logger = logging.getLogger("max.pipelines")
+
+TensorLike = TypeVar("TensorLike", TensorValue, Tensor)
+"""TypeVar to constrain the inputs to all TensorValue or all Tensor, and
+return the values as the same type as the input."""
+
+
+@overload
+def _as_input_type(
+    reference: TensorValue, value: TensorValue
+) -> TensorValue: ...
+
+
+@overload
+def _as_input_type(reference: Tensor, value: TensorValue) -> Tensor: ...
+
+
+def _as_input_type(
+    reference: TensorValue | Tensor, value: TensorValue
+) -> TensorValue | Tensor:
+    """Rewraps a kernel result to match the caller's tensor abstraction."""
+    if isinstance(reference, Tensor):
+        return Tensor.from_graph_value(value)
+    return value
 
 
 # MegaFFN scheduler constants, restated because a graph cannot read them from
@@ -479,10 +502,10 @@ class EPBatchManager:
 
     def ep_dispatch_async(
         self,
-        input_tokens: TensorValue,
-        topk_ids: TensorValue,
+        input_tokens: TensorLike,
+        topk_ids: TensorLike,
         device_id: int,
-        input_scales: TensorValue | None = None,
+        input_scales: TensorLike | None = None,
     ) -> None:
         """Initiate Expert Parallelism token dispatch phase (async).
 
@@ -499,17 +522,22 @@ class EPBatchManager:
                 dispatch.
         """
         DISPATCH_GROUP = 0
+        input_val = TensorValue(input_tokens)
+        topk_ids_val = TensorValue(topk_ids)
+        input_scales_val = (
+            TensorValue(input_scales) if input_scales is not None else None
+        )
         # Store the symbolic token numbers of each device for the combine phase
-        self._dispatch_dim[device_id] = input_tokens.shape[0]
+        self._dispatch_dim[device_id] = input_val.shape[0]
         call_ep_dispatch_async(
-            input_tokens,
-            topk_ids,
+            input_val,
+            topk_ids_val,
             self.atomic_counters[DISPATCH_GROUP][device_id],
             self.send_buf_ptrs[DISPATCH_GROUP],
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
-            input_scales=input_scales,
+            input_scales=input_scales_val,
         )
 
     def ep_dispatch_wait(self, device_id: int) -> tuple[TensorValue, ...]:
@@ -555,7 +583,7 @@ class EPBatchManager:
         return (*results[:-1], self._common_grouped_matmul_metadata())
 
     def ep_combine_async(
-        self, input_tokens: TensorValue, device_id: int
+        self, input_tokens: TensorLike, device_id: int
     ) -> None:
         """Initiate Expert Parallelism combine phase (async).
 
@@ -571,6 +599,7 @@ class EPBatchManager:
         COMBINE_GROUP = 1
         # always use group 0 atomic counters unless we enable
         # two-batch-overlap.
+        input_val = TensorValue(input_tokens)
 
         src_info = self._src_info[device_id]
         assert src_info is not None, (
@@ -578,7 +607,7 @@ class EPBatchManager:
         )
 
         call_ep_combine_async(
-            input_tokens,
+            input_val,
             src_info,
             self.atomic_counters[0][device_id],
             self.send_buf_ptrs[COMBINE_GROUP],
@@ -712,8 +741,8 @@ class EPBatchManager:
         self._src_info[device_id] = None
 
     def ep_combine_wait(
-        self, router_weight: TensorValue, device_id: int
-    ) -> TensorValue:
+        self, router_weight: TensorLike, device_id: int
+    ) -> TensorLike:
         """Wait for Expert Parallelism combine phase completion.
 
         This method waits for all expert output transfers to complete, then
@@ -729,6 +758,7 @@ class EPBatchManager:
             Final output tensor with shape (num_local_tokens, hidden_size).
         """
         COMBINE_GROUP = 1
+        router_weight_val = TensorValue(router_weight)
 
         # Collect results from all devices
         # always use group 0 atomic counters unless we enable
@@ -743,10 +773,10 @@ class EPBatchManager:
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
             dispatch_dim,
-            router_weight,
+            router_weight_val,
         )
 
-        return results
+        return _as_input_type(router_weight, results)
 
     # ===-------------------------------------------------------------------===#
     # Fused EP Operations
@@ -754,11 +784,11 @@ class EPBatchManager:
 
     def ep_dispatch(
         self,
-        input_tokens: TensorValue,
-        topk_ids: TensorValue,
+        input_tokens: TensorLike,
+        topk_ids: TensorLike,
         device_id: int,
-        input_scales: TensorValue | None = None,
-    ) -> tuple[TensorValue, ...]:
+        input_scales: TensorLike | None = None,
+    ) -> tuple[TensorLike, ...]:
         """Execute fused Expert Parallelism token dispatch (async + wait).
 
         This method launches the fused EP dispatch kernel that combines both
@@ -796,18 +826,23 @@ class EPBatchManager:
         """
         # Use group 0 for both send and recv buffers in fused kernel
         DISPATCH_GROUP = 0
+        input_val = TensorValue(input_tokens)
+        topk_ids_val = TensorValue(topk_ids)
+        input_scales_val = (
+            TensorValue(input_scales) if input_scales is not None else None
+        )
 
         # Store the symbolic token numbers for the combine phase
-        self._dispatch_dim[device_id] = input_tokens.shape[0]
+        self._dispatch_dim[device_id] = input_val.shape[0]
         results = call_ep_dispatch(
-            input_tokens,
-            topk_ids,
+            input_val,
+            topk_ids_val,
             self.atomic_counters[DISPATCH_GROUP][device_id],
             self.send_buf_ptrs[DISPATCH_GROUP],
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
-            input_scales=input_scales,
+            input_scales=input_scales_val,
         )
 
         # The last element is the src_info, we need to store it for the
@@ -815,15 +850,16 @@ class EPBatchManager:
         # results.
         self._src_info[device_id] = results[-1]
 
-        return (*results[:-1], self._common_grouped_matmul_metadata())
+        outputs = list(results[:-1]) + [self._common_grouped_matmul_metadata()]
+        return tuple(_as_input_type(input_tokens, value) for value in outputs)
 
     def ep_dispatch_all(
         self,
-        input_tokens: list[TensorValue],
-        topk_ids: list[TensorValue],
+        input_tokens: Sequence[TensorLike],
+        topk_ids: Sequence[TensorLike],
         device_ids: list[int],
-        input_scales: list[TensorValue] | None = None,
-    ) -> list[tuple[TensorValue, ...]]:
+        input_scales: Sequence[TensorLike] | None = None,
+    ) -> list[tuple[TensorLike, ...]]:
         """Multi-device fused EP dispatch across all devices.
 
         Launches a single multi-device dispatch graph op (BF16, FP8, or
@@ -842,40 +878,51 @@ class EPBatchManager:
             outputs followed by the grouped matmul metadata.
         """
         DISPATCH_GROUP = 0
+        token_vals = [TensorValue(t) for t in input_tokens]
+        topk_id_vals = [TensorValue(t) for t in topk_ids]
+        scale_vals = (
+            [TensorValue(s) for s in input_scales]
+            if input_scales is not None
+            else None
+        )
 
         for i, device_id in enumerate(device_ids):
-            self._dispatch_dim[device_id] = input_tokens[i].shape[0]
+            self._dispatch_dim[device_id] = token_vals[i].shape[0]
 
         atomic_counters = [
             self.atomic_counters[DISPATCH_GROUP][d] for d in device_ids
         ]
 
         all_results = call_distributed_ep_dispatch(
-            input_tokens,
-            topk_ids,
+            token_vals,
+            topk_id_vals,
             atomic_counters,
             self.send_buf_ptrs[DISPATCH_GROUP],
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
-            input_scales=input_scales,
+            input_scales=scale_vals,
         )
 
-        per_device_outputs: list[tuple[TensorValue, ...]] = []
+        per_device_outputs: list[tuple[TensorLike, ...]] = []
         gmm_meta = self._common_grouped_matmul_metadata()
         for i, device_id in enumerate(device_ids):
             results = all_results[i]
             self._src_info[device_id] = results[-1]
-            per_device_outputs.append((*results[:-1], gmm_meta))
+            ref = input_tokens[i]
+            outputs = list(results[:-1]) + [gmm_meta]
+            per_device_outputs.append(
+                tuple(_as_input_type(ref, value) for value in outputs)
+            )
 
         return per_device_outputs
 
     def ep_combine_all(
         self,
-        input_tokens: list[TensorValue],
-        router_weights: list[TensorValue],
+        input_tokens: Sequence[TensorLike],
+        router_weights: Sequence[TensorLike],
         device_ids: list[int],
-    ) -> list[TensorValue]:
+    ) -> list[TensorLike]:
         """Multi-device fused EP combine across all devices.
 
         Launches a single ``mo.distributed.ep.combine`` graph op that
@@ -891,6 +938,8 @@ class EPBatchManager:
             Per-device combined output tensors.
         """
         COMBINE_GROUP = 1
+        token_vals = [TensorValue(t) for t in input_tokens]
+        router_weight_vals = [TensorValue(w) for w in router_weights]
 
         src_info_list: list[TensorValue] = []
         dispatch_dims: list[Dim] = []
@@ -909,7 +958,7 @@ class EPBatchManager:
         atomic_counters = [self.atomic_counters[0][d] for d in device_ids]
 
         results = call_distributed_ep_combine(
-            input_tokens,
+            token_vals,
             src_info_list,
             atomic_counters,
             self.send_buf_ptrs[COMBINE_GROUP],
@@ -917,21 +966,24 @@ class EPBatchManager:
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
             dispatch_dims,
-            router_weights,
+            router_weight_vals,
         )
 
         for device_id in device_ids:
             self._src_info[device_id] = None
 
-        return results
+        return [
+            _as_input_type(ref, result)
+            for ref, result in zip(input_tokens, results, strict=True)
+        ]
 
     def ep_combine(
         self,
-        input_tokens: TensorValue,
-        router_weight: TensorValue,
+        input_tokens: TensorLike,
+        router_weight: TensorLike,
         device_id: int,
-        topk_ids: TensorValue | None = None,
-    ) -> TensorValue:
+        topk_ids: TensorLike | None = None,
+    ) -> TensorLike:
         """Execute fused Expert Parallelism token combine (async + wait).
 
         This method launches the fused EP combine kernel that combines both
@@ -959,6 +1011,9 @@ class EPBatchManager:
             Final output tensor with shape (num_local_tokens, hidden_size).
         """
         COMBINE_GROUP = 1
+        input_val = TensorValue(input_tokens)
+        router_weight_val = TensorValue(router_weight)
+        topk_ids_val = TensorValue(topk_ids) if topk_ids is not None else None
 
         src_info = self._src_info[device_id]
         assert src_info is not None, (
@@ -973,7 +1028,7 @@ class EPBatchManager:
         )
 
         results = call_ep_combine(
-            input_tokens,
+            input_val,
             src_info,
             self.atomic_counters[0][device_id],
             self.send_buf_ptrs[COMBINE_GROUP],
@@ -981,14 +1036,14 @@ class EPBatchManager:
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
             dispatch_dim,
-            router_weight,
-            topk_ids=topk_ids,
+            router_weight_val,
+            topk_ids=topk_ids_val,
         )
 
         # Reset src_info to None to avoid reusing it for the next batch
         self._src_info[device_id] = None
 
-        return results
+        return _as_input_type(input_tokens, results)
 
 
 class EPCommInitializer:

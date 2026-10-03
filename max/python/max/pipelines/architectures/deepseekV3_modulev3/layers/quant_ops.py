@@ -362,7 +362,7 @@ class EPDispatchPayload:
     @classmethod
     def from_dispatch(
         cls,
-        dispatch_results: list[tuple[TensorValue, ...]],
+        dispatch_results: list[tuple[Tensor, ...]],
         quant_config: QuantConfig | None,
         ep_config: EPConfig,
     ) -> EPDispatchPayload:
@@ -377,8 +377,7 @@ class EPDispatchPayload:
                 weight quant format).
         """
         columns = [
-            [Tensor.from_graph_value(v) for v in column]
-            for column in zip(*dispatch_results, strict=True)
+            list(column) for column in zip(*dispatch_results, strict=True)
         ]
 
         if (

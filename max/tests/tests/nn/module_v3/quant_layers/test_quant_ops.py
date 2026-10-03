@@ -29,7 +29,6 @@ from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
 from max.nn.comm.ep import EPConfig
 from max.nn.quant_config import QuantConfig, QuantFormat
 from max.pipelines.architectures.deepseekV3_modulev3.layers import quant_ops
@@ -259,16 +258,16 @@ def _ep_config(
     )
 
 
-def _value(shape: list[int], dtype: DType) -> TensorValue:
-    return TensorValue(Tensor.zeros(shape, dtype=dtype, device=CPU()))
+def _value(shape: list[int], dtype: DType) -> Tensor:
+    return Tensor.zeros(shape, dtype=dtype, device=CPU())
 
 
-def _metadata() -> TensorValue:
+def _metadata() -> Tensor:
     """The host grouped-matmul metadata tuple element ``[max_m, n_active]``."""
-    return TensorValue(Tensor.zeros([2], dtype=DType.uint32, device=CPU()))
+    return Tensor.zeros([2], dtype=DType.uint32, device=CPU())
 
 
-def _bf16_dispatch() -> list[tuple[TensorValue, ...]]:
+def _bf16_dispatch() -> list[tuple[Tensor, ...]]:
     return [
         (
             _value([_TOKENS, _HIDDEN_DIM], DType.bfloat16),
@@ -280,7 +279,7 @@ def _bf16_dispatch() -> list[tuple[TensorValue, ...]]:
     ]
 
 
-def _fp8_dispatch() -> list[tuple[TensorValue, ...]]:
+def _fp8_dispatch() -> list[tuple[Tensor, ...]]:
     return [
         (
             _value([_TOKENS, _HIDDEN_DIM], DType.float8_e4m3fn),
@@ -293,7 +292,7 @@ def _fp8_dispatch() -> list[tuple[TensorValue, ...]]:
     ]
 
 
-def _nvfp4_dispatch() -> list[tuple[TensorValue, ...]]:
+def _nvfp4_dispatch() -> list[tuple[Tensor, ...]]:
     """The six NVFP4 dispatch outputs (see ``_ep_dispatch_output_types``)."""
     return [
         (

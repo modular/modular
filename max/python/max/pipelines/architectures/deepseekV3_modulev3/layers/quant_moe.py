@@ -612,7 +612,7 @@ class ExpertParallelMoE(QuantizedMoE):
         payload: EPDispatchPayload,
         global_scale: Tensor | None,
         estimated_total_m: Tensor,
-    ) -> list[TensorValue]:
+    ) -> list[Tensor]:
         """Runs the per-device expert matmuls on dispatched tokens."""
         # The EP dispatch hands back one bundle per device, so each device's
         # expert matmuls run on its own entries.
@@ -624,24 +624,22 @@ class ExpertParallelMoE(QuantizedMoE):
         usage_stats = payload.usage_stats
         with ensure_context():
             return [
-                TensorValue(
-                    _local_expert_matmul(
-                        tokens[i],
-                        gate_up[i],
-                        down[i],
-                        payload.expert_start[i],
-                        payload.expert_ids[i],
-                        usage_stats[i] if usage_stats is not None else None,
-                        quant_config=self.quant_config,
-                        estimated_total_m=estimated_total_m,
-                    )
+                _local_expert_matmul(
+                    tokens[i],
+                    gate_up[i],
+                    down[i],
+                    payload.expert_start[i],
+                    payload.expert_ids[i],
+                    usage_stats[i] if usage_stats is not None else None,
+                    quant_config=self.quant_config,
+                    estimated_total_m=estimated_total_m,
                 )
                 for i in range(len(tokens))
             ]
 
     def _compute_shared_experts(
         self, x: Tensor, devices: Sequence[int]
-    ) -> list[TensorValue]:
+    ) -> list[Tensor]:
         """Runs the shared expert for ``devices``.
 
         Returns:
@@ -668,7 +666,7 @@ class ExpertParallelMoE(QuantizedMoE):
                 stream_id=_SHARED_EXPERT_STREAM_ID,
             )
 
-        return [TensorValue(output) for output in outputs]
+        return outputs
 
     def forward(self, x: Tensor, comm: EPCommBuffers | None = None) -> Tensor:
         """Expert-parallel forward: gate -> dispatch -> local compute -> combine.
@@ -687,17 +685,15 @@ class ExpertParallelMoE(QuantizedMoE):
         router_idx, router_weight = self.gate(x)
         router_idx = router_idx.cast(DType.int32)
 
-        x_shards = [TensorValue(s) for s in x.local_shards]
-        topk_id_shards = [TensorValue(s) for s in router_idx.local_shards]
-        router_weight_shards = [
-            TensorValue(s) for s in router_weight.local_shards
-        ]
+        x_shards = list(x.local_shards)
+        topk_id_shards = list(router_idx.local_shards)
+        router_weight_shards = list(router_weight.local_shards)
         device_ids = [d.id for d in self.mesh.devices]
 
         if ep_requires_dispatch_scales(self.quant_config):
             global_scale = self._nvfp4_global_input_scale()
             input_scales = [
-                TensorValue(F.broadcast_to(global_scale, [self.num_experts]))
+                F.broadcast_to(global_scale, [self.num_experts])
                 for _ in self.mesh.devices
             ]
         else:
@@ -722,7 +718,7 @@ class ExpertParallelMoE(QuantizedMoE):
 
         # Under allreduce, combine outputs are per-device partial sums that get
         # summed later, so add the replicated shared expert on one device only.
-        shared_by_device: dict[int, TensorValue] = {}
+        shared_by_device: dict[int, Tensor] = {}
         if self.shared_experts is not None and not config.fused_shared_expert:
             devices = (
                 [0] if config.use_allreduce else range(self.mesh.num_devices)
@@ -747,7 +743,7 @@ class ExpertParallelMoE(QuantizedMoE):
         payload = EPDispatchPayload.from_dispatch(
             dispatch_results, self.quant_config, config
         )
-        down_shards = self._local_compute(
+        down_bundle = self._local_compute(
             payload, global_scale, estimated_total_m
         )
 
@@ -755,7 +751,7 @@ class ExpertParallelMoE(QuantizedMoE):
         if config.use_allreduce:
             combine_results = [
                 batch_mgr.ep_combine(
-                    down_shards[i],
+                    down_bundle[i],
                     router_weight_shards[i],
                     device_ids[i],
                     topk_id_shards[i],
@@ -764,16 +760,18 @@ class ExpertParallelMoE(QuantizedMoE):
             ]
         else:
             combine_results = batch_mgr.ep_combine_all(
-                down_shards, router_weight_shards, device_ids
+                down_bundle, router_weight_shards, device_ids
             )
 
         # ``ep_combine`` returns each device exactly the tokens it dispatched,
         # so the output placement matches the input's.
-        placement = DeviceMapping(self.mesh, x.placements)
-        outputs: list[TensorValue] = []
+        outputs: list[Tensor] = []
         for i in range(self.mesh.num_devices):
             out = combine_results[i]
             if i in shared_by_device:
                 out = out + shared_by_device[i]
             outputs.append(out.cast(x_shards[i].dtype))
-        return Tensor.from_shard_values(outputs, mapping=placement)
+        return Tensor.from_shard_values(
+            [TensorValue(shard) for shard in outputs],
+            mapping=x.mapping,
+        )
