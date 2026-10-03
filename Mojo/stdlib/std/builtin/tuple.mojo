@@ -219,7 +219,9 @@ struct Tuple[*Ts: Movable](
         return Pointer[_, origin_of(self)](_mlir_value=elt_kgen_ptr)[]
 
     @inline(.nodebug)
-    def __contains__[T: Equatable](self, value: T) -> Bool:
+    def __contains__[
+        T: Equatable
+    ](self, value: T) -> Bool where Self.Ts.contains[T]():
         """Return whether the tuple contains the specified value.
 
         For example:
@@ -238,6 +240,11 @@ struct Tuple[*Ts: Movable](
 
         Returns:
             True if the value is in the tuple, False otherwise.
+
+        Constraints:
+            `T` must be one of the tuple's element types. A value of any
+            other type is never compared against the elements, so the
+            result would always be False.
         """
 
         comptime for i in range(type_of(self).__len__()):
