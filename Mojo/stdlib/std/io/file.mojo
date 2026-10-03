@@ -58,6 +58,9 @@ comptime O_RDWR = 0x0002
 comptime O_CREAT = platform_map[T=Int, "O_CREAT", linux=0x0040, macos=0x0200]()
 """Create file if it doesn't exist."""
 
+comptime O_EXCL = platform_map[T=Int, "O_EXCL", linux=0x0080, macos=0x0800]()
+"""Fail if file already exists (used with O_CREAT for atomic creation)."""
+
 comptime O_TRUNC = platform_map[T=Int, "O_TRUNC", linux=0x0200, macos=0x0400]()
 """Truncate file to zero length."""
 

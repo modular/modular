@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -49,6 +50,7 @@ def test_read_only_tree_redirects_to_modular_cache_root() -> None:
             "mojo.importer._modular_cache_root",
             return_value=Path(cache_root),
         ),
+        patch("mojo.importer.get_package_root", return_value=Path("/venv")),
     ):
         result = _resolve_cache_dir(
             "max._kv_cache_ops",
@@ -56,10 +58,50 @@ def test_read_only_tree_redirects_to_modular_cache_root() -> None:
             cache_filename=_CACHE_FILENAME,
         )
 
-    assert (
-        result
-        == Path(cache_root) / "python_extensions" / "max" / "_kv_cache_ops"
+    assert result == (
+        Path(cache_root)
+        / "python_extensions"
+        / hashlib.sha256(b"/venv").hexdigest()[:16]
+        / "max"
+        / "_kv_cache_ops"
     )
+
+
+def test_read_only_tree_redirected_cache_is_env_specific() -> None:
+    """Redirected cache directories are separated per installed Mojo environment."""
+    with (
+        tempfile.TemporaryDirectory() as tmp_dir,
+        tempfile.TemporaryDirectory() as cache_root,
+        patch("mojo.importer._cache_dir_is_writable", return_value=False),
+        patch(
+            "mojo.importer._modular_cache_root",
+            return_value=Path(cache_root),
+        ),
+        patch("mojo.importer.get_package_root", return_value=Path("/venv1")),
+    ):
+        first = _resolve_cache_dir(
+            "pkg.mod",
+            Path(tmp_dir),
+            cache_filename=_CACHE_FILENAME,
+        )
+
+    with (
+        tempfile.TemporaryDirectory() as tmp_dir,
+        tempfile.TemporaryDirectory() as cache_root,
+        patch("mojo.importer._cache_dir_is_writable", return_value=False),
+        patch(
+            "mojo.importer._modular_cache_root",
+            return_value=Path(cache_root),
+        ),
+        patch("mojo.importer.get_package_root", return_value=Path("/venv2")),
+    ):
+        second = _resolve_cache_dir(
+            "pkg.mod",
+            Path(tmp_dir),
+            cache_filename=_CACHE_FILENAME,
+        )
+
+    assert first != second
 
 
 def test_prebuilt_artifact_in_read_only_tree_is_used() -> None:

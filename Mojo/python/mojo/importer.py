@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from importlib.util import spec_from_file_location
 from pathlib import Path
 
+from ._package_root import get_package_root
 from .paths import MojoCompilationError, MojoModulePath, find_mojo_module_in_dir
 from .run import subprocess_run_mojo
 
@@ -168,6 +169,26 @@ def _cache_dir_is_writable(in_tree_cache_dir: Path, mojo_dir: Path) -> bool:
     return os.access(target, os.W_OK)
 
 
+def _redirected_cache_env_id() -> str:
+    """Returns a stable identifier for the current installed Mojo environment.
+
+    Redirected caches are shared across multiple installed environments, so we
+    must avoid reusing `.so` artifacts that were compiled for a different
+    runtime. This keeps cache directories environment-specific.
+    """
+    try:
+        package_root = get_package_root()
+    except RuntimeError:
+        package_root = None
+
+    if package_root is not None:
+        root_path = package_root
+    else:
+        root_path = Path(sys.executable).resolve()
+
+    return hashlib.sha256(str(root_path).encode("utf-8")).hexdigest()[:16]
+
+
 def _resolve_cache_dir(
     name: str, mojo_dir: Path, *, cache_filename: str
 ) -> Path:
@@ -199,7 +220,13 @@ def _resolve_cache_dir(
 
     # The in-tree directory is read-only; redirect to the Modular cache folder.
     if cache_root := _modular_cache_root():
-        return cache_root / _REDIRECTED_CACHE_SUBDIR / name.replace(".", "/")
+        env_id = _redirected_cache_env_id()
+        return (
+            cache_root
+            / _REDIRECTED_CACHE_SUBDIR
+            / env_id
+            / name.replace(".", "/")
+        )
 
     # As a last resort fall back to the in-tree directory; this preserves the
     # original read-only error if the directory ultimately cannot be created.
