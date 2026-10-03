@@ -81,6 +81,10 @@ from linalg.arch.apple.mma import MmaOpApple
 
 from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 
 comptime NEG_INF = Float32(-3.0e38)
 
@@ -912,14 +916,10 @@ def fa_prefill_apple[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, q.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
 ) raises:
-    """TileTensor overload of `fa_prefill_apple`. Bridges to LayoutTensor
-    internally.
+    """TileTensor overload of `fa_prefill_apple`. Converts the query and
+    output operands to `LayoutTensor` internally.
 
     Parameters:
         output_type: Element type of the attention output.
@@ -962,7 +962,7 @@ def fa_prefill_apple[
         v,
         mask_functor,
         output.to_layout_tensor(),
-        valid_length.to_layout_tensor(),
+        immut_tile_tensor_1d(valid_length.ptr, valid_length.num_elements()),
         scale,
         batch_size,
         max_prompt_len,
@@ -992,7 +992,7 @@ def fa_prefill_apple[
     v: v_t,
     mask_functor: mask_t,
     output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    valid_length: ImmutTileTensor1D[.uint32],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -1001,11 +1001,7 @@ def fa_prefill_apple[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, q.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
 ) raises:
     """Host launcher for the Apple M5 flash-attention prefill kernel.
 
@@ -1084,29 +1080,6 @@ def fa_prefill_apple[
         output.ptr.as_unsafe_any_origin(),
         row_major(Coord(Int(output.size()))),
     )
-    var valid_length_flat = TileTensor(
-        valid_length.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(Coord(Int(valid_length.size()))),
-    )
-
-    # Sink weights as a nullable `OptionalReg[TileTensor]` (not a dangling
-    # pointer). None when sink=False; converted to a TileTensor so the kernel
-    # stays TileTensor-only and indexes by head_id.
-    var sink_layout_val = row_major(Coord(num_heads))
-    comptime SinkTile = TileTensor[
-        q_type, type_of(sink_layout_val), ImmutAnyOrigin
-    ]
-    var sink_tile: OptionalReg[SinkTile]
-    comptime if sink:
-        var sw = sink_weights.value()
-        sink_tile = OptionalReg[SinkTile](
-            SinkTile(
-                sw.ptr.as_imm().as_unsafe_any_origin(),
-                sink_layout_val,
-            )
-        )
-    else:
-        sink_tile = None
 
     # MODULAR_APPLE_FA_PREFILL_NUM_SIMDGROUPS={4,8,16,32} overrides the
     # simdgroups-per-threadgroup at runtime; otherwise the `num_simdgroups`
@@ -1128,12 +1101,12 @@ def fa_prefill_apple[
                     mask_t,
                     type_of(q_flat).LayoutType,
                     type_of(output_flat).LayoutType,
-                    type_of(valid_length_flat).LayoutType,
-                    type_of(sink_layout_val),
+                    type_of(valid_length).LayoutType,
+                    ImmutTileTensor1D[q_type].LayoutType,
                     type_of(output_flat).Engine,
                     type_of(q_flat).Engine,
-                    type_of(valid_length_flat).Engine,
-                    SinkTile.Engine,
+                    type_of(valid_length).Engine,
+                    ImmutTileTensor1D[q_type].Engine,
                     ragged=ragged,
                     sink=sink,
                     _use_valid_length=_use_valid_length,
@@ -1149,8 +1122,8 @@ def fa_prefill_apple[
                     k,
                     v,
                     mask_functor,
-                    valid_length_flat,
-                    sink_tile,
+                    valid_length,
+                    sink_weights,
                     scale,
                     Int32(batch_size),
                     Int32(max_prompt_len),

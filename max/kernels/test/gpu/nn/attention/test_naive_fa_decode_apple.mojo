@@ -39,6 +39,7 @@ from layout._utils import ManagedLayoutTensor
 from layout._fillers import random
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.gpu.apple.naive_fa_decode import naive_fa_decode_apple
+from nn.attention.gpu.nvidia.common import immut_tile_tensor_1d
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 from std.testing import assert_almost_equal
@@ -226,7 +227,9 @@ def execute_decode_compare[
         v_operand,
         CausalMask(),
         test_output_tensor,
-        valid_lengths_tensor,
+        immut_tile_tensor_1d(
+            valid_lengths_tensor.ptr, valid_lengths_tensor.size()
+        ),
         scale,
         batch_size,
         max_prompt_len,

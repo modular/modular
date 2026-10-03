@@ -34,6 +34,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.gpu.nvidia.common import immut_tile_tensor_1d
 from nn.attention.mha_mask import CausalMask
 from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
@@ -148,10 +149,8 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
-    var sink_device = LayoutTensor[qkv_type, sink_layout, ImmutAnyOrigin](
-        sink_device_ptr,
-        RuntimeLayout[sink_layout].row_major(Index(num_heads)),
+    var sink_device = immut_tile_tensor_1d(
+        sink_device_ptr.unsafe_ptr(), num_heads
     )
 
     # Run flash_attention with sink=True.

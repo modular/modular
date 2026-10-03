@@ -37,6 +37,7 @@ from nn.attention.gpu.mha import (
     mha_gpu_naive,
 )
 from nn.attention.mha_mask import NullMask
+from nn.attention.gpu.nvidia.common import immut_tile_tensor_1d
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index
@@ -560,11 +561,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
         out_dev,
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
-    comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
-    var sinks_device = LayoutTensor[qkv_type, sinks_layout](
-        sinks_dev.unsafe_ptr(),
-        RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
-    )
+    var sinks_device = immut_tile_tensor_1d(sinks_dev.unsafe_ptr(), num_heads)
 
     @inline(.always)
     def launch(ctx: DeviceContext) raises {imm}:
@@ -577,7 +574,7 @@ def test_flash_attention_sink_kernel(ctx: DeviceContext, seq_len: Int) raises:
             scale,  # 0.0 -> all QK logits are exactly zero
             ctx,
             None,
-            sink_weights=sinks_device.as_imm().as_unsafe_any_origin(),
+            sink_weights=sinks_device,
         )
 
     launch(ctx)

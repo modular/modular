@@ -48,6 +48,10 @@ from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
 
 from nn.attention.gpu.apple.naive_fa_decode import naive_fa_decode_apple
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 
@@ -180,9 +184,10 @@ def _run_sink_closed_form[
     var v_op = KVCacheMHAOperand(kv_collection.get_value_cache(layer_idx))
 
     var sink_dev = sink_managed.device_tensor()
-    var sink_opt = OptionalReg[
-        LayoutTensor[dtype, sink_layout, ImmutAnyOrigin]
-    ](sink_dev.as_imm().as_unsafe_any_origin())
+    var sink_opt = OptionalReg[ImmutTileTensor1D[dtype]](
+        immut_tile_tensor_1d(sink_dev.ptr, num_q_heads)
+    )
+    var valid_lengths_dev = valid_lengths.device_tensor()
 
     naive_fa_decode_apple[
         sink=True,
@@ -194,7 +199,7 @@ def _run_sink_closed_form[
         v_op,
         NullMask(),
         test_output.device_tensor(),
-        valid_lengths.device_tensor(),
+        immut_tile_tensor_1d(valid_lengths_dev.ptr, valid_lengths_dev.size()),
         Float32(0.0),  # scale = 0 -> all QK logits exactly 0
         batch_size,
         max_prompt_len,

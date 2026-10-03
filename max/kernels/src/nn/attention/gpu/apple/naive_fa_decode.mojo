@@ -69,6 +69,7 @@ from layout.tile_layout import (
 
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 
 comptime BN = 16  # KV keys per producer tile step
 comptime NEG_INF = Float32(-3.0e38)
@@ -599,7 +600,7 @@ def naive_fa_decode_apple[
     v: v_t,
     mask_functor: mask_t,
     output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    valid_length: ImmutTileTensor1D[.uint32],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -608,11 +609,7 @@ def naive_fa_decode_apple[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, q.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
 ) raises:
     """Host launcher for the Apple split-K decode attention pair (decode-only).
 
@@ -713,37 +710,12 @@ def naive_fa_decode_apple[
         output.ptr.as_unsafe_any_origin(),
         row_major(Coord(Int(output.size()))),
     )
-    var valid_length_flat = TileTensor(
-        valid_length.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(Coord(Int(valid_length.size()))),
-    )
     var o_partial_t = TileTensor(o_partial_dev, row_major(Coord(o_partial_n)))
     var m_partial_t = TileTensor(m_partial_dev, row_major(Coord(ml_partial_n)))
     var l_partial_t = TileTensor(l_partial_dev, row_major(Coord(ml_partial_n)))
     var o_partial_imm = o_partial_t.as_imm()
     var m_partial_imm = m_partial_t.as_imm()
     var l_partial_imm = l_partial_t.as_imm()
-
-    # Sink weights: a nullable `OptionalReg[TileTensor]` passed by value (NOT a
-    # dangling `UnsafePointer` -- KB `unsafepointer-is-non-nullable`). When
-    # sink=False this is None and never read (the seed is comptime-gated on
-    # `sink` in the producer). The per-head [num_heads] tensor is converted to
-    # a TileTensor so the kernel stays TileTensor-only.
-    var sink_layout_val = row_major(Coord(num_heads))
-    comptime SinkTile = TileTensor[
-        q_type, type_of(sink_layout_val), ImmutAnyOrigin
-    ]
-    var sink_tile: OptionalReg[SinkTile]
-    comptime if sink:
-        var sw = sink_weights.value()
-        sink_tile = OptionalReg[SinkTile](
-            SinkTile(
-                sw.ptr.as_imm().as_unsafe_any_origin(),
-                sink_layout_val,
-            )
-        )
-    else:
-        sink_tile = None
 
     # The producer needs the head dim at compile time (EPL = Depth //
     # WARP_SIZE), so specialize one kernel per supported `depth` and select at
@@ -763,8 +735,8 @@ def naive_fa_decode_apple[
                     mask_t,
                     type_of(o_partial_t).LayoutType,
                     type_of(q_flat).LayoutType,
-                    type_of(valid_length_flat).LayoutType,
-                    type_of(sink_layout_val),
+                    type_of(valid_length).LayoutType,
+                    ImmutTileTensor1D[q_type].LayoutType,
                     ragged=ragged,
                     sink=sink,
                     _use_valid_length=_use_valid_length,
@@ -775,8 +747,8 @@ def naive_fa_decode_apple[
                     MPartialEngine=m_partial_t.Engine,
                     LPartialEngine=l_partial_t.Engine,
                     QEngine=q_flat.Engine,
-                    VLEngine=valid_length_flat.Engine,
-                    SinkEngine=SinkTile.Engine,
+                    VLEngine=valid_length.Engine,
+                    SinkEngine=ImmutTileTensor1D[q_type].Engine,
                 ]
                 ctx.enqueue_function[core_kernel](
                     o_partial_t,
@@ -786,8 +758,8 @@ def naive_fa_decode_apple[
                     k,
                     v,
                     mask_functor,
-                    valid_length_flat,
-                    sink_tile,
+                    valid_length,
+                    sink_weights,
                     scale,
                     Int32(batch_size),
                     Int32(max_prompt_len),
@@ -808,7 +780,7 @@ def naive_fa_decode_apple[
         mask_t,
         type_of(output_flat).LayoutType,
         type_of(o_partial_imm).LayoutType,
-        type_of(valid_length_flat).LayoutType,
+        type_of(valid_length).LayoutType,
         ragged=ragged,
         sink=sink,
         _use_valid_length=_use_valid_length,
@@ -818,7 +790,7 @@ def naive_fa_decode_apple[
         OPartialEngine=o_partial_imm.Engine,
         MPartialEngine=m_partial_imm.Engine,
         LPartialEngine=l_partial_imm.Engine,
-        VLEngine=valid_length_flat.Engine,
+        VLEngine=valid_length.Engine,
     ]
     ctx.enqueue_function[stitch_kernel](
         output_flat,
@@ -826,7 +798,7 @@ def naive_fa_decode_apple[
         m_partial_imm,
         l_partial_imm,
         k,
-        valid_length_flat,
+        valid_length,
         Int32(max_prompt_len),
         Int32(max_cache_size),
         Int32(num_heads),

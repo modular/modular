@@ -273,16 +273,6 @@ def test[
         ),
     )
 
-    # Valid length (empty -- not using ragged) for mha_gpu_naive
-    var null_valid_length = LayoutTensor[
-        .uint32,
-        Layout.row_major(UNKNOWN_VALUE),
-        MutAnyOrigin,
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
-    )
-
     # ---- Launch the native FP8 kernel via mla_decode_sm100_dispatch ----
     print("  Launching native FP8 kernel...")
 
@@ -371,7 +361,7 @@ def test[
             k_bf16_operand,
             CausalMask(),
             output_ref_full_device,
-            null_valid_length,
+            None,
             scale,
             batch_size,
             seq_len,
@@ -388,7 +378,7 @@ def test[
             k_bf16_operand,
             NullMask(),
             output_ref_full_device,
-            null_valid_length,
+            None,
             scale,
             batch_size,
             seq_len,
@@ -803,15 +793,6 @@ def test_sw[
         ),
     )
 
-    var null_valid_length = LayoutTensor[
-        .uint32,
-        Layout.row_major(UNKNOWN_VALUE),
-        MutAnyOrigin,
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
-    )
-
     print("  Launching native FP8 kernel (SlidingWindow)...")
 
     var mla_args = MLADispatchScalarArgs[
@@ -881,7 +862,7 @@ def test_sw[
         k_bf16_operand,
         SlidingWindowCausalMask[window_size](),
         output_ref_full_device,
-        null_valid_length,
+        None,
         scale,
         batch_size,
         seq_len,

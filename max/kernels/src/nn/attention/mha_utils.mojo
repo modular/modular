@@ -54,7 +54,6 @@ from nn.attention.mha_mask import (
     ChunkedCausalMask,
     ChunkedMask,
     MaskName,
-    MaterializedMask,
     MHAMask,
     NullMask,
     RelativeLogitsMask,
@@ -808,42 +807,6 @@ def dispatch_mask[
 
 
 @inline(.always)
-def dispatch_materialized_mask[
-    dtype: DType,
-    layout: Layout,
-    //,
-](
-    mask_nd: LayoutTensor[mut=False, dtype, layout, _],
-    callback_fn: Some[callback_fn_type],
-    start_pos_nd: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
-) raises -> None:
-    """Wrap a dense mask tensor in a `MaterializedMask` and invoke a callback.
-
-    Constructs a `MaterializedMask` from the provided tensor and optional
-    per-sequence start-position tensor, then calls `callback_fn` with the
-    resulting mask. Use this when the mask is provided as an explicit tensor
-    (e.g. an ALiBi or relative-positional-encoding bias) rather than a
-    compute-on-the-fly strategy.
-
-    Parameters:
-        dtype: Element type of the mask tensor.
-        layout: Layout of the mask tensor.
-
-    Args:
-        mask_nd: The mask values tensor with shape `(batch, heads, q, k)` or
-            compatible broadcast shape.
-        callback_fn: Parametric callback invoked with the `MaterializedMask`.
-        start_pos_nd: Optional per-sequence start positions used to offset the
-            key dimension.
-    """
-
-    var mask = MaterializedMask(mask_nd, start_pos_nd)
-    return callback_fn(mask)
-
-
-@inline(.always)
 def dispatch_relative_logits_mask[
     dtype: DType,
     BiasLayout: TensorLayout,
@@ -866,8 +829,8 @@ def dispatch_relative_logits_mask[
 ) raises -> None:
     """Wrap `bias_nd` in a `RelativeLogitsMask` and invoke `callback_fn`.
 
-    Like `dispatch_materialized_mask`, this carries runtime state (the bias
-    table plus the tensors that recover its ragged-flat row), so it lives
+    This carries runtime state (the bias table plus the tensors that recover
+    its ragged-flat row), so it lives
     outside `dispatch_mask`'s zero-arg string dispatch. `local_window_size`
     picks the visibility mask: `<= 0` (canonically `-1`, the graph-level
     "no window" value) -> `CausalMask`, else

@@ -41,6 +41,10 @@ from layout import (
 from layout.tile_layout import row_major
 
 from nn.attention.gpu.apple.fa_prefill import fa_prefill_apple
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.mha_mask import (
     CausalMask,
     MHAMask,
@@ -286,20 +290,10 @@ def _run[
     for h in range(num_heads):
         sink_h[h] = Scalar[qkv_type](sink_w[h])
     ctx.enqueue_copy(sink_d, sink_h)
-    comptime sinks_layout = Layout.row_major(UNKNOWN_VALUE)
-    comptime SinkOpt = OptionalReg[
-        LayoutTensor[qkv_type, sinks_layout, ImmutAnyOrigin]
-    ]
+    comptime SinkOpt = OptionalReg[ImmutTileTensor1D[qkv_type]]
     var sink_opt: SinkOpt
     comptime if use_sink:
-        sink_opt = SinkOpt(
-            LayoutTensor[qkv_type, sinks_layout](
-                sink_d.unsafe_ptr(),
-                RuntimeLayout[sinks_layout].row_major(Index(num_heads)),
-            )
-            .as_imm()
-            .as_unsafe_any_origin()
-        )
+        sink_opt = SinkOpt(immut_tile_tensor_1d(sink_d.unsafe_ptr(), num_heads))
     else:
         sink_opt = SinkOpt(None)
 
