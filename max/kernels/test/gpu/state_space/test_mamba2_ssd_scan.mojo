@@ -673,6 +673,41 @@ def test_mamba2_ssd_dstate_split_strided_with_initial_state() raises:
         )
 
 
+def test_mamba2_ssd_dstate_split_chunk_boundaries() raises:
+    """Sequences around the staged chunk size (8 tokens) that mix full chunks
+    with a scalar tail, with and without an initial state."""
+    with DeviceContext() as ctx:
+        comptime if not (
+            has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        ):
+            return
+        run_mamba2_ssd[.bfloat16, 128, 8, init_state=True](
+            nheads=64,
+            head_dim=64,
+            ngroups=8,
+            max_slots=5,
+            seq_lengths=Index(8, 16, 37, 130),
+            ctx=ctx,
+            row_pad=32,
+        )
+        run_mamba2_ssd[.bfloat16, 128, 8](
+            nheads=64,
+            head_dim=64,
+            ngroups=8,
+            max_slots=5,
+            seq_lengths=Index(9, 7, 24, 100),
+            ctx=ctx,
+        )
+        run_mamba2_ssd[.bfloat16, 128, 8](
+            nheads=8,
+            head_dim=72,
+            ngroups=2,
+            max_slots=4,
+            seq_lengths=Index(17, 9),
+            ctx=ctx,
+        )
+
+
 def test_mamba2_ssd_no_D_no_bias() raises:
     """Empty D and dt_bias drop their terms."""
     with DeviceContext() as ctx:

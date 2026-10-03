@@ -4497,42 +4497,54 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                 # batch-64 decode and 8 x 512 prefill.
                 comptime DSTATE_SPLIT = 8
                 comptime CH_PER_BLOCK = 128 // DSTATE_SPLIT
-                comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
-                    dtype,
-                    state_dtype,
-                    DSTATE,
-                    DSTATE_SPLIT,
-                    x_tt.LayoutType,
-                    dt_tt.LayoutType,
-                    A_tt.LayoutType,
-                    B_tt.LayoutType,
-                    C_tt.LayoutType,
-                    D_tt.LayoutType,
-                    dt_bias_tt.LayoutType,
-                    y_tt.LayoutType,
-                    ssm_pool_tt.LayoutType,
-                    query_start_loc_tt.LayoutType,
-                    has_initial_state_tt.LayoutType,
-                    cache_indices_tt.LayoutType,
-                    x_tt.Engine,
-                    Self.dt_softplus,
-                ]
-                ctx.enqueue_function[kernel](
-                    x_tt,
-                    dt_tt,
-                    A_tt,
-                    B_tt,
-                    C_tt,
-                    D_tt,
-                    dt_bias_tt,
-                    y_tt,
-                    ssm_pool_tt,
-                    query_start_loc_tt,
-                    has_initial_state_tt,
-                    cache_indices_tt,
-                    grid_dim=(ceildiv(head_dim, CH_PER_BLOCK), nheads, batch),
-                    block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
-                )
+                # The staged long-sequence path costs decode registers and
+                # shared memory, so only a launch with a multi-token sequence
+                # uses it.
+                var has_prefill = x.dim_size(0) > batch
+                comptime for mode in range(2):
+                    comptime prefill = mode == 1
+                    comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
+                        dtype,
+                        state_dtype,
+                        DSTATE,
+                        DSTATE_SPLIT,
+                        x_tt.LayoutType,
+                        dt_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        dt_bias_tt.LayoutType,
+                        y_tt.LayoutType,
+                        ssm_pool_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        x_tt.Engine,
+                        Self.dt_softplus,
+                        prefill,
+                    ]
+                    if has_prefill == prefill:
+                        ctx.enqueue_function[kernel](
+                            x_tt,
+                            dt_tt,
+                            A_tt,
+                            B_tt,
+                            C_tt,
+                            D_tt,
+                            dt_bias_tt,
+                            y_tt,
+                            ssm_pool_tt,
+                            query_start_loc_tt,
+                            has_initial_state_tt,
+                            cache_indices_tt,
+                            grid_dim=(
+                                ceildiv(head_dim, CH_PER_BLOCK),
+                                nheads,
+                                batch,
+                            ),
+                            block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
+                        )
 
         var dstate = B.dim_size(2)
         __match dstate:

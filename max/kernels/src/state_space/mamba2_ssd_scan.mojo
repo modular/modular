@@ -49,9 +49,11 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.host import DeviceContext
-from max.gpu.primitives.warp import lane_group_sum
+from max.gpu.primitives.warp import lane_group_sum, shuffle_xor
+from max.gpu.sync import barrier
 from max.algorithm import sync_parallelize
-from std.math import exp2
+from std.math import exp2, fma
+from std.memory import unsafe_stack_allocation
 from std.sys.info import align_of
 from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
@@ -135,15 +137,36 @@ def _use_initial_state(
     )
 
 
+@inline(.always)
+def _scatter_sum[n: Int](v: SIMD[.float32, n], lane: Int) -> Float32:
+    """Sums `v` across an `n`-lane group so that lane `i` ends with element `i`.
+
+    A butterfly reduce-scatter: it needs `n - 1` shuffles for `n` sums where
+    `n` separate `lane_group_sum`s need `n * log2(n)`.
+    """
+    comptime if n == 1:
+        return v[0]
+    else:
+        comptime half = n // 2
+        var lo = v.slice[half, offset=0]()
+        var hi = v.slice[half, offset=half]()
+        var upper = (lane & half) != 0
+        var keep = hi if upper else lo
+        var send = lo if upper else hi
+        comptime for i in range(half):
+            keep[i] += shuffle_xor(send[i], UInt32(half))
+        return _scatter_sum[half](keep, lane)
+
+
 # NVIDIA B200 (sm_100) launch bounds. This kernel is only ever launched with a
 # 128-thread block (production kernels.mojo and the unit test both use
 # `block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1)` with
 # DSTATE_SPLIT*CH_PER_BLOCK == 128), so `.maxntid 128` is exact.
 #
-# The kernel is latency-bound, so resident CTAs matter. `.minnctapersm 6` caps
-# it at 80 registers per thread (6 CTAs/SM), which the L == 16 production tile
-# meets without spills. Decode at batch 64 is 5% faster than with a 4-CTA
-# floor and prefill is 33% faster.
+# The kernel is latency-bound, so resident CTAs matter. `.minnctapersm 7` caps
+# it at 72 registers per thread (7 CTAs/SM), which the L == 16 production tile
+# meets without spills. A floor of 8 (64 registers) made the staged prefill
+# path slower on single long sequences and 16 x 512 batches.
 #
 # The floor is gated on `L <= 16`: for larger tiles (DSTATE == 256 at split 8,
 # L == 32) the state/B/C vectors spill under that cap, so they keep
@@ -153,7 +176,7 @@ def _use_initial_state(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(128))
 )
 @__llvm_metadata(
-    `nvvm.minctasm`=SIMDLength(6) if (DSTATE // DSTATE_SPLIT)
+    `nvvm.minctasm`=SIMDLength(7) if (DSTATE // DSTATE_SPLIT)
     <= 16 else SIMDLength(1)
 )
 def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
@@ -177,6 +200,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     # buffers in the tests), so a single engine binds every tile argument.
     Engine: TensorEngine = DefaultEngine[element_width=1],
     dt_softplus: Bool = True,
+    prefill: Bool = True,
 ](
     x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin, Engine=Engine],
     dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin, Engine=Engine],
@@ -241,6 +265,9 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         cache_indices_LT: Tensor layout of `cache_indices`.
         Engine: Engine shared by all tile operands.
         dt_softplus: Whether to apply softplus to `dt + dt_bias`.
+        prefill: Whether to enable the staged long-sequence path. Decode
+            launches turn it off because its shared memory and registers
+            would slow them down.
 
     Args:
         x: Input of shape `(total_len, nheads, head_dim)`.
@@ -259,6 +286,11 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         cache_indices: Pool slot per sequence of shape `(batch,)`.
     """
     comptime L = DSTATE // DSTATE_SPLIT
+    # The staged path is sized for the production tiling: a chunk of T tokens
+    # gives each of the 128 threads one 8-wide B vector, one C vector and one x.
+    comptime STAGED = prefill and DSTATE == 128 and DSTATE_SPLIT == 8
+    comptime T = 8
+    comptime CH = 16
     # `n_base` and DSTATE are multiples of L, so each sub-tile is L-aligned.
     comptime pool_align = align_of[SIMD[state_dtype, L]]()
     comptime bc_align = align_of[SIMD[kernel_dtype, L]]()
@@ -298,7 +330,125 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
             (slot, h, p, n_base)
         ).cast[.float32]()
 
-    for gt in range(seq_start, seq_end):
+    var gt = seq_start
+    comptime if STAGED:
+        # Every thread of a block would re-read and re-convert the same B/C
+        # rows and recompute the same dt, so each chunk of T tokens is staged
+        # once per block, double buffered so the next chunk's global loads
+        # overlap this chunk's scan. B/C are stored as fp32 float4 quads
+        # grouped by quad index so the per-thread float4 reads do not conflict.
+        if seq_end - seq_start >= T:
+            comptime B_QUADS = DSTATE_SPLIT * 4
+            comptime vec_align = align_of[SIMD[kernel_dtype, 8]]()
+            var B_s = unsafe_stack_allocation[
+                2 * T * DSTATE, DType.float32, address_space=.SHARED
+            ]()
+            var C_s = unsafe_stack_allocation[
+                2 * T * DSTATE, DType.float32, address_space=.SHARED
+            ]()
+            var x_s = unsafe_stack_allocation[
+                2 * T * CH, DType.float32, address_space=.SHARED
+            ]()
+            var dA_s = unsafe_stack_allocation[
+                2 * T, DType.float32, address_space=.SHARED
+            ]()
+            var delta_s = unsafe_stack_allocation[
+                2 * T, DType.float32, address_space=.SHARED
+            ]()
+            var ty = thread_idx.y
+            var tid = ty * DSTATE_SPLIT + tx
+            var t_w = tid // (DSTATE // 8)
+            var n_w = (tid % (DSTATE // 8)) * 8
+            var quad_w = (n_w % L) // 4 * B_QUADS + (n_w // L) * 4
+            var B_w = SIMD[kernel_dtype, 8](0)
+            var C_w = SIMD[kernel_dtype, 8](0)
+            var x_w = Scalar[kernel_dtype](0)
+            var dt_w = Scalar[kernel_dtype](0)
+            var p_w = block_idx.x * CH + tid % CH
+            var num_chunks = (seq_end - seq_start) // T
+            for c in range(num_chunks + 1):
+                var next = seq_start + c * T
+                if c < num_chunks:
+                    var row = (next + t_w) * B_strides[
+                        0
+                    ] + group_id * B_strides[1]
+                    B_w = B.raw_load[width=8, alignment=vec_align](
+                        UInt32(row + n_w)
+                    )
+                    row = (next + t_w) * C_strides[0] + group_id * C_strides[1]
+                    C_w = C.raw_load[width=8, alignment=vec_align](
+                        UInt32(row + n_w)
+                    )
+                    if p_w < Int(x.dim[2]()):
+                        x_w = x.raw_load(
+                            UInt32(
+                                (next + tid // CH) * x_strides[0]
+                                + h * x_strides[1]
+                                + p_w * x_strides[2]
+                            )
+                        )
+                    if tid < T:
+                        dt_w = dt.raw_load(
+                            UInt32(
+                                (next + tid) * dt_strides[0] + h * dt_strides[1]
+                            )
+                        )
+                if c > 0:
+                    var cur = seq_start + (c - 1) * T
+                    var buf = ((c - 1) % 2) * T
+                    var part = SIMD[.float32, T](0)
+                    comptime for t in range(T):
+                        var B_vals = SIMD[.float32, L](0)
+                        var C_vals = SIMD[.float32, L](0)
+                        comptime for q in range(L // 4):
+                            var off = (buf + t) * DSTATE + q * B_QUADS + tx * 4
+                            B_vals = B_vals.insert[offset=q * 4](
+                                B_s.unsafe_load[width=4, alignment=16](off)
+                            )
+                            C_vals = C_vals.insert[offset=q * 4](
+                                C_s.unsafe_load[width=4, alignment=16](off)
+                            )
+                        var dt_x = delta_s[buf + t] * x_s[(buf + t) * CH + ty]
+                        state = fma(
+                            B_vals,
+                            SIMD[.float32, L](dt_x),
+                            state * dA_s[buf + t],
+                        )
+                        part[t] = (state * C_vals).reduce_add()
+                    # Lane `tx` finishes token `tx` of this chunk.
+                    var y_val = _scatter_sum[T](part, tx)
+                    if active:
+                        y.raw_store(
+                            UInt32(
+                                (cur + tx) * y_strides[0]
+                                + h * y_strides[1]
+                                + p * y_strides[2]
+                            ),
+                            (y_val + head.D * x_s[(buf + tx) * CH + ty]).cast[
+                                kernel_dtype
+                            ](),
+                        )
+                if c < num_chunks:
+                    var buf = (c % 2) * T
+                    comptime for i in range(2):
+                        var off = (buf + t_w) * DSTATE + quad_w + i * B_QUADS
+                        B_s.unsafe_store[alignment=16](
+                            off, B_w.slice[4, offset=i * 4]().cast[.float32]()
+                        )
+                        C_s.unsafe_store[alignment=16](
+                            off, C_w.slice[4, offset=i * 4]().cast[.float32]()
+                        )
+                    x_s[buf * CH + tid] = x_w.cast[.float32]()
+                    if tid < T:
+                        var delta = head.delta[dt_softplus](
+                            dt_w.cast[.float32]()
+                        )
+                        delta_s[buf + tid] = delta
+                        dA_s[buf + tid] = head.decay(delta)
+                barrier()
+            gt = seq_start + num_chunks * T
+
+    while gt < seq_end:
         var x_val = Float32(0)
         var dt_x = Float32(0)
         var dA = Float32(0)
@@ -333,6 +483,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
                 UInt32(gt * y_strides[0] + h * y_strides[1] + p * y_strides[2]),
                 (y_val + head.D * x_val).cast[kernel_dtype](),
             )
+        gt += 1
 
     if active:
         ssm_pool.store[width=L, alignment=pool_align](
