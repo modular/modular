@@ -138,6 +138,16 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `String(from_codepoints=...)` constructs a string from a buffer of Unicode
+  scalar values (one codepoint per element). This is not a UTF-8 or UTF-16
+  byte encoding: `UInt8` is Latin-1 / ISO-8859-1 (not UTF-8), and `UInt16` is
+  a single BMP scalar (not a UTF-16 code unit that may participate in a
+  surrogate pair). Wider unsigned elements are full Unicode scalars, as in
+  UTF-32. Byte order is selected with `endian=` (`Endian`, host order by
+  default); pass `detect_bom=True` to read and skip a leading U+FEFF. PR
+  [#5258](https://github.com/modular/modular/pull/5258) by
+  [@martinvuyk](https://github.com/martinvuyk).
+
 - `Tuple` gained `first_of[T]()`, which returns a reference to the first
   element of type `T`. The lookup is resolved at compile time, and it is a
   compile-time error if the tuple has no element of that type:
