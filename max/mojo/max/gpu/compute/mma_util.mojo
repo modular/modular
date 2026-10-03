@@ -32,8 +32,8 @@ AMD Matrix Cores: https://gpuopen.com/learn/amd-lab-notes/amd-lab-notes-matrix-c
 """
 
 from std.sys import CompilationTarget, is_amd_gpu, is_nvidia_gpu
-from std._gpu import grid_dim, lane_id
-from std.math.uutils import umod
+from std._gpu import lane_id
+from std.math.uutils import umod, udivmod
 
 
 @inline(.always)
@@ -260,9 +260,7 @@ def load_matrix_a_amd[
     """
 
     comptime assert m == 16 and n == 16 and k == 4
-    var lane = lane_id()
-    var thread_x = lane & 15
-    var thread_y = lane >> 4
+    var thread_y, thread_x = udivmod(lane_id(), 16)
     return a_ptr[
         unsafe_offset=ldm * (tile_row + thread_x) + tile_col + thread_y
     ]
@@ -270,7 +268,7 @@ def load_matrix_a_amd[
 
 @inline(.always)
 def load_matrix_a_amd[
-    dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
+    dtype: DType, //, m: Int, n: Int, k: Int
 ](
     a_ptr: Pointer[mut=False, Scalar[dtype], _],
     tile_row: Int,
@@ -284,7 +282,6 @@ def load_matrix_a_amd[
         m: Number of rows in the output matrix tile.
         n: Number of columns in the output matrix tile.
         k: Inner dimension for matrix multiplication.
-        n_blocks: Number of blocks.
 
     Args:
         a_ptr: Pointer to matrix A data in memory.
@@ -296,43 +293,18 @@ def load_matrix_a_amd[
         SIMD vector containing 4 values loaded from matrix A.
 
     Constraints:
-        The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
+        The tile dimensions must be m=16, n=16, k=16.
     """
 
-    comptime if m == 16 and n == 16 and k == 16 and n_blocks == 1:
-        var lane = lane_id()
-        var thread_x = lane & 15
-        var thread_y = lane >> 4
-        var a = SIMD[dtype, 4]()
+    comptime assert m == 16 and n == 16 and k == 16
+    var thread_y, thread_x = udivmod(lane_id(), 16)
+    var a = SIMD[dtype, 4]()
 
-        comptime for i in range(4):
-            var a_idx = (
-                ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
-            )
-            a[i] = a_ptr[unsafe_offset=a_idx]
+    comptime for i in range(4):
+        var a_idx = ldm * (tile_row + thread_x) + tile_col + i + 4 * thread_y
+        a[i] = a_ptr[unsafe_offset=a_idx]
 
-        return a
-    else:
-        comptime assert m == 4 and n == 4 and k == 4 and n_blocks == 16
-        var lane = lane_id()
-        # Implies 4, 16 block.
-        var thread_x = lane & 3
-        var thread_y = lane >> 2
-        var batchStrideA = grid_dim.x * m * ldm
-        var a = SIMD[dtype, 4]()
-
-        comptime for i in range(4):
-            # consecutive threads cover 16 consecutive rows
-            # consecutive registers take consecutive columns
-            # groups of 16 lanes cover each matrix in batch
-            var a_idx = (
-                ldm * (tile_row + thread_x)
-                + (tile_col + i)
-                + thread_y * batchStrideA
-            )
-            a[i] = a_ptr[unsafe_offset=a_idx]
-
-        return a
+    return a
 
 
 @inline(.always)
@@ -519,9 +491,7 @@ def load_matrix_b_amd[
         SIMD vector containing 1 FP32 value loaded from matrix B.
     """
 
-    var lane = lane_id()
-    var thread_x = lane & 15
-    var thread_y = lane >> 4
+    var thread_y, thread_x = udivmod(lane_id(), 16)
     return b_ptr[
         unsafe_offset=ldm * (tile_row + thread_y) + tile_col + thread_x
     ]
@@ -529,13 +499,12 @@ def load_matrix_b_amd[
 
 @inline(.always)
 def load_matrix_b_amd[
-    dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
+    dtype: DType, //, m: Int, n: Int, k: Int
 ](
     b_ptr: Pointer[mut=False, Scalar[dtype], _],
     tile_row: Int,
     tile_col: Int,
     ldm: Int,
-    tile_loops: Int = 1,
 ) -> SIMD[dtype, 4] where dtype.is_half_float():
     """Loads a tile of matrix B from memory to registers for AMD half-precision tensor core operations.
 
@@ -548,55 +517,29 @@ def load_matrix_b_amd[
         m: Number of rows in the output matrix tile.
         n: Number of columns in the output matrix tile.
         k: Inner dimension for matrix multiplication.
-        n_blocks: Number of blocks.
 
     Args:
         b_ptr: Pointer to matrix B data in memory.
         tile_row: Starting row index of the tile.
         tile_col: Starting column index of the tile.
         ldm: Leading dimension of matrix B (stride between rows).
-        tile_loops: Number of tile loops across matrix B's row dimension.
 
     Returns:
         SIMD vector containing 4 values loaded from matrix B.
 
     Constraints:
-        The tile dimensions must be m=16, n=16, k=16 and n_blocks=1 or m=4, n=4, k=4 and n_blocks=16.
+        The tile dimensions must be m=16, n=16, k=16.
     """
 
-    comptime if m == 16 and n == 16 and k == 16 and n_blocks == 1:
-        var lane = lane_id()
-        var thread_x = lane & 15
-        var thread_y = lane >> 4
+    comptime assert m == 16 and n == 16 and k == 16
+    var thread_y, thread_x = udivmod(lane_id(), 16)
+    var b = SIMD[dtype, 4]()
 
-        var b = SIMD[dtype, 4]()
+    comptime for i in range(4):
+        var b_idx = ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
+        b[i] = b_ptr[unsafe_offset=b_idx]
 
-        comptime for i in range(4):
-            var b_idx = (
-                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
-            )
-            b[i] = b_ptr[unsafe_offset=b_idx]
-
-        return b
-    else:
-        comptime assert m == 4 and n == 4 and k == 4 and n_blocks == 16
-        var lane = lane_id()
-        # Implies 4, 16 block.
-        var thread_x = lane & 3
-        var thread_y = lane >> 2
-        var batchStrideB = tile_loops * k * ldm
-        var b = SIMD[dtype, 4]()
-
-        comptime for i in range(4):
-            var b_idx = (
-                tile_col
-                + thread_x
-                + (tile_row + i) * ldm
-                + thread_y * batchStrideB
-            )
-            b[i] = b_ptr[unsafe_offset=b_idx]
-
-        return b
+    return b
 
 
 @inline(.always)
@@ -652,7 +595,7 @@ def _store_matrix_d_nvidia[
 
 @inline(.always)
 def _store_matrix_d_amd[
-    dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
+    dtype: DType, //, m: Int, n: Int, k: Int
 ](
     d_ptr: Pointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
@@ -671,7 +614,6 @@ def _store_matrix_d_amd[
         m: Number of rows in matrix D.
         n: Number of columns in matrix D.
         k: Inner dimension for matrix multiply.
-        n_blocks: Number of blocks.
 
     Args:
         d_ptr: Pointer to destination memory for matrix D.
@@ -685,41 +627,16 @@ def _store_matrix_d_amd[
         - Each thread stores 4 elements in consecutive positions.
     """
 
-    comptime if m == 4 and n == 4 and k == 4 and n_blocks == 16:
-        var lane = lane_id()
-        # Implies 4, 16 block.
-        var thread_x = lane & 3
-        var thread_y = lane >> 2
-        var batchStrideD = grid_dim.x * m * ldm
+    var thread_y, thread_x = udivmod(lane_id(), 16)
 
-        comptime for i in range(4):
-            # consecutive threads cover 4 consecutive columns
-            # consecutive registers take consecutive rows
-            # groups of 4 lanes cover each matrix in batch
-            var d_idx = (
-                tile_col
-                + thread_x
-                + (tile_row + i) * ldm
-                + thread_y * batchStrideD
-            )
-            d_ptr[unsafe_offset=d_idx] = d[i]
-
-    else:
-        # TODO: Do we need to add constraints here?
-        var lane = lane_id()
-        var thread_x = lane & 15
-        var thread_y = lane >> 4
-
-        comptime for i in range(4):
-            var d_idx = (
-                ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
-            )
-            d_ptr[unsafe_offset=d_idx] = d[i]
+    comptime for i in range(4):
+        var d_idx = ldm * (tile_row + 4 * thread_y + i) + tile_col + thread_x
+        d_ptr[unsafe_offset=d_idx] = d[i]
 
 
 @inline(.always)
 def store_matrix_d[
-    dtype: DType, //, m: Int, n: Int, k: Int, n_blocks: Int = 1
+    dtype: DType, //, m: Int, n: Int, k: Int
 ](
     d_ptr: Pointer[mut=True, Scalar[dtype], _],
     d: SIMD[dtype, 4],
@@ -738,7 +655,6 @@ def store_matrix_d[
         m: Number of rows in matrix D.
         n: Number of columns in matrix D.
         k: Inner dimension for matrix multiply.
-        n_blocks: Number of blocks.
 
     Args:
         d_ptr: Pointer to destination memory for matrix D.
@@ -756,9 +672,7 @@ def store_matrix_d[
     comptime if is_nvidia_gpu():
         _store_matrix_d_nvidia[m, n, k](d_ptr, d, tile_row, tile_col, ldm)
     elif is_amd_gpu():
-        _store_matrix_d_amd[m, n, k, n_blocks](
-            d_ptr, d, tile_row, tile_col, ldm
-        )
+        _store_matrix_d_amd[m, n, k](d_ptr, d, tile_row, tile_col, ldm)
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
