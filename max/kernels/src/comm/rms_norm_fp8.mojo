@@ -68,11 +68,11 @@ def block_reduce_sum_and_max[
 
     var results = block._block_reduce[
         max_warps_per_block * WARP_SIZE,
-        warp_reduce_fn=_reduce_fn,
         broadcast=True,
     ](
         StaticTuple[Scalar[dtype], 2](sum_val, max_val),
         initial_vals=StaticTuple[Scalar[dtype], 2](0, Scalar[dtype].MIN_FINITE),
+        warp_reduce_fn=_reduce_fn,
     )
     return (results[0], results[1])
 

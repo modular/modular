@@ -131,9 +131,9 @@ def _block_reduce_cutoff_stats[
     initial[0] = Float32.MAX_FINITE
     initial[1] = Float32.MIN_FINITE
 
-    return block._block_reduce[
-        block_size, warp_reduce_fn=_reduce_fn, broadcast=broadcast
-    ](vals, initial_vals=initial)
+    return block._block_reduce[block_size, broadcast=broadcast](
+        vals, initial_vals=initial, warp_reduce_fn=_reduce_fn
+    )
 
 
 @inline(.always)
@@ -703,9 +703,9 @@ def _block_reduce_sums[
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
         return warp.sum(v)
 
-    return block._block_reduce[
-        block_size, warp_reduce_fn=_reduce_fn, broadcast=broadcast
-    ](vals, initial_vals=StaticTuple[Float32, n](0))
+    return block._block_reduce[block_size, broadcast=broadcast](
+        vals, initial_vals=StaticTuple[Float32, n](0), warp_reduce_fn=_reduce_fn
+    )
 
 
 @inline(.always)
