@@ -115,6 +115,9 @@ def test_grouped_matmul_fused_epilogue(epilogue: str, num_tokens: int) -> None:
         unfused.kernel_summaries
     )
 
+    # Unseeded data occasionally put an output on the relu boundary, where
+    # bf16 rounding flips it past the tolerance.
+    torch.manual_seed(num_tokens)
     rng = np.random.default_rng(num_tokens)
     topk_ids = rng.integers(0, NUM_EXPERTS, size=num_tokens, dtype=np.int32)
     x = torch.randn(num_tokens, K, dtype=torch.bfloat16)
