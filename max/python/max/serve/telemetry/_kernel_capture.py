@@ -34,6 +34,7 @@ from max._core.profiler import (
     stop_capture,
 )
 from max.pipelines.context import TextContext
+from max.pipelines.lib import ProfilingConfig
 from max.pipelines.request import RequestID
 from max.serve.config import KernelTraceLevel, Settings
 from max.serve.telemetry import common as telemetry
@@ -53,13 +54,6 @@ from opentelemetry.trace import (
 )
 
 _kernel_capture_permitted = False
-
-# Bounds the passes one capture records, traced or not, since overlapping
-# traced requests would otherwise keep it armed, and its buffers growing,
-# indefinitely.
-# TODO(MXTOOLS-651): The replay's 20,000-span cap and 64 MiB parse limit set
-# this; raise it once the replay works in chunks.
-_MAX_CAPTURE_PASSES = 64
 
 
 def kernel_capture_permitted() -> bool:
@@ -158,11 +152,12 @@ class KernelCapture:
     thread only.
 
     Args:
-        max_passes: The most passes one capture records, traced or not.
+        limits: The config whose pass, span and capture-size limits bound
+            each capture and its replay, or None for their defaults.
     """
 
-    def __init__(self, max_passes: int = _MAX_CAPTURE_PASSES) -> None:
-        self._max_passes = max_passes
+    def __init__(self, limits: ProfilingConfig | None = None) -> None:
+        self._limits = limits if limits is not None else ProfilingConfig()
         self._traced: dict[RequestID, RequestTraceLevel] = {}
         self._traced_passes: list[TracedPass] = []
         self._passes = 0
@@ -223,7 +218,7 @@ class KernelCapture:
             return None
         if not self._armed:
             if self._thread is None:
-                self._thread = KernelCaptureThread()
+                self._thread = KernelCaptureThread(self._limits)
             elif self._thread.busy:
                 return None
             if not start_capture():
@@ -273,11 +268,14 @@ class KernelCapture:
                 )
             )
         self._passes += 1
-        if self._passes >= self._max_passes:
+        # Overlapping traced requests would otherwise keep the capture armed,
+        # and its buffers growing, indefinitely.
+        max_passes = self._limits.kernel_trace_max_passes
+        if self._passes >= max_passes:
             logging.getLogger("max.serve").warning(
                 "Stopping a kernel capture at %d passes; its requests are no "
                 "longer traced.",
-                self._max_passes,
+                max_passes,
             )
             untraced = [
                 r
@@ -315,9 +313,14 @@ class KernelCaptureThread:
     the scheduler: :class:`KernelCapture` checks :attr:`busy` and defers
     re-arming instead. The replay also runs while busy, since the next
     capture overwrites its file.
+
+    Args:
+        limits: The config whose replay limits bound each replay, or None
+            for their defaults.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, limits: ProfilingConfig | None = None) -> None:
+        self._limits = limits
         self._jobs: queue.SimpleQueue[tuple[str, list[TracedPass]]] = (
             queue.SimpleQueue()
         )
@@ -353,7 +356,7 @@ class KernelCaptureThread:
                         output_path,
                     )
                     try:
-                        replay_kernel_capture(output_path, passes)
+                        replay_kernel_capture(output_path, passes, self._limits)
                     except Exception:
                         logger.exception("Kernel capture replay failed")
             except Exception:
@@ -362,14 +365,6 @@ class KernelCaptureThread:
                 self._idle.set()
 
 
-_REPLAY_SPAN_CAP = 20_000
-# Parsing holds the GIL, roughly 12 ms per MiB, so this bounds the stall to
-# about 0.8 s; it peaks at about 6x the file size in memory.
-# TODO(MXTOOLS-651): at about 1.2 KB per kernel, 64 MiB is about 55k kernels
-# across all the worker's GPUs. A full 64-pass capture of an 8B-class model
-# (~500 kernels a pass) fits, but a large MoE's (~2k a pass) does not; replay
-# in chunks or parse off the GIL if those need spans.
-_REPLAY_MAX_CAPTURE_BYTES = 64 * 1024 * 1024
 # At ``kernel-sampled``, one pass in this many gets kernel spans.
 _KERNEL_SAMPLE_STRIDE = 8
 # libkineto kernel args that ``full`` adds as span attributes, each cast to
@@ -386,6 +381,8 @@ _KINETO_ID_MASK = 0xFFFF_FFFF
 # Mojo kernel names end in a uniqueness hash, 8 hex digits, or 16 for a name
 # shortened to 32 characters; it only adds noise to a span name.
 _KERNEL_NAME_HASH = r"_[0-9a-f]{8}(?:[0-9a-f]{8})?$"
+# The OTel SDK's default ``max_export_batch_size``.
+_SDK_EXPORT_BATCH_SIZE = 512
 _replay_provider: TracerProvider | None = None
 
 
@@ -402,18 +399,22 @@ class _GpuActivity(NamedTuple):
 _ChildSpan = tuple[str, float, float, dict[str, str | int | float]]
 
 
-def _replay_tracer() -> Tracer:
+def _replay_tracer(max_spans: int) -> Tracer:
     """Returns the replay's tracer, whose queue holds a whole capture.
 
     A separate provider keeps a capture's burst of spans from overflowing the
     worker's default 2,048-span queue and crowding out other requests' spans.
+    The first call sizes the queue, since a worker's limit never changes. It
+    holds the span cap, but no fewer spans than the SDK's 512-span export
+    batch, since the SDK rejects a queue smaller than its batch.
     """
     global _replay_provider
     if _replay_provider is None:
         _replay_provider = TracerProvider(resource=logs_resource)
         _replay_provider.add_span_processor(
             BatchSpanProcessor(
-                _span_exporter(), max_queue_size=_REPLAY_SPAN_CAP
+                _span_exporter(),
+                max_queue_size=max(max_spans, _SDK_EXPORT_BATCH_SIZE),
             )
         )
     return _replay_provider.get_tracer("max.serve.kernel_replay")
@@ -504,7 +505,9 @@ def _child_spans(
 
 
 def replay_kernel_capture(
-    output_path: str, passes: Sequence[TracedPass]
+    output_path: str,
+    passes: Sequence[TracedPass],
+    limits: ProfilingConfig | None = None,
 ) -> None:
     """Exports a stopped capture's GPU activity as spans of its traced passes.
 
@@ -525,6 +528,9 @@ def replay_kernel_capture(
     Args:
         output_path: The libkineto Chrome-trace JSON the capture wrote.
         passes: The capture's traced passes.
+        limits: The config whose ``kernel_trace_max_spans`` and
+            ``kernel_trace_max_capture_bytes`` bound the replay, or None for
+            their defaults.
     """
     # A pass's replayed spans share its max.batch span's trace and sampler,
     # so they'd be dropped wherever it was; parsing for them would hold the
@@ -532,19 +538,23 @@ def replay_kernel_capture(
     passes = [p for p in passes if p.batch_span_context.trace_flags.sampled]
     if not passes:
         return
+    if limits is None:
+        limits = ProfilingConfig()
+    max_spans = limits.kernel_trace_max_spans
+    max_capture_bytes = limits.kernel_trace_max_capture_bytes
     log = logging.getLogger("max.serve")
     ranges: list[tuple[float, float, int]] = []
     launch_us: dict[int, float] = {}
     activities: list[tuple[_GpuActivity, int, int]] = []
     try:
         size = os.path.getsize(output_path)
-        if size > _REPLAY_MAX_CAPTURE_BYTES:
+        if size > max_capture_bytes:
             log.warning(
                 "Kernel capture %s is %d bytes, over the %d-byte replay"
                 " limit; not exporting its spans",
                 output_path,
                 size,
-                _REPLAY_MAX_CAPTURE_BYTES,
+                max_capture_bytes,
             )
             return
         with open(output_path, encoding="utf-8") as f:
@@ -635,11 +645,11 @@ def replay_kernel_capture(
     def to_ns(us: float) -> int:
         return base_ns + round(us * 1000) - offset_ns
 
-    tracer = _replay_tracer()
+    tracer = _replay_tracer(max_spans)
     keys = sorted(grouped, key=lambda k: by_key[k].batch_id)
     # Reserves the cap for every pass's max.batch.gpu span before any span
     # beneath one.
-    child_budget = _REPLAY_SPAN_CAP - min(len(keys), _REPLAY_SPAN_CAP)
+    child_budget = max_spans - min(len(keys), max_spans)
     dropped = 0
     sampled_seen = 0
     for n, key in enumerate(keys):
@@ -650,7 +660,7 @@ def replay_kernel_capture(
             sampled = sampled_seen % _KERNEL_SAMPLE_STRIDE == 0
             level = RequestTraceLevel.KERNEL if sampled else level
             sampled_seen += 1
-        if n >= _REPLAY_SPAN_CAP:
+        if n >= max_spans:
             dropped += 1 + _child_count(group, level)
             continue
         gpu_span = tracer.start_span(
@@ -681,6 +691,6 @@ def replay_kernel_capture(
     if dropped:
         log.warning(
             "Kernel capture replay hit its %d-span cap; dropped %d spans",
-            _REPLAY_SPAN_CAP,
+            max_spans,
             dropped,
         )

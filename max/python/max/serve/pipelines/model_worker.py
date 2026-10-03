@@ -45,6 +45,7 @@ from max.pipelines.lib import (
     PipelineConfig,
     PipelineModel,
     PipelineRole,
+    ProfilingConfig,
 )
 from max.pipelines.lib.eplb_stats import EplbStatsAccumulator
 from max.pipelines.modeling.types import (
@@ -95,8 +96,9 @@ GiB = 1024 * 1024 * 1024
 
 def _configure_kernel_capture(
     settings: Settings, pipeline_role: PipelineRole
-) -> None:
-    """Decides whether requests may arm kernel captures in this worker."""
+) -> bool:
+    """Returns whether requests may arm kernel captures in this worker,
+    loading the profiler plugin if they may."""
     # Only load_scheduler's prefill_and_decode scheduler takes a capture, so
     # other roles skip the profiler plugin, though non-text pipelines in that
     # role still load it, harmlessly.
@@ -104,11 +106,88 @@ def _configure_kernel_capture(
         not telemetry._trace_level_header_enabled
         or pipeline_role != "prefill_and_decode"
     ):
-        return
+        return False
     # Lazy so default startup skips the capture module.
-    from max.serve.telemetry._kernel_capture import configure_kernel_capture
+    from max.serve.telemetry._kernel_capture import (
+        configure_kernel_capture,
+        kernel_capture_permitted,
+    )
 
     configure_kernel_capture(settings)
+    return kernel_capture_permitted()
+
+
+def _configure_worker_tracing(
+    settings: Settings, profiling: ProfilingConfig
+) -> None:
+    """Configures the model worker's tracing."""
+    links = profiling.kernel_trace_max_batch_links
+    # The default, 128, is also the OTel SDK's link limit.
+    default = ProfilingConfig.model_fields[
+        "kernel_trace_max_batch_links"
+    ].default
+    configure_tracing(settings, max_links=links if links > default else None)
+
+
+def _warn_raised_kernel_trace_limits(
+    profiling: ProfilingConfig,
+    pipeline_role: PipelineRole,
+    kernel_capture: bool,
+) -> None:
+    """Warns once for each kernel-tracing limit that is in use and raised.
+
+    Args:
+        profiling: The model worker's profiling config.
+        pipeline_role: The worker's pipeline role.
+        kernel_capture: Whether requests may arm kernel captures.
+    """
+    # Without a capture, only the link limit can apply, and only while
+    # max.batch spans export: at level batch or higher with tracing on, in
+    # the one role whose scheduler emits them. A capture implies tracing.
+    batch_spans = kernel_capture or (
+        pipeline_role == "prefill_and_decode"
+        and telemetry.batch_spans_enabled()
+        and telemetry._tracing_enabled()
+    )
+    if not batch_spans:
+        return
+    for name, used, cost in (
+        (
+            "kernel_trace_max_passes",
+            kernel_capture,
+            "each capture records more, so it is likelier to exceed "
+            "kernel_trace_max_capture_bytes and export no spans",
+        ),
+        (
+            "kernel_trace_max_spans",
+            kernel_capture,
+            "each capture's replay exports more spans",
+        ),
+        (
+            "kernel_trace_max_capture_bytes",
+            kernel_capture,
+            "parsing a capture holds the GIL for about 12 ms per MiB, "
+            "about 0.8 s at the default, and peaks at about 6x its size "
+            "in memory",
+        ),
+        (
+            "kernel_trace_max_batch_links",
+            batch_spans,
+            "each max.batch span exports more links",
+        ),
+    ):
+        if not used:
+            continue
+        value: int = getattr(profiling, name)
+        default = type(profiling).model_fields[name].default
+        if value > default:
+            logger.warning(
+                "profiling.%s is %d, above its default of %d: %s.",
+                name,
+                value,
+                default,
+                cost,
+            )
 
 
 @runtime_checkable
@@ -290,11 +369,14 @@ class ModelWorker:
         """
         # Tracing first: configure_logging adds the dd.trace_id field only
         # when tracing is on.
-        configure_tracing(settings)
+        _configure_worker_tracing(settings, pipeline_config.profiling)
         configure_logging(settings)
         configure_kernel_tracing(settings)
-        _configure_kernel_capture(
-            settings, pipeline_config.runtime.pipeline_role
+        pipeline_role = pipeline_config.runtime.pipeline_role
+        _warn_raised_kernel_trace_limits(
+            pipeline_config.profiling,
+            pipeline_role,
+            _configure_kernel_capture(settings, pipeline_role),
         )
         pid = os.getpid()
         logger.debug("Starting model worker on process %d!", pid)

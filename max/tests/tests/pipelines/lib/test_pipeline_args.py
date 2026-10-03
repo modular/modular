@@ -33,7 +33,7 @@ import yaml
 from cyclopts import Parameter
 from max._entrypoints.cli.config import pipeline_config_options
 from max.config import ConfigFileModel
-from max.pipelines.lib import PipelineArgs, PipelineConfig
+from max.pipelines.lib import PipelineArgs, PipelineConfig, ProfilingConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_args import (
@@ -77,6 +77,18 @@ def test_every_cli_flag_routes_to_a_known_destination() -> None:
         "(max/python/max/pipelines/lib/pipeline_args.py) so these flags "
         "reconcile with a config file's nested section."
     )
+
+
+def test_kernel_trace_limits_have_no_cli_flag() -> None:
+    """They are set only from a config file's ``profiling`` section."""
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None: ...
+
+    limits = {f for f in ProfilingConfig.model_fields if "kernel_trace" in f}
+    assert len(limits) == 4
+    assert not limits & {param.name for param in cli.params}
 
 
 def test_from_args_threads_runtime_flags() -> None:

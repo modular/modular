@@ -67,6 +67,7 @@ modular_py_test(
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/schemas",
         "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/telemetry:kernel_capture",
         "//max/python/max/serve/worker_interface",
         requirement("async-asgi-testclient"),
         requirement("fastapi"),

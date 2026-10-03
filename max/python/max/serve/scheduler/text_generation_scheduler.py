@@ -31,6 +31,7 @@ from max.pipelines.lib import (
     MemoryPlan,
     OverlapTextGenerationPipeline,
     PipelineConfig,
+    ProfilingConfig,
     TextGenerationPipeline,
 )
 from max.pipelines.modeling.types import (
@@ -67,9 +68,9 @@ if TYPE_CHECKING:
 logger = logging.getLogger("max.serve")
 _tracer = otel_trace.get_tracer("max.serve")
 
-# The OTel SDK's default span link limit; the SDK would build and then drop
-# any links beyond it.
-_MAX_BATCH_LINKS = 128
+_DEFAULT_MAX_BATCH_LINKS: int = ProfilingConfig.model_fields[
+    "kernel_trace_max_batch_links"
+].default
 
 
 def _tracing_enabled() -> bool:
@@ -117,6 +118,7 @@ class TokenGenerationScheduler(Scheduler):
         dp_padder: DPBatchPadder | None = None,
         max_pending_requests: int | None = None,
         kernel_capture: KernelCapture | None = None,
+        max_batch_links: int = _DEFAULT_MAX_BATCH_LINKS,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
@@ -173,7 +175,7 @@ class TokenGenerationScheduler(Scheduler):
         # None unless requests may arm kernel captures, which needs tracing.
         self._kernel_capture = kernel_capture
         self._batch_links = _BatchLinks(
-            self._batch_spans_enabled, _MAX_BATCH_LINKS
+            self._batch_spans_enabled, max_batch_links
         )
 
     @traced
@@ -376,7 +378,10 @@ class TokenGenerationScheduler(Scheduler):
             assert ce_ids_before is not None
             batch_span = _tracer.start_span(
                 "max.batch",
-                links=self._batch_links.for_pass(inputs.flat_batch, capture),
+                links=self._batch_links.for_pass(
+                    inputs.flat_batch,
+                    capture.is_traced if capture is not None else None,
+                ),
                 attributes={
                     "max.batch_id": batch_id,
                     "max.ce_count": len(ce_ids_before),
@@ -536,4 +541,5 @@ def load_text_generation_scheduler(
         dp_padder=dp_padder,
         max_pending_requests=max_pending_requests,
         kernel_capture=kernel_capture,
+        max_batch_links=pipeline_config.profiling.kernel_trace_max_batch_links,
     )

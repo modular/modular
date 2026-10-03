@@ -35,6 +35,7 @@ from max.pipelines.lib import (
     EmbeddingsPipelineType,
     MemoryPlan,
     PipelineConfig,
+    ProfilingConfig,
     TextGenerationPipeline,
 )
 from max.pipelines.modeling.types import (
@@ -78,9 +79,9 @@ __all__ = [
 ]
 
 
-def _kernel_capture() -> KernelCapture | None:
-    """Returns the scheduler's kernel capture, if requests may arm one in
-    this worker."""
+def _kernel_capture(profiling: ProfilingConfig) -> KernelCapture | None:
+    """Returns the scheduler's kernel capture, bounded by ``profiling``'s
+    limits, if requests may arm one in this worker."""
     if not telemetry._trace_level_header_enabled:
         return None
     # Lazy so default startup skips the capture module.
@@ -89,7 +90,7 @@ def _kernel_capture() -> KernelCapture | None:
         kernel_capture_permitted,
     )
 
-    return KernelCapture() if kernel_capture_permitted() else None
+    return KernelCapture(profiling) if kernel_capture_permitted() else None
 
 
 def load_scheduler(
@@ -191,7 +192,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             memory_plan=memory_plan,
             max_pending_requests=settings.max_pending_requests,
-            kernel_capture=_kernel_capture(),
+            kernel_capture=_kernel_capture(pipeline_config.profiling),
         )
     elif pipeline_config.runtime.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)

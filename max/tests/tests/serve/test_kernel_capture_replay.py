@@ -28,6 +28,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from max.pipelines.lib import ProfilingConfig
 from max.serve.telemetry import _kernel_capture
 from max.serve.telemetry._kernel_capture import (
     KernelCaptureThread,
@@ -36,7 +37,10 @@ from max.serve.telemetry._kernel_capture import (
 )
 from max.serve.telemetry._trace_context import RequestTraceLevel
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+)
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
@@ -309,16 +313,15 @@ def test_clock_offset_applies_when_its_bound_excludes_zero(
 def test_span_cap_keeps_every_gpu_window(
     exporter: InMemorySpanExporter,
     capture: str,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    monkeypatch.setattr(_kernel_capture, "_REPLAY_SPAN_CAP", 4)
     replay_kernel_capture(
         capture,
         [
             _pass(5, RequestTraceLevel.KERNEL),
             _pass(7, RequestTraceLevel.KERNEL),
         ],
+        ProfilingConfig(kernel_trace_max_spans=4),
     )
 
     spans = _replayed(exporter)
@@ -348,15 +351,68 @@ def test_pass_without_captured_activity_emits_nothing(
 def test_oversized_capture_is_left_unreplayed(
     exporter: InMemorySpanExporter,
     capture: str,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    monkeypatch.setattr(_kernel_capture, "_REPLAY_MAX_CAPTURE_BYTES", 1024)
-    replay_kernel_capture(capture, [_pass(7, RequestTraceLevel.KERNEL)])
+    replay_kernel_capture(
+        capture,
+        [_pass(7, RequestTraceLevel.KERNEL)],
+        ProfilingConfig(kernel_trace_max_capture_bytes=1024),
+    )
 
     assert _replayed(exporter) == {}
     assert "over the 1024-byte replay limit" in caplog.text
     assert capture in caplog.text
+
+
+def test_capture_thread_replays_with_its_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    replayed: list[ProfilingConfig | None] = []
+
+    def replay(
+        output_path: str, passes: object, limits: ProfilingConfig | None
+    ) -> None:
+        replayed.append(limits)
+
+    monkeypatch.setattr(_kernel_capture, "stop_capture", lambda output_path: "")
+    monkeypatch.setattr(_kernel_capture, "replay_kernel_capture", replay)
+    limits = ProfilingConfig(
+        kernel_trace_max_spans=3, kernel_trace_max_capture_bytes=1024
+    )
+    thread = KernelCaptureThread(limits)
+    thread.submit("/tmp/a.json", [])
+    deadline = time.monotonic() + 5
+    while thread.busy:
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+
+    assert replayed == [limits]
+
+
+@pytest.mark.parametrize(
+    ("max_spans", "queue_size"), [(1, 512), (40_000, 40_000)]
+)
+def test_replay_queue_holds_the_span_cap(
+    monkeypatch: pytest.MonkeyPatch, max_spans: int, queue_size: int
+) -> None:
+    """The queue holds the span cap, but no fewer spans than the SDK's
+    512-span export batch, since the SDK rejects a queue smaller than its
+    batch."""
+    sizes: list[int] = []
+
+    def processor(
+        exporter: InMemorySpanExporter, max_queue_size: int
+    ) -> BatchSpanProcessor:
+        sizes.append(max_queue_size)
+        return BatchSpanProcessor(exporter, max_queue_size=max_queue_size)
+
+    monkeypatch.setattr(_kernel_capture, "_replay_provider", None)
+    monkeypatch.setattr(_kernel_capture, "_span_exporter", InMemorySpanExporter)
+    monkeypatch.setattr(_kernel_capture, "BatchSpanProcessor", processor)
+    _kernel_capture._replay_tracer(max_spans)
+    assert _kernel_capture._replay_provider is not None
+    _kernel_capture._replay_provider.shutdown()
+    assert sizes == [queue_size]
 
 
 def test_capture_thread_replays_after_a_successful_stop(
@@ -386,7 +442,7 @@ def test_capture_thread_survives_a_failed_replay(
         stops.append(output_path)
         return ""
 
-    def replay(output_path: str, passes: object) -> None:
+    def replay(output_path: str, passes: object, limits: object) -> None:
         raise RuntimeError("bad capture")
 
     monkeypatch.setattr(_kernel_capture, "stop_capture", stop_capture)
@@ -406,14 +462,13 @@ def test_capture_thread_survives_a_failed_replay(
 def test_span_cap_counts_what_it_drops_at_op_level(
     exporter: InMemorySpanExporter,
     capture: str,
-    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Pass 5 would add five aggregates and pass 7 two."""
-    monkeypatch.setattr(_kernel_capture, "_REPLAY_SPAN_CAP", 1)
     replay_kernel_capture(
         capture,
         [_pass(5, RequestTraceLevel.OP), _pass(7, RequestTraceLevel.OP)],
+        ProfilingConfig(kernel_trace_max_spans=1),
     )
 
     assert list(_replayed(exporter)) == ["max.batch.gpu"]

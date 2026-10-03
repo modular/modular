@@ -73,17 +73,15 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
 
 if TYPE_CHECKING:
-    # For annotations only: the CLI imports this module early, and default
-    # startup skips _kernel_capture.
+    # For annotations only: the CLI imports this module early.
     from max.pipelines.context import TextContext
     from max.pipelines.request import RequestID
-    from max.serve.telemetry._kernel_capture import KernelCapture
 
 otelBaseUrl = "https://telemetry.modular.com:443"
 
@@ -943,7 +941,13 @@ def _span_exporter() -> SpanExporter:
     return OTLPSpanExporter()
 
 
-def configure_tracing(settings: Settings) -> None:
+def configure_tracing(settings: Settings, max_links: int | None = None) -> None:
+    """Installs the process's tracer provider if it is to export spans.
+
+    Args:
+        settings: Server settings.
+        max_links: A per-span link limit to use in place of the SDK's.
+    """
     global _trace_level_header_enabled
     _trace_level_header_enabled = False
     # Spans cost work on every request, so only the traces-specific variable
@@ -953,7 +957,14 @@ def configure_tracing(settings: Settings) -> None:
         os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
     )
     if export_spans:
-        provider = TracerProvider(resource=logs_resource)
+        provider = TracerProvider(
+            resource=logs_resource,
+            span_limits=(
+                SpanLimits(max_links=max_links)
+                if max_links is not None
+                else None
+            ),
+        )
         exporter = _span_exporter()
         provider.add_span_processor(BatchSpanProcessor(exporter))
         set_tracer_provider(provider)
@@ -1030,21 +1041,23 @@ class _BatchLinks:
             self._links[request_id] = link
 
     def for_pass(
-        self, batch: Sequence[TextContext], capture: KernelCapture | None
+        self,
+        batch: Sequence[TextContext],
+        is_traced: Callable[[RequestID], bool] | None,
     ) -> list[trace.Link]:
         """Returns a pass's links, and over the cap keeps traced members'
         first, so the requests that asked for the pass's capture can find it.
 
         Args:
             batch: The pass's requests.
-            capture: The scheduler's kernel capture, which says which
-                requests are traced.
+            is_traced: Says whether a request is traced, as the scheduler's
+                kernel capture does, or None without a capture.
         """
         members = [
             ctx.request_id for ctx in batch if ctx.request_id in self._links
         ]
-        if len(members) > self._max_links and capture is not None:
-            members.sort(key=lambda r: not capture.is_traced(r))
+        if len(members) > self._max_links and is_traced is not None:
+            members.sort(key=lambda r: not is_traced(r))
         return [self._links[r] for r in members[: self._max_links]]
 
     def drop_untraced(self, request_ids: Iterable[RequestID]) -> None:

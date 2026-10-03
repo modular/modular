@@ -40,6 +40,7 @@ modular_py_library(
         "//max/python/max/serve:queue",
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/telemetry",
+        "//max/python/max/serve/telemetry:kernel_capture",
         "//max/python/max/serve/worker_interface",
         requirement("numpy"),
         requirement("uvloop"),

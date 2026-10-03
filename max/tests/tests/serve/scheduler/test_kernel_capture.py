@@ -25,6 +25,7 @@ import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import cast
 
 import numpy as np
 import pytest
@@ -36,11 +37,19 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import DummyKVCache
+from max.pipelines.lib import (
+    MAXModelConfig,
+    PipelineConfig,
+    ProfilingConfig,
+    TextGenerationPipeline,
+)
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
     TextGenerationInputs,
 )
+from max.serve import scheduler as serve_scheduler
 from max.serve.config import KernelTraceLevel, Settings
 from max.serve.scheduler import text_generation_scheduler
 from max.serve.scheduler.batch_constructor.text_batch_constructor import (
@@ -49,6 +58,7 @@ from max.serve.scheduler.batch_constructor.text_batch_constructor import (
 from max.serve.scheduler.config import TokenGenerationSchedulerConfig
 from max.serve.scheduler.text_generation_scheduler import (
     TokenGenerationScheduler,
+    load_text_generation_scheduler,
 )
 from max.serve.telemetry import _kernel_capture, common
 from max.serve.telemetry._kernel_capture import (
@@ -73,6 +83,7 @@ class _Pipeline(
 
     def __init__(self) -> None:
         self.done: set[RequestID] = set()
+        self.kv_manager = DummyKVCache()
 
     @property
     def max_batch_size(self) -> int:
@@ -102,6 +113,7 @@ class _Harness:
     exporter: InMemorySpanExporter
     events: list[tuple[object, ...]] = field(default_factory=list)
     stops: list[list[TracedPass]] = field(default_factory=list)
+    thread_limits: list[ProfilingConfig | None] = field(default_factory=list)
     open_ranges: list[int] = field(default_factory=list)
     busy: bool = False
     # False while another capture holds the profiler.
@@ -163,8 +175,9 @@ def _harness(
     *,
     tracing: bool = True,
     kernel_capture: bool = True,
-    max_passes: int = _kernel_capture._MAX_CAPTURE_PASSES,
+    profiling: ProfilingConfig | None = None,
 ) -> _Harness:
+    """Builds the scheduler, through the loader when given ``profiling``."""
     pipeline = _Pipeline()
     request_queue: queue.Queue[TextContext | TextAndVisionContext] = (
         queue.Queue()
@@ -177,20 +190,50 @@ def _harness(
     monkeypatch.setattr(
         text_generation_scheduler, "_tracing_enabled", lambda: tracing
     )
-    harness = _Harness(
-        scheduler=TokenGenerationScheduler(
-            scheduler_config=TokenGenerationSchedulerConfig(
-                max_batch_size=4, target_tokens_per_batch_ce=64
-            ),
+    scheduler_config = TokenGenerationSchedulerConfig(
+        max_batch_size=4, target_tokens_per_batch_ce=64
+    )
+    if profiling is None:
+        scheduler = TokenGenerationScheduler(
+            scheduler_config=scheduler_config,
             pipeline=pipeline,
             request_queue=request_queue,
             response_queue=queue.Queue(),
             cancel_queue=cancel_queue,
             kv_cache=DummyKVCache(),
-            kernel_capture=(
-                KernelCapture(max_passes) if kernel_capture else None
+            kernel_capture=KernelCapture() if kernel_capture else None,
+        )
+    else:
+        capture = None
+        if kernel_capture:
+            # As the model worker permits captures before it loads the
+            # scheduler.
+            monkeypatch.setattr(common, "_trace_level_header_enabled", True)
+            monkeypatch.setattr(
+                _kernel_capture, "_kernel_capture_permitted", True
+            )
+            capture = serve_scheduler._kernel_capture(profiling)
+        monkeypatch.setattr(
+            TokenGenerationSchedulerConfig,
+            "from_pipeline_config",
+            lambda *args: scheduler_config,
+        )
+        scheduler = load_text_generation_scheduler(
+            cast(TextGenerationPipeline[TextContext], pipeline),
+            PipelineConfig.model_construct(
+                models=ModelManifest(
+                    {"main": MAXModelConfig.model_construct()}
+                ),
+                profiling=profiling,
             ),
-        ),
+            request_queue=request_queue,
+            response_queue=queue.Queue(),
+            cancel_queue=cancel_queue,
+            memory_plan=None,
+            kernel_capture=capture,
+        )
+    harness = _Harness(
+        scheduler=scheduler,
         pipeline=pipeline,
         request_queue=request_queue,
         cancel_queue=cancel_queue,
@@ -198,8 +241,9 @@ def _harness(
     )
 
     class FakeCaptureThread:
-        def __init__(self) -> None:
+        def __init__(self, limits: ProfilingConfig | None) -> None:
             harness.events.append(("thread",))
+            harness.thread_limits.append(limits)
 
         @property
         def busy(self) -> bool:
@@ -348,7 +392,9 @@ def test_preemption_keeps_the_capture_armed(
 def test_long_capture_stops_at_the_pass_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    h = _harness(monkeypatch, max_passes=2)
+    h = _harness(
+        monkeypatch, profiling=ProfilingConfig(kernel_trace_max_passes=2)
+    )
     traced = h.add("kernel")
     h.step()
     h.step()
@@ -361,7 +407,9 @@ def test_long_capture_stops_at_the_pass_cap(
 def test_pass_cap_keeps_requests_outside_the_capture_traced(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    h = _harness(monkeypatch, max_passes=1)
+    h = _harness(
+        monkeypatch, profiling=ProfilingConfig(kernel_trace_max_passes=1)
+    )
     running = [h.add("kernel") for _ in range(4)]
     # The batch is full, so this one waits through the capped capture.
     waiting = h.add("kernel")
@@ -374,12 +422,26 @@ def test_pass_cap_keeps_requests_outside_the_capture_traced(
 def test_pass_cap_counts_untraced_passes_while_armed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    h = _harness(monkeypatch, max_passes=2)
+    h = _harness(
+        monkeypatch, profiling=ProfilingConfig(kernel_trace_max_passes=2)
+    )
     h.add("kernel")
     h.step()
     h.add()
     h.step()
     assert [[p.batch_id for p in passes] for passes in h.stops] == [[0]]
+
+
+def test_capture_thread_gets_the_configured_replay_limits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profiling = ProfilingConfig(
+        kernel_trace_max_spans=5, kernel_trace_max_capture_bytes=7
+    )
+    h = _harness(monkeypatch, profiling=profiling)
+    h.add("kernel")
+    h.step()
+    assert h.thread_limits == [profiling]
 
 
 def test_every_pass_opens_a_range_while_a_capture_may_record(
@@ -550,8 +612,9 @@ def test_batch_links_keep_traced_then_first_members_up_to_the_cap(
     monkeypatch.setattr(
         text_generation_scheduler, "batch_spans_enabled", lambda: True
     )
-    monkeypatch.setattr(text_generation_scheduler, "_MAX_BATCH_LINKS", 2)
-    h = _harness(monkeypatch)
+    h = _harness(
+        monkeypatch, profiling=ProfilingConfig(kernel_trace_max_batch_links=2)
+    )
     ids = [h.add(parent=_request_span(n)) for n in (1, 2, 3)]
     ids.append(h.add("kernel", parent=_request_span(4)))
     h.step(*ids)
@@ -597,7 +660,9 @@ def test_traced_pass_links_only_traced_members(
 def test_pass_cap_drops_the_links_of_requests_it_untraces(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    h = _harness(monkeypatch, max_passes=2)
+    h = _harness(
+        monkeypatch, profiling=ProfilingConfig(kernel_trace_max_passes=2)
+    )
     capped = h.add("kernel", parent=_request_span(1))
     h.step()
     h.step()

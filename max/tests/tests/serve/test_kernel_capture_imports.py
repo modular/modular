@@ -78,6 +78,7 @@ def test_worker_loads_them_once_headers_are_on(
     code = (
         "import max._core.profiler\n"
         "max._core.profiler.load_profiler_plugin = lambda: False\n"
+        "from max.pipelines.lib import ProfilingConfig\n"
         "from max.serve import scheduler\n"
         "from max.serve.config import Settings\n"
         "from max.serve.pipelines import model_worker\n"
@@ -85,7 +86,7 @@ def test_worker_loads_them_once_headers_are_on(
         f"s = Settings(kernel_trace_headers={headers}, disable_telemetry=False)\n"
         "common.configure_tracing(s)\n"
         "model_worker._configure_kernel_capture(s, 'prefill_and_decode')\n"
-        "assert scheduler._kernel_capture() is None\n"
+        "assert scheduler._kernel_capture(ProfilingConfig()) is None\n"
     )
     assert _loaded(code, _TRACES if tracing else None) == expected
 
