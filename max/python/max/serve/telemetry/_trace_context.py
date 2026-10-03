@@ -63,11 +63,23 @@ class RequestTraceLevel(Enum):
     """
 
     OFF = "off"
+    """Not traced."""
+
     BATCH = "batch"
+    """``max.batch`` and ``max.batch.gpu`` spans only."""
+
     OP = "op"
+    """``batch``, plus one aggregate span per kernel name. Unlike
+    ``KernelTraceLevel.OP``, no NVTX ranges."""
+
     KERNEL_SAMPLED = "kernel-sampled"
+    """``batch``, plus kernel spans on 1 traced pass in 8."""
+
     KERNEL = "kernel"
+    """``batch``, plus kernel spans on every traced pass."""
+
     FULL = "full"
+    """``kernel``, plus register, occupancy and shared memory attributes."""
 
     def __lt__(self, other: object) -> bool:
         if not isinstance(other, RequestTraceLevel):

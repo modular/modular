@@ -408,6 +408,13 @@ This version is still a work in progress.
 - `max.batch` spans now link to the spans of their requests at
   `MAX_SERVE_KERNEL_TRACE_LEVEL=batch` or higher, up to 128 per span.
 
+- A request can now ask for a kernel trace of the forward passes it runs in
+  with the `x-max-trace-level` header (`batch`, `op`, `kernel-sampled`,
+  `kernel` or `full`), when `MAX_SERVE_KERNEL_TRACE_HEADERS=true` is set and
+  span export is on (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set). Each of those
+  passes exports a `max.batch` span, linked to the request, with GPU spans
+  beneath it. This needs a MAX build that ships the profiler plugin.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured

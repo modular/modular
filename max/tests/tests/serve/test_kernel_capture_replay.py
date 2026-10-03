@@ -163,23 +163,87 @@ def test_batch_level_emits_only_the_gpu_window(
     assert (gpu.start_time, gpu.end_time) == (_us(2300.0), _us(2435.0))
 
 
+def test_op_level_aggregates_each_kernel_name(
+    exporter: InMemorySpanExporter, capture: str
+) -> None:
+    replay_kernel_capture(capture, [_pass(7, RequestTraceLevel.OP)])
+
+    spans = _replayed(exporter)
+    [gpu] = spans.pop("max.batch.gpu")
+    assert sorted(spans) == [
+        "kernel_agg:matmul_sm100_bf16",
+        "kernel_agg:rms_norm_gpu",
+    ]
+    [matmul] = spans["kernel_agg:matmul_sm100_bf16"]
+    assert matmul.parent is not None
+    assert matmul.parent.span_id == gpu.context.span_id
+    assert (matmul.start_time, matmul.end_time) == (_us(2312.0), _us(2435.0))
+    assert matmul.attributes == {
+        "max.batch_id": 7,
+        "max.kernel.name": "matmul_sm100_bf16_deadbeef",
+        "max.kernel.count": 2,
+        "max.kernel.total_us": 118.0,
+        "max.kernel.mean_us": 59.0,
+        "max.kernel.max_us": 78.0,
+    }
+
+
 @pytest.mark.parametrize(
-    ("level", "kernel_spans"),
+    ("pass_6", "with_kernels"),
     [
-        (RequestTraceLevel.OP, False),
-        (RequestTraceLevel.KERNEL_SAMPLED, False),
-        (RequestTraceLevel.FULL, True),
+        pytest.param(
+            RequestTraceLevel.KERNEL_SAMPLED, {5, 7}, id="all-sampled"
+        ),
+        # Only kernel-sampled passes advance the stride.
+        pytest.param(RequestTraceLevel.KERNEL, {5, 6}, id="one-kernel"),
     ],
 )
-def test_levels_without_their_own_export_fall_back(
+def test_kernel_sampled_takes_one_pass_in_stride(
     exporter: InMemorySpanExporter,
     capture: str,
-    level: RequestTraceLevel,
-    kernel_spans: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    pass_6: RequestTraceLevel,
+    with_kernels: set[int],
 ) -> None:
-    replay_kernel_capture(capture, [_pass(7, level)])
+    monkeypatch.setattr(_kernel_capture, "_KERNEL_SAMPLE_STRIDE", 2)
+    replay_kernel_capture(
+        capture,
+        [
+            _pass(5, RequestTraceLevel.KERNEL_SAMPLED),
+            _pass(6, pass_6),
+            _pass(7, RequestTraceLevel.KERNEL_SAMPLED),
+        ],
+    )
 
-    assert ("rms_norm_gpu" in _replayed(exporter)) == kernel_spans
+    spans = _replayed(exporter)
+    assert len(spans.pop("max.batch.gpu")) == 3
+    # Unsampled passes emit nothing beneath max.batch.gpu.
+    assert {
+        dict(span.attributes or {})["max.batch_id"]
+        for named in spans.values()
+        for span in named
+    } == with_kernels
+
+
+def test_full_adds_what_the_capture_has(
+    exporter: InMemorySpanExporter, capture: str
+) -> None:
+    replay_kernel_capture(capture, [_pass(5, RequestTraceLevel.FULL)])
+
+    spans = _replayed(exporter)
+    [matmul] = spans["matmul_sm100_bf16"]
+    assert matmul.attributes == {
+        "max.batch_id": 5,
+        "max.kernel.name": "matmul_sm100_bf16_deadbeef",
+        "max.kernel.registers_per_thread": 168,
+        "max.kernel.occupancy_pct": 12.5,
+        "max.kernel.shared_mem": 196608,
+    }
+    [memcpy] = spans["Memcpy DtoD (Device -> Device)"]
+    assert memcpy.attributes == {
+        "max.batch_id": 5,
+        "max.kernel.name": "Memcpy DtoD (Device -> Device)",
+    }
 
 
 def test_untraced_passes_are_dropped(
@@ -337,6 +401,23 @@ def test_capture_thread_survives_a_failed_replay(
 
     assert stops == ["/tmp/a.json", "/tmp/b.json"]
     assert caplog.text.count("Kernel capture replay failed") == 2
+
+
+def test_span_cap_counts_what_it_drops_at_op_level(
+    exporter: InMemorySpanExporter,
+    capture: str,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Pass 5 would add five aggregates and pass 7 two."""
+    monkeypatch.setattr(_kernel_capture, "_REPLAY_SPAN_CAP", 1)
+    replay_kernel_capture(
+        capture,
+        [_pass(5, RequestTraceLevel.OP), _pass(7, RequestTraceLevel.OP)],
+    )
+
+    assert list(_replayed(exporter)) == ["max.batch.gpu"]
+    assert "dropped 8 spans" in caplog.text
 
 
 def test_unreadable_capture_logs_and_exports_nothing(
@@ -630,3 +711,35 @@ def test_capture_without_a_sampled_pass_is_not_read(
 
     assert _replayed(exporter) == {}
     assert "Cannot read kernel capture" not in caplog.text
+
+
+def test_real_b200_capture_at_full_and_op(
+    exporter: InMemorySpanExporter, fixture_testdatadirectory: Path
+) -> None:
+    """The capture writes occupancy 0 as an int and times as large µs
+    offsets."""
+    capture = str(fixture_testdatadirectory / "kernel_capture_b200.json")
+    range_start_us, range_end_us = 7551180781350.135, 7551180791296.097
+    for level in (RequestTraceLevel.FULL, RequestTraceLevel.OP):
+        replay_kernel_capture(
+            capture,
+            [
+                TracedPass(
+                    batch_id=7,
+                    level=level,
+                    batch_span_context=_batch_span(7),
+                    host_start_ns=BASE_NS + round(range_start_us * 1000),
+                    host_end_ns=BASE_NS + round(range_end_us * 1000) + 1000,
+                )
+            ],
+        )
+
+    spans = _replayed(exporter)
+    [kernel] = spans["mogg_foreach_r2_w8_b128_gs_False"]
+    attributes = dict(kernel.attributes or {})
+    assert attributes["max.kernel.registers_per_thread"] == 32
+    assert attributes["max.kernel.shared_mem"] == 0
+    occupancy = attributes["max.kernel.occupancy_pct"]
+    assert isinstance(occupancy, float) and occupancy == 0.0
+    [aggregate] = spans["kernel_agg:mogg_foreach_r2_w8_b128_gs_False"]
+    assert dict(aggregate.attributes or {})["max.kernel.total_us"] == 2.112

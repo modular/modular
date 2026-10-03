@@ -370,6 +370,15 @@ _REPLAY_SPAN_CAP = 20_000
 # (~500 kernels a pass) fits, but a large MoE's (~2k a pass) does not; replay
 # in chunks or parse off the GIL if those need spans.
 _REPLAY_MAX_CAPTURE_BYTES = 64 * 1024 * 1024
+# At ``kernel-sampled``, one pass in this many gets kernel spans.
+_KERNEL_SAMPLE_STRIDE = 8
+# libkineto kernel args that ``full`` adds as span attributes, each cast to
+# one type since a capture can write occupancy 0 as an int.
+_FULL_KERNEL_ARGS: tuple[tuple[str, str, type[int | float]], ...] = (
+    ("registers per thread", "max.kernel.registers_per_thread", int),
+    ("est. achieved occupancy %", "max.kernel.occupancy_pct", float),
+    ("shared memory", "max.kernel.shared_mem", int),
+)
 _KINETO_GPU_CATEGORIES = frozenset({"kernel", "gpu_memcpy", "gpu_memset"})
 _KINETO_LAUNCH_CATEGORIES = frozenset({"cuda_driver", "cuda_runtime"})
 # libkineto stores range ids as 32-bit ints.
@@ -386,6 +395,11 @@ class _GpuActivity(NamedTuple):
     start_us: float
     end_us: float
     name: str
+    args: Mapping[str, object]
+
+
+# A span beneath ``max.batch.gpu``: name, start and end µs, and attributes.
+_ChildSpan = tuple[str, float, float, dict[str, str | int | float]]
 
 
 def _replay_tracer() -> Tracer:
@@ -427,6 +441,68 @@ def _kineto_clock_offset_ns(
     return 0
 
 
+def _child_count(
+    group: Sequence[_GpuActivity], level: RequestTraceLevel
+) -> int:
+    """Returns how many spans :func:`_child_spans` would build."""
+    if level == RequestTraceLevel.OP:
+        return len({a.name for a in group})
+    if level in (RequestTraceLevel.KERNEL, RequestTraceLevel.FULL):
+        return len(group)
+    return 0
+
+
+def _child_spans(
+    batch_id: int, group: Sequence[_GpuActivity], level: RequestTraceLevel
+) -> list[_ChildSpan]:
+    """Returns the spans under a pass's ``max.batch.gpu`` span at ``level``."""
+    if level == RequestTraceLevel.OP:
+        by_name: dict[str, list[_GpuActivity]] = {}
+        for a in group:
+            by_name.setdefault(a.name, []).append(a)
+        aggregates: list[_ChildSpan] = []
+        for name, same in by_name.items():
+            # Rounded to libkineto's ns resolution, since differences of
+            # large µs offsets carry float noise; exact below 2^43 µs.
+            durations = [round(a.end_us - a.start_us, 3) for a in same]
+            total = round(sum(durations), 3)
+            aggregates.append(
+                (
+                    "kernel_agg:" + re.sub(_KERNEL_NAME_HASH, "", name),
+                    min(a.start_us for a in same),
+                    max(a.end_us for a in same),
+                    {
+                        "max.batch_id": batch_id,
+                        "max.kernel.name": name,
+                        "max.kernel.count": len(same),
+                        "max.kernel.total_us": total,
+                        "max.kernel.mean_us": round(total / len(same), 3),
+                        "max.kernel.max_us": max(durations),
+                    },
+                )
+            )
+        return aggregates
+    if level not in (RequestTraceLevel.KERNEL, RequestTraceLevel.FULL):
+        return []
+    kernels: list[_ChildSpan] = []
+    for a in group:
+        attrs: dict[str, str | int | float] = {
+            "max.batch_id": batch_id,
+            "max.kernel.name": a.name,
+        }
+        if level == RequestTraceLevel.FULL:
+            for arg, attr, kind in _FULL_KERNEL_ARGS:
+                value = a.args.get(arg)
+                if isinstance(value, (int, float)) and not isinstance(
+                    value, bool
+                ):
+                    attrs[attr] = kind(value)
+        kernels.append(
+            (re.sub(_KERNEL_NAME_HASH, "", a.name), a.start_us, a.end_us, attrs)
+        )
+    return kernels
+
+
 def replay_kernel_capture(
     output_path: str, passes: Sequence[TracedPass]
 ) -> None:
@@ -440,9 +516,11 @@ def replay_kernel_capture(
     of it in ``correlation`` order. Where those lie in different passes, its
     ``External id`` must name one of the passes between them, or it is
     dropped. Each traced pass with captured activity gets a backdated
-    ``max.batch.gpu`` span under its ``max.batch`` span, and at the
-    ``kernel`` and ``full`` levels a span per activity beneath that.
-    Activities of untraced passes are dropped.
+    ``max.batch.gpu`` span under its ``max.batch`` span. Beneath that,
+    ``op`` adds one aggregate span per kernel name, ``kernel`` a span per
+    activity, ``kernel-sampled`` the same on one pass in eight, and ``full``
+    adds registers, occupancy and shared memory to kernel spans. Activities
+    of untraced passes are dropped.
 
     Args:
         output_path: The libkineto Chrome-trace JSON the capture wrote.
@@ -480,7 +558,10 @@ def replay_kernel_capture(
             if cat in _KINETO_GPU_CATEGORIES:
                 ts = float(e["ts"])
                 activity = _GpuActivity(
-                    ts, ts + float(e.get("dur", 0)), str(e.get("name", ""))
+                    ts,
+                    ts + float(e.get("dur", 0)),
+                    str(e.get("name", "")),
+                    args,
                 )
                 activities.append(
                     (
@@ -556,39 +637,46 @@ def replay_kernel_capture(
 
     tracer = _replay_tracer()
     keys = sorted(grouped, key=lambda k: by_key[k].batch_id)
-    kernel_levels = (RequestTraceLevel.KERNEL, RequestTraceLevel.FULL)
-    dropped = sum(
-        1 + (len(grouped[k]) if by_key[k].level in kernel_levels else 0)
-        for k in keys[_REPLAY_SPAN_CAP:]
-    )
-    keys = keys[:_REPLAY_SPAN_CAP]
-    kernel_budget = _REPLAY_SPAN_CAP - len(keys)
-    for key in keys:
+    # Reserves the cap for every pass's max.batch.gpu span before any span
+    # beneath one.
+    child_budget = _REPLAY_SPAN_CAP - min(len(keys), _REPLAY_SPAN_CAP)
+    dropped = 0
+    sampled_seen = 0
+    for n, key in enumerate(keys):
         p = by_key[key]
         group = grouped[key]
+        level = p.level
+        if level == RequestTraceLevel.KERNEL_SAMPLED:
+            sampled = sampled_seen % _KERNEL_SAMPLE_STRIDE == 0
+            level = RequestTraceLevel.KERNEL if sampled else level
+            sampled_seen += 1
+        if n >= _REPLAY_SPAN_CAP:
+            dropped += 1 + _child_count(group, level)
+            continue
         gpu_span = tracer.start_span(
             "max.batch.gpu",
             context=set_span_in_context(NonRecordingSpan(p.batch_span_context)),
             start_time=to_ns(min(a.start_us for a in group)),
             attributes={"max.batch_id": p.batch_id},
         )
-        if p.level in kernel_levels:
-            kernel_ctx = set_span_in_context(gpu_span)
-            for a in group:
-                if kernel_budget == 0:
-                    dropped += 1
-                    continue
-                kernel_budget -= 1
-                span = tracer.start_span(
-                    re.sub(_KERNEL_NAME_HASH, "", a.name),
-                    context=kernel_ctx,
-                    start_time=to_ns(a.start_us),
-                    attributes={
-                        "max.batch_id": p.batch_id,
-                        "max.kernel.name": a.name,
-                    },
-                )
-                span.end(end_time=to_ns(a.end_us))
+        children: list[_ChildSpan] = []
+        if child_budget == 0:
+            dropped += _child_count(group, level)
+        else:
+            children = _child_spans(p.batch_id, group, level)
+        child_ctx = set_span_in_context(gpu_span)
+        for name, start_us, end_us, attrs in children:
+            if child_budget == 0:
+                dropped += 1
+                continue
+            child_budget -= 1
+            span = tracer.start_span(
+                name,
+                context=child_ctx,
+                start_time=to_ns(start_us),
+                attributes=attrs,
+            )
+            span.end(end_time=to_ns(end_us))
         gpu_span.end(end_time=to_ns(max(a.end_us for a in group)))
     if dropped:
         log.warning(
