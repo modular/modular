@@ -85,36 +85,6 @@ comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
 ]() else PDLLevel.OFF
 
 
-@inline(.always)
-def as_dynamic_row_major_1d[
-    dtype: DType
-](
-    tensor: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
-    """Reinterprets a generic-address `LayoutTensor` as a 1-D dynamic row-major tensor.
-
-    The pointer and total element count are preserved; the result has an
-    unknown-value row-major layout so it can be passed to routines that
-    require a 1-D runtime-layout tensor without copying data.
-
-    Parameters:
-        dtype: The element data type of the input tensor.
-
-    Args:
-        tensor: The immutable generic-address tensor to reinterpret.
-
-    Returns:
-        A 1-D `LayoutTensor` with a `row_major(UNKNOWN_VALUE)` layout backed
-        by the same storage as `tensor`.
-    """
-    return {
-        tensor.ptr.as_imm().as_unsafe_any_origin(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            tensor.get_shape()
-        ),
-    }
-
-
 struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     """Identifies which flash-attention algorithm variant to use for a kernel launch.
 

@@ -70,12 +70,15 @@ from nn.attention.gpu.mha import (
     MHADecodeDispatchMetadata,
     flash_attention as gpu_flash_attention,
 )
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_utils import (
     MHAConfig,
     NullPointer,
     OptionalPointer,
-    as_dynamic_row_major_1d,
     dispatch_mask,
     dispatch_relative_logits_mask,
     null_pointer,
@@ -3679,14 +3682,14 @@ def generic_flash_attention_kv_cache_ragged[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
@@ -3723,7 +3726,9 @@ def generic_flash_attention_kv_cache_ragged[
     @inline(.always)
     def description_fn() {imm} -> String:
         var desc_parts = List[String]()
-        desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
+        desc_parts.append(
+            trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
+        )
         desc_parts.append("scale=" + String(scale))
         desc_parts.append("layer_idx=" + String(layer_idx))
         desc_parts.append(
@@ -3764,87 +3769,6 @@ def generic_flash_attention_kv_cache_ragged[
         )
 
 
-def generic_flash_attention_kv_cache_ragged[
-    collection_t: KVCollectionT,
-    dtype: DType,
-    //,
-    *,
-    target: StaticString,
-    mask_str: StaticString,
-    local_window_size: Int = -1,
-    output_dtype: DType = dtype,
-](
-    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    input_row_offsets: TileTensor[
-        mut=False, .uint32, address_space=.GENERIC, ...
-    ],
-    kv_collection: collection_t,
-    layer_idx: UInt32,
-    scale: Float32,
-    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
-    context: DeviceContext,
-    decode_dispatch_metadata: MHADecodeDispatchMetadata,
-) raises:
-    """`TileTensor` overload of `generic_flash_attention_kv_cache_ragged`.
-
-    Converts the `TileTensor` operands to `LayoutTensor` and delegates to the
-    `LayoutTensor` overload above.
-
-    Parameters:
-        collection_t: The KV cache collection type storing the K and V caches
-            for this layer (inferred).
-        dtype: Data type of the query tensor (inferred).
-        target: Target device string for kernel dispatch.
-        mask_str: Attention mask name selecting the masking strategy, such as
-            "causal", "null", or "sliding_window_causal".
-        local_window_size: Sliding-window size in tokens for windowed masks;
-            -1 for masks that ignore it (defaults to -1).
-        output_dtype: Data type of the `output` tensor (defaults to `dtype`).
-
-    Args:
-        q: Query tensor with shape (sum(seq_lens), num_heads, head_size).
-        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
-            start of each sequence along the ragged sequence dimension.
-        kv_collection: The collection storing the KVCache entries for this
-            layer, retrieved via layer_idx.
-        layer_idx: The index of the layer being executed, used to retrieve the
-            KVCache objects from kv_collection.
-        scale: The scaling factor in scaled dot-product attention, usually
-            rsqrt(head_size).
-        output: The pre-allocated output buffer to write results to, with shape
-            (sum(seq_lens), num_heads, head_size).
-        context: The call context pointer, passed by the graph compiler.
-        decode_dispatch_metadata: Precomputed dispatch metadata used to select
-            decode kernels for the GPU target.
-    """
-    comptime assert (
-        input_row_offsets.rank == 1
-    ), "Expected input_row_offsets to be a 1D tensor of shape `(batch + 1,)`"
-    var input_row_offsets_lt = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-    ](
-        input_row_offsets.ptr.as_unsafe_any_origin(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](Int(input_row_offsets.dim[0]()))
-        ),
-    )
-    generic_flash_attention_kv_cache_ragged[
-        target=target,
-        mask_str=mask_str,
-        local_window_size=local_window_size,
-        output_dtype=output_dtype,
-    ](
-        q.to_layout_tensor(),
-        input_row_offsets_lt,
-        kv_collection,
-        layer_idx,
-        scale,
-        output.to_layout_tensor(),
-        context,
-        decode_dispatch_metadata,
-    )
-
-
 @inline(.always)
 def _launch_flash_attention_with_mask[
     dtype: DType,
@@ -3856,20 +3780,18 @@ def _launch_flash_attention_with_mask[
     output_dtype: DType = dtype,
     sink: Bool = False,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     if q.dim[0]() == 0:
         return
@@ -3879,16 +3801,31 @@ def _launch_flash_attention_with_mask[
             "CPU flash attention requires output dtype == q dtype;"
             " the distinct-output-dtype (fp8->bf16) path is GPU-only."
         )
+        # The CPU kernel is still LayoutTensor based.
+        var input_row_offsets_lt = input_row_offsets.to_layout_tensor()
+        var sink_weights_lt = OptionalReg[
+            LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        ]()
+        if sink_weights:
+            var sink_tt = sink_weights.value()
+            sink_weights_lt = LayoutTensor[
+                dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+            ](
+                sink_tt.ptr,
+                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+                    IndexList[1](Int(sink_tt.dim[0]()))
+                ),
+            )
         return flash_attention_kv_cache_cpu(
-            q,
-            input_row_offsets,
-            input_row_offsets,
+            q.to_layout_tensor(),
+            input_row_offsets_lt,
+            input_row_offsets_lt,
             k,
             v,
             mask,
             scale,
-            output.bitcast[dtype](),
-            sink_weights,
+            output.to_layout_tensor().bitcast[dtype](),
+            sink_weights_lt,
         )
     else:
         gpu_flash_attention[ragged=True, sink=sink](
@@ -3917,19 +3854,17 @@ def _flash_attention_dispatch[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_cache: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -3979,7 +3914,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     input_row_offsets: ImmTileTensor[
         .uint32, RowOffsetsLayout, row_offsets_origin
     ],
@@ -3990,7 +3925,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     cache_lengths: ImmTileTensor[
         .uint32, CacheLengthsLayout, cache_lengths_origin
     ],
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
@@ -4007,7 +3942,9 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     @inline(.always)
     def description_fn() {imm} -> String:
         var desc_parts = List[String]()
-        desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
+        desc_parts.append(
+            trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
+        )
         desc_parts.append("scale=" + String(scale))
         desc_parts.append("layer_idx=" + String(layer_idx))
         desc_parts.append(
@@ -4044,7 +3981,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
             output_dtype=output_dtype,
         ](
             q,
-            input_row_offsets.to_layout_tensor(),
+            input_row_offsets,
             k,
             v,
             mask,
@@ -4078,16 +4015,16 @@ def generic_flash_attention_kv_cache_ragged_sink[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
-    sink_weights: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    sink_weights: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     decode_dispatch_metadata: MHADecodeDispatchMetadata,
 ) raises:
     """Dispatches flash attention over a ragged batch with attention sink weights.
@@ -4125,7 +4062,9 @@ def generic_flash_attention_kv_cache_ragged_sink[
     @inline(.always)
     def description_fn() {imm} -> String:
         var desc_parts = List[String]()
-        desc_parts.append(trace_arg("q", q.runtime_layout.shape.value))
+        desc_parts.append(
+            trace_arg("q", coord_to_index_list(q.layout.shape_coord()))
+        )
         desc_parts.append("scale=" + String(scale))
         desc_parts.append("layer_idx=" + String(layer_idx))
         desc_parts.append(
@@ -4163,7 +4102,11 @@ def generic_flash_attention_kv_cache_ragged_sink[
             output,
             context,
             decode_dispatch_metadata,
-            as_dynamic_row_major_1d(sink_weights),
+            OptionalReg[ImmutTileTensor1D[dtype]](
+                immut_tile_tensor_1d(
+                    sink_weights.ptr, sink_weights.num_elements()
+                )
+            ),
         )
 
 

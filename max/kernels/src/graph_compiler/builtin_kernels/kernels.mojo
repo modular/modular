@@ -84,7 +84,6 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias,
 )
 from nn.attention.gpu.mha import MHADecodeDispatchMetadata
-from nn.attention.mha_utils import as_dynamic_row_major_1d
 from nn.mhc import hyper_connection_gates
 from nn.moe import (
     eplb_remap,
@@ -1850,10 +1849,6 @@ def _execute_mha_ragged_paged_scalar_args[
         max_prompt_length,
         max_cache_length,
     )
-    var input_row_offsets_lt = as_dynamic_row_major_1d(
-        input_row_offsets.to_layout_tensor().as_imm()
-    )
-
     comptime if sink:
         generic_flash_attention_kv_cache_ragged_sink[
             target=target,
@@ -1861,14 +1856,14 @@ def _execute_mha_ragged_paged_scalar_args[
             local_window_size=local_window_size,
             output_dtype=output_dtype,
         ](
-            q.to_layout_tensor(),
-            input_row_offsets_lt,
+            q.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
             kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            output.to_tile_tensor(),
             context,
-            sink_weights.value().to_layout_tensor(),
+            sink_weights.value(),
             decode_dispatch_metadata,
         )
     else:
@@ -1878,12 +1873,12 @@ def _execute_mha_ragged_paged_scalar_args[
             local_window_size=local_window_size,
             output_dtype=output_dtype,
         ](
-            q.to_layout_tensor(),
-            input_row_offsets_lt,
+            q.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
             kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            output.to_tile_tensor(),
             context,
             decode_dispatch_metadata,
         )
@@ -1929,14 +1924,14 @@ def _execute_mha_ragged_paged_rel_logits[
         local_window_size=local_window_size,
         output_dtype=output_dtype,
     ](
-        q.to_layout_tensor(),
+        q.to_tile_tensor(),
         input_row_offsets.to_tile_tensor().as_imm(),
         kv_collection,
         layer_idx,
         scale,
         bias.to_tile_tensor().as_imm(),
         cache_lengths.to_tile_tensor().as_imm(),
-        output.to_layout_tensor(),
+        output.to_tile_tensor(),
         context,
         decode_dispatch_metadata,
     )
