@@ -22,6 +22,7 @@ from layout import DefaultEngine, TensorLayout, TensorEngine, TileTensor
 from max.algorithm import sync_parallelize
 from max.gpu.host import DeviceContext
 import std.math
+from std.bit import next_power_of_two
 from std.math import exp2
 from nn.activations import silu
 from state_space.selective_scan import softplus
@@ -235,6 +236,10 @@ def varlen_selective_scan_fwd_gpu[
     ],  # (batch,)
 ):
     """GPU kernel for variable-length selective scan."""
+    # Size the per-thread state vectors to DSTATE (rounded up to a power of
+    # two) rather than MAX_DSTATE, so the exp2 / FMA / reduce_add work and the
+    # register footprint scale with the real state size.
+    comptime STATE_WIDTH = Int(next_power_of_two(DSTATE))
     var _dim = Int(dim)
     var _ngroups = Int(ngroups)
     var _batch = Int(batch)
@@ -277,7 +282,7 @@ def varlen_selective_scan_fwd_gpu[
         delta_bias_val = delta_bias.load[width=1]((d,)).cast[.float32]()
 
     # Pre-load A values for this _dim and pre-multiply by LOG2E for faster exp2
-    var A_vals = SIMD[.float32, MAX_DSTATE](0.0)
+    var A_vals = SIMD[.float32, STATE_WIDTH](0.0)
 
     comptime for n in range(DSTATE):
         A_vals[n] = A.load[width=1]((d, n)).cast[.float32]() * LOG2E
@@ -287,7 +292,7 @@ def varlen_selective_scan_fwd_gpu[
     var group_id = d // group_size
 
     # Initialize state - either from cache or zeros
-    var state = SIMD[.float32, MAX_DSTATE](0.0)
+    var state = SIMD[.float32, STATE_WIDTH](0.0)
 
     # Load initial state if requested
     var use_initial_state = False
@@ -322,8 +327,8 @@ def varlen_selective_scan_fwd_gpu[
         var delta_u = delta_val * u_val
 
         # Load B and C values for this timestep
-        var B_vals = SIMD[.float32, MAX_DSTATE](0.0)
-        var C_vals = SIMD[.float32, MAX_DSTATE](0.0)
+        var B_vals = SIMD[.float32, STATE_WIDTH](0.0)
+        var C_vals = SIMD[.float32, STATE_WIDTH](0.0)
 
         comptime for n in range(DSTATE):
             B_vals[n] = B.load[width=1]((group_id, n, global_t)).cast[
