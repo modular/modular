@@ -731,6 +731,13 @@ def test_splitlines() raises:
     assert_equal(
         S("hello\r\nworld").splitlines(), [StaticString("hello"), "world"]
     )
+    assert_equal(
+        S("hello\rworld\nmojo").splitlines(),
+        [StaticString("hello"), "world", "mojo"],
+    )
+    assert_equal(
+        S("a\r\nb\rc\nd").splitlines(), [StaticString("a"), "b", "c", "d"]
+    )
 
     # Test with multiple different line breaks
     var s1 = S("hello\nworld\r\nmojo\rlanguage\r\n")
