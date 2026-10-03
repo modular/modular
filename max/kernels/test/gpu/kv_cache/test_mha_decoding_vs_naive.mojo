@@ -34,15 +34,12 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, row_major
 from layout._fillers import random
-from layout._utils import ManagedLayoutTensor
-from std.memory import unsafe_memcpy, unsafe_memset_zero
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal, assert_true
-
-from std.utils import IndexList
 
 
 def compute_hash[
@@ -102,47 +99,34 @@ def test_decode_kv_cache[
         max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
 
-    # Layouts
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
+    var q_layout = row_major(
+        total_length, Idx[num_q_heads], Idx[kv_params.head_size]
     )
-    comptime kv_block_6d_layout = Layout.row_major[6]()
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime lookup_table_layout = Layout(UNKNOWN_VALUE)
 
     # Row offsets
-    var row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
-        RuntimeLayout[row_offsets_layout].row_major(
-            IndexList[1](batch_size + 1)
-        ),
-        ctx,
+    var row_offsets = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size + 1))), ctx
     )
-    var row_offsets_host = row_offsets.tensor[update=False]()
+    var row_offsets_host = row_offsets.host_tensor()
     var running_offset: UInt32 = 0
     for i in range(batch_size):
         row_offsets_host[i] = running_offset
         running_offset += UInt32(valid_lengths[i])
     row_offsets_host[batch_size] = running_offset
+    row_offsets.to_device()
 
     # Cache lengths
-    var cache_lens = ManagedLayoutTensor[.uint32, cache_lengths_layout](
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
-        ctx,
+    var cache_lens = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size))), ctx
     )
-    var cache_lens_host = cache_lens.tensor[update=False]()
+    var cache_lens_host = cache_lens.host_tensor()
     for i in range(batch_size):
         cache_lens_host[i] = UInt32(cache_lengths[i])
+    cache_lens.to_device()
 
     # Q (random, ragged)
-    var q = ManagedLayoutTensor[dtype, q_layout](
-        RuntimeLayout[q_layout].row_major(
-            IndexList[3](total_length, num_q_heads, kv_params.head_size)
-        ),
-        ctx,
-    )
-    var q_host = q.tensor[update=False]()
+    var q = HostDeviceTileTensor[dtype](q_layout, ctx)
+    var q_host = q.host_tensor()
     random(q_host)
     if target_q_head >= 0:
         for r in range(total_length):
@@ -151,39 +135,30 @@ def test_decode_kv_cache[
                     q_host[r, h, channel_idx] = Scalar[dtype](q_channel_value)
                 else:
                     q_host[r, h, channel_idx] = Scalar[dtype](0)
+    q.to_device()
 
     # Output
-    var output = ManagedLayoutTensor[dtype, q_layout](
-        RuntimeLayout[q_layout].row_major(
-            IndexList[3](total_length, num_q_heads, kv_params.head_size)
-        ),
-        ctx,
-    )
+    var output = HostDeviceTileTensor[dtype](q_layout, ctx)
 
     # Naive reference output
-    var ref_output = ManagedLayoutTensor[dtype, q_layout](
-        RuntimeLayout[q_layout].row_major(
-            IndexList[3](total_length, num_q_heads, kv_params.head_size)
-        ),
-        ctx,
-    )
+    var ref_output = HostDeviceTileTensor[dtype](q_layout, ctx)
 
     # Continuous KV blocks
     var num_continuous_blocks = batch_size + 2
-    var kv_block_continuous = ManagedLayoutTensor[dtype, kv_block_6d_layout](
-        RuntimeLayout[kv_block_6d_layout].row_major(
-            IndexList[6](
-                num_continuous_blocks,
-                2,
-                num_layers,
-                max_full_context_length,
-                kv_params.num_heads,
-                kv_params.head_size,
+    var kv_block_continuous = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(
+                Int64(num_continuous_blocks),
+                Int64(2),
+                Int64(num_layers),
+                Int64(max_full_context_length),
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
             )
         ),
         ctx,
     )
-    var kv_block_host = kv_block_continuous.tensor[update=False]()
+    var kv_block_host = kv_block_continuous.host_tensor()
     random(kv_block_host)
     if target_q_head >= 0:
         var group = num_q_heads // kv_params.num_heads
@@ -193,21 +168,30 @@ def test_decode_kv_cache[
                 kv_block_host[
                     blk, 0, layer_idx, pos, target_kv_head, channel_idx
                 ] = Scalar[dtype](k_channel_value)
+    kv_block_continuous.to_device()
 
     # Lookup table for continuous batching
-    var lookup_table = ManagedLayoutTensor[.uint32, lookup_table_layout](
-        RuntimeLayout[lookup_table_layout].row_major(IndexList[1](batch_size)),
-        ctx,
+    var lookup_table = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size))), ctx
     )
-    var lookup_host = lookup_table.tensor[update=False]()
+    var lookup_host = lookup_table.host_tensor()
     for i in range(batch_size):
         lookup_host[i] = UInt32(i)
+    lookup_table.to_device()
 
     # Build continuous collection
-    var kv_continuous = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        kv_block_continuous.device_tensor(),
-        cache_lens.device_tensor(),
-        lookup_table.device_tensor(),
+    comptime Collection = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
+    ]
+    # The collection spells its block strides symbolically in `kv_params`,
+    # which the compiler cannot fold against `row_major`'s; the two layouts
+    # are structurally identical.
+    var kv_continuous = Collection(
+        rebind[Collection.blocks_tt_type](
+            kv_block_continuous.device_tensor().as_unsafe_any_origin()
+        ),
+        cache_lens.device_tensor().as_imm().as_unsafe_any_origin(),
+        lookup_table.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
@@ -243,8 +227,10 @@ def test_decode_kv_cache[
         ctx,
     )
 
-    var out_host = output.tensor()
-    var ref_host = ref_output.tensor()
+    output.to_host()
+    ref_output.to_host()
+    var out_host = output.host_tensor()
+    var ref_host = ref_output.host_tensor()
     for r in range(total_length):
         for h in range(num_q_heads):
             for d in range(kv_params.head_size):
@@ -257,7 +243,7 @@ def test_decode_kv_cache[
     print("REF OK")
 
     var actual_hash = compute_hash(
-        out_host.ptr,
+        out_host.unsafe_ptr(),
         total_length * num_q_heads * kv_params.head_size,
     )
     print("HASH:", actual_hash)
@@ -271,12 +257,6 @@ def test_decode_kv_cache[
             raise Error("Hash mismatch for mha_decoding output")
         else:
             print("HASH OK")
-
-    _ = row_offsets^
-    _ = cache_lens^
-    _ = kv_block_continuous^
-    _ = lookup_table^
-    _ = ref_output^
 
 
 def main() raises:

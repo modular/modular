@@ -39,7 +39,14 @@ from std.bit import prev_power_of_two
 from max.gpu import WARP_SIZE, lane_id
 from max.gpu.host import DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    ImmTileTensor,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TensorLayout,
+    UNKNOWN_VALUE,
+)
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
 from nn.attention.mha_mask import (
@@ -839,16 +846,21 @@ def dispatch_materialized_mask[
 @inline(.always)
 def dispatch_relative_logits_mask[
     dtype: DType,
-    layout: Layout,
+    BiasLayout: TensorLayout,
+    bias_origin: ImmOrigin,
+    CacheLengthsLayout: TensorLayout,
+    cache_lengths_origin: ImmOrigin,
+    RowOffsetsLayout: TensorLayout,
+    row_offsets_origin: ImmOrigin,
     //,
     local_window_size: Int = -1,
 ](
-    bias_nd: LayoutTensor[mut=False, dtype, layout, _],
-    cache_lengths: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    bias_nd: ImmTileTensor[dtype, BiasLayout, bias_origin],
+    cache_lengths: ImmTileTensor[
+        .uint32, CacheLengthsLayout, cache_lengths_origin
     ],
-    input_row_offsets: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    input_row_offsets: ImmTileTensor[
+        .uint32, RowOffsetsLayout, row_offsets_origin
     ],
     callback_fn: Some[callback_fn_type],
 ) raises -> None:

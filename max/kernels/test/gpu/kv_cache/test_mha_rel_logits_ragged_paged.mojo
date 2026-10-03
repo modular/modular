@@ -21,9 +21,9 @@ from std.random import seed
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import B200
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, row_major
 from layout._fillers import random
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
@@ -33,10 +33,7 @@ from nn.attention.mha_mask import (
     RelativeLogitsMask,
     SlidingWindowCausalMask,
 )
-from nn.attention.mha_utils import as_dynamic_row_major_1d
 from std.testing import assert_almost_equal
-
-from std.utils import IndexList
 
 
 def execute_rel_logits_flash_attention_test[
@@ -69,40 +66,30 @@ def execute_rel_logits_flash_attention_test[
     # The low-level kernels address the full final 64-row output tile.
     var padded_total_length = align_up(total_length, 64)
 
-    comptime tensor_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime kv_block_6d_layout = Layout.row_major[6]()
-    comptime rel_logits_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, extent
+    var tensor_layout = row_major(
+        padded_total_length, Idx[num_q_heads], Idx[head_size]
     )
 
     var scale = rsqrt(Float32(head_size))
 
     seed(0x9F3A + label.byte_length())
 
-    var tensor_runtime_layout = RuntimeLayout[tensor_layout].row_major(
-        IndexList[3](padded_total_length, num_q_heads, head_size)
-    )
-    var q = ManagedLayoutTensor[dtype, tensor_layout](
-        tensor_runtime_layout, ctx
-    )
-    random(q.tensor[update=False]())
+    var q = HostDeviceTileTensor[dtype](tensor_layout, ctx)
+    random(q.host_tensor())
+    q.to_device()
     var q_device = q.device_tensor().as_imm()
 
-    var rel_logits_runtime_layout = RuntimeLayout[rel_logits_layout].row_major(
-        IndexList[3](total_length, num_q_heads, extent)
+    var rel_logits = HostDeviceTileTensor[dtype](
+        row_major(total_length, Idx[num_q_heads], Idx[extent]), ctx
     )
-    var rel_logits = ManagedLayoutTensor[dtype, rel_logits_layout](
-        rel_logits_runtime_layout, ctx
-    )
-    random(rel_logits.tensor[update=False]())
+    random(rel_logits.host_tensor())
+    rel_logits.to_device()
     var rel_logits_device = rel_logits.device_tensor().as_imm()
 
     var mask = RelativeLogitsMask[visibility](
         rel_logits_device,
-        as_dynamic_row_major_1d(cache_table.cache_lengths.device_tensor()),
-        as_dynamic_row_major_1d(cache_table.input_row_offsets.device_tensor()),
+        cache_table.cache_lengths.device_tile_tensor(),
+        cache_table.input_row_offsets.device_tile_tensor(),
     )
 
     var num_paged_blocks = 0
@@ -112,20 +99,21 @@ def execute_rel_logits_flash_attention_test[
         )
     num_paged_blocks += 4
 
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_params.num_heads,
-        head_size,
-    )
-    var kv_blocks = ManagedLayoutTensor[dtype, kv_block_6d_layout](
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
+    var kv_blocks = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(
+                Int64(num_paged_blocks),
+                Idx[2],
+                Int64(num_layers),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[head_size],
+            )
+        ),
         ctx,
     )
-    random(kv_blocks.tensor[update=False]())
-    var kv_blocks_device = kv_blocks.device_tensor()
+    random(kv_blocks.host_tensor())
+    kv_blocks.to_device()
 
     var paged_lut = PagedLookupTable[page_size].build(
         valid_lengths,
@@ -135,43 +123,51 @@ def execute_rel_logits_flash_attention_test[
         ctx,
     )
 
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        kv_blocks_device.as_unsafe_any_origin(),
-        cache_table.cache_lengths.device_tensor(),
-        paged_lut.device_tensor(),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    # The collection spells its block strides symbolically in `kv_params`,
+    # which the compiler cannot fold against `row_major`'s; the two layouts
+    # are structurally identical.
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            kv_blocks.device_tensor().as_unsafe_any_origin()
+        ),
+        cache_table.cache_lengths.device_tile_tensor(),
+        paged_lut.device_tile_tensor(),
         UInt32(max_valid_length),
         UInt32(max_full_context_length),
     )
     var k_cache = kv_collection.get_key_cache(layer_idx)
     var v_cache = kv_collection.get_value_cache(layer_idx)
 
-    var test_output = ManagedLayoutTensor[dtype, tensor_layout](
-        tensor_runtime_layout, ctx
-    )
-    var test_output_device = test_output.device_tensor[update=False]()
+    var test_output = HostDeviceTileTensor[dtype](tensor_layout, ctx)
     flash_attention[ragged=True](
-        test_output_device,
+        test_output.device_tensor(),
         q_device,
         k_cache,
         v_cache,
         mask,
-        cache_table.input_row_offsets.device_tensor(),
+        cache_table.input_row_offsets.device_tile_tensor(),
         scale,
         ctx,
         num_partitions=num_partitions,
     )
 
-    var reference_output = ManagedLayoutTensor[dtype, tensor_layout](
-        tensor_runtime_layout, ctx
-    )
-    var reference_output_device = reference_output.device_tensor[update=False]()
+    var reference_output = HostDeviceTileTensor[dtype](tensor_layout, ctx)
     mha_gpu_naive[ragged=True](
         q_device,
         k_cache,
         v_cache,
         mask,
-        reference_output_device,
-        cache_table.input_row_offsets.device_tensor(),
+        reference_output.device_tensor(),
+        cache_table.input_row_offsets.device_tile_tensor(),
         scale,
         batch_size,
         max_valid_length,
@@ -182,10 +178,12 @@ def execute_rel_logits_flash_attention_test[
         ctx,
     )
 
-    var actual = test_output.tensor()
-    var expected = reference_output.tensor()
+    test_output.to_host()
+    reference_output.to_host()
+    var actual = test_output.host_tensor().unsafe_ptr()
+    var expected = reference_output.host_tensor().unsafe_ptr()
     for i in range(total_length * num_q_heads * head_size):
-        assert_almost_equal(actual.ptr[i], expected.ptr[i], atol=0.06)
+        assert_almost_equal(actual[i], expected[i], atol=0.06)
 
     print("PASSED [", label, "]", sep="")
 

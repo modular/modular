@@ -33,15 +33,14 @@ cache_len=0 (pure prefill).
 from std.math import ceildiv, rsqrt
 from std.random import seed
 from std.sys.defines import get_defined_int
-from layout._utils import ManagedLayoutTensor
 from max.gpu.host import DeviceContext
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, row_major
 from layout._fillers import random
-from std.memory import unsafe_memset_zero
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache_test_utils import (
     assert_no_nan_inf,
     padded_lut_cols,
@@ -49,8 +48,6 @@ from kv_cache_test_utils import (
 )
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
-
-from std.utils import IndexList
 
 
 def execute_ragged_paged_flash_attention[
@@ -82,54 +79,21 @@ def execute_ragged_paged_flash_attention[
         max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
 
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
-    )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
-    )
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime kv_block_6d_layout = Layout.row_major[6]()
-
-    var row_offsets_shape = IndexList[1](batch_size + 1)
-    var cache_lengths_shape = IndexList[1](batch_size)
-    var q_ragged_shape = IndexList[3](
-        total_length, num_q_heads, kv_params.head_size
-    )
-    var output_shape = IndexList[3](
-        total_length, num_q_heads, kv_params.head_size
+    var q_layout = row_major(
+        total_length, Idx[num_q_heads], Idx[kv_params.head_size]
     )
 
-    var row_offsets_runtime_layout = RuntimeLayout[
-        row_offsets_layout
-    ].row_major(row_offsets_shape)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_layout
-    ].row_major(cache_lengths_shape)
-    var q_ragged_runtime_layout = RuntimeLayout[q_ragged_layout].row_major(
-        q_ragged_shape
+    var input_row_offsets = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size + 1))), ctx
     )
-    var output_runtime_layout = RuntimeLayout[output_layout].row_major(
-        output_shape
+    var cache_lengths_managed = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size))), ctx
     )
+    var q_ragged = HostDeviceTileTensor[dtype](q_layout, ctx)
+    var test_output = HostDeviceTileTensor[dtype](q_layout, ctx)
 
-    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
-        row_offsets_runtime_layout, ctx
-    )
-    var cache_lengths_managed = ManagedLayoutTensor[
-        .uint32, cache_lengths_layout
-    ](cache_lengths_runtime_layout, ctx)
-    var q_ragged = ManagedLayoutTensor[dtype, q_ragged_layout](
-        q_ragged_runtime_layout, ctx
-    )
-    var test_output = ManagedLayoutTensor[dtype, output_layout](
-        output_runtime_layout, ctx
-    )
-
-    var input_row_offsets_host = input_row_offsets.tensor[update=False]()
-    var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
+    var input_row_offsets_host = input_row_offsets.host_tensor()
+    var cache_lengths_host = cache_lengths_managed.host_tensor()
 
     var running_offset: UInt32 = 0
     for i in range(batch_size):
@@ -137,52 +101,50 @@ def execute_ragged_paged_flash_attention[
         cache_lengths_host[i] = UInt32(cache_lengths[i])
         running_offset += UInt32(valid_lengths[i])
     input_row_offsets_host[batch_size] = running_offset
+    input_row_offsets.to_device()
+    cache_lengths_managed.to_device()
 
-    random(q_ragged.tensor())
+    random(q_ragged.host_tensor())
+    q_ragged.to_device()
 
     var num_paged_blocks = (
         ceildiv(max_full_context_length, page_size) * batch_size + 2
     )
 
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
+    var kv_block_paged = HostDeviceTileTensor[dtype](
+        row_major(
+            Coord(
+                Int64(num_paged_blocks),
+                Idx[2],
+                Int64(num_layers),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
+        ctx,
     )
     # Pad LUT inner dim to honor `PagedKVCache.populate`'s SIMD padding
     # invariant — see `padded_lut_cols`. Production
     # (`max/python/max/kv_cache/paged_kv_cache/cache_manager.py`) does
     # the same; tests that bypass the padding hit either a chunk-
     # alignment debug_assert or an OOB SIMD read into adjacent memory.
-    var paged_lut_shape = IndexList[2](
-        batch_size,
-        padded_lut_cols(ceildiv(max_full_context_length, page_size)),
+    var paged_lut = HostDeviceTileTensor[.uint32](
+        row_major(
+            Coord(
+                Int64(batch_size),
+                Int64(
+                    padded_lut_cols(ceildiv(max_full_context_length, page_size))
+                ),
+            )
+        ),
+        ctx,
     )
 
-    var kv_block_paged_runtime_layout = RuntimeLayout[
-        kv_block_6d_layout
-    ].row_major(kv_block_paged_shape)
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
+    random(kv_block_paged.host_tensor())
+    kv_block_paged.to_device()
 
-    var kv_block_paged = ManagedLayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_paged_runtime_layout, ctx
-    )
-    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
-        paged_lut_runtime_layout, ctx
-    )
-
-    var kv_block_paged_tensor = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_paged.tensor[update=False]().ptr,
-        kv_block_paged_runtime_layout,
-    )
-    random(kv_block_paged_tensor)
-
-    var paged_lut_tensor = paged_lut.tensor[update=False]()
+    var paged_lut_tensor = paged_lut.host_tensor()
     # Sample one distinct paged block per page across the whole batch up
     # front, then hand them out in iteration order. Total pages needed is
     # <= num_paged_blocks by construction.
@@ -196,27 +158,33 @@ def execute_ragged_paged_flash_attention[
         for block_idx in range(0, ceildiv(seq_len, page_size)):
             paged_lut_tensor[bs, block_idx] = UInt32(paged_blocks[page_pos])
             page_pos += 1
+    paged_lut.to_device()
 
-    var cache_lengths_lt = cache_lengths_managed.device_tensor()
-    var kv_block_paged_lt = kv_block_paged.device_tensor()
-    var paged_lut_lt = paged_lut.device_tensor()
-
-    var kv_collection_paged_device = PagedKVCacheCollection[
-        dtype, kv_params, page_size
-    ](
-        kv_block_paged_lt,
-        cache_lengths_lt,
-        paged_lut_lt,
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    # The collection spells its block strides symbolically in `kv_params`,
+    # which the compiler cannot fold against `row_major`'s; the two layouts
+    # are structurally identical.
+    var kv_collection_paged_device = Collection(
+        rebind[Collection.blocks_tt_type](
+            kv_block_paged.device_tensor().as_unsafe_any_origin()
+        ),
+        cache_lengths_managed.device_tensor().as_imm().as_unsafe_any_origin(),
+        paged_lut.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
 
-    var q_ragged_lt = q_ragged.device_tensor()
-    var test_output_lt = test_output.device_tensor()
-
     flash_attention[ragged=True](
-        test_output_lt,
-        q_ragged_lt,
+        test_output.device_tensor(),
+        q_ragged.device_tensor(),
         kv_collection_paged_device.get_key_cache(layer_idx),
         kv_collection_paged_device.get_value_cache(layer_idx),
         mask,

@@ -39,6 +39,7 @@ from layout import (
     Coord,
     CoordLike,
     Idx,
+    ImmTileTensor,
     Layout,
     LayoutTensor,
     RowMajorLayout,
@@ -3763,6 +3764,87 @@ def generic_flash_attention_kv_cache_ragged[
         )
 
 
+def generic_flash_attention_kv_cache_ragged[
+    collection_t: KVCollectionT,
+    dtype: DType,
+    //,
+    *,
+    target: StaticString,
+    mask_str: StaticString,
+    local_window_size: Int = -1,
+    output_dtype: DType = dtype,
+](
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, .uint32, address_space=.GENERIC, ...
+    ],
+    kv_collection: collection_t,
+    layer_idx: UInt32,
+    scale: Float32,
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    context: DeviceContext,
+    decode_dispatch_metadata: MHADecodeDispatchMetadata,
+) raises:
+    """`TileTensor` overload of `generic_flash_attention_kv_cache_ragged`.
+
+    Converts the `TileTensor` operands to `LayoutTensor` and delegates to the
+    `LayoutTensor` overload above.
+
+    Parameters:
+        collection_t: The KV cache collection type storing the K and V caches
+            for this layer (inferred).
+        dtype: Data type of the query tensor (inferred).
+        target: Target device string for kernel dispatch.
+        mask_str: Attention mask name selecting the masking strategy, such as
+            "causal", "null", or "sliding_window_causal".
+        local_window_size: Sliding-window size in tokens for windowed masks;
+            -1 for masks that ignore it (defaults to -1).
+        output_dtype: Data type of the `output` tensor (defaults to `dtype`).
+
+    Args:
+        q: Query tensor with shape (sum(seq_lens), num_heads, head_size).
+        input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
+            start of each sequence along the ragged sequence dimension.
+        kv_collection: The collection storing the KVCache entries for this
+            layer, retrieved via layer_idx.
+        layer_idx: The index of the layer being executed, used to retrieve the
+            KVCache objects from kv_collection.
+        scale: The scaling factor in scaled dot-product attention, usually
+            rsqrt(head_size).
+        output: The pre-allocated output buffer to write results to, with shape
+            (sum(seq_lens), num_heads, head_size).
+        context: The call context pointer, passed by the graph compiler.
+        decode_dispatch_metadata: Precomputed dispatch metadata used to select
+            decode kernels for the GPU target.
+    """
+    comptime assert (
+        input_row_offsets.rank == 1
+    ), "Expected input_row_offsets to be a 1D tensor of shape `(batch + 1,)`"
+    var input_row_offsets_lt = LayoutTensor[
+        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    ](
+        input_row_offsets.ptr.as_unsafe_any_origin(),
+        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
+            IndexList[1](Int(input_row_offsets.dim[0]()))
+        ),
+    )
+    generic_flash_attention_kv_cache_ragged[
+        target=target,
+        mask_str=mask_str,
+        local_window_size=local_window_size,
+        output_dtype=output_dtype,
+    ](
+        q.to_layout_tensor(),
+        input_row_offsets_lt,
+        kv_collection,
+        layer_idx,
+        scale,
+        output.to_layout_tensor(),
+        context,
+        decode_dispatch_metadata,
+    )
+
+
 @inline(.always)
 def _launch_flash_attention_with_mask[
     dtype: DType,
@@ -3885,6 +3967,12 @@ def _flash_attention_dispatch[
 def generic_flash_attention_kv_cache_ragged_rel_logits[
     collection_t: KVCollectionT,
     dtype: DType,
+    RowOffsetsLayout: TensorLayout,
+    row_offsets_origin: ImmOrigin,
+    BiasLayout: TensorLayout,
+    bias_origin: ImmOrigin,
+    CacheLengthsLayout: TensorLayout,
+    cache_lengths_origin: ImmOrigin,
     //,
     *,
     target: StaticString,
@@ -3892,15 +3980,15 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     output_dtype: DType = dtype,
 ](
     q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    input_row_offsets: ImmTileTensor[
+        .uint32, RowOffsetsLayout, row_offsets_origin
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    bias: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    cache_lengths: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    bias: ImmTileTensor[dtype, BiasLayout, bias_origin],
+    cache_lengths: ImmTileTensor[
+        .uint32, CacheLengthsLayout, cache_lengths_origin
     ],
     output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
@@ -3941,6 +4029,13 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
     var k = kv_collection.get_key_cache(Int(layer_idx))
     var v = kv_collection.get_value_cache(Int(layer_idx))
 
+    comptime assert (
+        input_row_offsets.rank == 1 and cache_lengths.rank == 1
+    ), "Expected rank-1 `input_row_offsets` and `cache_lengths`"
+    comptime assert (
+        bias.rank == 3
+    ), "Expected rank 3 (tokens, heads, extent) for the bias tensor"
+
     def _dispatch_flash_attention[
         mask_t: MHAMask
     ](mask: mask_t) raises {var k, var v, imm}:
@@ -3949,7 +4044,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
             output_dtype=output_dtype,
         ](
             q,
-            input_row_offsets,
+            input_row_offsets.to_layout_tensor(),
             k,
             v,
             mask,
@@ -3965,12 +4060,7 @@ def generic_flash_attention_kv_cache_ragged_rel_logits[
         task_id=Int(context.id()),
     ):
         return dispatch_relative_logits_mask[local_window_size,](
-            LayoutTensor[bias.dtype, bias.layout, bias.origin](
-                bias.ptr,
-                RuntimeLayout[bias.layout].row_major(
-                    bias.runtime_layout.shape.value.canonicalize()
-                ),
-            ),
+            bias,
             cache_lengths,
             input_row_offsets,
             _dispatch_flash_attention,
