@@ -25,7 +25,7 @@ software-pipelined tensor-core GEMM.
   activation-order permutation).
 """
 
-from std.math import ceildiv
+from std.math import ceildiv, divmod
 from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
 
 from std.sys import align_of, is_nvidia_gpu, simd_width_of, size_of
@@ -1276,7 +1276,8 @@ def repack_Q4_0_for_sm8x[
             )
 
             # Reorder scales to match the lanes consuming packed weights.
-            var scale_row = (lane_id % 4) * 16 + lane_id // 4
+            var lane_group, lane_offset = divmod(lane_id, 4)
+            var scale_row = lane_offset * 16 + lane_group
             var scales_warp_tile = repack_scales.tile[1, 64](
                 block_idx[1] * BK_groups + 2 * i + warp_y,
                 block_idx[0] * (BN // 64) + warp_x,
@@ -1476,7 +1477,8 @@ def repack_GPTQ_for_sm8x[
             var row_tile = block_idx[0] * (BN // 64) + warp_x
             var scales_warp_tile = repack_scales.tile[1, 64](group, row_tile)
             var raw_scales_warp_tile = raw_scales.tile[64, 1](row_tile, group)
-            var scale_row = (lane_id % 4) * 16 + lane_id // 4
+            var lane_group, lane_offset = divmod(lane_id, 4)
+            var scale_row = lane_offset * 16 + lane_group
 
             scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
                 scales_type

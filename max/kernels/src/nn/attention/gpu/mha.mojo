@@ -6339,6 +6339,8 @@ def mha_splitk_reduce[
     var compensation = SIMD[accum_type, width](0)
     var depth_idx = thread_idx.x * width
 
+    # Keep captured Kahan state inlined across scalar-tail calls on Metal.
+    @inline(.always)
     def accum_fn[
         simd_width: Int
     ](partition_idx: Int) {
