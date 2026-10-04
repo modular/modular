@@ -47,11 +47,12 @@ from kv_cache_test_utils import (
     padded_lut_cols,
     random_distinct,
 )
-from layout import Coord, Idx, row_major
+from layout import Coord, Idx, MixedLayout, TileTensor, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout._fillers import random
 from std.memory import unsafe_memcpy, unsafe_memset_zero
 from nn.attention.gpu.mha import flash_attention
+from nn.kv_cache_ragged import generic_cross_attention_kv_cache
 from nn.attention.mha_mask import (
     CausalMask,
     ChunkedCausalMask,
@@ -59,7 +60,7 @@ from nn.attention.mha_mask import (
     NullMask,
     SlidingWindowCausalMask,
 )
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_true
 
 from std.utils import IndexList
 
@@ -417,16 +418,69 @@ def _run_ragged_at[
             sink_weights=sink_device_view,
         )
     elif pass_kv_input_row_offsets:
-        flash_attention[ragged=True](
-            test_output_lt,
+        comptime assert mask_t == CausalMask
+        var invalid_q_max_seq_len = Array[UInt32, 2](
+            fill=UInt32(max_prompt_length)
+        )
+        var rejected_scalar = False
+        try:
+            generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+                q_ragged_lt,
+                input_row_offsets_dt,
+                TileTensor(invalid_q_max_seq_len, row_major[2]()),
+                kv_input_row_offsets_view,
+                kv_collection_paged_device,
+                UInt32(layer_idx),
+                rsqrt(Float32(kv_params.head_size)),
+                test_output_lt,
+                ctx,
+            )
+        except e:
+            assert_true(
+                "q_max_seq_len must contain exactly one element" in String(e)
+            )
+            rejected_scalar = True
+        assert_true(rejected_scalar)
+
+        var q_max_seq_len = Array[UInt32, 1](fill=UInt32(max_prompt_length))
+        # No backing memory is accessed: the invalid layout is rejected
+        # before constructing the pointer-only offsets view.
+        var strided_offsets = TileTensor(
+            kv_input_row_offsets_view.unsafe_ptr(),
+            MixedLayout(
+                Coord(Int(kv_input_row_offsets_view.dim[0]())), Coord(Idx[2])
+            ),
+        )
+        var rejected_stride = False
+        try:
+            generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
+                q_ragged_lt,
+                input_row_offsets_dt,
+                TileTensor(q_max_seq_len, row_major[1]()),
+                strided_offsets,
+                kv_collection_paged_device,
+                UInt32(layer_idx),
+                rsqrt(Float32(kv_params.head_size)),
+                test_output_lt,
+                ctx,
+            )
+        except e:
+            assert_true(
+                "kv_input_row_offsets must have unit stride" in String(e)
+            )
+            rejected_stride = True
+        assert_true(rejected_stride)
+
+        generic_cross_attention_kv_cache[target="gpu", mask_str="causal"](
             q_ragged_lt,
-            kv_collection_paged_device.get_key_cache(layer_idx),
-            kv_collection_paged_device.get_value_cache(layer_idx),
-            mask,
             input_row_offsets_dt,
+            TileTensor(q_max_seq_len, row_major[1]()),
+            kv_input_row_offsets_view,
+            kv_collection_paged_device,
+            UInt32(layer_idx),
             rsqrt(Float32(kv_params.head_size)),
+            test_output_lt,
             ctx,
-            kv_input_row_offsets=kv_input_row_offsets_view,
         )
     else:
         flash_attention[ragged=True](
@@ -626,8 +680,8 @@ def main() raises:
         # )
 
         # Case 8: Phase-10 cross-attention plumbing smoke. Calls
-        # `flash_attention[ragged=True]` with `kv_input_row_offsets`
-        # set equal to `input_row_offsets`, exercising the
+        # the native generic cross-attention entry point with KV offsets
+        # equal to the Q offsets, exercising the
         # dispatcher's `if kv_input_row_offsets:` branch and the
         # `mha_prefill_v2_ragged[cross_attention=True]` launcher.
         # Because the kv-side offsets match the Q-side, `num_keys`

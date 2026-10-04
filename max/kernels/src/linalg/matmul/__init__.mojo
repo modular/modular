@@ -22,7 +22,6 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_valid_target
 from layout import (
     Layout,
-    LayoutTensor,
     RowMajorLayout,
     TileTensor,
     UNKNOWN_VALUE,

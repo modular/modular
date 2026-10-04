@@ -198,7 +198,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    # LayoutTensors for reference matmul
+    # TileTensors for reference matmul
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(

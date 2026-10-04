@@ -4495,14 +4495,14 @@ struct Struct_cross_attention_ragged_paged:
             target=target,
             output_dtype=out_dtype,
         ](
-            q.to_layout_tensor(),
-            q_input_row_offsets.to_layout_tensor(),
-            q_max_seq_len.to_layout_tensor(),
-            kv_input_row_offsets.to_layout_tensor(),
+            q.to_tile_tensor(),
+            q_input_row_offsets.to_tile_tensor(),
+            q_max_seq_len.to_tile_tensor(),
+            kv_input_row_offsets.to_tile_tensor(),
             kv_collection,
             layer_idx,
             scale,
-            output.to_layout_tensor(),
+            output.to_tile_tensor(),
             context,
         )
 

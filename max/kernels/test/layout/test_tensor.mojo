@@ -1969,12 +1969,12 @@ def test_tensor_size() raises:
 
 # This test doesn't need to run, it just needs to compile
 def test_merge():
-    comptime layout = Layout.row_major(4, 4)
-    var stack = Array[UInt32, layout.size()](fill={})
-    var tensor = LayoutTensor[.uint32, layout](stack)
-    var stack2 = Array[UInt32, layout.size()](fill={})
-    var tensor2 = LayoutTensor[.uint32, layout](stack2)
-    var a = tensor if tensor.size() > 1 else tensor2
+    comptime layout = row_major[4, 4]()
+    var stack = Array[UInt32, layout.static_product](fill={})
+    var tensor = TileTensor(stack, layout).as_unsafe_any_origin()
+    var stack2 = Array[UInt32, layout.static_product](fill={})
+    var tensor2 = TileTensor(stack2, layout).as_unsafe_any_origin()
+    var a = tensor if tensor.num_elements() > 1 else tensor2
     print(a)
 
 

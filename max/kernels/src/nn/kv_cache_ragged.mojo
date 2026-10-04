@@ -4968,24 +4968,20 @@ def _cross_attention_dispatch[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     q_max_seq_len: UInt32,
-    kv_input_row_offsets: LayoutTensor[
+    kv_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_cache: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -5006,25 +5002,22 @@ def _cross_attention_dispatch[
                 "CPU flash attention requires output dtype == q dtype;"
                 " the distinct-output-dtype (fp8->bf16) path is GPU-only."
             )
-            var sink_weights_tt = OptionalReg[ImmutTileTensor1D[dtype]]()
-            if sink_weights:
-                var weights = sink_weights.value()
-                sink_weights_tt = immut_tile_tensor_1d(
-                    weights.ptr, weights.dim[0]()
-                )
             return flash_attention_kv_cache_cpu(
-                lt_to_tt(q),
-                lt_to_tt(q_input_row_offsets),
+                q,
+                q_input_row_offsets,
                 # Use KV offsets for cross attention.
-                lt_to_tt(kv_input_row_offsets),
+                kv_input_row_offsets,
                 k,
                 v,
                 mask,
                 scale,
-                lt_to_tt(output.bitcast[dtype]()),
-                sink_weights_tt,
+                output.bitcast[dtype](),
+                sink_weights,
             )
         else:
+            comptime assert kv_input_row_offsets.flat_rank == 1
+            if Int(kv_input_row_offsets.layout.stride[0]().value()) != 1:
+                raise Error("kv_input_row_offsets must have unit stride")
             gpu_flash_attention[ragged=True, sink=False](
                 output,
                 q,
@@ -5035,15 +5028,9 @@ def _cross_attention_dispatch[
                 scale,
                 context,
                 Int(q_max_seq_len),
-                LayoutTensor[
-                    kv_input_row_offsets.dtype,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                ](
-                    kv_input_row_offsets.ptr.as_imm().as_unsafe_any_origin(),
-                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                        kv_input_row_offsets.runtime_layout.shape.value.canonicalize()
-                    ),
+                immut_tile_tensor_1d(
+                    kv_input_row_offsets.unsafe_ptr(),
+                    Int(kv_input_row_offsets.dim[0]()),
                 ),
                 None,
             )
@@ -5064,24 +5051,20 @@ def generic_cross_attention_kv_cache[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    q_max_seq_len: LayoutTensor[
-        mut=False, .uint32, address_space=.GENERIC, ...
-    ],
-    kv_input_row_offsets: LayoutTensor[
+    q_max_seq_len: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    kv_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     """Dispatches cross-attention flash attention over a ragged batch against a paged KV cache.
 
@@ -5104,6 +5087,7 @@ def generic_cross_attention_kv_cache[
         q_max_seq_len: Scalar tensor holding the maximum query sequence length.
         kv_input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
             start of each KV sequence along the ragged sequence dimension.
+            GPU dispatch requires unit stride.
         kv_collection: The collection storing the KVCache entries for this
             layer, retrieved via layer_idx.
         layer_idx: The index of the layer being executed, used to retrieve the
@@ -5117,20 +5101,31 @@ def generic_cross_attention_kv_cache[
             leading cache slots.
     """
 
+    comptime assert q_max_seq_len.flat_rank == 1
+    if q_max_seq_len.num_elements() != 1:
+        raise Error("q_max_seq_len must contain exactly one element")
+
     @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
-                    trace_arg("output", output.runtime_layout.shape.value),
-                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg(
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
                     trace_arg(
                         "q_input_row_offsets",
-                        q_input_row_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(
+                            q_input_row_offsets.layout.shape_coord()
+                        ),
                     ),
                     trace_arg(
                         "kv_input_row_offsets",
-                        kv_input_row_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(
+                            kv_input_row_offsets.layout.shape_coord()
+                        ),
                     ),
                     "layer_idx=" + String(layer_idx),
                     "num_heads=" + String(collection_t.kv_params.num_heads),

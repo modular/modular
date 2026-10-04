@@ -20,6 +20,7 @@ from layout import (
     LayoutTensor,
     TileTensor,
     row_major,
+    stack_allocation,
 )
 from layout.tile_layout import blocked_product
 from layout._fillers import arange
@@ -216,39 +217,38 @@ def test_reshape() raises:
 
 
 def test_aligned_load() raises:
-    """Tests aligned_load with both index types."""
-    # Use a 4x7 tensor so we can load 4 elements starting at columns 0,1,2,3
-    # without going out of bounds (column 3 + width 4 = 7)
-    var storage = Array[Float32, 4 * 7](fill=0.0)
-    var tensor = LayoutTensor[
-        .float32,
-        Layout([4, 7]),
-    ](storage)
+    """Tests aligned SIMD loads with coordinate and index-list arguments."""
+    var tensor = stack_allocation[.float32, alignment=16](row_major[4, 16]())
 
-    tensor.store[4](0, 0, 1.0)  # Store 4 elements starting at column 0
-    tensor.store[4](0, 1, 2.0)  # Store 4 elements starting at column 1
-    tensor.store[4](0, 2, 3.0)  # Store 4 elements starting at column 2
-    tensor.store[4](0, 3, 4.0)  # Store 4 elements starting at column 3
+    for column in range(0, 16, 4):
+        var expected = SIMD[.float32, 4](Float32(column // 4 + 1))
+        tensor.store[width=4, alignment=16](Coord(0, column), expected)
+        var value = tensor.load[width=4, alignment=16](Coord(0, column))
+        var linear_value = tensor.load_linear[width=4, alignment=16](
+            IndexList[2](0, column)
+        )
+        assert_equal(value, linear_value)
+        assert_equal(value, expected)
 
-    # Load 4 elements starting at column 0
-    var a0 = tensor.aligned_load[4](0, 0)
-    var b0 = tensor.aligned_load[4](IndexList[2](0, 0))
-    assert_equal(a0, b0)
 
-    # Load 4 elements starting at column 1
-    var a1 = tensor.aligned_load[4](0, 1)
-    var b1 = tensor.aligned_load[4](IndexList[2](0, 1))
-    assert_equal(a1, b1)
+def test_unaligned_load() raises:
+    """Tests SIMD loads at scalar-aligned offsets across multiple rows."""
+    var tensor = stack_allocation[.float32, alignment=16](row_major[2, 16]())
+    for row in range(2):
+        for column in range(16):
+            tensor[row, column] = Float32(row * 16 + column)
 
-    # Load 4 elements starting at column 2
-    var a2 = tensor.aligned_load[4](0, 2)
-    var b2 = tensor.aligned_load[4](IndexList[2](0, 2))
-    assert_equal(a2, b2)
-
-    # Load 4 elements starting at column 3
-    var a3 = tensor.aligned_load[4](0, 3)
-    var b3 = tensor.aligned_load[4](IndexList[2](0, 3))
-    assert_equal(a3, b3)
+    for row in range(2):
+        for column in range(1, 4):
+            var expected = SIMD[.float32, 4]()
+            comptime for lane in range(4):
+                expected[lane] = Float32(row * 16 + column + lane)
+            var value = tensor.load[width=4, alignment=4](Coord(row, column))
+            var linear_value = tensor.load_linear[width=4, alignment=4](
+                IndexList[2](row, column)
+            )
+            assert_equal(value, expected)
+            assert_equal(linear_value, expected)
 
 
 def main() raises:
@@ -257,6 +257,7 @@ def main() raises:
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()
     test_aligned_load()
+    test_unaligned_load()
     test_coalesce()
     test_get_shape()
     test_reshape()

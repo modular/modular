@@ -238,7 +238,7 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
-    # LayoutTensors for FP8 K (needed by LayoutTensorMHAOperand)
+    # BF16 tensors for the naive reference.
     comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
     )

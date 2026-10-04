@@ -55,12 +55,11 @@ from layout import (
     Idx,
     IntTuple,
     Layout,
-    LayoutTensor,
     TensorLayout,
     RuntimeLayout,
     row_major,
 )
-from layout.tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor, LTToTTLayout
 
 from .utils import partial_simd_load
 from layout.swizzle import Swizzle, make_swizzle
@@ -711,7 +710,7 @@ def stsm_helper[
     transpose_c: Bool = False,
 ](
     vec: Array[Scalar[vec_dtype], vec_size],
-    dst: LayoutTensor[_, _, address_space=.SHARED, ...],
+    dst: TileTensor[address_space=.SHARED, ...],
 ):
     """Stores a register fragment to shared memory using the stmatrix instruction.
 
@@ -731,7 +730,7 @@ def stsm_helper[
     Args:
         vec: Register fragment loaded from tensor memory to store to shared
             memory.
-        dst: Destination shared-memory `LayoutTensor` where the fragment is
+        dst: Destination shared-memory `TileTensor` where the fragment is
             written via `st_matrix`.
     """
     # Number of elements in one row per stsmx4 tile, a row is 32B.
@@ -742,12 +741,12 @@ def stsm_helper[
     # E.g. dst layout can be (16, 16) : (32, 1), which is tiled from
     # row-major(16, 32). The map should use tile's stride to calculate
     # the dst row offset.
-    comptime stride0 = dst.layout.stride[0].value()
-    comptime stride1 = dst.layout.stride[1].value()
+    comptime stride0 = dst.static_stride[0]
+    comptime stride1 = dst.static_stride[1]
     comptime assert stride1 == 1, "stride1 must be 1. Got: " + String(stride1)
-    comptime shape0 = dst.layout.shape[
+    comptime shape0 = dst.static_shape[
         1
-    ].value() if not transpose_c else dst.layout.shape[0].value()
+    ] if not transpose_c else dst.static_shape[0]
     # the layout looks like
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-matrix-fragments-shape-16256b
     # but transposed and coalesced by 8 elements.
@@ -780,7 +779,7 @@ def stsm_helper[
             comptime for _j in range(cast_width):
                 v[k * cast_width + _j] = casted[_j]
         st_matrix[simd_width=4, transpose=transpose_c](
-            dst.ptr.unsafe_mut_cast[True]() + offset,
+            dst.unsafe_ptr().unsafe_mut_cast[True]() + offset,
             bitcast[.float32, 4](v),
         )
 
@@ -1052,12 +1051,11 @@ def multi_stage_store_C[
                 _cast_frag[accum_type](applied[1])
             ).copy()
 
-        var c_smem_tile = LayoutTensor[
-            c_type,
-            c_smem_layout,
-            address_space=.SHARED,
-            alignment=128,
-        ](c_smem_base + (stage % 2) * c_smem_tile_size)
+        # 128B alignment comes from external_memory and aligned buffer offsets.
+        var c_smem_tile = TileTensor(
+            c_smem_base + (stage % 2) * c_smem_tile_size,
+            LTToTTLayout[c_smem_layout](),
+        )
 
         comptime if transpose_c:
             # if stage_contiguous_size is 128, we need to split the shared memory
@@ -1066,10 +1064,10 @@ def multi_stage_store_C[
             # contiguous row_major(stageN, 16) chunks.
             var c_smem_warp_tile_upper = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
-            ](2 * warp_id, 0).reshape[Layout.row_major(stageN, 16)]()
+            ](2 * warp_id, 0).reshape(row_major[stageN, 16]())
             var c_smem_warp_tile_lower = c_smem_tile.tile[
                 stageN * 16 // stage_contiguous_size, stage_contiguous_size
-            ](2 * warp_id + 1, 0).reshape[Layout.row_major(stageN, 16)]()
+            ](2 * warp_id + 1, 0).reshape(row_major[stageN, 16]())
 
             # Pack the upper frag to shared memory
             stsm_helper[swizzle, transpose_c=transpose_c](
@@ -1103,7 +1101,7 @@ def multi_stage_store_C[
 
         var lane = lane_id()
 
-        comptime TMA_BM = c_smem_tile.layout.shape[
+        comptime TMA_BM = c_smem_layout.shape[
             0
         ].value() if MMA_M == 256 or cta_group == 1 else BM
 
@@ -1127,7 +1125,7 @@ def multi_stage_store_C[
 
         var n_inbound_size = group_end_idx - UInt32(coord_n)
 
-        comptime M = c_smem_tile.layout.shape[1].value()
+        comptime M = c_smem_layout.shape[1].value()
 
         comptime has_elementwise_lambda = (
             Bool(elementwise_lambda_fn) or has_epilogue_fn
@@ -1142,7 +1140,7 @@ def multi_stage_store_C[
                         var c_smem_warp_tile = c_smem_tile.tile[
                             stageN * 16 // stage_contiguous_size,
                             stage_contiguous_size,
-                        ](i, 0).reshape[Layout.row_major(stageN, 16)]()
+                        ](i, 0).reshape(row_major[stageN, 16]())
                         c_tma_op.async_store(
                             c_smem_warp_tile,
                             (
@@ -1212,7 +1210,7 @@ def multi_stage_store_C[
                 var src_idx = UInt32(simd_size) * thread_index
                 var c_smem_idx = swizzle(src_idx)
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
-                var val_vec = (c_smem_tile.ptr + c_smem_idx).load[
+                var val_vec = (c_smem_tile.unsafe_ptr() + c_smem_idx).load[
                     width=simd_size, alignment=alignment
                 ]()
                 var chunk_idx = rest // UInt32(stageN)
@@ -1366,7 +1364,7 @@ def zero_output_epilogue[
     ), "zero_output_epilogue only supports MMA_M == 256 or cta_group == 1"
 
     # `M` here is the tile's contiguous (row) extent, matching
-    # `c_smem_tile.layout.shape[1]` in `multi_stage_store_C`.
+    # `c_smem_layout.shape[1]` in `multi_stage_store_C`.
     comptime M = c_smem_layout.shape[1].value()
     comptime chunkM = c_swizzle.bytes() // size_of[c_type]()
     comptime vec_chunkM = chunkM // simd_size
