@@ -18,6 +18,7 @@ from layout import (
     LayoutTensor,
     TileTensor,
     row_major,
+    stack_allocation,
     stack_allocation_like,
 )
 from layout._fillers import arange
@@ -292,22 +293,20 @@ def test_softmax_math():
 # CHECK: test_max_elemntwise
 def test_max_elemntwise():
     print("== test_max_elemntwise")
-    var tensor_4x4_a = LayoutTensor[
-        .float32, Layout.row_major(4, 4), MutAnyOrigin
-    ].stack_allocation()
+    var tensor_4x4_a = stack_allocation[.float32](row_major[4, 4]())
     arange(tensor_4x4_a)
 
-    var tensor_4x4_b = (
-        LayoutTensor[.float32, Layout.row_major(4, 4), MutAnyOrigin]
-        .stack_allocation()
-        .fill(5)
-    )
+    var tensor_4x4_b = stack_allocation[.float32](row_major[4, 4]()).fill(5)
 
     # CHECK: 5.0 5.0 5.0 5.0
     # CHECK: 5.0 5.0 6.0 7.0
     # CHECK: 8.0 9.0 10.0 11.0
     # CHECK: 12.0 13.0 14.0 15.0
-    print(max(tensor_4x4_a, tensor_4x4_b))
+    var result = max(tensor_4x4_a.as_imm(), tensor_4x4_b.as_imm())
+    for i in range(4):
+        for j in range(4):
+            print(result[i, j], end=" ")
+        print()
 
 
 def main():

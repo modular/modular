@@ -1001,8 +1001,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
         ), "Mismatch in dtype between weight and QKV tensors"
 
         _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -1136,8 +1136,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         ), "Mismatch in dtype between weight and QKV tensors"
 
         _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -1334,8 +1334,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             elementwise_lambda_fn=write_to_cache,
             output_dtype=output_dtype,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -2296,8 +2296,8 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     ), "Mismatch in dtype between weight and QKV tensors"
 
     _matmul_common[target=target, elementwise_lambda_fn=write_to_caches](
-        hidden_state.to_layout_tensor(),
-        weight.bitcast[dtype]().to_layout_tensor(),
+        hidden_state,
+        weight.bitcast[dtype](),
         context,
     )
 
@@ -2311,49 +2311,39 @@ def _matmul_common[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     output_dtype: DType = dtype,
 ](
-    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
-    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    comptime N = Int(weight.layout.shape[0])
+    var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
+    comptime N = weight.static_shape[0]
 
     var c_alloc_layout = AllocLayout[Scalar[output_dtype]](
         count=TOTAL_SEQ_LEN * N
     )
-    var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
-    ]
+    var c_ptr: Optional[
+        UnsafePointer[Scalar[output_dtype], MutUntrackedOrigin]
+    ] = None
 
     comptime if is_cpu[target]():
-        # The CPU matmul codepath uses the C buffer as a workspace
-        # even if an epilogue is provided, here we just allocate
-        # something to ensure we don't segfault.
-        var c_ptr = alloc(c_alloc_layout).unsafe_leak()
+        # CPU matmul uses C as workspace even when an epilogue owns the output.
+        c_ptr = alloc(c_alloc_layout).unsafe_leak()
 
-        c_nd = {
-            c_ptr,
-            RuntimeLayout[c_nd.layout].row_major(
-                IndexList[2](TOTAL_SEQ_LEN, N)
-            ),
-        }
-    else:
-        c_nd = {
-            None,
-            RuntimeLayout[c_nd.layout].row_major(
-                IndexList[2](TOTAL_SEQ_LEN, N)
-            ),
-        }
+    # Preserve the null GPU placeholder: TMA setup may inspect C's alignment
+    # even though the epilogue redirects all stores to the cache.
+    var c_nd = TileTensor(
+        c_ptr._unsafe_nullable(), row_major(TOTAL_SEQ_LEN, Idx[N])
+    )
 
     matmul[
         target=target,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](lt_to_tt(c_nd), lt_to_tt(hidden_state), lt_to_tt(weight), context)
+    ](c_nd, hidden_state, weight, context)
 
     comptime if is_cpu[target]():
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=c_nd.ptr).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=c_ptr.value()).unsafe_with_layout(
                 c_alloc_layout
             )
         )
@@ -2825,7 +2815,7 @@ def _matmul_kv_cache_ragged_impl[
 
     _matmul_common[
         target=target, elementwise_lambda_fn=write_to_cache_continuous
-    ](hidden_state.to_layout_tensor(), weight.to_layout_tensor(), ctx)
+    ](hidden_state, weight, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3029,7 +3019,7 @@ def _matmul_k_cache_ragged_impl[
         )
 
     _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-        hidden_state.to_layout_tensor(), weight.to_layout_tensor(), ctx
+        hidden_state, weight, ctx
     )
 
 
