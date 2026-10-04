@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
 from std.sys import (
     align_of,
@@ -43,11 +43,11 @@ from layout import (
     Coord,
     Idx,
     LayoutTensor,
-    lt_to_tt,
     RuntimeLayout,
     RuntimeTuple,
     TensorLayout,
     TileTensor,
+    row_major,
 )
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -59,6 +59,7 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.tile_layout import Layout as TileLayout
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 
 from std.utils import StaticTuple
@@ -1157,44 +1158,49 @@ def multistage_gemm_kernel[
 )
 def multistage_gemm_split_k_kernel[
     c_type: DType,
-    c_layout: Layout,
+    CLT: TensorLayout,
     a_type: DType,
-    a_layout: Layout,
+    ALT: TensorLayout,
     b_type: DType,
-    b_layout: Layout,
+    BLT: TensorLayout,
     work_space_type: DType,
-    workspace_layout: Layout,
+    WLT: TensorLayout,
     transpose_b: Bool,
+    c_linear_idx_type: DType,
+    a_linear_idx_type: DType,
+    b_linear_idx_type: DType,
+    workspace_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
-    work_space: LayoutTensor[work_space_type, workspace_layout, MutAnyOrigin],
+    c: TileTensor[c_type, CLT, MutAnyOrigin, linear_idx_type=c_linear_idx_type],
+    a: TileTensor[
+        a_type, ALT, ImmutAnyOrigin, linear_idx_type=a_linear_idx_type
+    ],
+    b: TileTensor[
+        b_type, BLT, ImmutAnyOrigin, linear_idx_type=b_linear_idx_type
+    ],
+    work_space: TileTensor[
+        work_space_type,
+        WLT,
+        MutAnyOrigin,
+        linear_idx_type=workspace_linear_idx_type,
+    ],
     num_partitions: Int32,
 ):
     var _num_partitions = Int(num_partitions)
-    var M = c.dim[0]()
-    comptime N = b.shape[0]() if transpose_b else b.shape[1]()
-    comptime K = b.shape[1]() if transpose_b else b.shape[0]()
+    comptime assert c.rank == c.flat_rank == 2
+    comptime assert a.rank == a.flat_rank == 2
+    comptime assert b.rank == b.flat_rank == 2
+    comptime assert work_space.rank == work_space.flat_rank == 3
+    var M = Int(c.dim[0]())
+    comptime N = b.static_shape[0] if transpose_b else b.static_shape[1]
+    comptime K = b.static_shape[1] if transpose_b else b.static_shape[0]
     comptime BK = config.block_tile_shape[2]
 
-    comptime work_space_tensor_type = LayoutTensor[
-        work_space_type, c_layout, MutAnyOrigin
-    ]
-
-    var work_space_part = work_space_tensor_type(
-        work_space.ptr + block_idx.z * M * N,
-        RuntimeLayout[
-            c_layout,
-            element_type=work_space_tensor_type.layout_int_type,
-            linear_idx_type=work_space_tensor_type.linear_idx_type,
-        ].row_major(
-            IndexList[2, element_type=work_space_tensor_type.layout_int_type](
-                M, N
-            )
-        ),
+    var ws_tt = TileTensor(
+        work_space.ptr_at_offset((block_idx.z, 0, 0)),
+        row_major(c.layout.shape[0](), c.layout.shape[1]()),
     )
     comptime k_partition_config = MatmulConfig[
         a_type,
@@ -1206,8 +1212,6 @@ def multistage_gemm_split_k_kernel[
         warp_tile_shape=config.warp_tile_shape,
         num_pipeline_stages=config.num_pipeline_stages,
     )
-
-    var ws_tt = lt_to_tt(work_space_part)
 
     comptime if (
         has_amd_gpu_accelerator()
@@ -1229,8 +1233,8 @@ def multistage_gemm_split_k_kernel[
             K_part % BK == 0
         ), "AMD split-K requires each K partition to be a multiple of BK."
         var z = block_idx.z
-        var a_amd = lt_to_tt(a).tile(Coord(M, Idx[K_part]), Coord(0, z))
-        var b_amd = lt_to_tt(b).tile(Coord(Idx[N], Idx[K_part]), Coord(0, z))
+        var a_amd = a.tile(Coord(M, Idx[K_part]), Coord(0, z))
+        var b_amd = b.tile(Coord(Idx[N], Idx[K_part]), Coord(0, z))
         AMDMatmul[
             a_type,
             b_type,
@@ -1249,14 +1253,43 @@ def multistage_gemm_split_k_kernel[
         )
 
     else:
-        # If K is not divisible by num_partitions, the first
-        # num_partitions-1 parts are rounded up to a multiple of BK.
-        var a_part = a.split[axis=1, split_alignment=BK](
-            _num_partitions, block_idx.z
+        comptime assert (
+            a.static_shape[1] != UNKNOWN_VALUE
+            and a.static_stride[1] != UNKNOWN_VALUE
+        ), "Shouldn't split dynamic dimension."
+        comptime b_k_axis = 1 if transpose_b else 0
+        comptime assert (
+            b.static_shape[b_k_axis] != UNKNOWN_VALUE
+            and b.static_stride[b_k_axis] != UNKNOWN_VALUE
+        ), "Shouldn't split dynamic dimension."
+        # Preserve the historical floor-then-align split. TileTensor.split
+        # uses ceil division and clamps exhausted partitions instead.
+        var partition_size = align_up(K // _num_partitions, BK)
+        var k_start = block_idx.z * partition_size
+        var k_size = Int64(min(partition_size, K - k_start))
+        var a_part = TileTensor(
+            a.ptr_at_offset((0, k_start)),
+            TileLayout(
+                Coord(a.layout.shape[0](), k_size), a.layout.stride_coord()
+            ),
         )
-        var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
-            _num_partitions, block_idx.z
-        )
-        var a_tt = lt_to_tt(a_part)
-        var b_tt = lt_to_tt(b_part)
-        multistage_gemm_kernel[config=k_partition_config,](ws_tt, a_tt, b_tt)
+        comptime if transpose_b:
+            var b_part = TileTensor(
+                b.ptr_at_offset((0, k_start)),
+                TileLayout(
+                    Coord(b.layout.shape[0](), k_size), b.layout.stride_coord()
+                ),
+            )
+            multistage_gemm_kernel[config=k_partition_config](
+                ws_tt, a_part, b_part
+            )
+        else:
+            var b_part = TileTensor(
+                b.ptr_at_offset((k_start, 0)),
+                TileLayout(
+                    Coord(k_size, b.layout.shape[1]()), b.layout.stride_coord()
+                ),
+            )
+            multistage_gemm_kernel[config=k_partition_config](
+                ws_tt, a_part, b_part
+            )

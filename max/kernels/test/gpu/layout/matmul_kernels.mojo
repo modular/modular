@@ -34,12 +34,12 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import async_copy_wait_all
-from layout import Layout, LayoutTensor
+from layout import Layout
 from layout.layout_tensor import copy_dram_to_sram_async
 from layout.math import outer_product_acc
 from layout.tensor_core import TensorCore
 
-from layout import TileTensor, Idx, Coord, TensorLayout, row_major
+from layout import TileTensor, Idx, Coord, TensorLayout, col_major, row_major
 from layout.tile_tensor import stack_allocation
 from layout.tile_io import copy_dram_to_sram_async as copy_tiles_async
 
@@ -876,9 +876,9 @@ def run_gemm_kernel_5[
 
 def gemm_kernel_6[
     dtype: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_layout: TensorLayout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -886,13 +886,12 @@ def gemm_kernel_6[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    a: LayoutTensor[dtype, a_layout, ImmutAnyOrigin],
-    b: LayoutTensor[dtype, b_layout, ImmutAnyOrigin],
-    c: LayoutTensor[dtype, c_layout, MutAnyOrigin],
+    a: TileTensor[dtype, a_layout, ImmutAnyOrigin],
+    b: TileTensor[dtype, b_layout, ImmutAnyOrigin],
+    c: TileTensor[dtype, c_layout, MutAnyOrigin],
 ):
     """
-    Tiled GEMM kernel that performs matrix multiplication C = A * B with
-    vectorized memory access.
+    Accumulates `C += A * B` with vectorized memory access.
 
     Parameters:
         dtype: The data type of the input and output tensors.
@@ -926,66 +925,61 @@ def gemm_kernel_6[
     of rows in B.
     """
 
+    comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
     comptime simd_width = simd_width_of[dtype]()
+    comptime vector_alignment = align_of[SIMD[dtype, simd_width]]()
     var partition_row, partition_col = udivmod(thread_idx.x, BN // TN)
     var bidx = block_idx.x
     var bidy = block_idx.y
 
     # Get the tile of the output matrix C that this thread is responsible
     # for computing.
-    var dst = c.tile[BM, BN](bidy, bidx).tile[TM, TN](
-        partition_row, partition_col
+    var dst = c.tile[BM, BN](Coord(bidy, bidx)).tile[TM, TN](
+        Coord(partition_row, partition_col)
     )
     var dst_vec = dst.vectorize[1, simd_width]()
 
     # Allocate shared memory for tiles of A and B.
     # Use column-major layout for A to get the transpose.
-    var a_smem = LayoutTensor[
-        dtype,
-        Layout.col_major(BM, BK),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
-    var b_smem = LayoutTensor[
-        dtype,
-        Layout.row_major(BK, BN),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
+    var a_smem = stack_allocation[
+        dtype, address_space=.SHARED, alignment=vector_alignment
+    ](col_major[BM, BK]())
+    var b_smem = stack_allocation[
+        dtype, address_space=.SHARED, alignment=vector_alignment
+    ](row_major[BK, BN]())
 
     # Allocate register tiles to store the partial results and operands.
-    var dst_reg = LayoutTensor[
-        dtype,
-        Layout.row_major(TM, TN),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
+    var dst_reg = stack_allocation[
+        dtype, address_space=.LOCAL, alignment=vector_alignment
+    ](row_major[TM, TN]())
     var dst_reg_vec = dst_reg.vectorize[1, simd_width]()
     dst_reg_vec.copy_from(dst_vec)
 
-    var a_reg = LayoutTensor[
-        dtype, Layout(TM), MutAnyOrigin, address_space=.LOCAL
-    ].stack_allocation()
-    var b_reg = LayoutTensor[
-        dtype, Layout(TN), MutAnyOrigin, address_space=.LOCAL
-    ].stack_allocation()
+    var a_reg = stack_allocation[
+        dtype, address_space=.LOCAL, alignment=vector_alignment
+    ](row_major[TM]())
+    var b_reg = stack_allocation[
+        dtype, address_space=.LOCAL, alignment=vector_alignment
+    ](row_major[TN]())
 
-    var ntiles = b.dim[0]() // BK
+    var ntiles = Int(b.dim[0]()) // BK
 
     # Iterate over the tiles of A and B in the K dimension.
     for block in range(ntiles):
         comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
         comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-        var a_tile = a.tile[BM, BK](block_idx.y, block)
-        var b_tile = b.tile[BK, BN](block, block_idx.x)
+        var a_tile = a.tile[BM, BK](Coord(block_idx.y, block))
+        var b_tile = b.tile[BK, BN](Coord(block, block_idx.x))
 
-        # Load the tiles of A and B into shared memory using vectorized
-        # memory access.
+        # Keep the strided A-vector geometry at the legacy copy boundary;
+        # native vectorization represents only contiguous scalar lanes.
         copy_dram_to_sram_async[thread_layout=load_a_layout](
-            a_smem.vectorize[simd_width, 1](), a_tile.vectorize[simd_width, 1]()
+            a_smem.to_layout_tensor().vectorize[simd_width, 1](),
+            a_tile.to_layout_tensor().vectorize[simd_width, 1](),
         )
         copy_dram_to_sram_async[thread_layout=load_b_layout](
-            b_smem.vectorize[1, simd_width](), b_tile.vectorize[1, simd_width]()
+            b_smem.to_layout_tensor().vectorize[1, simd_width](),
+            b_tile.to_layout_tensor().vectorize[1, simd_width](),
         )
 
         async_copy_wait_all()
@@ -994,8 +988,8 @@ def gemm_kernel_6[
         # Iterate over the elements in the K dimension within the tiles.
         comptime for k in range(BK):
             # Load the corresponding tiles from shared memory into registers.
-            var a_tile = a_smem.tile[TM, 1](partition_row, k)
-            var b_tile = b_smem.tile[1, TN](k, partition_col)
+            var a_tile = a_smem.tile[TM, 1](Coord(partition_row, k))
+            var b_tile = b_smem.tile[1, TN](Coord(k, partition_col))
             a_reg.copy_from(a_tile)
             b_reg.copy_from(b_tile)
 
@@ -1025,11 +1019,6 @@ def run_gemm_kernel_6[
     b: TileTensor,
     c: TileTensor,
 ) raises:
-    # The remaining register math and tensor-core APIs still use legacy views.
-    var a_legacy = a.as_imm().as_unsafe_any_origin().to_layout_tensor()
-    var b_legacy = b.as_imm().as_unsafe_any_origin().to_layout_tensor()
-    var c_legacy = c.as_unsafe_any_origin().to_layout_tensor()
-
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
     var M = Int(a.dim[0]())
@@ -1039,9 +1028,9 @@ def run_gemm_kernel_6[
     comptime NUM_THREADS = (BM * BN) // (TM * TN)
     comptime kernel = gemm_kernel_6[
         dtype,
-        a_legacy.layout,
-        b_legacy.layout,
-        c_legacy.layout,
+        type_of(a.layout),
+        type_of(b.layout),
+        type_of(c.layout),
         BM,
         BN,
         BK,
@@ -1054,9 +1043,9 @@ def run_gemm_kernel_6[
     @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
-            a_legacy,
-            b_legacy,
-            c_legacy,
+            a.as_imm().as_unsafe_any_origin(),
+            b.as_imm().as_unsafe_any_origin(),
+            c.as_unsafe_any_origin(),
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(NUM_THREADS),
         )
@@ -1073,9 +1062,9 @@ def run_gemm_kernel_6[
         0,
     )
     ctx.enqueue_function[kernel](
-        a_legacy,
-        b_legacy,
-        c_legacy,
+        a.as_imm().as_unsafe_any_origin(),
+        b.as_imm().as_unsafe_any_origin(),
+        c.as_unsafe_any_origin(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
@@ -1083,9 +1072,9 @@ def run_gemm_kernel_6[
 
 def matmul_kernel_tc[
     dtype: DType,
-    layout_a: Layout,
-    layout_b: Layout,
-    layout_c: Layout,
+    layout_a: TensorLayout,
+    layout_b: TensorLayout,
+    layout_c: TensorLayout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -1095,9 +1084,9 @@ def matmul_kernel_tc[
     MMA_N: Int,
     MMA_K: Int,
 ](
-    A: LayoutTensor[dtype, layout_a, ImmutAnyOrigin],
-    B: LayoutTensor[dtype, layout_b, ImmutAnyOrigin],
-    C: LayoutTensor[dtype, layout_c, MutAnyOrigin],
+    A: TileTensor[dtype, layout_a, ImmutAnyOrigin],
+    B: TileTensor[dtype, layout_b, ImmutAnyOrigin],
+    C: TileTensor[dtype, layout_c, MutAnyOrigin],
 ):
     """
     Tiled GEMM kernel that performs matrix multiplication C = A * B using
@@ -1132,9 +1121,8 @@ def matmul_kernel_tc[
     matrix multiplication, i.e., the number of columns in A equals the number
     of rows in B.
     """
-    comptime M = C.shape[0]()  # Number of rows in matrix C
-    comptime N = C.shape[1]()  # Number of columns in matrix C
-    comptime K = A.shape[1]()  # Number of columns in matrix A
+    comptime assert A.flat_rank == B.flat_rank == C.flat_rank == 2
+    comptime K = A.static_shape[1]
 
     var warp_id = get_warp_id()  # Warp ID within the block
 
@@ -1142,9 +1130,9 @@ def matmul_kernel_tc[
     var warp_y, warp_x = udivmod(warp_id, BN // WN)
 
     # Get the warp tile of the output matrix C
-    var C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
-        warp_y, warp_x
-    )
+    var C_warp_tile = C.tile[BM, BN](Coord(block_idx.y, block_idx.x)).tile[
+        WM, WN
+    ](Coord(warp_y, warp_x))
 
     # Ensure warp tile dimensions are multiples of instruction shape
     comptime assert (
@@ -1155,88 +1143,93 @@ def matmul_kernel_tc[
     var mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
 
     # Allocate shared memory for tiles of A and B
-    var A_sram_tile = LayoutTensor[
+    var A_sram_tile = stack_allocation[
         A.dtype,
-        Layout.row_major(BM, BK),
-        MutAnyOrigin,
         address_space=.SHARED,
-    ].stack_allocation()
-    var B_sram_tile = LayoutTensor[
+        alignment=align_of[SIMD[A.dtype, 4]](),
+    ](row_major[BM, BK]())
+    var B_sram_tile = stack_allocation[
         B.dtype,
-        Layout.row_major(BK, BN),
-        MutAnyOrigin,
         address_space=.SHARED,
-    ].stack_allocation()
+        alignment=align_of[SIMD[B.dtype, 4]](),
+    ](row_major[BK, BN]())
 
     # Allocate register tile for accumulating partial results
-    var c_reg = (
-        LayoutTensor[
-            C.dtype,
-            Layout.row_major(WM // MMA_M, (WN * 4) // MMA_N),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
+    var c_reg = stack_allocation[
+        C.dtype,
+        address_space=.LOCAL,
+        alignment=align_of[SIMD[C.dtype, 4]](),
+    ](row_major[WM // MMA_M, (WN * 4) // MMA_N]()).fill(0)
 
     # Iterate over tiles of A and B in the K dimension
     for k_i in range(K // BK):
         barrier()  # Synchronize before loading new tiles
 
         # Get the tiles of A and B for the current iteration
-        var A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
-        var B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
+        var A_dram_tile = A.tile[BM, BK](Coord(block_idx.y, k_i))
+        var B_dram_tile = B.tile[BK, BN](Coord(k_i, block_idx.x))
 
         # Load tiles of A and B into shared memory asynchronously
         copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
-            A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
+            A_sram_tile.to_layout_tensor().vectorize[1, 4](),
+            A_dram_tile.to_layout_tensor().vectorize[1, 4](),
         )
         copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
-            B_sram_tile.vectorize[1, 4](), B_dram_tile.vectorize[1, 4]()
+            B_sram_tile.to_layout_tensor().vectorize[1, 4](),
+            B_dram_tile.to_layout_tensor().vectorize[1, 4](),
         )
 
         async_copy_wait_all()  # Wait for async copies to complete
         barrier()  # Synchronize after loading tiles
 
         # Get the warp tiles of A and B from shared memory
-        var A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
-        var B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
+        var A_warp_tile = A_sram_tile.tile[WM, BK](Coord(warp_y, 0))
+        var B_warp_tile = B_sram_tile.tile[BK, WN](Coord(0, warp_x))
 
         # Iterate over the elements in the K dimension within the tiles
         comptime for mma_k in range(BK // MMA_K):
             comptime for mma_m in range(WM // MMA_M):
                 comptime for mma_n in range(WN // MMA_N):
                     # Get the register tile for the current MMA operation
-                    var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
+                    var c_reg_m_n = c_reg.tile[1, 4](Coord(mma_m, mma_n))
 
                     # Get the MMA tiles of A and B
                     var A_mma_tile = A_warp_tile.tile[MMA_M, MMA_K](
-                        mma_m, mma_k
+                        Coord(mma_m, mma_k)
                     )
                     var B_mma_tile = B_warp_tile.tile[MMA_K, MMA_N](
-                        mma_k, mma_n
+                        Coord(mma_k, mma_n)
                     )
 
-                    # Load fragments of A and B into registers
-                    var a_reg = mma_op.load_a(A_mma_tile)
-                    var b_reg = mma_op.load_b(B_mma_tile)
+                    # Keep the existing hardware fragment representation at
+                    # the MMA boundary while surrounding views stay native.
+                    var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
+                    var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
 
                     # Perform MMA operation and accumulate the result
                     var d_reg_m_n = mma_op.mma_op(
                         a_reg,
                         b_reg,
-                        c_reg_m_n,
+                        c_reg_m_n.to_layout_tensor(),
                     )
 
                     # Store the accumulated result back to the register tile
-                    c_reg_m_n.copy_from(d_reg_m_n)
+                    # Legacy MMA results promise only scalar stack alignment.
+                    var d_native = TileTensor[
+                        C.dtype, address_space=d_reg_m_n.address_space
+                    ](d_reg_m_n.ptr, row_major[1, 4]())
+                    var d_reg = d_native.load[
+                        width=4, alignment=align_of[C.dtype]()
+                    ]((0, 0))
+                    c_reg_m_n.store[alignment=align_of[C.dtype]()](
+                        (0, 0), d_reg
+                    )
 
     # Write the final accumulated results to the output matrix
     comptime for mma_m in range(WM // MMA_M):
         comptime for mma_n in range(WN // MMA_N):
-            var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
-            var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
+            var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](Coord(mma_m, mma_n))
+            var c_reg_m_n = c_reg.tile[1, 4](Coord(mma_m, mma_n))
             mma_op.store_d(C_mma_tile, c_reg_m_n)
 
 
@@ -1260,11 +1253,6 @@ def run_gemm_kernel_tc[
     b: TileTensor,
     c: TileTensor,
 ) raises:
-    # The remaining register math and tensor-core APIs still use legacy views.
-    var a_legacy = a.as_imm().as_unsafe_any_origin().to_layout_tensor()
-    var b_legacy = b.as_imm().as_unsafe_any_origin().to_layout_tensor()
-    var c_legacy = c.as_unsafe_any_origin().to_layout_tensor()
-
     comptime assert a.rank == b.rank == c.rank == 2
     comptime assert a.flat_rank == b.flat_rank == c.flat_rank == 2
     var M = Int(a.dim[0]())
@@ -1274,9 +1262,9 @@ def run_gemm_kernel_tc[
     comptime NUM_WARPS = (BM // WM) * (BN // WN)
     comptime kernel = matmul_kernel_tc[
         dtype,
-        a_legacy.layout,
-        b_legacy.layout,
-        c_legacy.layout,
+        type_of(a.layout),
+        type_of(b.layout),
+        type_of(c.layout),
         BM,
         BN,
         BK,
@@ -1291,9 +1279,9 @@ def run_gemm_kernel_tc[
     @__parameter
     def run_func(ctx: DeviceContext) raises:
         ctx.enqueue_function[kernel](
-            a_legacy,
-            b_legacy,
-            c_legacy,
+            a.as_imm().as_unsafe_any_origin(),
+            b.as_imm().as_unsafe_any_origin(),
+            c.as_unsafe_any_origin(),
             grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
             block_dim=(NUM_WARPS * WARP_SIZE),
         )
@@ -1310,9 +1298,9 @@ def run_gemm_kernel_tc[
         0,
     )
     ctx.enqueue_function[kernel](
-        a_legacy,
-        b_legacy,
-        c_legacy,
+        a.as_imm().as_unsafe_any_origin(),
+        b.as_imm().as_unsafe_any_origin(),
+        c.as_unsafe_any_origin(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_WARPS * WARP_SIZE),
     )
