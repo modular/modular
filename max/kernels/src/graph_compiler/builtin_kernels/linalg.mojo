@@ -1065,6 +1065,7 @@ struct Struct_grouped_matmul_block_scaled_amd[
             for MXFP8. The kernel reads `a`/`b` as raw bytes, so this rather
             than the operand dtype selects the format, and with it the K extent
             (`K` at MXFP8, `K // 2` at MXFP4). Preshuffled-B path only.
+            Dense mixed W4A8 derives independent formats from operand dtypes.
     """
 
     @inline(.always)
@@ -1101,8 +1102,12 @@ struct Struct_grouped_matmul_block_scaled_amd[
 
         Args:
             c: The output tensor of shape (total_tokens, N).
-            a: The input tensor of shape (total_tokens, K // 2).
-            b: The weight tensor of shape (num_experts, N, K // 2).
+            a: The input tensor of shape (total_tokens, K // 2) as packed
+                uint8 MXFP4, or (total_tokens, K) as float8_e4m3fn MXFP8 or
+                W4A8 activations.
+            b: The weight tensor of shape (num_experts, N, K // 2) as packed
+                uint8 MXFP4 (W4A4 or W4A8), or (num_experts, N, K) as
+                float8_e4m3fn MXFP8.
             a_scales: The A scale factors in 2D layout.
             b_scales: The B scale factors in 3D layout.
             expert_start_indices: The starting token index for each expert.
@@ -1129,9 +1134,16 @@ struct Struct_grouped_matmul_block_scaled_amd[
             "grouped block-scaled matmul operands must be one byte wide"
             " (uint8 for MXFP4, float8_e4m3fn for MXFP8)"
         )
-        if num_active_experts == 0:
-            return
+        comptime mixed_w4a8 = (a_type == .float8_e4m3fn and b_type == .uint8)
+        comptime assert (
+            a_type == b_type and (a_type == .uint8 or a_type == .float8_e4m3fn)
+        ) or mixed_w4a8, "unsupported AMD grouped block-scaled operand formats"
         comptime if Self.preshuffled_b:
+            comptime assert (
+                not mixed_w4a8
+            ), "mixed AMD W4A8 requires dense row-major B"
+            if num_active_experts == 0:
+                return
             # Preshuffled-B kernel path (block_scaled_grouped_matmul_amd_preb).
             # Requires B in the 5D layout from `Shuffler.preshuffle_b_5d`,
             # typically produced by the model's weight adapter at load
@@ -1156,11 +1168,17 @@ struct Struct_grouped_matmul_block_scaled_amd[
             # Dense row-major B path. Safe default for arbitrary callers.
             # MXFP8 is wired on the preshuffled-B path only; reject rather
             # than silently reinterpret the K extent as FP4-packed.
-            comptime assert Self.lane_bytes == 16, (
+            comptime assert Self.lane_bytes == 16 or mixed_w4a8, (
                 "lane_bytes=32 (MXFP8) requires preshuffled_b=True; the dense"
                 " row-major B path is MXFP4-only"
             )
-            block_scaled_grouped_matmul_amd(
+            comptime a_format = (
+                CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3 if mixed_w4a8 else CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1
+            )
+            block_scaled_grouped_matmul_amd[
+                matrix_format=a_format,
+                b_matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+            ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64]().bitcast[.uint8](),
                 b.to_tile_tensor[.int64]().bitcast[.uint8](),

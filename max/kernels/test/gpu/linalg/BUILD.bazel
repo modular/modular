@@ -4,6 +4,17 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+mojo_test(
+    name = "test_w4a8_grouped_shapes.mojo.test",
+    size = "small",
+    srcs = ["test_w4a8_grouped_shapes.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    deps = [
+        "//max:linalg",
+        "@mojo//:std",
+    ],
+)
+
 # Grouped GEMM infrastructure tests - portable to any NVIDIA GPU
 # These tests validate scheduling logic, not block-scaled MMA operations
 _GROUPED_GEMM_INFRA_TESTS = [
@@ -77,6 +88,8 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_block_scaled_mma_amd.mojo": ["//:mi355_gpu"],
+    "test_block_scaled_mma_amd_mixed.mojo": ["//:mi355_gpu"],
+    "test_w4a8_grouped_matmul_amd.mojo": ["//:mi355_gpu"],
     "test_mxfp6_matmul_amd.mojo": ["//:mi355_gpu"],
     "test_mxfp6_dequant_smoke.mojo": select({
         "//:nvidia_gpu": ["//:nvidia_gpu"],
@@ -311,6 +324,8 @@ _GPU_MEMORY = {
     "test_batched_matmul.mojo": "5",
     "test_batched_matmul_sm100_scaled.mojo": "1.5",
     "test_block_scaled_mma_amd.mojo": "1",
+    "test_block_scaled_mma_amd_mixed.mojo": "1",
+    "test_w4a8_grouped_matmul_amd.mojo": "1",
     "test_mxfp6_matmul_amd.mojo": "2",
     "test_block_scaled_mma_amd_pack_k.mojo": "1",
     "test_blockwise_fp8_1d2d_structured.mojo": "1.5",
@@ -694,6 +709,7 @@ mojo_test(
     for src in glob(
         ["**/*.mojo"],
         exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + [
+            "test_w4a8_grouped_shapes.mojo",
             "test_matmul_pdl_race.mojo",
             "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",
             "test_grouped_matmul_swiglu_nvfp4_dispatch.mojo",

@@ -40,6 +40,21 @@ from .block_scaled_matmul_amd import BlockScaledMatmulAMD
 from .block_scaled_matmul_amd_preb import BlockScaledMatmulAMD_PreB
 
 
+def _validate_block_scaled_grouped_rows(
+    c_rows: Int, a_rows: Int, a_scale_rows: Int
+) raises:
+    """Validates the token-row extents, the only dynamic grouped dimensions.
+
+    Every other extent is static, so `_launch_block_scaled_grouped` checks
+    those with `comptime assert`. Raised errors remain active in release
+    builds.
+    """
+    if c_rows < 0 or a_rows < 0:
+        raise Error("grouped GEMM requires nonnegative row counts")
+    if c_rows != a_rows or a_scale_rows != a_rows:
+        raise Error("grouped C, A, and A scales must have matching row counts")
+
+
 @inline(.always)
 def _waves_per_eu_attr[waves_per_eu: Int]() -> __mlir_type.`!kgen.string`:
     # `amdgpu-waves-per-eu` "1,MAX" cap (avoids EU over-subscription); 0 => "1,8"
@@ -785,7 +800,9 @@ struct PreShuffledBGroupedGEMM[
         )
     )
 )
-@__name(t"mxfp4_grouped_{out_dtype}_BM{BM}_BN{BN}_WM{WM}_WN{WN}_BK{BK_ELEMS}")
+@__name(
+    t"mx_grouped_lb{(32 * matrix_format.bits_per_element()) // 8}{"" if matrix_format == b_matrix_format else "_w4a8"}_{out_dtype}_BM{BM}_BN{BN}_WM{WM}_WN{WN}_BK{BK_ELEMS}"
+)
 def block_scaled_grouped_matmul_amd_kernel[
     BM: Int,
     BN: Int,
@@ -808,6 +825,7 @@ def block_scaled_grouped_matmul_amd_kernel[
     SFBEngine: TensorEngine,
     AOffsetsEngine: TensorEngine,
     ExpertIdsEngine: TensorEngine,
+    b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ](
     c_tensor: TileTensor[
         mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=CEngine
@@ -836,19 +854,21 @@ def block_scaled_grouped_matmul_amd_kernel[
     ],
     num_active_experts: Int32,
 ):
-    """MXFP4 grouped matmul kernel with expert dispatch via block_idx.z.
+    """Block-scaled grouped matmul kernel with expert dispatch via block_idx.z.
 
-    b_tensor and sfb_tensor are flattened from 3D to 2D:
-      b: [num_experts*N, K//2], sfb: [num_experts*N, K//32]
+    A and B carry independent `f8f6f4` encodings, so their byte widths differ
+    when they differ (E4M3 A is `K` bytes wide, E2M1 B `K//2`). b_tensor and
+    sfb_tensor are flattened from 3D to 2D:
+      b: [num_experts*N, K*b_bits//8], sfb: [num_experts*N, K//32]
 
     Parameters:
         BM: Block tile rows (output M per block).
         BN: Block tile cols (output N per block).
-        BK_ELEMS: Block tile K in logical FP4 elements.
+        BK_ELEMS: Block tile K in logical elements.
         WM: Warp tile rows; `BM` must be divisible by `WM`.
         WN: Warp tile cols; `BN` must be divisible by `WN`.
-        matrix_format: `f8f6f4` operand encoding for A and B; the tile byte
-            widths are derived from it.
+        matrix_format: `f8f6f4` encoding of A; A's tile byte width is derived
+            from it.
         out_dtype: Element type of the output tensor `c_tensor`.
         LayoutC: Compile-time layout of the output tensor `c_tensor`.
         LayoutA: Compile-time layout of the A operand `a_tensor`.
@@ -867,19 +887,23 @@ def block_scaled_grouped_matmul_amd_kernel[
         AOffsetsEngine: Engine of the token offsets tensor `a_offsets`.
         ExpertIdsEngine: Engine of the expert indices tensor
             `expert_ids`.
+        b_matrix_format: `f8f6f4` encoding of B, defaulting to
+            `matrix_format`; B's tile byte width is derived from it.
 
     Args:
         c_tensor: Output matrix `[total_tokens, N]` of dtype `out_dtype`,
             indexed by per-expert token offsets.
-        a_tensor: Packed activations `[total_tokens, K//2]` uint8, two
-            MXFP4 nibbles per byte.
-        b_tensor: Expert weights `[num_experts*N, K//2]` uint8, flattened
-            from 3D `[num_experts, N, K//2]`, two MXFP4 nibbles per byte.
+        a_tensor: Activations `[total_tokens, K*a_bits//8]` as raw uint8
+            bytes in the `matrix_format` encoding (`K//2` at MXFP4, `K` at
+            MXFP8).
+        b_tensor: Expert weights `[num_experts*N, K*b_bits//8]` as raw uint8
+            bytes in the `b_matrix_format` encoding, flattened from 3D
+            `[num_experts, N, K*b_bits//8]`.
         sfa_tensor: A block scales `[total_tokens, K//32]` as
-            `float8_e8m0fnu`, one scale per 32 MXFP4 elements.
+            `float8_e8m0fnu`, one scale per 32 logical elements.
         sfb_tensor: B block scales `[num_experts*N, K//32]` as
             `float8_e8m0fnu`, flattened from 3D `[num_experts, N, K//32]`,
-            one scale per 32 MXFP4 elements.
+            one scale per 32 logical elements.
         a_offsets: Token offsets `[num_active_experts+1]` uint32; expert
             slot `e` spans rows `a_offsets[e]` to `a_offsets[e+1]`.
         expert_ids: Expert indices `[num_active_experts]` int32;
@@ -898,6 +922,7 @@ def block_scaled_grouped_matmul_amd_kernel[
         WM=WM,
         WN=WN,
         matrix_format=matrix_format,
+        b_matrix_format=b_matrix_format,
     ]
     comptime N = c_tensor.static_shape[1]
     comptime K_BYTES = b_tensor.static_shape[1]  # K//2
@@ -955,6 +980,7 @@ def block_scaled_grouped_matmul_amd_kernel[
 
 def block_scaled_grouped_matmul_amd[
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+    b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[.uint8, ...],
@@ -967,15 +993,20 @@ def block_scaled_grouped_matmul_amd[
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
-    """Launch native MXFP4 grouped matmul on AMD CDNA4.
+    """Launch native block-scaled grouped matmul on AMD CDNA4.
+
+    `matrix_format` describes A; B defaults to the same encoding. Mixed
+    E4M3 FP8 A and packed E2M1 FP4 B use independent byte strides and
+    hardware fragments. This entry point uses the direct row-major kernel;
+    preshuffled and persistent entry points retain their equal-format API.
 
     Grouped matmul for MoE: dispatches one expert per block_idx.z,
     using BlockScaledMatmulAMD.run per expert slice.
 
     Args:
         c: Output [total_tokens, N].
-        a: Packed activations [total_tokens, K//2] uint8.
-        b: Expert weights [num_experts, N, K//2] uint8.
+        a: Activations [total_tokens, K * A_bits // 8] as raw uint8 bytes.
+        b: Expert weights [num_experts, N, K * B_bits // 8] uint8.
         a_scales: Activation scales [total_tokens, K//32] float8_e8m0fnu.
         b_scales: Weight scales [num_experts, N, K//32] float8_e8m0fnu.
         a_offsets: Token offsets [num_active_experts+1] uint32.
@@ -990,12 +1021,15 @@ def block_scaled_grouped_matmul_amd[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
     comptime K_BYTES = b.static_shape[2]
-    comptime bk_512_bytes = (512 * matrix_format.bits_per_element()) // 8
+    comptime bk_512_bytes = (512 * b_matrix_format.bits_per_element()) // 8
     comptime can_use_bk_512 = (
         K_BYTES >= bk_512_bytes and K_BYTES % bk_512_bytes == 0
     )
 
-    comptime is_fp6 = matrix_format.bits_per_element() == 6
+    comptime is_fp6 = (
+        matrix_format.bits_per_element() == 6
+        or b_matrix_format.bits_per_element() == 6
+    )
     comptime BM_wide = 96 if is_fp6 else 64
     comptime BN_wide = 64 if is_fp6 else 128
     comptime WM_wide = 32 if is_fp6 else 64
@@ -1012,6 +1046,7 @@ def block_scaled_grouped_matmul_amd[
                 WM=WM_wide,
                 WN=64,
                 matrix_format=matrix_format,
+                b_matrix_format=b_matrix_format,
             ](
                 c,
                 a,
@@ -1033,6 +1068,7 @@ def block_scaled_grouped_matmul_amd[
         WM=WM_deep,
         WN=64,
         matrix_format=matrix_format,
+        b_matrix_format=b_matrix_format,
     ](
         c,
         a,
@@ -1054,6 +1090,7 @@ def _launch_block_scaled_grouped[
     WM: Int,
     WN: Int,
     matrix_format: CDNA4F8F6F4MatrixFormat = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+    b_matrix_format: CDNA4F8F6F4MatrixFormat = matrix_format,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[.uint8, ...],
@@ -1067,6 +1104,11 @@ def _launch_block_scaled_grouped[
     ctx: DeviceContext,
 ) raises:
     """Instantiates and launches the grouped MXFP4 kernel."""
+    comptime assert c.flat_rank == 2, "c must be rank 2"
+    comptime assert a.flat_rank == 2, "a must be rank 2"
+    comptime assert b.flat_rank == 3, "b must be rank 3"
+    comptime assert a_scales.flat_rank == 2, "a_scales must be rank 2"
+    comptime assert b_scales.flat_rank == 3, "b_scales must be rank 3"
     comptime Kernel = BlockScaledMatmulAMD[
         BM=BM,
         BN=BN,
@@ -1074,14 +1116,47 @@ def _launch_block_scaled_grouped[
         WM=WM,
         WN=WN,
         matrix_format=matrix_format,
+        b_matrix_format=b_matrix_format,
     ]
     comptime num_experts = b.static_shape[0]
     comptime N = b.static_shape[1]
-    comptime K_BYTES = b.static_shape[2]  # K//2
+    comptime K_BYTES = b.static_shape[2]  # K * b_bits // 8
 
     comptime num_experts_sf = b_scales.static_shape[0]
     comptime N_sf = b_scales.static_shape[1]
     comptime K_SCALES = b_scales.static_shape[2]  # K//32
+
+    # Only the token rows are dynamic: the expert views below and the kernel's
+    # `Idx` tiles are built from these extents (a dynamic one reads as -1).
+    # B's scale width must be checked here, since the per-expert view
+    # rebuilds it from A's and would hide a mismatch from `Kernel.run`.
+    comptime a_bits = matrix_format.bits_per_element()
+    comptime b_bits = b_matrix_format.bits_per_element()
+    comptime A_K_BYTES = a.static_shape[1]
+    comptime K_LOGICAL = A_K_BYTES * 8 // a_bits
+    comptime assert (
+        num_experts >= 0 and N > 0 and c.static_shape[1] == N
+    ), "grouped C width must match B's static N, and experts must be static"
+    comptime assert (
+        A_K_BYTES > 0
+        and K_BYTES > 0
+        and (A_K_BYTES * 8) % a_bits == 0
+        and (K_BYTES * 8) % b_bits == 0
+    ), "grouped operand byte widths must encode a positive whole logical K"
+    comptime assert (
+        K_LOGICAL == K_BYTES * 8 // b_bits and K_LOGICAL % 32 == 0
+    ), "grouped A and B must have matching logical K divisible by 32"
+    comptime assert (
+        a_scales.static_shape[1] == K_LOGICAL // 32
+    ), "grouped A scales must have one entry per 32 logical elements"
+    comptime assert (
+        num_experts_sf == num_experts
+        and N_sf == N
+        and K_SCALES == K_LOGICAL // 32
+    ), "grouped B scales must match B's expert/N axes and logical K/32"
+    _validate_block_scaled_grouped_rows(
+        Int(c.dim[0]()), Int(a.dim[0]()), Int(a_scales.dim[0]())
+    )
 
     var a_i = TileTensor(
         a.ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
@@ -1108,7 +1183,7 @@ def _launch_block_scaled_grouped[
         expert_ids.layout,
     )
 
-    if max_num_tokens_per_expert == 0:
+    if max_num_tokens_per_expert == 0 or num_active_experts == 0:
         return
 
     comptime out_dtype = type_of(c).dtype
@@ -1134,6 +1209,7 @@ def _launch_block_scaled_grouped[
         type_of(sfb_2d).Engine,
         type_of(a_off_i).Engine,
         type_of(expert_ids_i).Engine,
+        b_matrix_format,
     ]
 
     ctx.enqueue_function[kernel](

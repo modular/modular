@@ -122,6 +122,7 @@ modular_py_test(
             "test_sgmv_kernels_gpu.py",
             "test_smallm_streaming_matmul_gpu.py",
             "test_swiglu_nvfp4_graph_capture_mwe_gpu.py",
+            "test_w4a8_grouped_matmul_amd_gpu.py",
         ],
     ) + ["conftest.py"],
     exec_properties = {
@@ -386,6 +387,30 @@ modular_py_test(
     size = "large",
     srcs = [
         "test_mxfp4_fused_silu_scale_fusion_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:mi355_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "w4a8_grouped_matmul_amd_tests",
+    size = "large",
+    srcs = [
+        "test_w4a8_grouped_matmul_amd_gpu.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "2",
