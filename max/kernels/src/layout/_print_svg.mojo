@@ -13,39 +13,39 @@
 from std.pathlib import Path
 from std.sys import size_of
 
-from layout import IntTuple, Layout, LayoutTensor
+from layout import Coord, TileTensor, TensorLayout, TensorEngine, coord
+from layout.tile_layout import Layout as TileLayout
 from layout.swizzle import Swizzle
 
 
 def print_svg[
     tensor_list_origin: ImmOrigin,
     dtype: DType,
-    layout: Layout,
-    layout_int_type: DType,
+    layout: TensorLayout,
+    engine: TensorEngine,
     linear_idx_type: DType,
-    element_layout: Layout,
-    masked: Bool,
     //,
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
+    element_layout: TileLayout = TileLayout(coord[1, 1], coord[0, 0]),
 ](
-    tensor_base: LayoutTensor[mut=False, ...],
+    tensor_base: TileTensor[mut=False, ...],
     tensors: List[
-        LayoutTensor[
+        TileTensor[
             dtype,
             layout,
             tensor_list_origin,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
+            Engine=engine,
             linear_idx_type=linear_idx_type,
-            masked=masked,
         ]
     ],
     color_map: Optional[def(Int, Int) thin -> String] = None,
     file_path: Optional[Path] = None,
 ) raises:
     var s = String()
-    _print_svg_impl[swizzle, memory_bank](tensor_base, tensors, s, color_map)
+    _print_svg_impl[swizzle, memory_bank, element_layout](
+        tensor_base, tensors, s, color_map
+    )
     if file_path:
         file_path.value().write_text(s)
     else:
@@ -55,57 +55,54 @@ def print_svg[
 def _print_svg_impl[
     tensor_list_origin: ImmOrigin,
     dtype: DType,
-    layout: Layout,
-    layout_int_type: DType,
+    layout: TensorLayout,
+    engine: TensorEngine,
     linear_idx_type: DType,
-    element_layout: Layout,
-    masked: Bool,
     W: Writer,
     //,
     swizzle: Optional[Swizzle] = None,
     memory_bank: Optional[Tuple[Int, Int]] = None,
+    element_layout: TileLayout = TileLayout(coord[1, 1], coord[0, 0]),
 ](
-    tensor_base: LayoutTensor[mut=False, ...],
+    tensor_base: TileTensor[mut=False, ...],
     tensors: List[
-        LayoutTensor[
+        TileTensor[
             dtype,
             layout,
             tensor_list_origin,
-            element_layout=element_layout,
-            layout_int_type=layout_int_type,
+            Engine=engine,
             linear_idx_type=linear_idx_type,
-            masked=masked,
         ]
     ],
     mut writer: W,
     color_map: Optional[def(Int, Int) thin -> String] = None,
 ) raises:
-    # Given a base layout tensor and a sub tensor print the layouts
-    # Verify rank constraint
-    comptime assert tensor_base.layout.rank() == 2, "Layout rank must be 2"
-
+    comptime assert tensor_base.rank == 2, "Layout rank must be 2"
+    comptime assert layout.rank == 2, "Layout rank must be 2"
+    comptime assert element_layout.rank == 2, "Element layout rank must be 2"
+    comptime assert (
+        element_layout.static_product == engine.element_size
+    ), "Element layout must describe every SIMD lane"
+    comptime assert (
+        layout.all_dims_known and tensor_base.LayoutType.all_dims_known
+    ), "SVG layouts must be static"
     if len(tensors) > 0:
-        comptime assert layout.rank() == 2, "Layout rank must be 2"
-
-        comptime assert layout[0].size() <= (
-            tensor_base.layout[0].size()
-        ), "Layout 0 should have the largest first dimension"
-
         comptime assert (
-            layout[1].size() <= tensor_base.layout[1].size()
-        ), "Layout 0 should have the largest second dimension"
+            Coord[layout._shape_types[0]].static_product
+            <= Coord[tensor_base.LayoutType._shape_types[0]].static_product
+        ), "Base layout must have the largest first dimension"
+        comptime assert (
+            Coord[layout._shape_types[1]].static_product
+            <= Coord[tensor_base.LayoutType._shape_types[1]].static_product
+        ), "Base layout must have the largest second dimension"
 
     var colors: List[StaticString] = ["#FFFFFF", "#4A90E2", "#E8F0FF"]
 
     var cell_size = 80
     var margin = 40
     var text_margin = 30
-    var width = (
-        comptime (tensor_base.layout[1].size() + 2) * cell_size + 2 * margin
-    )
-    var height = (
-        comptime (tensor_base.layout[0].size() + 2) * cell_size + 2 * margin
-    )
+    var width = (Int(tensor_base.dim[1]()) + 2) * cell_size + 2 * margin
+    var height = (Int(tensor_base.dim[0]()) + 2) * cell_size + 2 * margin
 
     writer.write('<?xml version="1.0" encoding="UTF-8"?>\n')
     writer.write(
@@ -143,20 +140,19 @@ def _print_svg_impl[
         "</defs>\n",
     )
 
-    var map = Dict[Int, IntTuple]()
+    var map = Dict[Int, Tuple[Int, Int]]()
     var start_y = margin + 60  # Additional space for legends
 
     # Draw base layout
-    var materialized_layout = materialize[tensor_base.layout]()
-    for i in range(comptime (tensor_base.layout[0].size())):
-        for j in range(comptime (tensor_base.layout[1].size())):
-            var idx = materialized_layout([i, j])
+    for i in range(Int(tensor_base.dim[0]())):
+        for j in range(Int(tensor_base.dim[1]())):
+            var idx = Int(tensor_base.layout(Coord(i, j)))
             var non_swizzled_idx = idx
 
             comptime if swizzle:
                 idx = swizzle.value()(idx)
 
-            map[idx] = IntTuple(i, j)
+            map[idx] = (i, j)
             var x = margin + text_margin + j * cell_size
             var y = start_y + i * cell_size
             writer.write(
@@ -252,65 +248,34 @@ def _print_svg_impl[
             "</text>\n",
         )
 
+    # SIMD width does not encode noncontiguous fragment-element strides.
+    # Use the explicit element layout without loading the tensor's data.
     for t in range(len(tensors)):
         var tensor = tensors[t]
-        var materialized_element_layout = materialize[tensor.element_layout]()
-        var materialized_layout = materialize[tensor.layout]()
-        # Draw other layouts
-        if comptime (tensor.element_layout.rank() == 2):
-            var element_idx = 0
-            for i in range(comptime (tensor.layout[0].size())):
-                for j in range(comptime (tensor.layout[1].size())):
-                    for e_i in range(
-                        comptime (tensor.element_layout[0].size())
-                    ):
-                        for e_j in range(
-                            comptime (tensor.element_layout[1].size())
-                        ):
-                            var offset = (
-                                Int(tensor.ptr) - Int(tensor_base.ptr)
-                            ) // size_of[Scalar[tensor.dtype]]()
-                            var element_offset = materialized_element_layout(
-                                [e_i, e_j]
-                            )
-                            var idx = (
-                                materialized_layout([i, j])
-                                + offset
-                                + element_offset
-                            )
-                            var orig_pos = map[idx]
-                            var x = (
-                                margin
-                                + text_margin
-                                + orig_pos[1].value() * cell_size
-                            )
-                            var y = start_y + orig_pos[0].value() * cell_size
-                            var color = color_map.value()(
-                                t, element_idx
-                            ) if color_map else String(colors[1])
-                            draw_element(x, y, color, t, element_idx, writer)
-                            element_idx += 1
-        else:
-            var element_idx = 0
-            for i in range(comptime (tensor.layout[0].size())):
-                for j in range(comptime (tensor.layout[1].size())):
-                    var offset = (
-                        Int(tensor.ptr) - Int(tensor_base.ptr)
-                    ) // size_of[Scalar[tensor.dtype]]()
-                    var idx = materialized_layout([i, j]) + offset
-                    var orig_pos = map[idx]
-                    var x = (
-                        margin + text_margin + orig_pos[1].value() * cell_size
-                    )
-                    var y = start_y + orig_pos[0].value() * cell_size
-                    var color = color_map.value()(
-                        t, element_idx
-                    ) if color_map else String(colors[1])
-                    draw_element(x, y, color, t, element_idx, writer)
-                    element_idx += 1
+        var offset = (
+            Int(tensor.unsafe_ptr()) - Int(tensor_base.unsafe_ptr())
+        ) // size_of[Scalar[tensor.dtype]]()
+        var element_idx = 0
+        for i in range(Int(tensor.dim[0]())):
+            for j in range(Int(tensor.dim[1]())):
+                for e_i in range(element_layout.static_shape[0]):
+                    for e_j in range(element_layout.static_shape[1]):
+                        var idx = (
+                            Int(tensor.layout(Coord(i, j)))
+                            + offset
+                            + Int(element_layout(Coord(e_i, e_j)))
+                        )
+                        var orig_pos = map[idx]
+                        var x = margin + text_margin + orig_pos[1] * cell_size
+                        var y = start_y + orig_pos[0] * cell_size
+                        var color = color_map.value()(
+                            t, element_idx
+                        ) if color_map else String(colors[1])
+                        draw_element(x, y, color, t, element_idx, writer)
+                        element_idx += 1
 
     # Draw row labels with improved typography
-    for i in range(comptime (tensor_base.layout[0].size())):
+    for i in range(Int(tensor_base.dim[0]())):
         var y = Float64(start_y + i * cell_size) + Float64(cell_size) / 2
         writer.write(
             '<text x="',
@@ -328,7 +293,7 @@ def _print_svg_impl[
         )
 
     # Draw column labels with improved typography
-    for j in range(comptime (tensor_base.layout[1].size())):
+    for j in range(Int(tensor_base.dim[1]())):
         var x = (
             Float64(margin + text_margin + j * cell_size)
             + Float64(cell_size) / 2
