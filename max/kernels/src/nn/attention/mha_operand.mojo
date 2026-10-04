@@ -1498,7 +1498,7 @@ struct LayoutTensorMHAOperand[
         )
         var scale_tensor = TileTensor(
             self.scale_buffer.ptr,
-            row_major(Coord(Idx[1], total_elements)),
+            row_major(Idx[1], total_elements),
         )
         return create_tensor_tile[
             Index(1, BMN),
@@ -1964,7 +1964,7 @@ struct RaggedMHAOperand[
             )
             var scale_tensor = TileTensor(
                 self.scale_buffer.ptr,
-                row_major(Coord(Idx[1], total_elements)),
+                row_major(Idx[1], total_elements),
             )
             return create_tensor_tile[
                 Index(1, BMN),
@@ -1979,7 +1979,7 @@ struct RaggedMHAOperand[
 
             var scale_tensor = TileTensor(
                 self.scale_buffer.ptr,
-                row_major(Coord(Idx[num_heads], total_seq_len)),
+                row_major(Idx[num_heads], total_seq_len),
             )
 
             return create_tensor_tile[

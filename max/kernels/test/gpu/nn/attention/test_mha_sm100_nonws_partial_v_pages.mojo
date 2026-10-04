@@ -107,9 +107,7 @@ def main() raises:
         var row_offsets_dev = ctx.enqueue_create_buffer[.uint32](2)
         ctx.enqueue_copy(row_offsets_dev, row_offsets_host)
         var row_offsets = (
-            TileTensor(
-                row_offsets_dev, row_major(Coord(Int64(len(row_offsets_dev))))
-            )
+            TileTensor(row_offsets_dev, row_major(Int64(len(row_offsets_dev))))
             .as_imm()
             .as_unsafe_any_origin()
         )
@@ -121,7 +119,7 @@ def main() raises:
         var cache_lengths = (
             TileTensor(
                 cache_lengths_dev,
-                row_major(Coord(Int64(len(cache_lengths_dev)))),
+                row_major(Int64(len(cache_lengths_dev))),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -132,7 +130,7 @@ def main() raises:
             TileTensor(
                 q_host,
                 row_major(
-                    Coord(Int64(valid_length), Idx[num_q_heads], Idx[head_size])
+                    Int64(valid_length), Idx[num_q_heads], Idx[head_size]
                 ),
             )
         )
@@ -140,9 +138,7 @@ def main() raises:
         ctx.enqueue_copy(q_dev, q_host)
         var q = TileTensor(
             q_dev,
-            row_major(
-                Coord(Int64(valid_length), Idx[num_q_heads], Idx[head_size])
-            ),
+            row_major(Int64(valid_length), Idx[num_q_heads], Idx[head_size]),
         ).as_imm()
 
         # One spare block backs the LUT tail padding: the kernel reads LUT
@@ -178,7 +174,7 @@ def main() raises:
         var lut_dev = ctx.enqueue_create_buffer[.uint32](lut_cols)
         ctx.enqueue_copy(lut_dev, lut_host)
         var lut = (
-            TileTensor(lut_dev, row_major(Coord(Int64(1), Int64(lut_cols))))
+            TileTensor(lut_dev, row_major(Int64(1), Int64(lut_cols)))
             .as_imm()
             .as_unsafe_any_origin()
         )
@@ -211,11 +207,7 @@ def main() raises:
                 TileTensor(
                     test_dev.unsafe_ptr() + r * qo_size,
                     row_major(
-                        Coord(
-                            Int64(valid_length),
-                            Idx[num_q_heads],
-                            Idx[head_size],
-                        )
+                        Int64(valid_length), Idx[num_q_heads], Idx[head_size]
                     ),
                 ),
                 q,
@@ -236,7 +228,7 @@ def main() raises:
             TileTensor(
                 ref_dev,
                 row_major(
-                    Coord(Int64(valid_length), Idx[num_q_heads], Idx[head_size])
+                    Int64(valid_length), Idx[num_q_heads], Idx[head_size]
                 ),
             ),
             row_offsets,

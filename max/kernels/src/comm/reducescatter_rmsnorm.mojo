@@ -71,7 +71,7 @@ comptime RS_NORM_FUSE_THRESHOLD = 128 * 6144 * size_of[DType.bfloat16]()
 
 # Stand-in layout for a disengaged optional residual (mirrors
 # `allreduce_residual_rmsnorm.mojo`): never indexed, so it carries no storage.
-comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx[0], Idx[0])))
+comptime _ZeroSizedLayout = type_of(row_major(Idx[0], Idx[0]))
 
 
 # --- GPU Kernel ---

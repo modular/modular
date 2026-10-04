@@ -159,10 +159,10 @@ def execute_paged_fp8_test[
 
     # ---- Ragged metadata ----
     var input_row_offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
 
     var input_row_offsets_host = input_row_offsets.host_tensor()
@@ -198,14 +198,12 @@ def execute_paged_fp8_test[
         num_paged_blocks = 16
 
     var kv_layout = row_major(
-        Coord(
-            Int64(num_paged_blocks),
-            Idx[2],
-            Int64(num_layers),
-            Idx[page_size],
-            Idx[kv_num_heads],
-            Idx[head_dim],
-        )
+        Int64(num_paged_blocks),
+        Idx[2],
+        Int64(num_layers),
+        Idx[page_size],
+        Idx[kv_num_heads],
+        Idx[head_dim],
     )
     var kv_fp8 = HostDeviceTileTensor[fp8_dtype](kv_layout, ctx)
     var kv_bf16 = HostDeviceTileTensor[bf16_dtype](kv_layout, ctx)
@@ -215,12 +213,8 @@ def execute_paged_fp8_test[
     # ---- Lookup table (shared by fp8 and bf16 caches) ----
     var paged_lut = HostDeviceTileTensor[.uint32](
         row_major(
-            Coord(
-                Int64(batch_size),
-                Int64(
-                    padded_lut_cols(ceildiv(max_full_context_length, page_size))
-                ),
-            )
+            Int64(batch_size),
+            Int64(padded_lut_cols(ceildiv(max_full_context_length, page_size))),
         ),
         ctx,
     )

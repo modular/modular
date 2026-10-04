@@ -501,7 +501,7 @@ def _run_mha_composition(
         o_dev, row_major((batch_size, seq_len, Idx[num_heads], Idx[depth]))
     )
     # Runtime-sized [batch_size] valid_lengths (mask indexes valid_lengths[b]).
-    var vl = TileTensor(vl_dev, row_major(Coord(batch_size)))
+    var vl = TileTensor(vl_dev, row_major(batch_size))
     var mask = CausalPaddingMask(vl)
 
     flash_attention(o, q, k, v, mask, scale, ctx, num_partitions=np)

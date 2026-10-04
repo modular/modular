@@ -2356,9 +2356,9 @@ def _run_gemv_case[
     ctx.enqueue_copy(w_d, w_h)
     ctx.enqueue_copy(c_d, c_h)
 
-    var a_tt = TileTensor(act_d, row_major(Coord(m, Idx[K]))).as_imm()
-    var w_tt = TileTensor(w_d, row_major(Coord(Idx[N], Idx[K]))).as_imm()
-    var c_tt = TileTensor(c_d, row_major(Coord(m, Idx[N])))
+    var a_tt = TileTensor(act_d, row_major(m, Idx[K])).as_imm()
+    var w_tt = TileTensor(w_d, row_major(Idx[N], Idx[K])).as_imm()
+    var c_tt = TileTensor(c_d, row_major(m, Idx[N]))
     enqueue_apple_gemv_config[
         tile_m=tile_m,
         rows_per_warp=rows_per_warp,
@@ -2498,9 +2498,9 @@ def _run_gemv_dispatch_case[
     ctx.enqueue_copy(bias_d, bias_h)
     ctx.enqueue_copy(c_d, c_h)
 
-    var a_tt = TileTensor(act_d, row_major(Coord(m, Idx[K]))).as_imm()
-    var w_tt = TileTensor(w_d, row_major(Coord(Idx[N], Idx[K]))).as_imm()
-    var c_tt = TileTensor(c_d, row_major(Coord(m, Idx[N])))
+    var a_tt = TileTensor(act_d, row_major(m, Idx[K])).as_imm()
+    var w_tt = TileTensor(w_d, row_major(Idx[N], Idx[K])).as_imm()
+    var c_tt = TileTensor(c_d, row_major(m, Idx[N]))
 
     var bias_tt = TileTensor(bias_d, row_major(Idx[N])).as_imm()
 

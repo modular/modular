@@ -186,11 +186,11 @@ def test_kv_cache_2m_iadd_gpu[
         num_active_loras <= batch_size
     ), "num_active_loras must be less than or equal to batch_size"
     var cache_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var cache_lengths_host = cache_lengths.host_tensor()
     var input_row_offsets_slice = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(num_active_loras + 1))), ctx
+        row_major(Int64(num_active_loras + 1)), ctx
     )
     var input_row_offsets_slice_host = input_row_offsets_slice.host_tensor()
     var total_length = 0
@@ -229,14 +229,12 @@ def test_kv_cache_2m_iadd_gpu[
 
     var kv_block_paged = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[num_heads],
-                Idx[head_dim],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[num_heads],
+            Idx[head_dim],
         ),
         ctx,
     )
@@ -244,10 +242,8 @@ def test_kv_cache_2m_iadd_gpu[
     kv_block_paged.to_device()
     var paged_lut = HostDeviceTileTensor[.uint32](
         row_major(
-            Coord(
-                Int64(batch_size),
-                Int64(ceildiv(max_full_context_length, page_size)),
-            )
+            Int64(batch_size),
+            Int64(ceildiv(max_full_context_length, page_size)),
         ),
         ctx,
     )
@@ -280,9 +276,7 @@ def test_kv_cache_2m_iadd_gpu[
     )
 
     var a = HostDeviceTileTensor[dtype](
-        row_major(
-            Coord(Int64(2 * total_slice_length), Idx[num_heads * head_dim])
-        ),
+        row_major(Int64(2 * total_slice_length), Idx[num_heads * head_dim]),
         ctx,
     )
     var a_host = a.host_tensor()
@@ -346,7 +340,7 @@ def test_kv_cache_2m_iadd_cpu[
     ), "num_active_loras must be less than or equal to batch_size"
     var cache_lengths_host_ptr = List(length=batch_size, fill=UInt32(0))
     var cache_lengths_host = TileTensor(
-        cache_lengths_host_ptr, row_major(Coord(Int64(batch_size)))
+        cache_lengths_host_ptr, row_major(Int64(batch_size))
     )
 
     var input_row_offsets_slice_host_ptr = List(
@@ -397,14 +391,12 @@ def test_kv_cache_2m_iadd_cpu[
     var kv_block_paged_host = TileTensor(
         kv_block_paged_host_ptr,
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[num_heads],
-                Idx[head_dim],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[num_heads],
+            Idx[head_dim],
         ),
     )
     _ = kv_block_paged_host.fill(1)
@@ -414,7 +406,7 @@ def test_kv_cache_2m_iadd_cpu[
     )
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr,
-        row_major(Coord(Int64(batch_size), Int64(paged_lut_cols))),
+        row_major(Int64(batch_size), Int64(paged_lut_cols)),
     )
     # Sample one distinct paged block per page across the whole batch up
     # front, then hand them out in iteration order. Total pages needed is

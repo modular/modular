@@ -105,10 +105,10 @@ def execute_pack_gqa_test[
     var q_layout = row_major(total_length, Idx[num_q_heads], Idx[head_dim])
 
     var input_row_offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var row_offsets_host = input_row_offsets.host_tensor()
     var cache_lengths_host = cache_lengths_managed.host_tensor()
@@ -133,14 +133,12 @@ def execute_pack_gqa_test[
 
     var num_blocks = ceildiv(max_ctx, page_size) * batch_size + 4
     var kv_layout = row_major(
-        Coord(
-            Int64(num_blocks),
-            Idx[2],
-            Int64(num_layers),
-            Idx[page_size],
-            Idx[kv_num_heads],
-            Idx[head_dim],
-        )
+        Int64(num_blocks),
+        Idx[2],
+        Int64(num_layers),
+        Idx[page_size],
+        Idx[kv_num_heads],
+        Idx[head_dim],
     )
     var kv_fp8 = HostDeviceTileTensor[fp8_dtype](kv_layout, ctx)
     var kv_bf16 = HostDeviceTileTensor[bf16_dtype](kv_layout, ctx)
@@ -149,10 +147,8 @@ def execute_pack_gqa_test[
 
     var paged_lut = HostDeviceTileTensor[.uint32](
         row_major(
-            Coord(
-                Int64(batch_size),
-                Int64(padded_lut_cols(ceildiv(max_ctx, page_size))),
-            )
+            Int64(batch_size),
+            Int64(padded_lut_cols(ceildiv(max_ctx, page_size))),
         ),
         ctx,
     )

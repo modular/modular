@@ -110,36 +110,15 @@ def bench_decode[
         def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        seq_len,
-                        Idx[num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
             )
             var k_device = TileTensor(
                 cb_k.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        num_keys,
-                        Idx[kv_num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size, num_keys, Idx[kv_num_heads], Idx[depth]),
             )
             var output_device = TileTensor(
                 cb_o.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        seq_len,
-                        Idx[num_heads],
-                        Idx[v_depth],
-                    )
-                ),
+                row_major(batch_size, seq_len, Idx[num_heads], Idx[v_depth]),
             )
             var scalar_args_tt = TileTensor(
                 scalar_args_buf_lt.ptr, row_major[3]()
@@ -269,11 +248,11 @@ def bench_prefill[
     # Row offsets tensors (these don't need cache busting offsets).
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Coord(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Coord(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     @inline(.always)
@@ -293,54 +272,25 @@ def bench_prefill[
         def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * seq_len,
-                        Idx[num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size * seq_len, Idx[num_heads], Idx[depth]),
             )
             var k_device = TileTensor(
                 cb_k.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * num_keys,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
             )
             var v_device = TileTensor(
                 cb_v.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * num_keys,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
             )
             var cache_device = TileTensor(
                 cb_cache.offset_ptr(iteration),
                 row_major(
-                    Coord(
-                        batch_size,
-                        num_keys,
-                        Idx[cache_num_heads],
-                        Idx[cache_depth],
-                    )
+                    batch_size, num_keys, Idx[cache_num_heads], Idx[cache_depth]
                 ),
             )
             var output_device = TileTensor(
                 cb_o.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * seq_len,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
             )
 
             flare_mla_prefill[rank=q_device.rank](
@@ -501,14 +451,12 @@ def bench_prefill_sparse[
         blocks_device, blocks_layout_type(blocks_shape, blocks_strides)
     ).as_unsafe_any_origin()
     var cache_lengths = (
-        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table = (
-        TileTensor(
-            lut_device, row_major(Coord(Int64(batch_size), Int64(num_pages)))
-        )
+        TileTensor(lut_device, row_major(Int64(batch_size), Int64(num_pages)))
         .as_imm()
         .as_unsafe_any_origin()
     )

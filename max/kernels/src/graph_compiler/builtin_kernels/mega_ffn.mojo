@@ -329,7 +329,7 @@ struct Struct_mega_ffn_nvfp4:
         )
         var c_packed = TileTensor(
             c_packed_buf.unsafe_ptr(),
-            row_major(Coord(Int64(m_total), Idx[packed_K2])),
+            row_major(Int64(m_total), Idx[packed_K2]),
         )
 
         # Intermediate 5D SwiGLU scale tile, same SF dtype as the A-scale
@@ -349,13 +349,11 @@ struct Struct_mega_ffn_nvfp4:
         var c_swiglu_scales = TileTensor(
             c_swiglu_scales_buf.unsafe_ptr(),
             row_major(
-                Coord(
-                    Int64(a_scale_dim0),
-                    Idx[k_groups_swiglu],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Int64(a_scale_dim0),
+                Idx[k_groups_swiglu],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
 
@@ -677,7 +675,7 @@ struct Struct_mega_ffn_ep_combine_send:
         )
         var c_packed = TileTensor(
             c_packed_buf.unsafe_ptr(),
-            row_major(Coord(Int64(m_total), Idx[packed_K2])),
+            row_major(Int64(m_total), Idx[packed_K2]),
         )
 
         var s_size = (
@@ -693,13 +691,11 @@ struct Struct_mega_ffn_ep_combine_send:
         var c_swiglu_scales = TileTensor(
             c_swiglu_scales_buf.unsafe_ptr(),
             row_major(
-                Coord(
-                    Int64(a_scale_dim0),
-                    Idx[k_groups_swiglu],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Int64(a_scale_dim0),
+                Idx[k_groups_swiglu],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
 
@@ -713,7 +709,7 @@ struct Struct_mega_ffn_ep_combine_send:
             UnsafePointer[
                 Scalar[combine_dtype], MutAnyOrigin
             ].unsafe_dangling(),
-            row_major(Coord(Int(0), Idx[N2])),
+            row_major(Int(0), Idx[N2]),
         )
 
         # Destination resolve reads the combine-async counter region; the

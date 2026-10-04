@@ -229,12 +229,10 @@ def _run_paged_mha[
         kv_block_dev, BlocksLayout(blocks_shape, blocks_strides)
     ).as_unsafe_any_origin()
     var cl_tensor = (
-        TileTensor(cl_dev, row_major(Coord(Int64(1))))
-        .as_imm()
-        .as_unsafe_any_origin()
+        TileTensor(cl_dev, row_major(Int64(1))).as_imm().as_unsafe_any_origin()
     )
     var lut_tensor = (
-        TileTensor(lut_dev, row_major(Coord(Int64(1), Int64(lut_cols))))
+        TileTensor(lut_dev, row_major(Int64(1), Int64(lut_cols)))
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -247,12 +245,12 @@ def _run_paged_mha[
     )
 
     var q_tensor = TileTensor(
-        q_dev, row_major(Coord(Int64(extend), Idx[num_q_heads], Idx[head_dim]))
+        q_dev, row_major(Int64(extend), Idx[num_q_heads], Idx[head_dim])
     ).as_imm()
     var o_tensor = TileTensor(
-        o_dev, row_major(Coord(Int64(extend), Idx[num_q_heads], Idx[head_dim]))
+        o_dev, row_major(Int64(extend), Idx[num_q_heads], Idx[head_dim])
     )
-    var ro_tensor = TileTensor(ro_dev, row_major(Coord(Int64(2)))).as_imm()
+    var ro_tensor = TileTensor(ro_dev, row_major(Int64(2))).as_imm()
 
     flash_attention[ragged=True](
         o_tensor,

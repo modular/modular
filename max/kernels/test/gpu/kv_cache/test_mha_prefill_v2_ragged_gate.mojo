@@ -122,10 +122,10 @@ def _run_ragged_at[
     var q_layout = row_major(
         total_length, Idx[num_q_heads], Idx[kv_params.head_size]
     )
-    var lengths_layout = row_major(Coord(Int64(batch_size)))
+    var lengths_layout = row_major(Int64(batch_size))
 
     var input_row_offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
         lengths_layout, ctx
@@ -177,33 +177,29 @@ def _run_ragged_at[
 
     var kv_block_continuous = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_continuous_blocks),
-                Int64(2),
-                Int64(num_layers),
-                Int64(max_full_context_length),
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_continuous_blocks),
+            Int64(2),
+            Int64(num_layers),
+            Int64(max_full_context_length),
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
     var kv_block_paged = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
     var lookup_table = HostDeviceTileTensor[.uint32](lengths_layout, ctx)
     var paged_lut = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))),
+        row_major(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])),
         ctx,
     )
 
@@ -359,7 +355,7 @@ def _run_ragged_at[
     # the seeded `(max_vec, norm_vec)` invariant exercised without dominating
     # the rowmax across all tiles.
     var sink_managed = HostDeviceTileTensor[dtype](
-        row_major(Coord(Int64(num_q_heads))), ctx
+        row_major(Int64(num_q_heads)), ctx
     )
     comptime if pass_sink:
         var sink_host = sink_managed.host_tensor()

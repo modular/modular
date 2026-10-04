@@ -37,15 +37,13 @@ def test_block_scales_interleave_fp4[
     N: Int,
 ](ctx: DeviceContext, m: Int, n: Int) raises:
     # Input scales [m, n]; output scales in the interleaved 5D TCGEN layout.
-    var input_layout = row_major(Coord(m, Idx[N]))
+    var input_layout = row_major(m, Idx[N])
     var output_layout = row_major(
-        Coord(
-            ceildiv(m, SF_MN_GROUP_SIZE),
-            ceildiv(n, SF_ATOM_K),
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(m, SF_MN_GROUP_SIZE),
+        ceildiv(n, SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var input_scales_device = ctx.enqueue_create_buffer[scales_dtype](

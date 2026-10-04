@@ -451,7 +451,7 @@ def _run_paged_gather4_test[
     # Build lookup_table with shuffled page assignments.
     var max_pages_per_seq = ceildiv(tokens_per_seq, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(batch_size, num_blocks)), ctx
+        row_major(batch_size, num_blocks), ctx
     )
     var lut_host = lut_managed.host_tensor()
     for s in range(batch_size):
@@ -1061,7 +1061,7 @@ def test_wide_gather4_paged_kv[
     # Build lookup_table.
     var max_pages_per_seq = ceildiv(tokens_per_seq, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(batch_size, num_blocks)), ctx
+        row_major(batch_size, num_blocks), ctx
     )
     var lut_host = lut_managed.host_tensor()
     for s in range(batch_size):
@@ -1337,7 +1337,7 @@ def test_wide_gather4_mha_operand[
     # Build lookup_table.
     var max_pages_per_seq = ceildiv(tokens_per_seq, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(batch_size, num_blocks)), ctx
+        row_major(batch_size, num_blocks), ctx
     )
     var lut_host = lut_managed.host_tensor()
     for s in range(batch_size):
@@ -1806,7 +1806,7 @@ def test_gather4_tile_api_paged[
     # ---- Build lookup_table ----
     var max_pages_per_seq = ceildiv(tokens_per_seq, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(batch_size, num_blocks)), ctx
+        row_major(batch_size, num_blocks), ctx
     )
     var lut_host = lut_managed.host_tensor()
     for s in range(batch_size):

@@ -74,11 +74,11 @@ def execute_ragged_flash_attention[
     var q_layout = row_major(
         total_length, Idx[num_q_heads], Idx[kv_params.head_size]
     )
-    var lengths_layout = row_major(Coord(Int64(batch_size)))
+    var lengths_layout = row_major(Int64(batch_size))
 
     # Create device buffers
     var input_row_offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
         lengths_layout, ctx
@@ -136,33 +136,29 @@ def execute_ragged_flash_attention[
     # Build host/device tensors for continuous and paged KV state.
     var kv_block_continuous = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_continuous_blocks),
-                Int64(2),
-                Int64(num_layers),
-                Int64(max_full_context_length),
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_continuous_blocks),
+            Int64(2),
+            Int64(num_layers),
+            Int64(max_full_context_length),
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
     var kv_block_paged = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
     var lookup_table = HostDeviceTileTensor[.uint32](lengths_layout, ctx)
     var paged_lut = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))),
+        row_major(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])),
         ctx,
     )
 

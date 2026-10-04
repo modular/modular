@@ -133,12 +133,12 @@ def _run_case[
     var d_got_sc = ctx.enqueue_create_buffer[.float8_e8m0fnu](rows * scale_cols)
     ctx.enqueue_copy(d_in, inp)
 
-    var in_tt_mut = TileTensor(d_in, row_major(Coord(rows, cols)))
+    var in_tt_mut = TileTensor(d_in, row_major(rows, cols))
     var in_tt = in_tt_mut.as_imm()
-    var ref_out_tt = TileTensor(d_ref_out, row_major(Coord(rows, packed_cols)))
-    var ref_sc_tt = TileTensor(d_ref_sc, row_major(Coord(rows, scale_cols)))
-    var got_out_tt = TileTensor(d_got_out, row_major(Coord(rows, packed_cols)))
-    var got_sc_tt = TileTensor(d_got_sc, row_major(Coord(rows, scale_cols)))
+    var ref_out_tt = TileTensor(d_ref_out, row_major(rows, packed_cols))
+    var ref_sc_tt = TileTensor(d_ref_sc, row_major(rows, scale_cols))
+    var got_out_tt = TileTensor(d_got_out, row_major(rows, packed_cols))
+    var got_sc_tt = TileTensor(d_got_sc, row_major(rows, scale_cols))
 
     quantize_mxfp6_amd[fmt](ctx, ref_out_tt, ref_sc_tt, in_tt)
 

@@ -167,22 +167,18 @@ def bench_fused_qk_rms_norm_rope[
         random(
             TileTensor(
                 q_h,
-                row_major(
-                    Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim])
-                ),
+                row_major(total_seq_len, Idx[num_q_heads], Idx[head_dim]),
             )
         )
     ctx.enqueue_copy(q_fused_d, q_d)
 
     with gamma_q_d.map_to_host() as gq_h:
-        random(TileTensor(gq_h, row_major(Coord(Idx[head_dim]))))
+        random(TileTensor(gq_h, row_major(Idx[head_dim])))
     with gamma_k_d.map_to_host() as gk_h:
-        random(TileTensor(gk_h, row_major(Coord(Idx[head_dim]))))
+        random(TileTensor(gk_h, row_major(Idx[head_dim])))
 
     with freqs_d.map_to_host() as fr_h:
-        random(
-            TileTensor(fr_h, row_major(Coord(Idx[max_seq_len], Idx[rope_dim])))
-        )
+        random(TileTensor(fr_h, row_major(Idx[max_seq_len], Idx[rope_dim])))
 
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](
         kv_block_shape.flattened_length()
@@ -213,10 +209,10 @@ def bench_fused_qk_rms_norm_rope[
     var row_offsets_tile = TileTensor(row_offsets_d, row_major(batch_size + 1))
 
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_d, row_major(Coord(Int64(batch_size)))
+        cache_lengths_d, row_major(Int64(batch_size))
     )
     var paged_lut_tensor = TileTensor(
-        paged_lut_d, row_major(Coord(Int64(batch_size), Int64(pages_per_seq)))
+        paged_lut_d, row_major(Int64(batch_size), Int64(pages_per_seq))
     )
     var max_prompt_len = UInt32(seq_len)
     var max_cache_len = UInt32(Int(cache_len))

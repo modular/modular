@@ -687,11 +687,11 @@ def bench_mxfp4_amd[
     var a_scales_size = M * K_SCALES
     var b_scales_size = N_VAL * K_SCALES
 
-    var a_shape = row_major(Coord(M, Idx[K_PACKED]))
-    comptime b_shape = row_major(Coord(Idx[N_VAL], Idx[K_PACKED]))
-    var c_shape = row_major(Coord(M, Idx[N_VAL]))
-    var sfa_shape = row_major(Coord(M, Idx[K_SCALES]))
-    comptime sfb_shape = row_major(Coord(Idx[N_VAL], Idx[K_SCALES]))
+    var a_shape = row_major(M, Idx[K_PACKED])
+    comptime b_shape = row_major(Idx[N_VAL], Idx[K_PACKED])
+    var c_shape = row_major(M, Idx[N_VAL])
+    var sfa_shape = row_major(M, Idx[K_SCALES])
+    comptime sfb_shape = row_major(Idx[N_VAL], Idx[K_SCALES])
 
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[.uint8](a_size, simd_size, ctx)

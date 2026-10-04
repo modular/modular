@@ -2371,12 +2371,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # the runtime seq_len field lives once. Halves the per-block
         # live state introduced by the layout construction.
         var ragged_layout = row_major(
-            Coord(
-                1,
-                seq_len,
-                Self.config.num_heads,
-                Self.config.depth,
-            )
+            1, seq_len, Self.config.num_heads, Self.config.depth
         )
         var q_tt = TileTensor(q_ptr + q_batch_offset, ragged_layout)
         var o_tt = TileTensor(output_ptr + q_batch_offset, ragged_layout)

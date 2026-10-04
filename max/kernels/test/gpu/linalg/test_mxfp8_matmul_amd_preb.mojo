@@ -293,10 +293,10 @@ def _test_case[
         sfb_h[i] = UInt8(random_ui64(125, 129))
 
     var sfa_h_tt = TileTensor(
-        sfa_h, row_major(Coord(Idx[1], Idx[M_static], Idx[scale_K]))
+        sfa_h, row_major(Idx[1], Idx[M_static], Idx[scale_K])
     )
     var sfb_h_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[1], Idx[N_static], Idx[scale_K]))
+        sfb_h, row_major(Idx[1], Idx[N_static], Idx[scale_K])
     )
     # The scale layout is format-independent, so the FP4 default is reused.
     _ = Shuffler[1].preshuffle_scale_4d[MN=M_static, K_SCALES=scale_K](
@@ -352,9 +352,7 @@ def _test_case[
     )
 
     # ---- Preb kernel under test ----
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(M_static, Idx[K_BYTES]))
-    ).as_imm()
+    var a_tt = TileTensor(a_d, row_major(M_static, Idx[K_BYTES])).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * K_BYTES]()
     ).as_imm()
@@ -534,7 +532,7 @@ def _test_grouped_case[
         b_raw_tt, b_pre_dst_tt, ctx
     )
     var sfb_raw_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K]))
+        sfb_h, row_major(Idx[num_experts], Idx[N], Idx[scale_K])
     )
     _ = Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
         sfb_raw_tt, sfb_pre_h
@@ -543,14 +541,12 @@ def _test_grouped_case[
 
     # A scales: per-expert fixed-stride slots, same launcher as the FP4 path.
     var sfa_raw_tt = TileTensor(
-        sfa_d, row_major(Coord(total_tokens, Idx[scale_K]))
+        sfa_d, row_major(total_tokens, Idx[scale_K])
     ).as_imm()
     var sfa_pre_tt = TileTensor(
-        sfa_pre_d, row_major(Coord(num_experts * max_padded_M, Idx[scale_K]))
+        sfa_pre_d, row_major(num_experts * max_padded_M, Idx[scale_K])
     )
-    var a_off_pre_tt = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_imm()
+    var a_off_pre_tt = TileTensor(a_off_d, row_major(num_active + 1)).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         sfa_raw_tt,
         sfa_pre_tt,
@@ -587,25 +583,21 @@ def _test_grouped_case[
         )
 
     # Public dispatcher at matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3.
-    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    ).as_imm()
+    var c_tt = TileTensor(c_d, row_major(total_tokens, Idx[N]))
+    var a_tt = TileTensor(a_d, row_major(total_tokens, Idx[K_BYTES])).as_imm()
     var b_pre_flat = TileTensor(
         b_pre_d, row_major[num_experts, N * K_BYTES]()
     ).as_imm()
     var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
     ).as_imm()
     var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts * N, scale_K](),
     ).as_imm()
-    var a_off_tt = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_imm()
-    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active))).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1)).as_imm()
+    var eid_tt = TileTensor(eid_d, row_major(num_active)).as_imm()
 
     block_scaled_grouped_matmul_amd_preb[lane_bytes=FP8_LANE_BYTES](
         c_tt,
@@ -751,7 +743,7 @@ def _probe_grouped_determinism[
         b_raw_tt, b_pre_dst_tt, ctx
     )
     var sfb_raw_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K]))
+        sfb_h, row_major(Idx[num_experts], Idx[N], Idx[scale_K])
     )
     _ = Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
         sfb_raw_tt, sfb_pre_h
@@ -759,14 +751,12 @@ def _probe_grouped_determinism[
     ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
 
     var sfa_raw_tt = TileTensor(
-        sfa_d, row_major(Coord(total_tokens, Idx[scale_K]))
+        sfa_d, row_major(total_tokens, Idx[scale_K])
     ).as_imm()
     var sfa_pre_tt = TileTensor(
-        sfa_pre_d, row_major(Coord(num_experts * max_padded_M, Idx[scale_K]))
+        sfa_pre_d, row_major(num_experts * max_padded_M, Idx[scale_K])
     )
-    var a_off_pre_tt = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_imm()
+    var a_off_pre_tt = TileTensor(a_off_d, row_major(num_active + 1)).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         sfa_raw_tt,
         sfa_pre_tt,
@@ -802,25 +792,21 @@ def _probe_grouped_determinism[
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
-    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    ).as_imm()
+    var c_tt = TileTensor(c_d, row_major(total_tokens, Idx[N]))
+    var a_tt = TileTensor(a_d, row_major(total_tokens, Idx[K_BYTES])).as_imm()
     var b_pre_flat = TileTensor(
         b_pre_d, row_major[num_experts, N * K_BYTES]()
     ).as_imm()
     var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
     ).as_imm()
     var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts * N, scale_K](),
     ).as_imm()
-    var a_off_tt = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_imm()
-    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active))).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1)).as_imm()
+    var eid_tt = TileTensor(eid_d, row_major(num_active)).as_imm()
 
     var c_h = ctx.enqueue_create_host_buffer[.float32](n_elem)
     var c_ref_h = ctx.enqueue_create_host_buffer[.float32](n_elem)

@@ -209,14 +209,14 @@ def bench_sparse_kv_fp8[
         blocks_device, BlocksLayout(blocks_shape, blocks_strides)
     ).as_unsafe_any_origin()
     var cache_lengths = (
-        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table = (
         TileTensor(
             lookup_table_device,
-            row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+            row_major(Int64(batch_size), Int64(max_pages_per_batch)),
         )
         .as_imm()
         .as_unsafe_any_origin()
@@ -235,11 +235,11 @@ def bench_sparse_kv_fp8[
     # TileTensors + dispatch scalars + launch closure
     # -------------------------------------------------------------------
     var q_tt = TileTensor(
-        q_device, row_major(Coord(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH]))
+        q_device, row_major(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])
     )
     var out_tt = TileTensor(
         out_device,
-        row_major(Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+        row_major(total_q_tokens, Idx[num_heads], Idx[V_DEPTH]),
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](

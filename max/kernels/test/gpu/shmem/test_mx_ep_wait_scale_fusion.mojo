@@ -242,10 +242,10 @@ def _run_fusion_check[
     ref_tok_d.enqueue_fill(Scalar[quant_dtype](0))
     fused_tok_d.enqueue_fill(Scalar[quant_dtype](0))
     var ref_tok_tt = TileTensor[origin=MutAnyOrigin](
-        ref_tok_d, row_major(Coord(total_tokens, Idx[output_dim]))
+        ref_tok_d, row_major(total_tokens, Idx[output_dim])
     )
     var fused_tok_tt = TileTensor[origin=MutAnyOrigin](
-        fused_tok_d, row_major(Coord(total_tokens, Idx[output_dim]))
+        fused_tok_d, row_major(total_tokens, Idx[output_dim])
     )
 
     # Message per token: [quants | E8M0 scales]. A throwaway instance yields the
@@ -254,7 +254,7 @@ def _run_fusion_check[
     var dummy_fmt = MXTokenFormat[hidden_size, top_k](
         ref_tok_tt,
         TileTensor[origin=MutAnyOrigin](
-            dummy_scales_d, row_major(Coord(1, Idx[scale_K]))
+            dummy_scales_d, row_major(1, Idx[scale_K])
         ),
     )
     comptime FmtType = type_of(dummy_fmt)
@@ -304,7 +304,7 @@ def _run_fusion_check[
     ref_d.enqueue_fill(UInt8(0))
 
     var raw_scales_tt = TileTensor[origin=MutAnyOrigin](
-        raw_scales_d, row_major(Coord(total_tokens, Idx[scale_K]))
+        raw_scales_d, row_major(total_tokens, Idx[scale_K])
     )
 
     # Every launcher param is explicit, so both scales layouts must be pinned —
@@ -337,10 +337,10 @@ def _run_fusion_check[
         raw_scales_d.unsafe_ptr()
         .unsafe_bitcast[UInt8]()
         .as_unsafe_any_origin(),
-        row_major(Coord(total_tokens, Idx[scale_K])),
+        row_major(total_tokens, Idx[scale_K]),
     )
     var ref_slots_tt = TileTensor[origin=MutAnyOrigin](
-        ref_d, row_major(Coord(num_active * max_padded_M, Idx[scale_K]))
+        ref_d, row_major(num_active * max_padded_M, Idx[scale_K])
     )
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         raw_scales_bytes,
@@ -359,7 +359,7 @@ def _run_fusion_check[
     fused_scales_d.enqueue_fill(Float8_e8m0fnu(0))
     var fused_slots_tt = TileTensor[origin=MutAnyOrigin](
         fused_scales_d,
-        row_major(Coord(num_active * max_padded_M, Idx[scale_K])),
+        row_major(num_active * max_padded_M, Idx[scale_K]),
     )
     comptime kernel_fused = _ep_wait_copy_kernel[
         quant_dtype,

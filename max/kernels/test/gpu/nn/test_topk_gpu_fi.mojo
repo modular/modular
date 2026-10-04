@@ -1153,7 +1153,7 @@ def test_topk_topp_sampling_fi[
 
     # Create kernel input tensors.
     var logits_tt = TileTensor(logits_buf, input_layout)
-    var out_tt = TileTensor(out_buf, row_major(Coord(batch_size, 1)))
+    var out_tt = TileTensor(out_buf, row_major(batch_size, 1))
     var temp_tt = TileTensor(temp_buf, batch_layout)
     var k_tt = TileTensor(k_buf, batch_layout)
     var p_tt = TileTensor(p_buf, batch_layout)

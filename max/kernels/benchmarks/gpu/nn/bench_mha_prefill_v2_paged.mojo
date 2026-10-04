@@ -158,12 +158,7 @@ def run_mha_prefill_v2_paged[
     var paged_lut_host = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_view = TileTensor(
         paged_lut_host,
-        row_major(
-            Coord(
-                Int64(batch_size),
-                Int64(paged_lut_cols),
-            )
-        ),
+        row_major(Int64(batch_size), Int64(paged_lut_cols)),
     )
     var seen = Set[Int]()
     for bs in range(batch_size):
@@ -210,7 +205,7 @@ def run_mha_prefill_v2_paged[
     )
     var paged_lut_tensor = TileTensor(
         paged_lut_dev,
-        row_major(Coord(Int64(batch_size), Int64(paged_lut_cols))),
+        row_major(Int64(batch_size), Int64(paged_lut_cols)),
     )
 
     # K and V occupy disjoint per-page regions; erased origins allow the
@@ -251,23 +246,19 @@ def run_mha_prefill_v2_paged[
                 var q_tt = TileTensor[mut=False](
                     q_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(seq_len),
-                            Idx[num_heads],
-                            Idx[depth],
-                        )
+                        Int32(batch_size),
+                        Int32(seq_len),
+                        Idx[num_heads],
+                        Idx[depth],
                     ),
                 )
                 var o_tt = TileTensor(
                     cb_o.offset_ptr(iteration).bitcast[Float32](),
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(seq_len),
-                            Idx[num_heads],
-                            Idx[depth],
-                        )
+                        Int32(batch_size),
+                        Int32(seq_len),
+                        Idx[num_heads],
+                        Idx[depth],
                     ),
                 )
                 mha_prefill_v2[_config, compile_options=_PREFILL_IGLP_OPTS](

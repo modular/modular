@@ -183,7 +183,7 @@ def execute_sink_test[
     var q_ref_host = ctx.enqueue_create_host_buffer[ref_dtype](q_size)
     var q_ref_host_tt = TileTensor(
         q_ref_host,
-        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     # Zero-mean Q keeps the scores near zero, so the sink stays significant
     # even against a few hundred keys.
@@ -277,39 +277,35 @@ def execute_sink_test[
     var input_row_offsets_tt = (
         TileTensor(
             input_row_offsets_dev,
-            row_major(Coord(Int64(len(input_row_offsets_dev)))),
+            row_major(Int64(len(input_row_offsets_dev))),
         )
         .as_imm()
         .as_unsafe_any_origin()
     )
     var cache_lengths_tt = (
-        TileTensor(
-            cache_lengths_dev, row_major(Coord(Int64(len(cache_lengths_dev))))
-        )
+        TileTensor(cache_lengths_dev, row_major(Int64(len(cache_lengths_dev))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var paged_lut_tt = (
-        TileTensor(
-            paged_lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
-        )
+        TileTensor(paged_lut_dev, row_major(Int64(batch_size), Int64(lut_cols)))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var q_tt = TileTensor(
-        q_dev, row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        q_dev, row_major(total_length, Idx[num_q_heads], Idx[head_size])
     ).as_imm()
     var q_ref_tt = TileTensor(
         q_ref_dev,
-        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     ).as_imm()
     var sinks_tt = (
-        TileTensor(sinks_dev, row_major(Coord(Int64(len(sinks_dev)))))
+        TileTensor(sinks_dev, row_major(Int64(len(sinks_dev))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var sinks_ref_tt = (
-        TileTensor(sinks_ref_dev, row_major(Coord(Int64(len(sinks_ref_dev)))))
+        TileTensor(sinks_ref_dev, row_major(Int64(len(sinks_ref_dev))))
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -338,7 +334,7 @@ def execute_sink_test[
     var test_out_dev = ctx.enqueue_create_buffer[ref_dtype](out_size)
     var test_out_tt = TileTensor(
         test_out_dev,
-        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     var k_cache = kv_collection.get_key_cache(layer_idx)
     var v_cache = kv_collection.get_value_cache(layer_idx)
@@ -372,7 +368,7 @@ def execute_sink_test[
     var ref_out_dev = ctx.enqueue_create_buffer[ref_dtype](out_size)
     var ref_out_tt = TileTensor(
         ref_out_dev,
-        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     var k_ref_cache = kv_ref_collection.get_key_cache(layer_idx)
     var v_ref_cache = kv_ref_collection.get_value_cache(layer_idx)

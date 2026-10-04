@@ -82,14 +82,12 @@ def run_case(
     )
     var swa_blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(swa_pages),
-                Idx[1],
-                Int64(NUM_LAYERS),
-                Idx[PAGE_SIZE],
-                Idx[1],
-                Idx[HEAD_DIM],
-            )
+            Int64(swa_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[1],
+            Idx[HEAD_DIM],
         ),
         ctx,
     )
@@ -118,14 +116,12 @@ def run_case(
     )
     var comp_blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(comp_pages),
-                Idx[1],
-                Int64(NUM_LAYERS),
-                Idx[COMP_SLOTS],
-                Idx[1],
-                Idx[HEAD_DIM],
-            )
+            Int64(comp_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[COMP_SLOTS],
+            Idx[1],
+            Idx[HEAD_DIM],
         ),
         ctx,
     )
@@ -140,9 +136,7 @@ def run_case(
     )
 
     # --- q, sink, compressed indices -------------------------------------
-    var q_layout = row_major(
-        Coord(Int64(total_rows), Idx[NUM_HEADS], Idx[HEAD_DIM])
-    )
+    var q_layout = row_major(Int64(total_rows), Idx[NUM_HEADS], Idx[HEAD_DIM])
     var q = HostDeviceTileTensor[dtype](q_layout, ctx)
     _fill_random(q.host_tensor())
     q.to_device()
@@ -156,7 +150,7 @@ def run_case(
 
     var idx_cols = max(num_comp, 1)
     var idx = HostDeviceTileTensor[.int32](
-        row_major(Coord(Int64(total_rows), Int64(idx_cols))), ctx
+        row_major(Int64(total_rows), Int64(idx_cols)), ctx
     )
     var idx_host = idx.host_tensor()
     var row_offsets_host = swa_lengths.input_row_offsets.host_tile_tensor()

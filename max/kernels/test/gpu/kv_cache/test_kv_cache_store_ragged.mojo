@@ -62,14 +62,12 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
 
     var kv_block = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -102,9 +100,7 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var q_shape = IndexList[3](total_length, num_kv_heads, kv_params.head_size)
     var q = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(total_length), Idx[num_kv_heads], Idx[kv_params.head_size]
-            )
+            Int64(total_length), Idx[num_kv_heads], Idx[kv_params.head_size]
         ),
         ctx,
     )
@@ -239,14 +235,12 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
 
     var kv_block = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -286,12 +280,10 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     )
     var q = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(batch_size),
-                Int64(max_seq_length_batch),
-                Idx[num_kv_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(batch_size),
+            Int64(max_seq_length_batch),
+            Idx[num_kv_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -320,7 +312,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
             valid_lengths_host[i] = UInt32(valid_lengths[i])
 
     var valid_lengths_tensor = TileTensor(
-        valid_lengths_device, row_major(Coord(Int64(batch_size)))
+        valid_lengths_device, row_major(Int64(batch_size))
     )
 
     q.to_device()

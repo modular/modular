@@ -144,27 +144,19 @@ def run_case[depth: Int, seq_q: Int, num_keys: Int](ctx: DeviceContext) raises:
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(Int32(BATCH), Int32(seq_q), Idx[NUM_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(seq_q), Idx[NUM_HEADS], Idx[depth]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(Int32(BATCH), Int32(num_keys), Idx[NUM_KV_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(num_keys), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(Int32(BATCH), Int32(num_keys), Idx[NUM_KV_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(num_keys), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(Int32(BATCH), Int32(seq_q), Idx[NUM_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(seq_q), Idx[NUM_HEADS], Idx[depth]),
     )
     var k_op = LayoutTensorMHAOperand(k_tt)
     var v_op = LayoutTensorMHAOperand(v_tt)

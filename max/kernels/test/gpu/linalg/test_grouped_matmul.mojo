@@ -98,15 +98,15 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[actual_N])),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[actual_N])),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
 
     # Create host B buffers
@@ -147,15 +147,15 @@ def test[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[actual_N])),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
     var c_ref_dev = TileTensor(
         c_ref_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[actual_N])),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -163,11 +163,11 @@ def test[
     )
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(Coord(num_experts + 1)),
+        row_major(num_experts + 1),
     )
     var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(Coord(Idx[num_experts])),
+        row_major(Idx[num_experts]),
     )
 
     # Move inputs to device
@@ -405,7 +405,7 @@ def test_negative_lora_id[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
 
     # Create host B buffers
@@ -445,11 +445,11 @@ def test_negative_lora_id[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[N])),
+        row_major(total_num_tokens, Idx[N]),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -457,11 +457,11 @@ def test_negative_lora_id[
     )
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(Coord(num_active_experts + 1)),
+        row_major(num_active_experts + 1),
     )
     var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(Coord(num_active_experts)),
+        row_major(num_active_experts),
     )
 
     # Move inputs to device
@@ -578,7 +578,7 @@ def test_step3p5_moe_dims[
     var a_host_ptr = ctx.enqueue_create_host_buffer[in_type](a_size)
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_tokens, Idx[K])),
+        row_major(total_tokens, Idx[K]),
     )
     random(a_host)
 
@@ -589,7 +589,7 @@ def test_step3p5_moe_dims[
     var b_host_ptr = ctx.enqueue_create_host_buffer[in_type](b_size)
     var b_host = TileTensor(
         b_host_ptr,
-        row_major(Coord(num_experts, Idx[N], Idx[K])),
+        row_major(num_experts, Idx[N], Idx[K]),
     )
     random(b_host)
 
@@ -599,11 +599,11 @@ def test_step3p5_moe_dims[
     var c_ref_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(total_tokens, Idx[N])),
+        row_major(total_tokens, Idx[N]),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(total_tokens, Idx[N])),
+        row_major(total_tokens, Idx[N]),
     )
 
     # ---- offsets & expert ids ----
@@ -634,17 +634,15 @@ def test_step3p5_moe_dims[
     var off_dev_buf = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
     var eid_dev_buf = ctx.enqueue_create_buffer[.int32](num_experts)
 
-    var a_dev = TileTensor(a_dev_buf, row_major(Coord(total_tokens, Idx[K])))
+    var a_dev = TileTensor(a_dev_buf, row_major(total_tokens, Idx[K]))
     var b_dev = TileTensor(
         b_dev_buf,
         row_major[num_experts, N, K](),
     )
-    var c_dev = TileTensor(c_dev_buf, row_major(Coord(total_tokens, Idx[N])))
-    var c_ref_dev = TileTensor(
-        c_ref_dev_buf, row_major(Coord(total_tokens, Idx[N]))
-    )
-    var off_dev = TileTensor(off_dev_buf, row_major(Coord(num_experts + 1)))
-    var eid_dev = TileTensor(eid_dev_buf, row_major(Coord(Idx[num_experts])))
+    var c_dev = TileTensor(c_dev_buf, row_major(total_tokens, Idx[N]))
+    var c_ref_dev = TileTensor(c_ref_dev_buf, row_major(total_tokens, Idx[N]))
+    var off_dev = TileTensor(off_dev_buf, row_major(num_experts + 1))
+    var eid_dev = TileTensor(eid_dev_buf, row_major(Idx[num_experts]))
 
     ctx.enqueue_copy(a_dev_buf, a_host_ptr)
     ctx.enqueue_copy(b_dev_buf, b_host_ptr)
@@ -747,11 +745,11 @@ def test_expert_offset_past_int32(ctx: DeviceContext) raises:
     ctx.enqueue_copy(ids_dev, ids_host)
 
     grouped_matmul(
-        TileTensor[.bfloat16](c_dev, row_major(Coord(tokens, Idx[N]))),
-        TileTensor[.bfloat16](a_dev, row_major(Coord(tokens, Idx[K]))),
+        TileTensor[.bfloat16](c_dev, row_major(tokens, Idx[N])),
+        TileTensor[.bfloat16](a_dev, row_major(tokens, Idx[K])),
         TileTensor[.bfloat16](b_dev, row_major[num_experts, N, K]()),
-        TileTensor[.uint32](offsets_dev, row_major(Coord(3))),
-        TileTensor[.int32](ids_dev, row_major(Coord(Idx[2]))),
+        TileTensor[.uint32](offsets_dev, row_major(3)),
+        TileTensor[.int32](ids_dev, row_major(Idx[2])),
         tokens_per_expert,
         2,
         ctx,

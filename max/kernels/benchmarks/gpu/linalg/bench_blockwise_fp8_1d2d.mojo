@@ -134,7 +134,7 @@ def bench_blockwise_fp8_1d2d[
 
     var a_tt = TileTensor(
         a_dev_buf,
-        row_major(Coord(Int64(total_num_tokens), Idx[K])),
+        row_major(Int64(total_num_tokens), Idx[K]),
     )
     var b_tt = TileTensor(
         b_dev_buf,
@@ -142,16 +142,11 @@ def bench_blockwise_fp8_1d2d[
     )
     var c_tt = TileTensor(
         c_dev_buf,
-        row_major(Coord(Int64(total_num_tokens), Idx[N])),
+        row_major(Int64(total_num_tokens), Idx[N]),
     )
     var a_scales_tt = TileTensor(
         a_scales_dev_buf,
-        row_major(
-            Coord(
-                Idx[K // BLOCK_SCALE_K],
-                Int64(total_num_tokens),
-            )
-        ),
+        row_major(Idx[K // BLOCK_SCALE_K], Int64(total_num_tokens)),
     )
     var b_scales_tt = TileTensor(
         b_scales_dev_buf,

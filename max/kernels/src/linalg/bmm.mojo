@@ -258,26 +258,16 @@ def _batched_matmul_cpu[
 
     var c = TileTensor(
         c_tile.ptr,
-        row_major(Coord(collapsed_batches, mat_rows, mat_cols)),
+        row_major(collapsed_batches, mat_rows, mat_cols),
     )
     var a = TileTensor(
         a_tile.ptr,
-        row_major(
-            Coord(
-                collapsed_batches,
-                a_shape[rank - 2],
-                a_shape[rank - 1],
-            )
-        ),
+        row_major(collapsed_batches, a_shape[rank - 2], a_shape[rank - 1]),
     )
     var b = TileTensor(
         b_tile.ptr,
         row_major(
-            Coord(
-                collapsed_batches,
-                b_shape_idx[rank - 2],
-                b_shape_idx[rank - 1],
-            )
+            collapsed_batches, b_shape_idx[rank - 2], b_shape_idx[rank - 1]
         ),
     )
     var batch_size: Int = Int(c.dim[0]())
@@ -363,11 +353,11 @@ def _batched_matmul_cpu[
             # Get a 2D view of the 3D Tensor.
             var c_view = TileTensor(
                 c.ptr + batch * c_stride_between_batches,
-                row_major(Coord(Int(c.dim[1]()), Int(c.dim[2]()))),
+                row_major(Int(c.dim[1]()), Int(c.dim[2]())),
             )
             var a_view = TileTensor(
                 a.ptr + batch * a_stride_between_batches,
-                row_major(Coord(Int(a.dim[1]()), Int(a.dim[2]()))),
+                row_major(Int(a.dim[1]()), Int(a.dim[2]())),
             )
 
             comptime config = get_kernel_config[a_type, b_type, c_type]()
@@ -379,7 +369,7 @@ def _batched_matmul_cpu[
 
             var b_view = TileTensor(
                 b.ptr + batch * b_stride_between_batches,
-                row_major(Coord(Int(b.dim[1]()), Int(b.dim[2]()))),
+                row_major(Int(b.dim[1]()), Int(b.dim[2]())),
             )
 
             var batch_coords = _get_start_indices_of_nth_subvolume[2](
@@ -417,7 +407,7 @@ def _batched_matmul_cpu[
                 )
                 var a_packed = TileTensor(
                     a_packed_alloc.unsafe_ptr(),
-                    row_major(Coord(mh, kh)),
+                    row_major(mh, kh),
                 )
                 packA_i8mm[a_type](
                     0, m, k, a_view.ptr, a_packed_alloc.unsafe_ptr()
@@ -727,20 +717,17 @@ def _batched_matmul_gpu[
             # by constructing rank-2 TileTensors directly.
             var c_2d = TileTensor(
                 c_tensor_reshaped.ptr,
-                row_major(Coord(m, n)),
+                row_major(m, n),
             )
             var a_2d = TileTensor(
                 a_tensor_reshaped.ptr,
-                row_major(Coord(m, k)),
+                row_major(m, k),
             )
             # Use b's actual dims since their order depends on transpose_b.
             var b_2d = TileTensor(
                 b_tensor_reshaped.ptr,
                 row_major(
-                    Coord(
-                        Int(b_tensor_reshaped.dim(1)),
-                        Int(b_tensor_reshaped.dim(2)),
-                    )
+                    Int(b_tensor_reshaped.dim(1)), Int(b_tensor_reshaped.dim(2))
                 ),
             )
 

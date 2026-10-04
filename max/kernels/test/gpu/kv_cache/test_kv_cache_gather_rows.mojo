@@ -65,14 +65,12 @@ def run_case[
     )
     var blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_pages),
-                Idx[kv_dim],
-                Int64(NUM_LAYERS),
-                Idx[slots_per_page],
-                Idx[1],
-                Idx[head_dim],
-            )
+            Int64(num_pages),
+            Idx[kv_dim],
+            Int64(NUM_LAYERS),
+            Idx[slots_per_page],
+            Idx[1],
+            Idx[head_dim],
         ),
         ctx,
     )
@@ -82,7 +80,7 @@ def run_case[
     blocks.to_device()
 
     var offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var offsets_host = offsets.host_tensor()
     var num_rows = 0
@@ -93,7 +91,7 @@ def run_case[
     offsets.to_device()
 
     var slots = HostDeviceTileTensor[.int32](
-        row_major(Coord(Int64(num_rows), Int64(num_slots))), ctx
+        row_major(Int64(num_rows), Int64(num_slots)), ctx
     )
     var slots_host = slots.host_tensor()
     var row_batch = List[Int]()
@@ -107,9 +105,7 @@ def run_case[
             )
     slots.to_device()
 
-    var out_layout = row_major(
-        Coord(Int64(num_rows), Int64(num_slots), Idx[head_dim])
-    )
+    var out_layout = row_major(Int64(num_rows), Int64(num_slots), Idx[head_dim])
     var gpu_out = HostDeviceTileTensor[dtype](out_layout, ctx)
     _ = gpu_out.host_tensor().fill(0)
     gpu_out.to_device()

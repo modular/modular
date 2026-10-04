@@ -92,7 +92,7 @@ def shrink_qkv_permute_3mn_sm100(
     # exclusively via the epilogue function.
     var c = TileTensor(
         UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(M, N_Total)),
+        row_major(M, N_Total),
     )
 
     @inline(.always)
@@ -282,7 +282,7 @@ def expand_qkv_sm100(
     #   - B operand: the fused LoRA-B weight `b` (`[G, D_total, R]`), forwarded as-is.
     #   - A operand: the planar shrink output `P [3, M, R]` reinterpreted as `[3M, R]`,
     #     so plane `t` occupies rows `[t*M, (t+1)*M)`; `a_plane_splits` selects it.
-    var a_act = p.reshape(row_major(Coord(3 * M, Idx[R])))
+    var a_act = p.reshape(row_major(3 * M, Idx[R]))
 
     # Dangling C `[M, D_total]`: all results reach `q_out`/`kv_out` through the
     # `route_qkv` epilogue, so the grouped matmul never stores to C directly (the
@@ -292,7 +292,7 @@ def expand_qkv_sm100(
     # tensor-core kernel instead of falling back to naive.
     var c = TileTensor(
         UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(M, Idx[D_total])),
+        row_major(M, Idx[D_total]),
     )
 
     var q_tensor = q_out.to_layout_tensor()

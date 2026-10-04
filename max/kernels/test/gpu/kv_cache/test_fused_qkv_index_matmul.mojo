@@ -143,14 +143,14 @@ def execute_dual_cache_fused_bf16[
 
     # ---- hidden state (M, K) bf16 ----
     var hs = HostDeviceTileTensor[DATA_DTYPE](
-        row_major(Coord(total_length, Idx[hidden])), ctx
+        row_major(total_length, Idx[hidden]), ctx
     )
     random(hs.host_tensor())
     var hs_dev = hs.device_tensor()
 
     # ---- concatenated / stacked weight (N_total, K) bf16 ----
     var w = HostDeviceTileTensor[DATA_DTYPE](
-        row_major(Coord(Idx[n_total], Idx[hidden])), ctx
+        row_major(Idx[n_total], Idx[hidden]), ctx
     )
     random(w.host_tensor())
     var w_dev = w.device_tensor()
@@ -158,27 +158,23 @@ def execute_dual_cache_fused_bf16[
     # ---- KV cache blocks ----
     var main_blocks = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[MAIN_KV_HEADS],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[MAIN_KV_HEADS],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
     var main_blocks_ref = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[MAIN_KV_HEADS],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[MAIN_KV_HEADS],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
@@ -186,27 +182,23 @@ def execute_dual_cache_fused_bf16[
     # allocation retains trailing capacity for the untouched-region check.
     var index_blocks = HostDeviceTileTensor[index_kv_dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[1],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[1],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
     var index_blocks_ref = HostDeviceTileTensor[index_kv_dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[1],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[1],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
@@ -294,15 +286,15 @@ def execute_dual_cache_fused_bf16[
 
     # ---- combined output buffer (Q then IndexQ) ----
     var fused_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[combined_out])), ctx
+        row_major(total_length, Idx[combined_out]), ctx
     )
 
     # Q-only and IndexQ-only reference outputs.
     var q_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[q_dim])), ctx
+        row_major(total_length, Idx[q_dim]), ctx
     )
     var iq_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[iq_dim])), ctx
+        row_major(total_length, Idx[iq_dim]), ctx
     )
 
     # ============ DUAL-CACHE FUSED RUN (one GEMM over stacked weight) ========

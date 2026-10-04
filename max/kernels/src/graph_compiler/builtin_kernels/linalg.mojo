@@ -422,7 +422,7 @@ struct FusedMatmulAdd:
             epi_m = Int64(residual.dim_size(0))
             epi_n = Int64(residual.dim_size(1))
         var epilogue = TileTensor(
-            residual.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
+            residual.unsafe_ptr(), row_major(epi_m, epi_n)
         ).as_imm()
 
         fused_bias_residual_matmul_dispatch_sm100[
@@ -1615,10 +1615,8 @@ def _apple_int8_w8a8_dispatch[
     # (same lifetime idiom as the FP4 materialize path).
     var aq_buf = context.enqueue_create_buffer[.int8](M * K)
     var asc_buf = context.enqueue_create_buffer[.float32](M)
-    var aq_tt = TileTensor(
-        aq_buf.unsafe_ptr(), row_major(Coord(Int64(M), Int64(K)))
-    )
-    var asc_tt = TileTensor(asc_buf.unsafe_ptr(), row_major(Coord(Int64(M))))
+    var aq_tt = TileTensor(aq_buf.unsafe_ptr(), row_major(Int64(M), Int64(K)))
+    var asc_tt = TileTensor(asc_buf.unsafe_ptr(), row_major(Int64(M)))
 
     enqueue_apple_int8_quantize_activation[.bfloat16](
         aq_tt, a_tt.as_imm(), asc_tt, context
@@ -1669,9 +1667,7 @@ struct Struct_matmul_int8_w8a8_apple:
         # No bias: a length-1 dummy bias TileTensor (the `has_bias=False` GEMM
         # path ignores it). Reuse `b_scale` as the dummy source (same dtype is
         # not required -- it is never read -- but a valid 1-elem view is).
-        var dummy_bias = TileTensor(
-            c_tt._storage, row_major(Coord(Int64(1)))
-        ).as_imm()
+        var dummy_bias = TileTensor(c_tt._storage, row_major(Int64(1))).as_imm()
         _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
             c_tt,
             a.to_tile_tensor[.int64](),
@@ -1975,7 +1971,7 @@ struct MatmulStaticScaledFloat8:
             )
             var output_scratch = TileTensor(
                 scratch_buffer.unsafe_ptr(),
-                row_major(Coord(Int64(M), Idx[N])),
+                row_major(Int64(M), Idx[N]),
             )
 
             matmul[
@@ -2273,11 +2269,11 @@ struct Struct_router_gate_mixed_gemv:
             N != UNKNOWN_VALUE and K != UNKNOWN_VALUE
         ), "router-gate mixed GEMV requires a static [N, K] weight shape"
 
-        var c_tt = TileTensor(c.unsafe_ptr(), row_major(Coord(M, Idx[N])))
+        var c_tt = TileTensor(c.unsafe_ptr(), row_major(M, Idx[N]))
 
         if router_gate_use_mixed_gemv(M):
             # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
-            var a_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
+            var a_tt = TileTensor(a.unsafe_ptr(), row_major(M, Idx[K]))
             router_gate_mixed_gemv[N](
                 c_tt,
                 a_tt.as_imm(),
@@ -2294,8 +2290,8 @@ struct Struct_router_gate_mixed_gemv:
         # avoids), then run the ordinary fp32 matmul against the fp32 weight.
         # Routing large M through the tiny-M GEMV is catastrophically slow.
         var a_f32 = context.enqueue_create_buffer[.float32](M * K)
-        var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
-        var a_f32_tt = TileTensor(a_f32, row_major(Coord(M, Idx[K])))
+        var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(M, Idx[K]))
+        var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
 
         @inline(.always)
         def _cast_bf16_to_fp32[
@@ -2386,14 +2382,14 @@ struct Struct_smallm_streaming_matmul:
                 unsafe_from_address=Int(c.unsafe_ptr())
             )
             var c_tt = TileTensor[
-                .bfloat16, type_of(row_major(Coord(1, Idx[N]))), MutAnyOrigin
-            ](c_ptr, row_major(Coord(M, Idx[N])))
+                .bfloat16, type_of(row_major(1, Idx[N])), MutAnyOrigin
+            ](c_ptr, row_major(M, Idx[N]))
             var a_ptr = UnsafePointer[BFloat16, ImmutAnyOrigin](
                 unsafe_from_address=Int(a.unsafe_ptr())
             )
             var a_tt = TileTensor[
-                .bfloat16, type_of(row_major(Coord(1, Idx[K]))), ImmutAnyOrigin
-            ](a_ptr, row_major(Coord(M, Idx[K])))
+                .bfloat16, type_of(row_major(1, Idx[K])), ImmutAnyOrigin
+            ](a_ptr, row_major(M, Idx[K]))
             var scratch_ptr = UnsafePointer[BFloat16, MutAnyOrigin](
                 unsafe_from_address=Int(a_scratch.unsafe_ptr())
             )

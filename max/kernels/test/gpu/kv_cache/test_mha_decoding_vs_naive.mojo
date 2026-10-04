@@ -105,7 +105,7 @@ def test_decode_kv_cache[
 
     # Row offsets
     var row_offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var row_offsets_host = row_offsets.host_tensor()
     var running_offset: UInt32 = 0
@@ -117,7 +117,7 @@ def test_decode_kv_cache[
 
     # Cache lengths
     var cache_lens = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var cache_lens_host = cache_lens.host_tensor()
     for i in range(batch_size):
@@ -147,14 +147,12 @@ def test_decode_kv_cache[
     var num_continuous_blocks = batch_size + 2
     var kv_block_continuous = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_continuous_blocks),
-                Int64(2),
-                Int64(num_layers),
-                Int64(max_full_context_length),
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_continuous_blocks),
+            Int64(2),
+            Int64(num_layers),
+            Int64(max_full_context_length),
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -172,7 +170,7 @@ def test_decode_kv_cache[
 
     # Lookup table for continuous batching
     var lookup_table = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var lookup_host = lookup_table.host_tensor()
     for i in range(batch_size):

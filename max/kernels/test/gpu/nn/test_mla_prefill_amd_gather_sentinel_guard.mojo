@@ -177,22 +177,20 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     var blocks_tt = TileTensor(
         blocks_device,
         row_major(
-            Coord(
-                Int64(block_shape[0]),
-                Idx[1],
-                Int64(block_shape[2]),
-                Idx[PAGE_SIZE],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(block_shape[0]),
+            Idx[1],
+            Int64(block_shape[2]),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Int64(batch_size))
     )
     var lookup_table_tt = TileTensor(
         lookup_table_device,
-        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
     comptime Collection = PagedKVCacheCollection[
         .bfloat16,
@@ -235,19 +233,19 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var input_row_offsets_tt = TileTensor(
-        input_row_offsets_device, row_major(Coord(Int64(batch_size + 1)))
+        input_row_offsets_device, row_major(Int64(batch_size + 1))
     )
     var buffer_row_offsets_tt = TileTensor(
         buffer_row_offsets_device,
-        row_major(Coord(Int64(MAX_CHUNKS), Int64(batch_size + 1))),
+        row_major(Int64(MAX_CHUNKS), Int64(batch_size + 1)),
     )
     var cache_offsets_tt = TileTensor(
         cache_offsets_device,
-        row_major(Coord(Int64(MAX_CHUNKS), Int64(batch_size))),
+        row_major(Int64(MAX_CHUNKS), Int64(batch_size)),
     )
     # The plan kernel unrolls MAX_CHUNKS from this static shape.
     var buffer_lengths_tt = TileTensor(
-        buffer_lengths_device, row_major(Coord(Idx[MAX_CHUNKS]))
+        buffer_lengths_device, row_major(Idx[MAX_CHUNKS])
     )
 
     generic_flare_mla_prefill_ragged_paged_plan[target="gpu"](
@@ -316,14 +314,14 @@ def test_gather_zeros_out_of_range_rows(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var weight_tt = TileTensor(
-        weight_device, row_major(Coord(Int64(OUT_DIM), Int64(LATENT_DIM)))
+        weight_device, row_major(Int64(OUT_DIM), Int64(LATENT_DIM))
     )
     var k_latent_tt = TileTensor(
         k_latent_device,
-        row_major(Coord(Int64(inflated_length), Idx[LATENT_DIM])),
+        row_major(Int64(inflated_length), Idx[LATENT_DIM]),
     )
     var k_buffer_tt = TileTensor(
-        k_buffer_device, row_major(Coord(Int64(inflated_length), Idx[OUT_DIM]))
+        k_buffer_device, row_major(Int64(inflated_length), Idx[OUT_DIM])
     )
 
     generic_flare_mla_decompress_k_cache_ragged_paged[

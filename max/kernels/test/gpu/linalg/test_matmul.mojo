@@ -113,24 +113,22 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(m, Idx[K.value()])),
+        row_major(m, Idx[K.value()]),
     )
     var b_host = TileTensor(
         b_host_ptr,
         row_major(
-            Coord(
-                Idx[N.value() if transpose_b else K.value()],
-                Idx[K.value() if transpose_b else N.value()],
-            )
+            Idx[N.value() if transpose_b else K.value()],
+            Idx[K.value() if transpose_b else N.value()],
         ),
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
     var c_host_ref = TileTensor(
         c_host_ref_ptr,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
 
     # Device allocations
@@ -141,24 +139,22 @@ def test[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(Coord(m, Idx[K.value()])),
+        row_major(m, Idx[K.value()]),
     )
     var b_device = TileTensor(
         b_device_buffer,
         row_major(
-            Coord(
-                Idx[N.value() if transpose_b else K.value()],
-                Idx[K.value() if transpose_b else N.value()],
-            )
+            Idx[N.value() if transpose_b else K.value()],
+            Idx[K.value() if transpose_b else N.value()],
         ),
     )
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
     var c_device_ref = TileTensor(
         c_device_ref_buffer,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
 
     # Initialize matmul operands

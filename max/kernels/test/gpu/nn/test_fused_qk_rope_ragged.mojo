@@ -120,23 +120,21 @@ def execute_fused_qk_rope_ragged(
     var freqs_shape = IndexList[2](max_seq_len, kv_params.head_size)
 
     var true_ce_cache_lengths_layout = row_major(
-        Coord(Int64(true_ce_cache_lengths_shape[0]))
+        Int64(true_ce_cache_lengths_shape[0])
     )
     var mixed_ce_cache_lengths_layout = row_major(
-        Coord(Int64(mixed_ce_cache_lengths_shape[0]))
+        Int64(mixed_ce_cache_lengths_shape[0])
     )
     var kv_block_layout = row_major(
-        Coord(
-            Int64(kv_block_shape[0]),
-            Idx[2],
-            Int64(kv_block_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        Int64(kv_block_shape[0]),
+        Idx[2],
+        Int64(kv_block_shape[2]),
+        Idx[page_size],
+        Idx[kv_params.num_heads],
+        Idx[kv_params.head_size],
     )
     var paged_lut_layout = row_major(
-        Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+        Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])
     )
 
     # Create device buffers
@@ -214,32 +212,24 @@ def execute_fused_qk_rope_ragged(
     )
 
     var true_ce_q_ragged_layout = row_major(
-        Coord(
-            Int64(true_ce_q_ragged_shape[0]),
-            Idx[num_q_heads],
-            Idx[kv_params.head_size],
-        )
+        Int64(true_ce_q_ragged_shape[0]),
+        Idx[num_q_heads],
+        Idx[kv_params.head_size],
     )
     var mixed_ce_q_ragged_layout = row_major(
-        Coord(
-            Int64(mixed_ce_q_ragged_shape[0]),
-            Idx[num_q_heads],
-            Idx[kv_params.head_size],
-        )
+        Int64(mixed_ce_q_ragged_shape[0]),
+        Idx[num_q_heads],
+        Idx[kv_params.head_size],
     )
     var true_ce_output_layout = row_major(
-        Coord(
-            Int64(true_ce_output_shape[0]),
-            Idx[num_q_heads],
-            Idx[kv_params.head_size],
-        )
+        Int64(true_ce_output_shape[0]),
+        Idx[num_q_heads],
+        Idx[kv_params.head_size],
     )
     var mixed_ce_output_layout = row_major(
-        Coord(
-            Int64(mixed_ce_output_shape[0]),
-            Idx[num_q_heads],
-            Idx[kv_params.head_size],
-        )
+        Int64(mixed_ce_output_shape[0]),
+        Idx[num_q_heads],
+        Idx[kv_params.head_size],
     )
 
     # Initialize true_ce_q_ragged with random data
@@ -284,9 +274,7 @@ def execute_fused_qk_rope_ragged(
     # Fill the whole freqs_cis buffer: the kernel reads row
     # `cache_len + token`, not just the first rows. Unwritten rows are zero
     # under the default allocator but NaN under `poison-all`. (KERN-3088)
-    var freqs_layout = row_major(
-        Coord(Idx[max_seq_len], Idx[kv_params.head_size])
-    )
+    var freqs_layout = row_major(Idx[max_seq_len], Idx[kv_params.head_size])
     with freqs_device.map_to_host() as freqs_host:
         var freqs_init_tensor = TileTensor(freqs_host, freqs_layout)
         random(freqs_init_tensor)
@@ -395,9 +383,7 @@ def execute_fused_qk_rope_ragged(
     var paged_lut_tensor = (
         TileTensor(
             paged_lut_device,
-            row_major(
-                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
-            ),
+            row_major(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])),
         )
         .as_imm()
         .as_unsafe_any_origin()
@@ -541,9 +527,7 @@ def execute_fused_qk_rope_ragged(
         .as_unsafe_any_origin(),
         TileTensor(
             paged_lut_host_tensor.ptr,
-            row_major(
-                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
-            ),
+            row_major(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])),
         )
         .as_imm()
         .as_unsafe_any_origin(),
@@ -567,9 +551,7 @@ def execute_fused_qk_rope_ragged(
         .as_unsafe_any_origin(),
         TileTensor(
             paged_lut_host_tensor.ptr,
-            row_major(
-                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
-            ),
+            row_major(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])),
         )
         .as_imm()
         .as_unsafe_any_origin(),
@@ -678,29 +660,25 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     var cache_lengths_shape = Index(batch_size)
 
     var kv_block_layout = row_major(
-        Coord(
-            Int64(kv_block_shape[0]),
-            Idx[2],
-            Int64(kv_block_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        Int64(kv_block_shape[0]),
+        Idx[2],
+        Int64(kv_block_shape[2]),
+        Idx[page_size],
+        Idx[kv_params.num_heads],
+        Idx[kv_params.head_size],
     )
     var kv_block_64_layout = row_major(
-        Coord(
-            Int64(kv_block_64_shape[0]),
-            Idx[2],
-            Int64(kv_block_64_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[rope_dim],
-        )
+        Int64(kv_block_64_shape[0]),
+        Idx[2],
+        Int64(kv_block_64_shape[2]),
+        Idx[page_size],
+        Idx[kv_params.num_heads],
+        Idx[rope_dim],
     )
     var paged_lut_layout = row_major(
-        Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+        Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])
     )
-    var cache_lengths_layout = row_major(Coord(Int64(cache_lengths_shape[0])))
+    var cache_lengths_layout = row_major(Int64(cache_lengths_shape[0]))
 
     # Create device buffers
     var q_ragged_device = ctx.enqueue_create_buffer[dtype](
@@ -731,10 +709,10 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
     var q_ragged_layout = row_major(
-        Coord(Idx[seq_len], Idx[num_q_heads], Idx[q_head_size])
+        Idx[seq_len], Idx[num_q_heads], Idx[q_head_size]
     )
     var q_ragged_64_layout = row_major(
-        Coord(Idx[seq_len], Idx[num_q_heads], Idx[rope_dim])
+        Idx[seq_len], Idx[num_q_heads], Idx[rope_dim]
     )
 
     # Allocate host pointer for q_ragged (needed for verification)
@@ -838,7 +816,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
                             )
 
     # Initialize freqs_cis with random data
-    var freqs_layout = row_major(Coord(Idx[max_seq_len], Idx[rope_dim]))
+    var freqs_layout = row_major(Idx[max_seq_len], Idx[rope_dim])
     with freqs_device.map_to_host() as freqs_host:
         var freqs_tensor = TileTensor(freqs_host, freqs_layout)
         random(freqs_tensor)
@@ -881,7 +859,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     var cache_lengths_tensor = (
         TileTensor(
             cache_lengths_device,
-            row_major(Coord(Int64(cache_lengths_shape[0]))),
+            row_major(Int64(cache_lengths_shape[0])),
         )
         .as_imm()
         .as_unsafe_any_origin()
@@ -889,9 +867,7 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     var paged_lut_tensor = (
         TileTensor(
             paged_lut_device,
-            row_major(
-                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
-            ),
+            row_major(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])),
         )
         .as_imm()
         .as_unsafe_any_origin()
@@ -966,10 +942,10 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
 
     # Define output layouts for verification
     var output_layout = row_major(
-        Coord(Idx[seq_len], Idx[num_q_heads], Idx[q_head_size])
+        Idx[seq_len], Idx[num_q_heads], Idx[q_head_size]
     )
     var output_64_layout = row_major(
-        Coord(Idx[seq_len], Idx[num_q_heads], Idx[rope_dim])
+        Idx[seq_len], Idx[num_q_heads], Idx[rope_dim]
     )
 
     # Verify Q output

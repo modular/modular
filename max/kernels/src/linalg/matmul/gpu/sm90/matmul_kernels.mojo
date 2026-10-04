@@ -1523,7 +1523,7 @@ struct HopperMatmulSM90Kernel[
             # C tile for current expert.
             var c_by_expert = TileTensor(
                 c._offset_storage(Coord(Int(a_start_row) * N)),
-                row_major(Coord(Int(M), Idx[N])),
+                row_major(M, Idx[N]),
             )
 
             @__parameter

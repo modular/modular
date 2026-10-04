@@ -41,10 +41,10 @@ def test_kv_cache_radd[
         num_active_loras <= batch_size
     ), "num_active_loras must be less than or equal to batch_size"
     var cache_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var input_row_offsets_slice = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(num_active_loras + 1))), ctx
+        row_major(Int64(num_active_loras + 1)), ctx
     )
     var cache_lengths_host = cache_lengths.host_tensor()
     var input_row_offsets_slice_host = input_row_offsets_slice.host_tensor()
@@ -78,14 +78,12 @@ def test_kv_cache_radd[
 
     var kv_block_paged = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[num_heads],
-                Idx[head_dim],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[num_heads],
+            Idx[head_dim],
         ),
         ctx,
     )
@@ -114,9 +112,7 @@ def test_kv_cache_radd[
     )
 
     var a = HostDeviceTileTensor[dtype](
-        row_major(
-            Coord(Int64(total_slice_length), Idx[num_heads * head_dim * 2])
-        ),
+        row_major(Int64(total_slice_length), Idx[num_heads * head_dim * 2]),
         ctx,
     )
     var a_host = a.host_tensor()

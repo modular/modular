@@ -259,7 +259,7 @@ def test[
             var k_operand = LayoutTensorMHAOperand(k_ref_device)
             var null_valid_length = TileTensor(
                 MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-                row_major(Coord(Idx[0])),
+                row_major(Idx[0]),
             )
             mha_gpu_naive[_is_cache_length_accurate=True,](
                 q_tt,

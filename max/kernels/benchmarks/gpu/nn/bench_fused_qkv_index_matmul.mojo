@@ -149,15 +149,13 @@ def bench_shape(
 
     var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
-    var iro_tensor = TileTensor(
-        iro_dev, row_major(Coord(Int64(batch_size + 1)))
-    )
+    var iro_tensor = TileTensor(iro_dev, row_major(Int64(batch_size + 1)))
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_dev, row_major(Coord(Int64(batch_size)))
+        cache_lengths_dev, row_major(Int64(batch_size))
     )
 
     # ---- paged lookup table (sequential distinct blocks; shared by both
@@ -173,7 +171,7 @@ def bench_shape(
     var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
     var lut_tensor = TileTensor(
-        lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
+        lut_dev, row_major(Int64(batch_size), Int64(lut_cols))
     )
 
     # ---- cache-busting inputs: hidden state (M, K) and stacked weight
@@ -195,14 +193,12 @@ def bench_shape(
         total_seq * combined_out
     )
     var fused_out = TileTensor(
-        fused_out_dev, row_major(Coord(total_seq, Idx[combined_out]))
+        fused_out_dev, row_major(total_seq, Idx[combined_out])
     )
     var q_out_dev = ctx.enqueue_create_buffer[DATA_DTYPE](total_seq * q_dim)
-    var q_out = TileTensor(q_out_dev, row_major(Coord(total_seq, Idx[q_dim])))
+    var q_out = TileTensor(q_out_dev, row_major(total_seq, Idx[q_dim]))
     var iq_out_dev = ctx.enqueue_create_buffer[DATA_DTYPE](total_seq * iq_dim)
-    var iq_out = TileTensor(
-        iq_out_dev, row_major(Coord(total_seq, Idx[iq_dim]))
-    )
+    var iq_out = TileTensor(iq_out_dev, row_major(total_seq, Idx[iq_dim]))
 
     # ---- KV cache blocks (main: K+V, 1 head; index: K-only MLA, 1 head) ----
     var main_block_shape = IndexList[6](
@@ -298,7 +294,7 @@ def bench_shape(
         var hs_tensor = (
             TileTensor(
                 cb_hs.offset_ptr(iteration),
-                row_major(Coord(total_seq, Idx[hidden])),
+                row_major(total_seq, Idx[hidden]),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -306,7 +302,7 @@ def bench_shape(
         var w_full = (
             TileTensor(
                 cb_w.offset_ptr(iteration),
-                row_major(Coord(Idx[n_total], Idx[hidden])),
+                row_major(Idx[n_total], Idx[hidden]),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -344,7 +340,7 @@ def bench_shape(
         var hs_tensor = (
             TileTensor(
                 cb_hs.offset_ptr(iteration),
-                row_major(Coord(total_seq, Idx[hidden])),
+                row_major(total_seq, Idx[hidden]),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -352,7 +348,7 @@ def bench_shape(
         var w_qkv = (
             TileTensor(
                 cb_w.offset_ptr(iteration),
-                row_major(Coord(Idx[qkv_n], Idx[hidden])),
+                row_major(Idx[qkv_n], Idx[hidden]),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -360,7 +356,7 @@ def bench_shape(
         var w_idx = (
             TileTensor(
                 cb_w.offset_ptr(iteration) + qkv_n * hidden,
-                row_major(Coord(Idx[idx_n], Idx[hidden])),
+                row_major(Idx[idx_n], Idx[hidden]),
             )
             .as_imm()
             .as_unsafe_any_origin()

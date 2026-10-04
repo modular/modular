@@ -1454,7 +1454,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
                 var c_scratch = TileTensor(
                     scratch_buffer.unsafe_ptr(),
-                    row_major(Coord(M, Idx[b_N])),
+                    row_major(M, Idx[b_N]),
                 )
 
                 comptime if input_scale_granularity == "tensor":
@@ -1478,7 +1478,7 @@ def _matmul_dynamic_scaled_fp8_impl[
                 )
                 var c_scratch = TileTensor(
                     scratch_buffer.unsafe_ptr(),
-                    row_major(Coord(M, N_rt)),
+                    row_major(M, N_rt),
                 )
 
                 comptime if input_scale_granularity == "tensor":

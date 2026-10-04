@@ -136,7 +136,7 @@ def to_numpy[
     from layout.coord import Coord, Idx
 
     var storage = Array[Float32, 6](uninitialized=True)
-    var tensor = TileTensor(Span(storage), row_major(Coord(Idx[2], Idx[3])))
+    var tensor = TileTensor(Span(storage), row_major(Idx[2], Idx[3]))
     var array = to_numpy(tensor)  # a 2x3 NumPy float32 array
     ```
 

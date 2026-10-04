@@ -430,38 +430,34 @@ def run_test[
     var blocks_tt = TileTensor(
         blocks_device,
         row_major(
-            Coord(
-                Int64(total_pages),
-                Idx[1],
-                Int64(NUM_LAYERS),
-                Idx[PAGE_SIZE],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
 
     var scales_tt = TileTensor(
         scales_device,
         row_major(
-            Coord(
-                Int64(total_pages),
-                Idx[1],
-                Int64(NUM_LAYERS),
-                Idx[PAGE_SIZE],
-                Idx[kv_params.num_heads],
-                Idx[1],
-            )
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[1],
         ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Int64(batch_size))
     )
 
     var lookup_table_tt = TileTensor(
         lookup_table_device,
-        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
 
     comptime Collection = PagedKVCacheCollection[
@@ -1061,38 +1057,34 @@ def run_test_with_scales[
     var blocks_tt = TileTensor(
         blocks_device,
         row_major(
-            Coord(
-                Int64(total_pages),
-                Idx[1],
-                Int64(NUM_LAYERS),
-                Idx[PAGE_SIZE],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
     )
 
     var scales_tt = TileTensor(
         scales_device,
         row_major(
-            Coord(
-                Int64(total_pages),
-                Idx[1],
-                Int64(NUM_LAYERS),
-                Idx[PAGE_SIZE],
-                Idx[kv_params.num_heads],
-                Idx[1],
-            )
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[1],
         ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Int64(batch_size))
     )
 
     var lookup_table_tt = TileTensor(
         lookup_table_device,
-        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
 
     # Build PagedKVCacheCollection WITH per-token scales.

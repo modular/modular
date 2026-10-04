@@ -164,78 +164,70 @@ def execute_dual_cache_fused_mxfp6[
     var input_row_offsets_tensor = clt.input_row_offsets.device_tile_tensor()
 
     var hs = HostDeviceTileTensor[DATA_DTYPE](
-        row_major(Coord(total_length, Idx[K_BYTES])), ctx
+        row_major(total_length, Idx[K_BYTES]), ctx
     )
     _fill_random_u8(hs.host_tensor(), total_length * K_BYTES, 0, 255)
     var hs_dev = hs.device_tensor()
 
     var w = HostDeviceTileTensor[DATA_DTYPE](
-        row_major(Coord(Idx[n_total], Idx[K_BYTES])), ctx
+        row_major(Idx[n_total], Idx[K_BYTES]), ctx
     )
     _fill_random_u8(w.host_tensor(), n_total * K_BYTES, 0, 255)
     var w_dev = w.device_tensor()
 
     var input_scale = HostDeviceTileTensor[SCALE_DTYPE](
-        row_major(Coord(total_length, Idx[scale_K])), ctx
+        row_major(total_length, Idx[scale_K]), ctx
     )
     _fill_random_u8(input_scale.host_tensor(), total_length * scale_K, 125, 129)
     var input_scale_dev = input_scale.device_tensor()
 
     var weight_scale = HostDeviceTileTensor[SCALE_DTYPE](
-        row_major(Coord(Idx[n_total], Idx[scale_K])), ctx
+        row_major(Idx[n_total], Idx[scale_K]), ctx
     )
     _fill_random_u8(weight_scale.host_tensor(), n_total * scale_K, 125, 129)
     var weight_scale_dev = weight_scale.device_tensor()
 
     var main_blocks = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[MAIN_KV_HEADS],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[MAIN_KV_HEADS],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
     var main_blocks_ref = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[MAIN_KV_HEADS],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[MAIN_KV_HEADS],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
     var index_blocks = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[1],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[1],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
     var index_blocks_ref = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[1],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[1],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
@@ -317,16 +309,16 @@ def execute_dual_cache_fused_mxfp6[
     )
 
     var fused_q_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[q_dim])), ctx
+        row_major(total_length, Idx[q_dim]), ctx
     )
     var fused_iq_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[iq_dim])), ctx
+        row_major(total_length, Idx[iq_dim]), ctx
     )
     var q_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[q_dim])), ctx
+        row_major(total_length, Idx[q_dim]), ctx
     )
     var iq_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[iq_dim])), ctx
+        row_major(total_length, Idx[iq_dim]), ctx
     )
 
     hs.to_device()

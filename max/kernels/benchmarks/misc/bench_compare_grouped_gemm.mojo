@@ -286,40 +286,36 @@ def bench_structured_kernel[
     # Template tensors - 3D with batch=1
     var a_template = TileTensor(
         a_device,
-        row_major(Coord(Idx[1], m, Idx[K_ARRAY])),
+        row_major(Idx[1], m, Idx[K_ARRAY]),
     )
     var b_template = TileTensor(
         b_device,
-        row_major(Coord(Idx[1], n, Idx[K_ARRAY])),
+        row_major(Idx[1], n, Idx[K_ARRAY]),
     )
     var c_template = TileTensor(
         c_device,
-        row_major(Coord(Idx[1], m, n)),
+        row_major(Idx[1], m, n),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var sfa_template = TileTensor(
         sfa_device,
         row_major(
-            Coord(
-                Idx[1],
-                ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1] * SF_ATOM_K],
-            )
+            Idx[1],
+            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         ),
     )
     var sfb_template = TileTensor(
         sfb_device,
         row_major(
-            Coord(
-                Idx[1],
-                ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-                Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1] * SF_ATOM_K],
-            )
+            Idx[1],
+            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         ),
     )
 
@@ -361,28 +357,28 @@ def bench_structured_kernel[
 
     var problem_sizes_tensor = TileTensor(
         problem_sizes_host,
-        row_major(Coord(Idx[max_groups], Idx[4])),
+        row_major(Idx[max_groups], Idx[4]),
     )
 
     var a_ptrs_tensor = TileTensor(
         a_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
     var b_ptrs_tensor = TileTensor(
         b_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
     var c_ptrs_tensor = TileTensor(
         c_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
     var sfa_ptrs_tensor = TileTensor(
         sfa_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
     var sfb_ptrs_tensor = TileTensor(
         sfb_ptrs_device,
-        row_major(Coord(Idx[max_groups], Idx[1])),
+        row_major(Idx[max_groups], Idx[1]),
     )
 
     comptime BM = mma_shape[0]

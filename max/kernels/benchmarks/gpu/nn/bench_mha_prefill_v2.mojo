@@ -165,45 +165,37 @@ def run_mha_prefill_v2[
                 var q_tt = TileTensor(
                     q_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(seq_len),
-                            Idx[num_heads],
-                            Idx[depth],
-                        )
+                        Int32(batch_size),
+                        Int32(seq_len),
+                        Idx[num_heads],
+                        Idx[depth],
                     ),
                 )
                 var k_tt = TileTensor(
                     k_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(num_keys),
-                            Idx[kv_num_heads],
-                            Idx[depth],
-                        )
+                        Int32(batch_size),
+                        Int32(num_keys),
+                        Idx[kv_num_heads],
+                        Idx[depth],
                     ),
                 )
                 var v_tt = TileTensor(
                     v_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(num_keys),
-                            Idx[kv_num_heads],
-                            Idx[depth],
-                        )
+                        Int32(batch_size),
+                        Int32(num_keys),
+                        Idx[kv_num_heads],
+                        Idx[depth],
                     ),
                 )
                 var o_tt = TileTensor(
                     cb_o.offset_ptr(iteration).bitcast[Float32](),
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(seq_len),
-                            Idx[num_heads],
-                            Idx[depth],
-                        )
+                        Int32(batch_size),
+                        Int32(seq_len),
+                        Idx[num_heads],
+                        Idx[depth],
                     ),
                 )
                 var k_op = LayoutTensorMHAOperand(

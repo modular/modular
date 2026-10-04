@@ -216,50 +216,36 @@ def bench_conv3d[
     var input_tt = TileTensor(
         input_dev,
         row_major(
-            Coord(
-                Idx[batch],
-                Idx[in_depth],
-                Idx[in_height],
-                Idx[in_width],
-                Idx[in_channels],
-            )
+            Idx[batch],
+            Idx[in_depth],
+            Idx[in_height],
+            Idx[in_width],
+            Idx[in_channels],
         ),
     )
     var filter_qrscf_tt = TileTensor(
         filter_qrscf_dev,
         row_major(
-            Coord(
-                Idx[filter_q],
-                Idx[filter_r],
-                Idx[filter_s],
-                Idx[in_channels],
-                Idx[out_channels],
-            )
+            Idx[filter_q],
+            Idx[filter_r],
+            Idx[filter_s],
+            Idx[in_channels],
+            Idx[out_channels],
         ),
     )
     var output_tt = TileTensor(
         output_dev,
-        row_major(
-            Coord(
-                Idx[batch],
-                d_out,
-                h_out,
-                w_out,
-                Idx[out_channels],
-            )
-        ),
+        row_major(Idx[batch], d_out, h_out, w_out, Idx[out_channels]),
     )
 
     var filter_fcqrs_tt = TileTensor(
         filter_fcqrs_dev,
         row_major(
-            Coord(
-                Idx[out_channels],
-                Idx[in_channels],
-                Idx[filter_q],
-                Idx[filter_r],
-                Idx[filter_s],
-            )
+            Idx[out_channels],
+            Idx[in_channels],
+            Idx[filter_q],
+            Idx[filter_r],
+            Idx[filter_s],
         ),
     )
 

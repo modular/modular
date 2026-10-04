@@ -2027,7 +2027,7 @@ def _gemv_gpu_dispatch_impl[
                     # Runtime transpose (TileTensor.transpose needs a static
                     # shape). `reshape` reuses b's storage, so the view keeps b's
                     # engine.
-                    var b_tile_n_major = b.reshape(row_major(Coord(n, k)))
+                    var b_tile_n_major = b.reshape(row_major(n, k))
 
                     _enqueue_gemv_kernel_vector[
                         simd_width=simd_width,

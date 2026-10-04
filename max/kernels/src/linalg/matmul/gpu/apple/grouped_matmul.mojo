@@ -291,9 +291,9 @@ def grouped_matmul_mma_kernel[
     # `naive_grouped_matmul_kernel`.
     var k = K if expert != -1 else 0
 
-    var c_g = c.tile[1, N](a_start, 0).reshape(row_major(Coord(m, Idx[N])))
+    var c_g = c.tile[1, N](a_start, 0).reshape(row_major(m, Idx[N]))
     var b_e = b.tile[1, N, K](max(expert, 0), 0, 0).reshape(
-        row_major(Coord(Idx[N], k))
+        row_major(Idx[N], k)
     )
 
     # Pre-tile this simdgroup's A slab outside the K-loop, as `run` does,

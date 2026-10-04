@@ -51,9 +51,9 @@ def check_nan_does_not_hide_max(ctx: DeviceContext, batch_size: Int) raises:
     var out_vals = ctx.enqueue_create_buffer[DTYPE](batch_size)
     var out_idxs = ctx.enqueue_create_buffer[IDX](batch_size)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(batch_size, N)))
+    var in_t = TileTensor(in_buf, row_major(batch_size, N))
     with in_buf.map_to_host() as h:
-        var t = TileTensor(h, row_major(Coord(batch_size, N)))
+        var t = TileTensor(h, row_major(batch_size, N))
         for b in range(batch_size):
             for i in range(N):
                 t[b, i] = Scalar[DTYPE](0.0)
@@ -67,8 +67,8 @@ def check_nan_does_not_hide_max(ctx: DeviceContext, batch_size: Int) raises:
         ctx,
         1,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(out_vals, row_major(Coord(batch_size, 1))),
-        TileTensor(out_idxs, row_major(Coord(batch_size, 1))),
+        TileTensor(out_vals, row_major(batch_size, 1)),
+        TileTensor(out_idxs, row_major(batch_size, 1)),
         block_size=BLOCK_SIZE,
         num_blocks_per_input=NUM_BLOCKS,
     )
@@ -90,9 +90,9 @@ def check_all_nan_row_is_in_range(ctx: DeviceContext) raises:
     var out_vals = ctx.enqueue_create_buffer[DTYPE](1)
     var out_idxs = ctx.enqueue_create_buffer[IDX](1)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(1, N)))
+    var in_t = TileTensor(in_buf, row_major(1, N))
     with in_buf.map_to_host() as h:
-        var t = TileTensor(h, row_major(Coord(1, N)))
+        var t = TileTensor(h, row_major(1, N))
         for i in range(N):
             t[0, i] = nan[DTYPE]()
     with out_idxs.map_to_host() as h:
@@ -102,8 +102,8 @@ def check_all_nan_row_is_in_range(ctx: DeviceContext) raises:
         ctx,
         1,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(out_vals, row_major(Coord(1, 1))),
-        TileTensor(out_idxs, row_major(Coord(1, 1))),
+        TileTensor(out_vals, row_major(1, 1)),
+        TileTensor(out_idxs, row_major(1, 1)),
         block_size=BLOCK_SIZE,
         num_blocks_per_input=NUM_BLOCKS,
     )

@@ -332,14 +332,14 @@ def execute_fp8_index_prefill[
         .as_unsafe_any_origin()
     )
     var cache_lengths = (
-        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table = (
         TileTensor(
             k_lut_device,
-            row_major(Coord(Int64(batch_size), Int64(pages_per_seq))),
+            row_major(Int64(batch_size), Int64(pages_per_seq)),
         )
         .as_imm()
         .as_unsafe_any_origin()

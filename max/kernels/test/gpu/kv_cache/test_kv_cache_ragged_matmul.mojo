@@ -87,7 +87,7 @@ def _initialize_ragged_inputs[
     var hidden_state_ragged_host_ptr = alloc[Scalar[dtype]](ragged_size)
     var hidden_state_ragged_host = TileTensor(
         hidden_state_ragged_host_ptr,
-        row_major(Coord(total_length, Idx[hidden_size])),
+        row_major(total_length, Idx[hidden_size]),
     )
     random(hidden_state_ragged_host)
 
@@ -197,7 +197,7 @@ def execute_matmul_kv_cache_ragged[
     var weight_shape = IndexList[2](2 * kv_hidden_size, hidden_size)
     var weight_host = TileTensor(
         weight_host_ptr,
-        row_major(Coord(Idx[2 * kv_hidden_size], Idx[hidden_size])),
+        row_major(Idx[2 * kv_hidden_size], Idx[hidden_size]),
     )
     random(weight_host)
 
@@ -211,13 +211,13 @@ def execute_matmul_kv_cache_ragged[
     var ref_output_shape = IndexList[2](padded_batch_dim, 2 * kv_hidden_size)
     var ref_output_host = TileTensor(
         ref_output_host_ptr,
-        row_major(Coord(padded_batch_dim, Idx[2 * kv_hidden_size])),
+        row_major(padded_batch_dim, Idx[2 * kv_hidden_size]),
     )
     var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
 
     # Initialize our KVCache.
     var cache_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var cache_lengths_host = cache_lengths.host_tensor().as_unsafe_any_origin()
     var max_prompt_len = 0
@@ -270,7 +270,7 @@ def execute_matmul_kv_cache_ragged[
     var kv_block = HostDeviceTileTensor[dtype](blocks_layout, ctx)
 
     var lookup_table = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var lookup_table_host = lookup_table.host_tensor().as_unsafe_any_origin()
 
@@ -307,14 +307,14 @@ def execute_matmul_kv_cache_ragged[
 
     var hidden_state_ragged_tensor = TileTensor(
         hidden_state_ragged_device,
-        row_major(Coord(total_length, Idx[hidden_size])),
+        row_major(total_length, Idx[hidden_size]),
     )
     var input_row_offsets_tensor = TileTensor(
-        input_row_offsets_device, row_major(Coord(Int64(batch_size + 1)))
+        input_row_offsets_device, row_major(Int64(batch_size + 1))
     ).as_imm()
     var weight_device_tensor = TileTensor(
         weight_device,
-        row_major(Coord(Idx[2 * kv_hidden_size], Idx[hidden_size])),
+        row_major(Idx[2 * kv_hidden_size], Idx[hidden_size]),
     )
 
     # Execute test.
@@ -333,7 +333,7 @@ def execute_matmul_kv_cache_ragged[
     )
     var hidden_state_padded_tile = TileTensor(
         hidden_state_padded_device,
-        row_major(Coord(padded_batch_dim, hidden_size)),
+        row_major(padded_batch_dim, hidden_size),
     )
     var weight_tile = weight_device_tensor.reshape(Coord(weight_shape))
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
@@ -508,7 +508,7 @@ def execute_matmul_k_cache_ragged[
     var weight_shape = IndexList[2](kv_hidden_size, hidden_size)
     var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
     var weight_host = TileTensor(
-        weight_host_ptr, row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size]))
+        weight_host_ptr, row_major(Idx[kv_hidden_size], Idx[hidden_size])
     )
     random(weight_host)
 
@@ -523,19 +523,19 @@ def execute_matmul_k_cache_ragged[
     var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
     var ref_output_host = TileTensor(
         ref_output_host_ptr,
-        row_major(Coord(padded_batch_dim, Idx[kv_hidden_size])),
+        row_major(padded_batch_dim, Idx[kv_hidden_size]),
     )
     var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
 
     var hidden_state_ragged_tensor = TileTensor(
         hidden_state_ragged_device,
-        row_major(Coord(ragged_total_length, Idx[hidden_size])),
+        row_major(ragged_total_length, Idx[hidden_size]),
     )
     var input_row_offsets_tensor = TileTensor(
-        input_row_offsets_device, row_major(Coord(Int64(batch_size + 1)))
+        input_row_offsets_device, row_major(Int64(batch_size + 1))
     ).as_imm()
     var weight_device_tensor = TileTensor(
-        weight_device, row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size]))
+        weight_device, row_major(Idx[kv_hidden_size], Idx[hidden_size])
     )
 
     # Execute test.
@@ -553,7 +553,7 @@ def execute_matmul_k_cache_ragged[
     )
     var hidden_state_padded_tile = TileTensor(
         hidden_state_padded_device,
-        row_major(Coord(padded_batch_dim, hidden_size)),
+        row_major(padded_batch_dim, hidden_size),
     )
     var weight_tile = weight_device_tensor.reshape(Coord(weight_shape))
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
@@ -624,14 +624,14 @@ def generic_assert_output_equals[
     var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
     var ref_output_host = TileTensor(
         ref_output_host_ptr,
-        row_major(Coord(ref_output_shape[0], Idx[fused_hidden_size])),
+        row_major(ref_output_shape[0], Idx[fused_hidden_size]),
     )
 
     var test_output_size = test_output_shape[0] * test_output_shape[1]
     var test_output_host_ptr = alloc[Scalar[dtype]](test_output_size)
     var test_output_host = TileTensor(
         test_output_host_ptr,
-        row_major(Coord(test_output_shape[0], Idx[hidden_size])),
+        row_major(test_output_shape[0], Idx[hidden_size]),
     )
 
     ctx.enqueue_copy(test_output_host_ptr, test_output_device)
@@ -774,7 +774,7 @@ def generic_execute_fused_qkv_cache_ragged[
     var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
     var weight_host = TileTensor(
         weight_host_ptr,
-        row_major(Coord(Idx[fused_hidden_size], Idx[hidden_size])),
+        row_major(Idx[fused_hidden_size], Idx[hidden_size]),
     )
     random(weight_host)
 
@@ -794,17 +794,17 @@ def generic_execute_fused_qkv_cache_ragged[
 
     var hidden_state_ragged_tensor = TileTensor(
         hidden_state_ragged_device,
-        row_major(Coord(total_length, Idx[hidden_size])),
+        row_major(total_length, Idx[hidden_size]),
     )
     var input_row_offsets_tensor = TileTensor(
-        input_row_offsets_device, row_major(Coord(Int64(batch_size + 1)))
+        input_row_offsets_device, row_major(Int64(batch_size + 1))
     ).as_imm()
     var weight_device_tensor = TileTensor(
         weight_device,
-        row_major(Coord(Idx[fused_hidden_size], Idx[hidden_size])),
+        row_major(Idx[fused_hidden_size], Idx[hidden_size]),
     )
     var test_output_device_tensor = TileTensor(
-        test_output_device, row_major(Coord(total_length, Idx[hidden_size]))
+        test_output_device, row_major(total_length, Idx[hidden_size])
     )
 
     # Execute the matmul
@@ -824,7 +824,7 @@ def generic_execute_fused_qkv_cache_ragged[
     )
     var hidden_state_padded_tile = TileTensor(
         hidden_state_padded_device,
-        row_major(Coord(padded_batch_dim, hidden_size)),
+        row_major(padded_batch_dim, hidden_size),
     )
     var weight_tile = weight_device_tensor.reshape(Coord(weight_shape))
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
@@ -1084,10 +1084,10 @@ def execute_cont_batch_fused_qkv_matmul[
     var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
     var kv_blocks_device_view = TileTensor(kv_block_device, blocks_layout)
     var cache_lengths_device_view = TileTensor(
-        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Int64(batch_size))
     )
     var lookup_table_device_view = TileTensor(
-        lookup_table_device, row_major(Coord(Int64(batch_size)))
+        lookup_table_device, row_major(Int64(batch_size))
     )
     var kv_collection_device = CollectionType(
         kv_blocks_device_view.as_unsafe_any_origin(),
@@ -1102,10 +1102,10 @@ def execute_cont_batch_fused_qkv_matmul[
 
     var kv_blocks_host_view = TileTensor(kv_block_host_ptr, blocks_layout)
     var cache_lengths_host_view = TileTensor(
-        cache_lengths_host_ptr, row_major(Coord(Int64(batch_size)))
+        cache_lengths_host_ptr, row_major(Int64(batch_size))
     )
     var lookup_table_host_view = TileTensor(
-        lookup_table_host_ptr, row_major(Coord(Int64(batch_size)))
+        lookup_table_host_ptr, row_major(Int64(batch_size))
     )
     var kv_collection_host = CollectionType(
         kv_blocks_host_view.as_unsafe_any_origin(),

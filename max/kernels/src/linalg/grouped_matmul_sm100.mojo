@@ -507,7 +507,7 @@ def load_AB_cuda_core[
     comptime a_sw = make_swizzle[a_type, a_swizzle]()
     var a_smem_ptr = a_smem_tiles[stage].ptr
     comptime a_rows_per_thread = BM // WARP_SIZE
-    comptime a_tv = tl_col_major(Coord(Idx[WARP_SIZE], Idx[a_rows_per_thread]))
+    comptime a_tv = tl_col_major(Idx[WARP_SIZE], Idx[a_rows_per_thread])
 
     # SIMD widths must be powers of two: odd K rows are gathered with a
     # masked load into the next power-of-two width, whose padded lanes are
@@ -539,7 +539,7 @@ def load_AB_cuda_core[
     comptime b_sw = make_swizzle[b_type, b_swizzle]()
     var b_smem_ptr = b_smem_tiles[stage].ptr
     comptime b_rows_per_thread = BN // WARP_SIZE
-    comptime b_tv = tl_col_major(Coord(Idx[WARP_SIZE], Idx[b_rows_per_thread]))
+    comptime b_tv = tl_col_major(Idx[WARP_SIZE], Idx[b_rows_per_thread])
 
     comptime for v in range(b_rows_per_thread):
         var n = b_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
@@ -1728,7 +1728,7 @@ def blackwell_tma_umma_warp_specialized_kernel[
     var num_active_experts = Int(expert_usage_stats[1])
 
     var b_offsets_tensor = TileTensor(
-        ptr=b_offsets, layout=row_major(Coord(num_active_experts + 1))
+        ptr=b_offsets, layout=row_major(num_active_experts + 1)
     )
     var scheduler = TileScheduler[
         static_MN=expert_m,
@@ -2204,7 +2204,7 @@ def _grouped_matmul_sm100_persistent[
 
     # Real global-memory views keep the actual K for the CUDA-core path.
     var a_gmem = TileTensor(a_ptr, row_major[num_experts * expert_m, K]())
-    var b_gmem = TileTensor(b_ptr, row_major(Coord(b_desc_rows, Idx[K])))
+    var b_gmem = TileTensor(b_ptr, row_major(b_desc_rows, Idx[K]))
     comptime a_gmem_layout = type_of(a_gmem.layout)
     comptime b_gmem_layout = type_of(b_gmem.layout)
 
@@ -2214,7 +2214,7 @@ def _grouped_matmul_sm100_persistent[
     # own row extent `b_desc_rows`, not `M_runtime`. For a normal grouped matmul
     # the two are equal; the LoRA-B QKV expand passes a `[3M, R]` planar activation
     # (`b_desc_rows == 3M`) so the `a_plane_splits` plane shifts stay in bounds.
-    var b_device = TileTensor(b_ptr, row_major(Coord(b_desc_rows, Idx[tma_K])))
+    var b_device = TileTensor(b_ptr, row_major(b_desc_rows, Idx[tma_K]))
     # When an elementwise epilogue owns every store, the kernel never writes to
     # `c_ptr` through the C TMA descriptor (see `multi_stage_store_C` /
     # `zero_output_epilogue`), so the caller is allowed to pass a dangling
@@ -2235,9 +2235,7 @@ def _grouped_matmul_sm100_persistent[
     comptime if has_epilogue:
         c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
         c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
-    var c_device = TileTensor(
-        c_desc_ptr, row_major(Coord(M_runtime, Idx[expert_m]))
-    )
+    var c_device = TileTensor(c_desc_ptr, row_major(M_runtime, Idx[expert_m]))
 
     var M = M_runtime
     var N = expert_m

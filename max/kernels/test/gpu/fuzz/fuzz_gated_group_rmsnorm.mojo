@@ -138,10 +138,10 @@ def run_one_case(
     var gate_view = gate_d.create_sub_buffer[dtype](
         spec.gate_off, rows * gstride - spec.gate_off
     )
-    var y_t = TileTensor(y_d, row_major(Coord(rows, inter)))
-    var gate_t = TileTensor(gate_view, row_major(Coord(rows, gstride)))
-    var w_t = TileTensor(w_d, row_major(Coord(inter)))
-    var out_t = TileTensor(out_d, row_major(Coord(rows, inter)))
+    var y_t = TileTensor(y_d, row_major(rows, inter))
+    var gate_t = TileTensor(gate_view, row_major(rows, gstride))
+    var w_t = TileTensor(w_d, row_major(inter))
+    var out_t = TileTensor(out_d, row_major(rows, inter))
 
     def gate_aligned[
         width: Int, alignment: Int

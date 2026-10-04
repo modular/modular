@@ -475,11 +475,11 @@ def run_one_case(
         blocks_device, BlocksLayout(blocks_shape, blocks_strides)
     )
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Int64(batch_size))
     )
     var lookup_table = TileTensor(
         lookup_table_device,
-        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
     var kv_collection = Collection(
         blocks.as_unsafe_any_origin(),

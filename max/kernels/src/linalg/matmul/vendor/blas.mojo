@@ -387,7 +387,7 @@ def _get_global_handle[
 
 # A disengaged `_ComptimeConditionalTileTensor` stores nothing, so the layout
 # of an absent scale-factor argument only has to name a concrete type.
-comptime _NoScaleFactorsLayout = type_of(row_major(Coord(Idx[0], Idx[0])))
+comptime _NoScaleFactorsLayout = type_of(row_major(Idx[0], Idx[0]))
 
 
 def matmul[

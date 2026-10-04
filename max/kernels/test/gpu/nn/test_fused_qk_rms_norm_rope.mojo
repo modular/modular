@@ -170,13 +170,13 @@ def run_fused_qk_rms_norm_rope[
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
     var q_ragged_layout = row_major(
-        Coord(total_length, Idx[num_q_heads], Idx[head_size])
+        total_length, Idx[num_q_heads], Idx[head_size]
     )
     with q_in_device.map_to_host() as q_in_host:
         var q_in_tensor = TileTensor(q_in_host, q_ragged_layout)
         random(q_in_tensor)
 
-    var gamma_layout = row_major(Coord(Idx[head_size]))
+    var gamma_layout = row_major(Idx[head_size])
     with gamma_q_device.map_to_host() as gamma_q_host:
         var gamma_q_tensor = TileTensor(gamma_q_host, gamma_layout)
         random(gamma_q_tensor)
@@ -184,20 +184,18 @@ def run_fused_qk_rms_norm_rope[
         var gamma_k_tensor = TileTensor(gamma_k_host, gamma_layout)
         random(gamma_k_tensor)
 
-    var freqs_layout = row_major(Coord(Idx[max_seq_len], Idx[rope_dim]))
+    var freqs_layout = row_major(Idx[max_seq_len], Idx[rope_dim])
     with freqs_device.map_to_host() as freqs_host:
         var freqs_init = TileTensor(freqs_host, freqs_layout)
         random(freqs_init)
 
     var kv_block_layout = row_major(
-        Coord(
-            Int64(num_paged_blocks),
-            Idx[2],
-            Int64(num_layers),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        Int64(num_paged_blocks),
+        Idx[2],
+        Int64(num_layers),
+        Idx[page_size],
+        Idx[kv_params.num_heads],
+        Idx[kv_params.head_size],
     )
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](
         kv_block_shape.flattened_length()
@@ -211,7 +209,7 @@ def run_fused_qk_rms_norm_rope[
     ctx.synchronize()
 
     var paged_lut_layout = row_major(
-        Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+        Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])
     )
     with paged_lut_device.map_to_host() as paged_lut_host:
         var paged_lut_tensor = TileTensor(paged_lut_host, paged_lut_layout)
@@ -249,7 +247,7 @@ def run_fused_qk_rms_norm_rope[
     var freqs_tt = TileTensor(freqs_device, freqs_tile_layout)
 
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Int64(batch_size))
     ).as_imm()
     var paged_lut_tensor = TileTensor(
         paged_lut_device, row_major(paged_lut_layout.shape_coord())
@@ -528,13 +526,13 @@ def run_fused_dual_qk_rms_norm_rope[
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
-    var freqs_layout = row_major(Coord(Idx[max_seq_len], Idx[rope_dim]))
+    var freqs_layout = row_major(Idx[max_seq_len], Idx[rope_dim])
     with freqs_device.map_to_host() as freqs_host:
         var freqs_init = TileTensor(freqs_host, freqs_layout)
         random(freqs_init)
 
     var paged_lut_layout = row_major(
-        Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+        Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])
     )
     with paged_lut_device.map_to_host() as paged_lut_host:
         var paged_lut_tensor_h = TileTensor(paged_lut_host, paged_lut_layout)
@@ -553,7 +551,7 @@ def run_fused_dual_qk_rms_norm_rope[
     var gamma_main_k_device = ctx.enqueue_create_buffer[dtype](head_size)
     var gamma_index_q_device = ctx.enqueue_create_buffer[dtype](head_size)
     var gamma_index_k_device = ctx.enqueue_create_buffer[dtype](head_size)
-    var gamma_layout = row_major(Coord(Idx[head_size]))
+    var gamma_layout = row_major(Idx[head_size])
     for gamma_dev in [
         gamma_main_q_device,
         gamma_main_k_device,
@@ -568,10 +566,10 @@ def run_fused_dual_qk_rms_norm_rope[
     var q_main_shape = IndexList[3](total_length, main_q_heads, head_size)
     var q_index_shape = IndexList[3](total_length, index_q_heads, head_size)
     var q_main_layout = row_major(
-        Coord(total_length, Idx[main_q_heads], Idx[head_size])
+        total_length, Idx[main_q_heads], Idx[head_size]
     )
     var q_index_layout = row_major(
-        Coord(total_length, Idx[index_q_heads], Idx[head_size])
+        total_length, Idx[index_q_heads], Idx[head_size]
     )
 
     var q_main_in_device = ctx.enqueue_create_buffer[dtype](
@@ -601,24 +599,20 @@ def run_fused_dual_qk_rms_norm_rope[
     # Per-band K caches: identical random init copied into a ref and a fused
     # buffer so the read-modify-write is comparable bit for bit.
     var main_kv_layout = row_major(
-        Coord(
-            Int64(num_paged_blocks),
-            Idx[2],
-            Int64(num_layers),
-            Idx[page_size],
-            Idx[main_kv_params.num_heads],
-            Idx[main_kv_params.head_size],
-        )
+        Int64(num_paged_blocks),
+        Idx[2],
+        Int64(num_layers),
+        Idx[page_size],
+        Idx[main_kv_params.num_heads],
+        Idx[main_kv_params.head_size],
     )
     var index_kv_layout = row_major(
-        Coord(
-            Int64(num_paged_blocks),
-            Idx[2],
-            Int64(num_layers),
-            Idx[page_size],
-            Idx[index_kv_params.num_heads],
-            Idx[index_kv_params.head_size],
-        )
+        Int64(num_paged_blocks),
+        Idx[2],
+        Int64(num_layers),
+        Idx[page_size],
+        Idx[index_kv_params.num_heads],
+        Idx[index_kv_params.head_size],
     )
     var main_kv_host = ctx.enqueue_create_host_buffer[dtype](
         main_kv_block_shape.flattened_length()
@@ -689,7 +683,7 @@ def run_fused_dual_qk_rms_norm_rope[
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Int64(batch_size))
     ).as_imm()
     var paged_lut_tt = TileTensor(
         paged_lut_device, row_major(paged_lut_layout.shape_coord())

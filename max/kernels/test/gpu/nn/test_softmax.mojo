@@ -639,7 +639,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     # GPU output.
     var out_device = ctx.enqueue_create_buffer[type](length)
 
-    var rt_layout = row_major(Coord(batch_size, vocab_size))
+    var rt_layout = row_major(batch_size, vocab_size)
     var in_tt = TileTensor(in_device, rt_layout)
     var out_tt = TileTensor(out_device, rt_layout)
 

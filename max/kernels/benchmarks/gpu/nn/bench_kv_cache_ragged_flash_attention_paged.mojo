@@ -225,7 +225,7 @@ def execute_kv_cache_ragged_flash_attention[
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
     var output_device_tensor = TileTensor(
         output_dev_buffer,
-        row_major(Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim])),
+        row_major(total_seq_len, Idx[num_q_heads], Idx[head_dim]),
     )
     # Paged LUT allocation. The LUT row stride (columns per sequence)
     # must satisfy `PagedKVCache.populate`'s SIMD-path contract: round
@@ -248,7 +248,7 @@ def execute_kv_cache_ragged_flash_attention[
     var paged_lut_host_ptr = List(length=paged_lut_size, fill=UInt32(0))
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr,
-        row_major(Coord(_ri(batch_size), _ri(paged_lut_cols))),
+        row_major(_ri(batch_size), _ri(paged_lut_cols)),
     )
     var paged_lut_set = Set[Int]()
     for bs in range(batch_size):
@@ -303,7 +303,7 @@ def execute_kv_cache_ragged_flash_attention[
     )
     var paged_lut = TileTensor(
         paged_lut_dev_buffer,
-        row_major(Coord(Int64(batch_size), Int64(paged_lut_cols))),
+        row_major(Int64(batch_size), Int64(paged_lut_cols)),
     )
 
     # K and V occupy disjoint per-page regions; erased origins allow the
@@ -322,7 +322,7 @@ def execute_kv_cache_ragged_flash_attention[
     # Create tensors for flash_attention inputs
     var q_device_tensor = TileTensor(
         q_dev_buffer,
-        row_major(Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim])),
+        row_major(total_seq_len, Idx[num_q_heads], Idx[head_dim]),
     )
 
     var input_row_offsets_tensor = TileTensor(

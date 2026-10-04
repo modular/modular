@@ -82,10 +82,10 @@ def execute_sink_prefill_repro[
     )
 
     var input_row_offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var q_ragged = HostDeviceTileTensor[dtype](q_layout, ctx)
     var test_output = HostDeviceTileTensor[dtype](q_layout, ctx)
@@ -111,23 +111,19 @@ def execute_sink_prefill_repro[
 
     var kv_block_paged = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
     var paged_lut = HostDeviceTileTensor[.uint32](
         row_major(
-            Coord(
-                Int64(batch_size),
-                Int64(ceildiv(max_full_context_length, page_size)),
-            )
+            Int64(batch_size),
+            Int64(ceildiv(max_full_context_length, page_size)),
         ),
         ctx,
     )

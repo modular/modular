@@ -351,7 +351,7 @@ def naive_fa_decode_apple_core[
     # KV sub-tile layout: a 1D (_depth,) contiguous view of one token's K/V for
     # `kv_head`, reused for every key in this split. `block_paged_tile` infers
     # the type from this value; each lane loads its `EPL` chunk.
-    var kv_token_layout = row_major(Coord(_depth))
+    var kv_token_layout = row_major(_depth)
 
     # Replicated on every lane, so the running softmax needs no cross-lane comms.
     var m = NEG_INF
@@ -704,15 +704,15 @@ def naive_fa_decode_apple[
     # DeviceBuffer-as-pointer inside the kernels).
     var q_flat = TileTensor(
         q.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(Coord(Int(q.size()))),
+        row_major(q.size()),
     )
     var output_flat = TileTensor(
         output.ptr.as_unsafe_any_origin(),
-        row_major(Coord(Int(output.size()))),
+        row_major(output.size()),
     )
-    var o_partial_t = TileTensor(o_partial_dev, row_major(Coord(o_partial_n)))
-    var m_partial_t = TileTensor(m_partial_dev, row_major(Coord(ml_partial_n)))
-    var l_partial_t = TileTensor(l_partial_dev, row_major(Coord(ml_partial_n)))
+    var o_partial_t = TileTensor(o_partial_dev, row_major(o_partial_n))
+    var m_partial_t = TileTensor(m_partial_dev, row_major(ml_partial_n))
+    var l_partial_t = TileTensor(l_partial_dev, row_major(ml_partial_n))
     var o_partial_imm = o_partial_t.as_imm()
     var m_partial_imm = m_partial_t.as_imm()
     var l_partial_imm = l_partial_t.as_imm()

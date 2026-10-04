@@ -364,12 +364,10 @@ struct PreShuffledBGroupedGEMM[
             # written. That is what makes the uninitialized pad scale cells in
             # `sfa` (whose V# DOES extend to `sfa_padded_M`) safe — the C rows
             # they would feed are OOB-clamped and discarded.
-            var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-            var a_tile = TileTensor(
-                a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES]))
-            )
+            var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+            var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
             var b_pre_tile = TileTensor(
-                b_pre_ptr, row_major(Coord(Idx[1], Idx[N * K_BYTES]))
+                b_pre_ptr, row_major(Idx[1], Idx[N * K_BYTES])
             )
             # NOTE: the 2D `[MN_padded, K_SCALES]` shape is a fiction —
             # the buffer is in scale-4d byte order, not row-major. Only
@@ -379,7 +377,7 @@ struct PreShuffledBGroupedGEMM[
             # TODO: switch to a flat 1D uint8 tile so the layout stops
             # mis-suggesting row-major bytes.
             var sfa_tile = TileTensor(
-                sfa_ptr, row_major(Coord(Int(sfa_padded_M), Idx[K_SCALES]))
+                sfa_ptr, row_major(sfa_padded_M, Idx[K_SCALES])
             )
             var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
@@ -553,15 +551,15 @@ struct PreShuffledBGroupedGEMM[
         var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
         var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
 
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES])))
+        var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+        var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
         var b_pre_tile = TileTensor(
-            b_pre_ptr, row_major(Coord(Idx[1], Idx[N * K_BYTES]))
+            b_pre_ptr, row_major(Idx[1], Idx[N * K_BYTES])
         )
         # See persistent_kernel for why this 2D shape is a fiction.
         # TODO: switch to a flat 1D uint8 tile.
         var sfa_tile = TileTensor(
-            sfa_ptr, row_major(Coord(Int(sfa_padded_M), Idx[K_SCALES]))
+            sfa_ptr, row_major(sfa_padded_M, Idx[K_SCALES])
         )
         var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
@@ -952,10 +950,10 @@ def block_scaled_grouped_matmul_amd_kernel[
     var sfa_ptr = sfa_tensor.ptr + Int(a_start_row) * Int(K_SCALES)
     var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
 
-    var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-    var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[A_K_BYTES])))
+    var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+    var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
     var b_tile = TileTensor(b_ptr, row_major[N, K_BYTES]())
-    var sfa_tile = TileTensor(sfa_ptr, row_major(Coord(Int(M), Idx[K_SCALES])))
+    var sfa_tile = TileTensor(sfa_ptr, row_major(M, Idx[K_SCALES]))
     var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
 
     Kernel.run[

@@ -1074,11 +1074,11 @@ def fa_prefill_apple[
     # ragged/BSHD + q_row0 offset into each per-simdgroup tile base.
     var q_flat = TileTensor(
         q.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(Coord(Int(q.size()))),
+        row_major(q.size()),
     )
     var output_flat = TileTensor(
         output.ptr.as_unsafe_any_origin(),
-        row_major(Coord(Int(output.size()))),
+        row_major(output.size()),
     )
 
     # MODULAR_APPLE_FA_PREFILL_NUM_SIMDGROUPS={4,8,16,32} overrides the

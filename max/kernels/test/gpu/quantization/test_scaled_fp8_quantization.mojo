@@ -35,7 +35,7 @@ def test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
 ](ctx: DeviceContext, scale: Float32, m: Int, n: Int) raises:
-    var shape = row_major(Coord(Int64(m), Int64(n)))
+    var shape = row_major(Int64(m), Int64(n))
     var total_size = m * n
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
@@ -94,10 +94,8 @@ def test_dynamic_scaled_fp8_quant[
     comptime group_size: Int = NType.static_value
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
@@ -199,10 +197,8 @@ def test_dynamic_fp8_quant[
     comptime group_size: Int = NType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
@@ -321,10 +317,8 @@ def test_dynamic_fp8_quant_amax_floor[
     comptime below_floor = Scalar[in_dtype](1e-6)
     comptime above_floor = Scalar[in_dtype](0.5)
 
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
     var num_groups = Int(n.value()) // group_size
@@ -475,10 +469,8 @@ def test_batched_dynamic_fp8_quant[
     comptime group_size: Int = KType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    var shape = row_major(Coord(bs, m, k))
-    var scales_shape = row_major(
-        Coord(bs, Idx[KType.static_value // group_size], m)
-    )
+    var shape = row_major(bs, m, k)
+    var scales_shape = row_major(bs, Idx[KType.static_value // group_size], m)
     var total_size = Int(bs.value()) * Int(m.value()) * Int(k.value())
     var scales_size = (
         Int(bs.value()) * (Int(k.value()) // group_size) * Int(m.value())
@@ -599,10 +591,8 @@ def test_dynamic_fp8_quant_row_bounded[
     var rows = Int(m.value())
     var cols = Int(n.value())
     var num_groups = cols // group_size
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = rows * cols
     var scales_size = num_groups * rows
 
@@ -763,10 +753,8 @@ def test_dynamic_fp8_quant_near_zero[
     NaN/Inf flows into the output. A correct quant emits finite fp8 (the group
     is effectively zero → ~0). Asserts FINITENESS of every output element.
     """
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
@@ -857,10 +845,8 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     so the denormal-max overflow could still NaN here (the per-group near-zero
     test above does not reach it). Asserts FINITENESS of every output element.
     """
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 

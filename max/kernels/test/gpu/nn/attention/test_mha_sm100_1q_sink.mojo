@@ -191,7 +191,7 @@ def execute_1q_sink_test[
     var q_size = total_length * num_q_heads * head_size
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
     var q_host_tt = TileTensor(
-        q_host, row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        q_host, row_major(total_length, Idx[num_q_heads], Idx[head_size])
     )
     random(q_host_tt)
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
@@ -270,31 +270,27 @@ def execute_1q_sink_test[
     var input_row_offsets_tt = (
         TileTensor(
             input_row_offsets_dev,
-            row_major(Coord(Int64(len(input_row_offsets_dev)))),
+            row_major(Int64(len(input_row_offsets_dev))),
         )
         .as_imm()
         .as_unsafe_any_origin()
     )
     var cache_lengths_tt = (
-        TileTensor(
-            cache_lengths_dev, row_major(Coord(Int64(len(cache_lengths_dev))))
-        )
+        TileTensor(cache_lengths_dev, row_major(Int64(len(cache_lengths_dev))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var paged_lut_tt = (
-        TileTensor(
-            paged_lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
-        )
+        TileTensor(paged_lut_dev, row_major(Int64(batch_size), Int64(lut_cols)))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var kv_block_paged_tt = TileTensor(kv_block_dev, blocks_layout)
     var q_tt = TileTensor(
-        q_dev, row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        q_dev, row_major(total_length, Idx[num_q_heads], Idx[head_size])
     ).as_imm()
     var sinks_tt = (
-        TileTensor(sinks_dev, row_major(Coord(Int64(len(sinks_dev)))))
+        TileTensor(sinks_dev, row_major(Int64(len(sinks_dev))))
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -318,7 +314,7 @@ def execute_1q_sink_test[
     var test_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
     var test_out_tt = TileTensor(
         test_out_dev,
-        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
 
     if use_sink:
@@ -349,7 +345,7 @@ def execute_1q_sink_test[
     var ref_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
     var ref_out_tt = TileTensor(
         ref_out_dev,
-        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
 
     if use_sink:

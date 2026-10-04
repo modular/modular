@@ -579,7 +579,7 @@ def flare_mla_decoding[
 
     var valid_length = TileTensor(
         UnsafePointer[UInt32, MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(Idx[0])),
+        row_major(Idx[0]),
     )
 
     flare_mla_decoding_dispatch[
@@ -2629,9 +2629,7 @@ def _ragged_kv_view(
     """
     return TileTensor(
         rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
-        row_major(
-            Coord(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]()))
-        ),
+        row_major(Int(src.dim[0]()), Int(src.dim[1]()), Int(src.dim[2]())),
     )
 
 
@@ -2647,7 +2645,7 @@ def _ragged_offsets_view(
     """
     return TileTensor(
         rebind[UnsafePointer[UInt32, ImmutAnyOrigin]](src.ptr),
-        row_major(Coord(Int(src.dim[0]()))),
+        row_major(Int(src.dim[0]())),
     )
 
 
@@ -2664,7 +2662,7 @@ def _ragged_scales_view(
     """
     return TileTensor(
         rebind[UnsafePointer[Scalar[src.dtype], ImmutAnyOrigin]](src.ptr),
-        row_major(Coord(Int(src.dim[0]()), Int(src.dim[1]()))),
+        row_major(Int(src.dim[0]()), Int(src.dim[1]())),
     )
 
 

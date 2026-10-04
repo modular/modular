@@ -76,7 +76,7 @@ def _check_decomposition[
     var lut_columns = padded_lut_cols(num_used)
 
     var lut = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(1), Int64(lut_columns))), ctx
+        row_major(Int64(1), Int64(lut_columns)), ctx
     )
     var lut_host = lut.host_tensor()
     # Deliberately not the identity: a coordinate that ignored the lookup
@@ -85,22 +85,18 @@ def _check_decomposition[
         lut_host[0, c] = UInt32((c * 7 + 3) % num_used) if c < num_used else 0
     lut.to_device()
 
-    var cache_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(1))), ctx
-    )
+    var cache_lengths = HostDeviceTileTensor[.uint32](row_major(Int64(1)), ctx)
     cache_lengths.host_tensor()[0] = UInt32(num_used * page_size)
     cache_lengths.to_device()
 
     var blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_used),
-                Idx[2],
-                Int64(1),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_used),
+            Idx[2],
+            Int64(1),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )

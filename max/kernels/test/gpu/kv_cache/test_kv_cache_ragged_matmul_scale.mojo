@@ -183,14 +183,12 @@ def execute_matmul_k_cache_ragged_scale[
 
     var kv_block = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -256,7 +254,7 @@ def execute_matmul_k_cache_ragged_scale[
     )
     ctx.synchronize()
     var weight_host = TileTensor(
-        weight_host_ptr, row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size]))
+        weight_host_ptr, row_major(Idx[kv_hidden_size], Idx[hidden_size])
     )
     random(weight_host)
     var weight_device = ctx.enqueue_create_buffer[weight_dtype](weight_size)
@@ -265,10 +263,10 @@ def execute_matmul_k_cache_ragged_scale[
     # Initialize scales for blockwise scaling.
     var input_scale_cols = ragged_total_length
     var input_scale = HostDeviceTileTensor[scale_dtype](
-        row_major(Coord(Idx[input_scale_rows], input_scale_cols)), ctx
+        row_major(Idx[input_scale_rows], input_scale_cols), ctx
     )
     var weight_scale = HostDeviceTileTensor[scale_dtype](
-        row_major(Coord(Idx[weight_scale_rows], Idx[weight_scale_cols])), ctx
+        row_major(Idx[weight_scale_rows], Idx[weight_scale_cols]), ctx
     )
     random(input_scale.host_tensor())
     random(weight_scale.host_tensor())
@@ -276,7 +274,7 @@ def execute_matmul_k_cache_ragged_scale[
     weight_scale.to_device()
 
     var ref_output = HostDeviceTileTensor[dtype](
-        row_major(Coord(ragged_total_length, Idx[kv_hidden_size])), ctx
+        row_major(ragged_total_length, Idx[kv_hidden_size]), ctx
     )
     var hidden_state_ragged_tensor = (
         TileTensor(
@@ -293,7 +291,7 @@ def execute_matmul_k_cache_ragged_scale[
     var weight_device_tensor = (
         TileTensor(
             weight_device,
-            row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size])),
+            row_major(Idx[kv_hidden_size], Idx[hidden_size]),
         )
         .as_imm()
         .as_unsafe_any_origin()

@@ -86,9 +86,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
 
     # Shape info is derived from the TileLayout types below.
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value // 2]))
-    var b_shape = row_major(Coord(batch, n, Idx[KType.static_value // 2]))
-    var c_shape = row_major(Coord(batch, m, n))
+    var a_shape = row_major(batch, m, Idx[KType.static_value // 2])
+    var b_shape = row_major(batch, n, Idx[KType.static_value // 2])
+    var c_shape = row_major(batch, m, n)
 
     var a_size = Int(batch.value()) * Int(m.value()) * (KType.static_value // 2)
     var b_size = Int(batch.value()) * Int(n.value()) * (KType.static_value // 2)
@@ -113,24 +113,20 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        Coord(
-            Int(batch.value()),
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        batch.value(),
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Int(batch.value()),
-            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        batch.value(),
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -239,26 +235,22 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         ctx,
     )
 
-    var a_2d_shape = row_major(Coord(m, Idx[KType.static_value // 2]))
-    var b_2d_shape = row_major(Coord(n, Idx[KType.static_value // 2]))
-    var c_2d_shape = row_major(Coord(m, n))
+    var a_2d_shape = row_major(m, Idx[KType.static_value // 2])
+    var b_2d_shape = row_major(n, Idx[KType.static_value // 2])
+    var c_2d_shape = row_major(m, n)
     var a_scales_5d_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_5d_shape = row_major(
-        Coord(
-            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_batch_stride = Int(m.value()) * (KType.static_value // 2)

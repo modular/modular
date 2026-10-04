@@ -83,28 +83,22 @@ def _check_case[
         MutAnyOrigin,
     ]
     var hidden = HostDeviceTileTensor[input_dtype](
-        row_major(Coord(Int64(3), Idx[K])), ctx
+        row_major(Int64(3), Idx[K]), ctx
     )
     var weight = HostDeviceTileTensor[input_dtype](
-        row_major(Coord(Idx[N], Idx[K])), ctx
+        row_major(Idx[N], Idx[K]), ctx
     )
     var output = HostDeviceTileTensor[output_dtype](
-        row_major(Coord(Int64(3), Idx[Q])), ctx
+        row_major(Int64(3), Idx[Q]), ctx
     )
-    var bias = HostDeviceTileTensor[output_dtype](
-        row_major(Coord(Int64(N))), ctx
-    )
-    var offsets = HostDeviceTileTensor[DType.uint32](
-        row_major(Coord(Int64(3))), ctx
-    )
-    var lengths = HostDeviceTileTensor[DType.uint32](
-        row_major(Coord(Int64(2))), ctx
-    )
+    var bias = HostDeviceTileTensor[output_dtype](row_major(Int64(N)), ctx)
+    var offsets = HostDeviceTileTensor[DType.uint32](row_major(Int64(3)), ctx)
+    var lengths = HostDeviceTileTensor[DType.uint32](row_major(Int64(2)), ctx)
     var lut = HostDeviceTileTensor[DType.uint32](
-        row_major(Coord(Int64(2), Int64(2))), ctx
+        row_major(Int64(2), Int64(2)), ctx
     )
     var blocks = HostDeviceTileTensor[output_dtype](
-        row_major(Coord(Int64(5), Idx[2], Int64(2), Idx[PAGE], Idx[1], Idx[H])),
+        row_major(Int64(5), Idx[2], Int64(2), Idx[PAGE], Idx[1], Idx[H]),
         ctx,
     )
     comptime SA0 = 1
@@ -114,10 +108,10 @@ def _check_case[
     )
     comptime SB0 = N if mode == 2 else 2 if mode == 3 else 1
     var scale_a = HostDeviceTileTensor[DType.float32](
-        row_major(Coord(Int64(SA0), Int64(SA1))), ctx
+        row_major(Int64(SA0), Int64(SA1)), ctx
     )
     var scale_b = HostDeviceTileTensor[DType.float32](
-        row_major(Coord(Int64(SB0), Int64(1))), ctx
+        row_major(Int64(SB0), Int64(1)), ctx
     )
     for row in range(3):
         for k in range(K):

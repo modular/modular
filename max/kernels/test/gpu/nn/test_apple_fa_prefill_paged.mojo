@@ -227,7 +227,7 @@ def _run[
 
     # ---- ragged Q device tensor [total_tokens, num_q_heads, depth] ----- #
     var q_managed = HostDeviceTileTensor[qkv_type](
-        row_major(Coord(total_length, num_q_heads, depth)), ctx
+        row_major(total_length, num_q_heads, depth), ctx
     )
     var q_host = q_managed.host_tensor()
     for t in range(total_length):
@@ -239,12 +239,12 @@ def _run[
 
     # ---- ragged output tensor ------------------------------------------ #
     var o_managed = HostDeviceTileTensor[qkv_type](
-        row_major(Coord(total_length, num_q_heads, depth)), ctx
+        row_major(total_length, num_q_heads, depth), ctx
     )
 
     # ---- input_row_offsets [batch+1] ----------------------------------- #
     var ro_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(batch_size + 1)), ctx
+        row_major(batch_size + 1), ctx
     )
     var ro_host = ro_managed.host_tensor()
     for i in range(batch_size + 1):

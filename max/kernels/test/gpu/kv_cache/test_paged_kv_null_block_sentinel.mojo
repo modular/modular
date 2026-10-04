@@ -89,7 +89,7 @@ def run_null_block_test[
     # only real entry is the null block.
     var lut_columns = padded_lut_cols(total_num_real_pages + 4)
     var lut = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(1), Int64(lut_columns))), ctx
+        row_major(Int64(1), Int64(lut_columns)), ctx
     )
     var lut_host = lut.host_tensor()
     for c in range(lut_columns):
@@ -98,23 +98,19 @@ def run_null_block_test[
     lut.to_device()
 
     # cache_lengths: set to page_size so `base_kv_row=0` is in-cache.
-    var cache_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(1))), ctx
-    )
+    var cache_lengths = HostDeviceTileTensor[.uint32](row_major(Int64(1)), ctx)
     cache_lengths.host_tensor()[0] = UInt32(page_size)
     cache_lengths.to_device()
 
     # Allocate N+1 pages worth of block storage (null block at slot N).
     var blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(total_allocated),  # N+1 slots — null block at index N
-                Idx[2],
-                Int64(1),  # num_layers
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(total_allocated),  # N+1 slots — null block at index N
+            Idx[2],
+            Int64(1),  # num_layers
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )

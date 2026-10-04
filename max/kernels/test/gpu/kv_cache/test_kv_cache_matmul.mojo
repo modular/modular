@@ -69,7 +69,7 @@ def execute_fused_qkv_matmul[
     )
 
     var hidden_state = HostDeviceTileTensor[dtype](
-        row_major(Coord(batch_size, prompt_len, Idx[hidden_size])), ctx
+        row_major(batch_size, prompt_len, Idx[hidden_size]), ctx
     )
     random(hidden_state.host_tensor())
     hidden_state.to_device()
@@ -83,20 +83,20 @@ def execute_fused_qkv_matmul[
     with weight_device.map_to_host() as weight_host_buffer:
         var weight_host = TileTensor(
             weight_host_buffer,
-            row_major(Coord(Idx[fused_hidden_size], Idx[hidden_size])),
+            row_major(Idx[fused_hidden_size], Idx[hidden_size]),
         )
         random(weight_host)
 
     var ref_output = HostDeviceTileTensor[dtype](
-        row_major(Coord(batch_size * prompt_len, Idx[fused_hidden_size])), ctx
+        row_major(batch_size * prompt_len, Idx[fused_hidden_size]), ctx
     )
     var test_output = HostDeviceTileTensor[dtype](
-        row_major(Coord(batch_size, prompt_len, Idx[hidden_size])), ctx
+        row_major(batch_size, prompt_len, Idx[hidden_size]), ctx
     )
 
     var is_context_encoding = True
     var cache_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var cache_lengths_host = cache_lengths.host_tensor().as_unsafe_any_origin()
     for i in range(batch_size):
@@ -120,7 +120,7 @@ def execute_fused_qkv_matmul[
     )
     kv_block.to_device()
     var lookup_table = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var lookup_table_host = lookup_table.host_tensor().as_unsafe_any_origin()
 
@@ -145,11 +145,11 @@ def execute_fused_qkv_matmul[
     var hidden_state_device_tensor = hidden_state.device_tensor()
     var weight_device_tensor = TileTensor(
         weight_device,
-        row_major(Coord(Idx[fused_hidden_size], Idx[hidden_size])),
+        row_major(Idx[fused_hidden_size], Idx[hidden_size]),
     )
     var test_output_device_tensor = test_output.device_tensor()
     var valid_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     for i in range(batch_size):
         valid_lengths.host_tensor()[i] = UInt32(prompt_len)

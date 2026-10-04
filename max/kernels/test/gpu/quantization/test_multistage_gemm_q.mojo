@@ -410,14 +410,12 @@ def test_quantized[
     comptime BN = config.block_tile_shape[1]
 
     # Create TileTensors for the matmul operands
-    var a_tt_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_tt_shape = row_major(m, Idx[KType.static_value])
     var b_tt_shape = row_major(
-        Coord(
-            Idx[NType.static_value],
-            Idx[(KType.static_value // group_size) * group_bytes],
-        )
+        Idx[NType.static_value],
+        Idx[(KType.static_value // group_size) * group_bytes],
     )
-    var c_tt_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_tt_shape = row_major(m, Idx[NType.static_value])
 
     var c_dev_tt = TileTensor(c_device, c_tt_shape)
     var a_dev_tt = TileTensor(a_device, a_tt_shape)
@@ -530,9 +528,9 @@ def test_quantized[
 
     comptime kernels_ref = MatmulKernels[a_type, a_type, a_type, True]()
     comptime config_ref = kernels_ref.ampere_128x128_4
-    var c_ref_tt_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_ref_tt_shape = row_major(m, Idx[NType.static_value])
     var b_ref_tt_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
+        Idx[NType.static_value], Idx[KType.static_value]
     )
     var c_ref_tt = TileTensor(c_device_ref, c_ref_tt_shape)
     var b_ref_tt = TileTensor(b_device_ref, b_ref_tt_shape)

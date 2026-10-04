@@ -50,7 +50,7 @@ def test_sliced_add[
             c_host.raw_store(idx, 0.0)
 
     # Keep lora_end_idx on host; sliced_add reads this scalar on host.
-    var lora_end_idx = HostDeviceTileTensor[.int64](row_major(Coord(1)))
+    var lora_end_idx = HostDeviceTileTensor[.int64](row_major(1))
     var lora_end_idx_host = lora_end_idx.host_tensor()
     lora_end_idx_host.raw_store(0, Int64(batch_end_idx))
 

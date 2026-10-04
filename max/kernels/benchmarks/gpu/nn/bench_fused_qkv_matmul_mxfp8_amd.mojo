@@ -186,13 +186,13 @@ def bench_shape[
 
     var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
-    var iro_tt = TileTensor(iro_dev, row_major(Coord(Int64(batch_size + 1))))
+    var iro_tt = TileTensor(iro_dev, row_major(Int64(batch_size + 1)))
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_dev, row_major(Coord(Int64(batch_size)))
+        cache_lengths_dev, row_major(Int64(batch_size))
     )
 
     var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
@@ -206,7 +206,7 @@ def bench_shape[
     var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
     var lut_tensor = TileTensor(
-        lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
+        lut_dev, row_major(Int64(batch_size), Int64(lut_cols))
     )
 
     # ---- cache-busting inputs: fp8 operands plus both E8M0 scale tensors ----
@@ -231,14 +231,12 @@ def bench_shape[
 
     # ---- outputs: fused writes Q (+ IndexQ); unfused writes one per band ----
     var q_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](total_seq * q_dim)
-    var q_out = TileTensor(q_out_dev, row_major(Coord(total_seq, Idx[q_dim])))
+    var q_out = TileTensor(q_out_dev, row_major(total_seq, Idx[q_dim]))
     # IndexQ and the index cache are allocated for both variants: they are a few
     # hundred KiB, sit outside the timed closure, and keeping them unconditional
     # lets one closure body serve dense and sparse alike.
     var iq_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](total_seq * iq_dim)
-    var iq_out = TileTensor(
-        iq_out_dev, row_major(Coord(total_seq, Idx[iq_dim]))
-    )
+    var iq_out = TileTensor(iq_out_dev, row_major(total_seq, Idx[iq_dim]))
     # K, V and IndexK land in dense buffers on the unfused path; the fused
     # epilogue scatters them straight into the caches instead.
     var kv_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](
@@ -343,7 +341,7 @@ def bench_shape[
         var hs = (
             TileTensor(
                 cb_hs.offset_ptr(iteration),
-                row_major(Coord(total_seq, Idx[hidden])),
+                row_major(total_seq, Idx[hidden]),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -351,7 +349,7 @@ def bench_shape[
         var w = (
             TileTensor(
                 cb_w.offset_ptr(iteration),
-                row_major(Coord(Idx[n_total], Idx[hidden])),
+                row_major(Idx[n_total], Idx[hidden]),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -359,7 +357,7 @@ def bench_shape[
         var asf = (
             TileTensor(
                 cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-                row_major(Coord(total_seq, Idx[k_scales])),
+                row_major(total_seq, Idx[k_scales]),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -367,7 +365,7 @@ def bench_shape[
         var bsf = (
             TileTensor(
                 cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-                row_major(Coord(Idx[n_total], Idx[k_scales])),
+                row_major(Idx[n_total], Idx[k_scales]),
             )
             .as_imm()
             .as_unsafe_any_origin()
@@ -441,11 +439,11 @@ def bench_shape[
     }:
         var hs_tt = TileTensor(
             cb_hs.offset_ptr(iteration),
-            row_major(Coord(total_seq, Idx[hidden])),
+            row_major(total_seq, Idx[hidden]),
         ).bitcast[.uint8]()
         var asf_tt = TileTensor(
             cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-            row_major(Coord(total_seq, Idx[k_scales])),
+            row_major(total_seq, Idx[k_scales]),
         )
 
         # Q band: the only wide one (N=2048); the rest are N=128.
@@ -458,16 +456,14 @@ def bench_shape[
         ) raises {mut cb_w, mut cb_bsf, imm}:
             var w = TileTensor(
                 cb_w.offset_ptr(iteration) + col_off * hidden,
-                row_major(Coord(Idx[band_n], Idx[hidden])),
+                row_major(Idx[band_n], Idx[hidden]),
             )
             var bsf = TileTensor(
                 cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]]()
                 + col_off * k_scales,
-                row_major(Coord(Idx[band_n], Idx[k_scales])),
+                row_major(Idx[band_n], Idx[k_scales]),
             )
-            var c = TileTensor(
-                out_ptr, row_major(Coord(total_seq, Idx[band_n]))
-            )
+            var c = TileTensor(out_ptr, row_major(total_seq, Idx[band_n]))
             block_scaled_matmul_amd[lane_bytes=32](
                 c,
                 hs_tt,

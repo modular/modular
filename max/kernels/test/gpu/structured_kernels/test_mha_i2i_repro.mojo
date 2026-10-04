@@ -141,27 +141,19 @@ def run_partial_k_case[
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN_Q), Idx[num_heads], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN_Q), Idx[num_heads], Idx[depth]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(Int32(BATCH), Int32(n_alloc), Idx[NUM_KV_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(n_alloc), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(Int32(BATCH), Int32(n_alloc), Idx[NUM_KV_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(n_alloc), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN_Q), Idx[num_heads], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN_Q), Idx[num_heads], Idx[depth]),
     )
 
     var k_op = LayoutTensorMHAOperand(k_tt)

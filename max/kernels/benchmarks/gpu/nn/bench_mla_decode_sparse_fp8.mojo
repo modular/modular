@@ -210,14 +210,14 @@ def execute_mla_decode_sparse[
         blocks_device, blocks_layout_type(blocks_shape, blocks_strides)
     ).as_unsafe_any_origin()
     var cache_lengths = (
-        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table = (
         TileTensor(
             lookup_table_device,
-            row_major(Coord(Int64(batch_size), Int64(pages_per_seq))),
+            row_major(Int64(batch_size), Int64(pages_per_seq)),
         )
         .as_imm()
         .as_unsafe_any_origin()
@@ -232,11 +232,11 @@ def execute_mla_decode_sparse[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device, row_major(Coord(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH]))
+        q_device, row_major(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])
     )
     var out_tt = TileTensor(
         out_device,
-        row_major(Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+        row_major(total_q_tokens, Idx[num_heads], Idx[V_DEPTH]),
     )
     var row_offsets_tt = TileTensor(
         row_offsets_device, row_major(len(row_offsets_device))

@@ -677,7 +677,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
 # --- Launcher ---
 
-comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx[0], Idx[0])))
+comptime _ZeroSizedLayout = type_of(row_major(Idx[0], Idx[0]))
 
 
 def _allreduce_rmsnorm_fp8_launch[
@@ -961,12 +961,10 @@ def _launch_split_allreduce_rmsnorm_fp8[
     it avoids carrying bf16 residual data through scratch buffers.
     """
     # Construct TileTensor inputs for allreduce.
-    comptime _TT = type_of(
-        TileTensor(src_ptrs[0], row_major(Coord(rows, cols)))
-    )
+    comptime _TT = type_of(TileTensor(src_ptrs[0], row_major(rows, cols)))
     var input_buffers = Array[_, ngpus](
         fill_with=lambda (i: Int) -> _TT: TileTensor(
-            src_ptrs[i], row_major(Coord(rows, cols))
+            src_ptrs[i], row_major(rows, cols)
         )
     )
 
@@ -984,7 +982,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = TileTensor(
-        scale_output_1d._storage, row_major(Coord(rows, Idx[1]))
+        scale_output_1d._storage, row_major(rows, Idx[1])
     )
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
@@ -1440,17 +1438,13 @@ def allreduce_rmsnorm[
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
         rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var scale_output_1d = TileTensor(
         rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
             scale_output._storage
         ),
-        row_major(
-            Coord(
-                rows,
-            )
-        ),
+        row_major(rows),
     )
 
     _dispatch_fused_kernel[in_dtype, out_dtype, scales_dtype, ngpus](
@@ -1554,27 +1548,23 @@ def allreduce_residual_rmsnorm[
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
         rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var residual_2d = TileTensor(
         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](residual._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var residual_output_2d = TileTensor(
         rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
             residual_output._storage
         ),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var scale_output_1d = TileTensor(
         rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
             scale_output._storage
         ),
-        row_major(
-            Coord(
-                rows,
-            )
-        ),
+        row_major(rows),
     )
 
     _dispatch_fused_kernel[

@@ -185,25 +185,23 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     var kv_block_tensor = TileTensor(
         kv_block_device,
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[num_heads],
-                Idx[head_dim],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[num_heads],
+            Idx[head_dim],
         ),
     )
     var cache_lengths_tensor = (
-        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table_tensor = (
         TileTensor(
             lookup_table_device,
-            row_major(Coord(Int64(batch_size), Int64(pages_per_seq))),
+            row_major(Int64(batch_size), Int64(pages_per_seq)),
         )
         .as_imm()
         .as_unsafe_any_origin()

@@ -378,16 +378,14 @@ def bench_preb[
     ctx.enqueue_memset(cb_a_sc.device_buffer(), UInt8(127))
     ctx.enqueue_memset(cb_b_sc.device_buffer(), UInt8(127))
 
-    var aoff_tt = TileTensor(
-        a_offsets_dev, row_major(Coord(num_active_experts + 1))
-    )
-    var ei_tt = TileTensor(expert_ids_dev, row_major(Coord(num_active_experts)))
+    var aoff_tt = TileTensor(a_offsets_dev, row_major(num_active_experts + 1))
+    var ei_tt = TileTensor(expert_ids_dev, row_major(num_active_experts))
 
     @inline(.always)
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
         var a_tt = TileTensor[mut=False](
             cb_a.offset_ptr(iteration),
-            row_major(Coord(total_routes, Idx[packed_K])),
+            row_major(total_routes, Idx[packed_K]),
         )
         var b_pre_tt = TileTensor[mut=False](
             cb_b.offset_ptr(iteration), row_major[num_experts, N * packed_K]()
@@ -397,14 +395,14 @@ def bench_preb[
         # V# construction; the dtype is a wrapping convention.
         var sfa_tt = TileTensor[mut=False](
             cb_a_sc.offset_ptr(iteration).bitcast[Float8_e8m0fnu](),
-            row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+            row_major(num_experts * max_padded_M, Idx[scale_K]),
         )
         var sfb_tt = TileTensor[mut=False](
             cb_b_sc.offset_ptr(iteration).bitcast[Float8_e8m0fnu](),
             row_major[num_experts, N, scale_K](),
         )
         var c_tt = TileTensor[mut=True](
-            cb_c.offset_ptr(iteration), row_major(Coord(total_routes, Idx[N]))
+            cb_c.offset_ptr(iteration), row_major(total_routes, Idx[N])
         )
         # Pass lane_bytes explicitly: every format is uint8, and (N, packed_K)
         # is not unique across formats.
@@ -497,21 +495,21 @@ def bench_preb[
 
             var a_tt_v = TileTensor[mut=False](
                 cb_a.offset_ptr(0),
-                row_major(Coord(total_routes, Idx[packed_K])),
+                row_major(total_routes, Idx[packed_K]),
             )
             var b_pre_flat_v = TileTensor[mut=False](
                 verify_b_pre_dev, row_major[num_experts, N * packed_K]()
             )
             var sfa_tt_v = TileTensor[mut=False](
                 cb_a_sc.offset_ptr(0).bitcast[Float8_e8m0fnu](),
-                row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+                row_major(num_experts * max_padded_M, Idx[scale_K]),
             )
             var sfb_tt_v = TileTensor[mut=False](
                 cb_b_sc.offset_ptr(0).bitcast[Float8_e8m0fnu](),
                 row_major[num_experts, N, scale_K](),
             )
             var c_tt_v = TileTensor[mut=True](
-                verify_c_dev, row_major(Coord(total_routes, Idx[N]))
+                verify_c_dev, row_major(total_routes, Idx[N])
             )
 
             block_scaled_grouped_matmul_amd_preb[lane_bytes=lane_bytes](

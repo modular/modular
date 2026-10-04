@@ -55,10 +55,10 @@ def run_cpu[
     for c in range(intermediate):
         weight_heap[c] = Float32(((c * 5) % 41) + 10) * 0.05
 
-    var y_t = TileTensor(y_heap, row_major(Coord(n_rows, intermediate)))
-    var gate_t = TileTensor(gate_heap, row_major(Coord(n_rows, gate_stride)))
-    var weight_t = TileTensor(weight_heap, row_major(Coord(intermediate)))
-    var out_t = TileTensor(out_heap, row_major(Coord(n_rows, intermediate)))
+    var y_t = TileTensor(y_heap, row_major(n_rows, intermediate))
+    var gate_t = TileTensor(gate_heap, row_major(n_rows, gate_stride))
+    var weight_t = TileTensor(weight_heap, row_major(intermediate))
+    var out_t = TileTensor(out_heap, row_major(n_rows, intermediate))
 
     def gate_fn[
         width: Int, alignment: Int

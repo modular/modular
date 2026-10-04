@@ -163,14 +163,14 @@ def execute_dual_cache_fused[
 
     # ---- hidden state (M, K) fp8 ----
     var hs = HostDeviceTileTensor[DATA_DTYPE](
-        row_major(Coord(total_length, Idx[hidden])), ctx
+        row_major(total_length, Idx[hidden]), ctx
     )
     random(hs.host_tensor())
     var hs_dev = hs.device_tensor()
 
     # ---- concatenated weight (N_total, K) fp8 ----
     var w = HostDeviceTileTensor[DATA_DTYPE](
-        row_major(Coord(Idx[n_total], Idx[hidden])), ctx
+        row_major(Idx[n_total], Idx[hidden]), ctx
     )
     random(w.host_tensor())
     var w_dev = w.device_tensor()
@@ -181,13 +181,11 @@ def execute_dual_cache_fused[
     var m_sf = ceildiv(total_length, SF_MN_GROUP_SIZE)
     var input_scale = HostDeviceTileTensor[SCALE_DTYPE](
         row_major(
-            Coord(
-                m_sf,
-                Idx[k_sf],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            m_sf,
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
         ctx,
     )
@@ -198,13 +196,11 @@ def execute_dual_cache_fused[
     comptime n_sf = n_total // SF_MN_GROUP_SIZE
     var weight_scale = HostDeviceTileTensor[SCALE_DTYPE](
         row_major(
-            Coord(
-                Idx[n_sf],
-                Idx[k_sf],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[n_sf],
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
         ctx,
     )
@@ -214,27 +210,23 @@ def execute_dual_cache_fused[
     # ---- KV cache blocks ----
     var main_blocks = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[MAIN_KV_HEADS],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[MAIN_KV_HEADS],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
     var main_blocks_ref = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[MAIN_KV_HEADS],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[MAIN_KV_HEADS],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
@@ -243,27 +235,23 @@ def execute_dual_cache_fused[
     # shape; the extra half is trailing capacity, not a V plane per page.
     var index_blocks = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[1],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[1],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
     var index_blocks_ref = HostDeviceTileTensor[KV_DTYPE](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[1],
-                Idx[HEAD_SIZE],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[1],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
@@ -352,18 +340,18 @@ def execute_dual_cache_fused[
 
     # ---- dual-cache fused output buffers (Q and IndexQ, separate) ----
     var fused_q_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[q_dim])), ctx
+        row_major(total_length, Idx[q_dim]), ctx
     )
     var fused_iq_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[iq_dim])), ctx
+        row_major(total_length, Idx[iq_dim]), ctx
     )
 
     # Q-only and IndexQ-only reference outputs.
     var q_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[q_dim])), ctx
+        row_major(total_length, Idx[q_dim]), ctx
     )
     var iq_out = HostDeviceTileTensor[OUT_DTYPE](
-        row_major(Coord(total_length, Idx[iq_dim])), ctx
+        row_major(total_length, Idx[iq_dim]), ctx
     )
 
     # ============ DUAL-CACHE FUSED RUN ============

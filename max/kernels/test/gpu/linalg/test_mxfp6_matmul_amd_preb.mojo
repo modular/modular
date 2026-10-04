@@ -312,10 +312,10 @@ def _test_case[
     # The scale path is format-independent: one E8M0 byte per 32 elements per
     # lane, identical for every f8f6f4 format.
     var sfa_h_tt = TileTensor(
-        sfa_h, row_major(Coord(Idx[1], Idx[M_static], Idx[scale_K]))
+        sfa_h, row_major(Idx[1], Idx[M_static], Idx[scale_K])
     )
     var sfb_h_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[1], Idx[N_static], Idx[scale_K]))
+        sfb_h, row_major(Idx[1], Idx[N_static], Idx[scale_K])
     )
     _ = Shuffler[1].preshuffle_scale_4d[MN=M_static, K_SCALES=scale_K](
         sfa_h_tt, sfa_pre_h
@@ -368,9 +368,7 @@ def _test_case[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(M_static, Idx[K_BYTES]))
-    ).as_imm()
+    var a_tt = TileTensor(a_d, row_major(M_static, Idx[K_BYTES])).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * K_BYTES]()
     ).as_imm()

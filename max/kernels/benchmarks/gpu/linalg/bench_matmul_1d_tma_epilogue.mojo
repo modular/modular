@@ -219,7 +219,7 @@ def bench_matmul_1d_tma_epilogue[
     var b_size = N * K
 
     # 1D bias layout: shape [N]
-    comptime bias_layout = row_major(Coord(Idx[N]))
+    comptime bias_layout = row_major(Idx[N])
 
     var cb_a = CacheBustingBuffer[dtype](a_size, simd_size, ctx)
     var cb_b = CacheBustingBuffer[dtype](b_size, simd_size, ctx)
@@ -282,7 +282,7 @@ def bench_matmul_1d_tma_epilogue[
             var epi_1 = Int64(1)
             var epi_n = Int64(N)
             var epilogue_for_gpu = TileTensor(
-                bias_tile.ptr, row_major(Coord(epi_1, epi_n))
+                bias_tile.ptr, row_major(epi_1, epi_n)
             ).as_imm()
             fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,
@@ -391,7 +391,7 @@ def bench_matmul_1d_tma_epilogue[
             var ver_epi_n = Int64(N)
             var ver_epilogue = TileTensor(
                 bias_ver_dev.unsafe_ptr(),
-                row_major(Coord(ver_epi_1, ver_epi_n)),
+                row_major(ver_epi_1, ver_epi_n),
             ).as_imm()
             fused_bias_residual_matmul_dispatch_sm100[
                 transpose_b=transpose_b,

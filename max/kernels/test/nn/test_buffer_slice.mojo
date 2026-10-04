@@ -69,7 +69,7 @@ def test_slice[
     )
     var start_tensor = TileTensor(
         start_tensor_mem,
-        row_major(Coord(outer_rank)),
+        row_major(outer_rank),
     )
 
     var end_tensor_mem = Array[Int, outer_rank](
@@ -77,7 +77,7 @@ def test_slice[
     )
     var end_tensor = TileTensor(
         end_tensor_mem,
-        row_major(Coord(outer_rank)),
+        row_major(outer_rank),
     )
 
     var step_tensor_mem = Array[Int, outer_rank](
@@ -85,7 +85,7 @@ def test_slice[
     )
     var step_tensor = TileTensor(
         step_tensor_mem,
-        row_major(Coord(outer_rank)),
+        row_major(outer_rank),
     )
 
     # Perform the slice even if we are testing the copy so we get the target size.

@@ -96,14 +96,14 @@ def run_gated_group_rmsnorm[
     ctx.enqueue_copy(gate_d, gate_h)
     ctx.enqueue_copy(weight_d, weight_h)
 
-    var y_t = TileTensor(y_d, row_major(Coord(n_rows, intermediate)))
+    var y_t = TileTensor(y_d, row_major(n_rows, intermediate))
     # Gate tile: shape (n_rows, gstride) with row stride `gstride`. The kernel
     # only indexes columns [0, intermediate), so `gstride > intermediate`
     # exercises the wide-stride access exactly (a split view of the fused
     # in-proj) with no pointer arithmetic.
-    var gate_t = TileTensor(gate_d, row_major(Coord(n_rows, gstride)))
-    var weight_t = TileTensor(weight_d, row_major(Coord(intermediate)))
-    var out_t = TileTensor(out_d, row_major(Coord(n_rows, intermediate)))
+    var gate_t = TileTensor(gate_d, row_major(n_rows, gstride))
+    var weight_t = TileTensor(weight_d, row_major(intermediate))
+    var out_t = TileTensor(out_d, row_major(n_rows, intermediate))
 
     def gate_aligned[
         width: Int, alignment: Int

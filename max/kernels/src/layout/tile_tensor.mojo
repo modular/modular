@@ -5097,7 +5097,7 @@ def flatten_leading[
         *Coord[Int64, layout._shape_types[layout.rank - 1]].element_types
     ]
     return rebind[tensor.ViewType[ResultLayout]](
-        tensor.reshape(row_major(Coord(merged, tensor.layout.shape[2]())))
+        tensor.reshape(row_major(merged, tensor.layout.shape[2]()))
     )
 
 

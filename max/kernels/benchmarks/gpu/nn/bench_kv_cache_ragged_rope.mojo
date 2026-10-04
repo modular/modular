@@ -169,12 +169,12 @@ def execute_kv_cache_ragged_rope[
         kv_block_device, BlocksLayout(blocks_shape, blocks_strides)
     ).as_unsafe_any_origin()
     var cache_lengths = (
-        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table = (
-        TileTensor(lookup_table_device, row_major(Coord(Int64(batch_size))))
+        TileTensor(lookup_table_device, row_major(Int64(batch_size)))
         .as_imm()
         .as_unsafe_any_origin()
     )

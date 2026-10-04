@@ -31,7 +31,7 @@ from quantization.qmatmul_k import (
 )
 
 
-comptime MatrixLayout = type_of(row_major(Coord(Int(0), Int(0))))
+comptime MatrixLayout = type_of(row_major(Int(0), Int(0)))
 
 
 def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
@@ -141,7 +141,7 @@ struct qgemm_Q4_0(QuantizedGemm):
                 block_ptr += 1
 
         return TileTensor(
-            b_ptr, row_major(Coord(N, k_groups * size_of[_block_Q4_0]()))
+            b_ptr, row_major(N, k_groups * size_of[_block_Q4_0]())
         )
 
     @staticmethod
@@ -234,7 +234,7 @@ struct qgemm_Q4_K(QuantizedGemm):
                 block_ptr += 1
 
         return TileTensor(
-            b_ptr, row_major(Coord(N, k_groups * size_of[_block_Q4_K]()))
+            b_ptr, row_major(N, k_groups * size_of[_block_Q4_K]())
         )
 
     @staticmethod
@@ -362,7 +362,7 @@ struct qgemm_Q6_K(QuantizedGemm):
                 block_ptr += 1
 
         return TileTensor(
-            b_ptr, row_major(Coord(N, k_groups * size_of[_block_Q6_K]()))
+            b_ptr, row_major(N, k_groups * size_of[_block_Q6_K]())
         )
 
     @staticmethod
@@ -499,7 +499,7 @@ struct GemmContext[qgemm: QuantizedGemm]:
         var ptr = alloc[Float32](M * N)
         for i in range(M * N):
             ptr[i] = random_float64(min=-1.0, max=+1.0).cast[.float32]()
-        return TileTensor(ptr, row_major(Coord(M, N)))
+        return TileTensor(ptr, row_major(M, N))
 
     @staticmethod
     def _build_b_buffer(

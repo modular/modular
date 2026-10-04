@@ -175,14 +175,14 @@ def test_case_sampling[
     )
     var in_logits = TileTensor(
         in_logits_ptr,
-        row_major(Coord(batch_size, vocab_size)),
+        row_major(batch_size, vocab_size),
     )
     var token_ids_ptr = List(
         length=batch_size * 1, fill=Scalar[out_idx_type](0)
     )
     var token_ids = TileTensor(
         token_ids_ptr,
-        row_major(Coord(batch_size, Idx[1])),
+        row_major(batch_size, Idx[1]),
     )
     var p_thresholds_ptr = List(length=batch_size, fill=Scalar[dtype](0))
     var p_thresholds = TileTensor(

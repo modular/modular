@@ -2328,13 +2328,7 @@ def _multistage_gemm_runtime_impl[
 
         var tt_work_space = TileTensor(
             work_space_data,
-            row_major(
-                Coord(
-                    runtime_config.num_k_partitions,
-                    M,
-                    N,
-                )
-            ),
+            row_major(runtime_config.num_k_partitions, M, N),
         )
         _split_k_reduce_impl[
             elementwise_lambda_fn=elementwise_lambda_fn,

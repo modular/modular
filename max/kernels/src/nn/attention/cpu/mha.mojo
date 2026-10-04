@@ -616,9 +616,7 @@ struct _FlashAttention[
             sink_logit = sink_weight.value()
 
         for m in range(count_m):
-            var qk_row = TileTensor(
-                qk_row_ptr, row_major(Coord(Int64(kv_seq_cnt)))
-            )
+            var qk_row = TileTensor(qk_row_ptr, row_major(Int64(kv_seq_cnt)))
 
             @__parameter
             @inline(.always)

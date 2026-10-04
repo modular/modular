@@ -331,7 +331,7 @@ def _conv2d_fprop_impl[
     )
 
     # Create filter 2D view: [N, K] row-major (K-contiguous)
-    var filter_tensor = filter.reshape(row_major(Coord(N, K)))
+    var filter_tensor = filter.reshape(row_major(N, K))
 
     var filter_tma_op = create_tma_tile[
         KernelType.FilterTileLayout,
@@ -341,7 +341,7 @@ def _conv2d_fprop_impl[
     ](ctx, filter_tensor)
 
     # Create output 2D view: [M, N] row-major
-    var out_tensor = output.reshape(row_major(Coord(M, N)))
+    var out_tensor = output.reshape(row_major(M, N))
 
     comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
     comptime c_tma_tile_shape = config.output_tile_shape if (
@@ -567,7 +567,7 @@ def conv2d_fprop_with_residual[
     )
 
     # Filter TMA (2D row-major, K-contiguous)
-    var filter_tensor = filter.reshape(row_major(Coord(N, K)))
+    var filter_tensor = filter.reshape(row_major(N, K))
     var filter_tma_op = create_tma_tile[
         KernelType.FilterTileLayout,
         KernelType.FilterDescLayout,
@@ -576,7 +576,7 @@ def conv2d_fprop_with_residual[
     ](ctx, filter_tensor)
 
     # Output TMA (D) - 2D row-major
-    var out_tensor = output.reshape(row_major(Coord(M, N)))
+    var out_tensor = output.reshape(row_major(M, N))
     comptime c_tma_tile_shape_mma128 = Index(64, config.output_tile_shape[1])
     comptime c_tma_tile_shape = config.output_tile_shape if (
         MMA_M == 256 or config.cta_group == 1
@@ -590,7 +590,7 @@ def conv2d_fprop_with_residual[
     ](ctx, out_tensor)
 
     # Source TMA (C) - same shape and layout as output
-    var src_tensor = source.reshape(row_major(Coord(M, N)))
+    var src_tensor = source.reshape(row_major(M, N))
     var src_tma_op = create_tma_tile[
         KernelType.SrcTileLayout,
         KernelType.SrcDescLayout,

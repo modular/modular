@@ -43,16 +43,14 @@ def test_dynamic_fp4_quant[
 
     comptime out_dtype = DType.uint8
 
-    var input_layout = row_major(Coord(m, Idx[N]))
-    var output_layout = row_major(Coord(m, Idx[ceildiv(N, 2)]))
+    var input_layout = row_major(m, Idx[N])
+    var output_layout = row_major(m, Idx[ceildiv(N, 2)])
     var scales_layout = row_major(
-        Coord(
-            ceildiv(m, SF_MN_GROUP_SIZE),
-            ceildiv(n, SF_VECTOR_SIZE * SF_ATOM_K),
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(m, SF_MN_GROUP_SIZE),
+        ceildiv(n, SF_VECTOR_SIZE * SF_ATOM_K),
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var in_device = ctx.enqueue_create_buffer[in_dtype](input_layout.size())

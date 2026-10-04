@@ -2758,14 +2758,14 @@ def flash_attention_ragged[
     var k_operand = RaggedMHAOperand(
         TileTensor(
             k.ptr,
-            row_major(Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))),
+            row_major(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]())),
         ),
         lt_to_tt(cache_row_offsets),
     )
     var v_operand = RaggedMHAOperand(
         TileTensor(
             v.ptr,
-            row_major(Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))),
+            row_major(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]())),
         ),
         lt_to_tt(cache_row_offsets),
     )

@@ -252,35 +252,23 @@ def bench_conv2d[
 
     var input_tt = TileTensor(
         input_dev,
-        row_major(
-            Coord(Idx[batch], Idx[in_height], Idx[in_width], Idx[in_channels])
-        ),
+        row_major(Idx[batch], Idx[in_height], Idx[in_width], Idx[in_channels]),
     )
     var filter_rscf_tt = TileTensor(
         filter_rscf_dev,
         row_major(
-            Coord(
-                Idx[filter_r],
-                Idx[filter_s],
-                Idx[in_channels],
-                Idx[out_channels],
-            )
+            Idx[filter_r], Idx[filter_s], Idx[in_channels], Idx[out_channels]
         ),
     )
     var filter_fcrs_tt = TileTensor(
         filter_fcrs_dev,
         row_major(
-            Coord(
-                Idx[out_channels],
-                Idx[in_channels],
-                Idx[filter_r],
-                Idx[filter_s],
-            )
+            Idx[out_channels], Idx[in_channels], Idx[filter_r], Idx[filter_s]
         ),
     )
     var output_tt = TileTensor(
         output_dev,
-        row_major(Coord(Idx[batch], h_out, w_out, Idx[out_channels])),
+        row_major(Idx[batch], h_out, w_out, Idx[out_channels]),
     )
 
     var stride_idx = IndexList[2](stride_h, stride_w)

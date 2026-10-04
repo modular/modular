@@ -142,9 +142,9 @@ def run_case[
     # Static N and K (matched at comptime by small_MN_gemms_rule), dynamic M
     # (so the dispatcher uses runtime `m` -> `ceildiv(m, tile_m)` grid). The A
     # and C tensors report M rows even though their buffers hold M + guard_rows.
-    var a_tt = TileTensor(a_dev, row_major(Coord(Int64(M), Idx[K])))
-    var b_tt = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c_tt = TileTensor(c_dev, row_major(Coord(Int64(M), Idx[N])))
+    var a_tt = TileTensor(a_dev, row_major(Int64(M), Idx[K]))
+    var b_tt = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c_tt = TileTensor(c_dev, row_major(Int64(M), Idx[N]))
 
     matmul_dispatch_sm100[transpose_b=True](
         c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx
@@ -157,7 +157,7 @@ def run_case[
     # dispatcher selected: routing to small_MN_gemms is assumed (the tuning
     # table is consulted first under default build flags), not observed
     # directly.
-    var c_ref_tt = TileTensor(c_ref_dev, row_major(Coord(Int64(M), Idx[N])))
+    var c_ref_tt = TileTensor(c_ref_dev, row_major(Int64(M), Idx[N]))
     vendor_blas.matmul(
         ctx,
         c_ref_tt,

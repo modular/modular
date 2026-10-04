@@ -362,8 +362,8 @@ def grouped_matmul_amd_kernel_launcher[
     # Only perform matmul if expert_id is not -1
     # AMD matmul kernel performs the epilogue function
     if expert_id != -1:
-        var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
-        var a_tile = TileTensor(a_ptr, row_major(Coord(Int(M), Idx[K])))
+        var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+        var a_tile = TileTensor(a_ptr, row_major(M, Idx[K]))
         var b_tile = TileTensor(b_ptr, row_major[N, K]())
         comptime matmul = AMDMatmul[a_type, b_type, c_type, transpose_b, config]
         comptime if has_any_epilogue:
@@ -436,7 +436,7 @@ def grouped_matmul_amd_kernel_launcher[
 
             vectorize[vec_width](elements_to_process, process_elements)
         else:
-            var c_tile = TileTensor(c_ptr, row_major(Coord(Int(M), Idx[N])))
+            var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
             _ = c_tile.fill(0.0)
 
 
@@ -1144,7 +1144,7 @@ def grouped_matmul[
     with usage_stats_buf.map_to_host() as host:
         host[0] = UInt32(max_num_tokens_per_expert)
         host[1] = UInt32(num_active_experts)
-    var expert_usage_stats = TileTensor(usage_stats_buf, row_major(Coord(2)))
+    var expert_usage_stats = TileTensor(usage_stats_buf, row_major(2))
     grouped_matmul[
         elementwise_lambda_fn=elementwise_lambda_fn,
         has_epilogue_fn=has_epilogue_fn,
@@ -1636,15 +1636,15 @@ def grouped_matmul_vendor[
             # Create TileTensor views into the tensors for this expert
             var a_slice = TileTensor(
                 a.ptr + Int(token_start) * Int(a_K),
-                row_major(Coord(_ri(num_tokens), _ri(a_K))),
+                row_major(_ri(num_tokens), _ri(a_K)),
             )
             var b_slice = TileTensor(
                 b.ptr + Int(expert_id) * Int(b_N) * Int(b_K),
-                row_major(Coord(_ri(b_N), _ri(b_K))),
+                row_major(_ri(b_N), _ri(b_K)),
             )
             var c_slice = TileTensor(
                 c.ptr + Int(token_start) * Int(c_N),
-                row_major(Coord(_ri(num_tokens), _ri(c_N))),
+                row_major(_ri(num_tokens), _ri(c_N)),
             )
 
             vendor_matmul[use_tf32](

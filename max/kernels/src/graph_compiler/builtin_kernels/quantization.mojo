@@ -142,7 +142,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         var rows = in_shape.flattened_length() // in_shape[rank - 1]
         var scale_t = TileTensor(
             scales.to_tile_tensor[.int64]()._storage,
-            row_major(Coord(rows)),
+            row_major(rows),
         )
 
         @inline(.always)

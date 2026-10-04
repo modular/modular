@@ -96,9 +96,9 @@ def execute_ragged_flash_attention[
         total_length += valid_lengths[i]
 
     # Create host/device tensors for offset and length metadata.
-    var lengths_layout = row_major(Coord(Int64(batch_size)))
+    var lengths_layout = row_major(Int64(batch_size))
     var input_row_offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
         lengths_layout, ctx
@@ -172,14 +172,12 @@ def execute_ragged_flash_attention[
     # the limited host-pinned memory buffer cache
     var kv_block = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_blocks),
-                Int64(2),
-                Int64(num_layers),
-                Int64(max_seq_len_cache),
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_blocks),
+            Int64(2),
+            Int64(num_layers),
+            Int64(max_seq_len_cache),
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -219,7 +217,7 @@ def execute_ragged_flash_attention[
 
     # Create sink weights
     var sink_weights = HostDeviceTileTensor[dtype](
-        row_major(Coord(Int64(num_q_heads))), ctx
+        row_major(Int64(num_q_heads)), ctx
     )
 
     # Initialize sink weights with varying negative values

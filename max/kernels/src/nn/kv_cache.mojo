@@ -340,7 +340,7 @@ def _matmul_common[
         var c_ptr: UnsafePointer[
             Scalar[dtype], origin_of(c_alloc)
         ] = c_alloc.unsafe_ptr()
-        var c_nd = TileTensor(c_ptr, row_major(Coord(BS * SEQ_LEN, Idx[N])))
+        var c_nd = TileTensor(c_ptr, row_major(BS * SEQ_LEN, Idx[N]))
 
         matmul[
             transpose_b=True,
@@ -356,9 +356,7 @@ def _matmul_common[
         var c_device_buffer = context.value().enqueue_create_buffer[dtype](
             BS * SEQ_LEN * N
         )
-        var c_nd = TileTensor(
-            c_device_buffer, row_major(Coord(BS * SEQ_LEN, Idx[N]))
-        )
+        var c_nd = TileTensor(c_device_buffer, row_major(BS * SEQ_LEN, Idx[N]))
 
         matmul[
             transpose_b=True,

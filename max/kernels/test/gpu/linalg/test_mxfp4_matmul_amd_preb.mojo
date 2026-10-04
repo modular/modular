@@ -268,10 +268,10 @@ def _test_case[
         sfb_h[i] = UInt8(random_ui64(125, 129))
 
     var sfa_h_tt = TileTensor(
-        sfa_h, row_major(Coord(Idx[1], Idx[M_static], Idx[scale_K]))
+        sfa_h, row_major(Idx[1], Idx[M_static], Idx[scale_K])
     )
     var sfb_h_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[1], Idx[N_static], Idx[scale_K]))
+        sfb_h, row_major(Idx[1], Idx[N_static], Idx[scale_K])
     )
     _ = Shuffler[1].preshuffle_scale_4d[MN=M_static, K_SCALES=scale_K](
         sfa_h_tt, sfa_pre_h
@@ -328,9 +328,7 @@ def _test_case[
     )
 
     # ---- Preb kernel under test ----
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(M_static, Idx[packed_K]))
-    ).as_imm()
+    var a_tt = TileTensor(a_d, row_major(M_static, Idx[packed_K])).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * packed_K]()
     ).as_imm()

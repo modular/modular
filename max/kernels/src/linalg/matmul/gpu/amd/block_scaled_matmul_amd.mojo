@@ -2484,7 +2484,7 @@ def _launch_block_scaled_preb[
         total_scale_cells
     )
     var a_scales_pre_dst_tt = TileTensor[mut=True, Engine=_](
-        a_scales_pre_d, row_major(Coord(total_scale_cells))
+        a_scales_pre_d, row_major(total_scale_cells)
     )
     comptime PRESHUFFLE_BLOCK = 256
     ctx.enqueue_function[
@@ -2505,7 +2505,7 @@ def _launch_block_scaled_preb[
     )
 
     var a_scales_pre_view = TileTensor[mut=False, Engine=_](
-        a_scales_pre_d, row_major(Coord(a_scale_pad, Idx[SCALE_K]))
+        a_scales_pre_d, row_major(a_scale_pad, Idx[SCALE_K])
     )
 
     comptime out_dtype = type_of(c).dtype

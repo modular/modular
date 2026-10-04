@@ -68,7 +68,7 @@ def execute_flash_attention[
     q.to_device()
 
     var valid_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var valid_lengths_host = valid_lengths.host_tensor()
     for i in range(batch_size):
@@ -80,7 +80,7 @@ def execute_flash_attention[
 
     # initialize our KVCache
     var cache_lengths_managed = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size))), ctx
+        row_major(Int64(batch_size)), ctx
     )
     var cache_lengths_host = cache_lengths_managed.host_tensor()
     for i in range(batch_size):
@@ -89,14 +89,12 @@ def execute_flash_attention[
 
     var kv_block = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -104,7 +102,7 @@ def execute_flash_attention[
     kv_block.to_device()
 
     var lookup_table = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size), Int64(pages_per_seq))), ctx
+        row_major(Int64(batch_size), Int64(pages_per_seq)), ctx
     )
     var lookup_table_host = lookup_table.host_tensor()
     # Every page of every sequence gets a distinct physical block, so an

@@ -118,12 +118,8 @@ def _run_case[
         num_experts
     )
 
-    var a_host = TileTensor(
-        a_host_ptr, row_major(Coord(total_num_tokens, Idx[K]))
-    )
-    var b_host = TileTensor(
-        b_host_ptr, row_major(Coord(num_experts, Idx[N], Idx[K]))
-    )
+    var a_host = TileTensor(a_host_ptr, row_major(total_num_tokens, Idx[K]))
+    var b_host = TileTensor(b_host_ptr, row_major(num_experts, Idx[N], Idx[K]))
     random(a_host)
     random(b_host)
 
@@ -148,26 +144,22 @@ def _run_case[
     var eid_dev_buf = ctx.enqueue_create_buffer[.int32](num_experts)
 
     var a_dev = TileTensor[in_type](
-        a_dev_buf, row_major(Coord(total_num_tokens, Idx[K]))
+        a_dev_buf, row_major(total_num_tokens, Idx[K])
     )
     var b_dev = TileTensor[weight_type](
         b_dev_buf, row_major[num_experts, N, K]()
     )
     var c_disp_dev = TileTensor[out_type](
-        c_disp_dev_buf, row_major(Coord(total_num_tokens, Idx[N]))
+        c_disp_dev_buf, row_major(total_num_tokens, Idx[N])
     )
     var c_direct_dev = TileTensor[out_type](
-        c_direct_dev_buf, row_major(Coord(total_num_tokens, Idx[N]))
+        c_direct_dev_buf, row_major(total_num_tokens, Idx[N])
     )
     var c_ref_dev = TileTensor[out_type](
-        c_ref_dev_buf, row_major(Coord(total_num_tokens, Idx[N]))
+        c_ref_dev_buf, row_major(total_num_tokens, Idx[N])
     )
-    var off_dev = TileTensor[.uint32](
-        off_dev_buf, row_major(Coord(num_experts + 1))
-    )
-    var eid_dev = TileTensor[.int32](
-        eid_dev_buf, row_major(Coord(Idx[num_experts]))
-    )
+    var off_dev = TileTensor[.uint32](off_dev_buf, row_major(num_experts + 1))
+    var eid_dev = TileTensor[.int32](eid_dev_buf, row_major(Idx[num_experts]))
 
     ctx.enqueue_copy(a_dev_buf, a_host_ptr)
     ctx.enqueue_copy(b_dev_buf, b_host_ptr)
