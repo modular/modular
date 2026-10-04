@@ -22,13 +22,16 @@ pointer arithmetic, no shared memory).
 """
 
 from std.math import rsqrt
+from std.sys import size_of
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from std.testing import TestSuite, assert_almost_equal
 
 from nn.activations import silu
 
-from state_space.gated_group_rmsnorm import gated_group_rmsnorm_gpu
+from state_space.gated_group_rmsnorm import (
+    gated_group_rmsnorm_gpu,
+)
 
 
 def main() raises:
@@ -102,9 +105,30 @@ def run_gated_group_rmsnorm[
     var weight_t = TileTensor(weight_d, row_major(Coord(intermediate)))
     var out_t = TileTensor(out_d, row_major(Coord(n_rows, intermediate)))
 
-    gated_group_rmsnorm_gpu[y_dtype, gate_dtype, group_size](
-        out_t, y_t, gate_t, weight_t, n_rows, num_groups, eps, ctx
-    )
+    def gate_aligned[
+        width: Int, alignment: Int
+    ](n: Int, col: Int) {var gate_t} -> SIMD[gate_dtype, width]:
+        return gate_t.load[
+            width=width, alignment=alignment * size_of[gate_dtype]()
+        ]((n, col))
+
+    # A view that cannot prove 16-byte alignment claims none, as the graph
+    # compiler's fused input does.
+    def gate_unaligned[
+        width: Int, alignment: Int
+    ](n: Int, col: Int) {var gate_t} -> SIMD[gate_dtype, width]:
+        return gate_t.load[width=width, alignment=size_of[gate_dtype]()](
+            (n, col)
+        )
+
+    if gstride * size_of[gate_dtype]() % 16 == 0:
+        gated_group_rmsnorm_gpu[y_dtype, gate_dtype, group_size](
+            out_t, y_t, gate_aligned, weight_t, n_rows, num_groups, eps, ctx
+        )
+    else:
+        gated_group_rmsnorm_gpu[y_dtype, gate_dtype, group_size](
+            out_t, y_t, gate_unaligned, weight_t, n_rows, num_groups, eps, ctx
+        )
 
     ctx.enqueue_copy(out_h, out_d)
     ctx.synchronize()
@@ -237,7 +261,7 @@ def test_gated_group_rmsnorm_vector_tail() raises:
 
 
 def test_gated_group_rmsnorm_unaligned_gate_stride() raises:
-    """A gate row stride that breaks 16-byte alignment takes the scalar path."""
+    """A gate row stride that breaks 16-byte alignment claims no alignment."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return

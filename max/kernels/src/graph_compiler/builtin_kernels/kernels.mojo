@@ -4997,7 +4997,7 @@ struct GatedGroupRMSNorm[group_size: Int]:
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
         y: InputTensor[dtype=dtype, rank=2, ...],
-        gate: InputTensor[dtype=gate_dtype, rank=2, ...],
+        gate: FusedInputTensor[dtype=gate_dtype, rank=2, ...],
         weight: InputTensor[dtype=.float32, rank=1, ...],
         eps: Float32,
         ctx: DeviceContext,
@@ -5021,14 +5021,23 @@ struct GatedGroupRMSNorm[group_size: Int]:
 
         var output_tt = output.to_tile_tensor[.int32]()
         var y_tt = y.to_tile_tensor[.int32]()
-        var gate_tt = gate.to_tile_tensor[.int32]()
         var weight_tt = weight.to_tile_tensor[.int32]()
+
+        # The gate is often a slice of the in-projection output, fused into
+        # this input instead of being copied.
+        @inline(.always)
+        def gate_fn[
+            width: Int, alignment: Int
+        ](n: Int, col: Int) {var gate} -> SIMD[gate_dtype, width]:
+            return gate._fused_load[width, element_alignment=alignment](
+                (n, col)
+            )
 
         comptime if is_cpu[target]():
             gated_group_rmsnorm_cpu[dtype, gate_dtype](
                 output_tt,
                 y_tt,
-                gate_tt,
+                gate_fn,
                 weight_tt,
                 n_rows,
                 num_groups,
@@ -5036,10 +5045,10 @@ struct GatedGroupRMSNorm[group_size: Int]:
                 eps,
             )
         elif is_gpu[target]():
-            gated_group_rmsnorm_gpu[dtype, gate_dtype, gs](
+            gated_group_rmsnorm_gpu[dtype, gate_dtype, gs, type_of(gate_fn)](
                 output_tt,
                 y_tt,
-                gate_tt,
+                gate_fn,
                 weight_tt,
                 n_rows,
                 num_groups,

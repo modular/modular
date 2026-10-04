@@ -47,6 +47,7 @@ from max.graph import (
 )
 from max.nn.state_space import (
     causal_conv1d_varlen_fwd,
+    gated_group_rmsnorm,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace,
 )
 from torch.profiler import ProfilerActivity, profile
@@ -406,13 +407,16 @@ def _copies(launches: Counter[str]) -> list[str]:
     return [
         name
         for name in launches
-        if "causal_conv" not in name and "mamba2_ssd" not in name
+        if not any(
+            op in name
+            for op in ("causal_conv", "mamba2_ssd", "gated_group_rmsnorm")
+        )
     ]
 
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
 def test_fused_inputs_launch_no_copies(session: InferenceSession) -> None:
-    """Neither the operand slices nor the pool rows are copied."""
+    """Neither the operand slices, the gate slice nor the pool rows are copied."""
     s = _random_state([1] * 64, seed=7)
     ssd = session.load(_ssd_graph(fused=True))
     conv = session.load(_conv_graph(fused=True))
@@ -438,12 +442,23 @@ def test_fused_inputs_launch_no_copies(session: InferenceSession) -> None:
         s["has_initial_state"],
         s["layer"],
     ]
+    gate = session.load(_gate_graph(fused=True))
+    gate_inputs = [
+        torch.randn(64, _INTERMEDIATE).to(torch.bfloat16),
+        s["proj"],
+        torch.ones(_INTERMEDIATE),
+    ]
     launches: Counter[str] = Counter()
-    for model, tensors in ((ssd, ssd_inputs), (conv, conv_inputs)):
+    for model, tensors in (
+        (ssd, ssd_inputs),
+        (conv, conv_inputs),
+        (gate, gate_inputs),
+    ):
         launches += _launches(model, _to_device(tensors, model.input_devices))
     assert not _copies(launches), launches
     assert any("causal_conv" in name for name in launches)
     assert any("mamba2_ssd" in name for name in launches)
+    assert any("gated_group_rmsnorm_vec" in name for name in launches), launches
 
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
@@ -662,6 +677,119 @@ def test_unsliced_layer_rows_are_rejected(session: InferenceSession) -> None:
         model.execute(*buffers)
 
 
+def _gate_graph(fused: bool) -> Graph:
+    """The gated group RMSNorm on the in-projection's gate columns (fused) or
+    on a contiguous gate."""
+    gate_type = TensorType(
+        _BF16, ["n", _PROJ_WIDTH if fused else _INTERMEDIATE], device=_GPU
+    )
+    with Graph(
+        "gate_fused" if fused else "gate_plain",
+        input_types=[
+            TensorType(_BF16, ["n", _INTERMEDIATE], device=_GPU),
+            gate_type,
+            TensorType(DType.float32, [_INTERMEDIATE], device=_GPU),
+        ],
+    ) as graph:
+        y, gate, weight = (v.tensor for v in graph.inputs)
+        if fused:
+            gate = gate[:, :_INTERMEDIATE]
+        graph.output(
+            gated_group_rmsnorm(
+                y, gate, weight, eps=1e-5, group_size=_INTERMEDIATE // _GROUPS
+            )
+        )
+    return graph
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+@pytest.mark.parametrize("rows", [1, 64, 700], ids=["one", "decode", "prefill"])
+def test_gate_slice_matches_contiguous_gate(
+    session: InferenceSession, rows: int
+) -> None:
+    """The norm reads its gate in place out of the in-projection."""
+    gen = torch.Generator().manual_seed(rows)
+    proj = torch.randn(rows, _PROJ_WIDTH, generator=gen).to(torch.bfloat16)
+    y = torch.randn(rows, _INTERMEDIATE, generator=gen).to(torch.bfloat16)
+    weight = torch.rand(_INTERMEDIATE, generator=gen) + 0.5
+    fused = session.load(_gate_graph(fused=True))
+    plain = session.load(_gate_graph(fused=False))
+    (out_fused,) = fused.execute(
+        *_to_device([y, proj, weight], fused.input_devices)
+    )
+    gate = proj[:, :_INTERMEDIATE]
+    (out_plain,) = plain.execute(
+        *_to_device([y, gate, weight], plain.input_devices)
+    )
+    out_fused = torch.from_dlpack(out_fused).cpu()
+    assert torch.isfinite(out_fused.float()).all()
+    assert torch.equal(out_fused, torch.from_dlpack(out_plain).cpu())
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+@pytest.mark.parametrize("cast_to_float32", [False, True], ids=["abs", "cast"])
+def test_computed_gate_matches_materialized_gate(
+    session: InferenceSession, cast_to_float32: bool
+) -> None:
+    """A gate the graph computes, which has no storage to read, is correct."""
+    rows = 5
+    gen = torch.Generator().manual_seed(rows)
+    proj = torch.randn(rows, _PROJ_WIDTH, generator=gen).to(torch.bfloat16)
+    y = torch.randn(rows, _INTERMEDIATE, generator=gen).to(torch.bfloat16)
+    weight = torch.rand(_INTERMEDIATE, generator=gen) + 0.5
+    group_size = _INTERMEDIATE // _GROUPS
+
+    with Graph(
+        "gate_computed",
+        input_types=[
+            TensorType(_BF16, ["n", _INTERMEDIATE], device=_GPU),
+            TensorType(_BF16, ["n", _PROJ_WIDTH], device=_GPU),
+            TensorType(DType.float32, [_INTERMEDIATE], device=_GPU),
+        ],
+    ) as graph:
+        y_in, proj_in, w_in = (v.tensor for v in graph.inputs)
+        gate = proj_in[:, :_INTERMEDIATE]
+        gate = (
+            ops.cast(gate, DType.float32) if cast_to_float32 else ops.abs(gate)
+        )
+        graph.output(
+            gated_group_rmsnorm(
+                y_in, gate, w_in, eps=1e-5, group_size=group_size
+            )
+        )
+    computed = session.load(graph)
+    plain = session.load(_gate_graph(fused=False))
+
+    gate_values = proj[:, :_INTERMEDIATE]
+    gate_values = gate_values.float() if cast_to_float32 else gate_values.abs()
+    if cast_to_float32:
+        with Graph(
+            "gate_plain_fp32",
+            input_types=[
+                TensorType(_BF16, ["n", _INTERMEDIATE], device=_GPU),
+                TensorType(DType.float32, ["n", _INTERMEDIATE], device=_GPU),
+                TensorType(DType.float32, [_INTERMEDIATE], device=_GPU),
+            ],
+        ) as plain_graph:
+            y_in, g_in, w_in = (v.tensor for v in plain_graph.inputs)
+            plain_graph.output(
+                gated_group_rmsnorm(
+                    y_in, g_in, w_in, eps=1e-5, group_size=group_size
+                )
+            )
+        plain = session.load(plain_graph)
+
+    (out_computed,) = computed.execute(
+        *_to_device([y, proj, weight], computed.input_devices)
+    )
+    (out_plain,) = plain.execute(
+        *_to_device([y, gate_values, weight], plain.input_devices)
+    )
+    out_computed = torch.from_dlpack(out_computed).cpu()
+    assert torch.isfinite(out_computed.float()).all()
+    assert torch.equal(out_computed, torch.from_dlpack(out_plain).cpu())
+
+
 _STRIDED = ["transposed", "stepped"]
 
 
@@ -697,7 +825,7 @@ def test_non_contiguous_operands_match_contiguous(
 ) -> None:
     """Operands whose last dim is not contiguous still read right.
 
-    ``dt``, ``x``, ``B``, ``C`` and the conv input are transposed or
+    ``dt``, ``x``, ``B``, ``C``, the conv input and the gate are transposed or
     stepped views, so a vector load of a few elements of one row cannot be a
     contiguous read. Outputs and state pools must equal a run on contiguous
     copies.
@@ -830,3 +958,36 @@ def test_non_contiguous_operands_match_contiguous(
     )
     assert torch.equal(xs, xp)
     assert torch.equal(cp_s, cp_p)
+
+    # Gate.
+    rows_n = n
+    y = torch.randn(rows_n, _INTERMEDIATE, generator=gen).to(torch.bfloat16)
+    gate = torch.randn(rows_n, _INTERMEDIATE, generator=gen).to(torch.bfloat16)
+    weight = torch.rand(_INTERMEDIATE, generator=gen) + 0.5
+    with Graph(
+        "gate_strided",
+        input_types=[
+            TensorType(_BF16, ["n", _INTERMEDIATE], device=_GPU),
+            _storage_type([_INTERMEDIATE], kind),
+            TensorType(DType.float32, [_INTERMEDIATE], device=_GPU),
+        ],
+    ) as gate_graph:
+        y_in, g_in, w_in = (v.tensor for v in gate_graph.inputs)
+        gate_graph.output(
+            gated_group_rmsnorm(
+                y_in,
+                _view(g_in, kind),
+                w_in,
+                eps=1e-5,
+                group_size=_INTERMEDIATE // _GROUPS,
+            )
+        )
+    gs = session.load(gate_graph)
+    gp = session.load(_gate_graph(fused=False))
+    (go_s,) = gs.execute(
+        *_to_device([y, _storage(gate, kind), weight], gs.input_devices)
+    )
+    (go_p,) = gp.execute(*_to_device([y, gate, weight], gp.input_devices))
+    assert torch.equal(
+        torch.from_dlpack(go_s).cpu(), torch.from_dlpack(go_p).cpu()
+    )
