@@ -20,8 +20,8 @@ from std.memory import unsafe_stack_allocation
 
 from std.atomic import Atomic, Ordering
 from shmem.ep_comm import BLOCK_SCOPE
-from std.sys import simd_width_of
-from std.sys.info import is_amd_gpu, is_nvidia_gpu
+from std.sys import has_apple_gpu_accelerator, simd_width_of
+from std.sys.info import align_of, is_amd_gpu, is_nvidia_gpu, size_of
 
 import max.gpu.primitives.warp as warp
 import max.gpu.primitives.block as block
@@ -31,6 +31,7 @@ from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     block_idx,
+    grid_dim,
     warp_id,
     lane_id,
     thread_idx,
@@ -948,6 +949,8 @@ def single_group_router_kernel[
     scores_input_fn: OptionalReg[
         def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
+    score_splits: Int = 1,
+    apply_sigmoid: Bool = False,
 ](
     expert_indices: TileTensor[
         mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
@@ -965,6 +968,11 @@ def single_group_router_kernel[
 
     Fuses: corrected = scores + bias → top-k selection (`_block_top_k`) →
     weight = corrected - bias → optional normalize → scale.
+
+    With `score_splits > 1`, `expert_scores` holds `score_splits` stacked
+    `[num_tokens, n_routed_experts]` partial sums, which the kernel adds as
+    it loads them. With `apply_sigmoid`, it applies a sigmoid to each loaded
+    score. Both apply only when `scores_input_fn` is unset.
     """
 
     comptime assert expert_indices.flat_rank == 2
@@ -997,6 +1005,17 @@ def single_group_router_kernel[
     var warp_id = warp_id()
     var lane_id = lane_id()
 
+    @inline(.always)
+    def load_score(expert: Int) {imm} -> Scalar[scores_type]:
+        var score = Scalar[scores_type](0)
+        comptime for split in range(score_splits):
+            score += expert_scores.load[width=1](
+                (split * grid_dim.x + token_idx, expert)
+            )
+        comptime if apply_sigmoid:
+            score = sigmoid(score)
+        return score
+
     with PDL():
         var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
             scores_type
@@ -1007,7 +1026,7 @@ def single_group_router_kernel[
             comptime scores_fn = scores_input_fn.value()
             thread_expert_score = scores_fn[width=1]((token_idx, tid))
         else:
-            thread_expert_score = expert_scores.load[width=1]((token_idx, tid))
+            thread_expert_score = load_score(tid)
         var biased_score = thread_expert_score + thread_expert_bias
 
         var sorted_val3 = _block_top_k[n_experts_per_tok, num_threads](
@@ -1023,9 +1042,7 @@ def single_group_router_kernel[
                     comptime d_fn = scores_input_fn.value()
                     original_weight = d_fn[width=1]((token_idx, sorted_val3.p))
                 else:
-                    original_weight = expert_scores.load[width=1](
-                        (token_idx, sorted_val3.p)
-                    )
+                    original_weight = load_score(sorted_val3.p)
 
             var weights_sum = warp.lane_group_sum[num_lanes=sum_lanes](
                 original_weight
@@ -1243,6 +1260,8 @@ def single_group_router[
     scores_input_fn: OptionalReg[
         def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
     ] = None,
+    score_splits: Int = 1,
+    apply_sigmoid: Bool = False,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
@@ -1267,11 +1286,16 @@ def single_group_router[
         target: The target device to run the kernel on.
         scores_input_fn: Optional fused input lambda to load scores. If None,
             scores are loaded directly from expert_scores.
+        score_splits: Number of stacked partial-sum score blocks in
+            expert_scores to add on load.
+        apply_sigmoid: Whether to apply a sigmoid to each loaded score.
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
         expert_weights: Output expert weights. Shape: [num_tokens, n_experts_per_tok].
-        expert_scores: Input routing scores. Shape: [num_tokens, n_routed_experts].
+        expert_scores: Input routing scores. Shape:
+            [score_splits * num_tokens, n_routed_experts], the `score_splits`
+            partial-sum blocks stacked along the first axis.
         expert_bias: Per-expert correction bias used for selection only.
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
@@ -1279,9 +1303,21 @@ def single_group_router[
     comptime assert is_gpu[
         target
     ](), "Single group router is only supported on GPU"
+    comptime assert score_splits >= 1, "score_splits must be positive"
+    comptime assert (
+        score_splits == 1 or not scores_input_fn
+    ), "score_splits applies only to stacked scores, not scores_input_fn"
 
     if expert_scores.dim(0) == 0:
         return
+    if Int(expert_scores.dim(0)) % score_splits != 0:
+        raise Error(
+            "expert_scores rows (",
+            expert_scores.dim(0),
+            ") must be a multiple of score_splits (",
+            score_splits,
+            ")",
+        )
 
     var gpu_ctx = context
 
@@ -1307,6 +1343,8 @@ def single_group_router[
             norm_weights,
             num_threads,
             scores_input_fn=scores_input_fn,
+            score_splits=score_splits,
+            apply_sigmoid=apply_sigmoid,
         ]
 
         # launch the kernle using gpu_ctx
@@ -1316,10 +1354,239 @@ def single_group_router[
             expert_scores,
             expert_bias,
             routed_scaling_factor,
-            grid_dim=expert_scores.dim(0),
+            grid_dim=Int(expert_scores.dim(0)) // score_splits,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
+)
+@__name(t"router_gemv_partials_{hidden_type}_{weight_type}_t{num_threads}")
+def router_gemv_partials_kernel[
+    hidden_type: DType,
+    weight_type: DType,
+    PartialsLayoutType: TensorLayout,
+    HiddenLayoutType: TensorLayout,
+    GateWeightLayoutType: TensorLayout,
+    hidden_size: Int,
+    num_splits: Int,
+    tile_tokens: Int,
+    tile_experts: Int,
+    num_threads: Int,
+](
+    partials: TileTensor[
+        mut=True, weight_type, PartialsLayoutType, MutAnyOrigin
+    ],
+    hidden: TileTensor[hidden_type, HiddenLayoutType, ImmutAnyOrigin],
+    gate_weight: TileTensor[weight_type, GateWeightLayoutType, ImmutAnyOrigin],
+):
+    """Writes `partials[s, t, e] = hidden[t, slice s] . gate_weight[e, slice s]`.
+
+    Splits the hidden dimension into `num_splits` slices so that a decode
+    batch spreads over the whole GPU. Each block stages a
+    `tile_tokens x slice` block of hidden rows and a `tile_experts x slice`
+    block of gate rows in shared memory, then each thread computes one
+    (token, expert) dot product in `weight_type`.
+    """
+    comptime assert partials.flat_rank == 3
+    comptime assert hidden.flat_rank == 2
+    comptime assert gate_weight.flat_rank == 2
+    comptime assert num_threads == tile_tokens * tile_experts
+    comptime slice_len = hidden_size // num_splits
+    comptime assert slice_len * num_splits == hidden_size
+    comptime vec = 4
+    comptime assert slice_len % vec == 0
+    # Rows hold a whole number of vectors, so every vector read below is
+    # aligned to the vector size. The extra vector of padding spreads a
+    # warp's rows over distinct banks.
+    comptime stride = slice_len + vec
+    comptime vec_align = align_of[SIMD[weight_type, vec]]()
+
+    var num_tokens = Int(hidden.dim(0))
+    var first_expert = block_idx.x * tile_experts
+    var split = block_idx.y
+    var first_token = block_idx.z * tile_tokens
+    var k0 = split * slice_len
+    var tid = thread_idx.x
+
+    var w_smem = unsafe_stack_allocation[
+        tile_experts * stride,
+        Scalar[weight_type],
+        address_space=.SHARED,
+        alignment=vec_align,
+    ]()
+    var x_smem = unsafe_stack_allocation[
+        tile_tokens * stride,
+        Scalar[weight_type],
+        address_space=.SHARED,
+        alignment=vec_align,
+    ]()
+
+    with PDL():
+        for i in range(tid * vec, tile_experts * slice_len, num_threads * vec):
+            var r, k = divmod(i, slice_len)
+            var w = gate_weight.load[width=vec]((first_expert + r, k0 + k))
+            w_smem.store(r * stride + k, w)
+        for i in range(tid * vec, tile_tokens * slice_len, num_threads * vec):
+            var r, k = divmod(i, slice_len)
+            var x = SIMD[weight_type, vec](0)
+            if first_token + r < num_tokens:
+                x = hidden.load[width=vec]((first_token + r, k0 + k)).cast[
+                    weight_type
+                ]()
+            x_smem.store(r * stride + k, x)
+        barrier()
+
+        var t, e = divmod(tid, tile_experts)
+        var acc = SIMD[weight_type, vec](0)
+        for k in range(0, slice_len, vec):
+            acc += x_smem.load[width=vec, alignment=vec_align](
+                t * stride + k
+            ) * w_smem.load[width=vec, alignment=vec_align](e * stride + k)
+        if first_token + t < num_tokens:
+            partials.store(
+                (split, first_token + t, first_expert + e),
+                acc.reduce_add(),
+            )
+
+
+@inline(.always)
+def sigmoid_gemv_single_group_router[
+    hidden_type: DType,
+    weight_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    target: StaticString,
+](
+    expert_indices: TileTensor[mut=True, .int32, ...],
+    expert_weights: TileTensor[mut=True, weight_type, ...],
+    hidden: TileTensor[mut=False, hidden_type, ...],
+    gate_weight: TileTensor[mut=False, weight_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
+    routed_scaling_factor: Float32,
+    context: DeviceContext,
+) raises:
+    """Runs the sigmoid single-group MoE router, computing its gate GEMV.
+
+    Equivalent to `single_group_router` on
+    `sigmoid(hidden.cast[weight_type]() @ gate_weight.T)`. The GEMV splits
+    the hidden dimension across blocks and writes partial dot products; the
+    router kernel adds them and applies the sigmoid as it loads its scores,
+    so no separate reduction runs.
+
+    Parameters:
+        hidden_type: DType of the hidden states.
+        weight_type: DType of the gate weight, the scores and output weights.
+        bias_type: DType of the expert correction bias.
+        n_routed_experts: Total number of experts.
+        n_experts_per_tok: Experts selected per token.
+        norm_weights: If True, normalize selected weights to sum to 1 before
+            applying routed_scaling_factor.
+        target: The target device to run the kernel on.
+
+    Inputs:
+        expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
+        expert_weights: Output expert weights. Shape: [num_tokens, n_experts_per_tok].
+        hidden: Hidden states. Shape: [num_tokens, hidden_size].
+        gate_weight: Router weight. Shape: [n_routed_experts, hidden_size].
+        expert_bias: Per-expert correction bias used for selection only.
+        routed_scaling_factor: Scalar multiplied into every output weight.
+        context: The device context.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "Sigmoid GEMV single group router is only supported on GPU"
+    # TODO(GEX-3342): the warp bitonic top-k is wrong on Metal.
+    comptime assert (
+        not has_apple_gpu_accelerator()
+    ), "Sigmoid GEMV single group router is not supported on Apple GPUs"
+    comptime assert gate_weight.static_shape[0] == n_routed_experts
+    comptime hidden_size = gate_weight.static_shape[1]
+
+    var num_tokens = Int(hidden.dim(0))
+    if num_tokens == 0:
+        return
+
+    # The most hidden-dimension splits, up to 16, that leave every slice a
+    # whole number of 4-wide vectors.
+    comptime num_splits = 16 if hidden_size % 64 == 0 else (
+        8 if hidden_size % 32
+        == 0 else (
+            4 if hidden_size % 16 == 0 else (2 if hidden_size % 8 == 0 else 1)
+        )
+    )
+    comptime tile_tokens = 16
+    comptime tile_experts = 16
+    comptime assert n_routed_experts % tile_experts == 0
+    # The GEMV stages one slice of hidden and gate rows in shared memory; keep
+    # it within the 48 KiB every target allows without opting in.
+    comptime assert (tile_tokens + tile_experts) * (
+        hidden_size // num_splits + 4
+    ) * size_of[
+        weight_type
+    ]() <= 48 * 1024, "hidden_size slice does not fit in shared memory"
+    comptime gemv_threads = tile_tokens * tile_experts
+
+    var partials = context.enqueue_create_buffer[weight_type](
+        num_splits * num_tokens * n_routed_experts
+    )
+    var partials_by_split = TileTensor(
+        partials,
+        row_major((Idx[num_splits], num_tokens, Idx[n_routed_experts])),
+    )
+
+    with Trace[TraceLevel.OP, target=target](
+        "mo.moe.sigmoid_gemv_router_single_group", task_id=Int(context.id())
+    ):
+        comptime gemv = router_gemv_partials_kernel[
+            hidden_type,
+            weight_type,
+            partials_by_split.LayoutType,
+            hidden.LayoutType,
+            gate_weight.LayoutType,
+            hidden_size,
+            num_splits,
+            tile_tokens,
+            tile_experts,
+            gemv_threads,
+        ]
+        context.enqueue_function[gemv](
+            partials_by_split,
+            hidden,
+            gate_weight,
+            grid_dim=(
+                n_routed_experts // tile_experts,
+                num_splits,
+                ceildiv(num_tokens, tile_tokens),
+            ),
+            block_dim=gemv_threads,
+            attributes=pdl_launch_attributes(PDLLevel.ON),
+        )
+
+        single_group_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights=norm_weights,
+            target=target,
+            score_splits=num_splits,
+            apply_sigmoid=True,
+        ](
+            expert_indices,
+            expert_weights,
+            TileTensor(
+                partials,
+                row_major((num_splits * num_tokens, Idx[n_routed_experts])),
+            ).as_imm(),
+            expert_bias,
+            routed_scaling_factor,
+            context,
+        )
+    _ = partials^
 
 
 @__llvm_metadata(

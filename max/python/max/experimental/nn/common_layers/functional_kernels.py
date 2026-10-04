@@ -40,6 +40,9 @@ from max.nn.comm.ep.ep_kernels import (
     fused_silu_quantized as _fused_silu_quantized,
 )
 from max.nn.kernels import (
+    _moe_sigmoid_gemv_router,
+)
+from max.nn.kernels import (
     flare_mla_prefill_plan as _flare_mla_prefill_plan,
 )
 from max.nn.kernels import (
@@ -199,6 +202,22 @@ fused_silu_quantized = F.functional(_fused_silu_quantized)
 moe_router_group_limited = F.functional(_moe_router_group_limited)
 
 
+def _moe_sigmoid_gemv_router_rule(
+    hidden_states: TensorLayout,
+    gate_weight: TensorLayout,
+    expert_bias: TensorLayout,
+    *args: Any,
+) -> ActionSet:
+    # Sigmoid and top-k need the full gate dot product on every device, so
+    # this op runs on replicated inputs rather than on contraction shards.
+    return force_replicated_action_set(hidden_states, gate_weight, expert_bias)
+
+
+moe_sigmoid_gemv_router = F.functional(
+    _moe_sigmoid_gemv_router, rule=_moe_sigmoid_gemv_router_rule
+)
+
+
 def stack_device_shards(
     shards: Sequence[Tensor], axis: int, mesh: DeviceMesh
 ) -> Tensor:
@@ -219,6 +238,7 @@ __all__ = [
     "moe_create_indices",
     "moe_finalize",
     "moe_router_group_limited",
+    "moe_sigmoid_gemv_router",
     "rms_norm_key_cache",
     "rope_split_store_ragged",
     "stack_device_shards",

@@ -22,6 +22,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
     moe_create_indices,
     moe_finalize,
     moe_router_group_limited,
+    moe_sigmoid_gemv_router,
 )
 from max.experimental.nn.sequential import ModuleList
 from max.experimental.tensor import Tensor
@@ -161,6 +162,7 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
     """
 
     def __init__(self, config: NemotronHConfig) -> None:
+        self.fused = config.fused_router
         self.num_experts = config.num_experts
         self.num_experts_per_tok = config.num_experts_per_tok
         self.norm_topk_prob = config.norm_topk_prob
@@ -173,6 +175,15 @@ class NemotronHRouter(Module[[Tensor], tuple[Tensor, Tensor]]):
         )
 
     def forward(self, x: Tensor) -> tuple[Tensor, Tensor]:
+        if self.fused:
+            return moe_sigmoid_gemv_router(
+                x,
+                self.weight,
+                self.e_score_correction_bias,
+                self.num_experts_per_tok,
+                norm_weights=self.norm_topk_prob,
+                routed_scaling_factor=self.routed_scaling_factor,
+            )
         scores = F.sigmoid(F.cast(x, DType.float32) @ self.weight.T)
         return moe_router_group_limited(
             scores,

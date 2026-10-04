@@ -90,6 +90,7 @@ from nn.moe import (
     moe_create_indices,
     moe_finalize,
     router_group_limited,
+    sigmoid_gemv_single_group_router,
     sink_gate_router,
     single_group_router,
     single_group_router_eplb,
@@ -2223,6 +2224,49 @@ struct Struct_moe_single_group_router:
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
             expert_scores.to_tile_tensor[.int64]().as_imm(),
+            expert_bias.to_tile_tensor[.int64]().as_imm(),
+            routed_scaling_factor,
+            context,
+        )
+
+
+@extensibility.register("mo.moe.sigmoid.gemv.single.group.router")
+struct Struct_moe_sigmoid_gemv_single_group_router:
+    """Registers the `mo.moe.sigmoid.gemv.single.group.router` graph op.
+
+    Fuses the router GEMV and sigmoid into the single-group router.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        hidden_type: DType,
+        weight_type: DType,
+        bias_type: DType,
+        //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        norm_weights: Bool,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype=.int32, rank=2, ...],
+        expert_weights: OutputTensor[dtype=weight_type, rank=2, ...],
+        hidden: InputTensor[dtype=hidden_type, rank=2, ...],
+        gate_weight: InputTensor[dtype=weight_type, rank=2, ...],
+        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        routed_scaling_factor: Float32,
+        context: DeviceContext,
+    ) raises:
+        sigmoid_gemv_single_group_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights=norm_weights,
+            target=target,
+        ](
+            expert_indices.to_tile_tensor[.int64](),
+            expert_weights.to_tile_tensor[.int64](),
+            hidden.to_tile_tensor[.int64]().as_imm(),
+            gate_weight.to_tile_tensor[.int64]().as_imm(),
             expert_bias.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
