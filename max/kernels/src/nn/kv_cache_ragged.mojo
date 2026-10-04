@@ -41,15 +41,10 @@ from layout import (
     CoordLike,
     Idx,
     ImmTileTensor,
-    Layout,
-    LayoutTensor,
     RowMajorLayout,
-    RuntimeLayout,
     TileTensor,
     TensorLayout,
-    UNKNOWN_VALUE,
     coord_to_index_list,
-    lt_to_tt,
     row_major,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
@@ -984,14 +979,13 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             weight_dtype == .uint8
         ), "Expect GPTQ weights in an uint8 tensor."
 
-        # GPTQ remains on the legacy quantized launcher boundary.
         _qmatmul_common[
             group_size=group_size.value(),
             target=target,
             elementwise_lambda_fn=write_to_cache,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[.uint8]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[.uint8](),
             context,
         )
 
@@ -1125,8 +1119,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             target=target,
             elementwise_lambda_fn=write_to_cache,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[.uint8]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[.uint8](),
             context,
         )
 
@@ -2358,31 +2352,29 @@ def _qmatmul_common[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    weight: LayoutTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
     comptime assert is_gpu[target](), "GPTQ quantization only works on GPU."
 
-    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    comptime N = Int(weight.layout.shape[0])
-    var c_nd: LayoutTensor[
-        dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
-    ]
+    var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
+    comptime N = weight.static_shape[0]
+    var c_ptr: Optional[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]] = None
 
-    c_nd = {
-        None,
-        RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
-    }
+    # The epilogue owns all stores; C remains a null output view.
+    var c_nd = TileTensor(
+        c_ptr._unsafe_nullable(), row_major(TOTAL_SEQ_LEN, Idx[N])
+    )
 
     matmul_gpu_qint4_impl[
         target=target,
         group_size=group_size,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](
-        lt_to_tt(c_nd),
-        lt_to_tt(hidden_state),
-        lt_to_tt(weight),
+        c_nd,
+        hidden_state,
+        weight,
         context,
     )
 

@@ -49,6 +49,7 @@ from std.math import align_down
 from std.math.uutils import umod, ufloordiv
 from std.collections import OptionalReg
 from std.sys import (
+    align_of,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
@@ -82,7 +83,8 @@ from layout._utils import load_to_simd
 from layout.int_tuple import product, IntTuple
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
-from layout.tile_tensor import TileTensor
+from layout.tile_tensor import TileTensor, stack_allocation
+from layout.tile_layout import row_major
 from layout.swizzle import (
     ComposedLayout,
     Swizzle,
@@ -261,6 +263,17 @@ struct TensorCore[
     ]
     """LayoutTensor type for the C register tile."""
 
+    comptime c_fragment_layout = row_major[1, Self.c_reg_type.length]()
+    """Native scalar layout for the C register fragment."""
+
+    comptime c_fragment_type = TileTensor[
+        Self.out_type,
+        type_of(Self.c_fragment_layout),
+        MutUntrackedOrigin,
+        address_space=.LOCAL,
+    ]
+    """Native local-memory type for the C register fragment."""
+
     def __init__(out self):
         """
         Initialize a new TensorCore instance.
@@ -323,12 +336,14 @@ struct TensorCore[
     ](
         self,
         a: TileTensor[Self.in_type, ...],
-        out res: LayoutTensor[
+        out res: TileTensor[
             Self.in_type,
-            Layout.col_major(
-                1, num_matrix_reg[Self.shape[0], a.static_shape[1]]()
+            type_of(
+                row_major[
+                    1, num_matrix_reg[Self.shape[0], a.static_shape[1]]()
+                ]()
             ),
-            MutAnyOrigin,
+            MutUntrackedOrigin,
             address_space=.LOCAL,
         ],
     ):
@@ -341,7 +356,7 @@ struct TensorCore[
             a: An M-by-K scalar tile with arbitrary strides and static K.
 
         Returns:
-            The legacy register fragment accepted by `mma_op`.
+            The native register fragment accepted by `mma_op`.
 
         Constraints:
             The target must be AMD CDNA and M must be 16 or 32. K must be a
@@ -360,7 +375,10 @@ struct TensorCore[
             Int(a.dim[0]()) == Self.shape[0], "source must have MMA M rows"
         )
         comptime registers = num_matrix_reg[Self.shape[0], K]()
-        var fragment = type_of(res).stack_allocation()
+        var fragment = stack_allocation[Self.in_type, address_space=.LOCAL](
+            type_of(res).LayoutType()
+        )
+        comptime assert fragment.flat_rank == 2
         var row = lane_id() % Self.shape[0]
         var k_base = (lane_id() // Self.shape[0]) * registers
         comptime for register in range(registers):
@@ -373,15 +391,18 @@ struct TensorCore[
     ](
         self,
         b: TileTensor[Self.in_type, ...],
-        out res: LayoutTensor[
+        out res: TileTensor[
             Self.in_type,
-            Layout.row_major(
-                num_matrix_reg[
-                    b.static_shape[1 if Self.transpose_b else 0], Self.shape[1]
-                ](),
-                1,
+            type_of(
+                row_major[
+                    num_matrix_reg[
+                        b.static_shape[1 if Self.transpose_b else 0],
+                        Self.shape[1],
+                    ](),
+                    1,
+                ]()
             ),
-            MutAnyOrigin,
+            MutUntrackedOrigin,
             address_space=.LOCAL,
         ],
     ):
@@ -395,7 +416,7 @@ struct TensorCore[
                 Strides are arbitrary; K must be static.
 
         Returns:
-            The legacy register fragment accepted by `mma_op`.
+            The native register fragment accepted by `mma_op`.
 
         Constraints:
             The target must be AMD CDNA and N must be 16 or 32. K must be a
@@ -415,7 +436,10 @@ struct TensorCore[
             "source must have MMA N columns",
         )
         comptime registers = num_matrix_reg[K, Self.shape[1]]()
-        var fragment = type_of(res).stack_allocation()
+        var fragment = stack_allocation[Self.in_type, address_space=.LOCAL](
+            type_of(res).LayoutType()
+        )
+        comptime assert fragment.flat_rank == 2
         var col = lane_id() % Self.shape[1]
         var k_base = (lane_id() // Self.shape[1]) * registers
         comptime for register in range(registers):
@@ -825,7 +849,7 @@ struct TensorCore[
 
     @inline(.always)
     def load_c(
-        self, c: TileTensor[Self.out_type, ...], out res: Self.c_reg_tile_type
+        self, c: TileTensor[Self.out_type, ...], out res: Self.c_fragment_type
     ):
         """Loads a scalar matrix tile into the MMA accumulator registers.
 
@@ -852,7 +876,10 @@ struct TensorCore[
             and Int(c.dim[1]()) == Self.shape[1],
             "source must have the MMA accumulator shape",
         )
-        var fragment = type_of(res).stack_allocation()
+        var fragment = stack_allocation[Self.out_type, address_space=.LOCAL](
+            Self.c_fragment_layout
+        )
+        comptime assert fragment.flat_rank == 2
         comptime for register in range(registers):
             var row, col = Self._c_fragment_coord[register](lane_id())
             fragment[0, register] = c.load[width=1]((row, col))
@@ -932,21 +959,59 @@ struct TensorCore[
         d_dst: TileTensor[mut=True, Self.out_type, ...],
         d_src: LayoutTensor[Self.out_type, ...],
     ):
-        """Stores MMA accumulator registers into a scalar matrix tile.
+        """Stores a legacy accumulator fragment into a scalar matrix tile.
 
         Args:
             d_dst: The complete M-by-N output tile, with arbitrary strides.
-            d_src: The register fragment produced by `mma_op` or `load_c`.
+            d_src: A scalar legacy register fragment of shape (1, registers).
+        """
+        comptime registers = Self.c_reg_type.length
+        comptime assert d_src.shape[0]() == 1 and d_src.shape[1]() == registers
+        comptime assert d_src.element_size == 1
+        self._store_d_fragment(
+            d_dst,
+            rebind[Self.c_reg_type](d_src.vectorize[1, registers]()[0, 0]),
+        )
+
+    @inline(.always)
+    def store_d(
+        self,
+        d_dst: TileTensor[mut=True, Self.out_type, ...],
+        d_src: TileTensor[Self.out_type, ...],
+    ):
+        """Stores native MMA accumulator registers into a scalar matrix tile.
+
+        Args:
+            d_dst: The complete M-by-N output tile, with arbitrary strides.
+            d_src: The native register fragment produced by `mma_op` or `load_c`.
 
         Constraints:
-            The output tile must have scalar elements and the MMA M-by-N shape.
+            The source must have contiguous scalar registers and shape
+            (1, registers).
+            The destination must have scalar elements and the MMA M-by-N shape.
             NVIDIA supports float32 and float64; AMD supports float32.
         """
+        comptime registers = Self.c_reg_type.length
+        comptime assert d_src.rank == d_src.flat_rank == 2
+        comptime assert d_src.static_shape[0] == 1
+        comptime assert d_src.static_shape[1] == registers
+        comptime assert d_src.element_size == 1
+        comptime assert d_src.static_stride[1] == 1
+        var packed = d_src.vectorize[1, registers]()
+        comptime assert packed.flat_rank == 2
+        self._store_d_fragment(
+            d_dst, packed.load[alignment=align_of[Self.out_type]()]((0, 0))
+        )
+
+    @inline(.always)
+    def _store_d_fragment(
+        self,
+        d_dst: TileTensor[mut=True, Self.out_type, ...],
+        registers_src: Self.c_reg_type,
+    ):
         comptime assert d_dst.rank == d_dst.flat_rank == 2
         comptime assert d_dst.element_size == 1
         comptime registers = num_matrix_reg[Self.shape[0], Self.shape[1]]()
-        comptime assert d_src.shape[0]() == 1 and d_src.shape[1]() == registers
-        comptime assert d_src.element_size == 1
         comptime if is_nvidia_gpu():
             comptime assert (Self.out_type == .float32 and registers == 4) or (
                 Self.out_type == .float64 and registers in (2, 4)
@@ -966,7 +1031,7 @@ struct TensorCore[
         comptime rows = 8 if _is_amd_rdna() else 4
         comptime for register in range(registers):
             var row, col = Self._c_fragment_coord[register, rows](lane_id())
-            d_dst.store((row, col), d_src[0, register][0])
+            d_dst.store((row, col), registers_src[register])
 
     @inline(.always)
     def _store_d_amd(
@@ -1065,6 +1130,61 @@ struct TensorCore[
         d.vectorize[1, Self.c_reg_type.length]()[0, 0] = rebind[
             type_of(d.vectorize[1, Self.c_reg_type.length]()[0, 0])
         ](d_reg)
+        return d
+
+    @inline(.always)
+    def mma_op(
+        self,
+        a: TileTensor[Self.in_type, ...],
+        b: TileTensor[Self.in_type, ...],
+        c: TileTensor[Self.out_type, ...],
+        out res: Self.c_fragment_type,
+    ):
+        """Multiplies native register fragments and adds the accumulator.
+
+        Args:
+            a: A scalar fragment of shape (1, A registers).
+            b: A scalar fragment of shape (B registers, 1).
+            c: A scalar fragment of shape (1, C registers).
+
+        Returns:
+            A native local accumulator fragment in hardware register order.
+
+        Constraints:
+            Each fragment must contain exactly one contiguous MMA register
+            group.
+        """
+        comptime assert a.rank == a.flat_rank == 2 and a.element_size == 1
+        comptime assert b.rank == b.flat_rank == 2 and b.element_size == 1
+        comptime assert c.rank == c.flat_rank == 2 and c.element_size == 1
+        comptime assert a.static_shape[0] == 1
+        comptime assert a.static_shape[1] == Self.a_reg_type.length
+        comptime assert b.static_shape[0] == Self.b_reg_type.length
+        comptime assert b.static_shape[1] == 1
+        comptime assert c.static_shape[0] == 1
+        comptime assert c.static_shape[1] == Self.c_reg_type.length
+        comptime assert a.static_stride[1] == 1
+        comptime assert b.static_stride[0] == 1
+        comptime assert c.static_stride[1] == 1
+        var a_packed = a.vectorize[1, Self.a_reg_type.length]()
+        var b_packed = b.vectorize[Self.b_reg_type.length, 1]()
+        var c_packed = c.vectorize[1, Self.c_reg_type.length]()
+        comptime assert a_packed.flat_rank == 2
+        comptime assert b_packed.flat_rank == 2
+        comptime assert c_packed.flat_rank == 2
+        var d_reg = c_packed.load[alignment=align_of[Self.out_type]()]((0, 0))
+        mma(
+            d_reg,
+            a_packed.load[alignment=align_of[Self.in_type]()]((0, 0)),
+            b_packed.load[alignment=align_of[Self.in_type]()]((0, 0)),
+            d_reg,
+        )
+        var d = stack_allocation[Self.out_type, address_space=.LOCAL](
+            Self.c_fragment_layout
+        )
+        var d_packed = d.vectorize[1, Self.c_reg_type.length]()
+        comptime assert d_packed.flat_rank == 2
+        d_packed.store[alignment=align_of[Self.out_type]()]((0, 0), d_reg)
         return d
 
     @inline(.always)

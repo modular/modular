@@ -14,7 +14,14 @@
 from max.gpu import WARP_SIZE, lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import MI300X
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TileTensor,
+    row_major,
+    stack_allocation,
+)
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core import TensorCore
@@ -43,6 +50,7 @@ def test_load_a[
     comptime assert type_of(a).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var a_reg_tile = mma.load_a(a)
+    comptime assert a_reg_tile.rank == a_reg_tile.flat_rank == 2
     comptime assert a_lane.rank == a_lane.flat_rank == 1
     a_lane[lane_id()] = a_reg_tile[0, 0][0]
 
@@ -60,6 +68,7 @@ def test_load_b[
     comptime assert type_of(b).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
     var b_reg_tile = mma.load_b(b)
+    comptime assert b_reg_tile.rank == b_reg_tile.flat_rank == 2
     comptime assert b_lane.rank == b_lane.flat_rank == 1
     b_lane[lane_id()] = b_reg_tile[0, 0][0]
 
@@ -77,6 +86,7 @@ def test_load_c[
     comptime assert type_of(c).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
     var c_reg_tile = mma.load_c(c)
+    comptime assert c_reg_tile.rank == c_reg_tile.flat_rank == 2
     comptime assert c_lane.rank == c_lane.flat_rank == 2
     for i in range(4):
         c_lane[lane_id(), i] = c_reg_tile[0, i][0]
@@ -90,11 +100,9 @@ def test_store_d[
 ](d: TileTensor[dst_dtype, layout, MutAnyOrigin]):
     comptime assert type_of(d).LayoutType.all_dims_known
     var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
-    var src = (
-        type_of(mma)
-        .c_reg_tile_type.stack_allocation()
-        .fill(Scalar[dst_dtype](lane_id()))
-    )
+    var src = stack_allocation[dst_dtype, address_space=.LOCAL](
+        mma.c_fragment_layout
+    ).fill(Scalar[dst_dtype](lane_id()))
     mma.store_d(d, src)
 
 
@@ -124,8 +132,8 @@ def test_mma_op[
     var d_reg = mma.load_c(c)
 
     comptime for k in range(k_group_size):
-        var a_reg_k = a_reg.tile[1, a_reg.layout.size() // k_group_size](0, k)
-        var b_reg_k = b_reg.tile[b_reg.layout.size() // k_group_size, 1](k, 0)
+        var a_reg_k = a_reg.tile[1, mma.a_reg_type.length](0, k)
+        var b_reg_k = b_reg.tile[mma.b_reg_type.length, 1](k, 0)
         d_reg = mma.mma_op(a_reg_k, b_reg_k, d_reg)
 
     mma.store_d(d, d_reg)

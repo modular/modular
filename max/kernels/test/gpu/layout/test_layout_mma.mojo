@@ -42,7 +42,7 @@ def mma_layout_tc[
     comptime if is_nvidia_gpu():
         var a = tc.load_a(mat_a.to_layout_tensor())
         var b = tc.load_b(mat_b.to_layout_tensor())
-        var c = tc.load_c(mat_c)
+        var c = tc.load_c(mat_c.to_layout_tensor())
         tc.store_d(mat_c, tc.mma_op(a, b, c))
     else:
         var a = tc.load_a(mat_a)
@@ -201,6 +201,7 @@ def c_fragment_kernel[
         dtype, DType.float64 if dtype == .float64 else DType.float16, shape
     ]()
     var fragment = tc.load_c(c)
+    comptime assert fragment.rank == fragment.flat_rank == 2
     comptime registers = shape[0] * shape[1] // WARP_SIZE
     comptime for register in range(registers):
         loaded[lane_id(), register] = fragment[0, register][0]
@@ -311,6 +312,9 @@ def input_fragment_kernel[
     var a = tc.load_a(source)
     var b = tc.load_b(source.transpose())
     var b_transpose = tc_transpose.load_b(source)
+    comptime assert a.rank == a.flat_rank == 2
+    comptime assert b.rank == b.flat_rank == 2
+    comptime assert b_transpose.rank == b_transpose.flat_rank == 2
     comptime for register in range(loaded.static_shape[1]):
         loaded[lane_id(), register, 0] = a[0, register][0]
         loaded[lane_id(), register, 1] = b[register, 0][0]

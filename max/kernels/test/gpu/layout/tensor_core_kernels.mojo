@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.io.io import _printf
+from std.sys import align_of
 
 from max.gpu import WARP_SIZE
 from max.gpu.sync import barrier
@@ -151,12 +152,15 @@ def mma_write_operand_kernel[
     inst_shape: IndexList[3],
 ](output: TileTensor[dst_dtype, layout, MutAnyOrigin]):
     var mma = TensorCore[dst_dtype, dtype, inst_shape]()
-    var thread_reg_tile = mma.c_reg_tile_type.stack_allocation()
+    var thread_reg_tile = stack_allocation[dst_dtype, address_space=.LOCAL](
+        mma.c_fragment_layout
+    )
     var thread_reg_tile_v = thread_reg_tile.vectorize[
         1, mma.c_reg_type.length
     ]()
-    thread_reg_tile_v[0, 0] = rebind[type_of(thread_reg_tile_v[0, 0])](
-        mma.c_reg_type(thread_idx.x)
+    comptime assert thread_reg_tile_v.flat_rank == 2
+    thread_reg_tile_v.store[alignment=align_of[dst_dtype]()](
+        (0, 0), mma.c_reg_type(thread_idx.x)
     )
     mma.store_d(output, thread_reg_tile)
 

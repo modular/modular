@@ -486,8 +486,8 @@ def test_quantized[
                 epilogue_fn
             ),
         ](
-            a_dev_tt.as_imm().to_layout_tensor(),
-            b_dev_tt.bitcast[.uint8]().as_imm().to_layout_tensor(),
+            a_dev_tt.as_imm(),
+            b_dev_tt.bitcast[.uint8]().as_imm(),
             ctx,
         )
     elif use_dispatch:
