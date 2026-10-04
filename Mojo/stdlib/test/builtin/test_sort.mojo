@@ -67,10 +67,10 @@ def test_sort_small_3() raises:
     list.append(1)
     list.append(2)
 
-    def _less_than(lhs: Int, rhs: Int) -> Bool:
-        return lhs < rhs
-
-    _small_sort[length](list, _less_than)
+    _small_sort[length](
+        list,
+        lambda (lhs: Int, rhs: Int) -> Bool: lhs < rhs,
+    )
 
     var expected = [1, 2, 9]
     for i in range(length):
@@ -167,10 +167,7 @@ def test_sort3_dupe_elements() raises:
         for i in range(length):
             assert_equal(expected[i], list[i])
 
-    def _lt(lhs: Int, rhs: Int) -> Bool:
-        return lhs < rhs
-
-    test(_lt)
+    test(lambda (lhs: Int, rhs: Int) -> Bool: lhs < rhs)
 
 
 def test_sort4() raises:

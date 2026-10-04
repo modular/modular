@@ -474,28 +474,16 @@ def test_binary_search_by() raises:
     var data: List[Int] = [1, 3, 5, 7, 9, 11, 13]
     var span = Span(data)
 
-    def cmp_7(x: Int) -> Int:
-        return x - 7
-
-    var result = span.binary_search_by[cmp_7]()
+    var result = span.binary_search_by[lambda (x: Int) -> Int: x - 7]()
     assert_equal(3, result.value())
 
-    def cmp_6(x: Int) -> Int:
-        return x - 6
-
-    var result2 = span.binary_search_by[cmp_6]()
+    var result2 = span.binary_search_by[lambda (x: Int) -> Int: x - 6]()
     assert_true(not result2)
 
-    def cmp_1(x: Int) -> Int:
-        return x - 1
-
-    var result3 = span.binary_search_by[cmp_1]()
+    var result3 = span.binary_search_by[lambda (x: Int) -> Int: x - 1]()
     assert_equal(0, result3.value())
 
-    def cmp_13(x: Int) -> Int:
-        return x - 13
-
-    var result4 = span.binary_search_by[cmp_13]()
+    var result4 = span.binary_search_by[lambda (x: Int) -> Int: x - 13]()
     assert_equal(6, result4.value())
 
 
