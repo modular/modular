@@ -314,18 +314,19 @@ def _run_max_selection(
     return from_dlpack(compiled.execute(*args)[0]).cpu()
 
 
-def _run_max_pool_compress(
+def _compile_max_pool_compress(
     case: Case,
     weights: dict[str, torch.Tensor],
-    x: torch.Tensor,
-    row_offsets: torch.Tensor,
     max_pools: int,
     *,
+    num_sequences: int,
     quantize: bool = False,
-) -> tuple[torch.Tensor, ...]:
-    """Returns the pooled keys, and their FP8 cache rows when asked."""
-    device = Accelerator()
-    session = InferenceSession(devices=[device])
+) -> Model:
+    """Compiles the pool compression for ``num_sequences`` ragged sequences.
+
+    With ``quantize``, the graph also outputs the FP8 cache rows.
+    """
+    session = InferenceSession(devices=[Accelerator()])
     indexer = _max_indexer(case)
     indexer.load_state_dict(weights, strict=True)
 
@@ -335,9 +336,7 @@ def _run_max_pool_compress(
             TensorType(
                 DType.bfloat16, ["total_tokens", HIDDEN_SIZE], DeviceRef.GPU()
             ),
-            TensorType(
-                DType.uint32, [int(row_offsets.shape[0])], DeviceRef.GPU()
-            ),
+            TensorType(DType.uint32, [num_sequences + 1], DeviceRef.GPU()),
         ),
     ) as graph:
         grid = indexer.pool_grid(graph.inputs[1].tensor, max_pools)
@@ -351,7 +350,14 @@ def _run_max_pool_compress(
             outputs += [rows.cast(DType.bfloat16), scales]
         graph.output(*outputs)
 
-    compiled = session.load(graph, weights_registry=indexer.state_dict())
+    return session.load(graph, weights_registry=indexer.state_dict())
+
+
+def _run_max_pool_compress(
+    compiled: Model, x: torch.Tensor, row_offsets: torch.Tensor
+) -> tuple[torch.Tensor, ...]:
+    """Returns the pooled keys, and their FP8 cache rows if compiled with them."""
+    device = Accelerator()
     results = compiled.execute(
         _bf16_to_device(x, device),
         Buffer.from_numpy(row_offsets.numpy()).to(device),
@@ -441,7 +447,11 @@ def test_pool_compression_matches_reference(case: Case) -> None:
     x, _ = _activations(case.seq_len)
 
     max_pooled = _run_max_pool_compress(
-        case, weights, x, _row_offsets((case.seq_len,)), case.max_pools
+        _compile_max_pool_compress(
+            case, weights, case.max_pools, num_sequences=1
+        ),
+        x,
+        _row_offsets((case.seq_len,)),
     )[0]
 
     reference = _reference_module(case, weights)
@@ -494,16 +504,19 @@ def test_ape_is_load_bearing() -> None:
     x, _ = _activations(case.seq_len)
     offsets = _row_offsets((case.seq_len,))
 
-    with_ape = _run_max_pool_compress(
-        case, weights, x, offsets, case.max_pools
-    )[0]
     zeroed = dict(weights)
     zeroed["index_kpool_compress_ape"] = torch.zeros_like(
         weights["index_kpool_compress_ape"]
     )
-    without_ape = _run_max_pool_compress(
-        case, zeroed, x, offsets, case.max_pools
-    )[0]
+    with_ape_model = _compile_max_pool_compress(
+        case, weights, case.max_pools, num_sequences=1
+    )
+    without_ape_model = _compile_max_pool_compress(
+        case, zeroed, case.max_pools, num_sequences=1
+    )
+
+    with_ape = _run_max_pool_compress(with_ape_model, x, offsets)[0]
+    without_ape = _run_max_pool_compress(without_ape_model, x, offsets)[0]
 
     delta = (
         (with_ape.to(torch.float32) - without_ape.to(torch.float32))
@@ -662,11 +675,18 @@ def test_rebuild_versus_cached_pooled_keys() -> None:
     prefix = (case.seq_len // 2) // INDEX_KPOOL * INDEX_KPOOL
     prefix_pools = prefix // INDEX_KPOOL
 
+    rebuilt_model = _compile_max_pool_compress(
+        case, weights, case.max_pools, num_sequences=1
+    )
+    prefix_model = _compile_max_pool_compress(
+        case, weights, prefix_pools, num_sequences=1
+    )
+
     rebuilt = _run_max_pool_compress(
-        case, weights, x, _row_offsets((case.seq_len,)), case.max_pools
+        rebuilt_model, x, _row_offsets((case.seq_len,))
     )[0]
     from_prefix = _run_max_pool_compress(
-        case, weights, x[:prefix], _row_offsets((prefix,)), prefix_pools
+        prefix_model, x[:prefix], _row_offsets((prefix,))
     )[0]
 
     shared = rebuilt[0, :prefix_pools].view(torch.uint16)
@@ -696,12 +716,11 @@ def test_quantized_pooled_cache_rows() -> None:
     max_pools = case.max_pools
 
     pooled, rows, scales = _run_max_pool_compress(
-        case,
-        weights,
+        _compile_max_pool_compress(
+            case, weights, max_pools, num_sequences=1, quantize=True
+        ),
         x,
         _row_offsets((case.seq_len,)),
-        max_pools,
-        quantize=True,
     )
     indexer = _max_indexer(case)
 
