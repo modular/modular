@@ -301,9 +301,8 @@ struct PagedLookupTable[page_size: Int](Copyable):
     ) raises:
         var batch_size = len(prompt_lens)
 
-        var host_tensor = LayoutTensor[.uint32, type_of(self.paged_lut).layout](
-            self.paged_lut.host_ptr,
-            self.paged_lut._runtime_layout(),
+        var host_tensor = TileTensor(
+            self.paged_lut.host_ptr, row_major(Coord(self.paged_lut.shape))
         )
         # Sample one distinct paged block per page across the whole batch up
         # front, then hand them out in iteration order. Total pages needed is
