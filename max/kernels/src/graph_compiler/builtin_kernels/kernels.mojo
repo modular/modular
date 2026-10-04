@@ -132,7 +132,6 @@ from state_space.mamba2_ssd_scan import (
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_fwd_gpu,
-    causal_conv1d_varlen_fwd_seqparallel_gpu,
 )
 from max.runtime.tracing import trace_arg
 from extensibility import (
@@ -4807,9 +4806,16 @@ struct CausalConv1DVarlenFwd[
         # folded into its loads instead of being copied.
         @inline(.always)
         def x_fn[
-            width: Int, alignment: Int
+            width: Int, _alignment: Int
         ](i: Int, j: Int) {var x} -> SIMD[dtype, width]:
-            return x._fused_load[width, element_alignment=alignment]((i, j))
+            # A fused load applies its slice offset inside the functor. The
+            # slice pointer is the backing base, so a wide load can be
+            # misaligned even when that base is not. Read one element at a
+            # time; bias, SiLU and the store can still be vectors.
+            var v = SIMD[dtype, width]()
+            comptime for c in range(width):
+                v[c] = x._fused_load[1, element_alignment=1]((i, j + c))
+            return v
 
         # An empty `cache_indices` maps sequence `b` to slot `b`.
         var has_cache_indices = (
@@ -4849,85 +4855,32 @@ struct CausalConv1DVarlenFwd[
                 slot_fn,
             )
         elif is_gpu[target]():
-            comptime BLOCK_DIM = 128
-            comptime TILE_SEQ = 128
-            comptime seq_axis = 0 if Self.channels_last else 1
-            var dim = output.dim_size(1 - seq_axis)
-            var total_seqlen = output.dim_size(seq_axis)
-            var batch = query_start_loc.dim_size(0) - 1
 
             @inline(.always)
             def launch_gpu[WIDTH: Int]() raises {imm}:
-                # Pure decode (every sequence one token long) keeps the serial
-                # kernel; anything with a multi-token sequence tiles the
-                # sequence axis across grid-z.
-                if total_seqlen > batch:
-                    comptime kernel = causal_conv1d_varlen_fwd_seqparallel_gpu[
-                        dtype,
-                        conv_states_dtype,
-                        WIDTH,
-                        BLOCK_DIM,
-                        TILE_SEQ,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        conv_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        output_tt.Engine,
-                        type_of(x_fn),
-                        type_of(slot_fn),
-                        silu_activation,
-                        Self.use_residual,
-                        Self.channels_last,
-                    ]
-                    ctx.enqueue_function[kernel](
-                        weight_tt,
-                        bias_tt,
-                        query_start_loc_tt,
-                        has_initial_state_tt,
-                        conv_states_tt,
-                        output_tt,
-                        host_arg=x_fn,
-                        host_arg2=slot_fn,
-                        grid_dim=(
-                            batch,
-                            ceildiv(dim, BLOCK_DIM),
-                            ceildiv(total_seqlen, TILE_SEQ),
-                        ),
-                        block_dim=BLOCK_DIM,
-                    )
-                else:
-                    comptime kernel = causal_conv1d_varlen_fwd_gpu[
-                        dtype,
-                        conv_states_dtype,
-                        WIDTH,
-                        BLOCK_DIM,
-                        weight_tt.LayoutType,
-                        bias_tt.LayoutType,
-                        query_start_loc_tt.LayoutType,
-                        has_initial_state_tt.LayoutType,
-                        conv_states_tt.LayoutType,
-                        output_tt.LayoutType,
-                        output_tt.Engine,
-                        type_of(x_fn),
-                        type_of(slot_fn),
-                        silu_activation,
-                        Self.use_residual,
-                        Self.channels_last,
-                    ]
-                    ctx.enqueue_function[kernel](
-                        weight_tt,
-                        bias_tt,
-                        query_start_loc_tt,
-                        has_initial_state_tt,
-                        conv_states_tt,
-                        output_tt,
-                        host_arg=x_fn,
-                        host_arg2=slot_fn,
-                        grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-                        block_dim=BLOCK_DIM,
-                    )
+                # `x` is a fused input. Its tile pointer is not the address
+                # `_fused_load` uses, and the prologue stamps the device's
+                # preferred alignment rather than the view's, so that metadata
+                # is not a proof. `x_fn` loads scalars; pass no x address.
+                causal_conv1d_varlen_fwd_gpu[
+                    WIDTH,
+                    silu_activation,
+                    Self.use_residual,
+                    Self.channels_last,
+                ](
+                    weight_tt,
+                    bias_tt,
+                    query_start_loc_tt,
+                    has_initial_state_tt,
+                    conv_states_tt,
+                    output_tt,
+                    0,
+                    0,
+                    x_fn,
+                    slot_fn,
+                    ctx,
+                    x_vector_loads=False,
+                )
 
             __match weight.dim_size(1):
                 case 1:

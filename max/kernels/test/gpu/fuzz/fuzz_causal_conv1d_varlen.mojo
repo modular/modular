@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-# Fuzz target: the varlen causal conv1d (`causal_conv1d_varlen_fwd_gpu` for
-# decode, `causal_conv1d_varlen_fwd_seqparallel_gpu` otherwise), channels last,
-# as the Nemotron-H mixer runs it.
+# Fuzz target: the varlen causal conv1d (`causal_conv1d_varlen_fwd_gpu`),
+# channels last, as the Nemotron-H mixer runs it.
 #
 # The input is a column range of a wider row, like a slice of the fused
 # in-projection output: an arbitrary element offset and row padding. Covers decode
@@ -24,7 +23,6 @@
 # `cache_indices` must come back untouched. Memory-safety oracles need no extra
 # support.
 
-from std.math import ceildiv
 from std.memory import alloc
 from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
@@ -34,15 +32,15 @@ from max.gpu.host import DeviceContext
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_fwd_gpu,
-    causal_conv1d_varlen_fwd_seqparallel_gpu,
 )
 
 from _fuzz import boundary_int, collect_args, flag, flag_int, numeric_check
 
 comptime dtype = DType.bfloat16
 comptime WIDTH = get_defined_int["conv_width", 4]()
-comptime BLOCK_DIM = 128
-comptime TILE_SEQ = 128
+# bf16 prefill: 64 threads times 4 channels, and tokens per tile.
+comptime BLOCK_CHANNELS = 256
+comptime TILE_SEQ = 64
 comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
 comptime budget = get_defined_int["budget", 16]()
 
@@ -131,7 +129,7 @@ def gen_specs(n: Int) -> List[CaseSpec]:
         specs.append(
             CaseSpec(
                 boundary_int(1, 64, 8),
-                boundary_int(1, 300, BLOCK_DIM),
+                boundary_int(1, 1100, BLOCK_CHANNELS),
                 1 if decode else boundary_int(2, 300, TILE_SEQ),
                 Int(random_ui64(0, 1 << 30)),
                 boundary_int(0, 40, 8),
@@ -248,71 +246,23 @@ def run_one_case(
     ](b: Int) {var slot_g} -> SIMD[.uint32, width]:
         return slot_g.load[width=width]((b,))
 
-    if total > batch:
-        comptime kernel = causal_conv1d_varlen_fwd_seqparallel_gpu[
-            dtype,
-            dtype,
-            WIDTH,
-            BLOCK_DIM,
-            TILE_SEQ,
-            weight_g.LayoutType,
-            bias_g.LayoutType,
-            qsl_g.LayoutType,
-            his_g.LayoutType,
-            pool_g.LayoutType,
-            y_g.LayoutType,
-            y_g.Engine,
-            type_of(x_fn),
-            type_of(slot_fn),
-            silu_activation=True,
-            channels_last=True,
-        ]
-        ctx.enqueue_function[kernel](
-            weight_g,
-            bias_g,
-            qsl_g,
-            his_g,
-            pool_g,
-            y_g,
-            host_arg=x_fn,
-            host_arg2=slot_fn,
-            grid_dim=(
-                batch,
-                ceildiv(dim, BLOCK_DIM),
-                ceildiv(total, TILE_SEQ),
-            ),
-            block_dim=BLOCK_DIM,
-        )
-    else:
-        comptime kernel = causal_conv1d_varlen_fwd_gpu[
-            dtype,
-            dtype,
-            WIDTH,
-            BLOCK_DIM,
-            weight_g.LayoutType,
-            bias_g.LayoutType,
-            qsl_g.LayoutType,
-            his_g.LayoutType,
-            pool_g.LayoutType,
-            y_g.LayoutType,
-            y_g.Engine,
-            type_of(x_fn),
-            type_of(slot_fn),
-            silu_activation=True,
-            channels_last=True,
-        ]
-        ctx.enqueue_function[kernel](
-            weight_g,
-            bias_g,
-            qsl_g,
-            his_g,
-            pool_g,
-            y_g,
-            host_arg=x_fn,
-            host_arg2=slot_fn,
-            grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=BLOCK_DIM,
-        )
+    var x_addr = Int(x_g.unsafe_ptr())
+    var x_row_stride = Int(x_g.layout.stride[0]().value())
+    causal_conv1d_varlen_fwd_gpu[
+        WIDTH, silu_activation=True, channels_last=True
+    ](
+        weight_g,
+        bias_g,
+        qsl_g,
+        his_g,
+        pool_g,
+        y_g,
+        x_addr,
+        x_row_stride,
+        x_fn,
+        slot_fn,
+        ctx,
+    )
     ctx.synchronize()
 
     if check:

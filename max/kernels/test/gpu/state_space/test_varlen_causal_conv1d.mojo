@@ -12,25 +12,35 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, exp
+from std.utils.numerics import isinf, isnan
 
+from max.gpu import block_idx
 from max.gpu.host import DeviceContext
 from layout import (
     MixedLayout,
+    TensorLayout,
     TileTensor,
     row_major,
 )
-from std.memory import alloc
+from layout.tensor_engine import TensorEngine
+from std.memory import alloc, bitcast
 from std.random import rand
+from nn.activations import silu
 from state_space.varlen_causal_conv1d import (
+    _apply_silu,
     causal_conv1d_varlen_states_cpu,
     causal_conv1d_varlen_states_gpu,
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
     causal_conv1d_varlen_fwd_gpu,
-    causal_conv1d_varlen_fwd_seqparallel_gpu,
     causal_conv1d_varlen_update_gpu,
 )
-from std.testing import TestSuite, assert_almost_equal, assert_equal
+from std.testing import (
+    TestSuite,
+    assert_almost_equal,
+    assert_equal,
+    assert_true,
+)
 
 from std.utils.index import Index, IndexList
 
@@ -110,12 +120,8 @@ def run_varlen_causal_conv1d_fwd_gpu[
 ) raises:
     """Test varlen causal conv1d forward GPU kernel against CPU reference.
 
-    Also cross-checks the sequence-parallel prefill kernel
-    (`causal_conv1d_varlen_fwd_seqparallel_gpu`) against both the CPU
-    reference and the serial GPU kernel's output and final `conv_states`.
-
-    `use_residual` threads through all three, so the same cross-check covers
-    the fused residual add.
+    Checks the output and the final `conv_states`. `use_residual` covers the
+    fused residual add.
     """
     # Calculate total_seqlen (sum of all sequence lengths)
     var total_seqlen = 0
@@ -288,170 +294,64 @@ def run_varlen_causal_conv1d_fwd_gpu[
         row_major(dim, total_seqlen),
     )
 
-    # Run GPU kernel
-    comptime BLOCK_DIM = 128
+    @inline(.always)
+    def launch_gpu[kWidth: Int]() raises {imm}:
+        def x_fn[
+            width: Int, alignment: Int
+        ](i: Int, j: Int) {var x_device_tt} -> SIMD[dtype, width]:
+            return x_device_tt.load[width=width]((i, j))
 
-    def x_fn[
-        width: Int, alignment: Int
-    ](i: Int, j: Int) {var x_device_tt} -> SIMD[dtype, width]:
-        return x_device_tt.load[width=width]((i, j))
+        def slot_fn[
+            width: Int, alignment: Int
+        ](b: Int) {var cache_indices_device_tt} -> SIMD[.uint32, width]:
+            if Int(cache_indices_device_tt.dim[0]()) == 0:
+                return SIMD[.uint32, width](UInt32(b))
+            return cache_indices_device_tt.load[width=width]((b,))
 
-    def slot_fn[
-        width: Int, alignment: Int
-    ](b: Int) {var cache_indices_device_tt} -> SIMD[.uint32, width]:
-        if Int(cache_indices_device_tt.dim[0]()) == 0:
-            return SIMD[.uint32, width](UInt32(b))
-        return cache_indices_device_tt.load[width=width]((b,))
+        var x_addr = Int(x_device_tt.unsafe_ptr())
+        var x_row_stride = Int(x_device_tt.layout.stride[0]().value())
+        causal_conv1d_varlen_fwd_gpu[kWidth, silu_activation, use_residual](
+            weight_device_tt,
+            bias_device_tt,
+            query_start_loc_device_tt,
+            has_initial_state_device_tt,
+            conv_states_device_tt,
+            output_device_tt,
+            x_addr,
+            x_row_stride,
+            x_fn,
+            slot_fn,
+            ctx,
+        )
 
     if width == 1:
-        comptime kWidth = 1
-        comptime kernel = causal_conv1d_varlen_fwd_gpu[
-            dtype,
-            dtype,
-            kWidth,
-            BLOCK_DIM,
-            weight_device_tt.LayoutType,
-            bias_device_tt.LayoutType,
-            query_start_loc_device_tt.LayoutType,
-            has_initial_state_device_tt.LayoutType,
-            conv_states_device_tt.LayoutType,
-            output_device_tt.LayoutType,
-            output_device_tt.Engine,
-            type_of(x_fn),
-            type_of(slot_fn),
-            silu_activation,
-            use_residual,
-        ]
-        ctx.enqueue_function[kernel](
-            weight_device_tt,
-            bias_device_tt,
-            query_start_loc_device_tt,
-            has_initial_state_device_tt,
-            conv_states_device_tt,
-            output_device_tt,
-            host_arg=x_fn,
-            host_arg2=slot_fn,
-            grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=BLOCK_DIM,
-        )
+        launch_gpu[1]()
     elif width == 2:
-        comptime kWidth = 2
-        comptime kernel = causal_conv1d_varlen_fwd_gpu[
-            dtype,
-            dtype,
-            kWidth,
-            BLOCK_DIM,
-            weight_device_tt.LayoutType,
-            bias_device_tt.LayoutType,
-            query_start_loc_device_tt.LayoutType,
-            has_initial_state_device_tt.LayoutType,
-            conv_states_device_tt.LayoutType,
-            output_device_tt.LayoutType,
-            output_device_tt.Engine,
-            type_of(x_fn),
-            type_of(slot_fn),
-            silu_activation,
-            use_residual,
-        ]
-        ctx.enqueue_function[kernel](
-            weight_device_tt,
-            bias_device_tt,
-            query_start_loc_device_tt,
-            has_initial_state_device_tt,
-            conv_states_device_tt,
-            output_device_tt,
-            host_arg=x_fn,
-            host_arg2=slot_fn,
-            grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=BLOCK_DIM,
-        )
+        launch_gpu[2]()
     elif width == 3:
-        comptime kWidth = 3
-        comptime kernel = causal_conv1d_varlen_fwd_gpu[
-            dtype,
-            dtype,
-            kWidth,
-            BLOCK_DIM,
-            weight_device_tt.LayoutType,
-            bias_device_tt.LayoutType,
-            query_start_loc_device_tt.LayoutType,
-            has_initial_state_device_tt.LayoutType,
-            conv_states_device_tt.LayoutType,
-            output_device_tt.LayoutType,
-            output_device_tt.Engine,
-            type_of(x_fn),
-            type_of(slot_fn),
-            silu_activation,
-            use_residual,
-        ]
-        ctx.enqueue_function[kernel](
-            weight_device_tt,
-            bias_device_tt,
-            query_start_loc_device_tt,
-            has_initial_state_device_tt,
-            conv_states_device_tt,
-            output_device_tt,
-            host_arg=x_fn,
-            host_arg2=slot_fn,
-            grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=BLOCK_DIM,
-        )
+        launch_gpu[3]()
     elif width == 4:
-        comptime kWidth = 4
-        comptime kernel = causal_conv1d_varlen_fwd_gpu[
-            dtype,
-            dtype,
-            kWidth,
-            BLOCK_DIM,
-            weight_device_tt.LayoutType,
-            bias_device_tt.LayoutType,
-            query_start_loc_device_tt.LayoutType,
-            has_initial_state_device_tt.LayoutType,
-            conv_states_device_tt.LayoutType,
-            output_device_tt.LayoutType,
-            output_device_tt.Engine,
-            type_of(x_fn),
-            type_of(slot_fn),
-            silu_activation,
-            use_residual,
-        ]
-        ctx.enqueue_function[kernel](
-            weight_device_tt,
-            bias_device_tt,
-            query_start_loc_device_tt,
-            has_initial_state_device_tt,
-            conv_states_device_tt,
-            output_device_tt,
-            host_arg=x_fn,
-            host_arg2=slot_fn,
-            grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-            block_dim=BLOCK_DIM,
-        )
+        launch_gpu[4]()
     else:
         raise Error(
             "Unsupported kernel width: only widths 1, 2, 3, 4 are supported"
         )
 
-    # Copy GPU results back to host
-    ctx.enqueue_copy(output_gpu_buf._storage, output_device)
-    ctx.synchronize()
-
-    # --- Seq-parallel prefill kernel: run independently, cross-check ---
-    # Copy back the serial kernel's final conv_states now, before the CPU
+    # Copy GPU results back to host, the final conv_states before the CPU
     # reference below mutates the shared host seed buffer (`conv_states_buf`)
     # in place.
-    var conv_states_serial_heap = ctx.enqueue_create_host_buffer[dtype](
+    ctx.enqueue_copy(output_gpu_buf._storage, output_device)
+    var conv_states_gpu_heap = ctx.enqueue_create_host_buffer[dtype](
         batch * dim * state_len
     )
     with ctx.push_context():
-        ctx.enqueue_copy(conv_states_serial_heap, conv_states_device)
+        ctx.enqueue_copy(conv_states_gpu_heap, conv_states_device)
     ctx.synchronize()
 
-    # Check the state against the CONTRACT, not against the other kernel: after
-    # consuming a chunk the pool holds the last `state_len` tokens of everything
-    # seen, so entries the chunk is too short to supply come from the seed. The
-    # seq-parallel-vs-serial comparison further down cannot see a violation both
-    # kernels share, which is exactly how a missing carry-over survived here.
+    # Check the state against the CONTRACT, not only against the CPU reference
+    # below: after consuming a chunk the pool holds the last `state_len` tokens
+    # of everything seen, so entries the chunk is too short to supply come from
+    # the seed.
     if nonzero_initial_state:
         for b in range(batch):
             var seq_start = Int(query_start_loc_h.raw_load(b))
@@ -470,105 +370,10 @@ def run_varlen_causal_conv1d_fwd_gpu[
                             (b * dim + d) * state_len + state_len + offset
                         ]
                     assert_almost_equal(
-                        conv_states_serial_heap[(b * dim + d) * state_len + s],
+                        conv_states_gpu_heap[(b * dim + d) * state_len + s],
                         expected,
                         rtol=rtol,
                     )
-
-    # Fresh device buffers so the seq-parallel run starts from the same
-    # (still-unmutated) initial conv_states as the serial run above.
-    var conv_states_seqpar_device = ctx.enqueue_create_buffer[dtype](
-        batch * dim * state_len
-    )
-    var output_seqpar_device = ctx.enqueue_create_buffer[dtype](
-        dim * total_seqlen
-    )
-    with ctx.push_context():
-        ctx.enqueue_copy(conv_states_seqpar_device, conv_states_buf._storage)
-    var conv_states_seqpar_device_tt = TileTensor(
-        conv_states_seqpar_device,
-        row_major(batch, dim, state_len),
-    )
-    var output_seqpar_device_tt = TileTensor(
-        output_seqpar_device,
-        row_major(dim, total_seqlen),
-    )
-
-    comptime TILE_SEQ = 128
-
-    @inline(.always)
-    def launch_seqpar_gpu[kWidth: Int]() raises {imm}:
-        def x_fn[
-            width: Int, alignment: Int
-        ](i: Int, j: Int) {var x_device_tt} -> SIMD[dtype, width]:
-            return x_device_tt.load[width=width]((i, j))
-
-        def slot_fn[
-            width: Int, alignment: Int
-        ](b: Int) {var cache_indices_device_tt} -> SIMD[.uint32, width]:
-            if Int(cache_indices_device_tt.dim[0]()) == 0:
-                return SIMD[.uint32, width](UInt32(b))
-            return cache_indices_device_tt.load[width=width]((b,))
-
-        comptime kernel = causal_conv1d_varlen_fwd_seqparallel_gpu[
-            dtype,
-            dtype,
-            kWidth,
-            BLOCK_DIM,
-            TILE_SEQ,
-            weight_device_tt.LayoutType,
-            bias_device_tt.LayoutType,
-            query_start_loc_device_tt.LayoutType,
-            has_initial_state_device_tt.LayoutType,
-            conv_states_seqpar_device_tt.LayoutType,
-            output_seqpar_device_tt.LayoutType,
-            output_seqpar_device_tt.Engine,
-            type_of(x_fn),
-            type_of(slot_fn),
-            silu_activation,
-            use_residual,
-        ]
-        with ctx.push_context():
-            ctx.enqueue_function[kernel](
-                weight_device_tt,
-                bias_device_tt,
-                query_start_loc_device_tt,
-                has_initial_state_device_tt,
-                conv_states_seqpar_device_tt,
-                output_seqpar_device_tt,
-                host_arg=x_fn,
-                host_arg2=slot_fn,
-                grid_dim=(
-                    batch,
-                    ceildiv(dim, BLOCK_DIM),
-                    ceildiv(total_seqlen, TILE_SEQ),
-                ),
-                block_dim=BLOCK_DIM,
-            )
-
-    if width == 1:
-        launch_seqpar_gpu[1]()
-    elif width == 2:
-        launch_seqpar_gpu[2]()
-    elif width == 3:
-        launch_seqpar_gpu[3]()
-    elif width == 4:
-        launch_seqpar_gpu[4]()
-    else:
-        raise Error(
-            "Unsupported kernel width: only widths 1, 2, 3, 4 are supported"
-        )
-
-    var output_seqpar_heap = ctx.enqueue_create_host_buffer[dtype](
-        dim * total_seqlen
-    )
-    var conv_states_seqpar_heap = ctx.enqueue_create_host_buffer[dtype](
-        batch * dim * state_len
-    )
-    with ctx.push_context():
-        ctx.enqueue_copy(output_seqpar_heap, output_seqpar_device)
-        ctx.enqueue_copy(conv_states_seqpar_heap, conv_states_seqpar_device)
-    ctx.synchronize()
 
     # Create TileTensors for CPU reference
     var x_cpu_tt = TileTensor(x_buf._storage, row_major(dim, total_seqlen))
@@ -629,24 +434,10 @@ def run_varlen_causal_conv1d_fwd_gpu[
             rtol=rtol,
         )
 
-    # Cross-check the seq-parallel prefill kernel: output vs the CPU
-    # reference, and final conv_states vs the serial GPU kernel (the serial
-    # kernel is the trusted baseline for the recurrent conv_states contract;
-    # the CPU reference's conv_states buffer was already overwritten in
-    # place by the CPU call above, which is why we compare against the
-    # earlier-captured `conv_states_serial_heap` instead).
-    for i in range(flattened_size):
-        assert_almost_equal(
-            output_seqpar_heap[i],
-            output_cpu_h._storage[i],
-            rtol=rtol,
-        )
     var state_flattened_size = batch * dim * state_len
     for i in range(state_flattened_size):
         assert_almost_equal(
-            conv_states_seqpar_heap[i],
-            conv_states_serial_heap[i],
-            rtol=rtol,
+            conv_states_gpu_heap[i], conv_states_h._storage[i], rtol=rtol
         )
 
     # Host buffers are List-owned: RAII frees them on scope exit, including on an
@@ -1195,9 +986,7 @@ def test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
 
 
 def test_varlen_causal_conv1d_fwd_gpu_residual_decode_shape() raises:
-    """`use_residual=True` at a decode shape: one token per sequence, so
-    `total_seqlen == batch` routes to the serial kernel.
-    """
+    """`use_residual=True` at a decode shape: one token per sequence."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
@@ -1207,9 +996,7 @@ def test_varlen_causal_conv1d_fwd_gpu_residual_decode_shape() raises:
 
 
 def test_varlen_causal_conv1d_fwd_gpu_residual_prefill_shape() raises:
-    """`use_residual=True` at a multi-tile prefill shape: `total_seqlen >
-    batch` routes to the seq-parallel kernel.
-    """
+    """`use_residual=True` at a multi-tile prefill shape."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
@@ -1219,22 +1006,19 @@ def test_varlen_causal_conv1d_fwd_gpu_residual_prefill_shape() raises:
 
 
 # =============================================================================
-# Test functions for the seq-parallel prefill kernel
-# (causal_conv1d_varlen_fwd_seqparallel_gpu, cross-checked inside
-# run_varlen_causal_conv1d_fwd_gpu against both the CPU reference and the
-# serial GPU kernel).
+# Test functions for multi-tile prefill
 # =============================================================================
 
 
-def test_varlen_causal_conv1d_fwd_gpu_seqparallel_prefill_shapes() raises:
+def test_varlen_causal_conv1d_fwd_gpu_prefill_shapes() raises:
     """Single-sequence prefill at production-relevant lengths, spanning
-    multiple TILE_SEQ=128 tiles and exact tile boundaries (255/256/257), for
+    multiple tiles and exact tile boundaries (63/64/65, 255/256/257), for
     each kernel width the models use (2, 3, 4; width 1 also dispatches but no
     model uses it)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
         return
-    var seqlens: List[Int] = [255, 256, 257, 512, 1024, 4032]
+    var seqlens: List[Int] = [63, 64, 65, 255, 256, 257, 512, 4032]
     var widths: List[Int] = [2, 3, 4]
     for seqlen in seqlens:
         for width in widths:
@@ -1247,7 +1031,7 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_prefill_shapes() raises:
             )
 
 
-def test_varlen_causal_conv1d_fwd_gpu_seqparallel_ragged_batch() raises:
+def test_varlen_causal_conv1d_fwd_gpu_ragged_batch() raises:
     """Ragged varlen batch mixing multiple lengths (including a short,
     sub-tile sequence and long multi-tile sequences) in one packed call.
     Every position is independently cross-checked against the CPU reference,
@@ -1265,7 +1049,7 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_ragged_batch() raises:
     )
 
 
-def test_varlen_causal_conv1d_fwd_gpu_seqparallel_nonzero_initial_state() raises:
+def test_varlen_causal_conv1d_fwd_gpu_multi_tile_nonzero_initial_state() raises:
     """Long prefill sequences with a non-zero initial conv_states pool (the
     `has_initial_state`-gated read path), at the narrowest and widest width."""
     var ctx = DeviceContext()
@@ -1295,9 +1079,8 @@ def test_varlen_causal_conv1d_fwd_gpu_chunk_shorter_than_width() raises:
     The regime every decode step is in, and the one the long-sequence
     `nonzero_initial_state` cases above never reach: with `seqlen < width - 1`
     the pool's older entries can only come from the state being continued.
-    `Index(1, 1)` is pure decode (the serial kernel in production);
-    `Index(2, 2)` keeps `total_seqlen > batch`, so it is the seq-parallel
-    kernel's version of the same partial write.
+    `Index(1, 1)` is pure decode; `Index(2, 2)` is the same partial write
+    with two tokens per sequence.
     """
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1328,8 +1111,8 @@ def test_varlen_causal_conv1d_fwd_gpu_chunk_shorter_than_width() raises:
     )
 
 
-def test_varlen_causal_conv1d_fwd_gpu_seqparallel_with_silu() raises:
-    """The seq-parallel kernel's silu path over multi-tile sequences.
+def test_varlen_causal_conv1d_fwd_gpu_multi_tile_with_silu() raises:
+    """The silu path over multi-tile sequences.
 
     The activation is a production path, not a hypothetical: Nemotron-H calls
     this kernel with `activation="silu"` while Inkling passes `"none"`, and the
@@ -1347,7 +1130,7 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_with_silu() raises:
     )
 
 
-def test_varlen_causal_conv1d_fwd_gpu_seqparallel_zero_length_sequence() raises:
+def test_varlen_causal_conv1d_fwd_gpu_zero_length_sequence() raises:
     """A zero-length sequence packed alongside a long prefill sequence must
     still reach the tail-tile epilogue (conv_states zeroing) rather than
     early-returning out of every z-tile block."""
@@ -1360,6 +1143,26 @@ def test_varlen_causal_conv1d_fwd_gpu_seqparallel_zero_length_sequence() raises:
         seq_lengths=Index(0, 1024, 0),
         width=3,
         ctx=ctx,
+    )
+
+
+def test_varlen_causal_conv1d_fwd_gpu_many_short_sequences() raises:
+    """More sequences than a warp has lanes, most shorter than a tile, with
+    empty ones mixed in, so grid rows find their sequence in more than one
+    search step and several sequences share a tile."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    var seq_lengths = IndexList[70]()
+    for i in range(70):
+        seq_lengths[i] = (i * 7) % 11 if i != 35 else 300
+    run_varlen_causal_conv1d_fwd_gpu[.float32, "silu"](
+        batch=70,
+        dim=8,
+        seq_lengths=seq_lengths,
+        width=4,
+        ctx=ctx,
+        nonzero_initial_state=True,
     )
 
 
@@ -1437,7 +1240,6 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
     comptime batch_stride = dim * state_len  # 4, a power of two
     comptime batch = 1
     comptime total_seqlen = 1
-    comptime BLOCK_DIM = 128
 
     # cache_idx_deep * batch_stride == 2**32 exactly: one past UInt32.MAX.
     var cache_idx_deep = 1 << 30
@@ -1531,33 +1333,20 @@ def test_varlen_causal_conv1d_fwd_gpu_conv_states_deep_row_no_alias() raises:
             return SIMD[.uint32, width](UInt32(b))
         return cache_indices_device_tt.load[width=width]((b,))
 
-    comptime kernel = causal_conv1d_varlen_fwd_gpu[
-        dtype,
-        conv_states_dtype,
-        width,
-        BLOCK_DIM,
-        weight_device_tt.LayoutType,
-        bias_device_tt.LayoutType,
-        query_start_loc_device_tt.LayoutType,
-        has_initial_state_device_tt.LayoutType,
-        conv_states_device_tt.LayoutType,
-        output_device_tt.LayoutType,
-        output_device_tt.Engine,
-        type_of(x_fn),
-        type_of(slot_fn),
-        False,
-    ]
-    ctx.enqueue_function[kernel](
+    var x_addr = Int(x_device_tt.unsafe_ptr())
+    var x_row_stride = Int(x_device_tt.layout.stride[0]().value())
+    causal_conv1d_varlen_fwd_gpu[width](
         weight_device_tt,
         bias_device_tt,
         query_start_loc_device_tt,
         has_initial_state_device_tt,
         conv_states_device_tt,
         output_device_tt,
-        host_arg=x_fn,
-        host_arg2=slot_fn,
-        grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
-        block_dim=BLOCK_DIM,
+        x_addr,
+        x_row_stride,
+        x_fn,
+        slot_fn,
+        ctx,
     )
 
     var output_readback_heap = List(
@@ -1702,6 +1491,101 @@ def run_varlen_states_padded(
     expected.free()
     cpu_h.free()
     gpu_h.free()
+
+
+def _nvidia_f32_silu_bits_kernel[
+    n: Int,
+    vals_LT: TensorLayout,
+    out_LT: TensorLayout,
+    Engine: TensorEngine,
+](
+    vals: TileTensor[.float32, vals_LT, MutUntrackedOrigin, Engine=Engine],
+    got_out: TileTensor[.float32, out_LT, MutUntrackedOrigin, Engine=Engine],
+    ref_out: TileTensor[.float32, out_LT, MutUntrackedOrigin, Engine=Engine],
+):
+    """Compares the NVIDIA f32 SiLU approximation to `silu`, four lanes at a time.
+    """
+    var base = Int(block_idx.x) * 4
+    if base >= n:
+        return
+    var v = vals.load[width=4]((base,))
+    var got = _apply_silu[output_dtype=.float32, width=4](v, True)
+    var exact = silu(v)
+    comptime for c in range(4):
+        got_out.store((base + c,), got[c])
+        ref_out.store((base + c,), exact[c])
+
+
+def test_nvidia_f32_silu_bit_exact() raises:
+    """The NVIDIA f32 reciprocal SiLU matches `silu` bit for bit on |x| <= 80.
+
+    Also covers the exp-overflow clamp (finite inputs stay finite) and NaN/Inf.
+    f32 `exp` overflows near 88.72, so -89 is past that threshold.
+    """
+    comptime n = 16
+    var vals_h = alloc[Scalar[.float32]](n)
+    vals_h.store(0, Scalar[.float32](-80))
+    vals_h.store(1, Scalar[.float32](-40))
+    vals_h.store(2, Scalar[.float32](0))
+    vals_h.store(3, Scalar[.float32](80))
+    vals_h.store(4, Scalar[.float32](79.5))
+    vals_h.store(5, Scalar[.float32](-79.5))
+    vals_h.store(6, Scalar[.float32](1))
+    vals_h.store(7, Scalar[.float32](-1))
+    vals_h.store(8, Scalar[.float32](-88))
+    vals_h.store(9, Scalar[.float32](-89))
+    vals_h.store(10, Scalar[.float32](-100))
+    vals_h.store(11, Scalar[.float32](50))
+    vals_h.store(12, bitcast[.float32](UInt32(0x7FC00000)))
+    vals_h.store(13, bitcast[.float32](UInt32(0x7F800000)))
+    vals_h.store(14, bitcast[.float32](UInt32(0xFF800000)))
+    vals_h.store(15, Scalar[.float32](-1e20))
+
+    with DeviceContext() as ctx:
+        var vals_d = ctx.enqueue_create_buffer[.float32](n)
+        var got_d = ctx.enqueue_create_buffer[.float32](n)
+        var ref_d = ctx.enqueue_create_buffer[.float32](n)
+        ctx.enqueue_copy(vals_d, vals_h)
+        var vals_tt = TileTensor(vals_d, row_major(n))
+        var got_tt = TileTensor(got_d, row_major(n))
+        var ref_tt = TileTensor(ref_d, row_major(n))
+        ctx.enqueue_function[
+            _nvidia_f32_silu_bits_kernel[
+                n,
+                vals_tt.LayoutType,
+                got_tt.LayoutType,
+                vals_tt.Engine,
+            ]
+        ](vals_tt, got_tt, ref_tt, grid_dim=4, block_dim=1)
+        var got_h = alloc[Scalar[.float32]](n)
+        var ref_h = alloc[Scalar[.float32]](n)
+        ctx.enqueue_copy(got_h, got_d)
+        ctx.enqueue_copy(ref_h, ref_d)
+        ctx.synchronize()
+
+        for i in range(n):
+            var v = vals_h.load(i)
+            var got = got_h.load(i)
+            var exact = ref_h.load(i)
+            if isnan(v):
+                assert_true(isnan(got) and isnan(exact))
+            elif isinf(v) and v > 0:
+                assert_true(isinf(got) and got > 0)
+                assert_true(isinf(exact) and exact > 0)
+            elif isinf(v):
+                assert_true(isnan(got) or got == 0)
+                assert_true(isnan(exact) or exact == 0)
+            elif abs(Float64(v)) <= 80:
+                assert_equal(
+                    bitcast[.uint32](got),
+                    bitcast[.uint32](exact),
+                )
+            else:
+                assert_true(not isnan(got) and not isinf(got))
+                assert_true(not isnan(exact) and not isinf(exact))
+        got_h.free()
+        ref_h.free()
+    vals_h.free()
 
 
 def test_varlen_states_padded() raises:

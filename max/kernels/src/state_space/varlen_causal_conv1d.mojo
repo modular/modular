@@ -31,14 +31,23 @@ vLLM Interface:
     - pad_slot_id: int - for identifying padded entries
 """
 
-from std.bit import next_power_of_two
 from std.algorithm import vectorize
-from std.math import ceildiv
+from std.bit import count_leading_zeros, next_power_of_two
+from std.math import ceildiv, clamp, exp, recip
+from std.sys import size_of
+from std.sys.info import is_nvidia_gpu
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
-
-from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, thread_idx
+import max.gpu.primitives.warp as warp
+from max.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    WARP_SIZE,
+    block_idx,
+    lane_id,
+    thread_idx,
+)
+from max.gpu.host import DeviceContext
 
 
 from layout import TensorLayout, TileTensor
@@ -66,15 +75,18 @@ comptime _TAP_LANES[WIDTH: Int] = Int(next_power_of_two(WIDTH))
 
 @inline(.always)
 def _apply_silu[
-    output_dtype: DType
-](out_val: Scalar[output_dtype], silu_activation: Bool) -> Scalar[output_dtype]:
+    output_dtype: DType, width: Int = 1
+](out_val: SIMD[output_dtype, width], silu_activation: Bool) -> SIMD[
+    output_dtype, width
+]:
     """Optionally apply the SiLU activation, preserving the accumulator dtype.
 
     Floating-point outputs run SiLU in place; integral outputs promote to f32
-    for the activation then cast back.
+    for the activation then cast back. Works on a scalar or a channel vector.
 
     Parameters:
         output_dtype: The output element type.
+        width: The number of channels, 1 for a scalar.
 
     Args:
         out_val: The pre-activation convolution output.
@@ -85,7 +97,18 @@ def _apply_silu[
     """
     if silu_activation:
         comptime if output_dtype.is_floating_point():
-            return silu(out_val)
+            comptime if output_dtype == .float32 and is_nvidia_gpu():
+                # IEEE division branches per lane to handle denormals, which
+                # serializes the channel vector. An approximate reciprocal
+                # with one Newton step gives the same f32 bits for |x| <= 80;
+                # the clamp keeps `d * r` from becoming `inf * 0` when
+                # `exp(-x)` overflows.
+                var d = 1 + exp(-out_val)
+                var r = recip(d)
+                var cap = SIMD[output_dtype, width](8.5070592e37)
+                return out_val * (r + r * (1 - min(d, cap) * r))
+            else:
+                return silu(out_val)
         else:
             return silu(out_val.cast[.float32]()).cast[output_dtype]()
     return out_val
@@ -257,16 +280,21 @@ struct VarlenConvIO[
         return Int(self.output.dim[dim_axis]())
 
     @inline(.always)
-    def load_x(self, d: Int, s: Int) -> Scalar[Self.dtype]:
-        """Load `x[d, s]`: windowed history read of the input.
+    def load_x[width: Int = 1](self, d: Int, s: Int) -> SIMD[Self.dtype, width]:
+        """Load `x[d:d + width, s]`: windowed history read of the input.
+
+        Parameters:
+            width: The number of consecutive channels; above 1 needs
+                `channels_last`, where they are contiguous.
 
         Args:
-            d: The channel index.
+            d: The first channel index.
             s: The packed sequence position.
         """
         comptime if Self.channels_last:
-            return self.x_fn[1, 1](s, d)
+            return self.x_fn[width, width](s, d)
         else:
+            comptime assert width == 1, "channel vectors need channels_last"
             return self.x_fn[1, 1](d, s)
 
     @inline(.always)
@@ -280,74 +308,38 @@ struct VarlenConvIO[
         return self.weight.load[width=1]((d, w))
 
     @inline(.always)
-    def load_bias(self, d: Int) -> Scalar[Self.dtype]:
-        """Load `bias[d]`, or zero when `bias` is empty.
+    def load_bias[width: Int = 1](self, d: Int) -> SIMD[Self.dtype, width]:
+        """Load `bias[d:d + width]`, or zero when `bias` is empty.
+
+        Parameters:
+            width: The number of consecutive channels.
 
         Args:
-            d: The channel index into the `(dim,)` bias view.
+            d: The first channel index into the `(dim,)` bias view.
         """
         if Int(self.bias.dim[0]()) == 0:
             return 0
-        return self.bias.load[width=1]((d,))
+        return self.bias.load[width=width]((d,))
 
     @inline(.always)
-    def store_out(self, d: Int, s: Int, val: Scalar[Self.dtype]):
-        """Store `output[d, s] = val`: convolution output.
+    def store_out[
+        width: Int = 1
+    ](self, d: Int, s: Int, val: SIMD[Self.dtype, width]):
+        """Store `output[d:d + width, s] = val`: convolution output.
+
+        Parameters:
+            width: The number of consecutive channels, as in `load_x`.
 
         Args:
-            d: The channel index.
+            d: The first channel index.
             s: The packed sequence position.
-            val: The convolution result to store at `output[d, s]`.
+            val: The convolution result to store.
         """
         comptime if Self.channels_last:
             self.output.store((s, d), val)
         else:
+            comptime assert width == 1, "channel vectors need channels_last"
             self.output.store((d, s), val)
-
-    @inline(.always)
-    def store_final_state[
-        state_len: Int
-    ](
-        self,
-        conv_states: TileTensor[mut=True, ...],
-        slot: Int,
-        d: Int,
-        seq_start: Int,
-        seqlen: Int,
-        use_initial_state: Bool,
-    ):
-        """Write the last `state_len` inputs of a sequence to its pool slot.
-
-        A chunk shorter than `state_len` does not hold the whole new state: its
-        oldest entries come from the state being continued, under the same
-        negative-position mapping the convolution uses. Zero there would
-        restart the sequence on every decode step.
-
-        This reads the pool it is writing. That is safe because the carried
-        index simplifies to `seqlen + s`, strictly ahead of the `s` being
-        written, and `s` runs upwards. Reordering the loop would turn the
-        carry-over into a read of a just-written entry.
-
-        Parameters:
-            state_len: Conv-state length, `width - 1`.
-
-        Args:
-            conv_states: The `(max_slots, dim, state_len)` conv-state pool.
-            slot: The sequence's pool slot.
-            d: The channel index.
-            seq_start: Packed position of the sequence's first token.
-            seqlen: The sequence length.
-            use_initial_state: Whether the sequence continues its stored state.
-        """
-        comptime state_dtype = type_of(conv_states).dtype
-        comptime for s in range(state_len):
-            var src_l = seqlen - state_len + s
-            var val = Scalar[state_dtype](0)
-            if src_l >= 0:
-                val = self.load_x(d, seq_start + src_l).cast[state_dtype]()
-            elif use_initial_state:
-                val = conv_states.load[width=1]((slot, d, state_len + src_l))
-            conv_states.store((slot, d, s), val)
 
 
 # ============================================================================
@@ -784,24 +776,31 @@ def causal_conv1d_varlen_states_gpu[
         states.store[width=1]((batch_idx, col, states_row), val)
 
 
-# Launched with a `BLOCK_DIM`-thread block.
+# Tuned on B200, untuned elsewhere. Without the register cap the compiler keeps
+# about 150 registers per thread and too few blocks stay resident to hide the
+# load latency.
+comptime _FWD_BLOCK_DIM = 64
+comptime _FWD_TILE_SEQ = 64
+comptime _FWD_UNROLL = 8
+comptime _FWD_MIN_CTAS = 12
+
+
 @__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_DIM))
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(_FWD_BLOCK_DIM))
 )
-@__llvm_metadata(`nvvm.minctasm`=SIMDLength(16))
-def causal_conv1d_varlen_fwd_gpu[
+@__llvm_metadata(`nvvm.minctasm`=SIMDLength(_FWD_MIN_CTAS))
+def _causal_conv1d_varlen_fwd_kernel[
     dtype: DType,
     conv_states_dtype: DType,
     WIDTH: Int,
-    BLOCK_DIM: Int,
+    VEC: Int,
+    SEQ_PER_ROW: Bool,
     weight_LT: TensorLayout,
     bias_LT: TensorLayout,
     query_start_loc_LT: TensorLayout,
     has_initial_state_LT: TensorLayout,
     conv_states_LT: TensorLayout,
     output_LT: TensorLayout,
-    # All operands come from one source (graph tensors in production, device
-    # buffers in the tests), so a single engine binds every tile argument.
     Engine: TensorEngine,
     XFn: ImplicitlyCopyable
     & RegisterPassable
@@ -809,9 +808,9 @@ def causal_conv1d_varlen_fwd_gpu[
     SlotFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Int) -> SIMD[.uint32, width],
-    silu_activation: Bool = False,
-    use_residual: Bool = False,
-    channels_last: Bool = False,
+    silu_activation: Bool,
+    use_residual: Bool,
+    channels_last: Bool,
 ](
     weight: TileTensor[dtype, weight_LT, MutUntrackedOrigin, Engine=Engine],
     bias: TileTensor[dtype, bias_LT, MutUntrackedOrigin, Engine=Engine],
@@ -830,16 +829,31 @@ def causal_conv1d_varlen_fwd_gpu[
 ):
     """GPU kernel for causal conv1d forward with variable length sequences.
 
-    Each thread walks one `(sequence, channel)` serially; the dispatcher uses
-    it for decode, where every sequence is one token long.
+    Grid: `(ceildiv(dim, BLOCK_DIM * VEC), rows)`, block: `(BLOCK_DIM,)`.
 
-    Grid: `(batch, ceildiv(dim, BLOCK_DIM))`, block: `(BLOCK_DIM,)`.
+    Each thread owns `VEC` consecutive channels and walks a `TILE_SEQ`-token
+    tile of one sequence with a register window. A depthwise conv has no
+    cross-position recurrence, so tiles are independent: the causal gather
+    reads read-only `x` across tile boundaries, and `conv_states` is read and
+    written only by each sequence's first tile.
+
+    With `SEQ_PER_ROW`, row `b` walks all of sequence `b` and `rows` is the
+    batch. Otherwise tile `k` of sequence `b` runs in row `b + seq_start(b) //
+    TILE_SEQ + k`, which grows by at least one from tile to tile. A block finds
+    its sequence by search. `rows` is `ceildiv(total_seqlen, TILE_SEQ) + batch`,
+    enough to cover every tile without a host-side maximum over the ragged
+    lengths, and still larger than the tile count. Rows that map to no tile
+    return early, so the grid reduces empty rows rather than removing them.
 
     Parameters:
         dtype: Element type of `x`, `weight`, `bias` and `output`.
         conv_states_dtype: Element type of `conv_states`.
         WIDTH: Convolution width (number of taps).
-        BLOCK_DIM: Channels per block.
+        VEC: Channels per thread; above 1 needs `channels_last` and channel
+            vectors aligned to their size in `x`, `weight`, `bias` and
+            `output`.
+        SEQ_PER_ROW: Whether a grid row walks a whole sequence instead of a
+            tile.
         weight_LT: Layout type of `weight`.
         bias_LT: Layout type of `bias`.
         query_start_loc_LT: Layout type of `query_start_loc`.
@@ -863,82 +877,151 @@ def causal_conv1d_varlen_fwd_gpu[
         has_initial_state: Per-sequence flags of shape `(batch,)`, or empty.
         conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
             updated in place, or empty.
-        output: Output tensor of shape `(dim, total_seqlen)`.
-        x_fn: Reads the input `x`, of shape `(dim, total_seqlen)`.
+        output: Output tensor, same shape as `x`.
+        x_fn: Reads the input `x`.
         slot_fn: Reads each sequence's slot in `conv_states`. `PAD_SLOT_ID`
             skips the sequence.
     """
     comptime accum_dtype = get_accum_type[dtype]()
     comptime WIDTH_MINUS_1 = WIDTH - 1
+    comptime TILE_SEQ = _FWD_TILE_SEQ
+    comptime Vec = SIMD[dtype, VEC]
+    comptime AccVec = SIMD[accum_dtype, VEC]
 
-    var batch_idx = block_idx.x
-    var d = block_idx.y * BLOCK_DIM + thread_idx.x
-    # `conv_states` is indexed, not addressed: the pool outgrows a 32-bit
-    # offset, and TileTensor forms this one at 64 bits.
+    var batch = Int(query_start_loc.dim[0]()) - 1
+    var row = block_idx.y
+    var b = row
+    comptime if not SEQ_PER_ROW:
+        # Each warp searches on its own, so no thread leaves before the
+        # search: `lane_id()` probes `WARP_SIZE`-way and the sequence is the
+        # last one whose grid row starts at or before this block's. A row is
+        # at least the sequence index and at most `total_seqlen // TILE_SEQ`
+        # above it, which leaves a couple of candidates at decode.
+        comptime seq_axis = 0 if channels_last else 1
+        b = Int(
+            clamp(row - Int(output.dim[seq_axis]()) // TILE_SEQ, 0, batch - 1)
+        )
+        var hi = min(batch, row + 1)
+        while hi - b > 1:
+            var step = ceildiv(hi - b, WARP_SIZE)
+            var p = b + lane_id() * step
+            var le = p < hi and (
+                Int(query_start_loc.load[width=1]((p,))) // TILE_SEQ + p <= row
+            )
+            # Monotonic in the lane, so the last hit is the highest ballot
+            # bit. An empty ballot means that hit is before this window.
+            comptime mask_type = DType.uint32 if WARP_SIZE <= 32 else DType.uint64
+            var ballot = warp.vote[mask_type](le)
+            var last = -1
+            if ballot != 0:
+                last = WARP_SIZE - 1 - Int(count_leading_zeros(ballot))
+            b += last * step
+            hi = min(hi, b + step)
+
+    var d = (block_idx.x * _FWD_BLOCK_DIM + thread_idx.x) * VEC
     var io = VarlenConvIO[channels_last](x_fn, weight, bias, output)
     if d >= io.dim():
         return
 
-    var slot = _cache_slot(slot_fn, batch_idx)
+    # These loads do not depend on each other, so they all go out before the
+    # first branch on one of their results.
+    var seq_start = Int(query_start_loc.load[width=1]((b,)))
+    var seqlen = Int(query_start_loc.load[width=1]((b + 1,))) - seq_start
+    var slot = _cache_slot(slot_fn, b)
+    var use_initial_state = _use_initial_state(
+        has_initial_state, conv_states, b
+    )
+    var bias_val = io.load_bias[VEC](d).cast[accum_dtype]()
+    var tap_weights = Array[AccVec, WIDTH](fill=AccVec(0))
+    comptime for w in range(WIDTH):
+        comptime for c in range(VEC):
+            tap_weights[w][c] = io.load_weight(d + c, w).cast[accum_dtype]()
+
+    var tile_start = 0
+    var tile_end = seqlen
+    comptime if not SEQ_PER_ROW:
+        # Tile 0 stays alive even for an empty sequence so it still reaches
+        # the epilogue below and zeroes conv_states.
+        tile_start = (row - seq_start // TILE_SEQ - b) * TILE_SEQ
+        if tile_start >= max(seqlen, 1):
+            return
+        tile_end = min(tile_start + TILE_SEQ, seqlen)
     if slot == Int(PAD_SLOT_ID):
         return
 
-    var seq_start = Int(query_start_loc.load[width=1]((batch_idx,)))
-    var seqlen = (
-        Int(query_start_loc.load[width=1]((batch_idx + 1,))) - seq_start
-    )
-    var use_initial_state = _use_initial_state(
-        has_initial_state, conv_states, batch_idx
-    )
+    # Register sliding window over the WIDTH-1 inputs preceding the current
+    # position, so the steady state costs one global load per output instead
+    # of WIDTH. Negative positions fall back to the continued sequence's
+    # stored state.
+    var win = Array[AccVec, WIDTH_MINUS_1](fill=AccVec(0))
+    comptime for i in range(WIDTH_MINUS_1):
+        var pos = tile_start - WIDTH_MINUS_1 + i
+        if pos >= 0:
+            win[i] = io.load_x[VEC](d, seq_start + pos).cast[accum_dtype]()
+        elif use_initial_state:
+            comptime for c in range(VEC):
+                win[i][c] = (
+                    conv_states.load[width=1](
+                        (slot, d + c, WIDTH_MINUS_1 + pos)
+                    )
+                    .cast[dtype]()
+                    .cast[accum_dtype]()
+                )
 
-    var bias_val = io.load_bias(d).cast[accum_dtype]()
-    var weights = _channel_weights[dtype, WIDTH](weight, d)
+    # One U-output trip. The steady state calls this with U=UNROLL so the U
+    # loads share no dependencies and can all be in flight; the tile remainder
+    # reuses it with U=1.
+    def _emit_chunk[U: Int](tile_off: Int) {mut win, imm}:
+        var l0 = tile_start + tile_off
+        var raw = Array[Vec, U](fill=Vec(0))
+        comptime for u in range(U):
+            raw[u] = io.load_x[VEC](d, seq_start + l0 + u)
 
-    for l in range(seqlen):
-        var conv_sum = bias_val
-        comptime for w_idx in range(WIDTH):
-            var input_l = l - (WIDTH_MINUS_1 - w_idx)
-            var input_val = Scalar[dtype](0)
-            if input_l >= 0:
-                input_val = io.load_x(d, seq_start + input_l)
-            elif use_initial_state:
-                input_val = conv_states.load[width=1](
-                    (slot, d, WIDTH_MINUS_1 + input_l)
-                ).cast[dtype]()
-            conv_sum += (
-                input_val.cast[accum_dtype]()
-                * weights[w_idx].cast[accum_dtype]()
+        comptime for u in range(U):
+            var cur = raw[u].cast[accum_dtype]()
+            var conv_sum = bias_val
+            comptime for w in range(WIDTH_MINUS_1):
+                conv_sum += win[w] * tap_weights[w]
+            conv_sum += cur * tap_weights[WIDTH_MINUS_1]
+
+            comptime if use_residual:
+                conv_sum += cur
+
+            io.store_out[VEC](
+                d,
+                seq_start + l0 + u,
+                _apply_silu[accum_dtype, VEC](conv_sum, silu_activation).cast[
+                    dtype
+                ](),
             )
 
-        comptime if use_residual:
-            conv_sum += io.load_x(d, seq_start + l).cast[accum_dtype]()
+            comptime if WIDTH_MINUS_1 > 0:
+                comptime for w in range(WIDTH_MINUS_1 - 1):
+                    win[w] = win[w + 1]
+                win[WIDTH_MINUS_1 - 1] = cur
 
-        io.store_out(
-            d,
-            seq_start + l,
-            _apply_silu[accum_dtype](conv_sum, silu_activation).cast[dtype](),
-        )
+    vectorize[_FWD_UNROLL](tile_end - tile_start, _emit_chunk)
 
-    if Int(conv_states.dim[0]()) > 0:
-        io.store_final_state[WIDTH_MINUS_1](
-            conv_states, slot, d, seq_start, seqlen, use_initial_state
-        )
+    # Tile 0 is the only block that reads the slot, so it also writes it;
+    # the tail tile writing it would race with that read. When tile 0 is not
+    # the tail, the sequence is longer than WIDTH-1 and its new state is
+    # plain `x`; otherwise the window holds it, with the continued state
+    # filling any entries a short chunk lacks.
+    if Int(conv_states.dim[0]()) > 0 and tile_start == 0:
+        comptime for i in range(WIDTH_MINUS_1):
+            if tile_end != seqlen:
+                win[i] = io.load_x[VEC](
+                    d, seq_start + seqlen - WIDTH_MINUS_1 + i
+                ).cast[accum_dtype]()
+            comptime for c in range(VEC):
+                conv_states.store(
+                    (slot, d + c, i), win[i][c].cast[conv_states_dtype]()
+                )
 
 
-# Outputs per steady-state trip of the seq-parallel prefill kernel below.
-# The register sliding window reduces each output to one global load; the
-# UNROLL-wide trip keeps that many independent loads in flight so the walk
-# runs at bandwidth instead of at HBM-latency rate. 16 was measured on B200
-# at the Inkling prefill shapes; other parts are untuned.
-comptime _CONV1D_SEQPARALLEL_UNROLL: Int = 16
-
-
-def causal_conv1d_varlen_fwd_seqparallel_gpu[
+def causal_conv1d_varlen_fwd_gpu[
     dtype: DType,
     conv_states_dtype: DType,
-    WIDTH: Int,
-    BLOCK_DIM: Int,
-    TILE_SEQ: Int,
     weight_LT: TensorLayout,
     bias_LT: TensorLayout,
     query_start_loc_LT: TensorLayout,
@@ -952,46 +1035,49 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
     SlotFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int, alignment: Int](Int) -> SIMD[.uint32, width],
+    //,
+    WIDTH: Int,
     silu_activation: Bool = False,
     use_residual: Bool = False,
     channels_last: Bool = False,
 ](
-    weight: TileTensor[dtype, weight_LT, MutUntrackedOrigin, Engine=Engine],
-    bias: TileTensor[dtype, bias_LT, MutUntrackedOrigin, Engine=Engine],
-    query_start_loc: TileTensor[
-        .int32, query_start_loc_LT, MutUntrackedOrigin, Engine=Engine
-    ],
+    weight: TileTensor[dtype, weight_LT, _, Engine=Engine],
+    bias: TileTensor[dtype, bias_LT, _, Engine=Engine],
+    query_start_loc: TileTensor[.int32, query_start_loc_LT, _, Engine=Engine],
     has_initial_state: TileTensor[
-        .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
+        .bool, has_initial_state_LT, _, Engine=Engine
     ],
     conv_states: TileTensor[
-        conv_states_dtype, conv_states_LT, MutUntrackedOrigin, Engine=Engine
+        conv_states_dtype, conv_states_LT, _, Engine=Engine
     ],
-    output: TileTensor[dtype, output_LT, MutUntrackedOrigin, Engine=Engine],
+    output: TileTensor[dtype, output_LT, _, Engine=Engine],
+    x_addr: Int,
+    x_row_stride: Int,
     x_fn: XFn,
     slot_fn: SlotFn,
-):
-    """GPU kernel for causal conv1d forward with variable length sequences,
-    sequence-parallel prefill variant.
+    ctx: DeviceContext,
+    x_vector_loads: Bool = True,
+    x_col_stride: Int = 1,
+) raises:
+    """Launches the causal conv1d forward kernel with variable length sequences.
 
-    Grid: `(batch, ceildiv(dim, BLOCK_DIM), ceildiv(total_seqlen, TILE_SEQ))`,
-    block: `(BLOCK_DIM,)`.
+    Prefill moves 8 bytes of channels per thread when `channels_last` and the
+    operands are aligned for it, and one channel per thread otherwise. Pure
+    decode, where no sequence has more than a token on average, gives each
+    thread one channel and each grid row a whole sequence.
 
-    Grid-z tiles each sequence into `TILE_SEQ`-position chunks, so a long
-    prefill is spread across blocks instead of walked serially by one thread.
-    A depthwise conv has no cross-position recurrence: the causal gather reads
-    read-only `x` across tile boundaries, so tiles need no shared memory or
-    synchronization. `conv_states` is written once, by each sequence's tail
-    tile. No sequence is longer than `total_seqlen`, so the grid-z extent
-    bounds every sequence's tile count without a host-side reduction over the
-    ragged lengths; blocks past a sequence's last tile return early.
+    `x_addr`, `x_row_stride` and `x_col_stride` describe the view `x_fn` reads,
+    copied out before the call so the tensor and the closure are not both live
+    arguments. They are the address and strides of that view's first element.
+    A fused input does not have them: the closure applies the slice offset
+    inside the load, and the slice pointer is not that address. Pass
+    `x_vector_loads=False` unless those three values are the ones the load
+    uses, in which case `x_fn` may only issue a channel vector when they are
+    8-byte aligned and the channel stride is 1.
 
     Parameters:
         dtype: Element type of `x`, `weight`, `bias` and `output`.
         conv_states_dtype: Element type of `conv_states`.
-        WIDTH: Convolution width (number of taps).
-        BLOCK_DIM: Channels per block.
-        TILE_SEQ: Sequence positions per block.
         weight_LT: Layout type of `weight`.
         bias_LT: Layout type of `bias`.
         query_start_loc_LT: Layout type of `query_start_loc`.
@@ -1002,6 +1088,7 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
         XFn: Reads `x` at its physical `(row, column)` index, claiming
             `alignment` elements of alignment.
         SlotFn: Reads the conv-state slot of each sequence.
+        WIDTH: Convolution width (number of taps).
         silu_activation: Whether to apply SiLU to the output.
         use_residual: If True, adds `x[d, s]` to the convolution sum before
             the activation.
@@ -1015,103 +1102,92 @@ def causal_conv1d_varlen_fwd_seqparallel_gpu[
         has_initial_state: Per-sequence flags of shape `(batch,)`, or empty.
         conv_states: Convolution states of shape `(max_slots, dim, width - 1)`,
             updated in place, or empty.
-        output: Output tensor of shape `(dim, total_seqlen)`.
-        x_fn: Reads the input `x`, of shape `(dim, total_seqlen)`.
+        output: Output tensor, same shape as `x`.
+        x_addr: Address of the first element `x_fn` loads, when
+            `x_vector_loads` is True.
+        x_row_stride: Stride, in elements, of that view's first axis.
+        x_fn: Reads `x`.
         slot_fn: Reads each sequence's slot in `conv_states`. `PAD_SLOT_ID`
             skips the sequence.
+        ctx: The device context to launch on.
+        x_vector_loads: Whether `x_fn` issues channel vectors. False when the
+            address of those loads is not the one in `x_addr`.
+        x_col_stride: Stride, in elements, of that view's channel axis. A
+            channel vector needs this to be 1.
     """
-    comptime accum_dtype = get_accum_type[dtype]()
-    comptime WIDTH_MINUS_1 = WIDTH - 1
-    comptime UNROLL = _CONV1D_SEQPARALLEL_UNROLL
-    comptime TAP_LANES = _TAP_LANES[WIDTH]
+    comptime seq_axis = 0 if channels_last else 1
+    var dim = Int(output.dim[1 - seq_axis]())
+    var total_seqlen = Int(output.dim[seq_axis]())
+    var batch = Int(query_start_loc.dim[0]()) - 1
 
-    var batch_idx = block_idx.x
-    var d = block_idx.y * BLOCK_DIM + thread_idx.x
-    var io = VarlenConvIO[channels_last](x_fn, weight, bias, output)
-    if d >= io.dim():
-        return
-
-    var slot = _cache_slot(slot_fn, batch_idx)
-    if slot == Int(PAD_SLOT_ID):
-        return
-
-    var seq_start = Int(query_start_loc.load[width=1]((batch_idx,)))
-    var seqlen = (
-        Int(query_start_loc.load[width=1]((batch_idx + 1,))) - seq_start
-    )
-
-    # Tile 0 stays alive even for an empty sequence so it still reaches the
-    # epilogue below and zeroes conv_states.
-    var tile_start = block_idx.z * TILE_SEQ
-    if block_idx.z >= max(ceildiv(seqlen, TILE_SEQ), 1):
-        return
-    var tile_end = min(tile_start + TILE_SEQ, seqlen)
-
-    var use_initial_state = _use_initial_state(
-        has_initial_state, conv_states, batch_idx
-    )
-    var bias_val = io.load_bias(d).cast[accum_dtype]()
-    var tap_weights = _channel_weights[dtype, WIDTH](weight, d).cast[
-        accum_dtype
-    ]()
-
-    # Register sliding window over the WIDTH-1 inputs preceding the current
-    # position, so the steady state costs one global load per output instead
-    # of WIDTH. Negative positions fall back to the continued sequence's
-    # stored state.
-    var win = Array[Scalar[dtype], WIDTH_MINUS_1](fill=0)
-    comptime for i in range(WIDTH_MINUS_1):
-        var pos = tile_start - WIDTH_MINUS_1 + i
-        if pos >= 0:
-            win[i] = io.load_x(d, seq_start + pos)
-        elif use_initial_state:
-            win[i] = conv_states.load[width=1](
-                (slot, d, WIDTH_MINUS_1 + pos)
-            ).cast[dtype]()
-
-    # One U-output trip. The steady state calls this with U=UNROLL so the U
-    # loads share no dependencies and can all be in flight; the tile remainder
-    # reuses it with U=1.
-    def _emit_chunk[U: Int](tile_off: Int) {mut win, imm}:
-        var l0 = tile_start + tile_off
-        # Carried window followed by this trip's loads, so `taps[j]` is
-        # position `l0 - WIDTH_MINUS_1 + j` throughout and output `u` folds
-        # `taps[u ..< u + WIDTH]` against the taps.
-        var taps = Array[Scalar[dtype], WIDTH_MINUS_1 + U](fill=0)
-        comptime for i in range(WIDTH_MINUS_1):
-            taps[i] = win[i]
-        comptime for u in range(U):
-            taps[WIDTH_MINUS_1 + u] = io.load_x(d, seq_start + l0 + u)
-
-        comptime for u in range(U):
-            var window = SIMD[accum_dtype, TAP_LANES](0)
-            comptime for w in range(WIDTH):
-                window[w] = taps[u + w].cast[accum_dtype]()
-            var conv_sum = bias_val + (window * tap_weights).reduce_add()
-
-            comptime if use_residual:
-                # The last tap is this output's own `x`, so the residual
-                # costs no extra load.
-                conv_sum += window[WIDTH - 1]
-
-            io.store_out(
-                d,
-                seq_start + l0 + u,
-                _apply_silu[accum_dtype](conv_sum, silu_activation).cast[
-                    dtype
-                ](),
-            )
-
-        # Carry the last WIDTH-1 taps into the next trip.
-        comptime for i in range(WIDTH_MINUS_1):
-            win[i] = taps[U + i]
-
-    vectorize[UNROLL](tile_end - tile_start, _emit_chunk)
-
-    if Int(conv_states.dim[0]()) > 0 and tile_end == seqlen:
-        io.store_final_state[WIDTH_MINUS_1](
-            conv_states, slot, d, seq_start, seqlen, use_initial_state
+    @inline(.always)
+    def launch[VEC: Int, SEQ_PER_ROW: Bool]() raises {imm}:
+        comptime kernel = _causal_conv1d_varlen_fwd_kernel[
+            dtype,
+            conv_states_dtype,
+            WIDTH,
+            VEC,
+            SEQ_PER_ROW,
+            weight_LT,
+            bias_LT,
+            query_start_loc_LT,
+            has_initial_state_LT,
+            conv_states_LT,
+            output_LT,
+            Engine,
+            XFn,
+            SlotFn,
+            silu_activation,
+            use_residual,
+            channels_last,
+        ]
+        ctx.enqueue_function[kernel](
+            weight,
+            bias,
+            query_start_loc,
+            has_initial_state,
+            conv_states,
+            output,
+            host_arg=x_fn,
+            host_arg2=slot_fn,
+            grid_dim=(
+                ceildiv(dim, _FWD_BLOCK_DIM * VEC),
+                batch if SEQ_PER_ROW else ceildiv(total_seqlen, _FWD_TILE_SEQ)
+                + batch,
+            ),
+            block_dim=_FWD_BLOCK_DIM,
         )
+
+    if total_seqlen <= batch:
+        launch[1, True]()
+        return
+
+    comptime if channels_last:
+        # Channel vectors are contiguous 8-byte accesses. `x` is often a
+        # column slice, so its own base and strides have to be the ones the
+        # load uses; a fused input cannot prove that and passes
+        # `x_vector_loads=False`. Bias and output are read and written along
+        # their last axis, which has to be unit stride, not merely aligned.
+        comptime V = 8 // size_of[dtype]()
+        var x_ok = not x_vector_loads or (
+            x_addr % 8 == 0 and x_row_stride % V == 0 and x_col_stride == 1
+        )
+        var bias_ok = Int(bias.dim[0]()) == 0 or (
+            Int(bias.unsafe_ptr()) % 8 == 0
+            and Int(bias.layout.stride[0]().value()) == 1
+        )
+        if (
+            dim % V == 0
+            and x_ok
+            and bias_ok
+            and Int(output.unsafe_ptr()) % 8 == 0
+            and Int(weight.unsafe_ptr()) % 8 == 0
+            and Int(output.layout.stride[0]().value()) % V == 0
+            and Int(output.layout.stride[1]().value()) == 1
+        ):
+            launch[V, False]()
+            return
+    launch[1, False]()
 
 
 def causal_conv1d_varlen_update_gpu[
