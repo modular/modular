@@ -1895,11 +1895,12 @@ void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
   // Unfortunately, we don't have a good way to do a lookup given an origin
   // attribute, so we scan the body of the try block for any vardecls. Is this
   // the only thing that can declare an origin?
-  SmallPtrSet<Attribute, 8> originSet;
+  SmallPtrSet<Attribute, 8> roots;
   for (auto o : origins)
-    originSet.insert(OriginType::stripMutCastAndRebind(o));
+    if (ParamDeclRefAttr root = getRootOrigin(o))
+      roots.insert(root);
   tryOp.getTryRegion().walk([&](VarDeclOp varDecl) {
-    if (originSet.contains(varDecl.getType().getOrigin())) {
+    if (roots.contains(varDecl.getType().getOrigin())) {
       auto diag = emitError(loc);
       diag << "inferred error type " << rvalueType << " captures origin ";
       if (varDecl.isSynthetic()) {
