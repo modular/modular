@@ -63,6 +63,10 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4,
 )
 from nn.attention.gpu.mha import flash_attention, flash_attention_ragged
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
@@ -707,11 +711,11 @@ struct MaskedFlashAttentionGPU:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
         flash_attention(
-            output.to_layout_tensor(),
-            q.to_layout_tensor(),
-            k.to_layout_tensor(),
-            v.to_layout_tensor(),
-            mask.to_layout_tensor(),
+            output.to_tile_tensor(),
+            q.to_tile_tensor(),
+            k.to_tile_tensor(),
+            v.to_tile_tensor(),
+            mask.to_tile_tensor(),
             scale,
             context=ctx,
         )
@@ -795,10 +799,10 @@ struct FlashAttentionGPU:
         """
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        var output_buffer = output.to_layout_tensor()
-        var q_buffer = q.to_layout_tensor()
-        var k_buffer = k.to_layout_tensor()
-        var v_buffer = v.to_layout_tensor()
+        var output_buffer = output.to_tile_tensor()
+        var q_buffer = q.to_tile_tensor()
+        var k_buffer = k.to_tile_tensor()
+        var v_buffer = v.to_tile_tensor()
 
         def _dispatch_flash_attention[
             mask_t: MHAMask
@@ -845,16 +849,14 @@ struct PaddedFlashAttentionGPU:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        var output_buffer = output.to_layout_tensor()
-        var q_buffer = q.to_layout_tensor()
-        var k_buffer = k.to_layout_tensor()
-        var v_buffer = v.to_layout_tensor()
+        var output_buffer = output.to_tile_tensor()
+        var q_buffer = q.to_tile_tensor()
+        var k_buffer = k.to_tile_tensor()
+        var v_buffer = v.to_tile_tensor()
 
-        comptime valid_length_t = LayoutTensor[
-            .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-        var _valid_length = rebind[valid_length_t](
-            valid_length.to_layout_tensor()
+        comptime valid_length_t = ImmutTileTensor1D[.uint32]
+        var _valid_length = immut_tile_tensor_1d(
+            valid_length.unsafe_ptr(), valid_length.dim_size(0)
         )
 
         def _dispatch_flash_attention[
@@ -935,17 +937,12 @@ struct RaggedFlashAttentionGPU:
         """
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        var output_buffer = output.to_layout_tensor()
-        var q_buffer = q.to_layout_tensor()
-        var k_buffer = k.to_layout_tensor()
-        var v_buffer = v.to_layout_tensor()
+        var output_buffer = output.to_tile_tensor()
+        var q_buffer = q.to_tile_tensor()
+        var k_buffer = k.to_tile_tensor()
+        var v_buffer = v.to_tile_tensor()
 
-        comptime input_row_offsets_t = LayoutTensor[
-            .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-        var _input_row_offsets = rebind[input_row_offsets_t](
-            input_row_offsets.to_layout_tensor()
-        )
+        var _input_row_offsets = input_row_offsets.to_tile_tensor()
 
         def _dispatch_flash_attention[
             mask_t: MHAMask
@@ -962,7 +959,7 @@ struct RaggedFlashAttentionGPU:
                 k_buffer,
                 v_buffer,
                 _input_row_offsets,
-                q_max_seq_len.to_layout_tensor(),
+                q_max_seq_len.to_tile_tensor(),
                 mask,
                 scale,
                 ctx,

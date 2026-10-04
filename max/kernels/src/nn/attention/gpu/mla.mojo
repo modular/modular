@@ -3162,8 +3162,6 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var q_rope_lt = q_rope.to_layout_tensor()
-        var q_scale_lt = q_scale.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
             _ragged_kv_view(k),
@@ -3205,8 +3203,8 @@ def flare_mla_prefill[
         ](
             output,
             q_nope,
-            q_rope_lt,
-            q_scale_lt,
+            q_rope,
+            q_scale,
             k_operand,
             k_rope_operand,
             v_operand,
@@ -3302,8 +3300,6 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var q_rope_lt = q_rope.to_layout_tensor()
-        var q_scale_lt = q_scale.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
             _ragged_kv_view(k),
@@ -3342,8 +3338,8 @@ def flare_mla_prefill[
         ](
             output,
             q_nope,
-            q_rope_lt,
-            q_scale_lt,
+            q_rope,
+            q_scale,
             k_operand,
             k_rope_operand,
             v_operand,

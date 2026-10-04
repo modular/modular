@@ -50,6 +50,7 @@ from std.math.uutils import umod, ufloordiv
 from std.collections import OptionalReg
 from std.sys import (
     has_nvidia_gpu_accelerator,
+    is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
     size_of,
@@ -81,6 +82,7 @@ from layout._utils import load_to_simd
 from layout.int_tuple import product, IntTuple
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
+from layout.tile_tensor import TileTensor
 from layout.swizzle import (
     ComposedLayout,
     Swizzle,
@@ -298,6 +300,134 @@ struct TensorCore[
             return [shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16]
         else:
             comptime assert False, "No valid shape of mma"
+
+    @staticmethod
+    @inline(.always)
+    def _check_cdna_input_fragment[extent: Int, registers: Int]():
+        comptime assert _is_amd_cdna(), "native A/B loads require AMD CDNA"
+        comptime assert extent in (16, 32)
+        comptime fp8_dtype = get_amd_fp8_dtype()
+        comptime bf8_dtype = get_amd_bf8_dtype()
+        comptime assert (
+            (Self.in_type == .float32 and registers in (1, 2))
+            or (Self.in_type.is_half_float() and registers in (4, 8))
+            or (
+                Optional[DType](Self.in_type) in (fp8_dtype, bf8_dtype)
+                and registers == 8
+            )
+        ), "unsupported CDNA input fragment"
+
+    @inline(.always)
+    def load_a[
+        swizzle: Optional[Swizzle] = None
+    ](
+        self,
+        a: TileTensor[Self.in_type, ...],
+        out res: LayoutTensor[
+            Self.in_type,
+            Layout.col_major(
+                1, num_matrix_reg[Self.shape[0], a.static_shape[1]]()
+            ),
+            MutAnyOrigin,
+            address_space=.LOCAL,
+        ],
+    ):
+        """Loads a native matrix tile into CDNA A registers.
+
+        Parameters:
+            swizzle: Must be `None`; the tile layout supplies the addressing.
+
+        Args:
+            a: An M-by-K scalar tile with arbitrary strides and static K.
+
+        Returns:
+            The legacy register fragment accepted by `mma_op`.
+
+        Constraints:
+            The target must be AMD CDNA and M must be 16 or 32. K must be a
+            positive multiple of the MMA K dimension. Consecutive MMA register
+            groups are packed per lane. NVIDIA, RDNA, and swizzled loads are not
+            supported by this overload.
+        """
+        comptime assert a.rank == a.flat_rank == 2 and a.element_size == 1
+        comptime assert swizzle is None, "native A loads do not support swizzle"
+        comptime K = a.static_shape[1]
+        comptime assert K > 0 and K % Self.shape[2] == 0
+        Self._check_cdna_input_fragment[
+            Self.shape[0], num_matrix_reg[Self.shape[0], Self.shape[2]]()
+        ]()
+        debug_assert(
+            Int(a.dim[0]()) == Self.shape[0], "source must have MMA M rows"
+        )
+        comptime registers = num_matrix_reg[Self.shape[0], K]()
+        var fragment = type_of(res).stack_allocation()
+        var row = lane_id() % Self.shape[0]
+        var k_base = (lane_id() // Self.shape[0]) * registers
+        comptime for register in range(registers):
+            fragment[0, register] = a.load[width=1]((row, k_base + register))
+        return fragment
+
+    @inline(.always)
+    def load_b[
+        swizzle: Optional[Swizzle] = None
+    ](
+        self,
+        b: TileTensor[Self.in_type, ...],
+        out res: LayoutTensor[
+            Self.in_type,
+            Layout.row_major(
+                num_matrix_reg[
+                    b.static_shape[1 if Self.transpose_b else 0], Self.shape[1]
+                ](),
+                1,
+            ),
+            MutAnyOrigin,
+            address_space=.LOCAL,
+        ],
+    ):
+        """Loads a native matrix tile into CDNA B registers.
+
+        Parameters:
+            swizzle: Must be `None`; the tile layout supplies the addressing.
+
+        Args:
+            b: A K-by-N scalar tile, or N-by-K when `transpose_b` is enabled.
+                Strides are arbitrary; K must be static.
+
+        Returns:
+            The legacy register fragment accepted by `mma_op`.
+
+        Constraints:
+            The target must be AMD CDNA and N must be 16 or 32. K must be a
+            positive multiple of the MMA K dimension. Consecutive MMA register
+            groups are packed per lane. NVIDIA, RDNA, and swizzled loads are not
+            supported by this overload.
+        """
+        comptime assert b.rank == b.flat_rank == 2 and b.element_size == 1
+        comptime assert swizzle is None, "native B loads do not support swizzle"
+        comptime K = b.static_shape[1 if Self.transpose_b else 0]
+        comptime assert K > 0 and K % Self.shape[2] == 0
+        Self._check_cdna_input_fragment[
+            Self.shape[1], num_matrix_reg[Self.shape[2], Self.shape[1]]()
+        ]()
+        debug_assert(
+            Int(b.dim[0 if Self.transpose_b else 1]()) == Self.shape[1],
+            "source must have MMA N columns",
+        )
+        comptime registers = num_matrix_reg[K, Self.shape[1]]()
+        var fragment = type_of(res).stack_allocation()
+        var col = lane_id() % Self.shape[1]
+        var k_base = (lane_id() // Self.shape[1]) * registers
+        comptime for register in range(registers):
+            comptime if Self.transpose_b:
+                fragment[register, 0] = b.load[width=1](
+                    (col, k_base + register)
+                )
+            else:
+                fragment[register, 0] = b.load[width=1](
+                    (k_base + register, col)
+                )
+        return fragment
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
 
@@ -669,6 +799,65 @@ struct TensorCore[
         else:
             return self._load_c_amd(c)
 
+    @staticmethod
+    @inline(.always)
+    def _c_fragment_coord[
+        register: Int, rows: Int = 4
+    ](lane: Int) -> Tuple[Int, Int]:
+        comptime if is_nvidia_gpu():
+            comptime assert Self.shape[1] == 8
+            # NVIDIA MMA accumulators pair adjacent columns, then advance 8 rows.
+            return (
+                lane // 4 + (register // 2) * 8,
+                (lane % 4) * 2 + register % 2,
+            )
+        else:
+            comptime assert is_amd_gpu(), "unsupported accumulator architecture"
+            comptime assert WARP_SIZE % Self.shape[1] == 0
+            comptime assert Self.c_reg_type.length % rows == 0
+            comptime groups = WARP_SIZE // Self.shape[1]
+            return (
+                (lane // Self.shape[1]) * rows
+                + (register // rows) * groups * rows
+                + register % rows,
+                lane % Self.shape[1],
+            )
+
+    @inline(.always)
+    def load_c(
+        self, c: TileTensor[Self.out_type, ...], out res: Self.c_reg_tile_type
+    ):
+        """Loads a scalar matrix tile into the MMA accumulator registers.
+
+        Args:
+            c: The complete M-by-N accumulator tile, with arbitrary strides.
+
+        Returns:
+            The register fragment accepted by `mma_op`.
+
+        Constraints:
+            The tile must have scalar elements and exactly the MMA M-by-N shape.
+            NVIDIA supports float32 and float64; AMD supports float32.
+        """
+        comptime assert c.rank == c.flat_rank == 2 and c.element_size == 1
+        comptime registers = num_matrix_reg[Self.shape[0], Self.shape[1]]()
+        comptime if is_nvidia_gpu():
+            comptime assert (Self.out_type == .float32 and registers == 4) or (
+                Self.out_type == .float64 and registers in (2, 4)
+            )
+        else:
+            comptime assert Self.out_type == .float32 and registers in (4, 16)
+        debug_assert(
+            Int(c.dim[0]()) == Self.shape[0]
+            and Int(c.dim[1]()) == Self.shape[1],
+            "source must have the MMA accumulator shape",
+        )
+        var fragment = type_of(res).stack_allocation()
+        comptime for register in range(registers):
+            var row, col = Self._c_fragment_coord[register](lane_id())
+            fragment[0, register] = c.load[width=1]((row, col))
+        return fragment
+
     @inline(.always)
     def _load_c_amd(self, c: LayoutTensor, out res: Self.c_reg_tile_type):
         comptime mma_m = Self.shape[0]
@@ -736,6 +925,48 @@ struct TensorCore[
             self._store_d_nvidia(d_dst, d_src)
         else:
             self._store_d_amd(d_dst, d_src)
+
+    @inline(.always)
+    def store_d(
+        self,
+        d_dst: TileTensor[mut=True, Self.out_type, ...],
+        d_src: LayoutTensor[Self.out_type, ...],
+    ):
+        """Stores MMA accumulator registers into a scalar matrix tile.
+
+        Args:
+            d_dst: The complete M-by-N output tile, with arbitrary strides.
+            d_src: The register fragment produced by `mma_op` or `load_c`.
+
+        Constraints:
+            The output tile must have scalar elements and the MMA M-by-N shape.
+            NVIDIA supports float32 and float64; AMD supports float32.
+        """
+        comptime assert d_dst.rank == d_dst.flat_rank == 2
+        comptime assert d_dst.element_size == 1
+        comptime registers = num_matrix_reg[Self.shape[0], Self.shape[1]]()
+        comptime assert d_src.shape[0]() == 1 and d_src.shape[1]() == registers
+        comptime assert d_src.element_size == 1
+        comptime if is_nvidia_gpu():
+            comptime assert (Self.out_type == .float32 and registers == 4) or (
+                Self.out_type == .float64 and registers in (2, 4)
+            )
+        else:
+            comptime assert Self.out_type == .float32 and registers in (
+                4,
+                8,
+                16,
+            )
+        debug_assert(
+            Int(d_dst.dim[0]()) == Self.shape[0]
+            and Int(d_dst.dim[1]()) == Self.shape[1],
+            "destination must have the MMA accumulator shape",
+        )
+        # RDNA stores eight strided rows per group; CDNA stores four.
+        comptime rows = 8 if _is_amd_rdna() else 4
+        comptime for register in range(registers):
+            var row, col = Self._c_fragment_coord[register, rows](lane_id())
+            d_dst.store((row, col), d_src[0, register][0])
 
     @inline(.always)
     def _store_d_amd(
