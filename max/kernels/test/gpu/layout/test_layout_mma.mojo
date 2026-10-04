@@ -14,12 +14,12 @@
 from std.math import ceildiv, isclose, isnan, nan
 from std.os import abort
 from std.random import random_float64
+from std.sys import is_nvidia_gpu
 
 from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import H100, MI300X
 from layout import *
-from layout._utils import ManagedLayoutTensor
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core import *
 from std.testing import *
@@ -30,31 +30,37 @@ def mma_layout_tc[
     in_type: DType,
     shape: IndexList[3],
     layout_c: TensorLayout,
-    layout_a: Layout,
-    layout_b: Layout,
+    layout_a: TensorLayout,
+    layout_b: TensorLayout,
 ](
     mat_c: TileTensor[out_type, layout_c, MutAnyOrigin],
-    mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
-    mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
+    mat_a: TileTensor[in_type, layout_a, MutAnyOrigin],
+    mat_b: TileTensor[in_type, layout_b, MutAnyOrigin],
 ):
     var tc = TensorCore[out_type, in_type, shape]()
-    var a = tc.load_a(mat_a)
-    var b = tc.load_b(mat_b)
-    var c = tc.load_c(mat_c)
-    var d = tc.mma_op(a, b, c)
-    tc.store_d(mat_c, d)
+    # NVIDIA A/B fragment loaders still require legacy register-layout views.
+    comptime if is_nvidia_gpu():
+        var a = tc.load_a(mat_a.to_layout_tensor())
+        var b = tc.load_b(mat_b.to_layout_tensor())
+        var c = tc.load_c(mat_c)
+        tc.store_d(mat_c, tc.mma_op(a, b, c))
+    else:
+        var a = tc.load_a(mat_a)
+        var b = tc.load_b(mat_b)
+        var c = tc.load_c(mat_c)
+        tc.store_d(mat_c, tc.mma_op(a, b, c))
 
 
 def matmul_naive[
     out_type: DType,
     in_type: DType,
     layout_c: TensorLayout,
-    layout_a: Layout,
-    layout_b: Layout,
+    layout_a: TensorLayout,
+    layout_b: TensorLayout,
 ](
     mat_c: TileTensor[out_type, layout_c, MutAnyOrigin],
-    mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
-    mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
+    mat_a: TileTensor[in_type, layout_a, MutAnyOrigin],
+    mat_b: TileTensor[in_type, layout_b, MutAnyOrigin],
 ):
     comptime assert mat_c.rank == mat_c.flat_rank == 2
     var x = global_idx.x
@@ -64,7 +70,8 @@ def matmul_naive[
         return
 
     var accum = mat_c[x, y]
-    for i in range(mat_a.shape[1]()):
+    comptime assert mat_a.flat_rank == mat_b.flat_rank == 2
+    for i in range(Int(mat_a.dim[1]())):
         accum += (
             mat_a[x, i][0].cast[out_type]() * mat_b[i, y][0].cast[out_type]()
         )
@@ -86,25 +93,25 @@ def test_layout_mma[
 ) raises:
     print("== run layout mma => ", String(out_type), String(in_type), M, N, K)
 
-    comptime layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
-    comptime layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
+    comptime layout_a = row_major[M, K]()
+    comptime layout_b = row_major[K, N]()
     comptime layout_c = row_major[M, N]()
 
-    var mat_a = ManagedLayoutTensor[in_type, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[in_type, layout_b](ctx)
+    var mat_a = HostDeviceTileTensor[in_type](layout_a, ctx)
+    var mat_b = HostDeviceTileTensor[in_type](layout_b, ctx)
     var mat_c = HostDeviceTileTensor[out_type](layout_c, ctx)
-    var mat_a_n = ManagedLayoutTensor[in_type, layout_a](ctx)
-    var mat_b_n = ManagedLayoutTensor[in_type, layout_b](ctx)
+    var mat_a_n = HostDeviceTileTensor[in_type](layout_a, ctx)
+    var mat_b_n = HostDeviceTileTensor[in_type](layout_b, ctx)
     var mat_c_n = HostDeviceTileTensor[out_type](layout_c, ctx)
 
     var rand_min = -1 * rng_width
     var rand_max = rng_width
-    var mat_a_tensor = mat_a.tensor()
-    var mat_b_tensor = mat_b.tensor()
+    var mat_a_tensor = mat_a.host_tensor()
+    var mat_b_tensor = mat_b.host_tensor()
     var mat_c_tensor = mat_c.host_tensor()
 
-    var mat_a_n_tensor = mat_a_n.tensor()
-    var mat_b_n_tensor = mat_b_n.tensor()
+    var mat_a_n_tensor = mat_a_n.host_tensor()
+    var mat_b_n_tensor = mat_b_n.host_tensor()
     var mat_c_n_tensor = mat_c_n.host_tensor()
 
     for i in range(M):
@@ -123,16 +130,25 @@ def test_layout_mma[
             mat_c_tensor[i, j] = val.cast[out_type]()
             mat_c_n_tensor[i, j] = mat_c_tensor[i, j]
 
+    mat_a.to_device()
+    mat_b.to_device()
+    mat_a_n.to_device()
+    mat_b_n.to_device()
     mat_c.to_device()
     mat_c_n.to_device()
 
     comptime kernel = mma_layout_tc[
-        out_type, in_type, shape, type_of(layout_c), layout_a, layout_b
+        out_type,
+        in_type,
+        shape,
+        type_of(layout_c),
+        type_of(layout_a),
+        type_of(layout_b),
     ]
     ctx.enqueue_function[kernel](
         mat_c.device_tensor().as_unsafe_any_origin(),
-        mat_a.device_tensor(),
-        mat_b.device_tensor(),
+        mat_a.device_tensor().as_unsafe_any_origin(),
+        mat_b.device_tensor().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(WARP_SIZE),
     )
@@ -141,12 +157,16 @@ def test_layout_mma[
 
     comptime warps_per_block = 16
     comptime naive_func = matmul_naive[
-        out_type, in_type, type_of(layout_c), layout_a, layout_b
+        out_type,
+        in_type,
+        type_of(layout_c),
+        type_of(layout_a),
+        type_of(layout_b),
     ]
     ctx.enqueue_function[naive_func](
         mat_c_n.device_tensor().as_unsafe_any_origin(),
-        mat_a_n.device_tensor(),
-        mat_b_n.device_tensor(),
+        mat_a_n.device_tensor().as_unsafe_any_origin(),
+        mat_b_n.device_tensor().as_unsafe_any_origin(),
         grid_dim=(ceildiv(M, warps_per_block), ceildiv(N, warps_per_block)),
         block_dim=(warps_per_block, warps_per_block),
     )
