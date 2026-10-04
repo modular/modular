@@ -32,8 +32,8 @@ from std.testing import TestSuite, assert_equal
 
 
 def vec_add(
-    in0: Pointer[Float32, MutAnyOrigin],
-    in1: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):

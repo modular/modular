@@ -61,8 +61,8 @@ struct OneS(DevicePassable):
 
 
 def vec_func(
-    in0: Pointer[S, MutAnyOrigin],
-    in1: Pointer[S, MutAnyOrigin],
+    in0: Pointer[S, ImmutAnyOrigin],
+    in1: Pointer[S, ImmutAnyOrigin],
     output: Pointer[S, MutAnyOrigin],
     s: TwoS,
     len_dev: Int32,

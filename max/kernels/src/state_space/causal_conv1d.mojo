@@ -528,16 +528,16 @@ def causal_conv1d_channel_first_fwd_gpu[
     seqlen: Int32,
     width: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (B, C, L)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, C, L)
     bias: TileTensor[
-        bias_dtype, bias_LT, MutUntrackedOrigin, Engine=bias_engine
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
     ],  # Shape (C,)
     silu_activation: Int8,
 ):
@@ -740,10 +740,10 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias[
     seqlen: Int32,
     width: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (B, C, L)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
@@ -937,16 +937,16 @@ def causal_conv1d_channel_last_fwd_gpu[
     seqlen: Int32,
     width: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (B, L, C)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, L, C)
     bias: TileTensor[
-        bias_dtype, bias_LT, MutUntrackedOrigin, Engine=bias_engine
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
     ],  # Shape (C,)
     silu_activation: Int8,
 ):
@@ -1078,10 +1078,10 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias[
     seqlen: Int32,
     width: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (B, L, C)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
@@ -1211,19 +1211,19 @@ def causal_conv1d_channel_last_fwd_gpu_with_seq_idx[
     seqlen: Int32,
     width: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (B, L, C)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, L, C)
     bias: TileTensor[
-        bias_dtype, bias_LT, MutUntrackedOrigin, Engine=bias_engine
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
     ],  # Shape (C,)
     seq_idx: TileTensor[
-        seq_idx_dtype, seq_idx_LT, MutUntrackedOrigin, Engine=seq_idx_engine
+        seq_idx_dtype, seq_idx_LT, ImmUntrackedOrigin, Engine=seq_idx_engine
     ],  # Shape (B, L)
     silu_activation: Int8,
 ):
@@ -1523,16 +1523,16 @@ def causal_conv1d_channel_last_fwd_gpu_no_bias_with_seq_idx[
     seqlen: Int32,
     width: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (B, L, C)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, L, C)
     seq_idx: TileTensor[
-        seq_idx_dtype, seq_idx_LT, MutUntrackedOrigin, Engine=seq_idx_engine
+        seq_idx_dtype, seq_idx_LT, ImmUntrackedOrigin, Engine=seq_idx_engine
     ],  # Shape (B, L)
     silu_activation: Int8,
 ):
@@ -1788,19 +1788,19 @@ def causal_conv1d_channel_first_fwd_gpu_with_seq_idx[
     seqlen: Int32,
     width: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (B, C, L)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, C, L)
     bias: TileTensor[
-        bias_dtype, bias_LT, MutUntrackedOrigin, Engine=bias_engine
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
     ],  # Shape (C,)
     seq_idx: TileTensor[
-        seq_idx_dtype, seq_idx_LT, MutUntrackedOrigin, Engine=seq_idx_engine
+        seq_idx_dtype, seq_idx_LT, ImmUntrackedOrigin, Engine=seq_idx_engine
     ],  # Shape (B, L)
     silu_activation: Int8,
 ):
@@ -2053,16 +2053,16 @@ def causal_conv1d_channel_first_fwd_gpu_no_bias_with_seq_idx[
     seqlen: Int32,
     width: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (B, C, L)
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],  # Shape (C, W)
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],  # Shape (B, C, L)
     seq_idx: TileTensor[
-        seq_idx_dtype, seq_idx_LT, MutUntrackedOrigin, Engine=seq_idx_engine
+        seq_idx_dtype, seq_idx_LT, ImmUntrackedOrigin, Engine=seq_idx_engine
     ],  # Shape (B, L)
     silu_activation: Int8,
 ):
@@ -2538,7 +2538,7 @@ def causal_conv1d_update_gpu[
     seqlen: Int32,
     width: Int32,
     state_len: Int32,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine],
+    x: TileTensor[x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine],
     conv_state: TileTensor[
         conv_state_dtype,
         conv_state_LT,
@@ -2546,13 +2546,13 @@ def causal_conv1d_update_gpu[
         Engine=conv_state_engine,
     ],
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine
     ],
     bias: TileTensor[
-        bias_dtype, bias_LT, MutUntrackedOrigin, Engine=bias_engine
+        bias_dtype, bias_LT, ImmUntrackedOrigin, Engine=bias_engine
     ],
     silu_activation: Int8,
 ):
@@ -2685,7 +2685,7 @@ def causal_conv1d_update_gpu_no_bias[
     seqlen: Int32,
     width: Int32,
     state_len: Int32,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine],
+    x: TileTensor[x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine],
     conv_state: TileTensor[
         conv_state_dtype,
         conv_state_LT,
@@ -2693,7 +2693,7 @@ def causal_conv1d_update_gpu_no_bias[
         Engine=conv_state_engine,
     ],
     weight: TileTensor[
-        weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
+        weight_dtype, weight_LT, ImmUntrackedOrigin, Engine=weight_engine
     ],
     output: TileTensor[
         output_dtype, output_LT, MutUntrackedOrigin, Engine=output_engine

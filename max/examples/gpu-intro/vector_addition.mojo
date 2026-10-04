@@ -32,8 +32,8 @@ comptime num_blocks = ceildiv(vector_size, block_size)
 
 
 def vector_addition(
-    lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
-    rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    lhs_tensor: TileTensor[float_dtype, type_of(layout), ImmutAnyOrigin],
+    rhs_tensor: TileTensor[float_dtype, type_of(layout), ImmutAnyOrigin],
     out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""

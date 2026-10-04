@@ -61,21 +61,21 @@ def varlen_selective_state_update_gpu[
     state: TileTensor[
         kernel_dtype, state_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    x: TileTensor[kernel_dtype, x_LT, MutUntrackedOrigin, Engine=Engine],
-    dt: TileTensor[kernel_dtype, dt_LT, MutUntrackedOrigin, Engine=Engine],
-    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin, Engine=Engine],
-    B: TileTensor[kernel_dtype, B_LT, MutUntrackedOrigin, Engine=Engine],
-    C: TileTensor[kernel_dtype, C_LT, MutUntrackedOrigin, Engine=Engine],
-    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin, Engine=Engine],
+    x: TileTensor[kernel_dtype, x_LT, ImmUntrackedOrigin, Engine=Engine],
+    dt: TileTensor[kernel_dtype, dt_LT, ImmUntrackedOrigin, Engine=Engine],
+    A: TileTensor[kernel_dtype, A_LT, ImmUntrackedOrigin, Engine=Engine],
+    B: TileTensor[kernel_dtype, B_LT, ImmUntrackedOrigin, Engine=Engine],
+    C: TileTensor[kernel_dtype, C_LT, ImmUntrackedOrigin, Engine=Engine],
+    D: TileTensor[kernel_dtype, D_LT, ImmUntrackedOrigin, Engine=Engine],
     z: TileTensor[kernel_dtype, z_LT, MutUntrackedOrigin, Engine=Engine],
     output: TileTensor[
         kernel_dtype, output_LT, MutUntrackedOrigin, Engine=Engine
     ],
     dt_bias: TileTensor[
-        kernel_dtype, dt_bias_LT, MutUntrackedOrigin, Engine=Engine
+        kernel_dtype, dt_bias_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     state_batch_indices: TileTensor[
-        .int32, state_batch_indices_LT, MutUntrackedOrigin, Engine=Engine
+        .int32, state_batch_indices_LT, ImmUntrackedOrigin, Engine=Engine
     ],
 ):
     """GPU kernel for selective state update with multi-head support."""
@@ -203,21 +203,21 @@ def varlen_selective_scan_fwd_gpu[
     pad_slot_id: Int32,
     delta_softplus: Int8,
     # Tensors - varlen format: (dim, total_length) for u, delta, z, out
-    u: TileTensor[kernel_dtype, u_LT, MutUntrackedOrigin, Engine=Engine],
+    u: TileTensor[kernel_dtype, u_LT, ImmUntrackedOrigin, Engine=Engine],
     delta: TileTensor[
-        kernel_dtype, delta_LT, MutUntrackedOrigin, Engine=Engine
+        kernel_dtype, delta_LT, ImmUntrackedOrigin, Engine=Engine
     ],
-    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin, Engine=Engine],
+    A: TileTensor[kernel_dtype, A_LT, ImmUntrackedOrigin, Engine=Engine],
     B: TileTensor[
-        kernel_dtype, B_LT, MutUntrackedOrigin, Engine=Engine
+        kernel_dtype, B_LT, ImmUntrackedOrigin, Engine=Engine
     ],  # (ngroups, dstate, total_length)
     C: TileTensor[
-        kernel_dtype, C_LT, MutUntrackedOrigin, Engine=Engine
+        kernel_dtype, C_LT, ImmUntrackedOrigin, Engine=Engine
     ],  # (ngroups, dstate, total_length)
-    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin, Engine=Engine],
+    D: TileTensor[kernel_dtype, D_LT, ImmUntrackedOrigin, Engine=Engine],
     z: TileTensor[kernel_dtype, z_LT, MutUntrackedOrigin, Engine=Engine],
     delta_bias: TileTensor[
-        kernel_dtype, delta_bias_LT, MutUntrackedOrigin, Engine=Engine
+        kernel_dtype, delta_bias_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     ssm_states: TileTensor[
         kernel_dtype, ssm_states_LT, MutUntrackedOrigin, Engine=Engine
@@ -226,13 +226,13 @@ def varlen_selective_scan_fwd_gpu[
         kernel_dtype, output_LT, MutUntrackedOrigin, Engine=Engine
     ],  # Output written here (or to z if z is present)
     query_start_loc: TileTensor[
-        .int32, query_start_loc_LT, MutUntrackedOrigin, Engine=Engine
+        .int32, query_start_loc_LT, ImmUntrackedOrigin, Engine=Engine
     ],  # (batch + 1,)
     cache_indices: TileTensor[
-        .int32, cache_indices_LT, MutUntrackedOrigin, Engine=Engine
+        .int32, cache_indices_LT, ImmUntrackedOrigin, Engine=Engine
     ],  # (batch,)
     has_initial_state: TileTensor[
-        .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
+        .bool, has_initial_state_LT, ImmUntrackedOrigin, Engine=Engine
     ],  # (batch,)
 ):
     """GPU kernel for variable-length selective scan."""

@@ -88,8 +88,8 @@ struct NotZeroSized(
 
 def _vec_func_zero(
     zs: ZeroSized,
-    in0: Pointer[S, MutAnyOrigin],
-    in1: Pointer[S, MutAnyOrigin],
+    in0: Pointer[S, ImmutAnyOrigin],
+    in1: Pointer[S, ImmutAnyOrigin],
     output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):
@@ -105,8 +105,8 @@ def _vec_func_zero(
 
 def _vec_func_not_zero(
     zs: NotZeroSized,
-    in0: Pointer[S, MutAnyOrigin],
-    in1: Pointer[S, MutAnyOrigin],
+    in0: Pointer[S, ImmutAnyOrigin],
+    in1: Pointer[S, ImmutAnyOrigin],
     output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):
@@ -124,8 +124,8 @@ def _vec_func[
     zero_sized_t: MaybeZeroSized
 ](
     zs: zero_sized_t,
-    in0: Pointer[S, MutAnyOrigin],
-    in1: Pointer[S, MutAnyOrigin],
+    in0: Pointer[S, ImmutAnyOrigin],
+    in1: Pointer[S, ImmutAnyOrigin],
     output: Pointer[S, MutAnyOrigin],
     len_dev: Int32,
 ):
