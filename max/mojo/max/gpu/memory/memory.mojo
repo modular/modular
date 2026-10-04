@@ -317,7 +317,7 @@ struct Consistency(Equatable, TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
+struct ReduceOp(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents reduction operations for parallel reduction algorithms.
 
     This struct defines different reduction operations that can be performed
@@ -356,6 +356,31 @@ struct ReduceOp(Equatable, TrivialRegisterPassable, Writable):
     """Bitwise XOR reduction operation.
 
     Performs bitwise XOR across all inputs."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "ADD".value,
+        "MIN".value,
+        "MAX".value,
+        "AND".value,
+        "OR".value,
+        "XOR".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ReduceOp has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         """Tests if two ReduceOp instances are equal.
