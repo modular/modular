@@ -267,15 +267,9 @@ def flash_attention[
             k,
             v,
             MaterializedMask(
-                LayoutTensor[
-                    mask.dtype,
-                    Layout.row_major(mask.layout.shape),
-                    mask.origin,
-                ](
+                TileTensor(
                     mask.ptr,
-                    RuntimeLayout[
-                        Layout.row_major(mask.layout.shape)
-                    ].row_major(mask.runtime_layout.shape.value.canonicalize()),
+                    row_major(lt_to_tt(mask).layout.shape_coord()),
                 )
             ),
             scale,
@@ -2029,56 +2023,36 @@ def flash_attention_dispatch[
                             )
                         )
 
-                        var output_intermediate = LayoutTensor[
-                            intermediate_dtype, Layout.row_major[4]()
-                        ](
-                            output_intermediate_data.unsafe_ptr(),
-                            RuntimeLayout[Layout.row_major[4]()].row_major(
-                                Index(
-                                    num_partitions_value,
-                                    num_q_rows,
-                                    num_heads,
-                                    depth,
-                                )
+                        var output_intermediate = TileTensor(
+                            output_intermediate_data,
+                            row_major(
+                                num_partitions_value,
+                                num_q_rows,
+                                Idx[num_heads],
+                                Idx[depth],
                             ),
                         )
 
                         var data_len = (
                             num_heads * num_q_rows * num_partitions_value
                         )
-                        var data_dim = Index(
-                            num_partitions_value,
-                            num_q_rows,
-                            num_heads,
+                        var stats_layout = row_major(
+                            num_partitions_value, num_q_rows, Idx[num_heads]
                         )
                         var exp_sum_qk_max_data = ctx.enqueue_create_buffer[
                             accum_type
                         ](2 * data_len)
 
-                        var exp_sum = LayoutTensor[
-                            accum_type, Layout.row_major[3]()
-                        ](
-                            exp_sum_qk_max_data.unsafe_ptr(),
-                            RuntimeLayout[Layout.row_major[3]()].row_major(
-                                data_dim
-                            ),
+                        var exp_sum = TileTensor(
+                            exp_sum_qk_max_data.unsafe_ptr(), stats_layout
                         )
-
-                        var qk_max = LayoutTensor[
-                            accum_type, Layout.row_major[3]()
-                        ](
+                        var qk_max = TileTensor(
                             exp_sum_qk_max_data.unsafe_ptr() + data_len,
-                            RuntimeLayout[Layout.row_major[3]()].row_major(
-                                data_dim
-                            ),
+                            stats_layout,
                         )
 
-                        var exp_sum_device = DeviceBuffer[accum_type](
-                            ctx, exp_sum.ptr, exp_sum.size(), owning=False
-                        )
-                        var qk_max_device = DeviceBuffer[accum_type](
-                            ctx, qk_max.ptr, qk_max.size(), owning=False
-                        )
+                        var exp_sum_device = exp_sum.to_device_buffer(ctx)
+                        var qk_max_device = qk_max.to_device_buffer(ctx)
 
                         comptime if use_fa3_kernel:
                             var num_rows_q = q_num_matrix_view_rows(q)
@@ -6333,23 +6307,12 @@ def mha_splitk_reduce[
         row_major[WARP_SIZE](),
     )
 
-    comptime intermediate_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var intermediate_output = LayoutTensor[
-        intermediate_type, intermediate_layout
-    ](
+    var intermediate_output = TileTensor(
         intermediate_ptr,
-        RuntimeLayout[intermediate_layout].row_major(
-            Index(_num_partitions, _batch_size, num_heads, depth)
-        ),
+        row_major((_num_partitions, _batch_size, Idx[num_heads], Idx[depth])),
     )
-    comptime output_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
-    var output = LayoutTensor[output_type, output_layout](
-        output_ptr,
-        RuntimeLayout[output_layout].row_major(
-            Index(_batch_size, num_heads, depth)
-        ),
+    var output = TileTensor(
+        output_ptr, row_major((_batch_size, Idx[num_heads], Idx[depth]))
     )
 
     var rescaled_exp_sum: Scalar[accum_type] = 0
@@ -6376,27 +6339,27 @@ def mha_splitk_reduce[
     var compensation = SIMD[accum_type, width](0)
     var depth_idx = thread_idx.x * width
 
-    # Precompute base pointer and partition stride to avoid ptr_at_offset in inner loop
-    # Layout is [_num_partitions, _batch_size, num_heads, depth] in row-major
-    var partition_stride = _batch_size * num_heads * depth
-    var base_offset = (
-        batch_idx * num_heads * depth + q_head_idx * depth + depth_idx
-    )
-    var base_ptr = intermediate_output.ptr + base_offset
-
     def accum_fn[
         simd_width: Int
-    ](partition_idx: Int) {exp_sums, base_ptr, partition_stride, mut}:
+    ](partition_idx: Int) {
+        exp_sums,
+        intermediate_output,
+        imm batch_idx,
+        imm q_head_idx,
+        imm depth_idx,
+        mut,
+    }:
         var partition_exp_sum = exp_sums.vectorize[simd_width]()[
             partition_idx // simd_width
         ]
 
         comptime for i in range(simd_width):
-            var ptr = base_ptr + (partition_idx + i) * partition_stride
-            var x_load = ptr.load[
+            var x_load = intermediate_output.load[
                 width=width,
                 alignment=width * size_of[intermediate_type](),
-            ]().cast[accum_type]()
+            ]((partition_idx + i, batch_idx, q_head_idx, depth_idx)).cast[
+                accum_type
+            ]()
             var scale = partition_exp_sum[i]
             var mask = SIMD[.bool, width](fill=scale > 0)
             var safe_load = mask.select(x_load, type_of(x_load)(0))
@@ -6415,11 +6378,8 @@ def mha_splitk_reduce[
 
         acc *= inv_global_exp_sum
 
-        var ptr = output.ptr_at_offset(
-            IndexList[3](batch_idx, q_head_idx, depth_idx)
-        )
-        ptr.store[alignment=width * size_of[output_type](),](
-            acc.cast[output_type]()
+        output.store[alignment=width * size_of[output_type]()](
+            (batch_idx, q_head_idx, depth_idx), acc.cast[output_type]()
         )
 
 
@@ -6865,15 +6825,9 @@ def mha_gpu_naive[
         k,
         v,
         MaterializedMask(
-            LayoutTensor[
-                mask_type,
-                Layout.row_major(mask.layout.shape),
-                mask.origin,
-            ](
+            TileTensor(
                 mask.ptr,
-                RuntimeLayout[Layout.row_major(mask.layout.shape)].row_major(
-                    mask.runtime_layout.shape.value.canonicalize()
-                ),
+                row_major(lt_to_tt(mask).layout.shape_coord()),
             )
         ),
         output,
@@ -6913,31 +6867,13 @@ def mha_gpu_naive[
     ctx: DeviceContext,
     sink_weights: OptionalReg[ImmutTileTensor1D[q_type]] = None,
 ) raises:
-    # The naive reference accepts K/V with either a fully static or a fully
-    # dynamic layout (e.g. `Layout.row_major[4]`), so reinterpret each as a
-    # row-major view over its own shape -- this preserves the static/dynamic
-    # pattern exactly. A static `Idx[k.layout.shape[i]]` would be UNKNOWN_VALUE
-    # for a dynamic dim (corrupting strides), while all-runtime dims regress the
-    # static-dim path.
+    # Preserve each input's static/dynamic shape pattern while re-viewing
+    # its contiguous storage as row-major for the attention operand.
     var k_operand = LayoutTensorMHAOperand(
-        lt_to_tt(
-            LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
-                k.ptr,
-                RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                    k.runtime_layout.shape.value.canonicalize()
-                ),
-            )
-        )
+        TileTensor(k.ptr, row_major(lt_to_tt(k).layout.shape_coord()))
     )
     var v_operand = LayoutTensorMHAOperand(
-        lt_to_tt(
-            LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
-                v.ptr,
-                RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                    v.runtime_layout.shape.value.canonicalize()
-                ),
-            )
-        )
+        TileTensor(v.ptr, row_major(lt_to_tt(v).layout.shape_coord()))
     )
     mha_gpu_naive[_is_cache_length_accurate=True, sink=sink](
         q,

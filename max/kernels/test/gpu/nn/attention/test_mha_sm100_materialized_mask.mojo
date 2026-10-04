@@ -44,9 +44,6 @@ from std.random import random_ui64, seed
 
 from max.gpu.host import DeviceContext
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     Coord,
     Idx,
     TileTensor,
@@ -114,7 +111,6 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
     comptime mask_rows = valid_length
     comptime mask_cols = num_keys
     comptime large_neg = Float32(-10000.0)
-    comptime mask_layout = Layout.row_major(1, mask_rows, mask_cols)
 
     var mask_size = 1 * mask_rows * mask_cols
     var mask_host = ctx.enqueue_create_host_buffer[dtype](mask_size)
@@ -137,13 +133,10 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
     # DEFAULT start_pos (mask_cols - mask_rows == cache_length), so no
     # explicit start_pos is passed, matching the production construction in
     # gpu/mha.mojo.
-    var mask_lt = LayoutTensor[mut=False, dtype, mask_layout](
-        mask_dev,
-        RuntimeLayout[mask_layout].row_major(
-            IndexList[3](1, mask_rows, mask_cols)
-        ),
+    var mask = TileTensor(
+        mask_dev.unsafe_ptr().as_imm(), row_major[1, mask_rows, mask_cols]()
     )
-    var mat_mask = MaterializedMask(mask_lt)
+    var mat_mask = MaterializedMask(mask)
 
     print(
         "test_mha_sm100_materialized_mask: depth=",

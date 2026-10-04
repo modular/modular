@@ -35,6 +35,7 @@ from std.sys import (
     CompilationTarget,
 )
 
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from nn.attention.gpu.mha import (
     mha_splitk_reduce,
     q_num_matrix_view_rows,
@@ -1578,7 +1579,7 @@ def mla_splitk_reduce[
     # rows to `start_of_seq*H + row_idx`. Comptime-dead at S=1 / non-ragged
     # (byte-identical `out_row`).
     comptime if ragged and q_seq_len > 1:
-        var valid_length = valid_length_tt.to_layout_tensor()
+        var valid_length = valid_length_tt
         var start_of_seq = Int(valid_length[batch_idx])
         var seq_len_rt = Int(valid_length[batch_idx + 1]) - start_of_seq
         if Int(row_idx) >= num_heads * seq_len_rt:
@@ -1829,7 +1830,7 @@ def mla_decoding[
     var batch_size = Int(batch_size_dev)
     var num_partitions = Int(num_partitions_dev)
     var max_cache_valid_length = Int(max_cache_valid_length_dev)
-    var valid_length = valid_length_tt.to_layout_tensor()
+    var valid_length = valid_length_tt
     var batch_idx = block_idx.z
 
     # split-k offsets
@@ -2688,9 +2689,7 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     """MLA prefill kernel that would only be called in the optimized compute
     graph. Only supports ragged Q/K/V inputs.
@@ -2872,9 +2871,7 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
 
@@ -2996,9 +2993,7 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     comptime assert rank == 3, "only support ragged inputs"
     comptime assert (
@@ -3117,9 +3112,7 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -3257,9 +3250,7 @@ def flare_mla_prefill[
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: OptionalReg[Int] = None,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -3392,9 +3383,7 @@ def flare_mla_prefill_dispatch[
     max_prompt_len: Int,
     scale: Float32,
     ctx: DeviceContext,
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ] = None,
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
 ) raises:
     """Dispatches an MLA prefill request to the platform-specific kernel.
 
@@ -3601,14 +3590,12 @@ def mla_prefill[
     batch_size: Int32,
     seq_len_arg: Int32,
     valid_length_tt: TileTensor[.uint32, valid_layout, ImmutAnyOrigin],
-    cache_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin]
-    ],
+    cache_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
     mask: mask_t,
 ):
     var _batch_size = Int(batch_size)
     var _seq_len_arg = Int(seq_len_arg)
-    var valid_length = valid_length_tt.to_layout_tensor()
+    var valid_length = valid_length_tt
     comptime depth = config.depth
     var batch_idx = block_idx.z
 

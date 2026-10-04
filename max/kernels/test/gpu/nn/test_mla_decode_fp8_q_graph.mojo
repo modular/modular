@@ -29,11 +29,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mla_graph import mla_decode_branch_fp8
@@ -270,26 +266,21 @@ def _run_arm[
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
-    comptime blocks_layout = Layout.row_major[6]()
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lut_layout = Layout.row_major[2]()
-
     # Any-origins, matching how the graph runtime builds this collection.
-    var kv_collection = PagedKVCacheCollection[fp8_dtype, kv_params, page_size](
-        LayoutTensor[fp8_dtype, blocks_layout, MutAnyOrigin](
-            blocks_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[blocks_layout].row_major(block_shape),
-        ),
-        LayoutTensor[.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-        ),
-        LayoutTensor[.uint32, lut_layout, ImmutAnyOrigin](
-            lookup_table_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[lut_layout].row_major(
-                IndexList[2](batch_size, max_pages_per_batch)
-            ),
-        ),
+    var kv_collection = PagedKVCacheCollection[
+        fp8_dtype, kv_params, page_size, scales_origin=MutAnyOrigin
+    ](
+        TileTensor(
+            blocks_device, row_major(Coord(block_shape))
+        ).as_unsafe_any_origin(),
+        TileTensor(cache_lengths_device, row_major(batch_size))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(
+            lookup_table_device, row_major(batch_size, max_pages_per_batch)
+        )
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(q_len),
         UInt32(cache_len),
     )

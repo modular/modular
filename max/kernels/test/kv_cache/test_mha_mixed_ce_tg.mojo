@@ -246,31 +246,30 @@ def execute_ragged_flash_attention() raises:
         UInt32(mixed_ce_max_full_context_length),
     )
 
-    # The CPU cache implementation still uses legacy views at its API boundary.
     # "true CE" execution
     print("true")
     flash_attention_kv_cache(
-        true_ce_q_ragged.as_imm().to_layout_tensor(),
-        true_ce_row_offsets.as_imm().to_layout_tensor(),
-        true_ce_row_offsets.as_imm().to_layout_tensor(),
+        true_ce_q_ragged.as_imm(),
+        true_ce_row_offsets.as_imm(),
+        true_ce_row_offsets.as_imm(),
         true_ce_kv_collection.get_key_cache(layer_idx),
         true_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
-        true_ce_output.to_layout_tensor(),
+        true_ce_output,
     )
 
     # "mixed CE" execution
     print("mixed")
     flash_attention_kv_cache(
-        mixed_ce_q_ragged.as_imm().to_layout_tensor(),
-        mixed_ce_row_offsets.as_imm().to_layout_tensor(),
-        mixed_ce_row_offsets.as_imm().to_layout_tensor(),
+        mixed_ce_q_ragged.as_imm(),
+        mixed_ce_row_offsets.as_imm(),
+        mixed_ce_row_offsets.as_imm(),
         mixed_ce_kv_collection.get_key_cache(layer_idx),
         mixed_ce_kv_collection.get_value_cache(layer_idx),
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
-        mixed_ce_output.to_layout_tensor(),
+        mixed_ce_output,
     )
 
     var true_ce_out = true_ce_output

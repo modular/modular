@@ -213,27 +213,26 @@ def execute_ragged_flash_attention[
     var k_cache = kv_collection.get_key_cache(layer_idx)
     var v_cache = kv_collection.get_value_cache(layer_idx)
 
-    # The CPU cache implementation still uses legacy views at its API boundary.
     # ragged execution
     flash_attention_kv_cache(
-        q_ragged.as_imm().to_layout_tensor(),
-        input_row_offsets.as_imm().to_layout_tensor(),
+        q_ragged.as_imm(),
+        input_row_offsets.as_imm(),
         # Assume self attention: Q and KV sequence lengths are equal.
-        input_row_offsets.as_imm().to_layout_tensor(),
+        input_row_offsets.as_imm(),
         k_cache,
         v_cache,
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
-        test_output.to_layout_tensor(),
+        test_output,
     )
     # padded execution
     flash_attention_kv_cache(
-        q_padded.as_imm().to_layout_tensor(),
+        q_padded.as_imm(),
         k_cache,
         v_cache,
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
-        ref_output.to_layout_tensor(),
+        ref_output,
     )
 
     var ref_out = ref_output

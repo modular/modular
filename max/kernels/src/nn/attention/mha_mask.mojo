@@ -22,11 +22,10 @@ from std.utils import StaticTuple
 from std.math import align_down, iota, ceildiv
 from std.sys import is_nvidia_gpu
 from layout import (
+    Coord,
     ImmTileTensor,
-    Layout,
-    LayoutTensor,
+    RowMajorLayout,
     TensorLayout,
-    UNKNOWN_VALUE,
 )
 from std.collections import OptionalReg
 from std.utils.index import IndexList, Index
@@ -1917,9 +1916,9 @@ def naively_get_first_nonempty_mask_col[
     return kv_row
 
 
-struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
-    MHAMask, TrivialRegisterPassable
-):
+struct MaterializedMask[
+    dtype_: DType, layout_: TensorLayout, origin_: ImmOrigin
+](MHAMask, TrivialRegisterPassable):
     """Mask that's backed by a materialized tensor.
 
     Parameters:
@@ -1934,11 +1933,11 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
     comptime mask_safe_out_of_bounds: Bool = False
     comptime check_mask_during_decoding: Bool = True
 
-    var mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_]
+    var mask_tensor: ImmTileTensor[Self.dtype_, Self.layout_, Self.origin_]
 
     @__allow_legacy_any_origin_fields
     var start_pos: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+        ImmTileTensor[.uint32, RowMajorLayout[Int64], ImmutAnyOrigin]
     ]
     var is_multiple_of_2: Bool
 
@@ -1959,21 +1958,19 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
 
     def __init__(
         out self,
-        mask_tensor: LayoutTensor[Self.dtype_, Self.layout_, Self.origin_],
+        mask_tensor: ImmTileTensor[Self.dtype_, Self.layout_, Self.origin_],
         start_pos: OptionalReg[
-            LayoutTensor[
-                .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ]
+            ImmTileTensor[.uint32, RowMajorLayout[Int64], ImmutAnyOrigin]
         ] = None,
     ):
-        comptime assert Self.layout_.rank() in (
+        comptime assert Self.layout_.rank in (
             3,
             4,
         ), "Expected rank 3 or 4 for mask tensor"
         self.mask_tensor = mask_tensor
         self.start_pos = start_pos
         self.is_multiple_of_2 = (
-            self.mask_tensor.dim[Self.layout_.rank() - 1]() % 2 == 0
+            Int(self.mask_tensor.dim[Self.layout_.rank - 1]()) % 2 == 0
         )
 
     @inline(.always)
@@ -1981,9 +1978,8 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
         if self.start_pos:
             return Int(self.start_pos.value()[batch_idx])
         else:
-            return (
-                self.mask_tensor.dim[Self.layout_.rank() - 1]()
-                - self.mask_tensor.dim[Self.layout_.rank() - 2]()
+            return Int(self.mask_tensor.dim[Self.layout_.rank - 1]()) - Int(
+                self.mask_tensor.dim[Self.layout_.rank - 2]()
             )
 
     @inline(.always)
@@ -1999,13 +1995,13 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
         score_vec: SIMD[dtype, width],
     ) -> SIMD[dtype, width]:
         comptime IndexListType = IndexList[
-            Self.layout_.rank(), element_type=element_type
+            Self.layout_.rank, element_type=element_type
         ]
         var adjusted_coord: IndexListType
 
         var start_pos = self.get_start_pos(coord[0])
 
-        comptime if Self.layout_.rank() == 3:
+        comptime if Self.layout_.rank == 3:
             adjusted_coord = IndexListType(
                 coord[0], coord[2] - start_pos, coord[3]
             )
@@ -2015,26 +2011,28 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
             )
 
         var retval = SIMD[dtype, width](MASK_VALUE)
-        comptime rank = Self.layout_.rank()
-        if adjusted_coord[rank - 2] < self.mask_tensor.dim[rank - 2]():
+        comptime rank = Self.layout_.rank
+        if adjusted_coord[rank - 2] < Int(self.mask_tensor.dim[rank - 2]()):
             if (
                 adjusted_coord[rank - 1] + width
-                <= self.mask_tensor.dim[rank - 1]()
+                <= Int(self.mask_tensor.dim[rank - 1]())
                 and self.is_multiple_of_2
             ):
                 retval = self.mask_tensor.load[width=width](
-                    adjusted_coord.canonicalize()
+                    Coord(adjusted_coord)
                 ).cast[dtype]()
-            elif adjusted_coord[rank - 1] < self.mask_tensor.dim[rank - 1]():
+            elif adjusted_coord[rank - 1] < Int(
+                self.mask_tensor.dim[rank - 1]()
+            ):
                 for i in range(
                     min(
                         Int(width),
-                        self.mask_tensor.dim[rank - 1]() - coord[3],
+                        Int(self.mask_tensor.dim[rank - 1]()) - coord[3],
                     )
                 ):
                     adjusted_coord[rank - 1] = coord[3] + i
                     retval[i] = self.mask_tensor.load[width=1](
-                        adjusted_coord.canonicalize()
+                        Coord(adjusted_coord)
                     ).cast[dtype]()
 
         return score_vec + retval
@@ -2110,7 +2108,7 @@ struct MaterializedMask[dtype_: DType, layout_: Layout, origin_: ImmOrigin](
         num_keys: Int32,
     ) -> UInt32:
         # `MaterializedMask` is an additive-bias mask: `mask()` returns
-        # `score_vec + retval` (line ~1547), where `retval` is loaded from
+        # `score_vec + retval`, where `retval` is loaded from
         # an arbitrary-dtype tensor (e.g. ALiBi slopes, log-bias). A
         # 1-bit-per-key visibility mask cannot faithfully represent
         # arbitrary additive biases, so this mask permanently uses

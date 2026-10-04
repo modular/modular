@@ -15,10 +15,9 @@ from std.math import ceildiv
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 from extensibility import InputTensor, OutputTensor, StaticTensorSpec
 from std.testing import TestSuite, assert_equal
-from std.utils import IndexList
 
 comptime WIDTH = 5
 comptime HEIGHT = 10
@@ -26,20 +25,17 @@ comptime NUM_CHANNELS = 3
 
 comptime int_dtype = DType.uint8
 comptime float_dtype = DType.float32
-comptime rgb_layout_orig = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
-comptime gray_layout_orig = Layout.row_major(HEIGHT, WIDTH)
 comptime rgb_spec = StaticTensorSpec[int_dtype, 3, ...].get_unknown()
-comptime rgb_layout = rgb_spec.to_layout()
+comptime rgb_layout = InputTensor[static_spec=rgb_spec].RuntimeLayout
 comptime gray_spec = StaticTensorSpec[int_dtype, 2, ...].get_unknown()
-comptime gray_layout = gray_spec.to_layout()
+comptime gray_layout = OutputTensor[static_spec=gray_spec].RuntimeLayout
 
 
 def color_to_grayscale(
-    rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutAnyOrigin],
-    gray_tensor: LayoutTensor[int_dtype, gray_layout, MutAnyOrigin],
+    rgb_tensor: TileTensor[int_dtype, rgb_layout, ImmutAnyOrigin],
+    gray_tensor: TileTensor[int_dtype, gray_layout, MutAnyOrigin],
 ):
-    """Converting each RGB pixel to grayscale, parallelized across the output tensor on the GPU.
-    """
+    """Converts each RGB pixel to grayscale on the GPU."""
     var row = global_idx.y
     var col = global_idx.x
 
@@ -52,10 +48,9 @@ def color_to_grayscale(
         gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
-def print_image(
-    gray_tensor: LayoutTensor[int_dtype, gray_layout_orig, ...]
-) raises:
-    """A helper function to print out the grayscale channel intensities."""
+def print_image(gray_tensor: TileTensor[int_dtype, ...]) raises:
+    """Prints the grayscale channel intensities."""
+    comptime assert gray_tensor.flat_rank == 2
     for row in range(HEIGHT):
         for col in range(WIDTH):
             var v = gray_tensor[row, col]
@@ -70,11 +65,9 @@ def print_image(
 def test_color_to_grayscale() raises:
     with DeviceContext() as ctx:
         var rgb_buffer = ctx.enqueue_create_buffer[int_dtype](
-            comptime (rgb_layout_orig.size())
+            HEIGHT * WIDTH * NUM_CHANNELS
         )
-        var gray_buffer = ctx.enqueue_create_buffer[int_dtype](
-            comptime (gray_layout_orig.size())
-        )
+        var gray_buffer = ctx.enqueue_create_buffer[int_dtype](HEIGHT * WIDTH)
 
         var rgb_tensor = InputTensor[static_spec=rgb_spec](
             rgb_buffer.unsafe_ptr(), (HEIGHT, WIDTH, NUM_CHANNELS)
@@ -84,7 +77,7 @@ def test_color_to_grayscale() raises:
         with rgb_buffer.map_to_host() as host_buffer:
             var rgb_tensor = InputTensor[static_spec=rgb_spec](
                 host_buffer.unsafe_ptr(),
-                IndexList[3](HEIGHT, WIDTH, NUM_CHANNELS),
+                (HEIGHT, WIDTH, NUM_CHANNELS),
             ).to_tile_tensor()
             # Fill the image with initial colors.
             for row in range(HEIGHT):
@@ -104,19 +97,16 @@ def test_color_to_grayscale() raises:
         var num_col_blocks = ceildiv(WIDTH, BLOCK_SIZE)
         var num_row_blocks = ceildiv(HEIGHT, BLOCK_SIZE)
 
-        # Launch the compiled function on the GPU. The target device is specified
-        # first, followed by all function arguments. The last two named parameters
-        # are the dimensions of the grid in blocks, and the block dimensions.
         ctx.enqueue_function[color_to_grayscale](
-            rgb_tensor,
-            gray_tensor,
+            rgb_tensor.to_tile_tensor().as_imm(),
+            gray_tensor.to_tile_tensor(),
             grid_dim=(num_col_blocks, num_row_blocks),
             block_dim=(BLOCK_SIZE, BLOCK_SIZE),
         )
 
         with gray_buffer.map_to_host() as host_buffer:
-            var host_tensor = LayoutTensor[int_dtype, gray_layout_orig, ...](
-                host_buffer
+            var host_tensor = TileTensor(
+                host_buffer, row_major[HEIGHT, WIDTH]()
             )
             print("Resulting grayscale image:")
             print_image(host_tensor)

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Set
-from std.math import ceildiv, rsqrt
+from std.math import ceildiv, inf, rsqrt
 from std.random import random_ui64, seed
 
 from kv_cache.types import (
@@ -20,12 +20,12 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from std.memory import unsafe_memcpy
 from nn.attention.cpu.mha import flash_attention_kv_cache
 from nn.attention.mha_mask import CausalMask
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_equal, assert_true
 from std.sys import size_of
 
 from std.utils import IndexList
@@ -62,16 +62,13 @@ def execute_ragged_flash_attention[
         cache_lengths
     ), "expected valid_lengths and cache_lengths size to be equal"
 
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
     var input_row_offsets_heap = List(length=batch_size + 1, fill=UInt32(0))
-    var input_row_offsets = LayoutTensor[.uint32, layout_1d](
-        input_row_offsets_heap,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
+    var input_row_offsets = TileTensor(
+        Span(input_row_offsets_heap), row_major(batch_size + 1)
     )
     var cache_lengths_nd_heap = List(length=batch_size, fill=UInt32(0))
-    var cache_lengths_nd = LayoutTensor[.uint32, layout_1d](
-        cache_lengths_nd_heap,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
+    var cache_lengths_nd = TileTensor(
+        Span(cache_lengths_nd_heap), row_major(batch_size)
     )
 
     var total_length = 0
@@ -87,16 +84,13 @@ def execute_ragged_flash_attention[
         total_length += valid_lengths[i]
     input_row_offsets[batch_size] = UInt32(total_length)
 
-    comptime layout_3d = Layout.row_major[3]()
     var q_ragged_heap = List(
         length=total_length * num_q_heads * kv_params.head_size,
         fill=Scalar[dtype](0),
     )
-    var q_ragged = LayoutTensor[dtype, layout_3d](
-        q_ragged_heap,
-        RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, kv_params.head_size)
-        ),
+    var q_ragged = TileTensor(
+        Span(q_ragged_heap),
+        row_major((total_length, Idx[num_q_heads], Idx[kv_params.head_size])),
     )
     random(q_ragged)
 
@@ -105,21 +99,17 @@ def execute_ragged_flash_attention[
         length=total_length * num_q_heads * kv_params.head_size,
         fill=Scalar[dtype](0),
     )
-    var test_output = LayoutTensor[dtype, layout_3d](
-        test_output_heap,
-        RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, kv_params.head_size)
-        ),
+    var test_output = TileTensor(
+        Span(test_output_heap),
+        row_major((total_length, Idx[num_q_heads], Idx[kv_params.head_size])),
     )
     var ref_output_heap = List(
         length=total_length * num_q_heads * kv_params.head_size,
         fill=Scalar[dtype](0),
     )
-    var ref_output = LayoutTensor[dtype, layout_3d](
-        ref_output_heap,
-        RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, kv_params.head_size)
-        ),
+    var ref_output = TileTensor(
+        Span(ref_output_heap),
+        row_major((total_length, Idx[num_q_heads], Idx[kv_params.head_size])),
     )
 
     # initialize our KVCache
@@ -134,18 +124,15 @@ def execute_ragged_flash_attention[
     var block_heap = List(
         length=block_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    var kv_block_continuous = LayoutTensor[dtype, Layout.row_major[6]()](
-        block_heap, RuntimeLayout[Layout.row_major[6]()].row_major(block_shape)
+    var kv_block_continuous = TileTensor(
+        Span(block_heap), row_major(Coord(block_shape))
     )
 
     random(kv_block_continuous)
 
     var lookup_table_continuous_heap = List(length=batch_size, fill=UInt32(0))
-    var lookup_table_continuous = LayoutTensor[.uint32, layout_1d](
-        lookup_table_continuous_heap,
-        RuntimeLayout[layout_1d].row_major(
-            IndexList[1](batch_size),
-        ),
+    var lookup_table_continuous = TileTensor(
+        Span(lookup_table_continuous_heap), row_major(batch_size)
     )
 
     # hacky way to select random blocks for continuous batching
@@ -163,29 +150,9 @@ def execute_ragged_flash_attention[
     var kv_collection_continuous = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
     ](
-        LayoutTensor[kv_block_continuous.dtype, Layout.row_major[6]()](
-            kv_block_continuous.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_continuous.runtime_layout.shape.value,
-                kv_block_continuous.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, cache_lengths_nd.dtype, Layout(UNKNOWN_VALUE)](
-            cache_lengths_nd.ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_nd.runtime_layout.shape.value,
-                cache_lengths_nd.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[
-            mut=False, lookup_table_continuous.dtype, Layout(UNKNOWN_VALUE)
-        ](
-            lookup_table_continuous.ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                lookup_table_continuous.runtime_layout.shape.value,
-                lookup_table_continuous.runtime_layout.stride.value,
-            ),
-        ),
+        kv_block_continuous,
+        cache_lengths_nd.as_imm(),
+        lookup_table_continuous.as_imm(),
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
@@ -197,19 +164,19 @@ def execute_ragged_flash_attention[
         * page_size
         * kv_params.num_heads
         * kv_params.head_size,
-        fill=Scalar[dtype](0),
+        fill=inf[dtype](),
     )
-    var kv_block_paged = LayoutTensor[dtype, Layout.row_major[6]()](
-        kv_block_paged_heap,
-        RuntimeLayout[Layout.row_major[6]()].row_major(
-            IndexList[6](
-                num_paged_blocks,
-                2,
+    var kv_block_paged = TileTensor(
+        Span(kv_block_paged_heap),
+        row_major(
+            (
+                Idx[num_paged_blocks],
+                Idx[2],
                 num_layers,
-                page_size,
-                kv_params.num_heads,
-                kv_params.head_size,
-            ),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
         ),
     )
 
@@ -217,13 +184,9 @@ def execute_ragged_flash_attention[
         length=batch_size * ceildiv(max_full_context_length, page_size),
         fill=UInt32(0),
     )
-    var paged_lut = LayoutTensor[.uint32, Layout.row_major[2]()](
-        paged_lut_heap,
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            IndexList[2](
-                batch_size, ceildiv(max_full_context_length, page_size)
-            )
-        ),
+    var paged_lut = TileTensor(
+        Span(paged_lut_heap),
+        row_major((batch_size, ceildiv(max_full_context_length, page_size))),
     )
     var paged_lut_set = Set[Int]()
     for bs in range(batch_size):
@@ -239,11 +202,11 @@ def execute_ragged_flash_attention[
             paged_lut[bs, block_idx] = UInt32(randval)
 
             for kv_idx in range(2):
-                var dest = kv_block_paged.ptr + kv_block_paged._offset(
-                    IndexList[6](randval, kv_idx, layer_idx, 0, 0, 0)
+                var dest = kv_block_paged.ptr_at_offset(
+                    Coord(randval, kv_idx, layer_idx, 0, 0, 0)
                 )
-                var src = kv_block_continuous.ptr + kv_block_continuous._offset(
-                    IndexList[6](
+                var src = kv_block_continuous.ptr_at_offset(
+                    Coord(
                         continuous_idx,
                         kv_idx,
                         layer_idx,
@@ -252,57 +215,63 @@ def execute_ragged_flash_attention[
                         0,
                     )
                 )
-                var dest_byte_offset = Int(dest) - Int(kv_block_paged.ptr)
-                var src_byte_offset = Int(src) - Int(kv_block_continuous.ptr)
-                var dest_len = (
-                    kv_block_paged.size() * size_of[kv_block_paged.dtype]()
+                var dest_byte_offset = Int(dest) - Int(
+                    kv_block_paged.unsafe_ptr()
+                )
+                var src_byte_offset = Int(src) - Int(
+                    kv_block_continuous.unsafe_ptr()
+                )
+                var dest_remaining_bytes = (
+                    kv_block_paged.num_elements() * size_of[dtype]()
                     - dest_byte_offset
                 )
-                var src_len = kv_block_continuous.size() - src_byte_offset
-                unsafe_memcpy(
-                    dest=dest,
-                    src=src,
-                    count=min(
-                        dest_len // size_of[dest.T](),
-                        src_len // size_of[src.T](),
-                        page_size * kv_params.num_heads * kv_params.head_size,
-                    ),
+                var src_remaining_bytes = (
+                    kv_block_continuous.num_elements() * size_of[dtype]()
+                    - src_byte_offset
                 )
+                assert_true(dest_remaining_bytes >= 0)
+                assert_true(src_remaining_bytes >= 0)
+                # A partial source page must not read into the next KV block.
+                var source_rows = min(
+                    page_size, max_seq_len_cache - block_idx * page_size
+                )
+                var source_elements = (
+                    source_rows * kv_params.num_heads * kv_params.head_size
+                )
+                var copy_count = min(
+                    dest_remaining_bytes // size_of[dtype](),
+                    src_remaining_bytes // size_of[dtype](),
+                    source_elements,
+                )
+                assert_equal(copy_count, source_elements)
+                unsafe_memcpy(dest=dest, src=src, count=copy_count)
+                for i in range(copy_count):
+                    assert_equal(dest[i], src[i])
+                for i in range(
+                    copy_count,
+                    page_size * kv_params.num_heads * kv_params.head_size,
+                ):
+                    assert_equal(dest[i], inf[dtype]())
 
     var kv_collection_paged = PagedKVCacheCollection[
-        dtype, kv_params, page_size
+        dtype,
+        kv_params,
+        page_size,
+        scales_origin=MutUntrackedOrigin,
     ](
-        LayoutTensor[kv_block_paged.dtype, Layout.row_major[6]()](
-            kv_block_paged.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block_paged.runtime_layout.shape.value,
-                kv_block_paged.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, cache_lengths_nd.dtype, Layout(UNKNOWN_VALUE)](
-            cache_lengths_nd.ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths_nd.runtime_layout.shape.value,
-                cache_lengths_nd.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, paged_lut.dtype, Layout.row_major[2]()](
-            paged_lut.ptr,
-            RuntimeLayout[Layout.row_major[2]()](
-                paged_lut.runtime_layout.shape.value,
-                paged_lut.runtime_layout.stride.value,
-            ),
-        ),
+        kv_block_paged,
+        cache_lengths_nd.as_imm(),
+        paged_lut.as_imm(),
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
 
     # continuous execution
     flash_attention_kv_cache(
-        q_ragged,
-        input_row_offsets,
+        q_ragged.as_imm(),
+        input_row_offsets.as_imm(),
         # Assume self attention: Q and KV sequence lengths are equal.
-        input_row_offsets,
+        input_row_offsets.as_imm(),
         kv_collection_continuous.get_key_cache(layer_idx),
         kv_collection_continuous.get_value_cache(layer_idx),
         CausalMask(),
@@ -312,10 +281,10 @@ def execute_ragged_flash_attention[
 
     # paged execution
     flash_attention_kv_cache(
-        q_ragged,
-        input_row_offsets,
+        q_ragged.as_imm(),
+        input_row_offsets.as_imm(),
         # Assume self attention: Q and KV sequence lengths are equal.
-        input_row_offsets,
+        input_row_offsets.as_imm(),
         kv_collection_paged.get_key_cache(layer_idx),
         kv_collection_paged.get_value_cache(layer_idx),
         CausalMask(),
@@ -387,6 +356,10 @@ def execute_flash_attention_suite() raises:
     var short_ce_cache_size: List = [0]
     execute_ragged_flash_attention[llama_num_q_heads, dtype, kv_params_llama3](
         short_ce_seq_len, 110, short_ce_cache_size, 2, 1
+    )
+    # Cross a page boundary with one complete and one partial source page.
+    execute_ragged_flash_attention[llama_num_q_heads, dtype, kv_params_llama3](
+        [2], 515, [513], 2, 1
     )
 
 

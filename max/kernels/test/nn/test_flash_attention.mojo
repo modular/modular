@@ -16,7 +16,6 @@ from std.random import rand, seed
 
 from layout import (
     Layout,
-    LayoutTensor,
     TileTensor,
     Coord,
     row_major,
@@ -908,7 +907,6 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         scale,
     )
 
-    # The shared CPU cache core still accepts the legacy sink-weight view.
     flash_attention[input_k_fn, input_v_fn, mask_fn](
         q.as_imm(),
         coord_to_index_list(k.layout.shape_coord()),
@@ -916,9 +914,7 @@ def test_flash_attention_with_sinks[dtype: DType]() raises:
         coord_to_index_list(mask.layout.shape_coord()),
         output_with_sinks,
         scale,
-        sink_weights=rebind[
-            LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-        ](sink_weights.as_imm().as_unsafe_any_origin().to_layout_tensor()),
+        sink_weights=sink_weights.as_imm().as_unsafe_any_origin(),
     )
 
     # Verify sinks result

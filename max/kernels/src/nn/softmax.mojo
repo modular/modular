@@ -1881,35 +1881,22 @@ def _online_softmax_iter_for_mma_output[
     # The online softmax attributes for each thread's elements (fragments).
     comptime num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
-    var score_frag_rowmax = LayoutTensor[
-        dtype,
-        Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
-    var score_frag_rowsum = LayoutTensor[
-        dtype,
-        Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
-    var correction = LayoutTensor[
-        dtype,
-        Layout.row_major(num_colwise_tiles, frag_num_rows),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
+    var score_frag_rowmax = tt_stack_allocation[
+        dtype=dtype, address_space=.LOCAL
+    ](row_major[num_colwise_tiles, frag_num_rows]())
+    var score_frag_rowsum = tt_stack_allocation[
+        dtype=dtype, address_space=.LOCAL
+    ](row_major[num_colwise_tiles, frag_num_rows]())
+    var correction = tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
+        row_major[num_colwise_tiles, frag_num_rows]()
+    )
 
-    var rowmax_tensor = LayoutTensor[
-        dtype,
-        Layout.row_major(num_colwise_tiles, frag_num_rows),
-        address_space=rowmax.address_space,
-    ](rowmax)
-    var rowsum_tensor = LayoutTensor[
-        dtype,
-        Layout.row_major(num_colwise_tiles, frag_num_rows),
-        address_space=rowsum.address_space,
-    ](rowsum)
+    var rowmax_tensor = TileTensor(
+        rowmax, row_major[num_colwise_tiles, frag_num_rows]()
+    )
+    var rowsum_tensor = TileTensor(
+        rowsum, row_major[num_colwise_tiles, frag_num_rows]()
+    )
 
     # Initialize local max with the running max, and local sum with zero.
     comptime for col_tile in range(num_colwise_tiles):
@@ -2011,7 +1998,7 @@ def _online_softmax_iter_for_mma_output[
                     Int(num_rowwise_lanes), stride=Int(rowwise_lanes_stride)
                 ](score_frag_rowmax[col_tile, row])
 
-        # Corrention since previous max may be updated.
+        # Correct the accumulated output when the running maximum changes.
         comptime for row in range(frag_num_rows):
             correction[col_tile, row] = exp_function(
                 rowmax_tensor[col_tile, row] - score_frag_rowmax[col_tile, row]

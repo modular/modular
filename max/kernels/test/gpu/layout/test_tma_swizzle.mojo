@@ -17,9 +17,9 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, thread_idx
-from layout import Layout, LayoutTensor
+from layout import MixedLayout, TileTensor, row_major, stack_allocation
 from layout._fillers import arange, random
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
     SharedMemBarrier,
@@ -36,12 +36,12 @@ from std.utils.index import Index, IndexList
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 def tma_swizzle_load_kernel[
     dtype: DType,
-    layout: Layout,
+    layout: MixedLayout,
     tile_rank: Int,
     tile_shape: IndexList[tile_rank],
     desc_shape: IndexList[tile_rank],
 ](
-    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
+    dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
     tma_tile: TMATensorTile[dtype, tile_rank, tile_shape, desc_shape],
 ):
     comptime tileM = tile_shape[0]
@@ -50,14 +50,10 @@ def tma_swizzle_load_kernel[
         dtype
     ]()
 
-    comptime __tile_layout = Layout.row_major(tileM, tileN)
-    var tile = LayoutTensor[
-        dtype,
-        __tile_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    comptime __tile_layout = row_major[tileM, tileN]()
+    var tile = stack_allocation[dtype, address_space=.SHARED, alignment=128](
+        __tile_layout
+    )
 
     var mbar = unsafe_stack_allocation[
         1,
@@ -95,16 +91,19 @@ def test_tma_swizzle[
         shape == tile_shape
     ), "Only support same shape and tile shape."
 
-    comptime layout = Layout.row_major(shape[0], shape[1])
-    var src = ManagedLayoutTensor[dtype, layout](ctx)
-    var dst = ManagedLayoutTensor[dtype, layout](ctx)
+    comptime layout = row_major[shape[0], shape[1]]()
+    var src = HostDeviceTileTensor[dtype](layout, ctx)
+    var dst = HostDeviceTileTensor[dtype](layout, ctx)
 
     comptime if dtype == .float8_e4m3fn:
-        random(src.tensor[update=False]())
-        random(dst.tensor[update=False]())
+        random(src.host_tensor())
+        random(dst.host_tensor())
     else:
-        arange(src.tensor[update=False](), 0)
-        arange(dst.tensor[update=False](), 0)
+        arange(src.host_tensor(), 0)
+        arange(dst.host_tensor(), 0)
+
+    src.to_device()
+    dst.to_device()
 
     var tma_tensor = create_tensor_tile[
         tile_shape,
@@ -127,10 +126,8 @@ def test_tma_swizzle[
     comptime descM = type_of(tma_tensor).desc_shape[0]
     comptime descN = type_of(tma_tensor).desc_shape[1]
     comptime desc_tile_size = descM * descN
-    comptime __desc_layout = Layout.row_major(descM, descN)
-    var desc_tile = LayoutTensor[
-        dtype, __desc_layout, MutAnyOrigin
-    ].stack_allocation()
+    comptime __desc_layout = row_major[descM, descN]()
+    var desc_tile = stack_allocation[dtype](__desc_layout)
 
     comptime kernel = tma_swizzle_load_kernel[
         type_of(tma_tensor).dtype,
@@ -146,12 +143,18 @@ def test_tma_swizzle[
         block_dim=(1),
     )
 
-    var src_host = src.tensor()
-    var dst_host = dst.tensor()
+    dst.to_host()
+    var desc_flat = desc_tile.reshape(row_major[desc_tile_size]())
+    comptime assert desc_flat.flat_rank == 1
+
+    var src_host = src.host_tensor()
+    var dst_host = dst.host_tensor()
 
     comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
-    var dst_tile_ptr = dst_host.ptr
+    var dst_flat = dst_host.reshape(row_major[shape[0] * shape[1]]())
+    comptime assert dst_flat.flat_rank == 1
+    var dst_tile_offset = 0
     for desc_tile_m in range(shape[0] // descM):
         for desc_tile_n in range(shape[1] // descN):
             desc_tile.copy_from(
@@ -160,17 +163,17 @@ def test_tma_swizzle[
             for i in range(desc_tile_size):
                 var desc_idx = swizzle(i)
                 if (
-                    desc_tile.ptr[desc_idx].cast[.float64]()
-                    != dst_tile_ptr[i].cast[.float64]()
+                    desc_flat[desc_idx].cast[.float64]()
+                    != dst_flat[dst_tile_offset + i].cast[.float64]()
                 ):
                     print(
                         desc_tile_m,
                         desc_tile_n,
-                        desc_tile.ptr[desc_idx],
-                        dst_tile_ptr[i],
+                        desc_flat[desc_idx],
+                        dst_flat[dst_tile_offset + i],
                     )
                     break
-            dst_tile_ptr += desc_tile_size
+            dst_tile_offset += desc_tile_size
 
     _ = src^
     _ = dst^

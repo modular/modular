@@ -111,9 +111,6 @@ from layout import (
     Coord,
     Idx,
     IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TensorEngine,
     TensorLayout,
     TileTensor,
@@ -155,7 +152,6 @@ from .gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
 from .gpu.nvidia.sm100.qslice_conv3d import dispatch_qslice_conv3d_sm100
 from nn.shapes import get_sliding_window_out_dim
 from nn.pad_gpu import pad_constant as pad_constant_gpu
-from layout import lt_to_tt
 
 
 struct Naive2dConvolution[
@@ -3058,35 +3054,25 @@ def pack_filter(
         filter.dtype == packed_filter.dtype
     ), "Type mismatch between the filter and the packed filter."
 
-    # Bridge to LayoutTensor for legacy Layout shape access and fill().
-    var filter_lt = filter.to_layout_tensor()
-    var packed_filter_lt = packed_filter.to_layout_tensor()
-
     comptime simd_size = simd_width_of[filter.dtype]()
     comptime f_size_default = get_direct_conv_micro_kernel_width() * simd_size
+    comptime f_size = packed_filter.static_shape[packed_filter.flat_rank - 1]
 
-    comptime if packed_filter_lt.layout.shape[
-        packed_filter_lt.rank - 1
-    ] != UNKNOWN_VALUE:
-        comptime f_size = Int(
-            packed_filter_lt.layout.shape[packed_filter_lt.rank - 1]
-        )
-        pack_filter_lt[simd_size, f_size](
-            filter_lt, packed_filter_lt, num_groups
-        )
+    comptime if f_size != UNKNOWN_VALUE:
+        pack_filter[simd_size, f_size](filter, packed_filter, num_groups)
     else:
-        pack_filter_lt[simd_size, f_size_default](
-            filter_lt, packed_filter_lt, num_groups
+        pack_filter[simd_size, f_size_default](
+            filter, packed_filter, num_groups
         )
 
 
 @inline(.always)
-def pack_filter_lt[
+def pack_filter[
     simd_size: Int,
     micro_kernel_f_size: Int,  # 64
 ](
-    filter: LayoutTensor,
-    packed_filter: LayoutTensor[mut=True, ...],
+    filter: TileTensor,
+    packed_filter: TileTensor[mut=True, ...],
     num_groups: Int,
 ):
     """This packs the filter form RSCF to FRSCf.
@@ -3119,10 +3105,10 @@ def pack_filter_lt[
     # Product of filter dims upto (rank - 1).
     var outer_dims_prod = 1
 
-    comptime for i in range(filter.rank - 1):
-        outer_dims_prod *= filter.dim[i]()
+    comptime for i in range(filter.flat_rank - 1):
+        outer_dims_prod *= Int(filter.dim[i]())
 
-    var F = filter.dim[filter.rank - 1]()
+    var F = Int(filter.dim[filter.flat_rank - 1]())
     var F_per_group = F // num_groups
 
     _ = packed_filter.fill(0)
@@ -3144,9 +3130,7 @@ def pack_filter_lt[
     comptime packed_filter_dtype = packed_filter.dtype
 
     for g in range(num_groups):
-        var group_start = _get_group_filter_base(
-            lt_to_tt(packed_filter), g, F_per_group
-        )
+        var group_start = _get_group_filter_base(packed_filter, g, F_per_group)
 
         # TODO(MOCO-4664): `var g` copy-captures the loop variable to work
         # around wrong debug-info scopes on implicit nested-scope captures.
@@ -3160,7 +3144,10 @@ def pack_filter_lt[
 
             for row in range(outer_dims_prod):
                 var filter_ptr = (
-                    filter.ptr + row * F + g * F_per_group + f_tile_start
+                    filter.unsafe_ptr()
+                    + row * F
+                    + g * F_per_group
+                    + f_tile_start
                 )
 
                 comptime for i in range(f_tile_size // simd_size):
@@ -3184,7 +3171,7 @@ def pack_filter_lt[
     if residual > 0:
         for g in range(num_groups):
             var group_start = _get_group_filter_base(
-                lt_to_tt(packed_filter), g, F_per_group
+                packed_filter, g, F_per_group
             )
             var packed_filter_ptr = (
                 group_start + F_round_by_simd * outer_dims_prod
@@ -3192,7 +3179,10 @@ def pack_filter_lt[
 
             for row in range(outer_dims_prod):
                 var filter_ptr = (
-                    filter.ptr + row * F + g * F_per_group + F_round_by_simd
+                    filter.unsafe_ptr()
+                    + row * F
+                    + g * F_per_group
+                    + F_round_by_simd
                 )
 
                 # Load remainder elements and pad with zero to
@@ -3224,8 +3214,7 @@ def pack_filter_from_fcrs(
         num_groups: Number of groups in the convolution.
     """
 
-    var filter_lt = filter.to_layout_tensor()
-    var total_elems = filter_lt.size()
+    var total_elems = filter.num_elements()
 
     # Allocate temporary buffer for RSCF-ordered data (actual dtype).
     var rscf_buf_alloc = alloc[Scalar[filter.dtype]](
@@ -3234,12 +3223,12 @@ def pack_filter_from_fcrs(
     var rscf_buf = rscf_buf_alloc.unsafe_ptr()
 
     # Transpose FCRS→RSCF or FCQRS→QRSCF and create a TileTensor for packing.
-    comptime if filter_lt.rank == 4:
+    comptime if filter.flat_rank == 4:
         # FCRS [F, C, R, S] → RSCF [R, S, C, F]
-        var dim_F = filter_lt.dim[0]()
-        var dim_C = filter_lt.dim[1]()
-        var dim_R = filter_lt.dim[2]()
-        var dim_S = filter_lt.dim[3]()
+        var dim_F = Int(filter.dim[0]())
+        var dim_C = Int(filter.dim[1]())
+        var dim_R = Int(filter.dim[2]())
+        var dim_S = Int(filter.dim[3]())
         for f in range(dim_F):
             for c in range(dim_C):
                 for r in range(dim_R):
@@ -3256,7 +3245,7 @@ def pack_filter_from_fcrs(
                             + c * dim_F
                             + f
                         )
-                        rscf_buf.store(dst, filter_lt.ptr.load(src))
+                        rscf_buf.store(dst, filter.unsafe_ptr().load(src))
         # Reinterpret as int64 for pack_filter (matches existing convention).
         var rscf_tile = TileTensor(
             rscf_buf.bitcast[Int64](),
@@ -3265,11 +3254,11 @@ def pack_filter_from_fcrs(
         pack_filter(rscf_tile, packed_filter, num_groups)
     else:
         # FCQRS [F, C, Q, R, S] → QRSCF [Q, R, S, C, F]
-        var dim_F = filter_lt.dim[0]()
-        var dim_C = filter_lt.dim[1]()
-        var dim_Q = filter_lt.dim[2]()
-        var dim_R = filter_lt.dim[3]()
-        var dim_S = filter_lt.dim[4]()
+        var dim_F = Int(filter.dim[0]())
+        var dim_C = Int(filter.dim[1]())
+        var dim_Q = Int(filter.dim[2]())
+        var dim_R = Int(filter.dim[3]())
+        var dim_S = Int(filter.dim[4]())
         for f in range(dim_F):
             for c in range(dim_C):
                 for q in range(dim_Q):
@@ -3289,7 +3278,7 @@ def pack_filter_from_fcrs(
                                 + c * dim_F
                                 + f
                             )
-                            rscf_buf.store(dst, filter_lt.ptr.load(src))
+                            rscf_buf.store(dst, filter.unsafe_ptr().load(src))
         var rscf_tile = TileTensor(
             rscf_buf.bitcast[Int64](),
             row_major(
@@ -3350,30 +3339,24 @@ def conv_shape[
     Returns:
         The output shape.
     """
-    # Bridge to LayoutTensor for runtime dim access.
-    var input_lt = input_buf.to_layout_tensor()
-    var filter_lt = filter_buf.to_layout_tensor()
-    var strides_lt = strides_buf.to_layout_tensor()
-    var dilations_lt = dilations_buf.to_layout_tensor()
-    var paddings_lt = paddings_buf.to_layout_tensor()
-
+    comptime assert input_buf.rank == input_buf.flat_rank
     comptime assert strides_buf.flat_rank == 1
     comptime assert dilations_buf.flat_rank == 1
     comptime assert paddings_buf.flat_rank == 1
 
-    if input_lt.rank < 3:
+    if input_buf.flat_rank < 3:
         raise Error("[convolution] requires (input_rank >= 3)")
-    if input_lt.rank != filter_lt.rank:
+    if input_buf.flat_rank != filter_buf.flat_rank:
         raise Error("[convolution] requires (input_rank == filter_rank)")
     if (
-        strides_lt.dim(0) != input_lt.rank - 2
-        or dilations_lt.dim(0) != input_lt.rank - 2
+        Int(strides_buf.dim(0)) != input_buf.flat_rank - 2
+        or Int(dilations_buf.dim(0)) != input_buf.flat_rank - 2
     ):
         raise Error(
             "[convolution] requires (len(strides) == len(dilations) =="
             " input_rank - 2)"
         )
-    if paddings_lt.dim(0) != 2 * (input_lt.rank - 2):
+    if Int(paddings_buf.dim(0)) != 2 * (input_buf.flat_rank - 2):
         raise Error(
             "[convolution] requires (len(paddings) == 2 * (input rank - 2))"
         )
@@ -3381,10 +3364,10 @@ def conv_shape[
     # Assume
     # - input and output have layout [batch_size, ...spatial_dims..., input_channels]
     # - filter has layout [...spatial_dims..., filter_channels, output_channels]
-    var batch_size = input_lt.dim(0)
-    var input_channels = input_lt.dim(input_lt.rank - 1)
-    var filter_channels = filter_lt.dim(input_lt.rank - 2)
-    var output_channels = filter_lt.dim(input_lt.rank - 1)
+    var batch_size = Int(input_buf.dim(0))
+    var input_channels = Int(input_buf.dim(input_buf.flat_rank - 1))
+    var filter_channels = Int(filter_buf.dim(input_buf.flat_rank - 2))
+    var output_channels = Int(filter_buf.dim(input_buf.flat_rank - 1))
     var num_groups = Int(num_groups_scalar)
 
     if input_channels != (num_groups * filter_channels):
@@ -3397,13 +3380,13 @@ def conv_shape[
             "[convolution] output_channels must be divisible by num_groups"
         )
 
-    var output_shape = IndexList[input_lt.rank]()
+    var output_shape = IndexList[input_buf.flat_rank]()
     output_shape[0] = batch_size
-    output_shape[input_lt.rank - 1] = output_channels
+    output_shape[input_buf.flat_rank - 1] = output_channels
 
-    comptime for i in range(1, input_lt.rank - 1):
-        var input_spatial_dim = input_lt.dim(i)
-        var filter_spatial_dim = filter_lt.dim(i - 1)
+    comptime for i in range(1, input_buf.flat_rank - 1):
+        var input_spatial_dim = Int(input_buf.dim(i))
+        var filter_spatial_dim = Int(filter_buf.dim(i - 1))
 
         # Zero input spatial -> zero output spatial. Strided convs over a
         # zero-spatial input would otherwise compute a negative
@@ -3418,9 +3401,9 @@ def conv_shape[
         var output_spatial_dim = get_sliding_window_out_dim(
             input_spatial_dim,
             filter_spatial_dim,
-            Int(dilations_lt[i - 1]),
-            Int(strides_lt[i - 1]),
-            Int(paddings_lt[2 * i - 2] + paddings_lt[2 * i - 1]),
+            Int(dilations_buf[i - 1]),
+            Int(strides_buf[i - 1]),
+            Int(paddings_buf[2 * i - 2] + paddings_buf[2 * i - 1]),
         )
 
         if output_spatial_dim <= 0:
@@ -3428,10 +3411,7 @@ def conv_shape[
 
         output_shape[i] = output_spatial_dim
 
-    comptime assert (
-        input_buf.flat_rank == input_lt.rank
-    ), "TileTensor flat_rank must match LayoutTensor rank for rebind safety"
-    return rebind[IndexList[input_buf.flat_rank]](output_shape)
+    return output_shape
 
 
 def conv_nhwc_direct[

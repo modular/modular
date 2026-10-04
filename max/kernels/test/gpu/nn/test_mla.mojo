@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.random import randn
 from std.sys import argv
 
@@ -26,6 +27,10 @@ from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_prefill
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
@@ -297,6 +302,7 @@ def test_prefill[
     cache_num_heads: Int,
     batch_size: Int = 1,
     use_causal_mask: Bool = True,
+    use_cache_offsets: Bool = False,
     output_type: DType = qkv_type,
 ](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
     print(
@@ -443,6 +449,16 @@ def test_prefill[
         row_major(batch_size + 1),
     )
 
+    var cache_offsets_buffer = ctx.enqueue_create_buffer[.uint32](
+        batch_size if use_cache_offsets else 0
+    )
+    var cache_offsets = OptionalReg[ImmutTileTensor1D[.uint32]]()
+    comptime if use_cache_offsets:
+        ctx.enqueue_memset(cache_offsets_buffer, 0)
+        cache_offsets = immut_tile_tensor_1d(
+            cache_offsets_buffer.unsafe_ptr(), batch_size
+        )
+
     @inline(.always)
     def kernel_launch(
         ctx: DeviceContext,
@@ -468,6 +484,7 @@ def test_prefill[
             scale,
             ctx,
             q_max_seq_len=seq_len,
+            cache_offsets=cache_offsets,
         )
 
     if is_benchmark():
@@ -643,6 +660,7 @@ def test_prefill[
                         rtol=rtol,
                     )
 
+    _ = cache_offsets_buffer
     _ = q_device_ptr
     _ = k_device_ptr
     _ = v_device_ptr
@@ -1133,6 +1151,19 @@ def main() raises:
             # AMD reaches its combine kernel through partitions, not warp
             # split-K.
             test_decoding_k3_head_counts[1, 4, False](ctx, 1, 4096)
+
+        # An explicit zero-offset tensor must match the no-offset reference.
+        test_prefill[
+            DType.bfloat16,
+            DType.bfloat16,
+            depth=192,
+            num_heads=128,
+            kv_depth=128,
+            cache_depth=576,
+            cache_num_heads=1,
+            batch_size=2,
+            use_cache_offsets=True,
+        ](32, 64, ctx)
 
         # test mla prefill
         test_mla_prefill[2, DType.bfloat16, DType.bfloat16](ctx)

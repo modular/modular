@@ -91,6 +91,8 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "test_multistage_gemm_q.mojo",
+            "test_repack_q4_0.mojo",
+            "test_repack_gptq.mojo",
         ] + _FP8_FP4_TESTS,
     )
 ]
@@ -106,6 +108,24 @@ mojo_test(
     },
     tags = ["gpu"],
     # FIXME: KERN-1377 and move this into the glob above
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = _DEPS + ["//max:nn"],
+)
+
+mojo_test(
+    name = "test_repack_q4_0.mojo.test",
+    srcs = ["test_repack_q4_0.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = ["//:nvidia_gpu"],
+    deps = _DEPS,
+)
+
+mojo_test(
+    name = "test_repack_gptq.mojo.test",
+    srcs = ["test_repack_gptq.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
     target_compatible_with = ["//:nvidia_gpu"],
     deps = _DEPS,
 )

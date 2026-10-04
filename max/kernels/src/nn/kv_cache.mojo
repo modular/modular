@@ -32,9 +32,6 @@ from kv_cache.types import (
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -553,30 +550,14 @@ def _flash_attention_dispatch[
         mask_t: MHAMask
     ](mask: mask_t) raises {var k, var v, imm}:
         comptime if is_cpu[target]():
-            # The CPU kernel is still LayoutTensor based.
-            var sink_weights_lt = OptionalReg[
-                LayoutTensor[
-                    dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-                ]
-            ]()
-            if sink_weights:
-                var sink_tt = sink_weights.value()
-                sink_weights_lt = LayoutTensor[
-                    dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-                ](
-                    sink_tt.ptr,
-                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                        IndexList[1](Int(sink_tt.dim[0]()))
-                    ),
-                )
             return flash_attention_kv_cache_cpu(
-                q.to_layout_tensor(),
+                q,
                 k,
                 v,
                 mask,
                 scale,
-                output.to_layout_tensor(),
-                sink_weights_lt,
+                output,
+                sink_weights,
             )
         else:
             gpu_flash_attention[](

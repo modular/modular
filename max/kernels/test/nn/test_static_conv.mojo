@@ -21,7 +21,6 @@ from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     pack_filter,
-    pack_filter_lt,
 )
 from nn.conv.conv_utils import (
     ConvShape,
@@ -157,9 +156,9 @@ def test[
         Span(packed_filter_ptr_static), row_major(len(packed_filter_ptr_static))
     ).reshape(row_major[num_f_micro_tiles, R, S, C, micro_kernel_f_size]())
 
-    pack_filter_lt[simd_size, micro_kernel_f_size](
-        filter.as_imm().to_layout_tensor(),
-        packed_filter_static.to_layout_tensor(),
+    pack_filter[simd_size, micro_kernel_f_size](
+        filter.as_imm(),
+        packed_filter_static,
         num_groups,
     )
 

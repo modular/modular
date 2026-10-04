@@ -33,16 +33,12 @@ from max.algorithm.reduction import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
-    Layout,
-    LayoutTensor,
     Coord,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
 from layout.coord import coord_to_index_list
-from layout.int_tuple import to_index_list
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.accumulate import _Accumulator
 from linalg.matmul.cpu.apple_accelerate import (
@@ -62,6 +58,7 @@ from std.memory.alloc import (
     ManagedAllocation,
     Layout as AllocLayout,
 )
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from nn.attention.mha_mask import MHAMask
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -712,11 +709,7 @@ struct _FlashAttention[
         # Max sequence length of query states.
         max_seq_len: Int,
         scale: Float32,
-        sink_weights: OptionalReg[
-            LayoutTensor[
-                Self.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ]
-        ] = None,
+        sink_weights: OptionalReg[ImmutTileTensor1D[Self.dtype]] = None,
         ctx: Optional[DeviceContext] = None,
     ):
         var kv_group_count = num_heads // num_kv_heads
@@ -998,9 +991,7 @@ def _flash_attention[
     mask_shape: IndexList[mask_rank],
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
     ctx: Optional[DeviceContext] = None,
 ):
     comptime assert q.rank == q.flat_rank == rank
@@ -1025,16 +1016,18 @@ def _flash_attention[
     def input_q_ptr_fn(
         coords: IndexList[rank],
     ) -> UnsafePointer[Scalar[dtype], q_origin]:
-        var idx = q.layout(Coord(coords))
-        return q.ptr + idx
+        var coord = Coord(coords)
+        comptime assert coord.flat_rank == q.flat_rank
+        return q.ptr_at_offset(coord)
 
     @inline(.always)
     @__parameter
     def output_ptr_fn(
         coords: IndexList[rank],
     ) -> UnsafePointer[Scalar[dtype], output_origin]:
-        var idx = output.layout(Coord(coords))
-        return output.ptr + idx
+        var coord = Coord(coords)
+        comptime assert coord.flat_rank == output.flat_rank
+        return output.ptr_at_offset(coord)
 
     @inline(.always)
     def mask_fn[
@@ -1107,9 +1100,7 @@ def flash_attention[
     mask_shape: IndexList[mask_rank],
     output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
     ctx: Optional[DeviceContext] = None,
 ):
     """Computes scaled dot-product flash attention on CPU for the given query, key, value, and mask accessors.
@@ -1139,8 +1130,7 @@ def flash_attention[
         mask_shape: Shape of the attention mask tensor.
         output: Output tensor to write the attention results into.
         scale: Scaling factor applied to the query-key dot products.
-        sink_weights: Optional per-head attention sink weights. The shared
-            cache core still uses a legacy one-dimensional view.
+        sink_weights: Optional per-head attention sink weights.
         ctx: Optional device context for controlling parallelism.
     """
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
@@ -1350,20 +1340,18 @@ def _flash_attention_kv_cache[
     ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     scale: Float32,
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
     comptime kv_params = cache_t.kv_params
 
-    var max_seq_len = q.dim[1]()
-    var num_batches = q.dim[0]()
-    comptime num_heads = Int(q.layout.shape[2])
+    var max_seq_len = Int(q.dim[1]())
+    var num_batches = Int(q.dim[0]())
+    comptime num_heads = q.static_shape[2]
     comptime head_size = cache_t.kv_params.head_size
     comptime output_shape = IndexList[4](
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
@@ -1374,16 +1362,18 @@ def _flash_attention_kv_cache[
     def input_q_ptr_fn(
         coords: IndexList[4],
     ) -> UnsafePointer[Scalar[dtype], q_origin]:
-        var idx = q._offset(coords)
-        return q.ptr + idx
+        var coord = Coord(coords)
+        comptime assert coord.flat_rank == q.flat_rank
+        return q.ptr_at_offset(coord)
 
     @inline(.always)
     @__parameter
     def output_ptr_fn(
         coords: IndexList[4],
     ) -> UnsafePointer[Scalar[dtype], output_origin]:
-        var idx = output._offset(coords)
-        return output.ptr + idx
+        var coord = Coord(coords)
+        comptime assert coord.flat_rank == output.flat_rank
+        return output.ptr_at_offset(coord)
 
     @inline(.always)
     @__copy_capture(max_seq_len)
@@ -1432,9 +1422,7 @@ def _flash_attention_kv_cache[
     num_heads: Int,
     max_seq_len: Int,
     scale: Float32,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
     comptime num_kv_heads = cache_t.kv_params.num_heads
     comptime depth_dim = cache_t.kv_params.head_size
@@ -1503,17 +1491,15 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
-    mask: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    mask: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     scale: Float32,
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
-    """Computes flash attention on CPU using a KV cache with an additive LayoutTensor mask.
+    """Computes flash attention on CPU using a KV cache with an additive TileTensor mask.
 
     Args:
         q: Query tensor in BSHD layout.
@@ -1522,8 +1508,7 @@ def flash_attention_kv_cache[
         mask: Additive attention mask tensor.
         scale: Scaling factor applied to the query-key dot products.
         output: Output tensor to write the attention results into.
-        sink_weights: Optional per-head attention sink weights. The shared
-            cache core still uses a legacy one-dimensional view."""
+        sink_weights: Optional per-head attention sink weights."""
 
     @inline(.always)
     @__parameter
@@ -1534,7 +1519,7 @@ def flash_attention_kv_cache[
         score_vec: SIMD[dtype, simd_width],
         kv_cache_len: Int,
     ) -> SIMD[dtype, simd_width]:
-        return score_vec + mask.load[width=simd_width](idx)
+        return score_vec + mask.load[width=simd_width](Coord(idx))
 
     _flash_attention_kv_cache[mask_fn, mask.rank](
         q, k, v, scale, output, sink_weights
@@ -1552,17 +1537,13 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
     """Computes flash attention on CPU using a KV cache with an MHAMask-based mask.
 
@@ -1573,8 +1554,7 @@ def flash_attention_kv_cache[
         mask: MHAMask applied to the attention scores.
         scale: Scaling factor applied to the query-key dot products.
         output: Output tensor to write the attention results into.
-        sink_weights: Optional per-head attention sink weights. The shared
-            cache core still uses a legacy one-dimensional view."""
+        sink_weights: Optional per-head attention sink weights."""
 
     @inline(.always)
     @__parameter
@@ -1608,21 +1588,19 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    kv_input_row_offsets: LayoutTensor[
+    kv_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
     """Computes flash attention on CPU for ragged tensors using a KV cache with an `MHAMask`-based mask.
 
@@ -1649,8 +1627,7 @@ def flash_attention_kv_cache[
             scores.
         scale: Scaling factor applied to the query-key dot products.
         output: Output tensor to write the attention results into.
-        sink_weights: Optional per-head attention sink weights. The shared
-            cache core still uses a legacy one-dimensional view.
+        sink_weights: Optional per-head attention sink weights.
     """
 
     @inline(.always)
@@ -1688,9 +1665,8 @@ def flash_attention_kv_cache[
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
-        var flat_idx = IndexList[3](q_start, idx[2], idx[3])
-        var out_idx = q._offset(flat_idx)
-        return q.ptr + out_idx
+        comptime assert q.flat_rank == 3
+        return q.ptr_at_offset(Coord(q_start, idx[2], idx[3]))
 
     @inline(.always)
     @__parameter
@@ -1700,14 +1676,13 @@ def flash_attention_kv_cache[
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
-        var flat_idx = IndexList[3](q_start, idx[2], idx[3])
-        var out_idx = output._offset(flat_idx)
-        return output.ptr + out_idx
+        comptime assert output.flat_rank == 3
+        return output.ptr_at_offset(Coord(q_start, idx[2], idx[3]))
 
     comptime mask_rank = 4
-    var num_batches = q_input_row_offsets.dim[0]() - 1
+    var num_batches = Int(q_input_row_offsets.dim[0]()) - 1
     var max_seq_len = k.max_prompt_length()
-    comptime num_heads = Int(q.layout.shape[q.rank - 2])
+    comptime num_heads = q.static_shape[q.rank - 2]
     comptime head_size = cache_t.kv_params.head_size
     comptime output_shape = IndexList[4](
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size

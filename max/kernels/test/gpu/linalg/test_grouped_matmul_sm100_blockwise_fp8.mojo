@@ -13,6 +13,7 @@
 
 from std.collections import Optional
 from std.sys import align_of
+from std.math import inf
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -25,11 +26,12 @@ from layout import (
 from layout._fillers import random
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
+    grouped_matmul_sm100_blockwise_scaled_fp8,
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
 )
 from linalg.matmul.gpu.sm100.config import MatmulConfig
 from linalg.utils import elementwise_epilogue_type
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_equal
 
 from std.utils.index import Index, IndexList
 
@@ -42,6 +44,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     umma_shape: IndexList[3] = Index(64, 64, 32),
     use_epilogue: Bool = False,
     scales_type: DType = .float32,
+    persistent: Bool = True,
 ](
     num_active_experts: Int,
     num_tokens_by_expert: List[Int],
@@ -94,6 +97,9 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     var a_size = total_num_tokens * K
     var b_size = num_experts * N * K
     var c_size = total_num_tokens * N
+    var c_storage_size = (
+        c_size if persistent else c_size + block_tile_shape[0] * N
+    )
     var a_scales_size = (K // BLOCK_SCALE_K) * total_num_tokens
 
     var b_scales_size = (
@@ -118,7 +124,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     # Host allocations
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
-    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_storage_size)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
@@ -151,7 +157,7 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     # Device allocations
     var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device_buffer = ctx.enqueue_create_buffer[b_type](b_size)
-    var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_size)
+    var c_device_buffer = ctx.enqueue_create_buffer[c_type](c_storage_size)
     var c_device_ref_buffer = ctx.enqueue_create_buffer[c_type](c_size)
     var a_offsets_device_buffer = ctx.enqueue_create_buffer[.uint32](
         num_active_experts + 1
@@ -205,6 +211,8 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     random(a_host)
     random(b_host)
     _ = c_host.fill(0)
+    for i in range(c_size, c_storage_size):
+        c_host_ptr[i] = inf[c_type]()
     _ = c_host_ref.fill(0)
 
     random(a_scales_host)
@@ -248,23 +256,42 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
         k_group_size=1,
     )
 
-    grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
-        config=config,
-        elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-            epilogue_fn
-        ) if use_epilogue else None,
-    ](
-        c_device_tt,
-        a_device_tt,
-        b_device_tt,
-        a_scales_device_tt,
-        b_scales_device_tt,
-        a_offsets_device_tt,
-        expert_ids_device_tt,
-        max_num_tokens_by_expert,
-        num_active_experts,
-        ctx,
-    )
+    comptime if persistent:
+        grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
+            config=config,
+            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
+                epilogue_fn
+            ) if use_epilogue else None,
+        ](
+            c_device_tt,
+            a_device_tt,
+            b_device_tt,
+            a_scales_device_tt,
+            b_scales_device_tt,
+            a_offsets_device_tt,
+            expert_ids_device_tt,
+            max_num_tokens_by_expert,
+            num_active_experts,
+            ctx,
+        )
+    else:
+        grouped_matmul_sm100_blockwise_scaled_fp8[
+            config=config,
+            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
+                epilogue_fn
+            ) if use_epilogue else None,
+        ](
+            c_device_tt,
+            a_device_tt,
+            b_device_tt,
+            a_scales_device_tt,
+            b_scales_device_tt,
+            a_offsets_device_tt,
+            expert_ids_device_tt,
+            max_num_tokens_by_expert,
+            num_active_experts,
+            ctx,
+        )
 
     ctx.synchronize()
 
@@ -284,11 +311,36 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
                 atol=atol,
             )
 
-    # Cleanup
+    for i in range(c_size, c_storage_size):
+        assert_equal(c_host_ptr[i], inf[c_type]())
 
 
 def main() raises:
     with DeviceContext() as ctx:
+        # Exercise the non-persistent kernel independently of the dispatch path.
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=1,
+            expert_shape=Index(256, 256),
+            persistent=False,
+        ](1, [128], [0], ctx)
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .bfloat16,
+            num_experts=1,
+            expert_shape=Index(256, 256),
+            persistent=False,
+            use_epilogue=True,
+        ](1, [100], [0], ctx)
+        test_grouped_matmul_sm100_blockwise_scaled_fp8[
+            .float8_e4m3fn,
+            .float32,
+            num_experts=4,
+            expert_shape=Index(256, 256),
+            persistent=False,
+        ](2, [20, 40], [2, 0], ctx)
+
         test_grouped_matmul_sm100_blockwise_scaled_fp8[
             .float8_e4m3fn,
             .bfloat16,

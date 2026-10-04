@@ -45,7 +45,7 @@ from max.gpu.host.info import is_cpu
 from max.gpu.sync import barrier
 
 from kv_cache.types import KVCacheT
-from layout import LayoutTensor
+from layout import TileTensor
 
 
 @inline(.always)
@@ -221,14 +221,14 @@ def indexer_score_ragged_paged[
     target: StaticString,
     num_heads: Int,
 ](
-    output: LayoutTensor[mut=True, .float32, address_space=.GENERIC, ...],
-    q: LayoutTensor[mut=False, q_type, address_space=.GENERIC, ...],
-    weights: LayoutTensor[mut=False, .float32, address_space=.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    output: TileTensor[mut=True, .float32, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+    weights: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    base: LayoutTensor[mut=False, .int32, address_space=.GENERIC, ...],
-    cutoff: LayoutTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    base: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    cutoff: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     cache: cache_t,
     ctx: DeviceContext,
 ) raises:
@@ -258,40 +258,38 @@ def indexer_score_ragged_paged[
         cache_t.kv_params.num_heads == 1
     ), "the compressed leaf holds a single head"
     comptime assert head_dim % chunk == 0
-    comptime assert output.layout.rank() == 2 and q.layout.rank() == 3
-    comptime assert weights.layout.rank() == 2
-    comptime assert input_row_offsets.layout.rank() == 1
-    comptime assert base.layout.rank() == 1 and cutoff.layout.rank() == 1
+    comptime assert output.flat_rank == 2 and q.flat_rank == 3
+    comptime assert weights.flat_rank == 2
+    comptime assert input_row_offsets.flat_rank == 1
+    comptime assert base.flat_rank == 1 and cutoff.flat_rank == 1
 
-    var num_rows = q.dim(0)
-    var num_batches = input_row_offsets.dim(0) - 1
-    var num_cand = output.dim(1)
-    var q_stride0 = Int(q.runtime_layout.stride.value[0])
-    var q_stride1 = Int(q.runtime_layout.stride.value[1])
-    var w_stride0 = Int(weights.runtime_layout.stride.value[0])
-    var out_stride0 = Int(output.runtime_layout.stride.value[0])
+    var num_rows = Int(q.dim[0]())
+    var num_batches = Int(input_row_offsets.dim[0]()) - 1
+    var num_cand = Int(output.dim[1]())
+    var q_stride0 = Int(q.layout.stride[0]().value())
+    var q_stride1 = Int(q.layout.stride[1]().value())
+    var w_stride0 = Int(weights.layout.stride[0]().value())
+    var out_stride0 = Int(output.layout.stride[0]().value())
     debug_assert(
-        q.dim(1) == num_heads and q.dim(2) == head_dim,
+        Int(q.dim[1]()) == num_heads and Int(q.dim[2]()) == head_dim,
         "q must be [num_rows, num_heads, head_dim]",
     )
     debug_assert(num_cand % 2 == 0, "num_cand must be even")
     debug_assert(
-        Int(q.runtime_layout.stride.value[2]) == 1
-        and Int(weights.runtime_layout.stride.value[1]) == 1
-        and Int(output.runtime_layout.stride.value[1]) == 1,
+        Int(q.layout.stride[2]().value()) == 1
+        and Int(weights.layout.stride[1]().value()) == 1
+        and Int(output.layout.stride[1]().value()) == 1,
         "q, weights and output must be contiguous along the last axis",
     )
     if num_rows == 0 or num_cand == 0:
         return
 
-    var out_ptr = rebind[Pointer[Float32, MutAnyOrigin]](output.ptr)
-    var q_ptr = rebind[Pointer[Scalar[q_type], ImmutAnyOrigin]](q.ptr)
-    var w_ptr = rebind[Pointer[Float32, ImmutAnyOrigin]](weights.ptr)
-    var offs_ptr = rebind[Pointer[UInt32, ImmutAnyOrigin]](
-        input_row_offsets.ptr
-    )
-    var base_ptr = rebind[Pointer[Int32, ImmutAnyOrigin]](base.ptr)
-    var cutoff_ptr = rebind[Pointer[Int32, ImmutAnyOrigin]](cutoff.ptr)
+    var out_ptr = output.unsafe_ptr().as_unsafe_any_origin()
+    var q_ptr = q.unsafe_ptr().as_unsafe_any_origin()
+    var w_ptr = weights.unsafe_ptr().as_unsafe_any_origin()
+    var offs_ptr = input_row_offsets.unsafe_ptr().as_unsafe_any_origin()
+    var base_ptr = base.unsafe_ptr().as_unsafe_any_origin()
+    var cutoff_ptr = cutoff.unsafe_ptr().as_unsafe_any_origin()
 
     comptime if is_cpu[target]():
         _indexer_score_cpu[head_dim=head_dim, chunk=chunk](

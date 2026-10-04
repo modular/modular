@@ -108,7 +108,10 @@ def _check_case[
         ctx,
     )
     comptime SA0 = 1
-    comptime SA1 = 3 if mode == 2 or mode == 3 else 1
+    # The B200 blockwise path requires a 16-byte-aligned scale row stride.
+    comptime SA1 = 4 if mode == 3 and output_dtype == .bfloat16 else (
+        3 if mode == 2 or mode == 3 else 1
+    )
     comptime SB0 = N if mode == 2 else 2 if mode == 3 else 1
     var scale_a = HostDeviceTileTensor[DType.float32](
         row_major(Coord(Int64(SA0), Int64(SA1))), ctx
@@ -265,3 +268,6 @@ def main() raises:
         comptime for mode in range(1, 4):
             _check_case[DType.float8_e4m3fn, DType.float32, mode, False](ctx)
             _check_case[DType.float8_e4m3fn, DType.float32, mode, True](ctx)
+        # BF16 output selects the specialized blockwise kernel on B200.
+        _check_case[DType.float8_e4m3fn, DType.bfloat16, 3, False](ctx)
+        _check_case[DType.float8_e4m3fn, DType.bfloat16, 3, True](ctx)

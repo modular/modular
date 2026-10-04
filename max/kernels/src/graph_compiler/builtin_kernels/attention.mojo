@@ -4627,12 +4627,12 @@ struct Struct_indexer_score_ragged_paged:
             max_cache_length,
         )
         indexer_score_ragged_paged[target=target, num_heads=num_heads](
-            output.to_layout_tensor(),
-            q.to_layout_tensor(),
-            weights.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            base.to_layout_tensor(),
-            cutoff.to_layout_tensor(),
+            output.to_tile_tensor(),
+            q.to_tile_tensor(),
+            weights.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            base.to_tile_tensor(),
+            cutoff.to_tile_tensor(),
             collection.get_key_cache(Int(layer)),
             context,
         )
