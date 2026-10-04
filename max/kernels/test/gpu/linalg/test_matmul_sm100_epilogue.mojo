@@ -200,15 +200,18 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    var c_tensor_host_lt = c_host_copy.to_layout_tensor()
-
     @inline(.always)
     def test_lambda_add_coords_summ_local[
         _dtype: DType, width: SIMDLength
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) {
-        var c_tensor_host_lt
-    } -> SIMD[_dtype, width]:
-        return val + c_tensor_host_lt.load[width=width](idx).cast[_dtype]()
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) {var c_host_copy} -> SIMD[
+        _dtype, width
+    ]:
+        return (
+            val
+            + c_host_copy.load_linear[
+                width=width, alignment=align_of[c_type]()
+            ](idx).cast[_dtype]()
+        )
 
     comptime if test_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
