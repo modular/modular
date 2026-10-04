@@ -79,6 +79,51 @@ struct CaseSpec(Copyable, Movable, Writable):
         )
 
 
+def _conv_cpu[
+    dtype: DType,
+    //,
+    silu_activation: Bool,
+    use_residual: Bool = False,
+    channels_last: Bool = False,
+](
+    x: TileTensor[mut=False, dtype, ...],
+    weight: TileTensor[mut=False, dtype, ...],
+    bias: TileTensor[mut=False, dtype, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    cache_indices: TileTensor[mut=False, .uint32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
+    conv_states: TileTensor[mut=True, ...],
+    output: TileTensor[mut=True, dtype, ...],
+):
+    """Runs the CPU conv with reader functions over these tensors.
+
+    An empty `cache_indices` maps sequence `b` to slot `b`, as in the op.
+    """
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](i: Int, j: Int) {var x} -> SIMD[dtype, width]:
+        return x.load[width=width]((i, j))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices} -> SIMD[.uint32, width]:
+        if Int(cache_indices.dim[0]()) == 0:
+            return SIMD[.uint32, width](UInt32(b))
+        return cache_indices.load[width=width]((b,))
+
+    causal_conv1d_varlen_fwd_cpu[silu_activation, use_residual, channels_last](
+        weight,
+        bias,
+        query_start_loc,
+        has_initial_state,
+        conv_states,
+        output,
+        x_fn,
+        slot_fn,
+    )
+
+
 def gen_specs(n: Int) -> List[CaseSpec]:
     var specs = List[CaseSpec]()
     for _ in range(n):
@@ -193,6 +238,16 @@ def run_one_case(
     var pool_g = TileTensor(pool_d, row_major(pool_slots, dim, state_len))
     var y_g = TileTensor(y_d, row_major(total, dim))
 
+    def x_fn[
+        width: Int, alignment: Int
+    ](i: Int, j: Int) {var x_g} -> SIMD[dtype, width]:
+        return x_g.load[width=width]((i, j))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var slot_g} -> SIMD[.uint32, width]:
+        return slot_g.load[width=width]((b,))
+
     if total > batch:
         comptime kernel = causal_conv1d_varlen_fwd_seqparallel_gpu[
             dtype,
@@ -200,29 +255,27 @@ def run_one_case(
             WIDTH,
             BLOCK_DIM,
             TILE_SEQ,
-            x_g.LayoutType,
             weight_g.LayoutType,
             bias_g.LayoutType,
             qsl_g.LayoutType,
-            slot_g.LayoutType,
             his_g.LayoutType,
             pool_g.LayoutType,
             y_g.LayoutType,
-            x_g.Engine,
+            y_g.Engine,
+            type_of(x_fn),
+            type_of(slot_fn),
             silu_activation=True,
             channels_last=True,
         ]
-        var compiled = ctx.compile_function[kernel]()
-        ctx.enqueue_function(
-            compiled,
-            x_g,
+        ctx.enqueue_function[kernel](
             weight_g,
             bias_g,
             qsl_g,
-            slot_g,
             his_g,
             pool_g,
             y_g,
+            host_arg=x_fn,
+            host_arg2=slot_fn,
             grid_dim=(
                 batch,
                 ceildiv(dim, BLOCK_DIM),
@@ -236,29 +289,27 @@ def run_one_case(
             dtype,
             WIDTH,
             BLOCK_DIM,
-            x_g.LayoutType,
             weight_g.LayoutType,
             bias_g.LayoutType,
             qsl_g.LayoutType,
-            slot_g.LayoutType,
             his_g.LayoutType,
             pool_g.LayoutType,
             y_g.LayoutType,
-            x_g.Engine,
+            y_g.Engine,
+            type_of(x_fn),
+            type_of(slot_fn),
             silu_activation=True,
             channels_last=True,
         ]
-        var compiled = ctx.compile_function[kernel]()
-        ctx.enqueue_function(
-            compiled,
-            x_g,
+        ctx.enqueue_function[kernel](
             weight_g,
             bias_g,
             qsl_g,
-            slot_g,
             his_g,
             pool_g,
             y_g,
+            host_arg=x_fn,
+            host_arg2=slot_fn,
             grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
             block_dim=BLOCK_DIM,
         )
@@ -277,7 +328,7 @@ def run_one_case(
             pool_ref_h, row_major(pool_slots, dim, state_len)
         )
         var y_t = TileTensor(y_ref_h, row_major(total, dim))
-        causal_conv1d_varlen_fwd_cpu[
+        _conv_cpu[
             True,
             channels_last=True,
         ](

@@ -34,6 +34,51 @@ from std.utils.index import Index, IndexList
 comptime PAD_SLOT_ID: Int32 = -1
 
 
+def _conv_cpu[
+    dtype: DType,
+    //,
+    silu_activation: Bool,
+    use_residual: Bool = False,
+    channels_last: Bool = False,
+](
+    x: TileTensor[mut=False, dtype, ...],
+    weight: TileTensor[mut=False, dtype, ...],
+    bias: TileTensor[mut=False, dtype, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    cache_indices: TileTensor[mut=False, .uint32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
+    conv_states: TileTensor[mut=True, ...],
+    output: TileTensor[mut=True, dtype, ...],
+):
+    """Runs the CPU conv with reader functions over these tensors.
+
+    An empty `cache_indices` maps sequence `b` to slot `b`, as in the op.
+    """
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](i: Int, j: Int) {var x} -> SIMD[dtype, width]:
+        return x.load[width=width]((i, j))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices} -> SIMD[.uint32, width]:
+        if Int(cache_indices.dim[0]()) == 0:
+            return SIMD[.uint32, width](UInt32(b))
+        return cache_indices.load[width=width]((b,))
+
+    causal_conv1d_varlen_fwd_cpu[silu_activation, use_residual, channels_last](
+        weight,
+        bias,
+        query_start_loc,
+        has_initial_state,
+        conv_states,
+        output,
+        x_fn,
+        slot_fn,
+    )
+
+
 @inline(.always)
 def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
@@ -156,7 +201,7 @@ def run_varlen_causal_conv1d_fwd[
     comptime silu_activation = activation == "silu"
 
     # Test kernel
-    causal_conv1d_varlen_fwd_cpu[silu_activation,](
+    _conv_cpu[silu_activation,](
         x_tt,
         weight_tt,
         bias_tt,
@@ -641,7 +686,7 @@ def run_conv_state_writeback[
                 conv_states_tt.raw_store(idx, value)
                 initial_tt.raw_store(idx, value)
 
-    causal_conv1d_varlen_fwd_cpu[False,](
+    _conv_cpu[False,](
         x_tt,
         weight_tt,
         bias_tt,

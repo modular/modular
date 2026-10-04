@@ -71,7 +71,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace(
         has_initial_state: The ``[batch]`` bool, whether to load initial
             state for each sequence (empty to disable).
         cache_indices: The ``[batch]`` uint32 slot indices into
-            ``ssm_pool``.
+            ``ssm_pool``, or one ``[1, batch]`` row of a per-layer table.
 
     Returns:
         ``y``, the ``[total_len, nheads, head_dim]`` output (model

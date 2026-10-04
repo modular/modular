@@ -4371,7 +4371,8 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
           Apple GPUs (storage dtype only; the scan accumulates in fp32)  [MUT]
         - query_start_loc: (batch + 1,) int32
         - has_initial_state: (batch,) bool optional/empty
-        - cache_indices: (batch,) uint32, slot indices into ssm_pool
+        - cache_indices: (batch,) or (1, batch) uint32, slot indices into
+          ssm_pool
     """
 
     @staticmethod
@@ -4381,71 +4382,111 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
         target: StaticString,
     ](
         y: OutputTensor[dtype=dtype, rank=3, ...],
-        x: InputTensor[dtype=dtype, rank=3, ...],
-        dt: InputTensor[dtype=dtype, rank=2, ...],
+        x: FusedInputTensor[dtype=dtype, rank=3, ...],
+        dt: FusedInputTensor[dtype=dtype, rank=2, ...],
         A: InputTensor[dtype=dtype, rank=1, ...],
-        B: InputTensor[dtype=dtype, rank=3, ...],
-        C: InputTensor[dtype=dtype, rank=3, ...],
+        B: FusedInputTensor[dtype=dtype, rank=3, ...],
+        C: FusedInputTensor[dtype=dtype, rank=3, ...],
         D: InputTensor[dtype=dtype, rank=1, ...],
         dt_bias: InputTensor[dtype=dtype, rank=1, ...],
         # The caller owns this pool and the kernel writes it in place.
         ssm_pool: MutableInputTensor[dtype=state_dtype, rank=4, ...],
         query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
-        cache_indices: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_indices: FusedInputTensor[dtype=.uint32, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        comptime if cache_indices.rank == 2:
+            if cache_indices.dim_size(0) != 1:
+                raise Error(
+                    "cache_indices must be [batch] or [1, batch], got leading"
+                    " extent "
+                    + String(cache_indices.dim_size(0))
+                )
         # fp16 can overflow on the unbounded state, so only the two validated
         # storage dtypes are accepted.
         comptime assert (
             state_dtype == .float32 or state_dtype == .bfloat16
         ), "ssm_pool must be float32 or bfloat16"
-        # The kernels move each dstate run as one SIMD access.
-        if (
-            B.strides()[2] != 1
-            or C.strides()[2] != 1
-            or ssm_pool.strides()[3] != 1
-        ):
+        # The kernels move each dstate run of the pool as one SIMD access. B
+        # and C are fused inputs, so their loads handle any stride.
+        if ssm_pool.strides()[3] != 1:
             raise Error(
-                "the Mamba-2 SSD scan needs unit strides on the dstate axis"
-                " of B, C and ssm_pool"
+                "the Mamba-2 SSD scan needs a unit stride on the dstate axis"
+                " of ssm_pool"
             )
 
         var nheads = x.dim_size(1)
         var head_dim = x.dim_size(2)
+        var ngroups = B.dim_size(1)
         var batch = query_start_loc.dim_size(0) - 1
 
         var y_tt = y.to_tile_tensor()
-        var x_tt = x.to_tile_tensor()
-        var dt_tt = dt.to_tile_tensor()
         var A_tt = A.to_tile_tensor()
-        var B_tt = B.to_tile_tensor()
-        var C_tt = C.to_tile_tensor()
         var D_tt = D.to_tile_tensor()
         var dt_bias_tt = dt_bias.to_tile_tensor()
         var ssm_pool_tt = ssm_pool.to_tile_tensor()
         var query_start_loc_tt = query_start_loc.to_tile_tensor()
         var has_initial_state_tt = has_initial_state.to_tile_tensor()
-        var cache_indices_tt = cache_indices.to_tile_tensor()
+
+        # x, dt, B, C and the slot indices are fused inputs: a slice feeding
+        # one is folded into its loads instead of being copied.
+        @inline(.always)
+        def x_fn[
+            width: Int, alignment: Int
+        ](t: Int, h: Int, p: Int) {var x} -> SIMD[dtype, width]:
+            return x._fused_load[width, element_alignment=alignment]((t, h, p))
+
+        @inline(.always)
+        def dt_fn[
+            width: Int, alignment: Int
+        ](t: Int, h: Int) {var dt} -> SIMD[dtype, width]:
+            return dt._fused_load[width, element_alignment=alignment]((t, h))
+
+        @inline(.always)
+        def b_fn[
+            width: Int, alignment: Int
+        ](t: Int, g: Int, n: Int) {var B} -> SIMD[dtype, width]:
+            return B._fused_load[width, element_alignment=alignment]((t, g, n))
+
+        @inline(.always)
+        def c_fn[
+            width: Int, alignment: Int
+        ](t: Int, g: Int, n: Int) {var C} -> SIMD[dtype, width]:
+            return C._fused_load[width, element_alignment=alignment]((t, g, n))
+
+        @inline(.always)
+        def slot_fn[
+            width: Int, alignment: Int
+        ](b: Int) {var cache_indices} -> SIMD[DType.uint32, width]:
+            comptime if cache_indices.rank == 2:
+                return cache_indices._fused_load[
+                    width, element_alignment=alignment
+                ]((0, b))
+            else:
+                return cache_indices._fused_load[
+                    width, element_alignment=alignment
+                ]((b,))
 
         @inline(.always)
         def launch[DSTATE: Int]() raises {imm}:
             comptime if is_cpu[target]():
                 mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[
-                    DSTATE, Self.dt_softplus
+                    DSTATE, dt_softplus=Self.dt_softplus
                 ](
-                    x_tt,
-                    dt_tt,
+                    ngroups,
                     A_tt,
-                    B_tt,
-                    C_tt,
                     D_tt,
                     dt_bias_tt,
                     y_tt,
                     ssm_pool_tt,
                     query_start_loc_tt,
                     has_initial_state_tt,
-                    cache_indices_tt,
+                    x_fn,
+                    dt_fn,
+                    b_fn,
+                    c_fn,
+                    slot_fn,
                     Optional[DeviceContext](ctx),
                 )
             elif not is_gpu[target]():
@@ -4457,34 +4498,35 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                     dtype,
                     state_dtype,
                     DSTATE,
-                    x_tt.LayoutType,
-                    dt_tt.LayoutType,
                     A_tt.LayoutType,
-                    B_tt.LayoutType,
-                    C_tt.LayoutType,
                     D_tt.LayoutType,
                     dt_bias_tt.LayoutType,
                     y_tt.LayoutType,
                     ssm_pool_tt.LayoutType,
                     query_start_loc_tt.LayoutType,
                     has_initial_state_tt.LayoutType,
-                    cache_indices_tt.LayoutType,
-                    x_tt.Engine,
+                    y_tt.Engine,
+                    type_of(x_fn),
+                    type_of(dt_fn),
+                    type_of(b_fn),
+                    type_of(c_fn),
+                    type_of(slot_fn),
                     Self.dt_softplus,
                 ]
                 ctx.enqueue_function[kernel](
-                    x_tt,
-                    dt_tt,
+                    Int32(ngroups),
                     A_tt,
-                    B_tt,
-                    C_tt,
                     D_tt,
                     dt_bias_tt,
                     y_tt,
                     ssm_pool_tt,
                     query_start_loc_tt,
                     has_initial_state_tt,
-                    cache_indices_tt,
+                    host_arg=x_fn,
+                    host_arg2=dt_fn,
+                    host_arg3=b_fn,
+                    host_arg4=c_fn,
+                    host_arg5=slot_fn,
                     grid_dim=(ceildiv(head_dim, BLOCK_SIZE), nheads, batch),
                     block_dim=(BLOCK_SIZE, 1, 1),
                 )
@@ -4508,36 +4550,37 @@ struct Mamba2SSDChunkScanVarlenFwdInplace[dt_softplus: Bool = True]:
                         state_dtype,
                         DSTATE,
                         DSTATE_SPLIT,
-                        x_tt.LayoutType,
-                        dt_tt.LayoutType,
                         A_tt.LayoutType,
-                        B_tt.LayoutType,
-                        C_tt.LayoutType,
                         D_tt.LayoutType,
                         dt_bias_tt.LayoutType,
                         y_tt.LayoutType,
                         ssm_pool_tt.LayoutType,
                         query_start_loc_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
-                        x_tt.Engine,
+                        y_tt.Engine,
+                        type_of(x_fn),
+                        type_of(dt_fn),
+                        type_of(b_fn),
+                        type_of(c_fn),
+                        type_of(slot_fn),
                         Self.dt_softplus,
                         prefill,
                     ]
                     if has_prefill == prefill:
                         ctx.enqueue_function[kernel](
-                            x_tt,
-                            dt_tt,
+                            Int32(ngroups),
                             A_tt,
-                            B_tt,
-                            C_tt,
                             D_tt,
                             dt_bias_tt,
                             y_tt,
                             ssm_pool_tt,
                             query_start_loc_tt,
                             has_initial_state_tt,
-                            cache_indices_tt,
+                            host_arg=x_fn,
+                            host_arg2=dt_fn,
+                            host_arg3=b_fn,
+                            host_arg4=c_fn,
+                            host_arg5=slot_fn,
                             grid_dim=(
                                 ceildiv(head_dim, CH_PER_BLOCK),
                                 nheads,
@@ -4607,8 +4650,8 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
             from `ssm_pool`; may be empty when no initial states are
             used.
         cache_indices: Per-sequence slot indices of shape
-            `(batch,)` in `uint32` selecting where in `ssm_pool`
-            the final states are written.
+            `(batch,)` or `(1, batch)` in `uint32` selecting where in
+            `ssm_pool` the final states are written.
     """
     comptime assert type_of(x).rank == 3, "x must be rank 3"
     comptime assert type_of(dt).rank == 2, "dt must be rank 2"
@@ -4678,7 +4721,8 @@ struct CausalConv1DVarlenFwd[
         - weight: (dim, width) - Convolution weights per channel
         - bias: (dim,) - Per-channel bias
         - query_start_loc: (batch + 1,) - Cumulative sequence lengths
-        - cache_indices: (batch,) - Indices into conv_states (optional)
+        - cache_indices: (batch,) or (1, batch) - Indices into conv_states
+          (optional)
         - has_initial_state: (batch,) - Whether to use initial state (optional)
         - conv_states: (batch, dim, width - 1) - Conv states (optional, in/out)
     """
@@ -4690,26 +4734,61 @@ struct CausalConv1DVarlenFwd[
         target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=2, ...],
-        x: InputTensor[dtype=dtype, rank=2, ...],
+        x: FusedInputTensor[dtype=dtype, rank=2, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
         bias: InputTensor[dtype=dtype, rank=1, ...],
         # The caller owns this pool and the kernel writes it in place.
         conv_states: MutableInputTensor[dtype=conv_states_dtype, rank=3, ...],
         query_start_loc: InputTensor[dtype=.int32, rank=1, ...],
-        cache_indices: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_indices: FusedInputTensor[dtype=.uint32, ...],
         has_initial_state: InputTensor[dtype=.bool, rank=1, ...],
         ctx: DeviceContext,
     ) capturing raises:
+        comptime if cache_indices.rank == 2:
+            if cache_indices.dim_size(0) != 1:
+                raise Error(
+                    "cache_indices must be [batch] or [1, batch], got leading"
+                    " extent "
+                    + String(cache_indices.dim_size(0))
+                )
         comptime silu_activation = Self.activation == "silu"
 
         var output_tt = output.to_tile_tensor()
-        var x_tt = x.to_tile_tensor()
         var weight_tt = weight.to_tile_tensor()
         var bias_tt = bias.to_tile_tensor()
         var query_start_loc_tt = query_start_loc.to_tile_tensor()
-        var cache_indices_tt = cache_indices.to_tile_tensor()
         var has_initial_state_tt = has_initial_state.to_tile_tensor()
         var conv_states_tt = conv_states.to_tile_tensor()
+
+        # x and the slot indices are fused inputs: a slice feeding one is
+        # folded into its loads instead of being copied.
+        @inline(.always)
+        def x_fn[
+            width: Int, alignment: Int
+        ](i: Int, j: Int) {var x} -> SIMD[dtype, width]:
+            return x._fused_load[width, element_alignment=alignment]((i, j))
+
+        # An empty `cache_indices` maps sequence `b` to slot `b`.
+        var has_cache_indices = (
+            cache_indices.dim_size(cache_indices.rank - 1) > 0
+        )
+
+        @inline(.always)
+        def slot_fn[
+            width: Int, alignment: Int
+        ](b: Int) {var cache_indices, var has_cache_indices} -> SIMD[
+            DType.uint32, width
+        ]:
+            if not has_cache_indices:
+                return SIMD[DType.uint32, width](UInt32(b))
+            comptime if cache_indices.rank == 2:
+                return cache_indices._fused_load[
+                    width, element_alignment=alignment
+                ]((0, b))
+            else:
+                return cache_indices._fused_load[
+                    width, element_alignment=alignment
+                ]((b,))
 
         comptime if is_cpu[target]():
             causal_conv1d_varlen_fwd_cpu[
@@ -4717,21 +4796,21 @@ struct CausalConv1DVarlenFwd[
                 use_residual=Self.use_residual,
                 channels_last=Self.channels_last,
             ](
-                x_tt,
                 weight_tt,
                 bias_tt,
                 query_start_loc_tt,
-                cache_indices_tt,
                 has_initial_state_tt,
                 conv_states_tt,
                 output_tt,
+                x_fn,
+                slot_fn,
             )
         elif is_gpu[target]():
             comptime BLOCK_DIM = 128
             comptime TILE_SEQ = 128
             comptime seq_axis = 0 if Self.channels_last else 1
-            var dim = x.dim_size(1 - seq_axis)
-            var total_seqlen = x.dim_size(seq_axis)
+            var dim = output.dim_size(1 - seq_axis)
+            var total_seqlen = output.dim_size(seq_axis)
             var batch = query_start_loc.dim_size(0) - 1
 
             @inline(.always)
@@ -4746,28 +4825,28 @@ struct CausalConv1DVarlenFwd[
                         WIDTH,
                         BLOCK_DIM,
                         TILE_SEQ,
-                        x_tt.LayoutType,
                         weight_tt.LayoutType,
                         bias_tt.LayoutType,
                         query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
                         conv_states_tt.LayoutType,
                         output_tt.LayoutType,
-                        x_tt.Engine,
+                        output_tt.Engine,
+                        type_of(x_fn),
+                        type_of(slot_fn),
                         silu_activation,
                         Self.use_residual,
                         Self.channels_last,
                     ]
                     ctx.enqueue_function[kernel](
-                        x_tt,
                         weight_tt,
                         bias_tt,
                         query_start_loc_tt,
-                        cache_indices_tt,
                         has_initial_state_tt,
                         conv_states_tt,
                         output_tt,
+                        host_arg=x_fn,
+                        host_arg2=slot_fn,
                         grid_dim=(
                             batch,
                             ceildiv(dim, BLOCK_DIM),
@@ -4781,28 +4860,28 @@ struct CausalConv1DVarlenFwd[
                         conv_states_dtype,
                         WIDTH,
                         BLOCK_DIM,
-                        x_tt.LayoutType,
                         weight_tt.LayoutType,
                         bias_tt.LayoutType,
                         query_start_loc_tt.LayoutType,
-                        cache_indices_tt.LayoutType,
                         has_initial_state_tt.LayoutType,
                         conv_states_tt.LayoutType,
                         output_tt.LayoutType,
-                        x_tt.Engine,
+                        output_tt.Engine,
+                        type_of(x_fn),
+                        type_of(slot_fn),
                         silu_activation,
                         Self.use_residual,
                         Self.channels_last,
                     ]
                     ctx.enqueue_function[kernel](
-                        x_tt,
                         weight_tt,
                         bias_tt,
                         query_start_loc_tt,
-                        cache_indices_tt,
                         has_initial_state_tt,
                         conv_states_tt,
                         output_tt,
+                        host_arg=x_fn,
+                        host_arg2=slot_fn,
                         grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
                         block_dim=BLOCK_DIM,
                     )

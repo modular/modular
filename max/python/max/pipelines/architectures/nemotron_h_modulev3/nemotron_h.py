@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from max import tree
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module, as_subgraph
@@ -118,17 +119,14 @@ class NemotronHBackbone(Module[..., Tensor]):
             # subgraph.
             call: Callable[..., Tensor] = as_subgraph(layer, name=kind.value)
             if kind is LayerKind.MAMBA:
-                # The rows are selected here rather than inside the layer, so
-                # the Mamba layers can share one subgraph.
+                # Every layer's rows go into the shared subgraph with the
+                # layer index, and the layer slices its own rows there.
                 access = MambaStateAccess(
                     conv_pool=Tensor.from_graph_value(conv.pool),
-                    conv_rows=Tensor.from_graph_value(
-                        conv.live_row_id(mamba_idx)
-                    ),
+                    conv_rows=Tensor.from_graph_value(conv.live_row_ids),
                     ssm_pool=Tensor.from_graph_value(ssm.pool),
-                    ssm_rows=Tensor.from_graph_value(
-                        ssm.live_row_id(mamba_idx)
-                    ),
+                    ssm_rows=Tensor.from_graph_value(ssm.live_row_ids),
+                    layer=F.constant(mamba_idx, DType.int64, device=CPU()),
                 )
                 h = call(h, access, query_start_loc, has_initial_state)
                 mamba_idx += 1

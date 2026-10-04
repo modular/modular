@@ -17,7 +17,6 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",

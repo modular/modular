@@ -30,9 +30,74 @@ from state_space.mamba2_ssd_scan import (
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple,
     mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split,
 )
-from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.sys import (
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+    size_of,
+)
 from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
+
+
+def _scan_cpu[
+    dtype: DType, state_dtype: DType, //, DSTATE: Int
+](
+    x: TileTensor[mut=False, dtype, ...],
+    dt: TileTensor[mut=False, dtype, ...],
+    A: TileTensor[mut=False, dtype, ...],
+    B: TileTensor[mut=False, dtype, ...],
+    C: TileTensor[mut=False, dtype, ...],
+    D: TileTensor[mut=False, dtype, ...],
+    dt_bias: TileTensor[mut=False, dtype, ...],
+    y: TileTensor[mut=True, dtype, ...],
+    ssm_pool: TileTensor[mut=True, state_dtype, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
+    cache_indices: TileTensor[mut=False, .uint32, ...],
+):
+    """Runs the CPU scan with operand functions that read these tensors."""
+    comptime elt = size_of[dtype]()
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int, p: Int) {var x} -> SIMD[dtype, width]:
+        return x.load[width=width, alignment=alignment * elt]((t, h, p))
+
+    def dt_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int) {var dt} -> SIMD[dtype, width]:
+        return dt.load[width=width, alignment=alignment * elt]((t, h))
+
+    def b_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var B} -> SIMD[dtype, width]:
+        return B.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def c_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var C} -> SIMD[dtype, width]:
+        return C.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices} -> SIMD[.uint32, width]:
+        return cache_indices.load[width=width]((b,))
+
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[DSTATE](
+        Int(B.dim[1]()),
+        A,
+        D,
+        dt_bias,
+        y,
+        ssm_pool,
+        query_start_loc,
+        has_initial_state,
+        x_fn,
+        dt_fn,
+        b_fn,
+        c_fn,
+        slot_fn,
+    )
 
 
 def _reference_scan[
@@ -267,7 +332,7 @@ def run_mamba2_ssd[
     var pool_cpu_h = alloc[Float32](pool_size)
     for i in range(pool_size):
         pool_cpu_h.store(i, pool_init_h.load(i).cast[.float32]())
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[DSTATE](
+    _scan_cpu[DSTATE](
         TileTensor(x_h, x_layout),
         TileTensor(dt_h, row_major(total_len, nheads)),
         TileTensor(A_h, row_major(nheads)),
@@ -334,6 +399,33 @@ def run_mamba2_ssd[
         pool_d, row_major(max_slots, nheads, head_dim, dstate)
     )
 
+    comptime elt = size_of[dtype]()
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int, p: Int) {var x_g} -> SIMD[dtype, width]:
+        return x_g.load[width=width, alignment=alignment * elt]((t, h, p))
+
+    def dt_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int) {var dt_g} -> SIMD[dtype, width]:
+        return dt_g.load[width=width, alignment=alignment * elt]((t, h))
+
+    def b_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var B_g} -> SIMD[dtype, width]:
+        return B_g.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def c_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var C_g} -> SIMD[dtype, width]:
+        return C_g.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var slot_g} -> SIMD[.uint32, width]:
+        return slot_g.load[width=width]((b,))
+
     comptime if DSTATE_SPLIT > 0:
         # Mirrors the production launch in kernels.mojo.
         comptime CH_PER_BLOCK = 128 // DSTATE_SPLIT
@@ -342,33 +434,34 @@ def run_mamba2_ssd[
             state_dtype,
             DSTATE,
             DSTATE_SPLIT,
-            x_g.LayoutType,
-            dt_g.LayoutType,
             A_g.LayoutType,
-            B_g.LayoutType,
-            C_g.LayoutType,
             D_g.LayoutType,
             dt_bias_g.LayoutType,
             y_g.LayoutType,
             pool_g.LayoutType,
             qsl_g.LayoutType,
             his_g.LayoutType,
-            slot_g.LayoutType,
-            x_g.Engine,
+            y_g.Engine,
+            type_of(x_fn),
+            type_of(dt_fn),
+            type_of(b_fn),
+            type_of(c_fn),
+            type_of(slot_fn),
         ]
         ctx.enqueue_function[kernel](
-            x_g,
-            dt_g,
+            Int32(ngroups),
             A_g,
-            B_g,
-            C_g,
             D_g,
             dt_bias_g,
             y_g,
             pool_g,
             qsl_g,
             his_g,
-            slot_g,
+            host_arg=x_fn,
+            host_arg2=dt_fn,
+            host_arg3=b_fn,
+            host_arg4=c_fn,
+            host_arg5=slot_fn,
             grid_dim=(
                 (head_dim + CH_PER_BLOCK - 1) // CH_PER_BLOCK,
                 nheads,
@@ -382,33 +475,34 @@ def run_mamba2_ssd[
             dtype,
             state_dtype,
             DSTATE,
-            x_g.LayoutType,
-            dt_g.LayoutType,
             A_g.LayoutType,
-            B_g.LayoutType,
-            C_g.LayoutType,
             D_g.LayoutType,
             dt_bias_g.LayoutType,
             y_g.LayoutType,
             pool_g.LayoutType,
             qsl_g.LayoutType,
             his_g.LayoutType,
-            slot_g.LayoutType,
-            x_g.Engine,
+            y_g.Engine,
+            type_of(x_fn),
+            type_of(dt_fn),
+            type_of(b_fn),
+            type_of(c_fn),
+            type_of(slot_fn),
         ]
         ctx.enqueue_function[kernel](
-            x_g,
-            dt_g,
+            Int32(ngroups),
             A_g,
-            B_g,
-            C_g,
             D_g,
             dt_bias_g,
             y_g,
             pool_g,
             qsl_g,
             his_g,
-            slot_g,
+            host_arg=x_fn,
+            host_arg2=dt_fn,
+            host_arg3=b_fn,
+            host_arg4=c_fn,
+            host_arg5=slot_fn,
             grid_dim=((head_dim + BLOCK_SIZE - 1) // BLOCK_SIZE, nheads, batch),
             block_dim=(BLOCK_SIZE, 1, 1),
         )
@@ -501,7 +595,7 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
         cum += seq_lengths[i]
         qsl_h.store(i + 1, Int32(cum))
         slot_h.store(i, UInt32(i))
-    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[dstate](
+    _scan_cpu[dstate](
         TileTensor(x_h, row_major(total_len, nheads, head_dim)),
         TileTensor(dt_h, row_major(total_len, nheads)),
         A_tt,
@@ -527,7 +621,7 @@ def test_mamba2_ssd_varlen_no_cross_sequence_bleed() raises:
     for s in range(batch):
         var slen = seq_lengths[s]
         qsl_s_h.store(1, Int32(slen))
-        mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[dstate](
+        _scan_cpu[dstate](
             TileTensor(
                 x_h + off * nheads * head_dim,
                 row_major(slen, nheads, head_dim),
