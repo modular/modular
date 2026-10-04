@@ -31,13 +31,15 @@ kernel noise and its neighbours miss by whole layers.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 import pytest
 import torch
 from max import tree
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.nn.comm.allreduce import Signals
 from max.nn.kv_cache import (
@@ -252,12 +254,19 @@ def _create_kv_manager(
     )
 
 
-def _max_taps(
+@dataclass(frozen=True)
+class _CompiledTaps:
+    model: Model
+    kv_params: MultiKVCacheParams
+    device: Accelerator
+
+
+def _compile_taps(
     weights: dict[str, np.ndarray],
     target_layer_ids: list[int],
     use_subgraphs: bool = False,
-) -> list[np.ndarray]:
-    """Runs MAX's Qwen3.5 on the HuggingFace weights, returning its captures."""
+) -> _CompiledTaps:
+    """Compiles MAX's Qwen3.5 on the HuggingFace weights, capturing taps."""
     config = _with_state_regions(_max_config(target_layer_ids, use_subgraphs))
     model = Qwen3_5(config)
     model.return_logits = ReturnLogits.LAST_TOKEN
@@ -314,14 +323,23 @@ def _max_taps(
         )
         graph.output(*outputs)
 
-    compiled = session.load(graph, weights_registry=registry)
+    kv_params = config.kv_params
+    assert isinstance(kv_params, MultiKVCacheParams)
+    return _CompiledTaps(
+        model=session.load(graph, weights_registry=registry),
+        kv_params=kv_params,
+        device=device,
+    )
+
+
+def _run_taps(compiled: _CompiledTaps) -> list[np.ndarray]:
+    """Runs a compiled tap graph, returning its captures."""
+    device = compiled.device
 
     def buf(x: np.ndarray) -> Buffer:
         return Buffer.from_numpy(np.ascontiguousarray(x)).to(device)
 
-    kv_params = config.kv_params
-    assert isinstance(kv_params, MultiKVCacheParams)
-    kv_manager = _create_kv_manager(kv_params)
+    kv_manager = _create_kv_manager(compiled.kv_params)
     ctx = TextContext(
         request_id=RequestID(), max_length=128, tokens=TokenBuffer(TOKENS)
     )
@@ -329,7 +347,7 @@ def _max_taps(
     kv_manager.alloc(ctx)
     kv_runtime = kv_manager.runtime_inputs([[ctx]])
 
-    results = compiled.execute(
+    results = compiled.model.execute(
         buf(TOKENS),
         buf(np.array([0, SEQ_LEN], dtype=np.uint32)),
         Buffer.from_numpy(np.array([1], dtype=np.int64)),
@@ -352,20 +370,45 @@ def _relative(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.abs(a - b).max() / scale)
 
 
-@pytest.fixture(scope="module")
-def crosscheck() -> tuple[list[np.ndarray], list[np.ndarray], np.ndarray]:
-    weights, hidden, normed = _huggingface()
-    taps = _max_taps(weights, list(range(NUM_LAYERS)))
-    assert len(taps) == NUM_LAYERS
-    return taps, hidden, normed
-
-
 # HuggingFace applies the model's final norm to the last `hidden_states`
 # entry and to no other, so `hidden_states[NUM_LAYERS]` is not comparable to
 # a raw tap. `test_huggingface_normalises_only_its_last_entry` measures that
 # rather than assuming it. The real model taps 5/19/33/47/61 of 64 layers and
 # never the last, so this excludes nothing the drafter uses.
 COMPARABLE = range(NUM_LAYERS - 1)
+SCATTERED = [1, 3, 5, 6]
+
+HuggingFaceRun = tuple[dict[str, np.ndarray], list[np.ndarray], np.ndarray]
+
+
+@pytest.fixture(scope="module")
+def huggingface() -> HuggingFaceRun:
+    return _huggingface()
+
+
+@pytest.fixture(scope="module")
+def compiled_every_layer(huggingface: HuggingFaceRun) -> _CompiledTaps:
+    return _compile_taps(huggingface[0], list(range(NUM_LAYERS)))
+
+
+@pytest.fixture(scope="module")
+def compiled_scattered(huggingface: HuggingFaceRun) -> _CompiledTaps:
+    return _compile_taps(huggingface[0], SCATTERED)
+
+
+@pytest.fixture(scope="module")
+def compiled_subgraphs(huggingface: HuggingFaceRun) -> _CompiledTaps:
+    return _compile_taps(huggingface[0], list(COMPARABLE), use_subgraphs=True)
+
+
+@pytest.fixture(scope="module")
+def crosscheck(
+    huggingface: HuggingFaceRun, compiled_every_layer: _CompiledTaps
+) -> tuple[list[np.ndarray], list[np.ndarray], np.ndarray]:
+    _, hidden, normed = huggingface
+    taps = _run_taps(compiled_every_layer)
+    assert len(taps) == NUM_LAYERS
+    return taps, hidden, normed
 
 
 def test_huggingface_normalises_only_its_last_entry(
@@ -449,6 +492,7 @@ def test_taps_are_not_permuted(
 
 
 def test_the_real_tap_pattern_reads_the_same_layers(
+    compiled_scattered: _CompiledTaps,
     crosscheck: tuple[list[np.ndarray], list[np.ndarray], np.ndarray],
 ) -> None:
     """A scattered request, like the real config's, is not reordered.
@@ -458,11 +502,9 @@ def test_the_real_tap_pattern_reads_the_same_layers(
     return them in ascending order and read the right ones.
     """
     _, hidden, _ = crosscheck
-    weights, _, _ = _huggingface()
-    scattered = [1, 3, 5, 6]
-    taps = _max_taps(weights, scattered)
-    assert len(taps) == len(scattered)
-    for layer, tap in zip(scattered, taps, strict=True):
+    taps = _run_taps(compiled_scattered)
+    assert len(taps) == len(SCATTERED)
+    for layer, tap in zip(SCATTERED, taps, strict=True):
         best = min(
             range(NUM_LAYERS - 1),
             key=lambda j: _relative(hidden[j + 1], tap),
@@ -470,7 +512,9 @@ def test_the_real_tap_pattern_reads_the_same_layers(
         assert best == layer, f"scattered tap for {layer} read layer {best}"
 
 
-def test_the_subgraph_path_taps_the_same_layers() -> None:
+def test_the_subgraph_path_taps_the_same_layers(
+    compiled_subgraphs: _CompiledTaps, huggingface: HuggingFaceRun
+) -> None:
     """`forward_sequential_layers` calls the hook from two places.
 
     The DFlash2 target config sets `use_subgraphs = False`, so production
@@ -478,8 +522,8 @@ def test_the_subgraph_path_taps_the_same_layers() -> None:
     `on_layer_output` call and would silently diverge if it ever got turned
     on. Same weights, same expectation.
     """
-    weights, hidden, _ = _huggingface()
-    taps = _max_taps(weights, list(COMPARABLE), use_subgraphs=True)
+    _, hidden, _ = huggingface
+    taps = _run_taps(compiled_subgraphs)
     for layer in COMPARABLE:
         best = min(
             COMPARABLE, key=lambda j: _relative(hidden[j + 1], taps[layer])
