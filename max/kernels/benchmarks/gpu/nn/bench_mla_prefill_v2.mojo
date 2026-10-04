@@ -96,9 +96,7 @@ from std.utils import StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
-from layout import Idx, LayoutTensor, TileTensor, row_major
-from layout.coord import Coord
-from layout.runtime_layout import RuntimeLayout
+from layout import Idx, TileTensor, row_major
 
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand
