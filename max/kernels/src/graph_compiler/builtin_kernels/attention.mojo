@@ -33,7 +33,6 @@ from kv_cache.types import KVCacheStaticParams
 from linalg.mx_format import MXFormat
 from layout import (
     Layout,
-    LayoutTensor,
     RuntimeLayout,
     TileTensor,
     RowMajorLayout,
