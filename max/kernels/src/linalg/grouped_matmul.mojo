@@ -584,7 +584,7 @@ def grouped_matmul_amd[
     comptime assert K % BK == 0
 
     # Reshape b from (num_experts, N, K) to (num_experts*N, K) for 2D view
-    var b_2d = TileTensor(b.ptr, row_major[num_experts * N, K]())
+    var b_2d = b.reshape(row_major[num_experts * N, K]())
 
     comptime block_dim = 256
 

@@ -740,8 +740,8 @@ def pack_b[
         tile_k: Tile size along the K dimension of the matmul.
     """
     # Strip extra type params from existential `...` pattern.
-    var src_tt = TileTensor(src.ptr, src.layout)
-    var dst_tt = TileTensor(dst.ptr, dst.layout)
+    var src_tt = src.reshape(src.layout)
+    var dst_tt = dst.reshape(dst.layout)
     unsafe_memset_zero(
         dst_tt.ptr, dst_tt.num_elements()
     )  # zero the padding to be safe

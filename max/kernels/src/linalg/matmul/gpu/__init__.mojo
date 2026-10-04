@@ -718,7 +718,7 @@ def _matmul_gpu[
 
     # Capture the raw pointer: `@__copy_capture` byte-copies, so a
     # `DeviceBuffer`-backed tile would reach the device as a host reference.
-    var c_epilogue = TileTensor(c.ptr, c.layout)
+    var c_epilogue = c.reshape(c.layout)
 
     # Only the H100 version of gemm supports the compute lambda.
     # For the other kernels we wrap it around an epilogue lambda instead.

@@ -275,14 +275,14 @@ struct MXFP4MoERoutedMatmul[
 
         # ---- Loaders ----
         var b_loader = PreshuffledBLoader[N=N, K_BYTES=K_BYTES](
-            TileTensor(b_pre_expert.ptr, b_pre_expert.layout)
+            b_pre_expert.reshape(b_pre_expert.layout)
         )
         var sfa_loader = PreshuffledScaleLoader[
             MN_padded=Self.sort_block_m, K_SCALES=K_SCALES
-        ](TileTensor(sfa_pre_block.ptr, sfa_pre_block.layout))
+        ](sfa_pre_block.reshape(sfa_pre_block.layout))
         var sfb_loader = PreshuffledScaleLoader[
             MN_padded=N_padded_scale, K_SCALES=K_SCALES
-        ](TileTensor(sfb_pre_expert.ptr, sfb_pre_expert.layout))
+        ](sfb_pre_expert.reshape(sfb_pre_expert.layout))
         var a_bc = make_amd_buffer_resource(a_tt)
 
         # ---- SMEM for A ----

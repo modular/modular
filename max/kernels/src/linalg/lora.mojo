@@ -282,7 +282,7 @@ def expand_qkv_sm100(
     #   - B operand: the fused LoRA-B weight `b` (`[G, D_total, R]`), forwarded as-is.
     #   - A operand: the planar shrink output `P [3, M, R]` reinterpreted as `[3M, R]`,
     #     so plane `t` occupies rows `[t*M, (t+1)*M)`; `a_plane_splits` selects it.
-    var a_act = TileTensor(p.ptr, row_major(Coord(3 * M, Idx[R])))
+    var a_act = p.reshape(row_major(Coord(3 * M, Idx[R])))
 
     # Dangling C `[M, D_total]`: all results reach `q_out`/`kv_out` through the
     # `route_qkv` epilogue, so the grouped matmul never stores to C directly (the

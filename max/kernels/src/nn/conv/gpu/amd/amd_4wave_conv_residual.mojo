@@ -205,7 +205,7 @@ def amd_4wave_conv_fprop_with_residual[
     # the alloc + zero-pad entirely.
     comptime K_padded = ((K_real + 255) // 256) * 256
     comptime _needs_kpad = K_padded != K_real
-    var output_2d = TileTensor(output.ptr, row_major(Coord(M, Idx[_C_out])))
+    var output_2d = output.reshape(row_major(Coord(M, Idx[_C_out])))
 
     # The 2D residual view's row stride is `C_out` (NHWC contiguous).
     var _source_row_stride = _C_out
@@ -294,7 +294,7 @@ def amd_4wave_conv_fprop_with_residual[
             )
     else:
         comptime _filter_2d_layout_no_pad = row_major[_C_out, K_real]()
-        var filter_2d_no_pad = TileTensor(filter.ptr, _filter_2d_layout_no_pad)
+        var filter_2d_no_pad = filter.reshape(_filter_2d_layout_no_pad)
 
         @__parameter
         @inline(.always)
@@ -378,7 +378,7 @@ def _launch_plain_conv[
     comptime K_real = _R * _S * _C_in
     comptime K_padded = ((K_real + 255) // 256) * 256
     comptime _needs_kpad = K_padded != K_real
-    var output_2d = TileTensor(output.ptr, row_major(Coord(M, Idx[_C_out])))
+    var output_2d = output.reshape(row_major(Coord(M, Idx[_C_out])))
 
     if problem.stride_h != problem.stride_w or problem.pad_h != problem.pad_w:
         raise Error(
@@ -490,7 +490,7 @@ def _launch_plain_conv[
             )
     else:
         comptime _filter_2d_layout_no_pad = row_major[_C_out, K_real]()
-        var filter_2d_no_pad = TileTensor(filter.ptr, _filter_2d_layout_no_pad)
+        var filter_2d_no_pad = filter.reshape(_filter_2d_layout_no_pad)
 
         @__parameter
         @inline(.always)
