@@ -1039,7 +1039,7 @@ def _softmax_warp_kernel[
     var row_size = Int(output.dim[axis]())
     var num_rows = ufloordiv(output.num_elements(), row_size)
 
-    var warp_idx = thread_idx.x // WARP_SIZE
+    var warp_idx = warp_id()
     var lane = Int(lane_id())
     var row_stride = grid_dim.x * WARP_ROWS
 

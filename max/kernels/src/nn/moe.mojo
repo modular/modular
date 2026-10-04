@@ -590,7 +590,7 @@ def group_limited_router_kernel[
 
     var token_idx = block_idx.x
     var tid = thread_idx.x
-    var warp_id = tid // WARP_SIZE
+    var warp_id = warp_id()
 
     var num_tokens = expert_scores.dim(0)
 

@@ -43,7 +43,7 @@ data-before-signal ordering that `AmdCounterBackend` delegates to the caller;
 """
 
 from std.atomic import Ordering, fence
-from max.gpu import barrier, lane_id, thread_idx, WARP_SIZE
+from max.gpu import barrier, lane_id, thread_idx, warp_id, WARP_SIZE
 from max.gpu.host import DeviceContext
 from max.gpu.memory import AddressSpace
 from std.memory import stack_allocation
@@ -93,7 +93,7 @@ def pingpong_kernel[
     barrier()
 
     var is_leader = lane_id() == 0
-    var warp = thread_idx.x // WARP_SIZE
+    var warp = warp_id()
 
     if warp == 0:
         for i in range(Int(n_items)):

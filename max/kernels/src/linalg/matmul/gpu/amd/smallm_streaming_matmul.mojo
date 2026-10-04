@@ -36,6 +36,7 @@ from max.gpu import (
     grid_dim,
     lane_id,
     thread_idx,
+    warp_id,
 )
 from std.memory import unsafe_stack_allocation
 from std.utils import Index
@@ -198,7 +199,7 @@ def _gemm_smallm_streaming_kernel[
     var _m = Int(m)
     var _n = Int(n)
     var lane = Int(lane_id())
-    var warp_in_block = thread_idx.x // WARP_SIZE
+    var warp_in_block = warp_id()
 
     # mfma 16x16x32 bf16 lane layout (wave64): lane l serves row/col l%16 and
     # k-group l//16 (4 groups of 8 contiguous k). Fragment-major operands make

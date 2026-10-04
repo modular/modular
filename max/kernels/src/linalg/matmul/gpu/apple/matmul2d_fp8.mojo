@@ -61,7 +61,7 @@ register-cliff optimum (KB `apple-m5-gpu-perf-model`); do NOT exceed 4
 accumulators.
 """
 
-from max.gpu import WARP_SIZE, block_idx, thread_idx
+from max.gpu import WARP_SIZE, block_idx, thread_idx, warp_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 from std.sys import align_of
@@ -192,7 +192,7 @@ struct Matmul2dFp8[
         var tile_m = block_idx.y
         var tile_n = block_idx.x
 
-        var sg_id = thread_idx.x // WARP_SIZE
+        var sg_id = warp_id()
         var sg_m_idx, sg_n_idx = divmod(sg_id, Self.NUM_SG_N)
 
         var row_base = tile_m * BM + sg_m_idx * SG_M

@@ -59,7 +59,7 @@ The NVFP4 per-tensor `weight_scale_2` scalar folds in OUTSIDE the kernel (a
 post-matmul multiply by the graph lowering), identically to the committed path.
 """
 
-from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx
+from max.gpu import WARP_SIZE, block_idx, lane_id, thread_idx, warp_id
 from std.math import ceildiv
 from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
@@ -653,7 +653,7 @@ struct Matmul2dFp4[
         var N = Int(N_arg)
         var K = Int(K_arg)
         var lane = Int(lane_id())
-        var sg_id = thread_idx.x // WARP_SIZE
+        var sg_id = warp_id()
         var sg_m, sg_n = divmod(sg_id, Self.num_sg_n)
 
         var sg_row0 = (block_idx.y * Self.num_sg_m + sg_m) * (
@@ -824,7 +824,7 @@ struct Matmul2dFp4[
 
         var lane = Int(lane_id())
         var tid = thread_idx.x
-        var sg_id = tid // WARP_SIZE
+        var sg_id = warp_id()
         var sg_m, sg_n = divmod(sg_id, Self.num_sg_n)
 
         var tg_col = block_idx.x * BN  # N-origin of this threadgroup tile

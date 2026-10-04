@@ -104,6 +104,7 @@ from max.gpu import (
     block_idx,
     lane_id,
     thread_idx,
+    warp_id,
 )
 from max.gpu.primitives import warp
 from max.gpu.sync import barrier
@@ -174,8 +175,8 @@ def _gated_delta_token_step[
         k_value * k_value
     )
     if lane_id() == 0:
-        q_warp_sumsq_s[tid // WARP_SIZE] = warp_q_sum
-        k_warp_sumsq_s[tid // WARP_SIZE] = warp_k_sum
+        q_warp_sumsq_s[warp_id()] = warp_q_sum
+        k_warp_sumsq_s[warp_id()] = warp_k_sum
     barrier()
     var q_squared_sum = Float32(0.0)
     var key_squared_sum = Float32(0.0)
