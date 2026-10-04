@@ -619,7 +619,7 @@ def get_ib_sts() -> Int32:
 
 
 @fieldwise_init
-struct Scope(Equatable, ImplicitlyCopyable, Writable):
+struct Scope(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from
@@ -652,6 +652,32 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
 
     comptime SYSTEM = Self(6)
     """System-wide scope. Memory operations ordered across the entire system."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "NONE".value,
+        "THREAD".value,
+        "WARP".value,
+        "BLOCK".value,
+        "CLUSTER".value,
+        "GPU".value,
+        "SYSTEM".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Scope has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         """Checks if two `Scope` instances are equal.

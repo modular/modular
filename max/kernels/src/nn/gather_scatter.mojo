@@ -771,7 +771,9 @@ def gather[
 
 
 @fieldwise_init
-struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
+struct ScatterOobIndexStrategy(
+    EnumLike, Equatable, ImplicitlyCopyable, Writable
+):
     """Valid indices are within the range [-dim_size, dim_size). Indices which
     fall outside of that can be handled using different strategies. Note that
     negative indices are allowed in order to support negative relative indexing.
@@ -788,6 +790,27 @@ struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
     comptime SKIP = Self(1)
     """Users may pass in indices outside of the range [-dim_size, dim_size). In
     which case the corresponding update will be skipped."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "UNDEFINED".value,
+        "SKIP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ScatterOobIndexStrategy has no payload"
 
 
 @inline(.always)

@@ -165,7 +165,7 @@ struct KOffsetKind(Equatable, ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct Phase(Equatable, ImplicitlyCopyable, Movable):
+struct Phase(EnumLike, Equatable, ImplicitlyCopyable, Movable):
     """Which phase of the pipeline an entry belongs to."""
 
     var _value: Int
@@ -173,6 +173,28 @@ struct Phase(Equatable, ImplicitlyCopyable, Movable):
     comptime PROLOGUE = Self(0)
     comptime KERNEL = Self(1)
     comptime EPILOGUE = Self(2)
+
+    comptime _enum_case_names = ParameterList.of[
+        "PROLOGUE".value,
+        "KERNEL".value,
+        "EPILOGUE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Phase has no payload"
 
 
 # =============================================================================

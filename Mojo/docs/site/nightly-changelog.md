@@ -138,6 +138,28 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The enum-behaving structs across the standard library, MAX kernels, and
+  MAX runtime now conform to `EnumLike`, so they support enum-style pattern
+  matching (`__match` with `case .NAME`) and reflective case metadata:
+  `Scope`, `FastMathFlag`, and `TestResult` in the standard library;
+  `AllReduceAlgorithm`, `RasterOrder`, `MatmulSchedule`, `ReductionMode`,
+  `GEMMKind`, `ThreadScope`, `FP6Format`, `MXFormat`, `Backend`,
+  `AMDIGLPStrategy`, `MHASchedule`, `ScatterOobIndexStrategy`,
+  `SchedulingStrategy`, `Phase`, `PhaseAction`, and `BlockPhase` in the
+  kernels; and `TraceCategory`, `TraceLevel`, `LogLevel`, `CacheEviction`,
+  `Fill`, and `Consistency` in the runtime and driver APIs.
+  `FlashAttentionAlgorithm` conforms non-exhaustively: its `-1`
+  "unspecified" value selects no named case, matching its runtime
+  resolution semantics.
+
+  ```mojo
+  __match AllReduceAlgorithm.ONE_STAGE:
+      case .ONE_STAGE:
+          launch_1stage()
+      case .TWO_STAGE | .LAMPORT:
+          launch_2stage()
+  ```
+
 - `Tuple` gained `first_of[T]()`, which returns a reference to the first
   element of type `T`. The lookup is resolved at compile time, and it is a
   compile-time error if the tuple has no element of that type:

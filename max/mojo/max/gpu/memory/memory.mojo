@@ -79,7 +79,7 @@ from std._gpu.intrinsics import CacheOperation
 
 
 @fieldwise_init
-struct CacheEviction(Equatable, TrivialRegisterPassable):
+struct CacheEviction(EnumLike, Equatable, TrivialRegisterPassable):
     """Represents cache eviction policies for GPU memory operations.
 
     This struct defines different cache eviction priorities that control how data is
@@ -136,6 +136,30 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
     - Streaming operations with no data reuse
     """
 
+    comptime _enum_case_names = ParameterList.of[
+        "EVICT_NORMAL".value,
+        "EVICT_FIRST".value,
+        "EVICT_LAST".value,
+        "EVICT_UNCHANGED".value,
+        "NO_ALLOCATE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "CacheEviction has no payload"
+
     def __eq__(self, other: Self) -> Bool:
         """Tests if two CacheEviction instances are equal.
 
@@ -176,7 +200,7 @@ struct CacheEviction(Equatable, TrivialRegisterPassable):
 
 
 @fieldwise_init
-struct Fill(Equatable, TrivialRegisterPassable, Writable):
+struct Fill(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents memory fill patterns for GPU memory operations.
 
     This struct defines different fill patterns that can be used when allocating or
@@ -194,6 +218,28 @@ struct Fill(Equatable, TrivialRegisterPassable, Writable):
 
     comptime NAN = Self(2)
     """Fill memory with NaN values. Useful for debugging floating point computations."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "NONE".value,
+        "ZERO".value,
+        "NAN".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Fill has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         """Tests if two Fill instances have the same fill pattern.
@@ -231,7 +277,7 @@ struct Fill(Equatable, TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct Consistency(Equatable, TrivialRegisterPassable, Writable):
+struct Consistency(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Represents memory consistency models for GPU memory operations.
 
     This struct defines different memory consistency levels that control how memory
@@ -264,6 +310,29 @@ struct Consistency(Equatable, TrivialRegisterPassable, Writable):
 
     Ensures all previous memory operations are ordered before this operation.
     Paired with acquire operations for synchronization."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "WEAK".value,
+        "RELAXED".value,
+        "ACQUIRE".value,
+        "RELEASE".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Consistency has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         """Tests if two Consistency instances are equal.
