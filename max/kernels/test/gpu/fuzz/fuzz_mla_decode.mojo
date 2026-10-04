@@ -51,7 +51,6 @@ from layout import (
     Coord,
     Idx,
     TileTensor,
-    lt_to_tt,
     row_major,
 )
 from std.utils.index import IndexList
@@ -453,7 +452,7 @@ def run_one_case(
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads](
         batch_size, max_cache_len, q_max_seq_len, ctx
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
 
     # === Kernel under test ==================================================
     generic_flare_mla_decode_kv_cache_ragged[
@@ -466,7 +465,7 @@ def run_one_case(
         UInt32(0),  # layer_idx
         SCALE,
         out_tt,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_tt,
         ctx,
     )
     ctx.synchronize()
@@ -778,7 +777,7 @@ def run_schedule_case(
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads](
         batch_size, max_cache_len, 1, ctx
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
     # Pin split-K for the `schedule` oracle; leave it to the decode heuristic
     # for the `determinism` oracle.
     var np = Optional[Int](2) if pin_partitions else Optional[Int]()
@@ -790,7 +789,7 @@ def run_schedule_case(
         UInt32(0),
         SCALE,
         out_tt,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_tt,
         ctx,
         num_partitions_in=np,
     )
@@ -807,7 +806,7 @@ def run_schedule_case(
             UInt32(0),
             SCALE,
             out_tt,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_tt,
             ctx,
             num_partitions_in=np,
         )

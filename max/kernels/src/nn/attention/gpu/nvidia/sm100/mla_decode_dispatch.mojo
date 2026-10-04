@@ -21,7 +21,6 @@ from layout import (
     Coord,
     Idx,
     Layout,
-    LayoutTensor,
     RowMajorLayout,
     TileTensor,
     row_major,
@@ -798,18 +797,14 @@ struct MLADispatchScalarArgs[
         var args = MLADispatchScalarArgs[num_heads=128](
             batch_size, max_cache_len, q_max_seq_len, ctx,
         )
-        var gpu_lt = args.gpu_layout_tensor()
+        var gpu_tt = args.gpu_tile_tensor()
         mla_decode_sm100_dispatch[...](
-            ..., gpu_lt,
+            ..., gpu_tt,
             args.batch_size, args.q_max_seq_len, max_cache_len,
             ctx,
         )
         _ = args  # keepalive
     """
-
-    comptime MLAScalarArgsLT = LayoutTensor[
-        .int64, Layout.row_major(3), MutAnyOrigin
-    ]
 
     var gpu_buf: DeviceBuffer[.int64]
     var batch_size: Int
@@ -848,15 +843,6 @@ struct MLADispatchScalarArgs[
         )
         output_buf.enqueue_copy_from(
             UnsafePointer(to=host_args).bitcast[Int64]()
-        )
-
-    def gpu_layout_tensor(
-        self,
-    ) -> Self.MLAScalarArgsLT:
-        return Self.MLAScalarArgsLT(
-            rebind[UnsafePointer[Int64, origin=MutAnyOrigin]](
-                self.gpu_buf.unsafe_ptr()
-            ),
         )
 
     def gpu_tile_tensor(
@@ -2275,7 +2261,7 @@ def mla_decode_sm100_sink_split_k[
     comptime if _per_token_scale_rope_aware:
         # Q row stride in FP8 bytes: 512 FP8 content + 64 BF16 rope = 640 bytes.
         # The `depth` parameter in tma_tile_qo sets the row stride of the
-        # LayoutTensor, which the TMA descriptor uses as the global memory
+        # TileTensor, which the TMA descriptor uses as the global memory
         # stride.  It must equal the full row width so that consecutive
         # rows (heads/tokens) are read correctly.
         comptime _q_row_bytes = mla_config.padded_depth + mla_config.rope_depth * 2  # 640
