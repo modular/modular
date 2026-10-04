@@ -1228,7 +1228,7 @@ def multistage_gemm_split_k_kernel[
         comptime assert (
             K_part % BK == 0
         ), "AMD split-K requires each K partition to be a multiple of BK."
-        var z = Int(block_idx.z)
+        var z = block_idx.z
         var a_amd = lt_to_tt(a).tile(Coord(M, Idx[K_part]), Coord(0, z))
         var b_amd = lt_to_tt(b).tile(Coord(Idx[N], Idx[K_part]), Coord(0, z))
         AMDMatmul[

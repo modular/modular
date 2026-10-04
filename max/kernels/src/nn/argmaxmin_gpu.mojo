@@ -221,9 +221,9 @@ def _argmaxmin_scan_kernel[
     var num_elements = Int(num_elements_arg)
     # Rows ride the x dimension: it is the only one whose extent is not
     # capped at 65535, and a batch can have millions of rows.
-    var row_id = Int(block_idx.x)
-    var split = Int(block_idx.y)
-    var tid = Int(thread_idx.x)
+    var row_id = block_idx.x
+    var split = block_idx.y
+    var tid = thread_idx.x
 
     var begin = min(split * Int(split_len_arg), num_elements)
     var count = min(Int(split_len_arg), num_elements - begin)
@@ -237,7 +237,7 @@ def _argmaxmin_scan_kernel[
             count,
             aligned_arg != 0,
             tid,
-            Int(block_dim.x),
+            block_dim.x,
         )
         var total = _block_reduce_topk[ascending=largest](partial)
 
@@ -282,8 +282,8 @@ def _argmaxmin_combine_kernel[
         num_splits_arg: Slices per row.
     """
     var num_splits = Int(num_splits_arg)
-    var row_id = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var row_id = block_idx.x
+    var tid = thread_idx.x
     var base = row_id * num_splits
 
     with PDL():
@@ -291,7 +291,7 @@ def _argmaxmin_combine_kernel[
         # indices, so a strict insert plus the block reduce's lowest-index
         # tie-break reproduces a single-pass first-index scan.
         var partial = TopK_2[dtype, largest]()
-        for i in range(tid, num_splits, Int(block_dim.x)):
+        for i in range(tid, num_splits, block_dim.x):
             partial.insert(
                 part_vals.unsafe_offset(base + i)[],
                 Int(part_idxs.unsafe_offset(base + i)[]),

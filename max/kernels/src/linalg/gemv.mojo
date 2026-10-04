@@ -3117,9 +3117,9 @@ def gemm_mma_cpasync_kernel[
     var lane_idx_ = lane_id()
 
     # CTA tile origin.
-    var cta_m = tile_m * Int(block_idx.x)
-    var cta_n = tile_n * Int(block_idx.y)
-    var batch_idx = Int(block_idx.z)
+    var cta_m = tile_m * block_idx.x
+    var cta_n = tile_n * block_idx.y
+    var batch_idx = block_idx.z
 
     var out_ptr = output.ptr + batch_idx * _gemm_m * _gemm_n
 

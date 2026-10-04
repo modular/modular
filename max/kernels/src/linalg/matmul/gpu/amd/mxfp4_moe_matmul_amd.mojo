@@ -225,13 +225,13 @@ struct MXFP4MoERoutedMatmul[
         comptime if Self.enable_swizzle:
             comptime num_pid_n = ceildiv(N, Self.BN)
             var num_pid_m = _size_expert_ids
-            var wgid_raw = Int(block_idx.y) * num_pid_n + Int(block_idx.x)
+            var wgid_raw = block_idx.y * num_pid_n + block_idx.x
             var pid = _xcd_wgm_swizzle(wgid_raw, num_pid_m, num_pid_n)
             bx = pid[0]
             by_n = pid[1]
         else:
-            bx = Int(block_idx.y)
-            by_n = Int(block_idx.x)
+            bx = block_idx.y
+            by_n = block_idx.x
         var bx_m = bx * Self.sort_block_m
 
         # NOTE: flydsl-style routing producers can elide empty experts
@@ -297,7 +297,7 @@ struct MXFP4MoERoutedMatmul[
         comptime a_loads_per_tile = Self.BM // load_thread_rows
         comptime load_layout = row_major[load_thread_rows, load_thread_cols]()
 
-        var thread_idx_x = Int(thread_idx.x)
+        var thread_idx_x = thread_idx.x
         var row_thread, col_thread = divmod(thread_idx_x, load_thread_cols)
 
         # Decode (t, s) per row this thread will load. Cached across K-iters.

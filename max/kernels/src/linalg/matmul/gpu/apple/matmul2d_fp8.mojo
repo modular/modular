@@ -189,10 +189,10 @@ struct Matmul2dFp8[
         comptime SG_M = Self.SG_M
         comptime SG_N = Self.SG_N
 
-        var tile_m = Int(block_idx.y)
-        var tile_n = Int(block_idx.x)
+        var tile_m = block_idx.y
+        var tile_n = block_idx.x
 
-        var sg_id = Int(thread_idx.x) // WARP_SIZE
+        var sg_id = thread_idx.x // WARP_SIZE
         var sg_m_idx, sg_n_idx = divmod(sg_id, Self.NUM_SG_N)
 
         var row_base = tile_m * BM + sg_m_idx * SG_M
@@ -421,7 +421,7 @@ struct Matmul2dFp8[
         """
         var N = Int(N_arg)
         var K = Int(K_arg)
-        var z = Int(block_idx.z)
+        var z = block_idx.z
         var a_start = Int(a_offsets[z])
         var M = Int(a_offsets[z + 1]) - a_start
         var expert = Int(expert_ids[z])

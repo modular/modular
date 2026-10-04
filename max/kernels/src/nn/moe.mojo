@@ -150,7 +150,7 @@ def moe_create_indices_kernel[
 
     var total_tokens = Int(topk_ids.dim(0))
     var num_experts = Int(expert_ids.dim(0))
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     var counts = tensor_alloc[.uint32, address_space=.SHARED](
         row_major[block_threads]()
@@ -863,7 +863,7 @@ def _block_top_k[
         phase1_candidates + phase2_candidates
     )
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var warp_id = warp_id()
     var lane_id = lane_id()
 
@@ -1000,8 +1000,8 @@ def single_group_router_kernel[
     # next power of two.
     comptime sum_lanes = next_power_of_two(n_experts_per_tok)
 
-    var token_idx = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var token_idx = block_idx.x
+    var tid = thread_idx.x
     var warp_id = warp_id()
     var lane_id = lane_id()
 
@@ -1154,8 +1154,8 @@ def single_group_router_eplb_kernel[
         log2phy.static_shape[2] == max_replicas
     ), "log2phy.static_shape[2] must equal max_replicas"
 
-    var token_idx = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var token_idx = block_idx.x
+    var tid = thread_idx.x
     var w_id = warp_id()
     var l_id = lane_id()
 
@@ -1722,8 +1722,8 @@ def sink_gate_router_kernel[
         k_total <= WARP_SIZE
     ), "n_experts_per_tok + n_shared_experts must fit in one warp"
 
-    var token_idx = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var token_idx = block_idx.x
+    var tid = thread_idx.x
     var warp_id = warp_id()
     var lane_id = lane_id()
 
@@ -2096,7 +2096,7 @@ def eplb_remap_kernel[
         2654435761
     )  # Knuth golden-ratio multiplicative hash
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     var smem_cnt = unsafe_stack_allocation[
         num_log,
@@ -2131,7 +2131,7 @@ def eplb_remap_kernel[
 
         # Per element remap, One thread = one (n,k)
         var token_in_block, k = divmod(tid, K)
-        var n = Int(block_idx.x) * tile_tokens + token_in_block
+        var n = block_idx.x * tile_tokens + token_in_block
         var N = Int(phy_idx.dim(0))
 
         if n < N:

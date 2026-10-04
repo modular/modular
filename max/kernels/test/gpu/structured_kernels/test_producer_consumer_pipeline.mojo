@@ -93,7 +93,7 @@ def pingpong_kernel[
     barrier()
 
     var is_leader = lane_id() == 0
-    var warp = Int(thread_idx.x) // WARP_SIZE
+    var warp = thread_idx.x // WARP_SIZE
 
     if warp == 0:
         for i in range(Int(n_items)):

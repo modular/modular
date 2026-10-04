@@ -89,7 +89,7 @@ def _allreduce_lamport_rmsnorm_kernel[
     ), "Lamport pack must be exactly 16 bytes (the 128-bit atomic width)."
     comptime alignment = align_of[SIMD[dtype, atomic_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var col = tid * atomic_width
     var is_valid = col < cols
     var packs_per_row = cols // atomic_width
@@ -133,7 +133,7 @@ def _allreduce_lamport_rmsnorm_kernel[
             col
         ).cast[accum_type]()
 
-    for row in range(Int(block_idx.x), rows, Int(grid_dim.x)):
+    for row in range(block_idx.x, rows, grid_dim.x):
         var base = row * cols + col
         var global_pack = row * packs_per_row + tid
 
@@ -219,8 +219,8 @@ def _allreduce_lamport_rmsnorm_kernel[
     # (f-tail) If the previous call was LARGER, clear the leftover packs of the
     # reused generation here (empty in the common same-size case).
     var cur_packs = rows * packs_per_row
-    var gtid = Int(block_idx.x) * BLOCK_SIZE + tid
-    var nthreads = Int(grid_dim.x) * BLOCK_SIZE
+    var gtid = block_idx.x * BLOCK_SIZE + tid
+    var nthreads = grid_dim.x * BLOCK_SIZE
     for cp in range(cur_packs + gtid, clear_packs, nthreads):
         comptime for i in range(1, ngpus):
             var peer = circular_add[ngpus](my_rank, i)
@@ -234,7 +234,7 @@ def _allreduce_lamport_rmsnorm_kernel[
     barrier()
     if tid == 0:
         var arrived = Atomic.fetch_add(state + Lamport.STATE_ARRIVAL, UInt32(1))
-        if Int(arrived) == Int(grid_dim.x) - 1:
+        if Int(arrived) == grid_dim.x - 1:
             (state + Lamport.STATE_FLAG).store[volatile=True](UInt32(flag + 1))
             (state + Lamport.STATE_PREV_PACKS).store[volatile=True](
                 UInt32(cur_packs)

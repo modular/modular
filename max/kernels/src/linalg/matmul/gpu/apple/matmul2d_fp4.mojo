@@ -653,13 +653,13 @@ struct Matmul2dFp4[
         var N = Int(N_arg)
         var K = Int(K_arg)
         var lane = Int(lane_id())
-        var sg_id = Int(thread_idx.x) // WARP_SIZE
+        var sg_id = thread_idx.x // WARP_SIZE
         var sg_m, sg_n = divmod(sg_id, Self.num_sg_n)
 
-        var sg_row0 = (Int(block_idx.y) * Self.num_sg_m + sg_m) * (
+        var sg_row0 = (block_idx.y * Self.num_sg_m + sg_m) * (
             Self.MMA_M * Self.tm
         )
-        var sg_col0 = (Int(block_idx.x) * Self.num_sg_n + sg_n) * (
+        var sg_col0 = (block_idx.x * Self.num_sg_n + sg_n) * (
             Self.MMA_N * Self.tn
         )
 
@@ -823,12 +823,12 @@ struct Matmul2dFp4[
         )
 
         var lane = Int(lane_id())
-        var tid = Int(thread_idx.x)
+        var tid = thread_idx.x
         var sg_id = tid // WARP_SIZE
         var sg_m, sg_n = divmod(sg_id, Self.num_sg_n)
 
-        var tg_col = Int(block_idx.x) * BN  # N-origin of this threadgroup tile
-        var sg_row0 = (Int(block_idx.y) * Self.num_sg_m + sg_m) * (
+        var tg_col = block_idx.x * BN  # N-origin of this threadgroup tile
+        var sg_row0 = (block_idx.y * Self.num_sg_m + sg_m) * (
             Self.MMA_M * Self.tm
         )
 
@@ -882,7 +882,7 @@ struct Matmul2dFp4[
         # `bounded=False` instantiation contains no bounds branch (comptime),
         # matching the AppleM5Fp4MatMul edge/interior split. The B decode/read is
         # always interior (tile-aligned N + K % BK == 0).
-        var tg_m_end = (Int(block_idx.y) + 1) * Self.TG_M
+        var tg_m_end = (block_idx.y + 1) * Self.TG_M
         var is_m_edge = tg_m_end > M
 
         @inline(.always)

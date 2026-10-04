@@ -186,7 +186,7 @@ struct CoopRow[group_size: Int](TrivialRegisterPassable):
         comptime assert (
             width <= COOP_SLOT_FLOATS
         ), "a publish cannot exceed one slot"
-        var tx = Int(thread_idx.x)
+        var tx = thread_idx.x
         var slots = self._slots(workspace)
         var slot_base = self._phase * Self.group_size * COOP_SLOT_FLOATS
         self._phase ^= 1

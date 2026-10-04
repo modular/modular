@@ -134,6 +134,4 @@ def keyed_uniform[
         var generator = Random(seed=seed_ptr[row])
         out_ptr[row] = generator.step_uniform()[0]
 
-    elementwise[simd_width=1, target=target](
-        draw, Coord(IndexList[1](rows)), ctx
-    )
+    elementwise[simd_width=1, target=target](draw, Coord(rows), ctx)

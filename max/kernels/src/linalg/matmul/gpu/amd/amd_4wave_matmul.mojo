@@ -842,7 +842,7 @@ struct AMD4WaveMatmul[
 
         # split_id from grid_dim.z; always 0 when num_splits=1
         # (grid_dim.z=1) so reading is harmless.
-        var split_id = Int(block_idx.z)
+        var split_id = block_idx.z
 
         var _lane_id = lane_id()
         var _warp_id = readfirstlane(warp_id())
@@ -857,7 +857,7 @@ struct AMD4WaveMatmul[
         var num_pid_m = ceildiv(M, BM)
         comptime num_pid_n_static = ceildiv(N, BN)
         var pid_m_pid_n = _xcd_wgm_swizzle(
-            Int(block_idx.x), num_pid_m, num_pid_n_static
+            block_idx.x, num_pid_m, num_pid_n_static
         )
         var pid_m = pid_m_pid_n[0]
         var pid_n = pid_m_pid_n[1]
@@ -1378,7 +1378,7 @@ struct AMD4WaveMatmul[
 
         # split_id from grid_dim.z; always 0 when num_splits=1
         # (grid_dim.z=1) so reading is harmless.
-        var split_id = Int(block_idx.z)
+        var split_id = block_idx.z
 
         var _lane_id = lane_id()
         var _warp_id = readfirstlane(warp_id())
@@ -1393,7 +1393,7 @@ struct AMD4WaveMatmul[
         var num_pid_m = ceildiv(M, BM)
         comptime num_pid_n_static = ceildiv(N, BN)
         var pid_m_pid_n = _xcd_wgm_swizzle(
-            Int(block_idx.x), num_pid_m, num_pid_n_static
+            block_idx.x, num_pid_m, num_pid_n_static
         )
         var pid_m = pid_m_pid_n[0]
         var pid_n = pid_m_pid_n[1]
@@ -1908,7 +1908,7 @@ struct AMD4WaveMatmul[
                                 alignment=align_of[
                                     SIMD[Self.c_type, c_frag_size]
                                 ]()
-                            ](IndexList[2](m_logical, n_global), v)
+                            ]((m_logical, n_global), v)
                         comptime if has_residual:
                             var skip = prefetched[
                                 m_mma * num_n_mmas + n_mma

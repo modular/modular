@@ -1069,7 +1069,7 @@ def test_split():
 #            tile_4x2_cache.copy_from[
 #                dst_coords_bound = rebind[
 #                    IndexList[tile_4x2_cache.layout.rank()]
-#                ](IndexList[2](13, 7))
+#                ]((13, 7))
 #            ](tile_4x2)
 #            print(tile_4x2_cache)
 
@@ -1234,7 +1234,7 @@ def test_split():
 #            tile_4x4_cache.copy_from[
 #                dst_coords_bound = rebind[
 #                    IndexList[tile_4x4_cache.layout.rank()]
-#                ](IndexList[2](13, 7))
+#                ]((13, 7))
 #            ](tile_4x4)
 #            print(tile_4x4_cache)
 #
@@ -1249,7 +1249,7 @@ def test_split():
 #                tile_2x2_cache.copy_from[
 #                    dst_coords_bound = rebind[
 #                        IndexList[tile_2x2_cache.layout.rank()]
-#                    ](IndexList[2](13, 7))
+#                    ]((13, 7))
 #                ](tile_2x2)
 #                print(tile_2x2_cache)
 #
@@ -1413,33 +1413,21 @@ def test_slice_with_offsets():
     # CHECK: 6.0 8.0
     # CHECK: 12.0 14.0
     print("slice-of[0:3,:2,0]")
-    print(
-        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)](
-            IndexList[1](0)
-        )
-    )
+    print(tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)]((0,)))
 
     # CHECK: slice-of-[0:3,:2,1]
     # CHECK: 1.0 3.0
     # CHECK: 7.0 9.0
     # CHECK: 13.0 15.0
     print("slice-of-[0:3,:2,1]")
-    print(
-        tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)](
-            IndexList[1](1)
-        )
-    )
+    print(tensor_4x3x2_row_major.slice[0:3, 0:2, slice_indices=(0, 1)]((1,)))
 
     # CHECK: slice-of-[2,:,:]
     # CHECK: 12.0 13.0
     # CHECK: 14.0 15.0
     # CHECK: 16.0 17.0
     print("slice-of-[2,:,:]")
-    print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices=(1, 2)](
-            IndexList[1](2)
-        )
-    )
+    print(tensor_4x3x2_row_major.slice[:, :, slice_indices=(1, 2)]((2,)))
 
     print("slice-of-[:,1,:]")
     # CHECK: slice-of-[:,1,:]
@@ -1447,11 +1435,7 @@ def test_slice_with_offsets():
     # CHECK: 8.0 9.0
     # CHECK: 14.0 15.0
     # CHECK: 20.0 21.0
-    print(
-        tensor_4x3x2_row_major.slice[:, :, slice_indices=(0, 2)](
-            IndexList[1](1)
-        )
-    )
+    print(tensor_4x3x2_row_major.slice[:, :, slice_indices=(0, 2)]((1,)))
 
     # CHECK: slice-of-[:,0,0]
     # CHECK: 0.0
@@ -1459,22 +1443,14 @@ def test_slice_with_offsets():
     # CHECK: 12.0
     # CHECK: 18.0
     print("slice-of-[:,0,0]")
-    print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices=IndexList[1](0)](
-            IndexList[2](0, 0)
-        )
-    )
+    print(tensor_4x3x2_row_major.slice_1d[:, slice_indices=(0,)]((0, 0)))
 
     # CHECK: slice-of-[2,:,1]
     # CHECK: 13.0
     # CHECK: 15.0
     # CHECK: 17.0
     print("slice-of-[2,:,1]")
-    print(
-        tensor_4x3x2_row_major.slice_1d[:, slice_indices=IndexList[1](1)](
-            IndexList[2](2, 1)
-        )
-    )
+    print(tensor_4x3x2_row_major.slice_1d[:, slice_indices=(1,)]((2, 1)))
 
 
 # CHECK-LABEL: test_layout_tensor_iterator
@@ -1670,7 +1646,7 @@ def test_nested_layout_tensor_iterator():
 #    arange(tensor_8x8)
 #
 #    tensor_5x7.copy_from[
-#        rebind[IndexList[tensor_5x7.layout.rank()]](IndexList[2](5, 7))
+#        rebind[IndexList[tensor_5x7.layout.rank()]]((5, 7))
 #    ](tensor_8x8)
 #    # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 0.0
 #    # DISABLED-CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 0.0
@@ -1696,7 +1672,7 @@ def test_nested_layout_tensor_iterator():
 #     ].stack_allocation().fill(0)
 #
 #     tensor_8x8.copy_from[
-#         rebind[IndexList[tensor_8x8.layout.rank()]](IndexList[2](5, 7))
+#         rebind[IndexList[tensor_8x8.layout.rank()]]((5, 7))
 #     ](tensor_5x7)
 #     # DISABLED-CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 0.0
 #     # DISABLED-CHECK: 8.0 9.0 10.0 11.0 12.0 13.0 14.0 0.0
@@ -1741,7 +1717,7 @@ def test_nested_layout_tensor_iterator():
 #    var tensor_1x5_v1_4 = tensor_1x5.vectorize[1, 4]()
 #    tensor_1x5_v1_4.copy_from[
 #        dst_coords_bound = rebind[IndexList[tensor_1x5_v1_4.layout.rank()]](
-#            IndexList[2](1, 5)
+#            (1, 5)
 #        )
 #    ](tensor_1x8.vectorize[1, 4]())
 #
@@ -1766,7 +1742,7 @@ def test_nested_layout_tensor_iterator():
 #    var tensor_3x8_v_4_4 = tensor_3x8.vectorize[4, 4]()
 #    tensor_3x8_v_4_4.copy_from[
 #        dst_coords_bound = rebind[IndexList[tensor_3x8_v_4_4.layout.rank()]](
-#            IndexList[2](3, 8)
+#            (3, 8)
 #        )
 #    ](tensor_4x8.vectorize[4, 4]())
 #
@@ -1791,7 +1767,7 @@ def test_nested_layout_tensor_iterator():
 #    var tensor5x8_v_4_1 = tensor_5x8.vectorize[4, 1]()
 #    tensor5x8_v_4_1.copy_from[
 #        dst_coords_bound = rebind[IndexList[tensor5x8_v_4_1.layout.rank()]](
-#            IndexList[2](5, 8)
+#            (5, 8)
 #        )
 #    ](tensor_8x8.vectorize[4, 1]())
 #
@@ -1823,7 +1799,7 @@ def test_nested_layout_tensor_iterator():
 #    var tensor_8x8_v_1_4 = tensor_8x8.vectorize[1, 4]()
 #    tensor_8x8_v_1_4.copy_from[
 #        src_coords_bound = rebind[IndexList[tensor_8x8_v_1_4.layout.rank()]](
-#            IndexList[2](8, 5)
+#            (8, 5)
 #        )
 #    ](tensor_8x5.vectorize[1, 4]())
 #
@@ -1848,7 +1824,7 @@ def test_nested_layout_tensor_iterator():
 #    var tensor_8x8_v_4_1 = tensor_8x8.vectorize[4, 1]()
 #    tensor_8x8_v_4_1.copy_from[
 #        src_coords_bound = rebind[IndexList[tensor_8x8_v_4_1.layout.rank()]](
-#            IndexList[2](5, 8)
+#            (5, 8)
 #        )
 #    ](tensor_5x8.vectorize[4, 1]())
 #
@@ -1868,7 +1844,7 @@ def test_nested_layout_tensor_iterator():
 #    var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
 #    tensor_8x8_v_4_4.copy_from[
 #        src_coords_bound = rebind[IndexList[tensor_8x8_v_4_4.layout.rank()]](
-#            IndexList[2](5, 8)
+#            (5, 8)
 #        )
 #    ](tensor_5x8.vectorize[4, 4]())
 #

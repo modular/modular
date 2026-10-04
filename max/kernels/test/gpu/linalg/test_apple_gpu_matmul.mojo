@@ -78,6 +78,7 @@ def _launch[
 
 
 from linalg.utils import elementwise_epilogue_type
+from std.math import ceildiv
 
 
 def _host_matmul_nn[
@@ -179,7 +180,7 @@ def _run_8x8_case[
         Int32(M),
         Int32(N),
         Int32(K),
-        grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NSG * WARP_SIZE,),
     )
 
@@ -295,7 +296,7 @@ def _run_8x8_bias_case[
         Int32(M),
         Int32(N),
         Int32(K),
-        grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NSG * WARP_SIZE,),
     )
 

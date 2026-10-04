@@ -42,8 +42,8 @@ def coop_combine_kernel[
     sink: UnsafePointer[Float32, MutAnyOrigin],
     iters: Int32,
 ):
-    var rank = Int(block_idx.x) % group_size
-    var row = Int(block_idx.x) // group_size
+    var rank = block_idx.x % group_size
+    var row = block_idx.x // group_size
     var coop = CoopRow[group_size](row, rank)
     var table = unsafe_stack_allocation[
         group_size * COOP_SLOT_FLOATS,

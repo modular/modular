@@ -187,8 +187,8 @@ def max_reduction_scale_kernel[
         input_tensor: Rank-2 input.
     """
     comptime fp8_max = Float32(max_finite[out_dtype]())
-    var tid = Int(thread_idx.x)
-    var row = Int(block_idx.x)
+    var tid = thread_idx.x
+    var row = block_idx.x
     var hidden_size = Int(input_tensor.dim[1]())
 
     var thread_max = Float32(0)
@@ -1502,7 +1502,7 @@ def _matmul_dynamic_scaled_fp8_impl[
     ):
         blockwise_scaled_fp8_with_epilogue[
             transpose_b=transpose_b,
-            scales_granularity_mnk=IndexList[3](
+            scales_granularity_mnk=(
                 m_scale_granularity,
                 n_scale_granularity,
                 k_scale_granularity,

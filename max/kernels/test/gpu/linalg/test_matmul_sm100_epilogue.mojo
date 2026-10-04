@@ -218,7 +218,7 @@ def test_matmul_sm100_epilogue[
             for j in range(Int(n.value())):
                 comptime assert c_host_ref.flat_rank == 2
                 c_host_ref[i, j] = test_lambda_add_coords_summ_local(
-                    IndexList[2](i, j), c_host_ref[i, j]
+                    (i, j), c_host_ref[i, j]
                 )
 
     comptime rtol = 1e-2

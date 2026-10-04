@@ -472,10 +472,13 @@ def main() raises:
             dtype=dtype,
             input_dim=IntTuple(1, 8, 8, 1),
             filter_dim=IntTuple(3, 3, 1, 1),
-            stride=IndexList[2](1, 1),
-            dilation=IndexList[2](1, 1),
-            pad=IndexList[4](
-                0, 0, 0, 0
+            stride=(1, 1),
+            dilation=(1, 1),
+            pad=(
+                0,
+                0,
+                0,
+                0,
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
@@ -483,10 +486,13 @@ def main() raises:
             dtype=dtype,
             input_dim=IntTuple(32, 256, 256, 1),
             filter_dim=IntTuple(3, 3, 1, 1),
-            stride=IndexList[2](1, 1),
-            dilation=IndexList[2](1, 1),
-            pad=IndexList[4](
-                0, 0, 0, 0
+            stride=(1, 1),
+            dilation=(1, 1),
+            pad=(
+                0,
+                0,
+                0,
+                0,
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
@@ -494,10 +500,13 @@ def main() raises:
             dtype=dtype,
             input_dim=IntTuple(1, 4, 16, 1),
             filter_dim=IntTuple(3, 3, 1, 1),
-            stride=IndexList[2](1, 1),
-            dilation=IndexList[2](1, 1),
-            pad=IndexList[4](
-                0, 0, 0, 0
+            stride=(1, 1),
+            dilation=(1, 1),
+            pad=(
+                0,
+                0,
+                0,
+                0,
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
@@ -505,10 +514,13 @@ def main() raises:
             dtype=dtype,
             input_dim=IntTuple(1, 16, 4, 1),
             filter_dim=IntTuple(3, 3, 1, 1),
-            stride=IndexList[2](1, 1),
-            dilation=IndexList[2](1, 1),
-            pad=IndexList[4](
-                0, 0, 0, 0
+            stride=(1, 1),
+            dilation=(1, 1),
+            pad=(
+                0,
+                0,
+                0,
+                0,
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)
 
@@ -516,9 +528,12 @@ def main() raises:
             dtype=DType.bfloat16,
             input_dim=IntTuple(1, 32, 32, 1),
             filter_dim=IntTuple(3, 3, 1, 1),
-            stride=IndexList[2](1, 1),
-            dilation=IndexList[2](1, 1),
-            pad=IndexList[4](
-                0, 0, 0, 0
+            stride=(1, 1),
+            dilation=(1, 1),
+            pad=(
+                0,
+                0,
+                0,
+                0,
             ),  # [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx)

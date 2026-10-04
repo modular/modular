@@ -523,7 +523,7 @@ def _naive_reduce_kernel_with_lambda[
     comptime simd_align = align_of[SIMD[dtype, simd_width]]()
     comptime scalar_align = align_of[SIMD[dtype, 1]]()
     var global_tid = global_idx.x
-    var total_threads = grid_dim.x * Int(block_dim.x)
+    var total_threads = grid_dim.x * block_dim.x
     var _num_elements = Int(num_elements)
     var num_simd_vectors = _num_elements // simd_width
     var simd_prefix_elems = num_simd_vectors * simd_width
@@ -1279,7 +1279,7 @@ def _allreduce_lamport_kernel[
             var arrived = Atomic.fetch_add(
                 state + Lamport.STATE_ARRIVAL, UInt32(1)
             )
-            if Int(arrived) == Int(grid_dim.x) - 1:
+            if Int(arrived) == grid_dim.x - 1:
                 state.store[volatile=True](Lamport.STATE_FLAG, UInt32(flag + 1))
                 state.store[volatile=True](
                     Lamport.STATE_PREV_PACKS, UInt32(num_packs)

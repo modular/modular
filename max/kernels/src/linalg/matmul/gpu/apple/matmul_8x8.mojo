@@ -90,8 +90,8 @@ def _simdgroup8x8_matmul_kernel[
     var frow = fl[0]
     var fcol = fl[1]
     var sg = Int(warp_id())
-    var row_base = Int(block_idx.y) * BLOCK_M + (sg // 2) * SG_M
-    var col_base = Int(block_idx.x) * BLOCK_N + (sg % 2) * SG_N
+    var row_base = block_idx.y * BLOCK_M + (sg // 2) * SG_M
+    var col_base = block_idx.x * BLOCK_N + (sg % 2) * SG_N
     # Fully-interior simdgroup subtile -> unguarded loads (the common case).
     var interior = (row_base + SG_M <= m) and (col_base + SG_N <= n)
 

@@ -511,7 +511,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F
-                var head_idx_local = Int(block_idx.x) * Self.config.BM + row
+                var head_idx_local = block_idx.x * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
                         DType.float32
@@ -783,7 +783,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         )
         var elect_mask = elect()
         var warp_in_wg = Int(warp_id[broadcast=True]()) - Self.gather_warp0
-        var coop_tid = Int(thread_idx.x) - Self.gather_warp0 * WARP_SIZE
+        var coop_tid = thread_idx.x - Self.gather_warp0 * WARP_SIZE
         var row: Int = offset_position.q_row_offset
 
         # Q expect-bytes + TMA: warp 8's elected lane only.

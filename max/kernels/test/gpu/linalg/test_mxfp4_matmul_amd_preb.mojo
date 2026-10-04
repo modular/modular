@@ -186,7 +186,7 @@ def _preb_grid_kernel[
         N,
         K_BYTES,
     ](
-        c, a, b_pre, sfa, sfb, Int(block_idx.x), Int(block_idx.y)
+        c, a, b_pre, sfa, sfb, block_idx.x, block_idx.y
     )
 
 

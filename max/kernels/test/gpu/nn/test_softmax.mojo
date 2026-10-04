@@ -716,7 +716,7 @@ def main() raises:
         test_gpu_softmax(ctx)
         test_gpu_softmax_half[.bfloat16](ctx)
         test_gpu_softmax_half[.float16](ctx)
-        test_gpu_softmax_warp_short_axis[.bfloat16, IndexList[2](12, 5)](ctx)
+        test_gpu_softmax_warp_short_axis[.float16, IndexList[2](12, 5)](ctx)
         test_gpu_softmax_warp_short_axis[.float16, IndexList[2](12, 5)](ctx)
         test_gpu_softmax_verify_shapes[.bfloat16](ctx)
         test_gpu_softmax_verify_shapes[.float32](ctx)

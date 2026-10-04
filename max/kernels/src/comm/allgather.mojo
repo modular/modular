@@ -398,8 +398,8 @@ def _allgather_tma_kernel[
     # Grid-strided chunk distribution across warps handling the same source.
     var warps_per_src_per_block = NUM_WARPS // ngpus
     var src_local_warp = warp // ngpus
-    var first = Int(block_idx.x) * warps_per_src_per_block + src_local_warp
-    var warp_stride = Int(grid_dim.x) * warps_per_src_per_block
+    var first = block_idx.x * warps_per_src_per_block + src_local_warp
+    var warp_stride = grid_dim.x * warps_per_src_per_block
 
     var total_chunks = ceildiv(nbytes, BYTES_PER_COPY)
 
@@ -538,8 +538,8 @@ def _allgather_relay_kernel[
     # world rank folded by the group width.
     var group_rank = _my_rank % ngpus
 
-    var bid = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var bid = block_idx.x
+    var tid = thread_idx.x
     var _relay_percent = Int(relay_percent)
 
     # Synchronize before reading. The domain spans both groups because a
@@ -610,7 +610,7 @@ def _allgather_relay_kernel[
         # stores before any consumer reads the output.
         var relay_bid = bid - Int(num_direct_blocks)
         var src_idx = relay_bid % ngpus
-        var blocks_per_src = (Int(grid_dim.x) - Int(num_direct_blocks)) // ngpus
+        var blocks_per_src = (grid_dim.x - Int(num_direct_blocks)) // ngpus
         var src_block = relay_bid // ngpus
         var src_ptr = peer_src_ptrs[src_idx].address_space_cast[
             _target_address_space

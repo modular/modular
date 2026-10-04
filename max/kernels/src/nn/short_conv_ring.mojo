@@ -197,10 +197,9 @@ def short_conv_ring_fwd[
         var channel_blocks,
         var channels_dev,
     }:
-        var token_idx = Int(block_idx.x) // Int(channel_blocks)
+        var token_idx = block_idx.x // Int(channel_blocks)
         var channel = (
-            (Int(block_idx.x) % Int(channel_blocks)) * Int(block_dim.x)
-            + Int(thread_idx.x)
+            (block_idx.x % Int(channel_blocks)) * block_dim.x + thread_idx.x
         ) * vec
         if channel >= Int(channels_dev):
             return
@@ -304,7 +303,7 @@ def short_conv_ring_commit[
         var conv_rows,
         var layer_row,
     }:
-        var channel = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+        var channel = block_idx.x * block_dim.x + thread_idx.x
         if channel >= channels:
             return
         _commit_sequence_tail(
@@ -314,7 +313,7 @@ def short_conv_ring_commit[
             positions,
             conv_rows,
             layer_row,
-            Int(block_idx.y),
+            block_idx.y,
             channel,
             channel,
         )
@@ -382,7 +381,7 @@ def short_conv_ring_commit_kv[
         var k_layer_row,
         var v_layer_row,
     }:
-        var channel = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+        var channel = block_idx.x * block_dim.x + thread_idx.x
         if channel >= channels:
             return
         # Distinct operands never share a TileTensor type, so no select.
@@ -394,7 +393,7 @@ def short_conv_ring_commit_kv[
                 positions,
                 k_conv_rows,
                 k_layer_row,
-                Int(block_idx.y),
+                block_idx.y,
                 k_col + channel,
                 channel,
             )
@@ -406,7 +405,7 @@ def short_conv_ring_commit_kv[
                 positions,
                 v_conv_rows,
                 v_layer_row,
-                Int(block_idx.y),
+                block_idx.y,
                 k_col + channels + channel,
                 channel,
             )
@@ -499,8 +498,8 @@ def _launch_fused_qk_rms_norm_short_conv[
     }:
         var n_q_rows = Int(q_rows)
         var n_kv_rows = Int(kv_rows)
-        var row = Int(block_idx.x)
-        var idx = Int(thread_idx.x) * vec
+        var row = block_idx.x
+        var idx = thread_idx.x * vec
         var in_head = idx < head_dim
         var is_q = row < n_q_rows
         var is_k = not is_q and row < n_q_rows + n_kv_rows

@@ -640,7 +640,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         ]:
             return q_main_proj._fused_load[
                 width=width, element_alignment=alignment
-            ](IndexList[3](token, head, col))
+            ]((token, head, col))
 
         @inline(.always)
         def index_q_input_fn[
@@ -650,7 +650,7 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
         ]:
             return q_index_proj._fused_load[
                 width=width, element_alignment=alignment
-            ](IndexList[3](token, head, col))
+            ]((token, head, col))
 
         fused_dual_qk_rms_norm_rope_ragged_paged[
             target=target,
@@ -895,8 +895,10 @@ struct Struct_k_matmul_ragged_paged_scale:
         )
         k_matmul_ragged_paged_scale[
             target=target,
-            scales_granularity_mnk=IndexList[3](
-                m_scale_granularity, n_scale_granularity, k_scale_granularity
+            scales_granularity_mnk=(
+                m_scale_granularity,
+                n_scale_granularity,
+                k_scale_granularity,
             ),
         ](
             hidden_state.to_tile_tensor[.int64](),

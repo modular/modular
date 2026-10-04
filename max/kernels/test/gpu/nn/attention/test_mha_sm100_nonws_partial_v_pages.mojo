@@ -77,7 +77,7 @@ def poison_smem_kernel(sink: MutPointer[Float32, MutAnyOrigin]):
         name="poison_smem",
     ]()
     var poison = nan[dtype]()
-    for i in range(Int(thread_idx.x), poison_elems, Int(block_dim.x)):
+    for i in range(thread_idx.x, poison_elems, block_dim.x):
         smem[i] = poison
     # Read one element back so the stores are not optimized away.
     barrier()

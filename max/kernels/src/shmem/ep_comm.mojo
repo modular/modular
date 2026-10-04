@@ -450,7 +450,7 @@ struct EPRoleSplit[block_size: Int, n_items: Int, flag: Bool = False]:
     @staticmethod
     def copy_role_index() -> Int:
         """Returns this thread's linear index within the copy role."""
-        return Int(thread_idx.x)
+        return thread_idx.x
 
     @inline(.always)
     @staticmethod
@@ -4058,7 +4058,7 @@ struct EPDispatchKernel[
                                 ](
                                     trace_buf,
                                     trace_ring_base,
-                                    Int(block_idx.x),
+                                    block_idx.x,
                                     trace_comm_ring_id,
                                     44,  # E_SCAT_TILE_DONE
                                     pack_payload2(
@@ -4293,7 +4293,7 @@ def dispatch_async_kernel[
             expert_finished_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+            grid_dim.x - dispatch_impl.n_signal_sms,
         )
 
 
@@ -4389,7 +4389,7 @@ def dispatch_wait_kernel[
     # tokens from all the remote ranks. It will also calculate the offset where
     # the tokens start in the output tensor.
     # Use runtime grid_dim so the host can launch a smaller grid for decode.
-    if block_idx.x >= Int(grid_dim.x) - dispatch_impl.n_offset_sms:
+    if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
         dispatch_impl.wait_for_arrivals_and_compute_offsets(
             format_handler,
             row_offsets,
@@ -4397,7 +4397,7 @@ def dispatch_wait_kernel[
             recv_count_p,
             atomic_counter,
             my_rank,
-            Int(grid_dim.x) - dispatch_impl.n_offset_sms,
+            grid_dim.x - dispatch_impl.n_offset_sms,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -5457,7 +5457,7 @@ def combine_async_kernel[
         rank_completion_counter,
         my_rank,
         block_idx.x,
-        Int(grid_dim.x),
+        grid_dim.x,
     )
 
 
@@ -5541,7 +5541,7 @@ def combine_wait_kernel[
         combine_impl.wait_for_all_arrivals(
             recv_count_p,
             atomic_counter,
-            Int(grid_dim.x) - combine_impl.n_wait_sms,
+            grid_dim.x - combine_impl.n_wait_sms,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -5556,7 +5556,7 @@ def combine_wait_kernel[
             atomic_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x) - combine_impl.n_wait_sms,
+            grid_dim.x - combine_impl.n_wait_sms,
         )
 
 
@@ -5721,7 +5721,7 @@ def dispatch_kernel[
                 expert_finished_counter,
                 my_rank,
                 block_idx.x,
-                Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+                grid_dim.x - dispatch_impl.n_signal_sms,
             )
             comptime if fused_shared_expert:
                 # This RELEASE ensures that all previous writes to the send
@@ -5743,7 +5743,7 @@ def dispatch_kernel[
 
         # ===== dispatch_wait =====
         # Use runtime grid_dim so the host can launch a smaller grid for decode.
-        if block_idx.x >= Int(grid_dim.x) - dispatch_impl.n_offset_sms:
+        if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
             dispatch_impl.wait_for_arrivals_and_compute_offsets(
                 format_handler,
                 row_offsets,
@@ -5751,7 +5751,7 @@ def dispatch_kernel[
                 recv_count_ptrs[my_p2p_rank],
                 wait_atomic_counter,
                 my_rank,
-                Int(grid_dim.x) - dispatch_impl.n_offset_sms,
+                grid_dim.x - dispatch_impl.n_offset_sms,
                 shared_expert_token_count,
             )
         else:
@@ -5775,8 +5775,8 @@ def dispatch_kernel[
                     wait_atomic_counter + dispatch_impl.send_buf_ready_offset,
                     Int(shared_expert_token_count),
                     block_idx.x,
-                    Int(grid_dim.x) - dispatch_impl.n_offset_sms,
-                    Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+                    grid_dim.x - dispatch_impl.n_offset_sms,
+                    grid_dim.x - dispatch_impl.n_signal_sms,
                 )
 
             dispatch_impl.copy_received_tokens_to_output(
@@ -5930,7 +5930,7 @@ def combine_kernel[
             rank_completion_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x),
+            grid_dim.x,
         )
 
         # ===== combine_wait =====
@@ -5941,7 +5941,7 @@ def combine_kernel[
             combine_impl.wait_for_all_arrivals(
                 recv_count_ptrs[my_p2p_rank],
                 wait_atomic_counter,
-                Int(grid_dim.x) - combine_impl.n_wait_sms,
+                grid_dim.x - combine_impl.n_wait_sms,
             )
         else:
             # Create an elementwise lambda that adds shared expert output if enabled
@@ -6012,7 +6012,7 @@ def combine_kernel[
                     wait_atomic_counter,
                     my_rank,
                     block_idx.x,
-                    Int(grid_dim.x) - combine_impl.n_wait_sms,
+                    grid_dim.x - combine_impl.n_wait_sms,
                     topk_ids_p,
                 )
 
@@ -6027,7 +6027,7 @@ def combine_kernel[
                     wait_atomic_counter,
                     my_rank,
                     block_idx.x,
-                    Int(grid_dim.x) - combine_impl.n_wait_sms,
+                    grid_dim.x - combine_impl.n_wait_sms,
                     topk_ids_p,
                 )
 

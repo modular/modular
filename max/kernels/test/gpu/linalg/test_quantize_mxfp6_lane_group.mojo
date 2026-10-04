@@ -48,6 +48,7 @@ from linalg.fp6_quantization import (
     quantize_mxfp6_lane_group,
 )
 from linalg.fp6_utils import FP6Format, MXFP6_SF_VECTOR_SIZE, pack_fp6_x4
+from std.math import ceildiv
 
 comptime SF = MXFP6_SF_VECTOR_SIZE  # 32
 
@@ -76,8 +77,8 @@ def _lane_group_kernel[
     Threads are laid out so that consecutive lanes hold consecutive columns,
     which is what puts one MX block on one aligned lane group.
     """
-    var row = Int(block_idx.y)
-    var col = (Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)) * width
+    var row = block_idx.y
+    var col = (block_idx.x * block_dim.x + thread_idx.x) * width
     if col >= Int(num_cols):
         return
 
@@ -204,7 +205,7 @@ def _run_case[
 
 
 def ceildiv_int(a: Int, b: Int) -> Int:
-    return (a + b - 1) // b
+    return ceildiv(a, b)
 
 
 def main() raises:

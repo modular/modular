@@ -33,6 +33,7 @@ from std.memory import alloc
 
 from max.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
+from std.math import ceildiv
 
 from nn.gemv_partial_norm import (
     GEMV_TRACE_EVENTS_PER_BLOCK,
@@ -60,7 +61,7 @@ def main() raises:
     var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
     comptime gamma_shape = row_major(Idx[1536])
 
-    var num_blocks = (N + tile_n - 1) // tile_n
+    var num_blocks = ceildiv(N, tile_n)
 
     with DeviceContext() as ctx:
         var a_dev = ctx.enqueue_create_buffer[a_type](M * K)

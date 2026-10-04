@@ -69,7 +69,7 @@ from max.gpu import block_idx
 from max.gpu.host import DeviceContext, HostBuffer
 from max.gpu.host.info import MI355X
 from max.gpu.primitives import warp_id
-from std.math import align_up
+from std.math import ceildiv, align_up
 
 from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_layout import TensorLayout
@@ -146,7 +146,7 @@ def _ep_wait_copy_kernel[
         hidden_size, top_k, fuse_a_scale_preshuffle=fuse_a_scale_preshuffle
     ](output_tokens, output_scales, max_padded_M)
 
-    var warp_global = Int(block_idx.x) * warps_per_block + Int(warp_id())
+    var warp_global = block_idx.x * warps_per_block + Int(warp_id())
     var token = warp_global
     if token >= total_tokens:
         return
@@ -291,7 +291,7 @@ def _run_fusion_check[
         a_off_d, row_major[n_off]()
     )
 
-    var grid_blocks = (total_tokens + warps_per_block - 1) // warps_per_block
+    var grid_blocks = ceildiv(total_tokens, warps_per_block)
     if grid_blocks == 0:
         grid_blocks = 1
 

@@ -167,7 +167,7 @@ def test_partial_n_tile_compute_epilogue[
         for j in range(N):
             comptime assert c_host_ref.flat_rank == 2
             c_host_ref[i, j] = in_bounds_compute_lambda_local(
-                IndexList[2](i, j), c_host_ref[i, j]
+                (i, j), c_host_ref[i, j]
             )
 
     comptime rtol = 1e-2

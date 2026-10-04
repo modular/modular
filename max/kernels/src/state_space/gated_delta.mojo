@@ -107,7 +107,7 @@ from max.gpu import (
 )
 from max.gpu.primitives import warp
 from max.gpu.sync import barrier
-from std.math import fma, rsqrt
+from std.math import ceildiv, fma, rsqrt
 from std.memory import unsafe_stack_allocation
 from layout import TensorEngine, TensorLayout, TileTensor
 
@@ -159,11 +159,11 @@ def _gated_delta_token_step[
     Returns:
         The readout for this thread's value element.
     """
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     q_raw_s[tid] = q_value
     k_raw_s[tid] = k_value
 
-    comptime NUM_WARPS = (KEY_HEAD_DIM + WARP_SIZE - 1) // WARP_SIZE
+    comptime NUM_WARPS = ceildiv(KEY_HEAD_DIM, WARP_SIZE)
     # A head narrower than a warp leaves lanes unlaunched, which must not
     # join the shuffle.
     comptime REDUCE_LANES = min(KEY_HEAD_DIM, WARP_SIZE)
@@ -324,8 +324,8 @@ def gated_delta_recurrence_fwd_gpu[
         KEY_HEAD_DIM == VALUE_HEAD_DIM
     ), "gated_delta_recurrence_fwd_gpu requires KEY_HEAD_DIM == VALUE_HEAD_DIM"
 
-    var tid = Int(thread_idx.x)
-    var block = Int(block_idx.x)
+    var tid = thread_idx.x
+    var block = block_idx.x
 
     # ── block -> (batch_item, value_head) ───────────────────────────────────
     var batch_item_idx, value_head_idx = divmod(block, _num_value_heads)
@@ -347,7 +347,7 @@ def gated_delta_recurrence_fwd_gpu[
     var k_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM, Float32, address_space=.SHARED
     ]()
-    comptime NUM_WARPS = (KEY_HEAD_DIM + WARP_SIZE - 1) // WARP_SIZE
+    comptime NUM_WARPS = ceildiv(KEY_HEAD_DIM, WARP_SIZE)
     var q_warp_sumsq_s = unsafe_stack_allocation[
         NUM_WARPS, Float32, address_space=.SHARED
     ]()
@@ -577,8 +577,8 @@ def gated_delta_recurrence_verify_ring_gpu[
         " VALUE_HEAD_DIM"
     )
 
-    var tid = Int(thread_idx.x)
-    var block = Int(block_idx.x)
+    var tid = thread_idx.x
+    var block = block_idx.x
 
     var batch_item_idx, value_head_idx = divmod(block, _num_value_heads)
     if batch_item_idx >= Int(batch_size):
@@ -599,7 +599,7 @@ def gated_delta_recurrence_verify_ring_gpu[
     var k_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM, Float32, address_space=.SHARED
     ]()
-    comptime NUM_WARPS = (KEY_HEAD_DIM + WARP_SIZE - 1) // WARP_SIZE
+    comptime NUM_WARPS = ceildiv(KEY_HEAD_DIM, WARP_SIZE)
     var q_warp_sumsq_s = unsafe_stack_allocation[
         NUM_WARPS, Float32, address_space=.SHARED
     ]()
@@ -780,8 +780,8 @@ def gated_delta_state_fold_gpu[
         KEY_HEAD_DIM % KEY_DIM_TILE == 0
     ), "gated_delta_state_fold_gpu requires KEY_DIM_TILE to divide KEY_HEAD_DIM"
 
-    var tid = Int(thread_idx.x)
-    var block = Int(block_idx.x)
+    var tid = thread_idx.x
+    var block = block_idx.x
 
     # block -> (batch_item, layer, value_head), value head fastest.
     var layer_and_batch, value_head_idx = divmod(block, _num_value_heads)

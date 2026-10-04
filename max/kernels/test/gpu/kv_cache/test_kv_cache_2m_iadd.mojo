@@ -499,8 +499,8 @@ def main() raises:
             cpu_ctx,
         )
         test_kv_cache_2m_iadd_cpu[.float32, 8, 128, 128, 1](
-            IndexList[1](10),
-            IndexList[1](40),
+            (10,),
+            (40,),
             1,
             cpu_ctx,
         )
@@ -526,8 +526,8 @@ def main() raises:
             ctx,
         )
         test_kv_cache_2m_iadd_gpu[.float32, 8, 128, 128, 1](
-            IndexList[1](10),
-            IndexList[1](40),
+            (10,),
+            (40,),
             1,
             ctx,
         )

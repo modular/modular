@@ -20,7 +20,7 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from std.math import exp, exp2, log
+from std.math import ceildiv, exp, exp2, log
 from state_space.selective_scan import (
     ssd_combined_cpu,
 )
@@ -68,7 +68,7 @@ def run_ssd_combined[
 
     var group_size = dim // n_groups
     var chunk_size = 2048
-    var n_chunks = (seqlen + chunk_size - 1) // chunk_size
+    var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
     comptime layout_3d = Layout.row_major[3]()

@@ -20,7 +20,7 @@ optional D/dt_bias, seeded initial states, strided x/B/C, bf16 state storage,
 and that a packed ragged batch equals independent per-sequence runs.
 """
 
-from std.math import exp, log1p
+from std.math import ceildiv, exp, log1p
 
 from max.gpu.host import DeviceContext
 from layout import MixedLayout, TileTensor, row_major
@@ -463,7 +463,7 @@ def run_mamba2_ssd[
             host_arg4=c_fn,
             host_arg5=slot_fn,
             grid_dim=(
-                (head_dim + CH_PER_BLOCK - 1) // CH_PER_BLOCK,
+                ceildiv(head_dim, CH_PER_BLOCK),
                 nheads,
                 batch,
             ),
@@ -503,7 +503,7 @@ def run_mamba2_ssd[
             host_arg3=b_fn,
             host_arg4=c_fn,
             host_arg5=slot_fn,
-            grid_dim=((head_dim + BLOCK_SIZE - 1) // BLOCK_SIZE, nheads, batch),
+            grid_dim=(ceildiv(head_dim, BLOCK_SIZE), nheads, batch),
             block_dim=(BLOCK_SIZE, 1, 1),
         )
 

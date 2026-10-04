@@ -26,18 +26,14 @@ def main() raises:
         print("== test_scatter_ax0")
 
         var data_ptr = List(length=9, fill=Float32(0))
-        var data = DynamicTensor[.float32, 2](
-            data_ptr.unsafe_ptr(), IndexList[2](3, 3)
-        )
+        var data = DynamicTensor[.float32, 2](data_ptr.unsafe_ptr(), (3, 3))
 
         var indices_ptr = List(length=6, fill=Int32(0))
         indices_ptr[0] = 1
         indices_ptr[2] = 2
         indices_ptr[4] = 2
         indices_ptr[5] = 1
-        var indices = DynamicTensor[.int32, 2](
-            indices_ptr.unsafe_ptr(), IndexList[2](2, 3)
-        )
+        var indices = DynamicTensor[.int32, 2](indices_ptr.unsafe_ptr(), (2, 3))
 
         var updates_ptr = List(length=6, fill=Float32(0))
         updates_ptr[0] = 1.0
@@ -47,13 +43,11 @@ def main() raises:
         updates_ptr[4] = 2.1
         updates_ptr[5] = 2.2
         var updates = DynamicTensor[.float32, 2](
-            updates_ptr.unsafe_ptr(), IndexList[2](2, 3)
+            updates_ptr.unsafe_ptr(), (2, 3)
         )
 
         var output_ptr = List(length=9, fill=Float32(0))
-        var output = DynamicTensor[.float32, 2](
-            output_ptr.unsafe_ptr(), IndexList[2](3, 3)
-        )
+        var output = DynamicTensor[.float32, 2](output_ptr.unsafe_ptr(), (3, 3))
 
         var expected: Array[Float32, 9] = [
             Float32(2.0),
@@ -86,28 +80,22 @@ def main() raises:
         var data_ptr = List(length=5, fill=Float32(0))
         for i in range(5):
             data_ptr[i] = Float32(i + 1)
-        var data = DynamicTensor[.float32, 2](
-            data_ptr.unsafe_ptr(), IndexList[2](1, 5)
-        )
+        var data = DynamicTensor[.float32, 2](data_ptr.unsafe_ptr(), (1, 5))
 
         var indices_ptr = List(length=2, fill=Int32(0))
         indices_ptr[0] = 1
         indices_ptr[1] = 3
-        var indices = DynamicTensor[.int32, 2](
-            indices_ptr.unsafe_ptr(), IndexList[2](1, 2)
-        )
+        var indices = DynamicTensor[.int32, 2](indices_ptr.unsafe_ptr(), (1, 2))
 
         var updates_ptr = List(length=2, fill=Float32(0))
         updates_ptr[0] = 1.1
         updates_ptr[1] = 2.1
         var updates = DynamicTensor[.float32, 2](
-            updates_ptr.unsafe_ptr(), IndexList[2](1, 2)
+            updates_ptr.unsafe_ptr(), (1, 2)
         )
 
         var output_ptr = List(length=5, fill=Float32(0))
-        var output = DynamicTensor[.float32, 2](
-            output_ptr.unsafe_ptr(), IndexList[2](1, 5)
-        )
+        var output = DynamicTensor[.float32, 2](output_ptr.unsafe_ptr(), (1, 5))
 
         var expected: Array[Float32, 5] = [
             Float32(1.0),
@@ -136,28 +124,22 @@ def main() raises:
         var data_ptr = List(length=5, fill=Float32(0))
         for i in range(5):
             data_ptr[i] = Float32(i + 1)
-        var data = DynamicTensor[.float32, 2](
-            data_ptr.unsafe_ptr(), IndexList[2](1, 5)
-        )
+        var data = DynamicTensor[.float32, 2](data_ptr.unsafe_ptr(), (1, 5))
 
         var indices_ptr = List(length=2, fill=Int32(0))
         indices_ptr[0] = 1
         indices_ptr[1] = -3
-        var indices = DynamicTensor[.int32, 2](
-            indices_ptr.unsafe_ptr(), IndexList[2](1, 2)
-        )
+        var indices = DynamicTensor[.int32, 2](indices_ptr.unsafe_ptr(), (1, 2))
 
         var updates_ptr = List(length=2, fill=Float32(0))
         updates_ptr[0] = 1.1
         updates_ptr[1] = 2.1
         var updates = DynamicTensor[.float32, 2](
-            updates_ptr.unsafe_ptr(), IndexList[2](1, 2)
+            updates_ptr.unsafe_ptr(), (1, 2)
         )
 
         var output_ptr = List(length=5, fill=Float32(0))
-        var output = DynamicTensor[.float32, 2](
-            output_ptr.unsafe_ptr(), IndexList[2](1, 5)
-        )
+        var output = DynamicTensor[.float32, 2](output_ptr.unsafe_ptr(), (1, 5))
 
         var expected: Array[Float32, 5] = [
             Float32(1.0),
@@ -186,28 +168,22 @@ def main() raises:
         var data_ptr = List(length=5, fill=Float32(0))
         for i in range(5):
             data_ptr[i] = Float32(i + 1)
-        var data = DynamicTensor[.float32, 2](
-            data_ptr.unsafe_ptr(), IndexList[2](1, 5)
-        )
+        var data = DynamicTensor[.float32, 2](data_ptr.unsafe_ptr(), (1, 5))
 
         var indices_ptr = List(length=2, fill=Int32(0))
         indices_ptr[0] = 1
         indices_ptr[1] = 1
-        var indices = DynamicTensor[.int32, 2](
-            indices_ptr.unsafe_ptr(), IndexList[2](1, 2)
-        )
+        var indices = DynamicTensor[.int32, 2](indices_ptr.unsafe_ptr(), (1, 2))
 
         var updates_ptr = List(length=2, fill=Float32(0))
         updates_ptr[0] = 1.1
         updates_ptr[1] = 2.1
         var updates = DynamicTensor[.float32, 2](
-            updates_ptr.unsafe_ptr(), IndexList[2](1, 2)
+            updates_ptr.unsafe_ptr(), (1, 2)
         )
 
         var output_ptr = List(length=5, fill=Float32(0))
-        var output = DynamicTensor[.float32, 2](
-            output_ptr.unsafe_ptr(), IndexList[2](1, 5)
-        )
+        var output = DynamicTensor[.float32, 2](output_ptr.unsafe_ptr(), (1, 5))
 
         var expected: Array[Float32, 5] = [
             Float32(1.0),
@@ -252,25 +228,23 @@ def main() raises:
         var data_ptr = List(length=rows, fill=Float32(0))
         for i in range(rows):
             data_ptr[i] = Float32(i % 7)
-        var data = DynamicTensor[.float32, 2](
-            data_ptr.unsafe_ptr(), IndexList[2](rows, 1)
-        )
+        var data = DynamicTensor[.float32, 2](data_ptr.unsafe_ptr(), (rows, 1))
 
         var indices_ptr = List(length=n_idx, fill=Int32(0))
         for k in range(n_idx):
             indices_ptr[k] = Int32((k % n_targets) * 7 + 1)
         var indices = DynamicTensor[.int32, 2](
-            indices_ptr.unsafe_ptr(), IndexList[2](n_idx, 1)
+            indices_ptr.unsafe_ptr(), (n_idx, 1)
         )
 
         var updates_ptr = List(length=n_idx, fill=Float32(1))
         var updates = DynamicTensor[.float32, 2](
-            updates_ptr.unsafe_ptr(), IndexList[2](n_idx, 1)
+            updates_ptr.unsafe_ptr(), (n_idx, 1)
         )
 
         var output_ptr = List(length=rows, fill=Float32(0))
         var output = DynamicTensor[.float32, 2](
-            output_ptr.unsafe_ptr(), IndexList[2](rows, 1)
+            output_ptr.unsafe_ptr(), (rows, 1)
         )
 
         @inline(.always)

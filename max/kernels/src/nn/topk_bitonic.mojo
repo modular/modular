@@ -599,7 +599,7 @@ def _persistent_topk_2048_bounded_kernel[
     the output with `-1`. Scan cost tracks each row's real length rather than
     the row stride `N`.
     """
-    var bound = Int(row_bounds[Int(block_idx.x)])
+    var bound = Int(row_bounds[block_idx.x])
     _persistent_topk_2048_impl(
         in_scores, out_idxs, N, K, min(Int(N), max(0, bound))
     )
@@ -1459,7 +1459,7 @@ def _histsel_topk_bounded_kernel[
     live column, in descending order, and pads the rest of the output row
     with `-1`.
     """
-    var bound = Int(row_bounds[Int(block_idx.x)])
+    var bound = Int(row_bounds[block_idx.x])
     _histsel_topk_impl[
         TraceBufT,
         enable_trace,
@@ -1531,8 +1531,8 @@ def _histsel_topk_impl[
     so the caller picks by row count instead of this being unconditional.
     """
     comptime scan_step = _PTOPK_BLOCK * scan_items
-    var tid = Int(thread_idx.x)
-    var token = Int(block_idx.x)
+    var tid = thread_idx.x
+    var token = block_idx.x
 
     var hist = unsafe_stack_allocation[
         _HSEL_BINS + 1, UInt32, address_space=.SHARED
@@ -2540,7 +2540,7 @@ def _histsel_resident_bounded_kernel[
     `[0, row_bounds[r])` of its stripe, and a bound at or below `K` yields all
     live columns descending with a `-1` output tail.
     """
-    var bound = Int(row_bounds[Int(block_idx.x)])
+    var bound = Int(row_bounds[block_idx.x])
     _histsel_resident_impl[
         TraceBufT,
         enable_trace,
@@ -2604,8 +2604,8 @@ def _histsel_resident_impl[
     """
     comptime items = res_vecs * _PTOPK_ITEMS
     comptime res_step = _HSEL_RES_BLOCK * _PTOPK_ITEMS
-    var tid = Int(thread_idx.x)
-    var token = Int(block_idx.x)
+    var tid = thread_idx.x
+    var token = block_idx.x
 
     var hist = unsafe_stack_allocation[
         _HSEL_BINS + 1, UInt32, address_space=.SHARED

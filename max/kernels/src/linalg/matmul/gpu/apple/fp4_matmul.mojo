@@ -591,7 +591,7 @@ struct AppleM5Fp4MatMul[
                     comptime epilogue = Self.elementwise_lambda_fn.value()
                     if acol + 3 < n:
                         epilogue[Self.c_type, 4, alignment=elem_align](
-                            IndexList[2](arow, acol), y
+                            (arow, acol), y
                         )
                     else:
                         for e in range(min(4, n - acol)):

@@ -291,7 +291,7 @@ struct PreShuffledBGroupedGEMM[
         if N == 0 or _num_active_experts == 0:
             return
 
-        var linear_wg = Int(block_idx.x)
+        var linear_wg = block_idx.x
         var logical_wg = Self.to_swizzled_idx(linear_wg)
 
         # grid stride loop over available work tiles using the logical WG ID
@@ -541,7 +541,7 @@ struct PreShuffledBGroupedGEMM[
         var a_start_row = a_offsets[block_idx.z]
         # Preshuffled A-scales: fixed-stride slot at e * max_padded_M.
         # Per-expert tight V# bound = align_up(num_tokens, 32).
-        var sfa_start_row = Int(block_idx.z) * _max_padded_M
+        var sfa_start_row = block_idx.z * _max_padded_M
         var sfa_padded_M = align_up(Int(M), 32)
 
         var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
@@ -585,8 +585,8 @@ struct PreShuffledBGroupedGEMM[
             b_pre_tile,
             sfa_tile,
             sfb_tile,
-            Int(block_idx.x),
-            Int(block_idx.y),
+            block_idx.x,
+            block_idx.y,
         )
 
     # --------------------------------------------------------------------- #

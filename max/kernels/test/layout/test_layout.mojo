@@ -98,12 +98,12 @@ def test_layout_basic() raises:
 
     # testing col major
     assert_equal(
-        Layout.col_major[3](IndexList[3](3, 64, 128)),
+        Layout.col_major[3]((3, 64, 128)),
         Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
     )
 
     assert_equal(
-        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 64, 128)),
+        Layout.col_major[3]((UNKNOWN_VALUE, 64, 128)),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -117,7 +117,7 @@ def test_layout_basic() raises:
     )
 
     assert_equal(
-        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 8, 16)),
+        Layout.col_major[3]((UNKNOWN_VALUE, 8, 16)),
         Layout(
             IntTuple(UNKNOWN_VALUE, 8, 16),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),

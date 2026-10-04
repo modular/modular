@@ -31,7 +31,7 @@ ring by an earlier call, the rest arriving now) is `kpool_ring_close_kernel`'s
 job instead.
 """
 
-from std.math import exp, max
+from std.math import ceildiv, exp, max
 
 from layout import TensorEngine, TensorLayout, TileTensor
 
@@ -322,7 +322,7 @@ def kpool_tail_update_kernel[
     if c >= head_dim:
         return
 
-    comptime max_closed = (next_n + kpool - 1) // kpool
+    comptime max_closed = ceildiv(next_n, kpool)
     var tail_base = Int(slot_idx.raw_load(r)) * 2 * kpool * head_dim
     var n_closed = 0
 

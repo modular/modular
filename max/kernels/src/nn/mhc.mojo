@@ -149,7 +149,7 @@ def hyper_connection_gates_kernel[
     var lane = Int(lane_id())
     var elem = lane % HH
     var row = (
-        Int(block_idx.x) * rows_per_block
+        block_idx.x * rows_per_block
         + Int(warp_id()) * rows_per_warp
         + lane // HH
     )

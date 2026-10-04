@@ -650,7 +650,7 @@ struct MLAPrefillSparseQKVFP8[
         # here (cg1) warp0 arms its own single-CTA byte count.
         comptime if Self.NUM_Q_HEADS_PER_CTA < Self.PADDED_HEADS_PER_CTA:
             for i in range(
-                Int(thread_idx.x),
+                thread_idx.x,
                 Self.SMemType.Q_SIZE,
                 Self.config.num_threads,
             ):
@@ -873,7 +873,7 @@ struct MLAPrefillSparseQKVFP8[
             comptime _kv_kept = (
                 Self.SMemType.B_TOPK_PER_CTA * Self.config.input_qk_depth
             )
-            var _tid = Int(thread_idx.x)
+            var _tid = thread_idx.x
             for i in range(
                 _q_kept + _tid,
                 Self.SMemType.Q_SIZE,

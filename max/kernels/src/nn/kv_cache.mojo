@@ -656,7 +656,7 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
     var tid = thread_idx.x
-    var combined_row = Int(block_idx.x)
+    var combined_row = block_idx.x
     var q_rows = Int(total_seq_len) * _q_num_heads
     var is_k = combined_row >= q_rows
 
@@ -1171,7 +1171,7 @@ def _fused_qk_rms_norm_rope_ragged_paged_gpu[
         input_row_offsets.flat_rank == 1
     ), "input_row_offsets must be rank 1"
 
-    var combined_row = Int(block_idx.x)
+    var combined_row = block_idx.x
     var q_rows = Int(total_seq_len) * _q_num_heads
     var is_k = combined_row >= q_rows
 
@@ -1519,7 +1519,7 @@ def _fused_dual_qk_rms_norm_rope_ragged_paged_gpu[
     # tsl * heads rows. The band is a function of block_idx only, so it is
     # uniform across the block; the barrier inside the shared per-row helper is
     # therefore well formed even though only one band's helper runs per block.
-    var combined_row = Int(block_idx.x)
+    var combined_row = block_idx.x
     var tsl = Int(total_seq_len)
     comptime k_main_heads = main_cache_t.kv_params.num_heads
     comptime k_index_heads = index_cache_t.kv_params.num_heads

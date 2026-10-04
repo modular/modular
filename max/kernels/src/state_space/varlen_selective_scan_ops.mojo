@@ -716,4 +716,4 @@ def varlen_selective_state_update_shape[
     var nheads = x.dim_size(1)
     var dim = x.dim_size(2)
     var dstate = A.dim_size(2)
-    return (IndexList[4](batch, nheads, dim, dstate), x.shape())
+    return ((batch, nheads, dim, dstate), x.shape())

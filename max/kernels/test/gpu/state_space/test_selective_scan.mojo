@@ -53,7 +53,7 @@ def run_selective_scan_gpu[
 
     var group_size = dim // n_groups
     var chunk_size = 2048
-    var n_chunks = (seqlen + chunk_size - 1) // chunk_size
+    var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
 

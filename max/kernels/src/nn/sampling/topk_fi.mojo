@@ -1457,7 +1457,7 @@ def _sampling_rejection_loop_coop[
     Each block scans a contiguous slice. Group-wide values keep every block
     on the same branch and barrier sequence.
     """
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var sampled_id_sram = unsafe_stack_allocation[
         1, Int, address_space=.SHARED
     ]()
@@ -1928,8 +1928,8 @@ def TopKTopPSamplingFromProbKernel[
         coop_size == 1 or from_logits
     ), "the cooperative split needs the fused softmax"
     var n_vec = _d // vec_size
-    var rank = Int(block_idx.x) % coop_size
-    var bx = Int(block_idx.x) // coop_size
+    var rank = block_idx.x % coop_size
+    var bx = block_idx.x // coop_size
     var tx = thread_idx.x
 
     # Contiguous slices make block-rank order match token order.
@@ -3286,8 +3286,8 @@ def TopKTopPMaskedProbsKernel[
     ), "TopKTopPMaskedProbsKernel is not supported on Apple GPUs"
     var _d = Int(d)
     var n_vec = _d // vec_size
-    var rank = Int(block_idx.x) % coop_size
-    var bx = Int(block_idx.x) // coop_size
+    var rank = block_idx.x % coop_size
+    var bx = block_idx.x // coop_size
     var tx = thread_idx.x
 
     # Contiguous slices make block-rank order match token order.

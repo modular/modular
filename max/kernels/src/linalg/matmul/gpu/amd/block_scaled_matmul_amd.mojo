@@ -1029,7 +1029,7 @@ struct BlockScaledMatmulAMD[
         # grid_dim.z = num_experts, where block_idx.z is the expert index, not
         # a split. Forcing split_id = 0 there keeps the K range full and the
         # output offset zero — byte-identical to the no-split path.
-        var split_id = Int(block_idx.z) if num_splits > 1 else 0
+        var split_id = block_idx.z if num_splits > 1 else 0
 
         # Dynamic M for OOB bounds handling when M is not a multiple of Self.BM.
         var M = Int(a.dim[0]())
@@ -1223,7 +1223,7 @@ struct BlockScaledMatmulAMD[
             # as wrong results on FP6.
             comptime a_stage_base = stage * Self.BM * A_SMEM_ROW_BYTES
             comptime b_stage_base = stage * Self.BN * B_SMEM_ROW_BYTES
-            var tid = Int(thread_idx.x)
+            var tid = thread_idx.x
 
             @inline(.always)
             def store_a() {imm}:
@@ -1274,10 +1274,10 @@ struct BlockScaledMatmulAMD[
             Each active thread reads SCALE_WORDS_PER_ROW Int32 dwords per BK
             iteration, giving coalesced 4-byte aligned GMEM reads.
             """
-            var tid = Int(thread_idx.x)
+            var tid = thread_idx.x
             var base_scale_k = k_scale_counter * scales_per_mma * num_k_tiles
-            var a_base_row = Int(block_idx.y) * Self.BM
-            var b_base_row = Int(block_idx.x) * Self.BN
+            var a_base_row = block_idx.y * Self.BM
+            var b_base_row = block_idx.x * Self.BN
 
             # A scales: guard M-OOB rows.
             if tid < Self.BM:
@@ -1315,7 +1315,7 @@ struct BlockScaledMatmulAMD[
             """
             comptime sfa_stage_base = stage * Self.BM * SCALE_WORDS_PER_ROW
             comptime sfb_stage_base = stage * Self.BN * SCALE_WORDS_PER_ROW
-            var tid = Int(thread_idx.x)
+            var tid = thread_idx.x
 
             if tid < Self.BM:
                 comptime for w in range(SCALE_WORDS_PER_ROW):
@@ -1537,8 +1537,8 @@ struct BlockScaledMatmulAMD[
             # `c_frag_size` contiguous columns of one row: row = lane % MMA_M,
             # first column = (lane // MMA_M) * c_frag_size.
             var lane_group, thread_m = divmod(Int(lane_id()), Self.MMA_M)
-            var m_warp_base = Int(block_idx.y) * Self.BM + Int(warp_m) * Self.WM
-            var n_warp_base = Int(block_idx.x) * Self.BN + Int(warp_n) * Self.WN
+            var m_warp_base = block_idx.y * Self.BM + Int(warp_m) * Self.WM
+            var n_warp_base = block_idx.x * Self.BN + Int(warp_n) * Self.WN
 
             comptime for m_mma in range(num_m_mmas):
                 var m_global = m_warp_base + m_mma * Self.MMA_M + Int(thread_m)
@@ -2383,7 +2383,7 @@ def _preb_grid_kernel[
         N,
         K_BYTES,
     ](
-        c, a, b_pre, sfa, sfb, Int(block_idx.x), Int(block_idx.y)
+        c, a, b_pre, sfa, sfb, block_idx.x, block_idx.y
     )
 
 

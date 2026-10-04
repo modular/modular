@@ -1222,7 +1222,7 @@ def test_sparse_paged_mma_ws_ts[
     cache_lengths_managed.to_device()
 
     # ---- Build lookup_table with shuffled page assignments ----
-    var max_pages_per_seq = (total_tokens + page_size - 1) // page_size
+    var max_pages_per_seq = ceildiv(total_tokens, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
         Collection.CacheType.lookup_table_tt_layout(
             Coord(Int64(batch_size), Int64(num_blocks)),

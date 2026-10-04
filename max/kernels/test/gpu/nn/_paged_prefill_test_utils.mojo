@@ -1072,7 +1072,7 @@ def fill_paged_block_scales(
     behavior, which uses scale=1 for OOB rows — see
     ``cvt_block_fp8_to_bf16_with_scale`` in ``mla_prefill_utils.mojo``).
     """
-    var num_pages_per_batch = (num_keys + page_size - 1) // page_size
+    var num_pages_per_batch = ceildiv(num_keys, page_size)
     var pstride = scale_page_stride(page_size, head_dim_gran)
     var tstride = scale_token_stride(head_dim_gran)
 
@@ -1122,7 +1122,7 @@ def extract_dequantized_k_rope_for_batch[
     ``out_host`` must point to a buffer of at least
     ``num_keys * ROPE_DEPTH`` ``Scalar[out_type]`` elements.
     """
-    var num_pages_per_batch = (num_keys + page_size - 1) // page_size
+    var num_pages_per_batch = ceildiv(num_keys, page_size)
     var page_base = batch_idx * num_pages_per_batch
     var rope_offset_in_token = head_size - ROPE_DEPTH
 

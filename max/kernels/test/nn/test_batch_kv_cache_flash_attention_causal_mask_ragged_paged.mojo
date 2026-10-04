@@ -144,9 +144,7 @@ def execute_ragged_flash_attention[
     var lookup_table_continuous = LayoutTensor[.uint32, layout_1d](
         lookup_table_continuous_heap,
         RuntimeLayout[layout_1d].row_major(
-            IndexList[1](
-                batch_size,
-            ),
+            IndexList[1](batch_size),
         ),
     )
 

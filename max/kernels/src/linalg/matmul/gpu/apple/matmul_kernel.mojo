@@ -992,7 +992,7 @@ struct AppleM5MatMul[
                     comptime if bounded:
                         if acol + 3 < n:
                             epilogue[Self.c_type, 4, alignment=elem_align](
-                                IndexList[2](arow, acol), y
+                                (arow, acol), y
                             )
                         else:
                             for e in range(min(4, n - acol)):
@@ -1002,7 +1002,7 @@ struct AppleM5MatMul[
                                 )
                     else:
                         epilogue[Self.c_type, 4, alignment=elem_align](
-                            IndexList[2](arow, acol), y
+                            (arow, acol), y
                         )
                 else:
                     comptime if bounded:
@@ -1814,7 +1814,7 @@ struct AppleM5MatMul[
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
 
-        var idx = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+        var idx = block_idx.x * block_dim.x + thread_idx.x
         var total = m * n
         if idx >= total:
             return
@@ -1828,7 +1828,7 @@ struct AppleM5MatMul[
         comptime if Self.elementwise_lambda_fn:
             comptime epilogue = Self.elementwise_lambda_fn.value()
             epilogue[Self.c_type, 1](
-                IndexList[2](idx // n, idx % n), SIMD[Self.c_type, 1](y)
+                (idx // n, idx % n), SIMD[Self.c_type, 1](y)
             )
         else:
             c_ptr[idx] = y

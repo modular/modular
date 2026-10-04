@@ -244,7 +244,7 @@ def fp8_gemv_kernel[
 
         comptime if Bool(elementwise_lambda_fn) or has_epilogue_fn:
             apply_elementwise_epilogue[elementwise_lambda_fn](
-                epilogue_fn, IndexList[2](0, n_idx), y
+                epilogue_fn, (0, n_idx), y
             )
         else:
             c.store(Coord(0, n_idx), y)

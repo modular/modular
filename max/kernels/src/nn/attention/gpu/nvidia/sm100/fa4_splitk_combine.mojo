@@ -194,7 +194,7 @@ def _fa4_splitk_combine_kernel[
     comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
         wait_on_dependent_grids()
 
-    var rh: Int = Int(block_idx.x)
+    var rh: Int = block_idx.x
     var RH: Int = Int(rows_heads)
     if rh >= RH:
         return

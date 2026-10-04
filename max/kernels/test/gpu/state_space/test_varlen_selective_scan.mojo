@@ -28,6 +28,7 @@ from state_space.varlen_selective_scan import (
 from std.testing import TestSuite, assert_almost_equal
 
 from std.utils.index import Index, IndexList
+from std.math import ceildiv
 
 
 def run_varlen_selective_scan_fwd_gpu[
@@ -304,7 +305,7 @@ def run_varlen_selective_scan_fwd_gpu[
 
     # Launch GPU kernel
     comptime BLOCK_SIZE = 128
-    var num_dim_blocks = (dim + BLOCK_SIZE - 1) // BLOCK_SIZE
+    var num_dim_blocks = ceildiv(dim, BLOCK_SIZE)
 
     var compiled_kernel = ctx.compile_function[
         varlen_selective_scan_fwd_gpu[

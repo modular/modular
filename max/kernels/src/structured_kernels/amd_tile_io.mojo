@@ -2670,7 +2670,7 @@ struct RegTileEpilogue[
                 comptime epilogue_fn = Self.elementwise_lambda_fn.value()
                 epilogue_fn[
                     alignment=align_of[SIMD[Self.c_type, Self.chunk_width]]()
-                ](IndexList[2](m, n), v)
+                ]((m, n), v)
             else:
                 self._ptr().store[
                     alignment=align_of[SIMD[Self.c_type, Self.chunk_width]]()
@@ -2735,7 +2735,7 @@ def _buffer_load_impl[
         dst_layout: Layout controlling register storage order. Shape must
             match the per-thread fragment dimensions (M, N).
     """
-    var worker_idx = Int(lane_id()) if warp_scope else Int(thread_idx.x)
+    var worker_idx = Int(lane_id()) if warp_scope else thread_idx.x
 
     comptime if num_threads > thread_layout.size():
         if worker_idx >= thread_layout.size():
@@ -2816,7 +2816,7 @@ struct RegTileWriterLDS[
         comptime num_busy_threads = Self.thread_layout.size()
         comptime elem_size = type_of(dst).element_size
 
-        var worker_idx = Int(thread_idx.x)
+        var worker_idx = thread_idx.x
 
         comptime if Self.num_threads > num_busy_threads:
             if worker_idx >= num_busy_threads:
@@ -2902,7 +2902,7 @@ struct RegTileWriterLDS[
         comptime data_cols = type_of(dst).static_shape[1]
         comptime simd_width = simd_width_of[dst.dtype]()
 
-        var worker_idx = Int(thread_idx.x)
+        var worker_idx = thread_idx.x
 
         comptime if Self.num_threads > Self.thread_layout.size():
             if worker_idx >= Self.thread_layout.size():

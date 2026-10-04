@@ -2348,7 +2348,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # Out-of-range block guard: grid is sized by max_prompt_len;
         # if this sequence is shorter, the trailing q-blocks have
         # nothing to do.
-        if Int(block_idx.y) * Self.BM >= seq_len:
+        if block_idx.y * Self.BM >= seq_len:
             return
 
         var start_pos = Int(k.cache_length(batch_idx))

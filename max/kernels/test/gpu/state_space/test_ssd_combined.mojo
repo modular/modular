@@ -16,7 +16,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.math import exp, exp2, log
+from std.math import ceildiv, exp, exp2, log
 from std.random import rand
 from state_space.selective_scan import (
     ssd_combined_cpu,
@@ -66,7 +66,7 @@ def run_ssd_combined_gpu[
 
     var group_size = dim // n_groups
     var chunk_size = 2048
-    var n_chunks = (seqlen + chunk_size - 1) // chunk_size
+    var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
 
@@ -253,7 +253,6 @@ def run_ssd_combined_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from std.math import ceildiv
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 

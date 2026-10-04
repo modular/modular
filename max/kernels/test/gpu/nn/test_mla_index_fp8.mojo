@@ -251,7 +251,7 @@ def test_mla_index_fp8_paged_variable_lengths[
 
     # Calculate number of pages needed (based on max sequence)
     var total_num_keys_max = max_cache_len + max_seq_len
-    var pages_per_seq = (total_num_keys_max + page_size - 1) // page_size
+    var pages_per_seq = ceildiv(total_num_keys_max, page_size)
     var num_blocks = batch_size * pages_per_seq + 10  # Extra blocks
 
     # Q tensor: [total_seq_len, num_heads, depth]

@@ -281,9 +281,9 @@ def naive_fa_decode_apple_core[
     comptime EPL = Depth // WARP_SIZE
     debug_assert(_depth == Depth, "runtime _depth must match comptime Depth")
 
-    var split_id = Int(block_idx.x)
-    var batch_id = Int(block_idx.y)
-    var head_id = Int(block_idx.z)
+    var split_id = block_idx.x
+    var batch_id = block_idx.y
+    var head_id = block_idx.z
     var kv_head = head_id // _group
     var lane = Int(lane_id())
 
@@ -513,9 +513,9 @@ def naive_fa_decode_apple_stitch[
         and m_partial.flat_rank == 1
         and output.flat_rank == 1
     ), "partials and output are flat 1D TileTensors"
-    var head_id = Int(block_idx.x)
-    var batch_id = Int(block_idx.y)
-    var d = Int(thread_idx.x)
+    var head_id = block_idx.x
+    var batch_id = block_idx.y
+    var d = thread_idx.x
 
     if d >= _depth:
         return

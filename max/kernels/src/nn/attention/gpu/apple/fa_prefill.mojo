@@ -447,9 +447,9 @@ def fa_prefill_apple_core[
     # longest poles don't form the makespan tail; light low-row tiles backfill the
     # grid drain.
     var num_q_tiles = ceildiv(_max_prompt_len, NumSimdgroups * SQ)
-    var q_tile_id = (num_q_tiles - 1) - Int(block_idx.x)
-    var head_id = Int(block_idx.y)
-    var batch_id = Int(block_idx.z)
+    var q_tile_id = (num_q_tiles - 1) - block_idx.x
+    var head_id = block_idx.y
+    var batch_id = block_idx.z
     var kv_head = head_id // _group
     var sg = Int(warp_id())  # this simdgroup's slot in the threadgroup
     var lane = Int(lane_id())

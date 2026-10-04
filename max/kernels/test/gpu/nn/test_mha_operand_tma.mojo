@@ -46,6 +46,7 @@ from nn.attention.gpu.nvidia.sm90.attention import kv_coord
 from std.testing import assert_equal
 
 from std.utils import IndexList
+from std.math import ceildiv
 
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
@@ -468,7 +469,7 @@ def test_paged_kv_cache[
     ]
 
     # Calculate number of pages needed
-    var pages_per_seq = (max_seq_len + page_size - 1) // page_size
+    var pages_per_seq = ceildiv(max_seq_len, page_size)
     var num_blocks = batch_size * pages_per_seq + 10  # Extra blocks
 
     # Initialize paged cache blocks

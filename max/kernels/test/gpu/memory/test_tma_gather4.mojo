@@ -449,7 +449,7 @@ def _run_paged_gather4_test[
         cache_lengths_host[i] = UInt32(tokens_per_seq)
 
     # Build lookup_table with shuffled page assignments.
-    var max_pages_per_seq = (tokens_per_seq + page_size - 1) // page_size
+    var max_pages_per_seq = ceildiv(tokens_per_seq, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
         row_major(Coord(batch_size, num_blocks)), ctx
     )
@@ -1059,7 +1059,7 @@ def test_wide_gather4_paged_kv[
         cache_lengths_host[i] = UInt32(tokens_per_seq)
 
     # Build lookup_table.
-    var max_pages_per_seq = (tokens_per_seq + page_size - 1) // page_size
+    var max_pages_per_seq = ceildiv(tokens_per_seq, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
         row_major(Coord(batch_size, num_blocks)), ctx
     )
@@ -1335,7 +1335,7 @@ def test_wide_gather4_mha_operand[
         cache_lengths_host[i] = UInt32(tokens_per_seq)
 
     # Build lookup_table.
-    var max_pages_per_seq = (tokens_per_seq + page_size - 1) // page_size
+    var max_pages_per_seq = ceildiv(tokens_per_seq, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
         row_major(Coord(batch_size, num_blocks)), ctx
     )
@@ -1804,7 +1804,7 @@ def test_gather4_tile_api_paged[
         cache_lengths_host[i] = UInt32(tokens_per_seq)
 
     # ---- Build lookup_table ----
-    var max_pages_per_seq = (tokens_per_seq + page_size - 1) // page_size
+    var max_pages_per_seq = ceildiv(tokens_per_seq, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
         row_major(Coord(batch_size, num_blocks)), ctx
     )

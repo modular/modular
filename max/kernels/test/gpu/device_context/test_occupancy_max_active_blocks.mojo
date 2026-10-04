@@ -21,6 +21,7 @@ from max.gpu import block_dim, global_idx, thread_idx
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
 from std.testing import assert_almost_equal, assert_equal
+from std.math import ceildiv
 
 
 # Kernel that uses shared memory for testing occupancy with dynamic shared memory
@@ -199,7 +200,7 @@ def test_occupancy_max_active_blocks(ctx: DeviceContext) raises:
     )
 
     # Launch the kernel
-    var grid_dim = (length + optimal_block_size - 1) // optimal_block_size
+    var grid_dim = ceildiv(length, optimal_block_size)
     comptime kernel = occupancy_test_kernel
     ctx.enqueue_function[kernel](
         input_device,
