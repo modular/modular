@@ -20,7 +20,12 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Coord, TileTensor, Idx, row_major, coord
+from layout import (
+    TileTensor,
+    Coord,
+    Idx,
+    row_major,
+)
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
@@ -63,69 +68,60 @@ def execute_fused_qkv_matmul[
         ")",
     )
 
-    # Define shapes
-    var hidden_state_shape = Coord(batch_size, prompt_len, Idx[hidden_size])
-    var weight_shape = coord[fused_hidden_size, hidden_size]
-    var ref_output_shape = Coord(batch_size * prompt_len, fused_hidden_size)
-    var test_output_shape = Coord(batch_size, prompt_len, hidden_size)
-    var lengths_shape = Coord(Int64(batch_size))
-    var kv_block_shape = Coord(
-        Int64(num_blocks),
-        Int64(2),
-        Int64(num_layers),
-        Int64(max_seq_len),
-        Idx[kv_params.num_heads],
-        Idx[kv_params.head_size],
-    )
-
-    # Initialize hidden state
     var hidden_state = HostDeviceTileTensor[dtype](
-        row_major(hidden_state_shape), ctx
+        row_major(Coord(batch_size, prompt_len, Idx[hidden_size])), ctx
     )
-    var hidden_state_host = hidden_state.host_tensor()
-    random(hidden_state_host)
+    random(hidden_state.host_tensor())
     hidden_state.to_device()
-
-    var hidden_state_device_2d = TileTensor(
-        hidden_state.device_tensor()._storage,
-        row_major(batch_size * prompt_len, Idx[hidden_size]),
+    var hidden_state_device_2d = hidden_state.device_tensor().reshape(
+        Coord(batch_size * prompt_len, Idx[hidden_size])
     )
 
-    # Keep matmul weights on a direct device buffer; _matmul_gpu expects this
-    # static layout path and currently does not compose well with managed views.
-    var weight_device = ctx.enqueue_create_buffer[dtype](weight_shape.product())
-    with weight_device.map_to_host() as weight_host_ptr:
-        var weight_host = TileTensor(weight_host_ptr, row_major(weight_shape))
+    var weight_device = ctx.enqueue_create_buffer[dtype](
+        fused_hidden_size * hidden_size
+    )
+    with weight_device.map_to_host() as weight_host_buffer:
+        var weight_host = TileTensor(
+            weight_host_buffer, row_major(len(weight_host_buffer))
+        ).reshape(Coord(Idx[fused_hidden_size], Idx[hidden_size]))
         random(weight_host)
 
-    # Initialize reference output
     var ref_output = HostDeviceTileTensor[dtype](
-        row_major(ref_output_shape), ctx
+        row_major(Coord(batch_size * prompt_len, Idx[fused_hidden_size])), ctx
     )
-
-    # Initialize test output
     var test_output = HostDeviceTileTensor[dtype](
-        row_major(test_output_shape), ctx
+        row_major(Coord(batch_size, prompt_len, Idx[hidden_size])), ctx
     )
 
-    # Initialize our KVCache
     var is_context_encoding = True
     var cache_lengths = HostDeviceTileTensor[.uint32](
-        row_major(lengths_shape), ctx
+        row_major(Coord(Int64(batch_size))), ctx
     )
-    var cache_lengths_host = cache_lengths.host_tensor()
+    var cache_lengths_host = cache_lengths.host_tensor().as_unsafe_any_origin()
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_sizes[i])
         if cache_lengths_host[i] != 0:
             is_context_encoding = False
     cache_lengths.to_device()
 
-    var kv_block = HostDeviceTileTensor[dtype](row_major(kv_block_shape), ctx)
-
-    var lookup_table = HostDeviceTileTensor[.uint32](
-        row_major(lengths_shape), ctx
+    comptime BlocksLayout = CollectionType.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_blocks)
+    blocks_shape[1] = Int64(2)
+    blocks_shape[2] = Int64(num_layers)
+    blocks_shape[3] = Int64(max_seq_len)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(2 * num_layers * max_seq_len * kv_hidden_size)
+    blocks_strides[1] = Int64(num_layers * max_seq_len * kv_hidden_size)
+    blocks_strides[2] = Int64(max_seq_len * kv_hidden_size)
+    var kv_block = HostDeviceTileTensor[dtype](
+        BlocksLayout(blocks_shape, blocks_strides), ctx
     )
-    var lookup_table_host = lookup_table.host_tensor()
+    kv_block.to_device()
+    var lookup_table = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size))), ctx
+    )
+    var lookup_table_host = lookup_table.host_tensor().as_unsafe_any_origin()
 
     # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
     # the original draw range `[0, num_blocks - 1]` is a population of
@@ -135,6 +131,7 @@ def execute_fused_qkv_matmul[
         lookup_table_host[idx] = UInt32(lut_blocks[idx])
     lookup_table.to_device()
 
+    lookup_table.to_device()
     var kv_collection_device = CollectionType(
         kv_block.device_tensor().as_unsafe_any_origin(),
         cache_lengths.device_tensor().as_imm().as_unsafe_any_origin(),
@@ -146,19 +143,16 @@ def execute_fused_qkv_matmul[
     # Create device tensors for kernel calls
     var hidden_state_device_tensor = hidden_state.device_tensor()
     var weight_device_tensor = TileTensor(
-        weight_device, row_major(weight_shape)
-    )
+        weight_device, row_major(len(weight_device))
+    ).reshape(Coord(Idx[fused_hidden_size], Idx[hidden_size]))
     var test_output_device_tensor = test_output.device_tensor()
-
-    # Create valid_lengths - all sequences have full prompt_len valid
     var valid_lengths = HostDeviceTileTensor[.uint32](
-        row_major(lengths_shape), ctx
+        row_major(Coord(Int64(batch_size))), ctx
     )
-    var valid_lengths_host = valid_lengths.host_tensor()
     for i in range(batch_size):
-        valid_lengths_host[i] = UInt32(prompt_len)
+        valid_lengths.host_tensor()[i] = UInt32(prompt_len)
     valid_lengths.to_device()
-    var valid_lengths_tensor = valid_lengths.device_tensor()
+    var valid_lengths_tensor = valid_lengths.device_tensor().as_imm()
 
     _fused_qkv_matmul_kv_cache_impl[target="gpu"](
         hidden_state_device_tensor,
@@ -170,14 +164,8 @@ def execute_fused_qkv_matmul[
         ctx,
     )
 
-    var ref_output_device_ndbuffer = TileTensor(
-        ref_output.device_tensor().ptr,
-        row_major(ref_output_shape[0], Idx[fused_hidden_size]),
-    )
-    var weight_device_ndbuffer = TileTensor(
-        weight_device,
-        row_major(Idx[fused_hidden_size], Idx[hidden_size]),
-    )
+    var ref_output_device_ndbuffer = ref_output.device_tensor()
+    var weight_device_ndbuffer = weight_device_tensor
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
         ref_output_device_ndbuffer,
@@ -189,13 +177,13 @@ def execute_fused_qkv_matmul[
     kv_block.to_host()
     test_output.to_host()
     ref_output.to_host()
-    var kv_block_host_after = kv_block.host_tensor()
+    var kv_block_host_after = kv_block.host_tensor().as_unsafe_any_origin()
     var test_output_host = test_output.host_tensor()
     var ref_output_host = ref_output.host_tensor()
     var kv_collection_host = CollectionType(
-        kv_block_host_after.as_unsafe_any_origin(),
-        cache_lengths_host.as_imm().as_unsafe_any_origin(),
-        lookup_table_host.as_imm().as_unsafe_any_origin(),
+        kv_block_host_after,
+        cache_lengths_host.as_imm(),
+        lookup_table_host.as_imm(),
         UInt32(max_seq_len),
         UInt32(0 if is_context_encoding else max_seq_len),
     )

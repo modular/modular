@@ -36,6 +36,7 @@ from layout import (
     LayoutTensor,
     RuntimeLayout,
     TileTensor,
+    RowMajorLayout,
     UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
@@ -1015,11 +1016,11 @@ struct NoMaskFlashAttentionCPU:
             return SIMD[dtype, width](0)
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
-            q.to_layout_tensor(),
+            q.to_tile_tensor[.int64](),
             k.shape(),
             v.shape(),
             IndexList[0](),
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             scale.cast[.float32](),
             ctx=Optional[DeviceContext](ctx),
         )
@@ -1100,13 +1101,13 @@ struct WithMaskFlashAttentionSplitKVCPU:
             v_cache_input_fn,
             mask_input_fn,
         ](
-            q.to_layout_tensor(),
+            q.to_tile_tensor[.int64](),
             k.shape(),
             v.shape(),
             k_cache.shape(),
             v_cache.shape(),
             mask.shape(),
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             scale.cast[.float32](),
             ctx=Optional[DeviceContext](ctx),
         )
@@ -1205,11 +1206,11 @@ struct WithMaskFlashAttentionCPU:
             )
 
         nn_flash_attention[k_input_fn, v_input_fn, mask_input_fn](
-            q.to_layout_tensor(),
+            q.to_tile_tensor[.int64](),
             k.shape(),
             v.shape(),
             mask.shape(),
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             scale.cast[.float32](),
             ctx=Optional[DeviceContext](ctx),
         )
@@ -1456,24 +1457,16 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale:
             ),
             target=target,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
+            input_scale.to_tile_tensor[.int64](),
+            weight_scale.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             ctx,
-            OptionalReg[
-                LayoutTensor[
-                    mut=False,
-                    output_type,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                    address_space=.GENERIC,
-                ]
-            ](),
+            None,
         )
 
 
@@ -1521,15 +1514,21 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_float4:
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
+            input_scale.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
+            weight_scale.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
             tensor_sf,
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -1582,15 +1581,21 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8:
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
+            input_scale.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
+            weight_scale.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
             tensor_sf,
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -1644,15 +1649,21 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp8_amd:
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             target=target,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
+            input_scale.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
+            weight_scale.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
             tensor_sf,
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -1710,15 +1721,21 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_mxfp6_amd:
             target=target,
             mx_format=fmt,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
+            input_scale.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
+            weight_scale.to_tile_tensor[.int64]()
+            .as_imm()
+            .as_unsafe_any_origin(),
             tensor_sf,
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -1799,18 +1816,24 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8:
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 target=target,
             ](
-                hidden_state.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
-                weight.to_layout_tensor(),
-                input_scale.to_layout_tensor(),
-                weight_scale.to_layout_tensor(),
+                hidden_state.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
+                input_row_offsets.to_tile_tensor[.int64](),
+                weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
+                input_scale.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
+                weight_scale.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
                 tensor_sf,
                 kv_collection,
                 index_kv_collection,
                 layer_idx,
                 IQ_DIM,
-                q_output.to_layout_tensor(),
-                iq_output.to_layout_tensor(),
+                q_output.to_tile_tensor[.int64](),
+                iq_output.to_tile_tensor[.int64](),
                 ctx,
             )
         )
@@ -1894,18 +1917,24 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp8_amd:
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE,
                 target=target,
             ](
-                hidden_state.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
-                weight.to_layout_tensor(),
-                input_scale.to_layout_tensor(),
-                weight_scale.to_layout_tensor(),
+                hidden_state.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
+                input_row_offsets.to_tile_tensor[.int64](),
+                weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
+                input_scale.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
+                weight_scale.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
                 tensor_sf,
                 kv_collection,
                 index_kv_collection,
                 layer_idx,
                 IQ_DIM,
-                q_output.to_layout_tensor(),
-                iq_output.to_layout_tensor(),
+                q_output.to_tile_tensor[.int64](),
+                iq_output.to_tile_tensor[.int64](),
                 ctx,
             )
         )
@@ -1984,18 +2013,24 @@ struct Struct_fused_qkv_index_matmul_padded_ragged_scale_mxfp6_amd:
                 target=target,
                 mx_format=fmt,
             ](
-                hidden_state.to_layout_tensor(),
-                input_row_offsets.to_layout_tensor(),
-                weight.to_layout_tensor(),
-                input_scale.to_layout_tensor(),
-                weight_scale.to_layout_tensor(),
+                hidden_state.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
+                input_row_offsets.to_tile_tensor[.int64](),
+                weight.to_tile_tensor[.int64]().as_imm().as_unsafe_any_origin(),
+                input_scale.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
+                weight_scale.to_tile_tensor[.int64]()
+                .as_imm()
+                .as_unsafe_any_origin(),
                 tensor_sf,
                 kv_collection,
                 index_kv_collection,
                 layer_idx,
                 IQ_DIM,
-                q_output.to_layout_tensor(),
-                iq_output.to_layout_tensor(),
+                q_output.to_tile_tensor[.int64](),
+                iq_output.to_tile_tensor[.int64](),
                 ctx,
             )
         )
@@ -2065,14 +2100,14 @@ struct Struct_fused_qkv_index_matmul_padded_ragged:
         return generic_fused_qkv_index_matmul_kv_cache_paged_ragged[
             target=target,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
             kv_collection,
             index_kv_collection,
             layer_idx,
             IQ_DIM,
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             ctx,
         )
 
@@ -2119,29 +2154,30 @@ struct Struct_fused_qkv_matmul_padded_ragged_scale_bias:
             max_prompt_length,
             max_cache_length,
         )
-        comptime ExpectedBiasType = LayoutTensor[
-            mut=False,
-            output_type,
-            Layout.row_major(UNKNOWN_VALUE),
-            ImmutAnyOrigin,
-            address_space=.GENERIC,
+        comptime ExpectedBiasType = TileTensor[
+            output_type, RowMajorLayout[Int64], ImmutAnyOrigin
         ]
-        var bias_tensor = bias.to_layout_tensor()
-        var rebound_bias = rebind[ExpectedBiasType](bias_tensor)
+        var bias_tensor = bias.to_tile_tensor[.int64]()
+        comptime assert bias_tensor.is_row_major
+        var rebound_bias = rebind[ExpectedBiasType](
+            bias_tensor.reshape(
+                Coord(Int64(bias_tensor.num_elements()))
+            ).as_unsafe_any_origin()
+        )
         return generic_fused_qkv_matmul_kv_cache_paged_ragged_scale[
             scales_granularity_mnk=IndexList[3](
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),
             target=target,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
+            input_scale.to_tile_tensor[.int64](),
+            weight_scale.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor[.int64](),
             ctx,
             OptionalReg[ExpectedBiasType](rebound_bias),
         )
@@ -2870,13 +2906,13 @@ struct Struct_mla_prefill_ragged_plan:
             max_cache_length,
         )
         generic_flare_mla_prefill_ragged_paged_plan[target=target](
-            input_row_offsets.to_layout_tensor(),
+            input_row_offsets.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
             buffer_tok_size,
-            buffer_row_offsets.to_layout_tensor(),
-            cache_offsets.to_layout_tensor(),
-            buffer_lengths.to_layout_tensor(),
+            buffer_row_offsets.to_tile_tensor[.int64](),
+            cache_offsets.to_tile_tensor[.int64](),
+            buffer_lengths.to_tile_tensor[.int64](),
             context,
         )
 
@@ -2917,14 +2953,14 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
             max_cache_length,
         )
         generic_flare_mla_decompress_k_cache_ragged_paged[target=target](
-            buffer_row_offsets_1d.to_layout_tensor(),
-            cache_offsets_1d.to_layout_tensor(),
+            buffer_row_offsets_1d.to_tile_tensor[.int64](),
+            cache_offsets_1d.to_tile_tensor[.int64](),
             buffer_length,
-            weight.to_layout_tensor(),
+            weight.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
-            k_latent_buffer.to_layout_tensor(),
-            k_buffer.to_layout_tensor(),
+            k_latent_buffer.to_tile_tensor[.int64](),
+            k_buffer.to_tile_tensor[.int64](),
             context,
         )
 

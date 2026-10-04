@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements math methods that work on layout tensors."""
+"""Implements tensor math operations."""
 
 import std.math
 

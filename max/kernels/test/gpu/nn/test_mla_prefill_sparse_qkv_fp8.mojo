@@ -41,12 +41,9 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
@@ -225,14 +222,6 @@ def run_test_prefill_sparse_qkv_fp8[
     var total_pages = batch_size * ceildiv(num_kv_tokens, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_kv_tokens, PAGE_SIZE)
 
-    var block_shape = IndexList[6](
-        total_pages,
-        kv_dim2,
-        num_layers,
-        PAGE_SIZE,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
     var block_elems = (
         total_pages
         * kv_dim2
@@ -417,49 +406,40 @@ def run_test_prefill_sparse_qkv_fp8[
     ctx.synchronize()
 
     # FP8 PagedKVCacheCollection.
-    var blocks_lt = LayoutTensor[.float8_e4m3fn, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    var blocks_tt = TileTensor(
+        blocks_device, row_major(len(blocks_device))
+    ).reshape(
+        Coord(
+            Int64(total_pages),
+            Idx[1],
+            Int64(num_layers),
+            Idx[PAGE_SIZE],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        )
     )
 
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(len(cache_lengths_device))
+    ).reshape(Coord(Int64(batch_size)))
 
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
-    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device, row_major(len(lookup_table_device))
+    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
 
-    var kv_collection = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params, PAGE_SIZE
-    ](
-        LayoutTensor[.float8_e4m3fn, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    comptime Collection = PagedKVCacheCollection[
+        DType.float8_e4m3fn,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_kv_tokens),
     )
@@ -786,12 +766,6 @@ def run_nope_native_512_prefill_fp8[
     var total_pages = batch_size * ceildiv(num_kv_tokens, PAGE_SIZE)
     var max_pages_per_batch = ceildiv(num_kv_tokens, PAGE_SIZE)
 
-    var block_shape_576 = IndexList[6](
-        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, QK_DEPTH
-    )
-    var block_shape_512 = IndexList[6](
-        total_pages, kv_dim2, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, V_DEPTH
-    )
     var block_elems_576 = (
         total_pages * kv_dim2 * NUM_LAYERS * PAGE_SIZE * KV_NUM_HEADS * QK_DEPTH
     )
@@ -947,81 +921,72 @@ def run_nope_native_512_prefill_fp8[
     ctx.synchronize()
 
     # Paged KV cache collections, one per row width.
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lt_layout_2d = Layout.row_major[2]()
-    comptime blk_layout = Layout.row_major[6]()
 
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(len(cache_lengths_device))
+    ).reshape(Coord(Int64(batch_size)))
+    var lookup_table_tt = TileTensor(
+        lookup_table_device, row_major(len(lookup_table_device))
+    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+
+    var blocks_576_tt = TileTensor(
+        blocks_576_device, row_major(len(blocks_576_device))
+    ).reshape(
+        Coord(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params_576.num_heads],
+            Idx[kv_params_576.head_size],
+        )
     )
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
+    var blocks_512_tt = TileTensor(
+        blocks_512_device, row_major(len(blocks_512_device))
+    ).reshape(
+        Coord(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[kv_params_512.num_heads],
+            Idx[kv_params_512.head_size],
+        )
     )
 
-    var blocks_576_lt = LayoutTensor[.float8_e4m3fn, blk_layout](
-        blocks_576_device.unsafe_ptr(),
-        RuntimeLayout[blk_layout].row_major(block_shape_576),
-    )
-    var blocks_512_lt = LayoutTensor[.float8_e4m3fn, blk_layout](
-        blocks_512_device.unsafe_ptr(),
-        RuntimeLayout[blk_layout].row_major(block_shape_512),
-    )
-
-    var kv_collection_576 = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params_576, PAGE_SIZE
-    ](
-        LayoutTensor[.float8_e4m3fn, blk_layout](
-            blocks_576_lt.ptr,
-            RuntimeLayout[blk_layout](
-                blocks_576_lt.runtime_layout.shape.value,
-                blocks_576_lt.runtime_layout.stride.value,
-            ),
+    comptime Collection576 = PagedKVCacheCollection[
+        DType.float8_e4m3fn,
+        kv_params_576,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection_576 = Collection576(
+        rebind[Collection576.blocks_tt_type](
+            blocks_576_tt.as_unsafe_any_origin()
         ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_kv_tokens),
     )
-    var kv_collection_512 = PagedKVCacheCollection[
-        DType.float8_e4m3fn, kv_params_512, PAGE_SIZE
-    ](
-        LayoutTensor[.float8_e4m3fn, blk_layout](
-            blocks_512_lt.ptr,
-            RuntimeLayout[blk_layout](
-                blocks_512_lt.runtime_layout.shape.value,
-                blocks_512_lt.runtime_layout.stride.value,
-            ),
+    comptime Collection512 = PagedKVCacheCollection[
+        DType.float8_e4m3fn,
+        kv_params_512,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection_512 = Collection512(
+        rebind[Collection512.blocks_tt_type](
+            blocks_512_tt.as_unsafe_any_origin()
         ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),
         UInt32(num_kv_tokens),
     )

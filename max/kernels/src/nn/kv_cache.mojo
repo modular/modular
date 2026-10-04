@@ -243,6 +243,8 @@ def _fused_qkv_matmul_kv_cache_impl[
             projections are written in-place to k_cache and v_cache.
         context: The DeviceContext. This is unused if is_cpu[target]().
     """
+    comptime assert valid_lengths.rank == valid_lengths.flat_rank == 1
+    comptime assert output.rank == output.flat_rank == 3
     comptime cache_t = collection_t.CacheType
     comptime cache_dtype = cache_t.dtype
 
@@ -254,7 +256,6 @@ def _fused_qkv_matmul_kv_cache_impl[
     )
 
     comptime kv_params = cache_t.kv_params
-
     var SEQ_LEN = Int(hidden_state.dim[1]())
 
     var q_dim = Int(output.dim[2]())
@@ -272,7 +273,7 @@ def _fused_qkv_matmul_kv_cache_impl[
     ](idx: IndexList[2], val: SIMD[dtype_, width]):
         var b_idx, t_idx = udivmod(idx[0], SEQ_LEN)
         if idx[1] < q_dim:
-            output.store[width=width](
+            output.store[width=width, alignment=align_of[dtype]()](
                 Coord(b_idx, t_idx, idx[1]),
                 rebind[SIMD[dtype, width]](val),
             )
@@ -321,19 +322,19 @@ def _matmul_common[
     weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
+    comptime assert hidden_state.rank == hidden_state.flat_rank == 3
+    comptime assert weight.rank == weight.flat_rank == 2
+    comptime assert hidden_state.is_row_major
     comptime assert (
         weight.LayoutType._shape_types[0].is_static_value
         and weight.LayoutType._shape_types[1].is_static_value
     ), "weight must have a static shape"
+    var BS = Int(hidden_state.dim[0]())
+    var SEQ_LEN = Int(hidden_state.dim[1]())
     comptime N = weight.static_shape[0]
     comptime K = weight.static_shape[1]
 
-    var BS = Int(hidden_state.dim[0]())
-    var SEQ_LEN = Int(hidden_state.dim[1]())
-
-    var hidden_state_2d = TileTensor(
-        hidden_state.ptr, row_major(Coord(BS * SEQ_LEN, Idx[K]))
-    )
+    var hidden_state_2d = hidden_state.reshape(Coord(BS * SEQ_LEN, Idx[K]))
 
     comptime if is_cpu[target]():
         var c_alloc = alloc(
@@ -359,8 +360,8 @@ def _matmul_common[
             BS * SEQ_LEN * N
         )
         var c_nd = TileTensor(
-            c_device_buffer, row_major(Coord(BS * SEQ_LEN, Idx[N]))
-        )
+            c_device_buffer, row_major(len(c_device_buffer))
+        ).reshape(Coord(BS * SEQ_LEN, Idx[N]))
 
         matmul[
             transpose_b=True,

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, sqrt
-from std.memory import alloc, dealloc
+from std.memory import alloc
 from std.random import randn
 from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
@@ -32,11 +32,7 @@ from internal_utils._utils import InitializationType
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -51,7 +47,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def bench_decode[
@@ -460,7 +456,7 @@ def bench_prefill_sparse[
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
-    # Physical indices: cycle through all valid (page, offset) pairs.
+    # Physical indices use cyclic page and intra-page offsets.
     var indices_host_alloc = alloc[UInt32](
         {count = total_indices}
     ).into_managed()
@@ -481,53 +477,55 @@ def bench_prefill_sparse[
 
     ctx.synchronize()
 
-    dealloc(kv_host_alloc^)
-    dealloc(lut_host_alloc^)
-    dealloc(cache_lengths_host_alloc^)
-    dealloc(indices_host_alloc^)
-    dealloc(topk_lengths_host_alloc^)
-
     # Build PagedKVCacheCollection from device buffers.
     comptime kv_params = KVCacheStaticParams(
         num_heads=kv_num_heads, head_size=qk_depth, is_mla=True
     )
-    comptime kv_block_layout = Layout.row_major[6]()
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lut_layout = Layout.row_major[2]()
-
-    var kv_block_lt = LayoutTensor[qkv_type, kv_block_layout](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](
-                num_pages, 1, num_layers, page_size, kv_num_heads, qk_depth
-            )
-        ),
+    comptime Collection = PagedKVCacheCollection[
+        qkv_type,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime blocks_layout_type = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*blocks_layout_type.shape_types]()
+    blocks_shape[0] = Int64(num_pages)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*blocks_layout_type.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var blocks = (
+        TileTensor(blocks_device, row_major(len(blocks_device)))
+        .reshape(blocks_layout_type(blocks_shape, blocks_strides))
+        .as_unsafe_any_origin()
     )
-    var cache_lengths_lt = LayoutTensor[mut=False, .uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
+        .reshape(Coord(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var lut_lt = LayoutTensor[mut=False, .uint32, lut_layout, _](
-        lut_device.unsafe_ptr(),
-        RuntimeLayout[lut_layout].row_major(
-            IndexList[2](batch_size, num_pages)
-        ),
+    var lookup_table = (
+        TileTensor(lut_device, row_major(len(lut_device)))
+        .reshape(Coord(Int64(batch_size), Int64(num_pages)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-
-    var kv_collection = PagedKVCacheCollection[qkv_type, kv_params, page_size](
-        kv_block_lt,
-        cache_lengths_lt,
-        lut_lt,
+    var kv_collection = Collection(
+        blocks,
+        cache_lengths,
+        lookup_table,
         UInt32(s_q),
         UInt32(num_kv_tokens),
     )
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var indices_tt = TileTensor(
-        indices_device.unsafe_ptr(), row_major(total_indices)
-    )
+    var indices_tt = TileTensor(indices_device, row_major(len(indices_device)))
     var topk_lengths_tt = TileTensor(
-        topk_lengths_device.unsafe_ptr(), row_major(s_q)
+        topk_lengths_device, row_major(len(topk_lengths_device))
     )
 
     comptime config = MLASparseConfig[
@@ -607,6 +605,11 @@ def bench_prefill_sparse[
 
     ctx.synchronize()
 
+    _ = kv_host_alloc
+    _ = lut_host_alloc
+    _ = cache_lengths_host_alloc
+    _ = indices_host_alloc
+    _ = topk_lengths_host_alloc
     _ = blocks_device
     _ = lut_device
     _ = cache_lengths_device

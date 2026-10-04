@@ -43,7 +43,15 @@ from std.math import ceildiv, rsqrt
 from std.random import random_ui64, seed
 
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    Coord,
+    Idx,
+    TileTensor,
+    row_major,
+)
 from layout._fillers import random
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -149,16 +157,15 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
         sep="",
     )
 
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime kv_block_6d_layout = Layout.row_major[6]()
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
 
     var scale = rsqrt(Float32(head_size))
 
@@ -174,44 +181,42 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
         batch_size + 1
     )
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
-    var input_row_offsets_lt = LayoutTensor[
-        mut=False, .uint32, row_offsets_layout
-    ](
-        input_row_offsets_dev,
-        RuntimeLayout[row_offsets_layout].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var input_row_offsets_tt = (
+        TileTensor(input_row_offsets_dev, row_major(len(input_row_offsets_dev)))
+        .reshape(Coord(Int64(len(input_row_offsets_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     # --- Q ---
     var q_size = total_length * num_q_heads * head_size
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
-    var q_host_tt = LayoutTensor[dtype, q_ragged_layout](
-        q_host.unsafe_ptr(),
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var q_host_tt = TileTensor(q_host, row_major(len(q_host))).reshape(
+        Coord(total_length, Idx[num_q_heads], Idx[head_size])
     )
     random(q_host_tt)
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q_dev, q_host)
-    var q_lt = LayoutTensor[mut=False, dtype, q_ragged_layout](
-        q_dev,
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var q_tt = (
+        TileTensor(q_dev, row_major(len(q_dev)))
+        .reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        .as_imm()
     )
 
     # --- Paged KV blocks ---
     var num_paged_blocks = ceildiv(num_keys, page_size) * batch_size + 4
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_params.num_heads,
-        head_size,
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_paged_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        2 * num_layers * page_size * kv_params.num_heads * head_size
     )
+    blocks_strides[1] = Int64(
+        num_layers * page_size * kv_params.num_heads * head_size
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
     var kv_block_size = (
         num_paged_blocks
         * 2
@@ -221,17 +226,15 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
         * head_size
     )
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](kv_block_size)
-    var kv_block_host_tt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_host.unsafe_ptr(),
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_host_tt = TileTensor(
+        kv_block_host, row_major(len(kv_block_host))
+    ).reshape(blocks_layout)
     random(kv_block_host_tt)
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
     ctx.enqueue_copy(kv_block_dev, kv_block_host)
-    var kv_block_paged_lt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_dev,
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_paged_tt = TileTensor(
+        kv_block_dev, row_major(len(kv_block_dev))
+    ).reshape(blocks_layout)
 
     # --- Lookup table ---
     var full_pages = ceildiv(num_keys, page_size)
@@ -252,31 +255,30 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
     cache_lengths_host[0] = UInt32(cache_length)
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
-    var cache_lengths_lt = LayoutTensor[
-        mut=False, .uint32, cache_lengths_layout
-    ](
-        cache_lengths_dev,
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
+    var cache_lengths_tt = (
+        TileTensor(cache_lengths_dev, row_major(len(cache_lengths_dev)))
+        .reshape(Coord(Int64(len(cache_lengths_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     var paged_lut_dev = ctx.enqueue_create_buffer[.uint32](
         batch_size * lut_cols
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
-    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
-        paged_lut_dev,
-        RuntimeLayout[paged_lut_layout].row_major(
-            IndexList[2](batch_size, lut_cols)
-        ),
+    var paged_lut_tt = (
+        TileTensor(paged_lut_dev, row_major(len(paged_lut_dev)))
+        .reshape(Coord(Int64(batch_size), Int64(lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        # K and V views are disjoint kv_idx halves sharing one buffer origin;
-        # declare UnsafeAnyOrigin to opt out of exclusivity checking (same
-        # pattern as test_mha_sm100_1q_splitk_lse.mojo).
-        kv_block_paged_lt.as_unsafe_any_origin(),
-        cache_lengths_lt,
-        paged_lut_lt,
+    var kv_collection = Collection(
+        # K and V occupy disjoint per-page regions; erased origins allow
+        # the attention kernel to borrow both cache views.
+        kv_block_paged_tt.as_unsafe_any_origin(),
+        cache_lengths_tt,
+        paged_lut_tt,
         UInt32(valid_length),
         UInt32(num_keys),
     )
@@ -290,40 +292,34 @@ def execute_materialized_mask_test(ctx: DeviceContext) raises:
     # check_mask==False masks" in fa4_softmax.
     var test_out_size = total_length * num_q_heads * head_size
     var test_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
-    var test_out_lt = LayoutTensor[dtype, output_layout](
-        test_out_dev.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
-    )
+    var test_out_tt = TileTensor(
+        test_out_dev, row_major(len(test_out_dev))
+    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
 
     flash_attention[ragged=True](
-        test_out_lt,
-        q_lt,
+        test_out_tt,
+        q_tt,
         k_cache,
         v_cache,
         mat_mask,
-        input_row_offsets_lt,
+        input_row_offsets_tt,
         scale,
         ctx,
     )
 
     # ============ Run 2: mha_gpu_naive with the SAME MaterializedMask ========
     var ref_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
-    var ref_out_lt = LayoutTensor[dtype, output_layout](
-        ref_out_dev.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
-    )
+    var ref_out_tt = TileTensor(
+        ref_out_dev, row_major(len(ref_out_dev))
+    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
 
     mha_gpu_naive[ragged=True](
-        q_lt,
+        q_tt,
         k_cache,
         v_cache,
         mat_mask,
-        ref_out_lt,
-        input_row_offsets_lt,
+        ref_out_tt,
+        input_row_offsets_tt,
         scale,
         batch_size,
         valid_length,

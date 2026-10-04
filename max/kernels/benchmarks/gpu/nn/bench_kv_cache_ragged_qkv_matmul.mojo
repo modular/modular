@@ -30,12 +30,9 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
@@ -148,7 +145,6 @@ def execute_kv_cache_ragged_matmul[
     )
 
     # KV block tensor layout and buffer
-    comptime kv_block_static_shape = Layout.row_major[6]()
     var kv_block_dynamic_shape = IndexList[6](
         num_blocks,
         2,
@@ -157,30 +153,40 @@ def execute_kv_cache_ragged_matmul[
         num_kv_heads,
         head_dim,
     )
-    var kv_block_runtime_layout = RuntimeLayout[
-        kv_block_static_shape
-    ].row_major(kv_block_dynamic_shape)
     var kv_block_buffer = ctx.enqueue_create_buffer[dtype](
         kv_block_dynamic_shape.flattened_length()
     )
-    var kv_block_device = LayoutTensor[dtype, kv_block_static_shape](
-        kv_block_buffer, kv_block_runtime_layout
+    comptime Collection = ContinuousBatchingKVCacheCollection[
+        dtype,
+        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_blocks)
+    blocks_shape[1] = Int64(2)
+    blocks_shape[2] = Int64(num_layers)
+    blocks_shape[3] = Int64(max_seq_length_cache)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        2 * num_layers * max_seq_length_cache * num_kv_heads * head_dim
     )
+    blocks_strides[1] = Int64(
+        num_layers * max_seq_length_cache * num_kv_heads * head_dim
+    )
+    blocks_strides[2] = Int64(max_seq_length_cache * num_kv_heads * head_dim)
+    var kv_block_device = TileTensor(
+        kv_block_buffer, row_major(len(kv_block_buffer))
+    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
 
-    # Lookup table tensor layout and buffer
-    comptime lookup_table_static_shape = Layout(UNKNOWN_VALUE)
-    var lookup_table_dynamic_shape = IndexList[1](batch_size)
-    var lookup_table_runtime_layout = RuntimeLayout[
-        lookup_table_static_shape
-    ].row_major(lookup_table_dynamic_shape)
-    var lookup_table_buffer = ctx.enqueue_create_buffer[.uint32](
-        lookup_table_dynamic_shape.flattened_length()
-    )
-    var lookup_table_device = LayoutTensor[.uint32, lookup_table_static_shape](
-        lookup_table_buffer, lookup_table_runtime_layout
-    )
+    var lookup_table_buffer = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var lookup_table_device = TileTensor(
+        lookup_table_buffer, row_major(len(lookup_table_buffer))
+    ).reshape(Coord(Int64(batch_size)))
 
-    # hacky way to select random blocks.
+    # Sample distinct physical blocks so sequences do not alias KV storage.
     with lookup_table_buffer.map_to_host() as lookup_table_host:
         var block_idx_set = Set[Int]()
         var idx = 0
@@ -193,53 +199,21 @@ def execute_kv_cache_ragged_matmul[
             lookup_table_host[idx] = UInt32(randval)
             idx += 1
 
-    # Cache lengths tensor layout and buffer
-    comptime cache_lengths_static_shape = Layout(UNKNOWN_VALUE)
-    var cache_lengths_dynamic_shape = IndexList[1](batch_size)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_static_shape
-    ].row_major(cache_lengths_dynamic_shape)
-    var cache_lengths_buffer = ctx.enqueue_create_buffer[.uint32](
-        cache_lengths_dynamic_shape.flattened_length()
-    )
-    var cache_lengths_device = LayoutTensor[
-        .uint32, cache_lengths_static_shape
-    ](cache_lengths_buffer, cache_lengths_runtime_layout)
+    var cache_lengths_buffer = ctx.enqueue_create_buffer[.uint32](batch_size)
+    var cache_lengths_device = TileTensor(
+        cache_lengths_buffer, row_major(len(cache_lengths_buffer))
+    ).reshape(Coord(Int64(batch_size)))
 
     # Initialize cache lengths on host
     with cache_lengths_buffer.map_to_host() as cache_lengths_host:
         for i in range(batch_size):
             cache_lengths_host[i] = 10
 
-    var kv_collection_device = ContinuousBatchingKVCacheCollection[
-        dtype,
-        KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
-    ](
-        LayoutTensor[dtype, kv_block_static_shape](
-            # The fused QKV matmul writes both the `k` and `v` cache views, which are
-            # disjoint kv_idx halves of one `blocks` buffer sharing its origin, so the
-            # nested-origin exclusivity check rejects passing both. Declare kv_block_device
-            # as `AnyOrigin` to opt of out exclusivity checking.
-            kv_block_device.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[kv_block_static_shape](
-                kv_block_runtime_layout.shape.value,
-                kv_block_runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cache_lengths_static_shape](
-            cache_lengths_device.ptr,
-            RuntimeLayout[cache_lengths_static_shape](
-                cache_lengths_runtime_layout.shape.value,
-                cache_lengths_runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lookup_table_static_shape](
-            lookup_table_device.ptr,
-            RuntimeLayout[lookup_table_static_shape](
-                lookup_table_runtime_layout.shape.value,
-                lookup_table_runtime_layout.stride.value,
-            ),
-        ),
+    # K and V occupy disjoint regions per block; the launch writes both.
+    var kv_collection_device = Collection(
+        kv_block_device.as_unsafe_any_origin(),
+        cache_lengths_device.as_imm().as_unsafe_any_origin(),
+        lookup_table_device.as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_length),
         UInt32(max_context_length),
     )
@@ -261,12 +235,12 @@ def execute_kv_cache_ragged_matmul[
         @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
             _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
-                hidden_state_device.to_layout_tensor(),
-                prefix_sums_device_tensor.to_layout_tensor(),
-                weight_device.to_layout_tensor(),
+                hidden_state_device.as_imm().as_unsafe_any_origin(),
+                prefix_sums_device_tensor.as_imm(),
+                weight_device.as_imm().as_unsafe_any_origin(),
                 k_cache_device,
                 v_cache_device,
-                output_device.to_layout_tensor(),
+                output_device,
                 ctx,
             )
 

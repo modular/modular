@@ -1325,12 +1325,12 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
         group_size=group_size,
         has_zp=has_zp,
     ](
-        hidden_state.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
-        weight.to_layout_tensor(),
+        hidden_state.to_tile_tensor[.int64](),
+        input_row_offsets.to_tile_tensor[.int64](),
+        weight.to_tile_tensor[.int64](),
         kv_collection,
         layer_idx,
-        output.to_layout_tensor(),
+        output.to_tile_tensor[.int64](),
         ctx,
     )
 
@@ -1383,9 +1383,8 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
             `(sum(seq_lens), num_heads * head_size)` for the Q
             projections; K and V projections are written in place to the
             cache.
-        bias: One-dimensional bias tensor of length
-            `num_kv_heads * head_size` added to the K and V projections
-            before they are written to the cache.
+        bias: One-dimensional bias tensor concatenating Q, K, and V
+            biases in the same order as the weight rows.
         ctx: Device context used for kernel dispatch.
     """
     generic_fused_qkv_matmul_kv_cache_paged_ragged_bias[
@@ -1393,13 +1392,13 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
         group_size=group_size,
         has_zp=has_zp,
     ](
-        hidden_state.to_layout_tensor(),
-        input_row_offsets.to_layout_tensor(),
-        weight.to_layout_tensor(),
+        hidden_state.to_tile_tensor[.int64](),
+        input_row_offsets.to_tile_tensor[.int64](),
+        weight.to_tile_tensor[.int64](),
         kv_collection,
         layer_idx,
-        output.to_layout_tensor(),
-        bias.to_layout_tensor(),
+        output.to_tile_tensor[.int64](),
+        bias.to_tile_tensor[.int64](),
         ctx,
     )
 

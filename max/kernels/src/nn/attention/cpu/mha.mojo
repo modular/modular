@@ -35,11 +35,13 @@ from kv_cache.types import KVCacheT
 from layout import (
     Layout,
     LayoutTensor,
+    Coord,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
+from layout.coord import coord_to_index_list
 from layout.int_tuple import to_index_list
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.accumulate import _Accumulator
@@ -616,11 +618,9 @@ struct _FlashAttention[
         if do_sink:
             sink_logit = sink_weight.value()
 
-        comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
         for m in range(count_m):
-            var qk_row = LayoutTensor[Self.dtype, layout_1d, _](
-                qk_row_ptr,
-                RuntimeLayout[layout_1d].row_major(IndexList[1](kv_seq_cnt)),
+            var qk_row = TileTensor(
+                qk_row_ptr, row_major(Coord(Int64(kv_seq_cnt)))
             )
 
             @__parameter
@@ -638,8 +638,8 @@ struct _FlashAttention[
             def output_fn[
                 _dtype: DType, width: SIMDLength, rank: Int
             ](idx: Int, val: SIMD[_dtype, width]):
-                qk_row.store(
-                    IndexList[1](idx), rebind[SIMD[Self.dtype, width]](val)
+                qk_row.store[alignment=align_of[Self.dtype]()](
+                    Coord(idx), rebind[SIMD[Self.dtype, width]](val)
                 )
 
             # Update the row with the scale and mask. Find the maximum value
@@ -655,7 +655,7 @@ struct _FlashAttention[
                 _simd_max_elementwise,
                 _simd_max,
                 output_fn,
-            ](qk_row.size(), max_vals[m])
+            ](qk_row.num_elements(), max_vals[m])
 
             if do_sink:
                 max_val = max(max_val, sink_logit)
@@ -680,7 +680,7 @@ struct _FlashAttention[
                 _simd_sum_elementwise,
                 _simd_sum,
                 output_fn,
-            ](qk_row.size(), 0)
+            ](qk_row.num_elements(), 0)
 
             if do_sink:
                 accum_val += exp(sink_logit - max_val)
@@ -992,21 +992,31 @@ def _flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
     ] = None,
     ctx: Optional[DeviceContext] = None,
 ):
-    var num_batches = output.dim[0]()
-    var max_seq_len = output.dim[1]()
-    var num_heads = output.dim[rank - 2]() if rank == 4 else 1
-    var depth_dim = output.dim[rank - 1]()
+    comptime assert q.rank == q.flat_rank == rank
+    comptime assert output.rank == output.flat_rank == rank
+    comptime OutputType = type_of(output)
+
+    def output_static_shape() -> IndexList[rank]:
+        var result = IndexList[rank]()
+        comptime for i in range(rank):
+            result[i] = OutputType.static_shape[i]
+        return result
+
+    var num_batches = Int(output.dim[0]())
+    var max_seq_len = Int(output.dim[1]())
+    var num_heads = Int(output.dim[rank - 2]()) if rank == 4 else 1
+    var depth_dim = Int(output.dim[rank - 1]())
     var kv_cache_len = v_shape[1] - max_seq_len
     var num_kv_heads = k_shape[rank - 2] if rank == 4 else 1
 
@@ -1015,7 +1025,7 @@ def _flash_attention[
     def input_q_ptr_fn(
         coords: IndexList[rank],
     ) -> UnsafePointer[Scalar[dtype], q_origin]:
-        var idx = q._offset(coords)
+        var idx = q.layout(Coord(coords))
         return q.ptr + idx
 
     @inline(.always)
@@ -1023,7 +1033,7 @@ def _flash_attention[
     def output_ptr_fn(
         coords: IndexList[rank],
     ) -> UnsafePointer[Scalar[dtype], output_origin]:
-        var idx = output._offset(coords)
+        var idx = output.layout(Coord(coords))
         return output.ptr + idx
 
     @inline(.always)
@@ -1061,9 +1071,7 @@ def _flash_attention[
         # cross attention, which has different KV lengths.
         q_length_fn,
         kv_cache_length_fn,
-        rebind[IndexList[rank]](
-            to_index_list[output.rank](output.layout.shape)
-        ),
+        output_static_shape(),
     ].run(
         num_batches,
         num_heads,
@@ -1093,11 +1101,11 @@ def flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
     sink_weights: OptionalReg[
         LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
@@ -1131,7 +1139,8 @@ def flash_attention[
         mask_shape: Shape of the attention mask tensor.
         output: Output tensor to write the attention results into.
         scale: Scaling factor applied to the query-key dot products.
-        sink_weights: Optional per-head attention sink weights.
+        sink_weights: Optional per-head attention sink weights. The shared
+            cache core still uses a legacy one-dimensional view.
         ctx: Optional device context for controlling parallelism.
     """
     _flash_attention[input_k_fn, input_v_fn, input_mask_fn](
@@ -1167,14 +1176,14 @@ def flash_attention_split_kv[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
     k_cache_shape: IndexList[rank + 1],
     v_cache_shape: IndexList[rank + 1],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: Optional[DeviceContext] = None,
 ) raises:
@@ -1232,12 +1241,15 @@ def flash_attention_split_kv[
         return String(";").join(
             Span(
                 [
-                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
                     trace_arg("k", k_shape),
                     trace_arg("v", v_shape),
                     trace_arg("k_cache", k_cache_shape),
                     trace_arg("v_cache", v_cache_shape),
-                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
                 ]
             )
         )
@@ -1510,7 +1522,8 @@ def flash_attention_kv_cache[
         mask: Additive attention mask tensor.
         scale: Scaling factor applied to the query-key dot products.
         output: Output tensor to write the attention results into.
-        sink_weights: Optional per-head attention sink weights."""
+        sink_weights: Optional per-head attention sink weights. The shared
+            cache core still uses a legacy one-dimensional view."""
 
     @inline(.always)
     @__parameter
@@ -1560,7 +1573,8 @@ def flash_attention_kv_cache[
         mask: MHAMask applied to the attention scores.
         scale: Scaling factor applied to the query-key dot products.
         output: Output tensor to write the attention results into.
-        sink_weights: Optional per-head attention sink weights."""
+        sink_weights: Optional per-head attention sink weights. The shared
+            cache core still uses a legacy one-dimensional view."""
 
     @inline(.always)
     @__parameter
@@ -1635,7 +1649,8 @@ def flash_attention_kv_cache[
             scores.
         scale: Scaling factor applied to the query-key dot products.
         output: Output tensor to write the attention results into.
-        sink_weights: Optional per-head attention sink weights.
+        sink_weights: Optional per-head attention sink weights. The shared
+            cache core still uses a legacy one-dimensional view.
     """
 
     @inline(.always)

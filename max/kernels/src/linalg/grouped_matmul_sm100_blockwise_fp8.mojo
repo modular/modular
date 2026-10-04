@@ -52,6 +52,8 @@ from max.gpu.sync import (
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 from layout import (
+    Coord,
+    Idx,
     ImmTileTensor,
     IntTuple,
     Layout,
@@ -817,16 +819,16 @@ def _tile_fits_full_tma[
 def _copy_partial_a_tile_blockwise_from_gmem[
     a_type: DType,
     a_scales_type: DType,
-    a_gmem_layout: Layout,
-    a_scales_gmem_layout: Layout,
+    a_gmem_layout: TensorLayout,
+    a_scales_gmem_layout: TensorLayout,
     *,
     a_smem_layout: Layout,
     a_scales_smem_layout: Layout,
     block_tile_shape: IndexList[3],
     a_swizzle: TensorMapSwizzle,
 ](
-    a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
-    a_scales_gmem: LayoutTensor[
+    a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
+    a_scales_gmem: TileTensor[
         a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
     ],
     a_smem_tile: LayoutTensor[
@@ -858,6 +860,9 @@ def _copy_partial_a_tile_blockwise_from_gmem[
     needs to be safe, not exact. Writes go to the physical SMEM offset produced
     by `make_swizzle` so the MMA descriptor's swizzle XOR reads back the value
     we just stored. All lanes of the calling warp must execute this."""
+    comptime assert a_gmem.rank == a_scales_gmem.rank == 2
+    comptime assert a_gmem.flat_rank == a_scales_gmem.flat_rank == 2
+
     comptime BM = block_tile_shape[0]
     comptime BK = block_tile_shape[2]
     comptime a_sw = make_swizzle[a_type, a_swizzle]()
@@ -881,7 +886,9 @@ def _copy_partial_a_tile_blockwise_from_gmem[
         var g_row = m_tile_global_start + row
         var av = zero_vec
         if g_row < expert_end_row:
-            av = a_gmem.load[width=VEC](g_row, iter_idx * BK + k0)
+            av = a_gmem.load[width=VEC, alignment=align_of[a_type]()](
+                Coord(g_row, iter_idx * BK + k0)
+            )
         (a_smem_tile.ptr + Int(a_sw(Int32(row * BK + k0)))).store(av)
 
     # a_scales: BM scalars total; each lane writes one row per outer iteration.
@@ -909,7 +916,7 @@ def load_AB[
     a_scales_tile_shape: IndexList[a_scales_tile_rank],
     a_scales_desc_shape: IndexList[a_scales_tile_rank],
     num_pipeline_stages: Int,
-    expert_ids_layout: Layout,
+    expert_ids_layout: TensorLayout,
     /,
     *,
     a_smem_layout: Layout,
@@ -944,7 +951,7 @@ def load_AB[
     iter_idx: Int,
     elect_one_cta: Bool,
     scheduler: TileScheduler,
-    expert_ids: LayoutTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
+    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
 ):
     """Issues multicast TMA loads for A, B, and A scales into the producer stage of the load-MMA pipeline.
 
@@ -1017,6 +1024,9 @@ def load_AB[
     comptime expected_bytes = cta_group * (
         a_expected_bytes + b_expected_bytes + a_scales_expected_bytes
     )
+
+    comptime assert expert_ids.rank == 1
+    comptime assert expert_ids.flat_rank == 1
 
     comptime a_tma_load_size = _idx_product[a_tile_rank, a_desc_shape]()
     comptime b_tma_load_size = _idx_product[b_tile_rank, b_desc_shape]()
@@ -1106,9 +1116,9 @@ def load_AB_partial[
     b_tile_shape: IndexList[b_tile_rank],
     b_desc_shape: IndexList[b_tile_rank],
     num_pipeline_stages: Int,
-    expert_ids_layout: Layout,
-    a_gmem_layout: Layout,
-    a_scales_gmem_layout: Layout,
+    expert_ids_layout: TensorLayout,
+    a_gmem_layout: TensorLayout,
+    a_scales_gmem_layout: TensorLayout,
     /,
     *,
     a_smem_layout: Layout,
@@ -1118,8 +1128,8 @@ def load_AB_partial[
     cta_group: Int = 1,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
-    a_scales_gmem: LayoutTensor[
+    a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
+    a_scales_gmem: TileTensor[
         a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
     ],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
@@ -1139,7 +1149,7 @@ def load_AB_partial[
     iter_idx: Int,
     elect_one_cta: Bool,
     scheduler: TileScheduler,
-    expert_ids: LayoutTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
+    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     expert_end_row: Int,
     m_tile_global_start: Int,
 ):
@@ -1198,6 +1208,10 @@ def load_AB_partial[
         m_tile_global_start: Global M-row start of the current tile within
             the A buffer.
     """
+    comptime assert a_gmem.rank == a_scales_gmem.rank == 2
+    comptime assert a_gmem.flat_rank == a_scales_gmem.flat_rank == 2
+    comptime assert expert_ids.rank == expert_ids.flat_rank == 1
+
     # `expect_bytes` below only accounts for B's TMA; A is populated by the
     # calling warp under a `syncwarp` + `fence_async_view_proxy`. A peer CTA
     # in a cluster would see A unsynchronised on the multicast path.
@@ -1577,8 +1591,8 @@ def promote_accumulators[
     accum_layout: Layout,
     a_scales_type: DType,
     b_scales_type: DType,
-    b_scales_layout: Layout,
-    expert_ids_layout: Layout,
+    b_scales_layout: TensorLayout,
+    expert_ids_layout: TensorLayout,
     /,
     *,
     a_scales_smem_layout: Layout,
@@ -1589,7 +1603,7 @@ def promote_accumulators[
     is_lower_frag_required: Bool,
     num_output_warps: Int,
 ](
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     b_scales_n: Int,
     a_scales_smem_base: UnsafePointer[
         mut=True, Scalar[a_scales_type], _, address_space=.SHARED
@@ -1616,7 +1630,7 @@ def promote_accumulators[
     stage_stride_cols: Int,
     k_iter: Int,
     problem_shape: StaticTuple[Int32, 3],
-    expert_ids: LayoutTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
+    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     scheduler: TileScheduler,
 ):
     """Loads MMA outputs from TMEM and accumulates them into register C fragments with blockwise FP8 scaling.
@@ -1686,6 +1700,9 @@ def promote_accumulators[
         scheduler: Tile scheduler tracking the current group and work
             tile.
     """
+    comptime assert b_scales.rank == b_scales.flat_rank == 2
+    comptime assert expert_ids.rank == expert_ids.flat_rank == 1
+
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
@@ -1999,16 +2016,16 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     a_scales_desc_shape: IndexList[a_scales_tile_rank],
     a_scales_type: DType,
     OffsetsLayoutType: TensorLayout,
-    a_gmem_layout: Layout,
-    a_scales_gmem_layout: Layout,
+    a_gmem_layout: TensorLayout,
+    a_scales_gmem_layout: TensorLayout,
     b_scales_type: DType,
-    b_scales_layout: Layout,
+    b_scales_layout: TensorLayout,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b],
     num_pipeline_stages: Int,
     cluster_shape: StaticTuple[Int32, 3],
     expert_n: Int,
-    expert_ids_layout: Layout,
+    expert_ids_layout: TensorLayout,
     b_scales_n: Int,
 ](
     num_active_experts: Int32,
@@ -2026,14 +2043,20 @@ def blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
     ],
     a_offsets: ImmTileTensor[.uint32, OffsetsLayoutType, ImmutAnyOrigin],
     num_iters: Int32,
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
-    expert_ids: LayoutTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
+    b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
+    expert_ids: TileTensor[.int32, expert_ids_layout, ImmutAnyOrigin],
     problem_shape: StaticTuple[Int32, 3],
-    a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
-    a_scales_gmem: LayoutTensor[
+    a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
+    a_scales_gmem: TileTensor[
         a_scales_type, a_scales_gmem_layout, ImmutAnyOrigin
     ],
 ):
+    comptime assert a_gmem.rank == a_scales_gmem.rank == b_scales.rank == 2
+    comptime assert (
+        a_gmem.flat_rank == a_scales_gmem.flat_rank == b_scales.flat_rank == 2
+    )
+    comptime assert expert_ids.rank == expert_ids.flat_rank == 1
+
     var _num_active_experts = Int(num_active_experts)
     var _num_iters = Int(num_iters)
     comptime num_output_warps = 4
@@ -2643,13 +2666,15 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
             grouped matmul results.
         a: Input activation tensor of shape `[total_tokens, K]` in FP8.
             `K` must be a multiple of `BK`.
-        b: Input weight tensor of shape `[num_experts, N, K]` in FP8.
+        b: Contiguous row-major weight tensor of shape
+            `[num_experts, N, K]` in FP8.
         a_scales: Per-block scales for `A` of shape `[K // BK,
             total_tokens]` where `BK` is the scaling block size. The
             `total_tokens * size_of(a_scales_type)` byte stride must be
             16-byte aligned or this kernel falls back to the naive path.
-        b_scales: Per-block scales for `B` of shape `[num_experts, N // BN,
-            K // BK]` where `BN` and `BK` are the scaling block sizes.
+        b_scales: Contiguous row-major scales for `B` of shape
+            `[num_experts, N // BN, K // BK]` where `BN` and `BK` are the
+            scaling block sizes.
         a_offsets: Cumulative row offsets per expert, length
             `num_active_experts + 1`. Entry `i + 1` minus entry `i` gives
             the row count for expert `i`.
@@ -2698,35 +2723,34 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     # masking the K-tail, so any caller must size K to a BK multiple.
     comptime assert K % BK == 0, "K must be a multiple of BK"
 
-    # Convert TileTensors to LayoutTensors at the kernel boundary.
-    var a_tensor = a.to_layout_tensor()
-    var c_tensor = c.to_layout_tensor()
-    var a_scales_tensor = a_scales.to_layout_tensor()
-    var a_offsets_tensor = a_offsets.to_layout_tensor()
-    var expert_ids_tensor = expert_ids.to_layout_tensor()
+    comptime assert a.rank == c.rank == a_scales.rank == 2
+    comptime assert a.flat_rank == c.flat_rank == a_scales.flat_rank == 2
+    comptime assert b.rank == b_scales.rank == 3
+    comptime assert b.flat_rank == b_scales.flat_rank == 3
+    comptime assert a_offsets.rank == expert_ids.rank == 1
+    comptime assert a_offsets.flat_rank == expert_ids.flat_rank == 1
+    comptime assert b.is_row_major and b_scales.is_row_major
 
     # `create_tma_tile` rejects an `a_scales` whose K-row byte stride
     # (= total_m * size_of(scales)) is not 16-byte aligned. Detect that
     # at the host and fall back to the naive grouped FP8 kernel — the
     # per-tile `_tile_fits_full_tma` predicate alone is not enough,
     # because descriptor creation fails before any tile runs.
-    var total_m = Int(a_scales_tensor.dim(1))
+    var total_m = Int(a_scales.dim(1))
     if total_m * size_of[a_scales_type]() % 16 != 0:
-        var b_tensor_n = b.to_layout_tensor()
-        var b_scales_tensor_n = b_scales.to_layout_tensor()
         naive_blockwise_scaled_fp8_grouped_matmul[
             BLOCK_DIM_M=16,
             BLOCK_DIM_N=16,
             transpose_b=transpose_b,
             scales_granularity_mnk=Index(1, 128, 128),
         ](
-            c_tensor,
-            a_tensor,
-            b_tensor_n,
-            a_scales_tensor,
-            b_scales_tensor_n,
-            a_offsets_tensor,
-            expert_ids_tensor,
+            c,
+            a,
+            b,
+            a_scales,
+            b_scales,
+            a_offsets,
+            expert_ids,
             max_num_tokens_per_expert,
             num_active_experts,
             ctx,
@@ -2736,15 +2760,11 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     var a_tma_op = create_tensor_tile[
         Index(BM // config.cluster_shape[1], BK),
         swizzle_mode=config.a_swizzle,
-    ](ctx, a_tensor)
+    ](ctx, a)
 
     comptime expert_n = N
     # Reshape 3D weights to 2D for TMA.
-    var b_2d = LayoutTensor[
-        b_type,
-        Layout.row_major(num_experts * N, K),
-        address_space=.GENERIC,
-    ](b.ptr.as_unsafe_any_origin())
+    var b_2d = b.reshape(Coord(Idx[num_experts * N], Idx[K]))
     var b_tma_op = create_tensor_tile[
         Index(
             BN // (config.cluster_shape[0] // config.cta_group), BK
@@ -2754,7 +2774,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         swizzle_mode=config.b_swizzle,
     ](ctx, b_2d)
 
-    var a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales_tensor)
+    var a_scales_tma_op = create_tma_tile[1, BM](ctx, a_scales)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
@@ -2766,7 +2786,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     var c_tma_op = create_tensor_tile[
         c_tma_tile_shape,
         swizzle_mode=config.c_swizzle,
-    ](ctx, c_tensor)
+    ](ctx, c)
 
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime a_smem_bytes_per_stage = BM * BK * size_of[a_type]()
@@ -2840,11 +2860,9 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
     comptime b_scales_n = b_scales.static_shape[1]
     comptime b_scales_k = b_scales.static_shape[2]
     comptime a_scales_k = a_scales.static_shape[0]
-    var b_scales_2d = LayoutTensor[
-        b_scales_type,
-        Layout.row_major(b_scales_expert * b_scales_n, b_scales_k),
-        address_space=.GENERIC,
-    ](b_scales.ptr.as_unsafe_any_origin())
+    var b_scales_2d = b_scales.reshape(
+        Coord(Idx[b_scales_expert * b_scales_n], Idx[b_scales_k])
+    )
 
     comptime kernel = blackwell_gmm_tma_umma_warp_specialized_blockwise_fp8_kernel[
         a_type,
@@ -2864,10 +2882,10 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         type_of(a_scales_tma_op).desc_shape,
         a_scales_type,
         type_of(a_offsets).LayoutType,
-        type_of(a_tensor).layout,
-        type_of(a_scales_tensor).layout,
+        type_of(a.layout),
+        type_of(a_scales.layout),
         b_scales_type,
-        b_scales_2d.layout,
+        type_of(b_scales_2d.layout),
         transpose_b=transpose_b,
         config=config,
         num_pipeline_stages=max_pipeline_stages,
@@ -2877,7 +2895,7 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
             Int32(config.cluster_shape[2]),
         ),
         expert_n=expert_n,
-        expert_ids_layout=type_of(expert_ids_tensor).layout,
+        expert_ids_layout=type_of(expert_ids.layout),
         b_scales_n=b_scales_n,
     ]
 
@@ -2900,15 +2918,15 @@ def grouped_matmul_sm100_blockwise_scaled_fp8_persistent[
         a_tma_op,
         b_tma_op,
         c_tma_op,
-        c_tensor.ptr,
+        c.ptr.as_unsafe_any_origin(),
         a_scales_tma_op,
         a_offsets.as_unsafe_any_origin(),
         Int32(ceildiv(K, BK)),
-        b_scales_2d,
-        expert_ids_tensor,
+        b_scales_2d.as_unsafe_any_origin(),
+        expert_ids.as_unsafe_any_origin(),
         problem_shape,
-        a_tensor,
-        a_scales_tensor,
+        a.as_unsafe_any_origin(),
+        a_scales.as_unsafe_any_origin(),
         grid_dim=grid_dim,
         # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps
         block_dim=(32 * 7),
@@ -3060,14 +3078,6 @@ def grouped_matmul_dynamic_scaled_fp8[
             return
 
         else:
-            # Convert to LayoutTensor for naive fallback.
-            var a_tensor = a.to_layout_tensor()
-            var b_tensor = b.to_layout_tensor()
-            var c_tensor = c.to_layout_tensor()
-            var a_scales_tensor = a_scales.to_layout_tensor()
-            var b_scales_tensor = b_scales.to_layout_tensor()
-            var a_offsets_tensor = a_offsets.to_layout_tensor()
-            var expert_ids_tensor = expert_ids.to_layout_tensor()
             naive_blockwise_scaled_fp8_grouped_matmul[
                 BLOCK_DIM_M=16,
                 BLOCK_DIM_N=16,
@@ -3078,13 +3088,13 @@ def grouped_matmul_dynamic_scaled_fp8[
                     k_scale_granularity,
                 ),
             ](
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                a_scales_tensor,
-                b_scales_tensor,
-                a_offsets_tensor,
-                expert_ids_tensor,
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                a_offsets,
+                expert_ids,
                 max_num_tokens_per_expert,
                 num_active_experts,
                 ctx,

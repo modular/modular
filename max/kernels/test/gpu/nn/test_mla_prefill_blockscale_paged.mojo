@@ -54,11 +54,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.memory import alloc
@@ -255,84 +251,59 @@ def run_test_paged_prefill_blockscale[
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
-        total_pages,
-        1,  # kv_dim2 = 1 for is_mla
-        NUM_LAYERS,
-        page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
+
+    var blocks_tt = TileTensor(
+        blocks_device, row_major(len(blocks_device))
+    ).reshape(
+        Coord(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        )
     )
-    var scales_shape = IndexList[6](
-        total_pages,
-        1,
-        NUM_LAYERS,
-        page_size,
-        kv_params.num_heads,
-        HEAD_DIM_GRAN,
+    var scales_tt = TileTensor(
+        scales_device, row_major(len(scales_device))
+    ).reshape(
+        Coord(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[HEAD_DIM_GRAN],
+        )
     )
 
-    var blocks_lt = LayoutTensor[k_rope_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-    var scales_lt = LayoutTensor[.float32, Layout.row_major[6]()](
-        scales_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(scales_shape),
-    )
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(len(cache_lengths_device))
+    ).reshape(Coord(Int64(batch_size)))
 
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
+    var lookup_table_tt = TileTensor(
+        lookup_table_device, row_major(len(lookup_table_device))
+    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
 
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         k_rope_type,
         kv_params,
         page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=SCALE_BLOCK_SIZE,
-    ](
-        LayoutTensor[k_rope_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),  # max_seq_length
         UInt32(num_keys),  # max_cache_length
         # Pass the FP32 scales tensor.
-        LayoutTensor[.float32, Layout.row_major[6]()](
-            scales_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                scales_lt.runtime_layout.shape.value,
-                scales_lt.runtime_layout.stride.value,
-            ),
-        ),
+        rebind[Collection.scales_tt_type](scales_tt.as_unsafe_any_origin()),
     )
 
     var kv_cache = kv_collection.get_key_cache(0)

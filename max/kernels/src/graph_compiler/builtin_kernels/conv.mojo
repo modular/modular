@@ -459,16 +459,7 @@ struct Conv:
             comptime assert (
                 not filter_is_fcrs
             ), "Filter layout FCRS is not supported on CPU"
-            # Pass LayoutTensor layouts explicitly so ConvDirectNHWC gets the
-            # same compile-time shape/stride info as before the TileTensor
-            # migration.
-            comptime _input_layout = input.static_spec.to_layout()
-            comptime _filter_layout = filter.static_spec.to_layout()
-            comptime _output_layout = output.static_spec.to_layout()
             conv_nhwc_direct[
-                _input_layout,
-                _filter_layout,
-                _output_layout,
                 input.dtype,
                 filter.dtype,
                 output.dtype,

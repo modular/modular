@@ -19,14 +19,13 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from std.memory import unsafe_memcpy
 from nn.attention.cpu.mha import flash_attention_kv_cache
 from nn.attention.mha_mask import CausalMask
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_not_equal
 
-from std.utils import IndexList
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
@@ -43,7 +42,7 @@ def execute_ragged_flash_attention[
 ) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params, ...
+        dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
     ]
 
     var batch_size = len(valid_lengths_list)
@@ -59,22 +58,18 @@ def execute_ragged_flash_attention[
         cache_lengths_list
     ), "expected valid_lengths and cache_lengths size to be equal"
 
-    comptime layout_1d = Layout.row_major[1]()
     var input_row_offsets_buf = List(length=batch_size + 1, fill=UInt32(0))
-    var input_row_offsets = LayoutTensor[.uint32, layout_1d](
-        input_row_offsets_buf,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
-    )
+    var input_row_offsets = TileTensor(
+        Span(input_row_offsets_buf), row_major(len(input_row_offsets_buf))
+    ).reshape(Coord(Int64(batch_size + 1)))
     var cache_lengths_buf = List(length=batch_size, fill=UInt32(0))
-    var cache_lengths = LayoutTensor[.uint32, layout_1d](
-        cache_lengths_buf,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-    )
+    var cache_lengths = TileTensor(
+        Span(cache_lengths_buf), row_major(len(cache_lengths_buf))
+    ).reshape(Coord(Int64(batch_size)))
     var valid_lengths_buf = List(length=batch_size, fill=UInt32(0))
-    var valid_lengths = LayoutTensor[.uint32, layout_1d](
-        valid_lengths_buf,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-    )
+    var valid_lengths = TileTensor(
+        Span(valid_lengths_buf), row_major(len(valid_lengths_buf))
+    ).reshape(Coord(Int64(batch_size)))
 
     var total_length = 0
     var max_context_length = 0
@@ -90,20 +85,18 @@ def execute_ragged_flash_attention[
         total_length += valid_lengths_list[i]
     input_row_offsets[batch_size] = UInt32(total_length)
 
-    comptime layout_3d = Layout.row_major[3]()
+    # CPU cache attention specializes its work count on the query head axis.
     var q_ragged_buf = List(
         length=total_length * num_q_heads * kv_params.head_size,
         fill=Scalar[dtype](0),
     )
-    var q_ragged = LayoutTensor[dtype, layout_3d](
-        q_ragged_buf,
-        RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, kv_params.head_size)
-        ),
+    var q_ragged = TileTensor(
+        Span(q_ragged_buf), row_major(len(q_ragged_buf))
+    ).reshape(
+        Coord(Int64(total_length), Idx[num_q_heads], Idx[kv_params.head_size])
     )
     random(q_ragged)
 
-    comptime layout_4d = Layout.row_major[4]()
     var q_padded_buf = List(
         length=batch_size
         * max_prompt_length
@@ -111,16 +104,15 @@ def execute_ragged_flash_attention[
         * kv_params.head_size,
         fill=Scalar[dtype](0),
     )
-    var q_padded = LayoutTensor[dtype, layout_4d](
-        q_padded_buf,
-        RuntimeLayout[layout_4d].row_major(
-            IndexList[4](
-                batch_size,
-                max_prompt_length,
-                num_q_heads,
-                kv_params.head_size,
-            )
-        ),
+    var q_padded = TileTensor(
+        Span(q_padded_buf), row_major(len(q_padded_buf))
+    ).reshape(
+        Coord(
+            Int64(batch_size),
+            Int64(max_prompt_length),
+            Idx[num_q_heads],
+            Idx[kv_params.head_size],
+        )
     )
 
     # copy over the ragged values to the padded tensor.
@@ -128,11 +120,9 @@ def execute_ragged_flash_attention[
     for bs in range(batch_size):
         var unpadded_seq_len = valid_lengths_list[bs]
         var ragged_start_idx = Int(input_row_offsets[bs])
-        var padded_ptr = q_padded.ptr + q_padded._offset(
-            IndexList[4](bs, 0, 0, 0)
-        )
-        var ragged_ptr = q_ragged.ptr + q_ragged._offset(
-            IndexList[3](ragged_start_idx, 0, 0)
+        var padded_ptr = q_padded.ptr + q_padded.layout(Coord(bs, 0, 0, 0))
+        var ragged_ptr = q_ragged.ptr + q_ragged.layout(
+            Coord(ragged_start_idx, 0, 0)
         )
         unsafe_memcpy(
             dest=padded_ptr,
@@ -146,33 +136,30 @@ def execute_ragged_flash_attention[
         * max_prompt_length
         * num_q_heads
         * kv_params.head_size,
-        fill=Scalar[dtype](0),
+        fill=Scalar[dtype](9999),
     )
-    var ref_output = LayoutTensor[dtype, layout_4d](
-        ref_output_buf,
-        RuntimeLayout[layout_4d].row_major(
-            IndexList[4](
-                batch_size,
-                max_prompt_length,
-                num_q_heads,
-                kv_params.head_size,
-            )
-        ),
+    var ref_output = TileTensor(
+        Span(ref_output_buf), row_major(len(ref_output_buf))
+    ).reshape(
+        Coord(
+            Int64(batch_size),
+            Int64(max_prompt_length),
+            Idx[num_q_heads],
+            Idx[kv_params.head_size],
+        )
     )
 
     var test_output_buf = List(
         length=total_length * num_q_heads * kv_params.head_size,
-        fill=Scalar[dtype](0),
+        fill=Scalar[dtype](-9999),
     )
-    var test_output = LayoutTensor[dtype, layout_3d](
-        test_output_buf,
-        RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, kv_params.head_size)
-        ),
+    var test_output = TileTensor(
+        Span(test_output_buf), row_major(len(test_output_buf))
+    ).reshape(
+        Coord(Int64(total_length), Idx[num_q_heads], Idx[kv_params.head_size])
     )
 
     # initialize our KVCache
-    comptime layout_6d = Layout.row_major[6]()
     var kv_block_buf = List(
         length=num_blocks
         * 2
@@ -182,25 +169,26 @@ def execute_ragged_flash_attention[
         * kv_params.head_size,
         fill=Scalar[dtype](0),
     )
-    var kv_block = LayoutTensor[dtype, layout_6d](
-        kv_block_buf,
-        RuntimeLayout[layout_6d].row_major(
-            IndexList[6](
-                num_blocks,
-                2,
-                num_layers,
-                max_seq_len_cache,
-                kv_params.num_heads,
-                kv_params.head_size,
-            )
-        ),
+    comptime BlocksLayout = CollectionType.blocks_tt_layout
+    var native_blocks_shape = Coord[*BlocksLayout.shape_types]()
+    native_blocks_shape[0] = Int64(num_blocks)
+    native_blocks_shape[1] = Int64(2)
+    native_blocks_shape[2] = Int64(num_layers)
+    native_blocks_shape[3] = Int64(max_seq_len_cache)
+    var native_blocks_strides = Coord[*BlocksLayout.stride_types]()
+    native_blocks_strides[2] = native_blocks_shape[3] * Int64(
+        native_blocks_strides[3].value()
     )
+    native_blocks_strides[1] = native_blocks_shape[2] * native_blocks_strides[2]
+    native_blocks_strides[0] = native_blocks_shape[1] * native_blocks_strides[1]
+    var kv_block = TileTensor(
+        Span(kv_block_buf), row_major(len(kv_block_buf))
+    ).reshape(BlocksLayout(native_blocks_shape, native_blocks_strides))
     random(kv_block)
     var lookup_table_buf = List(length=batch_size, fill=UInt32(0))
-    var lookup_table = LayoutTensor[.uint32, layout_1d](
-        lookup_table_buf,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-    )
+    var lookup_table = TileTensor(
+        Span(lookup_table_buf), row_major(len(lookup_table_buf))
+    ).reshape(Coord(Int64(batch_size)))
 
     # hacky way to select random blocks.
     var block_idx_set = Set[Int]()
@@ -215,27 +203,9 @@ def execute_ragged_flash_attention[
         idx += 1
 
     var kv_collection = CollectionType(
-        LayoutTensor[kv_block.dtype, Layout.row_major[6]()](
-            kv_block.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                kv_block.runtime_layout.shape.value,
-                kv_block.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, cache_lengths.dtype, Layout(UNKNOWN_VALUE)](
-            cache_lengths.ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                cache_lengths.runtime_layout.shape.value,
-                cache_lengths.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, lookup_table.dtype, Layout(UNKNOWN_VALUE)](
-            lookup_table.ptr,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)](
-                lookup_table.runtime_layout.shape.value,
-                lookup_table.runtime_layout.stride.value,
-            ),
-        ),
+        kv_block.as_unsafe_any_origin(),
+        cache_lengths.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_length),
         UInt32(max_context_length),
     )
@@ -243,26 +213,27 @@ def execute_ragged_flash_attention[
     var k_cache = kv_collection.get_key_cache(layer_idx)
     var v_cache = kv_collection.get_value_cache(layer_idx)
 
+    # The CPU cache implementation still uses legacy views at its API boundary.
     # ragged execution
     flash_attention_kv_cache(
-        q_ragged,
-        input_row_offsets,
+        q_ragged.as_imm().to_layout_tensor(),
+        input_row_offsets.as_imm().to_layout_tensor(),
         # Assume self attention: Q and KV sequence lengths are equal.
-        input_row_offsets,
+        input_row_offsets.as_imm().to_layout_tensor(),
         k_cache,
         v_cache,
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
-        test_output,
+        test_output.to_layout_tensor(),
     )
     # padded execution
     flash_attention_kv_cache(
-        q_padded,
+        q_padded.as_imm().to_layout_tensor(),
         k_cache,
         v_cache,
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
-        ref_output,
+        ref_output.to_layout_tensor(),
     )
 
     var ref_out = ref_output
@@ -274,6 +245,10 @@ def execute_ragged_flash_attention[
             for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
                     try:
+                        assert_not_equal(ref_out[bs, s, h, hd][0], 9999)
+                        assert_not_equal(
+                            test_out[ragged_offset + s, h, hd][0], -9999
+                        )
                         assert_almost_equal(
                             ref_out[bs, s, h, hd][0],
                             test_out[ragged_offset + s, h, hd][0],

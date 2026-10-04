@@ -19,6 +19,8 @@ from kv_cache.types import (
 )
 from layout import (
     Coord,
+    Idx,
+    TileTensor,
     row_major,
     TileTensor,
 )
@@ -180,13 +182,36 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
             max_cache_len_in_batch, Int(start_positions_dyn[i])
         )
 
+    var kv_block_tensor = TileTensor(
+        kv_block_device, row_major(len(kv_block_device))
+    ).reshape(
+        Coord(
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[num_heads],
+            Idx[head_dim],
+        )
+    )
+    var cache_lengths_tensor = (
+        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
+        .reshape(Coord(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var lookup_table_tensor = (
+        TileTensor(lookup_table_device, row_major(len(lookup_table_device)))
+        .reshape(Coord(Int64(batch_size), Int64(pages_per_seq)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+
     # Create TileTensors for q, freqs, and output
     var q_tensor = TileTensor(q_device, q_tile_layout)
     var freqs_tensor = TileTensor(freqs_device, freqs_tile_layout)
     var q_out_tensor = TileTensor(q_out_device, q_tile_layout)
 
-    # The device buffers outlive the collection, so the views carry the
-    # untracked any-origins; `scales_origin` is the no-scales default.
     comptime Collection = PagedKVCacheCollection[
         dtype,
         kv_params,
@@ -194,32 +219,14 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
         MutAnyOrigin,
         ImmutAnyOrigin,
         ImmutAnyOrigin,
-        MutUntrackedOrigin,
+        MutAnyOrigin,
     ]
     var kv_collection = Collection(
-        blocks=TileTensor(
-            kv_block_device,
-            row_major(
-                Coord(
-                    num_paged_blocks,
-                    2,
-                    num_layers,
-                    page_size,
-                    num_heads,
-                    head_dim,
-                )
-            ),
-        ).as_unsafe_any_origin(),
-        cache_lengths=TileTensor(
-            cache_lengths_device, row_major(Coord(batch_size))
-        )
-        .as_imm()
-        .as_unsafe_any_origin(),
-        lookup_table=TileTensor(
-            lookup_table_device, row_major(Coord(batch_size, pages_per_seq))
-        )
-        .as_imm()
-        .as_unsafe_any_origin(),
+        blocks=rebind[Collection.blocks_tt_type](
+            kv_block_tensor.as_unsafe_any_origin()
+        ),
+        cache_lengths=cache_lengths_tensor,
+        lookup_table=lookup_table_tensor,
         max_seq_length=seq_len,
         max_cache_length=UInt32(max_cache_len_in_batch),
     )

@@ -17,15 +17,8 @@ from std.random import rand, random_float64
 from std.sys import size_of
 
 from max.algorithm import sync_parallelize
-from layout import (
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-)
+from layout import Coord, TileTensor, row_major
+
 from quantization.qmatmul import matmul_qint4, matmul_qint4_pack_b
 from quantization.qmatmul_k import (
     _block_Q4_K,
@@ -37,7 +30,8 @@ from quantization.qmatmul_k import (
     matmul_Q6_K_pack_b,
 )
 
-from std.utils.index import Index
+
+comptime MatrixLayout = type_of(row_major(Coord(Int(0), Int(0))))
 
 
 def fill_random[dtype: DType](mut array: Array[Scalar[dtype], ...]):
@@ -91,28 +85,28 @@ trait QuantizedGemm:
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) -> TileTensor[.uint8, MatrixLayout, MutAnyOrigin]:
         ...
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
-        b_packed: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
+        b: TileTensor[mut=True, .uint8, MatrixLayout, _],
+        b_packed: TileTensor[mut=True, .uint8, MatrixLayout, _],
     ) raises:
         ...
 
     @staticmethod
     def kernel(
-        a: LayoutTensor[.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
+        a: TileTensor[.float32, MatrixLayout, _],
+        b: TileTensor[.uint8, MatrixLayout, _],
+        c: TileTensor[mut=True, .float32, MatrixLayout, _],
     ):
         ...
 
     @staticmethod
     def dot_product(
-        a: LayoutTensor[.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+        a: TileTensor[.float32, MatrixLayout, _],
+        b: TileTensor[.uint8, MatrixLayout, _],
         m: Int,
         n: Int,
         k: Int,
@@ -135,7 +129,7 @@ struct qgemm_Q4_0(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
+    ) -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_0]())
         var block_ptr = b_ptr.bitcast[_block_Q4_0]()
@@ -146,48 +140,41 @@ struct qgemm_Q4_0(QuantizedGemm):
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
 
-        return LayoutTensor[.uint8, Layout.row_major[2]()](
-            b_ptr,
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                Index(N, k_groups * size_of[_block_Q4_0]())
-            ),
+        return TileTensor(
+            b_ptr, row_major(Coord(N, k_groups * size_of[_block_Q4_0]()))
         )
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
-        b_packed: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
+        b: TileTensor[mut=True, .uint8, MatrixLayout, _],
+        b_packed: TileTensor[mut=True, .uint8, MatrixLayout, _],
     ) raises:
-        matmul_qint4_pack_b[_block_Q4_0.group_size](
-            lt_to_tt(b), lt_to_tt(b_packed)
-        )
+        matmul_qint4_pack_b[_block_Q4_0.group_size](b, b_packed)
 
     @staticmethod
     def kernel(
-        a: LayoutTensor[.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
+        a: TileTensor[.float32, MatrixLayout, _],
+        b: TileTensor[.uint8, MatrixLayout, _],
+        c: TileTensor[mut=True, .float32, MatrixLayout, _],
     ):
-        matmul_qint4[_block_Q4_0.group_size](
-            lt_to_tt(a), lt_to_tt(b), lt_to_tt(c)
-        )
+        matmul_qint4[_block_Q4_0.group_size](a, b, c)
 
     @staticmethod
     def dot_product(
-        a: LayoutTensor[.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+        a: TileTensor[.float32, MatrixLayout, _],
+        b: TileTensor[.uint8, MatrixLayout, _],
         m: Int,
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = (b.ptr + b._offset(Index(n, 0))).bitcast[
-            _block_Q4_0
-        ]() + (k // Self.k_group_size())
+        var block_ptr = b.ptr_at_offset(Coord(n, 0)).bitcast[_block_Q4_0]() + (
+            k // Self.k_group_size()
+        )
 
         var a_quant_data = Array[Int8, _block_Q4_0.group_size](fill={})
 
         var a_scale = quantize_a_Q8[_block_Q4_0.group_size](
-            a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+            a.ptr_at_offset(Coord(m, k)), a_quant_data.unsafe_ptr()
         )
 
         var b_quant_data = Array[UInt8, _block_Q4_0.group_size](fill={})
@@ -233,7 +220,7 @@ struct qgemm_Q4_K(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
+    ) -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q4_K]())
         var block_ptr = b_ptr.bitcast[_block_Q4_K]()
@@ -246,44 +233,41 @@ struct qgemm_Q4_K(QuantizedGemm):
                 fill_random(block_ptr[].q_bits)
                 block_ptr += 1
 
-        return LayoutTensor[.uint8, Layout.row_major[2]()](
-            b_ptr,
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                Index(N, k_groups * size_of[_block_Q4_K]())
-            ),
+        return TileTensor(
+            b_ptr, row_major(Coord(N, k_groups * size_of[_block_Q4_K]()))
         )
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
-        b_packed: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
+        b: TileTensor[mut=True, .uint8, MatrixLayout, _],
+        b_packed: TileTensor[mut=True, .uint8, MatrixLayout, _],
     ) raises:
-        matmul_Q4_K_pack_b(lt_to_tt(b), lt_to_tt(b_packed))
+        matmul_Q4_K_pack_b(b, b_packed)
 
     @staticmethod
     def kernel(
-        a: LayoutTensor[.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
+        a: TileTensor[.float32, MatrixLayout, _],
+        b: TileTensor[.uint8, MatrixLayout, _],
+        c: TileTensor[mut=True, .float32, MatrixLayout, _],
     ):
-        matmul_Q4_K(lt_to_tt(a), lt_to_tt(b), lt_to_tt(c))
+        matmul_Q4_K(a, b, c)
 
     @staticmethod
     def dot_product(
-        a: LayoutTensor[.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+        a: TileTensor[.float32, MatrixLayout, _],
+        b: TileTensor[.uint8, MatrixLayout, _],
         m: Int,
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = (b.ptr + b._offset(Index(n, 0))).bitcast[
-            _block_Q4_K
-        ]() + (k // Self.k_group_size())
+        var block_ptr = b.ptr_at_offset(Coord(n, 0)).bitcast[_block_Q4_K]() + (
+            k // Self.k_group_size()
+        )
 
         var a_quant_data = Array[Int8, _block_QK_K.quantized_k](fill={})
 
         var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
-            a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+            a.ptr_at_offset(Coord(m, k)), a_quant_data.unsafe_ptr()
         )
 
         var a_quant_data_ptr: MutPointer[
@@ -364,7 +348,7 @@ struct qgemm_Q6_K(QuantizedGemm):
     @staticmethod
     def build_b_buffer(
         N: Int, K: Int
-    ) -> LayoutTensor[.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
+    ) -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
         var k_groups = ceildiv(K, Self.k_group_size())
         var b_ptr = alloc[UInt8](N * k_groups * size_of[_block_Q6_K]())
         var block_ptr = b_ptr.bitcast[_block_Q6_K]()
@@ -377,44 +361,41 @@ struct qgemm_Q6_K(QuantizedGemm):
                 block_ptr[].base_scale = random_float16(max=0.001)
                 block_ptr += 1
 
-        return LayoutTensor[.uint8, Layout.row_major[2]()](
-            b_ptr,
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                Index(N, k_groups * size_of[_block_Q6_K]())
-            ),
+        return TileTensor(
+            b_ptr, row_major(Coord(N, k_groups * size_of[_block_Q6_K]()))
         )
 
     @staticmethod
     def pack_b_buffer(
-        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
-        b_packed: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _],
+        b: TileTensor[mut=True, .uint8, MatrixLayout, _],
+        b_packed: TileTensor[mut=True, .uint8, MatrixLayout, _],
     ) raises:
-        matmul_Q6_K_pack_b(lt_to_tt(b), lt_to_tt(b_packed))
+        matmul_Q6_K_pack_b(b, b_packed)
 
     @staticmethod
     def kernel(
-        a: LayoutTensor[.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
-        c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
+        a: TileTensor[.float32, MatrixLayout, _],
+        b: TileTensor[.uint8, MatrixLayout, _],
+        c: TileTensor[mut=True, .float32, MatrixLayout, _],
     ):
-        matmul_Q6_K(lt_to_tt(a), lt_to_tt(b), lt_to_tt(c))
+        matmul_Q6_K(a, b, c)
 
     @staticmethod
     def dot_product(
-        a: LayoutTensor[.float32, Layout.row_major[2](), _],
-        b: LayoutTensor[.uint8, Layout.row_major[2](), _],
+        a: TileTensor[.float32, MatrixLayout, _],
+        b: TileTensor[.uint8, MatrixLayout, _],
         m: Int,
         n: Int,
         k: Int,
     ) -> Float32:
-        var block_ptr = (b.ptr + b._offset(Index(n, 0))).bitcast[
-            _block_Q6_K
-        ]() + (k // Self.k_group_size())
+        var block_ptr = b.ptr_at_offset(Coord(n, 0)).bitcast[_block_Q6_K]() + (
+            k // Self.k_group_size()
+        )
 
         var a_quant_data = Array[Int8, _block_QK_K.quantized_k](fill={})
 
         var a_scale = quantize_a_Q8[_block_QK_K.quantized_k](
-            a.ptr + a._offset(Index(m, k)), a_quant_data.unsafe_ptr()
+            a.ptr_at_offset(Coord(m, k)), a_quant_data.unsafe_ptr()
         )
 
         var b_quant_data = Array[UInt8, _block_QK_K.quantized_k](fill={})
@@ -465,13 +446,13 @@ struct qgemm_Q6_K(QuantizedGemm):
 def reference_gemm[
     qgemm: QuantizedGemm
 ](
-    a: LayoutTensor[.float32, Layout.row_major[2](), _],
-    b: LayoutTensor[.uint8, Layout.row_major[2](), _],
-    c: LayoutTensor[mut=True, .float32, Layout.row_major[2](), _],
+    a: TileTensor[.float32, MatrixLayout, _],
+    b: TileTensor[.uint8, MatrixLayout, _],
+    c: TileTensor[mut=True, .float32, MatrixLayout, _],
 ):
-    var M = a.dim[0]()
-    var N = b.dim[0]()
-    var K = a.dim[1]()
+    var M = Int(a.dim[0]())
+    var N = Int(b.dim[0]())
+    var K = Int(a.dim[1]())
 
     comptime grain_size = 128
 
@@ -490,57 +471,48 @@ def reference_gemm[
             for k in range(0, K, qgemm.k_group_size()):
                 result += qgemm.dot_product(a, b, m, n, k)
 
-            c.store(Index(m, n), result)
+            c.store(Coord(m, n), result)
 
     sync_parallelize(task_func, num_workers)
 
 
 struct GemmContext[qgemm: QuantizedGemm]:
     @__allow_legacy_any_origin_fields
-    var a: LayoutTensor[.float32, Layout.row_major[2](), MutAnyOrigin]
+    var a: TileTensor[.float32, MatrixLayout, MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var b: LayoutTensor[.uint8, Layout.row_major[2](), MutAnyOrigin]
+    var b: TileTensor[.uint8, MatrixLayout, MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var b_packed: LayoutTensor[.uint8, Layout.row_major[2](), MutAnyOrigin]
+    var b_packed: TileTensor[.uint8, MatrixLayout, MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var c: LayoutTensor[.float32, Layout.row_major[2](), MutAnyOrigin]
+    var c: TileTensor[.float32, MatrixLayout, MutAnyOrigin]
 
     @__allow_legacy_any_origin_fields
-    var c_golden: LayoutTensor[.float32, Layout.row_major[2](), MutAnyOrigin]
+    var c_golden: TileTensor[.float32, MatrixLayout, MutAnyOrigin]
 
     @staticmethod
     def _build_float_buffer(
         M: Int, N: Int
-    ) raises -> LayoutTensor[
-        .float32, Layout.row_major[2](), MutUntrackedOrigin
-    ]:
+    ) raises -> TileTensor[.float32, MatrixLayout, MutUntrackedOrigin]:
         var ptr = alloc[Float32](M * N)
         for i in range(M * N):
             ptr[i] = random_float64(min=-1.0, max=+1.0).cast[.float32]()
-        return LayoutTensor[.float32, Layout.row_major[2]()](
-            ptr, RuntimeLayout[Layout.row_major[2]()].row_major(Index(M, N))
-        )
+        return TileTensor(ptr, row_major(Coord(M, N)))
 
     @staticmethod
     def _build_b_buffer(
         N: Int, K: Int
-    ) raises -> LayoutTensor[.uint8, Layout.row_major[2](), MutAnyOrigin]:
+    ) raises -> TileTensor[.uint8, MatrixLayout, MutAnyOrigin]:
         return Self.qgemm.build_b_buffer(N, K)
 
     @staticmethod
     def _pack_b_buffer(
-        b: LayoutTensor[mut=True, .uint8, Layout.row_major[2](), _]
-    ) raises -> LayoutTensor[.uint8, Layout.row_major[2](), MutUntrackedOrigin]:
-        var b_packed_buffer = alloc[UInt8](b.size())
-        var b_packed = LayoutTensor[.uint8, Layout.row_major[2]()](
-            b_packed_buffer,
-            RuntimeLayout[Layout.row_major[2]()].row_major(
-                b.runtime_layout.shape.value.canonicalize()
-            ),
-        )
+        b: TileTensor[mut=True, .uint8, MatrixLayout, _]
+    ) raises -> TileTensor[.uint8, MatrixLayout, MutUntrackedOrigin]:
+        var b_packed_buffer = alloc[UInt8](b.num_elements())
+        var b_packed = TileTensor(b_packed_buffer, b.layout)
         Self.qgemm.pack_b_buffer(b, b_packed)
         return b_packed
 
@@ -569,13 +541,11 @@ def test_case[qgemm: QuantizedGemm](M: Int, N: Int, K: Int) raises:
     qgemm.kernel(ctx.a, ctx.b_packed, ctx.c)
 
     var mismatch = False
-    for i in range(ctx.c.size()):
+    for i in range(ctx.c.num_elements()):
         if not isclose(ctx.c.ptr[i], ctx.c_golden.ptr[i], atol=1e-4, rtol=1e-4):
             print(
                 "MISMATCH",
-                ctx.c.runtime_layout.idx2crd(
-                    RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
-                ),
+                divmod(i, N),
                 ctx.c.ptr[i],
                 ctx.c_golden.ptr[i],
             )

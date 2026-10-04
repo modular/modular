@@ -16,8 +16,7 @@ from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.algorithm.functional import vectorize
-from layout import Coord, Layout, LayoutTensor, RuntimeLayout
-from layout import lt_to_tt
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -120,40 +119,30 @@ def test[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
-    comptime layout_p2 = Layout.row_major[rank + 2]()
-    comptime layout_p3 = Layout.row_major[rank + 3]()
+
     var input_shape = extend_shape(input_dims, N, C)
-    var input = LayoutTensor[dtype, layout_p2](
-        input_ptr, RuntimeLayout[layout_p2].row_major(input_shape)
-    )
+    var input = TileTensor(Span(input_ptr), row_major(Coord(input_shape)))
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, C_per_group, F)
-    var filter = LayoutTensor[dtype, layout_p2](
-        filter_ptr, RuntimeLayout[layout_p2].row_major(filter_shape)
-    )
+    var filter = TileTensor(Span(filter_ptr), row_major(Coord(filter_shape)))
 
-    var packed_filter_shape = pack_conv_filter_shape(
-        lt_to_tt(filter), num_groups
-    )
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
         length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    var packed_filter = LayoutTensor[dtype, layout_p3](
-        packed_filter_ptr,
-        RuntimeLayout[layout_p3].row_major(packed_filter_shape),
+    var packed_filter = TileTensor(
+        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
     )
 
     var output_shape = extend_shape(output_dims, N, F)
-    var output = LayoutTensor[dtype, layout_p2](
-        output_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
-    )
-    var output_ref = LayoutTensor[dtype, layout_p2](
-        output_ref_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
+    var output = TileTensor(Span(output_ptr), row_major(Coord(output_shape)))
+    var output_ref = TileTensor(
+        Span(output_ref_ptr), row_major(Coord(output_shape))
     )
 
     comptime if filter_packed:
-        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     comptime conv_attr = ConvInfoStatic[rank]()
 
@@ -163,36 +152,26 @@ def test[
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p3,
-            layout_p2,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output_ref.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
-        ].run(
-            output_ref,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output_ref, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p2,
-            layout_p2,
+            input.LayoutType,
+            filter.LayoutType,
+            output_ref.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
-        ].run(
-            output_ref,
-            input,
-            filter,
-            conv_shape,
-        )
+        ].run(output_ref, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Add bias and activatiion separately.
     var output_image_size = output_dims.flattened_length()
@@ -224,10 +203,10 @@ def test[
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
-            var vec = output.load[width=width](curr_coords)
+            var vec = output.load[width=width](Coord(curr_coords))
 
             output.store(
-                curr_coords,
+                Coord(curr_coords),
                 10.0
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
@@ -236,38 +215,28 @@ def test[
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p3,
-            layout_p2,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
             epilogue,
-        ].run(
-            output,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_p2,
-            layout_p2,
-            layout_p2,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
             epilogue,
-        ].run(
-            output,
-            input,
-            filter,
-            conv_shape,
-        )
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Check results, return on the first failed comparison.
     for i in range(output_size):

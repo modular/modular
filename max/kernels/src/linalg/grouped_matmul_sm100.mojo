@@ -56,8 +56,8 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    TensorLayout,
     RuntimeLayout,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.tile_tensor import TileTensor
@@ -364,12 +364,12 @@ def load_AB_cuda_core[
     cta_group: Int = 1,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_32B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_32B,
-    a_gmem_layout: Layout = Layout.row_major(1, 1),
-    b_gmem_layout: Layout = Layout.row_major(1, 1),
+    a_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
+    b_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
     a_plane_splits: IndexList[2] = Index(0, 0),
 ](
-    a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
+    a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
+    b_gmem: TileTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
     expert_ids: UnsafePointer[mut=False, Int32, _],
     a_smem_tiles: SMemTileArray2D[
         a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
@@ -392,7 +392,7 @@ def load_AB_cuda_core[
 ):
     """CUDA core fallback for load_AB when K*sizeof < 16 bytes.
 
-    Copies [BM, BK] and [BN, BK] tiles from gmem LayoutTensors into
+    Copies [BM, BK] and [BN, BK] tiles from global-memory TileTensors into
     swizzled smem, zero-filling columns where k >= K_actual.
 
     Parameters:
@@ -421,9 +421,9 @@ def load_AB_cuda_core[
         b_swizzle: TMA swizzle mode applied to B shared-memory tiles
             (defaults to `SWIZZLE_32B`).
         a_gmem_layout: Layout of the A global-memory tensor (defaults to
-            `Layout.row_major(1, 1)`).
+            `type_of(row_major[1, 1]())`).
         b_gmem_layout: Layout of the B global-memory tensor (defaults to
-            `Layout.row_major(1, 1)`).
+            `type_of(row_major[1, 1]())`).
         a_plane_splits: Per-plane split sizes for fused LoRA QKV A-plane
             row offsetting; `(0, 0)` disables it (defaults to `(0, 0)`).
 
@@ -456,6 +456,9 @@ def load_AB_cuda_core[
         qkv_plane_stride: Row stride between fused QKV planes used to
             compute the A-plane row offset (defaults to 0).
     """
+    comptime assert a_gmem.rank == b_gmem.rank == 2
+    comptime assert a_gmem.flat_rank == b_gmem.flat_rank == 2
+
     comptime BM = a_dim0
     comptime BN = b_dim0
     comptime BK = a_dim1
@@ -515,12 +518,12 @@ def load_AB_cuda_core[
         var m = a_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
         var vec: SIMD[a_type, K_padded]
         comptime if K_actual == K_padded:
-            vec = a_gmem.load[K_padded, a_row_align](
-                Int(a_row0 + m), Int(a_col0)
+            vec = a_gmem.load[width=K_padded, alignment=a_row_align](
+                Coord(Int(a_row0 + m), Int(a_col0))
             )
         else:
             vec = partial_simd_load[K_padded](
-                a_gmem.ptr_at_offset(Index(Int(a_row0 + m), Int(a_col0))),
+                a_gmem.ptr_at_offset(Coord(Int(a_row0 + m), Int(a_col0))),
                 0,
                 K_actual,
                 0,
@@ -542,12 +545,12 @@ def load_AB_cuda_core[
         var n = b_tv[linear_idx_type=DType.int32](Coord(Int32(tid), Idx[v]))
         var vec: SIMD[b_type, K_padded]
         comptime if K_actual == K_padded:
-            vec = b_gmem.load[K_padded, b_row_align](
-                Int(b_row0 + n), Int(b_col0)
+            vec = b_gmem.load[width=K_padded, alignment=b_row_align](
+                Coord(Int(b_row0 + n), Int(b_col0))
             )
         else:
             vec = partial_simd_load[K_padded](
-                b_gmem.ptr_at_offset(Index(Int(b_row0 + n), Int(b_col0))),
+                b_gmem.ptr_at_offset(Coord(Int(b_row0 + n), Int(b_col0))),
                 0,
                 K_actual,
                 0,
@@ -1446,8 +1449,8 @@ def blackwell_tma_umma_warp_specialized_kernel[
     transpose_c: Bool = False,
     use_tma: Bool = True,
     K_actual: Int = 0,
-    a_gmem_layout: Layout = Layout.row_major(1, 1),
-    b_gmem_layout: Layout = Layout.row_major(1, 1),
+    a_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
+    b_gmem_layout: TensorLayout = type_of(row_major[1, 1]()),
 ](
     expert_usage_stats: UnsafePointer[UInt32, ImmutAnyOrigin],
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
@@ -1459,8 +1462,8 @@ def blackwell_tma_umma_warp_specialized_kernel[
     ],
     c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     mnk: StaticTuple[UInt32, 3],
-    a_gmem: LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
+    a_gmem: TileTensor[a_type, a_gmem_layout, ImmutAnyOrigin],
+    b_gmem: TileTensor[b_type, b_gmem_layout, ImmutAnyOrigin],
     epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
 ):
@@ -1531,9 +1534,9 @@ def blackwell_tma_umma_warp_specialized_kernel[
         K_actual: Actual K dimension in elements for the CUDA-core fallback
             when `use_tma` is False (defaults to 0).
         a_gmem_layout: Layout of the A global-memory tensor, used only by the
-            CUDA-core fallback (defaults to `Layout.row_major(1, 1)`).
+            CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
         b_gmem_layout: Layout of the B global-memory tensor, used only by the
-            CUDA-core fallback (defaults to `Layout.row_major(1, 1)`).
+            CUDA-core fallback (defaults to `type_of(row_major[1, 1]())`).
 
     Args:
         expert_usage_stats: Pointer to per-expert usage stats; index 1 holds
@@ -1558,6 +1561,8 @@ def blackwell_tma_umma_warp_specialized_kernel[
         epilogue_fn: Stores C when `has_epilogue_fn` is set.
         compute_fn: Maps C when `has_compute_fn` is set.
     """
+    comptime assert a_gmem.rank == b_gmem.rank == 2
+    comptime assert a_gmem.flat_rank == b_gmem.flat_rank == 2
     comptime assert c_type != .float32, "c_type cannot be float32"
     comptime if not use_tma:
         comptime assert (
@@ -2197,38 +2202,19 @@ def _grouped_matmul_sm100_persistent[
     comptime use_tma = (K * size_of[a_type]()) % 16 == 0
     comptime tma_K = K if use_tma else BK
 
-    # Real gmem layouts with actual K (used by kernel for CUDA core path).
-    comptime a_gmem_layout = Layout(
-        IntTuple(num_experts * expert_m, K), IntTuple(K, 1)
-    )
-    comptime b_gmem_layout = Layout(IntTuple(UNKNOWN_VALUE, K), IntTuple(K, 1))
-    var a_gmem = LayoutTensor[a_type, a_gmem_layout, ImmutAnyOrigin](a_ptr)
-    var b_gmem = LayoutTensor[b_type, b_gmem_layout, ImmutAnyOrigin](
-        b_ptr,
-        RuntimeLayout[b_gmem_layout](Index(b_desc_rows, K), Index(K, 1)),
-    )
+    # Real global-memory views keep the actual K for the CUDA-core path.
+    var a_gmem = TileTensor(a_ptr, row_major[num_experts * expert_m, K]())
+    var b_gmem = TileTensor(b_ptr, row_major(Coord(b_desc_rows, Idx[K])))
+    comptime a_gmem_layout = type_of(a_gmem.layout)
+    comptime b_gmem_layout = type_of(b_gmem.layout)
 
-    # TMA layouts with tma_K (may be padded when use_tma=False).
-    comptime a_tma_layout = Layout(
-        IntTuple(num_experts * expert_m, tma_K), IntTuple(tma_K, 1)
-    )
-    comptime b_tma_layout = Layout(
-        IntTuple(UNKNOWN_VALUE, tma_K), IntTuple(tma_K, 1)
-    )
-    comptime c_layout = Layout(
-        IntTuple(UNKNOWN_VALUE, expert_m), IntTuple(expert_m, 1)
-    )
-
-    # TMA descriptor creation uses tma_K layouts.
-    var a_device = LayoutTensor[a_type, a_tma_layout, ImmutAnyOrigin](a_ptr)
+    # TMA uses a padded K only when the descriptors will not be dereferenced.
+    var a_device = TileTensor(a_ptr, row_major[num_experts * expert_m, tma_K]())
     # The activation (post-swapAB `b`) descriptor is sized from the activation's
     # own row extent `b_desc_rows`, not `M_runtime`. For a normal grouped matmul
     # the two are equal; the LoRA-B QKV expand passes a `[3M, R]` planar activation
     # (`b_desc_rows == 3M`) so the `a_plane_splits` plane shifts stay in bounds.
-    var b_device = LayoutTensor[b_type, b_tma_layout, ImmutAnyOrigin](
-        b_ptr,
-        RuntimeLayout[b_tma_layout](Index(b_desc_rows, tma_K), Index(tma_K, 1)),
-    )
+    var b_device = TileTensor(b_ptr, row_major(Coord(b_desc_rows, Idx[tma_K])))
     # When an elementwise epilogue owns every store, the kernel never writes to
     # `c_ptr` through the C TMA descriptor (see `multi_stage_store_C` /
     # `zero_output_epilogue`), so the caller is allowed to pass a dangling
@@ -2249,13 +2235,8 @@ def _grouped_matmul_sm100_persistent[
     comptime if has_epilogue:
         c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
         c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
-    var c_device = LayoutTensor[
-        c_type,
-        c_layout,
-        MutAnyOrigin,
-    ](
-        c_desc_ptr,
-        RuntimeLayout[c_layout](Index(M_runtime, expert_m), Index(expert_m, 1)),
+    var c_device = TileTensor(
+        c_desc_ptr, row_major(Coord(M_runtime, Idx[expert_m]))
     )
 
     var M = M_runtime

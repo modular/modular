@@ -30,12 +30,9 @@ from kv_cache.types import (
     KVCacheStaticParams,
 )
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
@@ -82,7 +79,9 @@ def execute_kv_cache_ragged_rope[
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
-        ...,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
     ]
     var input_row_offsets_device = ctx.enqueue_create_buffer[dtype.uint32](
         batch_size + 1
@@ -143,7 +142,7 @@ def execute_kv_cache_ragged_rope[
 
     var lookup_table_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
-    # hacky way to select random blocks.
+    # Sample distinct physical blocks so sequences do not alias KV storage.
     var block_idx_set = Set[Int]()
     with lookup_table_device.map_to_host() as lookup_table_host:
         var idx = 0
@@ -156,29 +155,37 @@ def execute_kv_cache_ragged_rope[
             lookup_table_host[idx] = UInt32(randval)
             idx += 1
 
+    comptime BlocksLayout = CollectionType.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(kv_block_shape[0])
+    blocks_shape[1] = Int64(kv_block_shape[1])
+    blocks_shape[2] = Int64(kv_block_shape[2])
+    blocks_shape[3] = Int64(kv_block_shape[3])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[2] = blocks_shape[3] * Int64(blocks_strides[3].value())
+    blocks_strides[1] = blocks_shape[2] * blocks_strides[2]
+    blocks_strides[0] = blocks_shape[1] * blocks_strides[1]
+    var blocks = (
+        TileTensor(kv_block_device, row_major(len(kv_block_device)))
+        .reshape(BlocksLayout(blocks_shape, blocks_strides))
+        .as_unsafe_any_origin()
+    )
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
+        .reshape(Coord(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var lookup_table = (
+        TileTensor(lookup_table_device, row_major(len(lookup_table_device)))
+        .reshape(Coord(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
     var kv_collection_device = CollectionType(
-        LayoutTensor[
-            kv_block_device.dtype, Layout.row_major[6](), MutAnyOrigin
-        ](
-            kv_block_device,
-            RuntimeLayout[Layout.row_major[6]()].row_major(kv_block_shape),
-        ),
-        LayoutTensor[
-            cache_lengths_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            cache_lengths_device,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                IndexList[1](batch_size)
-            ),
-        ),
-        LayoutTensor[
-            lookup_table_device.dtype, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            lookup_table_device,
-            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                IndexList[1](batch_size)
-            ),
-        ),
+        blocks,
+        cache_lengths,
+        lookup_table,
         max_context_length,
         max_context_length,
     )

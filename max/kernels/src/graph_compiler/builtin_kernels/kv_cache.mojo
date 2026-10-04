@@ -803,9 +803,9 @@ struct Struct_kv_matmul_ragged_paged:
             max_cache_length,
         )
         kv_matmul_ragged_paged[target=target](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
             ctx,
@@ -845,9 +845,9 @@ struct Struct_k_matmul_ragged_paged:
             max_cache_length,
         )
         k_matmul_ragged_paged[target=target](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
             ctx,
@@ -899,11 +899,11 @@ struct Struct_k_matmul_ragged_paged_scale:
                 m_scale_granularity, n_scale_granularity, k_scale_granularity
             ),
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            weight.to_layout_tensor(),
-            input_scale.to_layout_tensor(),
-            weight_scale.to_layout_tensor(),
+            hidden_state.to_tile_tensor[.int64](),
+            input_row_offsets.to_tile_tensor[.int64](),
+            weight.to_tile_tensor[.int64](),
+            input_scale.to_tile_tensor[.int64](),
+            weight_scale.to_tile_tensor[.int64](),
             kv_collection,
             layer_idx,
             ctx,

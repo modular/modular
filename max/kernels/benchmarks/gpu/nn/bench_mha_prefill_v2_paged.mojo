@@ -61,16 +61,12 @@ from std.benchmark import (
 )
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     Idx,
     row_major,
 )
@@ -186,64 +182,42 @@ def run_mha_prefill_v2_paged[
         num_pages * 2 * num_layers * page_size * kv_num_heads * depth
     )
     var kv_block_host = List(length=kv_block_size, fill=Scalar[qkv_type](0))
-    fill_random(
-        LayoutTensor[qkv_type, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_host,
-            RuntimeLayout[Layout.row_major[6]()].row_major(
-                IndexList[6](
-                    num_pages, 2, num_layers, page_size, kv_num_heads, depth
-                )
-            ),
-        )
-    )
+    fill_random(TileTensor(kv_block_host, row_major(len(kv_block_host))))
     var kv_block_dev = ctx.enqueue_create_buffer[qkv_type](kv_block_size)
     ctx.enqueue_copy(kv_block_dev, kv_block_host)
 
-    # LayoutTensor views over the device buffers (consumed by PagedKVCacheCollection).
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_tensor = LayoutTensor[qkv_type, kv_block_layout](
-        kv_block_dev,
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](
-                num_pages, 2, num_layers, page_size, kv_num_heads, depth
-            )
-        ),
-    )
-
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_tensor = LayoutTensor[
-        mut=False,
-        .uint32,
-        cache_lengths_layout,
-    ](
-        cache_lengths_dev,
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime paged_lut_layout = Layout.row_major[2]()
-    var paged_lut_tensor = LayoutTensor[
-        mut=False,
-        .uint32,
-        paged_lut_layout,
-    ](
-        paged_lut_dev,
-        RuntimeLayout[paged_lut_layout].row_major(
-            IndexList[2](batch_size, paged_lut_cols)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         qkv_type,
         KVCacheStaticParams(num_heads=kv_num_heads, head_size=depth),
         page_size,
-    ](
-        # `mha_prefill_v2` reads both the `k` and `v` cache views, which are disjoint
-        # kv_idx halves of one `blocks` buffer sharing its origin, so the
-        # nested-origin exclusivity check rejects passing both. Declare the
-        # kv_block_tensor origins as UnsafeAnyOrigin to opt out of exclusivity checking.
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_pages)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(2 * num_layers * page_size * kv_num_heads * depth)
+    blocks_strides[1] = Int64(num_layers * page_size * kv_num_heads * depth)
+    var kv_block_tensor = TileTensor(
+        kv_block_dev, row_major(len(kv_block_dev))
+    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_dev, row_major(Int64(len(cache_lengths_dev)))
+    )
+    var paged_lut_tensor = TileTensor(
+        paged_lut_dev, row_major(len(paged_lut_dev))
+    ).reshape(Coord(Int64(batch_size), Int64(paged_lut_cols)))
+
+    # K and V occupy disjoint per-page regions; erased origins allow the
+    # attention kernel to borrow both cache views.
+    var kv_collection = Collection(
         kv_block_tensor.as_unsafe_any_origin(),
-        cache_lengths_tensor,
-        paged_lut_tensor,
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        paged_lut_tensor.as_imm().as_unsafe_any_origin(),
         max_seq_length,
         max_context_length,
     )

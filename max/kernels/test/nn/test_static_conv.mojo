@@ -16,8 +16,7 @@ from std.random import rand
 from std.sys.info import simd_width_of
 
 from std.itertools import product
-from layout import Coord, IntTuple, Layout, LayoutTensor, RuntimeLayout
-from layout import lt_to_tt
+from layout import Coord, IntTuple, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -80,19 +79,18 @@ def test[
     rand(input_ptr)
     rand(filter_ptr)
 
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_5d = Layout.row_major[5]()
-    var input = LayoutTensor[type, Layout.row_major(N, H, W, C)](input_ptr)
-    var filter = LayoutTensor[type, layout_4d](
-        filter_ptr, RuntimeLayout[layout_4d].row_major(Index(R, S, C, F))
+    var input = TileTensor(Span(input_ptr), row_major(len(input_ptr))).reshape(
+        row_major[N, H, W, C]()
     )
-    var output_static = LayoutTensor[type, Layout.row_major(N, HO, WO, F)](
-        output_ptr_static
-    )
-    var output_dynamic = LayoutTensor[type, layout_4d](
-        output_ptr_dynamic,
-        RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F)),
-    )
+    var filter = TileTensor(
+        Span(filter_ptr), row_major(len(filter_ptr))
+    ).reshape(Coord(Index(R, S, C, F)))
+    var output_static = TileTensor(
+        Span(output_ptr_static), row_major(len(output_ptr_static))
+    ).reshape(row_major[N, HO, WO, F]())
+    var output_dynamic = TileTensor(
+        Span(output_ptr_dynamic), row_major(len(output_ptr_dynamic))
+    ).reshape(Coord(Index(N, HO, WO, F)))
 
     # Pre-packed filter for dynamic shapes.
     comptime micro_kernel_width_default = get_direct_conv_micro_kernel_width()
@@ -103,9 +101,11 @@ def test[
     var packed_filter_ptr_dynamic = List(
         length=R * S * C * rounded_F_dynamic, fill=Scalar[type](0)
     )
-    var packed_filter_dynamic = LayoutTensor[type, layout_5d](
-        packed_filter_ptr_dynamic,
-        RuntimeLayout[layout_5d].row_major(
+    var packed_filter_dynamic = TileTensor(
+        Span(packed_filter_ptr_dynamic),
+        row_major(len(packed_filter_ptr_dynamic)),
+    ).reshape(
+        Coord(
             Index(
                 ceildiv(F, micro_kernel_f_size_default),
                 R,
@@ -113,18 +113,18 @@ def test[
                 C,
                 micro_kernel_f_size_default,
             )
-        ),
+        )
     )
 
-    pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter_dynamic), num_groups)
+    pack_filter(filter, packed_filter_dynamic, num_groups)
 
     # Conv attributes.
     comptime conv_attr_dynamic = ConvInfoStatic[2]()
 
     ConvDirectNHWC[
-        input.layout,  # input shape
-        layout_5d,  # filter shape
-        layout_4d,  # output shape
+        input.LayoutType,
+        packed_filter_dynamic.LayoutType,
+        output_dynamic.LayoutType,
         type,  # input type
         type,  # filter type
         type,  # output type
@@ -132,8 +132,8 @@ def test[
         conv_attr_dynamic,
     ].run(
         output_dynamic,
-        input,
-        packed_filter_dynamic,
+        input.as_imm(),
+        packed_filter_dynamic.as_imm(),
         conv_shape,
     )
 
@@ -150,26 +150,23 @@ def test[
     comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
     comptime num_f_micro_tiles = ceildiv(F, micro_kernel_f_size)
     comptime rounded_F_static = num_f_micro_tiles * micro_kernel_f_size
-    comptime packed_filter_layout = Layout.row_major(
-        num_f_micro_tiles, R, S, C, micro_kernel_f_size
-    )
     var packed_filter_ptr_static = List(
         length=R * S * C * rounded_F_static, fill=Scalar[type](0)
     )
-    var packed_filter_static = LayoutTensor[type, packed_filter_layout](
-        packed_filter_ptr_static
-    )
+    var packed_filter_static = TileTensor(
+        Span(packed_filter_ptr_static), row_major(len(packed_filter_ptr_static))
+    ).reshape(row_major[num_f_micro_tiles, R, S, C, micro_kernel_f_size]())
 
     pack_filter_lt[simd_size, micro_kernel_f_size](
-        filter,
-        packed_filter_static,
+        filter.as_imm().to_layout_tensor(),
+        packed_filter_static.to_layout_tensor(),
         num_groups,
     )
 
     ConvDirectNHWC[
-        Layout.row_major(N, H, W, C),
-        packed_filter_layout,
-        Layout.row_major(N, HO, WO, F),
+        input.LayoutType,
+        packed_filter_static.LayoutType,
+        output_static.LayoutType,
         type,  # input type
         type,  # filter type
         type,  # output type
@@ -177,8 +174,8 @@ def test[
         conv_attr_static,
     ].run(
         output_static,
-        input,
-        packed_filter_static,
+        input.as_imm(),
+        packed_filter_static.as_imm(),
         conv_shape,
     )
 
@@ -243,132 +240,3 @@ def main() raises:
         Index(1, 1),  # pad_h
         Index(1, 1),  # pad_w
     ]()
-
-    # Each test will build a specialization of the conv kernel.
-    # Disable the following tests for now to monitor build time.
-
-    # test[
-    #     1,  # N
-    #     56,  # H
-    #     56,  # W
-    #     64,  # C
-    #     3,  # R
-    #     3,  # S
-    #     64,  # F
-    #     Index(1, 1),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
-    # ]()
-
-    # test[
-    #     1,  # N
-    #     28,  # H
-    #     28,  # W
-    #     128,  # C
-    #     3,  # R
-    #     3,  # S
-    #     128,  # F
-    #     Index(1, 1),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
-    # ]()
-
-    # test[
-    #     1,  # N
-    #     7,  # H
-    #     7,  # W
-    #     512,  # C
-    #     3,  # R
-    #     3,  # S
-    #     512,  # F
-    #     Index(1, 1),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
-    # ]()
-
-    # test[
-    #     1,  # N
-    #     224,  # H
-    #     224,  # W
-    #     3,  # C
-    #     7,  # R
-    #     7,  # S
-    #     64,  # F
-    #     Index(2, 2),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(3, 3),  # pad_h
-    #     Index(3, 3),  # pad_w
-    # ]()
-
-    # test[
-    #     1,  # N
-    #     56,  # H
-    #     56,  # W
-    #     128,  # C
-    #     3,  # R
-    #     3,  # S
-    #     128,  # F
-    #     Index(2, 2),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
-    # ]()
-
-    # test[
-    #     1,  # N
-    #     28,  # H
-    #     28,  # W
-    #     256,  # C
-    #     3,  # R
-    #     3,  # S
-    #     256,  # F
-    #     Index(2, 2),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
-    # ]()
-
-    # test[
-    #     1,  # N
-    #     14,  # H
-    #     14,  # W
-    #     512,  # C
-    #     3,  # R
-    #     3,  # S
-    #     512,  # F
-    #     Index(2, 2),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
-    # ]()
-
-    # test[
-    #     19,  # N
-    #     7,  # H
-    #     7,  # W
-    #     1,  # C
-    #     3,  # R
-    #     3,  # S
-    #     16,  # F
-    #     Index(1, 1),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
-    # ]()
-
-    # test[
-    #     13,  # N
-    #     14,  # H
-    #     14,  # W
-    #     2,  # C
-    #     3,  # R
-    #     3,  # S
-    #     32,  # F
-    #     Index(2, 2),  # stride
-    #     Index(1, 1),  # dilation
-    #     Index(1, 1),  # pad_h
-    #     Index(1, 1),  # pad_w
-    # ]()

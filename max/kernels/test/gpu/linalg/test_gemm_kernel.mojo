@@ -24,14 +24,13 @@ from std.utils.numerics import get_accum_type
 
 from layout import (
     Idx,
-    Layout,
     TensorLayout,
     TileTensor,
     row_major,
     stack_allocation,
 )
-from layout.layout_tensor import copy_dram_to_sram_async, copy_local_to_dram
 from layout.math import outer_product_acc
+from layout.tile_io import copy_dram_to_sram_async, copy_local_to_dram
 
 
 def is_benchmark() -> Bool:
@@ -66,74 +65,72 @@ def gemm_kernel[
         mat_a.all_dims_known and mat_b.all_dims_known and mat_c.all_dims_known
     )
 
-    var K = mat_a.dim[1]()
+    var K = Int(mat_a.dim[1]())
 
     var a_tile_sram = stack_allocation[
-        mat_a.dtype,
+        dtype=mat_a.dtype,
         address_space=.SHARED,
     ](row_major[BM, BK]())
 
     var b_tile_sram = stack_allocation[
-        mat_b.dtype,
+        dtype=mat_b.dtype,
         address_space=.SHARED,
     ](row_major[BK, BN]())
 
     var n_warp_n = BN // WN
     var warp_m, warp_n = divmod(warp_id(), n_warp_n)
 
-    # Allocate register tiles.
+    # Register tiles: TM rows of A, TN columns of B, and the TMxTN accumulator.
     var a_reg = stack_allocation[
-        mat_a.dtype,
+        dtype=mat_a.dtype,
         address_space=.LOCAL,
-    ](
-        row_major[TM]()
-    )  # TM elements for M-dimension vector
+    ](row_major[TM]())
     var b_reg = stack_allocation[
-        mat_b.dtype,
+        dtype=mat_b.dtype,
         address_space=.LOCAL,
-    ](
-        row_major[TN]()
-    )  # TN elements for N-dimension vector
+    ](row_major[TN]())
     var c_reg = stack_allocation[
-        mat_c.dtype,
+        dtype=mat_c.dtype,
         address_space=.LOCAL,
     ](
         row_major[TM, TN]()
     ).fill(0)
 
+    # The 32 lanes of a warp form an 8x4 grid over the WMxWN warp tile; each
+    # lane owns TM rows and TN columns of it.
     comptime warp_layout = row_major[8, 4]()
 
-    for k_i in range(ceildiv(K, Scalar[mat_a.linear_idx_type](BK))):
-        var a_tile_dram = mat_a.tile[BM, BK]((block_idx.y, Int(k_i)))
+    for k_i in range(ceildiv(K, BK)):
+        var a_tile_dram = mat_a.tile[BM, BK]((block_idx.y, k_i))
         copy_dram_to_sram_async[
-            thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
-        ](a_tile_sram.to_layout_tensor(), a_tile_dram.to_layout_tensor())
+            thread_layout=row_major[NUM_THREADS // BK, BK]()
+        ](a_tile_sram, a_tile_dram)
 
-        var b_tile_dram = mat_b.tile[BK, BN]((Int(k_i), block_idx.x))
+        var b_tile_dram = mat_b.tile[BK, BN]((k_i, block_idx.x))
         copy_dram_to_sram_async[
-            thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
-        ](b_tile_sram.to_layout_tensor(), b_tile_dram.to_layout_tensor())
+            thread_layout=row_major[NUM_THREADS // BN, BN]()
+        ](b_tile_sram, b_tile_dram)
 
         async_copy_wait_all()
         barrier()
 
-        comptime for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
-            var a_smem_warp_row = a_tile_sram.tile[WM, BK](
+        comptime for k_j in range(BK):
+            var a_smem_warp_col = a_tile_sram.tile[WM, BK](
                 (warp_m, Idx[0])
-            ).slice[:, k_j : k_j + 1]()
-
+            ).slice[:, k_j]()
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](
                 (Idx[0], warp_n)
-            ).slice[k_j : k_j + 1, :]()
-            a_reg.to_layout_tensor().copy_from(
-                a_smem_warp_row.to_layout_tensor().distribute[
-                    warp_layout.to_layout(), axis=0
-                ](thread_idx.x)
+            ).slice[k_j, :]()
+
+            # Project the warp layout's row index onto A and its column index
+            # onto B; `distribute` wraps the thread id modulo the layout size.
+            a_reg.copy_from(
+                a_smem_warp_col.distribute[row_major[8]()](
+                    Int(thread_idx.x) // 4
+                )
             )
-            b_reg.to_layout_tensor().copy_from(
-                b_smem_warp_row.to_layout_tensor().distribute[
-                    warp_layout.to_layout(), axis=1
-                ](thread_idx.x)
+            b_reg.copy_from(
+                b_smem_warp_row.distribute[row_major[4]()](Int(thread_idx.x))
             )
             outer_product_acc(c_reg, a_reg, b_reg)
 
@@ -144,9 +141,7 @@ def gemm_kernel[
         WM, WN
     ]((warp_m, warp_n))
 
-    copy_local_to_dram[dst_thread_layout=warp_layout.to_layout()](
-        c_warp_tile.to_layout_tensor(), c_reg.to_layout_tensor()
-    )
+    copy_local_to_dram[thread_layout=warp_layout](c_warp_tile, c_reg)
 
 
 def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:

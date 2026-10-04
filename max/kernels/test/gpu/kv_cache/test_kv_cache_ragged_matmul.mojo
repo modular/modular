@@ -25,15 +25,11 @@ from kv_cache.types import (
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._fillers import random
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from linalg.matmul.gpu import _matmul_gpu
 from std.memory import unsafe_memcpy
 from nn.kv_cache_ragged import (
@@ -89,12 +85,9 @@ def _initialize_ragged_inputs[
     # Initialize ragged hidden state.
     var ragged_size = total_length * hidden_size
     var hidden_state_ragged_host_ptr = alloc[Scalar[dtype]](ragged_size)
-    comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    var hidden_state_ragged_host = LayoutTensor[dtype, hidden_state_layout](
+    var hidden_state_ragged_host = TileTensor(
         hidden_state_ragged_host_ptr,
-        RuntimeLayout[hidden_state_layout].row_major(
-            IndexList[2](total_length, hidden_size)
-        ),
+        row_major(Coord(total_length, Idx[hidden_size])),
     )
     random(hidden_state_ragged_host)
 
@@ -108,7 +101,7 @@ def _initialize_ragged_inputs[
     var hidden_state_padded_host_ptr = alloc[Scalar[dtype]](padded_size)
 
     # Copy over the ragged values to the padded tensor.
-    # Don't worry about padded values, we won't read them.
+    # Only the unpadded rows are checked against the reference output.
     for bs in range(batch_size):
         var unpadded_seq_len = prompt_lens[bs]
         var ragged_start_idx = Int(input_row_offsets_host_ptr[bs])
@@ -168,7 +161,7 @@ def execute_matmul_kv_cache_ragged[
     comptime num_blocks = 32
 
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params, ...
+        dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
     ]
 
     assert len(prompt_lens) == len(cache_sizes), (
@@ -198,18 +191,13 @@ def execute_matmul_kv_cache_ragged[
     var total_length = init_result[3]
     var max_seq_length_batch = init_result[4]
 
-    # Define layouts
-    comptime weight_layout = Layout.row_major(2 * kv_hidden_size, hidden_size)
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-    comptime kv_block_layout = Layout.row_major[6]()
-
     # Initialize the weights.
     var weight_size = 2 * kv_hidden_size * hidden_size
     var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
     var weight_shape = IndexList[2](2 * kv_hidden_size, hidden_size)
-    var weight_host = LayoutTensor[dtype, weight_layout](
+    var weight_host = TileTensor(
         weight_host_ptr,
-        RuntimeLayout[weight_layout].row_major(weight_shape),
+        row_major(Coord(Idx[2 * kv_hidden_size], Idx[hidden_size])),
     )
     random(weight_host)
 
@@ -221,21 +209,17 @@ def execute_matmul_kv_cache_ragged[
     var ref_output_size = padded_batch_dim * 2 * kv_hidden_size
     var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
     var ref_output_shape = IndexList[2](padded_batch_dim, 2 * kv_hidden_size)
-    comptime ref_output_layout = Layout.row_major(
-        UNKNOWN_VALUE, 2 * kv_hidden_size
-    )
-    var ref_output_host = LayoutTensor[dtype, ref_output_layout](
+    var ref_output_host = TileTensor(
         ref_output_host_ptr,
-        RuntimeLayout[ref_output_layout].row_major(ref_output_shape),
+        row_major(Coord(padded_batch_dim, Idx[2 * kv_hidden_size])),
     )
     var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
 
     # Initialize our KVCache.
-    var cache_lengths = ManagedLayoutTensor[.uint32, layout_1d](
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-        ctx,
+    var cache_lengths = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size))), ctx
     )
-    var cache_lengths_host = cache_lengths.tensor[update=False]()
+    var cache_lengths_host = cache_lengths.host_tensor().as_unsafe_any_origin()
     var max_prompt_len = 0
     var max_context_len = 0
     for i in range(batch_size):
@@ -259,16 +243,36 @@ def execute_matmul_kv_cache_ragged[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
-        RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
-        ctx,
+    comptime BlocksLayout = CollectionType.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(kv_block_shape[0])
+    blocks_shape[2] = Int64(kv_block_shape[2])
+    blocks_shape[1] = Int64(kv_block_shape[1])
+    blocks_shape[3] = Int64(kv_block_shape[3])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        kv_block_shape[1]
+        * kv_block_shape[2]
+        * kv_block_shape[3]
+        * kv_block_shape[4]
+        * kv_block_shape[5]
     )
+    blocks_strides[1] = Int64(
+        kv_block_shape[2]
+        * kv_block_shape[3]
+        * kv_block_shape[4]
+        * kv_block_shape[5]
+    )
+    blocks_strides[2] = Int64(
+        kv_block_shape[3] * kv_block_shape[4] * kv_block_shape[5]
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
+    var kv_block = HostDeviceTileTensor[dtype](blocks_layout, ctx)
 
-    var lookup_table = ManagedLayoutTensor[.uint32, layout_1d](
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-        ctx,
+    var lookup_table = HostDeviceTileTensor[.uint32](
+        row_major(Coord(Int64(batch_size))), ctx
     )
-    var lookup_table_host = lookup_table.tensor[update=False]()
+    var lookup_table_host = lookup_table.host_tensor().as_unsafe_any_origin()
 
     # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
     # the original draw range `[0, num_blocks - 1]` is a population of
@@ -277,19 +281,12 @@ def execute_matmul_kv_cache_ragged[
     for idx in range(batch_size):
         lookup_table_host[idx] = UInt32(lut_blocks[idx])
 
-    # Create runtime layouts
-    var cache_len_runtime = cache_lengths_host.runtime_layout
-
+    cache_lengths.to_device()
+    lookup_table.to_device()
     var kv_collection_device = CollectionType(
-        kv_block.device_tensor(),
-        LayoutTensor[.uint32, layout_1d, ImmutAnyOrigin](
-            cache_lengths.device_tensor().ptr,
-            cache_lengths.device_tensor().runtime_layout,
-        ),
-        LayoutTensor[.uint32, layout_1d, ImmutAnyOrigin](
-            lookup_table.device_tensor().ptr,
-            lookup_table.device_tensor().runtime_layout,
-        ),
+        kv_block.device_tensor().as_unsafe_any_origin(),
+        cache_lengths.device_tensor().as_imm().as_unsafe_any_origin(),
+        lookup_table.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_len),
         UInt32(max_context_len),
     )
@@ -298,15 +295,9 @@ def execute_matmul_kv_cache_ragged[
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     var kv_collection_host = CollectionType(
-        kv_block.tensor(),
-        LayoutTensor[.uint32, layout_1d, ImmutAnyOrigin](
-            cache_lengths.tensor().ptr,
-            cache_lengths.tensor().runtime_layout,
-        ),
-        LayoutTensor[.uint32, layout_1d, ImmutAnyOrigin](
-            lookup_table.tensor().ptr,
-            lookup_table.tensor().runtime_layout,
-        ),
+        kv_block.host_tensor().as_unsafe_any_origin(),
+        cache_lengths.host_tensor().as_imm().as_unsafe_any_origin(),
+        lookup_table.host_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_len),
         UInt32(max_context_len),
     )
@@ -314,28 +305,25 @@ def execute_matmul_kv_cache_ragged[
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
     var v_cache_host = kv_collection_host.get_value_cache(layer_idx)
 
-    # Create device LayoutTensors for kernel calls
-    comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    var hidden_state_ragged_tensor = LayoutTensor[dtype, hidden_state_layout](
-        hidden_state_ragged_device,
-        RuntimeLayout[hidden_state_layout].row_major(
-            IndexList[2](total_length, hidden_size)
-        ),
+    var hidden_state_ragged_tensor = TileTensor(
+        hidden_state_ragged_device, row_major(len(hidden_state_ragged_device))
+    ).reshape(Coord(total_length, Idx[hidden_size]))
+    var input_row_offsets_tensor = (
+        TileTensor(
+            input_row_offsets_device, row_major(len(input_row_offsets_device))
+        )
+        .reshape(Coord(Int64(batch_size + 1)))
+        .as_imm()
     )
-    var input_row_offsets_tensor = LayoutTensor[mut=False, .uint32, layout_1d](
-        input_row_offsets_device,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
-    )
-    var weight_device_tensor = LayoutTensor[dtype, weight_layout](
-        weight_device,
-        RuntimeLayout[weight_layout].row_major(weight_shape),
-    )
+    var weight_device_tensor = TileTensor(
+        weight_device, row_major(len(weight_device))
+    ).reshape(Coord(Idx[2 * kv_hidden_size], Idx[hidden_size]))
 
     # Execute test.
     _matmul_kv_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_tensor,
+        hidden_state_ragged_tensor.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
-        weight_device_tensor,
+        weight_device_tensor.as_imm().as_unsafe_any_origin(),
         k_cache_device,
         v_cache_device,
         ctx,
@@ -343,17 +331,12 @@ def execute_matmul_kv_cache_ragged[
 
     # Execute reference.
     var ref_output_tile = TileTensor(
-        ref_output_device,
-        row_major(Coord(ref_output_shape[0], ref_output_shape[1])),
-    )
+        ref_output_device, row_major(len(ref_output_device))
+    ).reshape(Coord(ref_output_shape))
     var hidden_state_padded_tile = TileTensor(
-        hidden_state_padded_device,
-        row_major(Coord(padded_batch_dim, hidden_size)),
-    )
-    var weight_tile = TileTensor(
-        weight_device,
-        row_major(Coord(weight_shape[0], weight_shape[1])),
-    )
+        hidden_state_padded_device, row_major(len(hidden_state_padded_device))
+    ).reshape(Coord(padded_batch_dim, hidden_size))
+    var weight_tile = weight_device_tensor.reshape(Coord(weight_shape))
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
         ref_output_tile,
         hidden_state_padded_tile,
@@ -361,7 +344,7 @@ def execute_matmul_kv_cache_ragged[
         ctx,
     )
 
-    _ = kv_block.tensor()
+    kv_block.to_host()
     ctx.enqueue_copy(ref_output_host_ptr, ref_output_device)
     ctx.synchronize()
 
@@ -429,19 +412,18 @@ def execute_matmul_k_cache_ragged[
     comptime num_paged_blocks = 32
     comptime page_size = 512
     comptime CollectionType = PagedKVCacheCollection[
-        dtype, kv_params, page_size, ...
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
     ]
     var batch_size = len(prompt_lens)
     assert len(prompt_lens) == len(
         cache_sizes
     ), "expected prompt_lens and cache_sizes size to be equal"
-
-    # Define layouts
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-    comptime kv_block_layout = Layout.row_major[6]()
-    comptime weight_layout = Layout.row_major(kv_hidden_size, hidden_size)
-    comptime ref_output_layout = Layout.row_major(UNKNOWN_VALUE, kv_hidden_size)
-    comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
 
     var kv_block_size = (
         num_paged_blocks
@@ -459,10 +441,26 @@ def execute_matmul_k_cache_ragged[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
-        RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
-        ctx,
+    comptime BlocksLayout = CollectionType.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(kv_block_shape[0])
+    blocks_shape[2] = Int64(kv_block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        kv_block_shape[1]
+        * kv_block_shape[2]
+        * kv_block_shape[3]
+        * kv_block_shape[4]
+        * kv_block_shape[5]
     )
+    blocks_strides[1] = Int64(
+        kv_block_shape[2]
+        * kv_block_shape[3]
+        * kv_block_shape[4]
+        * kv_block_shape[5]
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
+    var kv_block = HostDeviceTileTensor[dtype](blocks_layout, ctx)
 
     var cache_lengths_table = CacheLengthsTable.build(
         prompt_lens, cache_sizes, ctx
@@ -476,9 +474,9 @@ def execute_matmul_k_cache_ragged[
     )
 
     var kv_collection_device = CollectionType(
-        kv_block.device_tensor(),
-        cache_lengths_table.cache_lengths.device_tensor(),
-        paged_lut.device_tensor(),
+        kv_block.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_table.cache_lengths.device_tile_tensor(),
+        paged_lut.device_tile_tensor(),
         UInt32(max_seq_length_batch),
         UInt32(max_full_context_length),
     )
@@ -486,9 +484,9 @@ def execute_matmul_k_cache_ragged[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
 
     var kv_collection_host = CollectionType(
-        kv_block.tensor(),
-        cache_lengths_table.cache_lengths.host_tensor(),
-        paged_lut.host_tensor(),
+        kv_block.host_tensor().as_unsafe_any_origin(),
+        cache_lengths_table.cache_lengths.host_tile_tensor(),
+        paged_lut.host_tile_tensor(),
         UInt32(max_seq_length_batch),
         UInt32(max_full_context_length),
     )
@@ -510,9 +508,8 @@ def execute_matmul_k_cache_ragged[
     var weight_size = kv_hidden_size * hidden_size
     var weight_shape = IndexList[2](kv_hidden_size, hidden_size)
     var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
-    var weight_host = LayoutTensor[dtype, weight_layout](
-        weight_host_ptr,
-        RuntimeLayout[weight_layout].row_major(weight_shape),
+    var weight_host = TileTensor(
+        weight_host_ptr, row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size]))
     )
     random(weight_host)
 
@@ -525,52 +522,43 @@ def execute_matmul_k_cache_ragged[
     var ref_output_size = padded_batch_dim * kv_hidden_size
     var ref_output_shape = IndexList[2](padded_batch_dim, kv_hidden_size)
     var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
-    var ref_output_host = LayoutTensor[dtype, ref_output_layout](
+    var ref_output_host = TileTensor(
         ref_output_host_ptr,
-        RuntimeLayout[ref_output_layout].row_major(ref_output_shape),
+        row_major(Coord(padded_batch_dim, Idx[kv_hidden_size])),
     )
     var ref_output_device = ctx.enqueue_create_buffer[dtype](ref_output_size)
 
-    # Create device LayoutTensors for kernel calls
-    var hidden_state_ragged_tensor = LayoutTensor[dtype, hidden_state_layout](
-        hidden_state_ragged_device,
-        RuntimeLayout[hidden_state_layout].row_major(
-            IndexList[2](ragged_total_length, hidden_size)
-        ),
+    var hidden_state_ragged_tensor = TileTensor(
+        hidden_state_ragged_device, row_major(len(hidden_state_ragged_device))
+    ).reshape(Coord(ragged_total_length, Idx[hidden_size]))
+    var input_row_offsets_tensor = (
+        TileTensor(
+            input_row_offsets_device, row_major(len(input_row_offsets_device))
+        )
+        .reshape(Coord(Int64(batch_size + 1)))
+        .as_imm()
     )
-    var input_row_offsets_tensor = LayoutTensor[
-        mut=False, .uint32, layout_1d, ImmutAnyOrigin
-    ](
-        input_row_offsets_device,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
-    )
-    var weight_device_tensor = LayoutTensor[dtype, weight_layout](
-        weight_device,
-        RuntimeLayout[weight_layout].row_major(weight_shape),
-    )
+    var weight_device_tensor = TileTensor(
+        weight_device, row_major(len(weight_device))
+    ).reshape(Coord(Idx[kv_hidden_size], Idx[hidden_size]))
 
     # Execute test.
     _matmul_k_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_tensor,
+        hidden_state_ragged_tensor.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
-        weight_device_tensor,
+        weight_device_tensor.as_imm().as_unsafe_any_origin(),
         k_cache_device,
         ctx,
     )
 
     # Execute reference.
     var ref_output_tile = TileTensor(
-        ref_output_device,
-        row_major(Coord(ref_output_shape[0], ref_output_shape[1])),
-    )
+        ref_output_device, row_major(len(ref_output_device))
+    ).reshape(Coord(ref_output_shape))
     var hidden_state_padded_tile = TileTensor(
-        hidden_state_padded_device,
-        row_major(Coord(padded_batch_dim, hidden_size)),
-    )
-    var weight_tile = TileTensor(
-        weight_device,
-        row_major(Coord(weight_shape[0], weight_shape[1])),
-    )
+        hidden_state_padded_device, row_major(len(hidden_state_padded_device))
+    ).reshape(Coord(padded_batch_dim, hidden_size))
+    var weight_tile = weight_device_tensor.reshape(Coord(weight_shape))
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
         ref_output_tile,
         hidden_state_padded_tile,
@@ -578,7 +566,7 @@ def execute_matmul_k_cache_ragged[
         ctx,
     )
 
-    _ = kv_block.tensor()
+    kv_block.to_host()
     ctx.enqueue_copy(ref_output_host_ptr, ref_output_device)
     ctx.synchronize()
 
@@ -610,7 +598,7 @@ def execute_matmul_k_cache_ragged[
     _ = ref_output_device^
     _ = input_row_offsets_device^
 
-    # Cleanup managed objects.
+    # Release the shared metadata buffers.
     _ = cache_lengths_table^
     _ = paged_lut^
 
@@ -633,24 +621,20 @@ def generic_assert_output_equals[
     comptime hidden_size = num_q_heads * kv_params.head_size
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
     comptime fused_hidden_size = 2 * kv_hidden_size + hidden_size
-    comptime ref_output_layout = Layout.row_major(
-        UNKNOWN_VALUE, fused_hidden_size
-    )
-    comptime test_output_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
 
     # Allocate host memory and copy from device
     var ref_output_size = ref_output_shape[0] * ref_output_shape[1]
     var ref_output_host_ptr = alloc[Scalar[dtype]](ref_output_size)
-    var ref_output_host = LayoutTensor[dtype, ref_output_layout](
+    var ref_output_host = TileTensor(
         ref_output_host_ptr,
-        RuntimeLayout[ref_output_layout].row_major(ref_output_shape),
+        row_major(Coord(ref_output_shape[0], Idx[fused_hidden_size])),
     )
 
     var test_output_size = test_output_shape[0] * test_output_shape[1]
     var test_output_host_ptr = alloc[Scalar[dtype]](test_output_size)
-    var test_output_host = LayoutTensor[dtype, test_output_layout](
+    var test_output_host = TileTensor(
         test_output_host_ptr,
-        RuntimeLayout[test_output_layout].row_major(test_output_shape),
+        row_major(Coord(test_output_shape[0], Idx[hidden_size])),
     )
 
     ctx.enqueue_copy(test_output_host_ptr, test_output_device)
@@ -724,8 +708,8 @@ def generic_assert_output_equals[
     test_output_host_ptr.free()
 
 
-# HACK: `k_cache` and `v_cache` are the key/value halves (kv_idx 0 vs 1) of the
-# same `blocks` buffer, so they share the collection's mutable origins. They are
+# HACK: `k_cache` and `v_cache` use disjoint regions within each block
+# (kv_idx 0 vs 1), but share the collection's mutable origins. They are
 # only ever stored to at disjoint offsets, but the exclusivity checker cannot
 # prove that and rejects passing both as separately-writable arguments. Disable
 # the nested-origin exclusivity check as a stopgap; the proper fix is to give the
@@ -759,9 +743,6 @@ def generic_execute_fused_qkv_cache_ragged[
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
     comptime fused_hidden_size = (2 * kv_hidden_size) + hidden_size
     comptime num_blocks = 32
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-    comptime weight_layout = Layout.row_major(fused_hidden_size, hidden_size)
-    comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
 
     assert len(prompt_lens) == len(cache_sizes), (
         "mismatch between cache_sizes and prompt_lens, both should be"
@@ -794,9 +775,9 @@ def generic_execute_fused_qkv_cache_ragged[
     var weight_size = fused_hidden_size * hidden_size
     var weight_shape = IndexList[2](fused_hidden_size, hidden_size)
     var weight_host_ptr = alloc[Scalar[dtype]](weight_size)
-    var weight_host = LayoutTensor[dtype, weight_layout](
+    var weight_host = TileTensor(
         weight_host_ptr,
-        RuntimeLayout[weight_layout].row_major(weight_shape),
+        row_major(Coord(Idx[fused_hidden_size], Idx[hidden_size])),
     )
     random(weight_host)
 
@@ -814,31 +795,28 @@ def generic_execute_fused_qkv_cache_ragged[
     var test_output_shape = IndexList[2](total_length, hidden_size)
     var test_output_device = ctx.enqueue_create_buffer[dtype](test_output_size)
 
-    # Create device LayoutTensors for kernel calls
-    var hidden_state_ragged_tensor = LayoutTensor[dtype, hidden_state_layout](
-        hidden_state_ragged_device,
-        RuntimeLayout[hidden_state_layout].row_major(
-            IndexList[2](total_length, hidden_size)
-        ),
+    var hidden_state_ragged_tensor = TileTensor(
+        hidden_state_ragged_device, row_major(len(hidden_state_ragged_device))
+    ).reshape(Coord(total_length, Idx[hidden_size]))
+    var input_row_offsets_tensor = (
+        TileTensor(
+            input_row_offsets_device, row_major(len(input_row_offsets_device))
+        )
+        .reshape(Coord(Int64(batch_size + 1)))
+        .as_imm()
     )
-    var input_row_offsets_tensor = LayoutTensor[mut=False, .uint32, layout_1d](
-        input_row_offsets_device,
-        RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size + 1)),
-    )
-    var weight_device_tensor = LayoutTensor[dtype, weight_layout](
-        weight_device,
-        RuntimeLayout[weight_layout].row_major(weight_shape),
-    )
-    var test_output_device_tensor = LayoutTensor[dtype, hidden_state_layout](
-        test_output_device,
-        RuntimeLayout[hidden_state_layout].row_major(test_output_shape),
-    )
+    var weight_device_tensor = TileTensor(
+        weight_device, row_major(len(weight_device))
+    ).reshape(Coord(Idx[fused_hidden_size], Idx[hidden_size]))
+    var test_output_device_tensor = TileTensor(
+        test_output_device, row_major(len(test_output_device))
+    ).reshape(Coord(total_length, Idx[hidden_size]))
 
     # Execute the matmul
     _fused_qkv_matmul_kv_cache_ragged_impl[target="gpu"](
-        hidden_state_ragged_tensor,
+        hidden_state_ragged_tensor.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
-        weight_device_tensor,
+        weight_device_tensor.as_imm().as_unsafe_any_origin(),
         k_cache,
         v_cache,
         test_output_device_tensor,
@@ -847,17 +825,12 @@ def generic_execute_fused_qkv_cache_ragged[
 
     # Execute reference
     var ref_output_tile = TileTensor(
-        ref_output_device,
-        row_major(Coord(ref_output_shape[0], ref_output_shape[1])),
-    )
+        ref_output_device, row_major(len(ref_output_device))
+    ).reshape(Coord(ref_output_shape))
     var hidden_state_padded_tile = TileTensor(
-        hidden_state_padded_device,
-        row_major(Coord(padded_batch_dim, hidden_size)),
-    )
-    var weight_tile = TileTensor(
-        weight_device,
-        row_major(Coord(weight_shape[0], weight_shape[1])),
-    )
+        hidden_state_padded_device, row_major(len(hidden_state_padded_device))
+    ).reshape(Coord(padded_batch_dim, hidden_size))
+    var weight_tile = weight_device_tensor.reshape(Coord(weight_shape))
     _matmul_gpu[use_tensor_core=True, transpose_b=True](
         ref_output_tile,
         hidden_state_padded_tile,
@@ -899,10 +872,14 @@ def execute_paged_fused_qkv_matmul[
     comptime num_paged_blocks = 32
     comptime page_size = 512
     comptime CollectionType = PagedKVCacheCollection[
-        dtype, kv_params, page_size, ...
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
     ]
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-    comptime kv_block_layout = Layout.row_major[6]()
 
     var batch_size = len(prompt_lens)
     assert len(prompt_lens) == len(
@@ -927,10 +904,26 @@ def execute_paged_fused_qkv_matmul[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
-        RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
-        ctx,
+    comptime BlocksLayout = CollectionType.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(kv_block_shape[0])
+    blocks_shape[2] = Int64(kv_block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        kv_block_shape[1]
+        * kv_block_shape[2]
+        * kv_block_shape[3]
+        * kv_block_shape[4]
+        * kv_block_shape[5]
     )
+    blocks_strides[1] = Int64(
+        kv_block_shape[2]
+        * kv_block_shape[3]
+        * kv_block_shape[4]
+        * kv_block_shape[5]
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
+    var kv_block = HostDeviceTileTensor[dtype](blocks_layout, ctx)
 
     var cache_lengths_table = CacheLengthsTable.build(
         prompt_lens, cache_sizes, ctx
@@ -944,9 +937,9 @@ def execute_paged_fused_qkv_matmul[
     )
 
     var kv_collection_device = CollectionType(
-        kv_block.device_tensor(),
-        cache_lengths_table.cache_lengths.device_tensor(),
-        paged_lut.device_tensor(),
+        kv_block.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_table.cache_lengths.device_tile_tensor(),
+        paged_lut.device_tile_tensor(),
         UInt32(max_seq_length_batch),
         UInt32(max_full_context_length),
     )
@@ -955,9 +948,9 @@ def execute_paged_fused_qkv_matmul[
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     var kv_collection_host = CollectionType(
-        kv_block.tensor(),
-        cache_lengths_table.cache_lengths.host_tensor(),
-        paged_lut.host_tensor(),
+        kv_block.host_tensor().as_unsafe_any_origin(),
+        cache_lengths_table.cache_lengths.host_tile_tensor(),
+        paged_lut.host_tile_tensor(),
         UInt32(max_seq_length_batch),
         UInt32(max_full_context_length),
     )
@@ -975,7 +968,7 @@ def execute_paged_fused_qkv_matmul[
     var test_output_device = results[2]
     var test_output_shape = results[3]
 
-    _ = kv_block.tensor()
+    kv_block.to_host()
 
     generic_assert_output_equals[num_q_heads=num_q_heads, rtol=rtol](
         k_cache_host,
@@ -993,7 +986,7 @@ def execute_paged_fused_qkv_matmul[
     _ = ref_output_device^
     _ = test_output_device^
 
-    # Cleanup managed objects.
+    # Release the shared metadata buffers.
     _ = cache_lengths_table^
     _ = paged_lut^
 
@@ -1013,10 +1006,8 @@ def execute_cont_batch_fused_qkv_matmul[
 ) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params, ...
+        dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
     ]
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-    comptime kv_block_layout = Layout.row_major[6]()
 
     assert len(prompt_lens) == len(cache_sizes), (
         "mismatch between cache_sizes and prompt_lens, both should be"
@@ -1071,27 +1062,43 @@ def execute_cont_batch_fused_qkv_matmul[
     var lookup_table_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(lookup_table_device, lookup_table_host_ptr)
 
-    # Create runtime layouts
-    var kv_block_runtime = RuntimeLayout[kv_block_layout].row_major(
-        kv_block_shape
+    comptime BlocksLayout = CollectionType.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(kv_block_shape[0])
+    blocks_shape[2] = Int64(kv_block_shape[2])
+    blocks_shape[1] = Int64(kv_block_shape[1])
+    blocks_shape[3] = Int64(kv_block_shape[3])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        kv_block_shape[1]
+        * kv_block_shape[2]
+        * kv_block_shape[3]
+        * kv_block_shape[4]
+        * kv_block_shape[5]
     )
-    var cache_len_runtime = RuntimeLayout[layout_1d].row_major(
-        IndexList[1](batch_size)
+    blocks_strides[1] = Int64(
+        kv_block_shape[2]
+        * kv_block_shape[3]
+        * kv_block_shape[4]
+        * kv_block_shape[5]
     )
-
+    blocks_strides[2] = Int64(
+        kv_block_shape[3] * kv_block_shape[4] * kv_block_shape[5]
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
+    var kv_blocks_device_view = TileTensor(
+        kv_block_device, row_major(len(kv_block_device))
+    ).reshape(blocks_layout)
+    var cache_lengths_device_view = TileTensor(
+        cache_lengths_device, row_major(len(cache_lengths_device))
+    ).reshape(Coord(Int64(batch_size)))
+    var lookup_table_device_view = TileTensor(
+        lookup_table_device, row_major(len(lookup_table_device))
+    ).reshape(Coord(Int64(batch_size)))
     var kv_collection_device = CollectionType(
-        LayoutTensor[dtype, kv_block_layout](
-            kv_block_device,
-            kv_block_runtime,
-        ),
-        LayoutTensor[mut=False, .uint32, layout_1d](
-            cache_lengths_device,
-            cache_len_runtime,
-        ),
-        LayoutTensor[mut=False, .uint32, layout_1d](
-            lookup_table_device,
-            cache_len_runtime,
-        ),
+        kv_blocks_device_view.as_unsafe_any_origin(),
+        cache_lengths_device_view.as_imm().as_unsafe_any_origin(),
+        lookup_table_device_view.as_imm().as_unsafe_any_origin(),
         UInt32(max_seq_length_batch),
         UInt32(max_context_length),
     )
@@ -1099,19 +1106,17 @@ def execute_cont_batch_fused_qkv_matmul[
     var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
+    var kv_blocks_host_view = TileTensor(kv_block_host_ptr, blocks_layout)
+    var cache_lengths_host_view = TileTensor(
+        cache_lengths_host_ptr, row_major(Coord(Int64(batch_size)))
+    )
+    var lookup_table_host_view = TileTensor(
+        lookup_table_host_ptr, row_major(Coord(Int64(batch_size)))
+    )
     var kv_collection_host = CollectionType(
-        LayoutTensor[dtype, kv_block_layout](
-            kv_block_host_ptr,
-            kv_block_runtime,
-        ),
-        LayoutTensor[mut=False, .uint32, layout_1d](
-            cache_lengths_host_ptr,
-            cache_len_runtime,
-        ),
-        LayoutTensor[mut=False, .uint32, layout_1d](
-            lookup_table_host_ptr,
-            cache_len_runtime,
-        ),
+        kv_blocks_host_view.as_unsafe_any_origin(),
+        cache_lengths_host_view.as_imm().as_unsafe_any_origin(),
+        lookup_table_host_view.as_imm().as_unsafe_any_origin(),
         UInt32(max_seq_length_batch),
         UInt32(max_context_length),
     )
@@ -1156,7 +1161,6 @@ def execute_cont_batch_fused_qkv_matmul[
     _ = test_output_device^
 
 
-# TODO implement fused qkv matmul for paged
 def execute_fused_matmul_suite[
     dtype: DType, rtol: Float64
 ](ctx: DeviceContext) raises:

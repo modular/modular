@@ -72,11 +72,7 @@ from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from kv_cache.types import (
@@ -124,10 +120,22 @@ comptime main_kv_params = KVCacheStaticParams(
 )
 comptime index_kv_params = KVCacheStaticParams(num_heads=1, head_size=HEAD_SIZE)
 comptime MainCollection = PagedKVCacheCollection[
-    OUT_DTYPE, main_kv_params, page_size, ...
+    OUT_DTYPE,
+    main_kv_params,
+    page_size,
+    MutAnyOrigin,
+    ImmutAnyOrigin,
+    ImmutAnyOrigin,
+    MutAnyOrigin,
 ]
 comptime IndexCollection = PagedKVCacheCollection[
-    OUT_DTYPE, index_kv_params, page_size, ...
+    OUT_DTYPE,
+    index_kv_params,
+    page_size,
+    MutAnyOrigin,
+    ImmutAnyOrigin,
+    ImmutAnyOrigin,
+    MutAnyOrigin,
 ]
 
 
@@ -178,27 +186,16 @@ def bench_shape[
 
     var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
-    var iro_tensor = LayoutTensor[
-        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        iro_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var iro_tt = TileTensor(iro_dev, row_major(len(iro_dev))).reshape(
+        Coord(Int64(batch_size + 1))
     )
-    var iro_tt = TileTensor(iro_dev, row_major(Coord(Int64(batch_size + 1))))
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
-    var cache_lengths_tensor = LayoutTensor[
-        mut=False, .uint32, Layout(UNKNOWN_VALUE)
-    ](
-        cache_lengths_dev.unsafe_ptr(),
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size)
-        ),
-    )
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_dev, row_major(len(cache_lengths_dev))
+    ).reshape(Coord(Int64(batch_size)))
 
     var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
     var lut_host = List[UInt32](length=batch_size * lut_cols, fill=UInt32(0))
@@ -210,11 +207,8 @@ def bench_shape[
             block_counter += 1
     var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
-    var lut_tensor = LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
-        lut_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            IndexList[2](batch_size, lut_cols)
-        ),
+    var lut_tensor = TileTensor(lut_dev, row_major(len(lut_dev))).reshape(
+        Coord(Int64(batch_size), Int64(lut_cols))
     )
 
     # ---- cache-busting inputs: fp8 operands plus both E8M0 scale tensors ----
@@ -239,23 +233,15 @@ def bench_shape[
 
     # ---- outputs: fused writes Q (+ IndexQ); unfused writes one per band ----
     var q_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](total_seq * q_dim)
-    var q_out = LayoutTensor[OUT_DTYPE, Layout.row_major(UNKNOWN_VALUE, q_dim)](
-        q_out_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, q_dim)].row_major(
-            IndexList[2](total_seq, q_dim)
-        ),
+    var q_out = TileTensor(q_out_dev, row_major(len(q_out_dev))).reshape(
+        Coord(total_seq, Idx[q_dim])
     )
     # IndexQ and the index cache are allocated for both variants: they are a few
     # hundred KiB, sit outside the timed closure, and keeping them unconditional
     # lets one closure body serve dense and sparse alike.
     var iq_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](total_seq * iq_dim)
-    var iq_out = LayoutTensor[
-        OUT_DTYPE, Layout.row_major(UNKNOWN_VALUE, iq_dim)
-    ](
-        iq_out_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, iq_dim)].row_major(
-            IndexList[2](total_seq, iq_dim)
-        ),
+    var iq_out = TileTensor(iq_out_dev, row_major(len(iq_out_dev))).reshape(
+        Coord(total_seq, Idx[iq_dim])
     )
     # K, V and IndexK land in dense buffers on the unfused path; the fused
     # epilogue scatters them straight into the caches instead.
@@ -265,39 +251,66 @@ def bench_shape[
     var kv_out_ptr = kv_out_dev.unsafe_ptr()
 
     # ---- KV cache blocks (main: K+V; index: MLA K-only) ----
-    comptime block_layout = Layout.row_major[6]()
     var main_block_shape = IndexList[6](
         num_pages, 2, num_layers, page_size, MAIN_KV_HEADS, HEAD_SIZE
     )
     var main_blocks_dev = ctx.enqueue_create_buffer[OUT_DTYPE](
         main_block_shape.flattened_length()
     )
-    var main_blocks = LayoutTensor[OUT_DTYPE, block_layout](
-        main_blocks_dev.unsafe_ptr(),
-        RuntimeLayout[block_layout].row_major(main_block_shape),
+    comptime main_layout = MainCollection.blocks_tt_layout
+    var main_shape = Coord[*main_layout.shape_types]()
+    main_shape[0] = Int64(num_pages)
+    main_shape[2] = Int64(num_layers)
+    var main_strides = Coord[*main_layout.stride_types]()
+    main_strides[0] = Int64(
+        main_block_shape[1]
+        * num_layers
+        * page_size
+        * main_block_shape[4]
+        * HEAD_SIZE
     )
+    main_strides[1] = Int64(
+        num_layers * page_size * main_block_shape[4] * HEAD_SIZE
+    )
+    var main_blocks = TileTensor(
+        main_blocks_dev, row_major(len(main_blocks_dev))
+    ).reshape(main_layout(main_shape, main_strides))
     var index_block_shape = IndexList[6](
         num_pages, 2, num_layers, page_size, 1, HEAD_SIZE
     )
     var index_blocks_dev = ctx.enqueue_create_buffer[OUT_DTYPE](
         index_block_shape.flattened_length()
     )
-    var index_blocks = LayoutTensor[OUT_DTYPE, block_layout](
-        index_blocks_dev.unsafe_ptr(),
-        RuntimeLayout[block_layout].row_major(index_block_shape),
+    comptime index_layout = IndexCollection.blocks_tt_layout
+    var index_shape = Coord[*index_layout.shape_types]()
+    index_shape[0] = Int64(num_pages)
+    index_shape[2] = Int64(num_layers)
+    var index_strides = Coord[*index_layout.stride_types]()
+    index_strides[0] = Int64(
+        index_block_shape[1]
+        * num_layers
+        * page_size
+        * index_block_shape[4]
+        * HEAD_SIZE
     )
+    index_strides[1] = Int64(
+        num_layers * page_size * index_block_shape[4] * HEAD_SIZE
+    )
+    var index_blocks = TileTensor(
+        index_blocks_dev, row_major(len(index_blocks_dev))
+    ).reshape(index_layout(index_shape, index_strides))
 
     var main_collection = MainCollection(
         main_blocks.as_unsafe_any_origin(),
-        cache_lengths_tensor,
-        lut_tensor,
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lut_tensor.as_imm().as_unsafe_any_origin(),
         UInt32(max_seq),
         UInt32(max_ctx),
     )
     var index_collection = IndexCollection(
         index_blocks.as_unsafe_any_origin(),
-        cache_lengths_tensor,
-        lut_tensor,
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lut_tensor.as_imm().as_unsafe_any_origin(),
         UInt32(max_seq),
         UInt32(max_ctx),
     )
@@ -331,44 +344,44 @@ def bench_shape[
         mut iq_out,
         imm,
     }:
-        var hs = LayoutTensor[
-            mut=False, OPERAND_DTYPE, Layout.row_major(UNKNOWN_VALUE, hidden)
-        ](
-            cb_hs.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, hidden)].row_major(
-                IndexList[2](total_seq, hidden)
-            ),
+        var hs = (
+            TileTensor(
+                cb_hs.offset_ptr(iteration),
+                row_major(Coord(total_seq, Idx[hidden])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
-        var w = LayoutTensor[
-            mut=False, OPERAND_DTYPE, Layout.row_major(n_total, hidden)
-        ](
-            cb_w.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major(n_total, hidden)].row_major(
-                IndexList[2](n_total, hidden)
-            ),
+        var w = (
+            TileTensor(
+                cb_w.offset_ptr(iteration),
+                row_major(Coord(Idx[n_total], Idx[hidden])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
-        var asf = LayoutTensor[
-            mut=False, SCALE_DTYPE, Layout.row_major(UNKNOWN_VALUE, k_scales)
-        ](
-            cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, k_scales)].row_major(
-                IndexList[2](total_seq, k_scales)
-            ),
+        var asf = (
+            TileTensor(
+                cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
+                row_major(Coord(total_seq, Idx[k_scales])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
-        var bsf = LayoutTensor[
-            mut=False, SCALE_DTYPE, Layout.row_major(n_total, k_scales)
-        ](
-            cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-            RuntimeLayout[Layout.row_major(n_total, k_scales)].row_major(
-                IndexList[2](n_total, k_scales)
-            ),
+        var bsf = (
+            TileTensor(
+                cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
+                row_major(Coord(Idx[n_total], Idx[k_scales])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
         comptime if HAS_INDEXER:
             generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
             ](
                 hs,
-                iro_tensor,
+                iro_tt,
                 w,
                 asf,
                 bsf,
@@ -386,7 +399,7 @@ def bench_shape[
                 SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
             ](
                 hs,
-                iro_tensor,
+                iro_tt,
                 w,
                 asf,
                 bsf,
@@ -468,11 +481,11 @@ def bench_shape[
                 ctx,
             )
 
-        band[q_dim](0, _any(q_out.ptr))
+        band[q_dim](0, _any(q_out.unsafe_ptr()))
         band[kv_dim](k_off, _any(kv_out_ptr))
         band[kv_dim](v_off, _any(kv_out_ptr) + total_seq * kv_dim)
         comptime if HAS_INDEXER:
-            band[iq_dim](iq_off, _any(iq_out.ptr))
+            band[iq_dim](iq_off, _any(iq_out.unsafe_ptr()))
             band[ik_dim](ik_off, _any(kv_out_ptr) + 2 * total_seq * kv_dim)
 
         # Placing K/V (and IndexK) is the other half of what the fused epilogue

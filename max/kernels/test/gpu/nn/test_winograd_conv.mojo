@@ -11,21 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# TODO:
-# - Think about GPU memory access patterns/hierarchu
-# - Use shared memory for transformation matrices (B, G, A) to avoid redundant loads
-# - Use shared memory for input tiles to reduce global memory bandwidth
-# - Add proper grid dimension calculation instead of hardcoded values
-# - Implement proper tiling/slicing for rank 4 LayoutTensor to avoid get_tile workaround
-# - Add support for padding/strides in the Winograd convolution
-# - Add bounds checking for input dimensions
-# - Add test cases for odd sizes, likely broken
-
 from std.math import ceildiv
 
 from max.gpu.host import DeviceContext
 from max.gpu import block_dim, block_idx, thread_idx
-from layout import Idx, IntTuple, Layout, LayoutTensor, TileTensor, row_major
+from layout import Idx, IntTuple, TensorLayout, TileTensor, row_major
+from layout.tile_tensor import stack_allocation
+from layout.tensor_engine import DefaultEngine
 from layout.int_tuple import product
 from layout._fillers import random
 from nn.conv.conv import conv_gpu
@@ -37,16 +29,9 @@ from std.utils.numerics import get_accum_type
 
 @inline(.always)
 def _get_b[
-    dtype: DType, element_layout: Layout
-](
-    out B: LayoutTensor[
-        dtype,
-        Layout.row_major(4, 4),
-        MutAnyOrigin,
-        element_layout=element_layout,
-    ]
-):
-    B = type_of(B).stack_allocation()
+    dtype: DType
+](out B: TileTensor[dtype, type_of(row_major[4, 4]()), MutUntrackedOrigin]):
+    B = stack_allocation[dtype=dtype](row_major[4, 4]())
     # fmt:off
     B[0,0] = 1.0; B[0,1] =  0.0; B[0,2] = -1.0; B[0,3] =  0.0
     B[1,0] = 0.0; B[1,1] =  1.0; B[1,2] =  1.0; B[1,3] =  0.0
@@ -57,16 +42,9 @@ def _get_b[
 
 @inline(.always)
 def _get_g[
-    dtype: DType, element_layout: Layout
-](
-    out G: LayoutTensor[
-        dtype,
-        Layout.row_major(4, 3),
-        MutAnyOrigin,
-        element_layout=element_layout,
-    ]
-):
-    G = type_of(G).stack_allocation()
+    dtype: DType
+](out G: TileTensor[dtype, type_of(row_major[4, 3]()), MutUntrackedOrigin]):
+    G = stack_allocation[dtype=dtype](row_major[4, 3]())
     # fmt:off
     G[0,0] = 1.0; G[0,1] =  0.0; G[0,2] = 0.0
     G[1,0] = 0.5; G[1,1] =  0.5; G[1,2] = 0.5
@@ -77,16 +55,9 @@ def _get_g[
 
 @inline(.always)
 def _get_a[
-    dtype: DType, element_layout: Layout
-](
-    out A: LayoutTensor[
-        dtype,
-        Layout.row_major(2, 4),
-        MutAnyOrigin,
-        element_layout=element_layout,
-    ]
-):
-    A = type_of(A).stack_allocation()
+    dtype: DType
+](out A: TileTensor[dtype, type_of(row_major[2, 4]()), MutUntrackedOrigin]):
+    A = stack_allocation[dtype=dtype](row_major[2, 4]())
     # fmt:off
     A[0,0] = 1.0; A[0,1] = 1.0; A[0,2] =  1.0; A[0,3] =  0.0
     A[1,0] = 0.0; A[1,1] = 1.0; A[1,2] = -1.0; A[1,3] = -1.0
@@ -98,23 +69,26 @@ def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
-    element_layout: Layout,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
     //,
     transpose_b: Bool,
     s_type: DType = get_accum_type[c_type](),
 ](
-    C: LayoutTensor[
-        mut=True, c_type, c_layout, element_layout=element_layout, ...
+    C: TileTensor[
+        mut=True, c_type, c_layout, Engine=DefaultEngine[element_width=1], ...
     ],
-    A: LayoutTensor[a_type, a_layout, element_layout=element_layout, ...],
-    B: LayoutTensor[b_type, b_layout, element_layout=element_layout, ...],
+    A: TileTensor[a_type, a_layout, Engine=DefaultEngine[element_width=1], ...],
+    B: TileTensor[b_type, b_layout, Engine=DefaultEngine[element_width=1], ...],
 ):
-    comptime M = Int(c_layout.shape[0])
-    comptime N = Int(c_layout.shape[1])
-    comptime K = Int(a_layout.shape[1])
+    comptime assert C.rank == A.rank == B.rank == 2
+    comptime assert C.flat_rank == A.flat_rank == B.flat_rank == 2
+    comptime assert C.element_size == A.element_size == B.element_size == 1
+    comptime assert C.all_dims_known and A.all_dims_known and B.all_dims_known
+    comptime M = Int(c_layout.static_shape[0])
+    comptime N = Int(c_layout.static_shape[1])
+    comptime K = Int(a_layout.static_shape[1])
 
     comptime if transpose_b:
         for i in range(M):
@@ -132,31 +106,27 @@ def matmul[
                 C[i, j] = sum.cast[c_type]()
 
 
-# TODO: Workaround because I have not found a way to slice/tile a rank 4 LayoutTensor
-# to a rank 2 LayoutTensor
+# Copy the strided NHWC tile into writable scratch for the in-place transforms.
 @inline(.always)
 def get_tile[
     dtype: DType, //, tile_size: Int
 ](
-    input_tensor: LayoutTensor[dtype, ...],
+    input_tensor: TileTensor[dtype, Engine=DefaultEngine[element_width=1], ...],
     n: Int,
     h: Int,
     w: Int,
     c: Int,
-) -> LayoutTensor[
+) -> TileTensor[
     dtype,
-    Layout.row_major(tile_size, tile_size),
-    MutAnyOrigin,
-    element_layout=input_tensor.element_layout,
+    type_of(row_major[tile_size, tile_size]()),
+    MutUntrackedOrigin,
 ]:
-    # TODO: Issue because returning a stack variable? Workaround
-    # with @inline(.always)
-    var result = LayoutTensor[
-        dtype,
-        Layout.row_major(tile_size, tile_size),
-        MutAnyOrigin,
-        element_layout=input_tensor.element_layout,
-    ].stack_allocation()
+    comptime assert input_tensor.rank == input_tensor.flat_rank == 4
+    comptime assert input_tensor.element_size == 1
+    # Always inline so the scratch allocation lives in the caller's frame.
+    var result = stack_allocation[dtype=dtype](
+        row_major[tile_size, tile_size]()
+    )
 
     for i in range(tile_size):
         for j in range(tile_size):
@@ -166,33 +136,27 @@ def get_tile[
 
 
 # Each thread processes a 4x4 input tile to produce a 2x2 output tile.
-# The thread accumulates contributions from all input channels for each output channel.
+# This test supports one input channel and one filter output channel.
 def winograd_conv2d_gpu_nhwc[
-    element_layout: Layout,
-    //,
-    input_layout: Layout,
-    filter_layout: Layout,
-    output_layout: Layout,
+    input_layout: TensorLayout,
+    filter_layout: TensorLayout,
+    output_layout: TensorLayout,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
     block_size: Int,
 ](
-    input: LayoutTensor[
-        input_type, input_layout, ImmutAnyOrigin, element_layout=element_layout
-    ],
-    filter: LayoutTensor[
+    input: TileTensor[input_type, input_layout, ImmutAnyOrigin],
+    filter: TileTensor[
         filter_type,
         filter_layout,
         ImmutAnyOrigin,
-        element_layout=element_layout,
     ],
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True,
         output_type,
         output_layout,
         MutAnyOrigin,
-        element_layout=element_layout,
     ],
     stride: IndexList[2],
     dilation: IndexList[2],
@@ -210,25 +174,27 @@ def winograd_conv2d_gpu_nhwc[
     Currently only supports:
     - 3x3 filters
     - Stride 1
-    - Single input channel
-    - Even filter input sizes
+    - Single input and output channel
+    - Even input height and width
     - No padding
     - No dilation
     - NHWC input layout
     - RSCF filter layout
     """
     comptime assert input.rank == filter.rank == output.rank == 4
+    comptime assert input.flat_rank == filter.flat_rank == output.flat_rank == 4
+    comptime assert filter.all_dims_known
 
     # Dimensions
-    var C_in = input.dim[3]()  # input channels
-    var C_out = output.dim[3]()  # output channels
-    var H_out = output.dim[1]()
-    var W_out = output.dim[2]()
+    var C_in = Int(input.dim[3]())  # input channels
+    var C_out = Int(output.dim[3]())  # output channels
+    var H_out = Int(output.dim[1]())
+    var W_out = Int(output.dim[2]())
 
     # Get transformation matrices
-    var b = _get_b[input_type, element_layout]()
-    var g = _get_g[input_type, element_layout]()
-    var a = _get_a[input_type, element_layout]()
+    var b = _get_b[input_type]()
+    var g = _get_g[input_type]()
+    var a = _get_a[input_type]()
 
     # Thread indices
     var n = block_idx.z
@@ -240,69 +206,32 @@ def winograd_conv2d_gpu_nhwc[
         return
 
     # Allocate scratch space
-    var scratch = LayoutTensor[
-        input_type,
-        Layout.row_major(4, 3),
-        MutAnyOrigin,
-        element_layout=element_layout,
-    ].stack_allocation()
-    var scratch_2 = LayoutTensor[
-        input_type,
-        Layout.row_major(4, 4),
-        MutAnyOrigin,
-        element_layout=element_layout,
-    ].stack_allocation()
-    var scratch_3 = LayoutTensor[
-        input_type,
-        Layout.row_major(2, 4),
-        MutAnyOrigin,
-        element_layout=element_layout,
-    ].stack_allocation()
-    var m = LayoutTensor[
-        output_type,
-        Layout.row_major(4, 4),
-        MutAnyOrigin,
-        element_layout=element_layout,
-    ].stack_allocation()
-    var g_transformed = LayoutTensor[
-        input_type,
-        Layout.row_major(4, 4),
-        MutAnyOrigin,
-        element_layout=element_layout,
-    ].stack_allocation()
+    var scratch = stack_allocation[dtype=input_type](row_major[4, 3]())
+    var scratch_2 = stack_allocation[dtype=input_type](row_major[4, 4]())
+    var scratch_3 = stack_allocation[dtype=input_type](row_major[2, 4]())
+    var m = stack_allocation[dtype=output_type](row_major[4, 4]())
+    var g_transformed = stack_allocation[dtype=input_type](row_major[4, 4]())
 
-    # Pre-transform filter (G^T * filter * G)
-    # offsets=(0, 0) specifies indices for the non-sliced dimensions (rank-2)
-    var filter_slice = filter.slice[:, :, slice_indices=(0, 1)](offsets=(0, 0))
+    # Transform the filter as G * filter * G^T, fixing its channel indices.
+    var filter_slice = filter.slice[:, :, 0, 0]()
     matmul[False](scratch, g, filter_slice)
     matmul[True](g_transformed, scratch, g)
 
     # Process each output channel
     for c_out in range(C_out):
-        var output_tile = LayoutTensor[
-            output_type,
-            Layout.row_major(2, 2),
-            MutAnyOrigin,
-            element_layout=element_layout,
-        ].stack_allocation()
+        var output_tile = stack_allocation[dtype=output_type](row_major[2, 2]())
 
         # Process each input channel
         for c_in in range(C_in):
-            # 1. Get input tile
-
-            # TODO: Can we do something like this instead?
-            # var input_tile = input_tensor.tile[1,1,4,4](c_out, c_in)
             var input_tile = get_tile[4](
                 input.as_unsafe_any_origin(), n, h_out, w_out, c_in
             )
 
-            # 2. Transform input (B^T * d * B)
+            # Transform input as B * d * B^T.
             matmul[transpose_b=False](scratch_2, b, input_tile)
             matmul[transpose_b=True](input_tile, scratch_2, b)
 
-            # 3. Element-wise multiply with transformed filter and accumulate
-            # TODO: Can we do this instead? just need to figure out the casting of dtypes
-            # m = input_tile * g_transformed
+            # Multiply the transformed input and filter elementwise.
             for ii in range(4):
                 for jj in range(4):
                     m[ii, jj] = (
@@ -310,11 +239,10 @@ def winograd_conv2d_gpu_nhwc[
                         * g_transformed[ii, jj][0].cast[output_type]()
                     )
 
-            # 4. Transform output (A^T * m * A)
+            # Transform output as A * m * A^T.
             matmul[transpose_b=False](scratch_3, a, m)
             matmul[transpose_b=True](output_tile, scratch_3, a)
 
-            # 5. Store result
             for di in range(2):
                 for dj in range(2):
                     output[n, h_out + di, w_out + dj, c_out] = output_tile[
@@ -323,17 +251,13 @@ def winograd_conv2d_gpu_nhwc[
 
 
 def winograd_conv2d_gpu_launcher[
-    element_layout: Layout,
-    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
 ](
-    input: LayoutTensor[input_type, element_layout=element_layout, ...],
-    filter: LayoutTensor[filter_type, element_layout=element_layout, ...],
-    output: LayoutTensor[
-        mut=True, output_type, element_layout=element_layout, ...
-    ],
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[mut=True, output_type, ...],
     stride: IndexList[2],
     dilation: IndexList[2],
     padding: IndexList[
@@ -344,7 +268,6 @@ def winograd_conv2d_gpu_launcher[
 ) raises:
     comptime block_size = 16
 
-    # TODO: Is assert_true the right way to do this?
     assert_true(
         input.dim[1]() % 2 == 0 and input.dim[2]() % 2 == 0,
         "H and W must be even number",
@@ -370,20 +293,19 @@ def winograd_conv2d_gpu_launcher[
     )
     assert_true(num_groups == 1, "Num groups not implemented")
     assert_true(
-        input.dim[3]() == filter.dim[2](),
+        Int(input.dim[3]()) == Int(filter.dim[2]()),
         "Input and filter channels must match",
     )
     assert_true(input.dim[3]() == 1, "Multiple input channels not implemented")
 
-    var grid_dim_x = ceildiv(output.dim[2](), 2 * block_size)
-    var grid_dim_y = ceildiv(output.dim[1](), 2 * block_size)
-    var grid_dim_z = input.dim[0]()
+    var grid_dim_x = ceildiv(Int(output.dim[2]()), 2 * block_size)
+    var grid_dim_y = ceildiv(Int(output.dim[1]()), 2 * block_size)
+    var grid_dim_z = Int(input.dim[0]())
 
     comptime kernel = winograd_conv2d_gpu_nhwc[
-        element_layout=element_layout,
-        input.layout,
-        filter.layout,
-        output.layout,
+        type_of(input.layout),
+        type_of(filter.layout),
+        type_of(output.layout),
         input_type,
         filter_type,
         output_type,
@@ -452,7 +374,6 @@ def test_winograd_conv_gpu[
         input_dim, filter_dim, stride, dilation, pad
     ]()
 
-    # Define TileTensor layouts
     comptime input_tt_layout = row_major(
         (
             Idx[Int(input_dim[0])],
@@ -490,18 +411,29 @@ def test_winograd_conv_gpu[
 
     # Initialize input and filter with random values on host
     with input_device.map_to_host() as input_host:
-        var input_host_tt = TileTensor(input_host, input_tt_layout)
+        var input_host_tt = TileTensor(
+            input_host, row_major(len(input_host))
+        ).reshape(input_tt_layout)
         random(input_host_tt)
 
     with filter_device.map_to_host() as filter_host:
-        var filter_host_tt = TileTensor(filter_host, filter_tt_layout)
+        var filter_host_tt = TileTensor(
+            filter_host, row_major(len(filter_host))
+        ).reshape(filter_tt_layout)
         random(filter_host_tt)
 
-    # Create device TileTensors
-    var input_tt = TileTensor(input_device, input_tt_layout)
-    var filter_tt = TileTensor(filter_device, filter_tt_layout)
-    var output_tt = TileTensor(output_device, output_tt_layout)
-    var output_ref_tt = TileTensor(output_ref_device, output_tt_layout)
+    var input_tt = TileTensor(
+        input_device, row_major(len(input_device))
+    ).reshape(input_tt_layout)
+    var filter_tt = TileTensor(
+        filter_device, row_major(len(filter_device))
+    ).reshape(filter_tt_layout)
+    var output_tt = TileTensor(
+        output_device, row_major(len(output_device))
+    ).reshape(output_tt_layout)
+    var output_ref_tt = TileTensor(
+        output_ref_device, row_major(len(output_ref_device))
+    ).reshape(output_tt_layout)
 
     # Run reference convolution
     conv_gpu[dtype, dtype, dtype](
@@ -517,9 +449,9 @@ def test_winograd_conv_gpu[
 
     # Run winograd convolution
     winograd_conv2d_gpu_launcher[dtype, dtype, dtype](
-        input_tt.to_layout_tensor(),
-        filter_tt.to_layout_tensor(),
-        output_tt.to_layout_tensor(),
+        input_tt,
+        filter_tt,
+        output_tt,
         stride,
         dilation,
         pad,

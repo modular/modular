@@ -27,11 +27,7 @@ from std.benchmark import (
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from max.gpu.host import DeviceContext
@@ -40,8 +36,6 @@ from layout._fillers import random
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask, SlidingWindowCausalMask
-
-from std.utils import IndexList
 
 
 def flops(
@@ -133,7 +127,10 @@ def execute_kv_cache_ragged_flash_attention[
         dtype,
         KVCacheStaticParams(num_heads=num_kv_heads, head_size=head_dim),
         page_size,
-        ...,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
     ]
 
     debug_assert(
@@ -228,9 +225,8 @@ def execute_kv_cache_ragged_flash_attention[
     var output_host_ptr = List(length=output_size, fill=Scalar[out_dtype](0))
     var output_dev_buffer = ctx.enqueue_create_buffer[out_dtype](output_size)
     var output_device_tensor = TileTensor(
-        output_dev_buffer,
-        row_major((total_seq_len, Idx[num_q_heads], Idx[head_dim])),
-    )
+        output_dev_buffer, row_major(len(output_dev_buffer))
+    ).reshape(Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim]))
     # Paged LUT allocation. The LUT row stride (columns per sequence)
     # must satisfy `PagedKVCache.populate`'s SIMD-path contract: round
     # the page count up to a multiple of 8 so the `ld.global.v{chunk}.u32`
@@ -278,13 +274,8 @@ def execute_kv_cache_ragged_flash_attention[
         length=kv_block_size, fill=Scalar[dtype](0)
     )
     random(
-        LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
-            kv_block_paged_host_ptr,
-            RuntimeLayout[Layout.row_major[6]()].row_major(
-                IndexList[6](
-                    num_pages, 2, num_layers, page_size, num_kv_heads, head_dim
-                )
-            ),
+        TileTensor(
+            kv_block_paged_host_ptr, row_major(len(kv_block_paged_host_ptr))
         ),
         fill_lo,
         fill_hi,
@@ -294,46 +285,32 @@ def execute_kv_cache_ragged_flash_attention[
     )
     ctx.enqueue_copy(kv_block_paged_dev_buffer, kv_block_paged_host_ptr)
 
-    # Create LayoutTensors for KV collection
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_layout_tensor = LayoutTensor[dtype, kv_block_layout](
-        kv_block_paged_dev_buffer.unsafe_ptr(),
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](
-                num_pages, 2, num_layers, page_size, num_kv_heads, head_dim
-            )
-        ),
+    comptime BlocksLayout = CollectionType.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_pages)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        2 * num_layers * page_size * num_kv_heads * head_dim
     )
-
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_layout_tensor = LayoutTensor[
-        mut=False, .uint32, cache_lengths_layout
-    ](
-        cache_lengths_dev_buffer.unsafe_ptr(),
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
+    blocks_strides[1] = Int64(num_layers * page_size * num_kv_heads * head_dim)
+    var kv_blocks = TileTensor(
+        kv_block_paged_dev_buffer, row_major(len(kv_block_paged_dev_buffer))
+    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
+    var cache_lengths = TileTensor(
+        cache_lengths_dev_buffer,
+        row_major(Int64(len(cache_lengths_dev_buffer))),
     )
+    var paged_lut = TileTensor(
+        paged_lut_dev_buffer, row_major(len(paged_lut_dev_buffer))
+    ).reshape(Coord(Int64(batch_size), Int64(paged_lut_cols)))
 
-    comptime paged_lut_layout = Layout.row_major[2]()
-    var paged_lut_layout_tensor = LayoutTensor[
-        mut=False, .uint32, paged_lut_layout
-    ](
-        paged_lut_dev_buffer.unsafe_ptr(),
-        RuntimeLayout[paged_lut_layout].row_major(
-            IndexList[2](batch_size, paged_lut_cols)
-        ),
-    )
-
+    # K and V occupy disjoint per-page regions; erased origins allow the
+    # attention kernel to borrow both cache views.
     var kv_collection_device = CollectionType(
-        # `flash_attention`/`mha_gpu_naive` read both the `k` and `v` cache
-        # views, which are disjoint kv_idx halves of one `blocks` buffer
-        # sharing its (mutable) origin. The nested-origin exclusivity check
-        # therefore sees that mutable origin alias both the `k`/`v` operands
-        # and the mutable `output`, and rejects the call. Declare the blocks
-        # origin as UnsafeAnyOrigin to opt the collection out of exclusivity
-        # checking. Mirrors test_mha_sm100_1q_sink.mojo.
-        kv_block_layout_tensor.as_unsafe_any_origin(),
-        cache_lengths_layout_tensor,
-        paged_lut_layout_tensor,
+        kv_blocks.as_unsafe_any_origin(),
+        cache_lengths.as_imm().as_unsafe_any_origin(),
+        paged_lut.as_imm().as_unsafe_any_origin(),
         max_seq_length,
         UInt32(max_context_length),
     )
@@ -343,18 +320,16 @@ def execute_kv_cache_ragged_flash_attention[
 
     # Create tensors for flash_attention inputs
     var q_device_tensor = TileTensor(
-        q_dev_buffer,
-        row_major((total_seq_len, Idx[num_q_heads], Idx[head_dim])),
-    )
+        q_dev_buffer, row_major(len(q_dev_buffer))
+    ).reshape(Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim]))
 
     var input_row_offsets_tensor = TileTensor(
         input_row_offsets_dev_buffer,
         row_major(batch_size + 1),
     )
 
-    # Phase-10 cross-attention path: an independent kv-side
-    # input_row_offsets. For the bench harness we set it equal to
-    # the Q-side so the dispatcher routes through the cross-attention
+    # Cross-attention uses independent KV-side input_row_offsets. The bench
+    # sets them equal to the Q-side so the dispatcher uses the cross-attention
     # launcher (`mha_prefill_v2_ragged[cross_attention=True]`) but
     # `num_keys` derives identically; this measures the comptime-
     # monomorphized path, not a true encoder-decoder shape.
@@ -366,32 +341,30 @@ def execute_kv_cache_ragged_flash_attention[
             kv_input_row_offsets_dev_buffer, input_row_offsets_host_ptr
         )
 
-    var kv_input_row_offsets_view = LayoutTensor[
-        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        kv_input_row_offsets_dev_buffer.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var kv_input_row_offsets_view = (
+        TileTensor(
+            kv_input_row_offsets_dev_buffer,
+            row_major(Int64(len(kv_input_row_offsets_dev_buffer))),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
-    # Phase-5b sink path: per-q-head sink weight buffer. Filled with
-    # a small fixed value so the seeded `(max_vec, norm_vec)` init
-    # state has a non-trivial sink contribution.
+    # A small sink weight gives the seeded `(max_vec, norm_vec)` state
+    # a non-trivial sink contribution.
     var sink_weights_dev_buffer = ctx.enqueue_create_buffer[dtype](num_q_heads)
     comptime if sink:
         var sw_host = List(length=num_q_heads, fill=Scalar[dtype](0.05))
         ctx.enqueue_copy(sink_weights_dev_buffer, sw_host)
         _ = sw_host^
 
-    var sink_weights_view = LayoutTensor[
-        dtype,
-        Layout.row_major(UNKNOWN_VALUE),
-    ](
-        sink_weights_dev_buffer.unsafe_ptr().as_imm().as_unsafe_any_origin(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](num_q_heads)
-        ),
+    var sink_weights_view = (
+        TileTensor(
+            sink_weights_dev_buffer,
+            row_major(Int64(len(sink_weights_dev_buffer))),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
     if run_benchmark:
@@ -419,12 +392,12 @@ def execute_kv_cache_ragged_flash_attention[
                         not cross_attention
                     ), "sliding window mask does not support cross_attention"
                     flash_attention[ragged=True](
-                        output_device_tensor.to_layout_tensor(),
-                        q_device_tensor.to_layout_tensor(),
+                        output_device_tensor,
+                        q_device_tensor.as_imm(),
                         k_cache_device,
                         v_cache_device,
                         SlidingWindowCausalMask[local_window_size](),
-                        input_row_offsets_tensor.to_layout_tensor(),
+                        input_row_offsets_tensor.as_imm(),
                         rsqrt(Float32(head_dim)),
                         ctx,
                         num_partitions=_p_opt(num_partitions),
@@ -438,26 +411,26 @@ def execute_kv_cache_ragged_flash_attention[
                     # `if kv_input_row_offsets:` branch.
                     comptime if sink and cross_attention:
                         flash_attention[ragged=True, sink=True](
-                            output_device_tensor.to_layout_tensor(),
-                            q_device_tensor.to_layout_tensor(),
+                            output_device_tensor,
+                            q_device_tensor.as_imm(),
                             k_cache_device,
                             v_cache_device,
                             CausalMask(),
-                            input_row_offsets_tensor.to_layout_tensor(),
+                            input_row_offsets_tensor.as_imm(),
                             rsqrt(Float32(head_dim)),
                             ctx,
-                            kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
+                            kv_input_row_offsets=kv_input_row_offsets_view,
                             num_partitions=_p_opt(num_partitions),
                             sink_weights=sink_weights_view,
                         )
                     elif sink:
                         flash_attention[ragged=True, sink=True](
-                            output_device_tensor.to_layout_tensor(),
-                            q_device_tensor.to_layout_tensor(),
+                            output_device_tensor,
+                            q_device_tensor.as_imm(),
                             k_cache_device,
                             v_cache_device,
                             CausalMask(),
-                            input_row_offsets_tensor.to_layout_tensor(),
+                            input_row_offsets_tensor.as_imm(),
                             rsqrt(Float32(head_dim)),
                             ctx,
                             num_partitions=_p_opt(num_partitions),
@@ -465,25 +438,25 @@ def execute_kv_cache_ragged_flash_attention[
                         )
                     elif cross_attention:
                         flash_attention[ragged=True](
-                            output_device_tensor.to_layout_tensor(),
-                            q_device_tensor.to_layout_tensor(),
+                            output_device_tensor,
+                            q_device_tensor.as_imm(),
                             k_cache_device,
                             v_cache_device,
                             CausalMask(),
-                            input_row_offsets_tensor.to_layout_tensor(),
+                            input_row_offsets_tensor.as_imm(),
                             rsqrt(Float32(head_dim)),
                             ctx,
-                            kv_input_row_offsets=kv_input_row_offsets_view.as_unsafe_any_origin(),
+                            kv_input_row_offsets=kv_input_row_offsets_view,
                             num_partitions=_p_opt(num_partitions),
                         )
                     else:
                         flash_attention[ragged=True](
-                            output_device_tensor.to_layout_tensor(),
-                            q_device_tensor.to_layout_tensor(),
+                            output_device_tensor,
+                            q_device_tensor.as_imm(),
                             k_cache_device,
                             v_cache_device,
                             CausalMask(),
-                            input_row_offsets_tensor.to_layout_tensor(),
+                            input_row_offsets_tensor.as_imm(),
                             rsqrt(Float32(head_dim)),
                             ctx,
                             num_partitions=_p_opt(num_partitions),
@@ -525,24 +498,24 @@ def execute_kv_cache_ragged_flash_attention[
         # we don't look at.
         comptime if local_window_size > 0:
             flash_attention[ragged=True](
-                output_device_tensor.to_layout_tensor(),
-                q_device_tensor.to_layout_tensor(),
+                output_device_tensor,
+                q_device_tensor.as_imm(),
                 k_cache_device,
                 v_cache_device,
                 SlidingWindowCausalMask[local_window_size](),
-                input_row_offsets_tensor.to_layout_tensor(),
+                input_row_offsets_tensor.as_imm(),
                 rsqrt(Float32(head_dim)),
                 ctx,
                 num_partitions=_p_opt(num_partitions),
             )
         else:
             flash_attention[ragged=True](
-                output_device_tensor.to_layout_tensor(),
-                q_device_tensor.to_layout_tensor(),
+                output_device_tensor,
+                q_device_tensor.as_imm(),
                 k_cache_device,
                 v_cache_device,
                 CausalMask(),
-                input_row_offsets_tensor.to_layout_tensor(),
+                input_row_offsets_tensor.as_imm(),
                 rsqrt(Float32(head_dim)),
                 ctx,
                 num_partitions=_p_opt(num_partitions),

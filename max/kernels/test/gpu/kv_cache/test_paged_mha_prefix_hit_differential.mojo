@@ -90,12 +90,11 @@ from std.random import randn, seed
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext, HostBuffer
-from std.utils import IndexList
 from std.utils.numerics import nan
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from kv_cache_test_utils import padded_lut_cols
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 
@@ -210,50 +209,59 @@ def _run_paged_mha[
     ctx.enqueue_copy(dst_buf=lut_dev, src_buf=lut_host)
     ctx.enqueue_copy(dst_buf=ro_dev, src_buf=ro_host)
 
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
-        kv_block_dev,
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](num_pages, 2, NUM_LAYERS, PAGE_SIZE, head_kv, head_dim)
-        ),
-    )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cl_tensor = LayoutTensor[mut=False, .uint32, cl_layout](
-        cl_dev, RuntimeLayout[cl_layout].row_major(IndexList[1](1))
-    )
-    comptime lut_layout = Layout.row_major[2]()
-    var lut_tensor = LayoutTensor[mut=False, .uint32, lut_layout](
-        lut_dev, RuntimeLayout[lut_layout].row_major(IndexList[2](1, lut_cols))
-    )
-
-    var kv_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=head_kv, head_size=head_dim),
         PAGE_SIZE,
-    ](
-        kv_block_tensor.as_unsafe_any_origin(),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_pages)
+    blocks_shape[2] = Int64(NUM_LAYERS)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var kv_block_tensor = (
+        TileTensor(kv_block_dev, row_major(len(kv_block_dev)))
+        .reshape(BlocksLayout(blocks_shape, blocks_strides))
+        .as_unsafe_any_origin()
+    )
+    var cl_tensor = (
+        TileTensor(cl_dev, row_major(len(cl_dev)))
+        .reshape(Coord(Int64(1)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var lut_tensor = (
+        TileTensor(lut_dev, row_major(len(lut_dev)))
+        .reshape(Coord(Int64(1), Int64(lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var kv_collection = Collection(
+        kv_block_tensor,
         cl_tensor,
         lut_tensor,
         UInt32(extend),  # max_prompt_length
         UInt32(total_keys),  # max_full_context_length
     )
 
-    comptime qo_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
-    var q_tensor = LayoutTensor[mut=False, dtype, qo_layout](
-        q_dev,
-        RuntimeLayout[qo_layout].row_major(
-            IndexList[3](extend, num_q_heads, head_dim)
-        ),
+    var q_tensor = (
+        TileTensor(q_dev, row_major(len(q_dev)))
+        .reshape(Coord(Int64(extend), Idx[num_q_heads], Idx[head_dim]))
+        .as_imm()
     )
-    var o_tensor = LayoutTensor[dtype, qo_layout](
-        o_dev,
-        RuntimeLayout[qo_layout].row_major(
-            IndexList[3](extend, num_q_heads, head_dim)
-        ),
+    var o_tensor = TileTensor(o_dev, row_major(len(o_dev))).reshape(
+        Coord(Int64(extend), Idx[num_q_heads], Idx[head_dim])
     )
-    comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var ro_tensor = LayoutTensor[mut=False, .uint32, ro_layout](
-        ro_dev, RuntimeLayout[ro_layout].row_major(IndexList[1](2))
+    var ro_tensor = (
+        TileTensor(ro_dev, row_major(len(ro_dev)))
+        .reshape(Coord(Int64(2)))
+        .as_imm()
     )
 
     flash_attention[ragged=True](

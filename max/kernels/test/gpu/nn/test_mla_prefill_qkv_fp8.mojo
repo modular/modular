@@ -17,9 +17,6 @@ from std.random import randn
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -264,24 +261,15 @@ def test_prefill[
     )
 
     # create reference K and V
-    var k_ref = LayoutTensor[.bfloat16, Layout.row_major[4]()](
-        k_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var k_ref = TileTensor(k_ref_ptr, row_major(len(k_ref_ptr))).reshape(
+        Coord(batch_size, num_keys, num_heads, depth)
     )
-    var v_ref = LayoutTensor[.bfloat16, Layout.row_major[4]()](
-        v_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var v_ref = TileTensor(v_ref_ptr, row_major(len(v_ref_ptr))).reshape(
+        Coord(batch_size, num_keys, num_heads, depth)
     )
-    var output_ref = LayoutTensor[output_type, Layout.row_major[4]()](
-        output_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
+    var output_ref = TileTensor(
+        output_ref_ptr, row_major(len(output_ref_ptr))
+    ).reshape(Coord(batch_size, seq_len, num_heads, depth))
 
     # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
     for b in range(batch_size):
@@ -371,12 +359,9 @@ def test_prefill[
     ctx.synchronize()
 
     # view output as a rank 4 buffer
-    var output_rank4 = LayoutTensor[output_type, Layout.row_major[4]()](
-        output_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, kv_depth)
-        ),
-    )
+    var output_rank4 = TileTensor(
+        output_ptr, row_major(len(output_ptr))
+    ).reshape(Coord(batch_size, seq_len, num_heads, kv_depth))
 
     # compare output with reference
     # FP8 MMA has significantly less precision than BF16 MMA:

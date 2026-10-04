@@ -61,11 +61,8 @@ from max.gpu.host import DeviceAttribute, DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    Coord,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mla_index_fp8 import (
@@ -244,10 +241,6 @@ def execute_mla_indexer_paged[
         kv_params.num_heads,
         kv_params.head_size,
     )
-    comptime k_block_layout = Layout.row_major[6]()
-    var k_block_runtime_layout = RuntimeLayout[k_block_layout].row_major(
-        k_shape
-    )
     var k_block_device = ctx.enqueue_create_buffer[.float8_e4m3fn](
         k_shape.flattened_length()
     )
@@ -263,21 +256,13 @@ def execute_mla_indexer_paged[
         kv_params.num_heads,
         head_dim_granularity,
     )
-    comptime ks_block_layout = Layout.row_major[6]()
-    var ks_block_runtime_layout = RuntimeLayout[ks_block_layout].row_major(
-        ks_shape
-    )
     var ks_block_device = ctx.enqueue_create_buffer[.float32](
         ks_shape.flattened_length()
     )
     with ks_block_device.map_to_host() as ks_block_host:
         rand(ks_block_host.as_span())
 
-    comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_shape = IndexList[2](batch_size, lut_pages_per_seq)
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
     var k_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
     )
@@ -291,37 +276,62 @@ def execute_mla_indexer_paged[
                     block_idx
                 )
 
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_shape = IndexList[1](batch_size)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_layout
-    ].row_major(cache_lengths_shape)
-
-    var k_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         DType.float8_e4m3fn,
         kv_params,
         page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=128,
-    ](
-        LayoutTensor[.float8_e4m3fn, k_block_layout](
-            k_block_device,
-            k_block_runtime_layout,
-        ),
-        LayoutTensor[mut=False, .uint32, cache_lengths_layout](
-            cache_lengths_device,
-            cache_lengths_runtime_layout,
-        ),
-        LayoutTensor[mut=False, .uint32, paged_lut_layout](
-            k_lut_device,
-            paged_lut_runtime_layout,
-        ),
+    ]
+    comptime blocks_layout_type = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*blocks_layout_type.shape_types]()
+    blocks_shape[0] = Int64(num_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*blocks_layout_type.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var blocks = (
+        TileTensor(k_block_device, row_major(len(k_block_device)))
+        .reshape(blocks_layout_type(blocks_shape, blocks_strides))
+        .as_unsafe_any_origin()
+    )
+    comptime assert Collection.scale_dtype == DType.float32
+    comptime scales_layout_type = Collection.scales_tt_layout
+    var scales_shape = Coord[*scales_layout_type.shape_types]()
+    scales_shape[0] = Int64(num_blocks)
+    scales_shape[2] = Int64(num_layers)
+    var scales_strides = Coord[*scales_layout_type.stride_types]()
+    scales_strides[1] = scales_shape[2] * Int64(scales_strides[2].value())
+    scales_strides[0] = Int64(scales_shape[1].value()) * scales_strides[1]
+    var scales = (
+        TileTensor(ks_block_device, row_major(len(ks_block_device)))
+        .reshape(scales_layout_type(scales_shape, scales_strides))
+        .bitcast[Collection.scale_dtype]()
+        .as_unsafe_any_origin()
+    )
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
+        .reshape(Coord(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var lookup_table = (
+        TileTensor(k_lut_device, row_major(len(k_lut_device)))
+        .reshape(Coord(Int64(batch_size), Int64(lut_pages_per_seq)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var k_collection = Collection(
+        blocks,
+        cache_lengths,
+        lookup_table,
         UInt32(seq_len),
         UInt32(frozen_cache_len),
-        LayoutTensor[.float32, ks_block_layout](
-            ks_block_device,
-            ks_block_runtime_layout,
-        ),
+        scales,
     )
 
     var o_device = ctx.enqueue_create_buffer[.int32](total_seq_len * top_k)

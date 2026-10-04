@@ -55,10 +55,10 @@ from std.benchmark import (
 )
 from max.gpu.host import DeviceContext
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
+    Coord,
+    Idx,
+    TileTensor,
+    row_major,
 )
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -107,10 +107,22 @@ comptime index_kv_params = KVCacheStaticParams(
 )
 
 comptime MainCollection = PagedKVCacheCollection[
-    DATA_DTYPE, main_kv_params, page_size, ...
+    DATA_DTYPE,
+    main_kv_params,
+    page_size,
+    MutAnyOrigin,
+    ImmutAnyOrigin,
+    ImmutAnyOrigin,
+    MutAnyOrigin,
 ]
 comptime IndexCollection = PagedKVCacheCollection[
-    DATA_DTYPE, index_kv_params, page_size, ...
+    DATA_DTYPE,
+    index_kv_params,
+    page_size,
+    MutAnyOrigin,
+    ImmutAnyOrigin,
+    ImmutAnyOrigin,
+    MutAnyOrigin,
 ]
 
 
@@ -137,26 +149,16 @@ def bench_shape(
 
     var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
-    var iro_tensor = LayoutTensor[
-        mut=False, .uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        iro_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var iro_tensor = TileTensor(iro_dev, row_major(len(iro_dev))).reshape(
+        Coord(Int64(batch_size + 1))
     )
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
-    var cache_lengths_tensor = LayoutTensor[
-        mut=False, .uint32, Layout(UNKNOWN_VALUE)
-    ](
-        cache_lengths_dev.unsafe_ptr(),
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-            IndexList[1](batch_size)
-        ),
-    )
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_dev, row_major(len(cache_lengths_dev))
+    ).reshape(Coord(Int64(batch_size)))
 
     # ---- paged lookup table (sequential distinct blocks; shared by both
     # caches since main/index blocks are separate allocations) ----
@@ -170,11 +172,8 @@ def bench_shape(
             block_counter += 1
     var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
-    var lut_tensor = LayoutTensor[mut=False, .uint32, Layout.row_major[2]()](
-        lut_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            IndexList[2](batch_size, lut_cols)
-        ),
+    var lut_tensor = TileTensor(lut_dev, row_major(len(lut_dev))).reshape(
+        Coord(Int64(batch_size), Int64(lut_cols))
     )
 
     # ---- cache-busting inputs: hidden state (M, K) and stacked weight
@@ -195,70 +194,82 @@ def bench_shape(
     var fused_out_dev = ctx.enqueue_create_buffer[DATA_DTYPE](
         total_seq * combined_out
     )
-    var fused_out = LayoutTensor[
-        DATA_DTYPE, Layout.row_major(UNKNOWN_VALUE, combined_out)
-    ](
-        fused_out_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, combined_out)].row_major(
-            IndexList[2](total_seq, combined_out)
-        ),
-    )
+    var fused_out = TileTensor(
+        fused_out_dev, row_major(len(fused_out_dev))
+    ).reshape(Coord(total_seq, Idx[combined_out]))
     var q_out_dev = ctx.enqueue_create_buffer[DATA_DTYPE](total_seq * q_dim)
-    var q_out = LayoutTensor[
-        DATA_DTYPE, Layout.row_major(UNKNOWN_VALUE, q_dim)
-    ](
-        q_out_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, q_dim)].row_major(
-            IndexList[2](total_seq, q_dim)
-        ),
+    var q_out = TileTensor(q_out_dev, row_major(len(q_out_dev))).reshape(
+        Coord(total_seq, Idx[q_dim])
     )
     var iq_out_dev = ctx.enqueue_create_buffer[DATA_DTYPE](total_seq * iq_dim)
-    var iq_out = LayoutTensor[
-        DATA_DTYPE, Layout.row_major(UNKNOWN_VALUE, iq_dim)
-    ](
-        iq_out_dev.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, iq_dim)].row_major(
-            IndexList[2](total_seq, iq_dim)
-        ),
+    var iq_out = TileTensor(iq_out_dev, row_major(len(iq_out_dev))).reshape(
+        Coord(total_seq, Idx[iq_dim])
     )
 
     # ---- KV cache blocks (main: K+V, 1 head; index: K-only MLA, 1 head) ----
-    comptime block_layout = Layout.row_major[6]()
     var main_block_shape = IndexList[6](
         num_pages, 2, num_layers, page_size, MAIN_KV_HEADS, HEAD_SIZE
     )
     var main_blocks_dev = ctx.enqueue_create_buffer[DATA_DTYPE](
         main_block_shape.flattened_length()
     )
-    var main_blocks = LayoutTensor[DATA_DTYPE, block_layout](
-        main_blocks_dev.unsafe_ptr(),
-        RuntimeLayout[block_layout].row_major(main_block_shape),
+    comptime main_layout = MainCollection.blocks_tt_layout
+    var main_shape = Coord[*main_layout.shape_types]()
+    main_shape[0] = Int64(num_pages)
+    main_shape[2] = Int64(num_layers)
+    var main_strides = Coord[*main_layout.stride_types]()
+    main_strides[0] = Int64(
+        main_block_shape[1]
+        * num_layers
+        * page_size
+        * main_block_shape[4]
+        * HEAD_SIZE
     )
+    main_strides[1] = Int64(
+        num_layers * page_size * main_block_shape[4] * HEAD_SIZE
+    )
+    var main_blocks = TileTensor(
+        main_blocks_dev, row_major(len(main_blocks_dev))
+    ).reshape(main_layout(main_shape, main_strides))
     var index_block_shape = IndexList[6](
         num_pages, 2, num_layers, page_size, 1, HEAD_SIZE
     )
     var index_blocks_dev = ctx.enqueue_create_buffer[DATA_DTYPE](
         index_block_shape.flattened_length()
     )
-    var index_blocks = LayoutTensor[DATA_DTYPE, block_layout](
-        index_blocks_dev.unsafe_ptr(),
-        RuntimeLayout[block_layout].row_major(index_block_shape),
+    comptime index_layout = IndexCollection.blocks_tt_layout
+    var index_shape = Coord[*index_layout.shape_types]()
+    index_shape[0] = Int64(num_pages)
+    index_shape[2] = Int64(num_layers)
+    var index_strides = Coord[*index_layout.stride_types]()
+    index_strides[0] = Int64(
+        index_block_shape[1]
+        * num_layers
+        * page_size
+        * index_block_shape[4]
+        * HEAD_SIZE
     )
+    index_strides[1] = Int64(
+        num_layers * page_size * index_block_shape[4] * HEAD_SIZE
+    )
+    var index_blocks = TileTensor(
+        index_blocks_dev, row_major(len(index_blocks_dev))
+    ).reshape(index_layout(index_shape, index_strides))
 
     # `as_unsafe_any_origin`: the fused QKV matmul writes both the k and v cache
-    # views (disjoint kv_idx halves of one blocks buffer sharing its origin), so
+    # views (disjoint per-page regions sharing the blocks buffer origin), so
     # the nested-origin exclusivity check would reject passing both. Opt out.
     var main_collection = MainCollection(
         main_blocks.as_unsafe_any_origin(),
-        cache_lengths_tensor,
-        lut_tensor,
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lut_tensor.as_imm().as_unsafe_any_origin(),
         UInt32(max_seq),
         UInt32(max_ctx),
     )
     var index_collection = IndexCollection(
         index_blocks.as_unsafe_any_origin(),
-        cache_lengths_tensor,
-        lut_tensor,
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lut_tensor.as_imm().as_unsafe_any_origin(),
         UInt32(max_seq),
         UInt32(max_ctx),
     )
@@ -286,21 +297,21 @@ def bench_shape(
     def fused_launch(
         ctx: DeviceContext, iteration: Int
     ) raises {mut cb_hs, mut cb_w, mut fused_out, imm,}:
-        var hs_tensor = LayoutTensor[
-            mut=False, DATA_DTYPE, Layout.row_major(UNKNOWN_VALUE, hidden)
-        ](
-            cb_hs.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, hidden)].row_major(
-                IndexList[2](total_seq, hidden)
-            ),
+        var hs_tensor = (
+            TileTensor(
+                cb_hs.offset_ptr(iteration),
+                row_major(Coord(total_seq, Idx[hidden])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
-        var w_full = LayoutTensor[
-            mut=False, DATA_DTYPE, Layout.row_major(n_total, hidden)
-        ](
-            cb_w.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major(n_total, hidden)].row_major(
-                IndexList[2](n_total, hidden)
-            ),
+        var w_full = (
+            TileTensor(
+                cb_w.offset_ptr(iteration),
+                row_major(Coord(Idx[n_total], Idx[hidden])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
         generic_fused_qkv_index_matmul_kv_cache_paged_ragged[target="gpu"](
             hs_tensor,
@@ -332,29 +343,29 @@ def bench_shape(
     def unfused_launch(
         ctx: DeviceContext, iteration: Int
     ) raises {mut cb_hs, mut cb_w, mut q_out, mut iq_out, imm,}:
-        var hs_tensor = LayoutTensor[
-            mut=False, DATA_DTYPE, Layout.row_major(UNKNOWN_VALUE, hidden)
-        ](
-            cb_hs.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE, hidden)].row_major(
-                IndexList[2](total_seq, hidden)
-            ),
+        var hs_tensor = (
+            TileTensor(
+                cb_hs.offset_ptr(iteration),
+                row_major(Coord(total_seq, Idx[hidden])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
-        var w_qkv = LayoutTensor[
-            mut=False, DATA_DTYPE, Layout.row_major(qkv_n, hidden)
-        ](
-            cb_w.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major(qkv_n, hidden)].row_major(
-                IndexList[2](qkv_n, hidden)
-            ),
+        var w_qkv = (
+            TileTensor(
+                cb_w.offset_ptr(iteration),
+                row_major(Coord(Idx[qkv_n], Idx[hidden])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
-        var w_idx = LayoutTensor[
-            mut=False, DATA_DTYPE, Layout.row_major(idx_n, hidden)
-        ](
-            cb_w.offset_ptr(iteration) + qkv_n * hidden,
-            RuntimeLayout[Layout.row_major(idx_n, hidden)].row_major(
-                IndexList[2](idx_n, hidden)
-            ),
+        var w_idx = (
+            TileTensor(
+                cb_w.offset_ptr(iteration) + qkv_n * hidden,
+                row_major(Coord(Idx[idx_n], Idx[hidden])),
+            )
+            .as_imm()
+            .as_unsafe_any_origin()
         )
         generic_fused_qkv_matmul_kv_cache_paged_ragged[target="gpu"](
             hs_tensor,

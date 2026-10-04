@@ -63,6 +63,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Coord,
     Idx,
+    TileTensor,
     row_major,
     TileTensor,
 )
@@ -418,8 +419,6 @@ def run_one_case(
     ctx.synchronize()
 
     # --- PagedKVCacheCollection ----------------------------------------------
-    # The device buffers outlive the collection, so the views carry the
-    # untracked any-origins; `scales_origin` is the no-scales default.
     comptime Collection = PagedKVCacheCollection[
         kv_type,
         kv_params,
@@ -427,31 +426,36 @@ def run_one_case(
         MutAnyOrigin,
         ImmutAnyOrigin,
         ImmutAnyOrigin,
-        MutUntrackedOrigin,
+        MutAnyOrigin,
     ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(block_shape[0])
+    blocks_shape[2] = Int64(block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        block_shape[1]
+        * block_shape[2]
+        * block_shape[3]
+        * block_shape[4]
+        * block_shape[5]
+    )
+    blocks_strides[1] = Int64(
+        block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
+    )
+    var blocks = TileTensor(
+        blocks_device, row_major(len(blocks_device))
+    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(len(cache_lengths_device))
+    ).reshape(Coord(Int64(batch_size)))
+    var lookup_table = TileTensor(
+        lookup_table_device, row_major(len(lookup_table_device))
+    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
     var kv_collection = Collection(
-        TileTensor(
-            blocks_device,
-            row_major(
-                Coord(
-                    block_shape[0],
-                    block_shape[1],
-                    block_shape[2],
-                    block_shape[3],
-                    block_shape[4],
-                    block_shape[5],
-                )
-            ),
-        ).as_unsafe_any_origin(),
-        TileTensor(cache_lengths_device, row_major(Coord(batch_size)))
-        .as_imm()
-        .as_unsafe_any_origin(),
-        TileTensor(
-            lookup_table_device,
-            row_major(Coord(batch_size, max_pages_per_batch)),
-        )
-        .as_imm()
-        .as_unsafe_any_origin(),
+        blocks.as_unsafe_any_origin(),
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )

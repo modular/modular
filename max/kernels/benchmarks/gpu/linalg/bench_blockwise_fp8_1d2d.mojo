@@ -46,12 +46,8 @@ from max.gpu.host import DeviceContext
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
-    row_major as new_row_major,
+    row_major,
 )
 from linalg.grouped_matmul_sm100_blockwise_fp8 import (
     grouped_matmul_sm100_blockwise_scaled_fp8_persistent,
@@ -96,18 +92,6 @@ def bench_blockwise_fp8_1d2d[
 
     var total_flops = 2 * total_num_tokens * N * K
 
-    # Define layouts
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, K)
-    comptime b_layout = Layout.row_major(num_experts, N, K)
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    comptime a_scales_layout = Layout.row_major(
-        K // BLOCK_SCALE_K, UNKNOWN_VALUE
-    )
-    comptime b_scales_layout = Layout.row_major(
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
-    comptime expert_scales_layout = Layout.row_major(num_experts)
-
     # Sizes
     var a_size = total_num_tokens * K
     var b_size = num_experts * N * K
@@ -148,74 +132,21 @@ def bench_blockwise_fp8_1d2d[
     ctx.enqueue_copy(expert_ids_dev_buf, expert_ids_host_ptr)
     ctx.enqueue_copy(expert_scales_dev_buf, expert_scales_host_ptr)
 
-    # LayoutTensor views for structured kernel
-    var dynamic_a_shape = IndexList[2](total_num_tokens, K)
-    var dynamic_c_shape = IndexList[2](total_num_tokens, N)
-    var dynamic_a_scales_shape = IndexList[2](
-        K // BLOCK_SCALE_K, total_num_tokens
-    )
-    var dynamic_b_scales_shape = IndexList[3](
-        num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K
-    )
-
-    var a_struct = LayoutTensor[a_type, a_layout](
-        a_dev_buf.unsafe_ptr().bitcast[Scalar[a_type]](),
-        RuntimeLayout[a_layout].row_major(dynamic_a_shape),
-    )
-    var b_struct = LayoutTensor[b_type, b_layout](
-        b_dev_buf.unsafe_ptr().bitcast[Scalar[b_type]](),
-        RuntimeLayout[b_layout].row_major(IndexList[3](num_experts, N, K)),
-    )
-    var c_struct = LayoutTensor[c_type, c_layout](
-        c_dev_buf.unsafe_ptr().bitcast[Scalar[c_type]](),
-        RuntimeLayout[c_layout].row_major(dynamic_c_shape),
-    )
-    var a_scales_struct = LayoutTensor[.float32, a_scales_layout](
-        a_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
-        RuntimeLayout[a_scales_layout].row_major(dynamic_a_scales_shape),
-    )
-    var b_scales_struct = LayoutTensor[.float32, b_scales_layout](
-        b_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
-        RuntimeLayout[b_scales_layout].row_major(
-            IndexList[3](num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K)
-        ),
-    )
-    var a_offsets_struct = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        a_offsets_dev_buf.unsafe_ptr().bitcast[UInt32](),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](num_active_experts + 1)
-        ),
-    )
-    var expert_ids_struct = LayoutTensor[
-        .int32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        expert_ids_dev_buf.unsafe_ptr().bitcast[Int32](),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            IndexList[1](num_active_experts)
-        ),
-    )
-    var expert_scales_struct = LayoutTensor[.float32, expert_scales_layout](
-        expert_scales_dev_buf.unsafe_ptr().bitcast[Float32](),
-    )
-
-    # TileTensor versions for the structured kernel
     var a_tt = TileTensor(
         a_dev_buf,
-        new_row_major(Coord(Int64(total_num_tokens), Idx[K])),
+        row_major(Coord(Int64(total_num_tokens), Idx[K])),
     )
     var b_tt = TileTensor(
         b_dev_buf,
-        new_row_major[num_experts, N, K](),
+        row_major[num_experts, N, K](),
     )
     var c_tt = TileTensor(
         c_dev_buf,
-        new_row_major(Coord(Int64(total_num_tokens), Idx[N])),
+        row_major(Coord(Int64(total_num_tokens), Idx[N])),
     )
     var a_scales_tt = TileTensor(
         a_scales_dev_buf,
-        new_row_major(
+        row_major(
             Coord(
                 Idx[K // BLOCK_SCALE_K],
                 Int64(total_num_tokens),
@@ -224,7 +155,7 @@ def bench_blockwise_fp8_1d2d[
     )
     var b_scales_tt = TileTensor(
         b_scales_dev_buf,
-        new_row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
+        row_major[num_experts, N // BLOCK_SCALE_K, K // BLOCK_SCALE_K](),
     )
     var a_offsets_tt = TileTensor[.uint32, GMEMLayout1D, MutAnyOrigin](
         a_offsets_dev_buf,

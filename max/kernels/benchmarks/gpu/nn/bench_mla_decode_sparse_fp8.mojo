@@ -32,12 +32,9 @@ from max.gpu.host import DeviceContext
 from internal_utils import arg_parse
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mla import flare_mla_decoding
@@ -193,40 +190,56 @@ def execute_mla_decode_sparse[
             ro_host[i] = UInt32(i * seq_len)
     ctx.synchronize()
 
-    comptime blocks_layout = Layout.row_major[6]()
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lut_layout = Layout.row_major[2]()
-
-    var kv_collection = PagedKVCacheCollection[kv_dtype, kv_params, page_size](
-        LayoutTensor[kv_dtype, blocks_layout, MutAnyOrigin](
-            blocks_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[blocks_layout].row_major(block_shape),
-        ),
-        LayoutTensor[.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-        ),
-        LayoutTensor[.uint32, lut_layout, ImmutAnyOrigin](
-            lookup_table_device.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[lut_layout].row_major(
-                IndexList[2](batch_size, pages_per_seq)
-            ),
-        ),
+    comptime Collection = PagedKVCacheCollection[
+        kv_dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime blocks_layout_type = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*blocks_layout_type.shape_types]()
+    blocks_shape[0] = Int64(total_pages)
+    blocks_shape[2] = Int64(NUM_LAYERS)
+    var blocks_strides = Coord[*blocks_layout_type.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var blocks = (
+        TileTensor(blocks_device, row_major(len(blocks_device)))
+        .reshape(blocks_layout_type(blocks_shape, blocks_strides))
+        .as_unsafe_any_origin()
+    )
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
+        .reshape(Coord(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var lookup_table = (
+        TileTensor(lookup_table_device, row_major(len(lookup_table_device)))
+        .reshape(Coord(Int64(batch_size), Int64(pages_per_seq)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var kv_collection = Collection(
+        blocks,
+        cache_lengths,
+        lookup_table,
         UInt32(seq_len),
         UInt32(cache_len),
     )
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
+    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
+        Coord(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])
     )
-    var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
-        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
+        Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])
     )
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(), row_major(batch_size + 1)
+        row_offsets_device, row_major(len(row_offsets_device))
     )
 
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads, is_fp8_kv=True](

@@ -186,7 +186,7 @@ def _run_fp8_matmul_epilogue(
     @inline(.always)
     def epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
-    ](idx: IndexList[2], val: SIMD[dtype, width]) {var epi_ptr}:
+    ](idx: IndexList[2], val: SIMD[dtype, width]) {var epi_ptr, var N}:
         var out = val.cast[.float32]() * 2 + 1
         epi_ptr.unsafe_store[width=width](idx[0] * N + idx[1], out)
 
