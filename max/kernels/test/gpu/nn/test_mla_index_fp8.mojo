@@ -364,25 +364,27 @@ def test_mla_index_fp8_paged_variable_lengths[
     ]
     var k_collection = Collection(
         rebind[Collection.blocks_tt_type](
-            TileTensor(k_block_device, row_major(len(k_block_device)))
-            .reshape(
-                Coord(
-                    Int64(num_blocks),
-                    Idx[1],
-                    Int64(num_layers),
-                    Idx[page_size],
-                    Idx[kv_params.num_heads],
-                    Idx[kv_params.head_size],
-                )
-            )
-            .as_unsafe_any_origin()
+            TileTensor(
+                k_block_device,
+                row_major(
+                    Coord(
+                        Int64(num_blocks),
+                        Idx[1],
+                        Int64(num_layers),
+                        Idx[page_size],
+                        Idx[kv_params.num_heads],
+                        Idx[kv_params.head_size],
+                    )
+                ),
+            ).as_unsafe_any_origin()
         ),
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin(),
-        TileTensor(k_lut_device, row_major(len(k_lut_device)))
-        .reshape(Coord(Int64(batch_size), Int64(paged_lut_shape[1])))
+        TileTensor(
+            k_lut_device,
+            row_major(Coord(Int64(batch_size), Int64(paged_lut_shape[1]))),
+        )
         .as_imm()
         .as_unsafe_any_origin(),
         UInt32(max_seq_len),  # max_seq_length (new tokens)
@@ -390,18 +392,19 @@ def test_mla_index_fp8_paged_variable_lengths[
         # real maximum as a captured decode graph would bake it.
         UInt32(metadata_cache_len if metadata_cache_len > 0 else max_cache_len),
         rebind[Collection.scales_tt_type](
-            TileTensor(ks_block_device, row_major(len(ks_block_device)))
-            .reshape(
-                Coord(
-                    Int64(num_blocks),
-                    Idx[1],
-                    Int64(num_layers),
-                    Idx[page_size],
-                    Idx[kv_params.num_heads],
-                    Idx[head_dim_granularity],
-                )
-            )
-            .as_unsafe_any_origin()
+            TileTensor(
+                ks_block_device,
+                row_major(
+                    Coord(
+                        Int64(num_blocks),
+                        Idx[1],
+                        Int64(num_layers),
+                        Idx[page_size],
+                        Idx[kv_params.num_heads],
+                        Idx[head_dim_granularity],
+                    )
+                ),
+            ).as_unsafe_any_origin()
         ),
     )
 
@@ -1122,44 +1125,47 @@ def test_mla_index_frozen_metadata_equivalence[
         ]
         var k_collection = Collection(
             rebind[Collection.blocks_tt_type](
-                TileTensor(k_block_device, row_major(len(k_block_device)))
-                .reshape(
-                    Coord(
-                        Int64(num_blocks),
-                        Idx[1],
-                        Int64(num_layers),
-                        Idx[page_size],
-                        Idx[kv_params.num_heads],
-                        Idx[kv_params.head_size],
-                    )
-                )
-                .as_unsafe_any_origin()
+                TileTensor(
+                    k_block_device,
+                    row_major(
+                        Coord(
+                            Int64(num_blocks),
+                            Idx[1],
+                            Int64(num_layers),
+                            Idx[page_size],
+                            Idx[kv_params.num_heads],
+                            Idx[kv_params.head_size],
+                        )
+                    ),
+                ).as_unsafe_any_origin()
             ),
             TileTensor(
-                cache_lengths_device, row_major(len(cache_lengths_device))
+                cache_lengths_device, row_major(Coord(Int64(batch_size)))
             )
-            .reshape(Coord(Int64(batch_size)))
             .as_imm()
             .as_unsafe_any_origin(),
-            TileTensor(k_lut_device, row_major(len(k_lut_device)))
-            .reshape(Coord(Int64(batch_size), Int64(paged_lut_shape[1])))
+            TileTensor(
+                k_lut_device,
+                row_major(Coord(Int64(batch_size), Int64(paged_lut_shape[1]))),
+            )
             .as_imm()
             .as_unsafe_any_origin(),
             UInt32(max_seq_len),
             UInt32(metadata_cache),
             rebind[Collection.scales_tt_type](
-                TileTensor(ks_block_device, row_major(len(ks_block_device)))
-                .reshape(
-                    Coord(
-                        Int64(num_blocks),
-                        Idx[1],
-                        Int64(num_layers),
-                        Idx[page_size],
-                        Idx[kv_params.num_heads],
-                        Idx[head_dim_granularity],
-                    )
-                )
-                .as_unsafe_any_origin()
+                TileTensor(
+                    ks_block_device,
+                    row_major(
+                        Coord(
+                            Int64(num_blocks),
+                            Idx[1],
+                            Int64(num_layers),
+                            Idx[page_size],
+                            Idx[kv_params.num_heads],
+                            Idx[head_dim_granularity],
+                        )
+                    ),
+                ).as_unsafe_any_origin()
             ),
         )
         var o_tile = TileTensor(
@@ -1419,42 +1425,45 @@ def test_mla_index_chunked_equivalence[
 
     var k_collection = Collection(
         rebind[Collection.blocks_tt_type](
-            TileTensor(k_block_device, row_major(len(k_block_device)))
-            .reshape(
-                Coord(
-                    Int64(num_blocks),
-                    Idx[1],
-                    Int64(num_layers),
-                    Idx[page_size],
-                    Idx[kv_params.num_heads],
-                    Idx[kv_params.head_size],
-                )
-            )
-            .as_unsafe_any_origin()
+            TileTensor(
+                k_block_device,
+                row_major(
+                    Coord(
+                        Int64(num_blocks),
+                        Idx[1],
+                        Int64(num_layers),
+                        Idx[page_size],
+                        Idx[kv_params.num_heads],
+                        Idx[kv_params.head_size],
+                    )
+                ),
+            ).as_unsafe_any_origin()
         ),
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin(),
-        TileTensor(k_lut_device, row_major(len(k_lut_device)))
-        .reshape(Coord(Int64(batch_size), Int64(paged_lut_shape[1])))
+        TileTensor(
+            k_lut_device,
+            row_major(Coord(Int64(batch_size), Int64(paged_lut_shape[1]))),
+        )
         .as_imm()
         .as_unsafe_any_origin(),
         UInt32(max_seq_len),
         UInt32(max_cache_len),
         rebind[Collection.scales_tt_type](
-            TileTensor(ks_block_device, row_major(len(ks_block_device)))
-            .reshape(
-                Coord(
-                    Int64(num_blocks),
-                    Idx[1],
-                    Int64(num_layers),
-                    Idx[page_size],
-                    Idx[kv_params.num_heads],
-                    Idx[head_dim_granularity],
-                )
-            )
-            .as_unsafe_any_origin()
+            TileTensor(
+                ks_block_device,
+                row_major(
+                    Coord(
+                        Int64(num_blocks),
+                        Idx[1],
+                        Int64(num_layers),
+                        Idx[page_size],
+                        Idx[kv_params.num_heads],
+                        Idx[head_dim_granularity],
+                    )
+                ),
+            ).as_unsafe_any_origin()
         ),
     )
 

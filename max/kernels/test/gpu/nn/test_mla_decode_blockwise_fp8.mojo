@@ -350,38 +350,41 @@ def run_test_blockwise_fp8[
     # -----------------------------------------------------------------------
 
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[kv_dim2],
-            Int64(NUM_LAYERS),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[DEPTH],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[kv_dim2],
+                Int64(NUM_LAYERS),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[DEPTH],
+            )
+        ),
     )
 
     var scales_tt = TileTensor(
-        scales_device, row_major(len(scales_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[kv_dim2],
-            Int64(NUM_LAYERS),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[head_dim_gran],
-        )
+        scales_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[kv_dim2],
+                Int64(NUM_LAYERS),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[head_dim_gran],
+            )
+        ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
 
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
 
     # Build PagedKVCacheCollection with quantization_granularity and scales.
     comptime Collection = PagedKVCacheCollection[
@@ -406,17 +409,18 @@ def run_test_blockwise_fp8[
 
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
-        Coord(total_q_tokens, Idx[num_heads], Idx[DEPTH])
+    var q_tt = TileTensor(
+        q_device, row_major(Coord(total_q_tokens, Idx[num_heads], Idx[DEPTH]))
     )
 
-    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
-        Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])
+    var out_tt = TileTensor(
+        out_device,
+        row_major(Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
 
     # -----------------------------------------------------------------------
     # Step 7: Pre-compute scalar args and call the kernel
@@ -540,15 +544,15 @@ def run_test_blockwise_fp8[
         var ref_b_device = ctx.enqueue_create_buffer[q_type](ref_b_size)
         ctx.synchronize()
 
-        var q_b_tt = TileTensor(q_b_device, row_major(len(q_b_device))).reshape(
-            Coord(1, 1, num_heads, DEPTH)
+        var q_b_tt = TileTensor(
+            q_b_device, row_major(Coord(1, 1, num_heads, DEPTH))
         )
-        var k_b_tt = TileTensor(k_b_device, row_major(len(k_b_device))).reshape(
-            Coord(1, ref_num_keys, KV_NUM_HEADS, DEPTH)
+        var k_b_tt = TileTensor(
+            k_b_device, row_major(Coord(1, ref_num_keys, KV_NUM_HEADS, DEPTH))
         )
         var ref_b_tt = TileTensor(
-            ref_b_device, row_major(len(ref_b_device))
-        ).reshape(Coord(1, 1, num_heads, DEPTH))
+            ref_b_device, row_major(Coord(1, 1, num_heads, DEPTH))
+        )
 
         # Run mha_gpu_naive: batch_size=1, num_keys=ref_num_keys
         # K passed as both K and V (MLA: V = K[:,:,:512])
@@ -794,38 +798,41 @@ def run_bench_blockwise_fp8[
 
     # Step 6: Build native views and PagedKVCacheCollection
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[kv_dim2],
-            Int64(NUM_LAYERS),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[DEPTH],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[kv_dim2],
+                Int64(NUM_LAYERS),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[DEPTH],
+            )
+        ),
     )
 
     var scales_tt = TileTensor(
-        scales_device, row_major(len(scales_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[kv_dim2],
-            Int64(NUM_LAYERS),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[head_dim_gran],
-        )
+        scales_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[kv_dim2],
+                Int64(NUM_LAYERS),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[head_dim_gran],
+            )
+        ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
 
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
 
     comptime Collection = PagedKVCacheCollection[
         kv_type,
@@ -849,17 +856,18 @@ def run_bench_blockwise_fp8[
 
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
-        Coord(total_q_tokens, Idx[num_heads], Idx[DEPTH])
+    var q_tt = TileTensor(
+        q_device, row_major(Coord(total_q_tokens, Idx[num_heads], Idx[DEPTH]))
     )
 
-    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
-        Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])
+    var out_tt = TileTensor(
+        out_device,
+        row_major(Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
 
     # Step 7: Pre-compute scalar args and benchmark
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads, is_fp8_kv=True](

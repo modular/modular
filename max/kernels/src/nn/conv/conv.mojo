@@ -5503,9 +5503,7 @@ def conv_gpu[
                     output.num_elements()
                 )
 
-                var output_tmp = TileTensor(
-                    output_tmp_data, row_major(len(output_tmp_data))
-                ).reshape(output.layout)
+                var output_tmp = TileTensor(output_tmp_data, output.layout)
                 var output_tmp_rm = output_tmp.reshape(
                     row_major(output.layout.shape_coord())
                 )

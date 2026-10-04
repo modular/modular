@@ -105,18 +105,14 @@ def test_static_conv() raises:
     print("== test_static_conv")
 
     var output_stack = Array[Scalar[value_type], N * HO * WO * F](fill=0.0)
-    var output = TileTensor(output_stack, row_major(len(output_stack))).reshape(
-        row_major[N, HO, WO, F]()
-    )
+    var output = TileTensor(output_stack, row_major[N, HO, WO, F]())
     var input_stack = Array[Scalar[value_type], N * H * W * C](fill=1.0)
-    var input = TileTensor(input_stack, row_major(len(input_stack))).reshape(
-        row_major[N, H, W, C]()
-    )
+    var input = TileTensor(input_stack, row_major[N, H, W, C]())
     var filter_stack = Array[
         Scalar[value_type], num_micro_tile * R * S * C * micro_kernel_f_size
     ](fill=1.0)
-    var filter = TileTensor(filter_stack, row_major(len(filter_stack))).reshape(
-        row_major[num_micro_tile, R, S, C, micro_kernel_f_size]()
+    var filter = TileTensor(
+        filter_stack, row_major[num_micro_tile, R, S, C, micro_kernel_f_size]()
     )
 
     static_conv(output, input.as_imm(), filter.as_imm())

@@ -294,11 +294,9 @@ def execute_mla_indexer_paged[
     var blocks_strides = Coord[*blocks_layout_type.stride_types]()
     blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
     blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
-    var blocks = (
-        TileTensor(k_block_device, row_major(len(k_block_device)))
-        .reshape(blocks_layout_type(blocks_shape, blocks_strides))
-        .as_unsafe_any_origin()
-    )
+    var blocks = TileTensor(
+        k_block_device, blocks_layout_type(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
     comptime assert Collection.scale_dtype == DType.float32
     comptime scales_layout_type = Collection.scales_tt_layout
     var scales_shape = Coord[*scales_layout_type.shape_types]()
@@ -308,20 +306,22 @@ def execute_mla_indexer_paged[
     scales_strides[1] = scales_shape[2] * Int64(scales_strides[2].value())
     scales_strides[0] = Int64(scales_shape[1].value()) * scales_strides[1]
     var scales = (
-        TileTensor(ks_block_device, row_major(len(ks_block_device)))
-        .reshape(scales_layout_type(scales_shape, scales_strides))
+        TileTensor(
+            ks_block_device, scales_layout_type(scales_shape, scales_strides)
+        )
         .bitcast[Collection.scale_dtype]()
         .as_unsafe_any_origin()
     )
     var cache_lengths = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table = (
-        TileTensor(k_lut_device, row_major(len(k_lut_device)))
-        .reshape(Coord(Int64(batch_size), Int64(lut_pages_per_seq)))
+        TileTensor(
+            k_lut_device,
+            row_major(Coord(Int64(batch_size), Int64(lut_pages_per_seq))),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )

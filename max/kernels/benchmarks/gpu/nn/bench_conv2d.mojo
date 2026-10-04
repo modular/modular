@@ -250,21 +250,37 @@ def bench_conv2d[
     ctx.enqueue_copy(filter_fcrs_dev, filter_fcrs_host)
     ctx.synchronize()
 
-    var input_tt = TileTensor(input_dev, row_major(len(input_dev))).reshape(
-        Coord(Idx[batch], Idx[in_height], Idx[in_width], Idx[in_channels])
+    var input_tt = TileTensor(
+        input_dev,
+        row_major(
+            Coord(Idx[batch], Idx[in_height], Idx[in_width], Idx[in_channels])
+        ),
     )
     var filter_rscf_tt = TileTensor(
-        filter_rscf_dev, row_major(len(filter_rscf_dev))
-    ).reshape(
-        Coord(Idx[filter_r], Idx[filter_s], Idx[in_channels], Idx[out_channels])
+        filter_rscf_dev,
+        row_major(
+            Coord(
+                Idx[filter_r],
+                Idx[filter_s],
+                Idx[in_channels],
+                Idx[out_channels],
+            )
+        ),
     )
     var filter_fcrs_tt = TileTensor(
-        filter_fcrs_dev, row_major(len(filter_fcrs_dev))
-    ).reshape(
-        Coord(Idx[out_channels], Idx[in_channels], Idx[filter_r], Idx[filter_s])
+        filter_fcrs_dev,
+        row_major(
+            Coord(
+                Idx[out_channels],
+                Idx[in_channels],
+                Idx[filter_r],
+                Idx[filter_s],
+            )
+        ),
     )
-    var output_tt = TileTensor(output_dev, row_major(len(output_dev))).reshape(
-        Coord(Idx[batch], h_out, w_out, Idx[out_channels])
+    var output_tt = TileTensor(
+        output_dev,
+        row_major(Coord(Idx[batch], h_out, w_out, Idx[out_channels])),
     )
 
     var stride_idx = IndexList[2](stride_h, stride_w)
@@ -543,8 +559,9 @@ def bench_conv2d[
 
     if do_verify:
         var output_ref_tt = TileTensor(
-            output_ref_dev, row_major(len(output_ref_dev))
-        ).reshape(Coord(IndexList[4](batch, h_out, w_out, out_channels)))
+            output_ref_dev,
+            row_major(Coord(IndexList[4](batch, h_out, w_out, out_channels))),
+        )
         conv_cudnn[dtype, dtype, dtype](
             input_tt,
             filter_fcrs_tt,

@@ -182,8 +182,9 @@ def execute_sink_test[
     var q_size = total_length * num_q_heads * head_size
     var q_ref_host = ctx.enqueue_create_host_buffer[ref_dtype](q_size)
     var q_ref_host_tt = TileTensor(
-        q_ref_host, row_major(len(q_ref_host))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        q_ref_host,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+    )
     # Zero-mean Q keeps the scores near zero, so the sink stays significant
     # even against a few hundred keys.
     random(q_ref_host_tt, min=-1, max=1)
@@ -223,9 +224,7 @@ def execute_sink_test[
     var kv_block_ref_host = ctx.enqueue_create_host_buffer[ref_dtype](
         kv_block_size
     )
-    var kv_block_ref_host_tt = TileTensor(
-        kv_block_ref_host, row_major(len(kv_block_ref_host))
-    ).reshape(blocks_layout)
+    var kv_block_ref_host_tt = TileTensor(kv_block_ref_host, blocks_layout)
     random(kv_block_ref_host_tt)
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](kv_block_size)
     for i in range(kv_block_size):
@@ -276,52 +275,47 @@ def execute_sink_test[
     ctx.enqueue_copy(sinks_ref_dev, sinks_ref_host)
 
     var input_row_offsets_tt = (
-        TileTensor(input_row_offsets_dev, row_major(len(input_row_offsets_dev)))
-        .reshape(Coord(Int64(len(input_row_offsets_dev))))
+        TileTensor(
+            input_row_offsets_dev,
+            row_major(Coord(Int64(len(input_row_offsets_dev)))),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
     var cache_lengths_tt = (
-        TileTensor(cache_lengths_dev, row_major(len(cache_lengths_dev)))
-        .reshape(Coord(Int64(len(cache_lengths_dev))))
+        TileTensor(
+            cache_lengths_dev, row_major(Coord(Int64(len(cache_lengths_dev))))
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
     var paged_lut_tt = (
-        TileTensor(paged_lut_dev, row_major(len(paged_lut_dev)))
-        .reshape(Coord(Int64(batch_size), Int64(lut_cols)))
+        TileTensor(
+            paged_lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
-    var q_tt = (
-        TileTensor(q_dev, row_major(len(q_dev)))
-        .reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
-        .as_imm()
-    )
-    var q_ref_tt = (
-        TileTensor(q_ref_dev, row_major(len(q_ref_dev)))
-        .reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
-        .as_imm()
-    )
+    var q_tt = TileTensor(
+        q_dev, row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+    ).as_imm()
+    var q_ref_tt = TileTensor(
+        q_ref_dev,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+    ).as_imm()
     var sinks_tt = (
-        TileTensor(sinks_dev, row_major(len(sinks_dev)))
-        .reshape(Coord(Int64(len(sinks_dev))))
+        TileTensor(sinks_dev, row_major(Coord(Int64(len(sinks_dev)))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var sinks_ref_tt = (
-        TileTensor(sinks_ref_dev, row_major(len(sinks_ref_dev)))
-        .reshape(Coord(Int64(len(sinks_ref_dev))))
+        TileTensor(sinks_ref_dev, row_major(Coord(Int64(len(sinks_ref_dev)))))
         .as_imm()
         .as_unsafe_any_origin()
     )
 
-    var kv_block_tt = TileTensor(
-        kv_block_dev, row_major(len(kv_block_dev))
-    ).reshape(blocks_layout)
-    var kv_block_ref_tt = TileTensor(
-        kv_block_ref_dev, row_major(len(kv_block_ref_dev))
-    ).reshape(blocks_layout)
+    var kv_block_tt = TileTensor(kv_block_dev, blocks_layout)
+    var kv_block_ref_tt = TileTensor(kv_block_ref_dev, blocks_layout)
     # K and V occupy disjoint per-page regions; erased origins allow the
     # attention kernel to borrow both cache views.
     var kv_collection = Collection(
@@ -343,8 +337,9 @@ def execute_sink_test[
     var out_size = total_length * num_q_heads * head_size
     var test_out_dev = ctx.enqueue_create_buffer[ref_dtype](out_size)
     var test_out_tt = TileTensor(
-        test_out_dev, row_major(len(test_out_dev))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        test_out_dev,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+    )
     var k_cache = kv_collection.get_key_cache(layer_idx)
     var v_cache = kv_collection.get_value_cache(layer_idx)
     if use_sink:
@@ -376,8 +371,9 @@ def execute_sink_test[
     # --- Reference ---
     var ref_out_dev = ctx.enqueue_create_buffer[ref_dtype](out_size)
     var ref_out_tt = TileTensor(
-        ref_out_dev, row_major(len(ref_out_dev))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        ref_out_dev,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+    )
     var k_ref_cache = kv_ref_collection.get_key_cache(layer_idx)
     var v_ref_cache = kv_ref_collection.get_value_cache(layer_idx)
     if use_sink:

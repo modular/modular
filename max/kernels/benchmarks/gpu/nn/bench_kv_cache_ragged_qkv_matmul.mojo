@@ -178,13 +178,13 @@ def execute_kv_cache_ragged_matmul[
     )
     blocks_strides[2] = Int64(max_seq_length_cache * num_kv_heads * head_dim)
     var kv_block_device = TileTensor(
-        kv_block_buffer, row_major(len(kv_block_buffer))
-    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
+        kv_block_buffer, BlocksLayout(blocks_shape, blocks_strides)
+    )
 
     var lookup_table_buffer = ctx.enqueue_create_buffer[.uint32](batch_size)
     var lookup_table_device = TileTensor(
-        lookup_table_buffer, row_major(len(lookup_table_buffer))
-    ).reshape(Coord(Int64(batch_size)))
+        lookup_table_buffer, row_major(Coord(Int64(batch_size)))
+    )
 
     # Sample distinct physical blocks so sequences do not alias KV storage.
     with lookup_table_buffer.map_to_host() as lookup_table_host:
@@ -201,8 +201,8 @@ def execute_kv_cache_ragged_matmul[
 
     var cache_lengths_buffer = ctx.enqueue_create_buffer[.uint32](batch_size)
     var cache_lengths_device = TileTensor(
-        cache_lengths_buffer, row_major(len(cache_lengths_buffer))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_buffer, row_major(Coord(Int64(batch_size)))
+    )
 
     # Initialize cache lengths on host
     with cache_lengths_buffer.map_to_host() as cache_lengths_host:

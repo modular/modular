@@ -407,25 +407,27 @@ def run_test_prefill_sparse_qkv_fp8[
 
     # FP8 PagedKVCacheCollection.
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[1],
-            Int64(num_layers),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[1],
+                Int64(num_layers),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
 
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
 
     comptime Collection = PagedKVCacheCollection[
         DType.float8_e4m3fn,
@@ -923,35 +925,38 @@ def run_nope_native_512_prefill_fp8[
     # Paged KV cache collections, one per row width.
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
 
     var blocks_576_tt = TileTensor(
-        blocks_576_device, row_major(len(blocks_576_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[1],
-            Int64(NUM_LAYERS),
-            Idx[PAGE_SIZE],
-            Idx[kv_params_576.num_heads],
-            Idx[kv_params_576.head_size],
-        )
+        blocks_576_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[kv_params_576.num_heads],
+                Idx[kv_params_576.head_size],
+            )
+        ),
     )
     var blocks_512_tt = TileTensor(
-        blocks_512_device, row_major(len(blocks_512_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[1],
-            Int64(NUM_LAYERS),
-            Idx[PAGE_SIZE],
-            Idx[kv_params_512.num_heads],
-            Idx[kv_params_512.head_size],
-        )
+        blocks_512_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[kv_params_512.num_heads],
+                Idx[kv_params_512.head_size],
+            )
+        ),
     )
 
     comptime Collection576 = PagedKVCacheCollection[

@@ -639,25 +639,27 @@ def run_test_paged_prefill[
     )
 
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[1],
-            Int64(NUM_LAYERS),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
 
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
 
     comptime Collection = PagedKVCacheCollection[
         k_rope_type,

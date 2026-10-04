@@ -298,8 +298,8 @@ def execute_fused_qk_rope_ragged(
         kv_block_shape.flattened_length()
     )
     var kv_block_host_tensor = TileTensor(
-        kv_block_host_ptr, row_major(len(kv_block_host_ptr))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_host_ptr, row_major(kv_block_layout.shape_coord())
+    )
     random(kv_block_host_tensor)
     ctx.enqueue_copy(true_ce_kv_block_device, kv_block_host_ptr)
     # Copy same data to mixed_ce for consistency
@@ -387,14 +387,18 @@ def execute_fused_qk_rope_ragged(
         .as_unsafe_any_origin()
     )
     var true_ce_kv_block_tensor = TileTensor(
-        true_ce_kv_block_device, row_major(len(true_ce_kv_block_device))
-    ).reshape(kv_block_layout.shape_coord())
+        true_ce_kv_block_device, row_major(kv_block_layout.shape_coord())
+    )
     var mixed_ce_kv_block_tensor = TileTensor(
-        mixed_ce_kv_block_device, row_major(len(mixed_ce_kv_block_device))
-    ).reshape(kv_block_layout.shape_coord())
+        mixed_ce_kv_block_device, row_major(kv_block_layout.shape_coord())
+    )
     var paged_lut_tensor = (
-        TileTensor(paged_lut_device, row_major(len(paged_lut_device)))
-        .reshape(Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])))
+        TileTensor(
+            paged_lut_device,
+            row_major(
+                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+            ),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -515,14 +519,14 @@ def execute_fused_qk_rope_ragged(
     ctx.synchronize()
 
     var true_ce_kv_block_host_tensor = TileTensor(
-        kv_block_host_ptr, row_major(len(kv_block_host_ptr))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_host_ptr, row_major(kv_block_layout.shape_coord())
+    )
     var mixed_ce_kv_block_host_tensor = TileTensor(
-        mixed_kv_block_host_ptr, row_major(len(mixed_kv_block_host_ptr))
-    ).reshape(kv_block_layout.shape_coord())
+        mixed_kv_block_host_ptr, row_major(kv_block_layout.shape_coord())
+    )
     var paged_lut_host_tensor = TileTensor(
-        paged_lut_host_ptr, row_major(len(paged_lut_host_ptr))
-    ).reshape(paged_lut_layout.shape_coord())
+        paged_lut_host_ptr, row_major(paged_lut_layout.shape_coord())
+    )
 
     var true_ce_k_cache_collection_host = Collection(
         rebind[Collection.blocks_tt_type](
@@ -738,8 +742,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
         q_ragged_shape.flattened_length()
     )
     var q_ragged_host_tensor = TileTensor(
-        q_ragged_host_ptr, row_major(len(q_ragged_host_ptr))
-    ).reshape(q_ragged_layout.shape_coord())
+        q_ragged_host_ptr, row_major(q_ragged_layout.shape_coord())
+    )
     random(q_ragged_host_tensor)
     ctx.enqueue_copy(q_ragged_device, q_ragged_host_ptr)
 
@@ -770,8 +774,8 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
         kv_block_shape.flattened_length()
     )
     var kv_block_host_tensor = TileTensor(
-        kv_block_host_ptr, row_major(len(kv_block_host_ptr))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_host_ptr, row_major(kv_block_layout.shape_coord())
+    )
     random(kv_block_host_tensor)
     ctx.enqueue_copy(kv_block_device, kv_block_host_ptr)
 
@@ -869,20 +873,26 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     var freqs_tensor = TileTensor(freqs_device, freqs_tile_layout)
 
     var kv_block_tensor = TileTensor(
-        kv_block_device, row_major(len(kv_block_device))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_device, row_major(kv_block_layout.shape_coord())
+    )
     var kv_block_64_tensor = TileTensor(
-        kv_block_device_64, row_major(len(kv_block_device_64))
-    ).reshape(kv_block_64_layout.shape_coord())
+        kv_block_device_64, row_major(kv_block_64_layout.shape_coord())
+    )
     var cache_lengths_tensor = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(cache_lengths_shape[0])))
+        TileTensor(
+            cache_lengths_device,
+            row_major(Coord(Int64(cache_lengths_shape[0]))),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
     var paged_lut_tensor = (
-        TileTensor(paged_lut_device, row_major(len(paged_lut_device)))
-        .reshape(Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])))
+        TileTensor(
+            paged_lut_device,
+            row_major(
+                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+            ),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -1002,11 +1012,11 @@ def execute_fused_qk_rope_ragged_mla(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     var kv_block_out_tensor = TileTensor(
-        kv_block_out_host_ptr, row_major(len(kv_block_out_host_ptr))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_out_host_ptr, row_major(kv_block_layout.shape_coord())
+    )
     var kv_block_64_out_tensor = TileTensor(
-        kv_block_64_out_host_ptr, row_major(len(kv_block_64_out_host_ptr))
-    ).reshape(kv_block_64_layout.shape_coord())
+        kv_block_64_out_host_ptr, row_major(kv_block_64_layout.shape_coord())
+    )
 
     for page_idx in range(num_paged_blocks):
         # Only compare the K cache

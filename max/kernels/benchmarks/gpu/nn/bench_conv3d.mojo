@@ -251,15 +251,16 @@ def bench_conv3d[
     )
 
     var filter_fcqrs_tt = TileTensor(
-        filter_fcqrs_dev, row_major(len(filter_fcqrs_dev))
-    ).reshape(
-        Coord(
-            Idx[out_channels],
-            Idx[in_channels],
-            Idx[filter_q],
-            Idx[filter_r],
-            Idx[filter_s],
-        )
+        filter_fcqrs_dev,
+        row_major(
+            Coord(
+                Idx[out_channels],
+                Idx[in_channels],
+                Idx[filter_q],
+                Idx[filter_r],
+                Idx[filter_s],
+            )
+        ),
     )
 
     var stride_idx = IndexList[3](stride_d, stride_h, stride_w)
@@ -589,9 +590,7 @@ def bench_conv3d[
                 ctx,
             )
         else:
-            var output_ref_buf = TileTensor(
-                output_ref_dev, row_major(len(output_ref_dev))
-            ).reshape(output_tt.layout)
+            var output_ref_buf = TileTensor(output_ref_dev, output_tt.layout)
             conv3d_cudnn(
                 input_tt,
                 filter_fcqrs_tt,

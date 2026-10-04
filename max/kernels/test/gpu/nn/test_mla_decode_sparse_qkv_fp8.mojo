@@ -575,14 +575,15 @@ def run_nope_native_512_fp8[
     ctx.synchronize()
 
     var cache_lengths_tt = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table_tt = (
-        TileTensor(lookup_table_device, row_major(len(lookup_table_device)))
-        .reshape(Coord(Int64(batch_size), Int64(pages_per_batch)))
+        TileTensor(
+            lookup_table_device,
+            row_major(Coord(Int64(batch_size), Int64(pages_per_batch))),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -597,18 +598,19 @@ def run_nope_native_512_fp8[
     ]
     var kv_576 = Collection576(
         rebind[Collection576.blocks_tt_type](
-            TileTensor(blocks_576_dev, row_major(len(blocks_576_dev)))
-            .reshape(
-                Coord(
-                    Int64(block_shape_576[0]),
-                    Idx[1],
-                    Int64(block_shape_576[2]),
-                    Idx[PAGE_SIZE],
-                    Idx[kv_params_576.num_heads],
-                    Idx[kv_params_576.head_size],
-                )
-            )
-            .as_unsafe_any_origin()
+            TileTensor(
+                blocks_576_dev,
+                row_major(
+                    Coord(
+                        Int64(block_shape_576[0]),
+                        Idx[1],
+                        Int64(block_shape_576[2]),
+                        Idx[PAGE_SIZE],
+                        Idx[kv_params_576.num_heads],
+                        Idx[kv_params_576.head_size],
+                    )
+                ),
+            ).as_unsafe_any_origin()
         ),
         cache_lengths_tt,
         lookup_table_tt,
@@ -626,18 +628,19 @@ def run_nope_native_512_fp8[
     ]
     var kv_512 = Collection512(
         rebind[Collection512.blocks_tt_type](
-            TileTensor(blocks_512_dev, row_major(len(blocks_512_dev)))
-            .reshape(
-                Coord(
-                    Int64(block_shape_512[0]),
-                    Idx[1],
-                    Int64(block_shape_512[2]),
-                    Idx[PAGE_SIZE],
-                    Idx[kv_params_512.num_heads],
-                    Idx[kv_params_512.head_size],
-                )
-            )
-            .as_unsafe_any_origin()
+            TileTensor(
+                blocks_512_dev,
+                row_major(
+                    Coord(
+                        Int64(block_shape_512[0]),
+                        Idx[1],
+                        Int64(block_shape_512[2]),
+                        Idx[PAGE_SIZE],
+                        Idx[kv_params_512.num_heads],
+                        Idx[kv_params_512.head_size],
+                    )
+                ),
+            ).as_unsafe_any_origin()
         ),
         cache_lengths_tt,
         lookup_table_tt,
@@ -646,8 +649,8 @@ def run_nope_native_512_fp8[
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
     var args_576 = MLADispatchScalarArgs[num_heads=num_heads, is_fp8_kv=True](
         batch_size, cache_len, q_max_seq_len, ctx
     )
@@ -661,11 +664,13 @@ def run_nope_native_512_fp8[
         ragged=True,
         sparse=True,
     ](
-        TileTensor(out_576, row_major(len(out_576))).reshape(
-            Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])
+        TileTensor(
+            out_576,
+            row_major(Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
         ),
-        TileTensor(q_576_dev, row_major(len(q_576_dev))).reshape(
-            Coord(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])
+        TileTensor(
+            q_576_dev,
+            row_major(Coord(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])),
         ),
         kv_576.get_key_cache(0),
         NullMask(),
@@ -686,11 +691,13 @@ def run_nope_native_512_fp8[
         ragged=True,
         sparse=True,
     ](
-        TileTensor(out_512, row_major(len(out_512))).reshape(
-            Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])
+        TileTensor(
+            out_512,
+            row_major(Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
         ),
-        TileTensor(q_512_dev, row_major(len(q_512_dev))).reshape(
-            Coord(total_q_tokens, Idx[num_heads], Idx[LATENT_DEPTH])
+        TileTensor(
+            q_512_dev,
+            row_major(Coord(total_q_tokens, Idx[num_heads], Idx[LATENT_DEPTH])),
         ),
         kv_512.get_key_cache(0),
         NullMask(),
@@ -1061,25 +1068,27 @@ def run_test_sparse_qkv_fp8[
     # Build PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(block_shape[0]),
-            Idx[1],
-            Int64(block_shape[2]),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(block_shape[0]),
+                Idx[1],
+                Int64(block_shape[2]),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
 
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
 
     comptime Collection = PagedKVCacheCollection[
         kv_type,
@@ -1141,12 +1150,14 @@ def run_test_sparse_qkv_fp8[
     # -----------------------------------------------------------------------
     # Build TileTensors and call flare_mla_decoding.
     # -----------------------------------------------------------------------
-    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
-        Coord(total_q_tokens, Idx[num_heads], Idx[row_depth])
+    var q_tt = TileTensor(
+        q_device,
+        row_major(Coord(total_q_tokens, Idx[num_heads], Idx[row_depth])),
     )
 
-    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
-        Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])
+    var out_tt = TileTensor(
+        out_device,
+        row_major(Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
@@ -1161,8 +1172,8 @@ def run_test_sparse_qkv_fp8[
     ctx.synchronize()
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
@@ -1497,23 +1508,25 @@ def run_test_sparse_qkv_fp8_variable_topk[
     ctx.synchronize()
 
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(block_shape[0]),
-            Idx[1],
-            Int64(block_shape[2]),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(block_shape[0]),
+                Idx[1],
+                Int64(block_shape[2]),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
     comptime Collection = PagedKVCacheCollection[
         kv_type,
         kv_params,
@@ -1532,11 +1545,11 @@ def run_test_sparse_qkv_fp8_variable_topk[
     )
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
-        Coord(batch_size, Idx[num_heads], Idx[row_depth])
+    var q_tt = TileTensor(
+        q_device, row_major(Coord(batch_size, Idx[num_heads], Idx[row_depth]))
     )
-    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
-        Coord(batch_size, Idx[num_heads], Idx[V_DEPTH])
+    var out_tt = TileTensor(
+        out_device, row_major(Coord(batch_size, Idx[num_heads], Idx[V_DEPTH]))
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
@@ -1549,8 +1562,8 @@ def run_test_sparse_qkv_fp8_variable_topk[
     ctx.synchronize()
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
@@ -1801,23 +1814,25 @@ def run_test_sparse_qkv_fp8_attn_sink[
     ctx.synchronize()
 
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(block_shape[0]),
-            Idx[1],
-            Int64(block_shape[2]),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(block_shape[0]),
+                Idx[1],
+                Int64(block_shape[2]),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
     comptime Collection = PagedKVCacheCollection[
         kv_type,
         kv_params,
@@ -1851,11 +1866,11 @@ def run_test_sparse_qkv_fp8_attn_sink[
     ctx.enqueue_copy(d_indices_device, h_indices)
     ctx.synchronize()
 
-    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
-        Coord(batch_size, Idx[num_heads], Idx[row_depth])
+    var q_tt = TileTensor(
+        q_device, row_major(Coord(batch_size, Idx[num_heads], Idx[row_depth]))
     )
-    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
-        Coord(batch_size, Idx[num_heads], Idx[V_DEPTH])
+    var out_tt = TileTensor(
+        out_device, row_major(Coord(batch_size, Idx[num_heads], Idx[V_DEPTH]))
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
@@ -1868,8 +1883,8 @@ def run_test_sparse_qkv_fp8_attn_sink[
     ctx.synchronize()
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
@@ -2310,23 +2325,25 @@ def run_test_sparse_qkv_fp8_extra_kv[
     ctx.synchronize()
 
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(block_shape[0]),
-            Idx[1],
-            Int64(block_shape[2]),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(block_shape[0]),
+                Idx[1],
+                Int64(block_shape[2]),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
     comptime Collection = PagedKVCacheCollection[
         kv_type,
         kv_params,
@@ -2346,23 +2363,25 @@ def run_test_sparse_qkv_fp8_extra_kv[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var extra_blocks_tt = TileTensor(
-        extra_blocks_device, row_major(len(extra_blocks_device))
-    ).reshape(
-        Coord(
-            Int64(extra_block_shape[0]),
-            Idx[1],
-            Int64(extra_block_shape[2]),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        extra_blocks_device,
+        row_major(
+            Coord(
+                Int64(extra_block_shape[0]),
+                Idx[1],
+                Int64(extra_block_shape[2]),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     var extra_cache_lengths_tt = TileTensor(
-        extra_cache_lengths_device, row_major(len(extra_cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        extra_cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
     var extra_lookup_table_tt = TileTensor(
-        extra_lookup_table_device, row_major(len(extra_lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_extra_pages_per_batch)))
+        extra_lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_extra_pages_per_batch))),
+    )
     var extra_kv_collection = Collection(
         rebind[Collection.blocks_tt_type](
             extra_blocks_tt.as_unsafe_any_origin()
@@ -2374,11 +2393,11 @@ def run_test_sparse_qkv_fp8_extra_kv[
     )
     var extra_kv_cache = extra_kv_collection.get_key_cache(0)
 
-    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
-        Coord(batch_size, Idx[num_heads], Idx[row_depth])
+    var q_tt = TileTensor(
+        q_device, row_major(Coord(batch_size, Idx[num_heads], Idx[row_depth]))
     )
-    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
-        Coord(batch_size, Idx[num_heads], Idx[V_DEPTH])
+    var out_tt = TileTensor(
+        out_device, row_major(Coord(batch_size, Idx[num_heads], Idx[V_DEPTH]))
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
@@ -2391,8 +2410,8 @@ def run_test_sparse_qkv_fp8_extra_kv[
     ctx.synchronize()
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
@@ -2705,23 +2724,25 @@ def run_test_sparse_qkv_fp8_topk_clamping[
     ctx.synchronize()
 
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(block_shape[0]),
-            Idx[1],
-            Int64(block_shape[2]),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(block_shape[0]),
+                Idx[1],
+                Int64(block_shape[2]),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
     comptime Collection = PagedKVCacheCollection[
         kv_type,
         kv_params,
@@ -2740,11 +2761,11 @@ def run_test_sparse_qkv_fp8_topk_clamping[
     )
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
-        Coord(batch_size, Idx[num_heads], Idx[row_depth])
+    var q_tt = TileTensor(
+        q_device, row_major(Coord(batch_size, Idx[num_heads], Idx[row_depth]))
     )
-    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
-        Coord(batch_size, Idx[num_heads], Idx[V_DEPTH])
+    var out_tt = TileTensor(
+        out_device, row_major(Coord(batch_size, Idx[num_heads], Idx[V_DEPTH]))
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
@@ -2757,8 +2778,8 @@ def run_test_sparse_qkv_fp8_topk_clamping[
     ctx.synchronize()
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
 
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,

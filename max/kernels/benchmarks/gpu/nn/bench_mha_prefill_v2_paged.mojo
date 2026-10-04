@@ -203,14 +203,15 @@ def run_mha_prefill_v2_paged[
     blocks_strides[0] = Int64(2 * num_layers * page_size * kv_num_heads * depth)
     blocks_strides[1] = Int64(num_layers * page_size * kv_num_heads * depth)
     var kv_block_tensor = TileTensor(
-        kv_block_dev, row_major(len(kv_block_dev))
-    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
+        kv_block_dev, BlocksLayout(blocks_shape, blocks_strides)
+    )
     var cache_lengths_tensor = TileTensor(
         cache_lengths_dev, row_major(Int64(len(cache_lengths_dev)))
     )
     var paged_lut_tensor = TileTensor(
-        paged_lut_dev, row_major(len(paged_lut_dev))
-    ).reshape(Coord(Int64(batch_size), Int64(paged_lut_cols)))
+        paged_lut_dev,
+        row_major(Coord(Int64(batch_size), Int64(paged_lut_cols))),
+    )
 
     # K and V occupy disjoint per-page regions; erased origins allow the
     # attention kernel to borrow both cache views.

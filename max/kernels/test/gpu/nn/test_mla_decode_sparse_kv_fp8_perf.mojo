@@ -205,20 +205,19 @@ def bench_sparse_kv_fp8[
     var blocks_strides = Coord[*BlocksLayout.stride_types]()
     blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
     blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
-    var blocks = (
-        TileTensor(blocks_device, row_major(len(blocks_device)))
-        .reshape(BlocksLayout(blocks_shape, blocks_strides))
-        .as_unsafe_any_origin()
-    )
+    var blocks = TileTensor(
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
     var cache_lengths = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table = (
-        TileTensor(lookup_table_device, row_major(len(lookup_table_device)))
-        .reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        TileTensor(
+            lookup_table_device,
+            row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -235,11 +234,12 @@ def bench_sparse_kv_fp8[
     # -------------------------------------------------------------------
     # TileTensors + dispatch scalars + launch closure
     # -------------------------------------------------------------------
-    var q_tt = TileTensor(q_device, row_major(len(q_device))).reshape(
-        Coord(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH])
+    var q_tt = TileTensor(
+        q_device, row_major(Coord(total_q_tokens, Idx[num_heads], Idx[Q_DEPTH]))
     )
-    var out_tt = TileTensor(out_device, row_major(len(out_device))).reshape(
-        Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])
+    var out_tt = TileTensor(
+        out_device,
+        row_major(Coord(total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
     )
 
     var row_offsets_host = ctx.enqueue_create_host_buffer[.uint32](

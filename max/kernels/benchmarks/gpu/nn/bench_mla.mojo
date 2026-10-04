@@ -497,20 +497,18 @@ def bench_prefill_sparse[
     var blocks_strides = Coord[*blocks_layout_type.stride_types]()
     blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
     blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
-    var blocks = (
-        TileTensor(blocks_device, row_major(len(blocks_device)))
-        .reshape(blocks_layout_type(blocks_shape, blocks_strides))
-        .as_unsafe_any_origin()
-    )
+    var blocks = TileTensor(
+        blocks_device, blocks_layout_type(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
     var cache_lengths = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lookup_table = (
-        TileTensor(lut_device, row_major(len(lut_device)))
-        .reshape(Coord(Int64(batch_size), Int64(num_pages)))
+        TileTensor(
+            lut_device, row_major(Coord(Int64(batch_size), Int64(num_pages)))
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )

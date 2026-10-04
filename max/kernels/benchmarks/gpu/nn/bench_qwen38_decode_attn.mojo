@@ -225,8 +225,9 @@ def execute_kv_cache_ragged_flash_attention[
     var output_host_ptr = List(length=output_size, fill=Scalar[out_dtype](0))
     var output_dev_buffer = ctx.enqueue_create_buffer[out_dtype](output_size)
     var output_device_tensor = TileTensor(
-        output_dev_buffer, row_major(len(output_dev_buffer))
-    ).reshape(Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim]))
+        output_dev_buffer,
+        row_major(Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim])),
+    )
     # Paged LUT allocation. The LUT row stride (columns per sequence)
     # must satisfy `PagedKVCache.populate`'s SIMD-path contract: round
     # the page count up to a multiple of 8 so the `ld.global.v{chunk}.u32`
@@ -295,15 +296,16 @@ def execute_kv_cache_ragged_flash_attention[
     )
     blocks_strides[1] = Int64(num_layers * page_size * num_kv_heads * head_dim)
     var kv_blocks = TileTensor(
-        kv_block_paged_dev_buffer, row_major(len(kv_block_paged_dev_buffer))
-    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
+        kv_block_paged_dev_buffer, BlocksLayout(blocks_shape, blocks_strides)
+    )
     var cache_lengths = TileTensor(
         cache_lengths_dev_buffer,
         row_major(Int64(len(cache_lengths_dev_buffer))),
     )
     var paged_lut = TileTensor(
-        paged_lut_dev_buffer, row_major(len(paged_lut_dev_buffer))
-    ).reshape(Coord(Int64(batch_size), Int64(paged_lut_cols)))
+        paged_lut_dev_buffer,
+        row_major(Coord(Int64(batch_size), Int64(paged_lut_cols))),
+    )
 
     # K and V occupy disjoint per-page regions; erased origins allow the
     # attention kernel to borrow both cache views.
@@ -320,8 +322,9 @@ def execute_kv_cache_ragged_flash_attention[
 
     # Create tensors for flash_attention inputs
     var q_device_tensor = TileTensor(
-        q_dev_buffer, row_major(len(q_dev_buffer))
-    ).reshape(Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim]))
+        q_dev_buffer,
+        row_major(Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim])),
+    )
 
     var input_row_offsets_tensor = TileTensor(
         input_row_offsets_dev_buffer,

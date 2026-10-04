@@ -190,8 +190,8 @@ def execute_1q_sink_test[
     # --- Q (ragged: [total_length, num_q_heads, head_size]) ---
     var q_size = total_length * num_q_heads * head_size
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
-    var q_host_tt = TileTensor(q_host, row_major(len(q_host))).reshape(
-        Coord(total_length, Idx[num_q_heads], Idx[head_size])
+    var q_host_tt = TileTensor(
+        q_host, row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
     )
     random(q_host_tt)
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
@@ -222,9 +222,7 @@ def execute_1q_sink_test[
         * head_size
     )
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](kv_block_size)
-    var kv_block_host_tt = TileTensor(
-        kv_block_host, row_major(len(kv_block_host))
-    ).reshape(blocks_layout)
+    var kv_block_host_tt = TileTensor(kv_block_host, blocks_layout)
     random(kv_block_host_tt)
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
     ctx.enqueue_copy(kv_block_dev, kv_block_host)
@@ -270,34 +268,33 @@ def execute_1q_sink_test[
     # `cache_lengths`/`lookup_table` at ImmutAnyOrigin; the ragged FA4 path
     # wants `input_row_offsets` immutable. Bake the origins into the types.
     var input_row_offsets_tt = (
-        TileTensor(input_row_offsets_dev, row_major(len(input_row_offsets_dev)))
-        .reshape(Coord(Int64(len(input_row_offsets_dev))))
+        TileTensor(
+            input_row_offsets_dev,
+            row_major(Coord(Int64(len(input_row_offsets_dev)))),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
     var cache_lengths_tt = (
-        TileTensor(cache_lengths_dev, row_major(len(cache_lengths_dev)))
-        .reshape(Coord(Int64(len(cache_lengths_dev))))
+        TileTensor(
+            cache_lengths_dev, row_major(Coord(Int64(len(cache_lengths_dev))))
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
     var paged_lut_tt = (
-        TileTensor(paged_lut_dev, row_major(len(paged_lut_dev)))
-        .reshape(Coord(Int64(batch_size), Int64(lut_cols)))
+        TileTensor(
+            paged_lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
-    var kv_block_paged_tt = TileTensor(
-        kv_block_dev, row_major(len(kv_block_dev))
-    ).reshape(blocks_layout)
-    var q_tt = (
-        TileTensor(q_dev, row_major(len(q_dev)))
-        .reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
-        .as_imm()
-    )
+    var kv_block_paged_tt = TileTensor(kv_block_dev, blocks_layout)
+    var q_tt = TileTensor(
+        q_dev, row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+    ).as_imm()
     var sinks_tt = (
-        TileTensor(sinks_dev, row_major(len(sinks_dev)))
-        .reshape(Coord(Int64(len(sinks_dev))))
+        TileTensor(sinks_dev, row_major(Coord(Int64(len(sinks_dev)))))
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -320,8 +317,9 @@ def execute_1q_sink_test[
     var test_out_size = total_length * num_q_heads * head_size
     var test_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
     var test_out_tt = TileTensor(
-        test_out_dev, row_major(len(test_out_dev))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        test_out_dev,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+    )
 
     if use_sink:
         flash_attention[ragged=True, sink=True](
@@ -350,8 +348,9 @@ def execute_1q_sink_test[
     # --- Independent oracle: naive attention off the SAME paged cache ---
     var ref_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
     var ref_out_tt = TileTensor(
-        ref_out_dev, row_major(len(ref_out_dev))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        ref_out_dev,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+    )
 
     if use_sink:
         mha_gpu_naive[ragged=True, sink=True](

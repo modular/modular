@@ -176,16 +176,19 @@ def test[
     )
 
     var k_bf16_device = TileTensor(
-        k_bf16_device_ptr, row_major(len(k_bf16_device_ptr))
-    ).reshape(Coord(batch_size, num_keys, Idx[kv_num_heads], Idx[depth]))
+        k_bf16_device_ptr,
+        row_major(Coord(batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
+    )
 
     var q_bf16_dequant_device = TileTensor(
-        q_bf16_dequant_device_ptr, row_major(len(q_bf16_dequant_device_ptr))
-    ).reshape(Coord(batch_size, seq_len, Idx[num_heads], Idx[depth]))
+        q_bf16_dequant_device_ptr,
+        row_major(Coord(batch_size, seq_len, Idx[num_heads], Idx[depth])),
+    )
 
     var output_ref_device = TileTensor(
-        output_ref_device_ptr, row_major(len(output_ref_device_ptr))
-    ).reshape(Coord(batch_size, seq_len, Idx[num_heads], Idx[v_depth]))
+        output_ref_device_ptr,
+        row_major(Coord(batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
+    )
 
     print("  Launching native FP8 kernel...")
 
@@ -231,8 +234,9 @@ def test[
         ref_full_o_size
     )
     var output_ref_full_device = TileTensor(
-        output_ref_full_device_ptr, row_major(len(output_ref_full_device_ptr))
-    ).reshape(Coord(batch_size, seq_len, Idx[num_heads], Idx[depth]))
+        output_ref_full_device_ptr,
+        row_major(Coord(batch_size, seq_len, Idx[num_heads], Idx[depth])),
+    )
 
     mha_gpu_naive(
         q_bf16_dequant_device.as_imm().as_unsafe_any_origin(),

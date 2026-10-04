@@ -107,8 +107,9 @@ def main() raises:
         var row_offsets_dev = ctx.enqueue_create_buffer[.uint32](2)
         ctx.enqueue_copy(row_offsets_dev, row_offsets_host)
         var row_offsets = (
-            TileTensor(row_offsets_dev, row_major(len(row_offsets_dev)))
-            .reshape(Coord(Int64(len(row_offsets_dev))))
+            TileTensor(
+                row_offsets_dev, row_major(Coord(Int64(len(row_offsets_dev))))
+            )
             .as_imm()
             .as_unsafe_any_origin()
         )
@@ -118,27 +119,31 @@ def main() raises:
         var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](1)
         ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
         var cache_lengths = (
-            TileTensor(cache_lengths_dev, row_major(len(cache_lengths_dev)))
-            .reshape(Coord(Int64(len(cache_lengths_dev))))
+            TileTensor(
+                cache_lengths_dev,
+                row_major(Coord(Int64(len(cache_lengths_dev)))),
+            )
             .as_imm()
             .as_unsafe_any_origin()
         )
 
         var q_host = ctx.enqueue_create_host_buffer[dtype](qo_size)
         random(
-            TileTensor(q_host, row_major(len(q_host))).reshape(
-                Coord(Int64(valid_length), Idx[num_q_heads], Idx[head_size])
+            TileTensor(
+                q_host,
+                row_major(
+                    Coord(Int64(valid_length), Idx[num_q_heads], Idx[head_size])
+                ),
             )
         )
         var q_dev = ctx.enqueue_create_buffer[dtype](qo_size)
         ctx.enqueue_copy(q_dev, q_host)
-        var q = (
-            TileTensor(q_dev, row_major(len(q_dev)))
-            .reshape(
+        var q = TileTensor(
+            q_dev,
+            row_major(
                 Coord(Int64(valid_length), Idx[num_q_heads], Idx[head_size])
-            )
-            .as_imm()
-        )
+            ),
+        ).as_imm()
 
         # One spare block backs the LUT tail padding: the kernel reads LUT
         # columns a full tile at a time, so it can read past the last real
@@ -161,14 +166,10 @@ def main() raises:
             num_blocks * 2 * page_size * kv_params.num_heads * head_size
         )
         var kv_host = ctx.enqueue_create_host_buffer[dtype](kv_size)
-        random(
-            TileTensor(kv_host, row_major(len(kv_host))).reshape(blocks_layout)
-        )
+        random(TileTensor(kv_host, blocks_layout))
         var kv_dev = ctx.enqueue_create_buffer[dtype](kv_size)
         ctx.enqueue_copy(kv_dev, kv_host)
-        var kv_blocks = TileTensor(kv_dev, row_major(len(kv_dev))).reshape(
-            blocks_layout
-        )
+        var kv_blocks = TileTensor(kv_dev, blocks_layout)
 
         var lut_cols = ceildiv(num_pages, 8) * 8 + 16
         var lut_host = ctx.enqueue_create_host_buffer[.uint32](lut_cols)
@@ -177,8 +178,7 @@ def main() raises:
         var lut_dev = ctx.enqueue_create_buffer[.uint32](lut_cols)
         ctx.enqueue_copy(lut_dev, lut_host)
         var lut = (
-            TileTensor(lut_dev, row_major(len(lut_dev)))
-            .reshape(Coord(Int64(1), Int64(lut_cols)))
+            TileTensor(lut_dev, row_major(Coord(Int64(1), Int64(lut_cols))))
             .as_imm()
             .as_unsafe_any_origin()
         )
@@ -233,8 +233,11 @@ def main() raises:
             k_cache,
             v_cache,
             CausalMask(),
-            TileTensor(ref_dev, row_major(len(ref_dev))).reshape(
-                Coord(Int64(valid_length), Idx[num_q_heads], Idx[head_size])
+            TileTensor(
+                ref_dev,
+                row_major(
+                    Coord(Int64(valid_length), Idx[num_q_heads], Idx[head_size])
+                ),
             ),
             row_offsets,
             scale,

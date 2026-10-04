@@ -165,36 +165,29 @@ def bench_fused_qk_rms_norm_rope[
 
     with q_d.map_to_host() as q_h:
         random(
-            TileTensor(q_h, row_major(len(q_h))).reshape(
-                Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim])
+            TileTensor(
+                q_h,
+                row_major(
+                    Coord(total_seq_len, Idx[num_q_heads], Idx[head_dim])
+                ),
             )
         )
     ctx.enqueue_copy(q_fused_d, q_d)
 
     with gamma_q_d.map_to_host() as gq_h:
-        random(
-            TileTensor(gq_h, row_major(len(gq_h))).reshape(Coord(Idx[head_dim]))
-        )
+        random(TileTensor(gq_h, row_major(Coord(Idx[head_dim]))))
     with gamma_k_d.map_to_host() as gk_h:
-        random(
-            TileTensor(gk_h, row_major(len(gk_h))).reshape(Coord(Idx[head_dim]))
-        )
+        random(TileTensor(gk_h, row_major(Coord(Idx[head_dim]))))
 
     with freqs_d.map_to_host() as fr_h:
         random(
-            TileTensor(fr_h, row_major(len(fr_h))).reshape(
-                Coord(Idx[max_seq_len], Idx[rope_dim])
-            )
+            TileTensor(fr_h, row_major(Coord(Idx[max_seq_len], Idx[rope_dim])))
         )
 
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](
         kv_block_shape.flattened_length()
     )
-    random(
-        TileTensor(kv_block_host, row_major(len(kv_block_host))).reshape(
-            Coord(kv_block_shape)
-        )
-    )
+    random(TileTensor(kv_block_host, row_major(Coord(kv_block_shape))))
     ctx.enqueue_copy(kv_blocks_ref_d, kv_block_host)
     ctx.enqueue_copy(kv_blocks_fused_d, kv_block_host)
     ctx.synchronize()
@@ -220,11 +213,11 @@ def bench_fused_qk_rms_norm_rope[
     var row_offsets_tile = TileTensor(row_offsets_d, row_major(batch_size + 1))
 
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_d, row_major(len(cache_lengths_d))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_d, row_major(Coord(Int64(batch_size)))
+    )
     var paged_lut_tensor = TileTensor(
-        paged_lut_d, row_major(len(paged_lut_d))
-    ).reshape(Coord(Int64(batch_size), Int64(pages_per_seq)))
+        paged_lut_d, row_major(Coord(Int64(batch_size), Int64(pages_per_seq)))
+    )
     var max_prompt_len = UInt32(seq_len)
     var max_cache_len = UInt32(Int(cache_len))
 
@@ -247,12 +240,8 @@ def bench_fused_qk_rms_norm_rope[
     )
     blocks_strides[1] = Int64(num_layers * page_size * num_kv_heads * head_dim)
     var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
-    var kv_blocks_ref_tile = TileTensor(
-        kv_blocks_ref_d, row_major(len(kv_blocks_ref_d))
-    ).reshape(blocks_layout)
-    var kv_blocks_fused_tile = TileTensor(
-        kv_blocks_fused_d, row_major(len(kv_blocks_fused_d))
-    ).reshape(blocks_layout)
+    var kv_blocks_ref_tile = TileTensor(kv_blocks_ref_d, blocks_layout)
+    var kv_blocks_fused_tile = TileTensor(kv_blocks_fused_d, blocks_layout)
 
     @inline(.always)
     def bench_two_step(

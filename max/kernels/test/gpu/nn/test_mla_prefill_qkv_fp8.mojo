@@ -261,15 +261,15 @@ def test_prefill[
     )
 
     # create reference K and V
-    var k_ref = TileTensor(k_ref_ptr, row_major(len(k_ref_ptr))).reshape(
-        Coord(batch_size, num_keys, num_heads, depth)
+    var k_ref = TileTensor(
+        k_ref_ptr, row_major(Coord(batch_size, num_keys, num_heads, depth))
     )
-    var v_ref = TileTensor(v_ref_ptr, row_major(len(v_ref_ptr))).reshape(
-        Coord(batch_size, num_keys, num_heads, depth)
+    var v_ref = TileTensor(
+        v_ref_ptr, row_major(Coord(batch_size, num_keys, num_heads, depth))
     )
     var output_ref = TileTensor(
-        output_ref_ptr, row_major(len(output_ref_ptr))
-    ).reshape(Coord(batch_size, seq_len, num_heads, depth))
+        output_ref_ptr, row_major(Coord(batch_size, seq_len, num_heads, depth))
+    )
 
     # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
     for b in range(batch_size):
@@ -360,8 +360,8 @@ def test_prefill[
 
     # view output as a rank 4 buffer
     var output_rank4 = TileTensor(
-        output_ptr, row_major(len(output_ptr))
-    ).reshape(Coord(batch_size, seq_len, num_heads, kv_depth))
+        output_ptr, row_major(Coord(batch_size, seq_len, num_heads, kv_depth))
+    )
 
     # compare output with reference
     # FP8 MMA has significantly less precision than BF16 MMA:

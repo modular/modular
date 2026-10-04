@@ -188,9 +188,7 @@ def test_load_and_mma_and_multiply_operands[
     comptime layout_mn = row_major[M, N]()
     var a_host_managed = HostDeviceTileTensor[dtype](layout_mk)
     var a_host = a_host_managed.host_tensor()
-    var a_dev = TileTensor(a_device, row_major(len(a_device))).reshape(
-        Coord(Idx[M], Idx[K])
-    )
+    var a_dev = TileTensor(a_device, row_major(Coord(Idx[M], Idx[K])))
 
     comptime B_row = N if transpose_b else K
     comptime B_col = K if transpose_b else N
@@ -199,45 +197,33 @@ def test_load_and_mma_and_multiply_operands[
 
     var b_host_managed = HostDeviceTileTensor[dtype](layout_b)
     var b_host = b_host_managed.host_tensor()
-    var b_dev = TileTensor(b_device, row_major(len(b_device))).reshape(
-        Coord(Idx[B_row], Idx[B_col])
-    )
+    var b_dev = TileTensor(b_device, row_major(Coord(Idx[B_row], Idx[B_col])))
 
     var c_host_managed = HostDeviceTileTensor[dst_dtype](layout_mn)
     var c_host = c_host_managed.host_tensor().fill(0)
-    var c_dev = TileTensor(c_device, row_major(len(c_device))).reshape(
-        Coord(Idx[M], Idx[N])
-    )
+    var c_dev = TileTensor(c_device, row_major(Coord(Idx[M], Idx[N])))
 
     var d_host_managed = HostDeviceTileTensor[dst_dtype](layout_mn)
     var d_host = d_host_managed.host_tensor().fill(0)
 
-    var d_dev = TileTensor(d_device, row_major(len(d_device))).reshape(
-        Coord(Idx[M], Idx[N])
-    )
-    var d_dev_mma = TileTensor(
-        d_device_mma, row_major(len(d_device_mma))
-    ).reshape(Coord(Idx[M], Idx[N]))
+    var d_dev = TileTensor(d_device, row_major(Coord(Idx[M], Idx[N])))
+    var d_dev_mma = TileTensor(d_device_mma, row_major(Coord(Idx[M], Idx[N])))
 
     comptime layout_warp = row_major[WARP_SIZE]()
     comptime layout_warp4 = row_major[WARP_SIZE, 4]()
 
     var a_lane_host_managed = HostDeviceTileTensor[dtype](layout_warp)
     var a_lane_host = a_lane_host_managed.host_tensor()
-    var a_lane_dev = TileTensor(
-        a_lane_device, row_major(len(a_lane_device))
-    ).reshape(Coord(Idx[WARP_SIZE]))
+    var a_lane_dev = TileTensor(a_lane_device, row_major(Coord(Idx[WARP_SIZE])))
     var b_lane_host_managed = HostDeviceTileTensor[dtype](layout_warp)
     var b_lane_host = b_lane_host_managed.host_tensor()
-    var b_lane_dev = TileTensor(
-        b_lane_device, row_major(len(b_lane_device))
-    ).reshape(Coord(Idx[WARP_SIZE]))
+    var b_lane_dev = TileTensor(b_lane_device, row_major(Coord(Idx[WARP_SIZE])))
 
     var c_lane_host_managed = HostDeviceTileTensor[dst_dtype](layout_warp4)
     var c_lane_host = c_lane_host_managed.host_tensor()
     var c_lane_dev = TileTensor(
-        c_lane_device, row_major(len(c_lane_device))
-    ).reshape(Coord(Idx[WARP_SIZE], Idx[4]))
+        c_lane_device, row_major(Coord(Idx[WARP_SIZE], Idx[4]))
+    )
 
     _arange(a_host)
     _arange(b_host)

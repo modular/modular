@@ -360,8 +360,8 @@ def _matmul_common[
             BS * SEQ_LEN * N
         )
         var c_nd = TileTensor(
-            c_device_buffer, row_major(len(c_device_buffer))
-        ).reshape(Coord(BS * SEQ_LEN, Idx[N]))
+            c_device_buffer, row_major(Coord(BS * SEQ_LEN, Idx[N]))
+        )
 
         matmul[
             transpose_b=True,

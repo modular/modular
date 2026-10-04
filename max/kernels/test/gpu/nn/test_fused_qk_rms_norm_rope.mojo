@@ -203,8 +203,8 @@ def run_fused_qk_rms_norm_rope[
         kv_block_shape.flattened_length()
     )
     var kv_block_host_tensor = TileTensor(
-        kv_block_host, row_major(len(kv_block_host))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_host, row_major(kv_block_layout.shape_coord())
+    )
     random(kv_block_host_tensor)
     ctx.enqueue_copy(kv_block_ref_device, kv_block_host)
     ctx.enqueue_copy(kv_block_fused_device, kv_block_host)
@@ -248,23 +248,19 @@ def run_fused_qk_rms_norm_rope[
     var gamma_k_tt = TileTensor(gamma_k_device, row_major[head_size]())
     var freqs_tt = TileTensor(freqs_device, freqs_tile_layout)
 
-    var cache_lengths_tensor = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
-        .as_imm()
-    )
-    var paged_lut_tensor = (
-        TileTensor(paged_lut_device, row_major(len(paged_lut_device)))
-        .reshape(paged_lut_layout.shape_coord())
-        .as_imm()
-    )
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    ).as_imm()
+    var paged_lut_tensor = TileTensor(
+        paged_lut_device, row_major(paged_lut_layout.shape_coord())
+    ).as_imm()
 
     var ref_kv_block_tensor = TileTensor(
-        kv_block_ref_device, row_major(len(kv_block_ref_device))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_ref_device, row_major(kv_block_layout.shape_coord())
+    )
     var fused_kv_block_tensor = TileTensor(
-        kv_block_fused_device, row_major(len(kv_block_fused_device))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_fused_device, row_major(kv_block_layout.shape_coord())
+    )
     comptime Collection = PagedKVCacheCollection[
         dtype,
         kv_params,
@@ -370,14 +366,14 @@ def run_fused_qk_rms_norm_rope[
     ctx.synchronize()
 
     var ref_kv_host_tensor = TileTensor(
-        kv_block_host, row_major(len(kv_block_host))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_host, row_major(kv_block_layout.shape_coord())
+    )
     var fused_kv_host_tensor = TileTensor(
-        kv_block_fused_host, row_major(len(kv_block_fused_host))
-    ).reshape(kv_block_layout.shape_coord())
+        kv_block_fused_host, row_major(kv_block_layout.shape_coord())
+    )
     var paged_lut_host_tensor = TileTensor(
-        paged_lut_host_ptr, row_major(len(paged_lut_host_ptr))
-    ).reshape(paged_lut_layout.shape_coord())
+        paged_lut_host_ptr, row_major(paged_lut_layout.shape_coord())
+    )
 
     print("comparing K")
     for bs in range(batch_size):
@@ -630,16 +626,8 @@ def run_fused_dual_qk_rms_norm_rope[
     var index_kv_host = ctx.enqueue_create_host_buffer[dtype](
         index_kv_block_shape.flattened_length()
     )
-    random(
-        TileTensor(main_kv_host, row_major(len(main_kv_host))).reshape(
-            main_kv_layout.shape_coord()
-        )
-    )
-    random(
-        TileTensor(index_kv_host, row_major(len(index_kv_host))).reshape(
-            index_kv_layout.shape_coord()
-        )
-    )
+    random(TileTensor(main_kv_host, row_major(main_kv_layout.shape_coord())))
+    random(TileTensor(index_kv_host, row_major(index_kv_layout.shape_coord())))
     var main_kv_ref_device = ctx.enqueue_create_buffer[dtype](
         main_kv_block_shape.flattened_length()
     )
@@ -700,29 +688,25 @@ def run_fused_dual_qk_rms_norm_rope[
         row_major((total_length, Idx[index_q_heads], Idx[head_size])),
     )
 
-    var cache_lengths_tt = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
-        .as_imm()
-    )
-    var paged_lut_tt = (
-        TileTensor(paged_lut_device, row_major(len(paged_lut_device)))
-        .reshape(paged_lut_layout.shape_coord())
-        .as_imm()
-    )
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    ).as_imm()
+    var paged_lut_tt = TileTensor(
+        paged_lut_device, row_major(paged_lut_layout.shape_coord())
+    ).as_imm()
 
     var main_kv_ref_t = TileTensor(
-        main_kv_ref_device, row_major(len(main_kv_ref_device))
-    ).reshape(main_kv_layout.shape_coord())
+        main_kv_ref_device, row_major(main_kv_layout.shape_coord())
+    )
     var main_kv_fused_t = TileTensor(
-        main_kv_fused_device, row_major(len(main_kv_fused_device))
-    ).reshape(main_kv_layout.shape_coord())
+        main_kv_fused_device, row_major(main_kv_layout.shape_coord())
+    )
     var index_kv_ref_t = TileTensor(
-        index_kv_ref_device, row_major(len(index_kv_ref_device))
-    ).reshape(index_kv_layout.shape_coord())
+        index_kv_ref_device, row_major(index_kv_layout.shape_coord())
+    )
     var index_kv_fused_t = TileTensor(
-        index_kv_fused_device, row_major(len(index_kv_fused_device))
-    ).reshape(index_kv_layout.shape_coord())
+        index_kv_fused_device, row_major(index_kv_layout.shape_coord())
+    )
 
     comptime MainCollection = PagedKVCacheCollection[
         dtype,
@@ -882,8 +866,8 @@ def run_fused_dual_qk_rms_norm_rope[
     ctx.enqueue_copy(paged_lut_check, paged_lut_device)
     ctx.synchronize()
     var paged_lut_check_t = TileTensor(
-        paged_lut_check, row_major(len(paged_lut_check))
-    ).reshape(paged_lut_layout.shape_coord())
+        paged_lut_check, row_major(paged_lut_layout.shape_coord())
+    )
 
     print("comparing K (main)")
     var main_kv_ref_out = ctx.enqueue_create_host_buffer[dtype](
@@ -896,11 +880,11 @@ def run_fused_dual_qk_rms_norm_rope[
     ctx.enqueue_copy(main_kv_fused_out, main_kv_fused_device)
     ctx.synchronize()
     var main_kv_ref_out_t = TileTensor(
-        main_kv_ref_out, row_major(len(main_kv_ref_out))
-    ).reshape(main_kv_layout.shape_coord())
+        main_kv_ref_out, row_major(main_kv_layout.shape_coord())
+    )
     var main_kv_fused_out_t = TileTensor(
-        main_kv_fused_out, row_major(len(main_kv_fused_out))
-    ).reshape(main_kv_layout.shape_coord())
+        main_kv_fused_out, row_major(main_kv_layout.shape_coord())
+    )
     for bs in range(batch_size):
         var cache_len = cache_lens[bs]
         for tok in range(prompt_lens[bs]):
@@ -929,11 +913,11 @@ def run_fused_dual_qk_rms_norm_rope[
     ctx.enqueue_copy(index_kv_fused_out, index_kv_fused_device)
     ctx.synchronize()
     var index_kv_ref_out_t = TileTensor(
-        index_kv_ref_out, row_major(len(index_kv_ref_out))
-    ).reshape(index_kv_layout.shape_coord())
+        index_kv_ref_out, row_major(index_kv_layout.shape_coord())
+    )
     var index_kv_fused_out_t = TileTensor(
-        index_kv_fused_out, row_major(len(index_kv_fused_out))
-    ).reshape(index_kv_layout.shape_coord())
+        index_kv_fused_out, row_major(index_kv_layout.shape_coord())
+    )
     for bs in range(batch_size):
         var cache_len = cache_lens[bs]
         for tok in range(prompt_lens[bs]):

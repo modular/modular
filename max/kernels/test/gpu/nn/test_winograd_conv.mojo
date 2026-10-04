@@ -411,29 +411,17 @@ def test_winograd_conv_gpu[
 
     # Initialize input and filter with random values on host
     with input_device.map_to_host() as input_host:
-        var input_host_tt = TileTensor(
-            input_host, row_major(len(input_host))
-        ).reshape(input_tt_layout)
+        var input_host_tt = TileTensor(input_host, input_tt_layout)
         random(input_host_tt)
 
     with filter_device.map_to_host() as filter_host:
-        var filter_host_tt = TileTensor(
-            filter_host, row_major(len(filter_host))
-        ).reshape(filter_tt_layout)
+        var filter_host_tt = TileTensor(filter_host, filter_tt_layout)
         random(filter_host_tt)
 
-    var input_tt = TileTensor(
-        input_device, row_major(len(input_device))
-    ).reshape(input_tt_layout)
-    var filter_tt = TileTensor(
-        filter_device, row_major(len(filter_device))
-    ).reshape(filter_tt_layout)
-    var output_tt = TileTensor(
-        output_device, row_major(len(output_device))
-    ).reshape(output_tt_layout)
-    var output_ref_tt = TileTensor(
-        output_ref_device, row_major(len(output_ref_device))
-    ).reshape(output_tt_layout)
+    var input_tt = TileTensor(input_device, input_tt_layout)
+    var filter_tt = TileTensor(filter_device, filter_tt_layout)
+    var output_tt = TileTensor(output_device, output_tt_layout)
+    var output_ref_tt = TileTensor(output_ref_device, output_tt_layout)
 
     # Run reference convolution
     conv_gpu[dtype, dtype, dtype](

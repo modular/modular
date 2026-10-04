@@ -244,20 +244,16 @@ def bench_fused_qkv_index_rms_norm_rope[
     ctx.enqueue_copy(paged_lut_d, paged_lut_h)
 
     with gamma_q_main_d.map_to_host() as h:
-        random(TileTensor(h, row_major(len(h))).reshape(Coord(Idx[head_dim])))
+        random(TileTensor(h, row_major(Coord(Idx[head_dim]))))
     with gamma_k_main_d.map_to_host() as h:
-        random(TileTensor(h, row_major(len(h))).reshape(Coord(Idx[head_dim])))
+        random(TileTensor(h, row_major(Coord(Idx[head_dim]))))
     with gamma_q_index_d.map_to_host() as h:
-        random(TileTensor(h, row_major(len(h))).reshape(Coord(Idx[head_dim])))
+        random(TileTensor(h, row_major(Coord(Idx[head_dim]))))
     with gamma_k_index_d.map_to_host() as h:
-        random(TileTensor(h, row_major(len(h))).reshape(Coord(Idx[head_dim])))
+        random(TileTensor(h, row_major(Coord(Idx[head_dim]))))
 
     with freqs_d.map_to_host() as h:
-        random(
-            TileTensor(h, row_major(len(h))).reshape(
-                Coord(Idx[max_seq_len], Idx[rope_dim])
-            )
-        )
+        random(TileTensor(h, row_major(Coord(Idx[max_seq_len], Idx[rope_dim]))))
     ctx.synchronize()
 
     comptime main_collection = PagedKVCacheCollection[
@@ -324,11 +320,11 @@ def bench_fused_qkv_index_rms_norm_rope[
     var row_offsets_tile = TileTensor(row_offsets_d, row_major(batch_size + 1))
 
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_d, row_major(len(cache_lengths_d))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_d, row_major(Coord(Int64(batch_size)))
+    )
     var paged_lut_tensor = TileTensor(
-        paged_lut_d, row_major(len(paged_lut_d))
-    ).reshape(Coord(Int64(batch_size), Int64(pages_per_seq)))
+        paged_lut_d, row_major(Coord(Int64(batch_size), Int64(pages_per_seq)))
+    )
     var max_prompt_len = UInt32(seq_len)
     var max_cache_len = cache_len
 

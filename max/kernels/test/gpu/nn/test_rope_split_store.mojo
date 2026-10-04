@@ -176,48 +176,53 @@ def execute_test[
     random(freqs_host_tt)
     ctx.enqueue_copy(freqs_device, freqs_host_ptr)
     var freqs_tensor = TileTensor(
-        freqs_device, row_major(len(freqs_device))
-    ).reshape(freqs_tile_layout.shape_coord())
+        freqs_device, row_major(freqs_tile_layout.shape_coord())
+    )
 
     ctx.synchronize()
 
     # --- Build KV collections ---
     var cache_lengths_immut = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var paged_lut_immut = (
-        TileTensor(paged_lut_device, row_major(len(paged_lut_device)))
-        .reshape(Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])))
+        TileTensor(
+            paged_lut_device,
+            row_major(
+                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+            ),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
 
     var fused_kv_tt = TileTensor(
-        fused_kv_device, row_major(len(fused_kv_device))
-    ).reshape(
-        Coord(
-            Int64(kv_block_shape[0]),
-            Idx[2],
-            Int64(kv_block_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        fused_kv_device,
+        row_major(
+            Coord(
+                Int64(kv_block_shape[0]),
+                Idx[2],
+                Int64(kv_block_shape[2]),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     var unfused_kv_tt = TileTensor(
-        unfused_kv_device, row_major(len(unfused_kv_device))
-    ).reshape(
-        Coord(
-            Int64(kv_block_shape[0]),
-            Idx[2],
-            Int64(kv_block_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        unfused_kv_device,
+        row_major(
+            Coord(
+                Int64(kv_block_shape[0]),
+                Idx[2],
+                Int64(kv_block_shape[2]),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
 
     comptime Collection = PagedKVCacheCollection[
@@ -250,15 +255,15 @@ def execute_test[
     var fused_k_cache = fused_kv_collection.get_key_cache(layer_idx)
     var fused_v_cache = fused_kv_collection.get_value_cache(layer_idx)
 
-    var qkv_tile = TileTensor(qkv_device, row_major(len(qkv_device))).reshape(
-        Coord(total_length, Idx[combined_dim])
+    var qkv_tile = TileTensor(
+        qkv_device, row_major(Coord(total_length, Idx[combined_dim]))
     )
     var row_offsets_tile = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
     var fused_out_tile = TileTensor(
-        fused_output_device, row_major(len(fused_output_device))
-    ).reshape(Coord(total_length, Idx[hidden_size]))
+        fused_output_device, row_major(Coord(total_length, Idx[hidden_size]))
+    )
 
     _rope_split_store_ragged[target="gpu", interleaved=interleaved](
         qkv_tile,
@@ -283,11 +288,12 @@ def execute_test[
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
     var row_offsets = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(
-        Coord(
-            Int64(batch_size + 1),
-        )
+        row_offsets_device,
+        row_major(
+            Coord(
+                Int64(batch_size + 1),
+            )
+        ),
     )
 
     @__parameter
@@ -335,12 +341,14 @@ def execute_test[
     ctx.enqueue_copy(q_contig_device, q_contig_host_ptr)
 
     var q_tile = TileTensor(
-        q_contig_device, row_major(len(q_contig_device))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_dim]))
+        q_contig_device,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_dim])),
+    )
     var rope_q_out_device = ctx.enqueue_create_buffer[dtype](q_contig_size)
     var rope_q_out_tile = TileTensor(
-        rope_q_out_device, row_major(len(rope_q_out_device))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_dim]))
+        rope_q_out_device,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_dim])),
+    )
 
     fused_qk_rope_ragged[
         unfused_kv_collection.CacheType,
@@ -568,8 +576,8 @@ def execute_test_with_position_ids[
     random(freqs_host_tt)
     ctx.enqueue_copy(freqs_device, freqs_host_ptr)
     var freqs_tensor = TileTensor(
-        freqs_device, row_major(len(freqs_device))
-    ).reshape(freqs_tile_layout.shape_coord())
+        freqs_device, row_major(freqs_tile_layout.shape_coord())
+    )
 
     # --- Build position_ids [num_sections, total_seq_len] ---
     # Generate deterministic position_ids: cache_length + token_offset + section*7
@@ -593,41 +601,46 @@ def execute_test_with_position_ids[
 
     # --- Build KV collections ---
     var cache_lengths_immut = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var paged_lut_immut = (
-        TileTensor(paged_lut_device, row_major(len(paged_lut_device)))
-        .reshape(Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])))
+        TileTensor(
+            paged_lut_device,
+            row_major(
+                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+            ),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
 
     var fused_kv_tt = TileTensor(
-        fused_kv_device, row_major(len(fused_kv_device))
-    ).reshape(
-        Coord(
-            Int64(kv_block_shape[0]),
-            Idx[2],
-            Int64(kv_block_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        fused_kv_device,
+        row_major(
+            Coord(
+                Int64(kv_block_shape[0]),
+                Idx[2],
+                Int64(kv_block_shape[2]),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     var unfused_kv_tt = TileTensor(
-        unfused_kv_device, row_major(len(unfused_kv_device))
-    ).reshape(
-        Coord(
-            Int64(kv_block_shape[0]),
-            Idx[2],
-            Int64(kv_block_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        unfused_kv_device,
+        row_major(
+            Coord(
+                Int64(kv_block_shape[0]),
+                Idx[2],
+                Int64(kv_block_shape[2]),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
 
     comptime Collection = PagedKVCacheCollection[
@@ -660,18 +673,18 @@ def execute_test_with_position_ids[
     var fused_k_cache = fused_kv_collection.get_key_cache(layer_idx)
     var fused_v_cache = fused_kv_collection.get_value_cache(layer_idx)
 
-    var qkv_tile = TileTensor(qkv_device, row_major(len(qkv_device))).reshape(
-        Coord(total_length, Idx[combined_dim])
+    var qkv_tile = TileTensor(
+        qkv_device, row_major(Coord(total_length, Idx[combined_dim]))
     )
     var row_offsets_tile = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
     var fused_out_tile = TileTensor(
-        fused_output_device, row_major(len(fused_output_device))
-    ).reshape(Coord(total_length, Idx[hidden_size]))
+        fused_output_device, row_major(Coord(total_length, Idx[hidden_size]))
+    )
     var pos_ids_tile = TileTensor(
-        pos_ids_device, row_major(len(pos_ids_device))
-    ).reshape(Coord(num_sections, total_length))
+        pos_ids_device, row_major(Coord(num_sections, total_length))
+    )
 
     _rope_split_store_ragged_with_position_ids[
         target="gpu", interleaved=interleaved
@@ -698,11 +711,12 @@ def execute_test_with_position_ids[
     var unfused_k_cache = unfused_kv_collection.get_key_cache(layer_idx)
     var unfused_v_cache = unfused_kv_collection.get_value_cache(layer_idx)
     var row_offsets = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(
-        Coord(
-            Int64(batch_size + 1),
-        )
+        row_offsets_device,
+        row_major(
+            Coord(
+                Int64(batch_size + 1),
+            )
+        ),
     )
 
     @__parameter
@@ -747,12 +761,14 @@ def execute_test_with_position_ids[
     ctx.enqueue_copy(q_contig_device, q_contig_host_ptr)
 
     var q_tile = TileTensor(
-        q_contig_device, row_major(len(q_contig_device))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_dim]))
+        q_contig_device,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_dim])),
+    )
     var rope_q_out_device = ctx.enqueue_create_buffer[dtype](q_contig_size)
     var rope_q_out_tile = TileTensor(
-        rope_q_out_device, row_major(len(rope_q_out_device))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_dim]))
+        rope_q_out_device,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_dim])),
+    )
 
     var pos_ids_immut = TileTensor(
         pos_ids_tile._storage.as_unsafe_any_origin(),
@@ -972,36 +988,40 @@ def execute_test_fp8[
     random(freqs_host_tt)
     ctx.enqueue_copy(freqs_device, freqs_host_ptr)
     var freqs_tensor = TileTensor(
-        freqs_device, row_major(len(freqs_device))
-    ).reshape(freqs_tile_layout.shape_coord())
+        freqs_device, row_major(freqs_tile_layout.shape_coord())
+    )
 
     ctx.synchronize()
 
     # --- Build KV collections ---
     var cache_lengths_immut = (
-        TileTensor(cache_lengths_device, row_major(len(cache_lengths_device)))
-        .reshape(Coord(Int64(batch_size)))
+        TileTensor(cache_lengths_device, row_major(Coord(Int64(batch_size))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var paged_lut_immut = (
-        TileTensor(paged_lut_device, row_major(len(paged_lut_device)))
-        .reshape(Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1])))
+        TileTensor(
+            paged_lut_device,
+            row_major(
+                Coord(Int64(paged_lut_shape[0]), Int64(paged_lut_shape[1]))
+            ),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
 
     var bf16_kv_tt = TileTensor(
-        bf16_kv_device, row_major(len(bf16_kv_device))
-    ).reshape(
-        Coord(
-            Int64(kv_block_shape[0]),
-            Idx[2],
-            Int64(kv_block_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        bf16_kv_device,
+        row_major(
+            Coord(
+                Int64(kv_block_shape[0]),
+                Idx[2],
+                Int64(kv_block_shape[2]),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     comptime BF16Collection = PagedKVCacheCollection[
         compute_dtype,
@@ -1032,16 +1052,17 @@ def execute_test_fp8[
     )
 
     var fp8_kv_tt = TileTensor(
-        fp8_kv_device, row_major(len(fp8_kv_device))
-    ).reshape(
-        Coord(
-            Int64(kv_block_shape[0]),
-            Idx[2],
-            Int64(kv_block_shape[2]),
-            Idx[page_size],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        fp8_kv_device,
+        row_major(
+            Coord(
+                Int64(kv_block_shape[0]),
+                Idx[2],
+                Int64(kv_block_shape[2]),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
     var fp8_kv_collection = FP8Collection(
         rebind[FP8Collection.blocks_tt_type](fp8_kv_tt.as_unsafe_any_origin()),
@@ -1056,15 +1077,15 @@ def execute_test_fp8[
     # =====================================================================
     var bf16_k_cache = bf16_kv_collection.get_key_cache(layer_idx)
     var bf16_v_cache = bf16_kv_collection.get_value_cache(layer_idx)
-    var qkv_tile = TileTensor(qkv_device, row_major(len(qkv_device))).reshape(
-        Coord(total_length, Idx[combined_dim])
+    var qkv_tile = TileTensor(
+        qkv_device, row_major(Coord(total_length, Idx[combined_dim]))
     )
     var row_offsets_tile = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
     var bf16_out_tile = TileTensor(
-        bf16_q_device, row_major(len(bf16_q_device))
-    ).reshape(Coord(total_length, Idx[hidden_size]))
+        bf16_q_device, row_major(Coord(total_length, Idx[hidden_size]))
+    )
 
     _rope_split_store_ragged[target="gpu", interleaved=interleaved](
         qkv_tile,
@@ -1082,8 +1103,8 @@ def execute_test_fp8[
     var fp8_k_cache = fp8_kv_collection.get_key_cache(layer_idx)
     var fp8_v_cache = fp8_kv_collection.get_value_cache(layer_idx)
     var fp8_out_tile = TileTensor(
-        fp8_q_device, row_major(len(fp8_q_device))
-    ).reshape(Coord(total_length, Idx[hidden_size]))
+        fp8_q_device, row_major(Coord(total_length, Idx[hidden_size]))
+    )
 
     _rope_split_store_ragged[target="gpu", interleaved=interleaved](
         qkv_tile,

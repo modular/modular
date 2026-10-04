@@ -208,8 +208,10 @@ def execute_ws_bm32_test[
     )
     ctx.enqueue_copy(input_row_offsets_dev, input_row_offsets)
     var input_row_offsets_tt = (
-        TileTensor(input_row_offsets_dev, row_major(len(input_row_offsets_dev)))
-        .reshape(Coord(Int64(len(input_row_offsets_dev))))
+        TileTensor(
+            input_row_offsets_dev,
+            row_major(Coord(Int64(len(input_row_offsets_dev)))),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -217,17 +219,15 @@ def execute_ws_bm32_test[
     # --- Q (ragged: [total_length, num_q_heads, head_size]) ---
     var q_size = total_length * num_q_heads * head_size
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
-    var q_host_tt = TileTensor(q_host, row_major(len(q_host))).reshape(
-        Coord(total_length, Idx[num_q_heads], Idx[head_size])
+    var q_host_tt = TileTensor(
+        q_host, row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
     )
     random(q_host_tt)
     var q_dev = ctx.enqueue_create_buffer[dtype](q_size)
     ctx.enqueue_copy(q_dev, q_host)
-    var q_tt = (
-        TileTensor(q_dev, row_major(len(q_dev)))
-        .reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
-        .as_imm()
-    )
+    var q_tt = TileTensor(
+        q_dev, row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+    ).as_imm()
 
     # --- Paged KV blocks (shared physical storage for both runs) ---
     var num_paged_blocks = ceildiv(num_keys, page_size) * batch_size + 4
@@ -252,9 +252,7 @@ def execute_ws_bm32_test[
         * head_size
     )
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](kv_block_size)
-    var kv_block_host_tt = TileTensor(
-        kv_block_host, row_major(len(kv_block_host))
-    ).reshape(blocks_layout)
+    var kv_block_host_tt = TileTensor(kv_block_host, blocks_layout)
     random(kv_block_host_tt)
     # Reserve the last physical block as a NaN poison page. The LUT's padded
     # tail points every unused column at it (see below), so any TMA that reads
@@ -272,9 +270,7 @@ def execute_ws_bm32_test[
         kv_block_host[poison_block * block_elems + i] = nan[dtype]()
     var kv_block_dev = ctx.enqueue_create_buffer[dtype](kv_block_size)
     ctx.enqueue_copy(kv_block_dev, kv_block_host)
-    var kv_block_paged_tt = TileTensor(
-        kv_block_dev, row_major(len(kv_block_dev))
-    ).reshape(blocks_layout)
+    var kv_block_paged_tt = TileTensor(kv_block_dev, blocks_layout)
 
     # --- Full lookup table (unique physical block per logical page) ---
     var full_pages = ceildiv(num_keys, page_size)
@@ -306,8 +302,9 @@ def execute_ws_bm32_test[
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tt = (
-        TileTensor(cache_lengths_dev, row_major(len(cache_lengths_dev)))
-        .reshape(Coord(Int64(len(cache_lengths_dev))))
+        TileTensor(
+            cache_lengths_dev, row_major(Coord(Int64(len(cache_lengths_dev))))
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -317,8 +314,9 @@ def execute_ws_bm32_test[
     )
     ctx.enqueue_copy(paged_lut_dev, paged_lut_host)
     var paged_lut_tt = (
-        TileTensor(paged_lut_dev, row_major(len(paged_lut_dev)))
-        .reshape(Coord(Int64(batch_size), Int64(lut_cols)))
+        TileTensor(
+            paged_lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -363,8 +361,7 @@ def execute_ws_bm32_test[
     var sinks_dev = ctx.enqueue_create_buffer[dtype](num_q_heads)
     ctx.enqueue_copy(sinks_dev, sinks_host)
     var sinks_tt = (
-        TileTensor(sinks_dev, row_major(len(sinks_dev)))
-        .reshape(Coord(Int64(len(sinks_dev))))
+        TileTensor(sinks_dev, row_major(Coord(Int64(len(sinks_dev)))))
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -374,8 +371,9 @@ def execute_ws_bm32_test[
     # ============ Run 1: WS FA4 (BM=32) over the full cache ============
     var test_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
     var test_out_tt = TileTensor(
-        test_out_dev, row_major(len(test_out_dev))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        test_out_dev,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+    )
     comptime if use_sink:
         flash_attention[ragged=True, sink=True](
             test_out_tt,
@@ -405,8 +403,9 @@ def execute_ws_bm32_test[
     # ============ Run 2: naive over the full key range [0, num_keys) ======
     var ref_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
     var ref_out_tt = TileTensor(
-        ref_out_dev, row_major(len(ref_out_dev))
-    ).reshape(Coord(total_length, Idx[num_q_heads], Idx[head_size]))
+        ref_out_dev,
+        row_major(Coord(total_length, Idx[num_q_heads], Idx[head_size])),
+    )
     comptime if use_sink:
         mha_gpu_naive[ragged=True, sink=True](
             q_tt,

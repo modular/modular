@@ -225,20 +225,16 @@ def _run_paged_mha[
     var blocks_strides = Coord[*BlocksLayout.stride_types]()
     blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
     blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
-    var kv_block_tensor = (
-        TileTensor(kv_block_dev, row_major(len(kv_block_dev)))
-        .reshape(BlocksLayout(blocks_shape, blocks_strides))
-        .as_unsafe_any_origin()
-    )
+    var kv_block_tensor = TileTensor(
+        kv_block_dev, BlocksLayout(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
     var cl_tensor = (
-        TileTensor(cl_dev, row_major(len(cl_dev)))
-        .reshape(Coord(Int64(1)))
+        TileTensor(cl_dev, row_major(Coord(Int64(1))))
         .as_imm()
         .as_unsafe_any_origin()
     )
     var lut_tensor = (
-        TileTensor(lut_dev, row_major(len(lut_dev)))
-        .reshape(Coord(Int64(1), Int64(lut_cols)))
+        TileTensor(lut_dev, row_major(Coord(Int64(1), Int64(lut_cols))))
         .as_imm()
         .as_unsafe_any_origin()
     )
@@ -250,19 +246,13 @@ def _run_paged_mha[
         UInt32(total_keys),  # max_full_context_length
     )
 
-    var q_tensor = (
-        TileTensor(q_dev, row_major(len(q_dev)))
-        .reshape(Coord(Int64(extend), Idx[num_q_heads], Idx[head_dim]))
-        .as_imm()
+    var q_tensor = TileTensor(
+        q_dev, row_major(Coord(Int64(extend), Idx[num_q_heads], Idx[head_dim]))
+    ).as_imm()
+    var o_tensor = TileTensor(
+        o_dev, row_major(Coord(Int64(extend), Idx[num_q_heads], Idx[head_dim]))
     )
-    var o_tensor = TileTensor(o_dev, row_major(len(o_dev))).reshape(
-        Coord(Int64(extend), Idx[num_q_heads], Idx[head_dim])
-    )
-    var ro_tensor = (
-        TileTensor(ro_dev, row_major(len(ro_dev)))
-        .reshape(Coord(Int64(2)))
-        .as_imm()
-    )
+    var ro_tensor = TileTensor(ro_dev, row_major(Coord(Int64(2)))).as_imm()
 
     flash_attention[ragged=True](
         o_tensor,

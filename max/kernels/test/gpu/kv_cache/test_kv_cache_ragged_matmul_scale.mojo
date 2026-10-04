@@ -256,8 +256,8 @@ def execute_matmul_k_cache_ragged_scale[
     )
     ctx.synchronize()
     var weight_host = TileTensor(
-        weight_host_ptr, row_major(len(weight_host_ptr))
-    ).reshape(Coord(Idx[kv_hidden_size], Idx[hidden_size]))
+        weight_host_ptr, row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size]))
+    )
     random(weight_host)
     var weight_device = ctx.enqueue_create_buffer[weight_dtype](weight_size)
     ctx.enqueue_copy(weight_device, weight_host_ptr)
@@ -291,8 +291,10 @@ def execute_matmul_k_cache_ragged_scale[
         input_row_offsets_device, row_major(len(input_row_offsets_device))
     ).as_imm()
     var weight_device_tensor = (
-        TileTensor(weight_device, row_major(len(weight_device)))
-        .reshape(Coord(Idx[kv_hidden_size], Idx[hidden_size]))
+        TileTensor(
+            weight_device,
+            row_major(Coord(Idx[kv_hidden_size], Idx[hidden_size])),
+        )
         .as_imm()
         .as_unsafe_any_origin()
     )

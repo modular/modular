@@ -149,16 +149,16 @@ def bench_shape(
 
     var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
-    var iro_tensor = TileTensor(iro_dev, row_major(len(iro_dev))).reshape(
-        Coord(Int64(batch_size + 1))
+    var iro_tensor = TileTensor(
+        iro_dev, row_major(Coord(Int64(batch_size + 1)))
     )
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_dev, row_major(len(cache_lengths_dev))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_dev, row_major(Coord(Int64(batch_size)))
+    )
 
     # ---- paged lookup table (sequential distinct blocks; shared by both
     # caches since main/index blocks are separate allocations) ----
@@ -172,8 +172,8 @@ def bench_shape(
             block_counter += 1
     var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
-    var lut_tensor = TileTensor(lut_dev, row_major(len(lut_dev))).reshape(
-        Coord(Int64(batch_size), Int64(lut_cols))
+    var lut_tensor = TileTensor(
+        lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
     )
 
     # ---- cache-busting inputs: hidden state (M, K) and stacked weight
@@ -195,15 +195,13 @@ def bench_shape(
         total_seq * combined_out
     )
     var fused_out = TileTensor(
-        fused_out_dev, row_major(len(fused_out_dev))
-    ).reshape(Coord(total_seq, Idx[combined_out]))
-    var q_out_dev = ctx.enqueue_create_buffer[DATA_DTYPE](total_seq * q_dim)
-    var q_out = TileTensor(q_out_dev, row_major(len(q_out_dev))).reshape(
-        Coord(total_seq, Idx[q_dim])
+        fused_out_dev, row_major(Coord(total_seq, Idx[combined_out]))
     )
+    var q_out_dev = ctx.enqueue_create_buffer[DATA_DTYPE](total_seq * q_dim)
+    var q_out = TileTensor(q_out_dev, row_major(Coord(total_seq, Idx[q_dim])))
     var iq_out_dev = ctx.enqueue_create_buffer[DATA_DTYPE](total_seq * iq_dim)
-    var iq_out = TileTensor(iq_out_dev, row_major(len(iq_out_dev))).reshape(
-        Coord(total_seq, Idx[iq_dim])
+    var iq_out = TileTensor(
+        iq_out_dev, row_major(Coord(total_seq, Idx[iq_dim]))
     )
 
     # ---- KV cache blocks (main: K+V, 1 head; index: K-only MLA, 1 head) ----
@@ -229,8 +227,8 @@ def bench_shape(
         num_layers * page_size * main_block_shape[4] * HEAD_SIZE
     )
     var main_blocks = TileTensor(
-        main_blocks_dev, row_major(len(main_blocks_dev))
-    ).reshape(main_layout(main_shape, main_strides))
+        main_blocks_dev, main_layout(main_shape, main_strides)
+    )
     var index_block_shape = IndexList[6](
         num_pages, 2, num_layers, page_size, 1, HEAD_SIZE
     )
@@ -253,8 +251,8 @@ def bench_shape(
         num_layers * page_size * index_block_shape[4] * HEAD_SIZE
     )
     var index_blocks = TileTensor(
-        index_blocks_dev, row_major(len(index_blocks_dev))
-    ).reshape(index_layout(index_shape, index_strides))
+        index_blocks_dev, index_layout(index_shape, index_strides)
+    )
 
     # `as_unsafe_any_origin`: the fused QKV matmul writes both the k and v cache
     # views (disjoint per-page regions sharing the blocks buffer origin), so

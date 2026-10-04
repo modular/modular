@@ -454,14 +454,15 @@ def run_one_case(
         block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
     )
     var blocks = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(BlocksLayout(blocks_shape, blocks_strides))
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
+    )
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
     var lookup_table = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
     var kv_collection = Collection(
         blocks.as_unsafe_any_origin(),
         cache_lengths_tensor.as_imm().as_unsafe_any_origin(),

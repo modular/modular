@@ -428,38 +428,41 @@ def run_test[
     # Step 6: Build native views and PagedKVCacheCollection
     # -------------------------------------------------------------------
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[1],
-            Int64(NUM_LAYERS),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
 
     var scales_tt = TileTensor(
-        scales_device, row_major(len(scales_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[1],
-            Int64(NUM_LAYERS),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[1],
-        )
+        scales_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[1],
+            )
+        ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
 
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
 
     comptime Collection = PagedKVCacheCollection[
         fp8_type,
@@ -1056,38 +1059,41 @@ def run_test_with_scales[
     # Step 6: Build native views and PagedKVCacheCollection
     # -------------------------------------------------------------------
     var blocks_tt = TileTensor(
-        blocks_device, row_major(len(blocks_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[1],
-            Int64(NUM_LAYERS),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[kv_params.head_size],
-        )
+        blocks_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            )
+        ),
     )
 
     var scales_tt = TileTensor(
-        scales_device, row_major(len(scales_device))
-    ).reshape(
-        Coord(
-            Int64(total_pages),
-            Idx[1],
-            Int64(NUM_LAYERS),
-            Idx[PAGE_SIZE],
-            Idx[kv_params.num_heads],
-            Idx[1],
-        )
+        scales_device,
+        row_major(
+            Coord(
+                Int64(total_pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[kv_params.num_heads],
+                Idx[1],
+            )
+        ),
     )
 
     var cache_lengths_tt = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
 
     var lookup_table_tt = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
 
     # Build PagedKVCacheCollection WITH per-token scales.
     # quantization_granularity_ = PHYSICAL_DIM gives head_dim_gran = 1

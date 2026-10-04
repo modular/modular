@@ -2525,8 +2525,8 @@ def _matmul_blockwise_scaled_fp4_common[
     )
     # `Idx[N]` keeps the N dim STATIC (M stays dynamic).
     var c_tt = TileTensor(
-        scratch_buffer, row_major(len(scratch_buffer))
-    ).reshape(Coord(TOTAL_SEQ_LEN, Idx[N]))
+        scratch_buffer, row_major(Coord(TOTAL_SEQ_LEN, Idx[N]))
+    )
 
     # Try MAX's own SM100 Mojo block-scaled kernel first; vendor cuBLASLt only
     # on DISPATCH_MISS. The K/V-scatter epilogue rides `elementwise_lambda_fn`.

@@ -186,16 +186,14 @@ def bench_shape[
 
     var iro_dev = ctx.enqueue_create_buffer[.uint32](batch_size + 1)
     ctx.enqueue_copy(iro_dev, iro_host)
-    var iro_tt = TileTensor(iro_dev, row_major(len(iro_dev))).reshape(
-        Coord(Int64(batch_size + 1))
-    )
+    var iro_tt = TileTensor(iro_dev, row_major(Coord(Int64(batch_size + 1))))
 
     var cache_lengths_host = List[UInt32](length=batch_size, fill=UInt32(0))
     var cache_lengths_dev = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_dev, cache_lengths_host)
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_dev, row_major(len(cache_lengths_dev))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_dev, row_major(Coord(Int64(batch_size)))
+    )
 
     var lut_cols = ((ceildiv(max_ctx, page_size) + 7) // 8) * 8 + 16
     var lut_host = List[UInt32](length=batch_size * lut_cols, fill=UInt32(0))
@@ -207,8 +205,8 @@ def bench_shape[
             block_counter += 1
     var lut_dev = ctx.enqueue_create_buffer[.uint32](batch_size * lut_cols)
     ctx.enqueue_copy(lut_dev, lut_host)
-    var lut_tensor = TileTensor(lut_dev, row_major(len(lut_dev))).reshape(
-        Coord(Int64(batch_size), Int64(lut_cols))
+    var lut_tensor = TileTensor(
+        lut_dev, row_major(Coord(Int64(batch_size), Int64(lut_cols)))
     )
 
     # ---- cache-busting inputs: fp8 operands plus both E8M0 scale tensors ----
@@ -233,15 +231,13 @@ def bench_shape[
 
     # ---- outputs: fused writes Q (+ IndexQ); unfused writes one per band ----
     var q_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](total_seq * q_dim)
-    var q_out = TileTensor(q_out_dev, row_major(len(q_out_dev))).reshape(
-        Coord(total_seq, Idx[q_dim])
-    )
+    var q_out = TileTensor(q_out_dev, row_major(Coord(total_seq, Idx[q_dim])))
     # IndexQ and the index cache are allocated for both variants: they are a few
     # hundred KiB, sit outside the timed closure, and keeping them unconditional
     # lets one closure body serve dense and sparse alike.
     var iq_out_dev = ctx.enqueue_create_buffer[OUT_DTYPE](total_seq * iq_dim)
-    var iq_out = TileTensor(iq_out_dev, row_major(len(iq_out_dev))).reshape(
-        Coord(total_seq, Idx[iq_dim])
+    var iq_out = TileTensor(
+        iq_out_dev, row_major(Coord(total_seq, Idx[iq_dim]))
     )
     # K, V and IndexK land in dense buffers on the unfused path; the fused
     # epilogue scatters them straight into the caches instead.
@@ -273,8 +269,8 @@ def bench_shape[
         num_layers * page_size * main_block_shape[4] * HEAD_SIZE
     )
     var main_blocks = TileTensor(
-        main_blocks_dev, row_major(len(main_blocks_dev))
-    ).reshape(main_layout(main_shape, main_strides))
+        main_blocks_dev, main_layout(main_shape, main_strides)
+    )
     var index_block_shape = IndexList[6](
         num_pages, 2, num_layers, page_size, 1, HEAD_SIZE
     )
@@ -297,8 +293,8 @@ def bench_shape[
         num_layers * page_size * index_block_shape[4] * HEAD_SIZE
     )
     var index_blocks = TileTensor(
-        index_blocks_dev, row_major(len(index_blocks_dev))
-    ).reshape(index_layout(index_shape, index_strides))
+        index_blocks_dev, index_layout(index_shape, index_strides)
+    )
 
     var main_collection = MainCollection(
         main_blocks.as_unsafe_any_origin(),

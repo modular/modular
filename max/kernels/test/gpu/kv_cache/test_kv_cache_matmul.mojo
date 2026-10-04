@@ -82,8 +82,9 @@ def execute_fused_qkv_matmul[
     )
     with weight_device.map_to_host() as weight_host_buffer:
         var weight_host = TileTensor(
-            weight_host_buffer, row_major(len(weight_host_buffer))
-        ).reshape(Coord(Idx[fused_hidden_size], Idx[hidden_size]))
+            weight_host_buffer,
+            row_major(Coord(Idx[fused_hidden_size], Idx[hidden_size])),
+        )
         random(weight_host)
 
     var ref_output = HostDeviceTileTensor[dtype](
@@ -143,8 +144,9 @@ def execute_fused_qkv_matmul[
     # Create device tensors for kernel calls
     var hidden_state_device_tensor = hidden_state.device_tensor()
     var weight_device_tensor = TileTensor(
-        weight_device, row_major(len(weight_device))
-    ).reshape(Coord(Idx[fused_hidden_size], Idx[hidden_size]))
+        weight_device,
+        row_major(Coord(Idx[fused_hidden_size], Idx[hidden_size])),
+    )
     var test_output_device_tensor = test_output.device_tensor()
     var valid_lengths = HostDeviceTileTensor[.uint32](
         row_major(Coord(Int64(batch_size))), ctx

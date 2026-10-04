@@ -338,14 +338,12 @@ def run_one_case(
 
     # --- hidden_state (M, HIDDEN) fp8 + concat weight (N_TOTAL, HIDDEN) fp8 ----
     var hs_host = ctx.enqueue_create_host_buffer[data_dtype](max(1, M * HIDDEN))
-    var hs_host_tt = TileTensor(hs_host, row_major(len(hs_host))).reshape(
-        Coord(M, Idx[HIDDEN])
-    )
+    var hs_host_tt = TileTensor(hs_host, row_major(Coord(M, Idx[HIDDEN])))
     random(hs_host_tt)
 
     var w_host = ctx.enqueue_create_host_buffer[data_dtype](N_TOTAL * HIDDEN)
-    var w_host_tt = TileTensor(w_host, row_major(len(w_host))).reshape(
-        Coord(Idx[N_TOTAL], Idx[HIDDEN])
+    var w_host_tt = TileTensor(
+        w_host, row_major(Coord(Idx[N_TOTAL], Idx[HIDDEN]))
     )
     random(w_host_tt)
 
@@ -473,43 +471,43 @@ def run_one_case(
     ctx.synchronize()
 
     # --- device tensor views ------------------------------------------------
-    var hs_dev_tt = TileTensor(hs_device, row_major(len(hs_device))).reshape(
-        Coord(M, Idx[HIDDEN])
-    )
-    var w_dev_tt = TileTensor(w_device, row_major(len(w_device))).reshape(
-        Coord(Idx[N_TOTAL], Idx[HIDDEN])
+    var hs_dev_tt = TileTensor(hs_device, row_major(Coord(M, Idx[HIDDEN])))
+    var w_dev_tt = TileTensor(
+        w_device, row_major(Coord(Idx[N_TOTAL], Idx[HIDDEN]))
     )
     var input_scale_dev_tt = TileTensor(
-        input_scale_device, row_major(len(input_scale_device))
-    ).reshape(
-        Coord(
-            m_sf,
-            Idx[k_sf],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        input_scale_device,
+        row_major(
+            Coord(
+                m_sf,
+                Idx[k_sf],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
+            )
+        ),
     )
     var weight_scale_dev_tt = TileTensor(
-        weight_scale_device, row_major(len(weight_scale_device))
-    ).reshape(
-        Coord(
-            Idx[n_sf],
-            Idx[k_sf],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        weight_scale_device,
+        row_major(
+            Coord(
+                Idx[n_sf],
+                Idx[k_sf],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
+            )
+        ),
     )
     var q_output_dev_tt = TileTensor(
-        q_output_device, row_major(len(q_output_device))
-    ).reshape(Coord(M, Idx[Q_DIM]))
+        q_output_device, row_major(Coord(M, Idx[Q_DIM]))
+    )
     var iq_output_dev_tt = TileTensor(
-        iq_output_device, row_major(len(iq_output_device))
-    ).reshape(Coord(M, Idx[IQ_DIM]))
+        iq_output_device, row_major(Coord(M, Idx[IQ_DIM]))
+    )
     var row_offsets_tt = TileTensor(
-        row_offsets_device, row_major(len(row_offsets_device))
-    ).reshape(Coord(batch_size + 1))
+        row_offsets_device, row_major(Coord(batch_size + 1))
+    )
 
     comptime MainCollection = PagedKVCacheCollection[
         kv_dtype,
@@ -539,8 +537,9 @@ def run_one_case(
         * main_block_shape[5]
     )
     var main_blocks = TileTensor(
-        main_blocks_device, row_major(len(main_blocks_device))
-    ).reshape(MainCollectionLayout(main_blocks_shape, main_blocks_strides))
+        main_blocks_device,
+        MainCollectionLayout(main_blocks_shape, main_blocks_strides),
+    )
     comptime IndexCollection = PagedKVCacheCollection[
         kv_dtype,
         index_kv_params,
@@ -569,14 +568,16 @@ def run_one_case(
         * index_block_shape[5]
     )
     var index_blocks = TileTensor(
-        index_blocks_device, row_major(len(index_blocks_device))
-    ).reshape(IndexCollectionLayout(index_blocks_shape, index_blocks_strides))
+        index_blocks_device,
+        IndexCollectionLayout(index_blocks_shape, index_blocks_strides),
+    )
     var cache_lengths_tensor = TileTensor(
-        cache_lengths_device, row_major(len(cache_lengths_device))
-    ).reshape(Coord(Int64(batch_size)))
+        cache_lengths_device, row_major(Coord(Int64(batch_size)))
+    )
     var lookup_table = TileTensor(
-        lookup_table_device, row_major(len(lookup_table_device))
-    ).reshape(Coord(Int64(batch_size), Int64(max_pages_per_batch)))
+        lookup_table_device,
+        row_major(Coord(Int64(batch_size), Int64(max_pages_per_batch))),
+    )
     var main_kv = MainCollection(
         main_blocks.as_unsafe_any_origin(),
         cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
