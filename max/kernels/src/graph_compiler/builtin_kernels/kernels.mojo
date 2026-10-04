@@ -1275,6 +1275,7 @@ struct IRFFT:
 def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     dtype: DType,
     weight_type: DType,
+    kv_type: DType,
     target: StaticString,
     group_size: Optional[Int] = None,
     has_zp: Optional[Bool] = None,
@@ -1282,7 +1283,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2, ...],
     input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
     weight: ManagedTensorSlice[dtype=weight_type, rank=2, ...],
-    kv_collection: PagedKVCacheCollection[dtype, ...],
+    kv_collection: PagedKVCacheCollection[kv_type, ...],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=2, ...],
     ctx: DeviceContext,
@@ -1293,6 +1294,8 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
         dtype: Element type of the `hidden_state` input and `output`
             tensors.
         weight_type: Element type of the `weight` tensor.
+        kv_type: Element type of the paged KV cache. BF16 activations may
+            store into an FP8 cache; the epilogue saturates on the write.
         target: Target device identifier for kernel dispatch.
         group_size: Block size for GPTQ-style quantization of `weight`;
             when set, `weight` must be `uint8` (defaults to `None` for no
@@ -1339,6 +1342,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api[
 def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     dtype: DType,
     weight_type: DType,
+    kv_type: DType,
     target: StaticString,
     group_size: Optional[Int] = None,
     has_zp: Optional[Bool] = None,
@@ -1346,7 +1350,7 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
     hidden_state: ManagedTensorSlice[dtype=dtype, rank=2, ...],
     input_row_offsets: ManagedTensorSlice[dtype=DType.uint32, rank=1, ...],
     weight: ManagedTensorSlice[dtype=weight_type, rank=2, ...],
-    kv_collection: PagedKVCacheCollection[dtype, ...],
+    kv_collection: PagedKVCacheCollection[kv_type, ...],
     layer_idx: UInt32,
     output: ManagedTensorSlice[dtype=dtype, rank=2, ...],
     bias: ManagedTensorSlice[dtype=dtype, rank=1, ...],
@@ -1358,6 +1362,8 @@ def generic_fused_qkv_matmul_kv_cache_paged_ragged_kernel_api_bias[
         dtype: Element type of the `hidden_state`, `output`, and `bias`
             tensors.
         weight_type: Element type of the `weight` tensor.
+        kv_type: Element type of the paged KV cache. BF16 activations may
+            store into an FP8 cache; the epilogue saturates on the write.
         target: Target device identifier for kernel dispatch.
         group_size: Block size for GPTQ-style quantization of `weight`;
             when set, `weight` must be `uint8` (defaults to `None` for no

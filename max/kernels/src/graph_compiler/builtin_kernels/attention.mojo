@@ -1270,6 +1270,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
     @staticmethod
     def execute[
         dtype: DType,
+        kv_type: DType,
         //,
         target: StaticString,
     ](
@@ -1277,7 +1278,7 @@ struct Struct_fused_qkv_matmul_padded_ragged:
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
         page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
@@ -1371,6 +1372,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
     @staticmethod
     def execute[
         dtype: DType,
+        kv_type: DType,
         //,
         target: StaticString,
     ](
@@ -1378,7 +1380,7 @@ struct Struct_fused_qkv_matmul_padded_ragged_bias:
         hidden_state: InputTensor[dtype=dtype, rank=2, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         weight: InputTensor[dtype=dtype, rank=2, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        kv_blocks: MutableInputTensor[dtype=kv_type, rank=6, ...],
         page_stride: InputTensor[dtype=.int64, rank=1, ...],
         cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
         kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
