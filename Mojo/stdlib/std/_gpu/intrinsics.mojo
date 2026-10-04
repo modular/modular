@@ -180,47 +180,6 @@ struct CacheOperation(Equatable, TrivialRegisterPassable):
 
 
 # ===-----------------------------------------------------------------------===#
-# ldg
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def ldg[
-    dtype: DType,
-    //,
-    width: Int = 1,
-    *,
-    alignment: Int = align_of[SIMD[dtype, width]](),
-](x: Pointer[Scalar[dtype], address_space=.GENERIC, ...]) -> SIMD[
-    dtype, width
-] where dtype.is_numeric():
-    """Load data from global memory through the non-coherent cache.
-
-    This function provides a hardware-accelerated global memory load operation
-    that uses the GPU's non-coherent cache (equivalent to CUDA's `__ldg` instruction).
-    It optimizes for read-only data access patterns.
-
-    Parameters:
-        dtype: The data type to load (must be numeric).
-        width: The SIMD vector width for vectorized loads.
-        alignment: Memory alignment in bytes. Defaults to natural alignment
-            of the SIMD vector dtype.
-
-    Args:
-        x: Pointer to global memory location to load from.
-
-    Returns:
-        SIMD vector containing the loaded data.
-
-    Note:
-        - Uses invariant loads which indicate the memory won't change during kernel execution.
-        - Particularly beneficial for read-only texture-like access patterns.
-        - May improve performance on memory-bound kernels.
-    """
-    return x.unsafe_load[width=width, alignment=alignment, invariant=True]()
-
-
-# ===-----------------------------------------------------------------------===#
 # warpgroup_reg
 # ===-----------------------------------------------------------------------===#
 
