@@ -6167,7 +6167,8 @@ def _moe_sigmoid_gemv_router(
         ValueError: If the inputs aren't on a GPU, or their shapes or the
             routing configuration aren't supported by the kernel.
     """
-    if not hidden_states.device.is_gpu() or _is_apple_gpu():
+    device = DeviceRef.from_device(hidden_states.device)
+    if not device.is_gpu() or _is_apple_gpu():
         raise ValueError(
             "moe_sigmoid_gemv_router is only supported on NVIDIA and AMD GPUs"
         )
@@ -6207,7 +6208,7 @@ def _moe_sigmoid_gemv_router(
 
     results = ops.custom(
         "mo.moe.sigmoid.gemv.single.group.router",
-        device=hidden_states.device,
+        device=device,
         values=[
             hidden_states,
             gate_weight,
@@ -6220,12 +6221,12 @@ def _moe_sigmoid_gemv_router(
             TensorType(
                 dtype=DType.int32,
                 shape=[hidden_states.shape[0], n_experts_per_tok],
-                device=hidden_states.device,
+                device=device,
             ),  # expert_indices
             TensorType(
                 dtype=gate_weight.dtype,
                 shape=[hidden_states.shape[0], n_experts_per_tok],
-                device=hidden_states.device,
+                device=device,
             ),  # expert_weights
         ],
         parameters={
