@@ -33,9 +33,11 @@ from layout.layout_tensor import *
 from std.testing import assert_equal
 
 
-def print_raw_major_tensor(tensor: LayoutTensor):
-    for i in range(tensor.shape[0]()):
-        for j in range(tensor.shape[1]()):
+def print_raw_major_tensor(tensor: TileTensor):
+    comptime assert tensor.rank == tensor.flat_rank == 2
+    comptime assert tensor.element_size == 1
+    for i in range(tensor.dim[0]()):
+        for j in range(tensor.dim[1]()):
             print(tensor[i, j], "\t", end="")
         print("")
 
@@ -730,9 +732,7 @@ def test_copy_vectorized():
 # CHECK-LABEL: test_distribute_vectorized
 def test_distribute_vectorized():
     print("== test_distribute_vectorized")
-    var tensor_8_8 = LayoutTensor[
-        .float32, Layout(IntTuple(8, 8), IntTuple(8, 1)), MutAnyOrigin
-    ].stack_allocation[stack_alignment=16]()
+    var tensor_8_8 = stack_allocation[.float32, alignment=16](row_major[8, 8]())
     arange(tensor_8_8)
 
     var tensor_8_2xv4 = tensor_8_8.vectorize[1, 4]()
@@ -744,7 +744,7 @@ def test_distribute_vectorized():
     # CHECK: [40.0, 41.0, 42.0, 43.0] [44.0, 45.0, 46.0, 47.0]
     # CHECK: [48.0, 49.0, 50.0, 51.0] [52.0, 53.0, 54.0, 55.0]
     # CHECK: [56.0, 57.0, 58.0, 59.0] [60.0, 61.0, 62.0, 63.0]
-    print(tensor_8_2xv4)
+    print_tile_tensor(tensor_8_2xv4)
 
     # CHECK: ----thread[ 0 ]----
     # CHECK: [0.0, 1.0, 2.0, 3.0]
@@ -767,9 +767,9 @@ def test_distribute_vectorized():
     # CHECK: [44.0, 45.0, 46.0, 47.0]
     # CHECK: [60.0, 61.0, 62.0, 63.0]
     for tid in range(4):
-        var fragments = tensor_8_2xv4.distribute[Layout(IntTuple(2, 2))](tid)
+        var fragments = tensor_8_2xv4.distribute[col_major[2, 2]()](tid)
         print("----thread[", tid, "]----")
-        print(fragments)
+        print_tile_tensor(fragments)
 
     # Fill the buffer first because we can't fill a vectorized tensor.
     # This will become easier when we can vectorize nested layout.
@@ -1858,16 +1858,12 @@ def test_nested_layout_tensor_iterator():
 def test_binary_math_ops() raises:
     print("== test_binary_math_ops")
 
-    var managed_tensor_a = ManagedLayoutTensor[
-        .float32, Layout(IntTuple(8, 4))
-    ]()
-    var tensor_a = managed_tensor_a.tensor()
+    var tensor_a_storage = Array[Float32, 32](fill=0)
+    var tensor_a = TileTensor(tensor_a_storage, col_major[8, 4]())
     arange(tensor_a, start=1)
 
-    var managed_tensor_b = ManagedLayoutTensor[
-        .float32, Layout(IntTuple(8, 4))
-    ]()
-    var tensor_b = managed_tensor_b.tensor()
+    var tensor_b_storage = Array[Float32, 32](fill=0)
+    var tensor_b = TileTensor(tensor_b_storage, col_major[8, 4]())
     arange(tensor_b, start=32, step=-1)
 
     # CHECK: ----add matrix----
@@ -1880,7 +1876,15 @@ def test_binary_math_ops() raises:
     # CHECK: 33.0 	33.0 	33.0 	33.0
     # CHECK: 33.0 	33.0 	33.0 	33.0
     print("----add matrix----")
-    var add = tensor_a + tensor_b
+    var add_storage = Array[Float32, 32](fill=0)
+    var add = TileTensor(add_storage, col_major[8, 4]())
+    type_of(add).Engine.add[
+        LhsEngine=type_of(tensor_a).Engine, RhsEngine=type_of(tensor_b).Engine
+    ](
+        dst=(add._unsafe_storage_cast[to_mut=True](), add.layout),
+        lhs=(tensor_a._storage, tensor_a.layout),
+        rhs=(tensor_b._storage, tensor_b.layout),
+    )
     print_raw_major_tensor(add)
 
     # CHECK: ----sub matrix----
@@ -1893,7 +1897,15 @@ def test_binary_math_ops() raises:
     # CHECK: -17.0 	-19.0 	-21.0 	-23.0
     # CHECK: -25.0 	-27.0 	-29.0 	-31.0
     print("----sub matrix----")
-    var sub = tensor_b - tensor_a
+    var sub_storage = Array[Float32, 32](fill=0)
+    var sub = TileTensor(sub_storage, col_major[8, 4]())
+    type_of(sub).Engine.sub[
+        LhsEngine=type_of(tensor_b).Engine, RhsEngine=type_of(tensor_a).Engine
+    ](
+        dst=(sub._unsafe_storage_cast[to_mut=True](), sub.layout),
+        lhs=(tensor_b._storage, tensor_b.layout),
+        rhs=(tensor_a._storage, tensor_a.layout),
+    )
     print_raw_major_tensor(sub)
 
     # CHECK: ----div matrix----
@@ -1906,7 +1918,15 @@ def test_binary_math_ops() raises:
     # CHECK: 0.32    0.26923078      0.22222222      0.17857143
     # CHECK: 0.13793103      0.1     0.06451613      0.03125
     print("----div matrix----")
-    var div = tensor_b / tensor_a
+    var div_storage = Array[Float32, 32](fill=0)
+    var div = TileTensor(div_storage, col_major[8, 4]())
+    type_of(div).Engine.truediv[
+        LhsEngine=type_of(tensor_b).Engine, RhsEngine=type_of(tensor_a).Engine
+    ](
+        dst=(div._unsafe_storage_cast[to_mut=True](), div.layout),
+        lhs=(tensor_b._storage, tensor_b.layout),
+        rhs=(tensor_a._storage, tensor_a.layout),
+    )
     print_raw_major_tensor(div)
 
     # CHECK: ----mul matrix----
@@ -1919,11 +1939,16 @@ def test_binary_math_ops() raises:
     # CHECK: 200.0 	182.0 	162.0 	140.0
     # CHECK: 116.0 	90.0 	62.0 	32.0
     print("----mul matrix----")
-    var mul = tensor_b * tensor_a
+    var mul_storage = Array[Float32, 32](fill=0)
+    var mul = TileTensor(mul_storage, col_major[8, 4]())
+    type_of(mul).Engine.mul[
+        LhsEngine=type_of(tensor_b).Engine, RhsEngine=type_of(tensor_a).Engine
+    ](
+        dst=(mul._unsafe_storage_cast[to_mut=True](), mul.layout),
+        lhs=(tensor_b._storage, tensor_b.layout),
+        rhs=(tensor_a._storage, tensor_a.layout),
+    )
     print_raw_major_tensor(mul)
-
-    _ = managed_tensor_a^
-    _ = managed_tensor_b^
 
 
 def test_vectorized_tile() raises:
