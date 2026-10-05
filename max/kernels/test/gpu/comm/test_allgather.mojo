@@ -13,7 +13,7 @@
 
 
 from std.math.uutils import ualign_down
-from std.sys import size_of, has_amd_gpu_accelerator
+from std.sys import size_of
 
 from comm.allgather import allgather
 from comm import Signal
@@ -134,7 +134,7 @@ def all_gather_test[
             uniform = False
             break
 
-    if uniform and has_amd_gpu_accelerator():
+    if uniform and list_of_ctx.T.target.is_amd_gpu():
         # Reset outputs for vendor test
         for device_idx in range(ngpus):
             for input_idx in range(ngpus):

@@ -18,7 +18,7 @@ broadcast collectives, along with communicator initialization helpers and
 availability probes.
 """
 
-from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
+from std.sys import simd_width_of, size_of, default_accelerator
 from std.pathlib import Path
 from max.algorithm import elementwise
 from std.utils import IndexList
@@ -113,7 +113,7 @@ comptime NCCL_LIBRARY_PATHS: List[Path] = [
 
 # Unified CCL loader (selects RCCL/NCCL at compile time)
 def _init_ccl_dylib() -> OwnedDLHandle:
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         return _find_dylib["RCCL"](materialize[RCCL_LIBRARY_PATHS]())
     else:
         return _find_dylib["NCCL"](materialize[NCCL_LIBRARY_PATHS]())

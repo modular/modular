@@ -50,7 +50,7 @@ from std.math.uutils import umod, ufloordiv
 from std.collections import OptionalReg
 from std.sys import (
     align_of,
-    has_nvidia_gpu_accelerator,
+    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -1730,7 +1730,7 @@ def get_mma_shape[
         where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         comptime if accum_type == .float32 and input_type == .float32:
             comptime if shape_id == 0:
                 return shape_16x8x8

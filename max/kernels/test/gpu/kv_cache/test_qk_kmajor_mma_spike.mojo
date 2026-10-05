@@ -57,7 +57,7 @@ B200-only (SM100). Single CTA, single elected thread issues the MMA.
 
 from std.math import sqrt
 from std.memory import bitcast
-from std.sys import size_of, has_nvidia_gpu_accelerator
+from std.sys import default_accelerator, size_of
 
 from max.gpu import (
     WARP_SIZE,
@@ -693,7 +693,7 @@ def _print_layouts[mn: Int, k: Int]():
 
 
 def main() raises:
-    comptime if not has_nvidia_gpu_accelerator():
+    comptime if not default_accelerator().is_nvidia_gpu():
         return
     with DeviceContext() as ctx:
         _print_layouts[mn=128, k=128]()

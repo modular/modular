@@ -36,7 +36,6 @@ from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 
 from std.utils.index import IndexList, StaticTuple
 from std.utils.coord import Coord, CoordLike, DynamicCoord, coord_to_index_list
-from std.sys.info import has_apple_gpu_accelerator
 
 from std._plugin import CurrentPlugin
 
@@ -643,7 +642,7 @@ def mean[
         # For floats apply the reciprocal as a multiply.
         comptime if dtype.is_floating_point():
             # Apply mean division before storing to the output lambda.
-            comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+            comptime float_type = DType.float32 if context.T.target.is_apple_gpu() else DType.float64
             var reciprocal = Scalar[float_type](1.0) / Scalar[float_type](
                 input_shape_index_list[reduce_dim]
             )

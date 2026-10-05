@@ -26,8 +26,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     get_defined_int,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
+    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -278,7 +277,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     def shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
     ](self) -> Int:
-        if not has_nvidia_gpu_accelerator():
+        if not default_accelerator().is_nvidia_gpu():
             return 0
 
         comptime persistent = (
@@ -301,7 +300,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 + self.warp_scratch_smem_size()
             )
 
-        if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
+        if self.num_warps_n() > 1 or default_accelerator().is_amd_gpu():
             num_smem_elements += self.p_smem_size()
 
         var num_smem_bytes = size_of[self.dtype]() * num_smem_elements
@@ -403,25 +402,27 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             # Warp count is unchanged here; only the tile grows.
             self.num_keys_per_block = num_keys_per_block.or_else(
                 128 if (
-                    has_amd_gpu_accelerator()
+                    default_accelerator().is_amd_gpu()
                     and Self.dtype.is_float8()
                     and depth == 128
                 ) else (
                     (
                         32 if depth == 512 else 64
-                    ) if has_amd_gpu_accelerator() else depth
+                    ) if default_accelerator().is_amd_gpu() else depth
                 )
             )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 32 if Self.dtype
-                == .float32 else (128 if has_amd_gpu_accelerator() else 64)
+                == .float32 else (
+                    128 if default_accelerator().is_amd_gpu() else 64
+                )
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
             var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
-            ) if has_nvidia_gpu_accelerator() else BK.or_else(
+            ) if default_accelerator().is_nvidia_gpu() else BK.or_else(
                 64 if Self.dtype.is_float8() else 32
             )
             self.WN = WN.or_else(
@@ -429,7 +430,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             )
         self.WM = WM.or_else(
             32 if Self.dtype
-            == .float32 else (32 if has_amd_gpu_accelerator() else 16)
+            == .float32 else (32 if default_accelerator().is_amd_gpu() else 16)
         )
 
     def write_to(self, mut writer: Some[Writer]):

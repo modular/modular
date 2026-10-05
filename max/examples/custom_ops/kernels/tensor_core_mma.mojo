@@ -16,8 +16,7 @@ import extensibility
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys.info import (
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
+    current_accelerator,
     simd_width_of,
 )
 
@@ -943,7 +942,7 @@ def scheduler_hints[
         barrier()  # Synchronize after loading tiles
 
         # Schedule barrier after loading
-        comptime if has_amd_gpu_accelerator():
+        comptime if current_accelerator().is_amd_gpu():
             amd_schedule_barrier()
 
         # Get the warp tiles from shared memory
@@ -976,7 +975,7 @@ def scheduler_hints[
                     c_reg_m_n_lt.copy_from(d_reg)
 
         # Add AMD scheduling hints between tiles
-        comptime if has_amd_gpu_accelerator():
+        comptime if current_accelerator().is_amd_gpu():
             amd_scheduling_hints[
                 input_type,
                 output_type,
@@ -992,7 +991,7 @@ def scheduler_hints[
             ]()
 
     # Final schedule barrier before output phase
-    comptime if has_amd_gpu_accelerator():
+    comptime if current_accelerator().is_amd_gpu():
         amd_schedule_barrier()
 
     # === OUTPUT PHASE ===

@@ -40,7 +40,7 @@ bf16, SWIZZLE_128B, M=N=K=128 so `num_chunks = BK // gran = 2` makes the
 chunk-inner ordering observable. B200-only (SM100), single CTA.
 """
 
-from std.sys import size_of, has_nvidia_gpu_accelerator
+from std.sys import default_accelerator, size_of
 
 from max.gpu import WARP_SIZE, thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
@@ -442,7 +442,7 @@ def run_qk_consumer[
 
 
 def main() raises:
-    comptime if not has_nvidia_gpu_accelerator():
+    comptime if not default_accelerator().is_nvidia_gpu():
         return
     with DeviceContext() as ctx:
         # Arm 1: baseline (chunk-outer), validates the harness on B200.

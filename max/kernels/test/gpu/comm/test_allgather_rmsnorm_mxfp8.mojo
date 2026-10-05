@@ -34,7 +34,7 @@ owns the numerics, this one owns the wiring.
 """
 
 from std.memory import bitcast
-from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
+from std.sys import default_accelerator, simd_width_of, size_of
 from std.testing import assert_equal, assert_true
 from std.utils.index import Index
 
@@ -461,7 +461,7 @@ def main() raises:
     if num_devices < 2:
         print("SKIPPED: needs at least 2 GPUs, found", num_devices)
         return
-    if not has_amd_gpu_accelerator():
+    if not default_accelerator().is_amd_gpu():
         print("SKIPPED: the MXFP8 quantize path is CDNA4-only")
         return
 

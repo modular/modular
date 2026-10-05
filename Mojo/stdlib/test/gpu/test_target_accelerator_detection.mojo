@@ -116,7 +116,8 @@ def main() raises:
         # CHECK-NON-ACCELERATOR: current_accelerator() requires an accelerator compilation target, but the current compilation target is '
         # CHECK-NON-ACCELERATOR-SAME: This function is only valid in code compiled for an accelerator
         # CHECK-NON-ACCELERATOR-SAME: use `default_accelerator()` instead.
-        _ = current_accelerator()
+        comptime value = current_accelerator().is_nvidia_gpu()
+        print(value)  # keep
     elif expect == "current_accelerator_in_offload":
 
         def _is_nvidia_in_offload() -> Bool:

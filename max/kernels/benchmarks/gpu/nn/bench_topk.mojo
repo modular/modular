@@ -38,11 +38,12 @@ from std.testing import assert_almost_equal, assert_equal
 
 from std.utils import IndexList
 from std.sys import (
+    default_accelerator,
+    size_of,
     get_defined_int,
     get_defined_bool,
     get_defined_dtype,
 )
-from std.sys.info import has_apple_gpu_accelerator, size_of
 
 
 def bench_topk_batched[
@@ -1098,7 +1099,7 @@ def bench_gumbel_from_probs() raises:
     # (`_block_reduce_topk` caps its shared storage at WARP_SIZE there while
     # the kernel launches full-sized blocks), so the benchmark cannot be
     # instantiated for Metal.
-    comptime if has_apple_gpu_accelerator():
+    comptime if default_accelerator().is_apple_gpu():
         raise Error("the gumbel_from_probs benchmark requires a non-Apple GPU")
     else:
         comptime dtype = DType.float32

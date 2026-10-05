@@ -109,7 +109,7 @@ def current_accelerator() -> type_of(CompilationTarget.current()):
     Returns:
         A value representing the current accelerator target.
     """
-    var target = CompilationTarget.current()
+    comptime target = CompilationTarget.current()
 
     comptime assert target.is_accelerator(), String(
         __get_current_function_name(),
@@ -143,9 +143,19 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         _mlir_value: The raw target architecture to query. Defaults to the current target.
     """
 
+    # FIXME(MOCO-5023):
+    #   The comptime interpreter will incorrectly optimize out side effects from
+    #   calls to functions that return empty structs, so use a dummy field to
+    #   make this struct non-empty.
+    #
+    #   This ensures that in a call like `current_accelerator().is_amd_gpu()`,
+    #   any assertions inside of `current_accelerator()` can still fire when
+    #   that condition is being evaluated by the comptime interpreter.
+    var _dummy: Int
+
     def __init__(out self):
         """Initialize a `CompilationTarget` with the default target."""
-        pass
+        self._dummy = 0
 
     comptime current = CompilationTarget[_mlir_value=_current_target()]
     """Get the current compilation target.
@@ -675,9 +685,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
     # Accelerators
     # ===----------------------------------------------------------------------=== #
 
+    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
-    @staticmethod
-    def is_accelerator() -> Bool:
+    def is_accelerator(self) -> Bool:
         """Returns True if the target triple is an accelerator, and False
         otherwise.
 
@@ -687,22 +697,22 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         # FIXME(MSTDL-3256):
         #   What about non-GPU accelerators? Non-builtin targets? Support
         #   extending this via plugin hooks.
-        return Self.is_gpu()
+        return self.is_gpu()
 
+    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
-    @staticmethod
-    def is_gpu() -> Bool:
+    def is_gpu(self) -> Bool:
         """Returns True if the target triple is a GPU and False otherwise.
 
         Returns:
             True if the triple target is a GPU and False otherwise.
         """
-        return Self.is_nvidia_gpu() or Self.is_amd_gpu() or Self.is_apple_gpu()
+        return self.is_nvidia_gpu() or self.is_amd_gpu() or self.is_apple_gpu()
 
     # NOTE: Uses a sentinel instead of Optional to avoid recursive elaboration.
+    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
-    @staticmethod
-    def is_nvidia_gpu[subarch: StaticString = _ANY]() -> Bool:
+    def is_nvidia_gpu[subarch: StaticString = _ANY](self) -> Bool:
         """Returns True if the target triple is `nvptx64-nvidia-cuda`,
         and optionally if the target is also the specified sub-architecture, and False otherwise.
 
@@ -720,9 +730,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             return is_nvidia
 
     # NOTE: Uses a sentinel instead of Optional to avoid recursive elaboration.
+    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
-    @staticmethod
-    def is_amd_gpu[subarch: StaticString = _ANY]() -> Bool:
+    def is_amd_gpu[subarch: StaticString = _ANY](self) -> Bool:
         """Returns True if the target triple is an AMD GPU triple, and
         optionally if the target is also the specified sub-architecture,
         and False otherwise.
@@ -746,9 +756,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             return is_amd
 
     # NOTE: Uses a sentinel instead of Optional to avoid recursive elaboration.
+    # TODO(MOCO-5022): Make these @staticmethod's once side effect bug is fixed
     @inline(.nodebug)
-    @staticmethod
-    def is_apple_gpu[subarch: StaticString = _ANY]() -> Bool:
+    def is_apple_gpu[subarch: StaticString = _ANY](self) -> Bool:
         """Returns True if the target triple is for Apple GPU (Metal, `air64-apple-macosx`),
         and optionally if the target is alos the specified sub-architecture, and False otherwise.
 
@@ -1055,41 +1065,61 @@ def is_apple_m5() -> Bool:
     return is_apple_gpu() and CompilationTarget.is_apple_m5()
 
 
-comptime is_gpu = CompilationTarget.current.is_gpu
-"""Returns True if the target triple is GPU and False otherwise.
+@inline(.nodebug)
+def is_gpu() -> Bool:
+    """Returns True if the target triple is GPU and False otherwise.
 
-Equivalent to `CompilationTarget.current().is_gpu()`.
-"""
+    Equivalent to `CompilationTarget.current().is_gpu()`.
 
-
-comptime is_nvidia_gpu = CompilationTarget.current.is_nvidia_gpu
-"""Checks whether the current compilation target is an NVIDIA GPU.
-
-Equivalent to `CompilationTarget.current().is_nvidia_gpu()`.
-
-Parameters:
-    subarch: The GPU sub-architecture to check for.
-"""
+    Returns:
+        True if the current compilation target is a GPU.
+    """
+    return CompilationTarget.current().is_gpu()
 
 
-comptime is_amd_gpu = CompilationTarget.current.is_amd_gpu
-"""Checks whether the current compilation target is an AMD GPU.
+@inline(.nodebug)
+def is_nvidia_gpu[subarch: StaticString = _ANY]() -> Bool:
+    """Checks whether the current compilation target is an NVIDIA GPU.
 
-Equivalent to `CompilationTarget.current().is_amd_gpu()`.
+    Equivalent to `CompilationTarget.current().is_nvidia_gpu[subarch]()`.
 
-Parameters:
-    subarch: The GPU sub-architecture to check for.
-"""
+    Parameters:
+        subarch: The GPU sub-architecture to check for.
+
+    Returns:
+        True if the current compilation target is an NVIDIA GPU.
+    """
+    return CompilationTarget.current().is_nvidia_gpu[subarch]()
 
 
-comptime is_apple_gpu = CompilationTarget.current.is_apple_gpu
-"""Checks whether the current compilation target is an Apple GPU.
+@inline(.nodebug)
+def is_amd_gpu[subarch: StaticString = _ANY]() -> Bool:
+    """Checks whether the current compilation target is an AMD GPU.
 
-Equivalent to `CompilationTarget.current().is_apple_gpu()`.
+    Equivalent to `CompilationTarget.current().is_amd_gpu[subarch]()`.
 
-Parameters:
-    subarch: The GPU sub-architecture to check for.
-"""
+    Parameters:
+        subarch: The GPU sub-architecture to check for.
+
+    Returns:
+        True if the current compilation target is an AMD GPU.
+    """
+    return CompilationTarget.current().is_amd_gpu[subarch]()
+
+
+@inline(.nodebug)
+def is_apple_gpu[subarch: StaticString = _ANY]() -> Bool:
+    """Checks whether the current compilation target is an Apple GPU.
+
+    Equivalent to `CompilationTarget.current().is_apple_gpu[subarch]()`.
+
+    Parameters:
+        subarch: The GPU sub-architecture to check for.
+
+    Returns:
+        True if the current compilation target is an Apple GPU.
+    """
+    return CompilationTarget.current().is_apple_gpu[subarch]()
 
 
 comptime _AMD_GCN_ARCHS: List[StaticString] = [

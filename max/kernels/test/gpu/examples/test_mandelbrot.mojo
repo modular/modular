@@ -20,10 +20,10 @@ from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
-from std.sys import has_apple_gpu_accelerator
+from std.sys import default_accelerator
 from layout import TileTensor, Idx, row_major
 
-comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+comptime float_type = DType.float32 if default_accelerator().is_apple_gpu() else DType.float64
 comptime int_type = DType.int
 
 

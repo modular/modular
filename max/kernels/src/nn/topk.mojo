@@ -36,10 +36,7 @@ from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host.info import is_cpu
 from max.gpu.memory import external_memory
-from std.sys.info import (
-    has_amd_gpu_accelerator,
-    is_apple_gpu,
-)
+from std.sys.info import current_accelerator, is_apple_gpu
 from std.random import Random
 from layout import (
     Coord,
@@ -2581,7 +2578,9 @@ def _gumbel_argmax_fused_kernel[
         not from_probs or not is_apple_gpu()
     ), "from_probs is not supported on Apple GPUs"
     comptime assert not multi_block or (
-        has_amd_gpu_accelerator() and from_probs and dtype == DType.float32
+        current_accelerator().is_amd_gpu()
+        and from_probs
+        and dtype == DType.float32
     ), "multi-block Gumbel requires AMD FP32 from-probs"
 
     comptime EPS = Float32(1e-20)
@@ -2810,7 +2809,7 @@ def gumbel_sampling_fused_gpu[
             seed_ptr = seed.value().ptr
 
         comptime split_capable = (
-            has_amd_gpu_accelerator() and from_probs and dtype == DType.float32
+            ctx.target.is_amd_gpu() and from_probs and dtype == DType.float32
         )
         comptime if split_capable:
             var vocab = Int(input.dim(1))

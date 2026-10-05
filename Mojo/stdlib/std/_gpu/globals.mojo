@@ -26,8 +26,7 @@ from std.sys.info import (
     _accelerator_arch,
     _cdna_5_or_newer,
     _is_amd_rdna,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
+    current_accelerator,
     is_amd_gpu,
     is_apple_gpu,
     is_nvidia_gpu,
@@ -107,9 +106,9 @@ give a hint to the compiler about the max threads per block that's used."""
 
 
 def _resolve_max_threads_per_block_metadata() -> __mlir_type.`!kgen.string`:
-    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if current_accelerator().is_nvidia_gpu():
         return "nvvm.maxntid".value
-    elif is_amd_gpu() or has_amd_gpu_accelerator():
+    elif current_accelerator().is_amd_gpu():
         return "rocdl.flat_work_group_size".value
     elif is_apple_gpu():
         # That attribute is used to represent Metal's [[max_total_threads_per_threadgroup(x)]]

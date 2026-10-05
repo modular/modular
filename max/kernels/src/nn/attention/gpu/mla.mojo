@@ -26,7 +26,7 @@ from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
 from std.sys import (
     align_of,
-    has_amd_gpu_accelerator,
+    default_accelerator,
     get_defined_int,
     simd_width_of,
     size_of,
@@ -189,7 +189,7 @@ def mla_decode_max_seq_len[dtype: DType, num_heads: Int]() -> Int:
             requires `num_heads <= AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS`.
     """
     return 1 if (
-        has_amd_gpu_accelerator()
+        default_accelerator().is_amd_gpu()
         and (
             not dtype.is_float8()
             or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS

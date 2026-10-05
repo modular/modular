@@ -29,9 +29,8 @@ from std.sys import (
     align_of,
     get_defined_bool,
     get_defined_int,
-    has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
+    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -333,7 +332,7 @@ def _mha_decode_fold_ok[
     """
 
     return (
-        has_amd_gpu_accelerator()
+        default_accelerator().is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         # fp16 shares bf16's decode MMA shape and fp32 has its own, but neither
         # is tested through the fold; widen once a test covers them.
@@ -515,9 +514,9 @@ def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
         detected accelerator.
     """
 
-    return has_nvidia_gpu_accelerator() or (
+    return default_accelerator().is_nvidia_gpu() or (
         (qkv_type == .bfloat16 or qkv_type.is_float8())
-        and has_amd_gpu_accelerator()
+        and default_accelerator().is_amd_gpu()
     )
 
 
@@ -544,18 +543,19 @@ def depth_supported_by_gpu[
         `True` when the optimised flash-attention kernel supports `depth`
         on the given GPU.
     """
+    comptime target = CompilationTarget.from[info]()
 
     comptime is_sm100 = _is_sm10x_gpu(info)
     comptime is_sm90or100 = is_sm100 or (info == H100)
+
     comptime head_depth_supported = depth == 128 or (
-        depth == 64
-        and (is_sm90or100 or info == A100 or has_amd_gpu_accelerator())
+        depth == 64 and (is_sm90or100 or info == A100 or target.is_amd_gpu())
     ) or (
-        depth == 80 and config.dtype == .bfloat16 and has_amd_gpu_accelerator()
+        depth == 80 and config.dtype == .bfloat16 and target.is_amd_gpu()
     ) or (
         depth == 256
         and (
-            has_amd_gpu_accelerator()
+            target.is_amd_gpu()
             or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)
         )
     ) or (
@@ -563,7 +563,7 @@ def depth_supported_by_gpu[
         and is_sm90or100
         and config.algorithm == FlashAttentionAlgorithm(3)
     ) or (
-        (is_sm100 or has_amd_gpu_accelerator()) and depth == 512
+        (is_sm100 or target.is_amd_gpu()) and depth == 512
     )
     return head_depth_supported
 
@@ -1241,7 +1241,7 @@ def flash_attention_dispatch[
                     # config.dtype == DType.bfloat16
                     # and output.dtype == DType.bfloat16
                     # and (config.depth == 64 or config.depth == 128)
-                    # and has_amd_gpu_accelerator()
+                    # and ctx.target.is_amd_gpu()
                     # and not has_amd_rdna_gpu_accelerator()
                     # and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )

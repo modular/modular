@@ -26,7 +26,7 @@ the same kernel catches indexing errors in the `grid.x=M` path.
 
 from std.math import ceildiv
 from std.random import randn, random_float64, seed
-from std.sys import has_amd_gpu_accelerator, simd_width_of
+from std.sys import simd_width_of, default_accelerator
 from std.testing import assert_equal
 
 from internal_utils import assert_almost_equal
@@ -214,7 +214,7 @@ def _run_case[M: Int](ctx: DeviceContext) raises:
 
 
 def main() raises:
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("SKIP: AMD GPU not available")
         return
 

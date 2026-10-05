@@ -616,7 +616,7 @@ asynchronous copy path isn't currently supported.
 
 ```mojo
 def copy_from_async_example():
-    comptime if not has_apple_gpu_accelerator():
+    comptime if not default_accelerator().is_apple_gpu():
         comptime dtype = DType.float32
         comptime rows = 128
         comptime cols = 128

@@ -84,7 +84,7 @@ from max.gpu.memory import (
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from std.memory import unsafe_memset_zero, unsafe_stack_allocation
-from std.sys import has_nvidia_gpu_accelerator, size_of
+from std.sys import default_accelerator, size_of
 from std.utils.index import Index, IndexList
 
 from layout import UNKNOWN_VALUE, row_major
@@ -517,7 +517,7 @@ def run_spike[
 
 
 def main() raises:
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         with DeviceContext() as ctx:
             # Canonical config from the brief: bf16, SWIZZLE_128B, BN=128,
             # num_heads=2, head_size=128 -> gran=64, CM=8, num_chunks=2,

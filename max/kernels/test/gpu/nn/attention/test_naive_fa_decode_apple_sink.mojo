@@ -38,7 +38,7 @@ from std.collections import OptionalReg
 from max.gpu.host import DeviceContext
 from std.math import exp
 from std.random import seed
-from std.sys import has_apple_gpu_accelerator
+from std.sys import default_accelerator
 
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -261,7 +261,7 @@ def run_all(ctx: DeviceContext) raises:
 
 
 def main() raises:
-    comptime if not has_apple_gpu_accelerator():
+    comptime if not default_accelerator().is_apple_gpu():
         print("SKIP: naive_fa_decode_apple targets Apple silicon GPUs only")
         return
     seed(42)

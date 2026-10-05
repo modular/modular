@@ -15,7 +15,7 @@ from std.math import align_up, ceildiv
 from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
 from std.sys import (
     align_of,
-    has_amd_gpu_accelerator,
+    current_accelerator,
     has_amd_rdna_gpu_accelerator,
     is_nvidia_gpu,
     simd_width_of,
@@ -1214,7 +1214,7 @@ def multistage_gemm_split_k_kernel[
     )
 
     comptime if (
-        has_amd_gpu_accelerator()
+        current_accelerator().is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):

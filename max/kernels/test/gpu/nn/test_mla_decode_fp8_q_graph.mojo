@@ -20,7 +20,7 @@ that agreed bit for bit would mean the parameter selected nothing.
 """
 
 from std.math import ceildiv, sqrt
-from std.sys import has_nvidia_gpu_accelerator
+from std.sys import default_accelerator
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
@@ -534,7 +534,7 @@ def _compare[
 
 
 def main() raises:
-    comptime if not has_nvidia_gpu_accelerator():
+    comptime if not default_accelerator().is_nvidia_gpu():
         return
     with DeviceContext() as ctx:
         comptime if not _is_sm10x_gpu(ctx.default_device_info):

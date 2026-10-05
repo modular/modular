@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import randint, randn, seed
-from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator
+from std.sys import default_accelerator
 
 from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
@@ -1833,7 +1833,8 @@ def main() raises:
         raise Error("Cannot enable P2P Mem Access!")
 
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        default_accelerator().is_nvidia_gpu()
+        or default_accelerator().is_amd_gpu()
     ), "Only NVIDIA and AMD GPUs are supported"
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
@@ -1872,7 +1873,7 @@ def main() raises:
 
             comptime device_info = DeviceContext.default_device_info
 
-            comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            comptime if ctx.T.target.is_nvidia_gpu() and _is_sm10x_gpu(
                 device_info
             ):
                 test_dispatch_block_scaled_nv[
@@ -1957,7 +1958,7 @@ def main() raises:
         # the expert matmuls as NaN. 112 experts per device is the first
         # production shape that hits it (896 / EP8). Kept outside the sweep
         # above because its `> 256` cap would skip this count on 4+ GPUs.
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.T.target.is_nvidia_gpu() and _is_sm10x_gpu(
             DeviceContext.default_device_info
         ):
             test_dispatch_block_scaled_nv[

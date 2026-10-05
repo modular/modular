@@ -36,7 +36,7 @@ GQA, NullMask/CausalMask/SlidingWindowCausalMask, fp16/bf16, and depth 64/128.
 from max.gpu.host import DeviceContext
 from std.math import ceildiv, exp, sqrt
 from std.random import seed, shuffle
-from std.sys import has_apple_gpu_accelerator
+from std.sys import default_accelerator
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 
@@ -467,7 +467,7 @@ def test_apple_fa_prefill_paged(ctx: DeviceContext) raises:
 
 
 def main() raises:
-    comptime if not has_apple_gpu_accelerator():
+    comptime if not default_accelerator().is_apple_gpu():
         print("SKIP: fa_prefill_apple paged targets Apple silicon GPUs only")
         return
     seed(42)

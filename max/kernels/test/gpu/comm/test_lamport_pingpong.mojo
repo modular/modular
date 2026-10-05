@@ -63,7 +63,7 @@ from max.gpu import block_idx, global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.memory import bitcast
-from std.sys import has_amd_gpu_accelerator
+from std.sys import default_accelerator
 from std.testing import assert_equal, assert_true
 
 from comm.lamport import has_neg_zero, set_neg_zero
@@ -328,6 +328,9 @@ def main() raises:
     )
     assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
+    comptime target = default_accelerator()
+
+    # TODO(MSTDL-3208): Use DeviceContext[target]
     var writer_ctx = DeviceContext(device_id=0)
     var reader_ctx = DeviceContext(device_id=1)
     assert_true(
@@ -343,7 +346,7 @@ def main() raises:
     # which is broader than the GPU-wide "agent" scope. We deliberately do NOT
     # use `gpu.intrinsics.threadfence` -- it asserts `is_nvidia_gpu()` and
     # cannot express an AMD release fence at all.
-    comptime if has_amd_gpu_accelerator():
+    comptime if target.is_amd_gpu():
         print("target family: AMD (CDNA), expecting global_store_dwordx4")
     else:
         print("target family: NVIDIA, expecting st.volatile.global.v4.b32")

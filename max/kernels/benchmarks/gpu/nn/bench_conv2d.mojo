@@ -57,10 +57,11 @@ Usage (standalone AMD, BF16):
 
 from std.math import ceildiv
 from std.random import rand
-from std.sys import get_defined_dtype, get_defined_int, get_defined_string
-from std.sys.info import (
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
+from std.sys import (
+    get_defined_dtype,
+    get_defined_int,
+    get_defined_string,
+    CompilationTarget,
 )
 
 from max.benchmark import bencher_iter_custom
@@ -89,13 +90,10 @@ from std.utils.index import IndexList
 
 
 @inline(.always)
-def _resolve_impl[impl: StaticString, dtype: DType]() -> StaticString:
+def _resolve_impl[
+    target: CompilationTarget, impl: StaticString, dtype: DType
+]() -> StaticString:
     """Comptime-resolve `auto` to the platform-default impl.
-
-    Uses `has_amd_gpu_accelerator()` / `has_nvidia_gpu_accelerator()`
-    which detect the *build target's* GPU at comptime (working in
-    host code, unlike `is_amd_gpu()` / `is_nvidia_gpu()` which only
-    return true inside kernel codegen).
 
     Resolution:
       - NVIDIA → `cudnn`.
@@ -106,10 +104,10 @@ def _resolve_impl[impl: StaticString, dtype: DType]() -> StaticString:
     comptime if impl != "auto":
         return impl
     else:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if target.is_nvidia_gpu():
             return "cudnn"
         else:
-            comptime if has_amd_gpu_accelerator() and (
+            comptime if target.is_amd_gpu() and (
                 dtype == .float8_e4m3fn
                 or dtype == .bfloat16
                 or dtype == .float16
@@ -278,8 +276,8 @@ def bench_conv2d[
     comptime block_size = 16
 
     # Resolve `auto` to the platform-default impl at comptime via the
-    # build target's accelerator (`has_{amd,nvidia}_gpu_accelerator()`).
-    comptime resolved = _resolve_impl[impl, dtype]()
+    # build target's accelerator.
+    comptime resolved = _resolve_impl[ctx.target, impl, dtype]()
 
     # Probe the im2col dispatcher once. On decline, raise so kbench logs
     # this (impl, shape) as failed instead of timing a no-op (which would
@@ -354,7 +352,7 @@ def bench_conv2d[
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )
     comptime if resolved == "amd_4wave":
-        comptime assert has_amd_gpu_accelerator(), (
+        comptime assert ctx.target.is_amd_gpu(), (
             "impl=amd_4wave requires an AMD target. Build for an AMD"
             " accelerator (e.g. amdgpu:mi355) or pick a different impl."
         )

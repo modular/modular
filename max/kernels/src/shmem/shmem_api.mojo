@@ -22,8 +22,7 @@ The headings below corrosspond to section 9: OpenSHMEM Library API.
 from std.os import getenv
 from std.sys import (
     CompilationTarget,
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
+    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     size_of,
@@ -190,7 +189,7 @@ def shmem_init() raises:
         If SHMEM initialization fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         nvshmemx_init()
     else:
         CompilationTarget.unsupported_target_error[
@@ -237,7 +236,7 @@ def shmem_create_uniqueid(
         A `SHMEMUniqueID` to be passed to `shmem_init_thread_tcp`.
     """
 
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         return rocshmem_create_uniqueid(server_ip, server_port)
     else:
         CompilationTarget.unsupported_target_error[
@@ -359,9 +358,9 @@ def shmem_finalize():
     library resources that have been released.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         nvshmemx_hostlib_finalize()
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         rocshmem_finalize()
     else:
         CompilationTarget.unsupported_target_error[
@@ -378,9 +377,9 @@ def shmem_my_pe() -> c_int:
         program.
     """
 
-    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or default_accelerator().is_nvidia_gpu():
         return nvshmem_my_pe()
-    elif is_amd_gpu() or has_amd_gpu_accelerator():
+    elif is_amd_gpu() or default_accelerator().is_amd_gpu():
         return rocshmem_my_pe()
     else:
         CompilationTarget.unsupported_target_error[
@@ -395,9 +394,9 @@ def shmem_n_pes() -> c_int:
         Number of PEs running in the OpenSHMEM program.
     """
 
-    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or default_accelerator().is_nvidia_gpu():
         return nvshmem_n_pes()
-    elif is_amd_gpu() or has_amd_gpu_accelerator():
+    elif is_amd_gpu() or default_accelerator().is_amd_gpu():
         return rocshmem_n_pes()
     else:
         CompilationTarget.unsupported_target_error[
@@ -442,9 +441,9 @@ def shmem_malloc[
     symmetric heap allocation and won't error.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         return nvshmem_malloc[dtype](c_size_t(size_of[dtype]() * size))
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         return rocshmem_malloc[dtype](c_size_t(size_of[dtype]() * size))
     else:
         CompilationTarget.unsupported_target_error[
@@ -488,9 +487,9 @@ def shmem_calloc[
     symmetric heap allocation and won't error.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         return nvshmem_calloc[dtype](c_size_t(count), c_size_t(size))
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         return rocshmem_calloc[dtype](c_size_t(count), c_size_t(size))
     else:
         CompilationTarget.unsupported_target_error[
@@ -519,9 +518,9 @@ def shmem_free[
     PEs; otherwise, the behavior is undefined.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         nvshmem_free(ptr)
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         rocshmem_free(ptr)
     else:
         CompilationTarget.unsupported_target_error[
@@ -554,9 +553,9 @@ def shmem_team_my_pe(team: shmem_team_t = SHMEM_TEAM_NODE) -> c_int:
         if the team handle compares equal to SHMEM_TEAM_INVALID.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         return c_int(Int(nvshmem_team_my_pe(c_int(team))))
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         return c_int(Int(rocshmem_team_my_pe(c_int(team))))
     else:
         CompilationTarget.unsupported_target_error[
@@ -761,7 +760,7 @@ def shmem_p[
 
     comptime if is_nvidia_gpu():
         nvshmem_p(dest, value, pe)
-    elif is_amd_gpu() or has_amd_gpu_accelerator():
+    elif is_amd_gpu() or default_accelerator().is_amd_gpu():
         rocshmem_p(dest, value, pe)
     else:
         CompilationTarget.unsupported_target_error[
@@ -870,9 +869,9 @@ def shmem_barrier_all():
     shmem_get_nbi.
     """
 
-    comptime if is_nvidia_gpu() or has_nvidia_gpu_accelerator():
+    comptime if is_nvidia_gpu() or default_accelerator().is_nvidia_gpu():
         nvshmem_barrier_all()
-    elif is_amd_gpu() or has_amd_gpu_accelerator():
+    elif is_amd_gpu() or default_accelerator().is_amd_gpu():
         rocshmem_barrier_all()
     else:
         CompilationTarget.unsupported_target_error[
@@ -1003,9 +1002,9 @@ def shmem_barrier_all_on_stream(stream: DeviceStream) raises:
         If the barrier operation fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         nvshmemx_barrier_all_on_stream(CUDA(stream))
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         rocshmem_barrier_all_on_stream(HIP(stream))
     else:
         CompilationTarget.unsupported_target_error[
@@ -1029,12 +1028,12 @@ def shmem_module_init(device_function: DeviceFunction) raises:
         String: If module initialization fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         var func = CUDA_MODULE(device_function)
         var status = nvshmemx_cumodule_init(func)
         if status != 0:
             raise Error("nvshmemx_cumodule_init failed with status:", status)
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         var hip_module = HIP_MODULE(device_function)
         rocshmemx_hipmodule_init(hip_module)
     else:
@@ -1057,10 +1056,10 @@ def shmem_module_finalize(device_function: DeviceFunction) raises:
         String: If module finalization fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         var func = CUDA_MODULE(device_function)
         _ = nvshmemx_cumodule_finalize(func)
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         # Finalalizing a module is not required on AMD
         pass
     else:

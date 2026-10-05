@@ -28,7 +28,7 @@ The instantiation mirrors the production call site
 """
 
 from std.random import randn, random_float64, seed
-from std.sys import has_amd_gpu_accelerator
+from std.sys import default_accelerator
 from std.testing import assert_equal, assert_false, assert_true
 
 from internal_utils import assert_almost_equal
@@ -156,7 +156,7 @@ def test_router_gate_use_mixed_gemv() raises:
 
 
 def main() raises:
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("SKIP: AMD GPU not available")
         return
 
