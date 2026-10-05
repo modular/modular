@@ -4387,6 +4387,7 @@ StmtParser::parseImportModuleName(SharedState::ImportPath &parsedName,
 
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
+  warnIfUnprefixedAsyncSpelling(getToken());
   if (consumeIf(Token::kw___async) && rejectTokenAtStartOfLine("'def' keyword"))
     return failure();
   consumeToken(); // Consume either 'def' or 'fn'.

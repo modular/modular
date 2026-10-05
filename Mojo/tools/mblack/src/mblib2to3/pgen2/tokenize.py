@@ -965,9 +965,9 @@ def generate_tokens(
                         yield (tok_type, token, spos, epos, line)
                         continue
 
-                    # Mojo spells these `__async` / `__await`; the bare
-                    # words are ordinary identifiers.
-                    if not has_mojo_keywords and token in ("async", "await"):
+                    # Bare `async` / `await` are warned-on Mojo spellings of
+                    # `__async` / `__await` but still format as keywords.
+                    if token in ("async", "await"):
                         if async_keywords or async_def:
                             yield (
                                 ASYNC if token == "async" else AWAIT,
@@ -979,11 +979,7 @@ def generate_tokens(
                             continue
 
                     tok = (NAME, token, spos, epos, line)
-                    if (
-                        not has_mojo_keywords
-                        and token == "async"
-                        and not stashed
-                    ):
+                    if token == "async" and not stashed:
                         stashed = tok
                         continue
 

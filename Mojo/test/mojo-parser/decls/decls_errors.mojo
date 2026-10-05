@@ -52,6 +52,16 @@ def callsWith():
   testAsyncVoid() # expected-warning {{'Coroutine[None, {}]' value is not awaited; use '__await' to get its result}}
   testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value is not awaited; use '__await' to get its result}}
 
+# expected-warning @+1 {{async/await support in Mojo is experimental and unstable, there are many known issues. Please do not use it in production and do not expect correctness. To suppress this warning, use '__async' and '__await' keywords. That does not make the feature stable, it merely suppresses the warning.}}
+async def testUnprefixedAsync() -> Int: return 1
+
+__async def testUnprefixedAwait() -> Int:
+  # expected-warning @+1 {{async/await support in Mojo is experimental and unstable}}
+  return await testUnprefixedAsync()
+
+# expected-warning @+1 {{async/await support in Mojo is experimental and unstable}}
+def testUnprefixedAsyncFnType(f: async def() thin -> Int): pass
+
 
 struct ThingWithStaticMethod(Movable where False):
    @staticmethod

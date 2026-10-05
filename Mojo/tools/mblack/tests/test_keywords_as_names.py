@@ -24,9 +24,7 @@ KEYWORDS = [
     "and",
     "as",
     "assert",
-    "async",  # Used to be a keyword
     "__async",
-    "await",  # Used to be a keyword
     "__await",
     "break",
     "capturing",
@@ -148,11 +146,11 @@ def test_keyword_as_trait_name(kw):
 
 
 def test_async_await_keywords():
-    """`__async` and `__await` format as keywords; bare words are names."""
+    """`__async`/`__await` and the bare spellings are keywords."""
     source = (
         "__async def f() -> Int: return 1\n"
         "__async def g() -> Int: return __await f()\n"
-        "def h(): var async = 1; var await = async\n"
+        "async def h() -> Int: return await f()\n"
     )
     expected = (
         "__async def f() -> Int:\n"
@@ -163,9 +161,8 @@ def test_async_await_keywords():
         "    return __await f()\n"
         "\n"
         "\n"
-        "def h():\n"
-        "    var async = 1\n"
-        "    var await = async\n"
+        "async def h() -> Int:\n"
+        "    return await f()\n"
     )
     assert_mojo_format(source, expected)
 
