@@ -33,6 +33,12 @@ from typing import Any, BinaryIO, cast
 
 import huggingface_hub
 from huggingface_hub import errors as hf_hub_errors
+from huggingface_hub.file_download import repo_folder_name
+from huggingface_hub.utils import (
+    build_hf_headers,
+    get_session,
+    hf_raise_for_status,
+)
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.graph.weights import WeightsFormat
 from max.pipelines.modeling.config_enums import (
@@ -48,6 +54,7 @@ __all__ = [
     "HuggingFaceRepo",
     "download_weight_files",
     "generate_local_model_path",
+    "header_only_weight_files",
     "is_diffusion_pipeline",
     "try_to_load_from_cache",
     "validate_hf_repo_access",
@@ -318,6 +325,236 @@ def download_weight_files(
     )
 
     return weight_paths
+
+
+# Empirically 97% of safetensors headers on the Hub fit in 100 kB, so one
+# ranged GET of that size usually avoids a second round trip. Mirrors
+# ``huggingface_hub.HfApi.parse_safetensors_file_metadata``.
+_HEADER_PREFETCH_BYTES = 100_000
+
+
+def _header_only_weights_dir() -> Path:
+    """Returns the directory holding header-only safetensors stubs.
+
+    Deliberately outside the HuggingFace hub cache: a stub carries a real
+    file's name and size but no weight bytes, so it must never be reachable
+    through :func:`try_to_load_from_cache`.
+    """
+    return (
+        Path(huggingface_hub.constants.HF_HOME) / "modular-header-only-weights"
+    )
+
+
+def _fetch_safetensors_header(
+    repo_id: str, filename: str, revision: str
+) -> bytes:
+    """Fetches a remote safetensors file's leading header bytes.
+
+    Args:
+        repo_id: The Hugging Face repo id holding the file.
+        filename: The file's path relative to the repo root.
+        revision: The Hugging Face revision to read.
+
+    Returns:
+        The first ``8 + header_length`` bytes of the file: the little-endian
+        header length followed by the header JSON, verbatim.
+
+    Raises:
+        ValueError: If the bytes do not start with a safetensors header
+            whose JSON parses to an object.
+    """
+    url = huggingface_hub.hf_hub_url(repo_id, filename, revision=revision)
+    headers = build_hf_headers()
+    session = get_session()
+
+    response = session.get(
+        url,
+        headers={**headers, "Range": f"bytes=0-{_HEADER_PREFETCH_BYTES}"},
+    )
+    hf_raise_for_status(response)
+    content = response.content
+    if len(content) < 8:
+        raise ValueError(
+            f"'{filename}' in {repo_id} is too small to be a safetensors "
+            "file: it carries no 8-byte header length."
+        )
+
+    header_length: int = struct.unpack("<Q", content[:8])[0]
+    if 8 + header_length > len(content):
+        response = session.get(
+            url,
+            headers={**headers, "Range": f"bytes=8-{header_length + 7}"},
+        )
+        hf_raise_for_status(response)
+        content = content[:8] + response.content
+
+    prefix = content[: 8 + header_length]
+    if len(prefix) != 8 + header_length:
+        raise ValueError(
+            f"'{filename}' in {repo_id} declares a {header_length}-byte "
+            f"safetensors header but only {len(prefix) - 8} bytes were served."
+        )
+    try:
+        parsed = json.loads(prefix[8:])
+    except json.JSONDecodeError as e:
+        raise ValueError(
+            f"'{filename}' in {repo_id} does not have a valid safetensors "
+            f"header: {e}"
+        ) from e
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"'{filename}' in {repo_id} has a safetensors header that is "
+            f"not a JSON object, but a {type(parsed).__name__}."
+        )
+    return prefix
+
+
+def _header_only_file_size(header: bytes) -> int:
+    """Returns the full on-disk size of the file a header came from.
+
+    Args:
+        header: The leading bytes returned by
+            :func:`_fetch_safetensors_header`.
+
+    Returns:
+        ``8 + header_length + end of the last tensor's data``, which is the
+        size the complete safetensors file has on the Hub.
+    """
+    header_length: int = struct.unpack("<Q", header[:8])[0]
+    parsed = json.loads(header[8 : 8 + header_length])
+    data_end = max(
+        (
+            entry["data_offsets"][1]
+            for name, entry in parsed.items()
+            if name != "__metadata__"
+        ),
+        default=0,
+    )
+    return 8 + header_length + data_end
+
+
+def _write_header_only_safetensors(path: Path, header: bytes) -> None:
+    """Writes a header-only stub standing in for a full safetensors file.
+
+    The stub is a sparse file: the real header followed by a hole the size
+    of the tensor data, so it reads back as the right names, dtypes, shapes
+    and file length while occupying almost no disk.
+
+    Args:
+        path: Where to write the stub. Parent directories are created.
+        header: The leading bytes returned by
+            :func:`_fetch_safetensors_header`.
+    """
+    size = _header_only_file_size(header)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Write then rename so an interrupted run cannot leave a short stub
+    # behind, which would be reused as if it were complete.
+    incomplete = path.with_name(path.name + ".incomplete")
+    with open(incomplete, "wb") as f:
+        f.write(header)
+        f.truncate(size)
+    os.replace(incomplete, path)
+
+
+def _resolve_commit_sha(repo_id: str, revision: str) -> str:
+    """Resolves a Hugging Face revision to the commit sha it names.
+
+    Raises:
+        ValueError: If the Hub reports no sha for the revision.
+    """
+    sha = huggingface_hub.HfApi().model_info(repo_id, revision=revision).sha
+    if not sha:
+        raise ValueError(
+            f"Hugging Face reported no commit sha for {repo_id} at revision "
+            f"'{revision}'."
+        )
+    return sha
+
+
+def header_only_weight_files(
+    huggingface_model_id: str,
+    filenames: list[str],
+    revision: str | None = None,
+    max_workers: int = 8,
+) -> list[Path]:
+    """Stands in header-only stubs for a model's safetensors files.
+
+    Fetches each remote file's header and writes a sparse stub of the full
+    file size, instead of downloading the weights. Compilation reads only
+    tensor names, shapes, dtypes and the file-level ``__metadata__``, all of
+    which the header carries, so a compile-only run never needs the bytes.
+
+    Args:
+        huggingface_model_id: The Hugging Face model identifier, that is,
+            ``MiniMaxAI/MiniMax-M3-MXFP8``.
+        filenames: Safetensors file paths relative to the root of the
+            Hugging Face repo.
+        revision: The Hugging Face revision to read headers from. Defaults
+            to the Hub's default revision.
+        max_workers: The number of worker threads to concurrently fetch
+            headers.
+
+    Returns:
+        Absolute stub paths, in the order of ``filenames``.
+
+    Raises:
+        ValueError: If any filename is not a safetensors file.
+    """
+    unsupported = [
+        filename
+        for filename in filenames
+        if not filename.endswith(".safetensors")
+    ]
+    if unsupported:
+        raise ValueError(
+            "Header-only weights only support safetensors checkpoints, but "
+            f"{huggingface_model_id} carries {unsupported}."
+        )
+
+    resolved_revision = (
+        revision
+        if revision is not None
+        else huggingface_hub.constants.DEFAULT_REVISION
+    )
+    # Key stubs by commit sha, not by the given revision: a branch ref moves,
+    # and a stub whose header predates the move would describe the wrong
+    # checkpoint.
+    repo_dir = (
+        _header_only_weights_dir()
+        / repo_folder_name(repo_id=huggingface_model_id, repo_type="model")
+        / _resolve_commit_sha(huggingface_model_id, resolved_revision)
+    )
+
+    def stub_for(filename: str) -> Path:
+        stub = repo_dir / filename
+        if stub.exists():
+            return stub
+        _write_header_only_safetensors(
+            stub,
+            _fetch_safetensors_header(
+                huggingface_model_id, filename, resolved_revision
+            ),
+        )
+        return stub
+
+    start_time = datetime.datetime.now()
+    _logger.info(f"Fetching safetensors headers for: {huggingface_model_id}")
+    with _hf_tqdm_using_threading_only_lock():
+        stub_paths = list(
+            thread_map(
+                stub_for,
+                filenames,
+                max_workers=max_workers,
+                tqdm_class=hf_tqdm,
+            )
+        )
+
+    _logger.info(
+        f"Finished fetching safetensors headers for: {huggingface_model_id} "
+        f"in {(datetime.datetime.now() - start_time).total_seconds():.1f}s."
+    )
+
+    return stub_paths
 
 
 def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:

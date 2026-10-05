@@ -86,6 +86,13 @@ This version is still a work in progress.
   `MODULAR_DEBUG=ir-output-dir=<dir>,pre-jit max warm-cache ...` is a quick
   way to get the Mojo a model compiles to.
 
+- `max warm-cache` gained a `--use-dummy-weights` flag. Compilation only
+  needs tensor names, shapes and dtypes, so with the flag set each safetensors
+  shard is stood in by a sparse, zero-filled stub built from the remote file's
+  header instead of being downloaded, making a compile-only run independent of
+  checkpoint size. It requires `--target` (compile-only mode) and a
+  safetensors repo on HuggingFace.
+
 - Added the `uninitialized-read-mode` debug option
   (`MODULAR_DEBUG=uninitialized-read-mode=report`,
   `[max-debug] uninitialized-read-mode`, or

@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec
+from max.driver import DeviceSpec, is_virtual_device_mode
 from max.graph.weights import (
     WeightsFormat,
     load_weights,
@@ -53,6 +53,7 @@ from max.pipelines.modeling.config_enums import (
 from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
+    header_only_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
@@ -879,6 +880,19 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Whether to force download a file even if it's already in the local cache."""
 
+    header_only_weights: bool = Field(
+        default=False,
+        description=(
+            "Stand in header-only, zero-filled sparse copies of the safetensors "
+            "checkpoint, built from the remote files' headers, instead of "
+            "downloading the weights. Compilation only needs tensor names, "
+            "shapes and dtypes, so this makes ``warm-cache --target`` "
+            "independent of checkpoint size. Only valid with ``--target`` "
+            "(compile-only mode); safetensors repos only."
+        ),
+    )
+    """Whether to stand in header-only stubs for the checkpoint (compile-only)."""
+
     vision_config_overrides: dict[str, Any] = Field(
         default_factory=dict,
         description=(
@@ -1144,6 +1158,7 @@ class MAXModelConfig(MAXModelConfigBase):
             subfolder=args.subfolder,
             device_specs=list(args.device_specs),
             force_download=args.force_download,
+            header_only_weights=args.header_only_weights,
             vision_config_overrides=dict(args.vision_config_overrides),
             rope_type=args.rope_type,
             sliding_window=args.sliding_window,
@@ -1200,6 +1215,9 @@ class MAXModelConfig(MAXModelConfigBase):
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
 
+        Under ``header_only_weights`` the stubs are sized like the files they
+        stand in for, so their sizes are read straight off disk instead.
+
         Returns:
             The total size of all weight files in bytes.
 
@@ -1212,6 +1230,13 @@ class MAXModelConfig(MAXModelConfigBase):
                 not available or API error).
             RuntimeError: If the determined ``repo_type`` is unexpected.
         """
+        if self.header_only_weights:
+            # A stub is sized like the file it stands in for, so one stat per
+            # shard replaces one Hugging Face HEAD request per shard.
+            return sum(
+                path.stat().st_size for path in self.resolved_weight_paths()
+            )
+
         total_weights_size = 0
         repo = self.huggingface_weight_repo
 
@@ -1483,13 +1508,53 @@ class MAXModelConfig(MAXModelConfigBase):
             )
             return None
 
+    def _header_only_weight_paths(self, weight_path: list[Path]) -> list[Path]:
+        """Resolve weight paths to header-only stubs, fetching headers if needed.
+
+        Args:
+            weight_path: Weight files to resolve, relative to the repo.
+
+        Returns:
+            Absolute paths to header-only stubs on disk.
+
+        Raises:
+            ValueError: If the run is not compile-only, if the repo is not an
+                online Hugging Face repo, or if the weights are not safetensors.
+        """
+        if not is_virtual_device_mode():
+            raise ValueError(
+                "header_only_weights is only valid in compile-only mode "
+                "(``--target``). Its stub weights are zero-filled, so they "
+                "must never reach a real device."
+            )
+        weight_repo = self.huggingface_weight_repo
+        if weight_repo.repo_type != "online":
+            raise ValueError(
+                "header_only_weights reads the safetensors headers from an "
+                f"online Hugging Face repo, but '{weight_repo.repo_id}' is a "
+                f"{weight_repo.repo_type} repo."
+            )
+        if weights_format(weight_path) != WeightsFormat.safetensors:
+            raise ValueError(
+                "header_only_weights only supports safetensors checkpoints, "
+                f"but '{weight_repo.repo_id}' carries "
+                f"{weights_format(weight_path).value} weights."
+            )
+        return header_only_weight_files(
+            huggingface_model_id=weight_repo.repo_id,
+            filenames=[str(x) for x in weight_path],
+            revision=weight_repo.revision,
+        )
+
     def resolved_weight_paths(
         self, weight_path: list[Path] | None = None
     ) -> list[Path]:
         """Resolve weight paths to absolute local paths, downloading if needed.
 
         For online repos, downloads weight files from HuggingFace Hub.
-        For local repos, constructs absolute paths from the repo root.
+        For local repos, constructs absolute paths from the repo root. Under
+        ``header_only_weights`` the download is replaced by header-only stubs
+        (see :meth:`_header_only_weight_paths`).
 
         Args:
             weight_path: Weight files to resolve, relative to the repo.
@@ -1506,6 +1571,9 @@ class MAXModelConfig(MAXModelConfigBase):
             weight_path = self.weight_path
         if not weight_path:
             return []
+
+        if self.header_only_weights:
+            return self._header_only_weight_paths(weight_path)
 
         weight_repo = self.huggingface_weight_repo
         if weight_repo.repo_type == "online":
