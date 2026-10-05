@@ -105,4 +105,4 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
 # host/disk tier is now the Rust ``rust_tiered`` connector, whose pyo3 extension
 # may only be depended on from an internal-only package. Its host-tier
 # offload/onload coverage lives in
-# ``internal/dkv/test_rust_tiered_connector_gpu.py``.
+# ``internal/dkv/test_tiered_connector_gpu.py``.

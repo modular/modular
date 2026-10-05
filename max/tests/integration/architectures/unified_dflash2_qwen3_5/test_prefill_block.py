@@ -49,9 +49,16 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     MHAKVCacheParams,
     MultiKVCacheParams,
+    RecurrentStateParams,
 )
 from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
+from max.pipelines.architectures.qwen3_5.state_cache import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    linear_state_regions,
+    ring_len_for_window,
+)
 from max.pipelines.architectures.unified_dflash2_qwen3_5.model import GRAPH_NAME
 from max.pipelines.architectures.unified_dflash2_qwen3_5.model_config import (
     UnifiedDflash2Qwen3_5Config,
@@ -60,12 +67,8 @@ from max.pipelines.architectures.unified_dflash2_qwen3_5.unified_dflash2_qwen3_5
     UnifiedDflash2Qwen3_5,
 )
 from max.pipelines.architectures.unified_mtp_qwen3_5.spec_state import (
-    LIVE_CONV_POOLS,
-    LIVE_CONV_ROW_IDS,
-    LIVE_RECURRENT_POOLS,
-    LIVE_RECURRENT_ROW_IDS,
-    SHADOW_CONV_POOLS,
-    SHADOW_RECURRENT_POOLS,
+    graph_kv_params,
+    state_tail,
 )
 from max.pipelines.speculative.config import (
     MAGIC_DRAFT_TOKEN_ID,
@@ -112,7 +115,26 @@ def make_config() -> UnifiedDflash2Qwen3_5Config:
         dtype=DType.float32,
         model_quantization_encoding=None,
         quantization_config=None,
-        kv_params=tkv,
+        kv_params=MultiKVCacheParams.from_params(
+            {
+                ATTN_CACHE_KEY: tkv,
+                STATE_CACHE_KEY: RecurrentStateParams(
+                    devices=[gpu],
+                    data_parallel_degree=1,
+                    regions=linear_state_regions(
+                        num_linear_layers=NUM_LINEAR,
+                        key_head_dim=LKD,
+                        num_key_heads=LK,
+                        value_head_dim=LVD,
+                        num_value_heads=LV,
+                        conv_kernel_dim=CONV_KERNEL,
+                        dtype=DType.float32,
+                        num_devices=1,
+                        ring_len=ring_len_for_window(BLOCK),
+                    ),
+                ),
+            }
+        ),
         norm_dtype=DType.float32,
         rms_norm_eps=1e-6,
         attention_multiplier=16**-0.5,
@@ -201,9 +223,10 @@ def _build() -> Step:
         override_quantization_encoding=True,
     )
     registry = nn.state_dict()
+    ring_row_shape = nn.state_regions[2].row_shape
 
-    kvp = cfg.get_kv_params()
-    assert isinstance(kvp, MultiKVCacheParams)
+    # The graph's view of the cache: the tail declares the state.
+    kvp = graph_kv_params(cfg.get_kv_params())
     dev = Accelerator()
     session = InferenceSession(devices=[dev])
 
@@ -222,11 +245,7 @@ def _build() -> Step:
             next(it).tensor for _ in range(7)
         )
         pin = wait = scratch = None
-        # One pool per device per leaf, then the rows addressing them, then
-        # the shadows -- the order `input_types` lays the tail out in.
-        live_conv, live_rec = next(it).buffer, next(it).buffer
-        conv_rows, rec_rows = next(it).tensor, next(it).tensor
-        shadow_conv, shadow_rec = next(it).buffer, next(it).buffer
+        state = state_tail(it, nn.state_regions, 1)
         out = nn(
             tokens=tokens.tensor,
             input_row_offsets=row_offsets.tensor,
@@ -249,14 +268,7 @@ def _build() -> Step:
             pinned_bitmask=pin,
             wait_payload=wait,
             device_bitmask_scratch=scratch,
-            extra={
-                LIVE_CONV_POOLS: [live_conv],
-                LIVE_RECURRENT_POOLS: [live_rec],
-                LIVE_CONV_ROW_IDS: [conv_rows],
-                LIVE_RECURRENT_ROW_IDS: [rec_rows],
-                SHADOW_CONV_POOLS: [shadow_conv],
-                SHADOW_RECURRENT_POOLS: [shadow_rec],
-            },
+            extra=state,
         )
         g.output(*out)
 
@@ -349,6 +361,11 @@ def _build() -> Step:
                 np.zeros((SLOTS * NUM_LINEAR, LV, LKD, LVD), np.float32)
             ).to(dev)
 
+        def ring_pool() -> Buffer:
+            return Buffer.from_numpy(
+                np.zeros((SLOTS * NUM_LINEAR, *ring_row_shape), np.float32)
+            ).to(dev)
+
         # Request i holds block i, whose layers are rows i*L..i*L+L-1.
         rows = b(
             np.ascontiguousarray(
@@ -357,7 +374,7 @@ def _build() -> Step:
                 .T
             )
         )
-        args += [conv_pool(), rec_pool(), rows, rows, conv_pool(), rec_pool()]
+        args += [conv_pool(), rec_pool(), ring_pool(), rows, rows, rows]
         o = model.execute(*args)
         return [np.array(x.to(CPU()).to_numpy()) for x in o]
 

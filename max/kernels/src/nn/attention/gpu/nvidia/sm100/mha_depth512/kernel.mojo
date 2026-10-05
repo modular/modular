@@ -266,25 +266,25 @@ struct SM100MHADepth512[
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
         __match warp_idx:
-        case 0:
-            # Initialize all barriers.
-            Depth512MBars[Self.config.num_kv_stages, Self.config.split_o](
-                smem.mbar_base()
-            ).init(lane_idx=Int32(thread_idx.x))
-        case 1:
-            # TMEM allocation (pair-CTA cooperative).
-            tcgen05_alloc[Int32(Self.cta_group)](
-                smem.tmem_addr_ptr(),
-                UInt32(Self.config.sm100_tmem_cols),
-            )
-        case 2:
-            var e = elect()
-            if e != 0:
-                q_tma_op.prefetch_descriptor()
-            if e != 0:
-                k_tma_op.prefetch_descriptor()
-            if e != 0:
-                v_tma_op.prefetch_descriptor()
+            case 0:
+                # Initialize all barriers.
+                Depth512MBars[Self.config.num_kv_stages, Self.config.split_o](
+                    smem.mbar_base()
+                ).init(lane_idx=Int32(thread_idx.x))
+            case 1:
+                # TMEM allocation (pair-CTA cooperative).
+                tcgen05_alloc[Int32(Self.cta_group)](
+                    smem.tmem_addr_ptr(),
+                    UInt32(Self.config.sm100_tmem_cols),
+                )
+            case 2:
+                var e = elect()
+                if e != 0:
+                    q_tma_op.prefetch_descriptor()
+                if e != 0:
+                    k_tma_op.prefetch_descriptor()
+                if e != 0:
+                    v_tma_op.prefetch_descriptor()
 
         fence_mbarrier_init()
         cluster_sync()

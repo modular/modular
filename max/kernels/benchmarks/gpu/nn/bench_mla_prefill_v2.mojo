@@ -96,9 +96,7 @@ from std.utils import StaticTuple
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
-from layout import Idx, LayoutTensor, TileTensor, row_major
-from layout.coord import Coord
-from layout.runtime_layout import RuntimeLayout
+from layout import Idx, TileTensor, row_major
 
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand
@@ -249,34 +247,22 @@ def run_mla_prefill_v2[
         var _q0 = TileTensor(
             cb_q.offset_ptr(0).bitcast[Scalar[qkv_type]](),
             row_major(
-                Coord(
-                    Int32(batch_size),
-                    Int32(seq_len),
-                    Idx[num_heads],
-                    Idx[_D_QK],
-                )
+                Int32(batch_size), Int32(seq_len), Idx[num_heads], Idx[_D_QK]
             ),
         )
         var _o0 = TileTensor(
             cb_o.offset_ptr(0).bitcast[Scalar[out_type]](),
             row_major(
-                Coord(
-                    Int32(batch_size),
-                    Int32(seq_len),
-                    Idx[num_heads],
-                    Idx[_D_NOPE],
-                )
+                Int32(batch_size), Int32(seq_len), Idx[num_heads], Idx[_D_NOPE]
             ),
         )
         var _k0 = TileTensor(
             cb_k.offset_ptr(0).bitcast[Scalar[qkv_type]](),
             row_major(
-                Coord(
-                    Int32(batch_size),
-                    Int32(cache_seq_len),
-                    Idx[num_kv_heads],
-                    Idx[_CACHE_DEPTH],
-                )
+                Int32(batch_size),
+                Int32(cache_seq_len),
+                Idx[num_kv_heads],
+                Idx[_CACHE_DEPTH],
             ),
         )
         var _knope0 = LayoutTensorMHAOperand(
@@ -288,12 +274,10 @@ def run_mla_prefill_v2[
         var _v0 = TileTensor(
             cb_v.offset_ptr(0).bitcast[Scalar[qkv_type]](),
             row_major(
-                Coord(
-                    Int32(batch_size),
-                    Int32(cache_seq_len),
-                    Idx[num_kv_heads],
-                    Idx[_D_NOPE],
-                )
+                Int32(batch_size),
+                Int32(cache_seq_len),
+                Idx[num_kv_heads],
+                Idx[_D_NOPE],
             ),
         )
         var _vop0 = LayoutTensorMHAOperand(_v0.as_imm().as_unsafe_any_origin())
@@ -386,23 +370,19 @@ def run_mla_prefill_v2[
                 var q_tt = TileTensor(
                     q_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(seq_len),
-                            Idx[num_heads],
-                            Idx[_D_QK],
-                        )
+                        Int32(batch_size),
+                        Int32(seq_len),
+                        Idx[num_heads],
+                        Idx[_D_QK],
                     ),
                 )
                 var o_tt = TileTensor(
                     o_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(seq_len),
-                            Idx[num_heads],
-                            Idx[_D_NOPE],
-                        )
+                        Int32(batch_size),
+                        Int32(seq_len),
+                        Idx[num_heads],
+                        Idx[_D_NOPE],
                     ),
                 )
 
@@ -415,12 +395,10 @@ def run_mla_prefill_v2[
                 var k_tt = TileTensor(
                     k_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(cache_seq_len),
-                            Idx[num_kv_heads],
-                            Idx[_CACHE_DEPTH],
-                        )
+                        Int32(batch_size),
+                        Int32(cache_seq_len),
+                        Idx[num_kv_heads],
+                        Idx[_CACHE_DEPTH],
                     ),
                 )
                 var k_nope_op = LayoutTensorMHAOperand(
@@ -433,12 +411,10 @@ def run_mla_prefill_v2[
                 var v_tt = TileTensor(
                     v_ptr,
                     row_major(
-                        Coord(
-                            Int32(batch_size),
-                            Int32(cache_seq_len),
-                            Idx[num_kv_heads],
-                            Idx[_D_NOPE],
-                        )
+                        Int32(batch_size),
+                        Int32(cache_seq_len),
+                        Idx[num_kv_heads],
+                        Idx[_D_NOPE],
                     ),
                 )
                 var v_op = LayoutTensorMHAOperand(

@@ -16,6 +16,7 @@
 #include "ClosureEmitter.h"
 #include "ModuleStore.h"
 
+#include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/Lexer.h"
@@ -1220,35 +1221,6 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
         DeclResolvedness::body);
     shared.declResolver->finalizeFuncSignature(thunk, thunkDecl);
   }
-  for (auto trait :
-       llvm::make_early_inc_range(tmpModule.getOps<TraitDeclOp>())) {
-    if (!trait.getClosureSignature().has_value())
-      continue;
-
-    FnTypeGeneratorType key = *trait.getClosureSignature();
-    auto creation = [&]() -> ASTDecl * {
-      if (failed(bytecodeReader->materialize(trait)))
-        return nullptr;
-      // A closure trait with no methods is a stub from a package that
-      // references but does not define the closure type. Skip it so the cache
-      // slot stays empty and a later package with the full body can fill it.
-      if (trait.getOps<FnOp>().empty())
-        return nullptr;
-      trait->remove();
-      theModule.push_back(trait);
-      ASTDecl &traitDecl = shared.declResolver->addBytecodeDecl(
-          &*trait, trait.getSymNameAttr(), &shared.getTopLevelDecl(),
-          DeclResolvedness::body);
-      traitDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(trait));
-      // Ensure that the trait's methods are registered, too.
-      for (auto fn : trait.getOps<FnOp>()) {
-        shared.declResolver->addBytecodeDecl(
-            fn, fn.getSourceNameAttr(), &traitDecl, DeclResolvedness::body);
-      }
-      return &traitDecl;
-    };
-    shared.getClosureEmitter().getOrCreateClosureTrait(key, creation);
-  }
   for (auto structOp :
        llvm::make_early_inc_range(tmpModule.getOps<StructDeclOp>())) {
     auto creation = [&]() -> StructDeclOp {
@@ -1317,6 +1289,15 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
   origin.sourceMgr = sourceMgr;
   origin.tmpModule = tmpModule;
   origin.bytecodeImportLoc = loc;
+
+  // The package's references to the universal closure trait resolve against
+  // the top-level module, but each compilation synthesizes that trait lazily.
+  // Create it here, after the package state is registered, because creation
+  // imports `std.prelude` and may re-enter this package.
+  if (llvm::any_of(tmpModule.getOps<TraitDeclOp>(), [](TraitDeclOp trait) {
+        return trait.getSymName() == UNI_CLOSURE_TRAIT_NAME;
+      }))
+    shared.getUniversalParametricClosureTrait();
 
   return moduleState;
 }

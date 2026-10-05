@@ -13,11 +13,14 @@
 
 import subprocess
 import time
+from pathlib import Path
 
 import pytest
 import python.runfiles
 from click.testing import CliRunner
 from max._entrypoints import pipelines
+from max.experimental.cascade.serve import main as cascade_main
+from max.pipelines.lib import PipelineArgs
 
 
 def test_main_help() -> None:
@@ -154,3 +157,49 @@ def test_serve_cascade_only_flags_allowed_with_cascade() -> None:
     # check, never the cascade guard.
     assert "requires --cascade" not in result.output
     assert "No model specified" in result.output
+
+
+def _write_cascade_recipe(tmp_path: Path) -> Path:
+    recipe = tmp_path / "cascade.yaml"
+    recipe.write_text("cascade: true\nmodel:\n  model_path: echo:org/model\n")
+    return recipe
+
+
+def test_serve_recipe_enables_cascade(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    served: list[str] = []
+
+    async def fake_serve(
+        *, pipeline_args: PipelineArgs, **kwargs: object
+    ) -> None:
+        served.append(pipeline_args.model_path)
+
+    monkeypatch.setattr(cascade_main, "serve", fake_serve)
+    result = CliRunner().invoke(
+        pipelines.main,
+        ["serve", "--config-file", str(_write_cascade_recipe(tmp_path))],
+    )
+    assert result.exit_code == 0, result.output
+    assert served == ["echo:org/model"]
+
+
+def test_serve_no_cascade_flag_overrides_recipe(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    served: list[str] = []
+
+    async def fake_serve(**kwargs: object) -> None:
+        served.append("cascade")
+
+    monkeypatch.setattr(cascade_main, "serve", fake_serve)
+    CliRunner().invoke(
+        pipelines.main,
+        [
+            "serve",
+            "--no-cascade",
+            "--config-file",
+            str(_write_cascade_recipe(tmp_path)),
+        ],
+    )
+    assert served == []

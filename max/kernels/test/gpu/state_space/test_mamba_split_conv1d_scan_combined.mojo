@@ -14,7 +14,7 @@
 from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 from layout._fillers import random
 from state_space.selective_scan import (
     mamba_split_conv1d_scan_combined_cpu,
@@ -22,7 +22,6 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
@@ -111,70 +110,36 @@ def run_mamba_split_conv1d_scan_combined_gpu[
     var output_cpu_h = ctx.enqueue_create_host_buffer[dtype](output_size)
     var output_gpu_h = ctx.enqueue_create_host_buffer[dtype](output_size)
 
-    # Create LayoutTensors for initialization
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout.row_major[1]()
-
-    var zxbcdt_init = LayoutTensor[dtype, layout_3d](
-        zxbcdt_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(batch, seqlen, zxbcdt_channels)
-        ),
-    )
-    var conv_weight_init = LayoutTensor[dtype, layout_2d](
-        conv_weight_h,
-        RuntimeLayout[layout_2d].row_major(Index(conv_weight_channels, width)),
-    )
-    var conv_bias_init = LayoutTensor[dtype, layout_1d](
-        conv_bias_h, RuntimeLayout[layout_1d].row_major(Index(conv_bias_size))
-    )
-    var dt_bias_init = LayoutTensor[dtype, layout_1d](
-        dt_bias_h, RuntimeLayout[layout_1d].row_major(Index(dt_bias_size))
-    )
-    var A_init = LayoutTensor[dtype, layout_1d](
-        A_h, RuntimeLayout[layout_1d].row_major(Index(A_size))
-    )
-    var D_init = LayoutTensor[dtype, layout_2d](
-        D_h,
-        RuntimeLayout[layout_2d].row_major(
-            Index(
-                nheads if has_D else 0,
-                headdim if has_D and D_size > nheads else 0,
-            )
-        ),
-    )
-    var rmsnorm_weight_init = LayoutTensor[dtype, layout_1d](
-        rmsnorm_weight_h,
-        RuntimeLayout[layout_1d].row_major(Index(rmsnorm_weight_size)),
-    )
-    var outproj_weight_init = LayoutTensor[dtype, layout_2d](
-        outproj_weight_h,
-        RuntimeLayout[layout_2d].row_major(
-            Index(out_dim if has_outproj else 0, dim if has_outproj else 0)
-        ),
-    )
-    var outproj_bias_init = LayoutTensor[dtype, layout_1d](
-        outproj_bias_h,
-        RuntimeLayout[layout_1d].row_major(Index(outproj_bias_size)),
-    )
-
     # Initialize with random data
-    random(zxbcdt_init)
-    random(conv_weight_init)
-    random(conv_bias_init)
-    random(dt_bias_init)
-    random(A_init)
+    random(TileTensor(zxbcdt_h, row_major(batch, seqlen, zxbcdt_channels)))
+    random(TileTensor(conv_weight_h, row_major(conv_weight_channels, width)))
+    random(TileTensor(conv_bias_h, row_major(conv_bias_size)))
+    random(TileTensor(dt_bias_h, row_major(dt_bias_size)))
+    random(TileTensor(A_h, row_major(A_size)))
     if has_D:
-        random(D_init)
+        random(
+            TileTensor(
+                D_h,
+                row_major(
+                    nheads if has_D else 0,
+                    headdim if has_D and D_size > nheads else 0,
+                ),
+            )
+        )
     if has_rmsnorm:
-        random(rmsnorm_weight_init)
+        random(TileTensor(rmsnorm_weight_h, row_major(rmsnorm_weight_size)))
         for i in range(dim):
             rmsnorm_weight_h[i] = abs(rmsnorm_weight_h[i]) + Scalar[dtype](0.1)
     if has_outproj:
-        random(outproj_weight_init)
-        random(outproj_bias_init)
+        random(
+            TileTensor(
+                outproj_weight_h,
+                row_major(
+                    out_dim if has_outproj else 0, dim if has_outproj else 0
+                ),
+            )
+        )
+        random(TileTensor(outproj_bias_h, row_major(outproj_bias_size)))
 
     # Allocate GPU memory
     var zxbcdt_d = ctx.enqueue_create_buffer[dtype](zxbcdt_size)
@@ -623,6 +588,32 @@ def test_mamba_combined_gpu_basic() raises:
         dim=4,
         nheads=2,
         headdim=2,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+        ctx=ctx,
+    )
+
+
+def test_mamba_combined_gpu_headdim1_multi_head_D() raises:
+    """With headdim == 1, D is (nheads, 0); each head needs its own D."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_mamba_split_conv1d_scan_combined_gpu[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=4,
+        headdim=1,
         ngroups=1,
         width=4,
         chunk_size=4,

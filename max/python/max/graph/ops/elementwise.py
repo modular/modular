@@ -166,6 +166,11 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     ].tensor
 
 
+# Unlike `div`, keeps integer operands in the integer domain, truncating toward
+# zero.
+_trunc_div = _elementwise_binary(rmo.DivOp, "trunc_div")
+
+
 def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     """Divides two tensors element-wise using floor division (Python ``//``).
 
@@ -217,12 +222,7 @@ def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
     assert_same_device(lhs, rhs)
     if lhs.dtype.is_integral() and rhs.dtype.is_integral():
-        # Integer division stays in the integer domain, mirroring `mod`
-        # (`rmo.ModOp`), so there is no `float64` promotion like `div` does.
-        # `rmo.DivOp` truncates toward zero.
-        quotient = Graph.current._add_op_generated(
-            rmo.DivOp, input_x=lhs, input_y=rhs
-        )[0].tensor
+        quotient = _trunc_div(lhs, rhs)
         # Mixed operands divide in the promoted dtype (`uint8 // int16` is
         # signed), so test the quotient's dtype rather than the operands'.
         if quotient.dtype.is_signed_integral():

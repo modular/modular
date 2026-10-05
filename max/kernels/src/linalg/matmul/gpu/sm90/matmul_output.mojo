@@ -40,7 +40,12 @@ from layout.tma_async import TMATensorTile
 
 from std.utils.index import IndexList
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseEpilogueFn,
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+    no_epilogue_fn,
+)
 from std.collections import OptionalReg
 from ....structuring import (
     RegTile,
@@ -265,9 +270,16 @@ struct MatmulTileWriter[
     def _write_tile_to_gmem[
         accum_type: DType,
         reg_tile_layout: Layout,
+        EpilogueFnType: ElementwiseEpilogueFn,
         //,
         check_runtime_bounds: Bool = False,
-    ](self, reg_tile: RegTile[accum_type, reg_tile_layout]):
+        *,
+        has_epilogue_fn: Bool,
+    ](
+        self,
+        reg_tile: RegTile[accum_type, reg_tile_layout],
+        epilogue_fn: EpilogueFnType,
+    ):
         """Write from registers to global memory."""
 
         comptime out_tile_size_m = Self.BM if not Self.swapAB else Self.BN
@@ -303,6 +315,7 @@ struct MatmulTileWriter[
         comptime if (
             Self.elementwise_lambda_fn is not None
             or Self.elementwise_compute_lambda_fn is not None
+            or has_epilogue_fn
         ):
             tile_coords = TileCoordinates(
                 IndexList[2](tile_origin[0], tile_origin[1]),
@@ -329,9 +342,8 @@ struct MatmulTileWriter[
         comptime for row_tile, col_tile in std.itertools.product(
             range(Self.num_m_mmas), range(Self.num_n_mmas)
         ):
-            reg_writer.write_tile(
-                reg_tile,
-                (row_tile, col_tile),
+            reg_writer._write_tile[has_epilogue_fn=has_epilogue_fn](
+                reg_tile, (row_tile, col_tile), epilogue_fn
             )
 
     @inline(.always)
@@ -341,7 +353,10 @@ struct MatmulTileWriter[
         tma_desc_shape: IndexList[tma_rank],
         accum_type: DType,
         reg_tile_layout: Layout,
+        EpilogueFnType: ElementwiseEpilogueFn,
         //,
+        *,
+        has_epilogue_fn: Bool,
     ](
         self,
         tma_op: TMATensorTile[
@@ -350,6 +365,7 @@ struct MatmulTileWriter[
         reg_tile: RegTile[accum_type, reg_tile_layout],
         output_tile: TileTensor[mut=True, Self.dtype, ...],
         tile_origin: IndexList[2],
+        value_epilogue_fn: EpilogueFnType,
     ):
         """Use st.matrix instructions for optimized bf16 output."""
         var max_row, max_col = self._calculate_output_bounds()
@@ -460,6 +476,18 @@ struct MatmulTileWriter[
                     _ = epilogue_fn[alignment=alignment](index, val)
 
                 apply_epilogue(_epilogue)
+            elif has_epilogue_fn:
+
+                def _value_epilogue[
+                    dtype: DType, width: SIMDLength, *, alignment: Int = 1
+                ](index: IndexList[2], mut val: SIMD[dtype, width]) {
+                    var value_epilogue_fn
+                }:
+                    value_epilogue_fn[dtype, width, alignment=alignment](
+                        index, val
+                    )
+
+                apply_epilogue(_value_epilogue)
             else:
                 comptime if Self.use_tma_store and not is_partial_tile:
                     var tma_writer = TileWriterTMA(Pointer(to=tma_op))
@@ -518,13 +546,17 @@ struct MatmulTileWriter[
         tma_desc_shape: IndexList[tma_rank],
         accum_type: DType,
         reg_tile_layout: Layout,
+        EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
         //,
+        *,
+        has_epilogue_fn: Bool = False,
     ](
         self,
         tma_op: TMATensorTile[
             Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
         ],
         reg_tile: RegTile[accum_type, reg_tile_layout],
+        epilogue_fn: EpilogueFnType = no_epilogue_fn,
     ):
         """Write output from registers to global memory.
 
@@ -539,12 +571,17 @@ struct MatmulTileWriter[
                 index list of length `tma_rank`.
             accum_type: Data type of the WGMMA accumulator register tile.
             reg_tile_layout: Memory layout of the accumulator register tile.
+            EpilogueFnType: Type of `epilogue_fn` (inferred).
+            has_epilogue_fn: Whether `epilogue_fn` stores the output, in
+                place of `elementwise_lambda_fn`.
 
         Args:
             tma_op: TMA tensor tile descriptor used for async stores from
                 shared memory to global memory.
             reg_tile: WGMMA accumulator register tile containing the matmul
                 result to write.
+            epilogue_fn: Stores each output element at its global
+                coordinates.
         """
         # Output tile dimensions and block coordinates
         # For normal: tile is BM x BN, positioned at (block_y, block_x)
@@ -591,16 +628,18 @@ struct MatmulTileWriter[
         comptime can_use_stmatrix = can_use_stmatrix_swapAB if Self.swapAB else can_use_stmatrix_normal
 
         comptime if can_use_stmatrix:
-            self._write_tile_stmatrix(
+            self._write_tile_stmatrix[has_epilogue_fn=has_epilogue_fn](
                 tma_op,
                 reg_tile,
                 output_tile,
                 tile_origin,
+                epilogue_fn,
             )
         else:
             comptime check_bounds = (
                 Self.N % Self.BN != 0
             ) if not Self.swapAB else (Self.N % Self.BM != 0)
-            self._write_tile_to_gmem[check_runtime_bounds=check_bounds](
-                reg_tile
-            )
+            self._write_tile_to_gmem[
+                check_runtime_bounds=check_bounds,
+                has_epilogue_fn=has_epilogue_fn,
+            ](reg_tile, epilogue_fn)

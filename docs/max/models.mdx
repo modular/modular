@@ -121,7 +121,7 @@ You can also see the
       </td>
       <td className='modality'>text-to-text</td>
       <td className='encodings'>bfloat16</td>
-      <td className='gpus'>No</td>
+      <td className='gpus'>Yes</td>
     </tr>
     <tr>
       <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/flux2"><code>Flux2KleinPipeline</code></a></td>
@@ -209,6 +209,15 @@ You can also see the
       </td>
       <td className='modality'>text-to-text</td>
       <td className='encodings'>bfloat16, float16, float4_e2m1fnx2</td>
+      <td className='gpus'>Yes</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/glm5_next"><code>Glm5NextForConditionalGeneration</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/zai-org/GLM-5.3-Flash">zai-org/GLM-5.3-Flash</a>
+      </td>
+      <td className='modality'>text-to-text</td>
+      <td className='encodings'>float8_e4m3fn</td>
       <td className='gpus'>Yes</td>
     </tr>
     <tr>
@@ -436,6 +445,15 @@ You can also see the
       </td>
       <td className='modality'>text-to-embeddings</td>
       <td className='encodings'>bfloat16, float32</td>
+      <td className='gpus'>No</td>
+    </tr>
+    <tr>
+      <td className='arch'><a href="https://github.com/modular/modular/tree/main/max/python/max/pipelines/architectures/muse_glimmer"><code>MuseGlimmerForConditionalGeneration</code></a></td>
+      <td className='models'>
+        <a href="https://huggingface.co/meta-models/Muse-Glimmer-30B">meta-models/Muse-Glimmer-30B</a>
+      </td>
+      <td className='modality'>image-to-text,<br/>text-to-text</td>
+      <td className='encodings'>bfloat16</td>
       <td className='gpus'>No</td>
     </tr>
     <tr>

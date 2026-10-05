@@ -19,7 +19,6 @@ from std.math.uutils import uceildiv
 from std.sys import (
     get_defined_int,
     get_defined_bool,
-    has_nvidia_gpu_accelerator,
     size_of,
 )
 from std.ffi import external_call, _get_global_or_null
@@ -457,7 +456,7 @@ def select_config[
     comptime gpu_info = ctx.default_device_info
 
     # TODO(KERN-1310): This disables split-k for AMD, enable it after fixing KERN-1310.
-    comptime max_num_k_partitions = 8 if has_nvidia_gpu_accelerator() else 1
+    comptime max_num_k_partitions = 8 if ctx.target.is_nvidia_gpu() else 1
     comptime min_k_partition = 1024
 
     # Initial values overwritten in loop

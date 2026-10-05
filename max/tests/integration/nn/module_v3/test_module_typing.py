@@ -59,7 +59,8 @@ class MultiOutTypingModule(
 
 
 def _input_type() -> TensorType:
-    dtype, device = defaults()
+    dtype, mesh = defaults()
+    device = mesh.devices[0]
     return TensorType(dtype, ["batch", "n"], device=device)
 
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import Optional
 from std.math import ceildiv
 from std.sys import size_of
 
@@ -20,7 +19,7 @@ from layout import Coord, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,
     _concat_inner_most_single_dim,
-    elementwise_epilogue_type,
+    _no_epilogue,
 )
 from std.testing import assert_equal, assert_true
 
@@ -120,15 +119,18 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
 
     comptime B_SIZE = 32
 
-    @__parameter
+    # The timing closures below copy `output_dyn` as well, so the epilogue
+    # writes through an origin-erased view to keep the closure fields from
+    # aliasing one another.
+    var output_any = output_dyn.as_unsafe_any_origin()
+
     @inline(.always)
-    @__copy_capture(output_dyn)
     def epilogue_plus_one[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output_any}:
         var coord = Coord(indices)
-        comptime assert output_dyn.flat_rank >= coord.flat_rank
-        output_dyn.store[width=width](
+        comptime assert output_any.flat_rank >= coord.flat_rank
+        output_any.store[width=width](
             coord,
             rebind[SIMD[dtype, width]](val + 1),
         )
@@ -143,9 +145,8 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         dtype=dtype,
         num_inputs=4,
         block_size=B_SIZE,
-        epilogue_fn=Optional[elementwise_epilogue_type](
-            epilogue_plus_one
-        ) if test_epilogue else None,
+        has_epilogue=test_epilogue,
+        EpilogueFnType=type_of(epilogue_plus_one),
     ]
 
     @inline(.always)
@@ -170,6 +171,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 input_2_dyn.as_unsafe_any_origin().as_imm(),
                 input_3_dyn.as_unsafe_any_origin().as_imm(),
             ),
+            host_arg=epilogue_plus_one,
             grid_dim=(d0 * d1 * d2 * d3 * d4 // B_SIZE),
             block_dim=(B_SIZE),
         )
@@ -235,11 +237,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
         imm,
     }:
         # uses default stream
-        _concat_gpu[
-            epilogue_fn=Optional[elementwise_epilogue_type](
-                epilogue_plus_one
-            ) if test_epilogue else None
-        ](
+        _concat_gpu[has_epilogue=test_epilogue](
             output_dyn.as_unsafe_any_origin(),
             4,
             StaticTuple[
@@ -251,6 +249,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
                 input_2_dyn.as_unsafe_any_origin().as_imm(),
                 input_3_dyn.as_unsafe_any_origin().as_imm(),
             ),
+            epilogue_plus_one,
             ctx,
         )
 
@@ -350,11 +349,13 @@ def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
         dtype=dtype,
         num_inputs=num_inputs,
         block_size=B_SIZE,
-        epilogue_fn=None,
+        has_epilogue=False,
+        EpilogueFnType=type_of(_no_epilogue),
     ]
     ctx.enqueue_function[kernel_static](
         out_static.as_unsafe_any_origin(),
         ins_static,
+        host_arg=_no_epilogue,
         grid_dim=(ceildiv(n_rows, B_SIZE)),
         block_dim=(B_SIZE),
     )
@@ -392,11 +393,13 @@ def test_inner_most_single_dim_static_vs_dynamic(ctx: DeviceContext) raises:
         dtype=dtype,
         num_inputs=num_inputs,
         block_size=B_SIZE,
-        epilogue_fn=None,
+        has_epilogue=False,
+        EpilogueFnType=type_of(_no_epilogue),
     ]
     ctx.enqueue_function[kernel_dynamic](
         out_dynamic.as_unsafe_any_origin(),
         ins_dynamic,
+        host_arg=_no_epilogue,
         grid_dim=(ceildiv(n_rows, B_SIZE)),
         block_dim=(B_SIZE),
     )

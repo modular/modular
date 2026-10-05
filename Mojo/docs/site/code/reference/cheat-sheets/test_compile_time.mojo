@@ -16,7 +16,7 @@
 # Exercises the card's claims so one that drifts stops compiling or fails an
 # assert: parameters, where clauses (with messages and on thin function
 # types), trait bounds, running a function at compile time, literal
-# precision, comptime if/for/__match, sys.info queries with a
+# precision, comptime if/for, sys.info queries with a
 # CompilationTarget, comptime members, and the inlining decorators, including
 # inlining chosen by a parameter.
 #
@@ -26,7 +26,7 @@
 #     as incomplete; the wider field API may still shift.
 #   - 2**200: overflows a 64-bit Int, so it can't be materialized to compare.
 #   - comptime if on hardware facts (is_nvidia_gpu, ...): machine-dependent.
-#   - CompilationTarget.current_accelerator(): fails to instantiate on a host
+#   - CompilationTarget.default_accelerator(): fails to instantiate on a host
 #     with no accelerator configured.
 #   - where messages: they appear only in compile errors.
 #   - the compile-time boundary (no file I/O, no raising, runs on CPU): these
@@ -206,19 +206,19 @@ def small_tile[mt: Int, nt: Int]() -> String where mt * nt <= 256:
 
 def tile_path[m: Int, n: Int]() -> String:
     comptime __match (m, n):
-    case (16, 16):
-        return "tuned 16x16"
-    case (mt, nt) if mt * nt <= 256:  # the guard proves small_tile's where
-        return small_tile[mt, nt]()
-    case _:
-        return "generic"
+        case (16, 16):
+            return "tuned 16x16"
+        case (mt, nt) if mt * nt <= 256:  # the guard proves small_tile's where
+            return small_tile[mt, nt]()
+        case _:
+            return "generic"
 
 
 def tile_count[m: Int]() -> Int:
     var hits = 0
     comptime __match m:
-    case 16:
-        hits += 1
+        case 16:
+            hits += 1
     # no case _: an unmatched subject compiles to nothing
     return hits
 
@@ -290,7 +290,6 @@ def main() raises:
     test_comptime_for()
     test_comptime_if()
     test_inlining()
-    test_comptime_match()
     test_conditional_availability()
     test_type_of()
     test_conditional_construction()

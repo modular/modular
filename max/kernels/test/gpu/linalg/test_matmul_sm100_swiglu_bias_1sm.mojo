@@ -118,13 +118,11 @@ def test_swiglu_bias[
         sep="",
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
-    var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
-    )
-    var bias_shape = row_major(Coord(Idx[NType.static_value]))
-    var full_shape = row_major(Coord(m, Idx[NType.static_value]))
-    var c_shape = row_major(Coord(m, Idx[NType.static_value // 2]))
+    var a_shape = row_major(m, Idx[KType.static_value])
+    var b_shape = row_major(Idx[NType.static_value], Idx[KType.static_value])
+    var bias_shape = row_major(Idx[NType.static_value])
+    var full_shape = row_major(m, Idx[NType.static_value])
+    var c_shape = row_major(m, Idx[NType.static_value // 2])
 
     var a_size = M * K
     var b_size = N * K

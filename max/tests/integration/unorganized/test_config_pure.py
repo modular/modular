@@ -52,6 +52,7 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types.task import PipelineTask
+from max.pipelines.sampling import ToolCallPolicy
 from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_hf_repo_access,
@@ -346,31 +347,51 @@ class TestNeedsBitmaskConstraints:
 
     @mock_pipeline_config_resolve
     @pytest.mark.parametrize(
-        "enable_structured_output,tool_parser,enable_tool_call_constrained_decode,expected",
+        "enable_structured_output,tool_parser,tool_call_policy,expected",
         [
             # No structured output, no parser: never needs the bitmask path.
-            (False, None, True, False),
-            (False, None, False, False),
+            (False, None, ToolCallPolicy.FORCE_UNCONSTRAINED, False),
+            (
+                False,
+                None,
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                False,
+            ),
             # User structured output on: always needs it, regardless of the
-            # tool-call flag.
-            (True, None, True, True),
-            (True, None, False, True),
-            # Parser configured + tool-call constrained decode on (default):
-            # bitmask path wires in for server-generated tool grammars.
-            (False, "kimik2_5", True, True),
-            (True, "kimik2_5", True, True),
-            # Parser configured but tool-call constrained decode disabled: the
-            # parser still parses output, but no grammar/bitmask on its account.
-            (False, "kimik2_5", False, False),
+            # tool-call policy.
+            (True, None, ToolCallPolicy.FORCE_UNCONSTRAINED, True),
+            (
+                True,
+                None,
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
+            # Parser configured + any constrained policy (default): bitmask
+            # path wires in for server-generated tool grammars.
+            (
+                False,
+                "kimik2_5",
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
+            (
+                True,
+                "kimik2_5",
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
+            # Parser configured but force_unconstrained: the parser still
+            # parses output, but no grammar or bitmask on its account.
+            (False, "kimik2_5", ToolCallPolicy.FORCE_UNCONSTRAINED, False),
             # ...unless user structured output independently requires it.
-            (True, "kimik2_5", False, True),
+            (True, "kimik2_5", ToolCallPolicy.FORCE_UNCONSTRAINED, True),
         ],
     )
     def test_truth_table(
         self,
         enable_structured_output: bool,
         tool_parser: str | None,
-        enable_tool_call_constrained_decode: bool,
+        tool_call_policy: ToolCallPolicy,
         expected: bool,
     ) -> None:
         config = PipelineConfig(
@@ -379,11 +400,21 @@ class TestNeedsBitmaskConstraints:
             ),
             sampling=SamplingConfig(
                 enable_structured_output=enable_structured_output,
-                enable_tool_call_constrained_decode=enable_tool_call_constrained_decode,
+                tool_call_policy=tool_call_policy,
             ),
             runtime=PipelineRuntimeConfig(tool_parser=tool_parser),
         )
         assert config.needs_bitmask_constraints is expected
+
+
+class TestToolCallPolicy:
+    """Tests for ``ToolCallPolicy.reject_unsupported``."""
+
+    @pytest.mark.parametrize("policy", list(ToolCallPolicy))
+    def test_reject_unsupported(self, policy: ToolCallPolicy) -> None:
+        assert policy.reject_unsupported is policy.value.endswith(
+            "_and_reject_unsupported"
+        )
 
 
 class TestSpeculativeArchitectureOverride:
@@ -420,6 +451,7 @@ class TestSpeculativeArchitectureOverride:
             SimpleNamespace(
                 is_dflash=lambda: is_dflash or is_dflash2,
                 is_dflash2=lambda: is_dflash2,
+                is_mtp=lambda: False,
             )
             if speculative
             else None
@@ -478,6 +510,28 @@ class TestSpeculativeArchitectureOverride:
         assert (
             self._resolved_arch(cfg) == "Gemma4UnifiedForConditionalGeneration"
         )
+
+    def test_minimax_m3_dspark(self) -> None:
+        cfg = self._make_config(
+            "MiniMaxM3SparseForConditionalGeneration",
+            is_dflash=True,
+            draft_arch="DSparkMiniMaxDraftModel",
+        )
+        assert (
+            self._resolved_arch(cfg)
+            == "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
+        )
+
+    def test_minimax_m3_dspark_rejects_other_methods(self) -> None:
+        """The DSpark graph only runs under the v1 dflash harness."""
+        for kwargs in ({}, {"is_dflash2": True}):
+            cfg = self._make_config(
+                "MiniMaxM3SparseForConditionalGeneration",
+                draft_arch="DSparkMiniMaxDraftModel",
+                **kwargs,
+            )
+            with pytest.raises(ValueError, match="dflash"):
+                self._resolved_arch(cfg)
 
     def test_no_speculative_is_noop(self) -> None:
         cfg = self._make_config(

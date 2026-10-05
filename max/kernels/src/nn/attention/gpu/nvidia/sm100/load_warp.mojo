@@ -14,7 +14,9 @@
 
 from std.math import ceildiv
 from std.sys import size_of
-from max.gpu.memory import CacheEviction
+from max.gpu import thread_idx
+from max.gpu.memory import CacheEviction, fence_async_view_proxy
+from max.gpu.sync import syncwarp
 from layout.tma_async import SharedMemBarrier
 from layout import TileTensor
 from layout.tile_layout import row_major as tt_row_major
@@ -269,7 +271,12 @@ def fa4_load[
     var q_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
         smem.q_smem()
     )
-    comptime q_bytes = size_of[qkv_type]() * q_elements
+    # A packed GQA tile (group does not divide BM) loads only the real rows;
+    # the pad rows are zero-filled by `q_async_copy` and carry no TMA bytes.
+    comptime q_pad_rows = config.gqa_pad_rows()
+    comptime q_bytes = size_of[qkv_type]() * (
+        q_elements - q_pad_rows * config.BK0
+    )
 
     var q_gmem_row: UInt32 = PositionType.get_q_gmem_row[ragged=ragged](
         seq_info, max_seq_len
@@ -293,7 +300,6 @@ def fa4_load[
         CacheEviction.EVICT_NORMAL if pair_cta else CacheEviction.EVICT_FIRST
     )
 
-    @__parameter
     @inline(.always)
     def q_async_copy[
         eviction_policy: CacheEviction = q_default_eviction,
@@ -301,11 +307,43 @@ def fa4_load[
         smem_dst: QType,
         ref[AddressSpace.SHARED] mbar: SharedMemBarrier,
         depth_idx: UInt32 = 0,
-    ):
+    ) {imm}:
         """Issue Q TMA elect-predicated on `e`. Caller no longer needs
         `if e != 0:` around the call; the TMA fires only on the elected
         lane via the PTX predicate inside `_elect`."""
-        comptime if fuse_gqa:
+        comptime if fuse_gqa and q_pad_rows > 0:
+            comptime gran = config.swizzle_mode.bytes() // size_of[qkv_type]()
+            comptime nblk = config.BK0 // gran
+            comptime chunk = 16 // size_of[qkv_type]()
+            comptime chunks_per_blk = q_pad_rows * gran // chunk
+            var lane = Int(thread_idx.x) % 32
+            for c in range(lane, nblk * chunks_per_blk, 32):
+                var off = (
+                    (c // chunks_per_blk) * BM * gran
+                    + (BM - q_pad_rows) * gran
+                    + (c % chunks_per_blk) * chunk
+                )
+                (smem_dst.ptr + off).store(SIMD[qkv_type, chunk](0))
+            fence_async_view_proxy()
+            syncwarp()
+            comptime for blk in range(nblk):
+                q_tma_op.async_copy_elect[
+                    cta_group=cta_group, eviction_policy=eviction_policy
+                ](
+                    QType(
+                        smem_dst.ptr + blk * BM * gran,
+                        tt_row_major[q_elements](),
+                    ),
+                    mbar,
+                    StaticTuple[UInt32, 4](
+                        depth_idx + UInt32(blk * gran),
+                        0,
+                        kv_head_idx,
+                        q_gmem_row,
+                    ),
+                    e,
+                )
+        elif fuse_gqa:
             q_tma_op.async_copy_elect[
                 cta_group=cta_group, eviction_policy=eviction_policy
             ](
@@ -386,9 +424,8 @@ def fa4_load[
         row_major=v_row_major,
     ]()
 
-    @__parameter
     @inline(.always)
-    def _k_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+    def _k_num_valid_pages(current_kv_row: UInt32) {imm} -> UInt32:
         """Valid K sub-tile pages at `current_kv_row` (per-CTA range)."""
         if current_kv_row >= num_keys:
             return UInt32(0)
@@ -399,9 +436,8 @@ def fa4_load[
             ),
         )
 
-    @__parameter
     @inline(.always)
-    def _v_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+    def _v_num_valid_pages(current_kv_row: UInt32) {imm} -> UInt32:
         """Valid V sub-tile pages at `current_kv_row` (full BN range)."""
         return min(
             UInt32(KVPagedRows.num_pages),
@@ -508,7 +544,6 @@ def fa4_load[
     # `k_nvp_peer`, `kv_head_idx`, `v_col_offset`, `k_tma_op`,
     # `v_tma_op`, `config`. Caller owns `populate`, `smem_ptr`, and the
     # producer-pipeline acquire/step lifecycle.
-    @__parameter
     @inline(.always)
     def _produce_k[
         partial: Bool,
@@ -519,7 +554,7 @@ def fa4_load[
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
         k_num_valid_pages: UInt32,
-    ):
+    ) {imm}:
         comptime d_idx = qk_stage * config.BK0
         comptime if is_leader:
             comptime q_term = (cta_group * q_bytes if with_q else 0)
@@ -667,7 +702,6 @@ def fa4_load[
     comptime v_e_rows_per_page = config.v_tma_box_rows(page_size)
     comptime v_e_pages_per_chunk = config.v_e_chunk_rows() // v_e_rows_per_page
 
-    @__parameter
     @inline(.always)
     def _produce_v_e[
         partial: Bool,
@@ -677,7 +711,7 @@ def fa4_load[
         kv_row_base: UInt32,
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
-    ):
+    ) {imm}:
         # `_produce_v_e` is Layout-E-only (m_pack==2 => use_ws), so the non-WS
         # per-page byte count `_produce_v` carries never applies: V bytes are
         # always the full `v_expect_bytes`, and OOB-fill reduces to `partial`.
@@ -747,7 +781,6 @@ def fa4_load[
         is_leader=True,
     ]
 
-    @__parameter
     @inline(.always)
     def _produce_v_sk[
         partial: Bool,
@@ -757,7 +790,7 @@ def fa4_load[
         smem_ptr: SharedMemPointer[Scalar[qkv_type]],
         mbar: SharedMemPointer[SharedMemBarrier],
         chunk_valid_pages: UInt32,
-    ):
+    ) {imm}:
         # Always the FULL slot: a chunk that reaches here is live, and at the
         # production page sizes `v_sk_pages_per_chunk == 1`, so one issue
         # delivers the whole box. The dead chunks contribute no bytes because
@@ -833,13 +866,12 @@ def fa4_load[
         # first peeled K slot passes `acquire=False` (initial phase=1).
         # The caller still owns `populate` (K computes `rows`, V reuses it)
         # and any interleaved Q TMA.
-        @__parameter
         @inline(.always)
         def _emit_k[
             partial: Bool,
             with_q: Bool = False,
             acquire: Bool = True,
-        ](rows: KVPagedRows, k_num_valid_pages: UInt32):
+        ](rows: KVPagedRows, k_num_valid_pages: UInt32) {mut kv_pipeline, imm}:
             # WS shared sub-tile ring: emit num_qk_stages K depth-half sub-tiles
             # (each a 32768-B ring slot with its own barrier); Q (when with_q)
             # rides every K sub-tile (q_elements is per-sub-tile). Folds to one

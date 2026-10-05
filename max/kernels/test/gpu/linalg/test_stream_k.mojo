@@ -35,8 +35,8 @@ def swizzle_tile(
     BLOCK_K: Int,
     GROUP_M: Int,
 ) -> IndexList[2]:
-    var grid_m = (M + BLOCK_M - 1) // BLOCK_M
-    var grid_n = (N + BLOCK_N - 1) // BLOCK_N
+    var grid_m = ceildiv(M, BLOCK_M)
+    var grid_n = ceildiv(N, BLOCK_N)
     var width = GROUP_M * grid_n
     var group_id, tile_id_rem = divmod(tile_id, width)
     var group_size = min(grid_m - group_id * GROUP_M, GROUP_M)
@@ -55,7 +55,7 @@ def linear_tile(
     BLOCK_K: Int,
     GROUP_M: Int,
 ) -> IndexList[2]:
-    var pid_m, pid_n = divmod(tile_id, ((N + BLOCK_N - 1) // BLOCK_N))
+    var pid_m, pid_n = divmod(tile_id, (ceildiv(N, BLOCK_N)))
     return IndexList[2](pid_m, pid_n)
 
 
@@ -269,7 +269,7 @@ def full_tiles_kernel[
     var global_c = rn_base + tx
     var accum = Scalar[c_type](0)
 
-    var steps = (K + BLOCK_K - 1) // BLOCK_K
+    var steps = ceildiv(K, BLOCK_K)
     for s in range(steps):
         var k_offset = s * BLOCK_K
         for kk in range(BLOCK_K):
@@ -345,9 +345,9 @@ def matmul_stream_k[
     comptime BLK_N = 16
     comptime BLK_K = 16
 
-    var total_blocks_M = (M + BLK_M - 1) // BLK_M
-    var total_blocks_N = (N + BLK_N - 1) // BLK_N
-    var iters_per_tile = (K + BLK_K - 1) // BLK_K
+    var total_blocks_M = ceildiv(M, BLK_M)
+    var total_blocks_N = ceildiv(N, BLK_N)
+    var iters_per_tile = ceildiv(K, BLK_K)
     comptime GROUP_M = 8
 
     var total_tiles = total_blocks_M * total_blocks_N

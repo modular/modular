@@ -11,10 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import inspect
 import json
+import re
 
 from click.testing import CliRunner
 from smoke_tests import smoke_test, smoke_test_github_matrix
+
+_MATRIX_ENTRY = re.compile(r'^    "[^"]+": [^#]+,(  # TODO\([A-Z]+-\d+\))?$')
 
 
 def test_custom_model_keys_have_dunder() -> None:
@@ -22,6 +26,24 @@ def test_custom_model_keys_have_dunder() -> None:
     assert not bad, (
         f"CUSTOM_MODELS keys must contain '__' to separate the base model "
         f"from the alias suffix: {bad}"
+    )
+
+
+def test_matrix_entries_are_one_line_with_ticket_only_comments() -> None:
+    source = inspect.getsource(smoke_test_github_matrix).splitlines()
+    bad = []
+    for name in ("HF_MODELS", "CUSTOM_MODELS"):
+        start = next(
+            i for i, line in enumerate(source) if line.startswith(f"{name}:")
+        )
+        for line in source[start + 1 :]:
+            if line == "}":
+                break
+            if not _MATRIX_ENTRY.match(line):
+                bad.append(line)
+    assert not bad, (
+        "Matrix entries must be exactly one line, and the only allowed comment "
+        "is a trailing `# TODO(PROJ-1234)`:\n" + "\n".join(bad)
     )
 
 
@@ -89,6 +111,8 @@ def test_nightly_8xb200_pinned() -> None:
         "MiniMaxAI/MiniMax-M3-MXFP8__mtp",
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         "nvidia/Kimi-K2.7-Code-NVFP4",
+        "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
+        "zai-org/GLM-5.3-Flash__tpep",
     }
 
 

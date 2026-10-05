@@ -14,41 +14,36 @@
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.random import rand, randint, random_float64
-from std.sys import align_of, argv, size_of
+from std.sys import align_of, argv
 
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_idx,
     thread_idx,
 )
-from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.intrinsics import lop
-from max.gpu.memory import external_memory
 
 from internal_utils import assert_almost_equal
-from std.random import rand
 from layout import (
     Coord,
     CoordLike,
     Idx,
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    lt_to_tt,
+    TensorLayout,
     row_major,
 )
-from layout.layout import *
-from layout.layout_tensor import copy_dram_to_sram
 from linalg.matmul.gpu import multistage_gemm
+from linalg.utils import elementwise_epilogue_type
 from linalg.utils_gpu import MatmulKernels
-from std.memory import unsafe_memset_zero
+from nn.kv_cache_ragged import _qmatmul_common
 from std.memory.unsafe import bitcast
 from quantization import Q4sym
-from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
+from quantization.qmatmul_gpu import (
+    matmul_gpu_qint4,
+    multistage_gemm_q,
+    repack_Q4_0_for_sm8x,
+)
 
 from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
@@ -69,195 +64,23 @@ def args_to_tuple[swap: Bool](arg_0: Int, arg_1: Int) -> Tuple[Int, Int]:
         return Tuple(arg_0, arg_1)
 
 
-def repack_Q4_0_for_sm8x[
-    q_layout: Layout,
-    repack_layout: Layout,
-    scales_type: DType,
-](
-    q_weight: LayoutTensor[.uint8, q_layout, ImmutAnyOrigin],
-    q_packed_weight: LayoutTensor[.uint8, repack_layout, MutAnyOrigin],
-):
-    comptime group_size = 32
-    comptime group_bytes = size_of[DType.float16]() + (group_size // 2)
-    comptime pack_factor = 8
-    comptime repack_tile = Index(64, 16)
-    comptime WARP_SIZE = 32
-    comptime BN = 128
-    comptime BK = 1024
-
-    var tid = thread_idx.x
-    var warp_id, lane_id = udivmod(tid, WARP_SIZE)
-    comptime num_warps_x = BN // repack_tile[0]
-    var warp_y, warp_x = udivmod(warp_id, num_warps_x)
-    var block_idx = Index(block_idx.x, block_idx.y)
-
-    comptime N = Int(q_layout.shape[0])
-    comptime K = Int(q_layout.shape[1]) // group_bytes * group_size
-
-    comptime K_groups = K // group_size
-    comptime BK_groups = BK // group_size
-
-    comptime uint_K = K // pack_factor
-    comptime uint_BK = BK // pack_factor
-
-    @inline(.always)
-    def convert_bytes_to_bf16[
-        scales_type: DType
-    ](input_bytes: SIMD[.uint8, _]) -> Scalar[scales_type]:
-        var f32_values = bitcast[.float16, 1](input_bytes).cast[.float32]()
-        return bitcast[scales_type, 2](f32_values)[1]
-
-    comptime repacked_b_layout = Layout(
-        IntTuple(
-            IntTuple(64, N // 64),
-            IntTuple(2, uint_K // 2),
-        ),
-        IntTuple(
-            IntTuple(2, 128 * (uint_K // 2)),
-            IntTuple(1, 128),
-        ),
-    )
-    var repack_weights = LayoutTensor[.uint32, repacked_b_layout, _](
-        q_packed_weight.ptr.bitcast[UInt32](),
-    )
-
-    comptime b_scales_layout = Layout.row_major(K_groups, N)
-    var b_scales_ptr = q_packed_weight.ptr + N * K // 2
-    var repack_scales = LayoutTensor[scales_type, b_scales_layout, _](
-        b_scales_ptr.bitcast[Scalar[scales_type]](),
-    )
-
-    # We keep 128x2 Q4_0 GGUF blocks in smem
-    var smem = external_memory[
-        UInt8,
-        address_space=.SHARED,
-        alignment=align_of[UInt8](),
-    ]()
-    var qb_smem = LayoutTensor[
-        .uint8,
-        Layout.row_major(BN, 2 * group_bytes),
-        _,
-        address_space=.SHARED,
-    ](smem.bitcast[UInt8]())
-
-    var q_gmem_tile = q_weight.tile[BN, BK_groups * group_bytes](
-        block_idx[0], block_idx[1]
-    )
-    var q_gmem_iter = q_gmem_tile.tiled_iterator[BN, 2 * group_bytes, axis=1](
-        0, 0
-    )
-
-    var repacked_gmem_tile = repack_weights.tile[BN, uint_BK](
-        block_idx[0], block_idx[1]
-    )
-    var repacked_gemm_iter = repacked_gmem_tile.tiled_iterator[
-        BN, 2 * group_size // pack_factor, axis=1
-    ](0, 0)
-
-    var scales_gmem_tile = repack_scales.tile[BK_groups, BN](
-        block_idx[1], block_idx[0]
-    )
-    var scales_gmem_iter = scales_gmem_tile.tiled_iterator[2, BN, axis=0](0, 0)
-
-    # We load 128x2 Q4_0 GGUF blocks to smem.
-    # Each warp repacks 64x1 Q4_0 GGUF blocks, which are
-    # 64x32 4-bit weights. We repack weights into 64x16
-    # tiles for our quantized matmul kernel, so there are
-    # two tile for each warp.
-    # frag_0 stores frags of the first 64x16 tile,
-    # frag_1 stores frags of the second,
-    for i in range(ceildiv(BK_groups, 2)):
-        barrier()
-        copy_dram_to_sram[thread_layout=Layout.row_major(128, 1)](
-            qb_smem.vectorize[1, 4](),
-            q_gmem_iter[]
-            .bitcast[.uint8, target_address_space=.GENERIC]()
-            .vectorize[1, 4](),
-        )
-        q_gmem_iter._incr()
-        barrier()
-        var q_warp_tile = qb_smem.tile[repack_tile[0], group_bytes](
-            warp_x, warp_y
-        )
-
-        if (BK_groups * block_idx[1] + i * 2 + warp_y) < K_groups:
-            var frag_0: SIMD[.uint8, 16] = 0
-            var frag_1: SIMD[.uint8, 16] = 0
-            var raw_Q_tile = q_warp_tile.tile[repack_tile[0], group_bytes]()
-            comptime thd_layout = Layout.row_major(8, 4)
-            var thread_tile = (
-                raw_Q_tile.slice[:, 2:]()
-                .vectorize[1, 2]()
-                .distribute[thd_layout](lane_id)
-            )
-
-            comptime for i_ele in range(16):
-                var val = thread_tile.load[2](i_ele // 2, i_ele % 2)
-                frag_0[i_ele] = (val[0] & 0x0F) | ((val[1] & 0x0F) << 4)
-                frag_1[i_ele] = ((val[0] & 0xF0) >> 4) | (val[1] & 0xF0)
-
-            var repack_warp_tile = repacked_gemm_iter[].tile[
-                64, group_size // pack_factor
-            ](warp_x, warp_y)
-            # The repack_warp_tile is of shape [64, (2, 2)]. In this case,
-            # elements [0, 0], [0, 1], [1, 0] and [1, 1] are stored continuously
-            # in the memory. We need to use a element shape of [2, 2] to
-            # correctly vectorize this tensor.
-            repack_warp_tile.vectorize[2, 2]().store(
-                lane_id, 0, pack_Q_tile(frag_0)
-            )
-            repack_warp_tile.vectorize[2, 2]().store(
-                lane_id, 1, pack_Q_tile(frag_1)
-            )
-            repacked_gemm_iter._incr()
-
-            comptime scales_thread_layout = Layout(
-                IntTuple(4, 8),
-                IntTuple(16, 1),
-            )
-            var rt_scales_thread_layout = RuntimeLayout[scales_thread_layout]()
-
-            # cast scales to bf16 before storing back
-            var scales_warp_tile = scales_gmem_iter[].tile[1, 64](
-                warp_y, warp_x
-            )
-
-            scales_warp_tile[0, 2 * lane_id] = convert_bytes_to_bf16[
-                scales_type
-            ](
-                q_warp_tile.vectorize[1, 2]()[
-                    Int(rt_scales_thread_layout(lane_id)), 0
-                ]
-            )
-
-            scales_warp_tile[0, 2 * lane_id + 1] = convert_bytes_to_bf16[
-                scales_type
-            ](
-                q_warp_tile.vectorize[1, 2]()[
-                    Int(rt_scales_thread_layout(lane_id)) + 8, 0
-                ]
-            )
-
-            scales_gmem_iter._incr()
-
-
-# this kernel dequantizes a repacked INT4 matrix into bf16 format
+# This kernel dequantizes a repacked INT4 matrix into bf16 format.
 # Assuming a 64x16 (nxk) packing scheme
 # Tile [i, j] stores part of the original matrix [i*64:(i+1)*64, j*16:(j+1)*16]
 # Within each tile, weights are repacked similarly to the Marlin kernel.
-# The memory address for tile [i, j] is (i * (N//64) + j) * tile_size,
+# The memory address for tile [i, j] is (i * (K//16) + j) * tile_size,
 # where tile_size is 64 * 16 * 4 / pack_factor = 512 Bytes.
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](128))
 def create_ref_b[
     type_q: DType,
     type_b: DType,
-    b_q_layout: Layout,
-    b_layout: Layout,
+    b_q_layout: TensorLayout,
+    b_layout: TensorLayout,
     group_size: Int,
     pack_factor: Int,
 ](
-    b_packed: LayoutTensor[type_q, b_q_layout, ImmutAnyOrigin],
-    b_out: LayoutTensor[type_b, b_layout, MutAnyOrigin],
+    b_packed: TileTensor[mut=False, type_q, b_q_layout, ImmutAnyOrigin],
+    b_out: TileTensor[mut=True, type_b, b_layout, MutAnyOrigin],
 ):
     comptime WARP_SIZE = 32
     comptime BLOCK_N = 128
@@ -273,21 +96,21 @@ def create_ref_b[
     var warp_x, warp_y = udivmod(warp_id, num_k_warps)
 
     comptime group_bytes = group_size // 2 + 2
-    comptime N = Int(b_q_layout.shape[0])
-    comptime K = Int(b_q_layout.shape[1]) // group_bytes * group_size
+    comptime N = b_packed.static_shape[0]
+    comptime K = b_packed.static_shape[1] // group_bytes * group_size
 
     # Unpack quantized weights
     comptime scales_type = DType.bfloat16
     comptime b_type = DType.uint32
-    comptime b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
-    var b_q = LayoutTensor[b_type, b_weight_layout, _](
+    var b_q = TileTensor(
         b_packed.ptr.bitcast[Scalar[b_type]](),
+        row_major[N // 64, K * 64 // pack_factor](),
     )
 
-    comptime b_scales_layout = Layout.row_major(K // group_size, N)
     var b_scales_ptr = b_packed.ptr + N * K // 2
-    var scales = LayoutTensor[scales_type, b_scales_layout, _](
+    var scales = TileTensor(
         b_scales_ptr.bitcast[Scalar[scales_type]](),
+        row_major[K // group_size, N](),
     )
 
     var b_q_gmem_tile = b_q.tile[
@@ -303,30 +126,15 @@ def create_ref_b[
     var warp_scales_tile = scales_tile.tile[
         ceildiv(BLOCK_K, group_size), repack_tile[0]
     ](0, warp_x)
-    comptime smem_reg_scales_layout = Layout.row_major(8, 4)
-    var scales_reg_tiles = (
-        LayoutTensor[
-            scales_type,
-            Layout.row_major(repack_tile[0] // 8, 1),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .vectorize[1, 1]()
-    )
-    # load scales
-    scales_reg_tiles.vectorize[8, 1]().copy_from(
-        warp_scales_tile.vectorize[1, 8]().distribute[
-            smem_reg_scales_layout, axis=0
-        ](lane_id)
+    # Groups of four lanes share the eight scales for one output row group.
+    var scales_reg_tiles = warp_scales_tile.load[8](
+        Coord(0, (lane_id // 4) * 8)
     )
 
     var b_out_tile = b_out.tile[BLOCK_N, BLOCK_K](block_idx[0], block_idx[1])
     var warp_out_tile = b_out_tile.tile[repack_tile[0], repack_tile[1]](
         warp_x, warp_y
     )
-    var mma_tile_iter_1 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 0)
-    var mma_tile_iter_2 = warp_out_tile.tiled_iterator[8, 8, axis=0](0, 1)
 
     var vec = bitcast[.int32, 4](warp_q_tile.vectorize[1, 4]()[0, lane_id])
 
@@ -349,48 +157,35 @@ def create_ref_b[
         )
         return v
 
-    comptime write_back_layout = Layout.row_major(1, 32)
-    comptime write_back_type = type_of(
-        mma_tile_iter_1[].vectorize[1, 2]()[0, 0]
-    )
-
     var lane_row, lane_col = udivmod(lane_id, 4)
 
     comptime for i in range(0, TILE_N // 8, 2):
         var q_int = vec[i // 2]
 
-        var v1 = int4tobf16(
-            q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i, 0])
+        var v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i]))
+        warp_out_tile.store[2](
+            Coord((i) * 8 + lane_row, 0 * 8 + lane_col * 2),
+            v1.cast[type_b](),
         )
-        mma_tile_iter_1[].vectorize[1, 2]()[lane_row, lane_col] = rebind[
-            write_back_type
-        ](v1)
         q_int >>= 4
-        var v2 = int4tobf16(
-            q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i, 0])
+        var v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i]))
+        warp_out_tile.store[2](
+            Coord((i) * 8 + lane_row, 1 * 8 + lane_col * 2),
+            v2.cast[type_b](),
         )
-        mma_tile_iter_2[].vectorize[1, 2]()[lane_row, lane_col] = rebind[
-            write_back_type
-        ](v2)
         q_int >>= 4
-        mma_tile_iter_1._incr()
-        mma_tile_iter_2._incr()
 
-        v1 = int4tobf16(
-            q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i + 1, 0])
+        v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i + 1]))
+        warp_out_tile.store[2](
+            Coord((i + 1) * 8 + lane_row, 0 * 8 + lane_col * 2),
+            v1.cast[type_b](),
         )
-        mma_tile_iter_1[].vectorize[1, 2]()[lane_row, lane_col] = rebind[
-            write_back_type
-        ](v1)
         q_int >>= 4
-        v2 = int4tobf16(
-            q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i + 1, 0])
+        v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales_reg_tiles[i + 1]))
+        warp_out_tile.store[2](
+            Coord((i + 1) * 8 + lane_row, 1 * 8 + lane_col * 2),
+            v2.cast[type_b](),
         )
-        mma_tile_iter_2[].vectorize[1, 2]()[lane_row, lane_col] = rebind[
-            write_back_type
-        ](v2)
-        mma_tile_iter_1._incr()
-        mma_tile_iter_2._incr()
 
 
 def random_float16(min: Float64 = 0, max: Float64 = 1) -> Float16:
@@ -432,14 +227,6 @@ def test_repack_Q4_0_for_sm8x[
     comptime BK = 1024
     comptime group_bytes = 2 + (group_size // 2)
 
-    comptime _gguf_b_dim0 = NType.static_value
-    comptime _gguf_b_dim1 = (KType.static_value // group_size) * group_bytes
-    comptime _dequan_dim0 = KType.static_value
-    comptime _dequan_dim1 = NType.static_value
-
-    var dynamic_gguf_b_shape = IndexList[2](N, (K // group_size) * group_bytes)
-    var dynamic_dequan_shape = IndexList[2](K, N)
-
     var gguf_b_size = N * ((K // group_size) * group_bytes)
     var repacked_b_size = N * ((K // group_size) * group_bytes)
     var dequan_size = K * N
@@ -455,30 +242,18 @@ def test_repack_Q4_0_for_sm8x[
         DType.bfloat16
     ](dequan_size)
 
-    comptime gguf_b_host_layout = Layout.row_major(_gguf_b_dim0, _gguf_b_dim1)
-    var gguf_b_host_lt = LayoutTensor[.uint8, gguf_b_host_layout, _](
-        gguf_b_host_ptr,
+    var gguf_shape = row_major(
+        Coord(n, Idx[(KType.static_value // group_size) * group_bytes])
     )
-    comptime dequan_host_layout = Layout.row_major(_dequan_dim0, _dequan_dim1)
-    comptime dequan_lt_type = LayoutTensor[.bfloat16, dequan_host_layout, _]
-    var gguf_dequan_ref_host_lt = dequan_lt_type(
-        gguf_dequan_ref_host_ptr,
-        RuntimeLayout[
-            dequan_host_layout,
-            element_type=dequan_lt_type.layout_int_type,
-            linear_idx_type=dequan_lt_type.linear_idx_type,
-        ].row_major(
-            dynamic_dequan_shape.cast[dequan_lt_type.layout_int_type]()
-        ),
+    var dequan_shape = row_major(Coord(k, n))
+    var gguf_b_host = TileTensor(gguf_b_host_ptr, gguf_shape)
+    var gguf_dequan_ref_host = TileTensor(
+        gguf_dequan_ref_host_ptr, dequan_shape
     )
 
     build_b_buffer(N, K, gguf_b_host_ptr.unsafe_ptr())
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
-        lt_to_tt(gguf_b_host_lt).as_imm(),
-        lt_to_tt(gguf_dequan_ref_host_lt),
-        rebind[IndexList[gguf_dequan_ref_host_lt.rank]](
-            gguf_dequan_ref_host_lt.runtime_layout.shape.value.canonicalize()
-        ),
+        gguf_b_host.as_imm(), gguf_dequan_ref_host, IndexList[2](K, N)
     )
 
     var gguf_b_device = ctx.enqueue_create_buffer[.uint8](gguf_b_size)
@@ -490,52 +265,18 @@ def test_repack_Q4_0_for_sm8x[
     ctx.enqueue_copy(gguf_b_device, gguf_b_host_ptr)
     ctx.enqueue_copy(repacked_b_device, repacked_b_host_ptr)
 
-    comptime gguf_b_layout = Layout.row_major(_gguf_b_dim0, _gguf_b_dim1)
-    comptime repacked_b_layout = Layout.row_major(_gguf_b_dim0, _gguf_b_dim1)
-    comptime repack_dequan_layout = Layout.row_major(_dequan_dim0, _dequan_dim1)
-    comptime repacked_b_old_layout = Layout.row_major(
-        NType.static_value // 64,
-        KType.static_value * 64 // pack_factor,
+    var gguf_b_tensor = TileTensor(gguf_b_device.unsafe_ptr(), gguf_shape)
+    var repacked_b_tensor = TileTensor(
+        repacked_b_device.unsafe_ptr(), gguf_shape
     )
-    comptime gguf_b_tensor_type = LayoutTensor[.uint8, gguf_b_layout, _]
-    comptime repacked_dequan_tensor_type = LayoutTensor[
-        .bfloat16,
-        repack_dequan_layout,
-        _,
-    ]
-
-    var gguf_b_tensor = gguf_b_tensor_type(
-        gguf_b_device.unsafe_ptr(),
-        RuntimeLayout[
-            gguf_b_layout,
-            element_type=gguf_b_tensor_type.layout_int_type,
-            linear_idx_type=gguf_b_tensor_type.linear_idx_type,
-        ].row_major(
-            dynamic_gguf_b_shape.cast[gguf_b_tensor_type.layout_int_type]()
-        ),
-    )
-    var repacked_b_tensor = LayoutTensor[.uint8, repacked_b_layout, _](
-        repacked_b_device.unsafe_ptr(),
-    )
-    var repacked_dequan_tensor = repacked_dequan_tensor_type(
-        repacked_dequan_device.unsafe_ptr(),
-        RuntimeLayout[
-            repack_dequan_layout,
-            element_type=repacked_dequan_tensor_type.layout_int_type,
-            linear_idx_type=repacked_dequan_tensor_type.linear_idx_type,
-        ].row_major(
-            dynamic_dequan_shape.cast[
-                repacked_dequan_tensor_type.layout_int_type
-            ]()
-        ),
+    var repacked_dequan_tensor = TileTensor(
+        repacked_dequan_device.unsafe_ptr(), dequan_shape
     )
 
     var smem_usage: Int = BN * 2 * group_bytes
 
     comptime repack = repack_Q4_0_for_sm8x[
-        gguf_b_tensor.layout,
-        repacked_b_tensor.layout,
-        DType.bfloat16,
+        gguf_b_tensor.LayoutType, repacked_b_tensor.LayoutType, DType.bfloat16
     ]
 
     ctx.enqueue_function[repack](
@@ -552,8 +293,8 @@ def test_repack_Q4_0_for_sm8x[
     comptime dequan = create_ref_b[
         DType.uint8,
         DType.bfloat16,
-        repacked_b_tensor.layout,
-        repacked_dequan_tensor.layout,
+        repacked_b_tensor.LayoutType,
+        repacked_dequan_tensor.LayoutType,
         group_size,
         pack_factor,
     ]
@@ -597,6 +338,8 @@ def test_quantized[
     KType: CoordLike,
     //,
     dtype: DType,
+    use_dispatch: Bool = False,
+    use_ragged_epilogue: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     # quantization configs
     comptime group_size = 128
@@ -618,9 +361,6 @@ def test_quantized[
 
     comptime _b_dim0 = NType.static_value
     comptime _b_dim1 = (KType.static_value // group_size) * group_bytes
-
-    var dynamic_b_shape = IndexList[2](N, (K // group_size) * group_bytes)
-    var dynamic_b_ref_shape = IndexList[2](N, K)
 
     var a_size = M * K
     var b_size = N * ((K // group_size) * group_bytes)
@@ -655,30 +395,11 @@ def test_quantized[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    comptime b_layout = Layout.row_major(_b_dim0, _b_dim1)
-    comptime b_ref_layout = Layout.row_major(
-        NType.static_value, KType.static_value
+    var b_tensor = TileTensor(
+        b_device.unsafe_ptr(), row_major[_b_dim0, _b_dim1]()
     )
-    comptime b_tensor_type = LayoutTensor[dtype, b_layout, _]
-    comptime b_ref_tensor_type = LayoutTensor[a_type, b_ref_layout, _]
-
-    var b_tensor = b_tensor_type(
-        b_device.unsafe_ptr(),
-        RuntimeLayout[
-            b_layout,
-            element_type=b_tensor_type.layout_int_type,
-            linear_idx_type=b_tensor_type.linear_idx_type,
-        ].row_major(dynamic_b_shape.cast[b_tensor_type.layout_int_type]()),
-    )
-    var b_ref_tensor = b_ref_tensor_type(
-        b_device_ref.unsafe_ptr(),
-        RuntimeLayout[
-            b_ref_layout,
-            element_type=b_ref_tensor_type.layout_int_type,
-            linear_idx_type=b_ref_tensor_type.linear_idx_type,
-        ].row_major(
-            dynamic_b_ref_shape.cast[b_ref_tensor_type.layout_int_type]()
-        ),
+    var b_ref_tensor = TileTensor(
+        b_device_ref.unsafe_ptr(), row_major(Coord(n, k))
     )
 
     var c_device_ref = ctx.enqueue_create_buffer[a_type](c_size)
@@ -689,14 +410,12 @@ def test_quantized[
     comptime BN = config.block_tile_shape[1]
 
     # Create TileTensors for the matmul operands
-    var a_tt_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_tt_shape = row_major(m, Idx[KType.static_value])
     var b_tt_shape = row_major(
-        Coord(
-            Idx[NType.static_value],
-            Idx[(KType.static_value // group_size) * group_bytes],
-        )
+        Idx[NType.static_value],
+        Idx[(KType.static_value // group_size) * group_bytes],
     )
-    var c_tt_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_tt_shape = row_major(m, Idx[NType.static_value])
 
     var c_dev_tt = TileTensor(c_device, c_tt_shape)
     var a_dev_tt = TileTensor(a_device, a_tt_shape)
@@ -743,21 +462,55 @@ def test_quantized[
             TFlop / sectime,
         )
 
-    multistage_gemm_q[
-        group_size=group_size, pack_factor=pack_factor, config=config
-    ](
-        c_dev_tt,
-        a_dev_tt,
-        b_dev_tt,
-        config,
-        ctx,
-    )
+    comptime if use_ragged_epilogue:
+        comptime assert dtype == .uint8
+
+        @__parameter
+        @inline(.always)
+        @__copy_capture(c_dev_tt)
+        def epilogue_fn[
+            value_type: DType,
+            width: SIMDLength,
+            *,
+            alignment: Int = align_of[SIMD[value_type, width]](),
+        ](idx: IndexList[2], value: SIMD[value_type, width]) capturing -> None:
+            c_dev_tt.store[alignment=alignment](
+                Coord(idx), value.cast[a_type]()
+            )
+
+        # The helper supplies a null output view; only the epilogue may write.
+        _qmatmul_common[
+            group_size=group_size,
+            target="gpu",
+            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
+                epilogue_fn
+            ),
+        ](
+            a_dev_tt.as_imm(),
+            b_dev_tt.bitcast[.uint8]().as_imm(),
+            ctx,
+        )
+    elif use_dispatch:
+        comptime assert dtype == .uint8
+        matmul_gpu_qint4[group_size, "gpu"](
+            c_dev_tt, a_dev_tt, b_dev_tt.bitcast[.uint8](), ctx
+        )
+    else:
+        multistage_gemm_q[
+            group_size=group_size, pack_factor=pack_factor, config=config
+        ](
+            c_dev_tt,
+            a_dev_tt,
+            b_dev_tt,
+            config,
+            ctx,
+        )
 
     comptime dequan = create_ref_b[
         dtype,
         a_type,
-        b_tensor.layout,
-        b_ref_tensor.layout,
+        b_tensor.LayoutType,
+        b_ref_tensor.LayoutType,
         group_size,
         pack_factor,
     ]
@@ -775,9 +528,9 @@ def test_quantized[
 
     comptime kernels_ref = MatmulKernels[a_type, a_type, a_type, True]()
     comptime config_ref = kernels_ref.ampere_128x128_4
-    var c_ref_tt_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_ref_tt_shape = row_major(m, Idx[NType.static_value])
     var b_ref_tt_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
+        Idx[NType.static_value], Idx[KType.static_value]
     )
     var c_ref_tt = TileTensor(c_device_ref, c_ref_tt_shape)
     var b_ref_tt = TileTensor(b_device_ref, b_ref_tt_shape)
@@ -812,6 +565,14 @@ def test_quantized[
 
 def main() raises:
     with DeviceContext() as ctx:
+        test_quantized[.uint8, True](ctx, Int(16), Idx[4096], Idx[4096])
+        test_quantized[.uint8, True](ctx, Int(65), Idx[1024], Idx[1024])
+        test_quantized[.uint8, use_ragged_epilogue=True](
+            ctx, Int(16), Idx[4096], Idx[4096]
+        )
+        test_quantized[.uint8, use_ragged_epilogue=True](
+            ctx, Int(65), Idx[1024], Idx[1024]
+        )
         test_repack_Q4_0_for_sm8x(
             ctx,
             Idx[4096],

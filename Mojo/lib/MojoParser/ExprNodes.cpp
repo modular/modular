@@ -1588,7 +1588,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                                                  spelling, expr->getLoc());
           if (!decl)
             return {};
-        } else if (emitter.builder) {
+        } else if (emitter.builder && dest.getContext() != EC_TypeOf) {
           // There is no default set nor this capture was registered already.
           // This is an error.
           emitter.shared.emitError(
@@ -1895,19 +1895,6 @@ bindToGeneratorValue(PValue callable, GeneratorType sig, const ExprNode *expr,
   if (!newBindings)
     return {};
 
-  // Applying arguments to a parametric alias whose right-hand side is a closure
-  // type must substitute the arguments into the closure trait's captured
-  // aliases and yield a freshly specialized closure trait.
-  if (ASTDecl *moduleDecl =
-          emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>()) {
-    if (TraitType specialized =
-            emitter.shared.getClosureEmitter().getSpecializedClosureTrait(
-                sig, newBindings.getValues(), *moduleDecl, expr->getLoc())) {
-      return PValue(
-          TypeParamAttr::get(specialized, AnyTraitType::get(specialized)));
-    }
-  }
-
   return newBindings.specializeGenerator(callable);
 }
 
@@ -1991,7 +1978,8 @@ AnyValue emitGetterSetterAccess(const ExprNode *node, ASTExprAnd<CValue> base,
       size_t numEmitted = 0;
       for (const Operand &operand : exprOperands) {
         emitter.emitExpressionWithoutEvaluatingIt(
-            operand.expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+            operand.expr, EC_Origin,
+            [&](CValue result, IREmitter &emitter, Block &) {
               anyDynamic |= !result.getIfPValue();
               ++numEmitted;
             });
@@ -4900,16 +4888,8 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
       tcSignature.implicitOriginDecls);
 
   if (argList.isClosureTrait()) {
-    ASTDecl *moduleDecl =
-        emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>();
-    if (useParametricClosureTrait()) {
-      TraitType traitType = emitter.shared.declResolver->getCanonicalTrait(
-          emitter.bindParamsToClosureTraitFromSig(signature));
-      return emitter.emitResult(ASTType(traitType), this, dest);
-    }
-    ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
-        getLoc(), *moduleDecl, signature);
-    Type traitType = trait->getTypeDeclSelf().extractMetaType();
+    TraitType traitType = emitter.shared.declResolver->getCanonicalTrait(
+        emitter.bindParamsToClosureTraitFromSig(signature));
     return emitter.emitResult(ASTType(traitType), this, dest);
   }
   return emitter.emitResult(ASTType(signature), this, dest);
@@ -5104,13 +5084,20 @@ AnyValue MagicFunctionNode::emitOriginOf(ExprDest &dest,
 
   for (ExprNode *subExpr : subExprs) {
     emitter.emitExpressionWithoutEvaluatingIt(
-        subExpr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+        subExpr, EC_Origin,
+        [&](CValue result, IREmitter &emitter, Block &exprBlock) {
           // If this is a value of std.Origin type, remember it.
           if (auto origin = ASTType(result.getType()).isOriginStruct())
             singleOrigin = result;
 
-          if (auto origin = emitter.extractOriginOf(subExpr, result))
-            origins.push_back(origin);
+          // Drop a bad operand rather than bailing, so the remaining operands
+          // are checked and reported too.
+          TypedAttr origin = emitter.extractOriginOf(subExpr, result);
+          if (!origin || failed(emitter.checkRootOriginsOutliveBlock(
+                             origin, exprBlock, subExpr)))
+            return;
+
+          origins.push_back(origin);
         });
   }
 
@@ -5131,7 +5118,8 @@ AnyValue MagicFunctionNode::emitTypeOf(ExprDest &dest,
   // TypeOf can reference dynamic values even when in a parameter context.
   ASTType resultType;
   emitter.emitExpressionWithoutEvaluatingIt(
-      subExprs.front(), EC_Origin, [&](CValue result, IREmitter &emitter) {
+      subExprs.front(), EC_TypeOf,
+      [&](CValue result, IREmitter &emitter, Block &) {
         resultType = result.getRValueType();
       });
 

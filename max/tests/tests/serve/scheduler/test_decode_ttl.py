@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Unit tests for ``DecodeScheduler._evict_expired_requests``.
+"""Unit tests for the decode request TTL (``decode_request_ttl_s``).
 
-Tests are written against the unbound method with a mocked ``self`` so
-we avoid the full PD test harness for what is otherwise a small,
-self-contained sweep.
+The eviction tests call ``DecodeScheduler._evict_expired_requests`` unbound
+with a mocked ``self``, so they avoid the full PD test harness.
 """
 
 from __future__ import annotations
@@ -24,6 +23,8 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
+from max.pipelines.lib import MemoryPlan
+from max.serve.scheduler import TokenGenerationSchedulerConfig
 from max.serve.scheduler.decode_scheduler import (
     DecodeRequestPhase,
     DecodeScheduler,
@@ -232,3 +233,34 @@ def test_healthy_entries_untouched(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "b" in self_obj.requests
     assert self_obj.prefill_reqs_per_replica == [1, 1]
     self_obj.response_queue.put_nowait.assert_not_called()
+
+
+def test_decode_request_ttl_propagates_from_pipeline_config() -> None:
+    """``decode_request_ttl_s`` flows through ``from_pipeline_config``."""
+    pipeline_config = MagicMock()
+    pipeline_config.runtime.max_batch_size = 1
+    pipeline_config.runtime.max_batch_input_tokens = 8192
+    pipeline_config.runtime.enable_chunked_prefill = True
+    pipeline_config.runtime.chunked_prefill_min_chunk_size = 0
+    pipeline_config.runtime.max_request_input_tokens = 0
+    pipeline_config.runtime.enable_in_flight_batching = False
+    pipeline_config.runtime.prefill_coalesce_min_pending = 0
+    pipeline_config.runtime.prefill_coalesce_max_held_steps = 0
+    pipeline_config.runtime.prefill_schedule_interval = 1
+    pipeline_config.runtime.dp_ce_balance_threshold = 0.8
+    pipeline_config.runtime.decode_stall_timeout_s = None
+    pipeline_config.runtime.decode_request_ttl_s = 42.0
+    pipeline_config.model.data_parallel_degree = 1
+    pipeline_config.speculative = None
+    memory_plan = MemoryPlan(
+        planned_max_batch_size=1,
+        footprint=0,
+        planned_max_length=2048,
+        planned_max_batch_total_tokens=8192,
+    )
+
+    config = TokenGenerationSchedulerConfig.from_pipeline_config(
+        pipeline_config, max_batch_size=1, memory_plan=memory_plan
+    )
+
+    assert config.decode_request_ttl_s == 42.0

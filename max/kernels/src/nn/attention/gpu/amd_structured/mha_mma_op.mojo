@@ -964,8 +964,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
                     @inline(.always)
-                    @__parameter
-                    def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+                    def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
                         # Comptime per-cell offset, derived from
                         # B = _row_offset + key_base (multiple of 16):
                         #   ((B // V_SUB_ROWS) * subtiles_per_row +
@@ -1680,8 +1679,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
                 comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
                 @inline(.always)
-                @__parameter
-                def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+                def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
                     comptime _B = _row_offset + key_base
                     comptime _comptime_cell_offset = (
                         (_B // _V_SUB_ROWS_) * _v_block_stride
@@ -1779,8 +1777,7 @@ struct MlaMmaOp[T: DType, config: MhaConfigV2]:
         comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
         @inline(.always)
-        @__parameter
-        def _load_keys[key_base: Int]() -> SIMD[Self.T, 8]:
+        def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
             comptime _B = _row_offset + key_base
             # Reference FULL-v227 V adapter READ cell offset (the `R` of
             # the `W∘R` pair). The per-lane base `v_lane_base` is already

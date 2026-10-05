@@ -675,9 +675,9 @@ def rms_norm_gpu_warp_tiling[
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
-    var tid = Int(thread_idx.x)
-    var row = Int(block_idx.x)
-    var bdim = Int(block_dim.x)
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var bdim = block_dim.x
 
     # Hoist the rank-N row translation ONCE; reuse the base for load and store.
     var base = _get_start_indices_of_nth_subvolume_static(row, row_spec.shape)
@@ -727,8 +727,7 @@ def rms_norm_gpu_warp_tiling[
             var col = (c * bdim + tid) * simd_width
 
             @inline(.always)
-            @__parameter
-            def _normalize() -> SIMD[dtype, simd_width]:
+            def _normalize() {imm} -> SIMD[dtype, simd_width]:
                 comptime if multiply_before_cast:
                     var gamma_accum = (
                         gamma_val[c].cast[accum_type]() + weight_offset_accum
@@ -983,9 +982,8 @@ def rms_norm_gpu[
     # warps, capped at the device max), each owning `eff_simd * chunks` columns.
     # Single source of truth for both the launcher and the warp-per-row gate
     # below.
-    @__parameter
     @inline(.always)
-    def _wt_threads_per_block[eff_simd: Int, chunks: Int]() -> Int:
+    def _wt_threads_per_block[eff_simd: Int, chunks: Int]() {imm} -> Int:
         var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
         return min(
             align_up(threads, WARP_SIZE),
@@ -994,9 +992,8 @@ def rms_norm_gpu[
 
     # `exact` means every thread is fully active (the block tiles the row with
     # no ragged tail), so the unguarded kernel can be used.
-    @__parameter
     @inline(.always)
-    def _wt_exact[eff_simd: Int, chunks: Int]() -> Bool:
+    def _wt_exact[eff_simd: Int, chunks: Int]() {imm} -> Bool:
         return (
             _wt_threads_per_block[eff_simd, chunks]() * eff_simd * chunks
         ) == cols
@@ -1043,15 +1040,13 @@ def rms_norm_gpu[
     # Launch the multi-chunk warp-tiling kernel. `exact_fit` (every thread
     # fully active, no ragged tail) is decided at runtime and selects the
     # unguarded instantiation.
-    @__parameter
     @inline(.always)
-    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises:
+    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises {imm}:
         var threads_per_block = _wt_threads_per_block[eff_simd, chunks]()
         var exact = _wt_exact[eff_simd, chunks]()
 
-        @__parameter
         @inline(.always)
-        def _enqueue[exact_fit: Bool]() raises:
+        def _enqueue[exact_fit: Bool]() raises {imm}:
             comptime kernel = rms_norm_gpu_warp_tiling[
                 mut=gamma.mut,
                 LayoutType=gamma.LayoutType,
@@ -1621,8 +1616,7 @@ def apply_qk_rms_norm_gpu_block[
     with PDL():
         # rsqrt of the (already cross-rank reduced) per-row mean of squares.
         var rs = rsqrt(
-            qk_var.load[width=1](Coord(Index(Int(row), Int(block_idx.y))))
-            + epsilon
+            qk_var.load[width=1](Coord(Index(Int(row), block_idx.y))) + epsilon
         )
 
         # Each block owns a single (row, operand); threads grid-stride the cols.

@@ -199,7 +199,7 @@ digests it:
 Or run its script directly:
 
 ```bash
-python3 .claude/skills/mojo-compile-timing/scripts/digest_timing_log.py log.txt
+python3 .agents/skills/mojo-compile-timing/scripts/digest_timing_log.py log.txt
 ```
 
 Useful options:

@@ -88,19 +88,6 @@ struct CausalConv1D[activation: StaticString]:
         var seqlen: Int = input.dim_size(2)
         var width: Int = weight.dim_size(1)
 
-        var x_batch_stride: UInt32 = UInt32(input.strides()[0])
-        var x_c_stride: UInt32 = UInt32(input.strides()[1])
-        var x_l_stride: UInt32 = UInt32(input.strides()[2])
-
-        var weight_c_stride: UInt32 = UInt32(weight.strides()[0])
-        var weight_width_stride: UInt32 = UInt32(weight.strides()[1])
-
-        var out_batch_stride: UInt32 = UInt32(output.strides()[0])
-        var out_c_stride: UInt32 = UInt32(output.strides()[1])
-        var out_l_stride: UInt32 = UInt32(output.strides()[2])
-
-        var bias_stride: UInt32 = UInt32(bias.strides()[0])
-
         var silu_activation = Self.activation == "silu"
 
         comptime if is_cpu[target]():
@@ -118,15 +105,6 @@ struct CausalConv1D[activation: StaticString]:
                 W,
                 O,
                 B,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
-                bias_stride,
                 silu_activation,
                 Optional[DeviceContext](ctx),
             )
@@ -166,15 +144,6 @@ struct CausalConv1D[activation: StaticString]:
                     W,
                     O,
                     B,
-                    x_batch_stride,
-                    x_c_stride,
-                    x_l_stride,
-                    weight_c_stride,
-                    weight_width_stride,
-                    out_batch_stride,
-                    out_c_stride,
-                    out_l_stride,
-                    bias_stride,
                     silu_activation_int8,
                     grid_dim=(
                         ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
@@ -215,15 +184,6 @@ struct CausalConv1D[activation: StaticString]:
                     W,
                     O,
                     B,
-                    x_batch_stride,
-                    x_c_stride,
-                    x_l_stride,
-                    weight_c_stride,
-                    weight_width_stride,
-                    out_batch_stride,
-                    out_c_stride,
-                    out_l_stride,
-                    bias_stride,
                     silu_activation_int8,
                     grid_dim=(
                         ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
@@ -264,15 +224,6 @@ struct CausalConv1D[activation: StaticString]:
                     W,
                     O,
                     B,
-                    x_batch_stride,
-                    x_c_stride,
-                    x_l_stride,
-                    weight_c_stride,
-                    weight_width_stride,
-                    out_batch_stride,
-                    out_c_stride,
-                    out_l_stride,
-                    bias_stride,
                     silu_activation_int8,
                     grid_dim=(
                         ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
@@ -313,15 +264,6 @@ struct CausalConv1D[activation: StaticString]:
                     W,
                     O,
                     B,
-                    x_batch_stride,
-                    x_c_stride,
-                    x_l_stride,
-                    weight_c_stride,
-                    weight_width_stride,
-                    out_batch_stride,
-                    out_c_stride,
-                    out_l_stride,
-                    bias_stride,
                     silu_activation_int8,
                     grid_dim=(
                         ceildiv(Int(X.dim[2]()), kNThreads * kNElts),
@@ -437,21 +379,6 @@ struct CausalConv1DUpdate[activation: StaticString]:
         # read old values and write updates into the same allocation.
         var total_state_elements = batch_size * dim * state_len
 
-        var x_batch_stride: UInt32 = UInt32(input.strides()[0])
-        var x_c_stride: UInt32 = UInt32(input.strides()[1])
-        var x_l_stride: UInt32 = UInt32(input.strides()[2])
-
-        var conv_state_batch_stride: UInt32 = UInt32(conv_state.strides()[0])
-        var conv_state_c_stride: UInt32 = UInt32(conv_state.strides()[1])
-        var conv_state_l_stride: UInt32 = UInt32(conv_state.strides()[2])
-
-        var weight_c_stride: UInt32 = UInt32(weight.strides()[0])
-        var weight_width_stride: UInt32 = UInt32(weight.strides()[1])
-
-        var out_batch_stride: UInt32 = UInt32(output.strides()[0])
-        var out_c_stride: UInt32 = UInt32(output.strides()[1])
-        var out_l_stride: UInt32 = UInt32(output.strides()[2])
-
         var silu_activation = Self.activation == "silu"
 
         comptime if is_cpu[target]():
@@ -475,17 +402,6 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 W,
                 O,
                 B,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                conv_state_batch_stride,
-                conv_state_c_stride,
-                conv_state_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
                 silu_activation,
             )
         elif is_gpu[target]():
@@ -525,17 +441,6 @@ struct CausalConv1DUpdate[activation: StaticString]:
                 W,
                 O,
                 B,
-                x_batch_stride,
-                x_c_stride,
-                x_l_stride,
-                conv_state_batch_stride,
-                conv_state_c_stride,
-                conv_state_l_stride,
-                weight_c_stride,
-                weight_width_stride,
-                out_batch_stride,
-                out_c_stride,
-                out_l_stride,
                 silu_activation_int8,
                 grid_dim=(batch_size, ceildiv(dim, kNThreads)),
                 block_dim=(kNThreads),

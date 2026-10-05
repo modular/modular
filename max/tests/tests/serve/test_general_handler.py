@@ -61,11 +61,16 @@ async def _recorded_carried_media(request: OpenResponsesRequest) -> bool:
     order = Mock()
     order.attach_mock(handler.tokenizer.new_context, "new_context")
     order.attach_mock(handler._preprocess_cache_stats.record, "record")
+    order.attach_mock(handler._chat_encoder_outcomes.record, "outcomes")
 
     bound = GeneralPipelineHandler.next.__get__(handler, GeneralPipelineHandler)
     _ = [output async for output in bound(request)]
 
-    assert [call[0] for call in order.mock_calls] == ["new_context", "record"]
+    assert [call[0] for call in order.mock_calls] == [
+        "new_context",
+        "record",
+        "outcomes",
+    ]
     handler._preprocess_cache_stats.record.assert_called_once()
     return handler._preprocess_cache_stats.record.call_args.kwargs[
         "carried_media"

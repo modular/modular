@@ -13,14 +13,10 @@
 
 from max.gpu.host import DeviceContext
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
-from std.math import exp, exp2, log
+from std.math import ceildiv, exp, exp2, log
 from std.random import rand
 from state_space.selective_scan import (
     ssd_combined_cpu,
@@ -28,7 +24,6 @@ from state_space.selective_scan import (
 )
 from std.testing import TestSuite, assert_almost_equal
 
-from std.utils.index import Index
 
 comptime MAX_DSTATE = 16
 comptime LOG2E = 1.4426950408889634
@@ -71,13 +66,9 @@ def run_ssd_combined_gpu[
 
     var group_size = dim // n_groups
     var chunk_size = 2048
-    var n_chunks = (seqlen + chunk_size - 1) // chunk_size
+    var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     var output_cpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
     var output_gpu_h = alloc[Scalar[dtype]](batch * dim * seqlen)
@@ -99,66 +90,20 @@ def run_ssd_combined_gpu[
     var delta_bias_h = alloc[Scalar[dtype]](max(delta_bias_size, 1))
     var gamma_h = alloc[Scalar[dtype]](dim)
 
-    # Create LayoutTensors for initialization
-    var u_init = LayoutTensor[dtype, layout_3d](
-        u_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var delta_init = LayoutTensor[dtype, layout_3d](
-        delta_h, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
-    )
-    var residual_init = LayoutTensor[dtype, layout_3d](
-        residual_h,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    )
-    var A_init = LayoutTensor[dtype, layout_2d](
-        A_h, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
-    )
-    var B_init = LayoutTensor[dtype, layout_4d](
-        B_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var C_init = LayoutTensor[dtype, layout_4d](
-        C_h,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, n_groups, dstate, seqlen)
-        ),
-    )
-    var D_init = LayoutTensor[dtype, layout_1d](
-        D_h, RuntimeLayout[layout_1d].row_major(Index(D_size))
-    )
-    var z_init = LayoutTensor[dtype, layout_3d](
-        z_h,
-        RuntimeLayout[layout_3d].row_major(
-            Index(
-                batch if has_z else 0,
-                dim if has_z else 0,
-                seqlen if has_z else 0,
-            )
-        ),
-    )
-    var delta_bias_init = LayoutTensor[dtype, layout_1d](
-        delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
-    )
-    var gamma_init = LayoutTensor[dtype, layout_1d](
-        gamma_h, RuntimeLayout[layout_1d].row_major(Index(dim))
-    )
-
     # Initialize with random data
-    rand[dtype](u_init.ptr, u_init.size())
-    rand[dtype](delta_init.ptr, delta_init.size())
-    rand[dtype](residual_init.ptr, residual_init.size())
-    rand[dtype](A_init.ptr, A_init.size())
-    rand[dtype](B_init.ptr, B_init.size())
-    rand[dtype](C_init.ptr, C_init.size())
+    rand[dtype](u_h, batch * dim * seqlen)
+    rand[dtype](delta_h, batch * dim * seqlen)
+    rand[dtype](residual_h, batch * dim * seqlen)
+    rand[dtype](A_h, dim * dstate)
+    rand[dtype](B_h, batch * n_groups * dstate * seqlen)
+    rand[dtype](C_h, batch * n_groups * dstate * seqlen)
     if has_D:
-        rand[dtype](D_init.ptr, D_init.size())
+        rand[dtype](D_h, D_size)
     if has_z:
-        rand[dtype](z_init.ptr, z_init.size())
+        rand[dtype](z_h, z_size)
     if has_delta_bias:
-        rand[dtype](delta_bias_init.ptr, delta_bias_init.size())
-    rand[dtype](gamma_init.ptr, gamma_init.size())
+        rand[dtype](delta_bias_h, delta_bias_size)
+    rand[dtype](gamma_h, dim)
 
     # Initialize gamma to positive values
     for i in range(dim):
@@ -308,7 +253,6 @@ def run_ssd_combined_gpu[
     # Run GPU kernel
     var total_batch_dim = batch * dim
     comptime BLOCK_SIZE = 128
-    from std.math import ceildiv
 
     var num_blocks = ceildiv(total_batch_dim, BLOCK_SIZE)
 
@@ -529,6 +473,21 @@ def test_ssd_combined_gpu_basic() raises:
         has_delta_bias=True,
         delta_softplus=False,
     ](batch=2, dim=4, seqlen=8, n_groups=1, ctx=ctx)
+
+
+def test_ssd_combined_gpu_odd_seqlen_multi_channel() raises:
+    """Odd seqlen makes rows start at unaligned element offsets."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_ssd_combined_gpu[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_z=True,
+        has_delta_bias=True,
+        delta_softplus=False,
+    ](batch=2, dim=4, seqlen=9, n_groups=1, ctx=ctx)
 
 
 def test_ssd_combined_gpu_without_D() raises:

@@ -18,7 +18,6 @@ from max.gpu import *
 from max.gpu.host import DeviceContext, get_gpu_target
 from std.random import NormalRandom, Random
 from std.testing import *
-from std.sys import has_apple_gpu_accelerator
 
 from std.utils.coord import Coord
 from std.utils.index import Index, IndexList
@@ -86,7 +85,7 @@ def main() raises:
         run_elementwise[.float32](ctx)
         run_elementwise[.float16, "normal"](ctx)
         run_elementwise[.float32, "normal"](ctx)
-        comptime if not has_apple_gpu_accelerator():
+        comptime if not ctx.target.is_apple_gpu():
             # Metal does not support DType.float64
             run_elementwise[.float64](ctx)
             run_elementwise[.float64, "normal"](ctx)

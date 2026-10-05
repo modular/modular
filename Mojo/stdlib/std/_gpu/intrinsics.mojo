@@ -180,47 +180,6 @@ struct CacheOperation(Equatable, TrivialRegisterPassable):
 
 
 # ===-----------------------------------------------------------------------===#
-# ldg
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def ldg[
-    dtype: DType,
-    //,
-    width: Int = 1,
-    *,
-    alignment: Int = align_of[SIMD[dtype, width]](),
-](x: Pointer[Scalar[dtype], address_space=.GENERIC, ...]) -> SIMD[
-    dtype, width
-] where dtype.is_numeric():
-    """Load data from global memory through the non-coherent cache.
-
-    This function provides a hardware-accelerated global memory load operation
-    that uses the GPU's non-coherent cache (equivalent to CUDA's `__ldg` instruction).
-    It optimizes for read-only data access patterns.
-
-    Parameters:
-        dtype: The data type to load (must be numeric).
-        width: The SIMD vector width for vectorized loads.
-        alignment: Memory alignment in bytes. Defaults to natural alignment
-            of the SIMD vector dtype.
-
-    Args:
-        x: Pointer to global memory location to load from.
-
-    Returns:
-        SIMD vector containing the loaded data.
-
-    Note:
-        - Uses invariant loads which indicate the memory won't change during kernel execution.
-        - Particularly beneficial for read-only texture-like access patterns.
-        - May improve performance on memory-bound kernels.
-    """
-    return x.unsafe_load[width=width, alignment=alignment, invariant=True]()
-
-
-# ===-----------------------------------------------------------------------===#
 # warpgroup_reg
 # ===-----------------------------------------------------------------------===#
 
@@ -403,14 +362,8 @@ def mulhi(a: UInt16, b: UInt16) -> UInt32:
         The high 32 bits of the product a * b
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MULHI.U16 PTX instruction.
-        On others, it performs multiplication using 32-bit arithmetic.
+        This performs the multiplication using 32-bit arithmetic.
     """
-
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
-        ](a, b)
 
     var au32 = a.cast[.uint32]()
     var bu32 = b.cast[.uint32]()
@@ -433,14 +386,8 @@ def mulhi(a: Int16, b: Int16) -> Int32:
         The high 32 bits of the product a * b
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MULHI.S16 PTX instruction.
-        On others, it performs multiplication using 32-bit arithmetic.
+        This performs the multiplication using 32-bit arithmetic.
     """
-
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
-        ](a, b)
 
     var ai32 = a.cast[.int32]()
     var bi32 = b.cast[.int32]()
@@ -468,9 +415,7 @@ def mulhi(a: UInt32, b: UInt32) -> UInt32:
     """
 
     comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
-        ](a, b)
+        return llvm_intrinsic["llvm.umulh", UInt32, has_side_effect=False](a, b)
 
     var au64 = a.cast[.uint64]()
     var bu64 = b.cast[.uint64]()
@@ -498,9 +443,7 @@ def mulhi(a: Int32, b: Int32) -> Int32:
     """
 
     comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
-        ](a, b)
+        return llvm_intrinsic["llvm.smulh", Int32, has_side_effect=False](a, b)
 
     var ai64 = a.cast[.int64]()
     var bi64 = b.cast[.int64]()
@@ -528,9 +471,7 @@ def mulhi(a: UInt64, b: UInt64) -> UInt64:
     """
 
     comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.ull", UInt64, has_side_effect=False
-        ](a, b)
+        return llvm_intrinsic["llvm.umulh", UInt64, has_side_effect=False](a, b)
 
     var au128 = a.cast[.uint128]()
     var bu128 = b.cast[.uint128]()
@@ -558,9 +499,7 @@ def mulhi(a: Int64, b: Int64) -> Int64:
     """
 
     comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.ll", Int64, has_side_effect=False
-        ](a, b)
+        return llvm_intrinsic["llvm.smulh", Int64, has_side_effect=False](a, b)
 
     var ai128 = a.cast[.int128]()
     var bi128 = b.cast[.int128]()
@@ -660,7 +599,7 @@ def get_ib_sts() -> Int32:
 
 
 @fieldwise_init
-struct Scope(Equatable, ImplicitlyCopyable, Writable):
+struct Scope(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     """Represents memory synchronization scope levels for GPU memory operations.
 
     Defines different scopes of memory visibility and synchronization, from
@@ -693,6 +632,32 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
 
     comptime SYSTEM = Self(6)
     """System-wide scope. Memory operations ordered across the entire system."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "NONE".value,
+        "THREAD".value,
+        "WARP".value,
+        "BLOCK".value,
+        "CLUSTER".value,
+        "GPU".value,
+        "SYSTEM".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Scope has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         """Checks if two `Scope` instances are equal.
@@ -1189,13 +1154,13 @@ def _raw_ptr_buffer_load_lds[
 
 def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
     comptime __match bytes:
-    case 1:
-        return DType.uint8
-    case 2:
-        return DType.uint16
-    case _:
-        comptime assert bytes in (4, 8, 16), "Width not supported"
-        return DType.uint32
+        case 1:
+            return DType.uint8
+        case 2:
+            return DType.uint16
+        case _:
+            comptime assert bytes in (4, 8, 16), "Width not supported"
+            return DType.uint32
 
 
 def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:

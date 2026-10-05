@@ -1185,9 +1185,8 @@ struct DecodeStreamingKVBuffer[
             # only a scalar `element_size` and loses the element-layout
             # stride, so a subsequent `distribute` emits a contiguous
             # `load[width=simd]` that reads the wrong bytes on a strided
-            # tile. LayoutTensor's `vectorize` preserves the element
-            # layout via `zipped_divide` and iterates element-by-element
-            # in `copy_from`, which is why the LayoutTensor path works.
+            # tile. Preserve the strided element addressing with the
+            # explicit scalar loads below instead of vectorizing this view.
             #
             # The MFMA B non-transpose layout is BLOCK-distributed:
             # lane (tr, tc) with tr = lane // MMA_N, tc = lane % MMA_N

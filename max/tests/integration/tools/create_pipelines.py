@@ -1737,6 +1737,10 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
+    "meta-models/Muse-Glimmer-30B": GenericOracle(
+        model_path="meta-models/Muse-Glimmer-30B",
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "microsoft/Phi-3.5-mini-instruct": GenericOracle(
         model_path="microsoft/Phi-3.5-mini-instruct",
         device_encoding_map={

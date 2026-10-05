@@ -34,8 +34,8 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
-    mesh_context,
 )
+from max.experimental.tensor import default_device
 
 
 def cpu_devices(n: int) -> tuple[Device, ...]:
@@ -178,62 +178,6 @@ class TestNamedMapping:
         assert ns.placements == (Partial(), Sharded(0))
 
 
-class TestToMesh:
-    """``DeviceMapping.to_mesh`` rebinds by axis-name correspondence.
-
-    This is the single resolve path: it works the same whether the
-    source mapping was built via ``DeviceMapping(...)`` directly or via
-    ``NamedMapping(...)``.
-    """
-
-    def test_identity_same_mesh(self) -> None:
-        mesh = mesh_2d(2, 4)
-        m = DeviceMapping(mesh, (Sharded(0), Sharded(1)))
-        out = m.to_mesh(mesh)
-        assert out.mesh is mesh
-        assert out.placements == m.placements
-
-    def test_drops_axes_missing_on_target(self) -> None:
-        mesh_full = mesh_2d(2, 4)
-        m = DeviceMapping(mesh_full, (Sharded(0), Sharded(1)))
-        mesh_tp_only = mesh_1d(4, name="tp")
-        out = m.to_mesh(mesh_tp_only)
-        assert out.placements == (Sharded(1),)
-
-    def test_replicates_new_axes(self) -> None:
-        mesh_tp = mesh_1d(4, name="tp")
-        m = DeviceMapping(mesh_tp, (Sharded(0),))
-        mesh_full = mesh_2d(2, 4)
-        out = m.to_mesh(mesh_full)
-        # "dp" doesn't exist on source mesh → Replicated; "tp" preserved.
-        assert out.placements == (Replicated(), Sharded(0))
-
-    def test_named_mapping_resolves_via_to_mesh(self) -> None:
-        # A model defined for ("dp", "tp") drops onto a TP-only mesh.
-        full = mesh_2d(2, 4)
-        ns = NamedMapping(full, ("dp", "tp"))
-        tp_only = mesh_1d(4, name="tp")
-        out = ns.to_mesh(tp_only)
-        assert out.placements == (Sharded(1),)
-
-    def test_preserves_partial(self) -> None:
-        mesh_full = mesh_2d(2, 4)
-        m = DeviceMapping(mesh_full, (Partial(), Sharded(0)))
-        # New mesh with same axis names but swapped order.
-        rotated = DeviceMesh(cpu_devices(8), (4, 2), ("tp", "dp"))
-        out = m.to_mesh(rotated)
-        # axis 0 ("tp") preserves "tp"'s placement on source = Sharded(0)
-        # axis 1 ("dp") preserves "dp"'s placement on source = Partial
-        assert out.placements == (Sharded(0), Partial())
-
-    def test_drops_when_no_axis_names_match(self) -> None:
-        """Pure axis-name resolution: no shared name → all Replicated."""
-        source = mesh_1d(4, "tp")
-        m = DeviceMapping(source, (Sharded(0),))
-        target = mesh_1d(4, "other")
-        assert m.to_mesh(target).placements == (Replicated(),)
-
-
 class TestNamedMappingRepr:
     """``NamedMapping.__repr__`` renders placements in spec form."""
 
@@ -263,8 +207,8 @@ class TestConversionError:
         assert issubclass(ConversionError, Exception)
 
 
-class TestActiveMesh:
-    """``NamedMapping`` takes its mesh from ``mesh_context`` when given none.
+class TestDefaultMesh:
+    """``NamedMapping`` takes its mesh from ``default_device`` when given none.
 
     This is what lets a spec be written once, where the layer is defined, and
     resolved against whatever mesh the caller publishes -- so placement is a
@@ -272,23 +216,23 @@ class TestActiveMesh:
     threaded through every layer.
     """
 
-    def test_takes_the_active_mesh(self) -> None:
+    def test_takes_the_default_mesh(self) -> None:
         mesh = mesh_1d(4)
-        with mesh_context(mesh):
+        with default_device(mesh):
             mapping = NamedMapping(spec=("tp",))
         assert mapping.mesh is mesh
         assert mapping.placements == (Sharded(0),)
 
     def test_explicit_mesh_wins(self) -> None:
-        with mesh_context(mesh_1d(4)):
+        with default_device(mesh_1d(4)):
             mapping = NamedMapping(mesh_1d(2), ("tp",))
         assert mapping.mesh.num_devices == 2
 
     def test_same_spec_resolves_against_each_context(self) -> None:
         spec = ("tp", None)
-        with mesh_context(mesh_1d(2)):
+        with default_device(mesh_1d(2)):
             two = NamedMapping(spec=spec)
-        with mesh_context(mesh_1d(8)):
+        with default_device(mesh_1d(8)):
             eight = NamedMapping(spec=spec)
         assert two.mesh.num_devices == 2
         assert eight.mesh.num_devices == 8
@@ -296,8 +240,14 @@ class TestActiveMesh:
 
     def test_an_axis_the_context_mesh_lacks_replicates(self) -> None:
         """The degradation that makes one source run on any topology."""
-        with mesh_context(mesh_1d(4, name="other")):
+        with default_device(mesh_1d(4, name="other")):
             mapping = NamedMapping(spec=("tp", None))
+        assert mapping.placements == (Replicated(),)
+
+    def test_a_default_device_resolves_as_a_single_device_mesh(self) -> None:
+        with default_device(CPU()):
+            mapping = NamedMapping(spec=("tp",))
+        assert mapping.mesh.num_devices == 1
         assert mapping.placements == (Replicated(),)
 
     def test_no_mesh_and_no_context_raises(self) -> None:

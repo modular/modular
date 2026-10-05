@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import queue
 import re
 import uuid
 from abc import ABC, abstractmethod
@@ -84,6 +83,7 @@ from max.pipelines.modeling.types import (
 )
 from max.pipelines.request import OpenResponsesRequestBody
 from max.pipelines.request.open_responses import OutputAudioContent
+from max.pipelines.sampling import ToolCallPolicy
 from max.profiler import Tracer, traced
 from max.serve._tool_call_validation import (
     check_response_format_conformance,
@@ -152,6 +152,7 @@ from max.serve.schemas.openai import (
     TopLogprob,
     UnloadLoraRequest,
 )
+from max.serve.telemetry._trace_context import set_phase_parent
 from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
@@ -173,7 +174,6 @@ from openai.types.chat.chat_completion_stream_options_param import (
     ChatCompletionStreamOptionsParam,
 )
 from openai.types.create_embedding_response import Usage as EmbeddingUsage
-from opentelemetry import propagate as otel_propagate
 from PIL import Image
 from pydantic import BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
@@ -219,6 +219,17 @@ async def _start_stream(
             yield item
 
     return None, chained()
+
+
+def _in_stream_error(status_code: int, message: str) -> str:
+    """Serializes an error for a stream whose 200 is already committed.
+
+    The OpenAI client raises ``APIError`` off a frame with an ``error`` key, and
+    otherwise parses it as a completion.
+    """
+    return ErrorResponse(
+        error=Error(code=str(status_code), message=message, param="", type="")
+    ).model_dump_json()
 
 
 router = APIRouter(prefix="/v1")
@@ -428,7 +439,7 @@ class OpenAIResponseGenerator(ABC, Generic[_T]):
     @abstractmethod
     async def stream(
         self, request: TextGenerationRequest
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         """Submits ``request`` and returns an SSE payload generator.
 
         Awaiting this coroutine submits the request to the pipeline (which
@@ -1162,6 +1173,7 @@ class OpenAIChatResponseGenerator(
                 "max.request_id": str(request.request_id),
             },
         )
+        set_phase_parent(request_span)
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
@@ -2207,7 +2219,6 @@ async def openai_create_chat_completion(
     request: Request,
 ) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, request_id, CreateChatCompletionRequest
@@ -2264,7 +2275,7 @@ async def openai_create_chat_completion(
             tools = _convert_chat_completion_tools_to_token_generator_tools(
                 completion_request.tools,
                 valid_tool_name_re,
-                default_strict=getattr(parser, "DEFAULT_TOOL_STRICT", None),
+                policy=pipeline_config.sampling.tool_call_policy,
             )
 
         response_format = _create_response_format(
@@ -2292,7 +2303,8 @@ async def openai_create_chat_completion(
         has_grammar_parser = (
             parser is not None
             and hasattr(parser, "generate_tool_call_grammar")
-            and pipeline_config.sampling.enable_tool_call_constrained_decode
+            and pipeline_config.sampling.tool_call_policy
+            is not ToolCallPolicy.FORCE_UNCONSTRAINED
         )
         if has_grammar_parser:
             (
@@ -2327,6 +2339,7 @@ async def openai_create_chat_completion(
                         tokenizer=pipeline.tokenizer,
                         backend=pipeline_config.sampling.structured_output_backend,
                         tool_choice=completion_request.tool_choice,
+                        reject_unsupported=pipeline_config.sampling.tool_call_policy.reject_unsupported,
                     )
                 # Create the response format.
                 # Note:
@@ -2545,15 +2558,9 @@ async def openai_create_chat_completion(
 def _convert_chat_completion_tools_to_token_generator_tools(
     chat_tools: Iterable[ChatCompletionFunctionToolParam] | None,
     valid_tool_name_re: re.Pattern[str] = _DEFAULT_VALID_TOOL_NAME_RE,
-    default_strict: bool | None = None,
+    policy: ToolCallPolicy = ToolCallPolicy.DEFAULT_STRICT_FALSE_AND_BEST_EFFORT,
 ) -> list[TextGenerationRequestTool] | None:
-    """Convert ChatCompletionTool list to TextGenerationRequestTool list.
-
-    ``default_strict`` fills in ``strict`` for a tool that omits it. When set,
-    each function is also laid out in a fixed key order (description, name,
-    parameters, strict), so the chat template renders every tool the same
-    way. ``None`` keeps ``strict`` out unless the client sent it.
-    """
+    """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
         return None
 
@@ -2562,28 +2569,17 @@ def _convert_chat_completion_tools_to_token_generator_tools(
         function = tool["function"]
         name = name_from_tool(tool)
         _validate_tool_function_name(name, valid_tool_name_re)
-        description = function.get("description")
-        parameters = dict(function.get("parameters") or {})
-        client_strict = function.get("strict")
-        if default_strict is not None:
-            token_generator_function = TextGenerationRequestFunction(
-                description=description,
-                name=name,
-                parameters=parameters,
-                strict=default_strict
-                if client_strict is None
-                else client_strict,
-            )
-        else:
-            token_generator_function = TextGenerationRequestFunction(
-                name=name, description=description, parameters=parameters
-            )
-            if client_strict is not None:
-                token_generator_function["strict"] = client_strict
-        token_generator_tool = TextGenerationRequestTool(
-            type=tool["type"], function=token_generator_function
+        token_generator_function = TextGenerationRequestFunction(
+            description=function.get("description"),
+            name=name,
+            parameters=dict(function.get("parameters") or {}),
+            strict=policy.resolve_strict(function.get("strict")),
         )
-        token_generator_tools.append(token_generator_tool)
+        token_generator_tools.append(
+            TextGenerationRequestTool(
+                type=tool["type"], function=token_generator_function
+            )
+        )
 
     return token_generator_tools
 
@@ -2709,7 +2705,6 @@ async def openai_create_embeddings(
     request: Request,
 ) -> CreateEmbeddingResponse | Response:
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
 
     # First try-catch: request parsing (client fault → 400)
     try:
@@ -2899,7 +2894,6 @@ async def openai_create_speech(request: Request) -> Response:
     no streaming.
     """
     request_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
 
     # Request parsing and validation (client fault -> 400).
     try:
@@ -3027,9 +3021,11 @@ def _process_chat_log_probabilities(
             or not output.top_log_probabilities
         ):
             continue
+        assert output.sampled_tokens is not None
 
         # Iterate through each token's log probs
-        for token_logprob, top_logprobs_dict in zip(
+        for sampled_token, token_logprob, top_logprobs_dict in zip(
+            output.sampled_tokens,
             output.token_log_probabilities,
             output.top_log_probabilities,
             strict=True,
@@ -3050,22 +3046,11 @@ def _process_chat_log_probabilities(
             # Sort by logprob descending
             top_logprobs_list.sort(key=lambda x: x.logprob, reverse=True)
 
-            # Get the token string - it should be in top_logprobs_dict
-            # The token with the highest logprob that matches token_logprob is the sampled token
-            token_str = ""
-            for t, lp in top_logprobs_dict.items():
-                if abs(lp - token_logprob) < 1e-6:
-                    token_str = t
-                    break
-            # Fallback: use the first token if no exact match found
-            if not token_str and top_logprobs_list:
-                token_str = top_logprobs_list[0].token
-
             content.append(
                 ChatCompletionTokenLogprob(
-                    token=token_str,
+                    token=sampled_token,
                     logprob=token_logprob,
-                    bytes=list(token_str.encode("utf-8")),
+                    bytes=list(sampled_token.encode("utf-8")),
                     top_logprobs=top_logprobs_list,
                 )
             )
@@ -3142,27 +3127,31 @@ class OpenAICompletionResponseGenerator(
         pipeline: TokenGeneratorPipeline,
         stream_options: ChatCompletionStreamOptionsParam | None = None,
         return_token_ids: bool = False,
+        parse_reasoning: bool = True,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
         self.return_token_ids = return_token_ids
+        self.parse_reasoning = parse_reasoning
 
     async def stream(
         self, request: TextGenerationRequest
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         # Submit the request before returning the response stream. Awaiting
         # next_token_chunk tokenizes and hands the request off to the model
         # worker, so a failed submission (e.g. a dead worker) raises here —
         # before the SSE 200 headers are sent — and the route maps it to an
         # HTTP error status.
-        token_generator = await self.pipeline.next_token_chunk(request)
+        token_generator = await self.pipeline.next_token_chunk(
+            request, parse_reasoning=self.parse_reasoning
+        )
         return self._stream(request, token_generator)
 
     async def _stream(
         self,
         request: TextGenerationRequest,
         token_generator: AsyncGenerator[TokenGeneratorOutput, None],
-    ) -> AsyncGenerator[str | ErrorResponse | JSONResponse, None]:
+    ) -> AsyncGenerator[str | JSONResponse, None]:
         logger.debug("Streaming: Start: %s", request)
         record_request_start()
         request_span = _tracer.start_span(
@@ -3186,6 +3175,9 @@ class OpenAICompletionResponseGenerator(
         # token_ids.
         pending_token_ids: list[int] = []
         pending_prompt_token_ids: list[int] | None = None
+        # Until a payload is emitted the response is not yet a 200, so a
+        # failure can still be reported as an HTTP status.
+        emitted = False
         try:
             async for chunk in token_generator:
                 if chunk.batch_id is not None:
@@ -3272,6 +3264,7 @@ class OpenAICompletionResponseGenerator(
 
                 payload = response.model_dump_json()
 
+                emitted = True
                 yield payload
 
             logger.debug(
@@ -3304,33 +3297,41 @@ class OpenAICompletionResponseGenerator(
                     object="text_completion",
                     usage=final_usage,
                 )
+                emitted = True
                 yield final_response.model_dump_json()
 
+            emitted = True
             yield "[DONE]"
-        except queue.Full:
-            logger.exception("Request queue full %s", request.request_id)
-            yield JSONResponse(
-                status_code=529,
-                content={"detail": "Too Many Requests"},
-                headers={"Retry-After": "30"},
-            )
-        except InputError as e:
-            logger.warning(
-                "Input validation error in request %s: %s",
-                request.request_id,
-                str(e),
-            )
-            yield JSONResponse(
-                status_code=400,
-                content={"detail": "Input validation error", "message": str(e)},
-            )
-        except ValueError as e:
-            logger.exception("Exception in request %s", request.request_id)
-            # TODO (SI-722) - propagate better errors back.
-            yield JSONResponse(
-                status_code=500,
-                content={"detail": "Value error", "message": str(e)},
-            )
+        except Exception as e:
+            if isinstance(e, InputError):
+                logger.warning(
+                    "Input validation error in request %s: %s",
+                    request.request_id,
+                    str(e),
+                )
+                status_code, detail, message = (
+                    400,
+                    "Input validation error",
+                    str(e),
+                )
+            elif isinstance(e, ValueError):
+                logger.exception("Exception in request %s", request.request_id)
+                # TODO (SI-722) - propagate better errors back.
+                status_code, detail, message = 500, "Value error", str(e)
+            elif emitted:
+                logger.exception("Exception in request %s", request.request_id)
+                status_code, detail, message = 500, "", "Internal server error."
+            else:
+                # Before the 200, the route's handlers and the request
+                # middleware answer other types without echoing their text.
+                raise
+            if emitted:
+                yield _in_stream_error(status_code, message)
+            else:
+                yield JSONResponse(
+                    status_code=status_code,
+                    content={"detail": detail, "message": message},
+                )
         finally:
             request_span.set_attribute(
                 "gen_ai.usage.output_tokens", n_reasoning_tokens + n_tokens
@@ -3370,6 +3371,7 @@ class OpenAICompletionResponseGenerator(
                 "max.request_id": str(requests[0].request_id),
             },
         )
+        set_phase_parent(request_span)
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
@@ -3379,7 +3381,12 @@ class OpenAICompletionResponseGenerator(
 
         try:
             req_output_list = await asyncio.gather(
-                *[self.pipeline.all_tokens(request) for request in requests]
+                *[
+                    self.pipeline.all_tokens(
+                        request, parse_reasoning=self.parse_reasoning
+                    )
+                    for request in requests
+                ]
             )
             response_choices = []
             for i, req_outputs in enumerate(req_output_list):
@@ -3523,7 +3530,6 @@ async def openai_create_completion(
     Public benchmarking such as vLLM use this endpoint.
     """
     http_req_id = request.state.request_id
-    request_trace_ctx.set(otel_propagate.extract(request.headers))
     try:
         completion_request = await _parse_openai_request_body(
             request, http_req_id, CreateCompletionRequest
@@ -3570,6 +3576,7 @@ async def openai_create_completion(
             pipeline,
             stream_options=completion_request.stream_options,
             return_token_ids=completion_request.return_token_ids,
+            parse_reasoning=completion_request.reasoning_split,
         )
         prompts = get_prompts_from_openai_request(completion_request.prompt)
         token_requests = []

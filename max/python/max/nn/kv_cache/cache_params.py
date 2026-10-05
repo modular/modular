@@ -26,6 +26,7 @@ from typing import (
     Literal,
     Protocol,
     TypeGuard,
+    TypeVar,
     runtime_checkable,
 )
 
@@ -310,6 +311,17 @@ class KVConnectorType(str, Enum):
     contention) and overlaps onloads with GPU compute via asynchronous
     transfer handles. Requires ``enable_prefix_caching``. Raises on
     non-CUDA/HIP devices.
+    """
+
+    mojo_tiered = "mojo_tiered"
+    """Tiers evicted pages across host memory and disk, backed by the Mojo
+    ``kv_tier_mojo`` extension.
+
+    MAX currently doesn't support this connector type.
+
+    The same host and disk tiers as :attr:`rust_tiered`, behind the same
+    connector, and available only in builds that ship the extension.
+    Requires ``enable_prefix_caching``. Raises on non-CUDA/HIP devices.
     """
 
     dkv = "dkv"
@@ -1607,6 +1619,7 @@ class KVCacheParams(KVCacheParamInterface):
         if connector in (
             KVConnectorType.tiered,
             KVConnectorType.rust_tiered,
+            KVConnectorType.mojo_tiered,
         ):
             if not self.enable_prefix_caching:
                 raise ValueError(
@@ -1929,6 +1942,7 @@ class KVCacheParams(KVCacheParamInterface):
             if connector in (
                 KVConnectorType.tiered,
                 KVConnectorType.rust_tiered,
+                KVConnectorType.mojo_tiered,
                 KVConnectorType.dkv,
             ):
                 # KVCacheBuffer.all_buffers / to_memory enumerate only the
@@ -3222,6 +3236,9 @@ def _agreed_pool(
     return first
 
 
+_Child = TypeVar("_Child", bound=CacheLeafParamInterface)
+
+
 @dataclass(frozen=True)
 class MultiKVCacheParams(KVCacheParamInterface):
     """Aggregates multiple cache parameter sets into a recursive tree.
@@ -3340,6 +3357,21 @@ class MultiKVCacheParams(KVCacheParamInterface):
                             f" declare leaf {region.leaf_id!r}; give each"
                             " state its own leaf ids."
                         )
+
+    def child(self, key: str, kind: type[_Child]) -> _Child:
+        """Returns the child at ``key`` as the ``kind`` it must be.
+
+        Raises:
+            KeyError: If the tree has no child at ``key``.
+            TypeError: If the child at ``key`` is not a ``kind``.
+        """
+        child = self.children[key]
+        if not isinstance(child, kind):
+            raise TypeError(
+                f"Cache child {key!r} is a {type(child).__name__}, but the"
+                f" caller reads it as a {kind.__name__}."
+            )
+        return child
 
     @cached_property
     def _attention_children(self) -> dict[str, KVCacheParamInterface]:

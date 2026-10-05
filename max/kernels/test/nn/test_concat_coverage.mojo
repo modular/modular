@@ -29,6 +29,7 @@ from nn.concat import (
     _concat_inner,
     _concat_parallel,
     _concat_serial,
+    _no_epilogue,
     concat,
     concat_shape,
     fused_concat,
@@ -91,7 +92,9 @@ def test_concat_inner_all_outer_dims_singleton() raises:
     input_vec.append(x1_dyn.as_unsafe_any_origin().as_imm())
     input_vec.append(x2_dyn.as_unsafe_any_origin().as_imm())
 
-    _concat_inner[dtype, None](output.make_dynamic[.int64](), input_vec)
+    _concat_inner[dtype, has_epilogue=False](
+        output.make_dynamic[.int64](), input_vec, _no_epilogue
+    )
 
     # Verify contiguous concatenation
     for i in range(l1.product()):
@@ -148,7 +151,9 @@ def test_concat_serial_general_case() raises:
     input_vec.append(x2_dyn.as_unsafe_any_origin().as_imm())
     input_vec.append(x3_dyn.as_unsafe_any_origin().as_imm())
 
-    _concat_serial[dtype, None](output.make_dynamic[.int64](), axis, input_vec)
+    _concat_serial[dtype, has_epilogue=False](
+        output.make_dynamic[.int64](), axis, input_vec, _no_epilogue
+    )
 
     # Verify concatenation
     for i in range(4):
@@ -205,8 +210,8 @@ def test_concat_parallel_large() raises:
     input_vec.append(x1_dyn.as_unsafe_any_origin().as_imm())
     input_vec.append(x2_dyn.as_unsafe_any_origin().as_imm())
 
-    _concat_parallel[dtype, None](
-        output.make_dynamic[.int64](), axis, input_vec
+    _concat_parallel[dtype, has_epilogue=False](
+        output.make_dynamic[.int64](), axis, input_vec, _no_epilogue
     )
 
     # Sample verification (checking all elements would be too slow)
@@ -368,20 +373,19 @@ def test_concat_with_epilogue() raises:
         x2_dyn.as_unsafe_any_origin().as_imm(),
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(output)
     def epilogue_add_10[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output}:
         var coord = Coord(indices)
         comptime assert output.flat_rank >= coord.flat_rank
         output.store[width=width](coord, rebind[SIMD[dtype, width]](val + 10))
 
-    concat[dtype, epilogue_fn=epilogue_add_10](
-        output.make_dynamic[.int64](),
+    concat[dtype](
+        output.make_dynamic[.int64]().as_unsafe_any_origin(),
         axis,
         input_tuple,
+        epilogue_add_10,
         DeviceContext(api="cpu"),
     )
 

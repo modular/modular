@@ -44,10 +44,6 @@ class UnifiedMTPGlm5_2(SequentialDriver[list[TensorValue]]):
         enable_structured_output: bool = False,
     ) -> None:
         assert draft_config is not None
-        self.sampled_draft_proposal = (
-            speculative_config is not None
-            and speculative_config.draft_proposal == "sampled"
-        )
         target = DeepseekV3_2(config)
         target.emit_last_token_logits = False
         draft = DeepseekV3_2NextN(draft_config)
@@ -63,11 +59,6 @@ class UnifiedMTPGlm5_2(SequentialDriver[list[TensorValue]]):
             ),
             speculative_config=speculative_config,
             enable_structured_output=enable_structured_output,
-            draft_proposal=(
-                "sampled" if self.sampled_draft_proposal else "argmax"
-            ),
-            vocab_size=(
-                config.vocab_size if self.sampled_draft_proposal else None
-            ),
+            vocab_size=config.vocab_size,
         )
         self.config = config

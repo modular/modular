@@ -50,7 +50,12 @@ from max.nn.kv_cache import (
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import ColumnParallelLinear, Linear
-from max.nn.moe import MoE, MoEQuantized, forward_moe_sharded_layers
+from max.nn.moe import (
+    MoE,
+    MoEQuantized,
+    SigmoidTopKRouter,
+    forward_moe_sharded_layers,
+)
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
 from max.nn.transformer import forward_sequential_layers
@@ -64,7 +69,6 @@ from max.pipelines.architectures.gemma4.layers.rotary_embedding import (
 from max.tree import Tree
 
 from .layers.attention import MiniMaxM2Attention
-from .layers.moe_gate import MiniMaxM2TopKRouter
 from .layers.rotary_embedding import MiniMaxM2RotaryEmbedding
 from .model_config import MiniMaxM2Config
 
@@ -238,7 +242,7 @@ class MiniMaxM2TransformerBlock(Module):
             num_experts_per_token=config.num_experts_per_tok,
             moe_dim=config.intermediate_size,
             gate_cls=functools.partial(
-                MiniMaxM2TopKRouter,
+                SigmoidTopKRouter,
                 norm_topk_prob=config.norm_topk_prob,
                 gate_dtype=config.gate_dtype or config.dtype,
                 correction_bias_dtype=(

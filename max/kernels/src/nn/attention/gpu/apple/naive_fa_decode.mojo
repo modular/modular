@@ -54,10 +54,7 @@ from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from layout import (
-    UNKNOWN_VALUE,
     Idx,
-    Layout,
-    LayoutTensor,
     TensorEngine,
     TileTensor,
 )
@@ -69,6 +66,7 @@ from layout.tile_layout import (
 
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 
 comptime BN = 16  # KV keys per producer tile step
 comptime NEG_INF = Float32(-3.0e38)
@@ -280,13 +278,13 @@ def naive_fa_decode_apple_core[
     comptime EPL = Depth // WARP_SIZE
     debug_assert(_depth == Depth, "runtime _depth must match comptime Depth")
 
-    var split_id = Int(block_idx.x)
-    var batch_id = Int(block_idx.y)
-    var head_id = Int(block_idx.z)
+    var split_id = block_idx.x
+    var batch_id = block_idx.y
+    var head_id = block_idx.z
     var kv_head = head_id // _group
     var lane = Int(lane_id())
 
-    # Decode offset math — mirror `_bmm0_bs` (mha.mojo:5560-5589). The
+    # Decode offset math — mirror `_bmm0_bs` in `mha.mojo`. The
     # `cur_cache_len` (number of keys to attend) is set PER BRANCH because the
     # dense (`else`) path takes it from `_max_cache_size` (the K tensor's full
     # seq dim), NOT from `cur_query_len` / `cache_length` — exactly as the naive
@@ -307,14 +305,14 @@ def naive_fa_decode_apple_core[
         cur_query_len = seq_end - seq_start
         q_offset = _depth * (seq_start * _num_heads + head_id)
         # The new token's own KV sits at index `cache_length`, so an inaccurate
-        # cache length must include it. Mirror `_bmm0_bs` (mha.mojo:5567-5575).
+        # cache length must include it. Mirror `_bmm0_bs` in `mha.mojo`.
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
         else:
             cur_cache_len = k.cache_length(batch_id) + cur_query_len
     elif _use_valid_length:
         # KVCache decode: valid_length holds per-sequence query lengths, not row
-        # offsets. Mirror `_bmm0_bs` (mha.mojo:5576-5582).
+        # offsets. Mirror `_bmm0_bs` in `mha.mojo`.
         seq_start = batch_id
         cur_query_len = Int(valid_length[batch_id])
         q_offset = _depth * (head_id + _num_heads * _max_prompt_len * batch_id)
@@ -325,7 +323,7 @@ def naive_fa_decode_apple_core[
     else:
         # Dense decode: all sequences share one length and cache length; the
         # full key count is `_max_cache_size` (the K tensor's seq dim). Mirror
-        # `_bmm0_bs` (mha.mojo:5585-5589).
+        # `_bmm0_bs` in `mha.mojo`.
         seq_start = batch_id
         cur_query_len = _max_prompt_len
         q_offset = _depth * (head_id + _num_heads * _max_prompt_len * batch_id)
@@ -337,7 +335,7 @@ def naive_fa_decode_apple_core[
         return
     var end = min(start + SplitSize, seq_len)
 
-    # Decode token's score-matrix row (== cache_length). Mirror mha.mojo:5324.
+    # Decode token's score-matrix row (== cache_length). Mirror `_bmm0_bs` in `mha.mojo`.
     var score_row = cur_cache_len - cur_query_len
 
     # Q is a flat 1D TileTensor over the whole buffer; this lane owns the
@@ -350,7 +348,7 @@ def naive_fa_decode_apple_core[
     # KV sub-tile layout: a 1D (_depth,) contiguous view of one token's K/V for
     # `kv_head`, reused for every key in this split. `block_paged_tile` infers
     # the type from this value; each lane loads its `EPL` chunk.
-    var kv_token_layout = row_major(Coord(_depth))
+    var kv_token_layout = row_major(_depth)
 
     # Replicated on every lane, so the running softmax needs no cross-lane comms.
     var m = NEG_INF
@@ -512,14 +510,14 @@ def naive_fa_decode_apple_stitch[
         and m_partial.flat_rank == 1
         and output.flat_rank == 1
     ), "partials and output are flat 1D TileTensors"
-    var head_id = Int(block_idx.x)
-    var batch_id = Int(block_idx.y)
-    var d = Int(thread_idx.x)
+    var head_id = block_idx.x
+    var batch_id = block_idx.y
+    var d = thread_idx.x
 
     if d >= _depth:
         return
 
-    # Output offset — mirror mha.mojo:5390. `cur_cache_len` (the attend span)
+    # Output offset — mirror `_bmm1_bs` in `mha.mojo`. `cur_cache_len` (the attend span)
     # is set PER BRANCH and MUST match the producer's exactly, so the combine
     # reads precisely the splits the producer wrote (the dense path takes it
     # from `_max_cache_size`, not `cur_query_len`).
@@ -579,7 +577,7 @@ def naive_fa_decode_apple_stitch[
 
 
 # ===-------------------------------------------------------------------=== #
-# Host launcher. Mirrors `mha_gpu_naive` (MHAOperand overload, mha.mojo:5066)
+# Host launcher. Mirrors `mha_gpu_naive` (MHAOperand overload)
 # signature; enqueues the producer/stitch pair. Dispatches the runtime `_depth`
 # to a compile-time `Depth` specialization over multiples of WARP_SIZE.
 # ===-------------------------------------------------------------------=== #
@@ -594,12 +592,12 @@ def naive_fa_decode_apple[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    q: LayoutTensor[mut=False, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, address_space=.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
-    output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    valid_length: ImmutTileTensor1D[.uint32],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -608,11 +606,7 @@ def naive_fa_decode_apple[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, q.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
 ) raises:
     """Host launcher for the Apple split-K decode attention pair (decode-only).
 
@@ -662,7 +656,7 @@ def naive_fa_decode_apple[
     """
     # No `is_apple_gpu()` assert here — this launcher compiles for the host
     # target, where that target-query is always False. The Apple gate is the
-    # caller's (`has_apple_gpu_accelerator()` in dispatch).
+    # caller's (`ctx.target.is_apple_gpu()` in dispatch).
     comptime q_type = q.dtype
 
     var num_keys = max_cache_size
@@ -706,44 +700,19 @@ def naive_fa_decode_apple[
     # just carry the storage handles with TileTensor typing (no raw pointers /
     # DeviceBuffer-as-pointer inside the kernels).
     var q_flat = TileTensor(
-        q.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(Coord(Int(q.size()))),
+        q.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+        row_major(q.num_elements()),
     )
     var output_flat = TileTensor(
-        output.ptr.as_unsafe_any_origin(),
-        row_major(Coord(Int(output.size()))),
+        output.unsafe_ptr().as_unsafe_any_origin(),
+        row_major(output.num_elements()),
     )
-    var valid_length_flat = TileTensor(
-        valid_length.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(Coord(Int(valid_length.size()))),
-    )
-    var o_partial_t = TileTensor(o_partial_dev, row_major(Coord(o_partial_n)))
-    var m_partial_t = TileTensor(m_partial_dev, row_major(Coord(ml_partial_n)))
-    var l_partial_t = TileTensor(l_partial_dev, row_major(Coord(ml_partial_n)))
+    var o_partial_t = TileTensor(o_partial_dev, row_major(o_partial_n))
+    var m_partial_t = TileTensor(m_partial_dev, row_major(ml_partial_n))
+    var l_partial_t = TileTensor(l_partial_dev, row_major(ml_partial_n))
     var o_partial_imm = o_partial_t.as_imm()
     var m_partial_imm = m_partial_t.as_imm()
     var l_partial_imm = l_partial_t.as_imm()
-
-    # Sink weights: a nullable `OptionalReg[TileTensor]` passed by value (NOT a
-    # dangling `UnsafePointer` -- KB `unsafepointer-is-non-nullable`). When
-    # sink=False this is None and never read (the seed is comptime-gated on
-    # `sink` in the producer). The per-head [num_heads] tensor is converted to
-    # a TileTensor so the kernel stays TileTensor-only.
-    var sink_layout_val = row_major(Coord(num_heads))
-    comptime SinkTile = TileTensor[
-        q_type, type_of(sink_layout_val), ImmutAnyOrigin
-    ]
-    var sink_tile: OptionalReg[SinkTile]
-    comptime if sink:
-        var sw = sink_weights.value()
-        sink_tile = OptionalReg[SinkTile](
-            SinkTile(
-                sw.ptr.as_imm().as_unsafe_any_origin(),
-                sink_layout_val,
-            )
-        )
-    else:
-        sink_tile = None
 
     # The producer needs the head dim at compile time (EPL = Depth //
     # WARP_SIZE), so specialize one kernel per supported `depth` and select at
@@ -763,8 +732,8 @@ def naive_fa_decode_apple[
                     mask_t,
                     type_of(o_partial_t).LayoutType,
                     type_of(q_flat).LayoutType,
-                    type_of(valid_length_flat).LayoutType,
-                    type_of(sink_layout_val),
+                    type_of(valid_length).LayoutType,
+                    ImmutTileTensor1D[q_type].LayoutType,
                     ragged=ragged,
                     sink=sink,
                     _use_valid_length=_use_valid_length,
@@ -775,8 +744,8 @@ def naive_fa_decode_apple[
                     MPartialEngine=m_partial_t.Engine,
                     LPartialEngine=l_partial_t.Engine,
                     QEngine=q_flat.Engine,
-                    VLEngine=valid_length_flat.Engine,
-                    SinkEngine=SinkTile.Engine,
+                    VLEngine=valid_length.Engine,
+                    SinkEngine=ImmutTileTensor1D[q_type].Engine,
                 ]
                 ctx.enqueue_function[core_kernel](
                     o_partial_t,
@@ -786,8 +755,8 @@ def naive_fa_decode_apple[
                     k,
                     v,
                     mask_functor,
-                    valid_length_flat,
-                    sink_tile,
+                    valid_length,
+                    sink_weights,
                     scale,
                     Int32(batch_size),
                     Int32(max_prompt_len),
@@ -808,7 +777,7 @@ def naive_fa_decode_apple[
         mask_t,
         type_of(output_flat).LayoutType,
         type_of(o_partial_imm).LayoutType,
-        type_of(valid_length_flat).LayoutType,
+        type_of(valid_length).LayoutType,
         ragged=ragged,
         sink=sink,
         _use_valid_length=_use_valid_length,
@@ -818,7 +787,7 @@ def naive_fa_decode_apple[
         OPartialEngine=o_partial_imm.Engine,
         MPartialEngine=m_partial_imm.Engine,
         LPartialEngine=l_partial_imm.Engine,
-        VLEngine=valid_length_flat.Engine,
+        VLEngine=valid_length.Engine,
     ]
     ctx.enqueue_function[stitch_kernel](
         output_flat,
@@ -826,7 +795,7 @@ def naive_fa_decode_apple[
         m_partial_imm,
         l_partial_imm,
         k,
-        valid_length_flat,
+        valid_length,
         Int32(max_prompt_len),
         Int32(max_cache_size),
         Int32(num_heads),

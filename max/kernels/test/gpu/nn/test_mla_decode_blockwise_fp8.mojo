@@ -32,17 +32,14 @@ these values are exact.
 
 from std.math import ceildiv
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import argv
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    Coord,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.memory import alloc
@@ -349,91 +346,76 @@ def run_test_blockwise_fp8[
     ctx.synchronize()
 
     # -----------------------------------------------------------------------
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection on device
+    # Step 6: Build native views and PagedKVCacheCollection on device
     # -----------------------------------------------------------------------
 
-    # Blocks LayoutTensor
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    # Scales LayoutTensor (6D, same layout pattern as blocks)
-    var scales_lt = LayoutTensor[.float32, Layout.row_major[6]()](
-        scales_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(scales_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[DEPTH],
         ),
+    )
+
+    var scales_tt = TileTensor(
+        scales_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[head_dim_gran],
+        ),
+    )
+
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
 
     # Build PagedKVCacheCollection with quantization_granularity and scales.
-    var kv_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         kv_type,
         kv_params,
         page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
-    ](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        # Pass the scales tensor
-        LayoutTensor[.float32, Layout.row_major[6]()](
-            scales_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                scales_lt.runtime_layout.shape.value,
-                scales_lt.runtime_layout.stride.value,
-            ),
-        ),
+        rebind[Collection.scales_tt_type](scales_tt.as_unsafe_any_origin()),
     )
 
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device,
-        row_major((total_q_tokens, Idx[num_heads], Idx[DEPTH])),
+        q_device, row_major(total_q_tokens, Idx[num_heads], Idx[DEPTH])
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+        row_major(total_q_tokens, Idx[num_heads], Idx[V_DEPTH]),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device,
-        row_major(batch_size + 1),
+        row_offsets_device, row_major(batch_size + 1)
     )
 
     # -----------------------------------------------------------------------
@@ -558,32 +540,23 @@ def run_test_blockwise_fp8[
         var ref_b_device = ctx.enqueue_create_buffer[q_type](ref_b_size)
         ctx.synchronize()
 
-        # Build 4D LayoutTensors: batch_size=1
-        comptime layout_4d = Layout.row_major[4]()
-        var q_b_lt = LayoutTensor[q_type, layout_4d](
-            q_b_device.unsafe_ptr(),
-            RuntimeLayout[layout_4d].row_major(Index(1, 1, num_heads, DEPTH)),
+        var q_b_tt = TileTensor(q_b_device, row_major(1, 1, num_heads, DEPTH))
+        var k_b_tt = TileTensor(
+            k_b_device, row_major(1, ref_num_keys, KV_NUM_HEADS, DEPTH)
         )
-        var k_b_lt = LayoutTensor[q_type, layout_4d](
-            k_b_device.unsafe_ptr(),
-            RuntimeLayout[layout_4d].row_major(
-                Index(1, ref_num_keys, KV_NUM_HEADS, DEPTH)
-            ),
-        )
-        var ref_b_lt = LayoutTensor[q_type, layout_4d](
-            ref_b_device.unsafe_ptr(),
-            RuntimeLayout[layout_4d].row_major(Index(1, 1, num_heads, DEPTH)),
+        var ref_b_tt = TileTensor(
+            ref_b_device, row_major(1, 1, num_heads, DEPTH)
         )
 
         # Run mha_gpu_naive: batch_size=1, num_keys=ref_num_keys
         # K passed as both K and V (MLA: V = K[:,:,:512])
         # Note: K is already dequantized bf16
         mha_gpu_naive(
-            q_b_lt,
-            k_b_lt,
-            k_b_lt,
+            q_b_tt,
+            k_b_tt,
+            k_b_tt,
             NullMask(),
-            ref_b_lt,
+            ref_b_tt,
             scale,
             1,  # batch_size
             1,  # seq_len
@@ -817,85 +790,73 @@ def run_bench_blockwise_fp8[
 
     ctx.synchronize()
 
-    # Step 6: Build LayoutTensors and PagedKVCacheCollection
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    var scales_lt = LayoutTensor[.float32, Layout.row_major[6]()](
-        scales_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(scales_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    # Step 6: Build native views and PagedKVCacheCollection
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[DEPTH],
         ),
     )
 
-    var kv_collection = PagedKVCacheCollection[
+    var scales_tt = TileTensor(
+        scales_device,
+        row_major(
+            Int64(total_pages),
+            Idx[kv_dim2],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[head_dim_gran],
+        ),
+    )
+
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
         kv_type,
         kv_params,
         page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
         scale_dtype_=DType.float32,
         quantization_granularity_=quant_granularity,
-    ](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
-        LayoutTensor[.float32, Layout.row_major[6]()](
-            scales_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                scales_lt.runtime_layout.shape.value,
-                scales_lt.runtime_layout.stride.value,
-            ),
-        ),
+        rebind[Collection.scales_tt_type](scales_tt.as_unsafe_any_origin()),
     )
 
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device,
-        row_major((total_q_tokens, Idx[num_heads], Idx[DEPTH])),
+        q_device, row_major(total_q_tokens, Idx[num_heads], Idx[DEPTH])
     )
 
     var out_tt = TileTensor(
         out_device,
-        row_major((total_q_tokens, Idx[num_heads], Idx[V_DEPTH])),
+        row_major(total_q_tokens, Idx[num_heads], Idx[V_DEPTH]),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device,
-        row_major(batch_size + 1),
+        row_offsets_device, row_major(batch_size + 1)
     )
 
     # Step 7: Pre-compute scalar args and benchmark
@@ -1005,7 +966,7 @@ def main() raises:
     seed(42)
 
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             if is_benchmark():

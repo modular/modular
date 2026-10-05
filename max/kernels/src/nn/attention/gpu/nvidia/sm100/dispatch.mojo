@@ -66,6 +66,10 @@ comptime logger = Logger()
 # Debug instrument for the unfused (workspace) split-K path -- see
 # `launch_workspace` below for what it grades and why it must exist.
 comptime FA4_WS_POISON: Bool = get_defined_int["FA4_WS_POISON", 0]() != 0
+# Benchmark lever: every shape that reaches the 1Q/2Q gate takes the 2Q config
+# at P == 1, ignoring an explicit `num_partitions` (2Q has no split-K). The
+# short-prompt WS routes ahead of the gate are unaffected.
+comptime FA4_FORCE_2Q: Bool = get_defined_int["FA4_FORCE_2Q", 0]() != 0
 
 
 @inline(.always)
@@ -1288,7 +1292,7 @@ def mha_sm100_dispatch[
         # prompt across BM=128 tiles); the 2Q preference is purely a
         # large-tile perf heuristic. Both configs are already compiled, so this
         # adds no instantiation.
-        if (
+        if not FA4_FORCE_2Q and (
             num_partitions_override > 0
             or max_prompt_len_u32 <= bm_eff_1q
             or raw_grid_2q <= grid_threshold
@@ -1409,8 +1413,8 @@ def mha_sm100_dispatch[
                 StaticInt[1](), NoPartition[.float32]()
             )
         else:
-            # Not reachable with an override: the gate above forces the 1Q carve
-            # whenever `num_partitions_override > 0`.
+            # Not reachable with an override unless `FA4_FORCE_2Q`: the gate
+            # above forces the 1Q carve whenever `num_partitions_override > 0`.
             with_fa4_config[fa4_config_2q](
                 StaticInt[1](), NoPartition[.float32]()
             )

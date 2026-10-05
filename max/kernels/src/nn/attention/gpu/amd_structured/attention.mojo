@@ -832,8 +832,7 @@ struct Attention[
         not_last_iter: Bool,
     ):
         @inline(.always)
-        @__parameter
-        def _mask_apply_impl(masked: Bool):
+        def _mask_apply_impl(masked: Bool) {imm}:
             MaskTileOp[
                 accum_type=Self.accum_type,
                 token_gen=Self.token_gen,
@@ -1255,7 +1254,7 @@ struct Attention[
             var lane = Int(lane_id())
             var lane_row = lane % Self.mma_shape[0]
             var live_rows = Int(Self.heads_inner) * Int(self.seq_len)
-            var head_base = Int(block_idx.y) * Self._fold_head_base_stride
+            var head_base = block_idx.y * Self._fold_head_base_stride
             comptime for m_mma in range(Self.num_m_mmas):
                 var r = (
                     self.warp_row * Self.WM

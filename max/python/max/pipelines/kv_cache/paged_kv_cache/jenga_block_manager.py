@@ -41,10 +41,12 @@ from max.support.math import ceildiv
 from ..prefix_hit import longest_joint_prefix_hit
 from .block_manager import (
     CompletedTransfer,
+    KVLoadFailed,
     KVLoadRefused,
     KVTransfer,
     PrefixCacheHits,
     _compute_seq_len,
+    _OnloadSplice,
     _resolve_only_use_kv_connector_last_level_cache,
     compute_block_hashes,
 )
@@ -77,6 +79,7 @@ class _PendingTransfer:
     event: KVTransfer
     blocks: dict[str, list[LittleKVCacheBlock]]
     commit_hashes: list[bytes] | None = None
+    splice: _OnloadSplice | None = None
 
     def pinned_blocks(self) -> Iterator[LittleKVCacheBlock]:
         """Every block this transfer pins, across all its leaves."""
@@ -243,6 +246,17 @@ class RequestCacheState:
     committed_idx: int = 0
     """How far the published prefix reaches, in tokens."""
 
+    skips_connector: bool = False
+    """Whether a connector load failed for this request.
+
+    It then reads from the device tier alone until released, so a transport
+    that keeps failing costs it one attempt rather than one per admission.
+    """
+
+    failed_onload: tuple[_OnloadSplice, KVLoadFailed] | None = None
+    """An onload whose copy failed after it was spliced in, for the next
+    ``alloc`` to roll back."""
+
 
 @dataclass(frozen=True)
 class KVLeafInfo:
@@ -406,12 +420,15 @@ class JengaBlockManager:
         Raises:
             InsufficientBlocksError: If the pool cannot serve all of the
                 request's caches at once, in which case it draws nothing.
+            RuntimeError: If the request was run past an onload whose copy
+                failed, rather than held out of the batch until it landed.
         """
         replica_idx = self._replica_of(ctx)
 
         # Drain landed transfers first: their pinned pages are only returned
         # here, so skipping this leaks every offload source for the run.
         self.poll_transfers()
+        self._rollback_failed_onload(ctx, replica_idx)
 
         committed_before = self._state_of(ctx).committed_idx
         transfer = self._reuse_blocks_from_prefix_cache(ctx, replica_idx)
@@ -517,7 +534,12 @@ class JengaBlockManager:
 
     @traced
     def offload(self, replica_idx: int = 0) -> None:
-        """Offloads the recently produced KV states to the connector."""
+        """Offloads the recently committed blocks to the connector.
+
+        A run stops at the first hash an attention leaf has evicted. A
+        recurrent leaf holds only checkpoint boundaries, so its missing hashes
+        are skipped.
+        """
         connector = self._connector
         if connector is None:
             return
@@ -526,20 +548,25 @@ class JengaBlockManager:
             src: dict[str, list[LittleKVCacheBlock]] = {
                 leaf_id: [] for leaf_id in self._cacheable_leaf_ids
             }
-            block_hashes: list[bytes] = []
+            block_hashes: dict[str, list[bytes]] = {
+                leaf_id: [] for leaf_id in self._cacheable_leaf_ids
+            }
             for block_hash in hashes:
-                if any(
-                    block_hash not in pool.prefix_caches[leaf_id]
+                held = {
+                    leaf_id: pool.prefix_caches[leaf_id].get(block_hash)
                     for leaf_id in self._cacheable_leaf_ids
+                }
+                if any(
+                    block is None
+                    for leaf_id, block in held.items()
+                    if not self._groups[leaf_id].group_id.is_recurrent()
                 ):
-                    # Evicted from at least one leaf since it was committed, so
-                    # the row is no longer whole: truncate the run here.
                     break
-                for leaf_id in self._cacheable_leaf_ids:
-                    block = pool.prefix_caches[leaf_id][block_hash]
-                    src[leaf_id].append(block)
-                block_hashes.append(block_hash)
-            if not block_hashes:
+                for leaf_id, block in held.items():
+                    if block is not None:
+                        src[leaf_id].append(block)
+                        block_hashes[leaf_id].append(block_hash)
+            if not any(block_hashes.values()):
                 continue
             bids = {
                 leaf_id: [b.bid for b in bids] for leaf_id, bids in src.items()
@@ -561,6 +588,8 @@ class JengaBlockManager:
 
         For each pending async transfer, check if it has completed. If so, we
         may commit the hashes into the prefix cache and then unpin the blocks.
+        A failed onload is unpinned without a commit and left for its request's
+        next ``alloc`` to roll back.
         """
         if self._connector is not None:
             self._connector.poll_transfers()
@@ -573,6 +602,14 @@ class JengaBlockManager:
             for pending in unreached:
                 try:
                     complete = pending.event.is_complete()
+                except KVLoadFailed as failure:
+                    # Settled on the way to failing, so its pages can go back,
+                    # unpublished: they hold no valid KV.
+                    for block in pending.pinned_blocks():
+                        pool.free_block(block)
+                    if pending.splice is not None:
+                        self._fail_onload(pending.splice, failure)
+                    continue
                 except BaseException:
                     # A poll that raises has settled its own transfer, and the
                     # blocks it was filling hold no valid KV. Unpin them
@@ -627,9 +664,11 @@ class JengaBlockManager:
     @traced
     def _lookup_connector_prefix_cache_hit(
         self,
+        request_id: RequestID,
         desired: Sequence[bytes],
         replica_idx: int,
         hint: bytes | None,
+        num_device_blocks: int,
     ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVTransfer]:
         """Loads the prefix of ``desired`` the connector's tiers can serve.
 
@@ -640,6 +679,8 @@ class JengaBlockManager:
         the slots it has slid past get the null block here, the same row
         :meth:`SlidingWindowKVGroupCoordinator.claim_hit_blocks` builds for
         the device tier. Both phases get the same ``hint``.
+        ``num_device_blocks`` is the device hit spliced in ahead of the load,
+        which a failed copy rolls back along with it.
 
         Returns:
             How many blocks were loaded, the blocks they are landing in per
@@ -650,7 +691,8 @@ class JengaBlockManager:
             leaf_id: [] for leaf_id in self._cacheable_leaf_ids
         }
         miss = (0, empty, CompletedTransfer())
-        if connector is None or not desired:
+        state = self._requests[request_id]
+        if connector is None or not desired or state.skips_connector:
             return miss
         aligned = self._find_longest_connector_prefix_cache_hit(
             desired, replica_idx, hint
@@ -688,11 +730,17 @@ class JengaBlockManager:
                 replica_idx=replica_idx,
                 hint=hint,
             )
-        except KVLoadRefused as refused:
-            # Evicted between the two calls, or no room to stage the copy.
+            landed = event.is_complete()
+        except (KVLoadRefused, KVLoadFailed) as err:
+            # Evicted between the two calls, no room to stage the copy, or a
+            # transport fault while posting or on this first poll; nothing is
+            # in flight into the rows either way, and nothing is spliced yet.
             # There is no shorter hit to fall back to: a windowed leaf's
             # remaining run no longer ends where the prefix does.
-            logger.warning("serving a request as a cache miss: %s", refused)
+            if isinstance(err, KVLoadFailed):
+                self._skip_connector_after_failure(request_id, err)
+            else:
+                logger.warning("serving a request as a cache miss: %s", err)
             for blocks in rows.values():
                 for block in blocks:
                     pool.free_block(block)
@@ -707,11 +755,21 @@ class JengaBlockManager:
             for leaf_id in rows
         }
         loaded_hashes = list(desired[:aligned])
-        if event.is_complete():
+        if landed:
             self._commit_onloaded_blocks(pool, loaded_blocks, loaded_hashes)
         else:
+            start_idx = state.committed_idx
             self._track_transfer(
-                event, loaded_blocks, replica_idx, commit_hashes=loaded_hashes
+                event,
+                loaded_blocks,
+                replica_idx,
+                commit_hashes=loaded_hashes,
+                splice=_OnloadSplice(
+                    request_id=request_id,
+                    start_idx=start_idx,
+                    end_idx=start_idx
+                    + (num_device_blocks + aligned) * self._block_size,
+                ),
             )
         return aligned, loaded_blocks, event
 
@@ -732,12 +790,82 @@ class JengaBlockManager:
                 ):
                     pool.commit_into_prefix_cache(block_hash, block)
 
+    def _skip_connector_after_failure(
+        self, request_id: RequestID, failure: KVLoadFailed
+    ) -> None:
+        """Counts a failed load and serves its request without the connector."""
+        assert self._connector is not None
+        logger.warning(
+            "%s load for request %s failed; recomputing its prefix without "
+            "the connector: %s",
+            self._connector.name,
+            request_id,
+            failure,
+        )
+        self._metrics.connector_load_failures += 1
+        # A request released while its copy was in flight has no claim left
+        # to skip the connector for.
+        state = self._requests.get(request_id)
+        if state is not None:
+            state.skips_connector = True
+
+    def _fail_onload(
+        self, splice: _OnloadSplice, failure: KVLoadFailed
+    ) -> None:
+        """Leaves a failed onload for its request's next alloc to roll back."""
+        self._skip_connector_after_failure(splice.request_id, failure)
+        state = self._requests.get(splice.request_id)
+        if state is not None:
+            state.failed_onload = (splice, failure)
+
+    def _rollback_failed_onload(
+        self, ctx: TextContext, replica_idx: int
+    ) -> None:
+        """Undoes the prefix an onload spliced in, if its copy failed.
+
+        The request goes back to a fresh claim, device hit included, and the
+        reuse that follows in :meth:`alloc` takes the device hit again without
+        the connector. A reuse only splices into a request that has processed
+        nothing, so a fresh claim is exactly where it started. Trimming the
+        rows instead would not be: splicing past a windowed leaf's window
+        frees the device hit's pages there, and a recurrent leaf keeps its
+        live block, so the device hit would land behind it.
+
+        Raises:
+            RuntimeError: If the request moved past the splice before its copy
+                failed, which only a caller that never held it back can let
+                happen. It has read the failed pages by then, so there is no
+                clean prefix to recompute from.
+        """
+        state = self._state_of(ctx)
+        if state.failed_onload is None:
+            return
+        splice, failure = state.failed_onload
+        state.failed_onload = None
+        if (
+            state.committed_idx != splice.end_idx
+            or ctx.tokens.processed_length != splice.end_idx
+        ):
+            raise RuntimeError(
+                f"request {ctx.request_id} ran past an onload whose copy "
+                "failed, so its KV cannot be trusted"
+            ) from failure
+        for group in self._groups.values():
+            group.release(ctx.request_id, replica_idx)
+            group.claim(ctx.request_id)
+        state.committed_idx = 0
+        ctx.tokens.rewind_processing(ctx.tokens.processed_length)
+        self._metrics.cache_tokens -= splice.end_idx - splice.start_idx
+        ctx.cached_prefix_length = 0
+        ctx.cached_prefix_external_length = 0
+
     def _track_transfer(
         self,
         event: KVTransfer,
         blocks: Mapping[str, list[LittleKVCacheBlock]],
         replica_idx: int,
         commit_hashes: list[bytes] | None = None,
+        splice: _OnloadSplice | None = None,
     ) -> None:
         """Tracks an async connector transfer and the pages it pins.
 
@@ -761,6 +889,7 @@ class JengaBlockManager:
                     for leaf_id, leaf_blocks in blocks.items()
                 },
                 commit_hashes=commit_hashes,
+                splice=splice,
             )
         )
 
@@ -1098,9 +1227,11 @@ class JengaBlockManager:
         # Ask the connector to load the hashes that are remaining.
         num_loaded, loaded_blocks, transfer = (
             self._lookup_connector_prefix_cache_hit(
+                ctx.request_id,
                 desired_hashes[num_hit_blocks:],
                 replica_idx,
                 hint=ctx.dkv_cache_hint,
+                num_device_blocks=num_hit_blocks,
             )
         )
         num_reused = num_hit_blocks + num_loaded

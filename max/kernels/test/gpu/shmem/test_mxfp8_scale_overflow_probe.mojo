@@ -549,18 +549,18 @@ def test_fused_silu_adversarial[
     ctx.enqueue_copy(off_d, off_h)
 
     var input_tt = TileTensor[origin=ImmutAnyOrigin](
-        input_d, row_major(Coord(SILU_TOKENS, Idx[input_dim]))
+        input_d, row_major(SILU_TOKENS, Idx[input_dim])
     )
     var off_tt = TileTensor[origin=ImmutAnyOrigin](off_d, row_major[n_off]())
 
     comptime out_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(SILU_TOKENS, Idx[output_dim]))
+            input_d, row_major(SILU_TOKENS, Idx[output_dim])
         )
     ).LayoutType
     comptime scales_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(SILU_TOKENS, Idx[scale_K]))
+            input_d, row_major(SILU_TOKENS, Idx[scale_K])
         )
     ).LayoutType
 
@@ -589,10 +589,10 @@ def test_fused_silu_adversarial[
 
     ctx.enqueue_function[kernel](
         TileTensor[origin=MutAnyOrigin](
-            out_d, row_major(Coord(SILU_TOKENS, Idx[output_dim]))
+            out_d, row_major(SILU_TOKENS, Idx[output_dim])
         ),
         TileTensor[origin=MutAnyOrigin](
-            scales_d, row_major(Coord(SILU_TOKENS, Idx[scale_K]))
+            scales_d, row_major(SILU_TOKENS, Idx[scale_K])
         ),
         input_tt,
         off_tt,

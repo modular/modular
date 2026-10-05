@@ -29,18 +29,16 @@
 #include "Mojo/POPDialect/POPDialect.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
-#include "Support/Compiler/DomainAwareReplacer.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoTypes.h"
 #include "Support/DebugInfoDialect/Transforms/Conversion.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/PatternMatch.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/PointerUnion.h"
-#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include "Config/Version.h"
@@ -57,7 +55,6 @@ using namespace LIT;
 
 namespace {
 struct StructRefNode {
-  /// Null on the virtual root.
   StringAttr name;
   /// The parameter positions the struct holds by value. A position counts when
   /// building the struct's layout requires building the layout of the argument
@@ -65,32 +62,24 @@ struct StructRefNode {
   /// `@Ptr<ty> { p: !kgen.pointer<ty> }` has none, because the pointee is
   /// erased.
   llvm::BitVector byValueParams;
-  /// Every declared struct the fields reference, indirect ones included.
-  llvm::SmallSetVector<StructRefNode *, 4> refs;
-  /// Whether the struct is on a cycle of `refs`, self edges included. Lowering
-  /// one re-enters it, which is legal once by-value recursion has been ruled
-  /// out, but needs an erased stand-in layout to close the cycle with.
-  bool onCycle = false;
 };
 
-/// One node per declared struct, under a root that points at every node.
+/// One node per declared struct.
 struct StructRefGraph {
   explicit StructRefGraph(StructDecls &decls) {
-    // Reserve up front: the nodes point at each other.
+    // Reserve up front: `byName` points into `nodes`.
     nodes.reserve(decls.structDecls.size());
     for (auto &[name, decl] : decls.structDecls) {
       StructRefNode &node = nodes.emplace_back();
       node.name = name;
       node.byValueParams.resize(decl.decls ? decl.decls.size() : 0);
       byName[name] = &node;
-      root.refs.insert(&node);
     }
   }
   StructRefGraph(const StructRefGraph &) = delete;
 
   StructRefNode *lookup(StringAttr name) const { return byName.lookup(name); }
 
-  StructRefNode root;
   std::vector<StructRefNode> nodes;
   DenseMap<StringAttr, StructRefNode *> byName;
 };
@@ -254,8 +243,6 @@ void StructDependencyWalker::walkStructRef(LIT::StructType ref, bool indirect) {
   StructRefNode *target = graph.lookup(ref.getName());
   assert(target && "Reference to unknown struct");
 
-  self.refs.insert(target);
-
   // Under an indirection nothing constrains the layout, so which positions the
   // struct holds by value is beside the point.
   if (indirect) {
@@ -276,83 +263,40 @@ void StructDependencyWalker::walkStructRef(LIT::StructType ref, bool indirect) {
 
 } // namespace
 
-namespace llvm {
-template <>
-struct GraphTraits<StructRefGraph *> {
-  using NodeRef = StructRefNode *;
-  using ChildIteratorType =
-      llvm::SmallSetVector<StructRefNode *, 4>::const_iterator;
-
-  static NodeRef getEntryNode(StructRefGraph *graph) { return &graph->root; }
-  static ChildIteratorType child_begin(NodeRef node) {
-    return node->refs.begin();
-  }
-  static ChildIteratorType child_end(NodeRef node) { return node->refs.end(); }
-};
-} // namespace llvm
-
-/// Fills `graph` from every declaration, rejecting struct layouts that contain
-/// themselves by value, which have no finite size.
-static LogicalResult analyzeStructRefs(StructDecls &decls,
-                                       StructRefGraph &graph) {
-  if (failed(StructDependencyAnalysis(decls, graph).run()))
-    return failure();
-  // A struct is on a cycle exactly when its strongly connected component has
-  // another member, or it has an edge to itself.
-  for (auto scc = llvm::scc_begin(&graph); !scc.isAtEnd(); ++scc) {
-    if (scc.hasCycle()) {
-      for (StructRefNode *node : *scc)
-        node->onCycle = true;
-    }
-  }
-  return success();
-}
-
-/// Report a recursion the pass reached but could not break.
-static void reportUnsupportedRecursion(StructDecls &decls,
-                                       const StructRefGraph *graph,
-                                       StringAttr name) {
-  auto diag = mlir::emitError(decls.get(name).loc)
-              << "'" << name.getValue()
-              << "' requires a recursive layout, which is not supported";
-  if (!graph)
-    return;
-
-  StructRefNode *wrapper = graph->lookup(name);
-  for (const StructRefNode &owner : graph->nodes) {
-    if (&owner == wrapper || !owner.onCycle || !owner.refs.contains(wrapper))
-      continue;
-    diag.attachNote(decls.get(owner.name).loc)
-        << "'" << owner.name.getValue() << "' recurses through '"
-        << name.getValue() << "'";
-  }
+/// Rejects struct layouts that contain themselves by value, which have no
+/// finite size.
+static LogicalResult analyzeStructRefs(StructDecls &decls) {
+  StructRefGraph graph(decls);
+  return StructDependencyAnalysis(decls, graph).run();
 }
 
 namespace {
-/// A DomainAwareReplacer that distinguishes the two roles of a mojo type:
-/// As a value or as a type itself. The different roles require different Type
-/// representations in KGEN.
-class LowerLITReplacer : public DomainAwareReplacer {
+/// A thin layer over `mlir::CyclicAttrTypeReplacer`, which reports failure as
+/// a null result. It is surfaced here as `FailureOr` so no caller can drop it.
+class Lowering {
 public:
-  enum TypeDomain : DomainId {
-    AsType,  // Types are used as types.
-    AsValue, // Types are used as values.
-  };
-
-  LowerLITReplacer() {
-    // Parameters should always use the AsType domain so that their types are
-    // lowered as types.
-    addNonRecursiveReplacement(
-        [&](TypedAttr attr) -> FailureOr<Attribute> {
-          return replace(attr, TypeDomain::AsType);
-        },
-        TypeDomain::AsValue);
+  FailureOr<Attribute> replace(Attribute element) {
+    if (Attribute result = impl.replace(element))
+      return result;
+    return failure();
+  }
+  FailureOr<Type> replace(Type element) {
+    if (Type result = impl.replace(element))
+      return result;
+    return failure();
   }
 
-  /// Add a replacement that skips recursing down the replaced result.
-  /// The replacement callback itself must handle any further replacing by
-  /// calling back into this DomainAwareReplacer. This way the exact replacer
-  /// domain can be controlled at each replacement step.
+  /// Replace the attributes of `op`, and optionally its location and its
+  /// result and block-argument types. Unlike the walk upstream provides, this
+  /// fails on the first element that does not lower rather than leaving it in
+  /// place, so the pass reports an error instead of emitting LIT.
+  LogicalResult replaceElementsIn(Operation *op, bool replaceAttrs = true,
+                                  bool replaceLocs = false,
+                                  bool replaceTypes = false);
+
+  /// Add a rule that skips recursing down its own result. The callback does
+  /// any further replacing itself, which is what lets one lowering hand a
+  /// sub-element to another.
   template <typename FnT,
             typename T = typename llvm::function_traits<
                 std::decay_t<FnT>>::template arg_t<0>,
@@ -360,67 +304,147 @@ public:
                                                 Attribute, Type>,
             typename ResultT = std::invoke_result_t<FnT, T>>
   std::enable_if_t<std::is_convertible_v<ResultT, FailureOr<BaseT>>>
-  addNonRecursiveReplacement(FnT &&callback, DomainId domain) {
-    addReplacement(mlir::AttrTypeReplacer::ReplaceFn<BaseT>(
-                       [f = std::forward<FnT>(callback)](BaseT base)
-                           -> mlir::AttrTypeReplacer::ReplaceFnResult<BaseT> {
-                         if constexpr (std::is_same_v<T, BaseT>) {
-                           FailureOr<BaseT> ret = f(base);
-                           if (succeeded(ret))
-                             return {{*ret, WalkResult::skip()}};
-                           else
-                             return {{nullptr, WalkResult::interrupt()}};
-                         }
-                         if (auto derived = dyn_cast<T>(base)) {
-                           FailureOr<BaseT> ret = f(derived);
-                           if (succeeded(ret))
-                             return {{*ret, WalkResult::skip()}};
-                           else
-                             return {{nullptr, WalkResult::interrupt()}};
-                         }
-                         return {};
-                       }),
-                   domain);
+  addRule(FnT &&callback) {
+    impl.addReplacement(mlir::CyclicAttrTypeReplacer::ReplaceFn<BaseT>(
+        [f = std::forward<FnT>(callback)](BaseT base)
+            -> mlir::CyclicAttrTypeReplacer::ReplaceFnResult<BaseT> {
+          if constexpr (std::is_same_v<T, BaseT>) {
+            FailureOr<BaseT> ret = f(base);
+            if (succeeded(ret))
+              return {{*ret, WalkResult::skip()}};
+            else
+              return {{nullptr, WalkResult::interrupt()}};
+          }
+          if (auto derived = dyn_cast<T>(base)) {
+            FailureOr<BaseT> ret = f(derived);
+            if (succeeded(ret))
+              return {{*ret, WalkResult::skip()}};
+            else
+              return {{nullptr, WalkResult::interrupt()}};
+          }
+          return {};
+        }));
   }
 
-  /// Add a domain-agnostic replacement function.
-  /// Since TypedAttr replacements only need to happen in the type domain, any
-  /// replacement functions for TypedAttrs are only registered in one replacer.
-  /// Other replacers must be registered in both.
-  template <typename FnT,
-            typename T = typename llvm::function_traits<
-                std::decay_t<FnT>>::template arg_t<0>,
-            typename BaseT = std::conditional_t<std::is_base_of_v<Attribute, T>,
-                                                Attribute, Type>,
-            typename ResultT = std::invoke_result_t<FnT, T>>
-  std::enable_if_t<std::is_convertible_v<ResultT, FailureOr<BaseT>>>
-  addInferredDomainNonRecursiveReplacement(FnT &&callback) {
-    addNonRecursiveReplacement(std::forward<FnT>(callback), TypeDomain::AsType);
-    if constexpr (!std::is_same_v<BaseT, TypedAttr>)
-      addNonRecursiveReplacement(std::forward<FnT>(callback),
-                                 TypeDomain::AsValue);
+  template <typename FnT>
+  void addCycleBreaker(FnT &&callback) {
+    impl.addCycleBreaker(std::forward<FnT>(callback));
   }
 
   /// Convenience helper for replacing parameters and returning parameters.
   FailureOr<TypedAttr> replaceParameter(TypedAttr attr) {
-    FailureOr<Attribute> attrOr = replace(attr, TypeDomain::AsType);
+    FailureOr<Attribute> attrOr = replace(attr);
     if (failed(attrOr))
       return failure();
 
     return cast<TypedAttr>(*attrOr);
   }
 
-  /// Table of "erased" struct layouts keyed by the concrete LIT struct
-  /// type (parameter values included). Pointer and function-generator fields
-  /// are erased to pointer-sized indirections.
-  llvm::DenseMap<LIT::StructType, Type> erasedStructs;
-
-  /// The graph of struct -> struct references.
-  const StructRefGraph *structGraph = nullptr;
+private:
+  mlir::CyclicAttrTypeReplacer impl;
 };
 
-using TypeDomain = LowerLITReplacer::TypeDomain;
+LogicalResult Lowering::replaceElementsIn(Operation *op, bool replaceAttrs,
+                                          bool replaceLocs, bool replaceTypes) {
+  // The new element if it changed, null if it did not, so a caller only
+  // re-sets what actually moved.
+  auto replaceIfDifferent =
+      [&](auto element) -> FailureOr<std::conditional_t<
+                            std::is_convertible_v<decltype(element), Attribute>,
+                            Attribute, Type>> {
+    auto replaced = replace(element);
+    if (failed(replaced))
+      return failure();
+    return *replaced != element ? *replaced : nullptr;
+  };
 
+  if (replaceAttrs) {
+    FailureOr<Attribute> newAttrs =
+        replaceIfDifferent(op->getRawDictionaryAttrs());
+    if (failed(newAttrs))
+      return failure();
+    if (*newAttrs)
+      op->setDiscardableAttrs(cast<DictionaryAttr>(*newAttrs));
+
+    // Inherent attributes live in properties, outside the dictionary.
+    LogicalResult inherent = success();
+    if (op->getPropertiesStorageSize())
+      op->getName().walkInherentAttrs(op, [&](StringRef, Attribute &attr) {
+        if (failed(inherent))
+          return;
+        FailureOr<Attribute> replaced = replaceIfDifferent(attr);
+        if (failed(replaced))
+          inherent = failure();
+        else if (*replaced)
+          attr = *replaced;
+      });
+    if (failed(inherent))
+      return failure();
+  }
+
+  if (!replaceTypes && !replaceLocs)
+    return success();
+
+  if (replaceLocs) {
+    FailureOr<Attribute> newLoc = replaceIfDifferent(op->getLoc());
+    if (failed(newLoc))
+      return failure();
+    if (*newLoc)
+      op->setLoc(cast<LocationAttr>(*newLoc));
+  }
+
+  if (replaceTypes) {
+    for (OpResult result : op->getResults()) {
+      FailureOr<Type> newType = replaceIfDifferent(result.getType());
+      if (failed(newType))
+        return failure();
+      if (*newType)
+        result.setType(*newType);
+    }
+  }
+
+  for (Region &region : op->getRegions()) {
+    for (Block &block : region) {
+      for (BlockArgument &arg : block.getArguments()) {
+        if (replaceLocs) {
+          FailureOr<Attribute> newLoc = replaceIfDifferent(arg.getLoc());
+          if (failed(newLoc))
+            return failure();
+          if (*newLoc)
+            arg.setLoc(cast<LocationAttr>(*newLoc));
+        }
+        if (replaceTypes) {
+          FailureOr<Type> newType = replaceIfDifferent(arg.getType());
+          if (failed(newType))
+            return failure();
+          if (*newType)
+            arg.setType(*newType);
+        }
+      }
+    }
+  }
+  return success();
+}
+
+/// Contains the two lowerings a LIT module needs, one per domain. One lowers a
+/// type in the value domain: what the type is as a parameter value. The other
+/// lowers it in the type domain: the layout it occupies, a KGEN storage type.
+/// Each has its own rules and its own cache. A type constant carries one answer
+/// from each domain: its type value is the value domain's and its MLIR type is
+/// the type domain's.
+///
+/// The value domain calls nothing but itself. Computing a type's value
+/// representation never demands a layout, so no cycle can close in the value
+/// domain, and every cycle closes in the type domain, where we can break
+/// indirect references with pointer types.
+///
+/// The type domain delegates one thing to the value domain - the value-domain
+/// half of a type constant - and then continues into the result itself, because
+/// a value-domain result has type-domain positions of its own.
+struct LowerLITReplacer {
+  Lowering asValue;
+  Lowering asType;
+};
 } // namespace
 
 //===----------------------------------------------------------------------===//
@@ -453,37 +477,15 @@ private:
 };
 } // namespace
 
-static FailureOr<Type>
-lowerStructType(StructDecls &decls, LowerLITReplacer &replacer,
-                ParameterEvaluationContext &evalContext, MLIRContext *ctx,
-                Type noneType, LIT::StructType ref, bool eraseIndirections) {
+static FailureOr<Type> lowerStructType(StructDecls &decls,
+                                       LowerLITReplacer &replacer,
+                                       ParameterEvaluationContext &evalContext,
+                                       MLIRContext *ctx, Type noneType,
+                                       LIT::StructType ref) {
   StructDecl &decl = decls.get(ref.getName());
   // Substitute the given parameters in.
   ParameterEvaluator evaluator(decl.decls, ref.getParamValues());
   evaluator.setEvaluationContext(&evalContext);
-
-  // For the outer (non-erased) lowering, precompute and cache the erased layout
-  // so the AsType cycle-breaker can substitute it when the struct re-enters
-  // itself through an indirection.
-  if (!eraseIndirections && decl.needsErasure &&
-      !replacer.erasedStructs.contains(ref)) {
-    FailureOr<Type> erasedOr =
-        lowerStructType(decls, replacer, evalContext, ctx, noneType, ref,
-                        /*eraseIndirections=*/true);
-    if (failed(erasedOr))
-      return failure();
-    replacer.erasedStructs[ref] = *erasedOr;
-  }
-
-  // An erased layout only has to stand in for the real one while a cycle is
-  // broken, so it need only agree on size and alignment.
-  mlir::AttrTypeReplacer erasePointees;
-  erasePointees.addReplacement([&](PointerType type) {
-    return std::make_pair(
-        Type(PointerType::get(noneType, type.getAddressSpace(),
-                              type.getIsNonNull())),
-        WalkResult::skip());
-  });
 
   SmallVector<Type> fieldTypes;
   for (Type type : llvm::make_second_range(decl.fields)) {
@@ -497,40 +499,29 @@ lowerStructType(StructDecls &decls, LowerLITReplacer &replacer,
     Type reboundType = evaluator.getReboundType(type);
     if (!reboundType)
       return failure();
-    if (eraseIndirections) {
-      if (isa<LIT::StructType, FuncTypeGeneratorType>(reboundType)) {
-        fieldTypes.push_back(PointerType::get(noneType));
-        continue;
-      }
-      reboundType = erasePointees.replace(reboundType);
-      if (!reboundType)
-        return failure();
-    }
-
     fieldTypes.push_back(reboundType);
   }
-  if (decl.isSingleElement()) {
-    return replacer.replace(fieldTypes.front(), LowerLITReplacer::AsType);
-  }
+  if (decl.isSingleElement())
+    return replacer.asType.replace(fieldTypes.front());
   // Replace each field type individually, then create the struct.
   SmallVector<Type> replacedTypes;
   replacedTypes.reserve(fieldTypes.size());
   for (Type t : fieldTypes) {
-    auto replaced = replacer.replace(t, LowerLITReplacer::AsType);
+    auto replaced = replacer.asType.replace(t);
     if (failed(replaced) || !*replaced)
       return failure();
     replacedTypes.push_back(*replaced);
   }
   TypedAttr reboundAlignment = evaluator.getReboundAttribute(decl.minAlignment);
   FailureOr<TypedAttr> loweredAlignmentOr =
-      replacer.replaceParameter(reboundAlignment);
+      replacer.asType.replaceParameter(reboundAlignment);
   if (failed(loweredAlignmentOr))
     return failure();
   // Resolve the parametric isMemoryOnly through the evaluator.
   TypedAttr reboundIsMemoryOnly =
       evaluator.getReboundAttribute(decl.isMemoryOnlyAttr);
   FailureOr<TypedAttr> loweredIsMemoryOnlyOr =
-      replacer.replaceParameter(reboundIsMemoryOnly);
+      replacer.asType.replaceParameter(reboundIsMemoryOnly);
   if (failed(loweredIsMemoryOnlyOr))
     return failure();
   return KGEN::StructType::get(ctx, replacedTypes, *loweredIsMemoryOnlyOr,
@@ -548,6 +539,9 @@ LowerLITEvaluationContext::resolveStructOp(TypedAttr typeValue,
   if (!typeParam)
     return failure();
 
+  // A constant still in LIT references the struct in both halves; one already
+  // lowered references it in neither and resolves through the KGEN generator
+  // below.
   auto structType = sugarDynCast<LIT::StructType>(typeParam.getTypeValue());
   if (!structType)
     return SymTabEvaluationContext::resolveStructOp(typeValue, false);
@@ -590,27 +584,27 @@ FailureOr<TypedAttr> LowerLITEvaluationContext::evaluateContextSpecific(
 
 /// Populate `replacer` with the lowering patterns for attributes and types
 /// from the computed lowerings for each struct decl.
-static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
-                             ParameterEvaluationContext &evalContext,
-                             MLIRContext *ctx) {
+static void populateTypeDomainRules(StructDecls &decls,
+                                    LowerLITReplacer &replacer,
+                                    ParameterEvaluationContext &evalContext,
+                                    MLIRContext *ctx) {
   auto typeType = TypeType::get(ctx);
   auto emptyStructType = KGEN::StructType::get(ctx, ArrayRef<Type>{});
   auto emptyStruct = StructAttr::get({}, emptyStructType);
   auto noneType = KGEN::NoneType::get(ctx);
 
-  replacer.addInferredDomainNonRecursiveReplacement(
+  replacer.asType.addRule(
       [&replacer, evalCtxPtr = &evalContext](
           BindParamsAttr bindParams) -> FailureOr<Attribute> {
         // We always simplify BindParamsAttr against a evaluation context.
         SmallVector<TypedAttr> loweredParams;
         for (TypedAttr param : bindParams.getParamValues()) {
-          auto replaced = replacer.replace(param, TypeDomain::AsType);
+          auto replaced = replacer.asType.replace(param);
           if (failed(replaced))
             return failure();
           loweredParams.push_back(cast<TypedAttr>(*replaced));
         }
-        auto generatorOr =
-            replacer.replace(bindParams.getGenerator(), TypeDomain::AsType);
+        auto generatorOr = replacer.asType.replace(bindParams.getGenerator());
         if (failed(generatorOr))
           return failure();
 
@@ -622,15 +616,19 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         return evaluated;
       });
 
-  // TypeParamAttr dispatches replacing to different domains.
-  replacer.addInferredDomainNonRecursiveReplacement(
+  // A type constant is the one place a value-domain position occurs inside a
+  // type-domain tree. Its type value goes to the value domain first, and the
+  // result is then lowered here as well, because a value-domain result has
+  // type-domain positions of its own.
+  replacer.asType.addRule(
       [&replacer](TypeParamAttr typeValue) -> FailureOr<Attribute> {
-        auto typeValueOr =
-            replacer.replace(typeValue.getTypeValue(), TypeDomain::AsValue);
-        auto mlirTypeOr =
-            replacer.replace(typeValue.getMlirType(), TypeDomain::AsType);
-        auto typeOr = replacer.replace(typeValue.getType(), TypeDomain::AsType);
-
+        FailureOr<Type> valueHalfOr =
+            replacer.asValue.replace(typeValue.getTypeValue());
+        if (failed(valueHalfOr))
+          return failure();
+        auto typeValueOr = replacer.asType.replace(*valueHalfOr);
+        auto mlirTypeOr = replacer.asType.replace(typeValue.getMlirType());
+        auto typeOr = replacer.asType.replace(typeValue.getType());
         if (failed(typeValueOr) || failed(mlirTypeOr) || failed(typeOr))
           return failure();
 
@@ -644,113 +642,46 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   // in same (useless) form of `#downcast<T> : !kgen.type` anyway.
   //
   // TODO: preserve trait symbol in KGEN for downcast/conforms_to/is_sub_trait.
-  replacer.addInferredDomainNonRecursiveReplacement(
+  replacer.asType.addRule(
       [&replacer](DowncastAttr downcast) -> FailureOr<Attribute> {
-        auto typeOr = replacer.replace(downcast.getType(), TypeDomain::AsType);
+        auto typeOr = replacer.asType.replace(downcast.getType());
         if (failed(typeOr))
           return failure();
         auto downcastValOr =
-            replacer.replaceParameter(downcast.getInputTypeValue());
+            replacer.asType.replaceParameter(downcast.getInputTypeValue());
         if (failed(downcastValOr))
           return failure();
         // Since we are erasing the trait target type, the downcast becomes
         // essentially an upcast to type.type
         return UpcastAttr::get(*typeOr, *downcastValOr);
       });
-  replacer.addInferredDomainNonRecursiveReplacement(
+  replacer.asType.addRule(
       [](IsRefinedTypeAttr isRefinedTrait) -> FailureOr<Attribute> {
         return SIMDAttr::getScalarBool(isRefinedTrait.getContext(), true);
       });
 
-  // ParamRefTypes should be TypeValueType if in the value domain.
-  replacer.addNonRecursiveReplacement(
-      [&replacer](ParamType paramRef) -> FailureOr<Type> {
-        auto paramRefOr = replacer.replaceParameter(paramRef.getParam());
-        if (failed(paramRefOr))
-          return failure();
-        return TypeValueType::get(*paramRefOr);
-      },
-      TypeDomain::AsValue);
-
-  // The param types of a GeneratorType are always types, not values. Only the
-  // body is lowered in the enclosing domain, so a value-domain generator has
-  // value-domain argument/result types (its body) while its parameter decl
-  // types stay in the type domain. Keeping param decl types in the type domain
-  // matches how `ParamIndexRefAttr` types are lowered (always as types), so
-  // `verify-parameters` sees index references whose types agree with the
-  // parameter declarations they point to.
-  for (TypeDomain domain : {TypeDomain::AsType, TypeDomain::AsValue}) {
-    // Simply report the error after cycle detected.
-    replacer.addCycleBreaker(
-        [&decls, &replacer](Type t) -> std::optional<Type> {
-          if (auto structTp = dyn_cast<LIT::StructType>(t)) {
-            // Returning a null Type signals that an error occurred.
-            reportUnsupportedRecursion(decls, replacer.structGraph,
-                                       structTp.getName());
-            return Type();
-          }
-          // Should be unreachable? must be a aggregated type in order to have
-          // recursive reference.
-          return std::nullopt;
-        },
-        domain);
-
-    auto replaceAsType = [&replacer](Type type) {
-      return replacer.replace(type, TypeDomain::AsType);
-    };
-    replacer.addNonRecursiveReplacement(
-        [domain, replaceAsType,
-         &replacer](GeneratorType gen) -> FailureOr<Type> {
-          SmallVector<FailureOr<Type>> inputParamTypesOr(
-              map_range(gen.getInputParamTypes(), replaceAsType));
-          if (llvm::any_of(inputParamTypesOr, failed))
-            return failure();
-
-          SmallVector<Type> inputParamTypes = llvm::map_to_vector(
-              inputParamTypesOr, [](FailureOr<Type> t) { return *t; });
-          Attribute metadata = gen.getParamListAttrs();
-          if (metadata) {
-            auto metadataOr = replacer.replace(metadata, domain);
-            if (failed(metadataOr))
-              return failure();
-            metadata = *metadataOr;
-          }
-          auto bodyOr = replacer.replace(gen.getBody(), domain);
-          if (failed(bodyOr))
-            return failure();
-
-          return GeneratorType::get(inputParamTypes, *bodyOr, metadata);
-        },
-        domain);
-  }
-
   // All metatypes lower to `!kgen.type`.
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](StructMetaType) { return typeType; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](StructMetaMetaType) { return typeType; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](AnyTraitType) { return typeType; });
-  replacer.addInferredDomainNonRecursiveReplacement(
+  replacer.asType.addRule([=](StructMetaType) { return typeType; });
+  replacer.asType.addRule([=](StructMetaMetaType) { return typeType; });
+  replacer.asType.addRule([=](AnyTraitType) { return typeType; });
+  replacer.asType.addRule(
       [=](FnLiteralTypeGeneratorMetaType) { return typeType; });
-  replacer.addInferredDomainNonRecursiveReplacement(
+  replacer.asType.addRule(
       [=](FnLiteralTypeGeneratorMetaMetaType) { return typeType; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](NonStructTypeType) { return typeType; });
+  replacer.asType.addRule([=](NonStructTypeType) { return typeType; });
 
   // #lit.ref.pack => #kgen.struct
-  replacer.addInferredDomainNonRecursiveReplacement(
+  replacer.asType.addRule(
       [&replacer](RefPackAttr refPack) -> FailureOr<Attribute> {
         SmallVector<TypedAttr> loweredElts;
         loweredElts.reserve(refPack.getValues().size());
         for (TypedAttr elt : refPack.getValues()) {
-          auto eltOr = replacer.replaceParameter(elt);
+          auto eltOr = replacer.asType.replaceParameter(elt);
           if (failed(eltOr))
             return failure();
           loweredElts.push_back(*eltOr);
         }
-        FailureOr<Type> typeOr =
-            replacer.replace(refPack.getType(), TypeDomain::AsType);
+        FailureOr<Type> typeOr = replacer.asType.replace(refPack.getType());
         if (failed(typeOr))
           return failure();
         return StructAttr::get(loweredElts, cast<KGEN::StructType>(*typeOr));
@@ -758,82 +689,60 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
 
   // !lit.ref.pack<:param_list<!kgen.type> types, owned_in_mem, mut origin, 42>
   // => !kgen.struct<variadic_ptr_map(types), 42>
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [&replacer](RefPackType ref) -> FailureOr<Type> {
-        auto variadicOr = replacer.replaceParameter(ref.getVariadic());
-        auto addrSpaceOr = replacer.replaceParameter(ref.getAddressSpace());
-        if (failed(variadicOr) || failed(addrSpaceOr))
-          return failure();
-        auto mapped = ParamOperatorAttr::get(POC::VariadicPtrMap, *variadicOr,
-                                             *addrSpaceOr);
-        return KGEN::StructType::get(ref.getContext(), mapped,
-                                     /*memOnly=*/false, /*minAlign*/ {},
-                                     /*isParamPack=*/true);
-      });
+  replacer.asType.addRule([&replacer](RefPackType ref) -> FailureOr<Type> {
+    auto variadicOr = replacer.asType.replaceParameter(ref.getVariadic());
+    auto addrSpaceOr = replacer.asType.replaceParameter(ref.getAddressSpace());
+    if (failed(variadicOr) || failed(addrSpaceOr))
+      return failure();
+    auto mapped =
+        ParamOperatorAttr::get(POC::VariadicPtrMap, *variadicOr, *addrSpaceOr);
+    return KGEN::StructType::get(ref.getContext(), mapped,
+                                 /*memOnly=*/false, /*minAlign*/ {},
+                                 /*isParamPack=*/true);
+  });
 
   // !lit.ref -> !kgen.pointer
-  for (TypeDomain domain : {TypeDomain::AsType, TypeDomain::AsValue})
-    replacer.addNonRecursiveReplacement(
-        [domain, &replacer](RefType ref) -> FailureOr<Type> {
-          auto elemTpOr = replacer.replace(ref.getElementType(), domain);
-          auto addrSpaceOr = replacer.replaceParameter(ref.getAddressSpace());
-          if (failed(elemTpOr) || failed(addrSpaceOr))
-            return failure();
-          return PointerType::get(*elemTpOr, *addrSpaceOr);
-        },
-        domain);
+  replacer.asType.addRule([&replacer](RefType ref) -> FailureOr<Type> {
+    auto elemTpOr = replacer.asType.replace(ref.getElementType());
+    auto addrSpaceOr = replacer.asType.replaceParameter(ref.getAddressSpace());
+    if (failed(elemTpOr) || failed(addrSpaceOr))
+      return failure();
+    return PointerType::get(*elemTpOr, *addrSpaceOr);
+  });
 
   // Replace all origin attributes with empty structs. These attributes are
   // all terminal.
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](AnyOriginAttr) { return emptyStruct; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](StaticOriginAttr) { return emptyStruct; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](ComptimeOriginAttr) { return emptyStruct; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](OriginUnionAttr) { return emptyStruct; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](OriginMutCastAttr) { return emptyStruct; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](ImplicitOriginRefAttr) { return emptyStruct; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](OriginSetAttr) { return emptyStruct; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](EllipsisAttr) { return emptyStruct; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [](OriginEqAttr) -> FailureOr<Attribute> {
-        llvm_unreachable("OriginEqAttr should be replaced by now");
-      });
+  replacer.asType.addRule([=](AnyOriginAttr) { return emptyStruct; });
+  replacer.asType.addRule([=](StaticOriginAttr) { return emptyStruct; });
+  replacer.asType.addRule([=](ComptimeOriginAttr) { return emptyStruct; });
+  replacer.asType.addRule([=](OriginUnionAttr) { return emptyStruct; });
+  replacer.asType.addRule([=](OriginMutCastAttr) { return emptyStruct; });
+  replacer.asType.addRule([=](ImplicitOriginRefAttr) { return emptyStruct; });
+  replacer.asType.addRule([=](OriginSetAttr) { return emptyStruct; });
+  replacer.asType.addRule([=](EllipsisAttr) { return emptyStruct; });
+  replacer.asType.addRule([](OriginEqAttr) -> FailureOr<Attribute> {
+    llvm_unreachable("OriginEqAttr should be replaced by now");
+  });
 
   // !lit.origin -> !kgen.struct<()>
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](OriginType) { return emptyStructType; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](EllipsisType) { return emptyStructType; });
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [=](OriginSetType) { return emptyStructType; });
+  replacer.asType.addRule([=](OriginType) { return emptyStructType; });
+  replacer.asType.addRule([=](EllipsisType) { return emptyStructType; });
+  replacer.asType.addRule([=](OriginSetType) { return emptyStructType; });
 
-  // When a function-typed field refers back to its containing struct, keep the
-  // outer function type intact for CTFE symbol storage, but lower the recursive
-  // struct occurrence to an erased, pointer-sized layout.
-  replacer.addCycleBreaker(
-      [&decls, &replacer](Type t) -> std::optional<Type> {
-        auto structTp = dyn_cast<LIT::StructType>(t);
-        if (!structTp)
-          return std::nullopt;
-        auto it = replacer.erasedStructs.find(structTp);
-        if (it == replacer.erasedStructs.end()) {
-          reportUnsupportedRecursion(decls, replacer.structGraph,
-                                     structTp.getName());
-          return Type();
-        }
-        return it->second;
-      },
-      TypeDomain::AsType);
+  // A struct whose layout names itself - for example through a function-typed
+  // field whose signature takes the struct - has no finite structural layout,
+  // so the recursion is cut at the re-entry with an opaque pointer. The field
+  // must stay a function type, but its signature is a placeholder: the
+  // interpreter re-presents the stored symbol with `#kgen.func_ptr_bitcast`,
+  // and each use of the field casts to a type lowered outside the cycle.
+  replacer.asType.addCycleBreaker([noneType](Type t) -> std::optional<Type> {
+    if (!isa<LIT::StructType>(t))
+      return std::nullopt;
+    return Type(PointerType::get(noneType));
+  });
 
   // #lit.struct -> #kgen.struct
-  replacer.addInferredDomainNonRecursiveReplacement(
+  replacer.asType.addRule(
       [&, noneType](LITStructAttr attr) -> FailureOr<Attribute> {
         LIT::StructType ref = attr.getType();
         StructDecl &decl = decls.get(ref.getName());
@@ -842,7 +751,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         values.reserve(attr.getValues().size());
         for (auto [entry, type] : llvm::zip(attr.getValues(), decl.fields)) {
           FailureOr<TypedAttr> valueOr =
-              replacer.replaceParameter(std::get<1>(entry));
+              replacer.asType.replaceParameter(std::get<1>(entry));
           if (failed(valueOr))
             return failure();
 
@@ -862,7 +771,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
         if (decl.isSingleElement())
           return values.front();
 
-        auto refOr = replacer.replace(ref, TypeDomain::AsType);
+        auto refOr = replacer.asType.replace(ref);
         if (failed(refOr))
           return failure();
         if (auto type = cast_or_null<KGEN::StructType>(*refOr))
@@ -871,11 +780,11 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       });
 
   // #lit.struct.extract -> #kgen.struct.extract
-  replacer.addInferredDomainNonRecursiveReplacement(
+  replacer.asType.addRule(
       [&](LIT::StructExtractAttr attr) -> FailureOr<Attribute> {
         auto ref = cast<LIT::StructType>(attr.getStructValue().getType());
         int idx = decls.fieldIndices.at({ref.getName(), attr.getField()});
-        auto valueOr = replacer.replaceParameter(attr.getStructValue());
+        auto valueOr = replacer.asType.replaceParameter(attr.getStructValue());
         if (failed(valueOr))
           return failure();
         if (decls.get(ref.getName()).isSingleElement())
@@ -884,89 +793,100 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
       });
 
   // Sugar attr is turned into canonical form.
-  replacer.addInferredDomainNonRecursiveReplacement([&](SugarAttr sugar) {
+  replacer.asType.addRule([&](SugarAttr sugar) {
     llvm_unreachable("sugar should be replaced by now");
     return Attribute();
   });
 
-  // lower TraitType to `!kgen.type` in type domain and
-  //                 to `!kgen.typevalue<@trait>` in value domain.
-  replacer.addNonRecursiveReplacement([=](TraitType) { return typeType; },
-                                      TypeDomain::AsType);
-  replacer.addNonRecursiveReplacement(
-      [=](TraitType traitType) {
-        return TypeValueType::get(
-            TraitInstanceRefAttr::get(ctx, traitType.getSymbols(), typeType));
-      },
-      TypeDomain::AsValue);
+  // A trait's layout is `!kgen.type`; its value-domain form is registered in
+  // `populateValueDomainRules`.
+  replacer.asType.addRule(
+      [=](TraitType) -> FailureOr<Type> { return typeType; });
 
-  replacer.addInferredDomainNonRecursiveReplacement(
-      [&](TraitSymbolAttr attr) -> FailureOr<Attribute> {
-        if (attr.getSymbol().getLeafReference().strref().ends_with(
-                UNI_CLOSURE_TRAIT_NAME)) {
-          SmallVector<TypedAttr> params;
-          for (auto param : attr.getParamValues()) {
-            if (isa<PogListAttr>(param)) // irrelevant after lower-lit
-              continue;
-            auto replaced = replacer.replaceParameter(param);
-            if (failed(replaced))
-              return failure();
+  replacer.asType.addRule([&](TraitSymbolAttr attr) -> FailureOr<Attribute> {
+    if (attr.getSymbol().getLeafReference().strref().ends_with(
+            UNI_CLOSURE_TRAIT_NAME)) {
+      SmallVector<TypedAttr> params;
+      for (auto param : attr.getParamValues()) {
+        // Pog lists are irrelevant after lower-lit.
+        if (isa<PogListAttr>(QuoteAttr::unquote(param)))
+          continue;
+        auto replaced = replacer.asType.replaceParameter(param);
+        if (failed(replaced))
+          return failure();
 
-            // strip the origin metadata too.
-            if (auto meta = dyn_cast<FnMetadataAttr>(*replaced))
-              params.push_back(meta.getWithMetadata(nullptr));
-            else
-              params.push_back(*replaced);
-          }
-          // After pog list is skipped, there are 4 parameter remaining.
-          assert(params.size() == 4);
-          return TraitSymbolAttr::get(attr.getSymbol(), params);
-        }
+        // strip the origin metadata too.
+        if (auto meta = dyn_cast<FnMetadataAttr>(*replaced))
+          params.push_back(meta.getWithMetadata(nullptr));
+        else
+          params.push_back(*replaced);
+      }
+      // After pog list is skipped, there are 4 parameter remaining.
+      assert(params.size() == 4);
+      return TraitSymbolAttr::get(attr.getSymbol(), params);
+    }
 
-        // It has to be a non-parametric trait for non-closures.
-        assert(attr.getParamValues().empty());
-        return attr;
-      });
+    // It has to be a non-parametric trait for non-closures.
+    assert(attr.getParamValues().empty());
+    return attr;
+  });
 
   // Since lowerings have been generated for all struct types, we just need to
   // lookup the lowered type and substitute the parameters.
-  // - For the AsType type domain, convert into a StructType.
-  // - For the AsValue type domain, convert into a symbol reference to the
-  //   pre-created symbol generator op.
-  replacer.addNonRecursiveReplacement(
-      [&, ctx, noneType](LIT::StructType ref) -> FailureOr<Type> {
-        return lowerStructType(decls, replacer, evalContext, ctx, noneType, ref,
-                               /*eraseIndirections=*/false);
-      },
-      TypeDomain::AsType);
+  replacer.asType.addRule([&, ctx,
+                           noneType](LIT::StructType ref) -> FailureOr<Type> {
+    return lowerStructType(decls, replacer, evalContext, ctx, noneType, ref);
+  });
+}
 
-  replacer.addNonRecursiveReplacement(
-      [&](LIT::StructType ref) -> FailureOr<Type> {
-        StringAttr leafName = ref.getValue().getValue().getLeafReference();
-        auto structDeclIter = decls.structDecls.find(leafName);
-        StructDecl &decl = structDeclIter->second;
-        SmallVector<FailureOr<TypedAttr>> loweredParamValuesOr(
-            map_range(ref.getParamValues(), [&](TypedAttr value) {
-              return replacer.replaceParameter(value);
-            }));
-        if (llvm::any_of(loweredParamValuesOr, failed))
-          return failure();
+/// Register the value domain rules.
+///
+/// Lowering in the value domain is a dead-end; it must never break out back
+/// into the type domain. If computing the value representation of a type ever
+/// recursed into demanding the layout of its subtypes, we could hit a cycle.
+static void populateValueDomainRules(StructDecls &decls,
+                                     LowerLITReplacer &replacer,
+                                     MLIRContext *ctx) {
+  auto typeType = TypeType::get(ctx);
 
-        SmallVector<TypedAttr> loweredParamValues(
-            map_range(loweredParamValuesOr,
-                      [&](FailureOr<TypedAttr> value) { return *value; }));
-        auto structMetaOr = replacer.replace(
-            StructMetaType::get(LIT::StructType::get(
-                decl.symRef, loweredParamValues, ref.getSignature())),
-            TypeDomain::AsType);
-        if (failed(structMetaOr))
-          return failure();
+  // Registered first so every type rule below takes precedence.
+  replacer.asValue.addRule(
+      [](Attribute attr) -> FailureOr<Attribute> { return attr; });
 
-        auto concreteSymRef = TypeGeneratorRefAttr::get(
-            decl.symRef, loweredParamValues, *structMetaOr);
-        return TypeValueType::get(concreteSymRef);
-      },
-      TypeDomain::AsValue);
+  // A metatype has the one representation in both domains, `!kgen.type`, and
+  // nothing under it is worth descending into.
+  replacer.asValue.addRule(
+      [=](StructMetaType) -> FailureOr<Type> { return typeType; });
+
+  // A generator's parameter decl types are always types; only its body is a
+  // value. The type domain reaches them by descending into this result and
+  // lowers them there.
+  replacer.asValue.addRule([&replacer](GeneratorType gen) -> FailureOr<Type> {
+    auto bodyOr = replacer.asValue.replace(gen.getBody());
+    if (failed(bodyOr))
+      return failure();
+    return GeneratorType::get(gen.getInputParamTypes(), *bodyOr,
+                              gen.getParamListAttrs());
+  });
+
+  replacer.asValue.addRule([](ParamType paramRef) -> FailureOr<Type> {
+    return TypeValueType::get(paramRef.getParam());
+  });
+
+  replacer.asValue.addRule([=](TraitType traitType) -> FailureOr<Type> {
+    return TypeValueType::get(
+        TraitInstanceRefAttr::get(ctx, traitType.getSymbols(), typeType));
+  });
+
+  // A struct reference becomes a generator reference over the same parameter
+  // values. Its metatype is `!kgen.type`, like every metatype.
+  replacer.asValue.addRule([&decls,
+                            typeType](LIT::StructType ref) -> FailureOr<Type> {
+    StringAttr leafName = ref.getValue().getValue().getLeafReference();
+    StructDecl &decl = decls.structDecls.find(leafName)->second;
+    return TypeValueType::get(
+        TypeGeneratorRefAttr::get(decl.symRef, ref.getParamValues(), typeType));
+  });
 }
 
 //===----------------------------------------------------------------------===//
@@ -977,8 +897,7 @@ namespace {
 /// Struct operations need to refer to the struct declaration symbol.
 struct LITTypeLowerer : public IRRewriter, LowerLITReplacer {
   explicit LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
-                          mlir::LockedSymbolTableCollection &symtab,
-                          const StructRefGraph &structGraph);
+                          mlir::LockedSymbolTableCollection &symtab);
 
   /// Get the index of the struct field.
   int getField(StringAttr name, LIT::StructType ref) {
@@ -1058,17 +977,16 @@ static DebugInfo::DIType buildDebugInfoForStructRef(
 }
 
 LITTypeLowerer::LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
-                               mlir::LockedSymbolTableCollection &symtab,
-                               const StructRefGraph &structGraph)
+                               mlir::LockedSymbolTableCollection &symtab)
     : IRRewriter(module.getContext()), evalContext(module, symtab, structDecls),
       structDecls(structDecls) {
-  this->structGraph = &structGraph;
-  populateReplacer(structDecls, *this, evalContext, module.getContext());
+  populateValueDomainRules(structDecls, *this, module.getContext());
+  populateTypeDomainRules(structDecls, *this, evalContext, module.getContext());
 
   // Build a converter to handle updating converted types within debug info
   // constructs.
   debugTypeConverter.addConversion([&](Type type) -> std::optional<Type> {
-    FailureOr<Type> newTypeOr = replace(type, TypeDomain::AsType);
+    FailureOr<Type> newTypeOr = asType.replace(type);
     if (succeeded(newTypeOr) && *newTypeOr != type)
       return debugTypeConverter.convertDebugType(*newTypeOr);
     return std::nullopt;
@@ -1093,7 +1011,10 @@ LITTypeLowerer::LITTypeLowerer(ModuleOp module, StructDecls &structDecls,
     return debugTypeConverter.convertDebugType(type.getAsPointerType());
   });
 
-  addInferredDomainNonRecursiveReplacement([&](DebugInfo::DIType type) {
+  // Debug info describes storage, so converting it belongs to the type domain.
+  // The converter lowers the types it meets through `asType`, which is why it
+  // must not be reachable from `asValue`.
+  asType.addRule([&](DebugInfo::DIType type) {
     return debugTypeConverter.convertDebugType(type);
   });
 }
@@ -1251,7 +1172,7 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
         return adaptor.getContainer();
     }
 
-    auto resultTypeOr = b.replace(op.getType(), TypeDomain::AsType);
+    auto resultTypeOr = b.asType.replace(op.getType());
     if (failed(resultTypeOr))
       return nullptr;
     auto resultType = cast<PointerType>(*resultTypeOr);
@@ -1290,8 +1211,7 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
 /// Squash noop rebinds exposed by ref -> ptr lowering.
 static Value lowerOp(RebindOp op, RebindOpAdaptor adaptor, LITTypeLowerer &b) {
   // If this is a noop after lowering, squish it
-  if (adaptor.getInput().getType() ==
-      b.replace(op.getType(), TypeDomain::AsType))
+  if (adaptor.getInput().getType() == b.asType.replace(op.getType()))
     return adaptor.getInput();
   // Otherwise just leave it and type replacement will form a valid rebind
   // in the new type domain.
@@ -1301,7 +1221,7 @@ static Value lowerOp(RebindOp op, RebindOpAdaptor adaptor, LITTypeLowerer &b) {
 // lit.ref.pack.create => kgen.struct.create
 static Value lowerOp(RefPackCreateOp op, RefPackCreateOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  auto typeOr = b.replace(op.getType(), TypeDomain::AsType);
+  auto typeOr = b.asType.replace(op.getType());
   if (failed(typeOr))
     return nullptr;
   return StructCreateOp::create(b, op.getLoc(), *typeOr, adaptor.getOperands());
@@ -1313,7 +1233,7 @@ static Value lowerOp(RefPackExtractOp op, RefPackExtractOpAdaptor adaptor,
   Value value = KGEN::StructExtractOp::create(b, op.getLoc(), adaptor.getPack(),
                                               adaptor.getIndex());
   // If the result didn't fold to a pointer type, we need to emit a rebind.
-  FailureOr<Type> expectedOr = b.replace(op.getType(), TypeDomain::AsType);
+  FailureOr<Type> expectedOr = b.asType.replace(op.getType());
   if (failed(expectedOr))
     return nullptr;
   if (value.getType() != *expectedOr)
@@ -1379,7 +1299,7 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
   for (OpOperand &operand : op->getOpOperands()) {
     Value value = operand.get();
 
-    auto newTypeOr = replace(value.getType(), TypeDomain::AsType);
+    auto newTypeOr = asType.replace(value.getType());
     if (failed(newTypeOr))
       return failure();
     // When value is a function argument, location info's function scope is
@@ -1416,15 +1336,9 @@ LogicalResult LITTypeLowerer::materializeLowering(OpT op) {
 LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
                                  mlir::LockedSymbolTableCollection &symtab) {
   // Reject the layouts that contain themselves by value.
-  StructRefGraph structGraph(state);
-  if (failed(analyzeStructRefs(state, structGraph)))
+  if (failed(analyzeStructRefs(state)))
     return failure();
-  // A struct whose lowering re-enters itself needs an erased stand-in layout
-  // pre-built for the cycle breaker to substitute.
-  for (const StructRefNode &node : structGraph.nodes)
-    if (node.onCycle)
-      state.get(node.name).needsErasure = true;
-  LITTypeLowerer b(module, state, symtab, structGraph);
+  LITTypeLowerer b(module, state, symtab);
 
   // Lower operations first.
   WalkResult result = module.walk([&](Operation *op) -> WalkResult {
@@ -1456,11 +1370,10 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
         b.setInsertionPoint(witnessOp);
         Operation *kgenWitnessOp = b.clone(*witnessOp);
         witnessOp.setSymName(std::string(witnessOp.getSymName()) + ".#lit#");
-        LogicalResult res =
-            b.replaceElementsIn(kgenWitnessOp, TypeDomain::AsType,
-                                /*replaceAttrs=*/true,
-                                /*replaceLocs=*/true,
-                                /*replaceTypes=*/true);
+        LogicalResult res = b.asType.replaceElementsIn(kgenWitnessOp,
+                                                       /*replaceAttrs=*/true,
+                                                       /*replaceLocs=*/true,
+                                                       /*replaceTypes=*/true);
         if (failed(res))
           return failure();
       }
@@ -1472,10 +1385,9 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
     if (auto structGen = dyn_cast<StructGeneratorOp>(op))
       return WalkResult::skip();
 
-    LogicalResult res =
-        b.replaceElementsIn(op, TypeDomain::AsType, /*replaceAttrs=*/true,
-                            /*replaceLocs=*/true,
-                            /*replaceTypes=*/true);
+    LogicalResult res = b.asType.replaceElementsIn(op, /*replaceAttrs=*/true,
+                                                   /*replaceLocs=*/true,
+                                                   /*replaceTypes=*/true);
 
     if (failed(res))
       return WalkResult::interrupt();
@@ -1500,26 +1412,18 @@ LogicalResult LIT::lowerLITTypes(ModuleOp module, StructDecls &state,
   // witness entries to keep using LIT types in order for ParameterEvaluator to
   // work smoothly.
   for (StructGeneratorOp structGen : module.getOps<StructGeneratorOp>()) {
-    // Make sure valueDomainType is translated in the value domain.
-    auto valueDomainTypeOr =
-        b.replace(structGen.getValueDomainType(), TypeDomain::AsValue);
-    if (failed(valueDomainTypeOr))
-      return failure();
-
-    LogicalResult res = b.replaceElementsIn(structGen, TypeDomain::AsType,
-                                            /*replaceAttrs=*/true,
-                                            /*replaceLocs=*/true,
-                                            /*replaceTypes=*/true);
+    LogicalResult res = b.asType.replaceElementsIn(structGen,
+                                                   /*replaceAttrs=*/true,
+                                                   /*replaceLocs=*/true,
+                                                   /*replaceTypes=*/true);
     if (failed(res))
       return failure();
-    structGen.setValueDomainType(*valueDomainTypeOr);
 
     // Then lower the body.
     structGen.getBody().walk([&](Operation *op) {
-      LogicalResult res =
-          b.replaceElementsIn(op, TypeDomain::AsType, /*replaceAttrs=*/true,
-                              /*replaceLocs=*/true,
-                              /*replaceTypes=*/true);
+      LogicalResult res = b.asType.replaceElementsIn(op, /*replaceAttrs=*/true,
+                                                     /*replaceLocs=*/true,
+                                                     /*replaceTypes=*/true);
       if (failed(res))
         return WalkResult::interrupt();
 

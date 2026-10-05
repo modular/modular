@@ -1,11 +1,9 @@
 load(
     "//bazel:api.bzl",
-    "modular_py_binary",
     "modular_py_library",
     "modular_py_test",
     "requirement",
 )
-load("//max/tests/integration/test_common:mef_precompile.bzl", "CPU_TORCH", "precompiled_mefs")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -225,10 +223,6 @@ modular_py_library(
     data = [
         "//max/tests/integration/architectures/gemma4/testdata",
     ],
-    # Needs to be lazy, see definition of CPU_TORCH
-    ignore_unresolved_imports = [
-        "torch",
-    ],
     imports = ["."],
     deps = [
         "//max/python/max/dtype",
@@ -237,46 +231,9 @@ modular_py_library(
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/kv_cache",
+        requirement("torch"),
         requirement("transformers"),
     ],
-)
-
-modular_py_binary(
-    name = "precompile_attention_mefs",
-    testonly = True,
-    srcs = ["precompile_attention_mefs.py"],
-    data = [
-        "//max/tests/integration/architectures/gemma4/testdata",
-    ],
-    env = {
-        "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma4/testdata",
-    },
-    # FIXME: pydeps_test sees CPU_TORCH as two torch deps, so `ignore_extra_deps` needs
-    # both. But we can't add both, because they're mutually incompatible.
-    tags = ["no-pydeps"],
-    deps = [
-        ":attention_helpers",
-        "//max/python/max/driver",
-        "//max/python/max/dtype",
-        "//max/python/max/graph",
-        "//max/tests/integration/test_common:mef_precompile",
-    ] + CPU_TORCH,
-)
-
-precompiled_mefs(
-    name = "attention_mefs",
-    producer = ":precompile_attention_mefs",
-    specs = [
-        "compiled_local_bf16",
-        "compiled_global_bf16",
-    ] + select({
-        "//:b200_gpu": [
-            "compiled_local_native_fp8",
-            "compiled_global_native_fp8",
-        ],
-        "//conditions:default": [],
-    }),
-    tags = ["manual"],
 )
 
 modular_py_test(
@@ -287,12 +244,10 @@ modular_py_test(
         "test_attention.py",
     ],
     data = [
-        ":attention_mefs",
         "//max/tests/integration/architectures/gemma4/testdata",
     ],
     env = {
         "PIPELINES_TESTDATA": "max/tests/integration/architectures/gemma4/testdata",
-        "MEF_RLOCATIONS": "$(rlocationpaths :attention_mefs)",
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     exec_properties = {
@@ -300,6 +255,7 @@ modular_py_test(
         "test.resources:gpu-memory": "16",
     },
     gpu_constraints = ["//:has_gpu"],
+    precompile_mefs = True,
     tags = ["gpu"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -313,10 +269,8 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/gemma4",
-        "//max/python/max/pipelines/kv_cache",
         "//max/tests/integration/test_common:context_utils",
         "//max/tests/integration/test_common:graph_utils",
-        "//max/tests/integration/test_common:mef_precompile",
         requirement("numpy"),
         requirement("torch"),
         requirement("transformers"),

@@ -35,7 +35,7 @@ comptime FP6_BYTES_PER_GROUP = 3
 
 
 @fieldwise_init
-struct FP6Format(Equatable, TrivialRegisterPassable):
+struct FP6Format(EnumLike, Equatable, TrivialRegisterPassable):
     """Selects between the two OCP MX FP6 element encodings.
 
     The numeric parameters returned by the accessors below are the entire
@@ -47,6 +47,27 @@ struct FP6Format(Equatable, TrivialRegisterPassable):
 
     comptime E2M3 = Self(0)
     comptime E3M2 = Self(1)
+
+    comptime _enum_case_names = ParameterList.of[
+        "E2M3".value,
+        "E3M2".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "FP6Format has no payload"
 
     def __init__(out self, value: Int):
         self._value = Int32(value)

@@ -152,7 +152,7 @@ def kernel_qk_chain[
 
     # ---- K SMEM allocation + cooperative fill from gmem image -------------
     var k_smem = tt_stack_allocation[T, address_space=.SHARED](smem_layout_k)
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     comptime _smem_total = _K_SLOT_ROWS * _K_SUB_COLS
     var i = tid
     while i < _smem_total:

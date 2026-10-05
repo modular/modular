@@ -116,7 +116,7 @@ def test_case_batched[
         out_idxs_shape.flattened_length()
     )
 
-    # Create LayoutTensor for fill_fn (required by function signature)
+    # Create TileTensor for fill_fn (required by function signature)
     var in_tensor = TileTensor(in_host_ptr, row_major(Coord(in_shape)))
 
     # Fill the buffer with consecutive values
@@ -371,7 +371,7 @@ def test_case_multi_rank[
         out_idxs_shape.flattened_length()
     )
 
-    # Create LayoutTensor for fill_fn (required by function signature)
+    # Create TileTensor for fill_fn (required by function signature)
     var in_tensor = TileTensor(in_host_ptr, row_major(Coord(input_shape)))
 
     # Fill the buffer with consecutive values
@@ -693,7 +693,7 @@ def test_multi_rank[dtype: DType, sampling: Bool](ctx: DeviceContext) raises:
     comptime test_case_multi_rank1 = TestCaseMultiRank[
         _sampling=sampling, rank=1, _largest=True
     ](
-        input_shape=IndexList[1](4096),
+        input_shape=(4096,),
         K=10,
         block_size=256,
     )

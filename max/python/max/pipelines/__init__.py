@@ -63,7 +63,7 @@ from .lib.tokenizer import (
 from .lib.utils import upper_bounded_default
 from .lora import ADAPTER_CONFIG_FILE
 from .modeling.eager_validation import eager_validator
-from .sampling.sampling_config import SamplingConfig
+from .sampling import SamplingConfig
 
 # Hydrate the registry.
 register_all_models()

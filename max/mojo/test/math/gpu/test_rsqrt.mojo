@@ -46,9 +46,9 @@ def run_elementwise[
     var out_buffer = Span(unsafe_ptr=out_device.unsafe_ptr(), length=length)
 
     @inline(.always)
-    @__copy_capture(out_buffer, in_buffer)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    def func[
+        simd_width: Int, alignment: Int = 1
+    ](idx: Coord) {var out_buffer, var in_buffer}:
         out_buffer.unsafe_ptr().unsafe_store[width=simd_width](
             idx[0].value(),
             rsqrt(
@@ -58,7 +58,7 @@ def run_elementwise[
             ),
         )
 
-    elementwise[func, pack_size, target="gpu"](Coord(length), ctx)
+    elementwise[pack_size, target="gpu"](func, Coord(length), ctx)
 
     with out_device.map_to_host() as out_host:
         for i in range(length):

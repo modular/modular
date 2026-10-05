@@ -44,10 +44,10 @@ import numpy.typing as npt
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
+from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType, ops
 from max.nn.kernels import block_scales_interleave
-from max.nn.moe import quant_strategy
-from max.pipelines.architectures.mimo_v2.layers.moe import MiMoV2MoE
+from max.nn.moe import StackedMoE, quant_strategy
+from max.pipelines.architectures.mimo_v2.layers.moe import mimo_v2_moe
 from max.pipelines.architectures.mimo_v2.quant import parse_quant_scheme
 from max.pipelines.architectures.mimo_v2.weight_adapters import (
     interleave_e8m0,
@@ -90,14 +90,14 @@ def _weights(
         return rng.integers(121, 125, (EXPERTS, rows, cols), dtype=np.uint8)
 
     return {
-        "experts_gate_up_proj": rng.integers(
+        "experts.gate_up_proj": rng.integers(
             0, 256, (EXPERTS, 2 * WIDTH, HIDDEN // 2), dtype=np.uint8
         ),
-        "experts_gate_up_proj_scale": e8m0(2 * WIDTH, HIDDEN // 32),
-        "experts_down_proj": rng.integers(
+        "experts.gate_up_proj_scale": e8m0(2 * WIDTH, HIDDEN // 32),
+        "experts.down_proj": rng.integers(
             0, 256, (EXPERTS, HIDDEN, WIDTH // 2), dtype=np.uint8
         ),
-        "experts_down_proj_scale": e8m0(HIDDEN, WIDTH // 32),
+        "experts.down_proj_scale": e8m0(HIDDEN, WIDTH // 32),
         "gate.gate_score.weight": rng.standard_normal(
             (EXPERTS, HIDDEN), dtype=np.float32
         )
@@ -121,9 +121,9 @@ def _state(weights: dict[str, npt.NDArray[Any]]) -> dict[str, Buffer]:
 
 def _moe(
     weights: dict[str, npt.NDArray[Any]],
-) -> tuple[MiMoV2MoE, dict[str, Any]]:
+) -> tuple[StackedMoE, dict[str, Any]]:
     """The serving-mode layer, loaded, and its weights registry."""
-    moe = MiMoV2MoE(
+    moe = mimo_v2_moe(
         hidden_dim=HIDDEN,
         num_experts=EXPERTS,
         num_experts_per_tok=TOP_K,
@@ -147,7 +147,7 @@ def check_interleave(
 ) -> dict[str, Any]:
     """The adapter's interleave against the kernel library's, per stack."""
     result = {}
-    for name in ("experts_gate_up_proj_scale", "experts_down_proj_scale"):
+    for name in ("experts.gate_up_proj_scale", "experts.down_proj_scale"):
         block = weights[name][7]
         with Graph(
             "interleave",
@@ -182,7 +182,7 @@ _INPUTS = [
 ]
 
 
-def build_serving(moe: MiMoV2MoE) -> tuple[Graph, list[dict[str, Any]]]:
+def build_serving(moe: StackedMoE) -> tuple[Graph, list[dict[str, Any]]]:
     """The W4A8 expert rows with element 0 derived and with element 0 given
     as an input, and the derived element 0, as graph outputs.
 
@@ -204,9 +204,12 @@ def build_serving(moe: MiMoV2MoE) -> tuple[Graph, list[dict[str, Any]]]:
         ) as graph:
             shard = moe.shard([DeviceRef.GPU(0)])[0]
             x, idx, element_0 = (v.tensor for v in graph.inputs)
-            derived = shard._w4a8_experts(x, idx)
+            derived = ops.gather(*shard._forward_w4a8(x, idx), axis=0)
             labels = ["derived"] * spy.call_count
-            one = shard._w4a8_experts(x, idx, estimated_total_m=element_0)
+            one = ops.gather(
+                *shard._forward_w4a8(x, idx, estimated_total_m=element_0),
+                axis=0,
+            )
             labels += ["one"] * (spy.call_count - len(labels))
             calls = [
                 {
@@ -255,8 +258,8 @@ def host_reference(
         gate_up = _bf16_round(
             inputs
             @ _dequantize(
-                weights["experts_gate_up_proj"][expert],
-                weights["experts_gate_up_proj_scale"][expert],
+                weights["experts.gate_up_proj"][expert],
+                weights["experts.gate_up_proj_scale"][expert],
             ).T
         )
         gate, up = gate_up[:, :WIDTH], gate_up[:, WIDTH:]
@@ -264,8 +267,8 @@ def host_reference(
         out[where[:, 0], where[:, 1]] = (
             hidden
             @ _dequantize(
-                weights["experts_down_proj"][expert],
-                weights["experts_down_proj_scale"][expert],
+                weights["experts.down_proj"][expert],
+                weights["experts.down_proj_scale"][expert],
             ).T
         )
     return out.reshape(-1, HIDDEN)
@@ -277,7 +280,7 @@ def _bf16_round(x: npt.NDArray[np.float32]) -> npt.NDArray[np.float32]:
     return rounded.astype(np.uint32).view(np.float32)
 
 
-def build_timed(moe: MiMoV2MoE, given_element_0: bool) -> Graph:
+def build_timed(moe: StackedMoE, given_element_0: bool) -> Graph:
     """The W4A8 expert rows alone, element 0 derived or given."""
     extra = [TensorType(DType.uint32, [], device=DeviceRef.CPU())]
     with Graph(
@@ -287,8 +290,13 @@ def build_timed(moe: MiMoV2MoE, given_element_0: bool) -> Graph:
         shard = moe.shard([DeviceRef.GPU(0)])[0]
         x, idx, *element_0 = (v.tensor for v in graph.inputs)
         graph.output(
-            shard._w4a8_experts(
-                x, idx, estimated_total_m=element_0[0] if element_0 else None
+            ops.gather(
+                *shard._forward_w4a8(
+                    x,
+                    idx,
+                    estimated_total_m=element_0[0] if element_0 else None,
+                ),
+                axis=0,
             )
         )
     return graph

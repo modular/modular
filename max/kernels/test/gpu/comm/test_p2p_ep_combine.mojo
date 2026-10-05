@@ -43,6 +43,7 @@ from shmem.ep_comm import (
     dispatch_async_kernel,
 )
 from std.testing import assert_equal
+from std.math import ceildiv
 
 
 def legalize_topk_ids[
@@ -208,7 +209,7 @@ def test_combine[
             # each further lap shifts to the next triple of local experts, so
             # its experts stay distinct however top_k compares to n_ranks.
             comptime n_local = n_experts // n_ranks
-            comptime n_laps = (top_k + n_ranks - 1) // n_ranks
+            comptime n_laps = ceildiv(top_k, n_ranks)
             comptime assert 3 * n_laps <= n_local
             for t in range(n_slots * n_tokens_per_rank):
                 var phase = t % 8

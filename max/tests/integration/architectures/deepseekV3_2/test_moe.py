@@ -81,7 +81,6 @@ def test_moe_with_shared_experts() -> None:
         has_shared_experts=True,
         shared_experts_dim=shared_experts_dim,
         dtype=DType.float8_e4m3fn,
-        apply_router_weight_first=False,
         quant_config=quant_config,
     )
 

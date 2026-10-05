@@ -92,8 +92,9 @@ def test_constructors() raises:
 def test_string_slice_from_string_static_repr() raises:
     """Tests special case of StringSlice from String pointing to static data."""
 
-    def is_static_string(s: String) -> Bool:
-        return not s._is_inline() and not s._is_ref_counted()
+    var is_static_string = lambda (s: String) -> Bool: (
+        not s._is_inline() and not s._is_ref_counted()
+    )
 
     var s1 = String("foo")
     assert_true(is_static_string(s1))
@@ -1323,8 +1324,7 @@ def test_immutable_string_span_compatibility_aliases() raises:
             total += Int(b)
         return total
 
-    def byte_sum_compat(s: ImmStringSlice[_]) -> Int:
-        return byte_sum(s)
+    var byte_sum_compat = lambda (s: ImmStringSlice[_]) -> Int: byte_sum(s)
 
     var mutable_data = String("abc")
     var immutable_data = StaticString("abc")

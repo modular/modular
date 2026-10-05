@@ -500,7 +500,8 @@ def test_compile(test_module: TestModule) -> None:
 
 
 def test_compile_accepts_buffers(test_module: TestModule) -> None:
-    dtype, device = defaults()
+    dtype, mesh = defaults()
+    device = mesh.devices[0]
     type = TensorLayout(dtype, ["batch", "n"], device=device)
     compiled: CompiledCallable[..., Tensor] = test_module.compile(type)
 
@@ -591,7 +592,8 @@ def test_compile_with_weights_missing_parameter_raises() -> None:
 
 def test_compile_with_weights(lazy_test_module: TestModule) -> None:
     test_module = lazy_test_module
-    dtype, device = defaults()
+    dtype, mesh = defaults()
+    device = mesh.devices[0]
     type = TensorLayout(dtype, ["batch", "n"], device=device)
 
     parameters = weakref.WeakValueDictionary(test_module.parameters)

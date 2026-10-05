@@ -74,19 +74,19 @@ def test[
     comptime b_shape_1 = K if transpose_b else N
     var a_tensor = TileTensor(
         a_device_buffer,
-        row_major(Coord(m, Idx[K.value()])),
+        row_major(m, Idx[K.value()]),
     )
     var b_tensor = TileTensor(
         b_device_buffer,
-        row_major(Coord(Idx[b_shape_0.value()], Idx[b_shape_1.value()])),
+        row_major(Idx[b_shape_0.value()], Idx[b_shape_1.value()]),
     )
     var c_tensor = TileTensor(
         c_device_buffer,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
     var c_ref_tensor = TileTensor(
         c_device_ref_buffer,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
 
     comptime if c_type.is_float8():
@@ -345,14 +345,13 @@ def test_float8[fp8_type: DType](ctx: DeviceContext) raises:
 def test_block_k(ctx: DeviceContext) raises:
     print("=== test_block_k")
 
-    @__parameter
     def test_block_k[
         in_type: DType,
         out_type: DType,
         block_k: Int,
         N: Int,
         K: Int,
-    ](m: Int, n: Int, k: Int) raises:
+    ](m: Int, n: Int, k: Int) raises {imm}:
         comptime config = MatmulConfig[in_type, in_type, out_type, True](
             block_tile_shape=Index(64, 64, block_k),
             warp_tile_shape=Index(32, 32, block_k),
@@ -370,13 +369,12 @@ def test_block_k(ctx: DeviceContext) raises:
 def test_warp_k_partitions(ctx: DeviceContext) raises:
     print("=== test_warp_k_partitions")
 
-    @__parameter
     def test_warp_k_partitions[
         in_type: DType,
         out_type: DType,
         N: Int,
         K: Int,
-    ](m: Int, n: Int, k: Int) raises:
+    ](m: Int, n: Int, k: Int) raises {imm}:
         comptime config_type = MatmulConfig[in_type, in_type, out_type, True]
         comptime configs: List[config_type] = [
             # TEST: num_warps=(1, 4, 1).
@@ -468,12 +466,10 @@ def test_partial_tile[
     var c_device = ctx.enqueue_create_buffer[dtype](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[dtype](M * N)
 
-    var a_tensor = TileTensor(a_device, row_major(Coord(Idx[M], Idx[K])))
-    var b_tensor = TileTensor(b_device, row_major(Coord(Idx[K], Idx[N])))
-    var c_tensor = TileTensor(c_device, row_major(Coord(Idx[M], Idx[N])))
-    var c_ref_tensor = TileTensor(
-        c_device_ref, row_major(Coord(Idx[M], Idx[N]))
-    )
+    var a_tensor = TileTensor(a_device, row_major(Idx[M], Idx[K]))
+    var b_tensor = TileTensor(b_device, row_major(Idx[K], Idx[N]))
+    var c_tensor = TileTensor(c_device, row_major(Idx[M], Idx[N]))
+    var c_ref_tensor = TileTensor(c_device_ref, row_major(Idx[M], Idx[N]))
 
     # Small integers keep the accumulation exact in both kernels, so the
     # comparison below can be exact.
@@ -552,9 +548,9 @@ def _run_fp32_split_k[
     mut c_dev: DeviceBuffer[.float32],
 ) raises:
     """Runs the skinny-deep matmul with `num_k_partitions` K-splits."""
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     # Mirrors the fp32 split-K band's config; only num_k_partitions differs
     # (1 = single-pass, >1 = split-K).
@@ -628,9 +624,9 @@ def test_fp32_split_k_dispatch[
         rand(hb.unsafe_ptr(), N * K, min=-1.0, max=1.0)
     ctx.enqueue_memset(c_dev, 0)
 
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](c, a, b, ctx)
 
@@ -667,8 +663,9 @@ def test_matmul_config_from_block_shape(ctx: DeviceContext) raises:
     comptime for block_m in block_sizes:
         comptime for block_n in block_sizes:
 
-            @__parameter
-            def test_block_shape[block_m: Int, block_n: Int, k: Int]() raises:
+            def test_block_shape[
+                block_m: Int, block_n: Int, k: Int
+            ]() raises {imm}:
                 comptime config = _amdgpu_matmul_config_from_block_shape[
                     out_type, in_type, in_type, transpose_b, k
                 ](Index(block_m, block_n))

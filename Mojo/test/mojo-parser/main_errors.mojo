@@ -59,3 +59,24 @@ def main() abi("Mojo"):
 @export("main")
 def fooMain() abi("Mojo"):
     return
+
+
+# // -----
+
+
+@fieldwise_init
+struct ErrorCode(TrivialRegisterPassable):
+    var code: Int
+
+
+# expected-error @below {{'main()' can only raise 'Error'; remove the explicit error type}}
+def main() raises ErrorCode:
+    raise ErrorCode(1)
+
+
+# // -----
+
+
+# expected-error @below {{'main()' can only raise 'Error'; remove the explicit error type}}
+def main() raises Int:
+    raise 1

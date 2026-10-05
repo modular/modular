@@ -193,9 +193,7 @@ struct ImageData[
         var image_shape = ImageShape(self)
 
         @inline(.always)
-        @__copy_capture(image_shape)
-        @__parameter
-        def _compute_index_nchw() -> Int:
+        def _compute_index_nchw() {var image_shape, imm} -> Int:
             # Index [N,C,H,W]
             var idx = n
             idx = idx * image_shape.C + c
@@ -204,9 +202,7 @@ struct ImageData[
             return idx
 
         @inline(.always)
-        @__copy_capture(image_shape)
-        @__parameter
-        def _compute_index_nhwc() -> Int:
+        def _compute_index_nhwc() {var image_shape, imm} -> Int:
             # Index [N,H,W,C]
             var idx = n
             idx = idx * image_shape.H + h
@@ -236,9 +232,7 @@ struct ImageData[
         var image_shape = ImageShape(self)
 
         @inline(.always)
-        @__copy_capture(image_shape)
-        @__parameter
-        def _compute_index_nchw() -> IndexList[4]:
+        def _compute_index_nchw() {var image_shape, imm} -> IndexList[4]:
             # Index [N,C,H,W]
             var lidx, w_idx = divmod(idx, image_shape.W)
             var lidx2, h_idx = divmod(lidx, image_shape.H)
@@ -246,9 +240,7 @@ struct ImageData[
             return IndexList[4](n_idx, c_idx, h_idx, w_idx)
 
         @inline(.always)
-        @__copy_capture(image_shape)
-        @__parameter
-        def _compute_index_nhwc() -> IndexList[4]:
+        def _compute_index_nhwc() {var image_shape, imm} -> IndexList[4]:
             # Index [N,H,W,C]
             var lidx, c_idx = divmod(idx, image_shape.C)
             var lidx2, w_idx = divmod(lidx, image_shape.W)

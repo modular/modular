@@ -3112,6 +3112,320 @@ def mla_fp8_index_top_k(
     return result
 
 
+def mla_kpool_compress(
+    k: TensorValue,
+    gate: TensorValue,
+    ape: TensorValue,
+    input_row_offsets: TensorValue,
+    pool_row_offsets: TensorValue,
+    cache_lengths: TensorValue,
+    kpool: int,
+) -> TensorValue:
+    """Compresses each complete k-pool into one candidate key.
+
+    A pool covers ``kpool`` consecutive tokens of one request and collapses to
+    a single key: a per-channel softmax over ``gate + ape`` across the pool's
+    members, weighting their keys. Pooling is what lets the DSA indexer score
+    ``kv_len / kpool`` candidates instead of ``kv_len``; a pooled key is
+    immutable once its members exist, which is what makes it cacheable.
+
+    Only complete pools are emitted. The tokens after the last complete pool
+    are the caller's tail to handle.
+
+    Args:
+        k: Layer-normed indexer keys, ``[total_tokens, head_dim]``.
+        gate: Per-token gate scores, ``[total_tokens, head_dim]``, same dtype
+            as ``k``.
+        ape: Within-pool position embedding, ``[kpool, head_dim]``, float32.
+        input_row_offsets: Token row offsets per request, ``[batch + 1]``.
+        pool_row_offsets: Pool row offsets per request, ``[batch + 1]``.
+        cache_lengths: Cached-prefix length per request, ``[batch]``. A pool
+            covers absolute positions, so this is what places the call's
+            tokens on the pool grid.
+        kpool: Tokens per pool.
+
+    Returns:
+        ``[total_tokens // kpool, head_dim]`` pooled keys, dtype of ``k``.
+
+        The row count is an upper bound, not the exact pool count: the
+        exact count is data-dependent -- a sum of per-request floors --
+        and the graph compiler needs an output shape derivable from the
+        inputs. The kernel grids on the true pool count it reads from
+        ``pool_row_offsets``, so trailing rows are never written and never
+        read; ``pool_row_offsets`` is what locates each request's pools.
+
+    Raises:
+        ValueError: If ``kpool`` is not positive, if the operand ranks or head
+            dims disagree, or if ``ape`` is not ``[kpool, head_dim]``.
+    """
+    if kpool < 1:
+        raise ValueError(f"kpool must be at least 1, got {kpool}")
+    if k.rank != 2 or gate.rank != 2:
+        raise ValueError(
+            f"k and gate must be rank 2, got {k.rank} and {gate.rank}"
+        )
+    if k.shape[1] != gate.shape[1]:
+        raise ValueError(
+            "k and gate must share head_dim, got"
+            f" {k.shape[1]} and {gate.shape[1]}"
+        )
+    if k.dtype != gate.dtype:
+        raise ValueError(
+            f"k and gate must share dtype, got {k.dtype} and {gate.dtype}"
+        )
+    if ape.rank != 2 or ape.shape[0] != kpool or ape.shape[1] != k.shape[1]:
+        raise ValueError(
+            f"ape must be [kpool, head_dim] = [{kpool}, {k.shape[1]}], got"
+            f" {ape.shape}"
+        )
+
+    return ops.custom(
+        "mo.mla.kpool.compress",
+        device=k.device,
+        values=[
+            k,
+            gate,
+            ape,
+            input_row_offsets,
+            pool_row_offsets,
+            cache_lengths,
+        ],
+        out_types=[
+            TensorType(
+                dtype=k.dtype,
+                shape=(k.shape[0] // kpool, k.shape[1]),
+                device=k.device,
+            )
+        ],
+        parameters={"head_dim": int(k.shape[1]), "kpool": kpool},
+    )[0].tensor
+
+
+def mla_kpool_expand_topk(
+    pool_ids: TensorValue,
+    input_row_offsets: TensorValue,
+    cache_lengths: TensorValue,
+    kpool: int,
+    always_select_tail: bool = True,
+) -> TensorValue:
+    """Expands selected k-pool ids back into the token positions they cover.
+
+    The indexer selects pools; attention reads tokens. Pool ``p`` covers
+    positions ``[p * kpool, (p + 1) * kpool)``, so the selection widens from
+    ``pool_topk`` to ``pool_topk * kpool``. An unselected slot expands to
+    ``-1`` in every one of its positions rather than to a clamped valid one,
+    which would point attention at a token the indexer did not choose.
+
+    With ``always_select_tail`` the result carries ``kpool - 1`` further
+    columns holding the positions after the last complete pool -- the query's
+    most recent tokens, which no complete pool covers yet. The tail is located
+    from the query's visible count, so it tracks the pool currently filling.
+
+    Args:
+        pool_ids: Selected pool ids, ``[total_seq_len, pool_topk]`` int32.
+        input_row_offsets: Token row offsets per request, ``[batch + 1]``.
+        cache_lengths: Cached tokens per request, ``[batch]``.
+        kpool: Tokens per pool.
+        always_select_tail: Whether to append the trailing partial pool.
+
+    Returns:
+        ``[total_seq_len, pool_topk * kpool + tail]`` int32 token positions,
+        ``-1`` where unused, where ``tail`` is ``kpool - 1`` when
+        ``always_select_tail`` and ``0`` otherwise.
+
+    Raises:
+        ValueError: If ``kpool`` is not positive or ``pool_ids`` is not rank 2.
+    """
+    if kpool < 1:
+        raise ValueError(f"kpool must be at least 1, got {kpool}")
+    if pool_ids.rank != 2:
+        raise ValueError(f"pool_ids must be rank 2, got {pool_ids.rank}")
+
+    pool_topk = int(pool_ids.shape[1])
+    tail_width = (kpool - 1) if always_select_tail else 0
+
+    return ops.custom(
+        "mo.mla.kpool.expand_topk",
+        device=pool_ids.device,
+        values=[pool_ids, input_row_offsets, cache_lengths],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=(pool_ids.shape[0], pool_topk * kpool + tail_width),
+                device=pool_ids.device,
+            )
+        ],
+        parameters={
+            "kpool": kpool,
+            "pool_topk": pool_topk,
+            "always_select_tail": always_select_tail,
+        },
+    )[0].tensor
+
+
+def mla_kpool_seed_tail(
+    tail: BufferValue,
+    k: TensorValue,
+    gate: TensorValue,
+    input_row_offsets: TensorValue,
+    cache_lengths: TensorValue,
+    slot_idx: TensorValue,
+    kpool: int,
+) -> None:
+    """Stashes a prefill chunk's trailing tokens into the tail ring.
+
+    Whole pools compress directly from ``k``/``gate`` via
+    :func:`mla_kpool_compress`; the tokens after the last complete pool are
+    that request's in-progress pool and have nowhere else to go until later
+    tokens complete it, so they seed this per-request ring.
+    :func:`mla_kpool_ring_close` reads them back and closes the pool once it
+    fills.
+
+    Args:
+        tail: Persistent slot-indexed ring, mutated in place, dtype of
+            ``k``, ``[max_slots, 2, kpool, head_dim]``. Index 0 holds keys,
+            index 1 holds gate scores.
+        k: Layer-normed indexer keys, ``[total_tokens, head_dim]``.
+        gate: Per-token gate scores, ``[total_tokens, head_dim]``, same dtype
+            as ``k``.
+        input_row_offsets: Token row offsets per request, ``[batch + 1]``.
+        cache_lengths: Cached-prefix length per request, ``[batch]``.
+        slot_idx: Ring slot per request, ``[batch]`` uint32.
+        kpool: Tokens per pool.
+
+    Raises:
+        ValueError: If ``kpool`` is not positive or the operand ranks or
+            head dims disagree.
+    """
+    if kpool < 1:
+        raise ValueError(f"kpool must be at least 1, got {kpool}")
+    if k.rank != 2 or gate.rank != 2:
+        raise ValueError(
+            f"k and gate must be rank 2, got {k.rank} and {gate.rank}"
+        )
+    if k.shape[1] != gate.shape[1]:
+        raise ValueError(
+            "k and gate must share head_dim, got"
+            f" {k.shape[1]} and {gate.shape[1]}"
+        )
+    if k.dtype != gate.dtype:
+        raise ValueError(
+            f"k and gate must share dtype, got {k.dtype} and {gate.dtype}"
+        )
+
+    ops.inplace_custom(
+        "mo.mla.kpool.seed_tail",
+        device=k.device,
+        values=[
+            tail,
+            k,
+            gate,
+            input_row_offsets,
+            cache_lengths,
+            slot_idx,
+        ],
+        parameters={"head_dim": int(k.shape[1]), "kpool": kpool},
+    )
+
+
+def mla_kpool_ring_close(
+    tail: BufferValue,
+    k: TensorValue,
+    gate: TensorValue,
+    ape: TensorValue,
+    input_row_offsets: TensorValue,
+    cache_lengths: TensorValue,
+    slot_idx: TensorValue,
+    kpool: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Closes each request's pending tail-ring pool, ragged and unconditional.
+
+    A cached prefix ending mid-pool leaves that pool's earlier members in
+    ``tail``; neither :func:`mla_kpool_compress` nor :func:`mla_kpool_seed_tail`
+    reads them back -- ``compress`` only ever builds pools entirely from its
+    own call's tokens, skipping the leading remainder the ring already holds.
+    This op is the one that reads that remainder, closing the pool once a
+    call brings enough new tokens to finish it.
+
+    This takes a ragged, arbitrary-width
+    chunk per request rather than a fixed ``next_n``, and closes at most one
+    pool per request per call: the ring never holds more than ``kpool - 1``
+    members between calls, so there is never a second one pending to close.
+    Any further pools a call completes are entirely new tokens and are
+    :func:`mla_kpool_compress`'s job, which already skips exactly the tokens
+    this op consumes.
+
+    Args:
+        tail: Persistent slot-indexed ring, dtype of ``k``, ``[max_slots, 2,
+            kpool, head_dim]``. Read only here -- :func:`mla_kpool_seed_tail`
+            is what mutates it.
+        k: This call's layer-normed keys, ``[total_tokens, head_dim]``.
+        gate: This call's gate scores, ``[total_tokens, head_dim]``, same
+            dtype as ``k``.
+        ape: Within-pool position embedding, ``[kpool, head_dim]``, float32.
+        input_row_offsets: Token row offsets per request, ``[batch + 1]``.
+        cache_lengths: Cached-prefix length per request, ``[batch]``.
+        slot_idx: Ring slot per request, ``[batch]`` uint32.
+        kpool: Tokens per pool.
+
+    Returns:
+        A ``(pooled, closed_pool)`` pair:
+
+        - ``pooled``: ``[batch, head_dim]`` pooled keys, dtype of ``k``,
+          meaningful only where ``closed_pool`` is non-negative.
+        - ``closed_pool``: ``[batch]`` int32 pool id closed this call, or
+          ``-1`` where that request had nothing pending, or not yet enough
+          new tokens to finish it.
+
+    Raises:
+        ValueError: If ``kpool`` is not positive or the operand ranks or
+            head dims disagree.
+    """
+    if kpool < 1:
+        raise ValueError(f"kpool must be at least 1, got {kpool}")
+    if k.rank != 2 or gate.rank != 2:
+        raise ValueError(
+            f"k and gate must be rank 2, got {k.rank} and {gate.rank}"
+        )
+    if k.shape[1] != gate.shape[1]:
+        raise ValueError(
+            "k and gate must share head_dim, got"
+            f" {k.shape[1]} and {gate.shape[1]}"
+        )
+    if k.dtype != gate.dtype:
+        raise ValueError(
+            f"k and gate must share dtype, got {k.dtype} and {gate.dtype}"
+        )
+    if ape.rank != 2 or ape.shape[0] != kpool or ape.shape[1] != k.shape[1]:
+        raise ValueError(
+            f"ape must be [kpool, head_dim] = [{kpool}, {k.shape[1]}], got"
+            f" {ape.shape}"
+        )
+
+    batch = cache_lengths.shape[0]
+    results = ops.inplace_custom(
+        "mo.mla.kpool.ring_close",
+        device=k.device,
+        values=[
+            tail,
+            k,
+            gate,
+            ape,
+            input_row_offsets,
+            cache_lengths,
+            slot_idx,
+        ],
+        out_types=[
+            TensorType(
+                dtype=k.dtype, shape=(batch, k.shape[1]), device=k.device
+            ),
+            TensorType(dtype=DType.int32, shape=(batch,), device=k.device),
+        ],
+        parameters={"head_dim": int(k.shape[1]), "kpool": kpool},
+    )
+    return results[0].tensor, results[1].tensor
+
+
 def msa_sparse_indexer(
     kv_params: KVCacheParams,
     index_q: TensorValue,
@@ -4866,7 +5180,9 @@ def mla_decode_graph(
             with logical token indices into each sequence's KV; MOGG remaps them to
             physical ``block * page_size + offset`` rows before the kernel.
         sparse_topk_lengths: Per-batch valid top-k counts, ``int32`` rank-1.
+            ``None`` means every row uses the full ``sparse_indices_stride``.
         sparse_attn_sink: Per-batch attention sink weights, ``float32`` rank-1.
+            ``None`` means no sink.
         sparse_indices_stride: Row stride in ``sparse_indices`` (max top-k across
             the batch). Required when ``sparse_indices`` is set.
 
@@ -4910,25 +5226,30 @@ def mla_decode_graph(
     input_values.append(scalar_args)
 
     if sparse_indices is not None:
-        if (
-            sparse_topk_lengths is None
-            or sparse_attn_sink is None
-            or sparse_indices_stride is None
-        ):
-            raise ValueError(
-                "sparse_indices requires sparse_topk_lengths, sparse_attn_sink,"
-                " and sparse_indices_stride."
-            )
+        if sparse_indices_stride is None:
+            raise ValueError("sparse_indices requires sparse_indices_stride.")
         if sparse_indices.dtype != DType.int32:
             raise ValueError(
                 f"sparse_indices must be int32, got {sparse_indices.dtype}"
             )
-        if sparse_topk_lengths.dtype != DType.int32:
+        # An absent operand is a comptime op parameter, so the kernels are
+        # specialized on it; the op still takes a tensor, which it never reads.
+        if sparse_topk_lengths is None:
+            parameters["has_topk_lengths"] = False
+            sparse_topk_lengths = ops.constant(
+                [0], dtype=DType.int32, device=q.device
+            )
+        elif sparse_topk_lengths.dtype != DType.int32:
             raise ValueError(
                 "sparse_topk_lengths must be int32, got"
                 f" {sparse_topk_lengths.dtype}"
             )
-        if sparse_attn_sink.dtype != DType.float32:
+        if sparse_attn_sink is None:
+            parameters["has_attn_sink"] = False
+            sparse_attn_sink = ops.constant(
+                [0], dtype=DType.float32, device=q.device
+            )
+        elif sparse_attn_sink.dtype != DType.float32:
             raise ValueError(
                 "sparse_attn_sink must be float32, got"
                 f" {sparse_attn_sink.dtype}"
@@ -5031,7 +5352,9 @@ def mla_prefill_decode_graph(
         sparse_indices: Optional ``int32`` tensor for sparse decode (same semantics
             as :func:`mla_decode_graph`). Used only when the decode branch runs.
         sparse_topk_lengths: Per-batch valid top-k counts for sparse decode.
+            ``None`` means every row uses the full ``sparse_indices_stride``.
         sparse_attn_sink: Per-batch attention sink weights for sparse decode.
+            ``None`` means no sink.
         sparse_indices_stride: Row stride in ``sparse_indices``. Required when
             ``sparse_indices`` is set.
 
@@ -5083,25 +5406,30 @@ def mla_prefill_decode_graph(
     input_values.append(scalar_args)
 
     if sparse_indices is not None:
-        if (
-            sparse_topk_lengths is None
-            or sparse_attn_sink is None
-            or sparse_indices_stride is None
-        ):
-            raise ValueError(
-                "sparse_indices requires sparse_topk_lengths, sparse_attn_sink,"
-                " and sparse_indices_stride."
-            )
+        if sparse_indices_stride is None:
+            raise ValueError("sparse_indices requires sparse_indices_stride.")
         if sparse_indices.dtype != DType.int32:
             raise ValueError(
                 f"sparse_indices must be int32, got {sparse_indices.dtype}"
             )
-        if sparse_topk_lengths.dtype != DType.int32:
+        # An absent operand is a comptime op parameter, so the kernels are
+        # specialized on it; the op still takes a tensor, which it never reads.
+        if sparse_topk_lengths is None:
+            parameters["has_topk_lengths"] = False
+            sparse_topk_lengths = ops.constant(
+                [0], dtype=DType.int32, device=q.device
+            )
+        elif sparse_topk_lengths.dtype != DType.int32:
             raise ValueError(
                 "sparse_topk_lengths must be int32, got"
                 f" {sparse_topk_lengths.dtype}"
             )
-        if sparse_attn_sink.dtype != DType.float32:
+        if sparse_attn_sink is None:
+            parameters["has_attn_sink"] = False
+            sparse_attn_sink = ops.constant(
+                [0], dtype=DType.float32, device=q.device
+            )
+        elif sparse_attn_sink.dtype != DType.float32:
             raise ValueError(
                 "sparse_attn_sink must be float32, got"
                 f" {sparse_attn_sink.dtype}"
@@ -5574,6 +5902,52 @@ def moe_create_indices(
     )
 
 
+def moe_finalize(
+    down_projs: TensorValue,
+    restore_token_order: TensorValue,
+    router_weight: TensorValue,
+    out_type: DType,
+) -> TensorValue:
+    """Fuses the MoE unpermute gather with the top-k weighted row sum.
+
+    Reads each token's ``num_experts_per_token`` expert-permuted rows through
+    ``restore_token_order``, scales each by its ``router_weight``, and sums
+    them, so the ``[num_tokens, num_experts_per_token, hidden]`` unpermuted
+    tensor never materializes in HBM.
+
+    Args:
+        down_projs: Expert outputs in expert-permuted (``token_expert_order``)
+            row order. Shape: ``[num_tokens * num_experts_per_token, hidden]``.
+        restore_token_order: Maps token-major index
+            ``i = token * num_experts_per_token + k`` to its row in
+            ``down_projs``. Shape: ``[num_tokens * num_experts_per_token]``,
+            dtype ``uint32``.
+        router_weight: Per-(token, expert) routing weight applied before the
+            sum. Shape: ``[num_tokens, num_experts_per_token]``.
+        out_type: Output dtype.
+
+    Returns:
+        The combined per-token output. Shape: ``[num_tokens, hidden]``,
+        dtype ``out_type``.
+    """
+    seq_len = router_weight.shape[0]
+    hidden = down_projs.shape[1]
+
+    result = ops.custom(
+        "mo.moe.finalize",
+        device=down_projs.device,
+        values=[down_projs, restore_token_order, router_weight],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[seq_len, hidden],
+                device=down_projs.device,
+            )
+        ],
+    )
+    return result[0].tensor
+
+
 def moe_router_group_limited(
     expert_scores: TensorValue,
     expert_bias: TensorValue,
@@ -5674,6 +6048,192 @@ def moe_router_group_limited(
             ),  # expert_weights
         ],
         parameters=parameters,
+    )
+
+    return (results[0].tensor, results[1].tensor)
+
+
+def _moe_sigmoid_gemv_router_unsupported(
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    hidden_size: int,
+    warp_size: int,
+    weight_dtype: DType = DType.float32,
+) -> str | None:
+    """Returns why the fused sigmoid GEMV router can't run a shape, or None.
+
+    The router runs one thread per routed expert in a single block, and warp
+    0 sorts the last top-k round, so the survivors of the round before it
+    must fit one warp. The gate GEMV reads ``hidden_size`` in 4-wide vectors
+    and stages a slice of it for 32 rows in shared memory, which must fit in
+    48 KiB.
+
+    Args:
+        n_routed_experts: The number of routed experts.
+        n_experts_per_tok: The number of experts selected per token.
+        hidden_size: The gate GEMV's reduction length.
+        warp_size: The target's warp width (32 on NVIDIA, 64 on AMD).
+        weight_dtype: The gate weight's dtype, which the GEMV stages in.
+
+    Returns:
+        A description of the first unsupported dimension, or None if the
+        kernel supports the shape.
+    """
+    if (
+        n_routed_experts <= 0
+        or n_routed_experts % warp_size
+        or n_routed_experts > 1024
+    ):
+        return (
+            f"n_routed_experts must be a positive multiple of {warp_size} and"
+            f" fit in one block (<= 1024) but got {n_routed_experts}"
+        )
+    if n_experts_per_tok <= 0 or n_experts_per_tok > warp_size:
+        return (
+            f"n_experts_per_tok must be in [1, {warp_size}] but got"
+            f" {n_experts_per_tok}"
+        )
+    num_warps = n_routed_experts // warp_size
+    phase2_warps = -(-(num_warps * n_experts_per_tok) // warp_size)
+    if phase2_warps * n_experts_per_tok > warp_size:
+        return (
+            f"{n_routed_experts} routed experts with n_experts_per_tok"
+            f" {n_experts_per_tok} leaves"
+            f" {phase2_warps * n_experts_per_tok} top-k survivors, which"
+            f" exceeds the target's warp width of {warp_size}"
+        )
+    if hidden_size % 4:
+        return f"hidden_size must be a multiple of 4 but got {hidden_size}"
+    # Mirrors the kernel's split count: the most splits, up to 16, that keep
+    # each slice a whole number of 4-wide vectors.
+    num_splits = next(n for n in (16, 8, 4, 2, 1) if hidden_size % (4 * n) == 0)
+    smem_bytes = (
+        32 * (hidden_size // num_splits + 4) * weight_dtype.size_in_bytes
+    )
+    if smem_bytes > 48 * 1024:
+        return (
+            f"hidden_size {hidden_size} needs {smem_bytes} bytes of shared"
+            " memory per block, over the 48 KiB limit"
+        )
+    return None
+
+
+def _moe_sigmoid_gemv_router(
+    hidden_states: TensorValue,
+    gate_weight: TensorValue,
+    expert_bias: TensorValue,
+    n_experts_per_tok: int,
+    norm_weights: bool,
+    routed_scaling_factor: float,
+) -> tuple[TensorValue, TensorValue]:
+    """Routes tokens with a sigmoid gate, fusing the gate GEMV into the router.
+
+    Equivalent to :func:`moe_router_group_limited` with ``n_groups == 1`` on
+    ``sigmoid(hidden_states.cast(gate_weight.dtype) @ gate_weight.T)``, as
+    one op (``mo.moe.sigmoid.gemv.single.group.router``). On GPU it runs a
+    split-K gate GEMV that writes partial dot products, and the router kernel
+    adds them and applies the sigmoid as it loads its scores, so no separate
+    matmul reduction or sigmoid runs. The gate GEMV accumulates in
+    ``gate_weight.dtype``.
+
+    NVIDIA and AMD GPUs only. The router runs one thread per routed expert, so
+    ``n_routed_experts`` must be a multiple of the warp width (32 on NVIDIA,
+    64 on AMD) and at most 1024, and its top-k survivors must fit one warp.
+    ``hidden_size`` must be a multiple of 4, and the GEMV's staged slice of
+    it must fit in 48 KiB of shared memory.
+
+    Args:
+        hidden_states: The token hidden states. Shape:
+            ``[num_tokens, hidden_size]``.
+        gate_weight: The router weight. Shape:
+            ``[n_routed_experts, hidden_size]``.
+        expert_bias: The per-expert correction bias, used for selection
+            only. Shape: ``[n_routed_experts]``.
+        n_experts_per_tok: The number of experts to select per token.
+        norm_weights: Whether to normalize the selected weights to sum to
+            one before scaling.
+        routed_scaling_factor: The factor multiplied into every weight.
+
+    Returns:
+        A tuple of two tensors:
+
+        - expert_indices: The indices of the routed experts for each
+          token. Shape: ``[num_tokens, n_experts_per_tok]``.
+        - expert_weights: The weights of the routed experts for each
+          token, in ``gate_weight.dtype``. Shape:
+          ``[num_tokens, n_experts_per_tok]``.
+
+    Raises:
+        ValueError: If the inputs aren't on a GPU, or their shapes or the
+            routing configuration aren't supported by the kernel.
+    """
+    device = DeviceRef.from_device(hidden_states.device)
+    if not device.is_gpu() or _is_apple_gpu():
+        raise ValueError(
+            "moe_sigmoid_gemv_router is only supported on NVIDIA and AMD GPUs"
+        )
+    if gate_weight.rank != 2 or hidden_states.rank != 2:
+        raise ValueError(
+            "expected rank-2 hidden_states and gate_weight but got"
+            f" {hidden_states.rank} and {gate_weight.rank}"
+        )
+    if gate_weight.shape[1] != hidden_states.shape[1]:
+        raise ValueError(
+            "expected gate_weight of shape [n_routed_experts, hidden_size]"
+            f" but got {gate_weight.shape}"
+        )
+    if expert_bias.rank != 1 or expert_bias.shape[0] != gate_weight.shape[0]:
+        raise ValueError(
+            "expected expert_bias of shape [n_routed_experts] but got"
+            f" {expert_bias.shape}"
+        )
+    if not gate_weight.dtype.is_float() or not hidden_states.dtype.is_float():
+        raise ValueError(
+            "expected floating point hidden_states and gate_weight but got"
+            f" {hidden_states.dtype} and {gate_weight.dtype}"
+        )
+
+    # Check the kernel's shape limits here so an unsupported model fails at
+    # graph construction instead of in the Mojo compiler.
+    n_routed_experts = int(gate_weight.shape[0])
+    reason = _moe_sigmoid_gemv_router_unsupported(
+        n_routed_experts=n_routed_experts,
+        n_experts_per_tok=n_experts_per_tok,
+        hidden_size=int(gate_weight.shape[1]),
+        warp_size=64 if _is_amd_gpu() else 32,
+        weight_dtype=gate_weight.dtype,
+    )
+    if reason is not None:
+        raise ValueError(reason)
+
+    results = ops.custom(
+        "mo.moe.sigmoid.gemv.single.group.router",
+        device=device,
+        values=[
+            hidden_states,
+            gate_weight,
+            expert_bias,
+            ops.constant(
+                routed_scaling_factor, DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=[hidden_states.shape[0], n_experts_per_tok],
+                device=device,
+            ),  # expert_indices
+            TensorType(
+                dtype=gate_weight.dtype,
+                shape=[hidden_states.shape[0], n_experts_per_tok],
+                device=device,
+            ),  # expert_weights
+        ],
+        parameters={
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "norm_weights": norm_weights,
+        },
     )
 
     return (results[0].tensor, results[1].tensor)
@@ -6239,15 +6799,17 @@ def grouped_dynamic_block_scaled_matmul_amd(
     preshuffled_b: bool = False,
     a_scales_preshuffled: bool = False,
     a_scales_max_padded_m: int = 0,
+    a_scales_max_rows_per_expert: int | None = None,
     decode_grid_m_cap: int = 0,
     decode_grid_m_rows: int = 0,
 ) -> TensorValue:
-    """Performs grouped NVFP4 matmul for MoE layers.
+    """Performs grouped block-scaled AMD matmul for MoE layers.
 
-    Performs a grouped matmul with MXFP4 (4-bit) quantized inputs and weights.
-    The inputs are packed as uint8 (2 MXFP4 values per byte) with float8_e8m0fnu
-    scaling factors. MXFP4 uses fixed 1D block scaling with 32 elements per
-    scale factor along the K dimension.
+    Performs a grouped matmul with MX block-scaled inputs and weights: MXFP4
+    on both (packed as uint8, 2 values per byte), MXFP8 on both
+    (float8_e4m3fn), or W4A8 with MXFP8 inputs against packed MXFP4 weights.
+    Every format uses float8_e8m0fnu scaling factors with fixed 1D block
+    scaling, 32 elements per scale factor along the K dimension.
 
     ``hidden_states`` and ``expert_start_indices`` together implement the ragged
     tensor representation for variable-length expert inputs.
@@ -6255,10 +6817,12 @@ def grouped_dynamic_block_scaled_matmul_amd(
     Args:
         hidden_states: The input activations with shape
             ``[total_tokens, K/2]`` at MXFP4 or ``[total_tokens, K]`` at MXFP8,
-            where K is the unpacked hidden dimension.
+            where K is the unpacked hidden dimension. float8_e4m3fn
+            activations are accepted against either float8_e4m3fn or packed
+            uint8 weights.
         weight: The expert weights, shaped ``[num_experts, N, K/2]`` at MXFP4
-            or ``[num_experts, N, K]`` at MXFP8. Must share ``hidden_states``'
-            dtype: uint8 (packed MXFP4) or float8_e4m3fn (MXFP8).
+            or ``[num_experts, N, K]`` at MXFP8. Equal MX formats are supported;
+            dense W4A8 uses E4M3 activations and packed uint8 MXFP4 weights.
         a_scales: Scaling factors for inputs with shape
             ``[num_scale_rows, K/32]``. Dtype must be float8_e8m0fnu.
         b_scales: Scaling factors for weights with shape
@@ -6270,6 +6834,11 @@ def grouped_dynamic_block_scaled_matmul_amd(
             num_active_experts].
         out_type: Output dtype. Defaults to bfloat16.
         estimated_total_m: The estimated total number of tokens.
+        a_scales_max_rows_per_expert: Graph-build-time bound on the unpadded
+            rows one expert can hold, sizing the per-step A-scale slot buffer.
+            ``None`` falls back to the post-expansion row count, which
+            over-allocates each slot roughly ``top_k``-fold. Must be positive
+            when given. Ignored unless ``preshuffled_b``.
         decode_grid_m_cap: Decode-band gate on the AMD preb path; 0 disables.
             Selects the band; `decode_grid_m_rows` bounds the grid.
         decode_grid_m_rows: Rows grid.y must cover per expert on the decode
@@ -6286,25 +6855,35 @@ def grouped_dynamic_block_scaled_matmul_amd(
             f"expected hidden_states of rank 2 but got {hidden_states.rank}"
         )
 
-    weight_k = weight.shape[2]
-    hidden_k = hidden_states.shape[1]
-    if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
-        raise ValueError(
-            "expected weight is of shape [num_experts, *, "
-            f"{hidden_k}] but got {weight.shape}"
-        )
-
-    # The kernel infers the packing from the shapes, so both operands need only
-    # agree on one MX dtype: uint8 (MXFP4) or float8_e4m3fn (MXFP8).
-    if hidden_states.dtype != weight.dtype or hidden_states.dtype not in (
+    mixed_w4a8 = (
+        hidden_states.dtype == DType.float8_e4m3fn
+        and weight.dtype == DType.uint8
+    )
+    equal_mx = hidden_states.dtype == weight.dtype and hidden_states.dtype in (
         DType.uint8,
         DType.float8_e4m3fn,
-    ):
+    )
+    if not equal_mx and not mixed_w4a8:
         raise TypeError(
-            "hidden_states and weight must share one MX dtype, either uint8 "
-            "(MXFP4) or float8_e4m3fn (MXFP8), but got "
-            f"{hidden_states.dtype}, {weight.dtype}"
+            "operands must share an MX dtype or use E4M3 activations with"
+            " packed uint8 MXFP4 weights, but got"
+            f" {hidden_states.dtype}, {weight.dtype}"
         )
+    if mixed_w4a8 and (preshuffled_b or a_scales_preshuffled):
+        raise ValueError(
+            "mixed AMD W4A8 requires row-major operands and scales"
+        )
+
+    a_elems_per_byte = 2 if hidden_states.dtype == DType.uint8 else 1
+    b_elems_per_byte = 2 if weight.dtype == DType.uint8 else 1
+    hidden_k = hidden_states.shape[1] * a_elems_per_byte
+    weight_k = weight.shape[2] * b_elems_per_byte
+    if weight_k != hidden_k:
+        raise ValueError(
+            f"logical K mismatch: activations have {hidden_k}, weights {weight_k}"
+        )
+    if mixed_w4a8 and int(hidden_k) % 128:
+        raise ValueError("mixed AMD W4A8 logical K must be a multiple of 128")
 
     if (a_scales.dtype != b_scales.dtype) or (
         a_scales.dtype != DType.float8_e8m0fnu
@@ -6323,6 +6902,11 @@ def grouped_dynamic_block_scaled_matmul_amd(
         raise ValueError(
             f"expected expert_ids of rank 1 but got {expert_ids.rank}"
         )
+    if weight.shape[0] != expert_ids.shape[0]:
+        raise ValueError(
+            f"weight expert extent {weight.shape[0]} must match expert_ids"
+            f" length {expert_ids.shape[0]}; weight shape is {weight.shape}"
+        )
     if expert_start_indices.dtype != DType.uint32:
         raise TypeError(
             "expert_start_indices dtype must be uint32, but got"
@@ -6340,14 +6924,18 @@ def grouped_dynamic_block_scaled_matmul_amd(
             f" {a_scales.rank} and {b_scales.rank}"
         )
 
+    if not preshuffled_b and not a_scales_preshuffled:
+        if a_scales.shape[0] != hidden_states.shape[0]:
+            raise ValueError(
+                "row-major a_scales rows must match activation rows"
+            )
+
     MXFP4_SF_VECTOR_SIZE = 32
 
     # Shapes are in BYTES, so recover the element count before counting scale
     # groups: MXFP4 stores two elements per byte, MXFP8 one.
-    elems_per_byte = 2 if hidden_states.dtype == DType.uint8 else 1
-
     a_scales_dim_1 = ceildiv(
-        hidden_states.shape[1] * elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
+        hidden_states.shape[1] * a_elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
     )
     if a_scales.shape[1] != a_scales_dim_1:
         raise ValueError(
@@ -6357,7 +6945,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
         )
 
     b_scales_dim_2 = ceildiv(
-        weight.shape[2] * elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
+        weight.shape[2] * b_elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
     )
     if (
         b_scales.shape[0] != weight.shape[0]
@@ -6372,9 +6960,13 @@ def grouped_dynamic_block_scaled_matmul_amd(
     # `estimated_total_m` defaults to 0 (unknown). When `preshuffled_b` is
     # True, the AMD preb kernel uses it to choose between persistent (small)
     # and direct 3D-grid (large) dispatch paths. Ignored on the dense path.
+    #
+    # Host-resident, like every caller's own `estimated_total_m`: the kernel
+    # takes it as a scalar operand, so building the default on the activation's
+    # device fails custom-op verification rather than defaulting.
     if estimated_total_m is None:
         estimated_total_m_arg = ops.constant(
-            0, dtype=DType.uint32, device=hidden_states.device
+            0, dtype=DType.uint32, device=DeviceRef.CPU()
         )
     else:
         estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
@@ -6395,6 +6987,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
             expert_usage_stats_host[0].cast(DType.uint32),
             expert_usage_stats_host[1].cast(DType.uint32),
             num_experts=int(weight.shape[0]),
+            max_rows_per_expert=a_scales_max_rows_per_expert,
         )
 
     # The matmul derives the A-scale per-expert slot stride as
@@ -6455,7 +7048,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
             "preshuffled_b": preshuffled_b,
             # Both formats reach the kernel as raw bytes, so this is what tells
             # them apart: 16 bytes per lane at MXFP4, 32 at MXFP8.
-            "lane_bytes": 32 // elems_per_byte,
+            "lane_bytes": 32 // a_elems_per_byte,
         },
     )[0].tensor
 
@@ -6576,9 +7169,11 @@ def grouped_dynamic_scaled_mxfp6_matmul(
             f" {b_scales_dim_2}] but got {b_scales.shape}"
         )
 
+    # Host-resident for the same reason as the MXFP4 sibling: the kernel takes
+    # it as a scalar operand.
     if estimated_total_m is None:
         estimated_total_m_arg = ops.constant(
-            0, dtype=DType.uint32, device=hidden_states.device
+            0, dtype=DType.uint32, device=DeviceRef.CPU()
         )
     else:
         estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
@@ -7636,6 +8231,7 @@ def quantize_dynamic_scaled_float8(
     out_type: DType = DType.float8_e4m3fn,
     scales_type: DType = DType.bfloat16,
     amax_floor: float = 0.0,
+    row_offsets: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Dynamically quantize the input tensor to fp8.
 
@@ -7644,6 +8240,12 @@ def quantize_dynamic_scaled_float8(
         scale_ub: The upper bound of the scale factor.
         group_size_or_per_token: The group size for quantization. When set to -1,
             the quantization is column-wise.
+        row_offsets: Optional grouped-matmul row prefix sum, whose last entry is
+            the number of rows that carry data. Supply it when ``input`` is a
+            worst-case-sized buffer that the producer only partly filled, such
+            as the EP dispatch receive buffer; rows past that count are left
+            untouched rather than quantized. The quantized values and scales of
+            the rows below it are identical either way.
         out_type: The type of the output tensor.
         scales_type: The type of the scales tensor.
         amax_floor: Lower bound applied to a group's max-abs before the scale
@@ -7671,6 +8273,12 @@ def quantize_dynamic_scaled_float8(
         raise ValueError(
             "amax_floor is only supported with float8_e8m0fnu scales, got"
             f" {scales_type}"
+        )
+
+    if amax_floor > 0.0 and row_offsets is not None:
+        raise ValueError(
+            "amax_floor and row_offsets cannot be combined: the row-bounded"
+            " op takes no amax_floor parameter"
         )
 
     if not isinstance(input.shape[1], StaticDim):
@@ -7702,6 +8310,23 @@ def quantize_dynamic_scaled_float8(
             (input.shape[0] + padding_size - 1) // padding_size
         ) * padding_size
 
+    values: list[Value[Any]] = [
+        input,
+        ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+    ]
+    op_name = "mo.quantize_dynamic_scaled_float8"
+    if row_offsets is not None:
+        if row_offsets.dtype != DType.uint32 or row_offsets.rank != 1:
+            raise ValueError(
+                "row_offsets must be a rank-1 uint32 tensor, but got"
+                f" {row_offsets.rank}-D {row_offsets.dtype}"
+            )
+        # A distinct symbol, not a third operand: the graph compiler's
+        # RMS-norm and all-reduce fusion patterns match the unbounded op on
+        # its two-operand signature.
+        op_name += ".row_bounded"
+        values.append(row_offsets)
+
     # The kernel takes the floor string-encoded (the extensibility bridge has no
     # float parameter), and the RMS-norm fusion pattern only matches a quantize
     # op carrying exactly one parameter, so leave it off at the default.
@@ -7712,12 +8337,9 @@ def quantize_dynamic_scaled_float8(
         parameters["amax_floor"] = repr(amax_floor)
 
     result = ops.custom(
-        "mo.quantize_dynamic_scaled_float8",
+        op_name,
         device=input.device,
-        values=[
-            input,
-            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
-        ],
+        values=values,
         out_types=[
             TensorType(
                 dtype=out_type,
@@ -9011,6 +9633,7 @@ def block_scaled_preshuffle_grouped_scale_4d(
     max_num_tokens_per_expert: TensorValue,
     num_active_experts: TensorValue,
     num_experts: int,
+    max_rows_per_expert: int | None = None,
 ) -> TensorValue:
     """Applies the per-step A-scale preshuffle for the AMD CDNA4 preb kernel.
 
@@ -9034,11 +9657,21 @@ def block_scaled_preshuffle_grouped_scale_4d(
         num_active_experts: Scalar ``uint32`` number of active expert slots.
         num_experts: Graph-build-time upper bound on ``num_active_experts``
             (e.g. ``weight.shape[0]``). Used to size the output buffer.
+        max_rows_per_expert: Graph-build-time upper bound on the UNPADDED rows
+            one expert can hold, used to size its slot. Padded here to the
+            kernel's 32-row stride, so pass a token count rather than a padded
+            one. ``None`` falls back to ``total_tokens``, which is correct but
+            roughly ``top_k``-fold larger per slot than anything the matmul
+            reads. Must be positive and bound ``max_num_tokens_per_expert`` at
+            every step: too small is silent corruption, since the matmul
+            strides past the allocation.
 
     Returns:
-        Rank-2 ``float8_e8m0fnu`` tensor ``[num_experts * total_tokens,
-        K_SCALES]``. The first ``num_active_experts * max_padded_M`` rows
-        are written; the rest is left untouched but accessible.
+        Rank-2 ``float8_e8m0fnu`` tensor ``[num_experts * slot_rows,
+        K_SCALES]``, where ``slot_rows`` is ``align_up(max_rows_per_expert,
+        32)`` or ``total_tokens``. The first ``num_active_experts *
+        max_padded_M`` rows are written; the rest is left untouched but
+        accessible, and is what ``max_rows_per_expert`` bounds.
     """
     if a_scales.rank != 2:
         raise ValueError(
@@ -9054,8 +9687,26 @@ def block_scaled_preshuffle_grouped_scale_4d(
             "expert_start_indices must be rank 1, got rank"
             f" {expert_start_indices.rank}"
         )
+    if max_rows_per_expert is not None and max_rows_per_expert <= 0:
+        raise ValueError(
+            "max_rows_per_expert must be > 0 when given, got"
+            f" {max_rows_per_expert}"
+        )
 
-    out_rows = num_experts * a_scales.shape[0]
+    # The default is not a loose worst case, it is the wrong QUANTITY:
+    # `a_scales.shape[0]` counts rows POST-expansion (tokens * top_k), while an
+    # expert holds at most the PRE-expansion token count, because a token's
+    # top_k picks are distinct. Sizing `num_experts` slots by the former is
+    # invisible at decode and fatal at prefill -- 896 experts x 105,760 rows x
+    # 112 B is 10.6 GB where 665 MB is addressed, on a model with ~4 GB of
+    # headroom. Padded to 32 here rather than at the call site so a caller
+    # cannot hand over an unpadded bound and read past the slot.
+    slot_rows = (
+        a_scales.shape[0]
+        if max_rows_per_expert is None
+        else ((max_rows_per_expert + 31) // 32) * 32
+    )
+    out_rows = num_experts * slot_rows
 
     return ops.custom(
         "mo.block.scaled.preshuffle.scale.4d_per_expert",
@@ -11448,6 +12099,87 @@ def apply_qk_rms_norm(
     return q_out.tensor, k_out.tensor
 
 
+def indexer_score_ragged(
+    q: TensorValue,
+    weights: TensorValue,
+    input_row_offsets: TensorValue,
+    base: TensorValue,
+    cutoff: TensorValue,
+    collection: PagedCacheValues,
+    layer: TensorValue,
+    *,
+    num_candidates: int,
+) -> TensorValue:
+    """Scores queries against the entries of a paged compressed leaf.
+
+    DeepSeek-V4's lightning indexer: ``score[t, c] = sum_h relu(q[t, h] .
+    k[e]) * weights[t, h]`` over the heads in ``q``. The candidate axis is
+    ``cap = num_candidates // 2`` columns of entries closed before the chunk
+    (column ``c`` is entry ``c``, live while ``c < base[b]``) followed by
+    ``cap`` columns of the chunk's windows (column ``cap + w`` is entry
+    ``base[b] + w``, live while that entry is below ``cutoff[t]``). Dead
+    columns are 0. Every live entry must already be in the leaf; issue the
+    store before this op.
+
+    Args:
+        q: ``[total_rows, num_heads, head_dim]`` indexer queries, ragged
+            over the batch.
+        weights: ``[total_rows, num_heads]`` float32 per-head weights.
+        input_row_offsets: ``[batch + 1]`` uint32 row offsets of ``q``.
+        base: ``[batch]`` int32 entries each request closed before this
+            chunk.
+        cutoff: ``[total_rows]`` int32 entries each query may see.
+        collection: The compressed leaf (single head, paged by entry
+            through ``slots_per_page``).
+        layer: uint32 scalar, this layer's index in the leaf.
+        num_candidates: Width of the candidate axis, even.
+
+    Returns:
+        ``[total_rows, num_candidates]`` float32 scores.
+    """
+    _check_rank(3, q=q)
+    _check_rank(2, weights=weights)
+    _check_rank(
+        1, input_row_offsets=input_row_offsets, base=base, cutoff=cutoff
+    )
+    _check_dtype(DType.float32, weights=weights)
+    _check_dtype(DType.uint32, input_row_offsets=input_row_offsets, layer=layer)
+    _check_dtype(DType.int32, base=base, cutoff=cutoff)
+    _check_rank(6, kv_blocks=collection.kv_blocks)
+    if num_candidates <= 0 or num_candidates % 2:
+        raise ValueError(
+            f"num_candidates must be positive and even, got {num_candidates}"
+        )
+    if collection.kv_blocks.shape[5] != q.shape[2]:
+        raise ValueError(
+            f"q head_dim {q.shape[2]} does not match the leaf's"
+            f" {collection.kv_blocks.shape[5]}"
+        )
+
+    return ops.inplace_custom(
+        "mo.indexer_score.ragged.paged",
+        device=q.device,
+        values=[
+            q,
+            weights,
+            input_row_offsets,
+            base,
+            cutoff,
+            collection.kv_blocks,
+            collection.page_stride,
+            collection.cache_lengths,
+            collection.lookup_table,
+            collection.max_prompt_length,
+            collection.max_cache_length,
+            layer,
+        ],
+        out_types=[
+            TensorType(DType.float32, [q.shape[0], num_candidates], q.device)
+        ],
+        parameters={"num_heads": int(q.shape[1])},
+    )[0].tensor
+
+
 def latent_sparse_attention_ragged(
     q: TensorValue,
     input_row_offsets: TensorValue,
@@ -11534,75 +12266,126 @@ def latent_sparse_attention_ragged(
     )[0].tensor
 
 
-def mhc_split_sinkhorn(
-    mixes: TensorValue,
-    scale: TensorValue,
-    base: TensorValue,
-    *,
+def hyper_connection_gates(
+    hc_proj: TensorValue,
+    pre_post_comb_b: TensorValue,
+    pre_post_comb_scale: TensorValue,
     hc_mult: int,
-    sinkhorn_iters: int,
-    eps: float,
-    post_mult: float = 2.0,
+    hc_eps: float,
+    hc_sinkhorn_iters: int,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """Splits mHC mixing logits and Sinkhorn-projects the combination block.
+    r"""Computes the Manifold-Constrained Hyper-Connections (mHC) gates.
 
-    ``mixes[t]`` holds ``(2 + hc) * hc`` logits: ``hc`` pre, ``hc`` post, then
-    an ``hc x hc`` combination in row-major order. Each part is scaled by its
-    entry of ``scale`` and offset by ``base``; ``pre`` is
-    ``sigmoid(.) + eps``, ``post`` is ``post_mult * sigmoid(.)``, and the
-    combination is row-softmaxed plus ``eps``, column-normalized, then
-    ``sinkhorn_iters - 1`` times row- and column-normalized, every normalizer
-    being ``sum + eps``. One kernel launch computes all of it.
+    Fuses everything an mHC site does between its stream projection and its
+    stream collapse into one kernel: the ``pre`` and ``post`` sigmoids, the
+    softmax that seeds the ``comb`` mixer, and the ``hc_sinkhorn_iters``
+    Sinkhorn-Knopp steps that project ``comb`` onto the doubly-stochastic
+    manifold. Reference: Xie et al. 2026, section 2.2 equation 8.
+
+    ``hc_proj`` is the projection of the normalized residual streams, split
+    along its last axis into a ``pre`` band, a ``post`` band, and a flattened
+    ``hc_mult x hc_mult`` ``comb`` band. ``pre_post_comb_b`` is the matching
+    concatenated bias and ``pre_post_comb_scale`` holds one scale per band. All
+    three are ``float32``, as are all three outputs.
+
+    Rows are independent, so a ragged batch needs no row offsets: fold the
+    batch and sequence axes into ``hc_proj``'s leading axis.
 
     Args:
-        mixes: ``[tokens, (2 + hc_mult) * hc_mult]`` float32 logits.
-        scale: ``[3]`` float32 per-part scales.
-        base: ``[(2 + hc_mult) * hc_mult]`` float32 bias.
-        hc_mult: The number of residual copies ``hc``.
-        sinkhorn_iters: Sinkhorn rounds, at least one.
-        eps: Floor added to ``pre``, the softmax and every normalizer.
-        post_mult: Multiplier on the ``post`` sigmoid.
+        hc_proj: The projected residual streams. Shape:
+            ``[total_seq_len, 2 * hc_mult + hc_mult ** 2]``.
+        pre_post_comb_b: Per-output bias, concatenated in ``pre``, ``post``,
+            ``comb`` order. Shape: ``[2 * hc_mult + hc_mult ** 2]``.
+        pre_post_comb_scale: Per-output scale, in ``pre``, ``post``, ``comb``
+            order. Shape: ``[3]``.
+        hc_mult: The number of parallel residual streams. Must be a power of
+            two whose square fits in one warp.
+        hc_eps: Epsilon guarding the Sinkhorn divisions.
+        hc_sinkhorn_iters: Number of Sinkhorn-Knopp iterations.
 
     Returns:
-        ``pre`` ``[tokens, hc]``, ``post`` ``[tokens, hc]`` and ``comb``
-        ``[tokens, hc, hc]``, all float32.
-    """
-    _check_rank(2, mixes=mixes)
-    _check_rank(1, scale=scale, base=base)
-    _check_dtype(DType.float32, mixes=mixes, scale=scale, base=base)
-    width = (2 + hc_mult) * hc_mult
-    if int(mixes.shape[1]) != width or int(base.shape[0]) != width:
-        raise ValueError(
-            f"expected mixes/base width {width} for hc_mult={hc_mult}, got"
-            f" {mixes.shape[1]} / {base.shape[0]}"
-        )
-    if int(scale.shape[0]) != 3:
-        raise ValueError(
-            f"expected scale to have 3 entries, got {scale.shape[0]}"
-        )
-    if sinkhorn_iters < 1:
-        raise ValueError(f"sinkhorn_iters must be >= 1, got {sinkhorn_iters}")
+        A tuple of three tensors:
 
-    tokens = mixes.shape[0]
-    device = mixes.device
-    pre, post, comb = ops.custom(
-        "mo.mhc.split_sinkhorn",
-        device=device,
-        values=[mixes, scale, base],
+        - ``pre``: stream-collapse weights. Shape: ``[total_seq_len,
+          hc_mult]``.
+        - ``post``: sublayer-output placement weights in ``[0, 2]``. Shape:
+          ``[total_seq_len, hc_mult]``.
+        - ``comb``: the row-major stream mixer. Shape: ``[total_seq_len,
+          hc_mult ** 2]``.
+
+    Raises:
+        ValueError: If a dtype, rank, or width does not match ``hc_mult``, or
+            if ``hc_mult`` / ``hc_sinkhorn_iters`` are out of range.
+    """
+    _check_dtype(
+        DType.float32,
+        hc_proj=hc_proj,
+        pre_post_comb_b=pre_post_comb_b,
+        pre_post_comb_scale=pre_post_comb_scale,
+    )
+    _check_rank(2, hc_proj=hc_proj)
+    _check_rank(
+        1,
+        pre_post_comb_b=pre_post_comb_b,
+        pre_post_comb_scale=pre_post_comb_scale,
+    )
+
+    if hc_mult < 1 or hc_mult & (hc_mult - 1):
+        raise ValueError(
+            f"expected hc_mult to be a power of two, got {hc_mult}"
+        )
+    if hc_sinkhorn_iters < 1:
+        raise ValueError(
+            f"expected hc_sinkhorn_iters >= 1, got {hc_sinkhorn_iters}"
+        )
+
+    mix_width = 2 * hc_mult + hc_mult**2
+    if hc_proj.shape[1] != mix_width:
+        raise ValueError(
+            f"expected hc_proj of width {mix_width} for hc_mult {hc_mult}, got"
+            f" {hc_proj.shape[1]}"
+        )
+    if pre_post_comb_b.shape[0] != mix_width:
+        raise ValueError(
+            f"expected pre_post_comb_b of size {mix_width} for hc_mult"
+            f" {hc_mult}, got {pre_post_comb_b.shape[0]}"
+        )
+    if pre_post_comb_scale.shape[0] != 3:
+        raise ValueError(
+            "expected pre_post_comb_scale of size 3, got"
+            f" {pre_post_comb_scale.shape[0]}"
+        )
+
+    rows = hc_proj.shape[0]
+    results = ops.custom(
+        "mo.hyper_connection.gates",
+        device=hc_proj.device,
+        values=[
+            hc_proj,
+            pre_post_comb_b,
+            pre_post_comb_scale,
+            ops.constant(hc_eps, DType.float32, device=DeviceRef.CPU()),
+        ],
         out_types=[
-            TensorType(DType.float32, [tokens, hc_mult], device),
-            TensorType(DType.float32, [tokens, hc_mult], device),
-            TensorType(DType.float32, [tokens, hc_mult * hc_mult], device),
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult],
+                device=hc_proj.device,
+            ),  # pre
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult],
+                device=hc_proj.device,
+            ),  # post
+            TensorType(
+                dtype=DType.float32,
+                shape=[rows, hc_mult**2],
+                device=hc_proj.device,
+            ),  # comb
         ],
         parameters={
             "hc_mult": hc_mult,
-            "sinkhorn_iters": sinkhorn_iters,
-            "eps": repr(float(eps)),
-            "post_mult": repr(float(post_mult)),
+            "hc_sinkhorn_iters": hc_sinkhorn_iters,
         },
     )
-    return (
-        pre.tensor,
-        post.tensor,
-        ops.reshape(comb.tensor, [tokens, hc_mult, hc_mult]),
-    )
+    return (results[0].tensor, results[1].tensor, results[2].tensor)

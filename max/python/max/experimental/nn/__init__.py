@@ -59,6 +59,7 @@ from max.experimental.compilation import as_subgraph
 from .common_layers.lora_wrapper import LoRA, lora_layers, lora_parameters
 from .conv import Conv2d
 from .embedding import Embedding
+from .hyper_connection import HyperConnection
 from .linear import Linear
 from .module import (
     Module,
@@ -75,6 +76,7 @@ __all__ = [
     "Embedding",
     "GemmaRMSNorm",
     "GroupNorm",
+    "HyperConnection",
     "LayerNorm",
     "Linear",
     "LoRA",

@@ -25,13 +25,7 @@ from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from layout import Coord, Idx, stack_allocation, TileTensor
 from layout.tile_layout import row_major, blocked_product
 from std.sys import has_accelerator
-from std.sys.info import (
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-    is_apple_gpu,
-    is_nvidia_gpu,
-    simd_width_of,
-)
+from std.sys.info import simd_width_of
 from std.testing import assert_equal, assert_false, assert_true
 from std.sys import exit
 
@@ -46,7 +40,7 @@ def shared_memory_alloc_example() raises:
     def kernel(tensor: TileTensor[dtype, type_of(input_layout), MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         # start-shared-memory-alloc-example
         comptime tile_layout = row_major[block_size, block_size]()
@@ -164,7 +158,7 @@ def simple_copy_example():
     def kernel(tensor: TileTensor[dtype, type_of(input_layout), MutAnyOrigin]):
         # extract a tile from the input tensor.
         var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
+            block_idx.y, block_idx.x
         )
         comptime tile_layout = row_major[block_size, block_size]()
         var shared_tile = stack_allocation[dtype, address_space=.SHARED](

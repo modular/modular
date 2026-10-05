@@ -25,7 +25,6 @@ from max.engine import Model
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.graph_input_stager import InputDescriptor
-from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     RAGGED_INPUT_ROW_OFFSETS,
     RAGGED_INPUT_TOKENS,
@@ -79,7 +78,9 @@ class InklingInputs(ModelInputs):
 
 
 class InklingBatchProcessor(
-    SingleReplicaRaggedBatchProcessor[TextAndVisionContext, InklingInputs]
+    SingleReplicaRaggedBatchProcessor[
+        TextAndVisionContext, InklingInputs, InklingConfig
+    ]
 ):
     """Ragged batching with Inkling's vision operands.
 
@@ -87,7 +88,7 @@ class InklingBatchProcessor(
     """
 
     def __init__(
-        self, config: ArchConfig, runtime: BatchProcessorRuntime
+        self, config: InklingConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(
             config,
@@ -102,7 +103,6 @@ class InklingBatchProcessor(
                 )
             ],
         )
-        assert isinstance(config, InklingConfig)
         self._hidden_size = config.text_config.hidden_size
         self._dtype = config.dtype
         self._vision_model: Model | None = None

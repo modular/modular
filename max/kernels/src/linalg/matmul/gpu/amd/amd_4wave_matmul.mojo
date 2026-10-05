@@ -67,7 +67,12 @@ from pipeline.types import _Ops
 from structured_kernels.amd_tile_io import RegTileEpilogue, TileLoaderLDS
 from structured_kernels.amd_tile_io_conv import TileLoaderLDSIm2col
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseEpilogueFn,
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+    no_epilogue_fn,
+)
 from .amd_target import mi355x_target
 from .amd_4wave_schedule import (
     LOAD_A,
@@ -810,6 +815,77 @@ struct AMD4WaveMatmul[
             b: Input tile-tensor for B.
             c: Output tile-tensor for C (or workspace for split-K).
         """
+        Self._run_impl[num_splits=num_splits, has_epilogue_fn=False](
+            a, b, c, no_epilogue_fn
+        )
+
+    @__llvm_metadata(`rocdl.waves_per_eu`=SIMDLength(1))
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.config.num_threads())
+        )
+    )
+    @__name(
+        t"amd_4wave_matmul_epilogue_fn_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
+    )
+    @staticmethod
+    def run_with_epilogue_fn[
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_layout: TensorLayout,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        c_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+    ](
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Same as `run` without split-K, storing the output through
+        `epilogue_fn`.
+
+        Launch with `host_arg=epilogue_fn`. Requires
+        `elementwise_lambda_fn` to be unset.
+
+        Parameters:
+            a_layout: Logical layout of `a`.
+            b_layout: Logical layout of `b`.
+            c_layout: Logical layout of `c`.
+            a_engine: Engine of `a`.
+            b_engine: Engine of `b`.
+            c_engine: Engine of `c`.
+            EpilogueFnType: Type of `epilogue_fn`.
+
+        Args:
+            a: Input tile-tensor for A.
+            b: Input tile-tensor for B.
+            c: Output tile-tensor for C. Only its shape is read.
+            epilogue_fn: Stores each output chunk.
+        """
+        Self._run_impl[num_splits=1, has_epilogue_fn=True](a, b, c, epilogue_fn)
+
+    @staticmethod
+    @inline(.always)
+    def _run_impl[
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_layout: TensorLayout,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        c_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        *,
+        num_splits: Int,
+        has_epilogue_fn: Bool,
+    ](
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        epilogue_fn: EpilogueFnType,
+    ):
         Self.validate_config()
 
         comptime BM = Self.BM
@@ -842,7 +918,7 @@ struct AMD4WaveMatmul[
 
         # split_id from grid_dim.z; always 0 when num_splits=1
         # (grid_dim.z=1) so reading is harmless.
-        var split_id = Int(block_idx.z)
+        var split_id = block_idx.z
 
         var _lane_id = lane_id()
         var _warp_id = readfirstlane(warp_id())
@@ -857,7 +933,7 @@ struct AMD4WaveMatmul[
         var num_pid_m = ceildiv(M, BM)
         comptime num_pid_n_static = ceildiv(N, BN)
         var pid_m_pid_n = _xcd_wgm_swizzle(
-            Int(block_idx.x), num_pid_m, num_pid_n_static
+            block_idx.x, num_pid_m, num_pid_n_static
         )
         var pid_m = pid_m_pid_n[0]
         var pid_n = pid_m_pid_n[1]
@@ -1223,7 +1299,12 @@ struct AMD4WaveMatmul[
                             .raw_load[width=c_frag_size](0)
                             .cast[Self.c_type]()
                         )
-                        c_writer.store(v, m=m_dram, n=n_global)
+                        comptime if has_epilogue_fn:
+                            c_writer.store_with_epilogue_fn(
+                                epilogue_fn, v, m=m_dram, n=n_global
+                            )
+                        else:
+                            c_writer.store(v, m=m_dram, n=n_global)
 
     @__llvm_metadata(`rocdl.waves_per_eu`=SIMDLength(1))
     @__llvm_metadata(
@@ -1378,7 +1459,7 @@ struct AMD4WaveMatmul[
 
         # split_id from grid_dim.z; always 0 when num_splits=1
         # (grid_dim.z=1) so reading is harmless.
-        var split_id = Int(block_idx.z)
+        var split_id = block_idx.z
 
         var _lane_id = lane_id()
         var _warp_id = readfirstlane(warp_id())
@@ -1393,7 +1474,7 @@ struct AMD4WaveMatmul[
         var num_pid_m = ceildiv(M, BM)
         comptime num_pid_n_static = ceildiv(N, BN)
         var pid_m_pid_n = _xcd_wgm_swizzle(
-            Int(block_idx.x), num_pid_m, num_pid_n_static
+            block_idx.x, num_pid_m, num_pid_n_static
         )
         var pid_m = pid_m_pid_n[0]
         var pid_n = pid_m_pid_n[1]
@@ -1908,7 +1989,7 @@ struct AMD4WaveMatmul[
                                 alignment=align_of[
                                     SIMD[Self.c_type, c_frag_size]
                                 ]()
-                            ](IndexList[2](m_logical, n_global), v)
+                            ]((m_logical, n_global), v)
                         comptime if has_residual:
                             var skip = prefetched[
                                 m_mma * num_n_mmas + n_mma
@@ -2004,6 +2085,91 @@ def structured_4wave_matmul[
     Raises:
         An error if device enqueue fails.
     """
+    _structured_4wave_matmul_impl[
+        enable_swizzle=enable_swizzle,
+        block_m_override=block_m_override,
+        block_n_override=block_n_override,
+        block_k_override=block_k_override,
+        dump_asm_path=dump_asm_path,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=False,
+    ](a, b, c, no_epilogue_fn, ctx)
+
+
+@inline(.always)
+def structured_4wave_matmul[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    enable_swizzle: Bool = True,
+    block_m_override: Int = 0,
+    block_n_override: Int = 0,
+    block_k_override: Int = 0,
+](
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Runs the 4-wave matmul, storing the output through an epilogue
+    closure value instead of writing `c`.
+
+    Parameters:
+        a_type: Element type of `a`.
+        b_type: Element type of `b`.
+        c_type: Element type of `c`.
+        EpilogueFnType: Type of `epilogue_fn`.
+        enable_swizzle: Enable LDS bank-conflict avoidance.
+        block_m_override: If > 0, force BM (see the other overload).
+        block_n_override: If > 0, force BN (see the other overload).
+        block_k_override: If > 0, force BK (see the other overload).
+
+    Args:
+        a: Input tile-tensor for A.
+        b: Input tile-tensor for B.
+        c: Output tile-tensor for C. Only its shape is read.
+        epilogue_fn: Receives global `(m, n)` coords and a SIMD chunk.
+        ctx: Device context used to enqueue the kernel.
+
+    Raises:
+        An error if device enqueue fails.
+    """
+    _structured_4wave_matmul_impl[
+        enable_swizzle=enable_swizzle,
+        block_m_override=block_m_override,
+        block_n_override=block_n_override,
+        block_k_override=block_k_override,
+        dump_asm_path="",
+        elementwise_lambda_fn=None,
+        has_epilogue_fn=True,
+    ](a, b, c, epilogue_fn, ctx)
+
+
+@inline(.always)
+def _structured_4wave_matmul_impl[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    *,
+    enable_swizzle: Bool,
+    block_m_override: Int,
+    block_n_override: Int,
+    block_k_override: Int,
+    dump_asm_path: StaticString,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+](
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
         a_type.is_float8() or a_type == .bfloat16 or a_type == .float16
@@ -2035,16 +2201,16 @@ def structured_4wave_matmul[
     var M = Int(c.dim[0]())
 
     @inline(.always)
-    @__parameter
-    def run_kernel[config: MatmulKernelConfig]() raises:
-        comptime kernel = AMD4WaveMatmul[
+    def run_kernel[config: MatmulKernelConfig]() raises {imm}:
+        comptime kernel_type = AMD4WaveMatmul[
             a_type,
             b_type,
             c_type,
             config,
             enable_swizzle,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ].run[
+        ]
+        comptime kernel = kernel_type.run[
             type_of(a).LayoutType,
             type_of(b).LayoutType,
             type_of(c).LayoutType,
@@ -2056,7 +2222,25 @@ def structured_4wave_matmul[
         var num_blocks_n = ceildiv(N, config.block_shape[1])
 
         var num_blocks_m = ceildiv(M, config.block_shape[0])
-        comptime if dump_asm_path != "":
+        comptime if has_epilogue_fn:
+            comptime value_kernel = kernel_type.run_with_epilogue_fn[
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
+                type_of(c).LayoutType,
+                type_of(a).Engine,
+                type_of(b).Engine,
+                type_of(c).Engine,
+                EpilogueFnType,
+            ]
+            ctx.enqueue_function[value_kernel](
+                a,
+                b,
+                c,
+                host_arg=epilogue_fn,
+                grid_dim=(num_blocks_n * num_blocks_m,),
+                block_dim=config.num_threads(),
+            )
+        elif dump_asm_path != "":
             ctx.enqueue_function[kernel, dump_asm=dump_asm_path](
                 a,
                 b,

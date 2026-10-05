@@ -227,6 +227,7 @@ class HttpRuntimeProxy(Runtime):
                 f"{self._base_url}/worker",
                 data=pickle.dumps(worker),
                 headers={"Content-Type": "application/pickle"},
+                timeout=aiohttp.ClientTimeout(total=None, sock_connect=30),
             ) as response,
         ):
             response.raise_for_status()

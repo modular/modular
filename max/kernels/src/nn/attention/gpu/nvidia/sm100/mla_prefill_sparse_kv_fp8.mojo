@@ -26,6 +26,7 @@ from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
+    lane_id,
     warp_id,
     thread_idx,
     WARP_SIZE,
@@ -931,7 +932,7 @@ struct MLAPrefillSparseFP8[
         var cta_id = UInt32(block_idx.x % Self.config.cta_group)
         var seq_idx = UInt32(block_idx.x // Self.config.cta_group)
         var warp_idx = warp_id()
-        var lane_idx = thread_idx.x % WARP_SIZE
+        var lane_idx = lane_id()
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
         var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
         var num_k_blocks = max(

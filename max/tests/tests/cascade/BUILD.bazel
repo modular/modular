@@ -199,6 +199,13 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_fd_limits",
+    size = "small",
+    srcs = ["test_fd_limits.py"],
+    deps = ["//max/python/max/experimental/cascade/core"],
+)
+
+modular_py_test(
     name = "test_routing",
     size = "small",
     srcs = ["test_routing.py"],

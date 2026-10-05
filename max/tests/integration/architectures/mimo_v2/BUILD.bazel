@@ -23,7 +23,6 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
         "//max/python/max/pipelines/architectures",
@@ -109,7 +108,12 @@ modular_py_test(
         "//:has_multi_gpu",
     ],
     imports = ["."],
-    tags = ["gpu"],
+    # Postsubmit: an expensive B200 test that presubmit would rerun on any
+    # change to its dependencies.
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
     deps = [
         ":mimo_runner",
         ":tiny_fixture",

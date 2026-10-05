@@ -1293,8 +1293,9 @@ def test_format_args() raises:
     var s = " {} , {} {} !".format("Hello", "Beautiful", "World")
     assert_equal(s, " Hello , Beautiful World !")
 
-    def curly(c: StaticString) -> String:
-        return "there is a single curly " + c + " left unclosed or unescaped"
+    var curly = lambda (c: StaticString) -> String: (
+        "there is a single curly " + c + " left unclosed or unescaped"
+    )
 
     with assert_raises(contains=curly("{")):
         _ = String("{ {}").format(1)

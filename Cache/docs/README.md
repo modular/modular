@@ -28,6 +28,10 @@ implement the `llvm::MemoryBuffer` and `llvm::raw_pwrite_stream` APIs. The
 usual with the AsyncRT ref-counting infrastructure, `BufferRef` is a
 `RCRef` of the `Buffer` class, same for the `WriteableBuffer` class.
 
+Both classes are general enough to be useful outside the cache, so they live in
+`Support/include/Support/Buffer.h` in the `M::` namespace rather than in
+`Cache/`.
+
 `Buffer` interns any data passed to it on construction - it's important to
 ensure that any references to it actually extend the lifetime of the underlying
 memory, which means that the class itself should own the memory. If a string
@@ -46,15 +50,16 @@ operation. The user should instead use the `pwrite` API to write data to a
 particular offset.
 
 ```c++
-using namespace Cache;
+using namespace M;
 ...
 
 BufferRef buffer = Buffer::get("hello");
 llvm::outs() << buffer->getBuffer() << "\n"; // prints "hello"
 ...
 
-BufferRef fileBuf = Buffer::getFile("foo.txt");
-llvm::outs() << buffer->getBuffer() << "\n"; // prints the contents of foo.txt
+ErrorOr<BufferRef> fileBufOr = Buffer::getFile("foo.txt");
+BufferRef fileBuf = std::move(*fileBufOr);
+llvm::outs() << fileBuf->getBuffer() << "\n"; // prints the contents of foo.txt
 ...
 
 WriteableBufferRef writeableBuf = WriteableBuffer::get();
@@ -84,25 +89,26 @@ as a linked-list, where the next node in the list is known as the delegate. The
 base BlobCacheBackend class handles asynchrony so that the individual backends
 can implement synchronous operations for the API functions. Backends should
 generally be simple to construct and should generally not require data to be
-copied. For an example, look at the [FileSystemBackend](../lib/BlobCache.cpp).
+copied. For an example, look at the [FilesystemBackend](../lib/BlobCache.cpp).
 It simply reads from and writes to a particular directory - this means that
-multiple `FileSystemBackend` instances can share the same cache directory.
+multiple `FilesystemBackend` instances can share the same cache directory.
 This is a property we should strive to maintain.
 
 `BlobCacheBackend` is a virtual base class, and implementations need to provide
 the following:
 
 ```c++
-/// Subclasses should use this to provide the implementation of actually
-/// storing an item.
-virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) = 0;
-/// Subclasses should use this to provide the implementation of checking if an
-/// item exists.
-virtual bool containsImpl(StringRef keyHash) const = 0;
-/// Subclasses should use this to provide the implementation of getting an
-/// item from storage.
-virtual CacheFindResult findImpl(StringRef keyHash) const = 0;
+/// Must be overwritten to provide synchronous insert.
+virtual ErrorOrSuccess insertSyncImpl(StringRef keyHash, BufferRef obj) = 0;
+/// Must be overwritten to provide synchronous contains.
+virtual ErrorOr<bool> containsSyncImpl(StringRef keyHash) = 0;
+/// Must be overwritten to provide a synchronous find.
+virtual ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) = 0;
 ```
+
+A backend that can do better than the base class's synchrony wrapper may also
+override the async `insertImpl`, `containsImpl`, and `findImpl` overloads
+declared alongside these.
 
 ### KeyInfo
 
@@ -128,8 +134,8 @@ its result. This is important because in the future this may kick off a network
 request, which we should not synchronously wait on.
 
 The `BlobCache` assumes overwrite semantics on `insert`, so it is incumbent on
-the user to provide a strong hash function - the region and transform caches
-use SHA-256 as a hash function currently.
+the user to provide a strong hash function - the transform cache uses a
+128-bit xxhash currently.
 
 ## Transform Caching
 
@@ -151,7 +157,8 @@ auto xform = cachedTransform(*module1, transformCache, std::move(readyChain),
                              pm);
 ```
 
-This example runs a set of provided passes, caches the result, and at the end,
+This example runs a set of provided passes and caches the result, keyed on the
+input IR and the pass pipeline.
 
 The most complex part of caching a transform is understanding what the cache
 key needs to include. In the case of the MLIR pass pipeline, the cache key

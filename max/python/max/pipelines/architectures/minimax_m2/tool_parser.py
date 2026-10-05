@@ -167,6 +167,7 @@ class MinimaxM2ToolParser(StructuralTagToolParser):
         tools: list[dict[str, Any]] | None = None,
         backend: str = "xgrammar",
         tool_choice: str | dict[str, Any] | None = None,
+        reject_unsupported: bool = False,
         **kwargs: Any,
     ) -> str:
         """Generates a constrained-decoding grammar for MiniMax M2 tool calls.
@@ -184,6 +185,9 @@ class MinimaxM2ToolParser(StructuralTagToolParser):
             tools: OpenAI-style tool dicts.
             backend: Structured-output backend; must be ``"xgrammar"``.
             tool_choice: ``"auto"``, ``"required"``, or a named choice.
+            reject_unsupported: Whether to raise an error during grammar
+                compilation when a tool's schema cannot be enforced. Otherwise,
+                the schema is enforced best-effort.
             **kwargs: Ignored; accepts ``tokenizer`` and other future kwargs.
 
         Returns:
@@ -200,4 +204,5 @@ class MinimaxM2ToolParser(StructuralTagToolParser):
             tools or [],
             normalized_choice,
             response_format_schema=response_format_schema,
+            reject_unsupported=reject_unsupported,
         )

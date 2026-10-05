@@ -474,9 +474,7 @@ def run_case_preb[
     # static weight.
     var b_sf_pre = ctx.enqueue_create_host_buffer[DType.uint8](N * K_SCALES)
     ctx.synchronize()
-    var b_sf_tt = TileTensor(
-        b_sf, row_major(Coord(Idx[1], Idx[N], Idx[K_SCALES]))
-    )
+    var b_sf_tt = TileTensor(b_sf, row_major(Idx[1], Idx[N], Idx[K_SCALES]))
     _ = Shuffler[1].preshuffle_scale_4d[MN=N, K_SCALES=K_SCALES](
         b_sf_tt, b_sf_pre
     )

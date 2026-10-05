@@ -25,7 +25,7 @@ from max.experimental import functional as F
 from max.experimental.sharding import (
     DeviceMesh,
 )
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_device
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.transformer import ReturnLogits
@@ -169,9 +169,8 @@ class Gemma3MultiModalModelV3(
         mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
 
         # ---- Build and compile language model ----
-        with F.lazy():
+        with F.lazy(), default_device(mesh):
             language_nn = Gemma3LanguageModel(model_config, self.kv_params)
-            language_nn.to(mesh)
 
         assert isinstance(
             self._batch_processor, Gemma3MultiModalModuleV3BatchProcessor

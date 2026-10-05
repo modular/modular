@@ -276,7 +276,7 @@ def _ccl_broadcast(
 def _ccl_stream_ptr(
     ctx: DeviceContext,
 ) raises -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         return unsafe_cast[Type=NoneType](HIP(ctx.stream()))
     else:
         return unsafe_cast[Type=NoneType](CUDA(ctx.stream()))

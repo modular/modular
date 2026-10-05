@@ -64,6 +64,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
 )
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
+from std.math import ceildiv
 
 
 comptime Q_BLOCK_SIZE = 32  # per warp
@@ -73,7 +74,7 @@ comptime KV_BLOCK = 64  # MHA d=128 shape
 
 
 def _ceil_to_block(n: Int, block: Int) -> Int:
-    return ((n + block - 1) // block) * block
+    return ceildiv(n, block) * block
 
 
 def run_partial_k_case[
@@ -140,27 +141,19 @@ def run_partial_k_case[
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN_Q), Idx[num_heads], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN_Q), Idx[num_heads], Idx[depth]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(Int32(BATCH), Int32(n_alloc), Idx[NUM_KV_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(n_alloc), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(Int32(BATCH), Int32(n_alloc), Idx[NUM_KV_HEADS], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(n_alloc), Idx[NUM_KV_HEADS], Idx[depth]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN_Q), Idx[num_heads], Idx[depth])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN_Q), Idx[num_heads], Idx[depth]),
     )
 
     var k_op = LayoutTensorMHAOperand(k_tt)

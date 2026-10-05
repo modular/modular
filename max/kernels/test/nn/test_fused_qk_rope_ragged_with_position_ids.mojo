@@ -21,11 +21,7 @@ from kv_cache.types import (
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout.tile_layout import Layout as TileLayout
@@ -85,28 +81,40 @@ def test_fused_qk_rope[
         num_paged_blocks, 2, num_layers, page_size, num_heads, head_dim
     )
 
-    # Construct backing buffer and the KV cache itself (uses LayoutTensor).
     var kv_cache_block_buffer = List[Scalar[dtype]](
         length=block_shape.flattened_length(), fill=0
     )
-    var kv_cache_block_ptr: MutPointer[
-        Scalar[dtype], origin_of(kv_cache_block_buffer)
-    ] = kv_cache_block_buffer.unsafe_ptr()
-    var kv_cache_block = LayoutTensor[dtype, Layout.row_major[6]()](
-        kv_cache_block_ptr,
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_paged_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var kv_cache_block = (
+        TileTensor(
+            Span(kv_cache_block_buffer),
+            row_major(len(kv_cache_block_buffer)),
+        )
+        .reshape(BlocksLayout(blocks_shape, blocks_strides))
+        .as_unsafe_any_origin()
     )
 
-    comptime lut_layout = Layout.row_major[2]()
     var lookup_table_buffer = List[UInt32](
         length=batch_size * pages_per_seq, fill=0
     )
-    var lookup_table = LayoutTensor[.uint32, lut_layout](
-        lookup_table_buffer.unsafe_ptr(),
-        RuntimeLayout[lut_layout].row_major(
-            IndexList[2](batch_size, pages_per_seq)
-        ),
-    )
+    var lookup_table = TileTensor(
+        Span(lookup_table_buffer), row_major(len(lookup_table_buffer))
+    ).reshape(Coord(Int64(batch_size), Int64(pages_per_seq)))
     # Reverse the page pool so no sequence lands on an identity mapping.
     for batch_idx in range(batch_size):
         for page_idx in range(pages_per_seq):
@@ -128,8 +136,8 @@ def test_fused_qk_rope[
             var tok_idx = start_pos + seq_idx
             unsafe_memcpy(
                 dest=kv_cache_block.ptr
-                + kv_cache_block._offset(
-                    IndexList[6](
+                + kv_cache_block.layout(
+                    Coord(
                         Int(lookup_table[batch_idx, tok_idx // page_size]),
                         0,
                         0,
@@ -144,21 +152,13 @@ def test_fused_qk_rope[
             )
         max_cache_len_in_batch = max(max_cache_len_in_batch, start_pos)
 
-    # Create the actual KV cache type (uses LayoutTensor).
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
+    var cache_lengths = TileTensor(
+        Span(start_positions_dyn), row_major(len(start_positions_dyn))
+    ).reshape(Coord(Int64(len(start_positions_dyn))))
+    var kv_collection = Collection(
         blocks=kv_cache_block,
-        cache_lengths=LayoutTensor[mut=False, .uint32, Layout(UNKNOWN_VALUE)](
-            start_positions_dyn.unsafe_ptr(),
-            RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(
-                IndexList[1](len(start_positions_dyn)),
-            ),
-        ),
-        lookup_table=LayoutTensor[mut=False, .uint32, lut_layout](
-            lookup_table.ptr,
-            RuntimeLayout[lut_layout].row_major(
-                IndexList[2](batch_size, pages_per_seq)
-            ),
-        ),
+        cache_lengths=cache_lengths.as_imm().as_unsafe_any_origin(),
+        lookup_table=lookup_table.as_imm().as_unsafe_any_origin(),
         max_seq_length=seq_len,
         max_cache_length=UInt32(max_cache_len_in_batch),
     )
@@ -285,8 +285,8 @@ def test_fused_qk_rope[
                 var tok_idx = Int(start_positions_dyn[batch_idx]) + seq_idx
                 var cache_block_ptr = (
                     kv_cache_block.ptr
-                    + kv_cache_block._offset(
-                        IndexList[6](
+                    + kv_cache_block.layout(
+                        Coord(
                             Int(lookup_table[batch_idx, tok_idx // page_size]),
                             0,
                             0,

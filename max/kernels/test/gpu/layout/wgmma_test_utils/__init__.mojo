@@ -10,12 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""WGMMA descriptor helpers for the LayoutTensor-based WGMMA tests."""
+"""Builds WGMMA descriptors from shared-memory tensor layouts."""
 from std.sys import size_of
 
 from max.gpu.compute.mma import WGMMADescriptor
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout, LayoutTensor
+from layout import Layout, TileTensor, TensorLayout
+from layout.int_tuple import coord_to_int_tuple
 from layout.tensor_core_async import (
     _wgmma_descriptor,
     tile_layout_k_major,
@@ -25,12 +26,17 @@ from layout.tensor_core_async import (
 
 def _lhs_descriptor[
     dtype: DType,
-    layout: Layout,
+    LayoutType: TensorLayout,
     //,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    tensor: LayoutTensor[dtype, layout, address_space=.SHARED, ...]
+    tensor: TileTensor[dtype, LayoutType, address_space=.SHARED, ...]
 ) -> WGMMADescriptor[tensor.dtype]:
+    comptime assert LayoutType.all_dims_known
+    comptime layout = Layout(
+        coord_to_int_tuple[*LayoutType._shape_types](),
+        coord_to_int_tuple[*LayoutType._stride_types](),
+    )
     comptime BM = layout[0].size()
     comptime BK = layout[1].size()
     comptime canonical_K = swizzle_mode.bytes() // size_of[
@@ -49,13 +55,18 @@ def _lhs_descriptor[
 
 def _rhs_descriptor[
     dtype: DType,
-    layout: Layout,
+    LayoutType: TensorLayout,
     //,
     transposed: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    tensor: LayoutTensor[dtype, layout, address_space=.SHARED, ...]
+    tensor: TileTensor[dtype, LayoutType, address_space=.SHARED, ...]
 ) -> WGMMADescriptor[tensor.dtype]:
+    comptime assert LayoutType.all_dims_known
+    comptime layout = Layout(
+        coord_to_int_tuple[*LayoutType._shape_types](),
+        coord_to_int_tuple[*LayoutType._stride_types](),
+    )
     comptime BN = layout[0].size()
     comptime BK = layout[1].size()
     comptime canonical_K = swizzle_mode.bytes() // size_of[

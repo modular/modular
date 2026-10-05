@@ -20,11 +20,7 @@ import math
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.embedding import Embedding
-from max.experimental.sharding import (
-    DeviceMapping,
-    NamedMapping,
-    Partial,
-)
+from max.experimental.sharding import DeviceMapping, NamedMapping, Partial
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, DimLike, TensorValue, ops
 
@@ -45,7 +41,9 @@ class VocabParallelEmbedding(Embedding):
         super().__init__(vocab_size, dim=dim)
         if tp_axis is None:
             tp_axis = TP
-        self.weight._mapping = NamedMapping(self.weight.mesh, (tp_axis, None))
+        self.weight = self.weight.to(
+            NamedMapping(self.weight.mesh, (tp_axis, None))
+        )
 
     def forward(self, indices: Tensor) -> Tensor:
         """Gather the embeddings for the input indices."""

@@ -176,7 +176,7 @@ class GptOssAttention(Module[..., Tensor]):
             layer_idx=layer_idx,
             n_heads=self.n_heads,
             interleaved=rope.interleaved,
-        )
+        ).rebind_mapping(qkv.mapping)
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention with sinks.
@@ -192,7 +192,7 @@ class GptOssAttention(Module[..., Tensor]):
             scale=self.scale,
             local_window_size=self.local_window_size,
             sink_weights=self.sinks,
-        )
+        ).rebind_mapping(xq.mapping)
         attn_out = F.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)
         return ret

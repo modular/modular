@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import inspect
 from abc import ABC, abstractmethod
@@ -108,8 +109,14 @@ class Runtime(AsyncExitStack, ABC):
         with their worker classes (or :py:class:`typing.Protocol` interfaces)
         and get end-to-end type checking; the runtime cast is safe because
         :py:class:`Proxy` exposes a structurally compatible interface.
+
+        Raises:
+            asyncio.TimeoutError: If the worker is not deployed within its
+                ``deploy_timeout`` seconds.
         """
-        worker_id = await self.deploy_worker(worker)
+        worker_id = await asyncio.wait_for(
+            self.deploy_worker(worker), timeout=worker.deploy_timeout
+        )
         return cast(WorkerType, Proxy(self, worker_id, worker))
 
     @abstractmethod

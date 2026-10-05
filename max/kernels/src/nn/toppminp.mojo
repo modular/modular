@@ -153,7 +153,7 @@ def _topp_minp_sampling[
     ] = sorted_probs_alloc.unsafe_ptr()
     var sorted_probs = TileTensor(
         sorted_probs_ptr,
-        row_major(Coord(batch_size, vocab_size)),
+        row_major(batch_size, vocab_size),
     )
 
     var sorted_ids_alloc = alloc(
@@ -164,7 +164,7 @@ def _topp_minp_sampling[
     ] = sorted_ids_alloc.unsafe_ptr()
     var sorted_ids = TileTensor(
         sorted_ids_ptr,
-        row_major(Coord(batch_size, vocab_size)),
+        row_major(batch_size, vocab_size),
     )
 
     comptime assert sorted_probs.element_size == out_token_ids.element_size

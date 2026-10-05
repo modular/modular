@@ -270,8 +270,8 @@ trait InputFusion(DevicePassable, TrivialRegisterPassable):
 
     Conformers are `DevicePassable` so a GPU kernel callback can capture the
     functor. Encoding walks fields via `encode_fields`, translating host
-    `Pointer`s. `ManagedTensorSlice.device_type` is `LayoutTensor` and drops
-    `in_fusion`; capture the fusion value, not the slice.
+    `Pointer`s. `ManagedTensorSlice.device_type` is `TileTensor` and omits
+    fusion fields; capture the fusion value, not the slice.
     """
 
     # Default DevicePassable so graph-compiler FusionStruct types and
@@ -840,7 +840,6 @@ struct StaticTensorSpecInternal[dtype: DType, rank: Int](ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 
-@__parameter
 @inline(.always)
 def _gcd_pow2[a: Int, b: Int]() -> Int:
     # alignments should always be powers of 2
@@ -1208,14 +1207,14 @@ struct ManagedTensorSlice[
     """
 
     # `trait DevicePassable` implementation
-    comptime device_type: AnyType = LayoutTensor[
-        Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
+    comptime device_type: AnyType = TileTensor[
+        Self.dtype, Self.RuntimeLayout, MutUntrackedOrigin
     ]
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self.to_layout_tensor(), target)
+        encoder.encode(self.to_tile_tensor(), target)
 
     @staticmethod
     def get_type_name() -> String:
@@ -2309,8 +2308,7 @@ struct ManagedTensorSlice[
         """
         writer.write("ManagedTensorSlice(")
 
-        @__parameter
-        def serialize[T: Writable](val: T):
+        def serialize[T: Writable](val: T) {mut writer}:
             writer.write(val)
 
         var shape = List[Int]()
@@ -2323,9 +2321,7 @@ struct ManagedTensorSlice[
             self._ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin]()
         )
         # TODO(1937): make this work with all valid strides
-        _serialize[serialize_fn=serialize, serialize_end_line=False](
-            serialize_ptr, shape
-        )
+        _serialize[serialize_end_line=False](serialize_ptr, shape, serialize)
 
         writer.write("){")
         writer.write("static_shape = ", self._static_shape_tuple)
@@ -2708,7 +2704,7 @@ def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     comptime if _is_gpu[target]():
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        comptime if CompilationTarget.current_accelerator()._is_arch[
+        comptime if CompilationTarget.default_accelerator()._is_arch[
             "sm_100a"
         ]():
             return 32 // size_of[dtype]()

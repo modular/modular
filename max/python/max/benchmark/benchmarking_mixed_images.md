@@ -91,6 +91,9 @@ only the image turn and the turns after it resend it:
 - `last`: only the final request of a selected session carries it, so the share
   falls by the same factor as the encoder rate.
 
+The run reports the realized share as `image_request_rate`, in the "Request
+Mix" section of its results.
+
 This is deliberately unlike `--response-format-fraction`, which draws per
 request and per turn. A structured-output constraint applies only to the
 request that sets it, so a per-turn draw lands directly on the share of

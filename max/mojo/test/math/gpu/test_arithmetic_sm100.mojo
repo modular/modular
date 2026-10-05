@@ -22,8 +22,8 @@ from std.testing import assert_equal, TestSuite
 def simd_add_kernel[
     width: Int
 ](
-    a_span: Pointer[Float32, MutAnyOrigin],
-    b_span: Pointer[Float32, MutAnyOrigin],
+    a_span: Pointer[Float32, ImmutAnyOrigin],
+    b_span: Pointer[Float32, ImmutAnyOrigin],
     c_span: Pointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
@@ -38,8 +38,8 @@ def simd_add_kernel[
 def simd_mult_kernel[
     width: Int
 ](
-    a_span: Pointer[Float32, MutAnyOrigin],
-    b_span: Pointer[Float32, MutAnyOrigin],
+    a_span: Pointer[Float32, ImmutAnyOrigin],
+    b_span: Pointer[Float32, ImmutAnyOrigin],
     c_span: Pointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data
@@ -54,8 +54,8 @@ def simd_mult_kernel[
 def simd_fma_kernel[
     width: Int
 ](
-    a_span: Pointer[Float32, MutAnyOrigin],
-    b_span: Pointer[Float32, MutAnyOrigin],
+    a_span: Pointer[Float32, ImmutAnyOrigin],
+    b_span: Pointer[Float32, ImmutAnyOrigin],
     c_span: Pointer[Float32, MutAnyOrigin],
 ):
     # Calculate the index for this thread's data

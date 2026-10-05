@@ -68,7 +68,7 @@ def trigger_dtype():
 def async_unified_closure():
     var value = 0
 
-    async def inc() {mut value}:
+    __async def inc() {mut value}:
         value += 1
 
     _ = inc()

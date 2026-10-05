@@ -13,7 +13,7 @@
 """Tests for raising coroutine support in AsyncRT.
 
 These tests explore incrementally more complex scenarios for using
-async def ... raises with the async runtime.
+__async def ... raises with the async runtime.
 """
 
 from std.memory import alloc
@@ -26,17 +26,17 @@ from std.testing import assert_equal, assert_true
 # ===-----------------------------------------------------------------------===#
 
 
-async def add_async(a: Int, b: Int) raises -> Int:
+__async def add_async(a: Int, b: Int) raises -> Int:
     """A raising async function that succeeds."""
     return a + b
 
 
-async def failing_async() raises -> Int:
+__async def failing_async() raises -> Int:
     """A raising async function that always raises."""
     raise Error("intentional error from async task")
 
 
-async def conditional_raise(should_fail: Bool) raises -> Int:
+__async def conditional_raise(should_fail: Bool) raises -> Int:
     """A raising async function that conditionally raises."""
     if should_fail:
         raise Error("conditional failure")
@@ -53,9 +53,9 @@ async def conditional_raise(should_fail: Bool) raises -> Int:
 def test_raising_async_success_via_wrapper() raises:
     """Test that a raising async function can succeed through a wrapper."""
 
-    async def wrapper() -> Int:
+    __async def wrapper() -> Int:
         try:
-            return await add_async(10, 20)
+            return __await add_async(10, 20)
         except:
             return -1
 
@@ -66,9 +66,9 @@ def test_raising_async_success_via_wrapper() raises:
 def test_raising_async_failure_via_wrapper() raises:
     """Test that a raising async function's error is caught in the wrapper."""
 
-    async def wrapper() -> Int:
+    __async def wrapper() -> Int:
         try:
-            return await failing_async()
+            return __await failing_async()
         except:
             return -1
 
@@ -83,9 +83,9 @@ def test_raising_async_failure_via_wrapper() raises:
 def test_raising_async_error_message_via_wrapper() raises:
     """Test that the error message is preserved when caught in a wrapper."""
 
-    async def wrapper() -> String:
+    __async def wrapper() -> String:
         try:
-            _ = await failing_async()
+            _ = __await failing_async()
             return String("no error")
         except e:
             return String(e)
@@ -97,15 +97,15 @@ def test_raising_async_error_message_via_wrapper() raises:
 def test_raising_async_conditional_via_wrapper() raises:
     """Test conditional raising with both success and failure paths."""
 
-    async def success_wrapper() -> Int:
+    __async def success_wrapper() -> Int:
         try:
-            return await conditional_raise(should_fail=False)
+            return __await conditional_raise(should_fail=False)
         except:
             return -1
 
-    async def failure_wrapper() -> Int:
+    __async def failure_wrapper() -> Int:
         try:
-            return await conditional_raise(should_fail=True)
+            return __await conditional_raise(should_fail=True)
         except:
             return -1
 
@@ -174,10 +174,10 @@ def test_raising_task_multiple_success() raises:
 def test_raising_task_await_success() raises:
     """Test that RaisingTask can be awaited in an async function."""
 
-    async def wrapper() -> Int:
+    __async def wrapper() -> Int:
         var task = create_raising_task(add_async(10, 20))
         try:
-            return await task^
+            return __await task^
         except:
             return -1
 
@@ -188,10 +188,10 @@ def test_raising_task_await_success() raises:
 def test_raising_task_await_error() raises:
     """Test that RaisingTask await propagates errors to the caller."""
 
-    async def wrapper() -> Int:
+    __async def wrapper() -> Int:
         var task = create_raising_task(failing_async())
         try:
-            return await task^
+            return __await task^
         except:
             return -1
 
@@ -202,17 +202,17 @@ def test_raising_task_await_error() raises:
 def test_raising_task_await_conditional() raises:
     """Test RaisingTask await with conditional success/failure paths."""
 
-    async def success_wrapper() -> Int:
+    __async def success_wrapper() -> Int:
         var task = create_raising_task(conditional_raise(should_fail=False))
         try:
-            return await task^
+            return __await task^
         except:
             return -1
 
-    async def failure_wrapper() -> Int:
+    __async def failure_wrapper() -> Int:
         var task = create_raising_task(conditional_raise(should_fail=True))
         try:
-            return await task^
+            return __await task^
         except:
             return -1
 
@@ -225,9 +225,9 @@ def test_raising_task_await_conditional() raises:
 def test_raising_task_await_chained() raises:
     """Test awaiting a RaisingTask from within a raising async function."""
 
-    async def outer() raises -> Int:
+    __async def outer() raises -> Int:
         var inner = create_raising_task(add_async(5, 10))
-        return await inner^
+        return __await inner^
 
     var task = create_raising_task(outer())
     assert_equal(task^.wait(), 15)

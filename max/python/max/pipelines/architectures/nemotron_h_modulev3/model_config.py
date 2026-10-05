@@ -14,16 +14,18 @@
 
 from __future__ import annotations
 
+import enum
 import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
+from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kernels import _moe_sigmoid_gemv_router_unsupported
 from max.nn.kv_cache import (
-    KVCacheParamInterface,
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
@@ -48,15 +50,25 @@ logger = logging.getLogger("max.pipelines")
 ATTN_CACHE_KEY = "attn"
 STATE_CACHE_KEY = "state"
 
+
+class LayerKind(enum.Enum):
+    """The mixer of a Nemotron-H layer."""
+
+    MAMBA = "mamba"
+    ATTENTION = "attention"
+    MOE = "moe"
+    MLP = "mlp"
+
+
 # transformers main renamed the block types; both spellings name the same
 # mixers.
-_BLOCK_KINDS: dict[str, str] = {
-    "mamba": "mamba",
-    "linear_attention": "mamba",
-    "attention": "attention",
-    "full_attention": "attention",
-    "moe": "moe",
-    "mlp": "mlp",
+_BLOCK_KINDS: dict[str, LayerKind] = {
+    "mamba": LayerKind.MAMBA,
+    "linear_attention": LayerKind.MAMBA,
+    "attention": LayerKind.ATTENTION,
+    "full_attention": LayerKind.ATTENTION,
+    "moe": LayerKind.MOE,
+    "mlp": LayerKind.MLP,
 }
 
 # The only values of these fields this implementation builds.
@@ -77,10 +89,8 @@ _REQUIRED: dict[str, object] = {
 }
 
 
-def parse_layer_kinds(block_types: Sequence[str]) -> list[str]:
+def parse_layer_kinds(block_types: Sequence[str]) -> list[LayerKind]:
     """Maps a ``layers_block_type`` list to per-layer mixer kinds.
-
-    Returns ``"mamba"``, ``"attention"``, ``"moe"`` or ``"mlp"`` per layer.
 
     Raises:
         ValueError: If a block type is not one of the known spellings.
@@ -95,6 +105,41 @@ def parse_layer_kinds(block_types: Sequence[str]) -> list[str]:
             )
         kinds.append(kind)
     return kinds
+
+
+def _runs_w4a4_experts(device_specs: Sequence[DeviceSpec]) -> bool:
+    """Returns whether NVFP4 routed experts run the W4A4 grouped matmul.
+
+    The kernel is SM100-only.
+    """
+    return all(
+        device.api == "cuda" and device.architecture_name.startswith("sm_10")
+        for device in load_devices(device_specs)
+    )
+
+
+def _runs_fused_router(
+    device_specs: Sequence[DeviceSpec],
+    num_experts: int,
+    num_experts_per_tok: int,
+    hidden_size: int,
+) -> bool:
+    """Returns whether the MoE router fuses its gate GEMV into top-k.
+
+    Shapes the fused kernel can't run, such as fewer routed experts than one
+    warp, keep the separate float32 gate matmul.
+    """
+    return all(
+        device.api in ("hip", "cuda")
+        and _moe_sigmoid_gemv_router_unsupported(
+            n_routed_experts=num_experts,
+            n_experts_per_tok=num_experts_per_tok,
+            hidden_size=hidden_size,
+            warp_size=64 if device.api == "hip" else 32,
+        )
+        is None
+        for device in load_devices(device_specs)
+    )
 
 
 @dataclass(kw_only=True)
@@ -113,7 +158,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     hidden_size: int
     vocab_size: int
-    layer_kinds: list[str]
+    layer_kinds: list[LayerKind]
     layer_norm_epsilon: float
 
     num_attention_heads: int
@@ -140,8 +185,30 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     dtype: DType
     devices: list[DeviceRef]
     max_seq_len: int
-    kv_params: KVCacheParamInterface
+    kv_params: MultiKVCacheParams
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    w4a4_experts: bool = False
+    """Whether NVFP4 routed experts run the W4A4 grouped matmul, with their
+    activations quantized to NVFP4, instead of being dequantized to BF16."""
+    fused_router: bool = False
+    """Whether the MoE router runs its gate GEMV, sigmoid and top-k as one
+    fused op instead of a separate float32 matmul."""
+
+    def w4a4_mixers(self) -> frozenset[str]:
+        """Returns the MoE mixers whose routed experts run W4A4.
+
+        A mixer qualifies when every one of its routed projections is NVFP4.
+        """
+        if not self.w4a4_experts:
+            return frozenset()
+        return frozenset(
+            mixer
+            for i, kind in enumerate(self.layer_kinds)
+            if kind == LayerKind.MOE
+            and self.quant_scheme.has_nvfp4_routed_experts(
+                mixer := f"backbone.layers.{i}.mixer", self.num_experts
+            )
+        )
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -164,7 +231,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-    ) -> KVCacheParamInterface:
+    ) -> MultiKVCacheParams:
         """Returns the attention leaf beside the Mamba state.
 
         The attention layers index the KV cache 0, 1, 2, ... in layer order;
@@ -179,12 +246,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
-            num_layers=kinds.count("attention"),
+            num_layers=kinds.count(LayerKind.ATTENTION),
             devices=devices,
             data_parallel_degree=data_parallel_degree,
         )
         hf = huggingface_config
-        num_mamba_layers = kinds.count("mamba")
+        num_mamba_layers = kinds.count(LayerKind.MAMBA)
         state = RecurrentStateParams(
             # Separate leaves because the conv and SSM kernels each index
             # their own uniformly strided pool, at different dtypes.
@@ -251,6 +318,13 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         config = cls.from_huggingface(
             hf, kv_params=kv_params, devices=devices, max_seq_len=max_seq_len
         )
+        config.w4a4_experts = _runs_w4a4_experts(model_config.device_specs)
+        config.fused_router = _runs_fused_router(
+            model_config.device_specs,
+            num_experts=config.num_experts,
+            num_experts_per_tok=config.num_experts_per_tok,
+            hidden_size=config.hidden_size,
+        )
         hf_quant_config = resolve_hf_quant_config(hf, {}) or {}
         if hf_quant_config.get("kv_cache_scheme") and kv_cache_format is None:
             logger.info(
@@ -265,7 +339,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cls,
         hf: AutoConfig,
         *,
-        kv_params: KVCacheParamInterface,
+        kv_params: MultiKVCacheParams,
         devices: list[DeviceRef],
         max_seq_len: int,
     ) -> Self:

@@ -180,7 +180,6 @@ def test_ep_moe_fp8(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
         quant_config=fp8_config,
     )

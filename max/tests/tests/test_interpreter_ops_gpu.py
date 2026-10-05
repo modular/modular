@@ -436,6 +436,7 @@ class TestElementwiseGPU:
             (F.sin, torch.sin),
             (F.cos, torch.cos),
             (F.tanh, torch.tanh),
+            (F.relu, torch.relu),
         ],
     )
     @pytest.mark.parametrize(
@@ -453,7 +454,15 @@ class TestElementwiseGPU:
     ) -> None:
         """Test unary ops on GPU with various dtypes."""
         # Float-only ops: skip for integer dtypes
-        float_only_ops = (F.exp, F.log, F.sqrt, F.sin, F.cos, F.tanh)
+        float_only_ops = (
+            F.exp,
+            F.log,
+            F.sqrt,
+            F.sin,
+            F.cos,
+            F.tanh,
+            F.relu,
+        )
         if op in float_only_ops and dtype in (DType.int32, DType.int64):
             pytest.skip("Op not tested for integer types")
 

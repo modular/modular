@@ -106,14 +106,14 @@ def _run_case[
     out_d.enqueue_fill(UInt8(0))
 
     var input_tt = TileTensor[origin=ImmutAnyOrigin](
-        input_d, row_major(Coord(total_tokens, Idx[input_dim]))
+        input_d, row_major(total_tokens, Idx[input_dim])
     )
     var off_tt = TileTensor[origin=ImmutAnyOrigin](off_d, row_major[n_off]())
     var out_tt = TileTensor[origin=MutAnyOrigin](
-        out_d, row_major(Coord(total_tokens, Idx[out_bytes]))
+        out_d, row_major(total_tokens, Idx[out_bytes])
     )
     var scales_tt = TileTensor[origin=MutAnyOrigin](
-        scales_d, row_major(Coord(total_tokens, Idx[scale_k]))
+        scales_d, row_major(total_tokens, Idx[scale_k])
     )
 
     comptime kernel = fused_silu_mxfp6_kernel[

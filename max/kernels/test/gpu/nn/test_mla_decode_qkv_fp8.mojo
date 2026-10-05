@@ -35,11 +35,7 @@ The test:
 """
 
 from std.random import randn
-from std.sys import (
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -242,7 +238,7 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
-    # LayoutTensors for FP8 K (needed by LayoutTensorMHAOperand)
+    # BF16 tensors for the naive reference.
     comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
     )
@@ -277,16 +273,6 @@ def test[
         ),
     )
 
-    # Valid length (empty -- not using ragged) for mha_gpu_naive
-    var null_valid_length = LayoutTensor[
-        .uint32,
-        Layout.row_major(UNKNOWN_VALUE),
-        MutAnyOrigin,
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
-    )
-
     # ---- Launch the native FP8 kernel via mla_decode_sm100_dispatch ----
     print("  Launching native FP8 kernel...")
 
@@ -302,15 +288,10 @@ def test[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(
-        q_fp8_tt,
-        k_fp8_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[config=config](
@@ -380,7 +361,7 @@ def test[
             k_bf16_operand,
             CausalMask(),
             output_ref_full_device,
-            null_valid_length,
+            None,
             scale,
             batch_size,
             seq_len,
@@ -397,7 +378,7 @@ def test[
             k_bf16_operand,
             NullMask(),
             output_ref_full_device,
-            null_valid_length,
+            None,
             scale,
             batch_size,
             seq_len,
@@ -812,15 +793,6 @@ def test_sw[
         ),
     )
 
-    var null_valid_length = LayoutTensor[
-        .uint32,
-        Layout.row_major(UNKNOWN_VALUE),
-        MutAnyOrigin,
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
-    )
-
     print("  Launching native FP8 kernel (SlidingWindow)...")
 
     var mla_args = MLADispatchScalarArgs[
@@ -835,15 +807,10 @@ def test_sw[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(
-        q_fp8_tt,
-        k_fp8_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
         flare_mla_decoding[config=config](
             out_tt.as_unsafe_any_origin(),
@@ -895,7 +862,7 @@ def test_sw[
         k_bf16_operand,
         SlidingWindowCausalMask[window_size](),
         output_ref_full_device,
-        null_valid_length,
+        None,
         scale,
         batch_size,
         seq_len,
@@ -988,8 +955,8 @@ def test_decoding_sw[
 def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
-        comptime if has_amd_gpu_accelerator() or (
-            has_nvidia_gpu_accelerator()
+        comptime if ctx.target.is_amd_gpu() or (
+            ctx.target.is_nvidia_gpu()
             and _is_sm10x_gpu(ctx.default_device_info)
         ):
             # Basic functionality tests
@@ -1060,7 +1027,7 @@ def main() raises:
             # struct fold_q comptime branch).  AMD backend does not yet support
             # the fold path — gate this block to NVIDIA SM10x at comptime so AMD
             # skips it cleanly.
-            comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
                 ctx.default_device_info
             ):
                 print(
@@ -1296,7 +1263,7 @@ def main() raises:
             # row-keyed split-K) is unreachable from the NVIDIA configs. Hence the
             # shared helpers, arch-specific config lists.
             # ===-------------------------------------------------=== #
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 print("=== AMD MTP token-fold (M = H*S <= 128) ===")
 
                 # --- H=8/S=2 → M=16 (legacy (1,4)) ---

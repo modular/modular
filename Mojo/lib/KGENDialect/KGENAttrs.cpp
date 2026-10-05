@@ -20,6 +20,7 @@
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
+#include "Mojo/KGENDialect/PropositionFold.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Support/AssertStream.h"
 #include "Support/Compiler/MLIRDType.h"
@@ -736,10 +737,14 @@ Type TypeConformsToTraitAttr::getType() const {
 
 TypedAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
                                        TypedAttr traitType) {
+  // An upcast only widens the metatype, so dropping it keeps the narrower
+  // metatype that conformance checking reads as evidence. Downcast, rebind and
+  // extension stay: their metatype can be what proves the conformance.
+  typeValue = UpcastAttr::strip(typeValue);
   SmallVector<TypedAttr> inputs;
-  if (auto lst = sugarDynCast<ParamListAttr>(UpcastAttr::strip(typeValue))) {
+  if (auto lst = sugarDynCast<ParamListAttr>(typeValue)) {
     for (TypedAttr input : lst.getValues())
-      inputs.push_back(input);
+      inputs.push_back(UpcastAttr::strip(input));
   } else {
     inputs.push_back(typeValue);
   }
@@ -748,12 +753,14 @@ TypedAttr TypeConformsToTraitAttr::get(TypedAttr typeValue,
   if (inputs.empty())
     return {SIMDAttr::getScalarBool(typeValue.getContext(), true)};
 
-  TypedAttr ret = Base::get(typeValue.getContext(), inputs.front(), traitType);
-  for (TypedAttr input : ArrayRef<TypedAttr>(inputs).drop_front())
-    ret = ParamOperatorAttr::get(
-        POC::And, ret, Base::get(typeValue.getContext(), input, traitType));
+  SmallVector<TypedAttr> conjuncts;
+  conjuncts.reserve(inputs.size());
+  for (TypedAttr input : inputs)
+    conjuncts.push_back(Base::get(typeValue.getContext(), input, traitType));
+  if (conjuncts.size() == 1)
+    return conjuncts.front();
 
-  return ret;
+  return ParamOperatorAttr::get(POC::And, conjuncts);
 }
 
 TypedAttr TypeConformsToTraitAttr::getChecked(
@@ -3001,11 +3008,12 @@ static Attribute simplifyGenericMul(SmallVectorImpl<TypedAttr> &operands,
   return {};
 }
 
-// FIXME(MOCO-4577): merge identity conjuncts sharing an operand into one n-ary
-// proposition, so `and(identical(a, b), identical(b, c))` becomes
-// `identical(a, b, c)`. Until then a source-level `T == U == V`, which lowers
-// to exactly that conjunction, never reaches the n-ary form.
-static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands) {
+static Attribute simplifyAnd(SmallVectorImpl<TypedAttr> &operands,
+                             SIMDType resultType) {
+  // The fold covers the flatten, dedup, sort and True/False handling below for
+  // a scalar-bool AND, and also merges identity classes.
+  if (isScalarOf<KGENDType::kBool>(resultType))
+    return foldBoolConjunction(operands, resultType);
   return simplifyAssocOp(
       POC::And, operands, true,
       std::make_tuple(
@@ -3467,21 +3475,19 @@ struct DivOperandInfo {
       for (auto [n, d] : llvm::zip_equal(numerator.constant.getValues(),
                                          denominator.constant.getValues())) {
 
-        bool isSigned = n.getDType().isSInt();
-        APInt gcdTerm = llvm::APIntOps::GreatestCommonDivisor(
-            isSigned ? n.getData().abs() : n.getData(),
-            isSigned ? d.getData().abs() : d.getData());
+        const APSInt &nData = n.getData();
+        const APSInt &dData = d.getData();
+        APSInt gcdTerm(llvm::APIntOps::GreatestCommonDivisor(
+                           nData.isNegative() ? -nData : nData,
+                           dData.isNegative() ? -dData : dData),
+                       nData.isUnsigned());
 
-        if (isSigned && n.getData().isNegative() && d.getData().isNegative())
+        // A negative divisor for two negative terms cancels both signs.
+        if (nData.isNegative() && dData.isNegative())
           gcdTerm = -gcdTerm;
 
-        APInt nLane =
-            isSigned ? n.getData().sdiv(gcdTerm) : n.getData().udiv(gcdTerm);
-        APInt dLane =
-            isSigned ? d.getData().sdiv(gcdTerm) : d.getData().udiv(gcdTerm);
-
-        nC.push_back(DTypeValue(nLane, n.getDType()));
-        dC.push_back(DTypeValue(dLane, d.getDType()));
+        nC.push_back(DTypeValue(nData / gcdTerm, n.getDType()));
+        dC.push_back(DTypeValue(dData / gcdTerm, d.getDType()));
       }
 
       numerator.constant = SIMDAttr::get(nC, numerator.constant.getType());
@@ -4229,6 +4235,25 @@ constexpr POC migratedPOCs[] = {
     POC::FloorDivS, POC::RemS, POC::RemU,      POC::Mod,      POC::EQ,
     POC::LT,        POC::LE};
 
+TypedAttr KGEN::foldBoolConjunction(ArrayRef<TypedAttr> conjuncts,
+                                    Type boolType) {
+  SmallVector<TypedAttr> clauses;
+  for (TypedAttr conjunct : conjuncts) {
+    if (insertClause(clauses, getCanonicalAttr(conjunct)) ==
+        ClauseInsertResult::Contradiction)
+      return SIMDAttr::getScalarBool(boolType.getContext(), false);
+  }
+  if (clauses.empty())
+    return SIMDAttr::getScalarBool(boolType.getContext(), true);
+  if (clauses.size() == 1)
+    return clauses[0];
+  llvm::stable_sort(clauses, ParameterAttr::compare);
+  // `Base::get`, not `get`: the latter folds through `simplifyAnd`, which
+  // calls back here on the same clauses.
+  return ParamOperatorAttr::Base::get(boolType.getContext(), POC::And, clauses,
+                                      boolType);
+}
+
 /// Construct a arithmetic parameter operator attribute, folding it (in the form
 /// of SIMD) if possible. Return nullptr if the opcode is not an arithmetic
 /// POC.
@@ -4286,7 +4311,7 @@ static TypedAttr getArithParamOperator(MLIRContext *ctx, POC opcode,
       result = simplifyGenericMul(operands, opcode);
       break;
     case POC::And:
-      result = simplifyAnd(operands);
+      result = simplifyAnd(operands, resultSIMDType);
       break;
     case POC::Or:
       result = simplifyOr(operands);
@@ -4712,9 +4737,15 @@ TypedAttr ParamIdenticalAttr::get(ArrayRef<TypedAttr> operandsIn) {
   assert(!operandsIn.empty() && "identity needs an operand for its context");
   MLIRContext *ctx = operandsIn.front().getContext();
 
-  // Sorting first is what uniques `identical(t2, t1)` with `identical(t1, t2)`,
-  // and it makes the merge below independent of the order given.
-  SmallVector<TypedAttr> operands(operandsIn);
+  // Identity wrappers do not change which value an operand denotes, so members
+  // are compared bare. Sorting is what uniques `identical(t2, t1)` with
+  // `identical(t1, t2)`, and it makes the merge below independent of the order
+  // given. Equal attributes are not deduplicated here: two `?` need not be the
+  // same value, so only `decideIdenticalOperands` may merge members.
+  SmallVector<TypedAttr> operands;
+  operands.reserve(operandsIn.size());
+  for (TypedAttr operand : operandsIn)
+    operands.push_back(stripIdentityWrappers(operand));
   llvm::stable_sort(operands, ParameterAttr::compare);
 
   SmallVector<TypedAttr> representatives;
@@ -4722,6 +4753,11 @@ TypedAttr ParamIdenticalAttr::get(ArrayRef<TypedAttr> operandsIn) {
           decideIdenticalOperands(operands, representatives))
     return SIMDAttr::getScalarBool(ctx, *decided);
 
+  // Bare members of mixed metatypes are rebound to one type to satisfy the
+  // verifier.
+  Type reprType = representatives.front().getType();
+  for (TypedAttr &member : representatives)
+    member = ParamOperatorAttr::getRebind(member, reprType);
   return Base::get(ctx, representatives);
 }
 
@@ -5442,14 +5478,15 @@ TypedAttr KGEN::stripIdentityWrappers(TypedAttr attr) {
 // DTypeValue
 //===----------------------------------------------------------------------===//
 
-DTypeValue::DTypeValue(APInt data, KGENDType dtype)
-    : data(std::move(data)), dtype(dtype) {
+DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
+    : data(std::move(value)), dtype(dtype) {
+  data.setIsUnsigned(dtype.isUInt());
   assert(dtype.isAddress() || dtype.isIndex() || dtype.isUIndex() ||
-         this->data.getBitWidth() == dtype.getWidthInBits());
+         data.getBitWidth() == dtype.getWidthInBits());
 }
 
-DTypeValue::DTypeValue(APSInt value, KGENDType dtype)
-    : DTypeValue(APInt(std::move(value)), dtype) {}
+DTypeValue::DTypeValue(APInt data, KGENDType dtype)
+    : DTypeValue(APSInt(std::move(data), dtype.isUInt()), dtype) {}
 
 DTypeValue::DTypeValue(APFloat value, KGENDType dtype)
     : DTypeValue(value.bitcastToAPInt(), dtype) {
@@ -5466,7 +5503,7 @@ DTypeValue::DTypeValue(int64_t value, KGENDType dtype)
 
 APSInt DTypeValue::getIntVal() const {
   assert(dtype.isIntLike());
-  return APSInt(data, /*isUnsigned=*/dtype.isUInt());
+  return data;
 }
 
 APFloat DTypeValue::getFloatVal() const {
@@ -5488,11 +5525,10 @@ int64_t DTypeValue::getIndexVal() const {
 namespace M::KGEN {
 /// Provide the ability to hash values for attribute uniquing.
 inline llvm::hash_code hash_value(const DTypeValue &value) {
-  // Must be consistent with operator==. Normalize so equal values of different
-  // bit widths hash equally: sign-extend signed types to 64 bits, zero-extend
-  // unsigned types to minimal width.
-  const APInt &data = value.getData();
-  APInt normalized = value.getDType().isSInt()
+  // operator== ignores bit width, so equal values of different widths must
+  // hash equally.
+  const APSInt &data = value.getData();
+  APInt normalized = data.isSigned()
                          ? data.sextOrTrunc(64)
                          : data.zextOrTrunc(std::max(data.getActiveBits(), 1u));
   return hash_combine(normalized, value.getDType().getValue());

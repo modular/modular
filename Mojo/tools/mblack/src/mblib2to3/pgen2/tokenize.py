@@ -656,6 +656,8 @@ def generate_tokens(
         "ref": REF,
         "where": WHERE,
         "__extension": EXTENSION,
+        "__async": ASYNC,
+        "__await": AWAIT,
     }
 
     strstart: tuple[int, int]
@@ -963,7 +965,9 @@ def generate_tokens(
                         yield (tok_type, token, spos, epos, line)
                         continue
 
-                    if token in ("async", "await"):
+                    # Mojo spells these `__async` / `__await`; the bare
+                    # words are ordinary identifiers.
+                    if not has_mojo_keywords and token in ("async", "await"):
                         if async_keywords or async_def:
                             yield (
                                 ASYNC if token == "async" else AWAIT,
@@ -975,7 +979,11 @@ def generate_tokens(
                             continue
 
                     tok = (NAME, token, spos, epos, line)
-                    if token == "async" and not stashed:
+                    if (
+                        not has_mojo_keywords
+                        and token == "async"
+                        and not stashed
+                    ):
                         stashed = tok
                         continue
 

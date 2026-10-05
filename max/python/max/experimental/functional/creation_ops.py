@@ -659,6 +659,30 @@ def range(
 arange = range
 
 
+def shape_to_tensor(shape: ShapeLike) -> Tensor:
+    """Converts a shape into a rank-1 ``int64`` tensor on the CPU.
+
+    .. code-block:: python
+
+        from max.experimental import functional as F
+        from max.experimental.tensor import Tensor
+
+        x = Tensor.ones((3, 4))
+        num_tokens = F.shape_to_tensor(x.shape)[0]
+        # num_tokens holds 3
+
+    Args:
+        shape: The shape to convert. Each dimension may be static or
+            symbolic.
+
+    Returns:
+        A ``Tensor`` of shape ``[len(shape)]`` and dtype ``int64`` on the CPU
+        whose elements are the dimension values of ``shape``.
+    """
+    with ensure_context():
+        return Tensor.from_graph_value(ops.shape_to_tensor(shape))
+
+
 def constant(
     value: DLPackArray | NestedArray | Number,
     dtype: DType | None = None,

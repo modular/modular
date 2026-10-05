@@ -156,14 +156,10 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     return result;
 
   // Now find all extensions that target this struct/trait.
-  // Extensions are registered with the name of their target type, prefixed
-  // with "extension:" (e.g., "extension:Spaceship") so that we can do this
-  // lookup here.
-  StringRef typeName = astDecl->getUserNameIfOperation().value();
-  std::string extensionName =
-      shared.extensionsScopeMarker.getValue().str() + typeName.str();
-  LookupAllResult lookupResult =
-      shared.lookupAllDeclsWithName(extensionName, callLoc, *this, true);
+  StringAttr extensionName =
+      shared.getExtensionName(astDecl->getUserNameIfOperation().value());
+  LookupAllResult lookupResult = shared.lookupAllDeclsWithName(
+      extensionName.getValue(), callLoc, *this, true);
 
   // Only consider results from successful lookups. Lookups with isErroneous()
   // means the error was already diagnosed. Lookups with isFailure() should
@@ -184,10 +180,14 @@ ASTDecl::collectTypeAndExtensions(ASTType type, llvm::SMLoc callLoc) {
     // The bucket is keyed by the target's leaf name only, so extensions of
     // distinct types that share a name land together; keep only those whose
     // resolved target is this type's own decl, as
-    // findExtensionsInScopeForStruct does.
+    // findExtensionsInScopeForStruct does. An import re-exports every
+    // extension visible in its source module, so one extension can be found in
+    // several enclosing scopes; count it once, or its methods tie with
+    // themselves in overload resolution.
     auto extOp =
         dyn_cast_or_null<ExtensionDeclOp>(foundAstDecl->getIfOperation());
-    if (extOp && extOp.getTargetStructAttr() == typeSymbol)
+    if (extOp && extOp.getTargetStructAttr() == typeSymbol &&
+        !llvm::is_contained(result, foundAstDecl))
       result.push_back(foundAstDecl);
   }
 
@@ -475,13 +475,10 @@ void ASTDecl::findExtensionsInScopeForStruct(
   if (declsInScope->find(shared.extensionsScopeMarker) == declsInScope->end())
     return;
 
-  // Extensions targeting this struct are registered under "extension:<leaf>".
-  // The bucket is keyed by the target's leaf name only, so distinct structs
-  // that share a leaf name land together and the exact-symbol check below still
-  // filters them.
-  SmallString<64> extensionName(shared.extensionsScopeMarker.getValue());
-  extensionName += targetStruct.getLeafReference().getValue();
-  auto it = declsInScope->find(StringAttr::get(getContext(), extensionName));
+  // The exact-symbol check below filters out other structs sharing the leaf
+  // name.
+  auto it = declsInScope->find(
+      shared.getExtensionName(targetStruct.getLeafReference().getValue()));
   if (it == declsInScope->end())
     return;
 

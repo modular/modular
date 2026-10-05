@@ -1,0 +1,15 @@
+{
+  "target": "gated_group_rmsnorm",
+  "spec": {
+    "rows": 64,
+    "num_groups": 8,
+    "gate_pad": 6208,
+    "gate_off": 0,
+    "data_seed": 1,
+    "dist": 0
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "Nemotron-3.5-Lightning decode shape: batch 64, 8 groups of 512, gate row stride 10304 (vector path)",
+  "findings": []
+}

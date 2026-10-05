@@ -15,6 +15,7 @@ from std.collections import List
 from spmv_utils import CSRMatrix, generate_sparse_matrix, spmv_cpu, verify
 from max.gpu import block_idx, thread_idx, block_dim
 from max.gpu.host import DeviceContext
+from std.math import ceildiv
 
 
 def spmv_csr_kernel(
@@ -119,7 +120,7 @@ def main() raises:
     )
 
     var blockSize = 256
-    var numBlocks = (rows + blockSize - 1) // blockSize
+    var numBlocks = ceildiv(rows, blockSize)
 
     ctx.enqueue_function[spmv_csr_kernel](
         d_csrMatrix,

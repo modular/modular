@@ -259,8 +259,7 @@ def test_combine[
     var e2e_stat_m2: Float64 = 0
 
     @inline(.always)
-    @__parameter
-    def run_full_dispatch(ctx: DeviceContext) raises:
+    def run_full_dispatch(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [recv_buf]
         var recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [

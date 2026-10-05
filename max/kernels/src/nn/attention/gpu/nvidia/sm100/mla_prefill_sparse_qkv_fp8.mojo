@@ -55,6 +55,7 @@ from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
+    lane_id,
     warp_id,
     thread_idx,
     WARP_SIZE,
@@ -650,7 +651,7 @@ struct MLAPrefillSparseQKVFP8[
         # here (cg1) warp0 arms its own single-CTA byte count.
         comptime if Self.NUM_Q_HEADS_PER_CTA < Self.PADDED_HEADS_PER_CTA:
             for i in range(
-                Int(thread_idx.x),
+                thread_idx.x,
                 Self.SMemType.Q_SIZE,
                 Self.config.num_threads,
             ):
@@ -749,7 +750,7 @@ struct MLAPrefillSparseQKVFP8[
         var cta_id = UInt32(block_idx.x % Self.config.cta_group)
         var seq_idx = UInt32(block_idx.x // Self.config.cta_group)
         var warp_idx = warp_id()
-        var lane_idx = thread_idx.x % WARP_SIZE
+        var lane_idx = lane_id()
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
         var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
         var num_k_blocks = max(
@@ -873,7 +874,7 @@ struct MLAPrefillSparseQKVFP8[
             comptime _kv_kept = (
                 Self.SMemType.B_TOPK_PER_CTA * Self.config.input_qk_depth
             )
-            var _tid = Int(thread_idx.x)
+            var _tid = thread_idx.x
             for i in range(
                 _q_kept + _tid,
                 Self.SMemType.Q_SIZE,
@@ -1266,7 +1267,7 @@ struct MLAPrefillSparseQKVFP8[
         cta_id: UInt32,
     ):
         var warp_idx = warp_id()
-        var lane_idx = thread_idx.x % WARP_SIZE
+        var lane_idx = lane_id()
         var idx_in_wg = UInt32(thread_idx.x) % UInt32(WARPGROUP_SIZE)
 
         comptime MAX_INIT_VAL = Float32(-1e30)

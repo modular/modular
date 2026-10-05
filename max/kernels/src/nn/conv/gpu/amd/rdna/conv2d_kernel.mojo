@@ -308,9 +308,7 @@ def conv2d_kernel_rdna[
 
     # Block coordinates with swizzle for L2 locality
     var grid_dim = IndexList[2](ceildiv(_N, BLOCK_N), ceildiv(_M, BLOCK_M))
-    var swizzled = block_swizzle(
-        IndexList[2](block_idx.x, block_idx.y), grid_dim
-    )
+    var swizzled = block_swizzle((block_idx.x, block_idx.y), grid_dim)
     var block_n = swizzled[0]
     var block_m = swizzled[1]
 

@@ -24,15 +24,24 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Callable, Iterator, Mapping
+from concurrent import futures
 
+import grpc
 import pytest
 from max.serve.config import Settings
 from max.serve.telemetry import common
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
+    OTLPSpanExporter as OTLPGrpcSpanExporter,
+)
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
     OTLPMetricExporter,
 )
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
     OTLPSpanExporter,
+)
+from opentelemetry.proto.collector.trace.v1 import (
+    trace_service_pb2,
+    trace_service_pb2_grpc,
 )
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import (
@@ -41,11 +50,14 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.sdk.trace.sampling import TraceIdRatioBased
 
 GENERIC = "OTEL_EXPORTER_OTLP_ENDPOINT"
 TRACES = "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
 METRICS = "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT"
+PROTOCOL = "OTEL_EXPORTER_OTLP_PROTOCOL"
+TRACES_PROTOCOL = "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL"
 
 
 @pytest.fixture(autouse=True)
@@ -89,6 +101,166 @@ def test_exporter_endpoint_precedence(
 
     monkeypatch.delenv(GENERIC)
     assert build()._endpoint == "http://specific:4318/sink"
+
+
+def test_span_exporter_speaks_http_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The guarantee that adding the gRPC exporter cost nobody anything: with
+    no protocol variable set, every existing deployment keeps the HTTP
+    exporter it has always had."""
+    monkeypatch.setenv(TRACES, "http://agent:4318/v1/traces")
+    assert isinstance(common._span_exporter(), OTLPSpanExporter)
+
+
+def test_span_exporter_speaks_grpc_on_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """gRPC dials ``host:port``, so MAX leaves the SDK to strip the scheme
+    from the traces endpoint rather than passing an endpoint in."""
+    monkeypatch.setenv(TRACES, "http://agent:4317")
+    monkeypatch.setenv(PROTOCOL, "grpc")
+    exporter = common._span_exporter()
+    assert isinstance(exporter, OTLPGrpcSpanExporter)
+    assert exporter._endpoint == "agent:4317"
+
+
+def test_traces_protocol_precedence(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Signal-specific beats generic, as for the endpoint variables — an
+    operator moving only traces onto gRPC must not have to move metrics and
+    logs with them."""
+    assert common._traces_protocol() == "http/protobuf"
+
+    monkeypatch.setenv(PROTOCOL, "grpc")
+    assert common._traces_protocol() == "grpc"
+
+    monkeypatch.setenv(TRACES_PROTOCOL, "http/protobuf")
+    assert common._traces_protocol() == "http/protobuf"
+
+    monkeypatch.setenv(PROTOCOL, "http/protobuf")
+    monkeypatch.setenv(TRACES_PROTOCOL, "grpc")
+    assert common._traces_protocol() == "grpc"
+
+
+@pytest.mark.parametrize(
+    "value", ["http/json", "HTTP/PROTOBUF", " grpc ", "nonsense", ""]
+)
+def test_traces_protocol_parsing(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """Case and surrounding whitespace are forgiven; anything the SDK has no
+    exporter for degrades to HTTP rather than failing startup, because a
+    typo in a deploy config should cost spans, not the server."""
+    monkeypatch.setenv(PROTOCOL, value)
+    expected = "grpc" if value.strip().lower() == "grpc" else "http/protobuf"
+    assert common._traces_protocol() == expected
+
+
+def test_protocol_does_not_reach_metrics_or_logs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Scope wall: this change is traces only. The generic protocol variable
+    is deliberately not honoured for the other two signals, which still go to
+    Modular's collector over HTTP."""
+    monkeypatch.setenv(GENERIC, "http://agent:4317")
+    monkeypatch.setenv(PROTOCOL, "grpc")
+    assert isinstance(common._metric_exporter(), OTLPMetricExporter)
+
+
+@pytest.mark.parametrize("value", ["none", "deflate"])
+def test_grpc_tolerates_an_http_only_compression(
+    monkeypatch: pytest.MonkeyPatch, value: str
+) -> None:
+    """gRPC accepts only gzip, where HTTP also takes none and deflate, and
+    the generic variable is shared with metrics and logs that stay on HTTP.
+    Left alone the SDK raises out of the constructor, so a setting that is
+    valid for the other two signals would crash-loop the worker the moment
+    traces moved to gRPC."""
+    monkeypatch.setenv(TRACES, "http://agent:4317")
+    monkeypatch.setenv(PROTOCOL, "grpc")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_COMPRESSION", value)
+    assert isinstance(common._span_exporter(), OTLPGrpcSpanExporter)
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "warns"),
+    [
+        ("http://agent:4317", False),
+        ("https://agent:4317", False),
+        ("agent:4317", True),
+        ("agent.datadog.svc.cluster.local:4317", True),
+    ],
+)
+def test_grpc_warns_when_the_endpoint_omits_its_scheme(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    endpoint: str,
+    warns: bool,
+) -> None:
+    """``urlparse`` reads a bare ``agent:4317`` as a URL whose scheme is the
+    hostname, so the SDK does not infer plaintext and dials TLS instead.
+    Against a plaintext collector that surfaces only as spans never arriving,
+    which is why it is worth a line in the log at startup."""
+    monkeypatch.setenv(TRACES, endpoint)
+    monkeypatch.setenv(PROTOCOL, "grpc")
+    with caplog.at_level("WARNING"):
+        common._span_exporter()
+    assert ("exported over TLS" in caplog.text) is warns
+
+
+def test_explicit_insecure_silences_the_scheme_warning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An operator who set the insecure variable has chosen their transport,
+    and the scheme no longer decides it."""
+    monkeypatch.setenv(TRACES, "agent:4317")
+    assert common._tls_by_omission() == "agent:4317"
+
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_INSECURE", "true")
+    assert common._tls_by_omission() is None
+
+
+class _RecordingTraceService(trace_service_pb2_grpc.TraceServiceServicer):
+    """The receiver half of the gRPC egress test below."""
+
+    def __init__(self) -> None:
+        self.requests: list[trace_service_pb2.ExportTraceServiceRequest] = []
+
+    def Export(
+        self,
+        request: trace_service_pb2.ExportTraceServiceRequest,
+        context: grpc.ServicerContext,
+    ) -> trace_service_pb2.ExportTraceServiceResponse:
+        self.requests.append(request)
+        return trace_service_pb2.ExportTraceServiceResponse()
+
+
+def test_grpc_spans_reach_a_receiver(monkeypatch: pytest.MonkeyPatch) -> None:
+    """End to end over a real OTLP/gRPC receiver, because every assertion
+    above stops at which exporter was constructed. What this adds is that the
+    span leaves: a plaintext channel is inferred from the ``http://`` scheme,
+    so an in-cluster collector needs no TLS configuration, and the payload
+    carries MAX's resource."""
+    receiver = _RecordingTraceService()
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
+    trace_service_pb2_grpc.add_TraceServiceServicer_to_server(receiver, server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    try:
+        monkeypatch.setenv(TRACES, f"http://127.0.0.1:{port}")
+        monkeypatch.setenv(PROTOCOL, "grpc")
+        provider = TracerProvider(resource=common.logs_resource)
+        provider.add_span_processor(BatchSpanProcessor(common._span_exporter()))
+        with provider.get_tracer("test").start_as_current_span("max.request"):
+            pass
+        provider.force_flush(5000)
+        provider.shutdown()
+    finally:
+        server.stop(2).wait(5)
+
+    assert len(receiver.requests) == 1
+    spans = receiver.requests[0].resource_spans[0].scope_spans[0].spans
+    assert [span.name for span in spans] == ["max.request"]
 
 
 @pytest.mark.parametrize(
@@ -150,9 +322,9 @@ def test_only_the_traces_endpoint_turns_tracing_on(
     monkeypatch: pytest.MonkeyPatch, env: Mapping[str, str], installed: bool
 ) -> None:
     """With no provider installed the global stays OTel's
-    ProxyTracerProvider, so spans are no-ops and ``_tracing_enabled`` skips
-    its bookkeeping. The generic endpoint must not count: a deployment may
-    set it for metrics."""
+    ProxyTracerProvider, so spans are no-ops and the scheduler's
+    ``_tracing_enabled`` skips its bookkeeping. The generic endpoint must
+    not count: a deployment may set it for metrics."""
     captured: list[TracerProvider] = []
     monkeypatch.setattr(common, "set_tracer_provider", captured.append)
     for name, value in env.items():
@@ -161,6 +333,32 @@ def test_only_the_traces_endpoint_turns_tracing_on(
     assert len(captured) == int(installed)
     for provider in captured:
         provider.shutdown()
+
+
+def test_configure_tracing_installs_the_grpc_exporter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``configure_tracing`` installs the gRPC exporter when the traces
+    protocol is ``grpc``, not only ``_span_exporter`` in isolation."""
+    exporters: list[SpanExporter] = []
+
+    def recording_processor(exporter: SpanExporter) -> BatchSpanProcessor:
+        exporters.append(exporter)
+        return BatchSpanProcessor(exporter)
+
+    captured: list[TracerProvider] = []
+    monkeypatch.setattr(common, "set_tracer_provider", captured.append)
+    monkeypatch.setattr(common, "BatchSpanProcessor", recording_processor)
+    monkeypatch.setenv(TRACES, "http://agent:4317")
+    monkeypatch.setenv(TRACES_PROTOCOL, "grpc")
+    common.configure_tracing(Settings(disable_telemetry=False))
+    for provider in captured:
+        provider.shutdown()
+
+    assert len(captured) == 1
+    [exporter] = exporters
+    assert isinstance(exporter, OTLPGrpcSpanExporter)
+    assert exporter._endpoint == "agent:4317"
 
 
 @pytest.mark.parametrize(

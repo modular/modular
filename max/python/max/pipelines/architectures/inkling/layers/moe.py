@@ -26,7 +26,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.kernels import moe_sink_gate_router
+from max.nn.kernels import moe_finalize, moe_sink_gate_router
 from max.nn.layer import LayerList
 from max.nn.moe import MoEGate, MoEQuantized
 from max.nn.quant_config import fp4_packed_k
@@ -325,23 +325,24 @@ class InklingMoE(MoEQuantized):
     def __call__(self, x: TensorValue) -> TensorValue:
         assert isinstance(self.gate, InklingGate)
         routing = self.gate.route(x)
-        return self._routed_experts(x, routing) + self._sink_experts(
-            x, routing.sink_weights
+        routed = self._routed_experts(x, routing)
+        # Side_stream is a perf-optimization, after we noticed under
+        # profiling that these two computations could be overlapped
+        (sink,) = ops.side_stream(
+            [x, routing.sink_weights],
+            self._sink_experts,
+            result_types=[x.type],
         )
+        return routed + sink
 
     def _routed_experts(
         self, x: TensorValue, routing: InklingRouting
     ) -> TensorValue:
-        down_projs = self._expert_matmuls(
+        down, restore_order = self._expert_matmuls(
             x, ops.reshape(routing.expert_ids, [-1])
         )
-
-        return ops.squeeze(
-            ops.sum(
-                ops.unsqueeze(routing.expert_weights, axis=-1) * down_projs,
-                axis=1,
-            ),
-            axis=1,
+        return moe_finalize(
+            down, restore_order, routing.expert_weights, x.dtype
         )
 
     def _sink_experts(

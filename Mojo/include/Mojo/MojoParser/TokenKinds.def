@@ -113,8 +113,6 @@ TOK_KEYWORD(_)
 TOK_KEYWORD(and)
 TOK_KEYWORD(as)
 TOK_KEYWORD(assert)
-TOK_KEYWORD(async)
-TOK_KEYWORD(await)
 TOK_KEYWORD(break)
 TOK_KEYWORD(case)
 TOK_KEYWORD(class)
@@ -154,6 +152,8 @@ TOK_KEYWORD(var) // Mojo extension.
 TOK_KEYWORD(while)
 TOK_KEYWORD(with)
 TOK_KEYWORD(yield)
+TOK_KEYWORD(__async) // Mojo extension: unstable async support.
+TOK_KEYWORD(__await) // Mojo extension: unstable async support.
 TOK_KEYWORD(__extension)  // Mojo extension extension.
 TOK_KEYWORD(__generator_type) // Mojo extension: generator type literal.
 TOK_KEYWORD(__get_address_as_uninit_lvalue)

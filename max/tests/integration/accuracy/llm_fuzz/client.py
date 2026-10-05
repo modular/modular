@@ -68,6 +68,18 @@ class RunConfig:
     # multi-node deployment is driven at the same per-node pressure a single
     # pod sees.
     image_stress_nodes: int = 1
+    # Size of the needle_prefix_cache scenario: short conversations run side
+    # by side, long ones sized to half the model window alongside them,
+    # recall turns after the cold one, and the short haystack size (None
+    # derives it from the model's context window).
+    needle_conversations: int = 8
+    needle_long_conversations: int = 2
+    needle_turns: int = 3
+    needle_context_tokens: int | None = None
+    # Fail on any follow-up turn that did not reuse its whole previous
+    # prompt. For a deployment expected to serve every reload, such as a KV
+    # connector behind a GPU pool sized to evict.
+    needle_strict_cache_hits: bool = False
 
 
 class FuzzClient:

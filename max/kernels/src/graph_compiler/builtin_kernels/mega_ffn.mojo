@@ -53,7 +53,7 @@ See KERN-3085.
 Modeled on the sibling `msa.mojo` / `linalg.mojo` registrations (private
 `//Kernels` kernels registered in dedicated builtin_kernels files). MegaFFN is
 internal-only: unlike `msa` / `matmul_rs` it is NOT shipped in the OSS wheel, so
-open-source builds drop the `//Kernels/src/mega_ffn` dep (in `api.bzl`) and
+open-source builds drop the `//Kernels/lib/mega_ffn` dep (in `api.bzl`) and
 exclude this file from the public export (copybara).
 
 On-chip scratch (the composite op does not expose these): `c_packed` and
@@ -329,7 +329,7 @@ struct Struct_mega_ffn_nvfp4:
         )
         var c_packed = TileTensor(
             c_packed_buf.unsafe_ptr(),
-            row_major(Coord(Int64(m_total), Idx[packed_K2])),
+            row_major(Int64(m_total), Idx[packed_K2]),
         )
 
         # Intermediate 5D SwiGLU scale tile, same SF dtype as the A-scale
@@ -349,13 +349,11 @@ struct Struct_mega_ffn_nvfp4:
         var c_swiglu_scales = TileTensor(
             c_swiglu_scales_buf.unsafe_ptr(),
             row_major(
-                Coord(
-                    Int64(a_scale_dim0),
-                    Idx[k_groups_swiglu],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Int64(a_scale_dim0),
+                Idx[k_groups_swiglu],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
 
@@ -677,7 +675,7 @@ struct Struct_mega_ffn_ep_combine_send:
         )
         var c_packed = TileTensor(
             c_packed_buf.unsafe_ptr(),
-            row_major(Coord(Int64(m_total), Idx[packed_K2])),
+            row_major(Int64(m_total), Idx[packed_K2]),
         )
 
         var s_size = (
@@ -693,13 +691,11 @@ struct Struct_mega_ffn_ep_combine_send:
         var c_swiglu_scales = TileTensor(
             c_swiglu_scales_buf.unsafe_ptr(),
             row_major(
-                Coord(
-                    Int64(a_scale_dim0),
-                    Idx[k_groups_swiglu],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Int64(a_scale_dim0),
+                Idx[k_groups_swiglu],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
 
@@ -713,7 +709,7 @@ struct Struct_mega_ffn_ep_combine_send:
             UnsafePointer[
                 Scalar[combine_dtype], MutAnyOrigin
             ].unsafe_dangling(),
-            row_major(Coord(Int(0), Idx[N2])),
+            row_major(Int(0), Idx[N2]),
         )
 
         # Destination resolve reads the combine-async counter region; the

@@ -532,6 +532,34 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "tier."
         ),
     ),  # type: ignore
+    "maxserve.cache.connector_loads_refused": _meter.create_counter(
+        "maxserve.cache.connector_loads_refused",
+        unit="loads",
+        description=(
+            "Cumulative loads the KV connector's host and disk tiers refused. "
+            "Each refused load is served by recomputing its blocks, so a "
+            "steady rate is hit rate the tiers reported and could not "
+            "deliver."
+        ),
+    ),  # type: ignore
+    "maxserve.cache.connector_load_failures": _meter.create_counter(
+        "maxserve.cache.connector_load_failures",
+        unit="loads",
+        description=(
+            "Cumulative KV connector loads whose copy failed. Each is served "
+            "by recomputing the request's prefix without the connector, so "
+            "any of these is a transport fault rather than a cache miss."
+        ),
+    ),  # type: ignore
+    "maxserve.cache.connector_offload_blocks_dropped": _meter.create_counter(
+        "maxserve.cache.connector_offload_blocks_dropped",
+        unit="blocks",
+        description=(
+            "Cumulative offloaded KV blocks the connector's host pool had no "
+            "room for. A pool starved by blocks pinned for in-flight transfers "
+            "drops offloads before its hit rate falls."
+        ),
+    ),  # type: ignore
     "maxserve.cache.disk_bytes_read": _meter.create_counter(
         "maxserve.cache.disk_bytes_read",
         unit="bytes",
@@ -773,6 +801,15 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "is not counted. Counted before the schema is compiled, so a "
             "request later rejected by "
             "'maxserve.structured_output.grammar_rejections' still counts."
+        ),
+    ),  # type: ignore
+    "maxserve.tokenizer.chat_encoder_requests": _meter.create_counter(
+        "maxserve.tokenizer.chat_encoder_requests",
+        description=(
+            "Count of chat requests a --tokenizer-impl encoder was asked to "
+            "encode, split by the 'outcome' tag: 'custom' when it served the "
+            "request, 'fallback' when it failed and HuggingFace encoded the "
+            "request instead."
         ),
     ),  # type: ignore
 }
@@ -1940,6 +1977,33 @@ class _AsyncMetrics:
             ),
         )
 
+    def cache_connector_loads_refused(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_loads_refused",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_load_failures(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_load_failures",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
+    def cache_connector_offload_blocks_dropped(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.connector_offload_blocks_dropped",
+                count,
+                self.extra_attributes,
+            ),
+        )
+
     def cache_disk_bytes_read(self, count: int) -> None:
         self.client.send_measurement(
             MaxMeasurement(
@@ -2027,6 +2091,15 @@ class _AsyncMetrics:
                 "maxserve.structured_output.requests",
                 1,
                 {**self.extra_attributes, "kind": kind},
+            ),
+        )
+
+    def tokenizer_chat_encoder_requests(self, count: int, outcome: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.tokenizer.chat_encoder_requests",
+                count,
+                {**self.extra_attributes, "outcome": outcome},
             ),
         )
 

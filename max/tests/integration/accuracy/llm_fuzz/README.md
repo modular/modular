@@ -119,34 +119,35 @@ conservative defaults (4096 tokens).
 
 ### Fuzz scenarios (adversarial, crash-focused)
 
-| Scenario                           | Tests | What it attacks                                                                        |
-|------------------------------------|-------|----------------------------------------------------------------------------------------|
-| `malformed_payloads`               | ~40   | Missing fields, broken JSON, wrong types, truncated bodies, binary junk                |
-| `content_edge_cases`               | ~60   | Unicode surrogates, control chars, zero-width joiners, emoji clusters, extreme lengths |
-| `parameter_abuse`                  | ~50   | NaN/Infinity, negative max_tokens, temperature extremes, conflicting params            |
-| `concurrency_attacks`              | ~8    | Thundering herd (100 identical), burst patterns, ramp 1-100                            |
-| `streaming_attacks`                | ~14   | Cancel after 0/1/3 chunks, cancel storms, random cancel points                         |
-| `structured_output`                | ~15   | JSON mode state corruption (CVE), invalid schemas, rapid alternation                   |
-| `tool_calling`                     | ~25   | Malformed tools, empty args (vLLM #19419), streaming divergence                        |
-| `protocol_abuse`                   | ~20   | Wrong Content-Type, huge headers, slowloris, encoding attacks                          |
-| `resource_exhaustion`              | ~12   | Context boundary probing, logprobs amplification, concurrent large contexts            |
-| `state_interaction`                | ~18   | Cross-request state leaks, seed consistency, model switching                           |
-| `kv_cache_pressure`                | ~42   | Prefix cache pollution, page boundary probing, concurrent KV fill                      |
-| `thinking_tokens`                  | ~11   | DeepSeek `<think>` abuse: unbounded reasoning, mid-think cancellation                  |
-| `pipeline_stall`                   | ~8    | Prefill/decode imbalance, streaming cancel during KV transfer                          |
-| `connection_exhaustion`            | ~10   | Half-open connections, TCP resets, slowloris, pipelining                               |
-| `endurance_soak`                   | ~5    | Sustained load, error rate windows, latency degradation detection                      |
-| `endpoint_abuse`                   | ~30   | /metrics flooding, path traversal, method abuse, CORS probing                          |
-| `openai_spec_compliance`           | ~27   | Response structure, finish_reason, usage math, streaming chunks                        |
-| `output_correctness`               | ~13   | Concurrent prompts with quality validation, cross-contamination detection              |
-| `openrouter_tests`                 | ~59   | OpenRouter provider validation (49 text-only tests)                                    |
-| `tool_schema_validation`           | ~24   | K2VV-style tool call schema validation                                                 |
-| `json_schema_compliance`           | ~100  | 100-run cache-busted guided decoding validation                                        |
-| `tool_arguments_json_stability`    | 32x   | Repeated forced tool calls, arguments must parse as JSON                               |
-| `streaming_reasoning_monotonicity` | 30x   | Reasoning/content monotonicity in streaming                                            |
-| `schema_admission_policy`          | 12    | Admission verdict (serve vs refuse) for production-shaped, unenforceable JSON schemas  |
-| `reasoning_under_constraint`       | 4     | Gemma 4-only reasoning + document conformance (run with `--model-profile gemma4`)      |
-| `zombie_horde`                     | all   | Chaos mode, all scenarios in random parallel waves                                     |
+| Scenario                           | Tests    | What it attacks                                                                        |
+|------------------------------------|----------|----------------------------------------------------------------------------------------|
+| `malformed_payloads`               | ~40      | Missing fields, broken JSON, wrong types, truncated bodies, binary junk                |
+| `content_edge_cases`               | ~60      | Unicode surrogates, control chars, zero-width joiners, emoji clusters, extreme lengths |
+| `parameter_abuse`                  | ~50      | NaN/Infinity, negative max_tokens, temperature extremes, conflicting params            |
+| `concurrency_attacks`              | ~8       | Thundering herd (100 identical), burst patterns, ramp 1-100                            |
+| `streaming_attacks`                | ~14      | Cancel after 0/1/3 chunks, cancel storms, random cancel points                         |
+| `structured_output`                | ~15      | JSON mode state corruption (CVE), invalid schemas, rapid alternation                   |
+| `tool_calling`                     | ~25      | Malformed tools, empty args (vLLM #19419), streaming divergence                        |
+| `protocol_abuse`                   | ~20      | Wrong Content-Type, huge headers, slowloris, encoding attacks                          |
+| `resource_exhaustion`              | ~12      | Context boundary probing, logprobs amplification, concurrent large contexts            |
+| `state_interaction`                | ~18      | Cross-request state leaks, seed consistency, model switching                           |
+| `kv_cache_pressure`                | ~42      | Prefix cache pollution, page boundary probing, concurrent KV fill                      |
+| `thinking_tokens`                  | ~11      | DeepSeek `<think>` abuse: unbounded reasoning, mid-think cancellation                  |
+| `pipeline_stall`                   | ~8       | Prefill/decode imbalance, streaming cancel during KV transfer                          |
+| `connection_exhaustion`            | ~10      | Half-open connections, TCP resets, slowloris, pipelining                               |
+| `endurance_soak`                   | ~5       | Sustained load, error rate windows, latency degradation detection                      |
+| `endpoint_abuse`                   | ~30      | /metrics flooding, path traversal, method abuse, CORS probing                          |
+| `openai_spec_compliance`           | ~27      | Response structure, finish_reason, usage math, streaming chunks                        |
+| `output_correctness`               | ~13      | Concurrent prompts with quality validation, cross-contamination detection              |
+| `openrouter_tests`                 | ~59      | OpenRouter provider validation (49 text-only tests)                                    |
+| `tool_schema_validation`           | ~24      | K2VV-style tool call schema validation                                                 |
+| `json_schema_compliance`           | ~100     | 100-run cache-busted guided decoding validation                                        |
+| `constrained_decoding`             | 1.6-2.2k | Full draft-7 suite via tool-call (auto/required/named x strict) + response_format      |
+| `tool_arguments_json_stability`    | 32x      | Repeated forced tool calls, arguments must parse as JSON                               |
+| `streaming_reasoning_monotonicity` | 30x      | Reasoning/content monotonicity in streaming                                            |
+| `schema_admission_policy`          | 12       | Admission verdict (serve vs refuse) for production-shaped, unenforceable JSON schemas  |
+| `reasoning_under_constraint`       | 4        | Gemma 4-only reasoning + document conformance (run with `--model-profile gemma4`)      |
+| `zombie_horde`                     | all      | Chaos mode, all scenarios in random parallel waves                                     |
 
 ### Validation scenarios (correctness, OpenAI SDK-based)
 
@@ -161,6 +162,77 @@ These require the `openai` Python package, which Bazel provides automatically.
 | `so_advanced`           | 11    | Circular refs, large schemas, concurrent isolation, 50-property objects             |
 | `concurrent_stress`     | 5     | Mixed concurrent requests, type isolation, usage tracking                           |
 | `production_resilience` | 10    | Truncation, empty input, token counting, long conversations                         |
+| `needle_prefix_cache`   | 3     | Multi-turn needle recall over reused KV prefixes, short and half-window, plus leaks |
+
+### Needle prefix-cache recall
+
+```bash
+# Default: 8 short conversations plus 2 at half the context window,
+# 3 recall turns each, minutes on any model
+$LLM_FUZZ --url http://localhost:8000 --model my-model \
+    --scenarios needle_prefix_cache
+
+# Longer run that churns the cache and stretches the short prompts
+$LLM_FUZZ --url http://localhost:8000 --model my-model \
+    --scenarios needle_prefix_cache --needle-conversations 64 \
+    --needle-turns 6 --needle-context-tokens 8192
+
+# KV connector check: serve with a GPU pool too small for the run, so
+# every follow-up is a reload the connector must serve, and fail on a miss
+$LLM_FUZZ --url http://localhost:8000 --model my-model \
+    --scenarios needle_prefix_cache --needle-conversations 32 \
+    --needle-turns 6 --needle-strict-cache-hits
+```
+
+Several conversations advance side by side, so their turns co-batch. Each
+buries a high-entropy code in a unique log-shaped haystack, asks for it
+cold after a prefix-cache reset, then re-asks it on every follow-up turn,
+where the server should serve the whole earlier prompt from the prefix
+cache. Most haystacks are a few KV pages long; two are sized to half the
+model's context window (at most 128K tokens), so production-length prompts
+are prefilled, chunked and reloaded alongside the short ones. Three checks
+come out:
+
+- `prefix_cache_hits` reads `usage.prompt_tokens_details.cached_tokens` on
+  each follow-up turn and expects at least the previous turn's prompt rounded
+  down to a 128-token page (the server commits whole pages, never the
+  trailing partial one, and never the whole prompt). No follow-up reusing
+  anything is a FAIL: prefix caching is off or not finding the previous turn.
+  A shortfall on some turns is INTERESTING with the numbers, because a
+  multi-replica deployment can route a turn to a replica without the prefix,
+  and an eviction under a long run looks the same. `--needle-strict-cache-hits`
+  turns that shortfall into a FAIL for a deployment that is expected to serve
+  every reload.
+- `needle_recall` is the correctness gate. A cache-served turn that loses the
+  needle is replayed fresh after a prefix-cache reset, with the identical
+  message list. Recall on the replay means reusing the prefix changed the
+  answer, and that is a FAIL carrying both answers. A replay that misses too
+  is the model's own limit and is reported as INTERESTING, as are cold-turn
+  misses and completions spent entirely on reasoning.
+- `cross_talk` fails on any response carrying another conversation's needle,
+  in the answer or in the reasoning: KV or request mixing across sequences.
+
+`--needle-conversations`, `--needle-long-conversations`, `--needle-turns`
+and `--needle-context-tokens` size the run. The default short haystack is a
+quarter of the context window, at most 2048 tokens, and each short
+conversation draws a size in a 2x range under that so needles straddle
+different page boundaries. A deployment serving a `--max-length` below the
+model's window rejects the long conversations with a 400, which the
+`requests` result reports; pass `--max-context-length` so both tiers are
+sized to what is served.
+
+The verdict says which tier served a prefix no more than the wire does:
+`cached_tokens` sums the on-device cache and any KV connector. To exercise a
+connector, make the GPU pool too small for the run so that finished
+conversations are evicted before their follow-up arrives. MAX caps the pool
+at `ceil(max_length / page_size) * max_batch_size` pages, so
+`--max-batch-size 16 --max-length 8192` is 1024 pages, and 32 conversations
+of 6K tokens overflow it. Without a connector those follow-ups report
+`cached_tokens=0`; with one they must still reuse the whole prompt, and
+`--needle-strict-cache-hits` fails the run when they do not, while
+`needle_recall` fails it when the reloaded prefix comes back wrong. The
+statistical version of that comparison, with a connector-off control, is
+the dKV needle-recall harness.
 
 ### Model-specific scenarios
 

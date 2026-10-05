@@ -257,7 +257,7 @@ def bench_rs_norm_gemm_pdl[
     # each iteration streams cold weights -- the cost the prefetch must hide.
     comptime WeightType = TileTensor[
         in_dtype,
-        type_of(row_major(Coord(Idx[gemm_n], Idx[num_cols]))),
+        type_of(row_major(Idx[gemm_n], Idx[num_cols])),
         ImmutAnyOrigin,
     ]
     var in_bufs = Array[InTensorType, ngpus](uninitialized=True)
@@ -352,17 +352,17 @@ def bench_rs_norm_gemm_pdl[
                 ](
                     TileTensor(
                         c_dev[i] if verify_variant == 1 else c_ref_dev[i],
-                        row_major(Coord(local_rows, Idx[gemm_n])),
+                        row_major(local_rows, Idx[gemm_n]),
                     ),
                     TileTensor(
                         normed[i],
-                        row_major(Coord(local_rows, Idx[num_cols])),
+                        row_major(local_rows, Idx[num_cols]),
                     ),
                     WeightType(
                         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
                             cb_weights[i].offset_ptr(0)
                         ),
-                        row_major(Coord(Idx[gemm_n], Idx[num_cols])),
+                        row_major(Idx[gemm_n], Idx[num_cols]),
                     ),
                     list_of_ctx[i],
                 )
@@ -459,17 +459,17 @@ def bench_rs_norm_gemm_pdl[
                         ](
                             TileTensor(
                                 c_dev[ctx_idx],
-                                row_major(Coord(local_rows, Idx[gemm_n])),
+                                row_major(local_rows, Idx[gemm_n]),
                             ),
                             TileTensor(
                                 normed[ctx_idx],
-                                row_major(Coord(local_rows, Idx[num_cols])),
+                                row_major(local_rows, Idx[num_cols]),
                             ),
                             WeightType(
                                 rebind[
                                     ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]
                                 ](cb_weights[ctx_idx].offset_ptr(cache_iter)),
-                                row_major(Coord(Idx[gemm_n], Idx[num_cols])),
+                                row_major(Idx[gemm_n], Idx[num_cols]),
                             ),
                             ctx_inner,
                         )

@@ -158,6 +158,8 @@ modular_multi_py_version_test(
     }),
     deps = [
         "//max/python/max/_entrypoints:pipelines",
+        "//max/python/max/experimental/cascade/serve:main_lib",
+        "//max/python/max/pipelines/lib",
         requirement("click"),
     ],
 )

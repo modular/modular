@@ -171,12 +171,6 @@ def _bench(
             decay_tt,
             beta_tt,
             offsets_tt,
-            UInt32(conv_dim),
-            UInt32(1),
-            UInt32(num_value_heads),
-            UInt32(1),
-            UInt32(value_dim),
-            UInt32(1),
             grid_dim=(num_blocks,),
             block_dim=(V,),
         )

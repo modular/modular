@@ -78,11 +78,11 @@ def run_pathological_bscale[
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
 
-    var a_layout = row_major(Coord(m, k))
-    var b_layout = row_major(Coord(n, k))
-    var c_layout = row_major(Coord(m, n))
-    var a_scales_layout = row_major(Coord(Idx[1], m))
-    var b_scales_layout = row_major(Coord(n, Idx[1]))
+    var a_layout = row_major(m, k)
+    var b_layout = row_major(n, k)
+    var c_layout = row_major(m, n)
+    var a_scales_layout = row_major(Idx[1], m)
+    var b_scales_layout = row_major(n, Idx[1])
 
     # Fill A and B with full-magnitude fp8 values (worst case for overflow):
     # every element = fp8 max (448). a_scale = 1.0 (benign activation scale).

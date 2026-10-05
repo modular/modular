@@ -93,9 +93,9 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec, rerun: Int = 0) raises:
 
     # M runtime (bare Int); N, K comptime (Idx[...]) so the tuned split-K path
     # engages (it keys on the static N/K).
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     # use_tf32=False pins the IEEE-fp32 split-K GEMV and makes the dispatcher's
     # `has_precise_f32_gemv` comptime assert enforce it (see module header).

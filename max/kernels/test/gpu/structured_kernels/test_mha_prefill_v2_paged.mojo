@@ -31,16 +31,10 @@ depth tested at {64, 128}.
 
 from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-)
+from layout import TileTensor
 from layout.coord import Coord, Idx
 from layout.tile_layout import row_major
 
@@ -164,76 +158,46 @@ def test_v2_causal_paged[depth: Int](ctx: DeviceContext) raises:
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[depth]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[depth],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[depth]),
     )
-    # PagedKVCacheCollection. LayoutTensor wrappers over the device buffers.
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_tensor = LayoutTensor[
-        .bfloat16,
-        kv_block_layout,
-    ](
-        dev_kv_block,
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](
-                NUM_PAGES, 2, NUM_LAYERS, PAGE_SIZE, NUM_KV_HEADS, depth
-            )
-        ),
-    )
-
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_tensor = LayoutTensor[
-        mut=False,
-        .uint32,
-        cache_lengths_layout,
-    ](
-        dev_cache_lengths,
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](BATCH)),
-    )
-
-    comptime paged_lut_layout = Layout.row_major[2]()
-    var paged_lut_tensor = LayoutTensor[
-        mut=False,
-        .uint32,
-        paged_lut_layout,
-    ](
-        dev_paged_lut.unsafe_ptr(),
-        RuntimeLayout[paged_lut_layout].row_major(
-            IndexList[2](BATCH, PAGES_PER_SEQ)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         DType.bfloat16,
         KVCacheStaticParams(num_heads=NUM_KV_HEADS, head_size=depth),
         PAGE_SIZE,
-    ](
-        # `mha_prefill_v2` reads both the `k` and `v` cache views, which are disjoint
-        # kv_idx halves of one `blocks` buffer sharing its origin, so the
-        # nested-origin exclusivity check rejects passing both. Declare the
-        # kv_block_tensor origin as UnsafeAnyOrigin to opt out of exclusivity checking.
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(NUM_PAGES)
+    blocks_shape[2] = Int64(NUM_LAYERS)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(2 * NUM_LAYERS * PAGE_SIZE * NUM_KV_HEADS * depth)
+    blocks_strides[1] = Int64(NUM_LAYERS * PAGE_SIZE * NUM_KV_HEADS * depth)
+    var kv_block_tensor = TileTensor(
+        dev_kv_block.unsafe_ptr(), BlocksLayout(blocks_shape, blocks_strides)
+    )
+    var cache_lengths_tensor = TileTensor(
+        dev_cache_lengths.unsafe_ptr(), row_major(Int64(BATCH))
+    )
+    var paged_lut_tensor = TileTensor(
+        dev_paged_lut.unsafe_ptr(),
+        row_major(Int64(BATCH), Int64(PAGES_PER_SEQ)),
+    )
+    # K and V occupy disjoint per-page regions; erased origins allow the
+    # attention kernel to borrow both cache views.
+    var kv_collection = Collection(
         kv_block_tensor.as_unsafe_any_origin(),
-        cache_lengths_tensor,
-        paged_lut_tensor,
-        UInt32(SEQ_LEN),  # max_seq_length
-        UInt32(NUM_KEYS),  # max_context_length
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        paged_lut_tensor.as_imm().as_unsafe_any_origin(),
+        UInt32(SEQ_LEN),
+        UInt32(NUM_KEYS),
     )
 
     var k_operand = KVCacheMHAOperand(kv_collection.get_key_cache(LAYER_IDX))

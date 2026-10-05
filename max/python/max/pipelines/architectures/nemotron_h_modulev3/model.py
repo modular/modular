@@ -25,7 +25,7 @@ from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
 from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from .model_config import NemotronHConfig
 from .nemotron_h import NemotronH
-from .weight_adapters import dequantize_to_bf16
+from .weight_adapters import dequantize_to_bf16, stack_nvfp4_experts
 
 logger = logging.getLogger("max.pipelines")
 
@@ -53,6 +53,10 @@ class NemotronHModel(
     ) -> dict[str, Any]:
         modules = model_config.quant_scheme.quantized
         if modules:
+            if mixers := model_config.w4a4_mixers():
+                state_dict, modules = stack_nvfp4_experts(
+                    state_dict, modules, mixers
+                )
             start = time.perf_counter()
             state_dict = dequantize_to_bf16(state_dict, modules)
             logger.info(

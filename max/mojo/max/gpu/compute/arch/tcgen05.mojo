@@ -64,7 +64,7 @@ struct TensorMemory(TrivialRegisterPassable):
 def tcgen05_alloc[
     cta_group: Int32
 ](
-    ptr_tmem_addr: Pointer[mut=True, UInt32, _, address_space=.SHARED],
+    ptr_tmem_addr: Pointer[mut=False, UInt32, _, address_space=.SHARED],
     num_cols: UInt32,
 ):
     """Allocates tensor memory for use with tcgen05 instructions.
@@ -216,11 +216,10 @@ def tcgen05_ld[
     ]() + "}"
     comptime addr_str = "[$" + String(width) + "]"
 
-    @__parameter
     @inline(.nodebug)
     def call_ld_intrinsic[
         pack_type: TrivialRegisterPassable
-    ]() -> Array[Scalar[dtype], width]:
+    ]() {imm} -> Array[Scalar[dtype], width]:
         var r = inlined_assembly[
             "tcgen05.ld.sync.aligned."
             + shape_str

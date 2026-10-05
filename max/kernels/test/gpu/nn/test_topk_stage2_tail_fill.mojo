@@ -21,17 +21,19 @@ reads back as real picks with arbitrary indices. DeepSeek-V4's lightning
 indexer turned such a tail into out-of-range compressed-cache entry ids and
 faulted with an illegal address.
 
-Only the multi-block path is at risk: with `num_blocks_per_input == 1` stage 2
-copies a stage-1 row that is already fully written. `N == BLOCK_SIZE *
-NUM_BLOCKS` puts `num_blocks_per_input` at 4 under the `ceildiv(N, block_size)`
-default as well as under the explicit argument the checks pass, so stage 2
-takes the reduce path either way.
+`N == BLOCK_SIZE * NUM_BLOCKS` puts `num_blocks_per_input` at 4 under the
+`ceildiv(N, block_size)` default as well as under the explicit argument the
+reduce-path checks pass, so stage 2 takes the reduce path either way. With
+`num_blocks_per_input == 1` stage 2 instead copies the stage-1 row, and that copy
+has to cover every slot even when `max_k` exceeds the block, as it does on
+Apple, where every block is a single simdgroup.
 
 Both checks poison the output buffers before the launch, so an unwritten tail
 fails deterministically instead of depending on what the allocator recycled.
 """
 
 from layout import Coord, TileTensor, row_major
+from max.gpu import WARP_SIZE
 from max.gpu.host import DeviceContext
 from nn.topk import topk_gpu
 from std.testing import assert_equal
@@ -60,9 +62,9 @@ def check_short_row_tail_is_padded(ctx: DeviceContext, batch_size: Int) raises:
     var out_vals = ctx.enqueue_create_buffer[DTYPE](batch_size * MAX_K)
     var out_idxs = ctx.enqueue_create_buffer[IDX](batch_size * MAX_K)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(batch_size, N)))
+    var in_t = TileTensor(in_buf, row_major(batch_size, N))
     with in_buf.map_to_host() as h:
-        var t = TileTensor(h, row_major(Coord(batch_size, N)))
+        var t = TileTensor(h, row_major(batch_size, N))
         for b in range(batch_size):
             for i in range(N):
                 t[b, i] = dead
@@ -79,8 +81,8 @@ def check_short_row_tail_is_padded(ctx: DeviceContext, batch_size: Int) raises:
         ctx,
         MAX_K,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(out_vals, row_major(Coord(batch_size, MAX_K))),
-        TileTensor(out_idxs, row_major(Coord(batch_size, MAX_K))),
+        TileTensor(out_vals, row_major(batch_size, MAX_K)),
+        TileTensor(out_idxs, row_major(batch_size, MAX_K)),
         block_size=BLOCK_SIZE,
         num_blocks_per_input=NUM_BLOCKS,
     )
@@ -133,9 +135,9 @@ def check_full_row_keeps_every_slot(ctx: DeviceContext) raises:
     var out_vals = ctx.enqueue_create_buffer[DTYPE](MAX_K)
     var out_idxs = ctx.enqueue_create_buffer[IDX](MAX_K)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(1, N)))
+    var in_t = TileTensor(in_buf, row_major(1, N))
     with in_buf.map_to_host() as h:
-        var t = TileTensor(h, row_major(Coord(1, N)))
+        var t = TileTensor(h, row_major(1, N))
         for i in range(N):
             t[0, i] = dead
         for j in range(MAX_K):
@@ -151,8 +153,8 @@ def check_full_row_keeps_every_slot(ctx: DeviceContext) raises:
         ctx,
         MAX_K,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(out_vals, row_major(Coord(1, MAX_K))),
-        TileTensor(out_idxs, row_major(Coord(1, MAX_K))),
+        TileTensor(out_vals, row_major(1, MAX_K)),
+        TileTensor(out_idxs, row_major(1, MAX_K)),
         block_size=BLOCK_SIZE,
         num_blocks_per_input=NUM_BLOCKS,
     )
@@ -171,9 +173,65 @@ def check_full_row_keeps_every_slot(ctx: DeviceContext) raises:
     _ = out_idxs^
 
 
+def check_single_block_fills_past_block_size(ctx: DeviceContext) raises:
+    """One block of `WARP_SIZE` threads against `max_k == 2 * WARP_SIZE`.
+
+    The row is shorter than `max_k`, so the slots past the block hold both real
+    picks and padding.
+    """
+    comptime block_size = WARP_SIZE
+    comptime n = WARP_SIZE + 5
+    comptime max_k = 2 * WARP_SIZE
+    var dead = min_or_neg_inf[DTYPE]()
+
+    var in_buf = ctx.enqueue_create_buffer[DTYPE](n)
+    var out_vals = ctx.enqueue_create_buffer[DTYPE](max_k)
+    var out_idxs = ctx.enqueue_create_buffer[IDX](max_k)
+
+    var in_t = TileTensor(in_buf, row_major(1, n))
+    with in_buf.map_to_host() as h:
+        # Descending, so slot j holds index j.
+        for i in range(n):
+            h[i] = Scalar[DTYPE](n - i)
+    with out_vals.map_to_host() as h:
+        for i in range(max_k):
+            h[i] = Scalar[DTYPE](POISON_VAL)
+    with out_idxs.map_to_host() as h:
+        for i in range(max_k):
+            h[i] = Scalar[IDX](POISON_IDX)
+
+    topk_gpu[sampling=False, largest=True](
+        ctx,
+        max_k,
+        in_t.as_unsafe_any_origin().as_imm(),
+        TileTensor(out_vals, row_major(1, max_k)),
+        TileTensor(out_idxs, row_major(1, max_k)),
+        block_size=block_size,
+        num_blocks_per_input=1,
+    )
+    ctx.synchronize()
+
+    with out_vals.map_to_host() as h:
+        for j in range(n):
+            assert_equal(h[j], Scalar[DTYPE](n - j))
+        for j in range(n, max_k):
+            assert_equal(h[j], dead)
+
+    with out_idxs.map_to_host() as h:
+        for j in range(n):
+            assert_equal(Int(h[j]), j)
+        for j in range(n, max_k):
+            assert_equal(Int(h[j]), -1)
+
+    _ = in_buf^
+    _ = out_vals^
+    _ = out_idxs^
+
+
 def main() raises:
     with DeviceContext() as ctx:
         check_short_row_tail_is_padded(ctx, 1)
         check_short_row_tail_is_padded(ctx, 4)
         check_full_row_keeps_every_slot(ctx)
+        check_single_block_fills_past_block_size(ctx)
         print("test_topk_stage2_tail_fill: OK")

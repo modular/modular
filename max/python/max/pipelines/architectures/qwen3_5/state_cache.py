@@ -20,6 +20,7 @@ in, and keeping the two apart would put that order in two files.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 
 from max import tree
@@ -28,6 +29,7 @@ from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
+    MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
     RecurrentStateRegion,
@@ -45,15 +47,65 @@ Separate leaves because the kernels want each as its own uniformly-strided
 tensor. They are allocated, published and evicted together.
 """
 
-_LEAF_IDS = (CONV_LEAF_ID, RECURRENT_LEAF_ID)
-"""Region declaration order, which ``leaves`` is indexed by.
+RING_LEAF_ID = "linear_attn/ring"
+"""The scratch leaf of a speculative verify ring.
 
-:func:`linear_state_regions` checks what it returns against this, so the two
-indices below cannot drift into silently swapping conv and recurrent state.
+A scratch-group leaf of the state cache. Each request draws one block when it
+is admitted and holds it until it is released, and it is never published.
+"""
+
+_LEAF_IDS = (CONV_LEAF_ID, RECURRENT_LEAF_ID)
+"""Declaration order of the leaves every Gated DeltaNet state has.
+
+:func:`linear_state_regions` checks its leading regions against this. The ring
+leaf, when declared, comes after these.
 """
 
 _CONV_LEAF = _LEAF_IDS.index(CONV_LEAF_ID)
 _RECURRENT_LEAF = _LEAF_IDS.index(RECURRENT_LEAF_ID)
+_RING_LEAF = len(_LEAF_IDS)
+"""Where a speculative verify's ring follows the live leaves."""
+
+RING_DTYPE = DType.float32
+"""Dtype of the ring pool. Float32 keeps the fold bit-exact against a
+forward over the accepted prefix alone."""
+
+COMPILED_RING_LENS = (2, 4, 8)
+"""Ring lengths the ring kernels are compiled for."""
+
+_RING_RECORD_ALIGN = 32
+"""Elements a ring record's stride is a multiple of, one 128-byte line."""
+
+
+def ring_len_for_window(window: int) -> int:
+    """Returns the shortest compiled ring length that fits ``window``.
+
+    Args:
+        window: Tokens one verify advances a request by, ``K + 1``.
+
+    Returns:
+        The smallest entry of :data:`COMPILED_RING_LENS` that is at least
+        ``window``.
+
+    Raises:
+        ValueError: If no compiled ring length is long enough.
+    """
+    for compiled in COMPILED_RING_LENS:
+        if window <= compiled:
+            return compiled
+    raise ValueError(
+        f"a {window}-token verify window needs a ring longer than any the "
+        f"gated-delta ring kernels are compiled for ({COMPILED_RING_LENS}); "
+        "add the length to both the kernel dispatch and COMPILED_RING_LENS"
+    )
+
+
+@tree.dataclass(frozen=True)
+class GatedDeltaRingAccess:
+    """One linear layer's verify ring, on one device."""
+
+    pool: BufferValue
+    row_id: TensorValue
 
 
 @tree.dataclass(frozen=True)
@@ -68,6 +120,8 @@ class GatedDeltaStateAccess:
     conv_row_id: TensorValue
     recurrent_pool: BufferValue
     recurrent_row_id: TensorValue
+    ring: GatedDeltaRingAccess | None = None
+    """The verify's ring, or ``None`` outside a verify."""
 
 
 def layer_state_access(
@@ -87,12 +141,28 @@ def layer_state_access(
     Returns:
         One access per device, in the order ``state`` came in.
     """
+
+    def ring(
+        inputs: RecurrentStateInputsPerDevice[TensorValue, BufferValue],
+    ) -> GatedDeltaRingAccess | None:
+        assert len(inputs.leaves) in (len(_LEAF_IDS), _RING_LEAF + 1), (
+            "expected the live leaves alone or with a ring, got"
+            f" {len(inputs.leaves)} leaves"
+        )
+        if len(inputs.leaves) == len(_LEAF_IDS):
+            return None
+        leaf = inputs.leaves[_RING_LEAF]
+        return GatedDeltaRingAccess(
+            pool=leaf.pool, row_id=leaf.live_row_id(layer)
+        )
+
     return [
         GatedDeltaStateAccess(
             conv_pool=inputs.leaves[_CONV_LEAF].pool,
             conv_row_id=inputs.leaves[_CONV_LEAF].live_row_id(layer),
             recurrent_pool=inputs.leaves[_RECURRENT_LEAF].pool,
             recurrent_row_id=inputs.leaves[_RECURRENT_LEAF].live_row_id(layer),
+            ring=ring(inputs),
         )
         for inputs in state
     ]
@@ -123,11 +193,24 @@ def linear_state_regions(
     conv_kernel_dim: int,
     dtype: DType,
     num_devices: int,
+    ring_len: int = 0,
 ) -> tuple[RecurrentStateRegion, ...]:
     """Returns the pool leaves one request's state occupies, per device.
 
     Sharded here: a device holds only its own slice of the heads.
+
+    Args:
+        ring_len: Record capacity of the speculative verify ring, or zero to
+            declare no ring. One of :data:`COMPILED_RING_LENS`.
+
+    Raises:
+        ValueError: If ``ring_len`` is neither zero nor a compiled length.
     """
+    if ring_len and ring_len not in COMPILED_RING_LENS:
+        raise ValueError(
+            f"ring_len must be zero or one of {COMPILED_RING_LENS}, got "
+            f"{ring_len}"
+        )
     conv_dim = (
         linear_conv_dim(
             key_head_dim=key_head_dim,
@@ -156,7 +239,60 @@ def linear_state_regions(
         ),
     )
     assert tuple(region.leaf_id for region in regions) == _LEAF_IDS
-    return regions
+    if not ring_len:
+        return regions
+
+    num_key_heads_per_device = num_key_heads // num_devices
+    ring_row_records = num_key_heads_per_device * ring_len
+    record_stride = _ring_record_stride(
+        record_elements=key_head_dim
+        + (num_value_heads // num_key_heads) * (value_head_dim + 1),
+        bytes_per_element=num_linear_layers
+        * ring_row_records
+        * RING_DTYPE.size_in_bytes,
+        page_multiple_of=math.lcm(
+            *(region.bytes_per_page for region in regions)
+        ),
+    )
+    ring = RecurrentStateRegion(
+        leaf_id=RING_LEAF_ID,
+        num_layers=num_linear_layers,
+        row_shape=(num_key_heads_per_device, ring_len, record_stride),
+        dtype=RING_DTYPE,
+        scratch=True,
+    )
+    return (*regions, ring)
+
+
+def _ring_record_stride(
+    *, record_elements: int, bytes_per_element: int, page_multiple_of: int
+) -> int:
+    """Returns the padded stride of one ring record.
+
+    A huge block is the least common multiple of every leaf's page, so the
+    ring's page is padded to divide ``page_multiple_of``, the live leaves'
+    least common multiple, and never enlarges it. The kernels lay a record
+    out as ``gated_delta_ring_record_elements`` does, the raw key and then
+    each value head's delta row and decay, which ``record_elements`` counts.
+
+    Args:
+        record_elements: Elements one record holds before padding.
+        bytes_per_element: Page bytes one element of stride costs.
+        page_multiple_of: Bytes the ring's page must divide.
+
+    Returns:
+        The smallest aligned stride whose page divides ``page_multiple_of``,
+        or the aligned record itself when no stride that small does.
+    """
+    aligned = -(-record_elements // _RING_RECORD_ALIGN) * _RING_RECORD_ALIGN
+    for stride in range(
+        aligned,
+        page_multiple_of // bytes_per_element + 1,
+        _RING_RECORD_ALIGN,
+    ):
+        if page_multiple_of % (stride * bytes_per_element) == 0:
+            return stride
+    return aligned
 
 
 def attn_cache(params: KVCacheParamInterface) -> KVCacheParams:
@@ -170,6 +306,4 @@ def attn_cache(params: KVCacheParamInterface) -> KVCacheParams:
         "A Qwen3.5 cache is either an attention leaf or a tree holding one,"
         f" got {type(params).__name__}"
     )
-    attn = params.children[ATTN_CACHE_KEY]
-    assert isinstance(attn, KVCacheParams)
-    return attn
+    return params.child(ATTN_CACHE_KEY, MHAKVCacheParams)

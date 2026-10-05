@@ -35,8 +35,6 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.memory import external_memory
 from std.sys.info import (
-    has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
     is_amd_gpu,
     is_apple_gpu,
 )
@@ -60,10 +58,12 @@ from std.random import Random
 from std.sys import align_of, simd_width_of, size_of
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 from std.utils.static_tuple import StaticTuple
+from ..argmaxmin_gpu import _argmaxmin_block_partial
 from ..normalization import (
     _APPLE_STATIC_SHMEM_MAX_COUNT,
     _APPLE_STATIC_SHMEM_MAX_BYTES,
 )
+from ..topk import _block_reduce_topk
 from .coop_row import (
     COOP_SLOT_FLOATS,
     CoopRow,
@@ -114,13 +114,13 @@ def _block_minmax[
 
     var results = block._block_reduce[
         block_size,
-        warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Scalar[dtype], 2](min_val, max_val),
         initial_vals=StaticTuple[Scalar[dtype], 2](
             Scalar[dtype].MAX_FINITE, Scalar[dtype].MIN_FINITE
         ),
+        warp_reduce_fn=_reduce_fn,
     )
     return (results[0], results[1])
 
@@ -153,7 +153,6 @@ def _block_reduce_pivot_bounds[
 
     var results = block._block_reduce[
         block_size,
-        warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Float32, 4](
@@ -162,6 +161,7 @@ def _block_reduce_pivot_bounds[
         initial_vals=StaticTuple[Float32, 4](
             0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
         ),
+        warp_reduce_fn=_reduce_fn,
     )
     return (
         Int32(results[0]),
@@ -454,8 +454,7 @@ def topk_mask_logits[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int]() raises:
+        def launch_kernel[vec_size: Int]() raises {imm}:
             comptime kernel = TopKMaskLogitsKernel[
                 block_size,
                 vec_size,
@@ -1208,8 +1207,7 @@ def topk_sampling_from_prob[
         if top_k_arr:
             top_k_ptr = top_k_arr.value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int, deterministic: Bool]() raises:
+        def launch_kernel[vec_size: Int, deterministic: Bool]() raises {imm}:
             comptime kernel = TopKSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmOrigin(probs.origin),
@@ -1236,8 +1234,7 @@ def topk_sampling_from_prob[
             )
 
         # Runtime dispatch to compile-time parameter.
-        @__parameter
-        def dispatch_vec_size[deterministic: Bool]() raises:
+        def dispatch_vec_size[deterministic: Bool]() raises {imm}:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
                     return launch_kernel[param_vec_size, deterministic]()
@@ -1308,19 +1305,26 @@ comptime _COOP_STATS_WIDTH = 8
 
 
 @inline(.always)
-@__parameter
 def _coop_max(x: SIMD, y: type_of(x)) -> type_of(x):
     return max(x, y)
 
 
 @inline(.always)
-@__parameter
 def _coop_sum(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
 
 @inline(.always)
-@__parameter
+def _coop_first_argmax(x: SIMD, y: type_of(x)) -> type_of(x):
+    """Combines (maximum, index) pairs held in lanes 0 and 1.
+
+    Ranks fold in token order, so the strict comparison keeps the lowest index
+    among tied maxima.
+    """
+    return y if y[0] > x[0] else x
+
+
+@inline(.always)
 def _coop_cutoff_stats(x: SIMD, y: type_of(x)) -> type_of(x):
     """Combines cutoff statistics.
 
@@ -1362,7 +1366,6 @@ def _block_reduce_cutoff_stats[
 
     var results = block._block_reduce[
         block_size,
-        warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Float32, 6](
@@ -1376,6 +1379,7 @@ def _block_reduce_cutoff_stats[
         initial_vals=StaticTuple[Float32, 6](
             0, 0, 0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
         ),
+        warp_reduce_fn=_reduce_fn,
     )
     return (
         Int32(results[0]),
@@ -1411,7 +1415,6 @@ def _block_reduce_topp_stats[
 
     var results = block._block_reduce[
         block_size,
-        warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Float32, 4](
@@ -1423,6 +1426,7 @@ def _block_reduce_topp_stats[
         initial_vals=StaticTuple[Float32, 4](
             0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
         ),
+        warp_reduce_fn=_reduce_fn,
     )
     return (results[0], results[1], results[2], results[3])
 
@@ -1453,7 +1457,7 @@ def _sampling_rejection_loop_coop[
     Each block scans a contiguous slice. Group-wide values keep every block
     on the same branch and barrier sequence.
     """
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var sampled_id_sram = unsafe_stack_allocation[
         1, Int, address_space=.SHARED
     ]()
@@ -1924,8 +1928,8 @@ def TopKTopPSamplingFromProbKernel[
         coop_size == 1 or from_logits
     ), "the cooperative split needs the fused softmax"
     var n_vec = _d // vec_size
-    var rank = Int(block_idx.x) % coop_size
-    var bx = Int(block_idx.x) // coop_size
+    var rank = block_idx.x % coop_size
+    var bx = block_idx.x // coop_size
     var tx = thread_idx.x
 
     # Contiguous slices make block-rank order match token order.
@@ -1969,6 +1973,36 @@ def TopKTopPSamplingFromProbKernel[
 
         var probs_ptr = probs.ptr + row_idx * _d
         var probs_row = TileTensor(probs_ptr, row_major(Idx[1], _d))
+
+        comptime if is_apple_gpu() and coop_size == 1:
+            # A k=1 draw returns a row maximum whatever the temperature, top-p
+            # or min-p, so greedy rows skip the Apple search below, which runs
+            # on one thread. Ties take the lowest index (`numpy.argmax`); the
+            # search would draw one of them with the row's seed. NaN never
+            # wins, even at index 0, and a row with nothing above -inf reports
+            # 0. `k` is uniform per block, so the collectives stay legal.
+            if k == 1:
+                var best = Float32.MIN
+                var best_id = Int32.MAX
+                for i in range(vec_begin + Int(tx), vec_end, block_size):
+                    var v = probs_row.load[width=vec_size](
+                        (Idx[0], i * vec_size)
+                    ).cast[.float32]()
+                    comptime for j in range(vec_size):
+                        if v[j] > best:
+                            best = v[j]
+                            best_id = Int32(i * vec_size + j)
+                var row_best = block.max[block_size=block_size, broadcast=True](
+                    best
+                )
+                var first_id = block.min[
+                    block_size=block_size, broadcast=False
+                ](best_id if best == row_best else Int32.MAX)
+                if tx == 0:
+                    output[bx] = Scalar[out_idx_type](
+                        0 if first_id == Int32.MAX else Int(first_id)
+                    )
+                return
 
         # From-logits mode: resolve per-row temperature / min-p and compute
         # the row max and total unnormalized softmax mass z in two uniform
@@ -2459,6 +2493,46 @@ def TopKTopPSamplingFromProbKernel[
                         (Idx[0], i * vec_size), masked.cast[dist_dtype]()
                     )
 
+        # Temperature 0 arrives as top_k=1. Every token tied at the row
+        # maximum passes the accept test, so the seed would pick among exact
+        # ties; greedy decoding is argmax with the lowest index, the rule of
+        # `argmaxmin_gpu`, whose block reduction this reuses.
+        if k == 1:
+            comptime if is_apple_gpu():
+                if tx == 0:
+                    var best = probs_row.load[width=1]((Idx[0], 0))
+                    sampled_id = 0
+                    for j in range(1, _d):
+                        var v = probs_row.load[width=1]((Idx[0], j))
+                        if v > best:
+                            best = v
+                            sampled_id = j
+            else:
+                var best = _block_reduce_topk[ascending=True](
+                    _argmaxmin_block_partial[dtype, True, vec_size, 1](
+                        probs_ptr.as_unsafe_any_origin(),
+                        vec_begin * vec_size,
+                        (vec_end - vec_begin) * vec_size,
+                        False,
+                        Int(tx),
+                        block_size,
+                    )
+                )
+                sampled_id = best.p
+                comptime if coop_size > 1:
+                    # The blocks combine their own NaN-free maxima: `row_max`
+                    # is NaN on an all-NaN row, which no `best.u` matches.
+                    # Float32 holds every vocabulary index exactly.
+                    sampled_id = Int(
+                        coop.combine[2, _coop_first_argmax](
+                            coop_ws.unsafe_value(),
+                            coop_table,
+                            SIMD[.float32, 2](
+                                best.u.cast[.float32](), Float32(best.p)
+                            ),
+                        )[1]
+                    )
+
         if tx == 0 and rank == 0:
             output[bx] = Scalar[out_idx_type](sampled_id)
 
@@ -2696,7 +2770,7 @@ def topk_topp_sampling_from_prob[
                 raise Error("out_dist shape must match probs shape")
             dist_ptr = out_dist.unsafe_value().ptr
 
-        comptime coop_capable = from_logits and has_amd_gpu_accelerator()
+        comptime coop_capable = from_logits and ctx.target.is_amd_gpu()
         var coop = 1
         comptime if coop_capable:
             coop = coop_group_size(ctx, batch_size, block_size, d // vec_size)
@@ -2709,10 +2783,9 @@ def topk_topp_sampling_from_prob[
             ctx.enqueue_memset(coop_buf, 0)
             coop_ptr = coop_buf.unsafe_ptr().as_unsafe_any_origin()
 
-        @__parameter
         def launch_kernel[
             vec_size: Int, deterministic: Bool, coop_size: Int
-        ]() raises:
+        ]() raises {imm}:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,
                 ImmOrigin(probs.origin),
@@ -2750,8 +2823,7 @@ def topk_topp_sampling_from_prob[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-        @__parameter
-        def dispatch_vec_size[deterministic: Bool]() raises:
+        def dispatch_vec_size[deterministic: Bool]() raises {imm}:
             comptime for param_vec_size in [16, 8, 4, 2, 1]:
                 if vec_size == param_vec_size:
                     comptime if coop_capable:
@@ -3100,7 +3172,7 @@ def topk_softmax_sample[
 
         var k_rounded = align_up(top_k_val, WARP_SIZE)
         var shared_mem_bytes = k_rounded * (size_of[Float32]() + size_of[Int]())
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             if shared_mem_bytes > _APPLE_STATIC_SHMEM_CACHE_BYTES:
                 raise Error(
                     t"shared memory of {shared_mem_bytes} exceeds static"
@@ -3127,8 +3199,7 @@ def topk_softmax_sample[
         if seed:
             seed_ptr = seed.unsafe_value().ptr
 
-        @__parameter
-        def launch_kernel[vec_size: Int]() raises:
+        def launch_kernel[vec_size: Int]() raises {imm}:
             comptime kernel = topk_softmax_sample_kernel[
                 block_size,
                 vec_size,
@@ -3215,8 +3286,8 @@ def TopKTopPMaskedProbsKernel[
     ), "TopKTopPMaskedProbsKernel is not supported on Apple GPUs"
     var _d = Int(d)
     var n_vec = _d // vec_size
-    var rank = Int(block_idx.x) % coop_size
-    var bx = Int(block_idx.x) // coop_size
+    var rank = block_idx.x % coop_size
+    var bx = block_idx.x // coop_size
     var tx = thread_idx.x
 
     # Contiguous slices make block-rank order match token order.
@@ -3494,7 +3565,7 @@ def topk_topp_masked_probs[
         if temperature:
             temperature_ptr = temperature.unsafe_value().ptr
 
-        comptime coop_capable = has_amd_gpu_accelerator()
+        comptime coop_capable = ctx.target.is_amd_gpu()
         var coop = 1
         comptime if coop_capable:
             coop = coop_group_size(ctx, batch_size, block_size, d // vec_size)
@@ -3507,8 +3578,7 @@ def topk_topp_masked_probs[
             ctx.enqueue_memset(coop_buf, 0)
             coop_ptr = coop_buf.unsafe_ptr().as_unsafe_any_origin()
 
-        @__parameter
-        def launch_kernel[vec_size: Int, coop_size: Int]() raises:
+        def launch_kernel[vec_size: Int, coop_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsKernel[
                 block_size,
                 vec_size,

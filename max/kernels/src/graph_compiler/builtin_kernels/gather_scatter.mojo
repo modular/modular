@@ -29,7 +29,13 @@ import extensibility
 
 from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.host.info import is_cpu
-from layout import IntTuple, TileTensor, UNKNOWN_VALUE, coord_to_index_list
+from layout import (
+    Coord,
+    IntTuple,
+    TileTensor,
+    UNKNOWN_VALUE,
+    coord_to_index_list,
+)
 from layout.int_tuple import _IntTupleToCoordLike
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout as TileLayout
@@ -1542,30 +1548,26 @@ struct Gather:
     ) capturing raises:
         @inline(.always)
         def input_fn[
-            width: Int, _rank: Int, element_alignment: Int
-        ](coords: IndexList[_rank]) {var input} -> SIMD[output.dtype, width]:
+            width: Int, element_alignment: Int
+        ](coords: Coord) {var input} -> SIMD[output.dtype, width]:
             return input._lambda_load[
                 width=width, element_alignment=element_alignment
-            ](rebind[IndexList[input.rank]](coords))
+            ](coords)
 
         @inline(.always)
         def indices_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) {var indices} -> SIMD[indices.dtype, width]:
-            return indices._fused_load[width=width](
-                rebind[IndexList[indices.rank]](coords)
-            )
+            width: Int
+        ](coords: Coord) {var indices} -> SIMD[indices.dtype, width]:
+            return indices._fused_load[width=width](coords)
 
         @inline(.always)
         def output_fn[
-            width: SIMDLength, _rank: Int, element_alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[output.dtype, width]) {
-            var output
-        }:
+            width: SIMDLength, element_alignment: Int
+        ](coords: Coord, val: SIMD[output.dtype, width]) {var output}:
             output._lambda_store[
                 width=width, element_alignment=element_alignment
             ](
-                rebind[IndexList[output.rank]](coords),
+                coords,
                 rebind[SIMD[output.dtype, width]](val),
             )
 
@@ -2252,7 +2254,7 @@ struct AdvancedIndexingGetItem:
         @inline(.always)
         def input_tensor_fn[
             dtype: DType, width: Int
-        ](idx: IndexList[input_rank]) {var input_tensor} -> SIMD[dtype, width]:
+        ](idx: Coord) {var input_tensor} -> SIMD[dtype, width]:
             return rebind[SIMD[dtype, width]](
                 input_tensor._fused_load[width](idx)
             )
@@ -2260,7 +2262,7 @@ struct AdvancedIndexingGetItem:
         @inline(.always)
         def indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) {var indices} -> Int:
+        ](coordinates: Coord) {var indices} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"
@@ -2268,6 +2270,7 @@ struct AdvancedIndexingGetItem:
 
         advanced_indexing_getitem[
             input_rank=input_rank,
+            index_rank=index_rank,
             start_axis=start_axis,
             num_index_tensors=num_index_tensors,
             target=target,
@@ -2337,13 +2340,13 @@ struct AdvancedIndexingSetItemInplace:
         @inline(.always)
         def updates_tensor_fn[
             dtype: DType, width: Int
-        ](idx: IndexList[updates_rank]) {var updates} -> SIMD[dtype, width]:
+        ](idx: Coord) {var updates} -> SIMD[dtype, width]:
             return rebind[SIMD[dtype, width]](updates._fused_load[width](idx))
 
         @inline(.always)
         def indices_fn[
             indices_index: Int,
-        ](coordinates: IndexList[index_rank]) {var indices} -> Int:
+        ](coordinates: Coord) {var indices} -> Int:
             comptime assert (
                 indices_index < num_index_tensors
             ), "tensor index out of bounds"

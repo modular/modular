@@ -394,6 +394,10 @@ void DeclResolver::aliasDeclInParent(ASTDecl *decl, StringAttr aliasName) {
   // because the extension is already in the symbol table under its primary name
 }
 
+void DeclResolver::registerExtensionDecl(ASTDecl &extensionDecl) {
+  aliasDeclInParent(&extensionDecl, shared.extensionsScopeMarker);
+}
+
 TraitType DeclResolver::getCanonicalTrait(TraitType trait) {
   if (TraitType canonical = traitCanonicalizationCache.lookup(trait))
     return canonical;
@@ -1306,67 +1310,10 @@ LogicalResult DeclResolver::importDeclFromModule(
     return failure();
   }
 
-  // Also look for extensions in the source module.
   // When importing any declaration from a module, import all extensions from
   // that module so they're available in the destination scope.
-  // All extensions known to their parents as e.g. `extension:MyStruct` but
-  // also as `extension:` so asking for `extension:` will get all extensions.
-  // The aggregate `extension:` entry is a union over every wildcard import in
-  // the source scope, so resolve them all first. A lazy lookup would stop at
-  // the first wildcard that provides any extension and miss the rest. A
-  // failing wildcard reports at its own import site; it shouldn't fail this
-  // explicit import.
-  if (FailureOr<ASTDecl *> srcInit =
-          bodyResolvePackageInit(module, sourceNameLoc);
-      succeeded(srcInit)) {
-    expandWildcardsForName(*srcInit ? **srcInit : module,
-                           shared.extensionsScopeMarker);
-  }
-  StringAttr extensionNameAttr = shared.extensionsScopeMarker;
-  auto requestedModuleExts =
-      shared.lookupAndResolveDecl(extensionNameAttr, sourceNameLoc, module,
-                                  /*searchParentScopes=*/false,
-                                  /*resolveTarget=*/false);
-  if (requestedModuleExts.isSuccess()) {
-    ArrayRef<ASTDecl *> allExtensions = requestedModuleExts.getIfSuccess();
-    if (!allExtensions.empty()) {
-      shared.notifyListenerOnRef(allExtensions, extensionNameAttr,
-                                 sourceNameLoc);
-      shared.notifyListenerOnRef(allExtensions, extensionNameAttr, destNameLoc);
-
-      // Import under "extension:" for finding all extensions in a module
-      if (failed(aliasImportDecls(allExtensions, extensionNameAttr,
-                                  extensionNameAttr, moduleName, destNameLoc,
-                                  dest, true))) {
-        emitError(destNameLoc, "failed to import extensions from module '" +
-                                   modulePath.toDottedString() + "'");
-        return failure();
-      }
-      // Now that we have all the extensions, go through each one and register
-      // it under its specific name (e.g. "extension:SIMD") so
-      // collectTypeAndExtensions can find them.
-      for (ASTDecl *extensionDecl : allExtensions) {
-        auto extOp =
-            dyn_cast_or_null<ExtensionDeclOp>(extensionDecl->getIfOperation());
-        if (!extOp)
-          continue;
-        auto targetStructName = extOp.getTargetStructName().value();
-        StringAttr specificExtensionName = StringAttr::get(
-            getContext(), shared.extensionsScopeMarker.getValue().str() +
-                              targetStructName.str());
-        if (failed(aliasImportDecls({extensionDecl}, specificExtensionName,
-                                    extensionNameAttr, moduleName, destNameLoc,
-                                    dest, true))) {
-          emitError(destNameLoc, "failed to import extension for '" +
-                                     targetStructName + "' from module '" +
-                                     modulePath.toDottedString() + "'");
-          return failure();
-        }
-      }
-    }
-  }
-
-  return success();
+  return importModuleExtensions(module, dest, moduleName, sourceNameLoc,
+                                destNameLoc);
 }
 
 LogicalResult DeclResolver::importWildcardDeclsFromModule(
@@ -1403,21 +1350,7 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
     if (decls.empty())
       return success();
 
-    auto shouldImportWildcardDecl = [](ASTDecl *decl) {
-      auto structOp = dyn_cast_or_null<StructDeclOp>(decl->getIfOperation());
-      if (!structOp || !structOp.isSynthetic() || !structOp.getDefinesClosure())
-        return true;
-      return false;
-    };
-
-    SmallVector<ASTDecl *> filteredDecls;
-    llvm::copy_if(decls, std::back_inserter(filteredDecls),
-                  shouldImportWildcardDecl);
-    if (filteredDecls.empty())
-      return success();
-
-    return aliasImportDecls(filteredDecls, name, name, moduleName, loc, context,
-                            false);
+    return aliasImportDecls(decls, name, name, moduleName, loc, context, false);
   };
 
   // Resolve pending wildcard imports in the scope we are about to iterate
@@ -1450,54 +1383,10 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
     }
   }
 
-  // Also import all extensions from the source module, similar to what
-  // importDeclFromModule does. This ensures that when doing wildcard imports,
-  // extensions are available in the destination scope.
-  // Extensions are registered under "extension:" so we can find all of them.
-  StringAttr extensionNameAttr = shared.extensionsScopeMarker;
-  auto moduleExtensions =
-      shared.lookupAndResolveDecl(extensionNameAttr, loc, module,
-                                  /*searchParentScopes=*/false,
-                                  /*resolveTarget=*/false);
-  if (moduleExtensions.isSuccess()) {
-    ArrayRef<ASTDecl *> allExtensions = moduleExtensions.getIfSuccess();
-    if (!allExtensions.empty()) {
-      shared.notifyListenerOnRef(allExtensions, extensionNameAttr, loc);
-
-      // Import under "extension:" for finding all extensions in a module
-      if (failed(aliasImportDecls(allExtensions, extensionNameAttr,
-                                  extensionNameAttr, moduleName, loc, context,
-                                  true))) {
-        emitError(loc, "failed to import extensions from module '" +
-                           modulePath.toDottedString() + "'");
-        return failure();
-      }
-
-      // Now register each extension under its specific name (e.g.
-      // "extension:SIMD") so collectTypeAndExtensions can find them.
-      for (ASTDecl *extensionDecl : allExtensions) {
-        auto extOp =
-            dyn_cast_or_null<ExtensionDeclOp>(extensionDecl->getIfOperation());
-        if (!extOp)
-          continue;
-        auto targetStructName = extOp.getTargetStructName();
-        if (!targetStructName)
-          continue;
-        StringAttr specificExtensionName = StringAttr::get(
-            getContext(), shared.extensionsScopeMarker.getValue().str() +
-                              targetStructName.value().str());
-        if (failed(aliasImportDecls({extensionDecl}, specificExtensionName,
-                                    extensionNameAttr, moduleName, loc, context,
-                                    true))) {
-          emitError(loc, "failed to import extension for '" +
-                             targetStructName.value() + "' from module '" +
-                             modulePath.toDottedString() + "'");
-          return failure();
-        }
-      }
-    }
-  }
-
+  // A wildcard import brings in the module's extensions too, like any other
+  // import from it.
+  if (failed(importModuleExtensions(module, context, moduleName, loc, loc)))
+    return failure();
   return result;
 }
 
@@ -1554,6 +1443,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
   if (decl.loadedFromBytecode) {
     if (failed(shared.resolveDeclFromBytecode(decl, howResolved)))
       decl.setErroneous();
+    else if (howResolved == DeclResolvedness::body)
+      completeModuleScope(decl);
 
     declsCurrentlyProcessing.pop();
     return success(!decl.isErroneous());
@@ -1722,6 +1613,8 @@ LogicalResult DeclResolver::resolve(ASTDecl &decl, DeclResolvedness howResolved,
 
     if (decl.resolvedness == DeclResolvedness::signature)
       decl.resolvedness = DeclResolvedness::body;
+    if (!decl.isErroneous())
+      completeModuleScope(decl);
   }
 
   declsCurrentlyProcessing.pop();
@@ -1907,6 +1800,65 @@ void DeclResolver::expandWildcardsForName(ASTDecl &scope, StringAttr name,
   }
 }
 
+void DeclResolver::completeModuleScope(ASTDecl &decl) {
+  if (!isa_and_nonnull<FileModuleOp>(decl.getIfOperation()))
+    return;
+  expandWildcardsForName(decl, shared.extensionsScopeMarker);
+}
+
+LogicalResult DeclResolver::importModuleExtensions(ASTDecl &module,
+                                                   ASTDecl &dest,
+                                                   ImportPathAttr moduleName,
+                                                   SMLoc sourceLoc,
+                                                   SMLoc destLoc) {
+  // Mirror both names registerExtensionDecl gives each extension into `dest`.
+  StringAttr extensionNameAttr = shared.extensionsScopeMarker;
+  auto moduleExtensions =
+      shared.lookupAndResolveDecl(extensionNameAttr, sourceLoc, module,
+                                  /*searchParentScopes=*/false,
+                                  /*resolveTarget=*/false);
+  if (!moduleExtensions.isSuccess())
+    return success();
+  ArrayRef<ASTDecl *> allExtensions = moduleExtensions.getIfSuccess();
+  if (allExtensions.empty())
+    return success();
+
+  shared.notifyListenerOnRef(allExtensions, extensionNameAttr, sourceLoc);
+  if (destLoc != sourceLoc)
+    shared.notifyListenerOnRef(allExtensions, extensionNameAttr, destLoc);
+
+  auto modulePath = SharedState::ImportPath::fromAttr(moduleName);
+  if (failed(aliasImportDecls(allExtensions, extensionNameAttr,
+                              extensionNameAttr, moduleName, destLoc, dest,
+                              true))) {
+    emitError(destLoc, "failed to import extensions from module '" +
+                           modulePath.toDottedString() + "'");
+    return failure();
+  }
+
+  // collectTypeAndExtensions finds extensions by their specific name.
+  for (ASTDecl *extensionDecl : allExtensions) {
+    auto extOp =
+        dyn_cast_or_null<ExtensionDeclOp>(extensionDecl->getIfOperation());
+    if (!extOp)
+      continue;
+    std::optional<StringRef> targetStructName = extOp.getTargetStructName();
+    if (!targetStructName)
+      continue;
+    StringAttr specificExtensionName =
+        shared.getExtensionName(*targetStructName);
+    if (failed(aliasImportDecls({extensionDecl}, specificExtensionName,
+                                extensionNameAttr, moduleName, destLoc, dest,
+                                true))) {
+      emitError(destLoc, "failed to import extension for '" +
+                             *targetStructName + "' from module '" +
+                             modulePath.toDottedString() + "'");
+      return failure();
+    }
+  }
+  return success();
+}
+
 LogicalResult DeclResolver::resolveAllWildcardImports(ASTDecl &scope) {
   // Resolve wildcard imports from last to first, thereby meaning the last one
   // "wins" in terms of shadowing; subsequent colliding decls won't be brought
@@ -2033,6 +1985,14 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   // Process a main returning none.
   if (userResultType.isNoneType()) {
     if (userMainSignature.isThrows()) {
+      ASTType errorType = shared.lookupBuiltinType("Error", funcDecl, loc);
+      if (errorType.isTypeCheckErrorType())
+        return;
+      if (!isEqualCanon(userMainSignature.getUserThrownType(), errorType)) {
+        shared.emitError(loc, "'main()' can only raise 'Error'; "
+                              "remove the explicit error type");
+        return;
+      }
       mainKind = kRaisingNoneMain;
       // Drop the error from the argument list.
       argTypes = argTypes.drop_front(2);

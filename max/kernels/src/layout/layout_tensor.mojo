@@ -6005,7 +6005,7 @@ def stack_allocation_like[
     ].stack_allocation()
 
 
-struct ThreadScope(TrivialRegisterPassable, Writable):
+struct ThreadScope(EnumLike, TrivialRegisterPassable, Writable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -6054,6 +6054,27 @@ struct ThreadScope(TrivialRegisterPassable, Writable):
     comptime WARP = Self(1)
     """Represents operations at the warp level, where only threads within the
     same warp participate."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "BLOCK".value,
+        "WARP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ThreadScope has no payload"
 
     def __init__(out self, value: Int):
         """Initialize a `ThreadScope` with the given integer value.
@@ -7160,8 +7181,7 @@ def _copy_dram_to_local[
     ), "src_fragments must have known layout."
 
     @inline(.always)
-    @__parameter
-    def offset_helper(offset_val: Int):
+    def offset_helper(offset_val: Int) {imm}:
         var src_frag_offset = Int32(
             src_fragments.distance(src.ptr)
             + Scalar[src.linear_idx_type](offset_val)

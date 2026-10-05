@@ -1461,6 +1461,16 @@ def test_batch_inplace_copy_skips_a_zero_byte_pair() -> None:
     np.testing.assert_array_equal(other_dst.to_numpy(), [99])
 
 
+def test_batch_inplace_copy_lands_a_repeated_pair() -> None:
+    """A pair repeated in one batch still lands."""
+    src = Buffer.from_numpy(np.array([1, 2, 3, 4], dtype=np.uint32))
+    dst = Buffer.from_numpy(np.zeros(4, dtype=np.uint32))
+
+    batch_inplace_copy([dst, dst[:], dst], [src, src[:], src])
+
+    np.testing.assert_array_equal(dst.to_numpy(), [1, 2, 3, 4])
+
+
 def test_inplace_copy_from_still_copies_an_offset_view() -> None:
     """Two views of one buffer at different offsets are different memory."""
     backing = Buffer.from_numpy(np.arange(4, dtype=np.int32))

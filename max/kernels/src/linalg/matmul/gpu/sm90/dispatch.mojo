@@ -138,9 +138,7 @@ def matmul_dispatch_sm90[
     )
 
     @inline(.always)
-    @__parameter
-    @__copy_capture(c, a, b)
-    def _dispatch() raises -> Int:
+    def _dispatch() raises {var c, var a, var b, imm} -> Int:
         # General constraints for H100 matmul
         # fmt: off
         comptime if not (
@@ -637,9 +635,8 @@ def matmul_dispatch_sm90_fp8[
         ](c, a, b, ctx)
         return DISPATCH_HIT
 
-    @__parameter
     @inline(.nodebug)
-    def _dispatch[entry: TuningConfigSM90]() raises:
+    def _dispatch[entry: TuningConfigSM90]() raises {imm}:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,
@@ -658,11 +655,10 @@ def matmul_dispatch_sm90_fp8[
             grid_shape=entry.grid_shape,
         ](c, a, b, ctx)
 
-    @__parameter
     @inline(.nodebug)
     def _search[
         T: Table[TuningConfigSM90], domain: List[Int] = List[Int]()
-    ]() raises -> Int:
+    ]() raises {imm} -> Int:
         comptime m_values = T.query_values[Int, domain=domain](
             rule=lambda (x: TuningConfigSM90) -> Int: x.M
         )
@@ -988,9 +984,8 @@ def matmul_dispatch_sm90_bf16_fp32[
     comptime tuning_list = _get_tuning_list_bf16[size_factor, mma_k, BK]()
     comptime tuning_table = Table(tuning_list, "tuning_table_bf16")
 
-    @__parameter
     @inline(.nodebug)
-    def _dispatch[entry: TuningConfigSM90]() raises:
+    def _dispatch[entry: TuningConfigSM90]() raises {imm}:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             block_tile_shape=entry.block_tile_shape,
             mma_shape=entry.mma_shape,
@@ -1022,12 +1017,11 @@ def matmul_dispatch_sm90_bf16_fp32[
                 raster_order=entry.raster_order.value(),
             ](c, a, b, ctx)
 
-    @__parameter
     @inline(.nodebug)
     def _search[
         T: Table[TuningConfigSM90],
         domain: List[Int] = List[Int](),
-    ]() raises -> Int:
+    ]() raises {imm} -> Int:
         comptime m_values = T.query_values[Int, domain=domain](
             rule=lambda (x: TuningConfigSM90) -> Int: x.M
         )

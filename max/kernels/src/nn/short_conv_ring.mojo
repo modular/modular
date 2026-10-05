@@ -61,6 +61,17 @@ def _vector_width[dtype: DType, a: Int, b: Int]() -> Int:
 
 
 @inline(.always)
+def _ring_slot(
+    conv_rows: TileTensor[mut=False, .uint32, ...],
+    layer_row: UInt32,
+    batch_idx: Int,
+) -> Int:
+    """Returns the ring slot `batch_idx` occupies in row `layer_row` of
+    `conv_rows`."""
+    return Int(conv_rows.load[width=1](Coord(Int(layer_row), batch_idx))[0])
+
+
+@inline(.always)
 def _short_conv_ring_step[
     x_dtype: DType,
     ring_dtype: DType,
@@ -142,15 +153,17 @@ def short_conv_ring_fwd[
     ring: TileTensor[ring_dtype, ...],
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
     positions: TileTensor[mut=False, .uint32, ...],
-    conv_row: TileTensor[mut=False, .uint32, ...],
+    conv_rows: TileTensor[mut=False, .uint32, ...],
+    layer_row: UInt32,
     output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
 ) raises:
     """`x + conv(x)` over a ragged batch; reads the ring, writes nothing.
 
     `x`, `output`: `[total_seq_len, channels]`. `weight`: `[channels,
-    width]`. `ring`: `[slots, R, channels]`. `positions` is per token,
-    `conv_row` per sequence.
+    width]`. `ring`: `[slots, R, channels]`. `positions` is per token.
+    `conv_rows`: `[num_layers, batch]` ring slot per sequence; `layer_row`
+    picks this layer's row.
     """
     comptime assert is_gpu[target](), "short_conv_ring_fwd is GPU-only"
     comptime assert x.flat_rank == 2, "x must be [total_seq_len, channels]"
@@ -178,15 +191,15 @@ def short_conv_ring_fwd[
         var ring,
         var input_row_offsets,
         var positions,
-        var conv_row,
+        var conv_rows,
+        var layer_row,
         var output,
         var channel_blocks,
         var channels_dev,
     }:
-        var token_idx = Int(block_idx.x) // Int(channel_blocks)
+        var token_idx = block_idx.x // Int(channel_blocks)
         var channel = (
-            (Int(block_idx.x) % Int(channel_blocks)) * Int(block_dim.x)
-            + Int(thread_idx.x)
+            (block_idx.x % Int(channel_blocks)) * block_dim.x + thread_idx.x
         ) * vec
         if channel >= Int(channels_dev):
             return
@@ -201,7 +214,7 @@ def short_conv_ring_fwd[
             token_idx,
             channel,
             channel,
-            Int(conv_row.load[width=1](Coord(batch_idx))[0]),
+            _ring_slot(conv_rows, layer_row, batch_idx),
             position,
             position - idx_in_seq,
         )
@@ -226,7 +239,8 @@ def _commit_sequence_tail[
     ring: TileTensor[mut=True, ...],
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
     positions: TileTensor[mut=False, .uint32, ...],
-    conv_row: TileTensor[mut=False, .uint32, ...],
+    conv_rows: TileTensor[mut=False, .uint32, ...],
+    layer_row: UInt32,
     batch_idx: Int,
     col: Int,
     channel: Int,
@@ -241,7 +255,7 @@ def _commit_sequence_tail[
 
     var start = Int(input_row_offsets.load[width=1](Coord(batch_idx))[0])
     var end = Int(input_row_offsets.load[width=1](Coord(batch_idx + 1))[0])
-    var slot = Int(conv_row.load[width=1](Coord(batch_idx))[0])
+    var slot = _ring_slot(conv_rows, layer_row, batch_idx)
     for token_idx in range(max(start, end - ring_len), end):
         var position = Int(positions.load[width=1](Coord(token_idx))[0])
         var value = x.load[width=1](Coord(token_idx, col))
@@ -260,13 +274,16 @@ def short_conv_ring_commit[
     ring: TileTensor[mut=True, ...],
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
     positions: TileTensor[mut=False, .uint32, ...],
-    conv_row: TileTensor[mut=False, .uint32, ...],
+    conv_rows: TileTensor[mut=False, .uint32, ...],
+    layer_row: UInt32,
     context: DeviceContext,
 ) raises:
     """Writes each sequence's last `R` rows of `x` into its ring slot.
 
     `x`: `[total_seq_len, channels]`. `ring`: `[slots, R, channels]`.
-    Launch after every reader of the ring in the same forward.
+    `conv_rows`: `[num_layers, batch]` ring slot per sequence; `layer_row`
+    picks this layer's row. Launch after every reader of the ring in the
+    same forward.
     """
     comptime assert is_gpu[target](), "short_conv_ring_commit is GPU-only"
     comptime assert x.flat_rank == 2, "x must be [total_seq_len, channels]"
@@ -283,9 +300,10 @@ def short_conv_ring_commit[
         var ring,
         var input_row_offsets,
         var positions,
-        var conv_row,
+        var conv_rows,
+        var layer_row,
     }:
-        var channel = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+        var channel = block_idx.x * block_dim.x + thread_idx.x
         if channel >= channels:
             return
         _commit_sequence_tail(
@@ -293,8 +311,9 @@ def short_conv_ring_commit[
             ring,
             input_row_offsets,
             positions,
-            conv_row,
-            Int(block_idx.y),
+            conv_rows,
+            layer_row,
+            block_idx.y,
             channel,
             channel,
         )
@@ -322,14 +341,17 @@ def short_conv_ring_commit_kv[
     v_ring: TileTensor[mut=True, ring_dtype, ...],
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
     positions: TileTensor[mut=False, .uint32, ...],
-    k_conv_row: TileTensor[mut=False, .uint32, ...],
-    v_conv_row: TileTensor[mut=False, .uint32, ...],
+    k_conv_rows: TileTensor[mut=False, .uint32, ...],
+    v_conv_rows: TileTensor[mut=False, .uint32, ...],
+    k_layer_row: UInt32,
+    v_layer_row: UInt32,
     context: DeviceContext,
 ) raises:
     """Commits the K and V conv inputs of an attention block in one launch.
 
     K channels start at column `k_col` of `qkvr` and V channels follow them.
-    Grid z picks the site.
+    Grid z picks the site. Each site's `[num_layers, batch]` slot table is
+    indexed at its own layer row.
     """
     comptime assert is_gpu[target](), "short_conv_ring_commit_kv is GPU-only"
     comptime assert qkvr.flat_rank == 2, "qkvr must be rank 2"
@@ -354,10 +376,12 @@ def short_conv_ring_commit_kv[
         var v_ring,
         var input_row_offsets,
         var positions,
-        var k_conv_row,
-        var v_conv_row,
+        var k_conv_rows,
+        var v_conv_rows,
+        var k_layer_row,
+        var v_layer_row,
     }:
-        var channel = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+        var channel = block_idx.x * block_dim.x + thread_idx.x
         if channel >= channels:
             return
         # Distinct operands never share a TileTensor type, so no select.
@@ -367,8 +391,9 @@ def short_conv_ring_commit_kv[
                 k_ring,
                 input_row_offsets,
                 positions,
-                k_conv_row,
-                Int(block_idx.y),
+                k_conv_rows,
+                k_layer_row,
+                block_idx.y,
                 k_col + channel,
                 channel,
             )
@@ -378,8 +403,9 @@ def short_conv_ring_commit_kv[
                 v_ring,
                 input_row_offsets,
                 positions,
-                v_conv_row,
-                Int(block_idx.y),
+                v_conv_rows,
+                v_layer_row,
+                block_idx.y,
                 k_col + channels + channel,
                 channel,
             )
@@ -422,8 +448,10 @@ def _launch_fused_qk_rms_norm_short_conv[
     epsilon: Float32,
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
     positions: TileTensor[mut=False, .uint32, ...],
-    k_conv_row: TileTensor[mut=False, .uint32, ...],
-    v_conv_row: TileTensor[mut=False, .uint32, ...],
+    k_conv_rows: TileTensor[mut=False, .uint32, ...],
+    v_conv_rows: TileTensor[mut=False, .uint32, ...],
+    k_layer_row: UInt32,
+    v_layer_row: UInt32,
     log_scaling: TileTensor[mut=False, .float32, ...],
     q_output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
@@ -458,8 +486,10 @@ def _launch_fused_qk_rms_norm_short_conv[
         var v_conv_ring,
         var input_row_offsets,
         var positions,
-        var k_conv_row,
-        var v_conv_row,
+        var k_conv_rows,
+        var v_conv_rows,
+        var k_layer_row,
+        var v_layer_row,
         var log_scaling,
         var epsilon,
         var q_num_heads,
@@ -468,8 +498,8 @@ def _launch_fused_qk_rms_norm_short_conv[
     }:
         var n_q_rows = Int(q_rows)
         var n_kv_rows = Int(kv_rows)
-        var row = Int(block_idx.x)
-        var idx = Int(thread_idx.x) * vec
+        var row = block_idx.x
+        var idx = thread_idx.x * vec
         var in_head = idx < head_dim
         var is_q = row < n_q_rows
         var is_k = not is_q and row < n_q_rows + n_kv_rows
@@ -513,7 +543,7 @@ def _launch_fused_qk_rms_norm_short_conv[
                     token_idx,
                     col,
                     channel,
-                    Int(k_conv_row.load[width=1](Coord(batch_idx))[0]),
+                    _ring_slot(k_conv_rows, k_layer_row, batch_idx),
                     position,
                     chunk_start,
                 )
@@ -526,7 +556,7 @@ def _launch_fused_qk_rms_norm_short_conv[
                     token_idx,
                     col,
                     channel,
-                    Int(v_conv_row.load[width=1](Coord(batch_idx))[0]),
+                    _ring_slot(v_conv_rows, v_layer_row, batch_idx),
                     position,
                     chunk_start,
                 )
@@ -600,8 +630,10 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     layer_idx: UInt32,
     input_row_offsets: TileTensor[mut=False, .uint32, ...],
     positions: TileTensor[mut=False, .uint32, ...],
-    k_conv_row: TileTensor[mut=False, .uint32, ...],
-    v_conv_row: TileTensor[mut=False, .uint32, ...],
+    k_conv_rows: TileTensor[mut=False, .uint32, ...],
+    v_conv_rows: TileTensor[mut=False, .uint32, ...],
+    k_layer_row: UInt32,
+    v_layer_row: UInt32,
     log_scaling: TileTensor[mut=False, .float32, ...],
     q_output: TileTensor[mut=True, dtype, ...],
     context: DeviceContext,
@@ -613,7 +645,8 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     depthwise causal conv with residual, taps before the chunk from the conv
     rings; K is then RMSNormed; both are stored into the paged cache for
     `layer_idx`. With `apply_log_scaling`, each token's Q is then scaled by
-    `log_scaling[token]`.
+    `log_scaling[token]`. `k_conv_rows` and `v_conv_rows` are `[num_layers,
+    batch]` slot tables indexed at `k_layer_row` and `v_layer_row`.
 
     Exact for any chunk length. Only reads the rings; commit them afterwards
     with `short_conv_ring_commit_kv`.
@@ -662,8 +695,10 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
             epsilon,
             input_row_offsets,
             positions,
-            k_conv_row,
-            v_conv_row,
+            k_conv_rows,
+            v_conv_rows,
+            k_layer_row,
+            v_layer_row,
             log_scaling,
             q_output,
             context,

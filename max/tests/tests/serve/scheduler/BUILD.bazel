@@ -35,6 +35,7 @@ _MACOS_INCOMPATIBLE_TESTS = [
         }) if src in _MACOS_INCOMPATIBLE_TESTS else [],
         deps = [
             ":common",
+            requirement("opentelemetry-sdk"),
             requirement("pytest-asyncio"),
             requirement("pytest-mock"),
         ],

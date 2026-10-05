@@ -37,6 +37,10 @@ normalization, which drives it toward doubly stochastic -- no copy can be
 amplified or dropped across the round trip, which is what keeps the ``hc``
 lanes from collapsing into each other over 43 layers.
 
+The per-block gates and contraction run in :class:`~max.nn.HyperConnection`
+(see ``deepseekV4.py``); this module keeps the write-back, the head
+contraction and the initial expansion.
+
 Two places where this diverges from what the shapes suggest:
 
 * The whole path runs in float32, on a bf16 model. The parameters are float32 in
@@ -51,12 +55,6 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import TensorValue, ops
-from max.nn.kernels import mhc_split_sinkhorn
-
-
-def hc_mix_width(hc_mult: int) -> int:
-    """``mix_hc`` in the reference: ``hc`` pre + ``hc`` post + ``hc * hc`` comb."""
-    return (2 + hc_mult) * hc_mult
 
 
 def _mixes(flat: TensorValue, fn: TensorValue, norm_eps: float) -> TensorValue:
@@ -76,75 +74,6 @@ def _flatten_copies(x: TensorValue, hc_mult: int) -> TensorValue:
         ops.reshape(x, [x.shape[0], x.shape[1], hc_mult * int(x.shape[3])]),
         DType.float32,
     )
-
-
-def hc_split_sinkhorn(
-    mixes: TensorValue,
-    scale: TensorValue,
-    base: TensorValue,
-    hc_mult: int,
-    sinkhorn_iters: int,
-    eps: float,
-) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """Split ``[b, s, mix_hc]`` into pre, post and the Sinkhorn'd combination.
-
-    ``inference/kernel.py::hc_split_sinkhorn_kernel``. The slicing is
-    positional: ``[0:hc]`` is pre, ``[hc:2*hc]`` post, and the rest is the
-    ``hc x hc`` combination in row-major order.
-
-    Each part gets its own scalar from ``scale``, and ``post`` carries a factor
-    of two the others do not -- a copy may be amplified up to 2x by the
-    sublayer's contribution while ``pre`` stays inside ``(0, 1) + eps``.
-
-    The combination is row-softmaxed, then alternately column/row normalized;
-    the first column pass follows the softmax directly, so there are
-    ``sinkhorn_iters - 1`` row passes. As graph ops that chain is ~80 serial
-    4x4 kernels per site, so it runs as one fused kernel instead.
-    """
-    b, s = mixes.shape[0], mixes.shape[1]
-    pre, post, comb = mhc_split_sinkhorn(
-        ops.reshape(mixes, [-1, hc_mix_width(hc_mult)]),
-        scale,
-        base,
-        hc_mult=hc_mult,
-        sinkhorn_iters=sinkhorn_iters,
-        eps=eps,
-    )
-    return (
-        ops.reshape(pre, [b, s, hc_mult]),
-        ops.reshape(post, [b, s, hc_mult]),
-        ops.reshape(comb, [b, s, hc_mult, hc_mult]),
-    )
-
-
-def hc_pre(
-    x: TensorValue,
-    fn: TensorValue,
-    scale: TensorValue,
-    base: TensorValue,
-    hc_mult: int,
-    norm_eps: float,
-    hc_eps: float,
-    sinkhorn_iters: int,
-) -> tuple[TensorValue, TensorValue, TensorValue]:
-    """Contract ``[b, s, hc, d]`` to ``[b, s, d]``, and hand back post and comb.
-
-    ``post`` and ``comb`` are computed here and consumed by ``hc_post`` after
-    the sublayer runs: they are read off the state *before* the sublayer, not
-    after it.
-    """
-    flat = _flatten_copies(x, hc_mult)
-    pre, post, comb = hc_split_sinkhorn(
-        _mixes(flat, fn, norm_eps),
-        scale,
-        base,
-        hc_mult,
-        sinkhorn_iters,
-        hc_eps,
-    )
-    copies = ops.reshape(flat, x.shape)
-    y = ops.squeeze(ops.sum(ops.unsqueeze(pre, -1) * copies, axis=2), axis=2)
-    return ops.cast(y, x.dtype), post, comb
 
 
 def hc_post(
@@ -185,10 +114,10 @@ def hc_head(
 ) -> TensorValue:
     """Final contraction to ``[b, s, d]`` before the norm and LM head.
 
-    Same shape of computation as ``hc_pre`` but ``fn`` emits only ``hc``
-    numbers, ``scale`` is a single scalar, and there is no Sinkhorn -- the
-    output does not feed another copy-carrying layer, so nothing needs to stay
-    doubly stochastic.
+    Same shape of computation as a block's contraction but ``fn`` emits only
+    ``hc`` numbers, ``scale`` is a single scalar, and there is no Sinkhorn --
+    the output does not feed another copy-carrying layer, so nothing needs to
+    stay doubly stochastic.
     """
     flat = _flatten_copies(x, hc_mult)
     pre = ops.sigmoid(_mixes(flat, fn, norm_eps) * scale + base) + hc_eps

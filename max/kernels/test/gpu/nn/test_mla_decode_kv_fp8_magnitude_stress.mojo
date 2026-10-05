@@ -38,7 +38,7 @@ kernel they must still agree AND both be finite. A finite reference + NaN kernel
 
 from std.collections import Optional
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
@@ -186,10 +186,10 @@ def test[
     ](batch_size, num_keys, seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(q_tt, k_tt, out_tt, scalar_args_buf_tt)
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_tt, var k_tt, var out_tt, var scalar_args_buf_tt, imm}:
         # CAUSAL only (production MLA mask). See main() — every cell is CAUSAL.
         flare_mla_decoding[
             config=MHAConfig[q_type](num_heads, depth),
@@ -226,7 +226,7 @@ def test[
         var k_operand = LayoutTensorMHAOperand(k_ref_device)
         var null_valid_length = TileTensor(
             MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-            row_major(Coord(Idx[0])),
+            row_major(Idx[0]),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
             q_tt,
@@ -376,7 +376,7 @@ def sweep_q[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # Two per-rank head counts: 16 (e.g. 128 heads at TP=8), 32 (TP=4).

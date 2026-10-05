@@ -84,7 +84,7 @@ def test_vendor[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -92,21 +92,21 @@ def test_vendor[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[N])),
+        row_major(total_num_tokens, Idx[N]),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[N])),
+        row_major(total_num_tokens, Idx[N]),
     )
 
     # Create host TileTensors for offsets and expert_ids
     var a_offsets_host = TileTensor(
         a_offsets_host_ptr.as_unsafe_any_origin(),
-        row_major(Coord(num_active_experts + 1)),
+        row_major(num_active_experts + 1),
     )
     var expert_ids_host = TileTensor(
         expert_ids_host_ptr.as_unsafe_any_origin(),
-        row_major(Coord(num_active_experts)),
+        row_major(num_active_experts),
     )
 
     # Setup offsets and expert ids
@@ -135,7 +135,7 @@ def test_vendor[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(total_num_tokens, K)),
+        row_major(total_num_tokens, K),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -143,19 +143,19 @@ def test_vendor[
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(total_num_tokens, N)),
+        row_major(total_num_tokens, N),
     )
     var c_ref_dev = TileTensor(
         c_ref_dev_buffer,
-        row_major(Coord(total_num_tokens, N)),
+        row_major(total_num_tokens, N),
     )
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(Coord(num_active_experts + 1)),
+        row_major(num_active_experts + 1),
     )
     var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(Coord(num_active_experts)),
+        row_major(num_active_experts),
     )
 
     # Move inputs to device
@@ -277,7 +277,7 @@ def test_negative_lora_id_vendor[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -285,17 +285,17 @@ def test_negative_lora_id_vendor[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[N])),
+        row_major(total_num_tokens, Idx[N]),
     )
 
     # Create host TileTensors for offsets and expert_ids
     var a_offsets_host = TileTensor(
         a_offsets_host_ptr.as_unsafe_any_origin(),
-        row_major(Coord(num_active_experts + 1)),
+        row_major(num_active_experts + 1),
     )
     var expert_ids_host = TileTensor(
         expert_ids_host_ptr.as_unsafe_any_origin(),
-        row_major(Coord(num_active_experts)),
+        row_major(num_active_experts),
     )
 
     # Setup offsets and expert ids
@@ -323,7 +323,7 @@ def test_negative_lora_id_vendor[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(total_num_tokens, K)),
+        row_major(total_num_tokens, K),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -331,7 +331,7 @@ def test_negative_lora_id_vendor[
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(total_num_tokens, N)),
+        row_major(total_num_tokens, N),
     )
 
     # Move inputs to device
@@ -475,16 +475,16 @@ def test_vendor_expert_offset_past_int32(ctx: DeviceContext) raises:
 
     # The vendor path walks the routing on the host.
     grouped_matmul_vendor(
-        TileTensor[.bfloat16](c_dev, row_major(Coord(tokens, Idx[N]))),
-        TileTensor[.bfloat16](a_dev, row_major(Coord(tokens, Idx[K]))),
+        TileTensor[.bfloat16](c_dev, row_major(tokens, Idx[N])),
+        TileTensor[.bfloat16](a_dev, row_major(tokens, Idx[K])),
         TileTensor[.bfloat16](b_dev, row_major[num_experts, N, K]()),
         TileTensor(
             offsets_host.unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(3)),
+            row_major(3),
         ),
         TileTensor(
             ids_host.unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(Idx[2])),
+            row_major(Idx[2]),
         ),
         tokens_per_expert,
         2,

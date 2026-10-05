@@ -530,7 +530,7 @@ def main() raises:
     #     320,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -542,7 +542,7 @@ def main() raises:
     #     256,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -554,7 +554,7 @@ def main() raises:
     #     128,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -566,7 +566,7 @@ def main() raises:
     #     64,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )
 
@@ -578,6 +578,6 @@ def main() raises:
     #     32,  # F
     #     Index(2, 2, 2),  # stride
     #     Index(1, 1, 1),  # dilation
-    #     IndexList[6](0),  # pad
+    #     (0,),  # pad
     #     1,  # num_groups
     # )

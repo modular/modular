@@ -120,7 +120,7 @@ def _gpu_per_expert_reference[
 
         var a_expert = TileTensor(
             a_dev.unsafe_ptr() + token_start * packed_K,
-            row_major(Coord(num_tokens, Idx[packed_K])),
+            row_major(num_tokens, Idx[packed_K]),
         )
         var b_expert = TileTensor(
             b_dev.unsafe_ptr() + expert_id * N * packed_K,
@@ -128,7 +128,7 @@ def _gpu_per_expert_reference[
         ).as_imm()
         var sfa_expert = TileTensor(
             a_scales_dev.unsafe_ptr() + token_start * scale_K,
-            row_major(Coord(num_tokens, Idx[scale_K])),
+            row_major(num_tokens, Idx[scale_K]),
         ).as_imm()
         var sfb_expert = TileTensor(
             b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
@@ -136,7 +136,7 @@ def _gpu_per_expert_reference[
         ).as_imm()
         var c_expert = TileTensor(
             c_ref_dev.unsafe_ptr() + token_start * N,
-            row_major(Coord(num_tokens, Idx[N])),
+            row_major(num_tokens, Idx[N]),
         )
 
         block_scaled_matmul_amd(
@@ -289,14 +289,14 @@ def _run_preb[
     # GPU preshuffle of A-scales into per-expert fixed-stride slots.
     var a_sc_raw_u8_tt = TileTensor(
         a_sc_d.unsafe_ptr().bitcast[Scalar[.uint8]](),
-        row_major(Coord(total_tokens, Idx[scale_K])),
+        row_major(total_tokens, Idx[scale_K]),
     ).as_imm()
     var a_sc_pre_tt = TileTensor(
         a_sc_pre_d,
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
     )
     var a_off_tt_for_pre = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
+        a_off_d, row_major(num_active + 1)
     ).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         a_sc_raw_u8_tt,
@@ -317,7 +317,7 @@ def _run_preb[
     ctx.synchronize()
     var b_sc_raw_u8_tt = TileTensor(
         b_sc_h.unsafe_ptr().bitcast[UInt8](),
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K])),
+        row_major(Idx[num_experts], Idx[N], Idx[scale_K]),
     )
     Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
         b_sc_raw_u8_tt, b_sc_pre_h
@@ -341,23 +341,21 @@ def _run_preb[
     # buffers; bitcast uint8 ptr → float8_e8m0fnu to match the dispatcher
     # signature (the kernel internally bitcasts back to uint8 for V#
     # construction; the dtype here is a wrapping convention).
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(total_tokens, Idx[packed_K]))
-    ).as_imm()
+    var a_tt = TileTensor(a_d, row_major(total_tokens, Idx[packed_K])).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[num_experts, N * packed_K]()
     ).as_imm()
     var a_sc_tt = TileTensor(
         a_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
     ).as_imm()
     var b_sc_tt = TileTensor(
         b_sc_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
         row_major[num_experts, N, scale_K](),
     ).as_imm()
-    var a_off_tt = TileTensor(a_off_d, row_major(Coord(num_active + 1)))
-    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active)))
-    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
+    var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1))
+    var eid_tt = TileTensor(eid_d, row_major(num_active))
+    var c_tt = TileTensor(c_d, row_major(total_tokens, Idx[N]))
 
     PreShuffledBGroupedGEMM[cu_count=cu_count, wg_per_cu=wg_per_cu].launch[
         BM=BM,

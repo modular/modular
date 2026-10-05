@@ -89,7 +89,7 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.math import align_up, ceildiv
-from std.sys import get_defined_int, has_nvidia_gpu_accelerator, size_of
+from std.sys import get_defined_int, size_of
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
@@ -101,6 +101,7 @@ from layout import (
     UNKNOWN_VALUE,
 )
 from layout.tile_layout import row_major as tt_row_major
+from layout.tile_tensor import ImmTileTensor, MutTileTensor
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
@@ -224,6 +225,7 @@ def _fp8_index_body[
     KSOperand: MHAOperand,
     VLLT: TensorLayout,
     QSLT: TensorLayout,
+    out_dtype: DType,
     OutLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -243,7 +245,7 @@ def _fp8_index_body[
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
+    output: TileTensor[out_dtype, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys: Int,
     causal: Int,
     nt_start: Int,
@@ -282,7 +284,7 @@ def _fp8_index_body[
 
     var tid = thread_idx.x
     var b = block_idx.x
-    var key_start = Int(block_idx.y) * BM_key
+    var key_start = block_idx.y * BM_key
 
     var start_of_seq = Int(valid_length[b])
     var end_of_seq = Int(valid_length[b + 1])
@@ -594,7 +596,7 @@ def _fp8_index_body[
                             var out_row = out_row0 + tok_local
                             output.raw_store(
                                 out_row * max_num_keys + key_local,
-                                k_scale * (acc[0] + acc[1]),
+                                (k_scale * (acc[0] + acc[1])).cast[out_dtype](),
                             )
                         acc = SIMD[AT, 2](0)
         tcgen05_load_wait()
@@ -622,6 +624,7 @@ def _fp8_index_score_kernel_sm100[
     KSOperand: MHAOperand,
     VLLT: TensorLayout,
     QSLT: TensorLayout,
+    out_dtype: DType,
     OutLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -640,7 +643,7 @@ def _fp8_index_score_kernel_sm100[
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
+    output: TileTensor[out_dtype, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     out_row_begin_dev: Int32,
@@ -649,7 +652,7 @@ def _fp8_index_score_kernel_sm100[
     var max_num_keys = Int(max_num_keys_dev)
     var causal = Int(causal_dev)
     var b = block_idx.x
-    var key_start = Int(block_idx.y) * BM_key
+    var key_start = block_idx.y * BM_key
     var start_of_seq = Int(valid_length[b])
     var seq_len = Int(valid_length[b + 1]) - start_of_seq
     var num_keys = Int(k_operand.cache_length(b))
@@ -677,6 +680,7 @@ def _fp8_index_score_kernel_sm100[
         KSOperand,
         VLLT,
         QSLT,
+        out_dtype,
         OutLT,
         num_heads,
         depth,
@@ -716,6 +720,7 @@ def _fp8_index_score_kernel_sm100_split[
     KSOperand: MHAOperand,
     VLLT: TensorLayout,
     QSLT: TensorLayout,
+    out_dtype: DType,
     OutLT: TensorLayout,
     num_heads: Int,
     depth: Int,
@@ -734,7 +739,7 @@ def _fp8_index_score_kernel_sm100_split[
     ks_operand: KSOperand,
     valid_length: TileTensor[.uint32, VLLT, ImmutAnyOrigin, Engine=VLEngine],
     q_s: TileTensor[.float32, QSLT, ImmutAnyOrigin, Engine=QSEngine],
-    output: TileTensor[.float32, OutLT, MutAnyOrigin, Engine=OutEngine],
+    output: TileTensor[out_dtype, OutLT, MutAnyOrigin, Engine=OutEngine],
     max_num_keys_dev: Int32,
     causal_dev: Int32,
     out_row_begin_dev: Int32,
@@ -743,7 +748,7 @@ def _fp8_index_score_kernel_sm100_split[
     var max_num_keys = Int(max_num_keys_dev)
     var causal = Int(causal_dev)
     var b = block_idx.x
-    var key_start = Int(block_idx.y) * BM_key
+    var key_start = block_idx.y * BM_key
     var start_of_seq = Int(valid_length[b])
     var seq_len = Int(valid_length[b + 1]) - start_of_seq
     var num_keys = Int(k_operand.cache_length(b))
@@ -761,8 +766,8 @@ def _fp8_index_score_kernel_sm100_split[
     # grid.z splits this sequence's windowed token tiles across CTAs; bounds are
     # uniform per CTA.
     var n_token_tiles = ceildiv(win_tokens, N_TOKENS)
-    var tiles_per_slice = ceildiv(n_token_tiles, Int(grid_dim.z))
-    var nt_start = Int(block_idx.z) * tiles_per_slice
+    var tiles_per_slice = ceildiv(n_token_tiles, grid_dim.z)
+    var nt_start = block_idx.z * tiles_per_slice
 
     # Bail uniformly (every thread) before the helper's first collective op
     # (TMA mbar / tcgen05 alloc); a divergent early return would deadlock them.
@@ -777,6 +782,7 @@ def _fp8_index_score_kernel_sm100_split[
         KSOperand,
         VLLT,
         QSLT,
+        out_dtype,
         OutLT,
         num_heads,
         depth,
@@ -806,6 +812,12 @@ def _fp8_index_score_kernel_sm100_split[
 
 @inline(.always)
 def fp8_index_score_sm100[
+    out_dtype: DType,
+    output_layout: TensorLayout,
+    q_layout: TensorLayout,
+    qs_layout: TensorLayout,
+    vl_layout: TensorLayout,
+    //,
     dtype: DType,
     KOperand: MHAOperand,
     KSOperand: MHAOperand,
@@ -815,13 +827,13 @@ def fp8_index_score_sm100[
     N_TOKENS_ALT: Int = 0,
     kpool: Int = 1,
 ](
-    output: TileTensor[.float32, ...],
-    q: TileTensor[mut=False, dtype, ...],
-    q_s: TileTensor[mut=False, .float32, ...],
+    output: MutTileTensor[out_dtype, output_layout, _],
+    q: ImmTileTensor[dtype, q_layout, _],
+    q_s: ImmTileTensor[.float32, qs_layout, _],
     k_operand: KOperand,
     ks_operand: KSOperand,
     k_tma: KTMATileT[dtype, _BM_KEY, depth],
-    valid_length: TileTensor[mut=False, .uint32, ...],
+    valid_length: ImmTileTensor[.uint32, vl_layout, _],
     batch_size: Int,
     max_seq_len: Int,
     max_num_keys: Int,
@@ -833,10 +845,17 @@ def fp8_index_score_sm100[
 
     NVIDIA SM100 only: uses SS-UMMA, tcgen05 TMEM, and TMA staging. Writes the
     same `[total_seq, max_num_keys]` score buffer as the scalar
-    `nn.index_fp8.fp8_index_kernel`. Out-of-range keys are left untouched (the
-    caller's `-inf` fill covers them).
+    `nn.index_fp8.fp8_index_kernel`. Out-of-range keys are left untouched --
+    the bounded top-k derives the same per-row bound and never reads past it,
+    so the buffer needs no fill; only the unbounded `topk_gpu` arm relies on
+    the caller's `-inf` fill.
 
     Parameters:
+        out_dtype: Element type of the score buffer, f32 or bf16 (inferred).
+        output_layout: Layout of the score buffer.
+        q_layout: Layout of the query tensor.
+        qs_layout: Layout of the query scales.
+        vl_layout: Layout of the ragged query-token offsets.
         dtype: FP8 element type of Q and K (float8_e4m3fn).
         KOperand: `MHAOperand` type for the K values.
         KSOperand: `MHAOperand` type for the per-token K scales.
@@ -859,7 +878,7 @@ def fp8_index_score_sm100[
             pool-granular.
 
     Args:
-        output: Score buffer `[total_seq, max_num_keys]`, f32.
+        output: Score buffer `[total_seq, max_num_keys]`, f32 or bf16.
         q: Query tensor `[total_seq, num_heads, depth]`, fp8.
         q_s: Query scales `[total_seq, num_heads]`, f32.
         k_operand: K values as an `MHAOperand`.
@@ -919,7 +938,7 @@ def fp8_index_score_sm100[
     var win_seq_len = min(max_seq_len, out_rows)
 
     var num_q_tokens = Int(q.dim[0]())
-    var q_ptr = rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr)
+    var q_ptr = q.unsafe_ptr().as_unsafe_any_origin()
 
     # Prefill route: the warp-specialized K-streaming kernel (Q resident, causal
     # triangle trim) vs the K-resident scorer. Both fold the same (token, key, head)
@@ -1058,9 +1077,6 @@ def fp8_index_score_sm100[
                         N_ALT,
                         _is_cache_length_accurate,
                         kpool,
-                        VLEngine=type_of(valid_length.as_imm()).Engine,
-                        QSEngine=q_s.Engine,
-                        OutEngine=output.Engine,
                     ](
                         q_ptr,
                         num_q_tokens,
@@ -1088,9 +1104,6 @@ def fp8_index_score_sm100[
                 N_TOKENS,
                 _is_cache_length_accurate,
                 kpool,
-                VLEngine=type_of(valid_length.as_imm()).Engine,
-                QSEngine=q_s.Engine,
-                OutEngine=output.Engine,
             ](
                 q_ptr,
                 num_q_tokens,
@@ -1123,42 +1136,38 @@ def fp8_index_score_sm100[
             _INDEX_SWIZZLE,
         ](
             ctx,
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](q.ptr),
+            q_ptr,
             num_q_tokens * num_heads,
         )
         comptime kernel_flat = _fp8_index_score_kernel_sm100[
             dtype,
             KOperand,
             KSOperand,
-            type_of(valid_length.as_imm()).LayoutType,
-            type_of(q_s).LayoutType,
-            type_of(output).LayoutType,
+            vl_layout,
+            qs_layout,
+            out_dtype,
+            output_layout,
             num_heads,
             depth,
             BM_key,
             N_TOKENS,
             _is_cache_length_accurate,
             kpool,
-            VLEngine=type_of(valid_length.as_imm()).Engine,
-            QSEngine=q_s.Engine,
-            OutEngine=output.Engine,
         ]
         comptime kernel_split = _fp8_index_score_kernel_sm100_split[
             dtype,
             KOperand,
             KSOperand,
-            type_of(valid_length.as_imm()).LayoutType,
-            type_of(q_s).LayoutType,
-            type_of(output).LayoutType,
+            vl_layout,
+            qs_layout,
+            out_dtype,
+            output_layout,
             num_heads,
             depth,
             BM_key,
             N_TOKENS,
             _is_cache_length_accurate,
             kpool,
-            VLEngine=type_of(valid_length.as_imm()).Engine,
-            QSEngine=q_s.Engine,
-            OutEngine=output.Engine,
         ]
 
         comptime q1_offset = _Q1SmemOffset[dtype, BM_key, MMA_N, depth]
@@ -1198,7 +1207,7 @@ def fp8_index_score_sm100[
                 rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
                 k_operand,
                 ks_operand,
-                valid_length.as_imm(),
+                valid_length,
                 q_s,
                 output,
                 Int32(max_num_keys),
@@ -1222,7 +1231,7 @@ def fp8_index_score_sm100[
                 rebind[KTMATileT[dtype, BM_key, depth]](k_tma),
                 k_operand,
                 ks_operand,
-                valid_length.as_imm(),
+                valid_length,
                 q_s,
                 output,
                 Int32(max_num_keys),

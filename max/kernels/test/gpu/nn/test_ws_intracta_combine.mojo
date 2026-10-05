@@ -87,8 +87,8 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_store_wait,
 )
 from std.utils.numerics import min_or_neg_inf
-from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
+from layout import ComptimeInt, RowMajorLayout, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import RaggedTMA3DTile
 from nn.attention.gpu.nvidia.sm100.softmax_warp import (
     fa4_ws_level1_combine,
@@ -157,14 +157,20 @@ comptime OStoreT[depth: Int] = RaggedTMA3DTile[
 def combine_kernel[
     depth: Int,
 ](
-    O_in: LayoutTensor[
-        ACC_TYPE, Layout.row_major(NUM_PARTITIONS * ROWS, depth), MutAnyOrigin
+    O_in: TileTensor[
+        ACC_TYPE,
+        RowMajorLayout[ComptimeInt[NUM_PARTITIONS * ROWS], ComptimeInt[depth]],
+        MutAnyOrigin,
     ],
-    m_in: LayoutTensor[
-        ACC_TYPE, Layout.row_major(NUM_PARTITIONS, ROWS), MutAnyOrigin
+    m_in: TileTensor[
+        ACC_TYPE,
+        RowMajorLayout[ComptimeInt[NUM_PARTITIONS], ComptimeInt[ROWS]],
+        MutAnyOrigin,
     ],
-    l_in: LayoutTensor[
-        ACC_TYPE, Layout.row_major(NUM_PARTITIONS, ROWS), MutAnyOrigin
+    l_in: TileTensor[
+        ACC_TYPE,
+        RowMajorLayout[ComptimeInt[NUM_PARTITIONS], ComptimeInt[ROWS]],
+        MutAnyOrigin,
     ],
     o_store: OStoreT[depth],
 ):
@@ -213,7 +219,7 @@ def combine_kernel[
         var o_frag = Array[_, DEPTH_TILE](
             fill_with=lambda (j: Int) -> Scalar[ACC_TYPE]: O_in[
                 p * ROWS + row, t * DEPTH_TILE + j
-            ][0]
+            ]
         )
         tcgen05_st[datapaths=32, bits=32, repeat=DEPTH_TILE, pack=False](
             c_tmem + UInt32(t) * UInt32(DEPTH_TILE), o_frag
@@ -231,8 +237,8 @@ def combine_kernel[
         UInt32(row),
         UInt32(g),
         UInt32(wg),
-        m_in[p, row][0],
-        l_in[p, row][0],
+        m_in[p, row],
+        l_in[p, row],
         SCALE_LOG2E,
         c_tmem,
         stage_wg.as_unsafe_any_origin(),
@@ -303,30 +309,31 @@ def test_combine[depth: Int, mode: Int](ctx: DeviceContext) raises:
 
     seed(42)
 
-    var O_in = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(NUM_PARTITIONS * ROWS, depth)
-    ](ctx)
-    var m_in = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(NUM_PARTITIONS, ROWS)
-    ](ctx)
-    var l_in = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(NUM_PARTITIONS, ROWS)
-    ](ctx)
+    var O_in = HostDeviceTileTensor[ACC_TYPE](
+        row_major[NUM_PARTITIONS * ROWS, depth](), ctx
+    )
+    var m_in = HostDeviceTileTensor[ACC_TYPE](
+        row_major[NUM_PARTITIONS, ROWS](), ctx
+    )
+    var l_in = HostDeviceTileTensor[ACC_TYPE](
+        row_major[NUM_PARTITIONS, ROWS](), ctx
+    )
     # Output buffer with a ROWS-row front pad (see OStoreT): logical rows
     # [0, ROWS) land at physical rows [ROWS, 2*ROWS).
-    var o_dev = ManagedLayoutTensor[
-        OUT_TYPE, Layout.row_major(2 * ROWS, depth)
-    ](ctx)
+    var o_dev = HostDeviceTileTensor[OUT_TYPE](
+        row_major[2 * ROWS, depth](), ctx
+    )
 
-    var O_host = O_in.tensor[update=False]()
-    var m_host = m_in.tensor[update=False]()
-    var l_host = l_in.tensor[update=False]()
+    var O_host = O_in.host_tensor()
+    var m_host = m_in.host_tensor()
+    var l_host = l_in.host_tensor()
 
     # O ~ N(0,1); l = |N(0,1)| + 1 (strictly positive, it is a sum of exp).
-    randn[ACC_TYPE](O_host.ptr, NUM_PARTITIONS * ROWS * depth)
-    randn[ACC_TYPE](l_host.ptr, NUM_PARTITIONS * ROWS)
-    for i in range(NUM_PARTITIONS * ROWS):
-        l_host.ptr[i] = abs(l_host.ptr[i]) + 1.0
+    randn[ACC_TYPE](O_host.unsafe_ptr(), NUM_PARTITIONS * ROWS * depth)
+    randn[ACC_TYPE](l_host.unsafe_ptr(), NUM_PARTITIONS * ROWS)
+    for p in range(NUM_PARTITIONS):
+        for r in range(ROWS):
+            l_host[p, r] = abs(l_host[p, r]) + 1.0
 
     # Per-case m (and neutral l/O for empty quarters). INVARIANT: every case
     # keeps >= 1 non-empty quarter PER warpgroup -- Level 1's cross-quarter
@@ -340,39 +347,41 @@ def test_combine[depth: Int, mode: Int](ctx: DeviceContext) raises:
         var q = p % M_PACK  # quarter within WG
         for r in range(ROWS):
             if mode == 0:  # uniform: identical across all partitions
-                m_host.ptr[p * ROWS + r] = 0.5 * Float32(r)
+                m_host[p, r] = 0.5 * Float32(r)
             elif mode == 1:  # divergent: one dominant partition per row
                 var dom = r % NUM_PARTITIONS
-                m_host.ptr[p * ROWS + r] = 200.0 if p == dom else 0.0
+                m_host[p, r] = 200.0 if p == dom else 0.0
             elif mode == 2:  # one real quarter PER WG (q0); other 3/WG neutral
                 if q == 0:
-                    m_host.ptr[p * ROWS + r] = 1.0
+                    m_host[p, r] = 1.0
                 else:
-                    m_host.ptr[p * ROWS + r] = min_or_neg_inf[ACC_TYPE]()
-                    l_host.ptr[p * ROWS + r] = 0.0
+                    m_host[p, r] = min_or_neg_inf[ACC_TYPE]()
+                    l_host[p, r] = 0.0
                     for d in range(depth):
-                        O_host.ptr[(p * ROWS + r) * depth + d] = 0.0
+                        O_host[p * ROWS + r, d] = 0.0
             elif mode == 3:  # WG1 negligible: real, but m1 << m0 -> s1 -> 0
                 # 150-unit cross-WG gap flushes s1 = exp2(-150) to 0 (the
                 # Level-2 s1=0 path) WITHOUT an all-empty WG.
                 var boost: Float32 = 150.0 if wg_ == 0 else 0.0
-                m_host.ptr[p * ROWS + r] = 0.5 * Float32(r) + boost
+                m_host[p, r] = 0.5 * Float32(r) + boost
             else:  # mode 4: cross-WG divergence (per-row m0 != m1)
                 # WG1 dominant on even rows, WG0 on odd -> both s0<1 and s1<1.
                 var offset: Float32 = 2.0 if (r % 2 == 0) else -2.0
                 var extra: Float32 = 0.0 if wg_ == 0 else offset
-                m_host.ptr[p * ROWS + r] = 0.5 * Float32(r) + extra
+                m_host[p, r] = 0.5 * Float32(r) + extra
 
     # Initialize the output buffer to a sentinel and push it to device (this
     # also yields the persistent device pointer for the TMA descriptor). If the
     # store lands in the wrong region the sentinel survives and the test fails.
     var SENTINEL: Float32 = -1.0e30
-    var o_dev_host = o_dev.tensor[update=False]()
-    for i in range(2 * ROWS * depth):
-        o_dev_host.ptr[i] = SENTINEL
-    var dev_ptr = o_dev.device_tensor().ptr  # update=True: sentinel -> device
+    _ = o_dev.host_tensor().fill(SENTINEL)
+    o_dev.to_device()
+    var dev_ptr = o_dev.device_tensor().unsafe_ptr()
     var o_store = OStoreT[depth].create(ctx, dev_ptr + ROWS * depth, rows=ROWS)
 
+    O_in.to_device()
+    m_in.to_device()
+    l_in.to_device()
     comptime kernel = combine_kernel[depth]
     ctx.enqueue_function[kernel](
         O_in.device_tensor(),
@@ -389,8 +398,8 @@ def test_combine[depth: Int, mode: Int](ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ---- Host reference: FLAT 8-way LSE (must equal the hierarchical result) --
-    var o_res = o_dev.tensor()  # update=True: device -> host
-    var o_ptr = o_res.ptr
+    o_dev.to_host()
+    var o_res = o_dev.host_tensor()
 
     var max_abs_err: Float32 = 0.0
     var max_rel_err: Float32 = 0.0
@@ -400,23 +409,18 @@ def test_combine[depth: Int, mode: Int](ctx: DeviceContext) raises:
     for r in range(ROWS):
         var mmax = min_or_neg_inf[ACC_TYPE]()
         for p in range(NUM_PARTITIONS):
-            mmax = max(mmax, m_host.ptr[p * ROWS + r])
+            mmax = max(mmax, m_host[p, r])
         var l_ref: Float32 = 0.0
         for p in range(NUM_PARTITIONS):
-            l_ref += (
-                exp2(m_host.ptr[p * ROWS + r] - mmax) * l_host.ptr[p * ROWS + r]
-            )
+            l_ref += exp2(m_host[p, r] - mmax) * l_host[p, r]
         var inv = recip(l_ref)
         for dd in range(depth):
             var o_ref: Float32 = 0.0
             for p in range(NUM_PARTITIONS):
-                o_ref += (
-                    exp2(m_host.ptr[p * ROWS + r] - mmax)
-                    * O_host.ptr[(p * ROWS + r) * depth + dd]
-                )
+                o_ref += exp2(m_host[p, r] - mmax) * O_host[p * ROWS + r, dd]
             var ref_val = o_ref * inv
             # logical row r -> physical row ROWS + r (front pad).
-            var got = o_ptr[(ROWS + r) * depth + dd]
+            var got = o_res[ROWS + r, dd]
             if isnan(got):
                 nan_count += 1
                 continue

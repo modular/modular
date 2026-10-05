@@ -62,7 +62,7 @@ from std.random import randn, seed
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext, HostBuffer
-from layout import Idx, LayoutTensor, RuntimeLayout, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,

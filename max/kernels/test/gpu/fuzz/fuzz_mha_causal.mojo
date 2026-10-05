@@ -46,16 +46,7 @@ from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
-from std.utils.index import IndexList
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import (
     flash_attention,
     get_mha_decoding_num_partitions,
@@ -193,7 +184,7 @@ def run_one_case(
     # `vl_dev` across the launches (so a finding is the real OOB, not a UAF).
     var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(spec.valid_length))
-    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
+    var vl = TileTensor(vl_dev, row_major[1]())
     var mask = CausalPaddingMask(vl)
 
     flash_attention(o, q, k, v, mask, scale, ctx)
@@ -285,7 +276,7 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
 
     var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(num_keys))  # full (no padding)
-    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
+    var vl = TileTensor(vl_dev, row_major[1]())
     var mask = CausalPaddingMask(vl)
     var np = Optional[Int](2)  # force split-K
 
@@ -364,7 +355,7 @@ def run_determinism_case(
 
     var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(num_keys))  # full (no padding)
-    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
+    var vl = TileTensor(vl_dev, row_major[1]())
     var mask = CausalPaddingMask(vl)
 
     # Distinct output buffers so reruns do not serialize on one buffer (WAW)
@@ -510,11 +501,7 @@ def _run_mha_composition(
         o_dev, row_major((batch_size, seq_len, Idx[num_heads], Idx[depth]))
     )
     # Runtime-sized [batch_size] valid_lengths (mask indexes valid_lengths[b]).
-    comptime vl_layout = Layout(UNKNOWN_VALUE)
-    var vl = LayoutTensor[.uint32, vl_layout](
-        vl_dev.unsafe_ptr(),
-        RuntimeLayout[vl_layout].row_major(IndexList[1](batch_size)),
-    )
+    var vl = TileTensor(vl_dev, row_major(batch_size))
     var mask = CausalPaddingMask(vl)
 
     flash_attention(o, q, k, v, mask, scale, ctx, num_partitions=np)

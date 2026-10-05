@@ -53,7 +53,7 @@ struct _AMD_F8F6F4_MATRIX_FORMAT(TrivialRegisterPassable):
 
 
 @inline(.always)
-def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+def _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime if _is_amd_rdna():
         # Use WMMA instructions for RDNA3+ consumer GPUs.
         _mma_wmma_rdna(d, a, b, c)
@@ -68,8 +68,7 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime fp8_dtype = get_amd_fp8_dtype().value()
     comptime bf8_dtype = get_amd_bf8_dtype().value()
 
-    @__parameter
-    def _f8f6f4_intrinsic() -> SIMD[d.dtype, d.length]:
+    def _f8f6f4_intrinsic() {imm} -> SIMD[d.dtype, d.length]:
         comptime assert _cdna_4_or_newer(), "MMA shape requires CDNA4 or newer"
 
         comptime intrinsic_name = "llvm.amdgcn.mfma.scale.f32.16x16x128.f8f6f4" if _has_shape[
@@ -111,15 +110,9 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.length, b.length, c.length, d.length
     ):
-        comptime if block_size == 16:
-            # Note: 4x4x4_16B (i.e., 16 blocks).
-            d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.4x4x4f16", SIMD[d.dtype, d.length]
-            ](a, b, c, zero, zero, zero)
-        else:
-            d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[d.dtype, d.length]
-            ](a, b, c, zero, zero, zero)
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x16f16", SIMD[d.dtype, d.length]
+        ](a, b, c, zero, zero, zero)
     elif _has_type[
         (DType.float16, DType.float16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
@@ -155,29 +148,16 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[4](
         a.length, b.length, c.length, d.length
     ):
-        comptime if block_size == 16:
-            # Note: 4x4x4_16B (i.e., 16 blocks)
-            d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.4x4x4bf16.1k", SIMD[d.dtype, d.length]
-            ](
-                bitcast[.int16, 4](a),
-                bitcast[.int16, 4](b),
-                c,
-                zero,
-                zero,
-                zero,
-            )
-        else:
-            d = llvm_intrinsic[
-                "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[d.dtype, d.length]
-            ](
-                bitcast[.int16, 4](a),
-                bitcast[.int16, 4](b),
-                c,
-                zero,
-                zero,
-                zero,
-            )
+        d = llvm_intrinsic[
+            "llvm.amdgcn.mfma.f32.16x16x16bf16.1k", SIMD[d.dtype, d.length]
+        ](
+            bitcast[.int16, 4](a),
+            bitcast[.int16, 4](b),
+            c,
+            zero,
+            zero,
+            zero,
+        )
     elif _has_type[
         (DType.bfloat16, DType.bfloat16, DType.float32, DType.float32)
     ](a.dtype, b.dtype, c.dtype, d.dtype) and _has_shape[(4, 4, 16, 16)](
@@ -273,4 +253,13 @@ def _mma_amd[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = _f8f6f4_intrinsic()
 
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()

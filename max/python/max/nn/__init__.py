@@ -43,6 +43,7 @@ from .conv import Conv1D, Conv2d, Conv3D
 from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
 from .data_parallelism import split_batch, split_batch_replicated
 from .embedding import Embedding, VocabParallelEmbedding
+from .hyper_connection import HyperConnection
 from .identity import Identity
 from .kv_cache import (
     KVCacheInputs,
@@ -109,6 +110,7 @@ __all__ = [
     "GPTQAttentionWithRope",
     "GPTQLinear",
     "GroupNorm",
+    "HyperConnection",
     "Identity",
     "InputScaleSpec",
     "KVCacheInputs",

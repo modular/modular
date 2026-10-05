@@ -62,7 +62,7 @@ comptime scores_type = DType.float32
 comptime bias_type = DType.float32
 
 # COMPTIME router geometry (default = MiniMax-M3). n_routed_experts must be a
-# multiple of WARP_SIZE; n_experts_per_tok must be a power of two.
+# multiple of WARP_SIZE.
 comptime N_EXPERTS = get_defined_int["n_routed_experts", 128]()
 comptime TOPK = get_defined_int["n_experts_per_tok", 4]()
 comptime NORM = get_defined_bool["norm_weights", True]()
@@ -285,12 +285,10 @@ def run_one_case(
     ctx.enqueue_copy(scores_dev, scores_host)
     ctx.enqueue_copy(bias_dev, bias_host)
 
-    var expert_scores = TileTensor(
-        scores_dev, row_major(Coord(nt, Idx[N_EXPERTS]))
-    )
+    var expert_scores = TileTensor(scores_dev, row_major(nt, Idx[N_EXPERTS]))
     var expert_bias = TileTensor(bias_dev, row_major(Idx[N_EXPERTS]))
-    var expert_indices = TileTensor(idx_dev, row_major(Coord(nt, Idx[TOPK])))
-    var expert_weights = TileTensor(w_dev, row_major(Coord(nt, Idx[TOPK])))
+    var expert_indices = TileTensor(idx_dev, row_major(nt, Idx[TOPK]))
+    var expert_weights = TileTensor(w_dev, row_major(nt, Idx[TOPK]))
 
     single_group_router[N_EXPERTS, TOPK, NORM, "gpu"](
         expert_indices,

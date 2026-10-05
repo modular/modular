@@ -273,19 +273,16 @@ def mha_sm100_depth512_dispatch[
 
     # ---- Nested closure dispatch ---------------------------------------------
 
-    @__parameter
     @inline(.always)
-    def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
-        @__parameter
+    def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises {imm}:
         @inline(.always)
         def with_kv_offsets[
             KVRowOffsetsType: OptionalPointer
-        ](kv_row_offsets: KVRowOffsetsType) raises:
-            @__parameter
+        ](kv_row_offsets: KVRowOffsetsType) raises {imm}:
             @inline(.always)
             def with_valid_length[
                 ValidLengthType: OptionalPointer
-            ](valid_len: ValidLengthType) raises:
+            ](valid_len: ValidLengthType) raises {imm}:
                 comptime PackType = Pack[
                     MaskType,
                     SchedulerType,

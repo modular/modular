@@ -42,7 +42,11 @@ from std.sys import (
     _RegisterPackType,
 )
 from std.sys._assembly import inlined_assembly
-from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer
+from std.sys.info import (
+    _cdna_4_or_newer,
+    _cdna_5_or_newer,
+    _is_sm_100x_or_newer,
+)
 from std.sys.intrinsics import readfirstlane
 
 from std.bit import log2_floor
@@ -266,9 +270,6 @@ def _dpp_prefix_sum[
     comptime _DPP_ROW_SHR_2 = 0x112
     comptime _DPP_ROW_SHR_4 = 0x114
     comptime _DPP_ROW_SHR_8 = 0x118
-    comptime _DPP_WAVE_SHR_1 = 0x138
-    comptime _DPP_ROW_BCAST_15 = 0x142
-    comptime _DPP_ROW_BCAST_31 = 0x143
 
     var out = val
     var lane = lane_id()
@@ -291,18 +292,34 @@ def _dpp_prefix_sum[
     if row_lane >= 8:
         out += shr_8
 
-    # Steps 5-6: Cross-row prefix sum propagation.
-    var bcast_15 = _dpp_move[_DPP_ROW_BCAST_15](out)
-    if (lane % 32) >= 16:
-        out += bcast_15
+    comptime if _cdna_5_or_newer():
+        # Step 5: Cross-row prefix sum propagation.
+        var bcast_15 = shuffle_idx(out, 15)
+        if lane >= 16:
+            out += bcast_15
 
-    var bcast_31 = _dpp_move[_DPP_ROW_BCAST_31](out)
-    if lane >= 32:
-        out += bcast_31
+        # Optionally shift up for exclusive mode.
+        comptime if exclusive:
+            out = shuffle_up(out, 1)
+            if lane == 0:
+                out = 0
+    else:
+        comptime _DPP_WAVE_SHR_1 = 0x138
+        comptime _DPP_ROW_BCAST_15 = 0x142
+        comptime _DPP_ROW_BCAST_31 = 0x143
 
-    # Optionally shift up for exclsusive mode.
-    comptime if exclusive:
-        out = _dpp_move[_DPP_WAVE_SHR_1](out)
+        # Steps 5-6: Cross-row prefix sum propagation.
+        var bcast_15 = _dpp_move[_DPP_ROW_BCAST_15](out)
+        if (lane % 32) >= 16:
+            out += bcast_15
+
+        var bcast_31 = _dpp_move[_DPP_ROW_BCAST_31](out)
+        if lane >= 32:
+            out += bcast_31
+
+        # Optionally shift up for exclusive mode.
+        comptime if exclusive:
+            out = _dpp_move[_DPP_WAVE_SHR_1](out)
 
     return out
 
@@ -1006,30 +1023,32 @@ def _lane_group_broadcast_reduce[
 ](val: SIMD[val_type, simd_width], func: FuncType) -> SIMD[
     val_type, simd_width
 ]:
-    """Shared broadcast-reduce dispatch: CDNA4 permlane, AMD DPP, or
+    """Shared broadcast-reduce dispatch: CDNA4+ permlane, AMD DPP, or
     shuffle_xor fallback."""
     comptime if (
-        num_lanes == WARP_SIZE // stride
-        and stride in (16, 32)
-        and _cdna_4_or_newer()
+        is_amd_gpu() and num_lanes >= 2 and Bool(num_lanes.is_power_of_two())
     ):
-        var out = func(val, permlane_shuffle[32](val))
+        comptime if (
+            num_lanes == WARP_SIZE // stride
+            and stride in (16, 32)
+            and _cdna_4_or_newer()
+        ):
+            var out = val
 
-        comptime if stride == 16:
-            out = func(out, permlane_shuffle[16](out))
+            comptime if WARP_SIZE == 64:
+                out = func(out, permlane_shuffle[32](out))
 
-        return out
-    elif (
-        stride == 1
-        and num_lanes >= 2
-        and Bool(num_lanes.is_power_of_two())
-        and is_amd_gpu()
-    ):
-        return _dpp_reduce_and_broadcast[num_lanes=num_lanes](val, func)
-    else:
-        return lane_group_reduce[
-            shuffle_xor, num_lanes=num_lanes, stride=stride
-        ](val, func)
+            comptime if stride == 16:
+                out = func(out, permlane_shuffle[16](out))
+
+            return out
+
+        comptime if stride == 1:
+            return _dpp_reduce_and_broadcast[num_lanes=num_lanes](val, func)
+
+    return lane_group_reduce[shuffle_xor, num_lanes=num_lanes, stride=stride](
+        val, func
+    )
 
 
 # ===-----------------------------------------------------------------------===#

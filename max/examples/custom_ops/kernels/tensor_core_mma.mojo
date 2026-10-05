@@ -154,7 +154,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
             # - "mma_tile_buffers": A matrix multiplication using tile buffers and AMD Tensor Core instructions.
 
             comptime if Self.algorithm == "naive_tensor":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 64
                     comptime BN = 64
                     comptime BK = 8
@@ -186,7 +186,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "basic_shared_mem":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 64
                     comptime BN = 64
                     comptime BK = 8
@@ -218,7 +218,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "multi_block_tiled":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64
@@ -254,7 +254,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "scheduler_hints":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64
@@ -290,7 +290,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "double_buffer":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 128
                     comptime BN = 128
                     comptime BK = 32
@@ -326,7 +326,7 @@ struct TensorCoreMMA[algorithm: StaticString]:
                         block_dim=(NUM_THREADS, 1),
                     )
             elif Self.algorithm == "mma_tile_buffers":
-                comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+                comptime if gpu_ctx.target.is_nvidia_gpu() or gpu_ctx.target.is_amd_gpu():
                     comptime BM = 256
                     comptime BN = 256
                     comptime BK = 64
@@ -1323,7 +1323,6 @@ def mma_tile_buffers[
     var warp_k, warp_m = udivmod(warp_km, num_warps_m)
 
     # Helper function for thread layout
-    @__parameter
     def get_thread_layout() -> Layout:
         # TODO: Document the logic behind this layout
         # Define a layout that corresponds to the below pattern:
@@ -1357,7 +1356,6 @@ def mma_tile_buffers[
         return materialize[blocked_product(base_layout, tiler_layout)]()
 
     # Helper function for shared memory layout
-    @__parameter
     def get_smem_layout[block_rows: Int]() -> Layout:
         # Shared memory layout
         #
@@ -1441,20 +1439,17 @@ def mma_tile_buffers[
 
     # Helper functions for matrix operations
     @inline(.always)
-    @__parameter
-    def load_tiles_from_dram():
+    def load_tiles_from_dram() {mut a_tiles, mut b_tiles}:
         a_tiles.load_from_dram()
         b_tiles.load_from_dram()
 
     @inline(.always)
-    @__parameter
-    def copy_tiles_to_shared():
+    def copy_tiles_to_shared() {imm}:
         a_tiles.copy_to_shared()
         b_tiles.copy_to_shared()
 
     @inline(.always)
-    @__parameter
-    def load_tiles_from_shared[k_tile_idx: Int]():
+    def load_tiles_from_shared[k_tile_idx: Int]() {imm}:
         a_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
         b_tiles.load_tile_from_shared[k_tile_idx, is_a=True]()
 

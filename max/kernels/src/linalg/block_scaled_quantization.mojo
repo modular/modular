@@ -1242,12 +1242,10 @@ def quantize_dynamic_scaled_fp4_async[
     var scales_4d_tensor = TileTensor(
         scales_tensor_tile.ptr,
         row_major(
-            Coord(
-                Int(scales_tensor_tile.dim[0]()),
-                Int(scales_tensor_tile.dim[1]()),
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1] * SF_ATOM_K],
-            )
+            Int(scales_tensor_tile.dim[0]()),
+            Int(scales_tensor_tile.dim[1]()),
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1] * SF_ATOM_K],
         ),
     )
 
@@ -1494,7 +1492,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         1, Int32, alignment=16, address_space=.SHARED
     ]()
     if thread_idx.x < WARP_SIZE:
-        var lane = Int(thread_idx.x)
+        var lane = thread_idx.x
         var target = Int(scale_tile_idx)
 
         var coarse = lane * probe_stride
@@ -1601,7 +1599,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
 
         var num_cols = input_tensor.dim(1)
         var num_k_tiles = uceildiv(Int(num_cols), SF_K_GROUP_SIZE)
-        var k_idx = Int(block_idx.y) * k_tiles_per_block + kt_local
+        var k_idx = block_idx.y * k_tiles_per_block + kt_local
 
         var scales_smem = TileTensor(
             smem_ptr.unsafe_offset(kt_local * scales_smem_tile_size),
@@ -1636,7 +1634,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
             zeros_per_thread & (zeros_per_thread - 1) == 0
         ), "zero-fill store width must be a power of two"
         smem_ptr.store(
-            Int(thread_idx.x) * zeros_per_thread,
+            thread_idx.x * zeros_per_thread,
             SIMD[scales_dtype, zeros_per_thread](0),
         )
         barrier()
@@ -1711,7 +1709,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         if thread_idx.x == 0:
             fence_async_view_proxy()
             for kt in range(k_tiles_per_block):
-                var store_k_idx = Int(block_idx.y) * k_tiles_per_block + kt
+                var store_k_idx = block_idx.y * k_tiles_per_block + kt
                 if store_k_idx >= num_k_tiles:
                     break
                 scales_tma_op.async_store_4d(
@@ -1850,12 +1848,10 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     var scales_4d_tensor = TileTensor(
         scales_tensor.ptr,
         row_major(
-            Coord(
-                Int(scales_tensor.dim[0]()),
-                Int(scales_tensor.dim[1]()),
-                Int(scales_tensor.dim[2]()),
-                Int(scales_tensor.dim[3]()) * Int(scales_tensor.dim[4]()),
-            )
+            Int(scales_tensor.dim[0]()),
+            Int(scales_tensor.dim[1]()),
+            Int(scales_tensor.dim[2]()),
+            Int(scales_tensor.dim[3]()) * Int(scales_tensor.dim[4]()),
         ),
     )
 
@@ -1890,8 +1886,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         scales_tensor.dim[1]()
     )
 
-    @__parameter
-    def launch_quant_fp4_kernel[k_tiles_per_block: Int]() raises:
+    def launch_quant_fp4_kernel[k_tiles_per_block: Int]() raises {imm}:
         comptime kernel = grouped_quantize_dynamic_scaled_fp4_async_kernel[
             output_dtype,
             scales_dtype,
@@ -2051,9 +2046,9 @@ def block_scaled_matmul_with_epilogue[
         # fmt: off
         return String(
             "(gpu",
-            ";", trace_arg("A", IndexList[2](m, _k), a_type),
-            ";", trace_arg("B", IndexList[2](_k, n), b_type),
-            ";", trace_arg("C", IndexList[2](m, n), c_type),
+            ";", trace_arg("A", (m, _k), a_type),
+            ";", trace_arg("B", (_k, n), b_type),
+            ";", trace_arg("C", (m, n), c_type),
             ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), "]",
             ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), "]",
             ";transpose_b=", transpose_b,
@@ -2367,9 +2362,9 @@ def block_scaled_matmul[
         return String(
             "(",
             target,
-            ";", trace_arg("A", IndexList[2](m, k), a_type),
-            ";", trace_arg("B", IndexList[2](k, n), b_type),
-            ";", trace_arg("C", IndexList[2](m, n), c_type),
+            ";", trace_arg("A", (m, k), a_type),
+            ";", trace_arg("B", (k, n), b_type),
+            ";", trace_arg("C", (m, n), c_type),
             ";A_scales=[", a_scales.dim[0](), ",", a_scales.dim[1](), ",", a_scales.dim[2](), ",", a_scales.dim[3](), ",", a_scales.dim[4](), "]",
             ";B_scales=[", b_scales.dim[0](), ",", b_scales.dim[1](), ",", b_scales.dim[2](), ",", b_scales.dim[3](), ",", b_scales.dim[4](), "]",
             ";transpose_a=", True,

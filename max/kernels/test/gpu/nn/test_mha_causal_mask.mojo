@@ -19,12 +19,7 @@ from std.sys.defines import get_defined_int
 from max.gpu import *
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import A100, H100, _is_sm10x_gpu
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
-from layout import Layout, LayoutTensor
+from layout import ComptimeInt, Idx, RowMajorLayout, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import (
     CausalMask,
@@ -526,8 +521,13 @@ def main() raises:
         # same mutability, so the pointer has to come from a mutable borrow.
         def vl_view(
             mut buf: DeviceBuffer[.uint32],
-        ) -> LayoutTensor[.uint32, Layout.row_major(1), MutUntrackedOrigin]:
-            return {buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()}
+        ) -> TileTensor[
+            .uint32, RowMajorLayout[ComptimeInt[1]], MutUntrackedOrigin
+        ]:
+            return {
+                ptr = buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+                layout = row_major[1](),
+            }
 
         # valid_length == num_keys (equivalent to CausalMask).
         var vl_128_buf = vl_buffer(128, ctx)

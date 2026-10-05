@@ -805,15 +805,15 @@ def _frexp_mask1[
     dtype: DType, width: Int
 ]() -> SIMD[_integral_type_of[dtype](), width]:
     comptime __match dtype:
-    case .float16:
-        return 0x7C00
-    case .bfloat16:
-        return 0x7F80
-    case .float32:
-        return 0x7F800000
-    case _:
-        comptime assert dtype == .float64, "unhandled fp type"
-        return 0x7FF0000000000000
+        case .float16:
+            return 0x7C00
+        case .bfloat16:
+            return 0x7F80
+        case .float32:
+            return 0x7F800000
+        case _:
+            comptime assert dtype == .float64, "unhandled fp type"
+            return 0x7FF0000000000000
 
 
 @inline(.always)
@@ -821,15 +821,15 @@ def _frexp_mask2[
     dtype: DType, width: Int
 ]() -> SIMD[_integral_type_of[dtype](), width]:
     comptime __match dtype:
-    case .float16:
-        return 0x3800
-    case .bfloat16:
-        return 0x3F00
-    case .float32:
-        return 0x3F000000
-    case _:
-        comptime assert dtype == .float64, "unhandled fp type"
-        return 0x3FE0000000000000
+        case .float16:
+            return 0x3800
+        case .bfloat16:
+            return 0x3F00
+        case .float32:
+            return 0x3F000000
+        case _:
+            comptime assert dtype == .float64, "unhandled fp type"
+            return 0x3FE0000000000000
 
 
 def frexp[
@@ -3450,14 +3450,14 @@ def _call_amdgcn_intrinsic[intrin: StaticString](x: SIMD, out res: type_of(x)):
 @inline(.always)
 def _get_amdgcn_type_suffix[dtype: DType]() -> StaticString:
     comptime __match dtype:
-    case .float16:
-        return "f16"
-    case .float32:
-        return "f32"
-    case .float64:
-        return "f64"
-    case _:
-        comptime assert False, "Extend to support additional dtypes."
+        case .float16:
+            return "f16"
+        case .float32:
+            return "f32"
+        case .float64:
+            return "f64"
+        case _:
+            comptime assert False, "Extend to support additional dtypes."
 
 
 # ===----------------------------------------------------------------------=== #

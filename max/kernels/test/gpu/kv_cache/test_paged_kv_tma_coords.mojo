@@ -31,12 +31,10 @@ reach it on a real device.
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_memset_zero
-from std.utils import IndexList
 from std.testing import assert_equal, assert_true
 
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, Idx, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import (
     KVCacheStaticParams,
     KVCacheT,
@@ -77,48 +75,51 @@ def _check_decomposition[
     var num_used = 64
     var lut_columns = padded_lut_cols(num_used)
 
-    comptime lut_layout = Layout.row_major[2]()
-    var lut_runtime = RuntimeLayout[lut_layout].row_major(
-        IndexList[2](1, lut_columns)
+    var lut = HostDeviceTileTensor[.uint32](
+        row_major(Int64(1), Int64(lut_columns)), ctx
     )
-    var lut = ManagedLayoutTensor[.uint32, lut_layout](lut_runtime, ctx)
-    var lut_host = lut.tensor[update=False]()
+    var lut_host = lut.host_tensor()
     # Deliberately not the identity: a coordinate that ignored the lookup
     # table would still decompose correctly against an identity mapping.
     for c in range(lut_columns):
         lut_host[0, c] = UInt32((c * 7 + 3) % num_used) if c < num_used else 0
+    lut.to_device()
 
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_runtime = RuntimeLayout[cache_lengths_layout].row_major(
-        IndexList[1](1)
-    )
-    var cache_lengths = ManagedLayoutTensor[.uint32, cache_lengths_layout](
-        cache_lengths_runtime, ctx
-    )
-    cache_lengths.tensor[update=False]()[0] = UInt32(num_used * page_size)
+    var cache_lengths = HostDeviceTileTensor[.uint32](row_major(Int64(1)), ctx)
+    cache_lengths.host_tensor()[0] = UInt32(num_used * page_size)
+    cache_lengths.to_device()
 
-    comptime blocks_layout = Layout.row_major[6]()
-    var blocks_runtime = RuntimeLayout[blocks_layout].row_major(
-        IndexList[6](
-            num_used,
-            2,
-            1,
-            page_size,
-            kv_params.num_heads,
-            kv_params.head_size,
-        )
+    var blocks = HostDeviceTileTensor[dtype](
+        row_major(
+            Int64(num_used),
+            Idx[2],
+            Int64(1),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
+        ctx,
     )
-    var blocks = ManagedLayoutTensor[dtype, blocks_layout](blocks_runtime, ctx)
-    unsafe_memset_zero(blocks.tensor[update=False]().ptr, blocks_runtime.size())
+    _ = blocks.host_tensor().fill(0)
+    blocks.to_device()
 
     var flat_buf = ctx.enqueue_create_buffer[.uint32](_NUM_PROBES)
     var row_buf = ctx.enqueue_create_buffer[.int32](_NUM_PROBES)
     var block_buf = ctx.enqueue_create_buffer[.int32](_NUM_PROBES)
 
-    var collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        blocks.device_tensor(),
-        cache_lengths.device_tensor(),
-        lut.device_tensor(),
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var collection = Collection(
+        blocks.device_tensor().as_unsafe_any_origin(),
+        cache_lengths.device_tensor().as_imm().as_unsafe_any_origin(),
+        lut.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(num_used * page_size),
         UInt32(num_used * page_size),
     )

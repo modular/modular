@@ -56,7 +56,7 @@ def verify(a: TileTensor, b: TileTensor, c: TileTensor):
     var n = Int(c.dim[1]())
 
     var c_ref_ptr = List(length=m * n, fill=Scalar[c.dtype](0))
-    var c_ref = TileTensor(c_ref_ptr, row_major(Coord(_ri(m), _ri(n))))
+    var c_ref = TileTensor(c_ref_ptr, row_major(_ri(m), _ri(n)))
     gemm_naive(a, b, c_ref)
 
     for i in range(m):
@@ -98,13 +98,13 @@ def bench_matmul[
         Layout[Scalar[c_type], alignment=alignment](count=spec.m * spec.n)
     ).into_managed()
     var a = TileTensor(
-        a_alloc.unsafe_ptr(), row_major(Coord(_ri(spec.m), _ri(spec.k)))
+        a_alloc.unsafe_ptr(), row_major(_ri(spec.m), _ri(spec.k))
     )
     var b = TileTensor(
-        b_alloc.unsafe_ptr(), row_major(Coord(_ri(spec.k), _ri(spec.n)))
+        b_alloc.unsafe_ptr(), row_major(_ri(spec.k), _ri(spec.n))
     )
     var c = TileTensor(
-        c_alloc.unsafe_ptr(), row_major(Coord(_ri(spec.m), _ri(spec.n)))
+        c_alloc.unsafe_ptr(), row_major(_ri(spec.m), _ri(spec.n))
     )
     rand(a_alloc.unsafe_span())
     rand(b_alloc.unsafe_span())
@@ -119,7 +119,7 @@ def bench_matmul[
         Layout[Scalar[b_type], alignment=alignment](count=padded_k * padded_n)
     ).into_managed()
     var bp = TileTensor(
-        bp_alloc.unsafe_ptr(), row_major(Coord(_ri(padded_k), _ri(padded_n)))
+        bp_alloc.unsafe_ptr(), row_major(_ri(padded_k), _ri(padded_n))
     )
 
     if b_packed:

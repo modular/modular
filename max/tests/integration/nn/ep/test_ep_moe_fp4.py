@@ -457,7 +457,6 @@ def test_ep_moe_nvfp4(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
         quant_config=fp4_config,
     )
@@ -751,7 +750,6 @@ def test_ep_moe_mxfp4(
         shared_experts_dim=MOE_DIM,
         ep_size=n_devices,
         dtype=dtype,
-        apply_router_weight_first=False,
         ep_batch_manager=ep_batch_manager,
         quant_config=fp4_config,
         use_swigluoai=use_swigluoai,

@@ -20,13 +20,15 @@ comptime KGENString = __mlir_type.`!kgen.string`
 
 
 trait EnumLike:
-    """A type with a finite set of mutually exclusive alternatives.
+    """A type with named, mutually exclusive alternatives.
 
     Syntactic `enum` declarations will synthesize this conformance. Hand-written
     types (notably `Optional`) may also conform so pattern matching can treat
-    their alternatives as cases, e.g. `case .Some(x):` / `case .None:`.
+    their alternatives as cases, such as `case .Some(x):` / `case .None:`.
 
-    Payload type `NoneType` means the case has no associated value.
+    By default, the declared alternatives cover every value. An open enum sets
+    `_enum_is_exhaustive` to `False` when other values may exist. Payload type
+    `NoneType` means the case has no associated value.
     """
 
     comptime _enum_case_names: _MLIR.KGENParamListType[KGENString]
@@ -34,6 +36,9 @@ trait EnumLike:
 
     comptime _enum_case_types: _MLIR.KGENParamListType[AnyType]
     """Payload type for each case (`NoneType` means no payload)."""
+
+    comptime _enum_is_exhaustive: Bool = True
+    """Whether the declared cases cover every value of the conforming type."""
 
     comptime _enum_elt_type_for_case[id: Int]: AnyType = TypeList[
         Trait=AnyType, Self._enum_case_types

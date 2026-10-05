@@ -144,6 +144,31 @@ comptime ImmutTileTensor1D[
 ] = TileTensor[dtype, _1d_row_major_tt_layout, ImmutAnyOrigin, Engine=Engine]
 
 
+def immut_tile_tensor_1d[
+    mut: Bool, dtype: DType, origin: Origin[mut=mut], //
+](ptr: UnsafePointer[Scalar[dtype], origin], size: Int) -> ImmutTileTensor1D[
+    dtype
+]:
+    """Views `size` contiguous elements at `ptr` as an `ImmutTileTensor1D`.
+
+    Parameters:
+        mut: Mutability of `ptr`'s origin (inferred).
+        dtype: Element type of the viewed memory (inferred).
+        origin: Origin of `ptr` (inferred).
+
+    Args:
+        ptr: Pointer to the first element.
+        size: Number of elements.
+
+    Returns:
+        An immutable, untracked-origin 1-D view over the elements.
+    """
+    return ImmutTileTensor1D[dtype](
+        ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+        _1d_row_major_tt_layout(Coord(Int64(size)), Coord(ComptimeInt[1]())),
+    )
+
+
 struct Pack[
     MaskType: MHAMask,
     SchedulerType: MHATileScheduler,
@@ -702,7 +727,13 @@ def q_smem_shape[
     comptime if decoding:
         return {1, 1, max(group, 8), swizzle_granularity}
     elif fuse_gqa:
-        comptime if num_qk_stages == 1:
+        comptime if BM % group != 0:
+            # Packed tile with `BM % group` pad rows. A multi-block TMA box
+            # strides its swizzle blocks by the box rows (`BM // group * group`)
+            # rather than `BM`, so the box covers one swizzle block and the
+            # caller issues one TMA per block at the `BM`-row stride.
+            return {BM // group, 1, group, swizzle_granularity}
+        elif num_qk_stages == 1:
             return {BM // group, 1, group, depth}
         else:
             return {

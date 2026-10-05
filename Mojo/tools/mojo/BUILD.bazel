@@ -91,6 +91,14 @@ _MOJO_LINKOPTS = select({
     "//conditions:default": [],
 })
 
+_MOJO_MALLOC = select({
+    "//:asan_linux": "@bazel_tools//tools/cpp:malloc",
+    "//:tsan_linux": "@bazel_tools//tools/cpp:malloc",
+    "//:ubsan_linux": "@bazel_tools//tools/cpp:malloc",
+    "@platforms//os:linux": "//bazel/internal:jemalloc_global",
+    "//conditions:default": "@bazel_tools//tools/cpp:malloc",
+})
+
 modular_cc_library(
     name = "mojo_common",
     srcs = glob(["**/*.cpp"]),
@@ -117,6 +125,7 @@ modular_cc_library(
         ":Precompile.inc_files",
         ":REPL.inc_files",
         ":Run.inc_files",
+        "//:accel_registration",
         "//AsyncRT:Runtime",
         "//AsyncRT:RuntimeGlobals",
         "//Config",
@@ -152,6 +161,7 @@ modular_cc_library(
 modular_cc_binary(
     name = "mojo",
     linkopts = _MOJO_LINKOPTS,
+    malloc = _MOJO_MALLOC,
     deps = [":mojo_common"],
 )
 
@@ -169,6 +179,7 @@ modular_cc_binary(
         "MODULAR_CRASH_REPORTING_ENABLED": "0",
     },
     linkopts = _MOJO_LINKOPTS,
+    malloc = _MOJO_MALLOC,
     mojo_deps = ["@mojo//:std"],
     tags = ["manual"],
     deps = [":mojo_common"],

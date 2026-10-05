@@ -20,7 +20,7 @@ from max.runtime.tracing import Trace, TraceLevel
 
 
 def test_tracing[level: TraceLevel, enabled: Bool]() raises:
-    async def test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
+    __async def test_tracing_add[enabled: Bool, lhs: Int](rhs: Int) -> Int:
         comptime s1 = "ENABLED: trace event 2" if enabled else StaticString(
             "DISABLED: trace event 2"
         )
@@ -33,12 +33,12 @@ def test_tracing[level: TraceLevel, enabled: Bool]() raises:
         except e:
             abort(String(e))
 
-    async def test_tracing_add_two_of_them[
+    __async def test_tracing_add_two_of_them[
         enabled: Bool
     ](a: Int, b: Int) -> Int:
         var t0 = create_task(test_tracing_add[enabled, 1](a))
         var t1 = create_task(test_tracing_add[enabled, 2](b))
-        return await t0 + await t1
+        return __await t0 + __await t1
 
     comptime s1 = "ENABLED: trace event 1" if enabled else StaticString(
         "DISABLED: trace event 1"

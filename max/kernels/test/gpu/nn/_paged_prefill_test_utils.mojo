@@ -48,11 +48,7 @@ from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -641,65 +637,46 @@ def run_test_paged_prefill[
     comptime kv_params = KVCacheStaticParams(
         num_heads=KV_NUM_HEADS, head_size=CACHE_DEPTH, is_mla=True
     )
-    var block_shape = IndexList[6](
-        total_pages,
-        1,  # kv_dim2 = 1 for is_mla
-        NUM_LAYERS,
+
+    var blocks_tt = TileTensor(
+        blocks_device,
+        row_major(
+            Int64(total_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
+    )
+
+    var cache_lengths_tt = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+
+    var lookup_table_tt = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+
+    comptime Collection = PagedKVCacheCollection[
+        k_rope_type,
+        kv_params,
         page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
-
-    var blocks_lt = LayoutTensor[k_rope_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[
-        k_rope_type, kv_params, page_size
-    ](
-        LayoutTensor[k_rope_type, Layout.row_major[6](), MutAnyOrigin](
-            blocks_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[.uint32, cl_layout, ImmutAnyOrigin](
-            cache_lengths_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ),
-        LayoutTensor[.uint32, lt_layout_2d, ImmutAnyOrigin](
-            lookup_table_lt.ptr.as_unsafe_any_origin(),
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        rebind[Collection.blocks_tt_type](blocks_tt.as_unsafe_any_origin()),
+        cache_lengths_tt.as_imm().as_unsafe_any_origin(),
+        lookup_table_tt.as_imm().as_unsafe_any_origin(),
         UInt32(seq_len),  # max_seq_length
         UInt32(num_keys),  # max_cache_length
     )
 
     var kv_cache = kv_collection.get_key_cache(0)
-
-    # k and v need LayoutTensor form (the paged overload signature).
 
     # ------------------------------------------------------------------
     # Step 7: Launch the kernel.
@@ -816,7 +793,7 @@ def run_test_paged_prefill[
 
     var null_valid_length = TileTensor(
         MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-        row_major(Coord(Idx[0])),
+        row_major(Idx[0]),
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(
@@ -1093,7 +1070,7 @@ def fill_paged_block_scales(
     behavior, which uses scale=1 for OOB rows — see
     ``cvt_block_fp8_to_bf16_with_scale`` in ``mla_prefill_utils.mojo``).
     """
-    var num_pages_per_batch = (num_keys + page_size - 1) // page_size
+    var num_pages_per_batch = ceildiv(num_keys, page_size)
     var pstride = scale_page_stride(page_size, head_dim_gran)
     var tstride = scale_token_stride(head_dim_gran)
 
@@ -1143,7 +1120,7 @@ def extract_dequantized_k_rope_for_batch[
     ``out_host`` must point to a buffer of at least
     ``num_keys * ROPE_DEPTH`` ``Scalar[out_type]`` elements.
     """
-    var num_pages_per_batch = (num_keys + page_size - 1) // page_size
+    var num_pages_per_batch = ceildiv(num_keys, page_size)
     var page_base = batch_idx * num_pages_per_batch
     var rope_offset_in_token = head_size - ROPE_DEPTH
 

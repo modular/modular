@@ -1297,3 +1297,32 @@ class TestRuntimeInputComposition:
         state = create_state_params(create_kv_cache_params())
         with pytest.raises(ValueError, match="state/conv"):
             state.build_runtime_inputs([_assignment(staged={})], buffers=[])
+
+
+class TestChild:
+    """A hybrid tree hands back each child as the type it was built from."""
+
+    def test_returns_the_child_as_its_kind(self) -> None:
+        attn = create_kv_cache_params()
+        state = create_state_params(attn)
+        root = MultiKVCacheParams.from_params({"attn": attn, "state": state})
+
+        assert root.child("attn", MHAKVCacheParams) is attn
+        assert root.child("state", RecurrentStateParams) is state
+
+    def test_a_child_of_another_kind_is_refused(self) -> None:
+        attn = create_kv_cache_params()
+        root = MultiKVCacheParams.from_params(
+            {"attn": attn, "state": create_state_params(attn)}
+        )
+
+        with pytest.raises(TypeError, match="'state' is a RecurrentState"):
+            root.child("state", MHAKVCacheParams)
+
+    def test_a_missing_child_is_refused(self) -> None:
+        root = MultiKVCacheParams.from_params(
+            {"attn": create_kv_cache_params()}
+        )
+
+        with pytest.raises(KeyError, match="state"):
+            root.child("state", RecurrentStateParams)

@@ -533,9 +533,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             ctx.synchronize()
         ```
         """
-        comptime assert (
-            has_nvidia_gpu_accelerator()
-        ), "only available on NVIDIA GPUs"
+        comptime assert type_of(
+            self._ctx
+        ).target.is_nvidia_gpu(), "only available on NVIDIA GPUs"
         var gpu_kernel = self._ctx.compile_function[
             func,
             dump_asm=dump_asm,

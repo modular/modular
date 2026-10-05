@@ -304,7 +304,7 @@ def apple_gemv[
     var transposed_b_alloc = Optional[ManagedAllocation[Scalar[b.dtype]]]()
     var transposed_b = TileTensor(
         UnsafePointer[Scalar[b.dtype], MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(Int(0), Int(0))),
+        row_major(Int(0), Int(0)),
     )
 
     # If both b_packed and transpose_b are False, we need to transpose B at
@@ -318,9 +318,7 @@ def apple_gemv[
             transposed_b_alloc.unsafe_value()
             .unsafe_ptr()
             .unsafe_origin_cast[MutUntrackedOrigin](),
-            row_major(
-                Coord(Int(transposed_b_shape[0]), Int(transposed_b_shape[1]))
-            ),
+            row_major(transposed_b_shape[0], transposed_b_shape[1]),
         )
 
         var _kernel_type_m = 0
@@ -575,15 +573,15 @@ def apple_batched_matmul[
     for batch in range(batch_size):
         var c2 = TileTensor(
             c.ptr + batch * c_stride,
-            row_major(Coord(c_rows, c_cols)),
+            row_major(c_rows, c_cols),
         )
         var a2 = TileTensor(
             a.ptr + batch * a_stride,
-            row_major(Coord(a_rows, a_cols)),
+            row_major(a_rows, a_cols),
         )
         var b2 = TileTensor(
             b.ptr + batch * b_stride,
-            row_major(Coord(b_rows, b_cols)),
+            row_major(b_rows, b_cols),
         )
 
         var batch_coords = _get_start_indices_of_nth_subvolume[2](

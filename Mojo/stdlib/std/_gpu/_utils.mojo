@@ -177,20 +177,20 @@ comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 @inline(.nodebug)
 def _dtype_to_llvm_type_str[dtype: DType]() -> StaticString:
     comptime __match dtype:
-    case .float32:
-        return "f32"
-    case .float16:
-        return "f16"
-    case .bfloat16:
-        return "bf16"
-    case .float64:
-        return "f64"
-    case .int32 | .uint32:
-        return "i32"
-    case .int64 | .uint64:
-        return "i64"
-    case _:
-        return "i8"  # float8 variants
+        case .float32:
+            return "f32"
+        case .float16:
+            return "f16"
+        case .bfloat16:
+            return "bf16"
+        case .float64:
+            return "f64"
+        case .int32 | .uint32:
+            return "i32"
+        case .int64 | .uint64:
+            return "i64"
+        case _:
+            return "i8"  # float8 variants
 
 
 @inline(.nodebug)
@@ -266,46 +266,46 @@ def simd_to_llvm_struct[
 @inline(.nodebug)
 def _dtype_to_pop_scalar_str[dtype: DType]() -> StaticString:
     comptime __match dtype:
-    case .bool:
-        return "!kgen.scalar<bool>"
-    case .int8:
-        return "!kgen.scalar<si8>"
-    case .uint8:
-        return "!kgen.scalar<ui8>"
-    case .int16:
-        return "!kgen.scalar<si16>"
-    case .uint16:
-        return "!kgen.scalar<ui16>"
-    case .int32:
-        return "!kgen.scalar<si32>"
-    case .uint32:
-        return "!kgen.scalar<ui32>"
-    case .int64:
-        return "!kgen.scalar<si64>"
-    case .uint64:
-        return "!kgen.scalar<ui64>"
-    case .float16:
-        return "!kgen.scalar<f16>"
-    case .bfloat16:
-        return "!kgen.scalar<bf16>"
-    case .float32:
-        return "!kgen.scalar<f32>"
-    case .float64:
-        return "!kgen.scalar<f64>"
-    case .float8_e5m2:
-        return "!kgen.scalar<f8E5M2>"
-    case .float8_e5m2fnuz:
-        return "!kgen.scalar<f8E5M2FNUZ>"
-    case .float8_e4m3fn:
-        return "!kgen.scalar<f8E4M3>"
-    case .float8_e4m3fnuz:
-        return "!kgen.scalar<f8E4M3FNUZ>"
-    case .float8_e3m4:
-        return "!kgen.scalar<f8E3M4>"
-    case .float8_e8m0fnu:
-        return "!kgen.scalar<f8E8M0FNU>"
-    case _:
-        comptime assert False, "unsupported dtype for !kgen.scalar"
+        case .bool:
+            return "!kgen.scalar<bool>"
+        case .int8:
+            return "!kgen.scalar<si8>"
+        case .uint8:
+            return "!kgen.scalar<ui8>"
+        case .int16:
+            return "!kgen.scalar<si16>"
+        case .uint16:
+            return "!kgen.scalar<ui16>"
+        case .int32:
+            return "!kgen.scalar<si32>"
+        case .uint32:
+            return "!kgen.scalar<ui32>"
+        case .int64:
+            return "!kgen.scalar<si64>"
+        case .uint64:
+            return "!kgen.scalar<ui64>"
+        case .float16:
+            return "!kgen.scalar<f16>"
+        case .bfloat16:
+            return "!kgen.scalar<bf16>"
+        case .float32:
+            return "!kgen.scalar<f32>"
+        case .float64:
+            return "!kgen.scalar<f64>"
+        case .float8_e5m2:
+            return "!kgen.scalar<f8E5M2>"
+        case .float8_e5m2fnuz:
+            return "!kgen.scalar<f8E5M2FNUZ>"
+        case .float8_e4m3fn:
+            return "!kgen.scalar<f8E4M3>"
+        case .float8_e4m3fnuz:
+            return "!kgen.scalar<f8E4M3FNUZ>"
+        case .float8_e3m4:
+            return "!kgen.scalar<f8E3M4>"
+        case .float8_e8m0fnu:
+            return "!kgen.scalar<f8E8M0FNU>"
+        case _:
+            comptime assert False, "unsupported dtype for !kgen.scalar"
 
 
 @inline(.nodebug)

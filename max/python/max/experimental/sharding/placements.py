@@ -79,7 +79,8 @@ class Placement(ABC):
 
     Each placement describes what a single mesh axis does to a tensor:
     ``Replicated`` (full copy), ``Sharded`` (split along a tensor dim),
-    or ``Partial`` (partial result needing reduction).
+    ``Partial`` (partial result needing reduction), or ``Unknown`` (per-device
+    values with no known relation).
     """
 
     @abstractmethod
@@ -150,6 +151,25 @@ class Replicated(Placement):
         if isinstance(other, Sharded):
             return Collective.LOCAL_SLICE
         return super().transition_to(other)
+
+
+@dataclass(frozen=True)
+class Unknown(Placement):
+    """Per-device values on this mesh axis with no known relation.
+
+    The devices may hold different values, or happen to hold equal ones; only
+    a claim with :meth:`~max.experimental.tensor.Tensor.rebind_mapping` or a
+    collective establishes a relation.
+    """
+
+    def __repr__(self) -> str:
+        return "Unknown()"
+
+    def global_dim(self, cells: Dim) -> Dim:
+        """Returns each shard's own cell; no global extent relates them."""
+        if is_per_shard_dim(cells):
+            return make_per_shard_dim(cells.per_shard)
+        return cells
 
 
 @dataclass(frozen=True)

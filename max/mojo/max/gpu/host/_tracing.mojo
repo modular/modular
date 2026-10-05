@@ -150,25 +150,25 @@ struct Color(Intable, TrivialRegisterPassable):
             colorname: The name of the color to use.
         """
         __match colorname:
-        case "modular_purple":
-            self = Color.MODULAR_PURPLE
-        case "blue":
-            self = Color.BLUE
-        case "green":
-            self = Color.GREEN
-        case "orange":
-            self = Color.ORANGE
-        case "purple":
-            self = Color.PURPLE
-        case "red":
-            self = Color.RED
-        case "white":
-            self = Color.WHITE
-        case "yellow":
-            self = Color.YELLOW
-        case _:
-            # Default to MODULAR_PURPLE for unknown color names
-            self = Color.MODULAR_PURPLE
+            case "modular_purple":
+                self = Color.MODULAR_PURPLE
+            case "blue":
+                self = Color.BLUE
+            case "green":
+                self = Color.GREEN
+            case "orange":
+                self = Color.ORANGE
+            case "purple":
+                self = Color.PURPLE
+            case "red":
+                self = Color.RED
+            case "white":
+                self = Color.WHITE
+            case "yellow":
+                self = Color.YELLOW
+            case _:
+                # Default to MODULAR_PURPLE for unknown color names
+                self = Color.MODULAR_PURPLE
 
     def __int__(self) -> Int:
         return self._value

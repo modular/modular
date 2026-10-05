@@ -1,0 +1,54 @@
+# MiniMax-M3 llm-fuzz known failures, one `scenario:test` per line.
+#
+# These tests fail against MiniMax's official hosted API. We found that by
+# running the same suite there, so we skip them here. A test that passes on
+# the official API stays enabled.
+#
+# Entries go stale as MAX fixes land. Excluding a test that now passes
+# costs regression coverage for nothing, so re-validate periodically.
+#
+# Some entries name fuzz-type scenarios, which `--validation-only` runs
+# never select. Those runs cannot validate them either way, so they stay.
+#
+# Consumed by both llm-fuzz paths, so the two can never drift:
+#   - ad-hoc/Buildkite, via minimax-m3-known-failures.sh
+#   - Mammoth, via the llm-fuzz image's EXCLUDE_FILE env var (the Dockerfile
+#     copies this whole tree into the image)
+
+# endurance_soak
+endurance_soak:endurance_steady_state_error_windows
+endurance_soak:endurance_streaming_leak
+# parameter_abuse
+parameter_abuse:max_tokens_and_max_completion_tokens_conflict
+# pipeline_stall
+pipeline_stall:mixed_prefill_decode_pressure
+# streaming_attacks
+streaming_attacks:cancel_after_500ms
+# structured_output
+structured_output:uncompilable_invalid_regex_pattern
+structured_output:uncompilable_unresolvable_ref
+# tc_schema_enforcement
+tc_schema_enforcement:ap_typed_list_dict_str_list_str[tool_choice=auto]
+tc_schema_enforcement:ap_typed_list_dict_str_list_str[tool_choice=required]
+tc_schema_enforcement:ap_typed_pydantic_terminate_eval[tool_choice=auto]
+tc_schema_enforcement:ap_typed_pydantic_terminate_eval[tool_choice=required]
+tc_schema_enforcement:enum_with_object_value[tool_choice=required]
+tc_schema_enforcement:ref_defs_recursive[tool_choice=required]
+# tool_calling
+tool_calling:interleaved_thinking_multi_section
+tool_calling:interleaved_thinking_multi_section_streaming
+tool_calling:malformed_tool_name_special_chars
+tool_calling:required_no_content_leak
+tool_calling:tool_schema_with_oneof_and_const
+# tool_schema_validation
+tool_schema_validation:enforce_format_email
+tool_schema_validation:enforce_max_length
+tool_schema_validation:enforce_min_properties
+tool_schema_validation:enforce_missing_required
+tool_schema_validation:enforce_nested_wrong_type
+tool_schema_validation:enforce_not_forbidden
+tool_schema_validation:enforce_number_over_maximum
+tool_schema_validation:enforce_object_as_array
+tool_schema_validation:enforce_string_pattern
+tool_schema_validation:enforce_wrong_type
+tool_schema_validation:tool_choice_specific_schema

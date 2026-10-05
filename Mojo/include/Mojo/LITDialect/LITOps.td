@@ -468,7 +468,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
-    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
     // Mark the struct as a thunk struct for closures, see also FnOp::thunkKey
     OptionalAttr<AnyAttr>:$closureThunkKey,
     OptionalAttr<LIT_DocStringAttr>:$docString,
@@ -482,10 +481,6 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // Explicit minimum alignment specified via @align(N) decorator.
     OptionalAttr<AttrOfType<Index>>:$minAlignment,
     EnumProp<LIT_TypeConvention>:$convention,
-    // If definesClosure attribute is present,
-    // then this is a compiler generated structure
-    // used to wrap a function as a closure.
-    UnitAttr:$definesClosure,
     // Present when the struct has a conditional RegisterPassable conformance.
     // Stores the ConstraintAttr whose proposition governs whether the struct
     // is register-passable for a given instantiation.
@@ -775,10 +770,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     DefaultValuedAttr<KGEN_TraitSymbolArrayAttr,
                       "ArrayRef<TraitSymbolAttr>{}">:$immediateParents,
     EnumProp<LIT_TypeConvention>:$convention,
-    // If definesClosure attribute is present,
-    // then this is a compiler generated trait
-    // used to implement a closure
-    UnitAttr:$definesClosure,
     OptionalAttr<LIT_DocStringAttr>:$docString,
     OptionalAttr<LIT_DeprecationInfoAttr>:$deprecationInfo,
     OptionalAttr<LIT_UnavailableInfoAttr>:$unavailableInfo,
@@ -789,7 +780,6 @@ def LIT_TraitDeclOp : LITOp<"trait.decl", [
     // This is the error message to produce if a non-destructible type needs an
     // implicit destructor call.
     OptionalAttr<StrAttr>:$linearTypeErrorMsg,
-    OptionalAttr<TypeAttrOf<KGEN_FuncTypeGeneratorType>>:$closureSignature,
     OptionalAttr<SourceNameAttr>:$sourceName
   );
 

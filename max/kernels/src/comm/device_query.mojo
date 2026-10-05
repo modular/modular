@@ -226,5 +226,5 @@ def get_sm_version() -> StaticString:
     Returns:
         The SM version string for the target GPU architecture.
     """
-    comptime default_device_info = GPUInfo.current_accelerator()
+    comptime default_device_info = GPUInfo.default_accelerator()
     return default_device_info.version

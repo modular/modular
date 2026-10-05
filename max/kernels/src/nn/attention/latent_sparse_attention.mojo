@@ -53,13 +53,13 @@ from max.gpu.host.info import is_cpu
 import max.gpu.primitives.warp as warp
 
 from kv_cache.types import KVCacheT
-from layout import LayoutTensor
+from layout import TileTensor
 
 
 @inline(.always)
 def _batch_of_row(
     row: Int,
-    row_offsets: Pointer[UInt32, MutAnyOrigin],
+    row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
     num_batches: Int,
 ) -> Int:
     var r = UInt32(row)
@@ -113,10 +113,10 @@ def _latent_sparse_attention_gpu_kernel[
     window: Int,
 ](
     out_ptr: Pointer[Scalar[out_type], MutAnyOrigin],
-    q_ptr: Pointer[Scalar[q_type], MutAnyOrigin],
-    row_offsets: Pointer[UInt32, MutAnyOrigin],
-    comp_indices: Pointer[Int32, MutAnyOrigin],
-    attn_sink: Pointer[Float32, MutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
+    row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    comp_indices: ImmPointer[Int32, ImmutAnyOrigin],
+    attn_sink: ImmPointer[Float32, ImmutAnyOrigin],
     swa_cache: swa_t,
     comp_cache: comp_t,
     num_heads: Int32,
@@ -131,11 +131,9 @@ def _latent_sparse_attention_gpu_kernel[
     scale: Float32,
 ):
     comptime lane_width = head_dim // WARP_SIZE
-    var t = Int(block_idx.x)
+    var t = block_idx.x
     var lane = Int(lane_id())
-    var h0 = (
-        Int(block_idx.y) * warps_per_block + Int(warp_id())
-    ) * heads_per_warp
+    var h0 = (block_idx.y * warps_per_block + Int(warp_id())) * heads_per_warp
     var nh = Int(num_heads)
     if h0 >= nh:
         return
@@ -235,10 +233,10 @@ def _latent_sparse_attention_cpu[
     window: Int,
 ](
     out_ptr: Pointer[Scalar[out_type], MutAnyOrigin],
-    q_ptr: Pointer[Scalar[q_type], MutAnyOrigin],
-    row_offsets: Pointer[UInt32, MutAnyOrigin],
-    comp_indices: Pointer[Int32, MutAnyOrigin],
-    attn_sink: Pointer[Float32, MutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
+    row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    comp_indices: ImmPointer[Int32, ImmutAnyOrigin],
+    attn_sink: ImmPointer[Float32, ImmutAnyOrigin],
     swa_cache: swa_t,
     comp_cache: comp_t,
     num_rows: Int,
@@ -304,13 +302,13 @@ def latent_sparse_attention_ragged_paged[
     target: StaticString,
     window: Int,
 ](
-    output: LayoutTensor[mut=True, out_type, address_space=.GENERIC, ...],
-    q: LayoutTensor[mut=False, q_type, address_space=.GENERIC, ...],
-    input_row_offsets: LayoutTensor[
+    output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    comp_indices: LayoutTensor[mut=False, .int32, address_space=.GENERIC, ...],
-    attn_sink: LayoutTensor[mut=False, .float32, address_space=.GENERIC, ...],
+    comp_indices: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
+    attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
     swa_cache: swa_t,
     comp_cache: comp_t,
     scale: Float32,
@@ -351,35 +349,34 @@ def latent_sparse_attention_ragged_paged[
     comptime assert (
         head_dim % WARP_SIZE == 0
     ), "head_dim must be a multiple of the warp size"
-    comptime assert output.layout.rank() == 3 and q.layout.rank() == 3
-    comptime assert comp_indices.layout.rank() == 2
+    comptime assert output.flat_rank == 3 and q.flat_rank == 3
+    comptime assert comp_indices.flat_rank == 2
     comptime assert (
-        input_row_offsets.layout.rank() == 1 and attn_sink.layout.rank() == 1
+        input_row_offsets.flat_rank == 1 and attn_sink.flat_rank == 1
     )
 
-    var num_rows = q.dim(0)
-    var num_heads = q.dim(1)
-    var num_batches = input_row_offsets.dim(0) - 1
-    var num_comp = comp_indices.dim(1)
-    var q_stride0 = Int(q.runtime_layout.stride.value[0])
-    var q_stride1 = Int(q.runtime_layout.stride.value[1])
-    var out_stride0 = Int(output.runtime_layout.stride.value[0])
-    var out_stride1 = Int(output.runtime_layout.stride.value[1])
-    var idx_stride0 = Int(comp_indices.runtime_layout.stride.value[0])
-    var idx_stride1 = Int(comp_indices.runtime_layout.stride.value[1])
+    var num_rows = Int(q.dim[0]())
+    var num_heads = Int(q.dim[1]())
+    var num_batches = Int(input_row_offsets.dim[0]()) - 1
+    var num_comp = Int(comp_indices.dim[1]())
+    var q_stride0 = Int(q.dynamic_stride(0))
+    var q_stride1 = Int(q.dynamic_stride(1))
+    var out_stride0 = Int(output.dynamic_stride(0))
+    var out_stride1 = Int(output.dynamic_stride(1))
+    var idx_stride0 = Int(comp_indices.dynamic_stride(0))
+    var idx_stride1 = Int(comp_indices.dynamic_stride(1))
     debug_assert(
-        Int(q.runtime_layout.stride.value[2]) == 1
-        and Int(output.runtime_layout.stride.value[2]) == 1,
+        Int(q.dynamic_stride(2)) == 1 and Int(output.dynamic_stride(2)) == 1,
         "q and output must be contiguous along head_dim",
     )
     if num_rows == 0:
         return
 
-    var out_ptr = rebind[Pointer[Scalar[out_type], MutAnyOrigin]](output.ptr)
-    var q_ptr = rebind[Pointer[Scalar[q_type], MutAnyOrigin]](q.ptr)
-    var offs_ptr = rebind[Pointer[UInt32, MutAnyOrigin]](input_row_offsets.ptr)
-    var idx_ptr = rebind[Pointer[Int32, MutAnyOrigin]](comp_indices.ptr)
-    var sink_ptr = rebind[Pointer[Float32, MutAnyOrigin]](attn_sink.ptr)
+    var out_ptr = output.unsafe_ptr().as_unsafe_any_origin()
+    var q_ptr = q.unsafe_ptr().as_unsafe_any_origin()
+    var offs_ptr = input_row_offsets.unsafe_ptr().as_unsafe_any_origin()
+    var idx_ptr = comp_indices.unsafe_ptr().as_unsafe_any_origin()
+    var sink_ptr = attn_sink.unsafe_ptr().as_unsafe_any_origin()
 
     comptime if is_cpu[target]():
         _latent_sparse_attention_cpu[head_dim=head_dim, window=window](

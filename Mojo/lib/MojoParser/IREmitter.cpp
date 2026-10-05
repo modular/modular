@@ -1258,13 +1258,18 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
 /// parameter context.  When the result is computed, evaluate the specified
 /// callback on the result and then discard the result.
 ///
+/// The callback gets the block the expression was emitted into, which is
+/// erased once the callback returns: anything declared in it goes away with
+/// the expression.
+///
 /// On failure, an error is emitted and the callback is not invoked.
 ///
 /// This is used for evaluating expressions like `origin_of(x)` and
 /// `type_of(x)` and `ref [x] T`.
 void IREmitter::emitExpressionWithoutEvaluatingIt(
     const ExprNode *expr, ExprContext exprContext,
-    std::function<void(CValue, IREmitter &emitter)> callback) {
+    std::function<void(CValue, IREmitter &emitter, Block &exprBlock)>
+        callback) {
   SMLoc loc = expr->getLoc();
   // The emitter indicates what context to do name lookup against, but cannot
   // be used to emit the IR into.  Find something in the declScope with an
@@ -1305,7 +1310,7 @@ void IREmitter::emitExpressionWithoutEvaluatingIt(
   // Emit the expression and invoke the callback on success.
   CValue subExprValue = tmpEmitter.emitExprCValue(expr, exprContext);
   if (subExprValue)
-    callback(subExprValue, tmpEmitter);
+    callback(subExprValue, tmpEmitter, tmpBlock);
 
   // Finally, remove our temp block
   tmpBlock.erase();
@@ -1846,6 +1851,23 @@ MLValue IREmitter::findNearestErrorSlot() {
   return cast<LIT::TryOp>(opForRaise).getErr();
 }
 
+/// The declaration `origin` is ultimately rooted at, null when it is rooted at
+/// no declaration at all.  A field, interior or subtree origin refines a base
+/// whose invalidation governs it, so the base is what has to outlive a use of
+/// the refinement.
+static ParamDeclRefAttr getRootOrigin(TypedAttr origin) {
+  // A declaration reference is the only thing that can name a local origin, so
+  // walking to one crosses every refinement, mutcast and rebind on the way.
+  ParamDeclRefAttr root;
+  origin.walk([&](ParamDeclRefAttr declRef) {
+    // Only origins are of interest; a reference to any other kind of parameter
+    // is part of how the origin was spelled, not the storage it names.
+    if (isa<OriginType>(declRef.getType()))
+      root = declRef;
+  });
+  return root;
+}
+
 /// When a try block gets its error type inferred, this function makes sure the
 /// inferred type doesn't capture an origin from within a try body.  Such a
 /// thing would be an out of scope reference, e.g.:
@@ -1873,11 +1895,12 @@ void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
   // Unfortunately, we don't have a good way to do a lookup given an origin
   // attribute, so we scan the body of the try block for any vardecls. Is this
   // the only thing that can declare an origin?
-  SmallPtrSet<Attribute, 8> originSet;
+  SmallPtrSet<Attribute, 8> roots;
   for (auto o : origins)
-    originSet.insert(OriginType::stripMutCastAndRebind(o));
+    if (ParamDeclRefAttr root = getRootOrigin(o))
+      roots.insert(root);
   tryOp.getTryRegion().walk([&](VarDeclOp varDecl) {
-    if (originSet.contains(varDecl.getType().getOrigin())) {
+    if (roots.contains(varDecl.getType().getOrigin())) {
       auto diag = emitError(loc);
       diag << "inferred error type " << rvalueType << " captures origin ";
       if (varDecl.isSynthetic()) {
@@ -1892,6 +1915,38 @@ void IREmitter::checkInferredErrorType(ASTType rvalueType, SMLoc loc) {
       diag.attachNote(varDecl.getLoc()) << "origin declared here";
     }
   });
+}
+
+/// Check that the declarations `origin` is rooted at outlive `block`, emitting
+/// an error at `expr` and returning failure when one does not.
+LogicalResult IREmitter::checkRootOriginsOutliveBlock(TypedAttr origin,
+                                                      Block &block,
+                                                      const ExprNode *expr) {
+  // A union is reported member by member, so each is its own question.
+  SmallVector<TypedAttr> origins =
+      shared.cachedOriginFinder.findOriginsIn({}, {origin});
+
+  // A refinement dies with what it refines, so each member answers at its root.
+  SmallPtrSet<Attribute, 4> roots;
+  for (TypedAttr member : origins)
+    if (ParamDeclRefAttr root = getRootOrigin(member))
+      roots.insert(root);
+  if (roots.empty())
+    return success();
+
+  // There is no lookup from an origin back to its declaration, hence the scan.
+  SMLoc loc = expr->getLoc();
+  LogicalResult result = success();
+  block.walk([&](VarDeclOp varDecl) {
+    if (!roots.contains(varDecl.getType().getOrigin()))
+      return;
+
+    result = failure();
+    emitError(loc) << "origin" << getContextMessage(EC_Origin)
+                   << " must outlive the expression naming it"
+                   << expr->getRange();
+  });
+  return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2219,30 +2274,36 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // unquotes them when it folds into the generator type. A parameter's declared
   // type, an argument type and the result type are all encoded this way.
   SelfSlotShifter shifter(/*prepend=*/true);
-  auto quote = [&](Type type) -> TypedAttr {
+  auto shiftAndQuote = [&](auto typeOrAttr) -> TypedAttr {
     // Canonicalize the type value (as the previous `emitPValue` path did): the
     // closure trait it feeds into must stay canonical.
-    return QuoteAttr::get(TypeParamAttr::get(
-        getCanonicalType(shifter.replace(type)), TypeType::get(ctx)));
+    if constexpr (std::is_same_v<decltype(typeOrAttr), Type>) {
+      return QuoteAttr::get(TypeParamAttr::get(
+          getCanonicalType(shifter.replace(typeOrAttr)), TypeType::get(ctx)));
+    } else if constexpr (std::is_same_v<decltype(typeOrAttr), PogListAttr>) {
+      return QuoteAttr::get(shifter.replace(typeOrAttr));
+    } else {
+      static_assert(false);
+    }
   };
 
   // NOTE: this has to be in sync with `createParametricClosureTrait`.
 
   // 1st, the parameter decl list.
   SmallVector<TypedAttr> paramDecls =
-      llvm::map_to_vector(sig.getInputParamTypes(), quote);
+      llvm::map_to_vector(sig.getInputParamTypes(), shiftAndQuote);
 
   auto paramDeclList =
       ParamListAttr::get(paramDecls, ParamListType::get(TypeType::get(ctx)));
 
   // 2nd, the argument type list.
   SmallVector<TypedAttr> argTypes =
-      llvm::map_to_vector(sig.getBody().getArguments(), quote);
+      llvm::map_to_vector(sig.getBody().getArguments(), shiftAndQuote);
   auto argTypeList =
       ParamListAttr::get(argTypes, ParamListType::get(TypeType::get(ctx)));
 
   // 3rd, the result type.
-  auto resultType = quote(sig.getBody().getResultType());
+  auto resultType = shiftAndQuote(sig.getBody().getResultType());
 
   // 4th, the metadata. Adjust for the extra `mut self` argument (prepend a Mut
   // convention and one implicit origin decl); we can only do it here since we
@@ -2280,14 +2341,14 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   auto traitDeclOp = cast<TraitDeclOp>(closureTraitDecl->getIfOperation());
   return traitDeclOp.bindReference(
       {paramDeclList, argTypeList, resultType, metadata,
-       PogListAttr::get(
+       shiftAndQuote(PogListAttr::get(
            ctx, pogParams,
            /*bodyConstraints=*/{}, // Should we allow constraints on closure??
-           sig.getParamListAttrs().getOrigVariadicConvention()),
-       PogListAttr::get(
+           sig.getParamListAttrs().getOrigVariadicConvention())),
+       shiftAndQuote(PogListAttr::get(
            ctx, pogArgs,
            /*bodyConstraints=*/{}, // Should we allow constraints on closure??
-           sig.getArgListAttrs().getOrigVariadicConvention())});
+           sig.getArgListAttrs().getOrigVariadicConvention()))});
 }
 
 FnTypeGeneratorType

@@ -53,12 +53,12 @@ from kv_cache.types import (
     PagedKVCacheCollection,
 )
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
+    Coord,
+    Idx,
+    TileTensor,
+    row_major,
 )
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from linalg.mx_format import MXFormat
 from linalg.fp6_utils import MXFP6_SF_VECTOR_SIZE
 from nn.kv_cache_ragged import (
@@ -66,7 +66,6 @@ from nn.kv_cache_ragged import (
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4,
 )
 
-from std.utils import IndexList
 
 from kv_cache_test_utils import CacheLengthsTable, PagedLookupTable
 
@@ -92,7 +91,7 @@ comptime index_kv_params = KVCacheStaticParams(
 )
 
 
-def _fill_random_u8(t: LayoutTensor[mut=True, ...], n: Int, lo: Int, hi: Int):
+def _fill_random_u8(t: TileTensor[mut=True, ...], n: Int, lo: Int, hi: Int):
     """Fill `n` bytes with random values in `[lo, hi]`.
 
     Writes through a byte view so the same helper serves the packed-FP6 uint8
@@ -140,76 +139,105 @@ def execute_dual_cache_fused_mxfp6[
     comptime page_size = 128
 
     comptime MainCollection = PagedKVCacheCollection[
-        KV_DTYPE, main_kv_params, page_size, ...
+        KV_DTYPE,
+        main_kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
     ]
     comptime IndexCollection = PagedKVCacheCollection[
-        KV_DTYPE, index_kv_params, page_size, ...
+        KV_DTYPE,
+        index_kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
     ]
 
     var clt = CacheLengthsTable.build(prompt_lens, cache_sizes, ctx)
     var total_length = clt.total_length
     var max_seq = clt.max_seq_length_batch
     var max_ctx = clt.max_full_context_length
-    var input_row_offsets_tensor = clt.input_row_offsets.device_tensor()
+    var input_row_offsets_tensor = clt.input_row_offsets.device_tile_tensor()
 
-    comptime hs_layout = Layout.row_major(UNKNOWN_VALUE, K_BYTES)
-    var hs = ManagedLayoutTensor[DATA_DTYPE, hs_layout](
-        RuntimeLayout[hs_layout].row_major(IndexList[2](total_length, K_BYTES)),
-        ctx,
+    var hs = HostDeviceTileTensor[DATA_DTYPE](
+        row_major(total_length, Idx[K_BYTES]), ctx
     )
-    _fill_random_u8(hs.tensor[update=False](), total_length * K_BYTES, 0, 255)
+    _fill_random_u8(hs.host_tensor(), total_length * K_BYTES, 0, 255)
     var hs_dev = hs.device_tensor()
 
-    comptime w_layout = Layout.row_major(n_total, K_BYTES)
-    var w = ManagedLayoutTensor[DATA_DTYPE, w_layout](ctx)
-    _fill_random_u8(w.tensor[update=False](), n_total * K_BYTES, 0, 255)
+    var w = HostDeviceTileTensor[DATA_DTYPE](
+        row_major(Idx[n_total], Idx[K_BYTES]), ctx
+    )
+    _fill_random_u8(w.host_tensor(), n_total * K_BYTES, 0, 255)
     var w_dev = w.device_tensor()
 
-    comptime input_sf_layout = Layout.row_major(UNKNOWN_VALUE, scale_K)
-    var input_scale = ManagedLayoutTensor[SCALE_DTYPE, input_sf_layout](
-        RuntimeLayout[input_sf_layout].row_major(
-            IndexList[2](total_length, scale_K)
+    var input_scale = HostDeviceTileTensor[SCALE_DTYPE](
+        row_major(total_length, Idx[scale_K]), ctx
+    )
+    _fill_random_u8(input_scale.host_tensor(), total_length * scale_K, 125, 129)
+    var input_scale_dev = input_scale.device_tensor()
+
+    var weight_scale = HostDeviceTileTensor[SCALE_DTYPE](
+        row_major(Idx[n_total], Idx[scale_K]), ctx
+    )
+    _fill_random_u8(weight_scale.host_tensor(), n_total * scale_K, 125, 129)
+    var weight_scale_dev = weight_scale.device_tensor()
+
+    var main_blocks = HostDeviceTileTensor[KV_DTYPE](
+        row_major(
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[MAIN_KV_HEADS],
+            Idx[HEAD_SIZE],
         ),
         ctx,
     )
-    _fill_random_u8(
-        input_scale.tensor[update=False](), total_length * scale_K, 125, 129
+    var main_blocks_ref = HostDeviceTileTensor[KV_DTYPE](
+        row_major(
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[MAIN_KV_HEADS],
+            Idx[HEAD_SIZE],
+        ),
+        ctx,
     )
-    var input_scale_dev = input_scale.device_tensor()
+    var index_blocks = HostDeviceTileTensor[KV_DTYPE](
+        row_major(
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[1],
+            Idx[HEAD_SIZE],
+        ),
+        ctx,
+    )
+    var index_blocks_ref = HostDeviceTileTensor[KV_DTYPE](
+        row_major(
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[1],
+            Idx[HEAD_SIZE],
+        ),
+        ctx,
+    )
 
-    comptime weight_sf_layout = Layout.row_major(n_total, scale_K)
-    var weight_scale = ManagedLayoutTensor[SCALE_DTYPE, weight_sf_layout](ctx)
-    _fill_random_u8(
-        weight_scale.tensor[update=False](), n_total * scale_K, 125, 129
-    )
-    var weight_scale_dev = weight_scale.device_tensor()
-
-    comptime kv_block_layout = Layout.row_major[6]()
-    var main_block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, MAIN_KV_HEADS, HEAD_SIZE
-    )
-    var main_blocks = ManagedLayoutTensor[KV_DTYPE, kv_block_layout](
-        RuntimeLayout[kv_block_layout].row_major(main_block_shape), ctx
-    )
-    var main_blocks_ref = ManagedLayoutTensor[KV_DTYPE, kv_block_layout](
-        RuntimeLayout[kv_block_layout].row_major(main_block_shape), ctx
-    )
-    var index_block_shape = IndexList[6](
-        num_paged_blocks, 2, num_layers, page_size, 1, HEAD_SIZE
-    )
-    var index_blocks = ManagedLayoutTensor[KV_DTYPE, kv_block_layout](
-        RuntimeLayout[kv_block_layout].row_major(index_block_shape), ctx
-    )
-    var index_blocks_ref = ManagedLayoutTensor[KV_DTYPE, kv_block_layout](
-        RuntimeLayout[kv_block_layout].row_major(index_block_shape), ctx
-    )
-
-    var main_n0 = main_blocks.tensor[update=False]().runtime_layout.size()
-    unsafe_memset_zero(main_blocks.tensor[update=False]().ptr, main_n0)
-    unsafe_memset_zero(main_blocks_ref.tensor[update=False]().ptr, main_n0)
-    var index_n0 = index_blocks.tensor[update=False]().runtime_layout.size()
-    unsafe_memset_zero(index_blocks.tensor[update=False]().ptr, index_n0)
-    unsafe_memset_zero(index_blocks_ref.tensor[update=False]().ptr, index_n0)
+    var main_n0 = main_blocks.host_tensor().num_elements()
+    unsafe_memset_zero(main_blocks.host_tensor().ptr, main_n0)
+    unsafe_memset_zero(main_blocks_ref.host_tensor().ptr, main_n0)
+    var index_n0 = index_blocks.host_tensor().num_elements()
+    unsafe_memset_zero(index_blocks.host_tensor().ptr, index_n0)
+    unsafe_memset_zero(index_blocks_ref.host_tensor().ptr, index_n0)
 
     var main_lut = PagedLookupTable[page_size].build(
         prompt_lens, cache_sizes, max_ctx, num_paged_blocks, ctx
@@ -219,71 +247,104 @@ def execute_dual_cache_fused_mxfp6[
     )
 
     var main_collection = MainCollection(
-        main_blocks.device_tensor(),
-        clt.cache_lengths.device_tensor(),
-        main_lut.device_tensor(),
+        rebind[MainCollection.blocks_tt_type](
+            main_blocks.device_tensor().as_unsafe_any_origin()
+        ),
+        clt.cache_lengths.device_tile_tensor(),
+        main_lut.device_tile_tensor(),
         UInt32(max_seq),
         UInt32(max_ctx),
     )
     var main_collection_ref = MainCollection(
-        main_blocks_ref.device_tensor(),
-        clt.cache_lengths.device_tensor(),
-        main_lut.device_tensor(),
+        rebind[MainCollection.blocks_tt_type](
+            main_blocks_ref.device_tensor().as_unsafe_any_origin()
+        ),
+        clt.cache_lengths.device_tile_tensor(),
+        main_lut.device_tile_tensor(),
         UInt32(max_seq),
         UInt32(max_ctx),
     )
+    # Expose logical K-only shape; the collection derives its packed page pitch.
     var index_collection = IndexCollection(
-        index_blocks.device_tensor(),
-        clt.cache_lengths.device_tensor(),
-        index_lut.device_tensor(),
+        rebind[IndexCollection.blocks_tt_type](
+            index_blocks.device_tensor()
+            .tile(
+                Coord(
+                    Int64(num_paged_blocks),
+                    Idx[1],
+                    Int64(num_layers),
+                    Idx[page_size],
+                    Idx[1],
+                    Idx[HEAD_SIZE],
+                ),
+                Coord(0, 0, 0, 0, 0, 0),
+            )
+            .as_unsafe_any_origin()
+        ),
+        clt.cache_lengths.device_tile_tensor(),
+        index_lut.device_tile_tensor(),
         UInt32(max_seq),
         UInt32(max_ctx),
     )
     var index_collection_ref = IndexCollection(
-        index_blocks_ref.device_tensor(),
-        clt.cache_lengths.device_tensor(),
-        index_lut.device_tensor(),
+        rebind[IndexCollection.blocks_tt_type](
+            index_blocks_ref.device_tensor()
+            .tile(
+                Coord(
+                    Int64(num_paged_blocks),
+                    Idx[1],
+                    Int64(num_layers),
+                    Idx[page_size],
+                    Idx[1],
+                    Idx[HEAD_SIZE],
+                ),
+                Coord(0, 0, 0, 0, 0, 0),
+            )
+            .as_unsafe_any_origin()
+        ),
+        clt.cache_lengths.device_tile_tensor(),
+        index_lut.device_tile_tensor(),
         UInt32(max_seq),
         UInt32(max_ctx),
     )
 
-    comptime fused_q_layout = Layout.row_major(UNKNOWN_VALUE, q_dim)
-    var fused_q_out = ManagedLayoutTensor[OUT_DTYPE, fused_q_layout](
-        RuntimeLayout[fused_q_layout].row_major(
-            IndexList[2](total_length, q_dim)
-        ),
-        ctx,
+    var fused_q_out = HostDeviceTileTensor[OUT_DTYPE](
+        row_major(total_length, Idx[q_dim]), ctx
     )
-    comptime fused_iq_layout = Layout.row_major(UNKNOWN_VALUE, iq_dim)
-    var fused_iq_out = ManagedLayoutTensor[OUT_DTYPE, fused_iq_layout](
-        RuntimeLayout[fused_iq_layout].row_major(
-            IndexList[2](total_length, iq_dim)
-        ),
-        ctx,
+    var fused_iq_out = HostDeviceTileTensor[OUT_DTYPE](
+        row_major(total_length, Idx[iq_dim]), ctx
     )
-    var q_out = ManagedLayoutTensor[OUT_DTYPE, fused_q_layout](
-        RuntimeLayout[fused_q_layout].row_major(
-            IndexList[2](total_length, q_dim)
-        ),
-        ctx,
+    var q_out = HostDeviceTileTensor[OUT_DTYPE](
+        row_major(total_length, Idx[q_dim]), ctx
     )
-    var iq_out = ManagedLayoutTensor[OUT_DTYPE, fused_iq_layout](
-        RuntimeLayout[fused_iq_layout].row_major(
-            IndexList[2](total_length, iq_dim)
-        ),
-        ctx,
+    var iq_out = HostDeviceTileTensor[OUT_DTYPE](
+        row_major(total_length, Idx[iq_dim]), ctx
     )
+
+    hs.to_device()
+    w.to_device()
+    input_scale.to_device()
+    weight_scale.to_device()
+    main_blocks.to_device()
+    main_blocks_ref.to_device()
+    index_blocks.to_device()
+    index_blocks_ref.to_device()
+    fused_q_out.to_device()
+    fused_iq_out.to_device()
+    q_out.to_device()
+    iq_out.to_device()
+    ctx.synchronize()
 
     generic_fused_qkv_index_matmul_kv_cache_paged_ragged_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         target="gpu",
         mx_format=fmt,
     ](
-        hs_dev,
+        hs_dev.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
-        w_dev,
-        input_scale_dev,
-        weight_scale_dev,
+        w_dev.as_imm().as_unsafe_any_origin(),
+        input_scale_dev.as_imm().as_unsafe_any_origin(),
+        weight_scale_dev.as_imm().as_unsafe_any_origin(),
         Float32(1.0),
         main_collection,
         index_collection,
@@ -294,29 +355,19 @@ def execute_dual_cache_fused_mxfp6[
         ctx,
     )
 
-    var w_qkv = LayoutTensor[DATA_DTYPE, Layout.row_major(qkv_n, K_BYTES)](
-        w_dev.ptr,
-        RuntimeLayout[Layout.row_major(qkv_n, K_BYTES)].row_major(
-            IndexList[2](qkv_n, K_BYTES)
-        ),
-    )
-    var ws_qkv = LayoutTensor[SCALE_DTYPE, Layout.row_major(qkv_n, scale_K)](
-        weight_scale_dev.ptr,
-        RuntimeLayout[Layout.row_major(qkv_n, scale_K)].row_major(
-            IndexList[2](qkv_n, scale_K)
-        ),
-    )
+    var w_qkv = w_dev.slice[0:qkv_n, 0:K_BYTES]()
+    var ws_qkv = weight_scale_dev.slice[0:qkv_n, 0:scale_K]()
 
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         target="gpu",
         mx_format=fmt,
     ](
-        hs_dev,
+        hs_dev.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
-        w_qkv,
-        input_scale_dev,
-        ws_qkv,
+        w_qkv.as_imm().as_unsafe_any_origin(),
+        input_scale_dev.as_imm().as_unsafe_any_origin(),
+        ws_qkv.as_imm().as_unsafe_any_origin(),
         Float32(1.0),
         main_collection_ref,
         UInt32(layer_idx),
@@ -324,29 +375,19 @@ def execute_dual_cache_fused_mxfp6[
         ctx,
     )
 
-    var w_idx = LayoutTensor[DATA_DTYPE, Layout.row_major(idx_n, K_BYTES)](
-        w_dev.ptr + qkv_n * K_BYTES,
-        RuntimeLayout[Layout.row_major(idx_n, K_BYTES)].row_major(
-            IndexList[2](idx_n, K_BYTES)
-        ),
-    )
-    var ws_idx = LayoutTensor[SCALE_DTYPE, Layout.row_major(idx_n, scale_K)](
-        weight_scale_dev.ptr + qkv_n * scale_K,
-        RuntimeLayout[Layout.row_major(idx_n, scale_K)].row_major(
-            IndexList[2](idx_n, scale_K)
-        ),
-    )
+    var w_idx = w_dev.slice[qkv_n:n_total, 0:K_BYTES]()
+    var ws_idx = weight_scale_dev.slice[qkv_n:n_total, 0:scale_K]()
 
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
         target="gpu",
         mx_format=fmt,
     ](
-        hs_dev,
+        hs_dev.as_imm().as_unsafe_any_origin(),
         input_row_offsets_tensor,
-        w_idx,
-        input_scale_dev,
-        ws_idx,
+        w_idx.as_imm().as_unsafe_any_origin(),
+        input_scale_dev.as_imm().as_unsafe_any_origin(),
+        ws_idx.as_imm().as_unsafe_any_origin(),
         Float32(1.0),
         index_collection_ref,
         UInt32(layer_idx),
@@ -356,14 +397,24 @@ def execute_dual_cache_fused_mxfp6[
 
     ctx.synchronize()
 
-    var fused_q_host = fused_q_out.tensor[update=True]()
-    var fused_iq_host = fused_iq_out.tensor[update=True]()
-    var q_host = q_out.tensor[update=True]()
-    var iq_host = iq_out.tensor[update=True]()
-    var main_host = main_blocks.tensor[update=True]()
-    var main_ref_host = main_blocks_ref.tensor[update=True]()
-    var index_host = index_blocks.tensor[update=True]()
-    var index_ref_host = index_blocks_ref.tensor[update=True]()
+    main_blocks.to_host()
+    main_blocks_ref.to_host()
+    index_blocks.to_host()
+    index_blocks_ref.to_host()
+    fused_q_out.to_host()
+    fused_iq_out.to_host()
+    q_out.to_host()
+    iq_out.to_host()
+    ctx.synchronize()
+
+    var fused_q_host = fused_q_out.host_tensor()
+    var fused_iq_host = fused_iq_out.host_tensor()
+    var q_host = q_out.host_tensor()
+    var iq_host = iq_out.host_tensor()
+    var main_host = main_blocks.host_tensor()
+    var main_ref_host = main_blocks_ref.host_tensor()
+    var index_host = index_blocks.host_tensor()
+    var index_ref_host = index_blocks_ref.host_tensor()
 
     var rtol_f = Float32(rtol)
     var atol_f = Float32(atol)
@@ -403,7 +454,7 @@ def execute_dual_cache_fused_mxfp6[
     assert_equal(q_mm, 0)
     assert_equal(iq_mm, 0)
 
-    var main_n = main_host.runtime_layout.size()
+    var main_n = main_host.num_elements()
     var main_mismatches = 0
     var main_max_diff = Float32(0.0)
     for i in range(main_n):
@@ -413,7 +464,7 @@ def execute_dual_cache_fused_mxfp6[
             main_mismatches += 1
         main_max_diff = max(main_max_diff, abs(a - b))
 
-    var index_n = index_host.runtime_layout.size()
+    var index_n = index_host.num_elements()
     var index_mismatches = 0
     var index_max_diff = Float32(0.0)
     for i in range(index_n):

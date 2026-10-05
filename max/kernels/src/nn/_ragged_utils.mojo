@@ -17,35 +17,10 @@ from std.math.uutils import ufloordiv
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu
-from layout import LayoutTensor, TileTensor
+from layout import TileTensor
 from layout import Coord, Idx, coord_to_index_list
 
 from std.utils import IndexList
-
-
-@inline(.always)
-def get_batch_from_row_offsets(
-    row_offsets: LayoutTensor[mut=False, .uint32, ...], tok_idx: Int
-) -> Int:
-    """Calculate the batch_idx for the given flattened token_idx using row_offsets.
-    """
-    var row_offsets_size = row_offsets.size()
-
-    assert tok_idx >= 0 and tok_idx < Int(
-        row_offsets[row_offsets_size - 1]
-    ), "tok_idx is out of range of row_offsets"
-
-    var low = 0
-    var high: Int = row_offsets_size - 1
-    while low + 1 != high:
-        var mid = ufloordiv(low + high, 2)
-
-        if tok_idx >= Int(row_offsets[mid]):
-            low = mid
-        else:
-            high = mid
-
-    return low
 
 
 @inline(.always)

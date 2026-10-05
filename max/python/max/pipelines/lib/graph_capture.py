@@ -203,8 +203,7 @@ class ServeGraphCaptureRunner:
         max_cache_length_upper_bound: int,
         max_batch_size: int,
         num_speculative_tokens: int = 0,
-        verify_widths: Sequence[int] | None = None,
-        width_lookup: Sequence[int] | None = None,
+        widths_by_batch_size: Sequence[Sequence[int]] | None = None,
     ) -> None:
         self._model = model
         self._warmup_model_inputs = warmup_model_inputs
@@ -232,7 +231,19 @@ class ServeGraphCaptureRunner:
         self._kv_params = kv_params
         self._is_spec_decode = num_speculative_tokens > 0
 
-        widths = sorted(set(verify_widths or (num_speculative_tokens,)))
+        # ``batch_size -> verify widths``. Only a batch size's own row is
+        # reachable, so only that row is probed there.
+        self._widths_by_batch_size = [
+            sorted(set(row))
+            for row in widths_by_batch_size or [[num_speculative_tokens]]
+        ]
+        widths = sorted(
+            {
+                width
+                for batch_size in range(1, self._max_batch_size + 1)
+                for width in self._probe_verify_widths(batch_size)
+            }
+        )
         for width in widths:
             if not 0 <= width <= num_speculative_tokens:
                 raise ValueError(
@@ -241,18 +252,6 @@ class ServeGraphCaptureRunner:
                     "drafts than it carries."
                 )
         self._verify_widths = widths
-        # ``batch_size -> verify width``. When set, only the width a batch size
-        # resolves to is reachable, so only that one is probed.
-        self._width_lookup = width_lookup
-        if width_lookup is not None:
-            for batch_size in range(1, self._max_batch_size + 1):
-                scheduled = width_lookup[min(batch_size, len(width_lookup) - 1)]
-                if scheduled not in widths:
-                    raise ValueError(
-                        f"Batch size {batch_size} resolves to verify width "
-                        f"{scheduled}, which is not among the captured widths "
-                        f"{widths}."
-                    )
         # Block drafts (DFlash) run at q=num_draft_tokens_per_step; autoregressive
         # drafts (eagle/mtp) run at q=1.
         self._draft_q_at_capture = kv_params.num_draft_tokens_per_step
@@ -280,15 +279,9 @@ class ServeGraphCaptureRunner:
         model.release_captured_graph(_pack_model_graph_key(key))
 
     def _probe_verify_widths(self, batch_size: int) -> list[int]:
-        """Returns the verify widths to capture for ``batch_size``.
-
-        Without a schedule any width is reachable at any batch size, so all of
-        them are probed. Here we pin one width per batch size.
-        """
-        if self._width_lookup is None:
-            return self._verify_widths
-        index = min(batch_size, len(self._width_lookup) - 1)
-        return [self._width_lookup[index]]
+        """Returns the verify widths to capture for ``batch_size``."""
+        table = self._widths_by_batch_size
+        return table[min(batch_size, len(table) - 1)]
 
     def _resolve_graph_key(
         self, batch_size: int, cache_length: int, q_max_seq_len: int
@@ -519,15 +512,18 @@ class ServeGraphCaptureRunner:
             The aligned characteristics.
 
         Raises:
-            RuntimeError: If ``q_max_seq_len`` matches no captured verify width
-                or the cache length exceeds the largest captured length.
+            RuntimeError: If ``q_max_seq_len`` matches no verify width captured
+                at this batch size or the cache length exceeds the largest
+                captured length.
         """
         verify_width = characteristics.max_prompt_length - 1
-        if verify_width not in self._verify_widths:
+        captured = self._probe_verify_widths(characteristics.batch_size)
+        if verify_width not in captured:
             raise RuntimeError(
                 f"q_max_seq_len={characteristics.max_prompt_length} implies "
-                f"verify width {verify_width}, which is not captured; "
-                f"captured widths are {self._verify_widths}."
+                f"verify width {verify_width}, which is not captured at batch "
+                f"size {characteristics.batch_size}; captured widths are "
+                f"{captured}."
             )
         aligned = replace(
             characteristics,
@@ -573,12 +569,12 @@ class ServeGraphCaptureRunner:
         for index, (src_value, dst_value) in enumerate(
             zip(input_buffers, captured_inputs, strict=True)
         ):
-            if dst_value.device.is_host:
+            # Replay runs no host code, so host and pinned inputs were only
+            # read at capture and there is nothing to refresh. Copying into a
+            # pinned one would also sync the stream on HIP.
+            if dst_value.device.is_host or dst_value.pinned:
                 if self._host_input_guard_mode is not None:
-                    # Before the copy: `dst_value` still holds the value the
-                    # graph was captured with.
                     self._guard_host_input(index, dst_value, src_value)
-                dst_value.inplace_copy_from(src_value)
                 continue
             assert src_value.device == dst_value.device, (
                 "Graph-capture replay refresh must be a same-device copy "

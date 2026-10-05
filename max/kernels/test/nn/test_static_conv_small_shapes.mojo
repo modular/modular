@@ -11,12 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Use `kgen --emit=asm %s -o %t.asm` to exam the assembly code.
-
 from std.math import ceildiv
 from std.sys.info import simd_width_of
 
-from layout import Coord, IntTuple, Layout, LayoutTensor
+from layout import Coord, IntTuple, TileTensor, row_major
 from nn.conv.conv import ConvDirectNHWC, ConvInfoStatic
 from nn.conv.conv_utils import ConvShape, get_micro_kernel_shape
 
@@ -57,19 +55,18 @@ comptime simd_size = simd_width_of[value_type]()
 comptime micro_kernel_shape = get_micro_kernel_shape[
     2, WO, F, conv_attr, simd_size
 ]()
-# alias micro_kernel_width = get_direct_conv_micro_kernel_width()
 comptime micro_kernel_f_size = micro_kernel_shape[1] * simd_size
 comptime num_micro_tile = ceildiv(F, micro_kernel_f_size)
 
 
 def static_conv(
-    output: LayoutTensor[
-        mut=True, value_type, Layout.row_major(N, HO, WO, F), _
+    output: TileTensor[
+        mut=True, value_type, type_of(row_major[N, HO, WO, F]()), _
     ],
-    input: LayoutTensor[value_type, Layout.row_major(N, H, W, C), _],
-    filter: LayoutTensor[
+    input: TileTensor[value_type, type_of(row_major[N, H, W, C]()), _],
+    filter: TileTensor[
         value_type,
-        Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
+        type_of(row_major[num_micro_tile, R, S, C, micro_kernel_f_size]()),
         _,
     ],
 ):
@@ -88,22 +85,17 @@ def static_conv(
         num_groups=num_groups,
     )
 
-    def direct_null_elementwise_epilogue(
-        n: Int, ho: Int, wo: Int, f_offset: Int, f_size: Int
-    ):
-        pass
-
     try:
         ConvDirectNHWC[
-            Layout.row_major(N, H, W, C),
-            Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
-            Layout.row_major(N, HO, WO, F),
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             value_type,
             value_type,
             value_type,
             True,
             conv_attr,
-        ].run(output, input, filter, conv_shape)
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
     except e:
         print(e)
 
@@ -113,22 +105,17 @@ def test_static_conv() raises:
     print("== test_static_conv")
 
     var output_stack = Array[Scalar[value_type], N * HO * WO * F](fill=0.0)
-    var output = LayoutTensor[value_type, Layout.row_major(N, HO, WO, F)](
-        output_stack
-    )
+    var output = TileTensor(output_stack, row_major[N, HO, WO, F]())
     var input_stack = Array[Scalar[value_type], N * H * W * C](fill=1.0)
-    var input = LayoutTensor[value_type, Layout.row_major(N, H, W, C)](
-        input_stack
-    )
+    var input = TileTensor(input_stack, row_major[N, H, W, C]())
     var filter_stack = Array[
         Scalar[value_type], num_micro_tile * R * S * C * micro_kernel_f_size
     ](fill=1.0)
-    var filter = LayoutTensor[
-        value_type,
-        Layout.row_major(num_micro_tile, R, S, C, micro_kernel_f_size),
-    ](filter_stack)
+    var filter = TileTensor(
+        filter_stack, row_major[num_micro_tile, R, S, C, micro_kernel_f_size]()
+    )
 
-    static_conv(output, input, filter)
+    static_conv(output, input.as_imm(), filter.as_imm())
 
     # CHECK: 32.0
     print(output[0, 0, 0, 0])

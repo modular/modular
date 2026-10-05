@@ -482,8 +482,6 @@ class BlackTestCase(BlackBaseTestCase):
         if major > 3 or (major == 3 and minor >= 7):
             mblack.assert_equivalent(source, actual)
         mblack.assert_stable(source, actual, DEFAULT_MODE)
-        # ensure black can parse this when the target is 3.7
-        self.invokeBlack([str(source_path), "--target-version", "py37"])
 
     def test_tab_comment_indentation(self) -> None:
         contents_tab = "if 1:\n\tif 2:\n\t\tpass\n\t# comment\n\tpass\n"

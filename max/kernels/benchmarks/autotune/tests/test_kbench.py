@@ -1086,3 +1086,37 @@ def test_shared_lib_crash_recovery(tmp_path: Path) -> None:
     assert remaining_logs == [], (
         f"Capture files not cleaned up: {remaining_logs}"
     )
+
+
+def test_shared_lib_dryrun_does_not_execute(tmp_path: Path) -> None:
+    """`--dryrun` with cached shared libs prints each run and executes none.
+
+    Builds test_crash.yaml's binary into a cache, then dry-runs it. If any item
+    executed, its `should_crash=True` variants would report the crash message.
+    """
+    cache_dir = tmp_path / "cache"
+    build = CliRunner().invoke(
+        kbench_cli,
+        f"{kernel_benchmarks_root}/autotune/tests/test_crash.yaml"
+        f" --build --cache-dir {cache_dir} --output-dir {tmp_path / 'build'}"
+        " --plot none",
+        env=os.environ.copy(),
+    )
+    assert build.exit_code == 0, build.output
+
+    out_dir = tmp_path / "out"
+    result = CliRunner().invoke(
+        kbench_cli,
+        f"{kernel_benchmarks_root}/autotune/tests/test_crash.yaml"
+        f" --run-only --dryrun --cache-dir {cache_dir} --output-dir {out_dir}"
+        " --plot none",
+        env=os.environ.copy(),
+    )
+    assert result.exit_code == 0, result.output
+    failures = json.loads((out_dir / "output.failures.json").read_text())
+    assert len(failures["failures"]) == 6
+    for f in failures["failures"]:
+        assert "intentional crash" not in (f["exec_stderr"] or "")
+        assert "KBENCH_ARG_should_crash=" in f["exec_stdout"]
+        assert ":benchmark_entry" in f["exec_stdout"]
+        assert f["exec_stdout"] in result.output

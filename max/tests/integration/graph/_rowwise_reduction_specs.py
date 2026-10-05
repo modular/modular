@@ -12,12 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """Shared spec list and graph construction for the row-wise reduction tests.
 
-The CPU producer (``precompile_rowwise_reductions``) and the GPU consumer
-(``test_rowwise_reductions``) both import this module so they build the
-*identical* graph -- the producer compiles each spec to a MEF with no GPU
-attached, the consumer initializes that MEF and executes it. Keeping the spec
-list and the construction in one place is what guarantees the compiled
-artifact and the runtime inputs can't drift apart.
+``test_rowwise_reductions`` compiles each spec's graph, and Bazel records those
+compiles in CPU build actions (``precompile_mefs``) so the GPU worker only
+initializes and executes. Keeping the spec list and the construction in one
+place is what guarantees the recorded artifact and the runtime inputs can't
+drift apart.
 
 Every graph here is weightless: the ``layer_norm`` and ``rms_norm`` parameters
 are graph *inputs*, not weights, so the consumer initializes with no weights

@@ -88,14 +88,12 @@ def test_matmul_sm100_epilogue[
         )
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -202,15 +200,18 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    var c_tensor_host_lt = c_host_copy.to_layout_tensor()
-
     @inline(.always)
     def test_lambda_add_coords_summ_local[
         _dtype: DType, width: SIMDLength
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) {
-        var c_tensor_host_lt
-    } -> SIMD[_dtype, width]:
-        return val + c_tensor_host_lt.load[width=width](idx).cast[_dtype]()
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) {var c_host_copy} -> SIMD[
+        _dtype, width
+    ]:
+        return (
+            val
+            + c_host_copy.load_linear[
+                width=width, alignment=align_of[c_type]()
+            ](idx).cast[_dtype]()
+        )
 
     comptime if test_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
@@ -218,7 +219,7 @@ def test_matmul_sm100_epilogue[
             for j in range(Int(n.value())):
                 comptime assert c_host_ref.flat_rank == 2
                 c_host_ref[i, j] = test_lambda_add_coords_summ_local(
-                    IndexList[2](i, j), c_host_ref[i, j]
+                    (i, j), c_host_ref[i, j]
                 )
 
     comptime rtol = 1e-2
@@ -267,7 +268,6 @@ def main() raises:
 
                 comptime for register_based_epilogue in [True, False]:
                     # Helper to run test with varying cluster/k_group/sizes
-                    @__parameter
                     def run[
                         MType: CoordLike,
                         NType: CoordLike,
@@ -276,7 +276,7 @@ def main() raises:
                         cluster_m: Int,
                         cluster_n: Int,
                         k_group: Int = 1,
-                    ](m: MType, n: NType, k: KType) raises:
+                    ](m: MType, n: NType, k: KType) raises {imm}:
                         test_matmul_sm100_epilogue[
                             dtype,
                             dtype,

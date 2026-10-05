@@ -34,6 +34,51 @@ from std.utils.index import Index, IndexList
 comptime PAD_SLOT_ID: Int32 = -1
 
 
+def _conv_cpu[
+    dtype: DType,
+    //,
+    silu_activation: Bool,
+    use_residual: Bool = False,
+    channels_last: Bool = False,
+](
+    x: TileTensor[mut=False, dtype, ...],
+    weight: TileTensor[mut=False, dtype, ...],
+    bias: TileTensor[mut=False, dtype, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    cache_indices: TileTensor[mut=False, .uint32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
+    conv_states: TileTensor[mut=True, ...],
+    output: TileTensor[mut=True, dtype, ...],
+):
+    """Runs the CPU conv with reader functions over these tensors.
+
+    An empty `cache_indices` maps sequence `b` to slot `b`, as in the op.
+    """
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](i: Int, j: Int) {var x} -> SIMD[dtype, width]:
+        return x.load[width=width]((i, j))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices} -> SIMD[.uint32, width]:
+        if Int(cache_indices.dim[0]()) == 0:
+            return SIMD[.uint32, width](UInt32(b))
+        return cache_indices.load[width=width]((b,))
+
+    causal_conv1d_varlen_fwd_cpu[silu_activation, use_residual, channels_last](
+        weight,
+        bias,
+        query_start_loc,
+        has_initial_state,
+        conv_states,
+        output,
+        x_fn,
+        slot_fn,
+    )
+
+
 @inline(.always)
 def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
@@ -95,7 +140,7 @@ def run_varlen_causal_conv1d_fwd[
         query_start_loc_tt.raw_store(i + 1, Int32(cumsum))
 
     # cache_indices: (batch,) - identity mapping
-    var cache_indices_heap = List(length=batch, fill=Int32(0))
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
     var cache_indices_tt = TileTensor(
         cache_indices_heap,
         row_major(
@@ -103,7 +148,7 @@ def run_varlen_causal_conv1d_fwd[
         ),
     )
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Int32(i))
+        cache_indices_tt.raw_store(i, UInt32(i))
 
     # has_initial_state: (batch,) - all False
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](False))
@@ -153,23 +198,10 @@ def run_varlen_causal_conv1d_fwd[
     var out_dim_stride: UInt32 = UInt32(total_seqlen)
     var out_seqlen_stride: UInt32 = 1
 
-    var silu_activation = activation == "silu"
+    comptime silu_activation = activation == "silu"
 
     # Test kernel
-    causal_conv1d_varlen_fwd_cpu[
-        dtype,
-        dtype,
-        dtype,
-        dtype,
-        DType.int32,
-        DType.int32,
-        DType.bool,
-        dtype,
-    ](
-        dim,
-        total_seqlen,
-        width,
-        batch,
+    _conv_cpu[silu_activation,](
         x_tt,
         weight_tt,
         bias_tt,
@@ -178,18 +210,6 @@ def run_varlen_causal_conv1d_fwd[
         has_initial_state_tt,
         conv_states_tt,
         output_tt,
-        x_dim_stride,
-        x_seqlen_stride,
-        weight_dim_stride,
-        weight_width_stride,
-        out_dim_stride,
-        out_seqlen_stride,
-        silu_activation,
-        PAD_SLOT_ID,
-        True,  # has_cache_indices
-        True,  # has_initial_state_flag
-        True,  # has_conv_states
-        True,  # has_bias
     )
 
     # Reference implementation
@@ -378,17 +398,6 @@ def run_varlen_causal_conv1d_update[
         cache_seqlens_tt,
         conv_state_indices_tt,
         output_tt2,
-        x_batch_stride,
-        x_dim_stride,
-        x_seqlen_stride,
-        weight_dim_stride,
-        weight_width_stride,
-        conv_state_batch_stride,
-        conv_state_dim_stride,
-        conv_state_seqlen_stride,
-        out_batch_stride,
-        out_dim_stride,
-        out_seqlen_stride,
         silu_activation,
         PAD_SLOT_ID,
         True,  # has_conv_state_indices
@@ -575,11 +584,6 @@ def run_varlen_causal_conv1d_states[
         x_tt3,
         cu_seqlens_tt,
         states_tt,
-        x_seqlen_stride,
-        x_dim_stride,
-        states_batch_stride,
-        states_dim_stride,
-        states_seqlen_stride,
     )
 
     # Reference implementation
@@ -653,10 +657,10 @@ def run_conv_state_writeback[
     for i in range(batch + 1):
         query_start_loc_tt.raw_store(i, Int32(i * seqlen))
 
-    var cache_indices_heap = List(length=batch, fill=Int32(0))
+    var cache_indices_heap = List(length=batch, fill=UInt32(0))
     var cache_indices_tt = TileTensor(cache_indices_heap, row_major(batch))
     for i in range(batch):
-        cache_indices_tt.raw_store(i, Int32(i))
+        cache_indices_tt.raw_store(i, UInt32(i))
 
     var has_initial_state_heap = List(length=batch, fill=Scalar[.bool](True))
     var has_initial_state_tt = TileTensor(
@@ -682,20 +686,7 @@ def run_conv_state_writeback[
                 conv_states_tt.raw_store(idx, value)
                 initial_tt.raw_store(idx, value)
 
-    causal_conv1d_varlen_fwd_cpu[
-        dtype,
-        dtype,
-        dtype,
-        dtype,
-        DType.int32,
-        DType.int32,
-        DType.bool,
-        dtype,
-    ](
-        dim,
-        total_seqlen,
-        width,
-        batch,
+    _conv_cpu[False,](
         x_tt,
         weight_tt,
         bias_tt,
@@ -704,18 +695,6 @@ def run_conv_state_writeback[
         has_initial_state_tt,
         conv_states_tt,
         output_tt,
-        UInt32(total_seqlen),  # x_dim_stride
-        UInt32(1),  # x_seqlen_stride
-        UInt32(width),  # weight_dim_stride
-        UInt32(1),  # weight_width_stride
-        UInt32(total_seqlen),  # out_dim_stride
-        UInt32(1),  # out_seqlen_stride
-        False,  # silu_activation
-        PAD_SLOT_ID,
-        True,  # has_cache_indices
-        True,  # has_initial_state_flag
-        True,  # has_conv_states
-        True,  # has_bias
     )
 
     # Expected: the last `state_len` of `initial ++ chunk`, per (b, d).

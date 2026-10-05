@@ -367,6 +367,7 @@ def get_builtin_structural_tag(
     tools: Sequence[dict[str, Any]] | None = None,
     tool_choice: str | dict[str, Any] | None = "auto",
     reasoning: bool = True,
+    reject_unsupported: bool = False,
 ) -> StructuralTag:
     # Permissive typed boundary: callers pass OpenAI-style tool dicts and a
     # string/dict tool_choice; the vendored helper's params are stricter.
@@ -375,6 +376,7 @@ def get_builtin_structural_tag(
         tools=tools,
         tool_choice=tool_choice,
         reasoning=reasoning,
+        reject_unsupported=reject_unsupported,
     )
 
 

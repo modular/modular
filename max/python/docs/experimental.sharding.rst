@@ -21,13 +21,6 @@ Device mesh
 
    DeviceMesh
 
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   mesh_context
-
 Placements
 ----------
 

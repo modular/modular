@@ -145,15 +145,12 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from layout import (
-    Coord,
-    Layout,
-    LayoutTensor,
-    TileTensor,
-    row_major,
+from layout import Coord, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout.tensor_core_async import (
+    tile_layout_k_major,
+    tile_layout_k_major_typed,
 )
-from layout._utils import ManagedLayoutTensor
-from layout.tensor_core_async import tile_layout_k_major, tile_to_descriptor
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -208,6 +205,10 @@ comptime QK_META_OFFSET = QK_A_BYTES + QK_B_BYTES
 # tmem_addr (8B), a_mbar (8B), b_mbar (8B), mma_mbar (8B) = 32B.
 comptime QK_TOTAL_SMEM = QK_META_OFFSET + 32
 
+comptime QK_A_LAYOUT = row_major[QK_M, QK_K]()
+comptime QK_B_LAYOUT = row_major[QK_N, QK_K]()
+comptime QK_C_LAYOUT = row_major[QK_M, QK_N]()
+
 comptime MAX_TMEM_COLS: UInt32 = 512
 
 # FP8 tolerances (~3 bits of mantissa, K up to 576 of N(0,1) elements).
@@ -239,9 +240,7 @@ def ss_qk_partial_kernel[
 ](
     a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
-    c_output: LayoutTensor[
-        ACC_TYPE, Layout.row_major(QK_M, QK_N), MutAnyOrigin
-    ],
+    c_output: TileTensor[ACC_TYPE, type_of(QK_C_LAYOUT), MutAnyOrigin],
     valid_k_mmas: UInt32,
 ):
     """SS (.ws) MMA: C [32,64] = A [32,576] x B [64,576]^T (FP8 e4m3).
@@ -259,18 +258,8 @@ def ss_qk_partial_kernel[
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
-    var a_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(QK_M, QK_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](a_smem_ptr.as_unsafe_any_origin())
-    var b_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(QK_N, QK_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](b_smem_ptr.as_unsafe_any_origin())
+    var a_smem_tile = TileTensor(a_smem_ptr, QK_A_LAYOUT)
+    var b_smem_tile = TileTensor(b_smem_ptr, QK_B_LAYOUT)
 
     # ---- Metadata ----
     var metadata_ptr = (smem_base + QK_META_OFFSET).bitcast[UInt32]()
@@ -455,9 +444,7 @@ def ss_qk_multistage_kernel[
 ](
     a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
-    c_output: LayoutTensor[
-        ACC_TYPE, Layout.row_major(QK_M, QK_N), MutAnyOrigin
-    ],
+    c_output: TileTensor[ACC_TYPE, type_of(QK_C_LAYOUT), MutAnyOrigin],
     valid_k_mmas: UInt32,
 ):
     """Two partial calls into the SAME accumulator, no barrier between.
@@ -475,18 +462,8 @@ def ss_qk_multistage_kernel[
     var a_smem_ptr = (smem_base + QK_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + QK_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
-    var a_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(QK_M, QK_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](a_smem_ptr.as_unsafe_any_origin())
-    var b_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(QK_N, QK_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](b_smem_ptr.as_unsafe_any_origin())
+    var a_smem_tile = TileTensor(a_smem_ptr, QK_A_LAYOUT)
+    var b_smem_tile = TileTensor(b_smem_ptr, QK_B_LAYOUT)
 
     var metadata_ptr = (smem_base + QK_META_OFFSET).bitcast[UInt32]()
     var ptr_tmem_addr = metadata_ptr
@@ -625,9 +602,7 @@ def ss_qk_multistage_kernel[
 # ---------------------------------------------------------------------------
 # SS helpers
 # ---------------------------------------------------------------------------
-def fill_random_fp8[
-    dtype: DType
-](ptr: MutPointer[Scalar[dtype], MutAnyOrigin], n: Int):
+def fill_random_fp8[dtype: DType](ptr: MutPointer[Scalar[dtype], _], n: Int):
     """Generates random FP8 values via float32 RNG -> cast (matches the
     model smoke test)."""
     var f32_buf = alloc[Float32](n)
@@ -675,7 +650,7 @@ def _ss_naive_ref[
     via the naive matmul kernel (reads only the leading k_valid K-columns)."""
     var c_ref_dev = ctx.enqueue_create_buffer[ACC_TYPE](M * QK_N)
 
-    var c_ref_tt = TileTensor(c_ref_dev, row_major(Coord(M, QK_N)))
+    var c_ref_tt = TileTensor(c_ref_dev, row_major(M, QK_N))
     # A and B keep their physical row stride QK_K; only the K extent passed to
     # the kernel (k_valid) changes, so the naive reference reads cols
     # [0, k_valid) of each row.
@@ -683,13 +658,13 @@ def _ss_naive_ref[
         ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
-        row_major(Coord(M, QK_K)),
+        row_major(M, QK_K),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
-        row_major(Coord(QK_N, QK_K)),
+        row_major(QK_N, QK_K),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -730,9 +705,9 @@ def _ss_compare[
 ) raises:
     """Compares the GPU output against the host reference within FP8 tol.
 
-    Generic over the pointer origins so the caller can pass a LayoutTensor's
-    `.ptr` (MutAnyOrigin) and an `alloc`'d host buffer (MutUntrackedOrigin)
-    without an origin mismatch.
+    Generic over the pointer origins so the caller can pass a host tensor's
+    `unsafe_ptr()` and an `alloc`'d host buffer (MutUntrackedOrigin) without
+    an origin mismatch.
 
     When `require_finite` is True (the NaN-safety variant), additionally
     asserts every GPU output element is finite -- a leaked `0*NaN` would
@@ -812,20 +787,26 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # =====================================================================
     seed(42)
 
-    var a_inp = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(QK_M, QK_K)](ctx)
-    var b_inp = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(QK_N, QK_K)](ctx)
-    var a_host = a_inp.tensor[update=False]()
-    var b_host = b_inp.tensor[update=False]()
-    fill_random_fp8[FP8_TYPE](a_host.ptr, QK_M * QK_K)
-    fill_random_fp8[FP8_TYPE](b_host.ptr, QK_N * QK_K)
+    var a_inp = HostDeviceTileTensor[FP8_TYPE](QK_A_LAYOUT, ctx)
+    var b_inp = HostDeviceTileTensor[FP8_TYPE](QK_B_LAYOUT, ctx)
+    var a_host = a_inp.host_tensor()
+    var b_host = b_inp.host_tensor()
+    fill_random_fp8[FP8_TYPE](a_host.unsafe_ptr(), QK_M * QK_K)
+    fill_random_fp8[FP8_TYPE](b_host.unsafe_ptr(), QK_N * QK_K)
+    a_inp.to_device()
+    b_inp.to_device()
 
     # BF16 dequantized copies for the naive reference (full K=576).
     var a_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_M * QK_K)
     var b_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_N * QK_K)
     var a_ref_host = alloc[Scalar[REF_TYPE]](QK_M * QK_K)
     var b_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
-    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](a_host.ptr, a_ref_host, QK_M * QK_K)
-    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](b_host.ptr, b_ref_host, QK_N * QK_K)
+    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
+        a_host.unsafe_ptr(), a_ref_host, QK_M * QK_K
+    )
+    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
+        b_host.unsafe_ptr(), b_ref_host, QK_N * QK_K
+    )
     ctx.enqueue_copy(a_ref_dev, a_ref_host)
     ctx.enqueue_copy(b_ref_dev, b_ref_host)
 
@@ -843,9 +824,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ---- Variant 1: full[18] (== existing test_qk_smoke) ----
-    var c_full_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(QK_M, QK_N)
-    ](ctx)
+    var c_full_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_full = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         False,
@@ -869,17 +848,16 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_full_buf.to_host()
     _ss_compare(
         "v1 full[18]",
-        c_full_buf.tensor().ptr,
+        c_full_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
 
     # ---- Variant 2: partial[18, valid=18] ----
-    var c_deg_buf = ManagedLayoutTensor[ACC_TYPE, Layout.row_major(QK_M, QK_N)](
-        ctx
-    )
+    var c_deg_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_partial = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -903,17 +881,16 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_deg_buf.to_host()
     _ss_compare(
         "v2 partial[18,valid=18]",
-        c_deg_buf.tensor().ptr,
+        c_deg_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
 
     # ---- Variant 4: multi-stage k_start>0 (stage0=9, stage1=9, valid=18) ----
-    var c_ms_buf = ManagedLayoutTensor[ACC_TYPE, Layout.row_major(QK_M, QK_N)](
-        ctx
-    )
+    var c_ms_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_ms = ss_qk_multistage_kernel[
         QK_STAGE0,
         type_of(a_tma_op).rank,
@@ -936,9 +913,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_ms_buf.to_host()
     _ss_compare(
         "v4 multistage(9+9,valid=18)",
-        c_ms_buf.tensor().ptr,
+        c_ms_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
@@ -946,9 +924,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # ---- Variant 5: SM100TensorAccumulator.mma (struct ws dispatch) ----
     # The struct auto-selects the ws path (cta_group=1, MMA_M=32); the
     # single-stage struct call must match the raw bulk_mma_ws ground truth.
-    var c_st_buf = ManagedLayoutTensor[ACC_TYPE, Layout.row_major(QK_M, QK_N)](
-        ctx
-    )
+    var c_st_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_struct = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         False,
@@ -973,9 +949,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_st_buf.to_host()
     _ss_compare(
         "v5 struct.mma",
-        c_st_buf.tensor().ptr,
+        c_st_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
@@ -986,9 +963,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # stage byte-offset decomposition is exact.  (num_stages=2 would put a
     # stage boundary at 288 elements -- NOT swizzle-aligned -- which the
     # offset math does not support; real kernels keep stages aligned.)
-    var c_st_ms_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(QK_M, QK_N)
-    ](ctx)
+    var c_st_ms_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_struct_ms = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         False,
@@ -1014,9 +989,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_st_ms_buf.to_host()
     _ss_compare(
         "v6 struct.mma num_stages=3",
-        c_st_ms_buf.tensor().ptr,
+        c_st_ms_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
@@ -1025,9 +1001,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # The struct's partial method on the ws path (-> bulk_mma_ws_partial)
     # with valid == num_k_mmas: every validity guard is never-true, so the
     # result must equal the full contraction.
-    var c_st_pd_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(QK_M, QK_N)
-    ](ctx)
+    var c_st_pd_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_struct_pd = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1052,9 +1026,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_st_pd_buf.to_host()
     _ss_compare(
         "v7 struct.partial[valid=18]",
-        c_st_pd_buf.tensor().ptr,
+        c_st_pd_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
@@ -1083,21 +1058,23 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # =====================================================================
     seed(123)
 
-    var a_nan = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(QK_M, QK_K)](ctx)
-    var b_nan = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(QK_N, QK_K)](ctx)
-    var a_nan_host = a_nan.tensor[update=False]()
-    var b_nan_host = b_nan.tensor[update=False]()
-    fill_random_fp8[FP8_TYPE](a_nan_host.ptr, QK_M * QK_K)
-    fill_random_fp8[FP8_TYPE](b_nan_host.ptr, QK_N * QK_K)
+    var a_nan = HostDeviceTileTensor[FP8_TYPE](QK_A_LAYOUT, ctx)
+    var b_nan = HostDeviceTileTensor[FP8_TYPE](QK_B_LAYOUT, ctx)
+    var a_nan_host = a_nan.host_tensor()
+    var b_nan_host = b_nan.host_tensor()
+    fill_random_fp8[FP8_TYPE](a_nan_host.unsafe_ptr(), QK_M * QK_K)
+    fill_random_fp8[FP8_TYPE](b_nan_host.unsafe_ptr(), QK_N * QK_K)
 
     # Poison the tail K-columns [QK_VALID_K, QK_K) of BOTH operands with NaN.
     var nan_byte = fp8_nan()
     for r in range(QK_M):
         for c in range(QK_VALID_K, QK_K):
-            a_nan_host.ptr[r * QK_K + c] = nan_byte
+            a_nan_host[r, c] = nan_byte
     for r in range(QK_N):
         for c in range(QK_VALID_K, QK_K):
-            b_nan_host.ptr[r * QK_K + c] = nan_byte
+            b_nan_host[r, c] = nan_byte
+    a_nan.to_device()
+    b_nan.to_device()
 
     # BF16 reference operands: dequant ONLY the finite [0, QK_VALID_K) region;
     # the naive ref is invoked with k=QK_VALID_K so it never reads the tail.
@@ -1110,13 +1087,13 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # reference instead so a stray read can't poison the host ref either.
     for r in range(QK_M):
         for c in range(QK_K):
-            var v = a_nan_host.ptr[r * QK_K + c].cast[
+            var v = a_nan_host[r, c].cast[
                 REF_TYPE
             ]() if c < QK_VALID_K else Scalar[REF_TYPE](0)
             a_nan_ref_host[r * QK_K + c] = v
     for r in range(QK_N):
         for c in range(QK_K):
-            var v = b_nan_host.ptr[r * QK_K + c].cast[
+            var v = b_nan_host[r, c].cast[
                 REF_TYPE
             ]() if c < QK_VALID_K else Scalar[REF_TYPE](0)
             b_nan_ref_host[r * QK_K + c] = v
@@ -1137,9 +1114,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
     ctx.enqueue_copy(c_ref_v, c_ref_v_dev)
     ctx.synchronize()
 
-    var c_nan_buf = ManagedLayoutTensor[ACC_TYPE, Layout.row_major(QK_M, QK_N)](
-        ctx
-    )
+    var c_nan_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_nan = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1163,9 +1138,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_nan_buf.to_host()
     _ss_compare(
         "v3 partial[18,valid=10]+NaN",
-        c_nan_buf.tensor().ptr,
+        c_nan_buf.host_tensor().unsafe_ptr(),
         c_ref_v,
         require_finite=True,  # any leaked 0*NaN -> non-finite -> fail.
     )
@@ -1173,9 +1149,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # ---- Variant 8: struct.mma_maybe_partial_k[valid=10]+NaN ----
     # Same skip + NaN-safety check as v3, driven through the struct method
     # (ws dispatch -> bulk_mma_ws_partial).
-    var c_st_nan_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(QK_M, QK_N)
-    ](ctx)
+    var c_st_nan_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_st_nan = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1200,9 +1174,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_st_nan_buf.to_host()
     _ss_compare(
         "v8 struct.partial[valid=10]+NaN",
-        c_st_nan_buf.tensor().ptr,
+        c_st_nan_buf.host_tensor().unsafe_ptr(),
         c_ref_v,
         require_finite=True,
     )
@@ -1211,9 +1186,7 @@ def test_ss_partial(ctx: DeviceContext) raises:
     # Stage block ranges [0,6) / [6,12) / [12,18); valid=10 lands INSIDE
     # stage 1 (blocks 10,11 skipped) and stage 2 issues nothing at all --
     # exercising the per-stage k_start plumbing of the struct method.
-    var c_st_nan_ms_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(QK_M, QK_N)
-    ](ctx)
+    var c_st_nan_ms_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_st_nan_ms = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1239,9 +1212,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_st_nan_ms_buf.to_host()
     _ss_compare(
         "v9 struct.partial 3-stage[valid=10]+NaN",
-        c_st_nan_ms_buf.tensor().ptr,
+        c_st_nan_ms_buf.host_tensor().unsafe_ptr(),
         c_ref_v,
         require_finite=True,
     )
@@ -1282,6 +1256,9 @@ comptime NW_B_OFFSET = NW_A_BYTES
 comptime NW_META_OFFSET = NW_A_BYTES + QK_B_BYTES
 comptime NW_TOTAL_SMEM = NW_META_OFFSET + 32
 
+comptime NW_A_LAYOUT_RM = row_major[NW_M, QK_K]()
+comptime NW_C_LAYOUT = row_major[NW_M, QK_N]()
+
 # SMEM operand layouts for the raw (non-struct) bulk_mma/bulk_mma_ss_partial
 # calls; identical to SM100TensorAccumulator.a_layout/b_layout at M=128.
 comptime NW_A_LAYOUT = tile_layout_k_major[FP8_TYPE, NW_M, QK_K, QK_SWIZZLE]()
@@ -1304,9 +1281,7 @@ def ss_nonws_partial_kernel[
 ](
     a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
-    c_output: LayoutTensor[
-        ACC_TYPE, Layout.row_major(NW_M, QK_N), MutAnyOrigin
-    ],
+    c_output: TileTensor[ACC_TYPE, type_of(NW_C_LAYOUT), MutAnyOrigin],
     valid_k_mmas: UInt32,
 ):
     """Non-ws SS MMA: C [128,64] = A [128,576] x B [64,576]^T (FP8 e4m3).
@@ -1324,18 +1299,8 @@ def ss_nonws_partial_kernel[
     var a_smem_ptr = (smem_base + NW_A_OFFSET).bitcast[Scalar[FP8_TYPE]]()
     var b_smem_ptr = (smem_base + NW_B_OFFSET).bitcast[Scalar[FP8_TYPE]]()
 
-    var a_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(NW_M, QK_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](a_smem_ptr.as_unsafe_any_origin())
-    var b_smem_tile = LayoutTensor[
-        FP8_TYPE,
-        Layout.row_major(QK_N, QK_K),
-        address_space=.SHARED,
-        alignment=128,
-    ](b_smem_ptr.as_unsafe_any_origin())
+    var a_smem_tile = TileTensor(a_smem_ptr, NW_A_LAYOUT_RM)
+    var b_smem_tile = TileTensor(b_smem_ptr, QK_B_LAYOUT)
 
     # ---- Metadata ----
     var metadata_ptr = (smem_base + NW_META_OFFSET).bitcast[UInt32]()
@@ -1493,19 +1458,25 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     # =====================================================================
     seed(42)
 
-    var a_inp = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(NW_M, QK_K)](ctx)
-    var b_inp = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(QK_N, QK_K)](ctx)
-    var a_host = a_inp.tensor[update=False]()
-    var b_host = b_inp.tensor[update=False]()
-    fill_random_fp8[FP8_TYPE](a_host.ptr, NW_M * QK_K)
-    fill_random_fp8[FP8_TYPE](b_host.ptr, QK_N * QK_K)
+    var a_inp = HostDeviceTileTensor[FP8_TYPE](NW_A_LAYOUT_RM, ctx)
+    var b_inp = HostDeviceTileTensor[FP8_TYPE](QK_B_LAYOUT, ctx)
+    var a_host = a_inp.host_tensor()
+    var b_host = b_inp.host_tensor()
+    fill_random_fp8[FP8_TYPE](a_host.unsafe_ptr(), NW_M * QK_K)
+    fill_random_fp8[FP8_TYPE](b_host.unsafe_ptr(), QK_N * QK_K)
+    a_inp.to_device()
+    b_inp.to_device()
 
     var a_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](NW_M * QK_K)
     var b_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_N * QK_K)
     var a_ref_host = alloc[Scalar[REF_TYPE]](NW_M * QK_K)
     var b_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
-    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](a_host.ptr, a_ref_host, NW_M * QK_K)
-    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](b_host.ptr, b_ref_host, QK_N * QK_K)
+    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
+        a_host.unsafe_ptr(), a_ref_host, NW_M * QK_K
+    )
+    dequant_fp8_to_bf16[FP8_TYPE, REF_TYPE](
+        b_host.unsafe_ptr(), b_ref_host, QK_N * QK_K
+    )
     ctx.enqueue_copy(a_ref_dev, a_ref_host)
     ctx.enqueue_copy(b_ref_dev, b_ref_host)
 
@@ -1522,9 +1493,7 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ---- Variant 1: raw full[18] (bulk_mma, non-ws ground truth) ----
-    var c_full_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(NW_M, QK_N)
-    ](ctx)
+    var c_full_buf = HostDeviceTileTensor[ACC_TYPE](NW_C_LAYOUT, ctx)
     comptime kern_full = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         False,
@@ -1548,17 +1517,16 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_full_buf.to_host()
     _ss_compare[M=NW_M](
         "v1 full[18]",
-        c_full_buf.tensor().ptr,
+        c_full_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
 
     # ---- Variant 2: raw partial[18, valid=18] (degeneracy) ----
-    var c_deg_buf = ManagedLayoutTensor[ACC_TYPE, Layout.row_major(NW_M, QK_N)](
-        ctx
-    )
+    var c_deg_buf = HostDeviceTileTensor[ACC_TYPE](NW_C_LAYOUT, ctx)
     comptime kern_partial = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1582,17 +1550,16 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_deg_buf.to_host()
     _ss_compare[M=NW_M](
         "v2 partial[18,valid=18]",
-        c_deg_buf.tensor().ptr,
+        c_deg_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
 
     # ---- Variant 3: struct.mma_maybe_partial_k degeneracy (valid=18) ----
-    var c_st_deg_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(NW_M, QK_N)
-    ](ctx)
+    var c_st_deg_buf = HostDeviceTileTensor[ACC_TYPE](NW_C_LAYOUT, ctx)
     comptime kern_st_deg = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1617,9 +1584,10 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_st_deg_buf.to_host()
     _ss_compare[M=NW_M](
         "v3 struct.partial[valid=18]",
-        c_st_deg_buf.tensor().ptr,
+        c_st_deg_buf.host_tensor().unsafe_ptr(),
         c_ref_full,
         require_finite=False,
     )
@@ -1643,20 +1611,22 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     # =====================================================================
     seed(123)
 
-    var a_nan = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(NW_M, QK_K)](ctx)
-    var b_nan = ManagedLayoutTensor[FP8_TYPE, Layout.row_major(QK_N, QK_K)](ctx)
-    var a_nan_host = a_nan.tensor[update=False]()
-    var b_nan_host = b_nan.tensor[update=False]()
-    fill_random_fp8[FP8_TYPE](a_nan_host.ptr, NW_M * QK_K)
-    fill_random_fp8[FP8_TYPE](b_nan_host.ptr, QK_N * QK_K)
+    var a_nan = HostDeviceTileTensor[FP8_TYPE](NW_A_LAYOUT_RM, ctx)
+    var b_nan = HostDeviceTileTensor[FP8_TYPE](QK_B_LAYOUT, ctx)
+    var a_nan_host = a_nan.host_tensor()
+    var b_nan_host = b_nan.host_tensor()
+    fill_random_fp8[FP8_TYPE](a_nan_host.unsafe_ptr(), NW_M * QK_K)
+    fill_random_fp8[FP8_TYPE](b_nan_host.unsafe_ptr(), QK_N * QK_K)
 
     var nan_byte = fp8_nan()
     for r in range(NW_M):
         for c in range(QK_VALID_K, QK_K):
-            a_nan_host.ptr[r * QK_K + c] = nan_byte
+            a_nan_host[r, c] = nan_byte
     for r in range(QK_N):
         for c in range(QK_VALID_K, QK_K):
-            b_nan_host.ptr[r * QK_K + c] = nan_byte
+            b_nan_host[r, c] = nan_byte
+    a_nan.to_device()
+    b_nan.to_device()
 
     var a_nan_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](NW_M * QK_K)
     var b_nan_ref_dev = ctx.enqueue_create_buffer[REF_TYPE](QK_N * QK_K)
@@ -1664,13 +1634,13 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     var b_nan_ref_host = alloc[Scalar[REF_TYPE]](QK_N * QK_K)
     for r in range(NW_M):
         for c in range(QK_K):
-            var v = a_nan_host.ptr[r * QK_K + c].cast[
+            var v = a_nan_host[r, c].cast[
                 REF_TYPE
             ]() if c < QK_VALID_K else Scalar[REF_TYPE](0)
             a_nan_ref_host[r * QK_K + c] = v
     for r in range(QK_N):
         for c in range(QK_K):
-            var v = b_nan_host.ptr[r * QK_K + c].cast[
+            var v = b_nan_host[r, c].cast[
                 REF_TYPE
             ]() if c < QK_VALID_K else Scalar[REF_TYPE](0)
             b_nan_ref_host[r * QK_K + c] = v
@@ -1692,9 +1662,7 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # ---- Variant 4: raw bulk_mma_ss_partial[valid=10]+NaN ----
-    var c_nan_buf = ManagedLayoutTensor[ACC_TYPE, Layout.row_major(NW_M, QK_N)](
-        ctx
-    )
+    var c_nan_buf = HostDeviceTileTensor[ACC_TYPE](NW_C_LAYOUT, ctx)
     comptime kern_nan = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1718,17 +1686,16 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_nan_buf.to_host()
     _ss_compare[M=NW_M](
         "v4 partial[18,valid=10]+NaN",
-        c_nan_buf.tensor().ptr,
+        c_nan_buf.host_tensor().unsafe_ptr(),
         c_ref_v,
         require_finite=True,
     )
 
     # ---- Variant 5: struct.mma_maybe_partial_k[valid=10]+NaN ----
-    var c_st_nan_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(NW_M, QK_N)
-    ](ctx)
+    var c_st_nan_buf = HostDeviceTileTensor[ACC_TYPE](NW_C_LAYOUT, ctx)
     comptime kern_st_nan = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1753,9 +1720,10 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_st_nan_buf.to_host()
     _ss_compare[M=NW_M](
         "v5 struct.partial[valid=10]+NaN",
-        c_st_nan_buf.tensor().ptr,
+        c_st_nan_buf.host_tensor().unsafe_ptr(),
         c_ref_v,
         require_finite=True,
     )
@@ -1764,9 +1732,7 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     # Stage block ranges [0,6) / [6,12) / [12,18); valid=10 lands INSIDE
     # stage 1 and stage 2 issues nothing -- exercising bulk_mma_ss_partial's
     # k_start > 0 path through the struct's per-stage split.
-    var c_st_nan_ms_buf = ManagedLayoutTensor[
-        ACC_TYPE, Layout.row_major(NW_M, QK_N)
-    ](ctx)
+    var c_st_nan_ms_buf = HostDeviceTileTensor[ACC_TYPE](NW_C_LAYOUT, ctx)
     comptime kern_st_nan_ms = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
@@ -1792,9 +1758,10 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
         ),
     )
     ctx.synchronize()
+    c_st_nan_ms_buf.to_host()
     _ss_compare[M=NW_M](
         "v6 struct.partial 3-stage[valid=10]+NaN",
-        c_st_nan_ms_buf.tensor().ptr,
+        c_st_nan_ms_buf.host_tensor().unsafe_ptr(),
         c_ref_v,
         require_finite=True,
     )
@@ -1837,23 +1804,28 @@ comptime TS_STRIPS_PER_PAIR = TS_SW_K // TS_BF16_PER_STRIP  # 4
 comptime TS_NUM_GROUP_PAIRS = (TS_COLS // TS_SW_K) // 2  # 4
 comptime TS_NUM_STRIPS = TS_NUM_GROUP_PAIRS * TS_STRIPS_PER_PAIR  # 16
 
-comptime TS_Q_SMEM_LAYOUT = tile_layout_k_major[
+comptime TS_Q_LAYOUT = row_major[TS_ROWS, TS_COLS]()
+comptime TS_K_LAYOUT = row_major[TS_K_ROWS, TS_K_COLS]()
+
+comptime TS_Q_SMEM_LAYOUT = tile_layout_k_major_typed[
     TS_OP_TYPE, TS_ROWS, TS_COLS, TensorMapSwizzle.SWIZZLE_128B
-]()
-comptime TS_Q_SMEM_BYTES = TS_Q_SMEM_LAYOUT.size() * size_of[TS_OP_TYPE]()
+]
+comptime TS_Q_SMEM_BYTES = TS_ROWS * TS_COLS * size_of[TS_OP_TYPE]()
 
-comptime TS_K_SMEM_LAYOUT = tile_layout_k_major[
+comptime TS_K_SMEM_LAYOUT = tile_layout_k_major_typed[
     TS_OP_TYPE, TS_K_ROWS, TS_K_COLS, TensorMapSwizzle.SWIZZLE_128B
-]()
-comptime TS_K_SMEM_BYTES = TS_K_SMEM_LAYOUT.size() * size_of[TS_OP_TYPE]()
+]
+comptime TS_K_SMEM_BYTES = TS_K_ROWS * TS_K_COLS * size_of[TS_OP_TYPE]()
 
-comptime TS_CANONICAL_LAYOUT = tile_to_descriptor[
-    TS_OP_TYPE, TS_Q_SMEM_LAYOUT, is_k_major=True
+# The K-major smem layout is ((8, M/8), (sw_K, K/sw_K)): the descriptor SBO
+# is the stride between 8-row core-matrix groups and the LBO is the stride
+# between swizzle atoms along K, i.e. flattened strides 1 and 3.
+comptime TS_SBO = type_of(TS_Q_SMEM_LAYOUT).static_stride[1] * size_of[
+    TS_OP_TYPE
 ]()
-comptime TS_STRIDE_01 = TS_CANONICAL_LAYOUT[0].stride[1].value()
-comptime TS_STRIDE_11 = TS_CANONICAL_LAYOUT[1].stride[1].value()
-comptime TS_SBO = TS_STRIDE_01 * size_of[TS_OP_TYPE]()
-comptime TS_LBO = TS_STRIDE_11 * size_of[TS_OP_TYPE]()
+comptime TS_LBO = type_of(TS_Q_SMEM_LAYOUT).static_stride[3] * size_of[
+    TS_OP_TYPE
+]()
 
 comptime TS_TOTAL_TMEM_COLS = TS_NUM_STRIPS * TS_U32_PER_STRIP  # 128
 comptime TS_MAX_TMEM_COLS: UInt32 = 512
@@ -1879,6 +1851,8 @@ comptime TS_P_ROWS = TS_MMA_M  # 64
 comptime TS_P_COLS = TS_MMA_N  # 128
 comptime TS_P_REF_ROWS = 64
 comptime TS_P_REF_COLS = 64
+
+comptime TS_P_LAYOUT = row_major[TS_P_ROWS, TS_P_COLS]()
 
 comptime TS_K_SMEM_OFFSET = TS_Q_SMEM_BYTES
 comptime TS_METADATA_OFFSET = TS_K_SMEM_OFFSET + TS_K_SMEM_BYTES
@@ -1910,9 +1884,7 @@ def ts_partial_kernel[
     k_tma_op: TMATensorTile[
         TS_OP_TYPE, k_tile_rank, k_tile_shape, k_desc_shape
     ],
-    p_output: LayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS), MutAnyOrigin
-    ],
+    p_output: TileTensor[TS_ACCUM_TYPE, type_of(TS_P_LAYOUT), MutAnyOrigin],
     valid_k_mmas: UInt32,
 ):
     """TS (.ws) MMA: P = Q x K^T via dual-GEMM fold; raw output [64,128].
@@ -1928,22 +1900,12 @@ def ts_partial_kernel[
     ]()
 
     var q_smem_ptr = smem_base.bitcast[Scalar[TS_OP_TYPE]]()
-    var q_smem_tile = LayoutTensor[
-        TS_OP_TYPE,
-        TS_Q_SMEM_LAYOUT,
-        address_space=.SHARED,
-        alignment=128,
-    ](q_smem_ptr.as_unsafe_any_origin())
+    var q_smem_tile = TileTensor(q_smem_ptr, TS_Q_SMEM_LAYOUT)
 
     var k_smem_ptr = (smem_base + TS_K_SMEM_OFFSET).bitcast[
         Scalar[TS_OP_TYPE]
     ]()
-    var k_smem_tile = LayoutTensor[
-        TS_OP_TYPE,
-        TS_K_SMEM_LAYOUT,
-        address_space=.SHARED,
-        alignment=128,
-    ](k_smem_ptr.as_unsafe_any_origin())
+    var k_smem_tile = TileTensor(k_smem_ptr, TS_K_SMEM_LAYOUT)
 
     var metadata_ptr = (smem_base + TS_METADATA_OFFSET).bitcast[UInt32]()
     var ptr_tmem_addr = metadata_ptr
@@ -2100,8 +2062,8 @@ def ts_partial_kernel[
 
     tcgen05_load_wait()
 
-    var p_row = tid % TS_MMA_M  # 0-63
-    var p_dp_half = tid // TS_MMA_M  # 0 or 1
+    var p_row = Int(tid % TS_MMA_M)  # 0-63
+    var p_dp_half = Int(tid // TS_MMA_M)  # 0 or 1
     var p_col_base = p_dp_half * TS_HALF_N  # 0 or 64
 
     for j in range(TS_HALF_N):
@@ -2122,16 +2084,10 @@ def _ts_launch[
     NUM_STAGES: Int = 1,
 ](
     ctx: DeviceContext,
-    mut q_inp: ManagedLayoutTensor[
-        TS_OP_TYPE, Layout.row_major(TS_ROWS, TS_COLS)
-    ],
-    mut k_inp: ManagedLayoutTensor[
-        TS_OP_TYPE, Layout.row_major(TS_K_ROWS, TS_K_COLS)
-    ],
+    q_inp: HostDeviceTileTensor[TS_OP_TYPE, type_of(TS_Q_LAYOUT)],
+    k_inp: HostDeviceTileTensor[TS_OP_TYPE, type_of(TS_K_LAYOUT)],
     valid: UInt32,
-    mut p_out_buf: ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ],
+    mut p_out_buf: HostDeviceTileTensor[TS_ACCUM_TYPE, type_of(TS_P_LAYOUT)],
 ) raises:
     """Runs one TS kernel instantiation into `p_out_buf`."""
     var q_tma_op = create_tensor_tile[
@@ -2168,6 +2124,7 @@ def _ts_launch[
         ),
     )
     ctx.synchronize()
+    p_out_buf.to_host()
 
 
 def _ts_foldsum_compare(
@@ -2200,25 +2157,21 @@ def test_ts_partial(ctx: DeviceContext) raises:
 
     # ---- Random Q, K shared across all TS variants ----
     seed(42)
-    var q_inp = ManagedLayoutTensor[
-        TS_OP_TYPE, Layout.row_major(TS_ROWS, TS_COLS)
-    ](ctx)
-    var q_inp_host = q_inp.tensor[update=False]()
-    randn[TS_OP_TYPE](q_inp_host.ptr, TS_ROWS * TS_COLS)
+    var q_inp = HostDeviceTileTensor[TS_OP_TYPE](TS_Q_LAYOUT, ctx)
+    var q_inp_host = q_inp.host_tensor()
+    randn[TS_OP_TYPE](q_inp_host.unsafe_ptr(), TS_ROWS * TS_COLS)
+    q_inp.to_device()
 
-    var k_inp = ManagedLayoutTensor[
-        TS_OP_TYPE, Layout.row_major(TS_K_ROWS, TS_K_COLS)
-    ](ctx)
-    var k_inp_host = k_inp.tensor[update=False]()
-    randn[TS_OP_TYPE](k_inp_host.ptr, TS_K_ROWS * TS_K_COLS)
+    var k_inp = HostDeviceTileTensor[TS_OP_TYPE](TS_K_LAYOUT, ctx)
+    var k_inp_host = k_inp.host_tensor()
+    randn[TS_OP_TYPE](k_inp_host.unsafe_ptr(), TS_K_ROWS * TS_K_COLS)
+    k_inp.to_device()
 
     # =====================================================================
     # Variant 1 (ground truth): full[16] vs fold-sum naive (== existing
     # test_dense_mma_ws_ts).
     # =====================================================================
-    var p_full_buf = ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ](ctx)
+    var p_full_buf = HostDeviceTileTensor[TS_ACCUM_TYPE](TS_P_LAYOUT, ctx)
     _ts_launch[TS_NUM_K_MMAS, False](
         ctx, q_inp, k_inp, UInt32(TS_NUM_K_MMAS), p_full_buf
     )
@@ -2227,22 +2180,22 @@ def test_ts_partial(ctx: DeviceContext) raises:
     var p_ref_dev = ctx.enqueue_create_buffer[.float32](
         TS_P_REF_ROWS * TS_P_REF_COLS
     )
-    var q_dev_ptr = q_inp.device_data.value().unsafe_ptr()
-    var k_dev_ptr = k_inp.device_data.value().unsafe_ptr()
+    var q_dev_ptr = q_inp.device_tensor().unsafe_ptr()
+    var k_dev_ptr = k_inp.device_tensor().unsafe_ptr()
     var c_ref_tt = TileTensor(
-        p_ref_dev, row_major(Coord(TS_P_REF_ROWS, TS_P_REF_COLS))
+        p_ref_dev, row_major(TS_P_REF_ROWS, TS_P_REF_COLS)
     )
     var a_tt = TileTensor(
         ImmPointer[Scalar[TS_OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(q_dev_ptr)
         ),
-        row_major(Coord(TS_ROWS, TS_COLS)),
+        row_major(TS_ROWS, TS_COLS),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[TS_OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(k_dev_ptr)
         ),
-        row_major(Coord(TS_K_ROWS, TS_K_COLS)),
+        row_major(TS_K_ROWS, TS_K_COLS),
     )
     comptime gemm_naive = matmul_kernel_naive[
         .float32,
@@ -2274,7 +2227,7 @@ def test_ts_partial(ctx: DeviceContext) raises:
     ctx.enqueue_copy(p_ref_host, p_ref_dev)
     ctx.synchronize()
 
-    var p_full_ptr = p_full_buf.tensor().ptr
+    var p_full_ptr = p_full_buf.host_tensor().unsafe_ptr()
     var max_err_full: Float32 = 0.0
     for r in range(TS_P_REF_ROWS):
         for c in range(TS_P_REF_COLS):
@@ -2291,13 +2244,11 @@ def test_ts_partial(ctx: DeviceContext) raises:
     # =====================================================================
     # Variant 2 (degeneracy): partial[16, valid=16] vs SAME fold-sum naive.
     # =====================================================================
-    var p_deg_buf = ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ](ctx)
+    var p_deg_buf = HostDeviceTileTensor[TS_ACCUM_TYPE](TS_P_LAYOUT, ctx)
     _ts_launch[TS_NUM_K_MMAS, True](
         ctx, q_inp, k_inp, UInt32(TS_NUM_K_MMAS), p_deg_buf
     )
-    var p_deg_ptr = p_deg_buf.tensor().ptr
+    var p_deg_ptr = p_deg_buf.host_tensor().unsafe_ptr()
     var max_err_deg: Float32 = 0.0
     for r in range(TS_P_REF_ROWS):
         for c in range(TS_P_REF_COLS):
@@ -2329,24 +2280,20 @@ def test_ts_partial(ctx: DeviceContext) raises:
     # contracts the correct block range.  Reasoning about the dual fold's
     # NaN col mapping (c%256)//16 would add risk without adding coverage.
     # =====================================================================
-    var p_partial_buf = ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ](ctx)
+    var p_partial_buf = HostDeviceTileTensor[TS_ACCUM_TYPE](TS_P_LAYOUT, ctx)
     _ts_launch[TS_NUM_K_MMAS, True](
         ctx, q_inp, k_inp, UInt32(TS_VALID), p_partial_buf
     )
 
-    var p_oracle_buf = ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ](ctx)
+    var p_oracle_buf = HostDeviceTileTensor[TS_ACCUM_TYPE](TS_P_LAYOUT, ctx)
     # Oracle: full wrapper compiled at num_k_mmas=TS_VALID (issues blocks
     # [0,TS_VALID) unconditionally). valid arg is ignored (USE_PARTIAL=False).
     _ts_launch[TS_VALID, False](
         ctx, q_inp, k_inp, UInt32(TS_VALID), p_oracle_buf
     )
 
-    var p_partial_ptr = p_partial_buf.tensor().ptr
-    var p_oracle_ptr = p_oracle_buf.tensor().ptr
+    var p_partial_ptr = p_partial_buf.host_tensor().unsafe_ptr()
+    var p_oracle_ptr = p_oracle_buf.host_tensor().unsafe_ptr()
     var max_diff: Float32 = 0.0
     var num_nonfinite: Int = 0
     for r in range(TS_P_ROWS):
@@ -2387,14 +2334,14 @@ def test_ts_partial(ctx: DeviceContext) raises:
     # contraction vs the SAME fold-sum naive reference.  The struct
     # auto-selects the ws path (cta_group=1, MMA_M=64).
     # =====================================================================
-    var p_st_buf = ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ](ctx)
+    var p_st_buf = HostDeviceTileTensor[TS_ACCUM_TYPE](TS_P_LAYOUT, ctx)
     _ts_launch[TS_NUM_K_MMAS, False, USE_STRUCT=True](
         ctx, q_inp, k_inp, UInt32(TS_NUM_K_MMAS), p_st_buf
     )
     _ts_foldsum_compare(
-        "v4 struct.mma", p_st_buf.tensor().ptr, p_ref_host.unsafe_ptr()
+        "v4 struct.mma",
+        p_st_buf.host_tensor().unsafe_ptr(),
+        p_ref_host.unsafe_ptr(),
     )
 
     # =====================================================================
@@ -2402,15 +2349,13 @@ def test_ts_partial(ctx: DeviceContext) raises:
     # k-blocks [0,12), stage1 [12,16)) -- exercises the ws multi-stage arm
     # (offset A TMEM base + offset B descriptor).
     # =====================================================================
-    var p_st_ms_buf = ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ](ctx)
+    var p_st_ms_buf = HostDeviceTileTensor[TS_ACCUM_TYPE](TS_P_LAYOUT, ctx)
     _ts_launch[TS_NUM_K_MMAS, False, USE_STRUCT=True, NUM_STAGES=2](
         ctx, q_inp, k_inp, UInt32(TS_NUM_K_MMAS), p_st_ms_buf
     )
     _ts_foldsum_compare(
         "v5 struct.mma num_stages=2",
-        p_st_ms_buf.tensor().ptr,
+        p_st_ms_buf.host_tensor().unsafe_ptr(),
         p_ref_host.unsafe_ptr(),
     )
 
@@ -2418,15 +2363,13 @@ def test_ts_partial(ctx: DeviceContext) raises:
     # Variant 6: struct.mma_maybe_partial_k degeneracy (valid=16) -- the
     # ws-partial arm with no block skipped must match the naive reference.
     # =====================================================================
-    var p_st_deg_buf = ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ](ctx)
+    var p_st_deg_buf = HostDeviceTileTensor[TS_ACCUM_TYPE](TS_P_LAYOUT, ctx)
     _ts_launch[TS_NUM_K_MMAS, True, USE_STRUCT=True](
         ctx, q_inp, k_inp, UInt32(TS_NUM_K_MMAS), p_st_deg_buf
     )
     _ts_foldsum_compare(
         "v6 struct.partial[valid=16]",
-        p_st_deg_buf.tensor().ptr,
+        p_st_deg_buf.host_tensor().unsafe_ptr(),
         p_ref_host.unsafe_ptr(),
     )
 
@@ -2435,13 +2378,11 @@ def test_ts_partial(ctx: DeviceContext) raises:
     # the SAME full[10] oracle as v3 -- raw [64,128] outputs element-wise
     # equal, proving the struct routes the absolute-k partial wiring.
     # =====================================================================
-    var p_st_part_buf = ManagedLayoutTensor[
-        TS_ACCUM_TYPE, Layout.row_major(TS_P_ROWS, TS_P_COLS)
-    ](ctx)
+    var p_st_part_buf = HostDeviceTileTensor[TS_ACCUM_TYPE](TS_P_LAYOUT, ctx)
     _ts_launch[TS_NUM_K_MMAS, True, USE_STRUCT=True](
         ctx, q_inp, k_inp, UInt32(TS_VALID), p_st_part_buf
     )
-    var p_st_part_ptr = p_st_part_buf.tensor().ptr
+    var p_st_part_ptr = p_st_part_buf.host_tensor().unsafe_ptr()
     for r in range(TS_P_ROWS):
         for c in range(TS_P_COLS):
             var idx = r * TS_P_COLS + c

@@ -21,6 +21,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from max import tree
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module, as_subgraph
@@ -32,7 +33,7 @@ from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
-    MultiKVCacheParams,
+    MHAKVCacheParams,
     PagedCacheValues,
     RecurrentStateInputsPerDevice,
 )
@@ -41,7 +42,12 @@ from max.nn.transformer import ReturnLogits
 from .layers.attention import NemotronHAttention
 from .layers.mamba2 import MambaStateAccess, NemotronHMamba2Mixer
 from .layers.moe import NemotronHMLP, NemotronHMoE
-from .model_config import ATTN_CACHE_KEY, STATE_CACHE_KEY, NemotronHConfig
+from .model_config import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    LayerKind,
+    NemotronHConfig,
+)
 
 
 class NemotronHBlock(Module[..., Tensor]):
@@ -62,19 +68,25 @@ class NemotronHBackbone(Module[..., Tensor]):
         self.embeddings = Embedding(config.vocab_size, dim=config.hidden_size)
         self.layer_kinds = tuple(config.layer_kinds)
         layers: list[NemotronHBlock] = []
+        w4a4_mixers = config.w4a4_mixers()
         for i, kind in enumerate(self.layer_kinds):
             mixer: Module[..., Tensor]
-            if kind == "mamba":
-                mixer = NemotronHMamba2Mixer(config)
-            elif kind == "attention":
-                attn_idx = self.layer_kinds[:i].count("attention")
-                mixer = NemotronHAttention(config, attn_params, attn_idx)
-            elif kind == "moe":
-                mixer = NemotronHMoE(config)
-            else:
-                mixer = NemotronHMLP(
-                    config.hidden_size, config.intermediate_size
-                )
+            match kind:
+                case LayerKind.MAMBA:
+                    mixer = NemotronHMamba2Mixer(config)
+                case LayerKind.ATTENTION:
+                    attn_idx = self.layer_kinds[:i].count(LayerKind.ATTENTION)
+                    mixer = NemotronHAttention(config, attn_params, attn_idx)
+                case LayerKind.MOE:
+                    mixer = NemotronHMoE(
+                        config,
+                        w4a4_experts=f"backbone.layers.{i}.mixer"
+                        in w4a4_mixers,
+                    )
+                case LayerKind.MLP:
+                    mixer = NemotronHMLP(
+                        config.hidden_size, config.intermediate_size
+                    )
             layers.append(NemotronHBlock(mixer, config))
         self.layers = ModuleList(layers)
         self.norm_f = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
@@ -98,26 +110,23 @@ class NemotronHBackbone(Module[..., Tensor]):
         )
         mamba_idx = 0
         for kind, layer in zip(self.layer_kinds, self.layers, strict=True):
-            if kind == "attention":
+            if kind is LayerKind.ATTENTION:
                 h = layer(h, kv_collection, input_row_offsets)
                 continue
             # The blocks of each other kind share one subgraph, and each call
             # resolves its own layer's weights. Attention layers bake their
             # KV-cache layer index in as a constant, so they can't share a
             # subgraph.
-            call: Callable[..., Tensor] = as_subgraph(layer, name=kind)
-            if kind == "mamba":
-                # The rows are selected here rather than inside the layer, so
-                # the Mamba layers can share one subgraph.
+            call: Callable[..., Tensor] = as_subgraph(layer, name=kind.value)
+            if kind is LayerKind.MAMBA:
+                # Every layer's rows go into the shared subgraph with the
+                # layer index, and the layer slices its own rows there.
                 access = MambaStateAccess(
                     conv_pool=Tensor.from_graph_value(conv.pool),
-                    conv_rows=Tensor.from_graph_value(
-                        conv.live_row_id(mamba_idx)
-                    ),
+                    conv_rows=Tensor.from_graph_value(conv.live_row_ids),
                     ssm_pool=Tensor.from_graph_value(ssm.pool),
-                    ssm_rows=Tensor.from_graph_value(
-                        ssm.live_row_id(mamba_idx)
-                    ),
+                    ssm_rows=Tensor.from_graph_value(ssm.live_row_ids),
+                    layer=F.constant(mamba_idx, DType.int64, device=CPU()),
                 )
                 h = call(h, access, query_start_loc, has_initial_state)
                 mamba_idx += 1
@@ -137,9 +146,7 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
             )
         self.kv_params = config.kv_params
         self.return_logits = config.return_logits
-        assert isinstance(config.kv_params, MultiKVCacheParams)
-        attn_params = config.kv_params.children[ATTN_CACHE_KEY]
-        assert isinstance(attn_params, KVCacheParams)
+        attn_params = config.kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
         self.backbone = NemotronHBackbone(config, attn_params)
         self.lm_head = Linear(config.hidden_size, config.vocab_size, bias=False)
 
@@ -157,7 +164,6 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
         kv_tree = self.kv_params.unflatten_kv_inputs(
             iter(x._graph_value for x in kv_inputs)
         )
-        assert isinstance(kv_tree, dict)
         (kv_collection,) = tree.leaves(
             kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
         )

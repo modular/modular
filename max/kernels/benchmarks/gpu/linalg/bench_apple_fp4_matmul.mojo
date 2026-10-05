@@ -41,6 +41,7 @@ from layout.tile_layout import row_major
 from linalg.fp4_utils import NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
+from std.math import ceildiv
 from linalg.matmul.gpu.apple.fp4_matmul import (
     _enqueue_apple_fp4_materialize_dense,
     _launch_apple_fp4_matmul,
@@ -77,7 +78,7 @@ def _bench_fp4_shape(
     """Time fused W4A16 vs materialize+bf16 on one shape; report both + ratio.
     """
     var packed_k = k // 2
-    var scale_k = (k + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(k, NVFP4_SF_VECTOR_SIZE)
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](m * k)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](n * packed_k)
@@ -129,8 +130,7 @@ def _bench_fp4_shape(
 
     # --- fused: the cooperative-SMEM kernel directly (BM/BK by M, like the
     # dispatch: BM=128/BK=64 for M>=256, BM=64/BK=32 below). ---
-    @__parameter
-    def _run_fused() raises:
+    def _run_fused() raises {imm}:
         if m >= 256:
             _launch_apple_fp4_matmul[
                 DType.float32, None, BM=128, BK=64, coalesce_scales=True

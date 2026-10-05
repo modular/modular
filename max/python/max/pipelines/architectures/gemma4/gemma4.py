@@ -46,10 +46,21 @@ from .weight_adapters import gemma4_uses_fused_projections
 class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
     """The Gemma 4 language model."""
 
-    def __init__(self, config: Gemma4ForConditionalGenerationConfig) -> None:
+    def __init__(
+        self,
+        config: Gemma4ForConditionalGenerationConfig,
+        *,
+        layer_range: tuple[int, int] | None = None,
+    ) -> None:
         super().__init__()
         text_config = config.text_config
         self.devices = config.devices
+        start, end = layer_range or (0, text_config.num_hidden_layers)
+        if not 0 <= start < end <= text_config.num_hidden_layers:
+            raise ValueError("Invalid Gemma4 pipeline layer range")
+        self.global_layer_ids = list(range(start, end))
+        self.is_pipeline_head = start == 0
+        self.is_pipeline_tail = end == text_config.num_hidden_layers
 
         # Build per-layer-type rotary embeddings.
         # sliding_attention uses default rope, full_attention uses proportional.
@@ -87,33 +98,39 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # predicate keeps layer selection and adapter key fusion in lockstep.
         use_fused_projections = gemma4_uses_fused_projections(config)
 
-        self.embed_tokens = ScaledWordEmbedding(
-            text_config.vocab_size,
-            text_config.hidden_size,
-            embedding_output_dtype,
-            config.devices,
-            embed_scale=text_config.hidden_size**0.5,
-        )
+        if self.is_pipeline_head or (
+            self.is_pipeline_tail and config.tie_word_embeddings
+        ):
+            self.embed_tokens = ScaledWordEmbedding(
+                text_config.vocab_size,
+                text_config.hidden_size,
+                embedding_output_dtype,
+                config.devices,
+                embed_scale=text_config.hidden_size**0.5,
+            )
 
-        self.norm = Gemma4RMSNorm(
-            text_config.hidden_size,
-            unquantized_dtype,
-            text_config.rms_norm_eps,
-        )
-        self.norm.sharding_strategy = ShardingStrategy.replicate(
-            len(config.devices)
-        )
-        self.norm_shards = self.norm.shard(config.devices)
+        if self.is_pipeline_tail:
+            self.norm = Gemma4RMSNorm(
+                text_config.hidden_size,
+                unquantized_dtype,
+                text_config.rms_norm_eps,
+            )
+            self.norm.sharding_strategy = ShardingStrategy.replicate(
+                len(config.devices)
+            )
+            self.norm_shards = self.norm.shard(config.devices)
 
-        self.lm_head = ColumnParallelLinear(
-            text_config.hidden_size,
-            text_config.vocab_size,
-            dtype=unquantized_dtype,
-            devices=config.devices,
-            tied_weight=(
-                self.embed_tokens.weight if config.tie_word_embeddings else None
-            ),
-        )
+            self.lm_head = ColumnParallelLinear(
+                text_config.hidden_size,
+                text_config.vocab_size,
+                dtype=unquantized_dtype,
+                devices=config.devices,
+                tied_weight=(
+                    self.embed_tokens.weight
+                    if config.tie_word_embeddings
+                    else None
+                ),
+            )
 
         # Resolve per-layer KVCacheParams from MultiKVCacheParams. The tree is
         # keyed by layer-type name ("sliding_attention" / "full_attention").
@@ -128,7 +145,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
             "full_attention": 0,
         }
         layers = []
-        for i in range(text_config.num_hidden_layers):
+        for i in self.global_layer_ids:
             layer_type = text_config.layer_types[i]
             kv_params = kv_params_by_layer_type[layer_type]
 
@@ -247,13 +264,19 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # "full_attention") so __call__ can route the correct cache to each
         # layer.
         self._layer_kv_key = [
-            text_config.layer_types[i]
-            for i in range(text_config.num_hidden_layers)
+            text_config.layer_types[i] for i in self.global_layer_ids
         ]
 
         self.dim = text_config.hidden_size
         self.n_heads = text_config.num_attention_heads
         self.layers = LayerList(layers)
+        # The checkpoint identity survives slicing; cache indices are local.
+        self.layers._sublayers = {
+            str(global_id): layer
+            for global_id, layer in zip(
+                self.global_layer_ids, layers, strict=True
+            )
+        }
         self.kv_params = config.kv_params
         self.return_logits = text_config.return_logits
         self.return_hidden_states = text_config.return_hidden_states
@@ -316,7 +339,7 @@ class Gemma4TextModel(DistributedLogitsPostprocessMixin, Module):
         # Run through transformer layers
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = ops.constant(
-                idx, DType.uint32, device=self.devices[0]
+                self.global_layer_ids[idx], DType.uint32, device=self.devices[0]
             )
             kv_collections = kv_collections_by_type[self._layer_kv_key[idx]]
             h = layer(

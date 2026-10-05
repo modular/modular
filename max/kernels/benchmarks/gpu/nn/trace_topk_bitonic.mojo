@@ -24,8 +24,18 @@ row, `histsel_topk` with prefetch and narrow refine digits otherwise. Tracing a
 configuration the dispatch never launches attributes phases that nothing runs,
 which is why the contract is a flag here and not a fixed choice.
 
+`--dtype` picks the score buffer's element type, `float32` or `bfloat16`, as
+`bench_topk_mt` does -- the two read widths take different round schedules
+(`_hsel_sig_bits`), so a phase attribution at one dtype does not describe the
+other. `--sig-bits=32` forces the f32 schedule onto a bf16 buffer, which is the
+pre-Stage-A code at an unchanged input: it is what makes "does bf16 run MORE
+rounds than f32" answerable from the dump rather than from the schedule table. The `SCHED` header line reports the schedule the traced arm actually
+ran, because the slot layout depends on it: round `r`'s slots are `[1 + 2r]`
+and `[2 + 2r]` over the DENSE round index, and the score half may be shorter
+than the column half.
+
     trace_topk_bitonic --rows=48 --N=14336 --K=2048 --dist=q17 \
-        --unordered=True --deterministic=False
+        --unordered=True --deterministic=False --dtype=bfloat16
 """
 
 from std.time import perf_counter_ns
@@ -39,6 +49,8 @@ from nn.topk_bitonic import (
     HSEL_TRACE_EVENTS,
     _histsel_resident_kernel,
     _histsel_topk_kernel,
+    _hsel_half_rounds,
+    _hsel_sig_bits,
     _HSEL_RANK_BITS,
     _HSEL_RES_BLOCK,
     _HSEL_RES_MAX,
@@ -105,24 +117,64 @@ def _sample(dist: String, r: Int, c: Int, N: Int) -> Float32:
     return Float32((acc - Float64(_IH_TERMS) / 2.0) * _IH_SCALE)
 
 
+# Which instantiation to trace. Named once and shared by the launch and the
+# `SCHED` header, so the two cannot disagree about which kernel the trace slots
+# belong to. Keyed on `N` and the contract only: the launcher additionally gates
+# the resident arms on rows under the SM count, which this ignores so a resident
+# arm stays traceable at any row count.
+comptime _ARM_RES_UNORD: Int = 0
+comptime _ARM_RES_UNORD_WIDE: Int = 1
+comptime _ARM_RES_ORD_BINDIGIT: Int = 2
+comptime _ARM_RES_ORD: Int = 3
+comptime _ARM_STREAM_UNORD_ND: Int = 4
+comptime _ARM_STREAM_RANKED: Int = 5
+
+
+def _pick_arm(N: Int, K: Int, unordered: Bool, deterministic: Bool) -> Int:
+    if unordered:
+        if N <= _HSEL_RES_MAX:
+            return _ARM_RES_UNORD
+        if N <= _HSEL_RES_MAX_WIDE:
+            return _ARM_RES_UNORD_WIDE
+    if N <= _HSEL_RES_MAX and N < K + K // 2:
+        return _ARM_RES_ORD_BINDIGIT
+    if N <= _HSEL_RES_MAX:
+        return _ARM_RES_ORD
+    if unordered and not deterministic:
+        return _ARM_STREAM_UNORD_ND
+    return _ARM_STREAM_RANKED
+
+
+def _arm_runs_column_half(arm: Int) -> Bool:
+    """Whether the arm resolves the column half at all.
+
+    The resident select skips it under the cheap contract -- it cuts the tie
+    plateau by counting instead -- so its trace holds score-half rounds only.
+    """
+    return arm not in [_ARM_RES_UNORD, _ARM_RES_UNORD_WIDE]
+
+
 def _launch[
+    in_dtype: DType,
+    //,
     *,
     unordered: Bool = False,
     deterministic: Bool = True,
+    sched: Int = _hsel_sig_bits[in_dtype](),
 ](
     ctx: DeviceContext,
-    scores_t: TileTensor[.float32, ...],
+    scores_t: TileTensor[in_dtype, ...],
     idxs_t: TileTensor[.int32, ...],
     trace_ptr: MutPointer[UInt64, MutUntrackedOrigin],
     N: Int,
     K: Int,
     rows: Int,
 ) raises:
+    var arm = _pick_arm(N, K, unordered, deterministic)
     comptime if unordered:
 
-        @__parameter
         @inline(.always)
-        def resident[res_vecs: Int]() raises:
+        def resident[res_vecs: Int]() raises {imm}:
             ctx.enqueue_function[
                 _histsel_resident_kernel[
                     GmemTrace,
@@ -131,9 +183,13 @@ def _launch[
                     ordered=False,
                     deterministic=deterministic,
                     res_vecs=res_vecs,
+                    in_dtype=in_dtype,
+                    sig_bits=sched,
                 ]
             ](
-                rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+                rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](
+                    scores_t.ptr
+                ),
                 rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
                 Int32(N),
                 Int32(K),
@@ -142,20 +198,24 @@ def _launch[
                 block_dim=_HSEL_RES_BLOCK,
             )
 
-        if N <= _HSEL_RES_MAX:
+        if arm == _ARM_RES_UNORD:
             resident[_HSEL_RES_VECS]()
             return
-        if N <= _HSEL_RES_MAX_WIDE:
+        if arm == _ARM_RES_UNORD_WIDE:
             resident[_HSEL_RES_VECS_WIDE]()
             return
 
-    if N <= _HSEL_RES_MAX and N < K + K // 2:
+    if arm == _ARM_RES_ORD_BINDIGIT:
         ctx.enqueue_function[
             _histsel_resident_kernel[
-                GmemTrace, enable_trace=True, bin_digit=True
+                GmemTrace,
+                enable_trace=True,
+                bin_digit=True,
+                in_dtype=in_dtype,
+                sig_bits=sched,
             ]
         ](
-            rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](scores_t.ptr),
             rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
             Int32(N),
             Int32(K),
@@ -165,11 +225,16 @@ def _launch[
         )
         return
 
-    if N <= _HSEL_RES_MAX:
+    if arm == _ARM_RES_ORD:
         ctx.enqueue_function[
-            _histsel_resident_kernel[GmemTrace, enable_trace=True]
+            _histsel_resident_kernel[
+                GmemTrace,
+                enable_trace=True,
+                in_dtype=in_dtype,
+                sig_bits=sched,
+            ]
         ](
-            rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](scores_t.ptr),
             rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
             Int32(N),
             Int32(K),
@@ -193,9 +258,11 @@ def _launch[
                 tail_bits=_HSEL_TAIL_BITS,
                 ordered=False,
                 deterministic=False,
+                in_dtype=in_dtype,
+                sig_bits=sched,
             ]
         ](
-            rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+            rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](scores_t.ptr),
             rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
             Int32(N),
             Int32(K),
@@ -218,9 +285,11 @@ def _launch[
             rank_bits=_HSEL_RANK_BITS,
             rank_slots=True,
             sel_cap=_HSEL_SEL_CAP,
+            in_dtype=in_dtype,
+            sig_bits=sched,
         ]
     ](
-        rebind[ImmPointer[Float32, ImmutAnyOrigin]](scores_t.ptr),
+        rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](scores_t.ptr),
         rebind[MutPointer[Int32, MutAnyOrigin]](idxs_t.ptr),
         Int32(N),
         Int32(K),
@@ -234,6 +303,109 @@ def _launch[
     )
 
 
+def _run[
+    in_dtype: DType, sched: Int = _hsel_sig_bits[in_dtype]()
+](
+    ctx: DeviceContext,
+    rows: Int,
+    N: Int,
+    K: Int,
+    dist: String,
+    unordered: Bool,
+    deterministic: Bool,
+    iters: Int,
+) raises:
+    var scores_buf = ctx.enqueue_create_buffer[in_dtype](rows * N)
+    var idxs_buf = ctx.enqueue_create_buffer[.int32](rows * K)
+    var trace_buf = ctx.enqueue_create_buffer[.uint64](rows * HSEL_TRACE_EVENTS)
+
+    # Keyed by index, so the traced run and the benchmarked run are the same
+    # array. Stored at the READ width: at bf16 the trace sees the rounded input
+    # the kernel sees, not the one generated.
+    with scores_buf.map_to_host() as h:
+        for r in range(rows):
+            var nk = N - Int(_u_len(r) * Float64(N) / 8.0)
+            for c in range(N):
+                var v: Float32
+                if c < nk:
+                    v = Float32(_sample(dist, r, c, N))
+                else:
+                    v = Float32(-3.0e38)
+                h[r * N + c] = v.cast[in_dtype]()
+    ctx.enqueue_memset(trace_buf, 0)
+
+    var scores_t = TileTensor(scores_buf, row_major(rows, N))
+    var idxs_t = TileTensor(idxs_buf, row_major(rows, K))
+    ctx.synchronize()
+
+    var trace_ptr = rebind[MutPointer[UInt64, MutUntrackedOrigin]](
+        trace_buf.unsafe_ptr()
+    )
+
+    # The contract is a comptime parameter of `_launch`, so the three arms are
+    # three instantiations and the runtime flags only choose between them.
+    @inline(.always)
+    def sweep(reps: Int) raises {var}:
+        for _ in range(reps):
+            if unordered and not deterministic:
+                _launch[unordered=True, deterministic=False, sched=sched](
+                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
+                )
+            elif unordered:
+                _launch[unordered=True, sched=sched](
+                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
+                )
+            else:
+                _launch[unordered=False, sched=sched](
+                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
+                )
+
+    # Warm up before the traced launch: a cold launch's first row scan
+    # measures instruction-cache and page-table misses, not the kernel.
+    sweep(20)
+    ctx.synchronize()
+
+    var t0 = perf_counter_ns()
+    sweep(iters)
+    ctx.synchronize()
+    var t1 = perf_counter_ns()
+    print("TIME_MS", Float64(t1 - t0) / Float64(iters) / 1.0e6)
+
+    # Round `r`'s pass and split are slots `[1 + 2r]` and `[2 + 2r]` over the
+    # DENSE round index, so the column half's rounds start at `VAL_ROUNDS`; a
+    # decoder assuming one stride misattributes them and still looks plausible.
+    comptime val_rounds = _hsel_half_rounds[_HSEL_TAIL_BITS, sched]()
+    comptime col_rounds = _hsel_half_rounds[_HSEL_TAIL_BITS, 32]()
+    var arm = _pick_arm(N, K, unordered, deterministic)
+    print(
+        "SCHED arm",
+        arm,
+        "tail_bits",
+        _HSEL_TAIL_BITS,
+        "sig_bits",
+        sched,
+        "VAL_ROUNDS",
+        val_rounds,
+        "COL_ROUNDS",
+        col_rounds if _arm_runs_column_half(arm) else 0,
+    )
+
+    print("TRACE", rows, N, K, dist, HSEL_TRACE_EVENTS, unordered, in_dtype)
+    with trace_buf.map_to_host() as h:
+        for r in range(rows):
+            var line = String("T ")
+            line += String(r)
+            for e in range(HSEL_TRACE_EVENTS):
+                line += " "
+                line += String(h[r * HSEL_TRACE_EVENTS + e])
+            print(line)
+    print("TRACEDONE")
+
+    _ = scores_buf
+    _ = idxs_buf
+    _ = trace_buf
+
+
 def main() raises:
     var rows = arg_parse("rows", 48)
     var N = arg_parse("N", 107228)
@@ -241,89 +413,32 @@ def main() raises:
     var dist = arg_parse("dist", String("q17"))
     var unordered = arg_parse("unordered", False)
     var deterministic = arg_parse("deterministic", True)
+    var iters = arg_parse("iters", 20)
+    var dtype = arg_parse("dtype", String("float32"))
+    var sig_bits = arg_parse("sig-bits", 0)
+
+    # Refused rather than defaulted: a misspelled flag that keeps its default
+    # reports the default's phases under the label as typed.
+    if dtype not in ["float32", "bfloat16"]:
+        raise Error("unknown dtype: ", dtype)
+    # 0 derives from the dtype; 32 forces the f32 schedule, which is only a
+    # different kernel at bf16.
+    if sig_bits not in [0, 32]:
+        raise Error("sig-bits must be 0 (derive) or 32 (force), not ", sig_bits)
+    if sig_bits == 32 and dtype != "bfloat16":
+        raise Error("sig-bits=32 is only a distinct schedule at dtype=bfloat16")
 
     with DeviceContext() as ctx:
-        var scores_buf = ctx.enqueue_create_buffer[.float32](rows * N)
-        var idxs_buf = ctx.enqueue_create_buffer[.int32](rows * K)
-        var trace_buf = ctx.enqueue_create_buffer[.uint64](
-            rows * HSEL_TRACE_EVENTS
-        )
-
-        # `bench_topk_mt`'s own generator, keyed by index so the traced run and
-        # the benchmarked run are the same array -- see `_sample`.
-        with scores_buf.map_to_host() as h:
-            for r in range(rows):
-                var nk = N - Int(_u_len(r) * Float64(N) / 8.0)
-                for c in range(N):
-                    if c < nk:
-                        h[r * N + c] = Float32(_sample(dist, r, c, N))
-                    else:
-                        h[r * N + c] = Float32(-3.0e38)
-        ctx.enqueue_memset(trace_buf, 0)
-
-        var scores_t = TileTensor(scores_buf, row_major(rows, N))
-        var idxs_t = TileTensor(idxs_buf, row_major(rows, K))
-        ctx.synchronize()
-
-        var trace_ptr = rebind[MutPointer[UInt64, MutUntrackedOrigin]](
-            trace_buf.unsafe_ptr()
-        )
-
-        # Warm up before the traced launch: a cold launch's first row scan
-        # measures instruction-cache and page-table misses, not the kernel.
-        for _ in range(20):
-            if unordered and not deterministic:
-                _launch[unordered=True, deterministic=False](
-                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
-                )
-            elif unordered:
-                _launch[unordered=True](
-                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
+        if dtype == "bfloat16":
+            if sig_bits == 32:
+                _run[DType.bfloat16, 32](
+                    ctx, rows, N, K, dist, unordered, deterministic, iters
                 )
             else:
-                _launch[unordered=False](
-                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
+                _run[DType.bfloat16](
+                    ctx, rows, N, K, dist, unordered, deterministic, iters
                 )
-        ctx.synchronize()
-
-        var t0 = perf_counter_ns()
-        var iters = arg_parse("iters", 20)
-        for _ in range(iters):
-            if unordered and not deterministic:
-                _launch[unordered=True, deterministic=False](
-                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
-                )
-            elif unordered:
-                _launch[unordered=True](
-                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
-                )
-            else:
-                _launch[unordered=False](
-                    ctx, scores_t, idxs_t, trace_ptr, N, K, rows
-                )
-        ctx.synchronize()
-        var t1 = perf_counter_ns()
-        print("TIME_MS", Float64(t1 - t0) / Float64(iters) / 1.0e6)
-
-        print(
-            "TRACE",
-            rows,
-            N,
-            K,
-            dist,
-            HSEL_TRACE_EVENTS,
-            unordered,
-        )
-        with trace_buf.map_to_host() as h:
-            for r in range(rows):
-                var line = String("T ")
-                line += String(r)
-                for e in range(HSEL_TRACE_EVENTS):
-                    line += " "
-                    line += String(h[r * HSEL_TRACE_EVENTS + e])
-                print(line)
-        print("TRACEDONE")
-
-        _ = scores_buf
-        _ = idxs_buf
-        _ = trace_buf
+        else:
+            _run[DType.float32](
+                ctx, rows, N, K, dist, unordered, deterministic, iters
+            )

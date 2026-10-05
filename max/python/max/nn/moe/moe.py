@@ -28,7 +28,11 @@ from typing_extensions import Self
 
 from ..comm.ep import EPBatchManager
 from ..comm.ep.ep_kernels import fused_silu
-from ..kernels import grouped_matmul_ragged, moe_create_indices
+from ..kernels import (
+    grouped_matmul_ragged,
+    moe_create_indices,
+    moe_finalize,
+)
 from ..layer import Layer, LayerList, Module, Shardable
 from ..linear import MLP, Linear
 from ..quant_config import QuantConfig
@@ -115,6 +119,47 @@ def _swigluoai_activation(
     gate = ops.min(gate, lim)
     up = ops.min(ops.max(up, -lim), lim)
     return (up + 1.0) * gate * ops.sigmoid(gate * float(alpha))
+
+
+def _clamped_swiglu_activation(
+    gate_up: TensorValue,
+    moe_dim: int,
+    limit: float,
+) -> TensorValue:
+    """Applies a clamped SwiGLU: ``silu(min(gate, limit)) *
+    clamp(up, -limit, limit)``.
+
+    Clamps before the activation, like ``_swigluoai_activation``, but omits
+    its GPT-OSS ``+1`` bias on ``up`` and its ``alpha`` scale inside the
+    sigmoid (equivalent to ``alpha=1``).
+    """
+    gate = gate_up[:, :moe_dim]
+    up = gate_up[:, moe_dim:]
+
+    lim = ops.constant(limit, gate.dtype, device=gate.device)
+    neg_lim = ops.constant(-limit, up.dtype, device=up.device)
+
+    gate = ops.min(gate, lim)
+    up = ops.min(ops.max(up, neg_lim), lim)
+    return ops.silu(gate) * up
+
+
+@dataclass(frozen=True)
+class ClampedSwiGLU:
+    """Declarative marker for the clamped SwiGLU activation.
+
+    Set as a :class:`MoE` or :class:`MoEQuantized` ``gated_activation_fn`` to
+    select ``silu(min(gate, limit)) * clamp(up, -limit, limit)``. A named type
+    rather than a bare callable so the EP quantized path can recognize it by
+    ``isinstance`` and allow it where it rejects an arbitrary one, which it
+    must because the fused grouped-matmul epilogue cannot express a callable
+    it has never seen.
+    """
+
+    limit: float
+
+    def __call__(self, gate_up: TensorValue, moe_dim: int) -> TensorValue:
+        return _clamped_swiglu_activation(gate_up, moe_dim, self.limit)
 
 
 class MoEGate(Module):
@@ -249,8 +294,6 @@ class MoE(Module, Shardable):
         ep_size: The expert parallelism size. Defaults to ``1``.
         dtype: The data type of the MoE. Defaults to
             ``DType.bfloat16``.
-        apply_router_weight_first: Whether to apply the router weight
-            first. Defaults to ``False``.
         ep_batch_manager: The expert parallel batch manager. Defaults to
             ``None``.
         quant_config: The scaled quantization configuration. Defaults to
@@ -319,7 +362,6 @@ class MoE(Module, Shardable):
         shared_experts_dim: int = 0,
         ep_size: int = 1,
         dtype: DType = DType.bfloat16,
-        apply_router_weight_first: bool = False,
         use_swigluoai: bool = False,
         swiglu_alpha: float = 0.0,
         swiglu_limit: float = 0.0,
@@ -346,7 +388,6 @@ class MoE(Module, Shardable):
         self.shared_experts_dim = shared_experts_dim
         self.ep_size = ep_size
         self.dtype = dtype
-        self.apply_router_weight_first = apply_router_weight_first
         self.use_swigluoai = use_swigluoai
         self.swiglu_alpha = swiglu_alpha
         self.swiglu_limit = swiglu_limit
@@ -404,10 +445,6 @@ class MoE(Module, Shardable):
             )
 
         if ep_batch_manager:
-            assert not apply_router_weight_first, (
-                "apply_router_weight_first is not supported for expert parallel strategy"
-            )
-
             self._ep_batch_manager = ep_batch_manager
 
         if not is_sharding:
@@ -559,7 +596,6 @@ class MoE(Module, Shardable):
                 shared_experts_dim=sharded_shared_experts_dim,
                 ep_size=self.ep_size,
                 dtype=self.dtype,
-                apply_router_weight_first=self.apply_router_weight_first,
                 use_swigluoai=self.use_swigluoai,
                 swiglu_alpha=self.swiglu_alpha,
                 swiglu_limit=self.swiglu_limit,
@@ -784,23 +820,12 @@ class MoE(Module, Shardable):
         if self.pre_expert_norm is not None:
             x = self.pre_expert_norm(x)
 
-        down_projs = self._expert_matmuls(
-            x, ops.reshape(router_idx, [-1]), router_weight
+        down_projs, restore_order = self._expert_matmuls(
+            x, ops.reshape(router_idx, [-1])
         )
-
-        if not self.apply_router_weight_first:
-            # (seq_len, 1, n_expert) @ (seq_len, n_expert, hidden_dim) -> (seq_len, 1, hidden_dim)
-            routed_expert_out = (
-                ops.unsqueeze(router_weight, axis=1) @ down_projs
-            )
-            routed_expert_out = ops.squeeze(routed_expert_out, axis=1).cast(
-                x.dtype
-            )
-        else:
-            routed_expert_out = down_projs.transpose(1, 2)
-            routed_expert_out = ops.squeeze(
-                ops.sum(routed_expert_out, axis=2), axis=2
-            ).cast(x.dtype)
+        routed_expert_out = moe_finalize(
+            down_projs, restore_order, router_weight, x.dtype
+        )
 
         if self.has_shared_experts:
             routed_expert_out += self.shared_experts(x)
@@ -811,28 +836,26 @@ class MoE(Module, Shardable):
         self,
         x: TensorValue,
         router_idx: TensorValue,
-        router_weight: TensorValue | None = None,
-    ) -> TensorValue:
+    ) -> tuple[TensorValue, TensorValue]:
         """Runs the unquantized expert matmuls for one flat expert assignment.
 
         Args:
             x: ``[seq_len, hidden_dim]`` expert input.
             router_idx: ``[seq_len * num_experts_per_token]`` selected expert
                 ids, in token-major order.
-            router_weight: ``[seq_len, num_experts_per_token]`` router weights,
-                read only when ``apply_router_weight_first`` is set.
 
         Returns:
-            ``[seq_len, num_experts_per_token, hidden_dim]``, each selected
-            expert's output before the router weights are applied.
+            ``(down, restore_order)``: the down projection output in
+            expert-permuted (``token_expert_order``) row order, shape
+            ``[seq_len * num_experts_per_token, hidden_dim]``, and the
+            ``uint32`` permutation mapping token-major index
+            ``t * num_experts_per_token + k`` back to its row in ``down``.
 
         A subclass whose router carries state beyond the ids and weights
         overrides ``__call__`` and calls this from there. ``MoEQuantized``
         overrides it with the quantized expert matmuls, so such a subclass
         works against either base.
         """
-        seq_len = x.shape[0]
-
         (
             token_expert_order,
             expert_start_indices,
@@ -851,14 +874,6 @@ class MoE(Module, Shardable):
             ),
             axis=0,
         )
-
-        if self.apply_router_weight_first:
-            assert router_weight is not None, (
-                "router_weight is required when apply_router_weight_first is set"
-            )
-            permutated_states = permutated_states * ops.gather(
-                router_weight.reshape([-1, 1]), token_expert_order, axis=0
-            ).cast(x.dtype)
 
         gate_up_projs = grouped_matmul_ragged(
             permutated_states,
@@ -885,6 +900,4 @@ class MoE(Module, Shardable):
             expert_usage_stats,
         )
 
-        return ops.gather(down_projs, restore_token_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, self.hidden_dim]
-        )
+        return down_projs, restore_token_order

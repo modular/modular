@@ -89,9 +89,8 @@ class TestSingleDeviceTensor:
         t = Tensor.zeros([4], dtype=DType.float32, device=CPU())
         assert t.mapping.is_fully_replicated
 
-    def test_mesh_is_single(self) -> None:
+    def test_mesh_is_single_device(self) -> None:
         t = Tensor.zeros([4], dtype=DType.float32, device=CPU())
-        assert t.mesh.is_single
         assert t.mesh.num_devices == 1
 
 

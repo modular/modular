@@ -39,10 +39,8 @@ from layout.tma_async import (
     TMATensorTile,
 )
 from layout import TileTensor
-from layout.tile_tensor import TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from layout.coord import Idx, Coord
-from layout.layout_tensor import LayoutTensor
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
 from max.gpu.sync import barrier
 from max.gpu.primitives.warp import broadcast
@@ -1957,7 +1955,7 @@ def q_scale_tma[
     dtype: DType, //, BM: Int
 ](
     ctx: DeviceContext,
-    q_scale_tensor: LayoutTensor[dtype, ...],
+    q_scale_tensor: TileTensor[dtype, ...],
     out tma: TMATensorTile[dtype, 2, Index(1, BM), Index(1, BM)],
 ) raises:
     """Creates a 2-D TMA tile descriptor for the per-token Q scale tensor.
@@ -1971,20 +1969,20 @@ def q_scale_tma[
 
     Args:
         ctx: `DeviceContext` used to create the TMA descriptor.
-        q_scale_tensor: `LayoutTensor` of per-token Q scale values, one
+        q_scale_tensor: `TileTensor` of per-token Q scale values, one
             per Q row.
     """
-    var num_elements = q_scale_tensor.size()
+    var num_elements = q_scale_tensor.num_elements()
     debug_assert(num_elements % 4 == 0, "num_elements must be divisible by 4")
     var tensor = TileTensor(
-        q_scale_tensor.ptr, tt_row_major(Coord(Idx[1], num_elements))
+        q_scale_tensor.unsafe_ptr(), tt_row_major(Idx[1], num_elements)
     )
 
     return create_tensor_tile[
         Index(1, BM),
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         __desc_shape=Index(1, BM),
-    ](ctx, tensor.to_layout_tensor())
+    ](ctx, tensor)
 
 
 def mla_sm100_prefill_per_token_scale[
@@ -2007,8 +2005,8 @@ def mla_sm100_prefill_per_token_scale[
 ](
     output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     q_nope: TileTensor[q_dtype, address_space=.GENERIC, ...],
-    q_rope: LayoutTensor[rope_dtype, _, address_space=.GENERIC, ...],
-    q_scale: LayoutTensor[scale_dtype, _, address_space=.GENERIC, ...],
+    q_rope: TileTensor[rope_dtype, address_space=.GENERIC, ...],
+    q_scale: TileTensor[scale_dtype, address_space=.GENERIC, ...],
     k_nope: KType,
     k_rope: KRopeType,
     v: VType,
@@ -2053,9 +2051,9 @@ def mla_sm100_prefill_per_token_scale[
     Args:
         output: `TileTensor` receiving the attention output.
         q_nope: `TileTensor` of the Q query, non-rotary (nope) portion.
-        q_rope: `LayoutTensor` of the Q query, rotary position embedding
+        q_rope: `TileTensor` of the Q query, rotary position embedding
             portion.
-        q_scale: `LayoutTensor` of per-token Q scale values, one per Q row.
+        q_scale: `TileTensor` of per-token Q scale values, one per Q row.
         k_nope: K key operand for the non-rotary (nope) portion.
         k_rope: K key operand for the rotary position embedding portion.
         v: V value operand.
@@ -2139,7 +2137,7 @@ def mla_sm100_prefill_per_token_scale[
         decoding=False,
     ](
         ctx,
-        q_rope.ptr,
+        q_rope.unsafe_ptr(),
         num_rows_q,
     )
 

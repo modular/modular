@@ -70,10 +70,8 @@ using namespace M::KGEN;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct PrecompileOptTable : public llvm::opt::PrecomputedOptTable {
-  PrecompileOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct PrecompileOptTable : public llvm::opt::OptTable {
+  PrecompileOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 } // namespace
 
@@ -128,9 +126,7 @@ buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
     pushOpsOntoWorklist(MutableArrayRef(*func));
   }
   for (auto trait : theModule.getOps<LIT::TraitDeclOp>()) {
-    if (trait.getClosureSignature().has_value())
-      pushOpsOntoWorklist(MutableArrayRef(*trait));
-    else if (trait.getSymName() == "##__mojo_closure__##")
+    if (trait.getSymName() == "##__mojo_closure__##")
       pushOpsOntoWorklist(MutableArrayRef(*trait));
   }
   for (auto structOp : theModule.getOps<LIT::StructDeclOp>())

@@ -129,6 +129,12 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:minimax-m3"],
         description="MiniMax M3 model-specific tests",
     ),
+    "muse_glimmer": ModelProfile(
+        name="muse_glimmer",
+        default_port=8600,
+        tags=["model:muse_glimmer"],
+        description="Muse Glimmer model-specific tests",
+    ),
     "smollm": ModelProfile(
         name="smollm",
         default_port=8500,

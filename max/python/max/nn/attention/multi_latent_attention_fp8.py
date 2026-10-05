@@ -76,6 +76,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         buffer_size: int = 16384,
         graph_mode: str | None = None,
         norm_dtype: DType = DType.bfloat16,
+        kv_b_proj_dtype: DType | None = None,
     ) -> None:
         """Initializes the latent attention layer.
 
@@ -101,6 +102,12 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             graph_mode: Pipeline role to use for the attention layer. Should be
                 "prefill", "decode", or "auto".
             norm_dtype: DType of the weights for normalization layers.
+            kv_b_proj_dtype: Storage dtype of ``kv_b_proj``. ``None`` keeps it
+                FP8 with the rest of the block, which is what every checkpoint
+                on this path ships today. Pass an unquantized dtype for a
+                checkpoint that leaves this one projection alone, and the
+                absorb skips dequantization and declares no
+                ``kv_b_proj.weight_scale``.
         """
         super().__init__()
 
@@ -241,29 +248,43 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             device=self.devices[0],
         )
 
+        # `kv_b_proj` is the one projection a checkpoint may leave unquantized
+        # while the rest of the block is FP8.
+        # The absorb folds it into the query and output paths at graph-build
+        # time, so an unquantized source is *cheaper*: no dequantization and no
+        # block-scale bookkeeping. `mla_decode_graph` already takes the scales
+        # as `TensorValue | None`, so the unquantized arm needs no kernel work.
+        kv_b_proj_storage = (
+            proj_dtype if kv_b_proj_dtype is None else kv_b_proj_dtype
+        )
+        self._kv_b_proj_quantized = kv_b_proj_storage == proj_dtype
         self.kv_b_proj = Weight(
             name="kv_b_proj.weight",
-            dtype=proj_dtype,
+            dtype=kv_b_proj_storage,
             shape=(
                 self.n_heads * (self.qk_nope_head_dim + self.v_head_dim),
                 self.kv_lora_rank,
             ),
             device=self.devices[0],
         )
-        self.kv_b_proj_scale = Weight(
-            name="kv_b_proj.weight_scale",
-            dtype=quant_config.weight_scale.dtype,
-            shape=(
-                ceildiv(
-                    int(self.kv_b_proj.shape[0]),
-                    self.weight_block_size[0],
+        self.kv_b_proj_scale: Weight | None = (
+            Weight(
+                name="kv_b_proj.weight_scale",
+                dtype=quant_config.weight_scale.dtype,
+                shape=(
+                    ceildiv(
+                        int(self.kv_b_proj.shape[0]),
+                        self.weight_block_size[0],
+                    ),
+                    ceildiv(
+                        int(self.kv_b_proj.shape[1]),
+                        input_k_block,
+                    ),
                 ),
-                ceildiv(
-                    int(self.kv_b_proj.shape[1]),
-                    input_k_block,
-                ),
-            ),
-            device=self.devices[0],
+                device=self.devices[0],
+            )
+            if self._kv_b_proj_quantized
+            else None
         )
 
         o_proj_quant_config = quant_config
@@ -375,7 +396,10 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             # kv_b projects the KV latent up to per-head K/V dims: shard the
             # output rows (column-parallel).
             self.kv_b_proj.sharding_strategy = ShardingStrategy.rowwise(n)
-            self.kv_b_proj_scale.sharding_strategy = ShardingStrategy.rowwise(n)
+            if self.kv_b_proj_scale is not None:
+                self.kv_b_proj_scale.sharding_strategy = (
+                    ShardingStrategy.rowwise(n)
+                )
 
             # o_proj contracts the per-head value dim back to hidden: shard the
             # input columns (row-parallel). The Linear handles its block-wise
@@ -395,9 +419,10 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 self.kv_a_proj_with_mqa,
                 self.kv_a_proj_with_mqa_scale,
                 self.kv_b_proj,
-                self.kv_b_proj_scale,
                 self.o_proj.weight,
             ]
+            if self.kv_b_proj_scale is not None:
+                weights.append(self.kv_b_proj_scale)
 
             if self.o_proj.input_scale is not None:
                 weights.append(self.o_proj.input_scale)
@@ -445,7 +470,11 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 self.kv_a_proj_with_mqa_scale.shard(devices)
             )
             kv_b_proj_shards = self.kv_b_proj.shard(devices)
-            kv_b_proj_scale_shards = self.kv_b_proj_scale.shard(devices)
+            kv_b_proj_scale_shards = (
+                self.kv_b_proj_scale.shard(devices)
+                if self.kv_b_proj_scale is not None
+                else None
+            )
 
             o_proj_weight_shards = self.o_proj.weight.shard(devices)
             if self.o_proj.input_scale is not None:
@@ -476,6 +505,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
                     norm_dtype=self.norm_dtype,
+                    kv_b_proj_dtype=self.kv_b_proj.dtype,
                 )
 
                 sharded.q_a_proj = q_a_proj_shards[shard_idx]
@@ -496,7 +526,8 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     kv_a_proj_with_mqa_scale_shards[shard_idx]
                 )
                 sharded.kv_b_proj = kv_b_proj_shards[shard_idx]
-                sharded.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
+                if kv_b_proj_scale_shards is not None:
+                    sharded.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
 
                 sharded.o_proj.weight = o_proj_weight_shards[shard_idx]
                 if self.o_proj.input_scale is not None:
@@ -525,7 +556,11 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                 self.kv_a_proj_with_mqa_scale.shard(devices)
             )
             kv_b_proj_shards = self.kv_b_proj.shard(devices)
-            kv_b_proj_scale_shards = self.kv_b_proj_scale.shard(devices)
+            kv_b_proj_scale_shards = (
+                self.kv_b_proj_scale.shard(devices)
+                if self.kv_b_proj_scale is not None
+                else None
+            )
             o_proj_weight_shards = self.o_proj.weight.shard(devices)
 
             if self.o_proj.input_scale is not None:
@@ -555,6 +590,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     v_head_dim=self.v_head_dim,
                     buffer_size=self.BUFFER_TOK_SIZE,
                     norm_dtype=self.norm_dtype,
+                    kv_b_proj_dtype=self.kv_b_proj.dtype,
                 )
 
                 replica.q_a_proj = q_a_proj_shards[shard_idx]
@@ -575,7 +611,8 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
                     kv_a_proj_with_mqa_scale_shards[shard_idx]
                 )
                 replica.kv_b_proj = kv_b_proj_shards[shard_idx]
-                replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
+                if kv_b_proj_scale_shards is not None:
+                    replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
                 replica.o_proj.weight = o_proj_weight_shards[shard_idx]
                 if self.o_proj.input_scale is not None:
                     replica.o_proj.input_scale = o_proj_scale_shards[shard_idx]
@@ -613,7 +650,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
     def _gather_per_head_scale(
         self, start_row_offset: int, n_rows: int
-    ) -> TensorValue:
+    ) -> TensorValue | None:
         """Gathers per-head B-scale chunks from the flat on-disk
         `kv_b_proj_scale` for all heads in a single op.
 
@@ -626,6 +663,8 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
 
         Returns a `[H, n_chunks, n_cols_kernel]` tensor.
         """
+        if self.kv_b_proj_scale is None:
+            return None
         g = self._b_scale_granularity
         block_m = int(self.weight_block_size[0])
         block_k = int(self.weight_block_size[1])
@@ -669,7 +708,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         )
 
     @property
-    def w_uk(self) -> tuple[TensorValue, TensorValue]:
+    def w_uk(self) -> tuple[TensorValue, TensorValue | None]:
         """Decode K-up projection: weight `[H, R, Dn]`, scale
         `[H, R/block_k_kernel, ceildiv(Dn, g)]` after transpose.
 
@@ -681,13 +720,14 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         w_uk = self._kv_b_proj_weight[..., : self.qk_nope_head_dim].transpose(
             0, 1
         )
-        w_uk_scale = self._gather_per_head_scale(
+        gathered = self._gather_per_head_scale(
             start_row_offset=0, n_rows=self.qk_nope_head_dim
-        ).transpose(1, 2)
+        )
+        w_uk_scale = gathered.transpose(1, 2) if gathered is not None else None
         return (w_uk, w_uk_scale)
 
     @property
-    def w_uv(self) -> tuple[TensorValue, TensorValue]:
+    def w_uv(self) -> tuple[TensorValue, TensorValue | None]:
         """Decode V-up projection: weight `[H, Dv, R]`, scale
         `[H, ceildiv(Dv, g), R/block_k_kernel]`.
 
@@ -704,7 +744,7 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
         return (w_uv, w_uv_scale)
 
     @property
-    def w_k(self) -> tuple[TensorValue, TensorValue]:
+    def w_k(self) -> tuple[TensorValue, TensorValue | None]:
         """Prefill K-up projection: weight `[H*Dn, R]`, scale
         `[H*ceildiv(Dn, g), R/block_k_kernel]`."""
         w_k = (
@@ -713,9 +753,14 @@ class LatentAttentionWithRopeFp8(Module, Shardable):
             .reshape((-1, self.kv_lora_rank))
         )
         block_k_kernel = self._b_scale_granularity
-        w_k_scale = self._gather_per_head_scale(
+        gathered = self._gather_per_head_scale(
             start_row_offset=0, n_rows=self.qk_nope_head_dim
-        ).reshape((-1, self.kv_lora_rank // block_k_kernel))
+        )
+        w_k_scale = (
+            gathered.reshape((-1, self.kv_lora_rank // block_k_kernel))
+            if gathered is not None
+            else None
+        )
         return (w_k, w_k_scale)
 
     def _mla_impl(

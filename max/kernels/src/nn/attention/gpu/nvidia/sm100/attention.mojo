@@ -170,6 +170,13 @@ struct FA4Config[
         return self.BM
 
     @inline(.always)
+    def gqa_pad_rows(self) -> Int:
+        """Tile rows left unused when the GQA group does not divide `BM`."""
+        if self.fuse_gqa:
+            return self.BM % self.group
+        return 0
+
+    @inline(.always)
     def cta_group(self) -> Int:
         return 2 if self.pair_cta else 1
 
@@ -1227,7 +1234,22 @@ struct FA4Config[
             self.MMA_M = 32
         else:
             self.MMA_M = 128
-        self.fuse_gqa = group > 1 and (self.MMA_M % group == 0) and not is_mla
+        # A group that does not divide MMA_M is packed only by the d256
+        # shared-key decode vehicle: its tile holds `MMA_M // group` seq
+        # positions x `group` heads and leaves `MMA_M % group` pad rows.
+        self.fuse_gqa = (
+            group > 1
+            and not is_mla
+            and (
+                self.MMA_M % group == 0
+                or (
+                    ws_shared_key
+                    and self.MMA_M == 32
+                    and qk_depth == 256
+                    and group < self.MMA_M
+                )
+            )
+        )
         comptime if Self.qkv_dtype.is_float8():
             self.swizzle_mode = TensorMapSwizzle.SWIZZLE_64B
         else:

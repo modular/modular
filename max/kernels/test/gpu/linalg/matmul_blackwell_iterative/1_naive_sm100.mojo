@@ -17,9 +17,9 @@ from std.sys import argv
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, TileTensor, row_major
+from layout import ComptimeInt, RowMajorLayout, TileTensor, row_major
 from layout._fillers import random
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from std.testing import assert_almost_equal
 
 from std.utils.index import IndexList
@@ -39,12 +39,18 @@ def kernel_1[
     transpose_b: Bool = True,
     BLOCKSIZE: Int = 32,
 ](
-    c: LayoutTensor[.bfloat16, Layout.row_major(M, N), MutAnyOrigin],
-    a: LayoutTensor[.bfloat16, Layout.row_major(M, K), MutAnyOrigin],
-    b: LayoutTensor[.bfloat16, Layout.row_major(K, N), MutAnyOrigin],
+    c: TileTensor[
+        .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin
+    ],
+    a: TileTensor[
+        .bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[K]], MutAnyOrigin
+    ],
+    b: TileTensor[
+        .bfloat16, RowMajorLayout[ComptimeInt[K], ComptimeInt[N]], MutAnyOrigin
+    ],
 ):
-    var row = block_dim.y * block_idx.y + thread_idx.y
-    var col = block_dim.x * block_idx.x + thread_idx.x
+    var row = Int(block_dim.y * block_idx.y + thread_idx.y)
+    var col = Int(block_dim.x * block_idx.x + thread_idx.x)
 
     if row < M and col < N:
         # Still accumulate in float32 for precision
@@ -64,7 +70,7 @@ def test_kernel_1[
     c_type: DType,
     transpose_b: Bool = True,
     benchmark: Bool = False,
-    prob_shape: IndexList[3] = IndexList[3](1, 1, 1),
+    prob_shape: IndexList[3] = (1, 1, 1),
 ](ctx: DeviceContext) raises:
     comptime M = prob_shape[0]
     comptime N = prob_shape[1]
@@ -72,31 +78,28 @@ def test_kernel_1[
 
     print(M, "x", N, "x", K)
 
-    var a = ManagedLayoutTensor[a_type, Layout.row_major(M, K)](ctx)
-    random(a.tensor[update=False]())
-    comptime b_layout = Layout.row_major(K, N)
-    var b = ManagedLayoutTensor[b_type, b_layout](ctx)
-    random(b.tensor[update=False]())
-    var c = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
-    var c_ref = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
+    var a = HostDeviceTileTensor[a_type](row_major[M, K](), ctx)
+    random(a.host_tensor())
+    var b = HostDeviceTileTensor[b_type](row_major[K, N](), ctx)
+    random(b.host_tensor())
+    var c = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
+    var c_ref = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
 
-    comptime b_vendor_layout = Layout.row_major(
-        N, K
-    ) if transpose_b else Layout.row_major(K, N)
-    var b_vendor = ManagedLayoutTensor[b_type, b_vendor_layout](ctx)
-
-    comptime if transpose_b:
-        var b_tensor = b.tensor[update=False]()
-        var b_vendor_tensor = b_vendor.tensor[update=True]()
-        for k in range(K):
-            for n in range(N):
+    var b_vendor = HostDeviceTileTensor[b_type](
+        row_major[N if transpose_b else K, K if transpose_b else N](), ctx
+    )
+    var b_tensor = b.host_tensor()
+    var b_vendor_tensor = b_vendor.host_tensor()
+    for k in range(K):
+        for n in range(N):
+            comptime if transpose_b:
                 b_vendor_tensor[n, k] = b_tensor[k, n]
-    else:
-        var b_tensor = b.tensor[update=False]()
-        var b_vendor_tensor = b_vendor.tensor[update=True]()
-        for k in range(K):
-            for n in range(N):
+            else:
                 b_vendor_tensor[k, n] = b_tensor[k, n]
+
+    a.to_device()
+    b.to_device()
+    b_vendor.to_device()
 
     comptime kernel = kernel_1[
         M, N, K, transpose_b=transpose_b, BLOCKSIZE=BLOCKSIZE
@@ -121,9 +124,9 @@ def test_kernel_1[
         @inline(.always)
         def run_kernel(ctx: DeviceContext) raises {mut a, mut b, mut c, imm}:
             ctx.enqueue_function[kernel](
-                c.device_tensor[update=False](),
-                a.device_tensor[update=False](),
-                b.device_tensor[update=False](),
+                c.device_tensor(),
+                a.device_tensor(),
+                b.device_tensor(),
                 grid_dim=(ceildiv(N, BLOCKSIZE), ceildiv(M, BLOCKSIZE)),
                 block_dim=(BLOCKSIZE, BLOCKSIZE),
             )
@@ -145,22 +148,19 @@ def test_kernel_1[
     else:
         vendor_blas.matmul(
             ctx,
-            TileTensor(
-                c_ref.device_tensor[update=False]().ptr, row_major[M, N]()
-            ),
-            TileTensor(a.device_tensor[update=False]().ptr, row_major[M, K]()),
-            TileTensor(
-                b_vendor.device_tensor().ptr,
-                row_major[N if transpose_b else K, K if transpose_b else N](),
-            ),
+            c_ref.device_tensor(),
+            a.device_tensor(),
+            b_vendor.device_tensor(),
             c_row_major=True,
             transpose_b=transpose_b,
         )
 
         ctx.synchronize()
 
-        var c_host = c.tensor()
-        var c_host_ref = c_ref.tensor()
+        c.to_host()
+        c_ref.to_host()
+        var c_host = c.host_tensor()
+        var c_host_ref = c_ref.host_tensor()
 
         for m in range(M):
             for n in range(N):

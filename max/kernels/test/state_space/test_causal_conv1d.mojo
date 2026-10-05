@@ -13,22 +13,12 @@
 
 from std.math import exp
 
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import TileTensor, row_major
 from layout._fillers import random
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
 )
 from std.testing import TestSuite, assert_almost_equal
-
-from std.utils.index import Index
 
 
 def main() raises:
@@ -52,55 +42,34 @@ def run_causal_conv1d[
 ](batch: Int, dim: Int, seqlen: Int, width: Int, rtol: Float64 = 0.01,) raises:
     """Test causal conv1d kernel against reference implementation."""
     # Allocate host memory
-    comptime layout_3d = Layout.row_major[3]()
-    comptime layout_2d = Layout.row_major[2]()
-    comptime layout_1d = Layout(UNKNOWN_VALUE)
-
     var input_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
-    var input_h = LayoutTensor[dtype, layout_3d, _](
+    var input_h = TileTensor(
         input_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+        row_major(batch, dim, seqlen),
     )
     var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
-    var weight_h = LayoutTensor[dtype, layout_2d, _](
-        weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
-    )
+    var weight_h = TileTensor(weight_heap, row_major(dim, width))
     var bias_heap = List(length=dim, fill=Scalar[dtype](0))
-    var bias_h = LayoutTensor[dtype, layout_1d, _](
-        bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
-    )
+    var bias_h = TileTensor(bias_heap, row_major(dim))
     var result_fused_heap = List(
         length=batch * dim * seqlen, fill=Scalar[dtype](0)
     )
-    var result_fused_h = LayoutTensor[dtype, layout_3d, _](
+    var result_fused_h = TileTensor(
         result_fused_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+        row_major(batch, dim, seqlen),
     )
     var result_unfused_heap = List(
         length=batch * dim * seqlen, fill=Scalar[dtype](0)
     )
-    var result_unfused_h = LayoutTensor[dtype, layout_3d, _](
+    var result_unfused_h = TileTensor(
         result_unfused_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
+        row_major(batch, dim, seqlen),
     )
 
     # Initialize input data
     random(input_h)
     random(weight_h)
     random(bias_h)
-
-    # Create TileTensor versions for kernel call
-    var input_tt = TileTensor(input_heap, row_major(batch, dim, seqlen))
-    var weight_tt = TileTensor(weight_heap, row_major(dim, width))
-    var bias_tt = TileTensor(
-        bias_heap,
-        row_major(
-            dim,
-        ),
-    )
-    var result_fused_tt = TileTensor(
-        result_fused_heap, row_major(batch, dim, seqlen)
-    )
 
     var input_buf = input_h
     var weight_buf = weight_h
@@ -116,7 +85,6 @@ def run_causal_conv1d[
     var out_batch_stride: UInt32 = UInt32(dim * seqlen)
     var out_c_stride: UInt32 = UInt32(seqlen)
     var out_l_stride: UInt32 = 1
-    var bias_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
 
@@ -131,19 +99,10 @@ def run_causal_conv1d[
         dim,
         seqlen,
         width,
-        input_tt,
-        weight_tt,
-        result_fused_tt,
-        bias_tt,
-        x_batch_stride,
-        x_c_stride,
-        x_l_stride,
-        weight_c_stride,
-        weight_width_stride,
-        out_batch_stride,
-        out_c_stride,
-        out_l_stride,
-        bias_stride,
+        input_h,
+        weight_h,
+        result_fused_h,
+        bias_h,
         silu_activation,
     )
 
@@ -151,7 +110,7 @@ def run_causal_conv1d[
     var width_minus_1: Int = width - 1
     for b in range(batch):
         for c in range(dim):
-            var cur_bias = bias_buf.ptr.load(c)
+            var cur_bias = bias_buf.unsafe_ptr().load(c)
             for l in range(seqlen):
                 var conv_sum: Scalar[dtype] = cur_bias
                 for w in range(width):
@@ -162,12 +121,14 @@ def run_causal_conv1d[
                             + UInt32(c) * x_c_stride
                             + UInt32(input_l) * x_l_stride
                         )
-                        var input_val = input_buf.ptr.load(x_offset)
+                        var input_val = input_buf.unsafe_ptr().load(x_offset)
                         var weight_offset = (
                             UInt32(c) * weight_c_stride
                             + UInt32(w) * weight_width_stride
                         )
-                        var weight_val = weight_buf.ptr.load(weight_offset)
+                        var weight_val = weight_buf.unsafe_ptr().load(
+                            weight_offset
+                        )
                         conv_sum = conv_sum + input_val * weight_val
 
                 var out_val = conv_sum
@@ -179,14 +140,14 @@ def run_causal_conv1d[
                     + UInt32(c) * out_c_stride
                     + UInt32(l) * out_l_stride
                 )
-                result_unfused_buf.ptr.store(out_offset, out_val)
+                result_unfused_buf.unsafe_ptr().store(out_offset, out_val)
 
     # Compare results
     var flattened_size = batch * dim * seqlen
     for i in range(flattened_size):
         assert_almost_equal(
-            result_fused_h.ptr[i],
-            result_unfused_h.ptr[i],
+            result_fused_h.unsafe_ptr()[i],
+            result_unfused_h.unsafe_ptr()[i],
             rtol=rtol,
         )
 

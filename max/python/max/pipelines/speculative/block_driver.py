@@ -23,7 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
-from typing import Any, Generic, Protocol, TypeVar
+from typing import Any, Generic, Literal, Protocol, TypeVar
 
 from max.dtype import DType
 from max.graph import (
@@ -36,9 +36,13 @@ from max.graph import (
     Value,
     ops,
 )
+from max.nn.kernels import topk_fused_sampling_with_dist
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
-from max.nn.sampling.rejection_sampler import AcceptanceSampler
+from max.nn.sampling.rejection_sampler import (
+    AcceptanceSampler,
+    _draft_step_seed,
+)
 from typing_extensions import override
 
 from .config import MAGIC_DRAFT_TOKEN_ID, SpeculativeConfig
@@ -56,10 +60,13 @@ from .unified_graph_ops import apply_overlap_bitmask, broadcast_per_device
 
 __all__ = [
     "Accepted",
+    "ArgmaxDraftSampler",
     "BlockBatch",
     "BlockCaches",
     "BlockDriver",
     "BlockProposer",
+    "DraftSampler",
+    "SampledDraftSampler",
     "block_dispatch_metadata",
     "block_kv_with_dispatch",
     "local_row_offsets",
@@ -311,15 +318,200 @@ class BlockProposer(Protocol[_TargetHiddenT, _BlockHiddenT]):
         ...
 
     def head(
-        self, batch: BlockBatch, block_hs: _BlockHiddenT, accepted: Accepted
+        self,
+        batch: BlockBatch,
+        block_hs: _BlockHiddenT,
+        accepted: Accepted,
+        sampler: DraftSampler,
     ) -> TensorValue:
-        """Turns the block's hidden states into ``[batch_size, K - 1]`` tokens.
+        """Turns the block's hidden states into the next step's proposals.
 
-        Owns the head entirely: which ``lm_head``, whether the anchor slot is
-        sliced off before or after the projection, logit softcapping, and any
-        model-specific draft sampling.
+        ``[batch_size, K - 1]``, or ``[batch_size, num_speculative_tokens]``
+        when the driver verifies fewer proposals than the block holds.
+
+        Owns the head's scoring: which ``lm_head``, whether the anchor slot is
+        sliced off before or after the projection, logit softcapping. The
+        tokens themselves come from ``sampler``, which the driver picks for
+        the configured ``draft_proposal``.
         """
         ...
+
+
+class DraftSampler(Protocol):
+    """Picks a block draft's tokens from the logits its head scores.
+
+    The driver hands one to :meth:`BlockProposer.head`, so a head scores its
+    logits once and serves both ``draft_proposal`` modes. A head whose
+    positions never read each other's tokens calls :meth:`sample_all`; a head
+    whose logits at each position depend on the tokens picked before it calls
+    :meth:`sample_next` once per position, in order.
+    """
+
+    def sample_all(self, logits: TensorValue) -> TensorValue:
+        """Picks every position's token at once.
+
+        Args:
+            logits: ``[batch_size, n, vocab_size]`` target-vocab logits.
+
+        Returns:
+            ``[batch_size, n]`` token ids.
+        """
+        ...
+
+    def sample_next(
+        self,
+        logits: TensorValue,
+        position: int,
+        token_ids: TensorValue | None = None,
+    ) -> TensorValue:
+        """Picks one position's token for every row.
+
+        Args:
+            logits: ``[batch_size, m]`` logits for this position. ``m`` is
+                whatever space the head scores -- the target vocabulary, a
+                pruned draft vocabulary, a candidate list -- and the head maps
+                the returned index back to a token itself.
+            position: The position in the block, from 0.
+            token_ids: ``[batch_size, m]`` target-vocab id of each column, when
+                the head scores less than the whole target vocabulary.
+
+        Returns:
+            The ``[batch_size]`` column index picked.
+        """
+        ...
+
+
+class ArgmaxDraftSampler(DraftSampler):
+    """Takes each position's argmax, for ``draft_proposal="argmax"``."""
+
+    @override
+    def sample_all(self, logits: TensorValue) -> TensorValue:
+        return ops.squeeze(ops.argmax(logits, axis=-1), axis=-1)
+
+    @override
+    def sample_next(
+        self,
+        logits: TensorValue,
+        position: int,
+        token_ids: TensorValue | None = None,
+    ) -> TensorValue:
+        del position, token_ids
+        return ops.squeeze(ops.argmax(logits, axis=-1), axis=-1)
+
+
+class SampledDraftSampler(DraftSampler):
+    """Draws each position at its request's temperature, top-k and top-p.
+
+    Serves ``draft_proposal="sampled"``, keeping the distribution each draw
+    came from, in target-vocab positions, for the verifier. The driver builds
+    one per iteration from the per-row sampling parameters. Position ``i`` is
+    keyed like sequential draft step ``i``, so no two positions of a request
+    share a draw.
+    """
+
+    def __init__(
+        self,
+        *,
+        seed: TensorValue,
+        temperature: TensorValue,
+        top_k: TensorValue,
+        top_p: TensorValue,
+        vocab_size: int,
+    ) -> None:
+        self._seed = seed
+        self._temperature = temperature
+        self._top_k = top_k
+        self._top_p = top_p
+        self._vocab_size = vocab_size
+        self._all_dists: TensorValue | None = None
+        self._next_dists: list[TensorValue] = []
+
+    @override
+    def sample_all(self, logits: TensorValue) -> TensorValue:
+        assert self._all_dists is None and not self._next_dists
+        n = int(logits.shape[1])
+        vocab = logits.shape[2]
+
+        def per_position(param: TensorValue) -> TensorValue:
+            return ops.broadcast_to(
+                ops.unsqueeze(param, axis=1), ["batch_size", n]
+            ).reshape((-1,))
+
+        seeds = ops.stack(
+            [_draft_step_seed(self._seed, i) for i in range(n)], axis=1
+        ).reshape((-1,))
+        tokens, dist = topk_fused_sampling_with_dist(
+            logits.rebind(["batch_size", n, vocab]).reshape((-1, vocab)),
+            top_k=per_position(self._top_k),
+            temperature=per_position(self._temperature),
+            top_p=per_position(self._top_p),
+            seed=seeds,
+        )
+        self._all_dists = dist.reshape(("batch_size", n, vocab))
+        return tokens.reshape(("batch_size", n))
+
+    @override
+    def sample_next(
+        self,
+        logits: TensorValue,
+        position: int,
+        token_ids: TensorValue | None = None,
+    ) -> TensorValue:
+        assert self._all_dists is None
+        assert position == len(self._next_dists), (
+            "positions must be drawn in order"
+        )
+        index, dist = topk_fused_sampling_with_dist(
+            logits.rebind(["batch_size", logits.shape[1]]),
+            top_k=self._top_k,
+            temperature=self._temperature,
+            top_p=self._top_p,
+            seed=_draft_step_seed(self._seed, position),
+        )
+        if token_ids is not None:
+            dist = _scatter_to_vocab(dist, token_ids, self._vocab_size)
+        self._next_dists.append(dist)
+        return index
+
+    def distributions(self) -> TensorValue:
+        """The ``[batch_size, n, vocab_size]`` distributions drawn from."""
+        if self._all_dists is not None:
+            return self._all_dists
+        return ops.stack(self._next_dists, axis=1)
+
+
+def _scatter_to_vocab(
+    dist: TensorValue, token_ids: TensorValue, vocab_size: int
+) -> TensorValue:
+    """Spreads a distribution over a subset of the vocabulary onto all of it.
+
+    The verifier compares the draft's ``q`` with the target's ``p`` token by
+    token, so a head that sampled over a candidate list or a pruned vocabulary
+    hands back ``q`` in target-vocab positions, zero wherever it put no mass.
+
+    Args:
+        dist: ``[batch_size, m]`` probabilities.
+        token_ids: ``[batch_size, m]`` distinct target-vocab id of each column.
+        vocab_size: The target vocabulary size.
+
+    Returns:
+        ``[batch_size, vocab_size]`` float32 probabilities.
+    """
+    device = dist.device
+    batch = dist.shape[0]
+    m = dist.shape[1]
+    rows = ops.broadcast_to(
+        ops.unsqueeze(
+            ops.range(0, batch, 1, batch, dtype=DType.int64, device=device),
+            axis=1,
+        ),
+        [batch, m],
+    )
+    indices = ops.stack([rows, token_ids.cast(DType.int64)], axis=-1)
+    zeros = ops.broadcast_to(
+        ops.constant(0.0, DType.float32, device=device), [batch, vocab_size]
+    )
+    return ops.scatter_nd(zeros, dist.cast(DType.float32), indices)
 
 
 class BlockDriver(
@@ -339,6 +531,9 @@ class BlockDriver(
         enable_structured_output: bool = False,
         relaxed_acceptance: bool = False,
         ctx_at_draft_cache_length: bool = False,
+        num_speculative_tokens: int | None = None,
+        use_greedy_acceptance: bool = False,
+        vocab_size: int | None = None,
     ) -> None:
         super().__init__()
         self._target = target
@@ -353,9 +548,47 @@ class BlockDriver(
         self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
         self.enable_structured_output = enable_structured_output
         self.block_size = proposer.block_size
-        self.num_speculative_tokens = self.block_size - (
+        # The block always runs at its trained width; a step may verify fewer
+        # of its proposals than it holds.
+        max_drafts = self.block_size - (
             0 if proposer.samples_from_anchor else 1
         )
+        if num_speculative_tokens is None:
+            num_speculative_tokens = max_drafts
+        elif not 1 <= num_speculative_tokens <= max_drafts:
+            raise ValueError(
+                f"A block of {self.block_size} holds 1 to {max_drafts}"
+                " proposals; got"
+                f" num_speculative_tokens={num_speculative_tokens}."
+            )
+        self.num_speculative_tokens = num_speculative_tokens
+
+        draft_proposal: Literal["argmax", "sampled"] = (
+            speculative_config.draft_proposal
+        )
+        self._vocab_size = vocab_size
+        self._sampled = draft_proposal == "sampled"
+        if self._sampled:
+            if vocab_size is None:
+                raise ValueError(
+                    "vocab_size is required when draft_proposal='sampled':"
+                    " draft_probs_full's trailing dim has to be static"
+                )
+            if speculative_config.synthetic_acceptance_rate is not None:
+                raise ValueError(
+                    "draft_proposal='sampled' is incompatible with "
+                    "synthetic_acceptance_rate"
+                )
+            if use_greedy_acceptance:
+                raise ValueError(
+                    "draft_proposal='sampled' requires stochastic acceptance:"
+                    " greedy acceptance ignores the draft's distributions"
+                )
+            self._input_spec = replace(
+                self._input_spec,
+                enable_sampled_draft_proposal=True,
+                vocab_size=vocab_size,
+            )
 
         relaxed_topk: int | None = None
         relaxed_delta: float | None = None
@@ -365,15 +598,30 @@ class BlockDriver(
         ):
             relaxed_topk = speculative_config.relaxed_topk
             relaxed_delta = speculative_config.relaxed_delta
+        if use_greedy_acceptance and relaxed_topk is not None:
+            raise ValueError(
+                "Greedy acceptance has no relaxed rule; it would silently"
+                " verify strictly."
+            )
+        if (
+            use_greedy_acceptance
+            and speculative_config.synthetic_acceptance_rate is not None
+        ):
+            raise ValueError(
+                "use_greedy_acceptance is incompatible with"
+                " synthetic_acceptance_rate"
+            )
 
         self.acceptance_sampler = AcceptanceSampler(
             synthetic_acceptance_rate=(
                 speculative_config.synthetic_acceptance_rate
             ),
             num_draft_steps=self.num_speculative_tokens,
-            use_stochastic=True,
+            use_stochastic=not use_greedy_acceptance,
             relaxed_topk=relaxed_topk,
             relaxed_delta=relaxed_delta,
+            draft_proposal=draft_proposal,
+            vocab_size=vocab_size,
         )
         # Registered under the hand-written modules' names, so state_dict keys
         # and the weights registry are unchanged.
@@ -408,6 +656,7 @@ class BlockDriver(
         wait_payload: BufferValue | None = None,
         device_bitmask_scratch: BufferValue | None = None,
         extra: Mapping[str, Any] | None = None,
+        draft_probs_full: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Runs one block spec-decode iteration: verify K-1, propose K-1.
 
@@ -442,10 +691,19 @@ class BlockDriver(
             device_bitmask_scratch: Device buffer the bitmask lands in.
             extra: This model's own graph inputs, reaching its adapters
                 through :attr:`BlockBatch.extra` untouched.
+            draft_probs_full: ``[batch, num_speculative_tokens, vocab_size]``
+                distributions the previous iteration's draft drew its
+                proposals from. Required iff ``draft_proposal="sampled"``.
 
         Returns:
-            ``(num_accepted, next_tokens, next_draft_tokens)``.
+            ``(num_accepted, next_tokens, next_draft_tokens)``, plus
+            ``next_draft_probs_full`` under ``draft_proposal="sampled"``.
         """
+        if (draft_probs_full is not None) != self._sampled:
+            raise ValueError(
+                "draft_probs_full is required iff the driver was built with"
+                " draft_proposal='sampled'"
+            )
         signals = signal_buffers or []
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
@@ -510,6 +768,7 @@ class BlockDriver(
             min_top_p=min_top_p,
             in_thinking_phase=in_thinking_phase,
             token_bitmasks=effective_bitmasks,
+            draft_probs_full=draft_probs_full,
         )
 
         # Every phase below runs after the accept, so each sees the count
@@ -526,9 +785,34 @@ class BlockDriver(
         block_hs = self._proposer.forward_block(
             batch, embeds, block_offsets, caches.block
         )
-        next_draft_tokens = self._proposer.head(batch, block_hs, accepted)
+        if not self._sampled:
+            next_draft_tokens = self._proposer.head(
+                batch, block_hs, accepted, ArgmaxDraftSampler()
+            )
+            return (
+                accepted.num_accepted,
+                accepted.next_tokens,
+                next_draft_tokens,
+            )
 
-        return (accepted.num_accepted, accepted.next_tokens, next_draft_tokens)
+        assert self._vocab_size is not None
+        sampler = SampledDraftSampler(
+            seed=seed,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            vocab_size=self._vocab_size,
+        )
+        next_draft_tokens = self._proposer.head(
+            batch, block_hs, accepted, sampler
+        )
+        n = self.num_speculative_tokens
+        return (
+            accepted.num_accepted,
+            accepted.next_tokens,
+            next_draft_tokens.rebind(["batch_size", n]),
+            sampler.distributions().rebind(["batch_size", n, self._vocab_size]),
+        )
 
     def _accept(
         self,
@@ -543,6 +827,7 @@ class BlockDriver(
         min_top_p: TensorValue,
         in_thinking_phase: TensorValue | None,
         token_bitmasks: TensorValue | None,
+        draft_probs_full: TensorValue | None,
     ) -> Accepted:
         """Verifies the proposals, then corrects the rows that had none.
 
@@ -565,6 +850,7 @@ class BlockDriver(
             min_top_p=min_top_p,
             in_thinking_phase=in_thinking_phase,
             token_bitmasks=token_bitmasks,
+            draft_probs_full=draft_probs_full,
         )
 
         num_steps_u32 = _shape_to_scalar(

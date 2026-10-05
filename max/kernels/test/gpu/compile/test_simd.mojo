@@ -165,7 +165,7 @@ def main() raises:
 
     test_cast()
 
-    comptime device = GPUInfo.current_accelerator()
+    comptime device = GPUInfo.default_accelerator()
 
     comptime if _is_sm10x_gpu(device):
         test_add[.float32, "sm_100"]()

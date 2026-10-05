@@ -68,6 +68,20 @@ class NemotronHQuantScheme:
         """Returns the format ``module`` is stored in."""
         return self.quantized.get(module, ModuleFormat.BF16)
 
+    def has_nvfp4_routed_experts(self, mixer: str, num_experts: int) -> bool:
+        """Returns whether every routed expert projection of a mixer is NVFP4.
+
+        Args:
+            mixer: The mixer's checkpoint path, ``backbone.layers.1.mixer``.
+            num_experts: The number of routed experts.
+        """
+        return all(
+            self.format_of(f"{mixer}.experts.{e}.{proj}")
+            is ModuleFormat.NVFP4_WEIGHT_ONLY
+            for e in range(num_experts)
+            for proj in ("up_proj", "down_proj")
+        )
+
     def check_weights(self, weight_names: Collection[str]) -> None:
         """Checks the checkpoint's tensors against the declared formats.
 

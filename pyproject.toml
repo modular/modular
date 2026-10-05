@@ -36,6 +36,7 @@ extend-exclude = [
   ".git",
   # Machine-authored agent state (skills, agent scripts). Already excluded from
   # rumdl and typos; these helper scripts are not shipped product code.
+  ".agents",
   ".claude",
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",

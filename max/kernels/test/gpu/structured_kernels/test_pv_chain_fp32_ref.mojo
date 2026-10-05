@@ -185,7 +185,7 @@ def kernel_pv_chain[
 
     # ---- V SMEM allocation + cooperative fill from gmem image -------------
     var v_smem = tt_stack_allocation[T, address_space=.SHARED](smem_layout_v)
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     comptime _smem_total = _V_SLOT_ROWS * _V_SUB_COLS
     var i = tid
     while i < _smem_total:

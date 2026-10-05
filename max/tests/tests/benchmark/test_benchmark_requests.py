@@ -26,6 +26,8 @@ from max.benchmark.benchmark_serving import validate_task_and_endpoint
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatMessage,
+    ImageContentBlock,
+    ImageURLDetail,
     OpenAIImage,
     PixelGenerationImageOptions,
     TextContentBlock,
@@ -55,6 +57,7 @@ from max.benchmark.benchmark_shared.request import (
     async_request_lora_unload,
     get_request_driver_class,
     mark_cancelled_if_past_deadline,
+    tag_lora_route,
     tag_response_format_outcome,
 )
 from pytest_mock import MockerFixture
@@ -856,6 +859,84 @@ class TestRequestDriver:
         assert result.success is True
         _, post_kwargs = mock_aiohttp_session.post.call_args
         assert "tools" not in post_kwargs["json"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("prompt", "images", "expected"),
+        [
+            pytest.param("hi", [], False, id="text-only"),
+            pytest.param(
+                "hi",
+                [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/jpeg;base64,AAA"},
+                    }
+                ],
+                True,
+                id="attached",
+            ),
+            pytest.param(
+                [
+                    ChatMessage(
+                        role="user",
+                        content=[
+                            TextContentBlock(text="what is this?"),
+                            ImageContentBlock(
+                                image_url=ImageURLDetail(
+                                    url="data:image/jpeg;base64,AAA"
+                                )
+                            ),
+                        ],
+                    ),
+                    ChatMessage(role="assistant", content="a cat"),
+                    ChatMessage(
+                        role="user", content=[TextContentBlock(text="and?")]
+                    ),
+                ],
+                [],
+                True,
+                id="resent-with-history",
+            ),
+        ],
+    )
+    async def test_openai_chat_completions_records_whether_the_payload_carries_an_image(
+        self,
+        mock_aiohttp_session: Any,
+        mock_openai_env: None,
+        mocker: MockerFixture,
+        prompt: str | list[ChatMessage],
+        images: list[OpenAIImage],
+        expected: bool,
+    ) -> None:
+        """A turn that only resends an earlier image still carries one."""
+        request_input = RequestFuncInput(
+            model="test-model",
+            session_id=None,
+            sampling=SamplingConfig(),
+            prompt=prompt,
+            images=images,
+            api_url="http://localhost:8000/v1/chat/completions",
+            prompt_len=1,
+            max_tokens=8,
+            ignore_eos=False,
+        )
+
+        async def async_iter() -> AsyncIterator[bytes]:
+            yield b'data: {"choices": [{"delta": {"content": "x"}}]}\n\n'
+            yield b"data: [DONE]\n\n"
+
+        mock_response = mocker.AsyncMock()
+        mock_response.status = 200
+        mock_response.content = async_iter()
+        mock_aiohttp_session.setup_post_response(mock_response)
+
+        result = await OpenAIChatCompletionsRequestDriver().request(
+            request_input
+        )
+
+        assert result.success is True
+        assert result.carries_image is expected
 
     @pytest.mark.asyncio
     async def test_openai_completions_request_driver_no_content(
@@ -1666,6 +1747,17 @@ _PERSON_SCHEMA = {
         },
     },
 }
+
+
+def test_tag_lora_route_copies_the_adapter() -> None:
+    routed = _chat_input(None)
+    routed.lora_id = "adapter-a"
+    output = RequestFuncOutput()
+    tag_lora_route(output, routed)
+    assert output.lora_id == "adapter-a"
+
+    tag_lora_route(output, _chat_input(None))
+    assert output.lora_id is None
 
 
 @pytest.mark.parametrize(

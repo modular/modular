@@ -242,7 +242,7 @@ WriteableBuffer::getFile(const std::filesystem::path &filepath, size_t size,
     // resize_file_before_mapping_readwrite function.
 #ifndef _WIN32
     if (auto err =
-            llvm::sys::fs::resize_file_before_mapping_readwrite(fd, size))
+            llvm::sys::fs::resize_file_before_mapping_readwrite(fd.get(), size))
       return Error(err.message());
 #endif // _WIN32
   }

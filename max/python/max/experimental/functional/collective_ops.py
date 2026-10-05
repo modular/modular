@@ -36,6 +36,7 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
     ShardingError,
+    Unknown,
 )
 from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
@@ -449,6 +450,15 @@ def transfer_to(
         target = target.to_device()
     if isinstance(target, Device):
         target = DeviceMapping(DeviceMesh.single(target), (Replicated(),))
+    if t.mapping != target and any(
+        isinstance(p, Unknown) for p in (*t.placements, *target.placements)
+    ):
+        raise ShardingError(
+            f"transfer_to cannot move {t.mapping} to {target}: Unknown shards "
+            "have no global value to preserve. Use Tensor.rebind_mapping to "
+            "claim a placement, or a collective such as allreduce_sum to "
+            "combine them."
+        )
 
     if t.real and not t.is_distributed and target.mesh.num_devices == 1:
         mesh_device = target.mesh.devices[0]

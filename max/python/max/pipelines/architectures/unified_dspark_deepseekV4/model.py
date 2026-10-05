@@ -112,6 +112,7 @@ class UnifiedDSparkDeepseekV4Model(
                 max_k=inputs.max_k,
                 top_p=inputs.top_p,
                 min_top_p=inputs.min_top_p,
+                draft_probs_full=inputs.draft_probs_full,
                 signal_buffers=inputs.signal_buffers,
                 pinned_bitmask=inputs.pinned_bitmask,
                 wait_payload=inputs.wait_payload,

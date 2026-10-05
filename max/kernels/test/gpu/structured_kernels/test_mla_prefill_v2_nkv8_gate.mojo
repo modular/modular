@@ -426,25 +426,16 @@ def test_mla_vs_fp32_ref[
     # ---- TileTensor views for the launch ------------------------------
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[D_QK])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[D_QK]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[D_NOPE])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[D_NOPE]),
     )
     var k_tt = TileTensor(
         dev_k_latent,
         row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[CACHE_DEPTH],
-            )
+            Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[CACHE_DEPTH]
         ),
     )
     var k_nope_op = LayoutTensorMHAOperand(k_tt)
@@ -452,12 +443,7 @@ def test_mla_vs_fp32_ref[
     var v_tt = TileTensor(
         dev_k_latent,
         row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[CACHE_DEPTH],
-            )
+            Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[CACHE_DEPTH]
         ),
     )
     var v_op = LayoutTensorMHAOperand(v_tt)

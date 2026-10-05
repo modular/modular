@@ -49,6 +49,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncOutput,
     mark_cancelled_if_past_deadline,
     progressbar_request_driver,
+    tag_lora_route,
     tag_response_format_outcome,
 )
 from max.benchmark.benchmark_shared.utils import (
@@ -91,6 +92,8 @@ async def chat_session_driver(
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
+    lora_id: str | None = None,
+    disable_ignore_eos: bool = False,
 ) -> list[RequestFuncOutput]:
     request_func_input = RequestFuncInput(
         model=model_id,
@@ -105,6 +108,7 @@ async def chat_session_driver(
         prompt_len=0,
         max_tokens=0,
         ignore_eos=True,
+        lora_id=lora_id,
     )
     content_idx = 0  # Assume user initiates the conversation
 
@@ -197,7 +201,9 @@ async def chat_session_driver(
         # mostly unconstrained. A schema-shaped response ends when the schema is
         # satisfied anyway, so its length is the schema's to decide rather than
         # the workload's output-length distribution. Ref DISTINF-499.
-        request_func_input.ignore_eos = turn_response_format is None
+        request_func_input.ignore_eos = (
+            turn_response_format is None and not disable_ignore_eos
+        )
         request_func_input.tools = messages[content_idx].tools
 
         if not applied_initial_sleep:
@@ -253,6 +259,7 @@ async def chat_session_driver(
             response.session_id = str(chat_session.id)
             response.turn_index = len(session_outputs)
             tag_response_format_outcome(response, request_func_input)
+            tag_lora_route(response, request_func_input)
             session_outputs.append(response)
 
         if not response.success:
@@ -432,6 +439,7 @@ async def run_multiturn_benchmark(
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
+    disable_ignore_eos: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run multi-turn chat benchmark scenario.
 
@@ -473,6 +481,8 @@ async def run_multiturn_benchmark(
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
+                lora_id=lora_id,
+                disable_ignore_eos=disable_ignore_eos,
             )
         session_id = (
             str(chat_session.id)
@@ -601,6 +611,7 @@ async def run_kv_cache_stress_benchmark(
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
     use_session_id_as_cache_salt: bool = False,
+    disable_ignore_eos: bool = False,
 ) -> dict[str, list[RequestFuncOutput]]:
     """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
 
@@ -715,6 +726,8 @@ async def run_kv_cache_stress_benchmark(
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
+                lora_id=lora_id,
+                disable_ignore_eos=disable_ignore_eos,
             )
             session_id = (
                 str(chat_session.id)

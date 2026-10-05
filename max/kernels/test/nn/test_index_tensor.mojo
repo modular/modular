@@ -466,21 +466,21 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
     @inline(.always)
     def input_tensor_fn[
         dtype: DType, width: Int
-    ](idx: IndexList[input_rank]) {var input_dyn} -> SIMD[dtype, width]:
+    ](idx: Coord) {var input_dyn} -> SIMD[dtype, width]:
+        comptime assert idx.rank == input_rank
         return rebind[SIMD[dtype, width]](
-            input_dyn.load[width=width, alignment=1](Coord(idx))
+            input_dyn.load[width=width, alignment=1](idx)
         )
 
     @inline(.always)
     def indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) {
-        var _index_a_dyn, var _index_b_dyn
-    } -> Int:
+    ](coordinates: Coord) {var _index_a_dyn, var _index_b_dyn} -> Int:
+        comptime assert coordinates.rank == index_rank
         comptime if indices_index == 0:
-            return Int(_index_a_dyn.load[width=1](Coord(coordinates)))
+            return Int(_index_a_dyn.load[width=1](coordinates))
         else:
-            return Int(_index_b_dyn.load[width=1](Coord(coordinates)))
+            return Int(_index_b_dyn.load[width=1](coordinates))
 
     # Build input strides IndexList manually from layout
     var in_strides = IndexList[input_rank](
@@ -492,6 +492,7 @@ def test_advanced_indexing_getitem(ctx: DeviceContext) raises:
 
     advanced_indexing_getitem[
         input_rank=input_rank,
+        index_rank=index_rank,
         start_axis=start_axis,
         num_index_tensors=num_index_tensors,
         target="cpu",
@@ -611,21 +612,21 @@ def test_advanced_indexing_setitem_inplace(ctx: DeviceContext) raises:
     @inline(.always)
     def updates_tensor_fn[
         dtype: DType, width: Int
-    ](idx: IndexList[updates_rank]) {var updates_dyn} -> SIMD[dtype, width]:
+    ](idx: Coord) {var updates_dyn} -> SIMD[dtype, width]:
+        comptime assert idx.rank == updates_rank
         return rebind[SIMD[dtype, width]](
-            updates_dyn.load[width=width, alignment=1](Coord(idx))
+            updates_dyn.load[width=width, alignment=1](idx)
         )
 
     @inline(.always)
     def indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) {
-        var _index_a_dyn, var _index_b_dyn
-    } -> Int:
+    ](coordinates: Coord) {var _index_a_dyn, var _index_b_dyn} -> Int:
+        comptime assert coordinates.rank == index_rank
         comptime if indices_index == 0:
-            return Int(_index_a_dyn.load[width=1](Coord(coordinates)))
+            return Int(_index_a_dyn.load[width=1](coordinates))
         else:
-            return Int(_index_b_dyn.load[width=1](Coord(coordinates)))
+            return Int(_index_b_dyn.load[width=1](coordinates))
 
     # Build index shape and updates strides manually
     var idx_shape = IndexList[index_rank](

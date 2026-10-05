@@ -39,13 +39,10 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
-
-bool LIT::useParametricClosureTrait() { return true; }
 
 TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
                                       SMLoc loc, SharedState &shared) {
@@ -154,7 +151,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     TypedAttr thisOrigin;
     bool isError = false;
     emitter.emitExpressionWithoutEvaluatingIt(
-        expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+        expr, EC_Origin,
+        [&](CValue result, IREmitter &emitter, Block &exprBlock) {
           // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
             if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
@@ -170,7 +168,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
           }
           // Otherwise it must be a !lit.origin and Origin struct.
           thisOrigin = emitter.extractOriginOf(expr, result);
-          isError = !thisOrigin;
+          isError = !thisOrigin || failed(emitter.checkRootOriginsOutliveBlock(
+                                       thisOrigin, exprBlock, expr));
         });
 
     if (isError)
@@ -1128,17 +1127,6 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     ASTType type;
     if (arg.typeExpr) {
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
-
-      auto fnType = dyn_cast<FnTypeGeneratorType>(type);
-      auto *fnTypeExpr = dyn_cast<FunctionTypeNode>(arg.typeExpr);
-      if (fnType && fnTypeExpr && !fnTypeExpr->isThin &&
-          !fnTypeExpr->effects.isCapturing()) {
-        ASTDecl *closureTrait = result.shared.getOrCreateClosureTrait(
-            declScope.getLoc(), *declScope.getNearestDeclOfType<FileModuleOp>(),
-            fnType);
-        type = TraitType::get(getFullyResolvedSymbolRef(
-            cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
-      }
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;

@@ -123,7 +123,6 @@ def test_epilogue[
 
 
 @inline(.always)
-@__parameter
 def add_two[
     dtype: DType,
     width: SIMDLength,
@@ -210,6 +209,28 @@ def bench_grouped_matmul[
         eid_str,
         sep="",
     )
+    if (
+        len(num_tokens_by_expert) != num_active_experts
+        or len(expert_ids_input) != num_active_experts
+    ):
+        raise Error(
+            String(
+                "num_tokens_by_expert and expert_ids need ",
+                num_active_experts,
+                " entries each (num_active_experts)",
+            )
+        )
+    for expert_id in expert_ids_input:
+        if expert_id < 0 or expert_id >= num_experts:
+            raise Error(
+                String(
+                    "expert id ",
+                    expert_id,
+                    " is outside [0, ",
+                    num_experts,
+                    ")",
+                )
+            )
 
     def _ri(v: Int) -> Int64:
         return Int64(v)
@@ -270,23 +291,23 @@ def bench_grouped_matmul[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(_ri(total_num_tokens), Idx[a_packed_K])),
+        row_major(_ri(total_num_tokens), Idx[a_packed_K]),
     ).as_unsafe_any_origin()
     var b_dev = TileTensor(
         b_dev_buffer,
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[b_packed_K])),
+        row_major(Idx[num_experts], Idx[N], Idx[b_packed_K]),
     ).as_unsafe_any_origin()
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(_ri(total_num_tokens), Idx[N])),
+        row_major(_ri(total_num_tokens), Idx[N]),
     ).as_unsafe_any_origin()
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(Coord(_ri(num_active_experts + 1))),
+        row_major(_ri(num_active_experts + 1)),
     ).as_unsafe_any_origin()
     var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(Coord(_ri(num_active_experts))),
+        row_major(_ri(num_active_experts)),
     ).as_unsafe_any_origin()
 
     # Initialize data on the device
@@ -322,7 +343,7 @@ def bench_grouped_matmul[
         ](num_active_experts)
         var a_scale_offsets_dev = TileTensor(
             a_scale_offsets_dev_buffer,
-            row_major(Coord(_ri(num_active_experts))),
+            row_major(_ri(num_active_experts)),
         ).as_unsafe_any_origin()
         ctx.enqueue_copy(a_scale_offsets_dev_buffer, a_scale_offsets_ptr)
 
@@ -372,26 +393,22 @@ def bench_grouped_matmul[
         var a_scales_tt = TileTensor(
             a_scales_dev_buffer,
             row_major(
-                Coord(
-                    Int64(a_scale_dim0),
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Int64(a_scale_dim0),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         ).as_unsafe_any_origin()
         var b_scales_tt = TileTensor(
             b_scales_dev_buffer,
             row_major(
-                Coord(
-                    Idx[num_experts],
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         ).as_unsafe_any_origin()
 
@@ -406,7 +423,7 @@ def bench_grouped_matmul[
         ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
         var expert_scales_tt = TileTensor(
             expert_scales_dev_buffer,
-            row_major(Coord(Int64(num_experts))),
+            row_major(Int64(num_experts)),
         ).as_unsafe_any_origin()
 
         # Per-row input scales, only read when `row_scales` is set.
@@ -543,7 +560,7 @@ def bench_grouped_matmul[
         ](num_active_experts)
         var a_scale_offsets_dev = TileTensor(
             a_scale_offsets_dev_buffer,
-            row_major(Coord(_ri(num_active_experts))),
+            row_major(_ri(num_active_experts)),
         ).as_unsafe_any_origin()
         ctx.enqueue_copy(a_scale_offsets_dev_buffer, a_scale_offsets_ptr)
 
@@ -590,26 +607,22 @@ def bench_grouped_matmul[
         var a_scales_tt = TileTensor(
             a_scales_dev_buffer,
             row_major(
-                Coord(
-                    Int64(a_scale_dim0),
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Int64(a_scale_dim0),
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         ).as_unsafe_any_origin()
         var b_scales_tt = TileTensor(
             b_scales_dev_buffer,
             row_major(
-                Coord(
-                    Idx[num_experts],
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         ).as_unsafe_any_origin()
 
@@ -624,7 +637,7 @@ def bench_grouped_matmul[
         ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
         var expert_scales_tt = TileTensor(
             expert_scales_dev_buffer,
-            row_major(Coord(Int64(num_experts))),
+            row_major(Int64(num_experts)),
         ).as_unsafe_any_origin()
 
         @inline(.always)
@@ -725,16 +738,14 @@ def bench_grouped_matmul[
 
         var a_scales_dev = TileTensor(
             a_scales_dev_buffer,
-            row_major(Coord(Idx[K // BLOCK_SCALE_K], _ri(total_num_tokens))),
+            row_major(Idx[K // BLOCK_SCALE_K], _ri(total_num_tokens)),
         ).as_unsafe_any_origin()
         var b_scales_dev = TileTensor(
             b_scales_dev_buffer,
             row_major(
-                Coord(
-                    Idx[num_experts],
-                    Idx[N // BLOCK_SCALE_K],
-                    Idx[K // BLOCK_SCALE_K],
-                )
+                Idx[num_experts],
+                Idx[N // BLOCK_SCALE_K],
+                Idx[K // BLOCK_SCALE_K],
             ),
         ).as_unsafe_any_origin()
 

@@ -52,6 +52,7 @@ dependencies = [
   "numpy>=2.3.0; python_version >= '3.11'",
   "nvitop",
   "opentelemetry-api",
+  "opentelemetry-exporter-otlp-proto-grpc>=1.28.2",
   "opentelemetry-exporter-otlp-proto-http>=1.28.2",
   "opentelemetry-exporter-prometheus",
   "opentelemetry-proto",

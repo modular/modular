@@ -182,7 +182,7 @@ def dequant_mxfp6[
         "num_cols must be a multiple of ELEMENTS_PER_THREAD (32)",
     )
     comptime num_max_threads = 512
-    comptime _gpu = GPUInfo.current_accelerator()
+    comptime _gpu = GPUInfo.default_accelerator()
     comptime num_SMs = _gpu.sm_count
 
     var num_col_threads = ceildiv(num_cols, ELEMENTS_PER_THREAD)

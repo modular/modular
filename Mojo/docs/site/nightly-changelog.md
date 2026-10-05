@@ -12,47 +12,88 @@ This version is still a work in progress.
 
 - Added experimental `__match` / `case` pattern matching for early testing,
   including `comptime __match` for compile-time subjects. Patterns include
-  literals, or-patterns (`|`), guards (`if`), `as` / bare name bindings,
-  tuples, structs, and `EnumLike` types such as `Optional`. Dynamic match also
-  supports `var` / `ref` bindings; comptime match binds names as parameter
-  values and rejects `var` / `ref`. Nested patterns can dig through several
-  layers in one case — for example matching an optional point at runtime, or
-  specializing a kernel path on a compile-time tile size:
+  literals, contextual initializer lists such as `{}` and `{1, offset=2}`,
+  or-patterns (`|`), guards (`if`), `as` / bare name bindings, tuples, structs,
+  and `EnumLike` types such as `Optional`. An initializer-list pattern
+  constructs a value of the subject type and compares it to the subject.
+  Dynamic match also supports `var` / `ref` bindings; comptime match binds
+  names as parameter values and rejects `var` / `ref`. Nested patterns can dig
+  through several layers in one case—for example, matching an optional point
+  at runtime or specializing a kernel path on a compile-time tile size:
 
   ```mojo
   def describe(p: Optional[Point]) -> String:
       __match p:
-      case .Some(Point(x=0, y=0)):
-          return "origin"
-      case .Some(Point(x=var x, y=0)) | .Some(Point(x=0, y=var x)):
-          return String("axis:", x)
-      case .Some(Point(x=x, y=y)) if x == y:
-          return "diagonal"
-      case .None:
-          return "missing"
-      case _:
-          return "unreachable"
+          case .Some(Point(x=0, y=0)):
+              return "origin"
+          case .Some(Point(x=var x, y=0)) | .Some(Point(x=0, y=var x)):
+              return String("axis:", x)
+          case .Some(Point(x=x, y=y)) if x == y:
+              return "diagonal"
+          case .None:
+              return "missing"
+          case _:
+              return "unreachable"
 
   # comptime match is guaranteed evaluated at compile time.  The subject must be
   # a parameter and the bound names are also parameters. var and ref specifiers
   # are not allowed in comptime match, because they are not meaningful.
   def matmul_tile[m: Int, n: Int, k: Int](...):
       comptime __match (m, n, k):
-      case (16, 16, 16):
-          # Hand-tuned 16³ path.
-          ...
-      case (m_tile, n_tile, k_tile) if m_tile * n_tile <= 256:
-          # Small-tile path; bound sizes stay available as parameters.
-          ...
-      case _:
-          # Generic fallback.
-          ...
+          case (16, 16, 16):
+              # Hand-tuned 16³ path.
+              ...
+          case (m_tile, n_tile, k_tile) if m_tile * n_tile <= 256:
+              # Small-tile path; bound sizes stay available as parameters.
+              ...
+          case _:
+              # Generic fallback.
+              ...
   ```
 
   Both forms warn on non-exhaustive `EnumLike` subjects (including `Bool` and
   tuples/structs of such types) and on unreachable or duplicate cases. Open
   subjects such as `Int` and `String` diagnose duplicate literal cases but are
   not required to be exhaustive.
+
+  `EnumLike` types can now set `_enum_is_exhaustive` to `False` when their
+  known cases do not cover every possible value. This is useful for extensible
+  domains such as error codes, where an operating system or library can add
+  values that the type does not know about:
+
+  ```mojo
+  struct ErrorCode(EnumLike):
+      comptime FileNotFound = Self(2)
+      comptime PermissionDenied = Self(13)
+      comptime OutOfMemory = Self(12)
+      comptime TimedOut = Self(110)
+      comptime Unavailable = Self(503)
+
+      comptime _enum_is_exhaustive = False
+
+      # EnumLike metadata and methods omitted.
+      ...
+
+  def describe(error: ErrorCode) -> String:
+      __match error:
+          case .FileNotFound:
+              return "file not found"
+          case .PermissionDenied:
+              return "permission denied"
+          case .OutOfMemory:
+              return "out of memory"
+          case .TimedOut:
+              return "operation timed out"
+          case .Unavailable:
+              return "service unavailable"
+          case _:
+              return "unknown error"
+  ```
+
+  Open enums preserve separate compilation between libraries and their
+  clients. A library can add a known case without breaking previously compiled
+  client matches when they compile against a new version of the package that
+  adds a case they didn't know about.
 
 - The message on a `where` clause can now be written
   `where <condition> else "<message>"`, as the preferred alternative to the
@@ -88,9 +129,57 @@ This version is still a work in progress.
 
 ## Language changes
 
+- The `async` and `await` keywords are renamed to `__async` and `__await` to
+  mark async support as unstable. Write `__async def` and `__await expr`. The
+  unprefixed spellings are no longer keywords, so `async` and `await` are now
+  ordinary identifiers, and existing `async def` code no longer parses.
+
 ## Library stabilizations
 
 ## Library changes
+
+- The enum-behaving structs across the standard library, MAX kernels, and
+  MAX runtime now conform to `EnumLike`, so they support enum-style pattern
+  matching (`__match` with `case .NAME`) and reflective case metadata:
+  `Scope`, `FastMathFlag`, and `TestResult` in the standard library;
+  `AllReduceAlgorithm`, `RasterOrder`, `MatmulSchedule`, `ReductionMode`,
+  `GEMMKind`, `ThreadScope`, `FP6Format`, `MXFormat`, `Backend`,
+  `AMDIGLPStrategy`, `MHASchedule`, `ScatterOobIndexStrategy`,
+  `SchedulingStrategy`, `Phase`, `PhaseAction`, and `BlockPhase` in the
+  kernels; and `TraceCategory`, `TraceLevel`, `LogLevel`, `CacheEviction`,
+  `Fill`, and `Consistency` in the runtime and driver APIs.
+  `FlashAttentionAlgorithm` conforms non-exhaustively: its `-1`
+  "unspecified" value selects no named case, matching its runtime
+  resolution semantics.
+
+  ```mojo
+  __match AllReduceAlgorithm.ONE_STAGE:
+      case .ONE_STAGE:
+          launch_1stage()
+      case .TWO_STAGE | .LAMPORT:
+          launch_2stage()
+  ```
+
+- `Tuple` gained `first_of[T]()`, which returns a reference to the first
+  element of type `T`. The lookup is resolved at compile time, and it is a
+  compile-time error if the tuple has no element of that type:
+
+  ```mojo
+  var t = (1, String("two"), 3.0)
+  t.first_of[String]() += "!"
+  ```
+
+- `SIMD.from_bytes()` and `SIMD.as_bytes()` now take an `endian` parameter of
+  the new `Endian` type (`Endian.big` or `Endian.little`) instead of the
+  `big_endian` `Bool`:
+
+  ```mojo
+  var port = UInt16.from_bytes[endian=.big](bytes)  # was: big_endian=True
+  ```
+
+  The default is still the target's byte order, which `Endian.native()`
+  returns. `is_big_endian()` and `is_little_endian()` are deprecated; compare
+  `Endian.native()` with `.big` or `.little` instead.
 
 - Hashing a byte sequence is now spelled `hash_bytes()`, which takes an
   `ImmSpan[Byte]`. The pointer-and-length `hash()` overload is deprecated:
@@ -129,8 +218,18 @@ This version is still a work in progress.
   - `CompilationTarget.current()` — either the current host target, or
     accelerator target in an offload compilation.
 
-  - `CompilationTarget.current_accelerator()` — the default accelerator target,
+  - `CompilationTarget.default_accelerator()` — the default accelerator target,
     either determined automatically or as specified by `--target-accelerator`.
+
+  Additionally, `CompilationTarget` now provides predicate methods for checking
+  the vendor identity of a given target. (The preexisting free functions with
+  the same name are now implemented in terms of these new methods.) These
+  include:
+
+  - `.is_nvidia_gpu()` for checking whether a compilation target is an NVIDIA
+    GPU.
+  - `.is_amd_gpu()` and `.is_apple_gpu()` provide the equivalent checks for AMD
+    and Apple GPUs respectively.
 
 - Added new `TargetAccelerator` type for representing accelerator metadata at
   compile time, combining `GPUInfo` and `CompilationTarget` values.
@@ -201,7 +300,25 @@ This version is still a work in progress.
   t^.consume_elements(handler)  # was: t^.consume_elements[handler]()
   ```
 
+- `SIMD.reduce()` now takes a closure reduction function as a runtime
+  argument instead of a compile-time `capturing` parameter. The `thin`
+  function-pointer form is unchanged:
+
+  ```mojo
+  def add[width: SIMDLength](
+      lhs: SIMD[DType.int32, width], rhs: SIMD[DType.int32, width]
+  ) -> SIMD[DType.int32, width]:
+      return lhs + rhs
+
+  v.reduce(add)          # was: v.reduce[add]()
+  v.reduce[2](add)       # was: v.reduce[add, 2]()
+  ```
+
 ## Tooling changes
+
+- The `mojo` compiler now uses jemalloc as its allocator on Linux. Compiling
+  large GPU kernel files is roughly 10 to 13 percent faster, because the
+  compiler spends far less system time in glibc's arena management.
 
 ## Removed
 
@@ -216,3 +333,9 @@ This version is still a work in progress.
 
 - Splitting on an empty separator no longer puts the trailing empty slice out
   of bounds.
+
+- Struct layouts that recurse only through a parametric indirection now
+  compile. A field such as `Optional[List[Pointer[Node, origin]]]` or
+  `Tuple[Pointer[Node, origin], Int]` inside `struct Node` was spuriously
+  rejected with `struct has recursive reference to itself`, despite the
+  recursion being behind a pointer.

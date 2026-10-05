@@ -158,6 +158,11 @@ public:
   /// `validateEmissionKind` if the target does not accept `kind`.
   ErrorOr<EmitAs> emitAsForKind(llvm::StringRef kind) const;
 
+  /// The file extension an artifact of `kind` carries. Non-virtual, so a
+  /// file's name cannot disagree with its content across the places that
+  /// name one.
+  llvm::StringRef extensionFor(EmitAs kind) const;
+
   /// One accelerator architecture accepted by `--target-accelerator`.
   struct AcceleratorArch {
     llvm::StringRef arch;

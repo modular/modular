@@ -481,7 +481,6 @@ class DeepseekV3DecoderLayer(Module):
                 * config.moe_intermediate_size,
                 dtype=config.dtype,
                 ep_size=ep_size,
-                apply_router_weight_first=False,
                 ep_batch_manager=self.ep_manager,
                 quant_config=config.quant_config,
                 shared_experts_dtype=(

@@ -293,7 +293,8 @@ def batch_inplace_copy(dsts: Sequence[Buffer], srcs: Sequence[Buffer]) -> None:
     """Copies ``srcs[i]`` into ``dsts[i]`` in as few driver submissions as possible.
 
     Sources may be host, pinned, same-device or peer memory in any mix.
-    Identity pairs (``dst is src``) and zero-byte pairs are skipped.
+    Identity pairs (``dst is src``), zero-byte pairs and repeats of an earlier
+    pair's destination, source and size are skipped.
 
     One submission is one stream, and a stream only orders the writes it
     performs, so destinations are grouped by device and each device's group is
@@ -311,7 +312,18 @@ def batch_inplace_copy(dsts: Sequence[Buffer], srcs: Sequence[Buffer]) -> None:
             "batch_inplace_copy: dsts and srcs must have the same length"
             f" (got {len(dsts)} dsts, {len(srcs)} srcs)"
         )
-    _batch_inplace_copy(dsts, srcs)
+    # Dedupe identical copy operations.
+    seen: set[tuple[int, int, int]] = set()
+    unique_dsts: list[Buffer] = []
+    unique_srcs: list[Buffer] = []
+    for dst, src in zip(dsts, srcs, strict=True):
+        nbytes = dst.num_elements * dst.dtype.size_in_bytes
+        key = (dst._data_ptr(), src._data_ptr(), nbytes)
+        if key not in seen:
+            seen.add(key)
+            unique_dsts.append(dst)
+            unique_srcs.append(src)
+    _batch_inplace_copy(unique_dsts, unique_srcs)
 
 
 def copy_pinned_to_destinations(

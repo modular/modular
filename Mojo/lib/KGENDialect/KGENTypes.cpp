@@ -516,9 +516,11 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
   auto cstArgTypes = dyn_cast<ParamListAttr>(argTypes);
   auto cstMetadata = dyn_cast<FnMetadataAttr>(metadata);
 
-  // Two optional pogs.
-  auto cstParamListAttrs = dyn_cast_or_null<PogListAttr>(paramListAttrs);
-  auto cstArgListAttrs = dyn_cast_or_null<PogListAttr>(argListAttrs);
+  // Two optional pogs; unquote them before we assemble a FnTypeGeneratorType.
+  auto cstParamListAttrs =
+      dyn_cast_or_null<PogListAttr>(QuoteAttr::unquote(paramListAttrs));
+  auto cstArgListAttrs =
+      dyn_cast_or_null<PogListAttr>(QuoteAttr::unquote(argListAttrs));
 
   // If any of the components are not constants, skip.
   if (!cstParamDecls || !cstArgTypes || !cstMetadata ||
@@ -529,27 +531,24 @@ Type FuncGeneratorTypeBuilderType::get(MLIRContext *ctx, TypedAttr paramDecls,
   assert(llvm::all_of(cstParamDecls.getValues(), llvm::IsaPred<QuoteAttr>) &&
          "malformed fn gen builder param decls");
 
-  // Unquote before we assemble a FnTypeGeneratorType.
-  auto unquote = [](TypedAttr value) -> TypedAttr {
-    return cast<QuoteAttr>(value).getQuotedParam();
-  };
-
   SmallVector<Type> inputParamTypes = llvm::map_to_vector(
-      cstParamDecls.getValues(),
-      [&](TypedAttr attr) -> Type { return ParamType::get(unquote(attr)); });
+      cstParamDecls.getValues(), [&](TypedAttr attr) -> Type {
+        return ParamType::get(QuoteAttr::unquote(attr));
+      });
 
   SmallVector<Type> inputArgTypes =
       llvm::map_to_vector(cstArgTypes.getValues(), [&](TypedAttr attr) -> Type {
-        return ParamType::get(unquote(attr));
+        return ParamType::get(QuoteAttr::unquote(attr));
       });
 
   // Fold to the generator type this builder describes.
   return KGEN::FuncTypeGeneratorType::get(
       inputParamTypes,
-      FuncType::get(FunctionType::get(ctx, inputArgTypes,
-                                      ParamType::get(unquote(resultType))),
-                    cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
-                    cstMetadata.getMetadata(), cstArgListAttrs),
+      FuncType::get(
+          FunctionType::get(ctx, inputArgTypes,
+                            ParamType::get(QuoteAttr::unquote(resultType))),
+          cstMetadata.getArgConventions(), cstMetadata.getFnEffects(),
+          cstMetadata.getMetadata(), cstArgListAttrs),
       cstParamListAttrs);
 }
 

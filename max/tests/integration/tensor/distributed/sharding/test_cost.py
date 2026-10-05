@@ -26,7 +26,9 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    ShardingError,
     TensorLayout,
+    Unknown,
     build_action_set,
     force_replicated_action_set,
 )
@@ -34,6 +36,7 @@ from max.experimental.sharding.action import Action
 from max.experimental.sharding.cost import (
     P,
     R,
+    feasible_rows_at_axis,
     pair_transition_cost,
     tensor_byte_count,
     transition_cost,
@@ -297,3 +300,26 @@ class TestTransitionCost:
         assert math.isclose(on_dp, 1024.0 * _ring_factor(2))
         assert math.isclose(on_tp, 1024.0 * _ring_factor(8))
         assert on_tp > on_dp
+
+
+class TestUnknownOperand:
+    """An Unknown operand skips the rule on its mesh axis."""
+
+    def test_only_the_unknown_row_is_feasible(self) -> None:
+        mesh = mesh_1d(2)
+        unknown = layout(mesh, (8, 8), (Unknown(),))
+        menu = build_action_set([AxisAssignment((R,), R)], layouts=(unknown,))
+        rows = feasible_rows_at_axis(menu, 0, [unknown.placements])
+        assert rows == (AxisAssignment((Unknown(),), Unknown()),)
+
+    def test_partial_meeting_unknown_raises(self) -> None:
+        mesh = mesh_1d(2)
+        unknown = layout(mesh, (8, 8), (Unknown(),))
+        partial = layout(mesh, (8, 8), (Partial(),))
+        menu = build_action_set(
+            [AxisAssignment((R, R), R)], layouts=(unknown, partial)
+        )
+        with pytest.raises(ShardingError, match="Resolve Partial"):
+            feasible_rows_at_axis(
+                menu, 0, [unknown.placements, partial.placements]
+            )

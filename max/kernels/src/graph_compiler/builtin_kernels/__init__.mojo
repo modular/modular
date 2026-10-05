@@ -30,6 +30,5 @@ from .kernels import *
 from .kv_cache import *
 from .mtp import *
 from .linalg import *
-from .mhc import *
 from .quantization import *
 from .reductions import *

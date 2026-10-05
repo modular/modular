@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the DSA indexer's k-pool compression kernel."""
 
-from std.math import exp
+from std.math import ceildiv, exp
 from std.random import rand
 from std.testing import assert_almost_equal, assert_equal, assert_true
 
@@ -21,8 +21,9 @@ from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 
 from nn.attention.gpu.mla_index_kpool import (
     kpool_compress_kernel,
-    kpool_seed_tail_kernel,
     kpool_expand_topk_kernel,
+    kpool_ring_close_kernel,
+    kpool_seed_tail_kernel,
     kpool_tail_update_kernel,
 )
 
@@ -1216,7 +1217,7 @@ def _run_ring[
 ) raises -> Int:
     """Drives the ring `seq_len // next_n` times, collecting the closed pools.
     """
-    comptime max_closed = (next_n + kpool - 1) // kpool
+    comptime max_closed = ceildiv(next_n, kpool)
     var steps = seq_len // next_n
 
     var tail_d = ctx.enqueue_create_buffer[.bfloat16](
@@ -1460,7 +1461,7 @@ def _ring_after[
     The first `n_valid` slots carry real positions; the rest carry -1, which is
     what a padded entry in a speculative batch holds.
     """
-    comptime max_closed = (next_n + kpool - 1) // kpool
+    comptime max_closed = ceildiv(next_n, kpool)
     var ring_elems = 2 * kpool * head_dim
     var ring_d = ctx.enqueue_create_buffer[.bfloat16](ring_elems)
     ctx.enqueue_memset(ring_d, 0)
@@ -1785,6 +1786,260 @@ def test_seed_matches_feeding_the_prefix[
     _ = chunked_d
 
 
+def test_kpool_ring_close[
+    head_dim: Int, kpool: Int
+](seq_lens: List[Int], cache_lens: List[Int], ctx: DeviceContext) raises:
+    """Closing a pending pool must pool the ring's members with the new ones.
+
+    `kpool_compress_kernel` only builds pools out of a call's own tokens, so a
+    cached prefix ending mid-pool leaves that pool's earlier members in the
+    ring and nothing else reads them back. This kernel is the only path that
+    closes such a pool, and the three outcomes it has to separate are decided
+    by `cache_len % kpool` and this call's width:
+
+    * `cache_len % kpool == 0` -- the cache sits on a pool boundary, so there
+      is nothing pending and `closed_pool` must stay -1.
+    * fewer new tokens than the pool still needs -- the pool stays open for a
+      later call, and `closed_pool` must stay -1.
+    * enough new tokens -- the pool closes, pooling `ring_members` members
+      from the ring with `kpool - ring_members` from this call.
+
+    `slot_idx` is deliberately reversed here, so a kernel that indexed the
+    ring by batch row rather than by slot would read another request's
+    members and fail the value comparison.
+
+    Parameters:
+        head_dim: Channels per key.
+        kpool: Tokens per pool.
+
+    Args:
+        seq_lens: New tokens per request in this call.
+        cache_lens: Cached-prefix length per request.
+        ctx: Device context.
+    """
+    var batch = len(seq_lens)
+    var total_tokens = 0
+    for i in range(batch):
+        total_tokens += seq_lens[i]
+
+    var k_dev = ctx.enqueue_create_buffer[.bfloat16](total_tokens * head_dim)
+    var gate_dev = ctx.enqueue_create_buffer[.bfloat16](total_tokens * head_dim)
+    var ape_dev = ctx.enqueue_create_buffer[.float32](kpool * head_dim)
+    var tail_dev = ctx.enqueue_create_buffer[.bfloat16](
+        batch * 2 * kpool * head_dim
+    )
+    var iro_dev = ctx.enqueue_create_buffer[.uint32](batch + 1)
+    var clen_dev = ctx.enqueue_create_buffer[.uint32](batch)
+    var slot_dev = ctx.enqueue_create_buffer[.uint32](batch)
+    var out_dev = ctx.enqueue_create_buffer[.bfloat16](batch * head_dim)
+    var closed_dev = ctx.enqueue_create_buffer[.int32](batch)
+
+    var k_host = ctx.enqueue_create_host_buffer[.bfloat16](
+        total_tokens * head_dim
+    )
+    var gate_host = ctx.enqueue_create_host_buffer[.bfloat16](
+        total_tokens * head_dim
+    )
+    var ape_host = ctx.enqueue_create_host_buffer[.float32](kpool * head_dim)
+    var tail_host = ctx.enqueue_create_host_buffer[.bfloat16](
+        batch * 2 * kpool * head_dim
+    )
+    var iro_host = ctx.enqueue_create_host_buffer[.uint32](batch + 1)
+    var clen_host = ctx.enqueue_create_host_buffer[.uint32](batch)
+    var slot_host = ctx.enqueue_create_host_buffer[.uint32](batch)
+    var out_host = ctx.enqueue_create_host_buffer[.bfloat16](batch * head_dim)
+    var closed_host = ctx.enqueue_create_host_buffer[.int32](batch)
+    ctx.synchronize()
+
+    rand(k_host.unsafe_ptr(), total_tokens * head_dim)
+    rand(gate_host.unsafe_ptr(), total_tokens * head_dim)
+    rand(ape_host.unsafe_ptr(), kpool * head_dim)
+    rand(tail_host.unsafe_ptr(), batch * 2 * kpool * head_dim)
+
+    var offset = 0
+    iro_host[0] = 0
+    for r in range(batch):
+        offset += seq_lens[r]
+        iro_host[r + 1] = UInt32(offset)
+        clen_host[r] = UInt32(cache_lens[r])
+        # Reversed, so reading the ring by row rather than by slot is caught.
+        slot_host[r] = UInt32(batch - 1 - r)
+    # A block that returns early must leave `pooled` untouched, so prefill it
+    # with a value the pooling cannot produce from non-negative inputs.
+    for i in range(batch * head_dim):
+        out_host[i] = Scalar[.bfloat16](-1)
+    for r in range(batch):
+        closed_host[r] = Int32(0)
+
+    ctx.enqueue_copy(k_dev, k_host)
+    ctx.enqueue_copy(gate_dev, gate_host)
+    ctx.enqueue_copy(ape_dev, ape_host)
+    ctx.enqueue_copy(tail_dev, tail_host)
+    ctx.enqueue_copy(iro_dev, iro_host)
+    ctx.enqueue_copy(clen_dev, clen_host)
+    ctx.enqueue_copy(slot_dev, slot_host)
+    ctx.enqueue_copy(out_dev, out_host)
+    ctx.enqueue_copy(closed_dev, closed_host)
+
+    var out_t = TileTensor(out_dev, row_major(batch, head_dim))
+    var closed_t = TileTensor(closed_dev, row_major(batch))
+    var tail_t = TileTensor(tail_dev, row_major(batch, 2, kpool, head_dim))
+    var k_t = TileTensor(k_dev, row_major(total_tokens, head_dim))
+    var gate_t = TileTensor(gate_dev, row_major(total_tokens, head_dim))
+    var ape_t = TileTensor(ape_dev, row_major(kpool, head_dim))
+    var iro_t = TileTensor(iro_dev, row_major(batch + 1))
+    var clen_t = TileTensor(clen_dev, row_major(batch))
+    var slot_t = TileTensor(slot_dev, row_major(batch))
+
+    comptime kern = kpool_ring_close_kernel[
+        .bfloat16,
+        out_t.LayoutType,
+        out_t.origin,
+        closed_t.LayoutType,
+        closed_t.origin,
+        type_of(tail_t.as_imm()).LayoutType,
+        ImmOrigin(tail_t.origin),
+        type_of(k_t.as_imm()).LayoutType,
+        ImmOrigin(k_t.origin),
+        type_of(gate_t.as_imm()).LayoutType,
+        ImmOrigin(gate_t.origin),
+        type_of(ape_t.as_imm()).LayoutType,
+        ImmOrigin(ape_t.origin),
+        type_of(iro_t.as_imm()).LayoutType,
+        ImmOrigin(iro_t.origin),
+        type_of(clen_t.as_imm()).LayoutType,
+        type_of(slot_t.as_imm()).LayoutType,
+        ImmOrigin(slot_t.origin),
+        out_t.Engine,
+        closed_t.Engine,
+        type_of(tail_t.as_imm()).Engine,
+        type_of(k_t.as_imm()).Engine,
+        type_of(gate_t.as_imm()).Engine,
+        type_of(ape_t.as_imm()).Engine,
+        type_of(iro_t.as_imm()).Engine,
+        type_of(clen_t.as_imm()).Engine,
+        type_of(slot_t.as_imm()).Engine,
+        head_dim,
+        kpool,
+    ]
+    ctx.enqueue_function[kern](
+        out_t,
+        closed_t,
+        tail_t.as_imm(),
+        k_t.as_imm(),
+        gate_t.as_imm(),
+        ape_t.as_imm(),
+        iro_t.as_imm(),
+        clen_t.as_imm(),
+        slot_t.as_imm(),
+        Int32(batch),
+        grid_dim=(batch, 1, 1),
+        block_dim=(head_dim, 1, 1),
+    )
+    ctx.synchronize()
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.enqueue_copy(closed_host, closed_dev)
+    ctx.synchronize()
+
+    var row_start = 0
+    var closed_any = False
+    for r in range(batch):
+        var cache_len = cache_lens[r]
+        var ring_members = cache_len % kpool
+        var align = kpool - ring_members
+        var pending = ring_members != 0
+        var wide_enough = seq_lens[r] >= align
+
+        if not pending or not wide_enough:
+            assert_equal(
+                closed_host[r],
+                Int32(-1),
+                String(
+                    "request ",
+                    r,
+                    " has no pool to close (cache_len ",
+                    cache_len,
+                    ", ",
+                    seq_lens[r],
+                    " new tokens) but reported ",
+                    closed_host[r],
+                ),
+            )
+            # An early return must not have touched `pooled`.
+            for c in range(head_dim):
+                assert_equal(
+                    out_host[r * head_dim + c],
+                    Scalar[.bfloat16](-1),
+                    String(
+                        "request ", r, " channel ", c, " was written anyway"
+                    ),
+                )
+            row_start += seq_lens[r]
+            continue
+
+        closed_any = True
+        assert_equal(
+            closed_host[r],
+            Int32(cache_len // kpool),
+            String("request ", r, " closed the wrong pool id"),
+        )
+
+        var slot = batch - 1 - r
+        var ring_base = slot * 2 * kpool * head_dim
+        for c in range(head_dim):
+            var denom = Float64(0)
+            var acc = Float64(0)
+            for m in range(kpool):
+                var logit: Float64
+                var val: Float64
+                if m < ring_members:
+                    logit = Float64(
+                        tail_host[ring_base + (kpool + m) * head_dim + c].cast[
+                            .float32
+                        ]()
+                    ) + Float64(ape_host[m * head_dim + c])
+                    val = Float64(
+                        tail_host[ring_base + m * head_dim + c].cast[.float32]()
+                    )
+                else:
+                    var new_row = row_start + (m - ring_members)
+                    logit = Float64(
+                        gate_host[new_row * head_dim + c].cast[.float32]()
+                    ) + Float64(ape_host[m * head_dim + c])
+                    val = Float64(
+                        k_host[new_row * head_dim + c].cast[.float32]()
+                    )
+                var w = exp(logit)
+                denom += w
+                acc += w * val
+            var want = acc / denom
+            var got = Float64(out_host[r * head_dim + c].cast[.float32]())
+            # The tolerance comes from bf16's 8-bit mantissa.
+            assert_almost_equal(
+                got,
+                want,
+                atol=4e-3,
+                rtol=1e-2,
+                msg=String("request ", r, " channel ", c, " mismatch"),
+            )
+        row_start += seq_lens[r]
+
+    assert_true(
+        closed_any,
+        "no request closed a pool, so this case never reached the pooling",
+    )
+
+    _ = k_dev
+    _ = gate_dev
+    _ = ape_dev
+    _ = tail_dev
+    _ = iro_dev
+    _ = clen_dev
+    _ = slot_dev
+    _ = out_dev
+    _ = closed_dev
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_kpool_one_is_identity[head_dim=128](ctx)
@@ -1868,5 +2123,23 @@ def main() raises:
         test_seed_matches_feeding_the_prefix[
             head_dim=128, kpool=4, prefill_len=6
         ](ctx)
+
+        # The tail-ring close: a cached prefix ending mid-pool leaves members
+        # in the ring that only this kernel reads back.
+        #
+        # Every phase of `cache_len % kpool` in one ragged batch: 0 (nothing
+        # pending), 1, 2 and 3 (pending, and wide enough to close).
+        test_kpool_ring_close[head_dim=128, kpool=4](
+            seq_lens=[4, 3, 2, 1], cache_lens=[8, 9, 10, 11], ctx=ctx
+        )
+        # Widths straddling what each pending pool still needs: request 0 has
+        # exactly enough, request 1 one short, request 2 one spare.
+        test_kpool_ring_close[head_dim=128, kpool=4](
+            seq_lens=[3, 2, 4], cache_lens=[5, 5, 5], ctx=ctx
+        )
+        # A single request, and a long cached prefix so the pool id is large.
+        test_kpool_ring_close[head_dim=128, kpool=4](
+            seq_lens=[2], cache_lens=[8191], ctx=ctx
+        )
 
         print("\nAll tests passed!")

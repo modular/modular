@@ -45,13 +45,18 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    "test_gated_delta_spec_ring.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 _GPU_MEMORY = {
-    # These three each hold a ~4 GiB state pool, to reach a row past a
+    # These four each hold a ~4 GiB state or ring pool, to reach a row past a
     # 32-bit offset.
     "test_gated_delta.mojo": "8",
     "test_gated_delta_conv1d.mojo": "8",
+    "test_gated_delta_spec_ring.mojo": "8",
     "test_varlen_causal_conv1d.mojo": "8",
     "bench_gated_delta_recurrence.mojo": "8",
 }

@@ -618,7 +618,7 @@ struct MLAPrefillSparseCommon[
         # cp) sees them. Guarded to num_q_heads < 64, so 64/128 stay byte-NFC.
         comptime if Self.NUM_Q_HEADS_PER_CTA < Self.PADDED_HEADS_PER_CTA:
             for i in range(
-                Int(thread_idx.x),
+                thread_idx.x,
                 Self.SMemType.FULL_Q_SIZE,
                 Self.config.num_threads,
             ):

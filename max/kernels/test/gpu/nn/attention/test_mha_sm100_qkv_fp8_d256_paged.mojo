@@ -53,8 +53,8 @@ from std.math import ceildiv, sqrt
 from std.random import random_ui64, randn, seed
 
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, Idx, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
@@ -68,7 +68,6 @@ from nn.attention.mha_mask import (
 )
 
 from std.testing import assert_true
-from std.utils import IndexList
 
 
 # Mirror of `padded_lut_cols` in
@@ -156,67 +155,39 @@ def execute_paged_fp8_test[
         page_size,
     )
 
-    # ---- Layouts for ragged metadata + Q + output ----
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_dim
-    )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_dim
-    )
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime kv_block_6d_layout = Layout.row_major[6]()
-
-    var row_offsets_shape = IndexList[1](batch_size + 1)
-    var cache_lengths_shape = IndexList[1](batch_size)
-    var q_ragged_shape = IndexList[3](total_length, num_q_heads, head_dim)
-    var output_shape = IndexList[3](total_length, num_q_heads, head_dim)
-
-    var row_offsets_runtime_layout = RuntimeLayout[
-        row_offsets_layout
-    ].row_major(row_offsets_shape)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_layout
-    ].row_major(cache_lengths_shape)
-    var q_ragged_runtime_layout = RuntimeLayout[q_ragged_layout].row_major(
-        q_ragged_shape
-    )
-    var output_runtime_layout = RuntimeLayout[output_layout].row_major(
-        output_shape
-    )
+    var q_layout = row_major(total_length, Idx[num_q_heads], Idx[head_dim])
 
     # ---- Ragged metadata ----
-    var input_row_offsets = ManagedLayoutTensor[.uint32, row_offsets_layout](
-        row_offsets_runtime_layout, ctx
+    var input_row_offsets = HostDeviceTileTensor[.uint32](
+        row_major(Int64(batch_size + 1)), ctx
     )
-    var cache_lengths_managed = ManagedLayoutTensor[
-        .uint32, cache_lengths_layout
-    ](cache_lengths_runtime_layout, ctx)
+    var cache_lengths_managed = HostDeviceTileTensor[.uint32](
+        row_major(Int64(batch_size)), ctx
+    )
 
-    var input_row_offsets_host = input_row_offsets.tensor[update=False]()
-    var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
+    var input_row_offsets_host = input_row_offsets.host_tensor()
+    var cache_lengths_host = cache_lengths_managed.host_tensor()
     var running_offset: UInt32 = 0
     for i in range(batch_size):
         input_row_offsets_host[i] = running_offset
         cache_lengths_host[i] = UInt32(cache_lengths[i])
         running_offset += UInt32(valid_lengths[i])
     input_row_offsets_host[batch_size] = running_offset
+    input_row_offsets.to_device()
+    cache_lengths_managed.to_device()
 
     # ---- Q: generate fp8 directly, cast fp8 -> bf16 (lossless) ----
-    var q_fp8 = ManagedLayoutTensor[fp8_dtype, q_ragged_layout](
-        q_ragged_runtime_layout, ctx
-    )
-    var q_bf16 = ManagedLayoutTensor[bf16_dtype, q_ragged_layout](
-        q_ragged_runtime_layout, ctx
-    )
-    var q_fp8_host = q_fp8.tensor[update=False]()
-    var q_bf16_host = q_bf16.tensor[update=False]()
-    randn(q_fp8_host.ptr, total_length * num_q_heads * head_dim)
+    var q_fp8 = HostDeviceTileTensor[fp8_dtype](q_layout, ctx)
+    var q_bf16 = HostDeviceTileTensor[bf16_dtype](q_layout, ctx)
+    var q_fp8_host = q_fp8.host_tensor()
+    var q_bf16_host = q_bf16.host_tensor()
+    randn(q_fp8_host.unsafe_ptr(), total_length * num_q_heads * head_dim)
     for t in range(total_length):
         for h in range(num_q_heads):
             for d in range(head_dim):
                 q_bf16_host[t, h, d] = q_fp8_host[t, h, d].cast[bf16_dtype]()
+    q_fp8.to_device()
+    q_bf16.to_device()
 
     # ---- Paged KV blocks (fp8 + bf16) ----
     # 6D: [num_blocks, 2, num_layers, page_size, num_heads, head_size].
@@ -226,39 +197,28 @@ def execute_paged_fp8_test[
     if num_paged_blocks < 16:
         num_paged_blocks = 16
 
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_num_heads,
-        head_dim,
+    var kv_layout = row_major(
+        Int64(num_paged_blocks),
+        Idx[2],
+        Int64(num_layers),
+        Idx[page_size],
+        Idx[kv_num_heads],
+        Idx[head_dim],
     )
-    var kv_block_paged_runtime_layout = RuntimeLayout[
-        kv_block_6d_layout
-    ].row_major(kv_block_paged_shape)
-
-    var kv_fp8 = ManagedLayoutTensor[fp8_dtype, kv_block_6d_layout](
-        kv_block_paged_runtime_layout, ctx
-    )
-    var kv_bf16 = ManagedLayoutTensor[bf16_dtype, kv_block_6d_layout](
-        kv_block_paged_runtime_layout, ctx
-    )
-    var kv_fp8_host = kv_fp8.tensor[update=False]()
-    var kv_bf16_host = kv_bf16.tensor[update=False]()
+    var kv_fp8 = HostDeviceTileTensor[fp8_dtype](kv_layout, ctx)
+    var kv_bf16 = HostDeviceTileTensor[bf16_dtype](kv_layout, ctx)
+    var kv_fp8_host = kv_fp8.host_tensor().unsafe_ptr()
+    var kv_bf16_host = kv_bf16.host_tensor().unsafe_ptr()
 
     # ---- Lookup table (shared by fp8 and bf16 caches) ----
-    var paged_lut_shape = IndexList[2](
-        batch_size,
-        padded_lut_cols(ceildiv(max_full_context_length, page_size)),
+    var paged_lut = HostDeviceTileTensor[.uint32](
+        row_major(
+            Int64(batch_size),
+            Int64(padded_lut_cols(ceildiv(max_full_context_length, page_size))),
+        ),
+        ctx,
     )
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
-    var paged_lut = ManagedLayoutTensor[.uint32, paged_lut_layout](
-        paged_lut_runtime_layout, ctx
-    )
-    var paged_lut_host = paged_lut.tensor[update=False]()
+    var paged_lut_host = paged_lut.host_tensor()
 
     # Assign unique physical blocks per (batch, logical block).
     var used = Set[Int]()
@@ -278,34 +238,53 @@ def execute_paged_fp8_test[
     var kv_pool_size = (
         num_paged_blocks * 2 * num_layers * page_size * kv_num_heads * head_dim
     )
-    randn(kv_fp8_host.ptr, kv_pool_size)
+    randn(kv_fp8_host, kv_pool_size)
     for i in range(kv_pool_size):
-        kv_bf16_host.ptr[i] = kv_fp8_host.ptr[i].cast[bf16_dtype]()
+        kv_bf16_host[i] = kv_fp8_host[i].cast[bf16_dtype]()
+    kv_fp8.to_device()
+    kv_bf16.to_device()
+    paged_lut.to_device()
 
     # ---- Output buffers (both bf16) ----
-    var out_fp8 = ManagedLayoutTensor[bf16_dtype, output_layout](
-        output_runtime_layout, ctx
-    )
-    var out_ref = ManagedLayoutTensor[bf16_dtype, output_layout](
-        output_runtime_layout, ctx
-    )
+    var out_fp8 = HostDeviceTileTensor[bf16_dtype](q_layout, ctx)
+    var out_ref = HostDeviceTileTensor[bf16_dtype](q_layout, ctx)
 
     # ---- Build paged collections ----
-    var kv_collection_fp8 = PagedKVCacheCollection[
-        fp8_dtype, kv_params, page_size
-    ](
-        kv_fp8.device_tensor(),
-        cache_lengths_managed.device_tensor(),
-        paged_lut.device_tensor(),
+    comptime Fp8Collection = PagedKVCacheCollection[
+        fp8_dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime Bf16Collection = PagedKVCacheCollection[
+        bf16_dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var cache_lengths_device = (
+        cache_lengths_managed.device_tensor().as_imm().as_unsafe_any_origin()
+    )
+    var paged_lut_device = (
+        paged_lut.device_tensor().as_imm().as_unsafe_any_origin()
+    )
+    var kv_collection_fp8 = Fp8Collection(
+        kv_fp8.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_device,
+        paged_lut_device,
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
-    var kv_collection_bf16 = PagedKVCacheCollection[
-        bf16_dtype, kv_params, page_size
-    ](
-        kv_bf16.device_tensor(),
-        cache_lengths_managed.device_tensor(),
-        paged_lut.device_tensor(),
+    var kv_collection_bf16 = Bf16Collection(
+        kv_bf16.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_device,
+        paged_lut_device,
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
@@ -336,9 +315,11 @@ def execute_paged_fp8_test[
     ctx.synchronize()
 
     # ---- Compare ----
-    var out_fp8_h = out_fp8.tensor()
-    var out_ref_h = out_ref.tensor()
-    var row_offsets_h = input_row_offsets.tensor()
+    out_fp8.to_host()
+    out_ref.to_host()
+    var out_fp8_h = out_fp8.host_tensor()
+    var out_ref_h = out_ref.host_tensor()
+    var row_offsets_h = input_row_offsets.host_tensor()
 
     comptime rtol = 5e-2
     comptime atol = 3e-1
@@ -410,16 +391,6 @@ def execute_paged_fp8_test[
             "mismatches > atol/rtol (but cosine passed)",
         )
     print("  PASSED")
-
-    _ = q_fp8^
-    _ = q_bf16^
-    _ = kv_fp8^
-    _ = kv_bf16^
-    _ = out_fp8^
-    _ = out_ref^
-    _ = paged_lut^
-    _ = input_row_offsets^
-    _ = cache_lengths_managed^
 
 
 # ===-----------------------------------------------------------------------===#

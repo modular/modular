@@ -38,14 +38,13 @@ def add_two(a: Int, b: Int) -> Int:
     return a + b
 
 
-def describe(x: Int) -> String:
-    __match x:
-    case 2:
-        return "is exactly two"
-    case _ if x.is_power_of_two():
-        return "power of two"
-    case _:
-        return "not power of two"
+def sign(x: Int) -> String:
+    if x > 0:
+        return "positive"
+    elif x == 0:
+        return "zero"
+    else:
+        return "negative"
 
 
 @fieldwise_init
@@ -125,9 +124,9 @@ def test_strings() raises:
 
 
 def test_control_flow() raises:
-    assert_equal(describe(2), "is exactly two")
-    assert_equal(describe(8), "power of two")
-    assert_equal(describe(6), "not power of two")
+    assert_equal(sign(5), "positive")
+    assert_equal(sign(0), "zero")
+    assert_equal(sign(-5), "negative")
     var x = 3
     var kind = "even" if x % 2 == 0 else "odd"
     assert_equal(kind, "odd")

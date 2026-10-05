@@ -113,6 +113,7 @@ at your own collector without MAX-specific configuration.
 | `OTEL_EXPORTER_OTLP_ENDPOINT`         | Base metrics endpoint, path appended | URL             | Modular's               |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`  | Trace endpoint; turns span export on | URL             | None                    |
 | `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` | Metrics endpoint, used as given      | URL             | Modular's               |
+| `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`  | Trace protocol, see below            | Protocol name   | `http/protobuf`         |
 | `OTEL_TRACES_SAMPLER`                 | Trace sampling strategy              | Sampler name    | `parentbased_always_on` |
 | `OTEL_TRACES_SAMPLER_ARG`             | Argument to the sampler              | String          | None                    |
 | `OTEL_SDK_DISABLED`                   | Disable OTLP export                  | `true`, `false` | `false`                 |
@@ -127,9 +128,13 @@ metrics, a signal-specific endpoint takes precedence over the base endpoint:
 setting `OTEL_EXPORTER_OTLP_ENDPOINT` to `http://collector:4318` sends metrics
 to `http://collector:4318/v1/metrics`.
 
-MAX exports over OTLP HTTP only, so the endpoint must be an HTTP
-receiver, conventionally port 4318. Pointing it at a gRPC receiver on port
-4317 drops every span and every metric.
+MAX exports metrics over OTLP HTTP only, so their endpoint must be an HTTP
+receiver, conventionally port 4318; a gRPC receiver on port 4317 drops them.
+Spans go over HTTP too unless `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL` (or the
+generic `OTEL_EXPORTER_OTLP_PROTOCOL`) is `grpc`. For gRPC, write the traces
+endpoint with an `http://` scheme, such as `http://collector:4317`, to get a
+plaintext channel: without one the exporter uses TLS unless
+`OTEL_EXPORTER_OTLP_TRACES_INSECURE` is `true`.
 
 The published container images set `OTEL_SERVICE_NAME` to `max-serve`, so
 override it explicitly rather than leaving it unset:

@@ -705,7 +705,6 @@ def mean[
 
 
 @inline(.always)
-@__parameter
 def map_reduce[
     simd_width: SIMDLength,
     dtype: DType,
@@ -771,7 +770,6 @@ def map_reduce[
 
 
 @inline(.always)
-@__parameter
 def map_reduce[
     simd_width: SIMDLength,
     dtype: DType,
@@ -846,7 +844,6 @@ def map_reduce[
 
 
 @inline(.always)
-@__parameter
 def reduce[
     reduce_fn: def[acc_type: DType, dtype: DType, width: SIMDLength](
         SIMD[acc_type, width], SIMD[dtype, width]
@@ -924,7 +921,6 @@ def _simd_max[
 
 
 @inline(.always)
-@__parameter
 def _simd_max_elementwise[
     acc_type: DType,
     dtype: DType,
@@ -971,7 +967,6 @@ def _simd_min[
 
 
 @inline(.always)
-@__parameter
 def _simd_min_elementwise[
     acc_type: DType, dtype: DType, simd_width: SIMDLength
 ](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
@@ -1016,7 +1011,6 @@ def _simd_sum[
 
 
 @inline(.always)
-@__parameter
 def _simd_sum_elementwise[
     acc_type: DType, dtype: DType, simd_width: SIMDLength
 ](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
@@ -1134,7 +1128,6 @@ def _simd_product[
 
 
 @inline(.always)
-@__parameter
 def _simd_product_elementwise[
     acc_type: DType, dtype: DType, simd_width: SIMDLength
 ](x: SIMD[acc_type, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[

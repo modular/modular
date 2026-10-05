@@ -103,7 +103,10 @@ class PendingDecodeRequest:
     phase: DecodeRequestPhase
     # The admission-time KV onload (a reused-prefix H2D copy). Release
     # and TG-enqueue sites must wait for this too, not just the prefill
-    # transfer.
+    # transfer. A copy that fails raises KVLoadFailed from those polls and
+    # is not recovered here: the rollback ``alloc`` gives an aggregated
+    # request cannot apply, since prefill already writes past the cached
+    # prefix this onload was filling.
     onload_event: KVTransfer
     phase_entered_at: float = field(default_factory=time.monotonic)
     transfer: TransferReqData | None = None
@@ -269,7 +272,7 @@ class DecodeScheduler(Scheduler):
             # Update the context with the generated token
             context.update(message.generated_token_id)
 
-            # Restore draft tokens from Eagle/MTP prefill so the first
+            # Restore draft tokens from speculative prefill so the first
             # decode iteration can verify them without re-running draft
             # prefill. When speculative decoding is active, the prefill
             # worker always sends draft tokens.

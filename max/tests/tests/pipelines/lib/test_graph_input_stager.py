@@ -21,7 +21,12 @@ import pytest
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.nn.transformer import ReturnLogits
-from max.pipelines.graph_input_stager import GraphInputStager, InputDescriptor
+from max.pipelines import graph_input_stager
+from max.pipelines.graph_input_stager import (
+    _FUSE_MAX_BYTES,
+    GraphInputStager,
+    InputDescriptor,
+)
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 
 MAX_TOKENS = 64
@@ -223,11 +228,7 @@ def test_one_name_staged_at_two_shapes_in_a_scope_raises(
 
 
 def test_a_host_device_gets_pageable_staging() -> None:
-    """Callers do not choose: a host device cannot pin, so the stager does.
-
-    An accelerator gets untracked staging memory so its H2D is async. There is
-    no accelerator here to assert that half on.
-    """
+    """Staging on a host device is not pinned, so no caller has to check."""
     stager = GraphInputStager([describe(TOKENS)])
 
     with stager.stage() as staging:
@@ -249,6 +250,129 @@ def test_host_staging_is_fresh_every_step(
 
     assert first_host is not second_host
     assert first_host.to_numpy().tolist() == [1, 2, 3, 4]
+
+
+def test_small_inputs_share_one_arena() -> None:
+    """Two small inputs share one allocation, with the same layout on both."""
+    stager = GraphInputStager(
+        [
+            describe(TOKENS, max_shape=(8,)),
+            describe(OFFSETS, dtype=DType.uint32, max_shape=(4,)),
+        ]
+    )
+
+    with stager.stage() as staging:
+        offsets_host, (offsets,) = staging.get(OFFSETS, (4,))
+        tokens_host, (tokens,) = staging.get(TOKENS, (8,))
+
+    # Inputs are placed smallest first, each on a 256-byte boundary.
+    assert tokens_host._data_ptr() - offsets_host._data_ptr() == 256
+    assert tokens._data_ptr() - offsets._data_ptr() == 256
+
+
+def _count_copies(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Records each copy the stager issues, then performs it."""
+    calls: list[int] = []
+    real = graph_input_stager.batch_inplace_copy
+
+    def counting(dsts: Any, srcs: Any) -> None:
+        calls.extend(int(src.num_elements) for src in srcs)
+        real(dsts, srcs)
+
+    monkeypatch.setattr(graph_input_stager, "batch_inplace_copy", counting)
+    return calls
+
+
+def test_consecutive_staged_inputs_leave_in_one_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Three small inputs staged together go out in one copy."""
+    names = ["a", "b", "c"]
+    stager = GraphInputStager(
+        [describe(n, dtype=DType.uint32, max_shape=(4,)) for n in names]
+    )
+    calls = _count_copies(monkeypatch)
+
+    with stager.stage() as staging:
+        for i, name in enumerate(names):
+            host, _ = staging.get(name, (4,))
+            host.to_numpy()[:] = i
+
+    assert len(calls) == 1
+
+
+def test_a_skipped_input_splits_the_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Skipping an input splits the copy, and the skipped input keeps its value.
+
+    The skipped region of the new host buffer was never written, so copying it
+    would overwrite what the graph last read.
+    """
+    names = ["a", "b", "c"]
+    stager = GraphInputStager(
+        [describe(n, dtype=DType.uint32, max_shape=(4,)) for n in names]
+    )
+    with stager.stage() as staging:
+        host, (kept,) = staging.get("b", (4,))
+        host.to_numpy()[:] = [7, 7, 7, 7]
+
+    calls = _count_copies(monkeypatch)
+    with stager.stage() as staging:
+        for name in ("a", "c"):
+            host, _ = staging.get(name, (4,))
+            host.to_numpy()[:] = 1
+
+    assert len(calls) == 2
+    assert kept.to_numpy().tolist() == [7, 7, 7, 7]
+
+
+def test_a_wide_input_gets_an_arena_of_its_own() -> None:
+    """An input over the fuse limit gets its own arena."""
+    wide = "wide"
+    stager = GraphInputStager(
+        [
+            describe(OFFSETS, dtype=DType.uint32, max_shape=(4,)),
+            describe(wide, max_shape=(_FUSE_MAX_BYTES,)),
+        ]
+    )
+    declared = stager._slots
+    assert declared[wide].arena is not declared[OFFSETS].arena
+    assert declared[wide].offset == 0
+
+    with stager.stage() as staging:
+        first_host, (first_device,) = staging.get(wide, (4,))
+    with stager.stage() as staging:
+        second_host, (second_device,) = staging.get(wide, (4,))
+
+    # Host staging is new every step; the device buffer stays fixed because
+    # captured graphs bind it.
+    assert first_host._data_ptr() != second_host._data_ptr()
+    assert first_device._data_ptr() == second_device._data_ptr()
+
+
+def test_destinations_that_differ_do_not_share_an_arena() -> None:
+    """Inputs with different destinations go to different arenas."""
+    stager = GraphInputStager(
+        [
+            describe(TOKENS, max_shape=(4,)),
+            describe(
+                OFFSETS,
+                dtype=DType.uint32,
+                max_shape=(4,),
+                destinations=[CPU(), CPU()],
+            ),
+        ]
+    )
+    declared = stager._slots
+    assert declared[TOKENS].arena is not declared[OFFSETS].arena
+
+    with stager.stage() as staging:
+        _, tokens = staging.get(TOKENS, (4,))
+        _, offsets = staging.get(OFFSETS, (4,))
+
+    assert len(tokens) == 1
+    assert len(offsets) == 2
 
 
 def test_the_described_maximum_fits_the_backing(

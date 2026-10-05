@@ -38,10 +38,10 @@ from max.pipelines.modeling.types import (
 from .tokenizer import TOOL_CALL_JSON_MARKER
 
 # Payload shape: {"name":...,"args":{...}}. The tool-call grammar pins that
-# frame to a const string, but the parser also runs on unconstrained output:
-# with ``enable_tool_call_constrained_decode=False``, or after a rejected token
-# fails enforcement open for the rest of a request. So neither the key order nor
-# ``args`` being the payload's last key is guaranteed here.
+# frame to a const string, but the parser also runs when no grammar is
+# generated (e.g. when ``tool_call_policy`` is ``force_unconstrained``) or
+# after a rejected token causes enforcement to fail open. So neither the key
+# order nor ``args`` being the payload's last key is guaranteed here.
 _ARGS_KEY_RE = re.compile(r'[,{]\s*"args"\s*:\s*')
 
 _DECODER = json.JSONDecoder()
@@ -279,6 +279,7 @@ class InklingToolParser(StructuralTagToolParser):
         tokenizer: PipelineTokenizer[Any, Any, Any] | None = None,
         backend: str = "xgrammar",
         tool_choice: str | dict[str, Any] | None = None,
+        reject_unsupported: bool = False,
         **kwargs: Any,
     ) -> str:
         """Builds the decode-time grammar that constrains tool calls."""
@@ -293,4 +294,5 @@ class InklingToolParser(StructuralTagToolParser):
             tools or [],
             normalized_choice,
             response_format_schema=response_format_schema,
+            reject_unsupported=reject_unsupported,
         )

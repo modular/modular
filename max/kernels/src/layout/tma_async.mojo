@@ -4227,10 +4227,8 @@ def _create_split_tma_folded[
         )
         var desc = create_tma_descriptor[dtype, 5, swizzle_mode](
             device_buf,
-            IndexList[5](
-                num_heads, runtime_rows // CM, num_depth_dim, CM, gran
-            ),
-            IndexList[5](
+            (num_heads, runtime_rows // CM, num_depth_dim, CM, gran),
+            (
                 head_size,
                 CM * num_heads * head_size,
                 gran,
@@ -4762,11 +4760,9 @@ struct RaggedTMA3DTile[
                         DeviceBuffer(
                             ctx, ptr - stride * Self.BM_seq, 1, owning=False
                         ),
-                        IndexList[5](
-                            merged_extent, n_blocks, Self.BM_seq, Self.group, K
-                        ),
+                        (merged_extent, n_blocks, Self.BM_seq, Self.group, K),
                         IndexList[5](Self.group * depth, K, stride, depth, 1),
-                        IndexList[5](
+                        (
                             1,
                             Self.tma_blocks_per_op,
                             Self.BM_seq,
@@ -4783,13 +4779,9 @@ struct RaggedTMA3DTile[
                         DeviceBuffer(
                             ctx, ptr - stride * Self.BM_seq, 1, owning=False
                         ),
-                        IndexList[4](
-                            merged_extent, Self.BM_seq, Self.group, depth
-                        ),
+                        (merged_extent, Self.BM_seq, Self.group, depth),
                         IndexList[4](Self.group * depth, stride, depth, 1),
-                        IndexList[4](
-                            1, Self.BM_seq, Self.group, Self.swizzle_granularity
-                        ),
+                        (1, Self.BM_seq, Self.group, Self.swizzle_granularity),
                     ),
                 )
         else:
@@ -5341,7 +5333,7 @@ def _im2col_desc_shape[
     comptime pixels_per_column = (
         m_tile if m_tile < max_pixels_from_box else max_pixels_from_box
     )
-    return IndexList[2](pixels_per_column, channels_per_pixel)
+    return (pixels_per_column, channels_per_pixel)
 
 
 @inline(.always)
@@ -5380,18 +5372,18 @@ def _build_im2col_descriptor[
         owning=False,
     )
 
-    var global_shape = IndexList[4](batch, height, width, channels)
+    var global_shape = (batch, height, width, channels)
 
     # Row-major NHWC strides: stride(i) = product of all dims after i
-    var global_strides = IndexList[4](
+    var global_strides = (
         height * width * channels,
         width * channels,
         channels,
         1,
     )
 
-    var lower_corner = IndexList[2](lower_corner_h, lower_corner_w)
-    var upper_corner = IndexList[2](upper_corner_h, upper_corner_w)
+    var lower_corner = (lower_corner_h, lower_corner_w)
+    var upper_corner = (upper_corner_h, upper_corner_w)
 
     comptime pixels_per_column = __desc_shape[0]
     comptime channels_per_pixel = __desc_shape[1]

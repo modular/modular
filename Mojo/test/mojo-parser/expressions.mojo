@@ -1067,7 +1067,7 @@ def function_types():
   # CHECK: lit.alias.decl *"p2{{.*}}"Ts": !lit.struct<#TypeList{{.*}} pos_vararg{{.*}}(!lit.ref<{{.*}}#VariadicPack
   # CHECK-SAME: <:!Bool {:scalar<bool> false},  :origin<false> *(0,2){{.*}}, :meta<!AnyType> !AnyType, :param_list<!AnyType> *(0,0), :!Bool {:scalar<bool> false}, {{.*}}>>, imm *[0,0]>
   # CHECK-SAME: imm_mem|pack_vararg, ?, "__result__": !lit.ref<none, mut *[0,1]> byref_result) async
-  comptime p2 = async def[*Ts: AnyType](* *Ts) thin -> None
+  comptime p2 = __async def[*Ts: AnyType](* *Ts) thin -> None
 
   # CHECK: lit.var.decl "float0"{{.*}}(!Int, |) -> !alias_Int1
   var float0: def(Int) thin -> Int
@@ -1088,7 +1088,7 @@ def function_types():
   var float5: def(Int) thin raises -> None
 
   # CHECK: lit.var.decl "float6"{{.*}}(!Int, |, ?, "__result__": !lit.ref<none, mut *[0,0]> byref_result) async|capturing -> !kgen.none
-  var float6: async def(Int) capturing thin -> None
+  var float6: __async def(Int) capturing thin -> None
 
   # CHECK: lit.var.decl "float7"{{.*}}(!lit.ref<!lit.struct<#VariadicList <:!Bool {:scalar<bool> false}, :origin<false> *(0,0), :!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>> *(0,1), :!AnyType !Int, :!Bool {:scalar<bool> false}>>, imm *[0,0]> imm_mem|pos_vararg, ?, {{.*}}) throws -> !kgen.scalar<bool>
   var float7: def(*Int) thin raises -> None

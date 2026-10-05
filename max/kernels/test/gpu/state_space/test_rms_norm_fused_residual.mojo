@@ -14,7 +14,7 @@
 
 from std.math import sqrt
 from max.gpu.host import DeviceContext
-from layout import Coord, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from std.random import rand, Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_gpu
 from std.testing import TestSuite, assert_almost_equal
@@ -39,18 +39,25 @@ def compute_rms_ref[
     return sqrt((sum_of_squares / Float32(size)) + eps)
 
 
-def run_rms_norm_fused_residual_gpu[
-    dtype: DType, rank: Int
+def _run_rms_norm_fused_residual_gpu_impl[
+    dtype: DType
 ](
     ctx: DeviceContext,
-    shape: IndexList[rank],
+    shape: Coord,
     rtol: Float64 = 0.01,
     dropout_p: Float64 = 0.0,
     seed: UInt64 = 0,
 ) raises:
-    """Test rms_norm_fused_residual GPU implementation."""
-    var cols = shape[rank - 1]
-    var rows = shape.flattened_length() // cols
+    """Test rms_norm_fused_residual GPU implementation.
+
+    Takes the shape as a `Coord` so a caller can supply statically known
+    leaves: production reaches this kernel through the op registrations'
+    `input.shape_coord()`, and a mixed static/dynamic leaf list encodes
+    differently from an all-runtime one.
+    """
+    comptime rank = type_of(shape).rank
+    var cols = Int(shape[rank - 1].value())
+    var rows = Int(shape.product()) // cols
 
     # Allocate host memory
     var input_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
@@ -86,12 +93,10 @@ def run_rms_norm_fused_residual_gpu[
     ctx.enqueue_copy(residual_output_d, residual_output_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
-    var input_tensor = TileTensor(input_d, row_major(Coord(shape)))
-    var residual_tensor = TileTensor(residual_d, row_major(Coord(shape)))
-    var output_tensor = TileTensor(output_d, row_major(Coord(shape)))
-    var residual_output_tensor = TileTensor(
-        residual_output_d, row_major(Coord(shape))
-    )
+    var input_tensor = TileTensor(input_d, row_major(shape))
+    var residual_tensor = TileTensor(residual_d, row_major(shape))
+    var output_tensor = TileTensor(output_d, row_major(shape))
+    var residual_output_tensor = TileTensor(residual_output_d, row_major(shape))
     var gamma_tensor = TileTensor(gamma_d, row_major(cols))
 
     var epsilon = Float32(1e-5)
@@ -99,35 +104,29 @@ def run_rms_norm_fused_residual_gpu[
 
     @inline(.always)
     def input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var input_tensor} -> SIMD[dtype, width]:
-        return input_tensor.load_linear[width=width](
-            rebind[IndexList[rank]](coords)
-        )
+        width: Int
+    ](coords: Coord) {var input_tensor} -> SIMD[dtype, width]:
+        return input_tensor.load[width=width](coords)
 
     @inline(.always)
     def residual_input_fn[
-        width: Int, _rank: Int
-    ](coords: IndexList[_rank]) {var residual_tensor} -> SIMD[dtype, width]:
-        return residual_tensor.load_linear[width=width](
-            rebind[IndexList[rank]](coords)
-        )
+        width: Int
+    ](coords: Coord) {var residual_tensor} -> SIMD[dtype, width]:
+        return residual_tensor.load[width=width](coords)
 
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-        var output_tensor
-    } -> None:
-        output_tensor.store_linear[width=width](coords, val)
+    ](coords: Coord, val: SIMD[dtype, width]) {var output_tensor} -> None:
+        output_tensor.store[width=width](coords, val)
 
     @inline(.always)
     def residual_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: IndexList[rank], val: SIMD[dtype, width]) {
+    ](coords: Coord, val: SIMD[dtype, width]) {
         var residual_output_tensor
     } -> None:
-        residual_output_tensor.store_linear[width=width](coords, val)
+        residual_output_tensor.store[width=width](coords, val)
 
     var dropout_p_scalar = Scalar[dtype](dropout_p)
 
@@ -194,6 +193,21 @@ def run_rms_norm_fused_residual_gpu[
                 gamma_h[c] + weight_offset
             )
             assert_almost_equal(expected_norm, output_h[idx], rtol=rtol)
+
+
+def run_rms_norm_fused_residual_gpu[
+    dtype: DType, rank: Int
+](
+    ctx: DeviceContext,
+    shape: IndexList[rank],
+    rtol: Float64 = 0.01,
+    dropout_p: Float64 = 0.0,
+    seed: UInt64 = 0,
+) raises:
+    """Drive the kernel with an all-dynamic shape `Coord`."""
+    _run_rms_norm_fused_residual_gpu_impl[dtype](
+        ctx, Coord(shape), rtol=rtol, dropout_p=dropout_p, seed=seed
+    )
 
 
 # =============================================================================
@@ -286,6 +300,46 @@ def test_rms_norm_fused_residual_gpu_bfloat16_large_cols_loop() raises:
     if not ctx.is_compatible():
         return
     run_rms_norm_fused_residual_gpu[.bfloat16](ctx, Index(2, 4096), rtol=1e-2)
+
+
+def test_rms_norm_fused_residual_gpu_static_dims_3d() raises:
+    """A rank-3 shape with static inner dims, as `shape_coord()` produces."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    _run_rms_norm_fused_residual_gpu_impl[.float32](
+        ctx, Coord(Int64(4), Idx[8], Idx[64]), rtol=1e-3
+    )
+
+
+def test_rms_norm_fused_residual_gpu_static_dims_2d() raises:
+    """A rank-2 shape whose normalized dim is static."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    _run_rms_norm_fused_residual_gpu_impl[.float32](
+        ctx, Coord(Int64(4), Idx[128]), rtol=1e-3
+    )
+
+
+def test_rms_norm_fused_residual_gpu_static_dims_all_static() raises:
+    """Every leaf static, which zero-sizes the whole stride list."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    _run_rms_norm_fused_residual_gpu_impl[.float32](
+        ctx, Coord(Idx[2], Idx[3], Idx[64]), rtol=1e-3
+    )
+
+
+def test_rms_norm_fused_residual_gpu_static_dims_bfloat16() raises:
+    """Static inner dims with a narrower dtype."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    _run_rms_norm_fused_residual_gpu_impl[.bfloat16](
+        ctx, Coord(Int64(4), Idx[8], Idx[64]), rtol=1e-2
+    )
 
 
 # =============================================================================

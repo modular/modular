@@ -1371,8 +1371,10 @@ def fused_silu_quantized(
     the host. This kernel will read the row offsets to determine the actual
     number of received tokens in the input tensor, and then only perform the
     SILU operation on the received tokens. Once the SILU operation is performed,
-    the output will be quantized to the FP8 format. The scales will be stored
-    in a transposed way.
+    the output will be quantized to the NVFP4, MXFP4, MXFP6 or MXFP8 format.
+    Block-scaled FP8 (group size 128) has no kernel here: apply the gated
+    activation and call :func:`~max.nn.kernels.quantize_dynamic_scaled_float8`
+    with ``row_offsets``, which the graph compiler fuses into one kernel.
 
     Args:
         input: Input tokens to perform the SILU operation.
@@ -1502,8 +1504,6 @@ def fused_silu_quantized(
                 Shape([n_local_experts * max_padded_M, raw_hidden]),
                 input.device,
             )
-    elif out_type.is_float8():
-        op_name += ".fp8"
     else:
         raise ValueError(
             f"Unsupported quantization format: {quant_config.format}"

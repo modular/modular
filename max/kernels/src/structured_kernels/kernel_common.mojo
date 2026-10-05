@@ -665,11 +665,5 @@ def _to_batched_3d(
     comptime L = type_of(tensor).LayoutType
     comptime assert L.rank == 2, "expected rank-2 TileTensor"
     return tensor.reshape(
-        row_major(
-            Coord(
-                Idx[1],
-                tensor.layout.shape[0](),
-                tensor.layout.shape[1](),
-            )
-        )
+        row_major(Idx[1], tensor.layout.shape[0](), tensor.layout.shape[1]())
     )

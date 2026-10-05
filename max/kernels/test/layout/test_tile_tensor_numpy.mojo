@@ -74,7 +74,7 @@ def test_to_numpy_contiguous() raises:
     var storage = Array[Float32, 6](
         fill_with=lambda (i: Int) -> Float32: Float32(i)
     )
-    var tensor = TileTensor(Span(storage), row_major(Coord(Idx[2], Idx[3])))
+    var tensor = TileTensor(Span(storage), row_major(Idx[2], Idx[3]))
     var array = to_numpy(tensor)
 
     assert_equal(Int(py=array.ndim), 2)
@@ -90,7 +90,7 @@ def test_to_numpy_is_independent() raises:
     var storage = Array[Float32, 4](
         fill_with=lambda (i: Int) -> Float32: Float32(i)
     )
-    var tensor = TileTensor(Span(storage), row_major(Coord(Idx[2], Idx[2])))
+    var tensor = TileTensor(Span(storage), row_major(Idx[2], Idx[2]))
     var array = to_numpy(tensor)
     storage[0] = 99.0
     assert_almost_equal(Float64(py=array[0][0]), 0.0)
@@ -102,9 +102,7 @@ def test_to_numpy_gathers_non_contiguous() raises:
     var storage = Array[Float32, 24](
         fill_with=lambda (i: Int) -> Float32: Float32(i)
     )
-    var tensor = TileTensor(
-        Span(storage), row_major(Coord(Idx[2], Idx[3], Idx[4]))
-    )
+    var tensor = TileTensor(Span(storage), row_major(Idx[2], Idx[3], Idx[4]))
     var tile = tensor.tile[1, 2, 2](0, 0, 0)
     var array = to_numpy(tile)
 

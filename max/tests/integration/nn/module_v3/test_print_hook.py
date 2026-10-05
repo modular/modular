@@ -51,7 +51,8 @@ def test_named_print_hook_v3(
     # module's `forward` so the hook fires during tracing.
     print_hook.name_layers(model)
 
-    dtype, device = defaults()
+    dtype, mesh = defaults()
+    device = mesh.devices[0]
     input_type = TensorType(dtype, [3, 3], device=device)
     compiled = model.compile(input_type)
 

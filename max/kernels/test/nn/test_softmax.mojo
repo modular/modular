@@ -61,7 +61,7 @@ def test_logsoftmax() raises:
                 for i in range(out_flat.num_elements()):
                     print(out_flat[i])
 
-    logsoftmax_test_nd[1, IndexList[1](5)]()
+    logsoftmax_test_nd[1, (5,)]()
 
     # CHECK: -4.45191{{[0-9]+}}
     # CHECK-NEXT: -3.451914{{[0-9]+}}
@@ -69,7 +69,7 @@ def test_logsoftmax() raises:
     # CHECK-NEXT: -1.451914{{[0-9]+}}
     # CHECK-NEXT: -0.451914{{[0-9]+}}
 
-    logsoftmax_test_nd[2, IndexList[2](3, 4)]()
+    logsoftmax_test_nd[2, (3, 4)]()
 
     # CHECK: -3.440189{{[0-9]+}}
     # CHECK-NEXT: -2.440189{{[0-9]+}}

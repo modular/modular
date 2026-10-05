@@ -18,7 +18,7 @@ from linalg.fp6_utils import FP6Format
 
 
 @fieldwise_init
-struct MXFormat(Equatable, TrivialRegisterPassable):
+struct MXFormat(EnumLike, Equatable, TrivialRegisterPassable):
     """Names the element encoding of an OCP microscaling (MX) operand.
 
     An MX operand is a block of elements sharing one `float8_e8m0fnu` scale;
@@ -43,6 +43,34 @@ struct MXFormat(Equatable, TrivialRegisterPassable):
     comptime FP6_E2M3 = Self(2)
     comptime FP6_E3M2 = Self(3)
     comptime FP4_E2M1 = Self(4)
+    # The public `__init__(value: Int)` accepts raw backing values the named
+    # cases do not cover; downstream matches (e.g. the CDNA4 selector mapping)
+    # keep their `abort` catch-alls for them, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "FP8_E4M3".value,
+        "FP8_E5M2".value,
+        "FP6_E2M3".value,
+        "FP6_E3M2".value,
+        "FP4_E2M1".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "MXFormat has no payload"
 
     def __init__(out self, value: Int):
         self._value = Int32(value)

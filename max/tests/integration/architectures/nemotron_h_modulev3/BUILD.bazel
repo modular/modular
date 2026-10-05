@@ -8,17 +8,70 @@ package(default_visibility = [
 
 modular_py_test(
     name = "tests",
-    srcs = glob(["test_*.py"]),
+    srcs = glob(
+        ["test_*.py"],
+        exclude = [
+            "test_fused_router_gpu.py",
+            "test_w4a4_experts_gpu.py",
+        ],
+    ),
     deps = [
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
         "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "w4a4_experts_gpu_tests",
+    size = "large",
+    srcs = ["test_w4a4_experts_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        "//max/python/max/pipelines/weights",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "fused_router_gpu_tests",
+    srcs = ["test_fused_router_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    # TODO(GEX-3342): the fused router rejects Apple GPUs.
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )

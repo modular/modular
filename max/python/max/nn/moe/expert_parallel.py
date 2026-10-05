@@ -247,8 +247,11 @@ def _ep_forward(
         moe_shards[0].has_shared_experts
         and not batch_mgr.config.fused_shared_expert
     )
+    # Per-token NVFP4 global scales exist only on the fused dispatch.
     overlap_shared_expert = (
-        has_unfused_shared and not batch_mgr.config.use_allreduce
+        has_unfused_shared
+        and not batch_mgr.config.use_allreduce
+        and not batch_mgr.config.nvfp4_dyn_global_scales
     )
 
     # Decide the MXFP4 EP A-scale preshuffle fold before dispatch because the
@@ -306,7 +309,12 @@ def _ep_forward(
         all_dispatch_results = batch_mgr.ep_dispatch_all(
             xs, all_topk_ids, device_ids, input_scales=scales
         )
-        if has_unfused_shared:
+        if has_unfused_shared and batch_mgr.config.nvfp4_dyn_global_scales:
+            shared_outs = [
+                shard.shared_experts(x)
+                for shard, x in zip(moe_shards, xs, strict=True)
+            ]
+        elif has_unfused_shared:
             shared_outs = _compute_shared_experts(
                 moe_shards, xs, range(len(moe_shards))
             )

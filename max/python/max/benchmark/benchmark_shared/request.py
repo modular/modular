@@ -169,6 +169,15 @@ def _attach_images_to_first_user_message(
     target["content"].extend(images)
 
 
+def _messages_carry_image(messages: Sequence[SerializedChatMessage]) -> bool:
+    return any(
+        isinstance(part, Mapping) and part.get("type") == "image_url"
+        for message in messages
+        if isinstance(content := message.get("content"), list)
+        for part in content
+    )
+
+
 def _build_final_payload(
     base_payload: Mapping[str, Any], extra_body: Mapping[str, Any] | None
 ) -> dict[str, Any]:
@@ -207,6 +216,9 @@ class RequestFuncInput(BaseRequestFuncInput):
     # so datasets can pass through OpenAI-shaped or server-specific schemas
     # without translation; ignored by non-chat drivers.
     tools: list[dict[str, Any]] | None = None
+    # The adapter the request is routed to. ``model`` already names it for the
+    # server; this keeps it apart from a base-model request for the metrics.
+    lora_id: str | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         return RequestFuncOutput
@@ -242,6 +254,16 @@ class BaseRequestFuncOutput:
         if self.request_submit_time is None:
             return None
         return self.request_submit_time + self.latency
+
+
+def tag_lora_route(
+    output: BaseRequestFuncOutput, request_func_input: BaseRequestFuncInput
+) -> None:
+    """Records the adapter *output*'s request was routed to, if any."""
+    if isinstance(output, RequestFuncOutput) and isinstance(
+        request_func_input, RequestFuncInput
+    ):
+        output.lora_id = request_func_input.lora_id
 
 
 def tag_response_format_outcome(
@@ -392,6 +414,10 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     # of tool-call decoding.
     tools_offered: bool = False
     tool_call_returned: bool = False
+    # Whether the payload carried an image part, counting images resent with
+    # earlier turns of the session: the share production counts per request.
+    carries_image: bool = False
+    lora_id: str | None = None
 
 
 @dataclass
@@ -1028,6 +1054,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
                 tokenizer=self.tokenizer,
             )
         output.tools_offered = "tools" in payload
+        output.carries_image = _messages_carry_image(messages_data)
         return output
 
 

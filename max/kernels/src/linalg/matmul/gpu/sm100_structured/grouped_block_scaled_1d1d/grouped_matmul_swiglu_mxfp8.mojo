@@ -160,7 +160,7 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
     # and fills the kernel ABI, so alias `c_packed` rather than allocate.
     var dummy_c_tensor = TileTensor(
         c_packed_ptr.bitcast[Scalar[c_type]](),
-        row_major(Coord(Idx[1], Idx[N])),
+        row_major(Idx[1], Idx[N]),
     )
     var c_swiglu_scales_ptr = rebind[
         UnsafePointer[Scalar[MXFP8_SF_DTYPE], MutAnyOrigin]

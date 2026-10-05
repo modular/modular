@@ -168,6 +168,8 @@ class RecurrentLeafInputs(Generic[_Tensor, _Buffer]):
     """One state leaf's graph inputs on one device."""
 
     pool: _Buffer
+    """Shared by all layers, so it can exceed 2**32 elements. Kernels must
+    index it with 64-bit offsets."""
     live_row_ids: _Tensor
 
     def live_row_id(self, layer: int) -> TensorValue:

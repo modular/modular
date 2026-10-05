@@ -236,10 +236,9 @@ def test_quantize_known_scales(ctx: DeviceContext) raises:
     ctx.enqueue_copy(scales_host, scales_dev)
     ctx.synchronize()
 
-    @__parameter
     def _check_block(
         blk: Int, expected_e8m0: Int, expected_val: Float32
-    ) raises:
+    ) raises {imm}:
         var bits = Int(bitcast[.uint8](scales_host[blk]))
         var scale_f32 = _e8m0_to_float32(UInt8(bits))
         print("    block", blk, ": e8m0=", bits, " scale=", scale_f32)

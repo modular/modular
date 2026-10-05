@@ -31,7 +31,6 @@ comptime BLOCK_SIZE = 1024
 
 
 @inline(.always)
-@__parameter
 def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
@@ -43,8 +42,8 @@ def coop_combine_kernel[
     sink: UnsafePointer[Float32, MutAnyOrigin],
     iters: Int32,
 ):
-    var rank = Int(block_idx.x) % group_size
-    var row = Int(block_idx.x) // group_size
+    var rank = block_idx.x % group_size
+    var row = block_idx.x // group_size
     var coop = CoopRow[group_size](row, rank)
     var table = unsafe_stack_allocation[
         group_size * COOP_SLOT_FLOATS,
@@ -76,8 +75,7 @@ def main() raises:
 
         @inline(.always)
         def launch(ctx: DeviceContext) raises {mut workspace, mut sink, imm}:
-            @__parameter
-            def go[g: Int]() raises:
+            def go[g: Int]() raises {imm}:
                 ctx.enqueue_function[coop_combine_kernel[g]](
                     workspace.unsafe_ptr(),
                     sink.unsafe_ptr(),

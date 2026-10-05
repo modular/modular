@@ -44,7 +44,6 @@ from std.sys import (
     simd_width_of,
     size_of,
     align_of,
-    has_amd_gpu_accelerator,
     is_amd_gpu,
 )
 
@@ -532,8 +531,8 @@ def _reducescatter_relay_kernel[
     # rank is the pair-local rank folded by the group width.
     var group_rank = _my_rank % ngpus
 
-    var bid = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var bid = block_idx.x
+    var tid = thread_idx.x
     var _relay_percent = Int(relay_percent)
 
     # Synchronize before reading. The domain spans both groups because a
@@ -603,7 +602,7 @@ def _reducescatter_relay_kernel[
         # already is between ranks, since the plain kernel rotates too.
         var relay_bid = bid - Int(num_direct_blocks)
         var dst = relay_bid % ngpus
-        var blocks_per_dst = (Int(grid_dim.x) - Int(num_direct_blocks)) // ngpus
+        var blocks_per_dst = (grid_dim.x - Int(num_direct_blocks)) // ngpus
         var dst_block = relay_bid // ngpus
 
         # Each destination's partition is split on its own length, so a
@@ -1138,7 +1137,6 @@ def _reducescatter_p2p[
     )
 
 
-@__parameter
 def reducescatter[
     dtype: DType,
     ngpus: Int,
@@ -1370,7 +1368,7 @@ def reducescatter[
     # AMD P2P reduce-scatter is PCIe-fabric-bound: ~128 blocks saturate it
     # (CDNA4: 166.5 vs 148.8 GB/s at 1024); more only adds barrier overhead.
     comptime _default_num_blocks = (
-        128 if has_amd_gpu_accelerator() else MAX_NUM_BLOCKS_UPPER_BOUND
+        128 if ctx.target.is_amd_gpu() else MAX_NUM_BLOCKS_UPPER_BOUND
     )
     var max_num_blocks = (
         _max_num_blocks.value() if _max_num_blocks else _default_num_blocks

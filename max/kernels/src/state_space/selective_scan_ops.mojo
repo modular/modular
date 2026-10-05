@@ -101,18 +101,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         var z_tt = z.to_tile_tensor[.int32]()
         var delta_bias_tt = delta_bias.to_tile_tensor[.int32]()
 
-        var output_strides = output.strides()
-        var x_strides = x.strides()
-        var out_z_strides = out_z.strides()
-        var u_strides = u.strides()
-        var delta_strides = delta.strides()
-        var A_strides = A.strides()
-        var B_strides = B.strides()
-        var C_strides = C.strides()
-        var D_strides = D.strides()
-        var z_strides = z.strides()
-        var delta_bias_strides = delta_bias.strides()
-
         comptime delta_softplus_int8: Int8 = Int8(
             1
         ) if Self.delta_softplus else Int8(0)
@@ -146,17 +134,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    output_strides,
-                    x_strides,
-                    out_z_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
                     Optional[DeviceContext](ctx),
                 )
             else:
@@ -180,17 +157,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    output_strides,
-                    x_strides,
-                    out_z_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
                     Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
@@ -238,17 +204,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    output_strides,
-                    x_strides,
-                    out_z_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
                 )
@@ -291,17 +246,6 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     delta_bias_tt,
-                    output_strides,
-                    x_strides,
-                    out_z_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    delta_bias_strides,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
                 )
@@ -398,14 +342,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         var B_tt = B.to_tile_tensor[.int32]()
         var C_tt = C.to_tile_tensor[.int32]()
 
-        var output_strides = output.strides()
-        var x_strides = x.strides()
-        var u_strides = u.strides()
-        var delta_strides = delta.strides()
-        var A_strides = A.strides()
-        var B_strides = B.strides()
-        var C_strides = C.strides()
-
         comptime delta_softplus_int8: Int8 = Int8(
             1
         ) if Self.delta_softplus else Int8(0)
@@ -433,13 +369,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    output_strides,
-                    x_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
                     Optional[DeviceContext](ctx),
                 )
             else:
@@ -459,13 +388,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    output_strides,
-                    x_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
                     Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
@@ -505,13 +427,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    output_strides,
-                    x_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
                     grid_dim=(num_blocks),
                     block_dim=(BLOCK_SIZE),
                 )
@@ -546,13 +461,6 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_tt,
                     B_tt,
                     C_tt,
-                    output_strides,
-                    x_strides,
-                    u_strides,
-                    delta_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
                     grid_dim=(num_blocks),
                     block_dim=(BLOCK_SIZE),
                 )
@@ -647,18 +555,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         var z_tt = z.to_tile_tensor[.int32]()
         var dt_bias_tt = dt_bias.to_tile_tensor[.int32]()
 
-        var state_out_strides = state_out.strides()
-        var output_strides = output.strides()
-        var state_in_strides = state_in.strides()
-        var x_strides = x.strides()
-        var dt_strides = dt.strides()
-        var A_strides = A.strides()
-        var B_strides = B.strides()
-        var C_strides = C.strides()
-        var D_strides = D.strides()
-        var z_strides = z.strides()
-        var dt_bias_strides = dt_bias.strides()
-
         comptime delta_softplus_int8: Int8 = Int8(
             1
         ) if Self.delta_softplus else Int8(0)
@@ -689,17 +585,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    state_out_strides,
-                    output_strides,
-                    state_in_strides,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    dt_bias_strides,
                     Optional[DeviceContext](ctx),
                 )
             else:
@@ -722,17 +607,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    state_out_strides,
-                    output_strides,
-                    state_in_strides,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    dt_bias_strides,
                     Optional[DeviceContext](ctx),
                 )
         elif is_gpu[target]():
@@ -779,17 +653,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    state_out_strides,
-                    output_strides,
-                    state_in_strides,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    dt_bias_strides,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
                 )
@@ -831,17 +694,6 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_tt,
                     z_tt,
                     dt_bias_tt,
-                    state_out_strides,
-                    output_strides,
-                    state_in_strides,
-                    x_strides,
-                    dt_strides,
-                    A_strides,
-                    B_strides,
-                    C_strides,
-                    D_strides,
-                    z_strides,
-                    dt_bias_strides,
                     grid_dim=(num_blocks,),
                     block_dim=(BLOCK_SIZE,),
                 )

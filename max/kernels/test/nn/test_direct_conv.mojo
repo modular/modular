@@ -15,8 +15,7 @@ from std.math import ceildiv, isclose
 from std.random import rand
 from std.sys.info import num_physical_cores, simd_width_of
 
-from layout import Coord, Layout, LayoutTensor, RuntimeLayout
-from layout import lt_to_tt
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
@@ -89,34 +88,26 @@ def test[
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
     comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_5d = Layout.row_major[5]()
-    var input = LayoutTensor[dtype, layout_4d](
-        input_ptr, RuntimeLayout[layout_4d].row_major(Index(N, H, W, C))
+    var input = TileTensor(Span(input_ptr), row_major(Coord(Index(N, H, W, C))))
+    var filter = TileTensor(
+        Span(filter_ptr), row_major(Coord(Index(R, S, C // num_groups, F)))
     )
-    var filter = LayoutTensor[dtype, layout_4d](
-        filter_ptr,
-        RuntimeLayout[layout_4d].row_major(Index(R, S, C // num_groups, F)),
-    )
-    var packed_filter_shape = pack_conv_filter_shape(
-        lt_to_tt(filter), num_groups
-    )
+    var packed_filter_shape = pack_conv_filter_shape(filter, num_groups)
     var packed_filter_ptr = List(
         length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
-    var packed_filter = LayoutTensor[dtype, layout_5d](
-        packed_filter_ptr,
-        RuntimeLayout[layout_5d].row_major(packed_filter_shape),
+    var packed_filter = TileTensor(
+        Span(packed_filter_ptr), row_major(Coord(packed_filter_shape))
     )
-    var output = LayoutTensor[dtype, layout_4d](
-        output_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    var output = TileTensor(
+        Span(output_ptr), row_major(Coord(Index(N, HO, WO, F)))
     )
-    var output_ref = LayoutTensor[dtype, layout_4d](
-        output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    var output_ref = TileTensor(
+        Span(output_ref_ptr), row_major(Coord(Index(N, HO, WO, F)))
     )
 
     comptime if filter_packed:
-        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
+        pack_filter(filter, packed_filter, num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -143,31 +134,26 @@ def test[
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_4d,
-            layout_5d,
-            layout_4d,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             True,
             conv_attr,
-        ].run(
-            output,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_4d,
-            layout_4d,
-            layout_4d,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             dtype,
             dtype,
             dtype,
             False,
             conv_attr,
-        ].run(output, input, filter, conv_shape)
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Check results, return on the first failed comparison.
     for n in range(N):

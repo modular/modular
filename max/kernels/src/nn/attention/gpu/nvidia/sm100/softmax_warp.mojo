@@ -171,9 +171,8 @@ def fa4_scale_write_output[
         if e != 0:
             ragged_tma_store.prefetch_descriptor()
 
-    @__parameter
     @inline(.always)
-    def write_chunk[j: Int]():
+    def write_chunk[j: Int]() {imm}:
         var packed: SIMD[DType.uint32, chunk // 2]
         comptime if zero_fill:
             # Empty (all-masked) row: emit zeros without reading the
@@ -199,17 +198,15 @@ def fa4_scale_write_output[
             )
         ).bitcast[UInt32]().store(packed)
 
-    @__parameter
     @inline(.always)
-    def write_blocks[lo: Int, hi: Int]():
+    def write_blocks[lo: Int, hi: Int]() {imm}:
         comptime for j in range(
             lo * chunks_per_blk, min(hi * chunks_per_blk, n_chunks)
         ):
             write_chunk[j]()
 
-    @__parameter
     @inline(.always)
-    def store_blocks[lo: Int, hi: Int]():
+    def store_blocks[lo: Int, hi: Int]() {imm}:
         comptime for blk in range(lo, hi):
             ragged_tma_store.async_copy_from_col[blk](
                 o_smem_arg,
@@ -1585,9 +1582,8 @@ def fa4_ws_splitk_reduce_scatter_write[
     # ---- (2) fence the m_pack warps' staging (WG0-local) ----
     named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
 
-    @__parameter
     @inline(.always)
-    def reduce_scatter_p[P_static: Int]():
+    def reduce_scatter_p[P_static: Int]() {imm}:
         comptime bpp = ceildiv(m_pack, P_static)
         var e = elect()
         # ---- (3) publish: WG0 warp 0 ONLY, exactly rows*P_static arrivals ----
@@ -2317,9 +2313,8 @@ def fa4_splitk_reduce_scatter_write[
     # is P-general: a non-pow2 P (6, 10) just yields uneven and/or empty
     # trailing bands, both of which are already handled below.
 
-    @__parameter
     @inline(.always)
-    def reduce_scatter_p[P_static: Int]():
+    def reduce_scatter_p[P_static: Int]() {imm}:
         comptime bpp = ceildiv(iters_total, P_static)
         comptime for p_static in range(P_static):
             comptime ob = p_static * bpp
@@ -2681,7 +2676,9 @@ def fa4_softmax[
     var head_idx: UInt32 = seq_info.head_idx
     var q_head_idx: UInt32 = head_idx
     comptime if config.fuse_gqa:
-        q_head_idx = UInt32(config.group) * head_idx + row % UInt32(
+        # `thread_tile_row`, not `row`: `tid % 128` folds in the WS key
+        # partition, which only agrees mod `group` when `group` divides 128.
+        q_head_idx = UInt32(config.group) * head_idx + thread_tile_row % UInt32(
             config.group
         )
 
@@ -2746,11 +2743,10 @@ def fa4_softmax[
         get_defined_int["BLASST_LOG_THRESHOLD_MAG", 1_000_000_000]()
     ) * Float32(0.001)
 
-    @__parameter
     @inline(.always)
     def mask_row[
         BN: Int, //, mask_strategy: MaskStrategy
-    ](mut s: Array[Scalar[accum_dtype], BN], kv_row: UInt32):
+    ](mut s: Array[Scalar[accum_dtype], BN], kv_row: UInt32) {imm}:
         apply_mask[
             mask_strategy=mask_strategy,
             skip_scale=use_fma,
@@ -2815,9 +2811,8 @@ def fa4_softmax[
         ws_part_idx = splitk_partition_idx(ws_num_partitions)
         ws_o_row_off = ws_part_idx * ws_num_rows_q
 
-    @__parameter
     @inline(.always)
-    def _ws_write_lse(mx: Scalar[accum_dtype], sm: Scalar[accum_dtype]):
+    def _ws_write_lse(mx: Scalar[accum_dtype], sm: Scalar[accum_dtype]) {imm}:
         # Store this thread's fused per-row LSE (log2 domain) into
         # `ws_lse_ptr[p, token_row, q_head]` (layout [P, num_rows_q,
         # num_q_heads]) for the separate combine kernel. WG0 only (LSE is
@@ -2892,11 +2887,10 @@ def fa4_softmax[
 
     comptime max_unroll = 8
 
-    @__parameter
     @inline(.always)
     def apply_k_scale[
         N: Int, //, offset: Int
-    ](mut s0: Array[Float32, N], k_scale_off: UInt32):
+    ](mut s0: Array[Float32, N], k_scale_off: UInt32) {imm}:
         comptime if not KScaleType.is_null:
             comptime for n in range(0, N, 2):
                 var k_sc: f32x2 = (
@@ -3028,9 +3022,10 @@ def fa4_softmax[
         tcgen05_fence_after()
         return load_mask_max_impl[mask_strategy=mask_strategy](kv_row)
 
-    @__parameter
     @inline(.always)
-    def store_exp(max_term: Float32) -> f32x2:
+    def store_exp(
+        max_term: Float32,
+    ) {mut s, mut inplace_cons, mut pipeline_s, mut order_phase, imm} -> f32x2:
         comptime exp_simd = 2
         comptime vs_len = score_cols // exp_simd  # score_cols // 2
         comptime assert (vs_len % config.num_pv_stages) == 0
@@ -3082,9 +3077,8 @@ def fa4_softmax[
             vscale = f32x2(0)  # unused
             vneg_max_scaled = f32x2(0)  # unused
 
-        @__parameter
         @inline(.always)
-        def score_to_logit(score: f32x2) -> f32x2:
+        def score_to_logit(score: f32x2) {imm} -> f32x2:
             comptime if use_fma:
                 return fma_ftz(score, vscale, vneg_max_scaled)
             else:
@@ -3417,9 +3411,10 @@ def fa4_softmax[
     # Stripped sibling of store_exp for a WG-unanimous skip: no exp2/P-store/
     # row-sum, but reproduces every barrier arrival so the MMA and correction
     # warps stay in lockstep.
-    @__parameter
     @inline(.always)
-    def store_exp_skip():
+    def store_exp_skip() {
+        mut pipeline_s, mut inplace_cons, mut order_phase, imm
+    }:
         # Match store_exp's tail ordering (no P store to fence, but keep the
         # same tcgen05 wait/fence discipline before releasing S-consumer).
         tcgen05_store_wait()
@@ -3851,9 +3846,8 @@ def fa4_softmax[
     # so the two cannot drift. Do not open-code either half.
     var ws_exchange_seq: UInt32 = 0
 
-    @__parameter
     @inline(.always)
-    def sk_shared_max(m: Float32) -> Float32:
+    def sk_shared_max(m: Float32) {mut ws_exchange_seq, imm} -> Float32:
         """Shared-key: agree the running row max across the warpgroup's warps.
 
         Off-mode this is the identity and elaborates to nothing.
@@ -3948,9 +3942,8 @@ def fa4_softmax[
     comptime if use_fma:
         neg_scale_log2e = -scale_log2e
 
-    @__parameter
     @inline(.always)
-    def neg_scaled_max(m: Float32) -> Float32:
+    def neg_scaled_max(m: Float32) {imm} -> Float32:
         # `-m*scale_log2e`, with the fp8 `p_fp8_bias` folded in via one fused
         # fma -- so store_exp needs no separate bias add and, since the bias is
         # common to every max, it cancels in the correction diff
@@ -3975,9 +3968,8 @@ def fa4_softmax[
     var blasst_warp_in_wg: UInt32 = warp_idx & UInt32(3)
     var blasst_lane0: Bool = (tid % UInt32(32)) == UInt32(0)
 
-    @__parameter
     @inline(.always)
-    def blasst_observe(tile_max: Float32) -> Bool:
+    def blasst_observe(tile_max: Float32) {mut m_true, imm} -> Bool:
         m_true = max_ftz(m_true, tile_max)
         var diff_true = sub_ftz(tile_max, m_true)
         comptime if use_fma:
@@ -4040,9 +4032,8 @@ def fa4_softmax[
         # normalize. fp8 adds the same +p_fp8_bias as store_exp; the
         # `comptime if p_fp8_bias != 0` keeps the bf16 sink expression
         # byte-identical.
-        @__parameter
         @inline(.always)
-        def sink_mass() -> Float32:
+        def sink_mass() {imm} -> Float32:
             comptime if use_fma:
                 comptime if p_fp8_bias != 0:
                     return exp2(
@@ -4305,9 +4296,8 @@ def fa4_softmax[
         )
 
         # wait on the o_pipeline producer
-        @__parameter
         @inline(.always)
-        def wait_and_write_output():
+        def wait_and_write_output() {imm}:
             o_prod_mbar[warp_group_idx].wait(o_phase)  # consumer wait
             tcgen05_fence_after()  # example 1
             # TODO: pass in a dedicated barrier that a q-writer can wait on in a persistent kernel?
@@ -4539,9 +4529,8 @@ def fa4_softmax[
                     smem.ws_exchange_smem(),
                 )
 
-                @__parameter
                 @inline(.always)
-                def sk_epilogue[single_wg: Bool]():
+                def sk_epilogue[single_wg: Bool]() {imm}:
                     # (M, L) are depth-independent, so every tile computes the
                     # same pair; keep tile 0's. They are carried OUT of the loop
                     # rather than used inside it because the egress below must

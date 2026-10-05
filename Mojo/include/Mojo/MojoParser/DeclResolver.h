@@ -120,6 +120,10 @@ public:
   // TODO(MOCO-522): Centralize into arcana doc.
   void aliasDeclInParent(ASTDecl *decl, StringAttr aliasName);
 
+  /// Register a newly added extension decl under its parent's aggregate
+  /// "extension:" name.
+  void registerExtensionDecl(ASTDecl &extensionDecl);
+
   /// Attach a declaration to a trait composition's decl. This does not modify
   /// any existing parent-child relationships of the `childDecl`. It merely adds
   /// it to the trait composition's declsInScope map.
@@ -282,6 +286,17 @@ public:
   /// searched for `name` are skipped.
   void expandWildcardsForName(ASTDecl &scope, StringAttr name,
                               bool stopOnFirstHit = false);
+
+  /// If `decl` is a file module, pull the extensions its wildcard imports
+  /// provide into its scope, so conformance checks against its traits and
+  /// structs see them. Called once the decl's body is resolved.
+  void completeModuleScope(ASTDecl &decl);
+
+  /// Import every extension visible in `module`'s scope into `dest`, as part
+  /// of importing from `module`.
+  LogicalResult importModuleExtensions(ASTDecl &module, ASTDecl &dest,
+                                       ImportPathAttr moduleName,
+                                       SMLoc sourceLoc, SMLoc destLoc);
 
   ArrayRef<ASTDecl *> getParsedDeclList() const { return parsedDeclList; }
 

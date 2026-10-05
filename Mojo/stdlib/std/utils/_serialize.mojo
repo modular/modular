@@ -20,34 +20,38 @@ comptime _kCompactElemPerSide = _kCompactMaxElemsToPrint // 2
 
 def _serialize_elements_compact[
     dtype: DType,
+    SerializeFnType: def[T: Writable](elem: T) -> None,
     //,
-    serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
-](ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin], len: Int):
+](
+    ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin],
+    len: Int,
+    serialize_fn: SerializeFnType,
+):
     serialize_fn(_kStartTensorMarker)
     if len < _kCompactMaxElemsToPrint:
-        _serialize_elements_complete[serialize_fn=serialize_fn](ptr, len)
+        _serialize_elements_complete(ptr, len, serialize_fn)
         serialize_fn(_kEndTensorMarker)
         return
 
-    _serialize_elements_complete[serialize_fn=serialize_fn](
-        ptr, _kCompactElemPerSide
-    )
+    _serialize_elements_complete(ptr, _kCompactElemPerSide, serialize_fn)
     serialize_fn(", ")
     serialize_fn(_kTensorFiller)
     var tail_ptr: OptionalPointer[
         Scalar[dtype], ImmutAnyOrigin
     ] = ptr.unsafe_value().unsafe_offset(len - _kCompactElemPerSide)
-    _serialize_elements_complete[serialize_fn=serialize_fn](
-        tail_ptr, _kCompactElemPerSide
-    )
+    _serialize_elements_complete(tail_ptr, _kCompactElemPerSide, serialize_fn)
     serialize_fn(_kEndTensorMarker)
 
 
 def _serialize_elements_complete[
     dtype: DType,
+    SerializeFnType: def[T: Writable](elem: T) -> None,
     //,
-    serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
-](ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin], len: Int):
+](
+    ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin],
+    len: Int,
+    serialize_fn: SerializeFnType,
+):
     if len == 0:
         return
     var p = ptr.unsafe_value()
@@ -59,24 +63,32 @@ def _serialize_elements_complete[
 
 def _serialize_elements[
     dtype: DType,
+    SerializeFnType: def[T: Writable](elem: T) -> None,
     //,
-    serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
     compact: Bool = False,
-](ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin], len: Int):
+](
+    ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin],
+    len: Int,
+    serialize_fn: SerializeFnType,
+):
     comptime if compact:
-        _serialize_elements_compact[serialize_fn=serialize_fn](ptr, len)
+        _serialize_elements_compact(ptr, len, serialize_fn)
     else:
-        _serialize_elements_complete[serialize_fn=serialize_fn](ptr, len)
+        _serialize_elements_complete(ptr, len, serialize_fn)
 
 
 def _serialize[
     dtype: DType,
+    SerializeFnType: def[T: Writable](elem: T) -> None,
     //,
-    serialize_fn: def[T: Writable](elem: T) capturing[_] -> None,
     serialize_dtype: Bool = True,
     serialize_shape: Bool = True,
     serialize_end_line: Bool = True,
-](ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin], shape: List[Int]):
+](
+    ptr: OptionalPointer[Scalar[dtype], ImmutAnyOrigin],
+    shape: List[Int],
+    serialize_fn: SerializeFnType,
+):
     var rank = len(shape)
     if rank == 0:
         if serialize_end_line:
@@ -129,8 +141,8 @@ def _serialize[
             ] = ptr.unsafe_value().unsafe_offset(
                 matrix_idx * matrix_elem_count + row_idx * column_elem_count
             )
-            _serialize_elements[serialize_fn=serialize_fn, compact=True](
-                row_ptr, column_elem_count
+            _serialize_elements[compact=True](
+                row_ptr, column_elem_count, serialize_fn
             )
 
             row_idx += 1

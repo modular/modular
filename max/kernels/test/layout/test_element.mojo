@@ -16,24 +16,65 @@ from std.sys import align_of
 from layout import (
     IntTuple,
     Layout,
-    LayoutTensor,
+    TileTensor,
+    Coord,
+    Idx,
+    row_major,
+    stack_allocation,
     RuntimeLayout,
     RuntimeTuple,
     UNKNOWN_VALUE,
 )
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
 from layout.element import Element
 
 from std.utils import IndexList
+from layout.tile_layout import Layout as TileLayout
+
+
+def print_matrix(tensor: TileTensor):
+    comptime assert tensor.rank == tensor.flat_rank == 2
+    comptime assert tensor.element_size == 1
+    for i in range(tensor.dim[0]()):
+        for j in range(tensor.dim[1]()):
+            print(tensor[i, j], end=" ")
+        print()
+
+
+def print_elements[
+    element_layout: Layout,
+](
+    tensor: TileTensor,
+    runtime_element_layout: RuntimeLayout[
+        element_layout,
+        element_type=.int32,
+        linear_idx_type=tensor.linear_idx_type,
+    ],
+):
+    comptime assert tensor.rank == tensor.flat_rank == 2
+    comptime assert element_layout.size() == tensor.element_size
+    for i in range(tensor.dim[0]()):
+        for j in range(tensor.dim[1]()):
+            print(
+                Element[
+                    tensor.dtype,
+                    element_layout,
+                    index_type=tensor.linear_idx_type,
+                ].load(
+                    tensor.unsafe_ptr() + tensor.layout(Coord(i, j)),
+                    runtime_element_layout,
+                ),
+                end=" ",
+            )
+        print()
 
 
 # CHECK-LABEL: test_element_load
 def test_element_load():
     print("== test_element_load")
-    var tensor_8x8 = LayoutTensor[
-        .float32, Layout.row_major(8, 8), MutAnyOrigin
-    ].stack_allocation[stack_alignment=align_of[SIMD[.float32, 4]]()]()
+    var tensor_8x8 = stack_allocation[
+        .float32, alignment=align_of[SIMD[.float32, 4]]()
+    ](row_major[8, 8]())
     arange(tensor_8x8)
 
     # CHECK: vector_1x4
@@ -49,10 +90,10 @@ def test_element_load():
     for i in range(8):
         for j in range(2):
             var tensor_8x8_v_1_4 = tensor_8x8.as_imm().vectorize[1, 4]()
-            var offset = materialize[tensor_8x8_v_1_4.layout]()(IntTuple(i, j))
+            var offset = tensor_8x8_v_1_4.layout(Coord(i, j))
             var elem = Element[
-                tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
-            ].load(tensor_8x8_v_1_4.ptr + offset)
+                tensor_8x8_v_1_4.dtype, Layout(IntTuple(1, 4), IntTuple(0, 1))
+            ].load(tensor_8x8_v_1_4.unsafe_ptr() + offset)
             print(elem, end=" ")
         print("")
 
@@ -63,10 +104,10 @@ def test_element_load():
     for i in range(2):
         for j in range(8):
             var tensor_8x8_v_4_1 = tensor_8x8.as_imm().vectorize[4, 1]()
-            var offset = materialize[tensor_8x8_v_4_1.layout]()(IntTuple(i, j))
+            var offset = tensor_8x8_v_4_1.layout(Coord(i, j))
             var elem = Element[
-                tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
-            ].load(tensor_8x8_v_4_1.ptr + offset)
+                tensor_8x8_v_4_1.dtype, Layout(IntTuple(4, 1), IntTuple(8, 0))
+            ].load(tensor_8x8_v_4_1.unsafe_ptr() + offset)
             print(elem, end=" ")
         print("")
 
@@ -77,10 +118,10 @@ def test_element_load():
     for i in range(2):
         for j in range(2):
             var tensor_8x8_v_4_4 = tensor_8x8.as_imm().vectorize[4, 4]()
-            var offset = materialize[tensor_8x8_v_4_4.layout]()(IntTuple(i, j))
+            var offset = tensor_8x8_v_4_4.layout(Coord(i, j))
             var elem = Element[
-                tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
-            ].load(tensor_8x8_v_4_4.ptr + offset)
+                tensor_8x8_v_4_4.dtype, Layout(IntTuple(4, 4), IntTuple(8, 1))
+            ].load(tensor_8x8_v_4_4.unsafe_ptr() + offset)
             print(elem, end=" ")
         print("")
 
@@ -88,9 +129,9 @@ def test_element_load():
 # CHECK-LABEL: test_element_store
 def test_element_store():
     print("== test_element_store")
-    var tensor_8x8 = LayoutTensor[
-        .float32, Layout.row_major(8, 8), MutAnyOrigin
-    ].stack_allocation[stack_alignment=align_of[SIMD[.float32, 4]]()]()
+    var tensor_8x8 = stack_allocation[
+        .float32, alignment=align_of[SIMD[.float32, 4]]()
+    ](row_major[8, 8]())
     arange(tensor_8x8)
 
     # CHECK: vector_1x4
@@ -106,13 +147,13 @@ def test_element_store():
     for i in range(8):
         for j in range(2):
             var tensor_8x8_v_1_4 = tensor_8x8.vectorize[1, 4]()
-            var offset = materialize[tensor_8x8_v_1_4.layout]()(IntTuple(i, j))
+            var offset = tensor_8x8_v_1_4.layout(Coord(i, j))
             var elem = Element[
-                tensor_8x8_v_1_4.dtype, tensor_8x8_v_1_4.element_layout
-            ].load(tensor_8x8_v_1_4.ptr + offset)
+                tensor_8x8_v_1_4.dtype, Layout(IntTuple(1, 4), IntTuple(0, 1))
+            ].load(tensor_8x8_v_1_4.unsafe_ptr() + offset)
             elem.element_data *= 10
-            elem.store(tensor_8x8_v_1_4.ptr + offset)
-    print(tensor_8x8)
+            elem.store(tensor_8x8_v_1_4.unsafe_ptr() + offset)
+    print_matrix(tensor_8x8)
 
     # CHECK: vector_4x1
     # CHECK: 0.0 100.0 200.0 300.0 400.0 500.0 600.0 700.0
@@ -127,13 +168,13 @@ def test_element_store():
     for i in range(2):
         for j in range(8):
             var tensor_8x8_v_4_1 = tensor_8x8.vectorize[4, 1]()
-            var offset = materialize[tensor_8x8_v_4_1.layout]()(IntTuple(i, j))
+            var offset = tensor_8x8_v_4_1.layout(Coord(i, j))
             var elem = Element[
-                tensor_8x8_v_4_1.dtype, tensor_8x8_v_4_1.element_layout
-            ].load(tensor_8x8_v_4_1.ptr + offset)
+                tensor_8x8_v_4_1.dtype, Layout(IntTuple(4, 1), IntTuple(8, 0))
+            ].load(tensor_8x8_v_4_1.unsafe_ptr() + offset)
             elem.element_data *= 10
-            elem.store(tensor_8x8_v_4_1.ptr + offset)
-    print(tensor_8x8)
+            elem.store(tensor_8x8_v_4_1.unsafe_ptr() + offset)
+    print_matrix(tensor_8x8)
 
     # CHECK: vector_4x4
     # CHECK: 0.0 1000.0 2000.0 3000.0 4000.0 5000.0 6000.0 7000.0
@@ -148,57 +189,55 @@ def test_element_store():
     for i in range(2):
         for j in range(2):
             var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
-            var offset = materialize[tensor_8x8_v_4_4.layout]()(IntTuple(i, j))
+            var offset = tensor_8x8_v_4_4.layout(Coord(i, j))
             var elem = Element[
-                tensor_8x8_v_4_4.dtype, tensor_8x8_v_4_4.element_layout
-            ].load(tensor_8x8_v_4_4.ptr + offset)
+                tensor_8x8_v_4_4.dtype, Layout(IntTuple(4, 4), IntTuple(8, 1))
+            ].load(tensor_8x8_v_4_4.unsafe_ptr() + offset)
             elem.element_data *= 10
-            elem.store(tensor_8x8_v_4_4.ptr + offset)
+            elem.store(tensor_8x8_v_4_4.unsafe_ptr() + offset)
 
-    print(tensor_8x8)
+    print_matrix(tensor_8x8)
 
 
 def test_element_dynamic_layout() raises:
     print("== test_element_dynamic_layout")
 
-    comptime layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
-    var dynamic_layout = RuntimeLayout[
-        layout, element_type=.int32, linear_idx_type=.int32
-    ](
-        RuntimeTuple[layout.shape, element_type=.int32](8, 8),
-        RuntimeTuple[layout.stride, element_type=.int32](8, 1),
+    var dynamic_layout = TileLayout(
+        Coord(Int32(8), Int32(8)), Coord(Int32(8), Idx[1])
     )
-
     var storage = List(length=dynamic_layout.size(), fill=Float32(0))
-
-    var tensor_8x8 = LayoutTensor[
-        .float32,
-        layout,
-        layout_int_type=.int32,
-        linear_idx_type=.int32,
-    ](storage, dynamic_layout)
+    var tensor_8x8 = TileTensor[linear_idx_type=.int32](storage, dynamic_layout)
+    comptime dynamic_element_layout = Layout(
+        IntTuple(4, 4), IntTuple(UNKNOWN_VALUE, 1)
+    )
+    var runtime_element_layout = RuntimeLayout[
+        dynamic_element_layout, element_type=.int32, linear_idx_type=.int32
+    ](
+        RuntimeTuple[dynamic_element_layout.shape, element_type=.int32](),
+        RuntimeTuple[dynamic_element_layout.stride, element_type=.int32](
+            Int(tensor_8x8.layout.stride_coord()[0].value()),
+            Int(tensor_8x8.layout.stride_coord()[1].value()),
+        ),
+    )
 
     arange(tensor_8x8)
 
     for tile_i in range(2):
         for tile_j in range(2):
             var tensor_8x8_v_4_4 = tensor_8x8.vectorize[4, 4]()
-            var offset = tensor_8x8_v_4_4.runtime_layout(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE, UNKNOWN_VALUE)](
-                    tile_i, tile_j
-                )
+            var offset = tensor_8x8_v_4_4.layout[linear_idx_type=.int32](
+                Coord(Int32(tile_i), Int32(tile_j))
             )
             var elem = Element[
                 tensor_8x8_v_4_4.dtype,
-                tensor_8x8_v_4_4.element_layout,
+                dynamic_element_layout,
                 index_type=tensor_8x8_v_4_4.linear_idx_type,
             ].load(
-                tensor_8x8_v_4_4.ptr + offset,
-                tensor_8x8_v_4_4.runtime_element_layout,
+                tensor_8x8_v_4_4.unsafe_ptr() + offset,
+                runtime_element_layout,
             )
             elem.element_data *= 10
-            elem.store(tensor_8x8_v_4_4.ptr + offset)
+            elem.store(tensor_8x8_v_4_4.unsafe_ptr() + offset)
 
     # CHECK: 0.0 10.0 20.0 30.0 40.0 50.0 60.0 70.0
     # CHECK: 80.0 90.0 100.0 110.0 120.0 130.0 140.0 150.0
@@ -208,18 +247,11 @@ def test_element_dynamic_layout() raises:
     # CHECK: 400.0 410.0 420.0 430.0 440.0 450.0 460.0 470.0
     # CHECK: 480.0 490.0 500.0 510.0 520.0 530.0 540.0 550.0
     # CHECK: 560.0 570.0 580.0 590.0 600.0 610.0 620.0 630.0
-    print(tensor_8x8)
+    print_matrix(tensor_8x8)
 
-    comptime layoutUx8 = Layout.row_major(UNKNOWN_VALUE, 8)
-    comptime tensor_Ux8_type = ManagedLayoutTensor[.float32, layoutUx8]
-    var runtime_layoutUx8 = RuntimeLayout[
-        layoutUx8,
-        element_type=tensor_Ux8_type.element_type,
-        linear_idx_type=tensor_Ux8_type.index_type,
-    ].row_major(IndexList[2, element_type=tensor_Ux8_type.element_type](8, 8))
-
-    var tensor_Ux8 = tensor_Ux8_type(runtime_layoutUx8)
-    arange(tensor_Ux8.tensor(), 0, 0.5)
+    var storage_Ux8 = List(length=8 * 8, fill=Float32(0))
+    var tensor_Ux8 = TileTensor(storage_Ux8, row_major(Coord(Int32(8), Idx[8])))
+    arange(tensor_Ux8, 0, 0.5)
     # CHECK: 0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5
     # CHECK: 4.0 4.5 5.0 5.5 6.0 6.5 7.0 7.5
     # CHECK: 8.0 8.5 9.0 9.5 10.0 10.5 11.0 11.5
@@ -228,9 +260,9 @@ def test_element_dynamic_layout() raises:
     # CHECK: 20.0 20.5 21.0 21.5 22.0 22.5 23.0 23.5
     # CHECK: 24.0 24.5 25.0 25.5 26.0 26.5 27.0 27.5
     # CHECK: 28.0 28.5 29.0 29.5 30.0 30.5 31.0 31.5
-    print(tensor_Ux8.tensor())
+    print_matrix(tensor_Ux8)
 
-    var tensor_Ux8_vec4_d1 = tensor_Ux8.tensor().vectorize[1, 4]()
+    var tensor_Ux8_vec4_d1 = tensor_Ux8.vectorize[1, 4]()
 
     # CHECK: ((1, 4):(0, 1))
     # CHECK: [0.0, 0.5, 1.0, 1.5] [2.0, 2.5, 3.0, 3.5]
@@ -241,19 +273,20 @@ def test_element_dynamic_layout() raises:
     # CHECK: [20.0, 20.5, 21.0, 21.5] [22.0, 22.5, 23.0, 23.5]
     # CHECK: [24.0, 24.5, 25.0, 25.5] [26.0, 26.5, 27.0, 27.5]
     # CHECK: [28.0, 28.5, 29.0, 29.5] [30.0, 30.5, 31.0, 31.5]
-    print(materialize[tensor_Ux8_vec4_d1.element_layout]())
-    print(tensor_Ux8_vec4_d1)
+    comptime element_1x4 = Layout(IntTuple(1, 4), IntTuple(0, 1))
+    print(materialize[element_1x4]())
+    print_elements[element_1x4](
+        tensor_Ux8_vec4_d1,
+        RuntimeLayout[
+            element_1x4,
+            element_type=.int32,
+            linear_idx_type=tensor_Ux8_vec4_d1.linear_idx_type,
+        ](),
+    )
 
-    comptime layout8xU = Layout.row_major(8, UNKNOWN_VALUE)
-    comptime tensor_8xU_type = ManagedLayoutTensor[.float32, layout8xU]
-    var runtime_layout8xU = RuntimeLayout[
-        layout8xU,
-        element_type=tensor_8xU_type.element_type,
-        linear_idx_type=tensor_8xU_type.index_type,
-    ].row_major(IndexList[2, element_type=tensor_8xU_type.element_type](8, 2))
-
-    var tensor_8xU = tensor_8xU_type(runtime_layout8xU)
-    arange(tensor_8xU.tensor(), 0, 0.5)
+    var storage_8xU = List(length=8 * 2, fill=Float32(0))
+    var tensor_8xU = TileTensor(storage_8xU, row_major(Coord(Idx[8], Int32(2))))
+    arange(tensor_8xU, 0, 0.5)
     # CHECK: 0.0 0.5
     # CHECK: 1.0 1.5
     # CHECK: 2.0 2.5
@@ -262,59 +295,65 @@ def test_element_dynamic_layout() raises:
     # CHECK: 5.0 5.5
     # CHECK: 6.0 6.5
     # CHECK: 7.0 7.5
-    print(tensor_8xU.tensor())
+    print_matrix(tensor_8xU)
 
-    var tensor_Ux8_vec4_d0 = tensor_8xU.tensor().vectorize[4, 1]()
+    var tensor_Ux8_vec4_d0 = tensor_8xU.vectorize[4, 1]()
     # CHECK: ((4, 1):(-1, 0))
     # CHECK: [0.0, 1.0, 2.0, 3.0] [0.5, 1.5, 2.5, 3.5]
     # CHECK: [4.0, 5.0, 6.0, 7.0] [4.5, 5.5, 6.5, 7.5]
-    print(materialize[tensor_Ux8_vec4_d0.element_layout]())
-    print(tensor_Ux8_vec4_d0)
-
-    _ = tensor_Ux8^
-    _ = tensor_8xU^
+    comptime element_4x1 = Layout(IntTuple(4, 1), IntTuple(UNKNOWN_VALUE, 0))
+    var runtime_element_4x1 = RuntimeLayout[
+        element_4x1,
+        element_type=.int32,
+        linear_idx_type=tensor_Ux8_vec4_d0.linear_idx_type,
+    ](
+        RuntimeTuple[element_4x1.shape, element_type=.int32](),
+        RuntimeTuple[
+            element_4x1.stride, element_type=tensor_Ux8_vec4_d0.linear_idx_type
+        ](Int(tensor_8xU.layout.stride_coord()[0].value()), 0),
+    )
+    print(materialize[element_4x1]())
+    print_elements[element_4x1](tensor_Ux8_vec4_d0, runtime_element_4x1)
 
 
 # CHECK-LABEL: test_element_masked_load
 def test_element_masked_load():
     print("== test_element_masked_load")
     var tensor_4x4_stack = Array[Float32, 4 * 4](fill={})
-    var tensor_4x4 = LayoutTensor[.float32, Layout.row_major(4, 4)](
-        tensor_4x4_stack
-    )
+    var tensor_4x4 = TileTensor(tensor_4x4_stack, row_major[4, 4]())
     arange(tensor_4x4)
-    var tensor_1x3 = LayoutTensor[.float32, Layout.row_major(1, 3)](
-        tensor_4x4.ptr
-    )
+    var tensor_1x3 = TileTensor(tensor_4x4.unsafe_ptr(), row_major[1, 3]())
 
     var tensor_1x3_v4 = tensor_1x3.as_imm().vectorize[1, 4]()
     # CHECK: [0.0, 1.0, 2.0, 0.0]
     print(
         Element[
             tensor_1x3_v4.dtype,
-            tensor_1x3_v4.element_layout,
+            Layout(IntTuple(1, 4), IntTuple(0, 1)),
             index_type=tensor_1x3_v4.linear_idx_type,
         ].masked_load(
-            tensor_1x3_v4.ptr,
-            type_of(tensor_1x3_v4.runtime_element_layout).row_major(
-                IndexList[2, element_type=.int32](1, 3)
-            ),
+            tensor_1x3_v4.unsafe_ptr(),
+            RuntimeLayout[
+                Layout(IntTuple(1, 4), IntTuple(0, 1)),
+                element_type=.int32,
+                linear_idx_type=tensor_1x3_v4.linear_idx_type,
+            ].row_major(IndexList[2, element_type=.int32](1, 3)),
         )
     )
 
     # CHECK: [0.0, 4.0, 8.0, 0.0]
-    var tensor_3x4 = LayoutTensor[.float32, Layout.row_major(3, 4)](
-        tensor_4x4.ptr
-    )
+    var tensor_3x4 = TileTensor(tensor_4x4.unsafe_ptr(), row_major[3, 4]())
 
     var tensor_3x1_v4 = tensor_3x4.as_imm().vectorize[4, 1]()
 
     print(
         Element[index_type=tensor_3x1_v4.linear_idx_type].masked_load(
-            tensor_3x1_v4.ptr,
-            type_of(tensor_3x1_v4.runtime_element_layout).row_major(
-                IndexList[2, element_type=.int32](3, 1)
-            ),
+            tensor_3x1_v4.unsafe_ptr(),
+            RuntimeLayout[
+                Layout(IntTuple(4, 1), IntTuple(4, 0)),
+                element_type=.int32,
+                linear_idx_type=tensor_3x1_v4.linear_idx_type,
+            ].row_major(IndexList[2, element_type=.int32](3, 1)),
         )
     )
 
@@ -323,10 +362,12 @@ def test_element_masked_load():
     # CHECK: [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 0.0, 0.0, 0.0, 0.0]
     print(
         Element[index_type=tensor_3x4_v4x4.linear_idx_type].masked_load(
-            tensor_3x4_v4x4.ptr,
-            type_of(tensor_3x4_v4x4.runtime_element_layout).row_major(
-                IndexList[2, element_type=.int32](3, 4)
-            ),
+            tensor_3x4_v4x4.unsafe_ptr(),
+            RuntimeLayout[
+                Layout(IntTuple(4, 4), IntTuple(4, 1)),
+                element_type=.int32,
+                linear_idx_type=tensor_3x4_v4x4.linear_idx_type,
+            ].row_major(IndexList[2, element_type=.int32](3, 4)),
         )
     )
 
@@ -334,66 +375,79 @@ def test_element_masked_load():
 # CHECK-LABEL: test_element_masked_store
 def test_element_masked_store():
     print("== test_element_masked_store")
+    comptime element_1x4 = Layout(IntTuple(1, 4), IntTuple(0, 1))
+    comptime element_4x1 = Layout(IntTuple(4, 1), IntTuple(4, 0))
+    comptime element_4x4 = Layout(IntTuple(4, 4), IntTuple(4, 1))
     var tensor_4x4_stack = Array[Float32, 4 * 4](fill={})
-    var tensor_4x4 = LayoutTensor[.float32, Layout.row_major(4, 4)](
-        tensor_4x4_stack
-    ).fill(-1)
+    var tensor_4x4 = TileTensor(tensor_4x4_stack, row_major[4, 4]()).fill(-1)
 
     var tensor_4x4_vec_1_4 = tensor_4x4.vectorize[1, 4]()
-    var element_v_1_4 = Element[index_type=tensor_4x4_vec_1_4.linear_idx_type](
-        SIMD[
-            tensor_4x4_vec_1_4.dtype, tensor_4x4_vec_1_4.element_layout.size()
-        ](1),
-        type_of(tensor_4x4_vec_1_4.runtime_element_layout).row_major(
-            IndexList[2, element_type=.int32](1, 3)
-        ),
+    var element_v_1_4 = Element[
+        .float32,
+        element_1x4,
+        index_type=tensor_4x4_vec_1_4.linear_idx_type,
+    ](
+        SIMD[tensor_4x4_vec_1_4.dtype, element_1x4.size()](1),
+        RuntimeLayout[
+            element_1x4,
+            element_type=.int32,
+            linear_idx_type=tensor_4x4_vec_1_4.linear_idx_type,
+        ].row_major(IndexList[2, element_type=.int32](1, 3)),
     )
-    element_v_1_4.masked_store(tensor_4x4_vec_1_4.ptr)
+    element_v_1_4.masked_store(tensor_4x4_vec_1_4.unsafe_ptr())
     # CHECK: vec_1x4:mask_1x3
     # CHECK: 1.0 1.0 1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
     print("vec_1x4:mask_1x3")
-    print(tensor_4x4)
+    print_matrix(tensor_4x4)
     _ = tensor_4x4.fill(-1)
 
     var tensor_4x4_vec_4_1 = tensor_4x4.vectorize[4, 1]()
-    var element_v_4_1 = Element[index_type=tensor_4x4_vec_4_1.linear_idx_type](
-        SIMD[
-            tensor_4x4_vec_4_1.dtype, tensor_4x4_vec_4_1.element_layout.size()
-        ](1),
-        type_of(tensor_4x4_vec_4_1.runtime_element_layout).row_major(
-            IndexList[2, element_type=.int32](2, 1)
-        ),
+    var element_v_4_1 = Element[
+        .float32,
+        element_4x1,
+        index_type=tensor_4x4_vec_4_1.linear_idx_type,
+    ](
+        SIMD[tensor_4x4_vec_4_1.dtype, element_4x1.size()](1),
+        RuntimeLayout[
+            element_4x1,
+            element_type=.int32,
+            linear_idx_type=tensor_4x4_vec_4_1.linear_idx_type,
+        ].row_major(IndexList[2, element_type=.int32](2, 1)),
     )
-    element_v_4_1.masked_store(tensor_4x4_vec_4_1.ptr)
+    element_v_4_1.masked_store(tensor_4x4_vec_4_1.unsafe_ptr())
     print("vec_4x1:mask_1x2")
     # CHECK: vec_4x1:mask_1x2
     # CHECK: 1.0 -1.0 -1.0 -1.0
     # CHECK: 1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
-    print(tensor_4x4)
+    print_matrix(tensor_4x4)
     _ = tensor_4x4.fill(-1)
 
     var tensor_4x4_vec_4_4 = tensor_4x4.vectorize[4, 4]()
-    var element_v_4_4 = Element[index_type=tensor_4x4.linear_idx_type](
-        SIMD[
-            tensor_4x4_vec_4_4.dtype, tensor_4x4_vec_4_4.element_layout.size()
-        ](1),
-        type_of(tensor_4x4_vec_4_4.runtime_element_layout).row_major(
-            IndexList[2, element_type=.int32](3, 2)
-        ),
+    var element_v_4_4 = Element[
+        .float32,
+        element_4x4,
+        index_type=tensor_4x4.linear_idx_type,
+    ](
+        SIMD[tensor_4x4_vec_4_4.dtype, element_4x4.size()](1),
+        RuntimeLayout[
+            element_4x4,
+            element_type=.int32,
+            linear_idx_type=tensor_4x4_vec_4_4.linear_idx_type,
+        ].row_major(IndexList[2, element_type=.int32](3, 2)),
     )
-    element_v_4_4.masked_store(tensor_4x4_vec_4_4.ptr)
+    element_v_4_4.masked_store(tensor_4x4_vec_4_4.unsafe_ptr())
     print("vec_4x4:mask_3x2")
     # CHECK: vec_4x4:mask_3x2
     # CHECK: 1.0 1.0 -1.0 -1.0
     # CHECK: 1.0 1.0 -1.0 -1.0
     # CHECK: 1.0 1.0 -1.0 -1.0
     # CHECK: -1.0 -1.0 -1.0 -1.0
-    print(tensor_4x4)
+    print_matrix(tensor_4x4)
 
 
 def main() raises:

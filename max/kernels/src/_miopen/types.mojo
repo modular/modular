@@ -103,16 +103,16 @@ struct DataType(Equatable, TrivialRegisterPassable):
 
     def __init__(out self, dtype: DType) raises:
         __match dtype:
-        case .float32:
-            self = Self.FLOAT
-        case .float16:
-            self = Self.HALF
-        case .bfloat16:
-            self = Self.BFLOAT16
-        case _:
-            raise Error(
-                "the dtype '", dtype, "' is not currently handled by MIOpen"
-            )
+            case .float32:
+                self = Self.FLOAT
+            case .float16:
+                self = Self.HALF
+            case .bfloat16:
+                self = Self.BFLOAT16
+            case _:
+                raise Error(
+                    "the dtype '", dtype, "' is not currently handled by MIOpen"
+                )
 
     def __int__(self) -> Int:
         return Int(self._value)

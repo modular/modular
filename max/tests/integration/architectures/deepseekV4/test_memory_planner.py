@@ -28,11 +28,12 @@ from max.pipelines.lib import PipelineConfig
 # Memory-manager allocation logs, TP=2 on 2x B200, per device (MXSERV-569):
 # (max_length, trunk layers, CE tokens, arena bytes).
 _MEASURED = [
-    (4096, 43, 1024, 5_133_310_464),
-    (4096, 43, 7168, 35_888_315_392),
-    (4096, 8, 1024, 4_733_510_144),
-    (2048, 8, 1000, 2_876_710_400),
-    (1024, 8, 1000, 2_002_646_528),
+    (4096, 43, 2000, 2_253_603_328),
+    (4096, 43, 4000, 4_499_096_064),
+    (4096, 8, 4000, 4_440_524_288),
+    (2048, 8, 4000, 4_394_989_056),
+    (1024, 8, 500, 546_302_464),
+    (1024, 8, 4000, 4_367_980_032),
 ]
 
 
@@ -86,8 +87,6 @@ def test_reserves_the_full_ce_batch_on_every_device() -> None:
         _pipeline_config(), _huggingface_config()
     )
     assert estimate == 2 * 8192 * prefill_arena_bytes_per_token(4096, 43)
-    # The batch that OOMed run 36376133383 asked for 38.40 GB on cuda[0].
-    assert estimate // 2 > 38.40 * 1000**3
 
 
 def test_decode_only_reserves_nothing() -> None:

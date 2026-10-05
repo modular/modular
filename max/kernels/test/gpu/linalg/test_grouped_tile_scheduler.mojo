@@ -24,12 +24,13 @@ from std.iter import zip
 from std.itertools import count
 from max.gpu.host import DeviceContext
 from layout import (
+    ComptimeInt,
     DefaultEngine,
-    Layout,
-    LayoutTensor,
-    row_major as new_row_major,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
 )
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul_kernel import (
     _ProblemSizesTile,
@@ -44,6 +45,11 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_schedu
 # =============================================================================
 
 
+comptime _ColumnTile[rows: Int] = TileTensor[
+    .int32, RowMajorLayout[ComptimeInt[rows], ComptimeInt[1]], MutAnyOrigin
+]
+
+
 def test_scheduler_kernel[
     tile_m: Int,
     tile_n: Int,
@@ -51,39 +57,19 @@ def test_scheduler_kernel[
     max_groups: Int,
     max_tiles: Int,
 ](
-    problem_sizes: LayoutTensor[
-        .int32, Layout.row_major(max_groups, 4), MutAnyOrigin
+    problem_sizes: _ProblemSizesTile[
+        max_groups, DefaultEngine[element_width=1]
     ],
     num_groups: Int32,
     # Outputs: record visited tiles
-    visited_group: LayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1), MutAnyOrigin
-    ],
-    visited_m: LayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1), MutAnyOrigin
-    ],
-    visited_n: LayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1), MutAnyOrigin
-    ],
-    visited_k_tiles: LayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1), MutAnyOrigin
-    ],
-    visited_changed: LayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1), MutAnyOrigin
-    ],
-    tile_count: LayoutTensor[.int32, Layout.row_major(1, 1), MutAnyOrigin],
+    visited_group: _ColumnTile[max_tiles],
+    visited_m: _ColumnTile[max_tiles],
+    visited_n: _ColumnTile[max_tiles],
+    visited_k_tiles: _ColumnTile[max_tiles],
+    visited_changed: _ColumnTile[max_tiles],
+    tile_count: _ColumnTile[1],
 ):
     """Kernel that iterates over all tiles and records their coordinates."""
-    # Convert LayoutTensor to TileTensor for the scheduler
-
-    var problem_sizes_tt = _ProblemSizesTile[
-        max_groups, DefaultEngine[element_width=1]
-    ](
-        ptr=MutPointer[Int32, MutAnyOrigin](
-            unsafe_from_address=Int(problem_sizes.ptr)
-        ),
-        layout=new_row_major[max_groups, 4](),
-    )
     var scheduler = GroupedTileScheduler[
         tile_m,
         tile_n,
@@ -91,13 +77,11 @@ def test_scheduler_kernel[
         max_groups,
         0,
         problem_sizes_engine=DefaultEngine[element_width=1],
-    ](problem_sizes_tt, Int(num_groups))
+    ](problem_sizes, Int(num_groups))
 
     var work_iter = scheduler.work_iterator()
 
-    for linear_idx, current in zip(
-        count(Int(block_idx.x), Int(grid_dim.x)), work_iter
-    ):
+    for linear_idx, current in zip(count(block_idx.x, grid_dim.x), work_iter):
         # Record visited tile (only thread 0 writes)
         if thread_idx.x == 0:
             if linear_idx < max_tiles:
@@ -125,34 +109,30 @@ def test_single_group(ctx: DeviceContext) raises:
     comptime max_tiles = 64
 
     # Create problem sizes: 1 group, 64x64x128
-    var problem_sizes = ManagedLayoutTensor[
-        .int32, Layout.row_major(max_groups, 4)
-    ](ctx)
-    var ps = problem_sizes.tensor[update=False]()
+    var problem_sizes = HostDeviceTileTensor[.int32](
+        row_major[max_groups, 4](), ctx
+    )
+    var ps = problem_sizes.host_tensor()
     ps[0, 0] = 64  # M
     ps[0, 1] = 64  # N
     ps[0, 2] = 128  # K
     ps[0, 3] = 0  # L (unused)
 
     # Create output tensors
-    var visited_group = ManagedLayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1)
-    ](ctx)
-    var visited_m = ManagedLayoutTensor[.int32, Layout.row_major(max_tiles, 1)](
-        ctx
+    var visited_group = HostDeviceTileTensor[.int32](
+        row_major[max_tiles, 1](), ctx
     )
-    var visited_n = ManagedLayoutTensor[.int32, Layout.row_major(max_tiles, 1)](
-        ctx
+    var visited_m = HostDeviceTileTensor[.int32](row_major[max_tiles, 1](), ctx)
+    var visited_n = HostDeviceTileTensor[.int32](row_major[max_tiles, 1](), ctx)
+    var visited_k_tiles = HostDeviceTileTensor[.int32](
+        row_major[max_tiles, 1](), ctx
     )
-    var visited_k_tiles = ManagedLayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1)
-    ](ctx)
-    var visited_changed = ManagedLayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1)
-    ](ctx)
-    var tile_count = ManagedLayoutTensor[.int32, Layout.row_major(1, 1)](ctx)
+    var visited_changed = HostDeviceTileTensor[.int32](
+        row_major[max_tiles, 1](), ctx
+    )
+    var tile_count = HostDeviceTileTensor[.int32](row_major[1, 1](), ctx)
 
-    ctx.synchronize()
+    problem_sizes.to_device()
 
     # Launch kernel
     comptime kernel = test_scheduler_kernel[
@@ -175,9 +155,13 @@ def test_single_group(ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
+    visited_group.to_host()
+    visited_k_tiles.to_host()
+    visited_changed.to_host()
+    tile_count.to_host()
 
     # Verify results
-    var total = Int(tile_count.tensor()[0, 0])
+    var total = Int(tile_count.host_tensor()[0, 0])
     if total != expected_tiles:
         print("    FAILED: Expected", expected_tiles, "tiles, got", total)
         return
@@ -185,8 +169,8 @@ def test_single_group(ctx: DeviceContext) raises:
     # Check all tiles are from group 0 with k_tile_count = 128/32 = 4
     var errors = 0
     for i in range(expected_tiles):
-        var g = Int(visited_group.tensor()[i, 0])
-        var kt = Int(visited_k_tiles.tensor()[i, 0])
+        var g = Int(visited_group.host_tensor()[i, 0])
+        var kt = Int(visited_k_tiles.host_tensor()[i, 0])
         if g != 0:
             if errors < 3:
                 print("    Tile", i, "has wrong group:", g)
@@ -197,7 +181,7 @@ def test_single_group(ctx: DeviceContext) raises:
             errors += 1
 
     # Check first tile has group_changed = True
-    if Int(visited_changed.tensor()[0, 0]) != 1:
+    if Int(visited_changed.host_tensor()[0, 0]) != 1:
         print("    First tile should have group_changed=True")
         errors += 1
 
@@ -227,10 +211,10 @@ def test_two_groups(ctx: DeviceContext) raises:
     comptime max_tiles = 64
 
     # Create problem sizes: 2 groups
-    var problem_sizes = ManagedLayoutTensor[
-        .int32, Layout.row_major(max_groups, 4)
-    ](ctx)
-    var ps = problem_sizes.tensor[update=False]()
+    var problem_sizes = HostDeviceTileTensor[.int32](
+        row_major[max_groups, 4](), ctx
+    )
+    var ps = problem_sizes.host_tensor()
     # Group 0: 32x32x64 -> 2x2=4 tiles, k_tiles=2
     ps[0, 0] = 32
     ps[0, 1] = 32
@@ -243,24 +227,20 @@ def test_two_groups(ctx: DeviceContext) raises:
     ps[1, 3] = 0
 
     # Create output tensors
-    var visited_group = ManagedLayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1)
-    ](ctx)
-    var visited_m = ManagedLayoutTensor[.int32, Layout.row_major(max_tiles, 1)](
-        ctx
+    var visited_group = HostDeviceTileTensor[.int32](
+        row_major[max_tiles, 1](), ctx
     )
-    var visited_n = ManagedLayoutTensor[.int32, Layout.row_major(max_tiles, 1)](
-        ctx
+    var visited_m = HostDeviceTileTensor[.int32](row_major[max_tiles, 1](), ctx)
+    var visited_n = HostDeviceTileTensor[.int32](row_major[max_tiles, 1](), ctx)
+    var visited_k_tiles = HostDeviceTileTensor[.int32](
+        row_major[max_tiles, 1](), ctx
     )
-    var visited_k_tiles = ManagedLayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1)
-    ](ctx)
-    var visited_changed = ManagedLayoutTensor[
-        .int32, Layout.row_major(max_tiles, 1)
-    ](ctx)
-    var tile_count = ManagedLayoutTensor[.int32, Layout.row_major(1, 1)](ctx)
+    var visited_changed = HostDeviceTileTensor[.int32](
+        row_major[max_tiles, 1](), ctx
+    )
+    var tile_count = HostDeviceTileTensor[.int32](row_major[1, 1](), ctx)
 
-    ctx.synchronize()
+    problem_sizes.to_device()
 
     # Expected tiles: 4 + 9 = 13
     comptime expected_tiles = 13
@@ -282,9 +262,13 @@ def test_two_groups(ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
+    visited_group.to_host()
+    visited_k_tiles.to_host()
+    visited_changed.to_host()
+    tile_count.to_host()
 
     # Verify results
-    var total = Int(tile_count.tensor()[0, 0])
+    var total = Int(tile_count.host_tensor()[0, 0])
     if total != expected_tiles:
         print("    FAILED: Expected", expected_tiles, "tiles, got", total)
         return
@@ -296,9 +280,9 @@ def test_two_groups(ctx: DeviceContext) raises:
     var errors = 0
 
     for i in range(expected_tiles):
-        var g = Int(visited_group.tensor()[i, 0])
-        var kt = Int(visited_k_tiles.tensor()[i, 0])
-        var changed = Int(visited_changed.tensor()[i, 0])
+        var g = Int(visited_group.host_tensor()[i, 0])
+        var kt = Int(visited_k_tiles.host_tensor()[i, 0])
+        var changed = Int(visited_changed.host_tensor()[i, 0])
 
         if g == 0:
             group0_count += 1

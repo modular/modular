@@ -21,7 +21,7 @@ correctly.
 
 The four write-back cases were once expected to fail under the new fusion
 system, on the reading that it merely left the store unfused. It did worse than
-that: the store was dropped and the buffer never written, because `mogg._kernel`
+that: the store was dropped and the buffer never written, because `mogg.kernel`
 modelled no memory effects, so a kernel whose only effect was the store had no
 reason to survive DCE. With the effects carried and the output fuser
 retargeting the store to its buffer, all four pass.

@@ -67,18 +67,18 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
     @staticmethod
     def from_str(str: String) raises -> Self:
         __match str:
-        case "zero":
-            return InitializationType.zero
-        case "one":
-            return InitializationType.one
-        case "uniform_distribution":
-            return InitializationType.uniform_distribution
-        case "arange":
-            return InitializationType.arange
-        case "fill":
-            return InitializationType.fill
-        case _:
-            raise Error("Invalid initialization type")
+            case "zero":
+                return InitializationType.zero
+            case "one":
+                return InitializationType.one
+            case "uniform_distribution":
+                return InitializationType.uniform_distribution
+            case "arange":
+                return InitializationType.arange
+            case "fill":
+                return InitializationType.fill
+            case _:
+                raise Error("Invalid initialization type")
 
 
 # TODO: refactor the following to run exactly once.
@@ -361,8 +361,7 @@ def init_vector_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @__parameter
-    def apply(values: SIMD[dtype, 4]):
+    def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
             comptime if i == 3:
                 if tid >= _len:
@@ -436,8 +435,7 @@ def _init_block_scaled_scales_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @__parameter
-    def apply(values: SIMD[dtype, 4]):
+    def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
             comptime if i == 3:
                 if tid >= _len:

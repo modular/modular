@@ -310,9 +310,9 @@ yield_arg: 'from' test | testlist_star_expr
 # Soft keywords use double quotes ("match", "case", "__match").
 #
 # Two layouts are accepted after the subject colon:
-#   1. Python style: NEWLINE INDENT case_block+ DEDENT
-#   2. Mojo style:   NEWLINE case_block+   (cases share the match indent)
-# Mojo mode formatting always emits layout (2).
+#   1. Indented: NEWLINE INDENT case_block+ DEDENT
+#   2. Flat:     NEWLINE case_block+   (cases share the match indent)
+# Formatting always emits layout (1).
 
 # PS: normally the grammar is much much more restricted, but
 # at this moment for not trying to bother much with encoding the

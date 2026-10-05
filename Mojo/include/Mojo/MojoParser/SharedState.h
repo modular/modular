@@ -24,6 +24,7 @@
 #include "Mojo/MojoParser/IRValues.h"
 #include "Mojo/MojoParser/ModuleSpec.h"
 #include "Mojo/MojoParser/MojoDiags.h"
+#include "Mojo/Support/TriBool.h"
 
 #include "Support/DebugInfoDialect/IR/DIBuilder.h"
 #include "Support/ErrorOr.h"
@@ -103,11 +104,6 @@ private:
   StringRef spelling;
 };
 
-/// Store a list of parameter captures per closure type.
-using ClosureParamCapture = std::pair<StringAttr, Type>;
-using ClosureParamCaptures =
-    DenseMap<StringAttr, SmallVector<ClosureParamCapture>>;
-
 /// This enum indicates how much parsing and type checking has been done on
 /// this declaration.
 enum class DeclResolvedness : uint8_t {
@@ -152,6 +148,15 @@ public:
   /// module-import paths in DeclResolver), so it serves as a cheap marker to
   /// skip extension lookups entirely in scopes that have none.
   const mlir::StringAttr extensionsScopeMarker;
+
+  /// Returns the name a scope registers extensions of `targetName` under
+  /// ("extension:<targetName>"). Distinct targets with the same leaf name share
+  /// it, so lookups must still check the extension's target symbol.
+  mlir::StringAttr getExtensionName(llvm::StringRef targetName) const {
+    return mlir::StringAttr::get(extensionsScopeMarker.getContext(),
+                                 llvm::Twine(extensionsScopeMarker.getValue()) +
+                                     targetName);
+  }
 
   /// This is used to efficiently walk MLIR types to find embedded origins.
   CachedOriginFinder cachedOriginFinder;
@@ -577,15 +582,6 @@ public:
   struct Impl;
   Impl &getImpl() const { return *impl; }
 
-  /// Given a signature [Int](y:Int) -> Int for example, return the trait. If
-  /// there is not a trait already generated, the compiler will generate the
-  /// following:
-  ///  trait Closure_Int_yInt_Int(Movable, AnyType):
-  ///      def __call__(mut self, y: Int) -> Int:
-  ///         ...
-  ASTDecl *getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
-                                   FnTypeGeneratorType sig);
-
   /// Get or create the universal closure trait, we don't care about the
   /// signatures and we can adapt the trait to any signature.
   ASTDecl *getUniversalParametricClosureTrait();
@@ -601,11 +597,6 @@ public:
     return trait == getUniversalParametricClosureTrait();
   }
 
-  /// Get or create a struct that defines conformance of targetTrait in terms of
-  /// sourceTrait.
-  ASTDecl *getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
-                                TraitDeclOp targetTrait, ASTType sourceMetaType,
-                                ASTDecl *moduleDecl);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.
@@ -651,37 +642,18 @@ public:
   void setDefaultCaptureForScope(ASTDecl &scope,
                                  CaptureConvention defaultConvention);
 
-  /// Return the captured parameters map for all closures defined in the
-  /// function represented by \p op. Returns nullptr if no captures have been
-  /// registered for this op.
-  ClosureParamCaptures *getClosureParamCapturesForOp(Operation *op);
-
-  /// Look up the captures registered for the closure named \p closureName as
-  /// visible from \p startOp.
-  ArrayRef<ClosureParamCapture>
-  lookupClosureCaptureFromOp(Operation *startOp, StringAttr closureName);
-  /// Set the captured parameters map for a given function.
-  void setClosureParamCaptures(ASTDecl &functionDecl,
-                               ClosureParamCaptures closureParamCaptures);
-
-  /// Add an entry to the captured closures map of the given function.
-  void addClosureParamCaptures(ASTDecl &functionDecl, StringAttr closureName,
-                               SmallVector<ClosureParamCapture> captures);
-
   /// These two methods are used to memoize whether a type is implicitly
   /// convertible to another type, which includes overload resolution etc.
-  std::optional<bool> getCachedImplicitConvertibility(ASTType from, ASTType to);
+  TriBool getCachedImplicitConvertibility(ASTType from, ASTType to);
   void cacheImplicitConvertibility(ASTType from, ASTType to,
                                    bool isConvertible);
 
   /// These two methods memoize ASTDecl::doesNominalTypeConformTo for the
   /// common, assumption-free case, keyed by (type decl, required trait,
   /// concrete type). Only definitive (yes/no) results are cached; `unknown` is
-  /// phase-dependent and never stored. `conforms` is the `yes`/`no` result as a
-  /// bool.
-  std::optional<bool> getCachedNominalConformance(const ASTDecl *decl,
-                                                  TraitType trait,
-                                                  ASTType concreteType);
+  /// phase-dependent and never stored.
+  TriBool getCachedNominalConformance(const ASTDecl *decl, TraitType trait,
+                                      ASTType concreteType);
   void cacheNominalConformance(const ASTDecl *decl, TraitType trait,
                                ASTType concreteType, bool conforms);
 

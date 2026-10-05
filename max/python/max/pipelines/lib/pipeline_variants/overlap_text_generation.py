@@ -154,6 +154,10 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TextGenerationRequest,
 )
+from max.pipelines.speculative.adaptive_width import (
+    AdaptiveVerifyWidth,
+    parse_adaptive_widths,
+)
 from max.pipelines.speculative.config import (
     MAGIC_DRAFT_TOKEN_ID,
     SpeculativeConfig,
@@ -166,6 +170,7 @@ from max.profiler import Tracer, traced
 from ..memory_estimation import MemoryPlan
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
+from .unified_spec_decode_model import _UnifiedSpecDecodeModelMixin
 from .utils import (
     CommittedSpanSnapshot,
     StructuredOutputHelper,
@@ -203,40 +208,72 @@ _MAX_GRAPH_CAPTURE_BATCH_SIZE = 128
 _OOB_IDX = np.iinfo(np.int32).min
 
 
-def _verify_width_lookup(
+def _verify_widths_by_batch_size(
     spec_config: SpeculativeConfig | None,
     num_speculative_tokens: int,
     max_batch_size: int,
-) -> list[int] | None:
-    """Dense ``batch_size -> drafts to verify``; ``None`` when unscheduled.
+) -> list[list[int]]:
+    """Dense ``batch_size -> sorted widths a pure decode step may verify``.
 
-    A step always drafts ``num_speculative_tokens`` proposals. The schedule
-    decides how many of them the target verifies.
+    A step always drafts ``num_speculative_tokens`` proposals. The row decides
+    how many of them the target may verify, and graph capture records exactly
+    these widths at that batch size.
 
     Index 0 is unused so a runtime batch size indexes the list directly.
 
     Args:
         spec_config: The pipeline's speculative config, which carries the
-            schedule.
+            schedule or the adaptive widths.
         num_speculative_tokens: The configured draft depth, which caps every
-            scheduled count. For block drafters this is the checkpoint's
-            fixed block width; the schedule narrows only how much of that
-            block the target verifies, not how much the draft produces.
-        max_batch_size: Largest decode batch size the lookup must cover.
+            width. For block drafters this is the checkpoint's fixed block
+            width; narrowing changes only how much of that block the target
+            verifies, not how much the draft produces.
+        max_batch_size: Largest decode batch size the table must cover.
 
     Returns:
-        The dense lookup, or ``None`` when no schedule applies.
+        A list of length ``max_batch_size + 1``.
     """
+    num_rows = max(1, max_batch_size) + 1
     if spec_config is None or num_speculative_tokens <= 0:
-        return None
+        return [[num_speculative_tokens]] * num_rows
+    if spec_config.adaptive_speculative_widths is not None:
+        widths = parse_adaptive_widths(
+            spec_config.adaptive_speculative_widths, num_speculative_tokens
+        )
+        return [widths] * num_rows
     schedule = spec_config.verify_width_schedule
     if schedule is None:
-        return None
-    return build_depth_lookup(
+        return [[num_speculative_tokens]] * num_rows
+    lookup = build_depth_lookup(
         schedule,
-        max_batch_size=max(1, max_batch_size),
+        max_batch_size=num_rows - 1,
         max_depth=num_speculative_tokens,
     )
+    return [[width] for width in lookup]
+
+
+def _verify_width_candidates(
+    spec_config: SpeculativeConfig | None,
+    num_speculative_tokens: int,
+    max_batch_size: int,
+) -> list[int]:
+    """Returns every number of drafts a pure decode step could verify.
+
+    Graph capture, the bitmask buffers, and the adaptive controller all read
+    this, so none can reach a width another was not prepared for.
+    """
+    if spec_config is None or num_speculative_tokens <= 0:
+        return [num_speculative_tokens]
+    # Independent of the batch ceiling: the bitmask is sized at a higher
+    # ceiling than graph capture.
+    if spec_config.adaptive_speculative_widths is not None:
+        return parse_adaptive_widths(
+            spec_config.adaptive_speculative_widths, num_speculative_tokens
+        )
+    table = _verify_widths_by_batch_size(
+        spec_config, num_speculative_tokens, max_batch_size
+    )
+    return sorted({width for row in table[1:] for width in row})
 
 
 def _reachable_verify_widths(
@@ -251,15 +288,12 @@ def _reachable_verify_widths(
     one buffer per width from this, and a width missing here fails the step with
     "no allocated buffer" rather than degrading.
     """
-    lookup = _verify_width_lookup(
+    widths = _verify_width_candidates(
         spec_config, num_speculative_tokens, max_batch_size
-    )
-    widths = (
-        [num_speculative_tokens] if lookup is None else sorted(set(lookup[1:]))
     )
     mixed = _mixed_verify_width(spec_config, num_speculative_tokens)
     if mixed is not None:
-        widths.append(mixed)
+        widths = [*widths, mixed]
     return sorted(set(widths))
 
 
@@ -315,6 +349,34 @@ def _contiguous_prefix_2d(buffer: Buffer, rows: int, cols: int) -> Buffer:
 
     flat = buffer.view(buffer.dtype, (buffer.num_elements,))
     return flat[:num_elements].view(buffer.dtype, (rows, cols))
+
+
+def _sampled_draft_vocab_size(
+    model: object, speculative: SpeculativeConfig
+) -> int | None:
+    """The vocabulary the compiled graph's draft distributions span.
+
+    ``None`` under ``draft_proposal="argmax"``. The size comes from the
+    compiled graph.
+
+    Raises:
+        ValueError: If the config asks for a sampled proposal the graph does
+            not implement, or the reverse.
+    """
+    vocab_size = (
+        model.sampled_draft_vocab_size
+        if isinstance(model, _UnifiedSpecDecodeModelMixin)
+        else None
+    )
+    sampled = speculative.draft_proposal == "sampled"
+    if sampled != (vocab_size is not None):
+        raise ValueError(
+            f"{type(model).__name__} does not support"
+            f" draft_proposal='{speculative.draft_proposal}': its compiled graph"
+            f" {'does not return' if sampled else 'returns'} the draft's"
+            " proposal distributions"
+        )
+    return vocab_size
 
 
 def _contiguous_prefix_3d(
@@ -417,6 +479,15 @@ def _host_mirror_realized_drafts(
     return realized
 
 
+def _is_constrained(ctx: TextGenerationContextType) -> bool:
+    """Whether a request decodes under a grammar or JSON schema."""
+    return (
+        ctx.matcher is not None
+        or ctx.grammar is not None
+        or ctx.json_schema is not None
+    )
+
+
 def _should_verify_drafts(
     inputs: TextGenerationInputs[TextGenerationContextType],
     *,
@@ -429,12 +500,7 @@ def _should_verify_drafts(
         return False
     has_decode_row = False
     for ctx in inputs.flat_batch:
-        if (
-            ctx.matcher is not None
-            or ctx.grammar is not None
-            or ctx.json_schema is not None
-            or getattr(ctx, "needs_vision_encoding", False)
-        ):
+        if _is_constrained(ctx) or getattr(ctx, "needs_vision_encoding", False):
             return False
         has_decode_row = has_decode_row or ctx.tokens.generated_length > 0
     return has_decode_row
@@ -647,24 +713,23 @@ class SpecDecodeState:
         )
         persistent_draft_probs_full: Buffer | None = None
         draft_probs_full_zero_row: Buffer | None = None
-        if pipeline_config.speculative.draft_proposal == "sampled":
-            draft_vocab_size = getattr(
-                model.huggingface_config, "vocab_size", None
+        draft_vocab_size = _sampled_draft_vocab_size(
+            model, pipeline_config.speculative
+        )
+        if draft_vocab_size is not None:
+            persistent_draft_probs_full = Buffer(
+                dtype=DType.float32,
+                shape=(
+                    total_max_batch,
+                    num_speculative_tokens,
+                    draft_vocab_size,
+                ),
+                device=buffer_device,
             )
-            if draft_vocab_size is not None:
-                persistent_draft_probs_full = Buffer(
-                    dtype=DType.float32,
-                    shape=(
-                        total_max_batch,
-                        num_speculative_tokens,
-                        draft_vocab_size,
-                    ),
-                    device=buffer_device,
-                )
-                zero_shape = (num_speculative_tokens, draft_vocab_size)
-                draft_probs_full_zero_row = Buffer.from_numpy(
-                    np.zeros(zero_shape, dtype=np.float32)
-                ).to(buffer_device)
+            zero_shape = (num_speculative_tokens, draft_vocab_size)
+            draft_probs_full_zero_row = Buffer.from_numpy(
+                np.zeros(zero_shape, dtype=np.float32)
+            ).to(buffer_device)
 
         # The packed-int32 bitmask the async FSM callback fills lives in
         # :class:`StructuredOutputOverlapState`'s ``pinned_bitmask`` (allocated
@@ -1757,13 +1822,22 @@ class OverlapTextGenerationPipeline(
 
     _pipeline_model: PipelineModelWithKVCache[Any]
 
-    _width_lookup: list[int] | None = None
-    """``batch_size -> drafts to verify``, set only under speculative decoding
-    with a schedule configured. ``None`` verifies every carried draft."""
+    _widths_by_batch_size: Sequence[Sequence[int]] = ()
+    """``batch_size -> widths a pure decode step may verify``, from
+    :func:`_verify_widths_by_batch_size`. Set only under speculative
+    decoding."""
 
     _mixed_verify_width: int | None = None
     """Drafts a mixed prefill+decode step verifies, overriding the schedule.
     ``None`` leaves mixed steps on the batch-size schedule."""
+
+    _verify_widths: Sequence[int] = ()
+    """Every width a pure decode step may verify, from
+    :func:`_verify_width_candidates`."""
+
+    _adaptive_width: AdaptiveVerifyWidth | None = None
+    """Picks the width by measured tokens per second. ``None`` keeps it
+    static."""
 
     def __init__(
         self,
@@ -1939,16 +2013,34 @@ class OverlapTextGenerationPipeline(
                 ),
             )
             self._kv_manager = self._spec_decode_state.kv_manager
-            # ``batch_size -> drafts to verify``.
-            self._width_lookup = _verify_width_lookup(
-                self._pipeline_config.speculative,
+            spec_config = self._pipeline_config.speculative
+            self._verify_widths = _verify_width_candidates(
+                spec_config,
                 self._spec_decode_state.num_speculative_tokens,
                 self._max_batch_size,
             )
-            if self._width_lookup is not None:
+            self._widths_by_batch_size = _verify_widths_by_batch_size(
+                spec_config,
+                self._spec_decode_state.num_speculative_tokens,
+                self._max_batch_size,
+            )
+            if (
+                spec_config is not None
+                and spec_config.adaptive_speculative_widths is not None
+            ):
+                logger.info(
+                    "Choosing among %s drafts to verify by measured tokens "
+                    "per second.",
+                    self._verify_widths,
+                )
+                self._adaptive_width = AdaptiveVerifyWidth(self._verify_widths)
+            if (
+                spec_config is not None
+                and spec_config.verify_width_schedule is not None
+            ):
                 logger.info(
                     "Verifying %s of %d drafted tokens by decode batch size.",
-                    sorted(set(self._width_lookup[1:])),
+                    self._verify_widths,
                     self._spec_decode_state.num_speculative_tokens,
                 )
             self._mixed_verify_width = _mixed_verify_width(
@@ -2028,12 +2120,14 @@ class OverlapTextGenerationPipeline(
                         device=sampler_device_ref,
                         needs_bitmask_input=True,
                         custom_extensions=sampler_extensions,
+                        unpadded_vocab_size=self.vocab_size,
                     )
                 without_bitmask_graph = token_sampler(
                     pipeline_config.sampling,
                     device=sampler_device_ref,
                     needs_bitmask_input=False,
                     custom_extensions=sampler_extensions,
+                    unpadded_vocab_size=self.vocab_size,
                 )
                 sampler_timer.mark_build_complete()
                 if with_bitmask_graph is not None:
@@ -2266,8 +2360,8 @@ class OverlapTextGenerationPipeline(
         spec_decode_metrics: _SpeculativeDecodingMetrics | None,
         sync_monotonic: float,
         early_sync_duration_s: float | None = None,
-    ) -> None:
-        """Records stats for a batch whose outputs were just synchronized.
+    ) -> CompletedBatchStats:
+        """Records and returns stats for a batch whose outputs just synced.
 
         The execution time is estimated host-side as the interval from when
         the batch could have started executing — the later of its enqueue
@@ -2310,6 +2404,7 @@ class OverlapTextGenerationPipeline(
             )
         self._completed_batch_stats = stats
         self._last_sync_monotonic = sync_monotonic
+        return stats
 
     # Warmup inputs use runtime construction with explicit max-cache-length LUT
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
@@ -2495,12 +2590,9 @@ class OverlapTextGenerationPipeline(
 
         # Pure-decode widths only. A mixed batch is CE, replay is TG-only, so a
         # mixed step never reaches a captured graph.
-        width_lookup = self._width_lookup
-        verify_widths = (
-            sorted(set(width_lookup[1 : max_capture_batch_size + 1]))
-            if width_lookup is not None
-            else [num_speculative_tokens]
-        )
+        widths_by_batch_size = self._widths_by_batch_size[
+            : max_capture_batch_size + 1
+        ]
 
         graph_capture_runner = ServeGraphCaptureRunner(
             model=self._pipeline_model.model,
@@ -2509,8 +2601,7 @@ class OverlapTextGenerationPipeline(
             max_cache_length_upper_bound=self._effective_max_cache_length,
             max_batch_size=max_capture_batch_size,
             num_speculative_tokens=num_speculative_tokens,
-            verify_widths=verify_widths,
-            width_lookup=width_lookup,
+            widths_by_batch_size=widths_by_batch_size,
         )
         self._graph_capture_runner = graph_capture_runner
         self._max_graph_capture_batch_size = max_capture_batch_size
@@ -2534,6 +2625,24 @@ class OverlapTextGenerationPipeline(
             if self._spec_decode_state is not None
             else 0
         )
+        # One decode shape is recorded for the whole run, so a step verifying
+        # fewer drafts than configured arrives at a q the aligner rejects. The
+        # mixed-batch width is exempt: it narrows CE batches only, and
+        # synthesis is TG-only.
+        unservable = [
+            width
+            for width in self._verify_widths
+            if width != num_speculative_tokens
+        ]
+        if unservable:
+            raise ValueError(
+                "Device graph synthesis records one decode shape, at verify "
+                f"width {num_speculative_tokens}, so a step verifying "
+                f"{unservable} cannot be served. Drop "
+                "--num-speculative-tokens-per-batch-size and "
+                "--adaptive-speculative-widths, or disable "
+                "--experimental-device-graph-synthesis to keep them."
+            )
         self._synthesis_aligner = SynthesisBucketAligner(
             kv_params=self._kv_manager.params,
             max_cache_length_upper_bound=self._effective_max_cache_length,
@@ -2740,12 +2849,46 @@ class OverlapTextGenerationPipeline(
             and inputs.batch_type == BatchType.CE
         ):
             return self._mixed_verify_width
-        if self._width_lookup is None:
-            return self._spec_decode_state.num_speculative_tokens
         batch_size = max((len(b) for b in inputs.batches), default=0)
-        return self._width_lookup[
-            min(max(batch_size, 1), len(self._width_lookup) - 1)
-        ]
+        if self._adaptive_width is not None:
+            return self._adaptive_width.next_step_width(batch_size)
+        return self._widths_by_batch_size[
+            min(max(batch_size, 1), len(self._widths_by_batch_size) - 1)
+        ][0]
+
+    def _record_spec_decode_metrics(
+        self,
+        batch: AsyncBatch[TextGenerationContextType],
+        metrics: _SpeculativeDecodingMetrics | None,
+        stats: CompletedBatchStats | None,
+    ) -> None:
+        """Publishes one synced batch's metrics and trains the adaptive width.
+
+        Without ``stats`` the step is untimed, and only acceptance trains.
+        """
+        assert self._spec_decode_state is not None
+        assert metrics is not None
+        self._spec_decode_state.batch_metrics = metrics
+        # A mixed batch runs eager, so it says nothing about a decode step.
+        if (
+            self._adaptive_width is not None
+            and batch.inputs.batch_type == BatchType.TG
+            and metrics.num_verifications
+        ):
+            assert metrics.accepted_per_position is not None
+            # An early sync's time includes the forced sync.
+            step_time_s = (
+                None
+                if stats is None or stats.early_sync_duration_s is not None
+                else stats.execution_time_s
+            )
+            self._adaptive_width.record_step(
+                max(len(b) for b in batch.inputs.batches),
+                metrics.num_speculative_tokens,
+                metrics.accepted_per_position,
+                metrics.num_verifications,
+                step_time_s,
+            )
 
     def _replay_batch_characteristics(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
@@ -3669,17 +3812,24 @@ class OverlapTextGenerationPipeline(
 
     @traced
     def _execute_spec_decode(
-        self, inputs: TextGenerationInputs[TextGenerationContextType]
+        self,
+        inputs: TextGenerationInputs[TextGenerationContextType],
+        *,
+        num_draft_tokens_to_verify: int,
     ) -> AsyncBatch[TextGenerationContextType]:
         """Executes unified EAGLE speculative decoding.
 
         Single graph call handles: merge, target forward, greedy rejection,
         shift, and draft forward.
+
+        Args:
+            inputs: This step's batch.
+            num_draft_tokens_to_verify: Drafts this step verifies. Resolved
+                once by the caller so the bitmask shares the same width.
         """
         assert self._spec_decode_state is not None
 
         context_batch = inputs.flat_batch
-        num_draft_tokens_to_verify = self._verify_width(inputs)
         verify_draft_tokens = num_draft_tokens_to_verify > 0
 
         # The bitmask callback is only ever enqueued for decode batches
@@ -3822,7 +3972,9 @@ class OverlapTextGenerationPipeline(
             and self._prev_batch.spec_decode.num_draft_tokens_to_verify > 0
         )
 
-    def _should_early_sync_prev_batch(self) -> bool:
+    def _should_early_sync_prev_batch(
+        self, curr_flat_batch: Sequence[TextGenerationContextType]
+    ) -> bool:
         """Return True iff the previous batch must be early-synced.
 
         Checked at the head of `execute`, just after
@@ -3859,6 +4011,11 @@ class OverlapTextGenerationPipeline(
         callback is ever enqueued, so `fsm_advanced_by_callback` is always
         False. Without this gate the guard would fire every decode step.
 
+        Also gated on a constrained request in the previous or current batch.
+        With none, there is no FSM to advance and every bitmask row allows
+        every token, so syncing would only stall the GPU at each prefill
+        boundary.
+
         IMPORTANT: even when this returns True, `_prev_batch` is NOT cleared
         by the caller. `_run_forward` needs it so `realize_future_tokens` can
         scatter the previous batch's GPU-side EAGLE draft tokens into the
@@ -3876,6 +4033,13 @@ class OverlapTextGenerationPipeline(
             and self._prev_batch is not None
             and self._prev_batch.spec_decode is not None
             and not self._prev_batch.spec_decode.fsm_advanced_by_callback
+            and any(
+                _is_constrained(ctx)
+                for ctx in (
+                    *self._prev_batch.inputs.flat_batch,
+                    *curr_flat_batch,
+                )
+            )
         )
 
     @traced
@@ -3977,12 +4141,13 @@ class OverlapTextGenerationPipeline(
                 # decide whether the previous batch still needs a synchronous
                 # FSM advance (it does only when no callback advanced it, e.g.
                 # the prefill->decode boundary).
+                curr_verify_width = self._verify_width(inputs)
                 self._enqueue_prev_bitmask_callback(
                     curr_context_batch=inputs.flat_batch,
-                    curr_verify_width=self._verify_width(inputs),
+                    curr_verify_width=curr_verify_width,
                 )
 
-                if self._should_early_sync_prev_batch():
+                if self._should_early_sync_prev_batch(inputs.flat_batch):
                     assert self._prev_batch is not None
                     _early_sync_start_monotonic = time.monotonic()
                     _early_sync_outputs = (
@@ -3997,7 +4162,9 @@ class OverlapTextGenerationPipeline(
                 # just above. The captured graph's ``mo.wait_host_value_with_dep``
                 # blocks the in-graph H2D until the worker signals, so the FSM
                 # advancement is observed before the sampler runs.
-                curr_batch = self._execute_spec_decode(inputs)
+                curr_batch = self._execute_spec_decode(
+                    inputs, num_draft_tokens_to_verify=curr_verify_width
+                )
             else:
                 # Run the entire forward pass and output processing if the
                 # batch has at least one request.
@@ -4042,12 +4209,7 @@ class OverlapTextGenerationPipeline(
                     sampling_processor=sampling_processor,
                 )
 
-            if self._spec_decode_state is not None:
-                assert wrapped_outputs.spec_decode_metrics is not None
-                self._spec_decode_state.batch_metrics = (
-                    wrapped_outputs.spec_decode_metrics
-                )
-            self._record_completed_batch_stats(
+            stats = self._record_completed_batch_stats(
                 self._prev_batch,
                 wrapped_outputs.spec_decode_metrics,
                 sync_monotonic=_early_sync_monotonic
@@ -4055,6 +4217,10 @@ class OverlapTextGenerationPipeline(
                 else time.monotonic(),
                 early_sync_duration_s=_early_sync_duration_s,
             )
+            if self._spec_decode_state is not None:
+                self._record_spec_decode_metrics(
+                    self._prev_batch, wrapped_outputs.spec_decode_metrics, stats
+                )
             outputs = wrapped_outputs.output_dict
             self._prev_batch = None
 
@@ -4112,9 +4278,8 @@ class OverlapTextGenerationPipeline(
                 # results of the current batch.
                 wrapped_outputs = curr_batch.sync_and_process_outputs()
                 if self._spec_decode_state is not None:
-                    assert wrapped_outputs.spec_decode_metrics is not None
-                    self._spec_decode_state.batch_metrics = (
-                        wrapped_outputs.spec_decode_metrics
+                    self._record_spec_decode_metrics(
+                        curr_batch, wrapped_outputs.spec_decode_metrics, None
                     )
                 # Merge current batch outputs with any previous batch outputs
                 outputs.update(wrapped_outputs.output_dict)

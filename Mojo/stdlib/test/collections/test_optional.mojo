@@ -551,10 +551,9 @@ def test_optional_non_movable_element_type() raises:
 
 def test_optional_non_movable_construct_in_place() raises:
     # `init_with=` populates an `Optional` with a non-`Movable` value in place.
-    def make() -> _NotMovable:
-        return _NotMovable(7)
-
-    var opt = Optional[_NotMovable](init_with=make)
+    var opt = Optional[_NotMovable](
+        init_with=lambda () -> _NotMovable: _NotMovable(7)
+    )
     assert_true(opt)
     assert_equal(opt.bounds()[0], 1)
     assert_equal(opt.value().x, 7)

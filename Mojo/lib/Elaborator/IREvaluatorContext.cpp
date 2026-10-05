@@ -158,6 +158,11 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateGetSourceNameAttr(
   }
 
   auto func = getGenerator(symbol.getSymbol());
+  if (!func) {
+    emitError({*errorLoc, "'get_source_name' function argument does not "
+                          "name a function generator"});
+    return failure();
+  }
 
   std::optional<StringRef> sourceName = func.getSourceName();
   if (!sourceName) {

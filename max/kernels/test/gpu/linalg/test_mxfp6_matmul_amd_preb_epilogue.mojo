@@ -82,7 +82,7 @@ def _run_case[
     _fill_random(sfb_h, N_static * scale_K, 125, 129)
 
     var sfb_h_tt = TileTensor[mut=True](
-        sfb_h, row_major(Coord(Idx[1], Idx[N_static], Idx[scale_K]))
+        sfb_h, row_major(Idx[1], Idx[N_static], Idx[scale_K])
     )
     _ = Shuffler[1].preshuffle_scale_4d[MN=N_static, K_SCALES=scale_K](
         sfb_h_tt, sfb_pre_h
@@ -115,30 +115,28 @@ def _run_case[
         N=N_static, K_BYTES=K_BYTES, lane_bytes=FP6_LANE_BYTES
     ](b_raw_tt, b_pre_dst_tt, ctx)
 
-    var a_tt = TileTensor[mut=False](
-        a_d, row_major(Coord(M_static, Idx[K_BYTES]))
-    )
+    var a_tt = TileTensor[mut=False](a_d, row_major(M_static, Idx[K_BYTES]))
     var b_pre_tt = TileTensor[mut=False](
-        b_pre_d, row_major(Coord(Idx[N_static], Idx[K_BYTES]))
+        b_pre_d, row_major(Idx[N_static], Idx[K_BYTES])
     )
     var sfa_tt = TileTensor[mut=False](
         sfa_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
-        row_major(Coord(M_static, Idx[scale_K])),
+        row_major(M_static, Idx[scale_K]),
     )
     var sfb_pre_tt = TileTensor[mut=False](
         sfb_pre_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
-        row_major(Coord(Idx[N_static], Idx[scale_K])),
+        row_major(Idx[N_static], Idx[scale_K]),
     )
 
     var sfb_raw_tt = TileTensor[mut=False](
         sfb_raw_d.unsafe_ptr().bitcast[Float8_e8m0fnu](),
-        row_major(Coord(Idx[N_static], Idx[scale_K])),
+        row_major(Idx[N_static], Idx[scale_K]),
     )
     var b_row_tt = TileTensor[mut=False](
-        b_d, row_major(Coord(Idx[N_static], Idx[K_BYTES]))
+        b_d, row_major(Idx[N_static], Idx[K_BYTES])
     )
     var c_direct_tt = TileTensor[mut=True](
-        c_direct_d, row_major(Coord(M_static, Idx[N_static]))
+        c_direct_d, row_major(M_static, Idx[N_static])
     )
     comptime if preshuffled_b:
         mxfp6_block_scaled_matmul_amd[preshuffled_b=True](
@@ -149,11 +147,9 @@ def _run_case[
             c_direct_tt, a_tt, b_row_tt, sfa_tt, sfb_raw_tt, ctx
         )
 
-    var out_tt = TileTensor[mut=True](
-        out_d, row_major(Coord(M_static, Idx[N_static]))
-    )
+    var out_tt = TileTensor[mut=True](out_d, row_major(M_static, Idx[N_static]))
     var c_sentinel_tt = TileTensor[mut=True](
-        c_sentinel_d, row_major(Coord(M_static, Idx[N_static]))
+        c_sentinel_d, row_major(M_static, Idx[N_static])
     )
 
     @inline(.always)

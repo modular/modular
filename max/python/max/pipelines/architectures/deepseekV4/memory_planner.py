@@ -30,15 +30,14 @@ _INDEXER_RATIO = 4
 # Per-device bytes one prefill token adds to the forward's activation arena,
 # fitted to memory-manager allocation logs (MXSERV-569): DeepSeek-V4-Flash-0731
 # and its 8-layer minimized variant, TP=2 on 2x B200, max_length 1024 to 4096,
-# 1000 to 7168 CE tokens. The fit is linear in all three terms to within 0.1%
-# (1706 B per candidate, 10.9 KB per layer, 1.04 MB base); the constants round
-# it up by under 1%. The arena peaks inside one block, at the indexer's dense
-# per-token candidate table (``CompressedWindows.table`` and
-# ``Indexer.score``), so it grows with the candidate count and barely with
-# depth.
-_ARENA_BYTES_PER_TOKEN_BASE = 1_050_000
-_ARENA_BYTES_PER_TOKEN_PER_CANDIDATE = 1_720
-_ARENA_BYTES_PER_TOKEN_PER_LAYER = 11_000
+# 500 to 4000 CE tokens. The fit is linear in all three terms to within 0.1%
+# (11.6 B per candidate, 444 B per layer, 1.083 MB base); the constants round
+# it up by under 1%. The indexer scores straight from the paged leaf, so no
+# per-token candidate table is built and the arena barely grows with either
+# the candidate count or depth.
+_ARENA_BYTES_PER_TOKEN_BASE = 1_090_000
+_ARENA_BYTES_PER_TOKEN_PER_CANDIDATE = 12
+_ARENA_BYTES_PER_TOKEN_PER_LAYER = 450
 
 
 def prefill_arena_bytes_per_token(max_length: int, num_layers: int) -> int:
@@ -63,7 +62,7 @@ def prefill_arena_bytes_per_token(max_length: int, num_layers: int) -> int:
 class DeepseekV4MemoryPlanner(PagedMemoryPlanner):
     """Reserves the prefill activation arena out of the KV budget.
 
-    Without it the arena (~38 GiB per device for an 8192-token CE batch at
+    Without it the arena (~8.6 GiB per device for an 8192-token CE batch at
     max_length 4096) lives in whatever ``device_memory_utilization`` leaves
     over, and the first full CE batch OOMs whenever that slack is smaller.
     """

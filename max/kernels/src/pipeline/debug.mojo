@@ -79,16 +79,16 @@ def default_op_name(tag: Int) -> StaticString:
 
 def _koff_name(k: KOffsetKind) -> StaticString:
     __match k:
-    case .K0:
-        return "K0   "
-    case .K1:
-        return "K1   "
-    case .K_NEXT:
-        return "KNEXT"
-    case .K_PREV:
-        return "KPREV"
-    case _:
-        return "-    "
+        case .K0:
+            return "K0   "
+        case .K1:
+            return "K1   "
+        case .K_NEXT:
+            return "KNEXT"
+        case .K_PREV:
+            return "KPREV"
+        case _:
+            return "-    "
 
 
 # =============================================================================
@@ -214,16 +214,16 @@ def update_wait_counts(mut counts: WaitCounts, e: ScheduleEntry, next_tag: Int):
     """
     var t = e.op.tag
     __match t:
-    case _Ops.WAIT_VM.value:
-        counts.n_vm += 1
-        if next_tag == _Ops.WAIT_LGKM.value:
-            counts.n_combined += 1
-    case _Ops.WAIT_LGKM.value:
-        counts.n_lgkm += 1
-    case _Ops.BARRIER.value:
-        counts.n_barrier += 1
-    case _Ops.SCHEDULE_BARRIER.value:
-        counts.n_sched_barrier += 1
+        case _Ops.WAIT_VM.value:
+            counts.n_vm += 1
+            if next_tag == _Ops.WAIT_LGKM.value:
+                counts.n_combined += 1
+        case _Ops.WAIT_LGKM.value:
+            counts.n_lgkm += 1
+        case _Ops.BARRIER.value:
+            counts.n_barrier += 1
+        case _Ops.SCHEDULE_BARRIER.value:
+            counts.n_sched_barrier += 1
 
 
 def print_wait_counts(label: StaticString, c: WaitCounts):

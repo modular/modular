@@ -70,31 +70,33 @@ def coord_transform[
     var out_coord_f32 = Float32(out_coord)
 
     comptime __match mode:
-    case .HalfPixel:
-        # note: coordinates are for the CENTER of the pixel
-        # - 0.5 term at the end is so that when we round to the nearest integer
-        # coordinate, we get the coordinate whose center is closest
-        return (out_coord_f32 + Float32(0.5)) / scale - 0.5
-    case .HalfPixel1D:
-        # Same as HalfPixel except for 1D output. Described here:
-        # https://onnx.ai/onnx/operators/onnx__Resize.html
-        if out_dim == 1:
-            return 0
-        return (out_coord_f32 + Float32(0.5)) / scale - 0.5
-    case .AlignCorners:
-        # aligning "corners" when output is 1D isn't well defined
-        # this matches pytorch
-        if out_dim == 1:
-            return 0
-        # note: resized image will have same corners as original image
-        return (
-            out_coord_f32
-            * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[.float32]()
-        )
-    case .Asymmetric:
-        return out_coord_f32 / scale
-    case _:
-        comptime assert False, "coordinate_transformation_mode not implemented"
+        case .HalfPixel:
+            # note: coordinates are for the CENTER of the pixel
+            # - 0.5 term at the end is so that when we round to the nearest integer
+            # coordinate, we get the coordinate whose center is closest
+            return (out_coord_f32 + Float32(0.5)) / scale - 0.5
+        case .HalfPixel1D:
+            # Same as HalfPixel except for 1D output. Described here:
+            # https://onnx.ai/onnx/operators/onnx__Resize.html
+            if out_dim == 1:
+                return 0
+            return (out_coord_f32 + Float32(0.5)) / scale - 0.5
+        case .AlignCorners:
+            # aligning "corners" when output is 1D isn't well defined
+            # this matches pytorch
+            if out_dim == 1:
+                return 0
+            # note: resized image will have same corners as original image
+            return (
+                out_coord_f32
+                * (Float64(in_dim - 1) / Float64(out_dim - 1)).cast[.float32]()
+            )
+        case .Asymmetric:
+            return out_coord_f32 / scale
+        case _:
+            comptime assert (
+                False
+            ), "coordinate_transformation_mode not implemented"
 
 
 struct RoundMode(ImplicitlyCopyable):
@@ -193,16 +195,16 @@ def resize_nearest_neighbor[
     @inline(.always)
     def round[dtype: DType](val: Scalar[dtype]) -> Scalar[dtype]:
         comptime __match round_mode:
-        case .HalfDown:
-            return ceil(val - 0.5)
-        case .HalfUp:
-            return floor(val + 0.5)
-        case .Floor:
-            return floor(val)
-        case .Ceil:
-            return ceil(val)
-        case _:
-            comptime assert False, "round_mode not implemented"
+            case .HalfDown:
+                return ceil(val - 0.5)
+            case .HalfUp:
+                return floor(val + 0.5)
+            case .Floor:
+                return floor(val)
+            case .Ceil:
+                return ceil(val)
+            case _:
+                comptime assert False, "round_mode not implemented"
 
     def nn_interpolate[
         simd_width: Int, alignment: Int = 1

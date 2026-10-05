@@ -64,6 +64,7 @@ from layout import (
     stack_allocation as tt_stack_allocation,
 )
 from nn.attention.gpu.nvidia.common import (
+    NullPointer,
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask
@@ -123,9 +124,9 @@ struct MLA_SM100_Decode_Sparse[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
-    has_attn_sink: Bool = False,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     has_extra_kv: Bool = False,
-    has_variable_topk: Bool = False,
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     Engine: TensorEngine = DefaultEngine[element_width=1],
 ](TrivialRegisterPassable):
     """Sparse MLA decoding kernel for SM100 with FP8 KV cache and gather4 TMA.
@@ -154,15 +155,20 @@ struct MLA_SM100_Decode_Sparse[
             is exact, enabling tighter bounds (defaults to `False`).
         ragged: Whether ragged batching is enabled, so each batch may
             have a different query length (defaults to `False`).
-        has_attn_sink: Whether an attention sink is applied, keeping
-            leading tokens always attended (defaults to `False`).
+        AttnSinkPtrType: `OptionalPointer` type of the per-head attention
+            sink; non-null applies the sink (defaults to `NullPointer`).
         has_extra_kv: Whether a separate extra KV cache holds
             always-attend tokens (defaults to `False`).
-        has_variable_topk: Whether the sparse top-k length varies per
-            batch, read from `topk_lengths` (defaults to `False`).
+        TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
+            `extra_topk_lengths`; non-null reads the sparse top-k length per
+            batch instead of using the stride (defaults to `NullPointer`).
         Engine: Engine policy of the `scalar_args` tile operand
             (defaults to `DefaultEngine[element_width=1]`).
     """
+
+    # Presence of the optional operands is carried by their pointer types.
+    comptime has_attn_sink = not Self.AttnSinkPtrType.is_null
+    comptime has_variable_topk = not Self.TopkLengthsPtrType.is_null
 
     comptime kv_type = Self.KVLUTType.dtype
     # KV nope type is always FP8 (same as kv_type from the LUT)
@@ -405,9 +411,9 @@ struct MLA_SM100_Decode_Sparse[
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_stride_dev: Int32,
-        topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        topk_lengths: Self.TopkLengthsPtrType,
         scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
-        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
+        attn_sink_ptr: Self.AttnSinkPtrType,
         # Extra KV parameters: separate cache for always-attend tokens.
         # When has_extra_kv is True, these provide a second KV cache
         # with its own TMA descriptors, indices, and scales.
@@ -425,7 +431,7 @@ struct MLA_SM100_Decode_Sparse[
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        extra_topk_lengths: Self.TopkLengthsPtrType,
         extra_indices_stride_dev: Int32,
         extra_scales_ptr: OptionalReg[
             UnsafePointer[Float32, origin=MutAnyOrigin]
@@ -478,7 +484,7 @@ struct MLA_SM100_Decode_Sparse[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ](
             kv_lut,
             rebind[
@@ -502,18 +508,14 @@ struct MLA_SM100_Decode_Sparse[
         # cache vs the extra cache in the kernel loop.
         var topk: Int
         comptime if Self.has_variable_topk:
-            topk = Int(
-                topk_lengths.unsafe_value()[Int(offset_position.batch_idx)]
-            )
+            topk = Int(topk_lengths.value()[Int(offset_position.batch_idx)])
         else:
             topk = indices_stride
         var extra_topk: Int = 0
         comptime if Self.has_extra_kv:
             comptime if Self.has_variable_topk:
                 extra_topk = Int(
-                    extra_topk_lengths.unsafe_value()[
-                        Int(offset_position.batch_idx)
-                    ]
+                    extra_topk_lengths.value()[Int(offset_position.batch_idx)]
                 )
             else:
                 extra_topk = extra_indices_stride
@@ -779,11 +781,11 @@ struct MLA_SM100_Decode_Sparse[
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F
-                var head_idx_local = Int(block_idx.x) * Self.config.BM + row
+                var head_idx_local = block_idx.x * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
-                    attn_sink_log2 = attn_sink_ptr.unsafe_value()[
-                        head_idx_local
-                    ] * Float32(log2e)
+                    attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
+                        DType.float32
+                    ]() * Float32(log2e)
 
             Self.Common_MLA_Op.Softmax[has_attn_sink=Self.has_attn_sink,](
                 ptr_tmem_addr[0],
@@ -982,7 +984,7 @@ struct MLA_SM100_Decode_Sparse[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
         num_orig_blocks: Int,
         extra_kv_lut: Self.KVLUTType,
@@ -1219,7 +1221,7 @@ struct MLA_SM100_Decode_Sparse[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
         idx_bars: DecodeSM100MiscMBars[
             num_stages=2,
@@ -1873,7 +1875,7 @@ struct MLA_SM100_Decode_Sparse[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -1957,7 +1959,7 @@ struct MLA_SM100_Decode_Sparse[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)

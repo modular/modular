@@ -407,16 +407,21 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             already-complete :class:`CompletedTransfer` when nothing was
             onloaded (a device hit). The caller polls ``is_complete()`` to hold
             the request out of a batch until its onloaded KV has landed, since
-            a connector's H2D runs off the forward stream.
+            a connector's H2D runs off the forward stream. If it raises
+            :class:`KVLoadFailed` instead, the next ``alloc`` rolls the
+            onloaded prefix back and the request recomputes it.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation. The request is left as it was before the
             call, so the caller can release or retry it.
+            RuntimeError: If the request was run past an onload whose copy
+                failed, rather than held out of the batch until it landed.
         """
         # Drain completed async KV transfers first to release any g0 blocks of
         # completed transfers.
         self._block_manager.poll_transfers()
+        self._block_manager.rollback_failed_onload(ctx)
 
         skip_amount, load_event = (
             self._block_manager.reuse_blocks_from_prefix_cache(ctx)

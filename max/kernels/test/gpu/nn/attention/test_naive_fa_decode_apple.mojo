@@ -34,15 +34,15 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Idx, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout._fillers import random
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.gpu.apple.naive_fa_decode import naive_fa_decode_apple
+from nn.attention.gpu.nvidia.common import immut_tile_tensor_1d
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 from std.testing import assert_almost_equal
-from std.utils import Index, IndexList
 
 
 def execute_decode_compare[
@@ -79,77 +79,51 @@ def execute_decode_compare[
         )
 
     # ---- q: padded layout [batch, max_prompt_len=1, num_q_heads, depth] ---- #
-    comptime q_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, depth
+    var q_layout = row_major(
+        batch_size, max_prompt_len, Idx[num_q_heads], Idx[depth]
     )
-    var q_shape = IndexList[4](batch_size, max_prompt_len, num_q_heads, depth)
-    var q_runtime_layout = RuntimeLayout[q_static_layout].row_major(q_shape)
-    var q = ManagedLayoutTensor[dtype, q_static_layout](q_runtime_layout, ctx)
-    random(q.tensor())
+    var q = HostDeviceTileTensor[dtype](q_layout, ctx)
+    random(q.host_tensor())
 
     # ---- valid_length: one query token per sequence ([1, 1, ...]) -------- #
-    var valid_lengths = ManagedLayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
-        ctx,
+    var valid_lengths = HostDeviceTileTensor[.uint32](
+        row_major(batch_size), ctx
     )
-    var valid_lengths_host = valid_lengths.tensor[update=False]()
+    var valid_lengths_host = valid_lengths.host_tensor()
     for i in range(batch_size):
         valid_lengths_host[i] = UInt32(max_prompt_len)
 
     # ---- output tensors (oracle + under-test), same padded layout -------- #
-    var output_shape = IndexList[4](
-        batch_size, max_prompt_len, num_q_heads, depth
-    )
-    var output_runtime_layout = RuntimeLayout[q_static_layout].row_major(
-        output_shape
-    )
-    var ref_output = ManagedLayoutTensor[dtype, q_static_layout](
-        output_runtime_layout, ctx
-    )
-    var test_output = ManagedLayoutTensor[dtype, q_static_layout](
-        output_runtime_layout, ctx
-    )
+    var ref_output = HostDeviceTileTensor[dtype](q_layout, ctx)
+    var test_output = HostDeviceTileTensor[dtype](q_layout, ctx)
 
     # ---- per-sequence cache lengths (varied) ----------------------------- #
-    var cache_lengths_managed = ManagedLayoutTensor[
-        .uint32, Layout(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
-        ctx,
+    var cache_lengths_managed = HostDeviceTileTensor[.uint32](
+        row_major(batch_size), ctx
     )
-    var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
+    var cache_lengths_host = cache_lengths_managed.host_tensor()
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
+    cache_lengths_managed.to_device()
     var cache_lengths_device = cache_lengths_managed.device_tensor()
 
     # ---- paged kv_block: [num_blocks, 2, num_layers, max_seq, kv_heads, d] - #
-    comptime kv_block_static_layout = Layout.row_major[6]()
-    var kv_block_shape = IndexList[6](
-        num_blocks,
-        2,
-        num_layers,
-        max_seq_len_cache,
-        kv_params.num_heads,
-        depth,
-    )
-    var kv_block_runtime_layout = RuntimeLayout[
-        kv_block_static_layout
-    ].row_major(kv_block_shape)
-    var kv_block = ManagedLayoutTensor[dtype, kv_block_static_layout](
-        kv_block_runtime_layout, ctx
-    )
-    random(kv_block.tensor())
-
-    # ---- lookup table: distinct random block index per sequence ---------- #
-    var lookup_table = ManagedLayoutTensor[.uint32, Layout(UNKNOWN_VALUE)](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
+    var kv_block = HostDeviceTileTensor[dtype](
+        row_major(
+            num_blocks,
+            2,
+            num_layers,
+            max_seq_len_cache,
+            kv_params.num_heads,
+            depth,
+        ),
         ctx,
     )
-    var lookup_table_host = lookup_table.tensor[update=False]()
+    random(kv_block.host_tensor())
+
+    # ---- lookup table: distinct random block index per sequence ---------- #
+    var lookup_table = HostDeviceTileTensor[.uint32](row_major(batch_size), ctx)
+    var lookup_table_host = lookup_table.host_tensor()
     var block_idx_set = Set[Int]()
     var idx = 0
     while len(block_idx_set) < batch_size:
@@ -161,6 +135,10 @@ def execute_decode_compare[
         idx += 1
 
     # ---- build the KV collection + pull K/V operands --------------------- #
+    q.to_device()
+    valid_lengths.to_device()
+    kv_block.to_device()
+    lookup_table.to_device()
     var q_tensor = q.device_tensor()
     var valid_lengths_tensor = valid_lengths.device_tensor()
     var ref_output_tensor = ref_output.device_tensor()
@@ -189,7 +167,7 @@ def execute_decode_compare[
 
     # ---- oracle: mha_gpu_naive KVCacheT overload (wraps the cache in a
     # `KVCacheMHAOperand` and forwards with `_use_valid_length=True`,
-    # `_is_cache_length_accurate=False` — mha.mojo:5696-5751). For decode this
+    # `_is_cache_length_accurate=False`). For decode this
     # makes the new token attend `cache_length + cur_query_len` keys.
     mha_gpu_naive(
         q_tensor,
@@ -226,7 +204,9 @@ def execute_decode_compare[
         v_operand,
         CausalMask(),
         test_output_tensor,
-        valid_lengths_tensor,
+        immut_tile_tensor_1d(
+            valid_lengths_tensor.ptr, valid_lengths_tensor.num_elements()
+        ),
         scale,
         batch_size,
         max_prompt_len,
@@ -240,8 +220,10 @@ def execute_decode_compare[
     ctx.synchronize()
 
     # ---- compare in fp32, bf16 tolerance band ---------------------------- #
-    var ref_out = ref_output.tensor()
-    var test_out = test_output.tensor()
+    ref_output.to_host()
+    test_output.to_host()
+    var ref_out = ref_output.host_tensor()
+    var test_out = test_output.host_tensor()
     var max_abs_err = Float64(0.0)
     for bs in range(batch_size):
         for h in range(num_q_heads):

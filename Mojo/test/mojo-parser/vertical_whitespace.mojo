@@ -22,7 +22,7 @@ foo():
 
 # // -----
 
-async
+__async
 # expected-error @+1 {{'def' keyword may not appear at the start of the line}}
 def foo():
     pass

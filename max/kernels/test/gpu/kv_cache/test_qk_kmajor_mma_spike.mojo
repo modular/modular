@@ -74,14 +74,19 @@ from max.gpu.memory import external_memory
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.compute.arch.tcgen05 import *
 
-from layout import IntTuple, Layout, LayoutTensor
-from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_layout_mn_major,
-    tile_to_descriptor,
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
+    RowMajorLayout,
+    TensorLayout,
+    TileTensor,
+    row_major,
 )
+from layout._fillers import arange
+from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout.tensor_core_async import tile_layout_k_major_typed
+from layout.tile_layout import Layout as TileLayout
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -98,100 +103,133 @@ from std.utils.static_tuple import StaticTuple
 # `_CM_NUM_ROWS` in `layout/tensor_core_async.mojo` (module-private there).
 comptime _CM_NUM_ROWS = 8
 
+comptime _gran[dtype: DType, swizzle_mode: TensorMapSwizzle] = (
+    swizzle_mode.bytes() // size_of[dtype]()
+)
+"""Swizzle-atom width in elements: one `swizzle_mode` row of `dtype`."""
 
-def _tile_layout_k_major_pagedense[
+
+comptime _tile_layout_k_major[
     dtype: DType,
     mn_dim: Int,
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle,
-]() -> Layout:
-    """Page-dense k-major SMEM layout: **chunk-inner (row-major atoms)**.
+    page_dense: Bool,
+] = TileLayout(
+    Coord(
+        Coord(Idx[_CM_NUM_ROWS], Idx[mn_dim // _CM_NUM_ROWS]),
+        Coord(
+            Idx[_gran[dtype, swizzle_mode]],
+            Idx[k_dim // _gran[dtype, swizzle_mode]],
+        ),
+    ),
+    Coord(
+        Coord(
+            Idx[_gran[dtype, swizzle_mode]],
+            Idx[
+                (k_dim // _gran[dtype, swizzle_mode])
+                * _CM_NUM_ROWS
+                * _gran[dtype, swizzle_mode] if page_dense else _CM_NUM_ROWS
+                * _gran[dtype, swizzle_mode]
+            ],
+        ),
+        Coord(
+            Idx[1],
+            Idx[
+                _CM_NUM_ROWS
+                * _gran[dtype, swizzle_mode] if page_dense else mn_dim
+                * _gran[dtype, swizzle_mode]
+            ],
+        ),
+    ),
+)
+"""K-major SMEM layout, `((CM, mn/CM), (gran, k/gran))`, in one of two forms.
 
-    Each `_CM_NUM_ROWS`-row swizzle atom is a dense, contiguous 1 KB SMEM block
-    (so a single cp.async.bulk.tensor with box `(_CM_NUM_ROWS, gran)` can fill
-    it). Atom-rows are the OUTER axis (stride `num_chunks*CM*gran`) and the chunk
-    atoms within an atom-row are INNER (stride `CM*gran`) — that is chunk-inner.
-    The 8-row x `gran` swizzle tile is dense (seq_k strides by `gran` within the
-    atom), so SWIZZLE_128B applies per atom — this is the swizzle-compatible
-    page-dense form for k-major, distinct from the (swizzle-incompatible for
-    k-major) **element-row-contiguous** form (seq_k strides by `BK`; see
-    `_tile_layout_k_major_chunkinner`). (Coincides with "chunk-outer-within-page"
-    only at a single atom-row, page = `CM` rows — the artifact behind that
-    earlier label.)
+`page_dense=False` is the production chunk-outer form, stride
+``((gran, CM*gran), (1, mn*gran))``: identical to
+`tile_layout_k_major_typed[dtype, mn_dim, k_dim, swizzle_mode]`, which the
+kernel asserts stride-for-stride.
 
-    Shape  ((CM, mn/CM), (gran, k/gran))
-    Stride ((gran, num_chunks*CM*gran), (1, CM*gran))
-    """
-    comptime assert (
-        swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
-    ), "spike only covers the SWIZZLE_128B page-dense k-major layout"
-    comptime gran = swizzle_mode.bytes() // size_of[dtype]()
-    comptime num_chunks = k_dim // gran
-    return Layout(
-        [
-            [_CM_NUM_ROWS, mn_dim // _CM_NUM_ROWS],
-            [gran, num_chunks],
-        ],
-        [
-            [gran, num_chunks * _CM_NUM_ROWS * gran],
-            [1, _CM_NUM_ROWS * gran],
-        ],
-    )
+`page_dense=True` is the page-dense form, **chunk-inner (row-major atoms)**:
+stride ``((gran, num_chunks*CM*gran), (1, CM*gran))``.
+"""
 
-
-def _tile_layout_k_major_chunkinner[
+comptime _tile_layout_k_major_pagedense[
     dtype: DType,
     mn_dim: Int,
     k_dim: Int,
     swizzle_mode: TensorMapSwizzle,
-]() -> Layout:
-    """TRUE chunk-inner (BK-contiguous-per-row) k-major layout — DIAGNOSTIC ONLY.
+] = _tile_layout_k_major[dtype, mn_dim, k_dim, swizzle_mode, True]
+"""Page-dense k-major SMEM layout: **chunk-inner (row-major atoms)**.
 
-    row_major(mn_dim, k_dim): each seq_k row's full head_size (BK) is contiguous.
-    For k-major this makes the 8-row swizzle tile NON-dense (rows are `BK` apart,
-    but the swizzle atom is only `gran` wide), so SWIZZLE_128B cannot describe it
-    directly. Included only so the diagnostic can show why the design's §6
-    "chunk-inner" does not transfer verbatim to k-major.
+Each `_CM_NUM_ROWS`-row swizzle atom is a dense, contiguous 1 KB SMEM block
+(so a single cp.async.bulk.tensor with box `(_CM_NUM_ROWS, gran)` can fill
+it). Atom-rows are the OUTER axis (stride `num_chunks*CM*gran`) and the chunk
+atoms within an atom-row are INNER (stride `CM*gran`) — that is chunk-inner.
+The 8-row x `gran` swizzle tile is dense (seq_k strides by `gran` within the
+atom), so SWIZZLE_128B applies per atom — this is the swizzle-compatible
+page-dense form for k-major, distinct from the (swizzle-incompatible for
+k-major) **element-row-contiguous** form (seq_k strides by `BK`; see
+`_tile_layout_k_major_chunkinner`). (Coincides with "chunk-outer-within-page"
+only at a single atom-row, page = `CM` rows — the artifact behind that
+earlier label.)
 
-    Shape  ((CM, mn/CM), (gran, k/gran))
-    Stride ((k_dim, CM*k_dim), (1, gran))
-    """
-    comptime gran = swizzle_mode.bytes() // size_of[dtype]()
-    comptime num_chunks = k_dim // gran
-    return Layout(
-        [
-            [_CM_NUM_ROWS, mn_dim // _CM_NUM_ROWS],
-            [gran, num_chunks],
-        ],
-        [
-            [k_dim, _CM_NUM_ROWS * k_dim],
-            [1, gran],
-        ],
-    )
+Shape  ((CM, mn/CM), (gran, k/gran))
+Stride ((gran, num_chunks*CM*gran), (1, CM*gran))
+"""
+
+comptime _tile_layout_k_major_chunkinner[
+    dtype: DType,
+    mn_dim: Int,
+    k_dim: Int,
+    swizzle_mode: TensorMapSwizzle,
+] = TileLayout(
+    Coord(
+        Coord(Idx[_CM_NUM_ROWS], Idx[mn_dim // _CM_NUM_ROWS]),
+        Coord(
+            Idx[_gran[dtype, swizzle_mode]],
+            Idx[k_dim // _gran[dtype, swizzle_mode]],
+        ),
+    ),
+    Coord(
+        Coord(Idx[k_dim], Idx[_CM_NUM_ROWS * k_dim]),
+        Coord(Idx[1], Idx[_gran[dtype, swizzle_mode]]),
+    ),
+)
+"""TRUE chunk-inner (BK-contiguous-per-row) k-major layout — DIAGNOSTIC ONLY.
+
+row_major(mn_dim, k_dim): each seq_k row's full head_size (BK) is contiguous.
+For k-major this makes the 8-row swizzle tile NON-dense (rows are `BK` apart,
+but the swizzle atom is only `gran` wide), so SWIZZLE_128B cannot describe it
+directly. Included only so the diagnostic can show why the design's §6
+"chunk-inner" does not transfer verbatim to k-major.
+
+Shape  ((CM, mn/CM), (gran, k/gran))
+Stride ((k_dim, CM*k_dim), (1, gran))
+"""
 
 
-def cpu_qk_naive(
-    O: LayoutTensor[mut=True, ...],
-    Q: LayoutTensor,
-    K: LayoutTensor,
+def cpu_qk_naive[
+    o_type: DType, ab_type: DType, M: Int, N: Int, D: Int
+](
+    O: TileTensor[
+        o_type, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin
+    ],
+    Q: TileTensor[
+        ab_type, RowMajorLayout[ComptimeInt[M], ComptimeInt[D]], MutAnyOrigin
+    ],
+    K: TileTensor[
+        ab_type, RowMajorLayout[ComptimeInt[N], ComptimeInt[D]], MutAnyOrigin
+    ],
 ):
     """Host reference `O = Q @ Kᵀ`. Q is M x D (row-major), K is N x D
     (row-major), O is M x N (row-major). Contraction is D (= head_size)."""
-    comptime M = O.layout[0].size()
-    comptime N = O.layout[1].size()
-    comptime D = Q.layout[1].size()
-    comptime assert M == Q.layout[0].size()
-    comptime assert N == K.layout[0].size()
-    comptime assert D == K.layout[1].size()
     for m in range(M):
         for n in range(N):
             var acc: Float32 = 0.0
             for d in range(D):
-                acc += (
-                    Q.ptr.load(m * D + d).cast[.float32]()
-                    * K.ptr.load(n * D + d).cast[.float32]()
-                )
-            O.ptr.store(m * N + n, acc.cast[O.dtype]())
+                acc += Q[m, d].cast[.float32]() * K[n, d].cast[.float32]()
+            O[m, n] = acc.cast[o_type]()
 
 
 @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
@@ -205,7 +243,7 @@ def qk_mma_kernel[
     k_tile_rank: Int,
     k_tile_shape: IndexList[k_tile_rank],
     k_desc_shape: IndexList[k_tile_rank],
-    c_layout: Layout,
+    c_layout: TensorLayout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     swizzle_mode: TensorMapSwizzle,
@@ -216,7 +254,7 @@ def qk_mma_kernel[
     k_tma_op: TMATensorTile[
         ab_type, k_tile_rank, k_tile_shape, k_desc_shape, is_k_major=True
     ],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -232,14 +270,25 @@ def qk_mma_kernel[
     comptime num_k_mmas = BK // MMA_K
 
     # A = Q : k-major.   B = K : k-major (transpose_b == True).
-    comptime q_smem_layout = tile_layout_k_major[
-        ab_type, BM, BK, swizzle_mode=swizzle_mode
-    ]()
-    comptime k_smem_layout = _tile_layout_k_major_pagedense[
-        ab_type, BN, BK, swizzle_mode
-    ]() if use_native else tile_layout_k_major[
-        ab_type, BN, BK, swizzle_mode=swizzle_mode
-    ]()
+    comptime q_smem_layout = tile_layout_k_major_typed[
+        ab_type, BM, BK, swizzle_mode
+    ]
+    comptime k_smem_layout = _tile_layout_k_major[
+        ab_type, BN, BK, swizzle_mode, use_native
+    ]
+    comptime if use_native:
+        comptime assert (
+            swizzle_mode == TensorMapSwizzle.SWIZZLE_128B
+        ), "spike only covers the SWIZZLE_128B page-dense k-major layout"
+    else:
+        comptime production = tile_layout_k_major_typed[
+            ab_type, BN, BK, swizzle_mode
+        ]
+        comptime for i in range(4):
+            comptime assert (
+                type_of(k_smem_layout).static_stride[i]
+                == type_of(production).static_stride[i]
+            ), "baseline arm must be the production k-major layout"
 
     var q_smem = rebind[
         MutPointer[
@@ -253,29 +302,14 @@ def qk_mma_kernel[
             name="qk_spike_dynamic_smem",
         ]()
     )
-    comptime q_smem_tile_t = LayoutTensor[
-        ab_type,
-        q_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ]
-    comptime k_smem_tile_t = LayoutTensor[
-        ab_type,
-        k_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ]
-
-    comptime q_size = q_smem_layout.size()
-    comptime k_size = k_smem_layout.size()
+    comptime q_size = BM * BK
+    comptime k_size = BN * BK
     comptime assert ((q_size * size_of[ab_type]()) % 128) == 0
     comptime assert ((k_size * size_of[ab_type]()) % 16) == 0
     var k_smem = (q_smem + q_size).bitcast[Scalar[ab_type]]()
 
-    var q_smem_tile = q_smem_tile_t(q_smem.as_unsafe_any_origin())
-    var k_smem_tile = k_smem_tile_t(k_smem.as_unsafe_any_origin())
+    var q_smem_tile = TileTensor(q_smem, q_smem_layout)
+    var k_smem_tile = TileTensor(k_smem, k_smem_layout)
 
     var ptr_tmem_addr = (k_smem + k_size).bitcast[UInt32]()
 
@@ -310,29 +344,20 @@ def qk_mma_kernel[
 
     # ---- MMA operand descriptors ------------------------------------------
     # A (Q) and B (K) are both k-major. SBO/LBO derived exactly as in
-    # test_tma_mma_sm100.mojo (k-major branch: SBO<-stride01, LBO<-stride11),
-    # so the *only* variable under test is `k_smem_layout` (page-dense
-    # chunk-inner / row-major atoms vs the current global chunk-outer).
-    comptime q_canonical = tile_to_descriptor[
-        ab_type, q_smem_layout, is_k_major=True
-    ]()
-    comptime k_canonical = tile_to_descriptor[
-        ab_type, k_smem_layout, is_k_major=True
-    ]()
-    comptime q_s01 = q_canonical[0].stride[1].value()
-    comptime q_s11 = q_canonical[1].stride[1].value()
-    comptime qSBO = q_s01 * size_of[ab_type]()
-    comptime qLBO = q_s11 * size_of[ab_type]()
-    comptime k_s01 = k_canonical[0].stride[1].value()
-    comptime k_s11 = k_canonical[1].stride[1].value()
-    comptime kSBO = k_s01 * size_of[ab_type]()
-    comptime kLBO = k_s11 * size_of[ab_type]()
+    # test_tma_mma_sm100.mojo (k-major branch: SBO<-stride01, LBO<-stride11,
+    # i.e. flattened strides 1 and 3), so the *only* variable under test is
+    # `k_smem_layout` (page-dense chunk-inner / row-major atoms vs the current
+    # global chunk-outer).
+    comptime qSBO = type_of(q_smem_layout).static_stride[1] * size_of[ab_type]()
+    comptime qLBO = type_of(q_smem_layout).static_stride[3] * size_of[ab_type]()
+    comptime kSBO = type_of(k_smem_layout).static_stride[1] * size_of[ab_type]()
+    comptime kLBO = type_of(k_smem_layout).static_stride[3] * size_of[ab_type]()
 
     var qdesc = MMASmemDescriptor.create[qSBO, qLBO, swizzle_mode](
-        q_smem_tile.ptr
+        q_smem_tile.unsafe_ptr()
     )
     var kdesc = MMASmemDescriptor.create[kSBO, kLBO, swizzle_mode](
-        k_smem_tile.ptr
+        k_smem_tile.unsafe_ptr()
     )
 
     var idesc = UMMAInsDescriptor[UMMAKind.KIND_F16].create[
@@ -346,8 +371,8 @@ def qk_mma_kernel[
     for i in range(num_iters):
         if elect_one_thread:
             tma_mbar[0].expect_bytes(Int32(expected_bytes))
-            var m = block_idx.y * BM
-            var n = block_idx.x * BN
+            var m = Int(block_idx.y) * BM
+            var n = Int(block_idx.x) * BN
             var k = i * BK
             # A=Q k-major : (k, m).   B=K k-major (transpose_b=True) : (k, n).
             q_tma_op.async_copy(q_smem_tile, tma_mbar[0], (k, m))
@@ -362,17 +387,25 @@ def qk_mma_kernel[
             if i == 0:
                 mma[c_scale=0](qdesc, kdesc, tmem_addr, idesc)
                 comptime for j in range(1, num_k_mmas):
-                    comptime idx = IntTuple(0, MMA_K * j)
-                    comptime q_off = q_smem_layout(idx) * size_of[ab_type]()
-                    comptime k_off = k_smem_layout(idx) * size_of[ab_type]()
+                    comptime idx = Coord(Idx[0], Idx[MMA_K * j])
+                    comptime q_off = Int(q_smem_layout(idx)) * size_of[
+                        ab_type
+                    ]()
+                    comptime k_off = Int(k_smem_layout(idx)) * size_of[
+                        ab_type
+                    ]()
                     mma[c_scale=1](
                         qdesc + q_off, kdesc + k_off, tmem_addr, idesc
                     )
             else:
                 comptime for j in range(num_k_mmas):
-                    comptime idx = IntTuple(0, MMA_K * j)
-                    comptime q_off = q_smem_layout(idx) * size_of[ab_type]()
-                    comptime k_off = k_smem_layout(idx) * size_of[ab_type]()
+                    comptime idx = Coord(Idx[0], Idx[MMA_K * j])
+                    comptime q_off = Int(q_smem_layout(idx)) * size_of[
+                        ab_type
+                    ]()
+                    comptime k_off = Int(k_smem_layout(idx)) * size_of[
+                        ab_type
+                    ]()
                     mma[c_scale=1](
                         qdesc + q_off, kdesc + k_off, tmem_addr, idesc
                     )
@@ -398,23 +431,23 @@ def qk_mma_kernel[
     comptime num_warps = num_threads // WARP_SIZE
     var warp_id = get_warp_id()
 
-    var ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    var ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
             var c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
-                4 * m_mma + warp_id, n_mma
+                4 * m_mma + Int(warp_id), n_mma
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
-                Layout.row_major(8, 4)
-            ](lane_id())
-            comptime num_vecs_m = c_gmem_frag.layout.shape[0].value()
-            comptime num_vecs_n = c_gmem_frag.layout.shape[1].value()
+                row_major[8, 4]()
+            ](Int(lane_id()))
+            comptime num_vecs_m = type_of(c_gmem_frag).static_shape[0]
+            comptime num_vecs_n = type_of(c_gmem_frag).static_shape[1]
             comptime for n_vec in range(num_vecs_n):
                 comptime for m_vec in range(num_vecs_m):
                     comptime i_vec = n_vec * num_vecs_m + m_vec
                     c_gmem_frag[m_vec, n_vec] = rebind[
-                        c_gmem_frag.element_type
+                        type_of(c_gmem_frag).ElementType
                     ](
                         SIMD[accum_type, 2](
                             c_frag[2 * i_vec], c_frag[2 * i_vec + 1]
@@ -459,15 +492,17 @@ def run_qk_spike[
     )
 
     # Q is M x D, K is N x D (both row-major, D = head_size = contraction).
-    var q = ManagedLayoutTensor[ab_type, Layout.row_major(M, K)](ctx)
-    var k = ManagedLayoutTensor[ab_type, Layout.row_major(N, K)](ctx)
-    var o = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
-    var o_ref = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
+    var q = HostDeviceTileTensor[ab_type](row_major[M, K](), ctx)
+    var k = HostDeviceTileTensor[ab_type](row_major[N, K](), ctx)
+    var o = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
+    var o_ref = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
 
     # Distinguishable small values so a mis-strided layout mismatches visibly
     # rather than averaging out; keep magnitudes tiny to bound bf16 error.
-    arange(q.tensor[update=False](), start=0.0, step=0.001)
-    arange(k.tensor[update=False](), start=0.0, step=0.001)
+    arange(q.host_tensor(), start=0.0, step=0.001)
+    arange(k.host_tensor(), start=0.0, step=0.001)
+    q.to_device()
+    k.to_device()
 
     # A=Q k-major tile (BM,BK), default box.
     var q_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=swizzle_mode](
@@ -491,13 +526,11 @@ def run_qk_spike[
         # constructor. The multi-box `async_copy` then lays the 8-row atoms x
         # chunk boxes contiguously (chunk-inner / row-major atoms), matching
         # `_tile_layout_k_major_pagedense`.
-        var k_dev = k.device_tensor()
+        var k_ptr = k.device_tensor().unsafe_ptr()
         var k_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                k_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    .GENERIC
-                ](),
+                k_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -517,7 +550,7 @@ def run_qk_spike[
             type_of(k_tma_op).rank,
             type_of(k_tma_op).tile_shape,
             type_of(k_tma_op).desc_shape,
-            Layout.row_major(M, N),
+            type_of(o).LayoutType,
             block_tile_shape,
             mma_shape,
             swizzle_mode=swizzle_mode,
@@ -551,7 +584,7 @@ def run_qk_spike[
             type_of(k_tma_op).rank,
             type_of(k_tma_op).tile_shape,
             type_of(k_tma_op).desc_shape,
-            Layout.row_major(M, N),
+            type_of(o).LayoutType,
             block_tile_shape,
             mma_shape,
             swizzle_mode=swizzle_mode,
@@ -571,16 +604,12 @@ def run_qk_spike[
             ),
         )
 
-    cpu_qk_naive(
-        o_ref.tensor[update=False](),
-        q.tensor[update=False](),
-        k.tensor[update=False](),
-    )
-    _ = o_ref.device_tensor()
+    cpu_qk_naive(o_ref.host_tensor(), q.host_tensor(), k.host_tensor())
     ctx.synchronize()
 
-    var o_host = o.tensor()
-    var o_host_ref = o_ref.tensor()
+    o.to_host()
+    var o_host = o.host_tensor()
+    var o_host_ref = o_ref.host_tensor()
     var mismatches = 0
     for m in range(M):
         for n in range(N):
@@ -630,40 +659,29 @@ def _print_layouts[mn: Int, k: Int]():
     at comptime and only materialized Ints are printed (Layout is not
     runtime-materializable)."""
     comptime sw = TensorMapSwizzle.SWIZZLE_128B
-    comptime base = tile_layout_k_major[
-        DType.bfloat16, mn, k, swizzle_mode=sw
-    ]()
-    comptime pdns = _tile_layout_k_major_pagedense[.bfloat16, mn, k, sw]()
-    comptime cinr = _tile_layout_k_major_chunkinner[.bfloat16, mn, k, sw]()
-    comptime base_can = tile_to_descriptor[
-        DType.bfloat16, base, is_k_major=True
-    ]()
-    comptime pdns_can = tile_to_descriptor[
-        DType.bfloat16, pdns, is_k_major=True
-    ]()
-    comptime cinr_can = tile_to_descriptor[
-        DType.bfloat16, cinr, is_k_major=True
-    ]()
-    # k-major: SBO <- stride01, LBO <- stride11.
-    comptime base_sbo = base_can[0].stride[1].value() * 2
-    comptime base_lbo = base_can[1].stride[1].value() * 2
-    comptime pdns_sbo = pdns_can[0].stride[1].value() * 2
-    comptime pdns_lbo = pdns_can[1].stride[1].value() * 2
-    comptime cinr_sbo = cinr_can[0].stride[1].value() * 2
-    comptime cinr_lbo = cinr_can[1].stride[1].value() * 2
+    comptime base = tile_layout_k_major_typed[DType.bfloat16, mn, k, sw]
+    comptime pdns = _tile_layout_k_major_pagedense[.bfloat16, mn, k, sw]
+    comptime cinr = _tile_layout_k_major_chunkinner[.bfloat16, mn, k, sw]
+    # k-major: SBO <- stride01, LBO <- stride11 (flattened strides 1 and 3).
+    comptime base_sbo = type_of(base).static_stride[1] * 2
+    comptime base_lbo = type_of(base).static_stride[3] * 2
+    comptime pdns_sbo = type_of(pdns).static_stride[1] * 2
+    comptime pdns_lbo = type_of(pdns).static_stride[3] * 2
+    comptime cinr_sbo = type_of(cinr).static_stride[1] * 2
+    comptime cinr_lbo = type_of(cinr).static_stride[3] * 2
     print("---- k-major layout diagnostics (mn=", mn, " k=", k, ") ----")
     print("baseline    SBO,LBO=", base_sbo, base_lbo)
     print("pagedense   SBO,LBO=", pdns_sbo, pdns_lbo)
     print("chunkinner  SBO,LBO=", cinr_sbo, cinr_lbo)
     print("per-MMA_K(16) elem offsets (mn=0): k, base, pdns, cinr")
     comptime for j in range(k // 16):
-        comptime bo = base(IntTuple(0, 16 * j))
-        comptime po = pdns(IntTuple(0, 16 * j))
-        comptime co = cinr(IntTuple(0, 16 * j))
+        comptime bo = Int(base(Coord(Idx[0], Idx[16 * j])))
+        comptime po = Int(pdns(Coord(Idx[0], Idx[16 * j])))
+        comptime co = Int(cinr(Coord(Idx[0], Idx[16 * j])))
         print("  k=", 16 * j, bo, po, co)
-    comptime base_mn = base(IntTuple(8, 0))
-    comptime pdns_mn = pdns(IntTuple(8, 0))
-    comptime cinr_mn = cinr(IntTuple(8, 0))
+    comptime base_mn = Int(base(Coord(Idx[8], Idx[0])))
+    comptime pdns_mn = Int(pdns(Coord(Idx[8], Idx[0])))
+    comptime cinr_mn = Int(cinr(Coord(Idx[8], Idx[0])))
     print(
         "mn=8,k=0 (next 8-row page) base=",
         base_mn,

@@ -24,7 +24,7 @@ import logging
 import pathlib
 from collections.abc import Iterator
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import numpy as np
 import pytest
@@ -499,6 +499,7 @@ def _make_real_target(
 
 def _make_unified_real(
     quant_config: QuantConfig | None = None,
+    draft_proposal: Literal["argmax", "sampled"] = "argmax",
 ) -> UnifiedDflashGemma4_31BConfig:
     devices = [DeviceRef.GPU()]
     draft = _tiny_draft_config(devices, num_hidden_layers=2)
@@ -507,7 +508,9 @@ def _make_unified_real(
         draft=draft,
         draft_kv_params=cast(MHAKVCacheParams, draft.kv_params),
         speculative_config=SpeculativeConfig(
-            speculative_method="dflash", num_speculative_tokens=15
+            speculative_method="dflash",
+            num_speculative_tokens=15,
+            draft_proposal=draft_proposal,
         ),
         target_layer_ids=[0, 1],
         layer_types=["sliding_attention", "full_attention"],
@@ -563,9 +566,12 @@ def test_graph_signature_binds_thinking_and_structured_output(
     assert scratch.dtype == DType.int32
 
 
+@pytest.mark.parametrize("draft_proposal", ["argmax", "sampled"])
 @pytest.mark.parametrize("structured_output", [False, True])
 def test_graph_stages_end_to_end(
-    virtual_gpu: None, structured_output: bool
+    virtual_gpu: None,
+    structured_output: bool,
+    draft_proposal: Literal["argmax", "sampled"],
 ) -> None:
     """The whole merge -> target -> reject -> materialize -> block graph
     stages, and the drafted output is ``[batch, block_size - 1]``.
@@ -576,7 +582,7 @@ def test_graph_stages_end_to_end(
     collective embedding and tied head being driven from the draft's block
     stream.
     """
-    config = _make_unified_real()
+    config = _make_unified_real(draft_proposal=draft_proposal)
     nn_model = UnifiedDflashGemma4_31B(
         config, enable_structured_output=structured_output
     )
@@ -612,11 +618,21 @@ def test_graph_stages_end_to_end(
             pinned_bitmask=graph_inputs.pinned_bitmask,
             wait_payload=graph_inputs.wait_payload,
             device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
+            draft_probs_full=graph_inputs.draft_probs_full,
         )
-        assert len(outputs) == 3
         next_draft_tokens = outputs[2]
         assert int(next_draft_tokens.shape[1]) == config.block_size - 1
         assert next_draft_tokens.dtype == DType.int64
+        if draft_proposal == "sampled":
+            assert len(outputs) == 4
+            probs = outputs[3]
+            assert probs.dtype == DType.float32
+            assert [int(d) for d in probs.shape[1:]] == [
+                config.block_size - 1,
+                config.target.text_config.vocab_size,
+            ]
+        else:
+            assert len(outputs) == 3
         graph.output(*outputs)
 
 

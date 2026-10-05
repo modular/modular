@@ -208,6 +208,8 @@ _WS_SCHEMA = json.dumps(
 _TOKENS_BY_MODEL_FORMAT: dict[str, tuple[str, ...]] = {
     # MiniMax-M3's envelope is built from single tokens.
     "minimax_m3": ("<tool_call>", "</tool_call>", "]<]minimax[>["),
+    # Muse Glimmer frames each call as a message with special-token headers.
+    "muse_glimmer": ("<|start|>", "<|message|>"),
 }
 
 
@@ -494,6 +496,49 @@ def test_container_enum_constrains_to_the_declared_literals(
     assert _consume_wire(matcher, model_format, undeclared) < len(undeclared), (
         f"[{model_format}] the grammar admitted an object matching no literal"
     )
+
+
+_MUSE_GLIMMER_CALL = (
+    '<atem:function_calls><atem:invoke name="get_weather">'
+    '<atem:parameter name="city">Paris</atem:parameter>'
+    "</atem:invoke></atem:function_calls>"
+)
+# The chat template's own rendering of the same call, header included.
+_MUSE_GLIMMER_TEMPLATE_CALL = (
+    "<|start|>assistant to=get_weather<|message|>"
+    '<atem:function_calls>\n<atem:invoke name="get_weather">\n'
+    '<atem:parameter name="city">Paris</atem:parameter>\n'
+    "</atem:invoke>\n</atem:function_calls>"
+)
+
+
+@pytest.mark.parametrize(
+    "wire",
+    [
+        _MUSE_GLIMMER_CALL,
+        _MUSE_GLIMMER_TEMPLATE_CALL,
+        _MUSE_GLIMMER_CALL.replace("</atem:invoke>", ""),
+    ],
+    ids=["bare", "template", "unclosed_invoke"],
+)
+def test_muse_glimmer_required_grammar_frames_the_call(wire: str) -> None:
+    """A ``required`` Muse Glimmer grammar admits only a closed ATEM call."""
+    matcher = _tool_matcher(
+        _make_helper("xgrammar", "muse_glimmer"),
+        "muse_glimmer",
+        "get_weather",
+        {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"],
+        },
+    )
+    consumed = _consume_wire(matcher, "muse_glimmer", wire)
+    if "</atem:invoke>" in wire:
+        assert consumed == len(wire), f"rejected at {wire[consumed:]!r}"
+        assert matcher.is_accepting()
+    else:
+        assert consumed < len(wire), "admitted a call without </atem:invoke>"
 
 
 # A JSON Schema integer is a number with a zero fractional part, so the

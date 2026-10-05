@@ -27,6 +27,7 @@
 #include "Mojo/MojoParser/CallOperands.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/POPDialect/POPAttrs.h"
+#include "Mojo/Support/TriBool.h"
 #include "MojoUtils.h"
 #include "ParserEvaluationContext.h"
 
@@ -223,6 +224,13 @@ LogicalResult FloatLiteralNode::buildCheckList(
 }
 
 LogicalResult StringLiteralNode::buildCheckList(
+    PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
+    SmallVectorImpl<const PatternCommand *> &out) const {
+  out.push_back(builder.createEqual(path, this));
+  return success();
+}
+
+LogicalResult SetInitLiteralNode::buildCheckList(
     PatternMatchBuilder &builder, CValue subject, const PatternPath *path,
     SmallVectorImpl<const PatternCommand *> &out) const {
   out.push_back(builder.createEqual(path, this));
@@ -486,6 +494,23 @@ getEnumCaseNames(IREmitter &emitter, ASTType subjectType, SMLoc loc) {
           dyn_cast_or_null<ParamListAttr>(getCanonicalAttr(namesAttr)))
     return namesList.getValues();
   return std::nullopt;
+}
+
+/// Read `SubjectType._enum_is_exhaustive` when it is statically known.
+static TriBool getEnumIsExhaustive(IREmitter &emitter, ASTType subjectType,
+                                   SMLoc loc) {
+  SyntheticNode typeNode(loc, PValue(subjectType));
+  AttributeRefNode exhaustiveRef(&typeNode, loc, "_enum_is_exhaustive");
+  PValue exhaustiveValue =
+      emitter.emitExprPValue(&exhaustiveRef, EC_AttributeRefBase);
+  PValue scalarBool =
+      emitter
+          .emitScalarBool({CValue(exhaustiveValue), &exhaustiveRef},
+                          EC_OperatorOperandValue)
+          .getIfPValue();
+  if (auto boolAttr = sugarDynCastIfPresent<SIMDAttr>(scalarBool.get()))
+    return TriBool::fromBool(boolAttr.getAsBool());
+  return TriBool::unknown();
 }
 
 /// When processing `Type.Case` patterns, require them to be the subject's
@@ -793,7 +818,10 @@ RValue PatternEmitState::emitTestForValue(IREmitter &emitter,
       return {};
     rhs = caseIdxInt;
   } else {
-    rhs = emitter.emitExpr(expr, EC_MatchSubject);
+    if (isa<SetInitLiteralNode>(expr))
+      rhs = emitter.emitExpr(expr, EC_MatchSubject, value.getRValueType());
+    else
+      rhs = emitter.emitExpr(expr, EC_MatchSubject);
     if (!rhs)
       return {};
   }
@@ -1280,6 +1308,8 @@ struct MatchCoveringSpace {
   enum class Kind : uint8_t {
     Opaque,
     FiniteCtors,
+    /// EnumLike root with known constructors but an open value universe.
+    OpenCtors,
     Product,
     /// Tuple/struct of EnumLike leaves whose flattened cell count exceeds
     /// `kMaxProductCells`. Not tracked cell-by-cell; requires a catch-all.
@@ -1290,10 +1320,11 @@ struct MatchCoveringSpace {
   };
   Kind kind = Kind::Opaque;
 
-  // FiniteCtors (EnumLike root):
+  // FiniteCtors / OpenCtors (EnumLike root):
   size_t numCtors = 0;
   bool *remaining = nullptr;
   ArrayRef<TypedAttr> caseNames;
+  bool openUniverseCovered = false;
 
   // Product (tuple/struct of EnumLike leaves, flattened):
   size_t numDims = 0;
@@ -1306,7 +1337,7 @@ struct MatchCoveringSpace {
   llvm::BumpPtrAllocator *allocator = nullptr;
 
   bool hasOpenCtor() const {
-    if (kind != Kind::FiniteCtors || !remaining)
+    if ((kind != Kind::FiniteCtors && kind != Kind::OpenCtors) || !remaining)
       return false;
     for (size_t i = 0; i < numCtors; ++i)
       if (remaining[i])
@@ -1326,19 +1357,21 @@ struct MatchCoveringSpace {
   bool isFullyCovered() const {
     return kind == Kind::Closed ||
            (kind == Kind::FiniteCtors && !hasOpenCtor()) ||
+           (kind == Kind::OpenCtors && openUniverseCovered) ||
            (kind == Kind::Product && !hasOpenCell());
   }
 
   void closeAll() { kind = Kind::Closed; }
 
   void coverCtor(size_t index) {
-    assert(kind == Kind::FiniteCtors && remaining && index < numCtors);
+    assert((kind == Kind::FiniteCtors || kind == Kind::OpenCtors) &&
+           remaining && index < numCtors);
     remaining[index] = false;
   }
 
   bool isCtorOpen(size_t index) const {
-    return kind == Kind::FiniteCtors && remaining && index < numCtors &&
-           remaining[index];
+    return (kind == Kind::FiniteCtors || kind == Kind::OpenCtors) &&
+           remaining && index < numCtors && remaining[index];
   }
 
   bool isLiteralCovered(StringRef spelling) const {
@@ -1401,7 +1434,15 @@ static bool collectFiniteDims(PatternMatchBuilder &builder,
           ASTDecl::getAssumptionsFromScope(&builder.declScope))) {
     IREmitter emitter = builder.getParamEmitter();
     auto names = getEnumCaseNames(emitter, type, loc);
-    if (!names || names->empty())
+    auto isExhaustive = getEnumIsExhaustive(emitter, type, loc);
+    if (isExhaustive.isUnknown()) {
+      builder.emitError(
+          loc,
+          "'_enum_is_exhaustive' must be statically known when matching an "
+          "EnumLike type");
+      return false;
+    }
+    if (!names || names->empty() || isExhaustive.isFalse())
       return false;
     dims.push_back({path, names->size(), *names});
     return true;
@@ -1447,16 +1488,25 @@ static MatchCoveringSpace *createRootCoveringSpace(PatternMatchBuilder &builder,
   auto *space = builder.create<MatchCoveringSpace>();
   ASTType subjectType = rootPath->type;
 
-  // EnumLike root → FiniteCtors.
+  // EnumLike root → closed or open constructor space.
   if (subjectType.provenConformsToBuiltinTrait(
           "EnumLike", matchLoc, builder.shared,
           ASTDecl::getAssumptionsFromScope(&builder.declScope))) {
     IREmitter emitter = builder.getParamEmitter();
     auto names = getEnumCaseNames(emitter, subjectType, matchLoc);
+    auto isExhaustive = getEnumIsExhaustive(emitter, subjectType, matchLoc);
     if (!names || names->empty())
       return space; // Opaque — incomplete reflection metadata
+    if (isExhaustive.isUnknown()) {
+      builder.emitError(
+          matchLoc,
+          "'_enum_is_exhaustive' must be statically known when matching an "
+          "EnumLike type");
+      return space;
+    }
 
-    space->kind = MatchCoveringSpace::Kind::FiniteCtors;
+    space->kind = isExhaustive.isTrue() ? MatchCoveringSpace::Kind::FiniteCtors
+                                        : MatchCoveringSpace::Kind::OpenCtors;
     space->numCtors = names->size();
     space->caseNames = *names;
     space->remaining = builder.allocator.Allocate<bool>(space->numCtors);
@@ -1689,20 +1739,26 @@ static bool coverLiteralCommands(MatchCoveringSpace &space,
   return true;
 }
 
-/// Cover FiniteCtors with an Or-free command list. Returns false if the
-/// pattern cannot be credited; `hitOpen` if a still-open ctor was cleared.
+/// Cover FiniteCtors or OpenCtors with an Or-free command list. Returns false
+/// if the pattern cannot be credited; `hitOpen` if new values were covered.
 static bool coverFiniteCtorsCommands(MatchCoveringSpace &space,
                                      PatternCommandList commands,
                                      const PatternPath *rootPath,
                                      bool &hitOpen) {
   hitOpen = false;
-  assert(space.kind == MatchCoveringSpace::Kind::FiniteCtors);
+  assert(space.kind == MatchCoveringSpace::Kind::FiniteCtors ||
+         space.kind == MatchCoveringSpace::Kind::OpenCtors);
 
   // Irrefutable alternative (`_` / bind-only, including empty): closes every
   // remaining ctor. Needed for `case True | _:` where `_` is an Or arm.
   if (llvm::all_of(commands, [](const PatternCommand *cmd) {
         return cmd->kind == PatternCommand::Bind;
       })) {
+    if (space.kind == MatchCoveringSpace::Kind::OpenCtors &&
+        !space.openUniverseCovered) {
+      space.openUniverseCovered = true;
+      hitOpen = true;
+    }
     for (size_t i = 0; i < space.numCtors; ++i) {
       if (space.remaining[i]) {
         space.remaining[i] = false;
@@ -1844,7 +1900,8 @@ static bool coverCommands(MatchCoveringSpace &space,
   for (ArrayRef<const PatternCommand *> alt : alts) {
     bool altHit = false;
     bool ok = false;
-    if (space.kind == MatchCoveringSpace::Kind::FiniteCtors)
+    if (space.kind == MatchCoveringSpace::Kind::FiniteCtors ||
+        space.kind == MatchCoveringSpace::Kind::OpenCtors)
       ok = coverFiniteCtorsCommands(space, alt, rootPath, altHit);
     else if (space.kind == MatchCoveringSpace::Kind::Product)
       ok = coverProductCommands(space, alt, altHit);
@@ -1869,7 +1926,8 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
     MutableArrayRef<MatchCaseEntry> caseEntries, const PatternPath *rootPath,
     SMLoc matchLoc) {
   // Covering model (see MatchCoveringSpace):
-  //   - EnumLike root → FiniteCtors bitset.
+  //   - Closed EnumLike root → FiniteCtors bitset.
+  //   - Open EnumLike root → OpenCtors bitset for duplicate detection.
   //   - Tuple/struct of EnumLike leaves → flattened Product cell bitset.
   //   - Product larger than kMaxProductCells → TooComplex (needs `_`).
   //   - Else LiteralSet: track root Equal spellings for duplicates only
@@ -1903,6 +1961,7 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
       continue;
 
     if (space->kind != MatchCoveringSpace::Kind::FiniteCtors &&
+        space->kind != MatchCoveringSpace::Kind::OpenCtors &&
         space->kind != MatchCoveringSpace::Kind::Product &&
         space->kind != MatchCoveringSpace::Kind::LiteralSet)
       continue;
@@ -1921,7 +1980,8 @@ void PatternMatchBuilder::checkCaseExhaustivityAndUnreachability(
           llvm::any_of(entry.commandList, [](const PatternCommand *cmd) {
             return cmd->kind == PatternCommand::Or;
           });
-      if (!hasOr && space->kind == MatchCoveringSpace::Kind::FiniteCtors) {
+      if (!hasOr && (space->kind == MatchCoveringSpace::Kind::FiniteCtors ||
+                     space->kind == MatchCoveringSpace::Kind::OpenCtors)) {
         if (auto ctor = getSimpleRootCtorCoverage(entry.commandList, rootPath,
                                                   space->caseNames)) {
           emitWarning(entry.patternExpr->getLoc(), "case is unreachable; ")

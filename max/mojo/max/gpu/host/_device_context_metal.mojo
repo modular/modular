@@ -91,7 +91,6 @@ struct MetalDeviceTypeEncoder(DeviceTypeEncoder):
 
 
 @inline(.always)
-@__parameter
 def call_with_pack_metal[
     func: Some[TrivialRegisterPassable],
     ContextT: _FunctionEnqueuer,
@@ -209,7 +208,6 @@ def call_with_pack_metal[
 
 
 @inline(.always)
-@__parameter
 def call_with_pack_checked_metal[
     func: Some[TrivialRegisterPassable],
     *Ts: DevicePassable,
@@ -223,9 +221,13 @@ def call_with_pack_checked_metal[
     host0: Optional[OpaquePointer[MutAnyOrigin]] = None,
     host1: Optional[OpaquePointer[MutAnyOrigin]] = None,
     host2: Optional[OpaquePointer[MutAnyOrigin]] = None,
+    host3: Optional[OpaquePointer[MutAnyOrigin]] = None,
+    host4: Optional[OpaquePointer[MutAnyOrigin]] = None,
     host0_size: Int = 0,
     host1_size: Int = 0,
     host2_size: Int = 0,
+    host3_size: Int = 0,
+    host4_size: Int = 0,
     func_handle: _DeviceFunctionPtr[mut=True],
     device_context: DeviceContext,
     capture_sizes: Pointer[UInt64, ImmUntrackedOrigin],
@@ -259,9 +261,13 @@ def call_with_pack_checked_metal[
         host0: Pointer to the first host-layout argument, or `None`.
         host1: Pointer to the second host-layout argument, or `None`.
         host2: Pointer to the third host-layout argument, or `None`.
+        host3: Pointer to the fourth host-layout argument, or `None`.
+        host4: Pointer to the fifth host-layout argument, or `None`.
         host0_size: Byte size of the first host-layout argument.
         host1_size: Byte size of the second host-layout argument.
         host2_size: Byte size of the third host-layout argument.
+        host3_size: Byte size of the fourth host-layout argument.
+        host4_size: Byte size of the fifth host-layout argument.
         func_handle: Handle to the compiled `DeviceFunction` to launch.
         device_context: The device context backing the function, used for
             error reporting in `_checked_call`.
@@ -377,6 +383,16 @@ def call_with_pack_checked_metal[
     if extra_host_count >= 3 and host2:
         dense_args_addrs[unsafe_offset=translated_arg_idx] = host2.value()
         dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host2_size)
+        dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
+        translated_arg_idx += 1
+    if extra_host_count >= 4 and host3:
+        dense_args_addrs[unsafe_offset=translated_arg_idx] = host3.value()
+        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host3_size)
+        dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
+        translated_arg_idx += 1
+    if extra_host_count >= 5 and host4:
+        dense_args_addrs[unsafe_offset=translated_arg_idx] = host4.value()
+        dense_args_sizes[unsafe_offset=translated_arg_idx] = UInt64(host4_size)
         dense_args_is_device_ptr[unsafe_offset=translated_arg_idx] = False
         translated_arg_idx += 1
 

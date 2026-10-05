@@ -30,7 +30,7 @@ from test_common.context_utils import create_text_context
 # the Python host tier: the host/disk tier is now the Rust ``rust_tiered``
 # connector, whose pyo3 extension may only be depended on from an internal-only
 # package. Multi-buffer offload/onload stays covered by the round-trip tests in
-# ``integration/kv_cache/internal/dkv/test_rust_tiered_connector_gpu.py``.
+# ``integration/kv_cache/internal/dkv/test_tiered_connector_gpu.py``.
 
 
 def test_kv_cache_gpu() -> None:

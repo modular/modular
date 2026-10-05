@@ -495,35 +495,38 @@ def print_benchmark_summary(
             )
         )
 
-    # Printed only when the run constrained something: an unconstrained run
-    # would otherwise carry a permanent "0.00%" for a feature it never used.
-    if summary.constrained_request_rate:
-        print(
-            "{:<40} {:<10.2%}".format(
-                "Structured-output requests:",
-                summary.constrained_request_rate,
+    # Each line prints only when its feature was used: a run without it would
+    # otherwise carry a permanent "0.00%" for something it never sent.
+    mix = groups.request_mix
+    if mix is not None:
+        mix_lines: list[tuple[str, float]] = []
+        if mix.constrained_request_rate:
+            mix_lines.append(
+                ("Structured-output requests:", mix.constrained_request_rate)
             )
-        )
-        if summary.constrained_conformance_rate is not None:
-            print(
-                "{:<40} {:<10.2%}".format(
-                    "  of which schema-conforming:",
-                    summary.constrained_conformance_rate,
+            if mix.constrained_conformance_rate is not None:
+                mix_lines.append(
+                    (
+                        "  of which schema-conforming:",
+                        mix.constrained_conformance_rate,
+                    )
                 )
-            )
-    if summary.tool_request_rate:
-        print(
-            "{:<40} {:<10.2%}".format(
-                "Tool-offering requests:", summary.tool_request_rate
-            )
-        )
-        if summary.tool_call_response_rate is not None:
-            print(
-                "{:<40} {:<10.2%}".format(
-                    "  of which called a tool:",
-                    summary.tool_call_response_rate,
+        if mix.tool_request_rate:
+            mix_lines.append(("Tool-offering requests:", mix.tool_request_rate))
+            if mix.tool_call_response_rate is not None:
+                mix_lines.append(
+                    ("  of which called a tool:", mix.tool_call_response_rate)
                 )
+        if mix.image_request_rate:
+            mix_lines.append(
+                ("Image-carrying requests:", mix.image_request_rate)
             )
+        if mix.lora_request_rate:
+            mix_lines.append(("LoRA-routed requests:", mix.lora_request_rate))
+        if mix_lines:
+            print_section(title="Request Mix")
+            for label, rate in mix_lines:
+                print(f"{label:<40} {rate:<10.2%}")
 
     latency = groups.latency_stats
     if latency is not None:

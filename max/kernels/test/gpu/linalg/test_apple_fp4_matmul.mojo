@@ -62,6 +62,7 @@ from layout.tile_layout import row_major
 from linalg.fp4_utils import E2M1_TO_FLOAT32, NVFP4_SF_VECTOR_SIZE
 from linalg.matmul.gpu.apple import enqueue_apple_matmul
 from linalg.matmul.gpu.apple.fp4_dequant import enqueue_fp4_materialize
+from std.math import ceildiv
 from linalg.matmul.gpu.apple.fp4_matmul import (
     _enqueue_apple_fp4_materialize_dense,
     _launch_apple_fp4_matmul,
@@ -103,7 +104,7 @@ def _fill_random_fp4_weight(
     weight stays in a sane range for the bf16 MMA.
     """
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
     for i in range(N * packed_k):
         # Two random nibbles packed into one byte.
         var lo = UInt8(random_si64(Int64(0), Int64(15)).cast[.uint8]())
@@ -133,7 +134,7 @@ def _check_vs_host_ref(
     O(M*N*K)). Tolerance matches the bf16-MMA bound used elsewhere.
     """
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
     var pass_ = True
     for i in range(M):
         for j in range(N):
@@ -168,7 +169,7 @@ def _run_stage1_oracle(
     """
     print("== stage1", name, M, "x", N, "x", K)
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     # Host inputs.
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
@@ -253,7 +254,7 @@ def _run_stage2_fused(
     """
     print("== stage2", name, M, "x", N, "x", K)
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
@@ -342,7 +343,7 @@ def _run_stage3_global_scale(
     """
     print("== stage3", name, M, "x", N, "x", K, "scale2", scale2)
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
@@ -437,7 +438,7 @@ def _run_stage4_dispatch_paths(
     """
     print("== stage4", name, M, "x", N, "x", K)
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     var act_host = ctx.enqueue_create_host_buffer[.bfloat16](M * K)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)
@@ -535,7 +536,7 @@ def _parity_and_hostref[
     comptime a_type = DType.bfloat16
     comptime c_type = DType.float32
     var packed_k = K // 2
-    var scale_k = (K + NVFP4_SF_VECTOR_SIZE - 1) // NVFP4_SF_VECTOR_SIZE
+    var scale_k = ceildiv(K, NVFP4_SF_VECTOR_SIZE)
 
     var a_host = ctx.enqueue_create_host_buffer[a_type](M * K)
     var packed_host = ctx.enqueue_create_host_buffer[.uint8](N * packed_k)

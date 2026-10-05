@@ -135,6 +135,23 @@ mojo_test(
             "test_multimem_allreduce.mojo",
             "test_multimem_reducescatter.mojo",
             "test_allreduce_residual_rmsnorm.mojo",  # Has its own standalone rule above
+            "test_enum_like_conformance.mojo",  # Has its own standalone rule below
         ],
     )
 ]
+
+# CPU-runnable: exercises the `EnumLike` conformances added across the
+# kernels' enum-behaving structs (runtime `__match`, discriminants,
+# non-exhaustive `-1` fallback) without launching any GPU work.
+mojo_test(
+    name = "test_enum_like_conformance.mojo.test",
+    srcs = ["test_enum_like_conformance.mojo"],
+    deps = [
+        "//max:comm",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:pipeline",
+        "@mojo//:std",
+    ],
+)

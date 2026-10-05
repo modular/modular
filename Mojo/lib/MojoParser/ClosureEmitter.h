@@ -34,90 +34,14 @@ inline constexpr llvm::StringLiteral kClosureExtensionPrefix = "extension$";
 inline constexpr llvm::StringLiteral kClosureDeviceTypeSuffix =
     "::__device_type";
 
-class TypeCheckedFnSignature;
-class TypeCheckedParamList;
-struct AuxiliaryParameters;
-using AliasSubstitutions = llvm::MapVector<mlir::StringAttr, TypedAttr>;
-struct AdapteeParts {
-  AliasSubstitutions aliasSubstitutions;
-  DenseMap<StringAttr, TypedAttr> adapteeTypeMap;
-  SmallVector<TypedAttr> fnLevelBindings;
-  // flag to store when the callee returns in-register but the trait signature
-  // expects a memory-only result.
-  bool needsResultConversion = false;
-};
-
-/// Information about a closure parameter's external reference that needs
-/// a where clause constraint. Contains the closure parameter along with the
-/// name and type of the externalized reference.
-struct ClosureExternalRef {
-  /// The closure-typed parameter (e.g., "C" in `C: def(T) -> T`)
-  ParamDeclAttr closureParam;
-
-  /// The externalized name/type for the capture.
-  StringAttr externalName;
-  Type externalType;
-};
-
 class ClosureEmitter : public FunctionEmitter {
 public:
   ClosureEmitter(SharedState &shared);
-
-  /// Collect external parameter references from closure-typed parameters.
-  ///
-  /// For each parameter constrained by a closure trait, this examines the
-  /// alias ops in the trait body. These aliases represent external parameter
-  /// references from the outer scope where the closure was defined.
-  ///
-  /// Example:
-  ///   def useIt[T: Coord, C: def(T) -> T](impl: C, arg: T)
-  ///
-  /// The closure trait for `C` will have an alias `T` in its body. This
-  /// function collects that alias along with the closure param `C`.
-  /// The caller can then generate: `where _type_is_eq_parse_time[T, C.T]()`
-  ///
-  /// \param closureParam The closure-typed parameter to examine
-  /// \param refs Output vector for collected external references
-  void collectClosureExternalRefs(ParamDeclAttr closureParam,
-                                  SmallVectorImpl<ClosureExternalRef> &refs);
-
-  /// Iterate over closure traits in a TraitType and invoke a callback for each.
-  void processClosureTraits(TraitType traitType,
-                            std::function<void(TraitDeclOp)> const &callback);
-
-  /// Return the closure-defining trait declaration backing \p type, if \p type
-  /// is a compiler-synthesized closure type. Looks through struct wrappers and
-  /// reference types. Returns std::nullopt otherwise.
-  static std::optional<TraitDeclOp> getClosureDecl(SharedState &shared,
-                                                   Type type);
-
-  /// Return true if \p type is a compiler-synthesized closure type.
-  static bool isClosureType(SharedState &shared, Type type);
-
-  /// Given a closure trait and "parameters", specialize the closure trait as
-  /// though it had parameters to bind. That is, replace the aliases with the
-  /// parameter bindings provided.
-  TraitType getSpecializedClosureTrait(GeneratorType aliasGenerator,
-                                       ArrayRef<TypedAttr> paramValues,
-                                       ASTDecl &moduleDecl, SMLoc loc);
 
   /// Return true if \p type provably conforms to \p traitDecl.
   static bool provenConformsToTrait(ASTType type, ASTDecl *traitDecl,
                                     SharedState &shared,
                                     ArrayRef<ConstraintAttr> callerAssumptions);
-
-  /// Generate a Parametric Closure Wrapper Struct, a struct that contains a
-  /// parametric field. Both the field and the struct must conform to the
-  /// associated closure trait characterized by the signature of the closure.
-  ASTDecl *createClosureTrait(ASTDecl &moduleDecl,
-                              FnTypeGeneratorType signatureType,
-                              FnTypeGeneratorType key,
-                              unsigned numPrependedCaptures,
-                              SMLoc nestedFunctionOrTypeLocation);
-
-  TraitType bindParamsToClosureTraitFromSig(IREmitter &emitter,
-                                            ASTType traitType,
-                                            FnTypeGeneratorType sig);
 
   struct PromotedClosureSelfArg {
     Type type;
@@ -140,7 +64,7 @@ public:
   promoteClosure(ASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclAttr> prependedParams = {},
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 std::optional<bool> capturingOverride = std::nullopt,
+                 TriBool capturingOverride = TriBool::unknown(),
                  ASTDecl *targetParent = nullptr);
 
   /// Adapter overload for callsites that currently hold ParamDeclRefAttr.
@@ -148,13 +72,12 @@ public:
   promoteClosure(ASTDecl &nestedFnDecl,
                  ArrayRef<ParamDeclRefAttr> prependedParamRefs,
                  std::optional<PromotedClosureSelfArg> selfArg = std::nullopt,
-                 std::optional<bool> capturingOverride = std::nullopt,
+                 TriBool capturingOverride = TriBool::unknown(),
                  ASTDecl *targetParent = nullptr);
 
   Value emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
-                    ArrayRef<Capture> captures, ASTDecl &traitDecl,
-                    Location location, bool isCopyable,
-                    ArrayRef<ParamDeclRefAttr> paramCaptures);
+                    ArrayRef<Capture> captures, Location location,
+                    bool isCopyable, ArrayRef<ParamDeclRefAttr> paramCaptures);
   static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
                                   StringRef name, SMLoc location);
 
@@ -162,70 +85,9 @@ public:
                                   StringRef name, CaptureConvention capture,
                                   IREmitter &emitter,
                                   ASTDecl *signatureDecl = nullptr);
-  /// Maps a raw closure signature to the canonical key and captured-parameter
-  /// count used for closure-trait uniquing and name synthesis.
-  static std::pair<FnTypeGeneratorType, unsigned>
-  getClosureTraitKey(FnTypeGeneratorType rawSignature);
-  ASTDecl *getOrCreateClosureTrait(FnTypeGeneratorType key,
-                                   llvm::function_ref<ASTDecl *()> creation);
-  /// Given a trait decl and a function signature, generate a struct that can
-  /// wrap a function pointer to be used as a closure (`_PtrWrapper`).
-  ASTDecl *createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
-                                 FnTypeGeneratorType signatureType,
-                                 SMLoc location,
-                                 ArrayRef<ParamDeclRefAttr> bodyCaptures = {});
-
-  /// Generate a stateless extension struct that extends one closure trait to
-  /// a structurally compatible one.
-  ASTDecl *createExtensionStruct(ASTDecl &moduleDecl, TraitDeclOp sourceTrait,
-                                 TraitDeclOp targetTrait,
-                                 ASTType sourceMetaType, SMLoc location);
-  Type getConcreteClosureWrapperTypeForFnSymbol(ASTDecl &declScope, SMLoc loc,
-                                                PValue fnPValue);
-
-  /// True if wrapping `fnSymbol` as a PtrWrapper produces `wrapper`.
-  bool isWrapperStructForFnSymbol(PValue fnSymbol, LIT::StructType wrapper);
-
   LIT::StructType getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
                                                 PValue fnPValue);
   bool isInflatedClosureForFnSymbol(PValue fnSymbol, LIT::StructType wrapper);
-
-private:
-  MLIRContext *ctx;
-
-  // Cached attributes and types.
-  StringAttr selfName, copyName;
-
-  /// Underlying implementation of `augmentWitnessTablesToConformTo` and
-  /// `isCompatibleWith`.
-  LogicalResult checkStructCompatibility(ASTType structType, ASTDecl *traitDecl,
-                                         bool emitRebind);
-
-  /// Synthesize an adaptor function that rebinds the closure wrapper's
-  /// __call__ from auxiliary parameters to trait aliases, then add the
-  /// conformance witness table.
-  void buildCallAdaptorAndAddWitness(StructDeclOp structDeclOp,
-                                     ASTDecl &structDecl,
-                                     TraitDeclOp traitDeclOp, FnOp traitCallFn,
-                                     TypedAttr callee,
-                                     const AdapteeParts &adapteeParts,
-                                     ASTType selfTypeOverride = {});
-
-public:
-  /// If the wrapper conforms to a trait that is compatible with the desired
-  /// trait, emit a rebind. For example, suppose we have a parameter P with a
-  /// closure metatype defined by `def(x:Int) -> Int`. We should be able to bind
-  /// a struct wrapper type W to P if W conforms to the trait `def(z:Int) ->
-  /// Int`. This will require a rebind though because of the differences in
-  /// argument names.
-  LogicalResult augmentWitnessTablesToConformTo(ASTType structType,
-                                                ASTDecl *closureTrait);
-
-  /// Extend a source closure value/type constrained by one closure trait to a
-  /// structurally compatible target closure trait, without changing the
-  /// source's physical type.
-  CValue createExtensionType(ASTDecl &fileModule, CValue sourceValue,
-                             Type targetMetaType, TraitDeclOp targetTrait);
 
   /// Extend a source closure type constrained by one closure trait to a
   /// structurally compatible target closure trait, without changing the
@@ -237,15 +99,6 @@ public:
                                          ASTExprAnd<CValue> srcTypeVal,
                                          TraitSymbolAttr srcClosureInst,
                                          TraitSymbolAttr tgtClosureInst);
-
-  /// Checks if the wrapper struct type conforms to a trait that is compatible
-  /// with the desired trait.
-  LogicalResult isCompatibleWith(ASTType structType, ASTDecl *traitDecl);
-
-  /// Returns true if sourceTraitType can conform to targetTrait.
-  LogicalResult isTraitCompatibleWith(ASTType sourceTraitType,
-                                      TraitDeclOp targetTrait,
-                                      ASTDecl *declScope = nullptr);
 
   /// One parent trait that a synthesized closure conforms to, named by symbol.
   struct ClosureParent {
@@ -287,13 +140,6 @@ public:
     InlineLevel inlineLevel = InlineLevel::Automatic;
   };
 
-  /// This is `isEqualCanon` with one relaxation: parameters
-  /// in the leading "before-`+`" region of the pog list (i.e.
-  /// `PassingKind::Inferred`) are not user-bindable, so their names are
-  /// arbitrary disambiguators and may differ.
-  static bool isTypeRebindableTo(FuncTypeGeneratorType from,
-                                 FuncTypeGeneratorType to);
-
   /// Bundles the IR artifacts produced by liftClosure.
   struct Closure {
     ASTDecl *structDecl;         ///< The closure storage struct.
@@ -302,27 +148,20 @@ public:
   };
 
 private:
+  MLIRContext *ctx;
+
+  // Cached attributes and types.
+  StringAttr selfName, copyName;
+
   /// Augment a synthesized struct with trivial lifecycle traits.
   void addTrivialClosureLifecycle(ASTDecl &structDecl,
                                   const ClosureParent &callParent);
 
-  /// Given a name, a list of builtin parent traits (like "Movable" for
-  /// example), a location, and a populate method, return a trait declaration
-  /// that inherits from the parent and contains the methods added to the
-  /// function list populated by the populate method.
-  std::pair<TraitDeclOp, ASTDecl *>
-  createTraitOp(StringAttr name, SmallVector<ClosureParent> &parents,
-                SMLoc nestedFunctionOrTypeLocation,
-                llvm::function_ref<void(
-                    ASTDecl &traitDecl,
-                    DenseSet<std::pair<StringAttr, StringAttr>> &functions)>
-                    populateTrait);
   /// Construct the closure struct, lift the nested function into a method, and
   /// emit witness tables for all closure parents.
   Closure liftClosure(ASTDecl &moduleDecl, SMLoc smLoc,
                       SmallVector<ClosureParent> &closureParents,
                       SymbolRefAttr parentSymbolRef,
-                      llvm::MapVector<StringRef, Type> const &aliases,
                       SmallVector<StructDefFieldAttr> &&fieldDecls,
                       SmallVector<Value> &&fieldCaptures,
                       SmallVector<CaptureConvention> &&fieldCaptureConventions,
@@ -340,14 +179,11 @@ private:
   /// reference struct parameters instead of indices
   /// (c) the result of the function, remapped to reference the struct
   /// parameters instead of indices.
-  /// \p selfTypeOverride replaces the struct's own `Self` in the specialized
-  /// signature; an extension's methods are written on the anchor it extends,
-  /// not on the (stateless) extension struct.
-  std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type> pushBackTraitFunctionImpl(
-      FnTypeGeneratorType traitFnSignature, ASTDecl &structDecl, bool synthetic,
-      StringAttr fnName, SpecialFunctionKind specialFnID,
-      InlineLevel inlineLevel, bool redirectWitnessToImplParam = true,
-      ASTType selfTypeOverride = {});
+  std::tuple<FnOp, ArrayRef<ParamDeclAttr>, Type>
+  pushBackTraitFunctionImpl(FnTypeGeneratorType traitFnSignature,
+                            ASTDecl &structDecl, bool synthetic,
+                            StringAttr fnName, SpecialFunctionKind specialFnID,
+                            InlineLevel inlineLevel);
   struct DevicePassablePopulators {
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isConvertible;
     llvm::function_ref<FailureOr<SymbolConstantAttr>(FnOp)> isEncodable;
@@ -424,9 +260,6 @@ private:
   /// ImplicitlyCopyable trait is a parent of some closures. It has no defining
   /// methods.
   std::optional<ClosureParent> implicitlyCopyableParent;
-  /// Closure traits live in the top level module. This cache guards against
-  /// emitting duplicates.
-  DenseMap<Type, ASTDecl *> closureTraitCache;
 };
 
 } // namespace M::KGEN::LIT

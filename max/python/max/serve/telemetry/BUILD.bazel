@@ -4,15 +4,22 @@ package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "telemetry",
-    srcs = glob(["*.py"]),
+    srcs = glob(
+        ["*.py"],
+        exclude = ["_kernel_capture.py"],
+    ),
     test_docstring_examples = True,
     deps = [
         "//max/python/max:_core",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/request",
         "//max/python/max/profiler",
         "//max/python/max/serve:config",
         "//max/python/max/serve:process_control",
+        requirement("grpcio"),
         requirement("numpy"),
         requirement("opentelemetry-sdk"),
+        requirement("opentelemetry-exporter-otlp-proto-grpc"),
         requirement("opentelemetry-exporter-otlp-proto-http"),
         requirement("opentelemetry-exporter-prometheus"),
         requirement("opentelemetry-api"),
@@ -20,5 +27,22 @@ modular_py_library(
         requirement("python-json-logger"),
         requirement("requests"),
         requirement("uvicorn"),  # to host /metrics endpoint as it runs in a different process
+    ],
+)
+
+# Apart from telemetry so that its other users don't pull in
+# max.pipelines.lib, which the capture reads its limits from.
+modular_py_library(
+    name = "kernel_capture",
+    srcs = ["_kernel_capture.py"],
+    deps = [
+        ":telemetry",
+        "//max/python/max:_core",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/request",
+        "//max/python/max/serve:config",
+        requirement("opentelemetry-api"),
+        requirement("opentelemetry-sdk"),
     ],
 )

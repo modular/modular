@@ -89,49 +89,58 @@ def unsafe_stack_allocation[
 
         comptime global_name = name.value() if name else "_global_alloc"
 
-        comptime if address_space == .SHARED:
-            return {
-                _mlir_value = __mlir_op.`pop.global_alloc`[
-                    name=_get_kgen_string[global_name](),
-                    count=count.__mlir_index__(),
-                    memoryType=__mlir_attr.`#pop.global_alloc_addr_space<gpu_shared>`,
-                    _type=Pointer[
-                        type, MutUntrackedOrigin, address_space=address_space
-                    ]._mlir_type,
-                    alignment=alignment.__mlir_index__(),
-                ]()
-            }
-        elif address_space == .CONSTANT:
-            # No need to annotation this global_alloc because constants in
-            # GPU shared memory won't prevent llvm module splitting to
-            # happen since they are immutables.
-            return {
-                _mlir_value = __mlir_op.`pop.global_alloc`[
-                    name=_get_kgen_string[global_name](),
-                    count=count.__mlir_index__(),
-                    _type=Pointer[
-                        type, MutUntrackedOrigin, address_space=address_space
-                    ]._mlir_type,
-                    alignment=alignment.__mlir_index__(),
-                ]()
-            }
+        comptime __match address_space:
+            case .SHARED:
+                return {
+                    _mlir_value = __mlir_op.`pop.global_alloc`[
+                        name=_get_kgen_string[global_name](),
+                        count=count.__mlir_index__(),
+                        memoryType=__mlir_attr.`#pop.global_alloc_addr_space<gpu_shared>`,
+                        _type=Pointer[
+                            type,
+                            MutUntrackedOrigin,
+                            address_space=address_space,
+                        ]._mlir_type,
+                        alignment=alignment.__mlir_index__(),
+                    ]()
+                }
+            case .CONSTANT:
+                # No need to annotation this global_alloc because constants in
+                # GPU shared memory won't prevent llvm module splitting to
+                # happen since they are immutables.
+                return {
+                    _mlir_value = __mlir_op.`pop.global_alloc`[
+                        name=_get_kgen_string[global_name](),
+                        count=count.__mlir_index__(),
+                        _type=Pointer[
+                            type,
+                            MutUntrackedOrigin,
+                            address_space=address_space,
+                        ]._mlir_type,
+                        alignment=alignment.__mlir_index__(),
+                    ]()
+                }
 
-        # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
-        # only have generic address spaces. When allocating LOCAL memory,
-        # addrspacecast the resulting pointer.
-        elif address_space == .LOCAL:
-            var generic_ptr = __mlir_op.`pop.stack_allocation`[
-                count=count.__mlir_index__(),
-                _type=Pointer[type, MutUntrackedOrigin]._mlir_type,
-                alignment=alignment.__mlir_index__(),
-            ]()
-            return {
-                _mlir_value = __mlir_op.`pop.pointer.bitcast`[
-                    _type=Pointer[
-                        type, MutUntrackedOrigin, address_space=address_space
-                    ]._mlir_type
-                ](generic_ptr)
-            }
+            # MSTDL-797: The NVPTX backend requires that `alloca` instructions
+            # may only have generic address spaces. When allocating LOCAL
+            # memory, addrspacecast the resulting pointer.
+            case .LOCAL:
+                var generic_ptr = __mlir_op.`pop.stack_allocation`[
+                    count=count.__mlir_index__(),
+                    _type=Pointer[type, MutUntrackedOrigin]._mlir_type,
+                    alignment=alignment.__mlir_index__(),
+                ]()
+                return {
+                    _mlir_value = __mlir_op.`pop.pointer.bitcast`[
+                        _type=Pointer[
+                            type,
+                            MutUntrackedOrigin,
+                            address_space=address_space,
+                        ]._mlir_type
+                    ](generic_ptr)
+                }
+            case _:
+                pass
 
     elif CurrentPlugin.stack_allocation_fn[address_space]:
         return comptime (

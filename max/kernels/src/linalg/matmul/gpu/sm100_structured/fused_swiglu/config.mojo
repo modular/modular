@@ -468,9 +468,10 @@ def choose_swiglu_config[
                 mma_mn[1] = mma_n
     else:
 
-        @__parameter
         @inline(.always)
-        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(
+            M: Int, N: Int, _swapAB: Bool = False
+        ) {mut min_num_waves, mut mma_mn, mut swapAB, imm}:
             var N_aligned = align_up(N, 16)
             var max_mma_n = min(N_aligned, 256)
             var min_mma_n = min(N_aligned, 32)

@@ -17,6 +17,7 @@ from max.gpu.host import DeviceContext
 from linalg.grouped_matmul import grouped_matmul, naive_grouped_matmul
 
 from std.utils import Index, IndexList
+from layout.tensor_engine import DefaultEngine, DevicePointerEngine
 from layout import (
     Coord,
     Idx,
@@ -85,25 +86,28 @@ def shrink_qkv_permute_3mn_sm100(
     )
 
     var M = Int(c_lora.dim(1))
-    var c_tensor_lora = c_lora.to_layout_tensor()
+    comptime assert (
+        c_lora.Engine == DefaultEngine[element_width=1]
+        or c_lora.Engine == DevicePointerEngine[element_width=1]
+    ), "LoRA epilogues require a scalar pointer engine"
     comptime N_Total = B * N
     # Create a dangling TileTensor for C. This ensures GroupGEMM does NOT
     # write into C directly; any changes to the final C output must happen
     # exclusively via the epilogue function.
     var c = TileTensor(
         UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(M, N_Total)),
+        row_major(M, N_Total),
     )
 
     @inline(.always)
-    @__copy_capture(c_tensor_lora, M)
+    @__copy_capture(c_lora, M)
     @__parameter
     def permute_dim_lora_bmn[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         """Epilogue: permute flat (M, 3N) columns to planar (3, M, N) tiles.
         Maps a flat column index `j` into `(head, n)` via `divmod(j, N)` and
-        stores the SIMD vector `val` into the original 3D layout tensor at
+        stores the SIMD vector `val` into the original 3D tile tensor at
         `[head, m, n + lane]`. Used as the elementwise epilogue for the
         grouped matmul, so the final `c_lora` is written directly in
         planar Q/K/V format without an extra kernel.
@@ -117,7 +121,7 @@ def shrink_qkv_permute_3mn_sm100(
         Constraints:
             - `N` is the per-head width; must satisfy `N % width == 0` for aligned
             and in-bounds vector stores.
-            - The underlying storage of `c_tensor_lora` aliases the (M, 3N) view.
+            - The underlying storage of `c_lora` aliases the (M, 3N) view.
             - Rank/layout assumptions:
                 * Input view is row-major (M, 3N).
                 * Output view is row-major (3, M, N) with head-major tiles.
@@ -131,9 +135,8 @@ def shrink_qkv_permute_3mn_sm100(
         # tensor.
         # The permdim tensor has the shape 3 x M x N, so the index is then
         # [new_j, i, new_k].
-        var off = c_tensor_lora._offset(IndexList[3](new_j, i, new_k))
-        c_tensor_lora.ptr.store[width=width, alignment=alignment](
-            off, val.cast[c_type]()
+        c_lora.store_linear[width=width, alignment=alignment](
+            IndexList[3](new_j, i, new_k), val.cast[c_type]()
         )
 
     # Run grouped_matmul and apply permute_dim_lora as the elementwise epilogue.
@@ -282,7 +285,7 @@ def expand_qkv_sm100(
     #   - B operand: the fused LoRA-B weight `b` (`[G, D_total, R]`), forwarded as-is.
     #   - A operand: the planar shrink output `P [3, M, R]` reinterpreted as `[3M, R]`,
     #     so plane `t` occupies rows `[t*M, (t+1)*M)`; `a_plane_splits` selects it.
-    var a_act = TileTensor(p.ptr, row_major(Coord(3 * M, Idx[R])))
+    var a_act = p.reshape(row_major(3 * M, Idx[R]))
 
     # Dangling C `[M, D_total]`: all results reach `q_out`/`kv_out` through the
     # `route_qkv` epilogue, so the grouped matmul never stores to C directly (the
@@ -292,11 +295,17 @@ def expand_qkv_sm100(
     # tensor-core kernel instead of falling back to naive.
     var c = TileTensor(
         UnsafePointer[Scalar[c_type], MutUntrackedOrigin].unsafe_dangling(),
-        row_major(Coord(M, Idx[D_total])),
+        row_major(M, Idx[D_total]),
     )
 
-    var q_tensor = q_out.to_layout_tensor()
-    var kv_tensor = kv_out.to_layout_tensor()
+    comptime assert (
+        q_out.Engine == DefaultEngine[element_width=1]
+        or q_out.Engine == DevicePointerEngine[element_width=1]
+    ), "LoRA epilogues require a scalar pointer engine"
+    comptime assert (
+        kv_out.Engine == DefaultEngine[element_width=1]
+        or kv_out.Engine == DevicePointerEngine[element_width=1]
+    ), "LoRA epilogues require a scalar pointer engine"
 
     # Plane-select boundaries for the load specialization. For output column `j`
     # the activation plane is:
@@ -310,7 +319,7 @@ def expand_qkv_sm100(
     comptime a_plane_splits = Index(q_dim, q_dim + kv_dim)
 
     @inline(.always)
-    @__copy_capture(q_tensor, kv_tensor, M)
+    @__copy_capture(q_out, kv_out, M)
     @__parameter
     def route_qkv[
         dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -339,29 +348,25 @@ def expand_qkv_sm100(
         Constraints:
             - `q_dim` and `kv_dim` must be divisible by `width`, so a stored vector
               never straddles a Q/K/V boundary and lands entirely in one region.
-            - `q_tensor` / `kv_tensor` alias `q_out` / `kv_out`; `val` is cast to
-              each tensor's own dtype (`q_type` / `kv_type`) on store.
+            - `val` is cast to each output tensor's own dtype
+              (`q_type` / `kv_type`) on store.
         """
         comptime assert q_dim % width == 0, "q_dim must be divisible by width"
         comptime assert kv_dim % width == 0, "kv_dim must be divisible by width"
         var token = idx[0]
         var j = idx[1]
         if j < q_dim:
-            var off = q_tensor._offset(IndexList[2](token, j))
-            q_tensor.ptr.store[width=width, alignment=alignment](
-                off, val.cast[q_type]()
+            q_out.store_linear[width=width, alignment=alignment](
+                IndexList[2](token, j), val.cast[q_type]()
             )
         elif j < q_dim + kv_dim:
-            var off = kv_tensor._offset(IndexList[2](token, j - q_dim))
-            kv_tensor.ptr.store[width=width, alignment=alignment](
-                off, val.cast[kv_type]()
+            kv_out.store_linear[width=width, alignment=alignment](
+                IndexList[2](token, j - q_dim), val.cast[kv_type]()
             )
         else:
-            var off = kv_tensor._offset(
-                IndexList[2](M + token, j - q_dim - kv_dim)
-            )
-            kv_tensor.ptr.store[width=width, alignment=alignment](
-                off, val.cast[kv_type]()
+            kv_out.store_linear[width=width, alignment=alignment](
+                IndexList[2](M + token, j - q_dim - kv_dim),
+                val.cast[kv_type](),
             )
 
     # The SM100 tensor-core path selects the P-plane once per output-D tile, so a

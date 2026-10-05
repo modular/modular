@@ -36,11 +36,10 @@ a common shape (the RMO->MO lowering inserts the ``BroadcastToOp`` chain), so a
 graph with one dtype shared by both rank-1 inputs is exact.
 
 The swept dtype set is deliberately conservative (the IR type category is only a
-ceiling): general arithmetic (``Add``/``Sub``/``Mul``/``Max``/``Min``/``Mod``),
-``Pow``, and the comparisons sweep floats + integers; ``Div`` sweeps floats only;
-the logical ops (``And``/``Or``/``Xor``) sweep ``bool``. CPU floats are f32/f64
-(no 16-bit); GPU floats are f16/f32/bf16 (no f64). ``dtype_class`` keys the
-*input* dtype.
+ceiling): general arithmetic (``Add``/``Sub``/``Mul``/``Div``/``Max``/``Min``/
+``Mod``), ``Pow``, and the comparisons sweep floats + integers; the logical ops
+(``And``/``Or``/``Xor``) sweep ``bool``. CPU floats are f32/f64 (no 16-bit); GPU
+floats are f16/f32/bf16 (no f64). ``dtype_class`` keys the *input* dtype.
 """
 
 from collections.abc import Callable
@@ -85,9 +84,9 @@ _BINARY_OPS: dict[type[_core.Operation], BinarySpec] = {
     mo.MaxOp: BinarySpec(elementwise.max, DTypeClass.NUMERIC),
     mo.MinOp: BinarySpec(elementwise.min, DTypeClass.NUMERIC),
     mo.ModOp: BinarySpec(elementwise.mod, DTypeClass.NUMERIC),
-    # div promotes int operands to f64 in the lowering, so an int div never
-    # reaches the handler; pow has no such promotion, so it must sweep ints.
-    mo.DivOp: BinarySpec(elementwise.div, DTypeClass.FLOAT),
+    # Integer `floor_div` (Python `//`) emits a truncating integer div, which
+    # `elementwise.div` can't build because it promotes int operands to f64.
+    mo.DivOp: BinarySpec(elementwise._trunc_div, DTypeClass.NUMERIC),
     mo.PowOp: BinarySpec(elementwise.pow, DTypeClass.NUMERIC),
     mo.AndOp: BinarySpec(elementwise.logical_and, DTypeClass.BOOL),
     mo.OrOp: BinarySpec(elementwise.logical_or, DTypeClass.BOOL),
@@ -224,7 +223,7 @@ def binary_model(
 
     Raises:
         KeyError: If the (op, device, dtype) is outside the supported set (e.g.
-            ``Div`` on an int dtype).
+            ``And`` on an int dtype).
         EagerLazyCompileDisallowed: If a supported target is not already
             compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.
     """

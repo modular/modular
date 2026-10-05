@@ -94,9 +94,9 @@ def _find_batch_for_row(
 
 @__name(t"paged_sparse_kv_index_remap_row_offs_kernel")
 def _paged_sparse_kv_index_remap_row_offs_kernel(
-    logical: UnsafePointer[Int32, MutAnyOrigin],
+    logical: UnsafePointer[Int32, ImmutAnyOrigin],
     row_offsets: UnsafePointer[UInt32, ImmutAnyOrigin],
-    lut: UnsafePointer[UInt32, MutAnyOrigin],
+    lut: UnsafePointer[UInt32, ImmutAnyOrigin],
     physical_out: UnsafePointer[Int32, MutAnyOrigin],
     num_indices: Int32,
     lut_cols: Int32,
@@ -139,9 +139,9 @@ def paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
     page_size: Int,
 ](
     physical_out: UnsafePointer[mut=True, Int32, _],
-    logical: UnsafePointer[mut=True, Int32, _],
-    input_row_offsets: UnsafePointer[mut=True, UInt32, _],
-    lut: UnsafePointer[mut=True, UInt32, _],
+    logical: UnsafePointer[mut=False, Int32, _],
+    input_row_offsets: UnsafePointer[mut=False, UInt32, _],
+    lut: UnsafePointer[mut=False, UInt32, _],
     num_indices: Int,
     lut_cols: Int,
     lut_rows: Int,

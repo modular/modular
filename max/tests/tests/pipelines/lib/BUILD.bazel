@@ -12,6 +12,7 @@ modular_py_test(
         ["test_*.py"],
         exclude = [
             "test_bounded_cache.py",
+            "test_chat_encoder.py",
             "test_reasoning.py",
             "test_structured_output_backend.py",
         ],
@@ -86,6 +87,24 @@ modular_py_test(
     srcs = ["test_bounded_cache.py"],
     deps = [
         "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_chat_encoder",
+    srcs = ["test_chat_encoder.py"],
+    ignore_extra_deps = [
+        # Transitive dep of transformers, needed to render chat templates
+        requirement("jinja2"),
+    ],
+    deps = [
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
+        requirement("transformers"),
     ],
 )
 

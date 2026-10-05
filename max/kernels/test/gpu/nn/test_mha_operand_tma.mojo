@@ -29,14 +29,11 @@ from layout import (
     Coord,
     Idx,
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    lt_to_tt,
     row_major,
-    UNKNOWN_VALUE,
 )
 from layout._fillers import random
+from layout.tile_tensor import stack_allocation
 from layout.tma_async import SharedMemBarrier, TMATensorTile, _idx_product
 from std.memory import unsafe_stack_allocation
 from nn.attention.mha_operand import (
@@ -49,6 +46,7 @@ from nn.attention.gpu.nvidia.sm90.attention import kv_coord
 from std.testing import assert_equal
 
 from std.utils import IndexList
+from std.math import ceildiv
 
 
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
@@ -83,14 +81,11 @@ def mha_operand_tma_copy_kernel[
 
     var num_keys = src_operand.cache_length(Int(batch_idx))
 
-    # Allocate shared memory tile
-    var smem_tile = LayoutTensor[
-        kv_t.dtype,
-        smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    # TMA load/store share the same opaque swizzled byte region; no scalar
+    # indexing of the shared storage is needed between the transfers.
+    var smem_tile = stack_allocation[
+        dtype=kv_t.dtype, address_space=.SHARED, alignment=128
+    ](row_major[smem_layout.size()]())
 
     # Initialize barrier
     ref mbar = unsafe_stack_allocation[
@@ -163,7 +158,7 @@ def mha_operand_copy[
     ctx: DeviceContext, src: kv_t, dst: kv_t, batch_size: Int, max_seq_len: Int
 ) raises:
     # Each kernel call copies the entire array, iterating over `tile_m` chunks
-    # along the rows. `head_size` is the continugous axis.
+    # along the rows. `head_size` is the contiguous axis.
     # For `Q @ K'`, `is_k_major` is True.
     # For `P @ V`, `is_k_major` is False.
     # We emulate both, using the appropriate smem layout for the (wg/u)mma instructions.
@@ -253,6 +248,10 @@ def test_continuous_kv_cache[
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
 
+    comptime Collection = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
+    ]
+
     # Initialize cache blocks
     var num_blocks = batch_size + 2
     var dyn_shape = IndexList[6](
@@ -264,11 +263,6 @@ def test_continuous_kv_cache[
         kv_params.head_size,
     )
 
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
-        dyn_shape
-    )
-
     # Create device buffer for kv blocks
     var kv_block_device = ctx.enqueue_create_buffer[dtype](
         dyn_shape.flattened_length()
@@ -276,17 +270,20 @@ def test_continuous_kv_cache[
 
     # Initialize with random data
     with kv_block_device.map_to_host() as kv_block_host:
-        var kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
-            kv_block_host, kv_block_runtime_layout
+        var kv_block_host_tensor = TileTensor(
+            kv_block_host,
+            row_major(
+                Int64(num_blocks),
+                Int64(2),
+                Int64(num_layers),
+                Int64(max_seq_len),
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            ),
         )
         random(kv_block_host_tensor)
 
     # Set up lookup table and cache lengths
-    comptime lookup_layout = Layout(UNKNOWN_VALUE)
-    var lookup_shape = IndexList[1](batch_size)
-    var lookup_runtime_layout = RuntimeLayout[lookup_layout].row_major(
-        lookup_shape
-    )
 
     var lookup_table_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
@@ -302,16 +299,26 @@ def test_continuous_kv_cache[
             )  # Half filled caches
 
     # Create source collection on device
-    var src_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            kv_block_device, kv_block_runtime_layout
+    var src_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            TileTensor(
+                kv_block_device,
+                row_major(
+                    Int64(num_blocks),
+                    Int64(2),
+                    Int64(num_layers),
+                    Int64(max_seq_len),
+                    Idx[kv_params.num_heads],
+                    Idx[kv_params.head_size],
+                ),
+            ).as_unsafe_any_origin()
         ),
-        LayoutTensor[.uint32, lookup_layout, ImmutAnyOrigin](
-            cache_lengths_device, lookup_runtime_layout
-        ),
-        LayoutTensor[.uint32, lookup_layout, ImmutAnyOrigin](
-            lookup_table_device, lookup_runtime_layout
-        ),
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(lookup_table_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
@@ -328,16 +335,26 @@ def test_continuous_kv_cache[
         for i in range(len(dst_host)):
             dst_host[i] = 0
 
-    var dst_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            dst_block_device, kv_block_runtime_layout
+    var dst_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            TileTensor(
+                dst_block_device,
+                row_major(
+                    Int64(num_blocks),
+                    Int64(2),
+                    Int64(num_layers),
+                    Int64(max_seq_len),
+                    Idx[kv_params.num_heads],
+                    Idx[kv_params.head_size],
+                ),
+            ).as_unsafe_any_origin()
         ),
-        LayoutTensor[.uint32, lookup_layout, ImmutAnyOrigin](
-            cache_lengths_device, lookup_runtime_layout
-        ),
-        LayoutTensor[.uint32, lookup_layout, ImmutAnyOrigin](
-            lookup_table_device, lookup_runtime_layout
-        ),
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(lookup_table_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
@@ -356,32 +373,48 @@ def test_continuous_kv_cache[
         with dst_block_device.map_to_host() as dst_host:
             with lookup_table_device.map_to_host() as lookup_host:
                 with cache_lengths_device.map_to_host() as cache_lengths_host:
-                    var src_host_tensor = LayoutTensor[dtype, kv_block_layout](
-                        src_host, kv_block_runtime_layout
+                    var src_host_tensor = TileTensor(
+                        src_host,
+                        row_major(
+                            Int64(num_blocks),
+                            Int64(2),
+                            Int64(num_layers),
+                            Int64(max_seq_len),
+                            Idx[kv_params.num_heads],
+                            Idx[kv_params.head_size],
+                        ),
                     )
-                    var dst_host_tensor = LayoutTensor[dtype, kv_block_layout](
-                        dst_host, kv_block_runtime_layout
+                    var dst_host_tensor = TileTensor(
+                        dst_host,
+                        row_major(
+                            Int64(num_blocks),
+                            Int64(2),
+                            Int64(num_layers),
+                            Int64(max_seq_len),
+                            Idx[kv_params.num_heads],
+                            Idx[kv_params.head_size],
+                        ),
                     )
-                    var lookup_host_tensor = LayoutTensor[
-                        .uint32, lookup_layout
-                    ](lookup_host, lookup_runtime_layout)
-                    var cache_lengths_host_tensor = LayoutTensor[
-                        .uint32, lookup_layout
-                    ](cache_lengths_host, lookup_runtime_layout)
+                    var lookup_host_tensor = TileTensor(
+                        lookup_host, row_major(Int64(batch_size))
+                    )
+                    var cache_lengths_host_tensor = TileTensor(
+                        cache_lengths_host, row_major(Int64(batch_size))
+                    )
 
-                    var src_host_collection = ContinuousBatchingKVCacheCollection[
-                        dtype, kv_params
-                    ](
-                        src_host_tensor.as_unsafe_any_origin(),
+                    var src_host_collection = Collection(
+                        rebind[Collection.blocks_tt_type](
+                            src_host_tensor.as_unsafe_any_origin()
+                        ),
                         cache_lengths_host_tensor.as_unsafe_any_origin().as_imm(),
                         lookup_host_tensor.as_unsafe_any_origin().as_imm(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
-                    var dst_host_collection = ContinuousBatchingKVCacheCollection[
-                        dtype, kv_params
-                    ](
-                        dst_host_tensor.as_unsafe_any_origin(),
+                    var dst_host_collection = Collection(
+                        rebind[Collection.blocks_tt_type](
+                            dst_host_tensor.as_unsafe_any_origin()
+                        ),
                         cache_lengths_host_tensor.as_unsafe_any_origin().as_imm(),
                         lookup_host_tensor.as_unsafe_any_origin().as_imm(),
                         UInt32(max_seq_len),
@@ -415,8 +448,18 @@ def test_paged_kv_cache[
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
 
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+
     # Calculate number of pages needed
-    var pages_per_seq = (max_seq_len + page_size - 1) // page_size
+    var pages_per_seq = ceildiv(max_seq_len, page_size)
     var num_blocks = batch_size * pages_per_seq + 10  # Extra blocks
 
     # Initialize paged cache blocks
@@ -429,11 +472,6 @@ def test_paged_kv_cache[
         kv_params.head_size,
     )
 
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
-        dyn_shape
-    )
-
     # Create device buffer for kv blocks
     var kv_block_device = ctx.enqueue_create_buffer[dtype](
         dyn_shape.flattened_length()
@@ -441,17 +479,21 @@ def test_paged_kv_cache[
 
     # Initialize with random data
     with kv_block_device.map_to_host() as kv_block_host:
-        var kv_block_host_tensor = LayoutTensor[dtype, kv_block_layout](
-            kv_block_host, kv_block_runtime_layout
+        var kv_block_host_tensor = TileTensor(
+            kv_block_host,
+            row_major(
+                Int64(num_blocks),
+                Idx[2],
+                Int64(num_layers),
+                Idx[page_size],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
+            ),
         )
         random(kv_block_host_tensor)
 
     # Set up page lookup table
-    comptime paged_lut_layout = Layout.row_major[2]()
     var paged_lut_shape = IndexList[2](batch_size, pages_per_seq)
-    var paged_lut_runtime_layout = RuntimeLayout[paged_lut_layout].row_major(
-        paged_lut_shape
-    )
 
     var paged_lut_device = ctx.enqueue_create_buffer[.uint32](
         paged_lut_shape.flattened_length()
@@ -459,8 +501,9 @@ def test_paged_kv_cache[
 
     var paged_lut_set = Set[Int]()
     with paged_lut_device.map_to_host() as paged_lut_host:
-        var paged_lut_tensor = LayoutTensor[.uint32, paged_lut_layout](
-            paged_lut_host, paged_lut_runtime_layout
+        var paged_lut_tensor = TileTensor(
+            paged_lut_host,
+            row_major(Int64(batch_size), Int64(pages_per_seq)),
         )
         for bs in range(batch_size):
             for page_idx in range(pages_per_seq):
@@ -471,11 +514,6 @@ def test_paged_kv_cache[
                 paged_lut_tensor[bs, page_idx] = UInt32(block_idx)
 
     # Set up cache lengths
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_shape = IndexList[1](batch_size)
-    var cache_lengths_runtime_layout = RuntimeLayout[
-        cache_lengths_layout
-    ].row_major(cache_lengths_shape)
 
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
 
@@ -484,16 +522,29 @@ def test_paged_kv_cache[
             cache_lengths_host[i] = UInt32(max_seq_len // 2)  # Half filled
 
     # Create source collection on device
-    var src_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            kv_block_device, kv_block_runtime_layout
+    var src_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            TileTensor(
+                kv_block_device,
+                row_major(
+                    Int64(num_blocks),
+                    Idx[2],
+                    Int64(num_layers),
+                    Idx[page_size],
+                    Idx[kv_params.num_heads],
+                    Idx[kv_params.head_size],
+                ),
+            ).as_unsafe_any_origin()
         ),
-        LayoutTensor[.uint32, cache_lengths_layout, ImmutAnyOrigin](
-            cache_lengths_device, cache_lengths_runtime_layout
-        ),
-        LayoutTensor[.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_device, paged_lut_runtime_layout
-        ),
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(
+            paged_lut_device,
+            row_major(Int64(batch_size), Int64(pages_per_seq)),
+        )
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
@@ -509,16 +560,29 @@ def test_paged_kv_cache[
         for i in range(len(dst_host)):
             dst_host[i] = 0
 
-    var dst_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        LayoutTensor[dtype, kv_block_layout, MutAnyOrigin](
-            dst_block_device, kv_block_runtime_layout
+    var dst_collection = Collection(
+        rebind[Collection.blocks_tt_type](
+            TileTensor(
+                dst_block_device,
+                row_major(
+                    Int64(num_blocks),
+                    Idx[2],
+                    Int64(num_layers),
+                    Idx[page_size],
+                    Idx[kv_params.num_heads],
+                    Idx[kv_params.head_size],
+                ),
+            ).as_unsafe_any_origin()
         ),
-        LayoutTensor[.uint32, cache_lengths_layout, ImmutAnyOrigin](
-            cache_lengths_device, cache_lengths_runtime_layout
-        ),
-        LayoutTensor[.uint32, paged_lut_layout, ImmutAnyOrigin](
-            paged_lut_device, paged_lut_runtime_layout
-        ),
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(
+            paged_lut_device,
+            row_major(Int64(batch_size), Int64(pages_per_seq)),
+        )
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(max_seq_len),
         UInt32(max_seq_len),
     )
@@ -537,32 +601,49 @@ def test_paged_kv_cache[
         with dst_block_device.map_to_host() as dst_host:
             with paged_lut_device.map_to_host() as paged_lut_host:
                 with cache_lengths_device.map_to_host() as cache_lengths_host:
-                    var src_host_tensor = LayoutTensor[dtype, kv_block_layout](
-                        src_host, kv_block_runtime_layout
+                    var src_host_tensor = TileTensor(
+                        src_host,
+                        row_major(
+                            Int64(num_blocks),
+                            Idx[2],
+                            Int64(num_layers),
+                            Idx[page_size],
+                            Idx[kv_params.num_heads],
+                            Idx[kv_params.head_size],
+                        ),
                     )
-                    var dst_host_tensor = LayoutTensor[dtype, kv_block_layout](
-                        dst_host, kv_block_runtime_layout
+                    var dst_host_tensor = TileTensor(
+                        dst_host,
+                        row_major(
+                            Int64(num_blocks),
+                            Idx[2],
+                            Int64(num_layers),
+                            Idx[page_size],
+                            Idx[kv_params.num_heads],
+                            Idx[kv_params.head_size],
+                        ),
                     )
-                    var paged_lut_host_tensor = LayoutTensor[
-                        .uint32, paged_lut_layout
-                    ](paged_lut_host, paged_lut_runtime_layout)
-                    var cache_lengths_host_tensor = LayoutTensor[
-                        .uint32, cache_lengths_layout
-                    ](cache_lengths_host, cache_lengths_runtime_layout)
+                    var paged_lut_host_tensor = TileTensor(
+                        paged_lut_host,
+                        row_major(Int64(batch_size), Int64(pages_per_seq)),
+                    )
+                    var cache_lengths_host_tensor = TileTensor(
+                        cache_lengths_host, row_major(Int64(batch_size))
+                    )
 
-                    var src_host_collection = PagedKVCacheCollection[
-                        dtype, kv_params, page_size
-                    ](
-                        src_host_tensor.as_unsafe_any_origin(),
+                    var src_host_collection = Collection(
+                        rebind[Collection.blocks_tt_type](
+                            src_host_tensor.as_unsafe_any_origin()
+                        ),
                         cache_lengths_host_tensor.as_unsafe_any_origin().as_imm(),
                         paged_lut_host_tensor.as_unsafe_any_origin().as_imm(),
                         UInt32(max_seq_len),
                         UInt32(max_seq_len),
                     )
-                    var dst_host_collection = PagedKVCacheCollection[
-                        dtype, kv_params, page_size
-                    ](
-                        dst_host_tensor.as_unsafe_any_origin(),
+                    var dst_host_collection = Collection(
+                        rebind[Collection.blocks_tt_type](
+                            dst_host_tensor.as_unsafe_any_origin()
+                        ),
                         cache_lengths_host_tensor.as_unsafe_any_origin().as_imm(),
                         paged_lut_host_tensor.as_unsafe_any_origin().as_imm(),
                         UInt32(max_seq_len),
@@ -583,12 +664,12 @@ def test_paged_kv_cache[
     print("    PagedKVCache test passed!")
 
 
-def test_layout_tensor[
+def test_tile_tensor[
     dtype: DType,
     tile_m: Int,
     kv_params: KVCacheStaticParams,
 ](ctx: DeviceContext, batch_size: Int, max_seq_len: Int) raises:
-    comptime msg = "  Testing LayoutTensor with tile_m=" + String(
+    comptime msg = "  Testing TileTensor with tile_m=" + String(
         tile_m
     ) + ", head_size=" + String(kv_params.head_size)
     print(msg)
@@ -606,12 +687,14 @@ def test_layout_tensor[
         var src_host_tt = TileTensor(
             src_host,
             row_major(
-                (
-                    batch_size,
-                    max_seq_len,
-                    Idx[num_heads],
-                    Idx[head_size],
-                )
+                row_major(
+                    (
+                        batch_size,
+                        max_seq_len,
+                        Idx[num_heads],
+                        Idx[head_size],
+                    )
+                ).shape_coord()
             ),
         )
         random(src_host_tt)
@@ -620,12 +703,14 @@ def test_layout_tensor[
     var src_tt = TileTensor(
         src_device,
         row_major(
-            (
-                batch_size,
-                max_seq_len,
-                Idx[num_heads],
-                Idx[head_size],
-            )
+            row_major(
+                (
+                    batch_size,
+                    max_seq_len,
+                    Idx[num_heads],
+                    Idx[head_size],
+                )
+            ).shape_coord()
         ),
     )
     var src_operand = LayoutTensorMHAOperand(
@@ -644,12 +729,14 @@ def test_layout_tensor[
         var dst_tt = TileTensor(
             dst_device,
             row_major(
-                (
-                    batch_size,
-                    max_seq_len,
-                    Idx[num_heads],
-                    Idx[head_size],
-                )
+                row_major(
+                    (
+                        batch_size,
+                        max_seq_len,
+                        Idx[num_heads],
+                        Idx[head_size],
+                    )
+                ).shape_coord()
             ),
         )
         var dst_operand = LayoutTensorMHAOperand(
@@ -670,42 +757,42 @@ def test_layout_tensor[
                 var src_host_tt = TileTensor(
                     src_host,
                     row_major(
-                        (
-                            batch_size,
-                            max_seq_len,
-                            Idx[num_heads],
-                            Idx[head_size],
-                        )
+                        row_major(
+                            (
+                                batch_size,
+                                max_seq_len,
+                                Idx[num_heads],
+                                Idx[head_size],
+                            )
+                        ).shape_coord()
                     ),
                 )
                 var dst_host_tt = TileTensor(
                     dst_host,
                     row_major(
-                        (
-                            batch_size,
-                            max_seq_len,
-                            Idx[num_heads],
-                            Idx[head_size],
-                        )
+                        row_major(
+                            (
+                                batch_size,
+                                max_seq_len,
+                                Idx[num_heads],
+                                Idx[head_size],
+                            )
+                        ).shape_coord()
                     ),
                 )
 
                 var src_host_operand = LayoutTensorMHAOperand(
-                    lt_to_tt(
-                        src_host_tt.to_layout_tensor().as_unsafe_any_origin()
-                    )
+                    src_host_tt.as_unsafe_any_origin()
                 )
                 var dst_host_operand = LayoutTensorMHAOperand(
-                    lt_to_tt(
-                        dst_host_tt.to_layout_tensor().as_unsafe_any_origin()
-                    )
+                    dst_host_tt.as_unsafe_any_origin()
                 )
 
                 test_mha_host_operand[tile_m, kv_params](
                     src_host_operand, dst_host_operand, batch_size
                 )
 
-    print("    LayoutTensor test passed!")
+    print("    TileTensor test passed!")
 
 
 def test_ragged[
@@ -752,11 +839,13 @@ def test_ragged[
         var src_host_tt = TileTensor(
             src_host,
             row_major(
-                (
-                    total_tokens,
-                    Idx[num_heads],
-                    Idx[head_size],
-                )
+                row_major(
+                    (
+                        total_tokens,
+                        Idx[num_heads],
+                        Idx[head_size],
+                    )
+                ).shape_coord()
             ),
         )
         random(src_host_tt)
@@ -765,16 +854,16 @@ def test_ragged[
     var src_tt = TileTensor(
         src_device,
         row_major(
-            (
-                total_tokens,
-                Idx[num_heads],
-                Idx[head_size],
-            )
+            row_major(
+                (
+                    total_tokens,
+                    Idx[num_heads],
+                    Idx[head_size],
+                )
+            ).shape_coord()
         ),
     )
-    var cro_tt = TileTensor(
-        cache_row_offsets_device, row_major(Coord(batch_size + 1))
-    )
+    var cro_tt = TileTensor(cache_row_offsets_device, row_major(batch_size + 1))
     var src_operand = RaggedMHAOperand(
         src_tt.as_unsafe_any_origin(),
         cro_tt.as_unsafe_any_origin(),
@@ -796,11 +885,13 @@ def test_ragged[
     var dst_tt = TileTensor(
         dst_device,
         row_major(
-            (
-                total_tokens,
-                Idx[num_heads],
-                Idx[head_size],
-            )
+            row_major(
+                (
+                    total_tokens,
+                    Idx[num_heads],
+                    Idx[head_size],
+                )
+            ).shape_coord()
         ),
     )
     var dst_operand = RaggedMHAOperand(
@@ -823,25 +914,29 @@ def test_ragged[
                 var src_host_tt = TileTensor(
                     src_host,
                     row_major(
-                        (
-                            total_tokens,
-                            Idx[num_heads],
-                            Idx[head_size],
-                        )
+                        row_major(
+                            (
+                                total_tokens,
+                                Idx[num_heads],
+                                Idx[head_size],
+                            )
+                        ).shape_coord()
                     ),
                 )
                 var dst_host_tt = TileTensor(
                     dst_host,
                     row_major(
-                        (
-                            total_tokens,
-                            Idx[num_heads],
-                            Idx[head_size],
-                        )
+                        row_major(
+                            (
+                                total_tokens,
+                                Idx[num_heads],
+                                Idx[head_size],
+                            )
+                        ).shape_coord()
                     ),
                 )
                 var offsets_host_tt = TileTensor(
-                    offsets_host, row_major(Coord(batch_size + 1))
+                    offsets_host, row_major(batch_size + 1)
                 )
 
                 var src_host_operand = RaggedMHAOperand(
@@ -894,7 +989,7 @@ def main() raises:
                     max_seq_len,
                     num_layers,
                 )
-                test_layout_tensor[dtype, block_m, kv_params](
+                test_tile_tensor[dtype, block_m, kv_params](
                     ctx, batch_size, max_seq_len
                 )
                 test_ragged[dtype, block_m, kv_params](ctx, batch_size)

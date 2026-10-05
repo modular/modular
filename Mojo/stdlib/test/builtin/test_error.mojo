@@ -47,8 +47,7 @@ def test_error_reraise() raises:
 
 
 def test_error_implicit_copy() raises:
-    def consume(var error: Error) -> String:
-        return String(error)
+    comptime consume = lambda (var error: Error) -> String: String(error)
 
     var error = Error("copy me")
     assert_equal(consume(error), "copy me")

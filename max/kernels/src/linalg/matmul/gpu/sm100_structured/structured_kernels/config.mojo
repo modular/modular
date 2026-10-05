@@ -48,7 +48,9 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init("implicit")
-struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
+struct GEMMKind(
+    EnumLike, Equatable, Hashable, TrivialRegisterPassable, Writable
+):
     """Struct for GEMM types.
 
     This struct defines the different types of GEMM that is supported by BlackWell Such as BMM, GEMM, GMM, etc.
@@ -67,6 +69,34 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
     comptime BLOCK_SCALED_1D2D_FP8 = Self(3)
     """BLOCK_SCALED_1D2D_FP8 type."""
+
+    # The implicit fieldwise initializer permits raw backing values the named
+    # cases do not cover; `write_to` / `__str__` keep their `unknown` catch-alls
+    # for them, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "GEMM".value,
+        "BMM".value,
+        "GMM".value,
+        "BLOCK_SCALED_1D2D_FP8".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "GEMMKind has no payload"
 
     @inline(.nodebug)
     def __int__(self) -> Int:
@@ -109,31 +139,31 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
             writer: The writer to write the GEMM kind to.
         """
         __match self:
-        case .GEMM:
-            writer.write("kind::gemm")
-        case .BMM:
-            writer.write("kind::bmm")
-        case .GMM:
-            writer.write("kind::gmm")
-        case .BLOCK_SCALED_1D2D_FP8:
-            writer.write("kind::block_scaled_1d2d_fp8")
-        case _:
-            writer.write("kind::unknown")
+            case .GEMM:
+                writer.write("kind::gemm")
+            case .BMM:
+                writer.write("kind::bmm")
+            case .GMM:
+                writer.write("kind::gmm")
+            case .BLOCK_SCALED_1D2D_FP8:
+                writer.write("kind::block_scaled_1d2d_fp8")
+            case _:
+                writer.write("kind::unknown")
 
     @inline(.always)
     def __str__(self) -> String:
         """Convert GEMM kind to a string."""
         __match self:
-        case .GEMM:
-            return "gemm"
-        case .BMM:
-            return "bmm"
-        case .GMM:
-            return "gmm"
-        case .BLOCK_SCALED_1D2D_FP8:
-            return "block_scaled_1d2d_fp8"
-        case _:
-            return "unknown"
+            case .GEMM:
+                return "gemm"
+            case .BMM:
+                return "bmm"
+            case .GMM:
+                return "gmm"
+            case .BLOCK_SCALED_1D2D_FP8:
+                return "block_scaled_1d2d_fp8"
+            case _:
+                return "unknown"
 
 
 # ============================================================================
@@ -254,12 +284,12 @@ def _compute_swizzle_modes(
             var elem_size = 2 if c_type == DType.bfloat16 else 4
             var row_bytes = output_tile_shape[1] * elem_size
             __match row_bytes:
-            case 128:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_128B
-            case 64:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_64B
-            case 32:
-                c_swizzle = TensorMapSwizzle.SWIZZLE_32B
+                case 128:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_128B
+                case 64:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_64B
+                case 32:
+                    c_swizzle = TensorMapSwizzle.SWIZZLE_32B
     else:
         c_swizzle = TensorMapSwizzle.SWIZZLE_NONE
 
@@ -444,14 +474,14 @@ def _write_common_config[
 
 def _get_dtype_name(dtype: DType) -> String:
     __match dtype:
-    case .bfloat16:
-        return "bf16"
-    case .float8_e4m3fn:
-        return "e4m3"
-    case .uint8:
-        return "e2m1"
-    case _:
-        return String(dtype)
+        case .bfloat16:
+            return "bf16"
+        case .float8_e4m3fn:
+            return "e4m3"
+        case .uint8:
+            return "e2m1"
+        case _:
+            return String(dtype)
 
 
 def _get_common_config_string[
@@ -930,9 +960,10 @@ def choose_config[
     # For large M, use 2xSM mma
     else:
 
-        @__parameter
         @inline(.always)
-        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(
+            M: Int, N: Int, _swapAB: Bool = False
+        ) {mut min_num_waves, mut mma_mn, mut swapAB, imm}:
             for bm in [64, 128]:
                 var N_aligned = align_up(N, 16)
                 var MMA_N_GRANULARITY = 16
@@ -1528,9 +1559,10 @@ def choose_block_scaled_config[
     # For large M, use 2xSM mma
     else:
 
-        @__parameter
         @inline(.always)
-        def select_mma_mn(M: Int, N: Int, _swapAB: Bool = False):
+        def select_mma_mn(
+            M: Int, N: Int, _swapAB: Bool = False
+        ) {mut min_num_waves, mut mma_mn, mut swapAB, imm}:
             var N_alignby64 = align_up(N, 64)
             var max_mma_n = min(N_alignby64, 256)
             # In practice 64x16 mma creates too many ctas and increase L2

@@ -36,6 +36,7 @@ from layout import TileTensor, row_major
 
 from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
+from std.math import align_up
 
 
 def _host_im2col_general[
@@ -77,10 +78,6 @@ def _host_im2col_general[
                                 ] = input_host_ptr[in_idx]
 
 
-def _round_up(x: Int, mod: Int) -> Int:
-    return ((x + mod - 1) // mod) * mod
-
-
 def _bench_one[
     a_type: DType,
     c_type: DType,
@@ -104,7 +101,7 @@ def _bench_one[
     comptime W_out = (W + 2 * pad_w - S) // stride_w + 1
     comptime M_total = N_batch * H_out * W_out
     comptime K_real = R * S * C_in
-    comptime K_padded = _round_up(K_real, 256)
+    comptime K_padded = align_up(K_real, 256)
     comptime flops = 2 * M_total * K_real * C_out
 
     # Path classification (matches the comptime branches inside
@@ -168,9 +165,8 @@ def _bench_one[
     # conv-vs-matmul ratio compares apples-to-apples (the conv path
     # also routes through the framework body for all dtypes). Use
     # `structured_4wave_matmul` for all dtypes.
-    @__parameter
     @inline(.always)
-    def _ref_matmul() raises:
+    def _ref_matmul() raises {imm}:
         structured_4wave_matmul(im2col_2d, filter, output, ctx)
 
     # Warmup (DVFS, allocator).

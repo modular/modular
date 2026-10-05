@@ -112,7 +112,7 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_try:
   case Token::kw_with:
   case Token::kw___match:
-  case Token::kw_async:
+  case Token::kw___async:
   case Token::kw_def:
   case Token::kw_fn:
   case Token::kw_struct:
@@ -598,9 +598,9 @@ static void diagnoseIgnoredResult(const ExprNode *expr, CValue value,
   // TODO: This should be handled with linear types.
   if (shared.typeHasMember(valueType, "__await__", expr->getLoc())) {
     shared.emitWarning(expr->getLoc())
-        << valueType << " value is not awaited; use 'await' to get its result"
+        << valueType << " value is not awaited; use '__await' to get its result"
         << expr->getRange()
-        << FixIt::insertBeforeToken(expr->getRangeStart(), "await ");
+        << FixIt::insertBeforeToken(expr->getRangeStart(), "__await ");
     return;
   }
 
@@ -778,7 +778,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (rejectInNonFunctionScope())
       return success();
     return parseWithStmt(stmtIndent);
-  case Token::kw_async:
+  case Token::kw___async:
   case Token::kw_def:
   case Token::kw_fn:
     rejectSimpleStmt(); // Not a simple_stmt.
@@ -1984,9 +1984,9 @@ static size_t findClusterSize(ArrayRef<MatchCaseEntry> caseEntries) {
       firstCommand->kind != PatternCommand::Kind::EnumTag)
     return 1;
 
-  // Member patterns (`.float16`, `Self.HOST`) are equality tests with no
-  // literal spelling. Clustering would assert in getLeadingTest; emit each
-  // one as its own case instead.
+  // Non-literal value patterns (`.float16`, `Self.HOST`, `{}`) are equality
+  // tests with no literal spelling. Clustering requires a stable sort key, so
+  // emit each one as its own case instead.
   if (firstCommand->kind == PatternCommand::Kind::Equal &&
       firstCommand->expr->getLiteralSpelling().empty())
     return 1;
@@ -4387,7 +4387,7 @@ StmtParser::parseImportModuleName(SharedState::ImportPath &parsedName,
 
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
-  if (consumeIf(Token::kw_async) && rejectTokenAtStartOfLine("'def' keyword"))
+  if (consumeIf(Token::kw___async) && rejectTokenAtStartOfLine("'def' keyword"))
     return failure();
   consumeToken(); // Consume either 'def' or 'fn'.
 
@@ -4920,8 +4920,8 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
 
   auto loc = translateLocation(nameSMLoc);
 
-  std::string nameStr = "extension:" + targetStructNameAttr.getValue().str();
-  auto nameAttr = StringAttr::get(getContext(), nameStr);
+  StringAttr nameAttr =
+      shared.getExtensionName(targetStructNameAttr.getValue());
 
   // Note that this is using the unique name, not the base name.
   // Further below, we'll still add it to the parent ASTDecl with the base name.
@@ -4948,13 +4948,7 @@ ParseResult StmtParser::parseExtensionStmt(LexerCursor startCursor,
     ASTDecl &decl = getDeclResolver().addDecl(
         extensionDeclOp, nameSMLoc, nameAttr, curDeclScope, startCursor,
         getLexer().getCursor(), curIndent);
-
-    // The extension should also be known to its parent as "extension:". Some
-    // places look up that string when they want to find all extensions in a
-    // particular scope.
-    // TODO(MOCO-522): Arcana docs on this.
-    StringAttr extensionsNameAttr = StringAttr::get(getContext(), "extension:");
-    getDeclResolver().aliasDeclInParent(&decl, extensionsNameAttr);
+    getDeclResolver().registerExtensionDecl(decl);
   }
   return success();
 }

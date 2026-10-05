@@ -20,6 +20,8 @@ from .info import (
     TargetAccelerator,
     TargetAcceleratorType,
     GPUInfo,
+    _empty_target,
+    NoGPU,
 )
 
 
@@ -29,6 +31,12 @@ struct BuiltinTargets(TargetAcceleratorCollection):
     # fmt: off
     comptime RAW_TARGETS = TypeList.of[
         Trait=TargetAcceleratorType,
+
+        # When no `--target-accelerator` is specified, we still need
+        # `default_accelerator()` to resolve to a "dummy" value.
+        # TODO(MSTDL-3241): Refactor to avoid needing this dummy value.
+        TargetAccelerator[NoGPU, _empty_target]._with_cli_values[[""]],
+
         # FIXME: GTX1060 and GTX1080Ti share `sm_61` but have different
         # `sm_count`; target resolution should differentiate them at compile time.
         GTX1060   ._with_cli_values[[]       ], # Could be ["sm_61"], but `sm_61` resolves to GTX1080Ti.

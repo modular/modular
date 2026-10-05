@@ -23,7 +23,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext, get_gpu_target
 from std.memory import Layout as AllocLayout, dealloc
 from internal_utils import (
@@ -80,11 +80,10 @@ def run_reduce[
             Scalar[dtype](shape[axis]) * Scalar[dtype](1)
         )
 
-    var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)
+    var res_buffer = ctx.enqueue_create_buffer[dtype](out_size)
 
-    comptime res_layout = Layout.row_major[rank]()
-    var res_device = LayoutTensor[dtype, res_layout](
-        res_buffer.unsafe_ptr(), RuntimeLayout[res_layout].row_major(out_shape)
+    var res_device = TileTensor(res_buffer, row_major(out_size)).reshape(
+        Coord(out_shape)
     )
 
     ctx.enqueue_copy(cb_in.device_buffer(), in_host)
@@ -105,19 +104,20 @@ def run_reduce[
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        res_device.store[width=width](
-            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
+        res_device.store[width=width, alignment=align_of[dtype]()](
+            Coord(rebind[IndexList[rank]](coords)),
+            rebind[SIMD[dtype, width]](val[0]),
         )
 
     def kernel_launch(
         ctx: DeviceContext, iteration: Int
     ) raises {mut cb_in, mut res_device, imm}:
-        var input_lt = LayoutTensor[dtype, Layout.row_major[rank]()](
+        var input_tile = TileTensor(
             cb_in.offset_ptr(iteration),
-            RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
+            row_major(Coord(shape)),
         )
 
-        @__copy_capture(input_lt)
+        @__copy_capture(input_tile)
         @__parameter
         def input_fn[
             dtype: DType,
@@ -125,7 +125,9 @@ def run_reduce[
             _rank: Int,
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
             return rebind[SIMD[dtype, width]](
-                input_lt.load[width=width](rebind[IndexList[rank]](coords))
+                input_tile.load[width=width, alignment=align_of[dtype]()](
+                    Coord(rebind[IndexList[rank]](coords))
+                )
             )
 
         reduce_launch[
@@ -173,7 +175,6 @@ def run_reduce[
     _ = res_host^
 
 
-@__parameter
 def reduce_add[
     dtype: DType,
     width: SIMDLength,

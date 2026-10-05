@@ -30,7 +30,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from layout import TileTensor, row_major
 from std.math import sqrt
-from std.sys.info import has_amd_gpu_accelerator
 from std.testing import assert_equal, assert_true
 
 from nn.topk import _gumbel_argmax_fused_kernel, gumbel_sampling_fused_gpu
@@ -326,7 +325,7 @@ def main() raises:
         # Real Llama-3.1-8B vocabulary width.
         test_zero_mass_never_wins(ctx, d=128256)
         test_equal_seeds_share_noise(ctx)
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             test_amd_split_matches_single(ctx, rows=32, d=200064)
             test_amd_split_matches_single(ctx, rows=32, d=200065)
             test_amd_split_matches_single(ctx, rows=96, d=200064)

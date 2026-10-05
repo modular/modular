@@ -85,9 +85,9 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     comptime c_type = DType.bfloat16
     comptime transpose_b = True
 
-    var a_shape = row_major(Coord(m, Idx[K]))
-    var b_shape = row_major(Coord(Idx[N], Idx[K]))  # transpose_b: [N, K]
-    var c_shape = row_major(Coord(m, Idx[N]))
+    var a_shape = row_major(m, Idx[K])
+    var b_shape = row_major(Idx[N], Idx[K])  # transpose_b: [N, K]
+    var c_shape = row_major(m, Idx[N])
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](m * K)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -164,9 +164,9 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     comptime dt = DType.bfloat16
     comptime transpose_b = True
 
-    var a_shape = row_major(Coord(m, Idx[K]))
-    var b_shape = row_major(Coord(Idx[N], Idx[K]))  # transpose_b: [N, K]
-    var c_shape = row_major(Coord(m, Idx[N]))
+    var a_shape = row_major(m, Idx[K])
+    var b_shape = row_major(Idx[N], Idx[K])  # transpose_b: [N, K]
+    var c_shape = row_major(m, Idx[N])
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[dt](m * K)
     var a_host = TileTensor(a_host_ptr, a_shape)

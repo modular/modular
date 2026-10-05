@@ -313,28 +313,26 @@ def run_one_case(
     # Ragged Q/K/V (batch*seq_len rows, no padding); K_rope (`cache`) is the
     # contiguous BSHD buffer flare_mla_prefill wraps separately.
     var q_tt = TileTensor(
-        q_dev, row_major(Coord(q_rows, Idx[NUM_HEADS], Idx[Q_DEPTH]))
+        q_dev, row_major(q_rows, Idx[NUM_HEADS], Idx[Q_DEPTH])
     )
     var k_tt = TileTensor(
-        k_dev, row_major(Coord(kv_rows, Idx[NUM_HEADS], Idx[NOPE_DEPTH]))
+        k_dev, row_major(kv_rows, Idx[NUM_HEADS], Idx[NOPE_DEPTH])
     )
     var v_tt = TileTensor(
-        v_dev, row_major(Coord(kv_rows, Idx[NUM_HEADS], Idx[NOPE_DEPTH]))
+        v_dev, row_major(kv_rows, Idx[NUM_HEADS], Idx[NOPE_DEPTH])
     )
     var cache_tt = TileTensor(
         cache_dev,
-        row_major(
-            Coord(batch_size, num_keys, Idx[CACHE_NUM_HEADS], Idx[CACHE_DEPTH])
-        ),
+        row_major(batch_size, num_keys, Idx[CACHE_NUM_HEADS], Idx[CACHE_DEPTH]),
     )
     var o_tt = TileTensor(
-        o_dev, row_major(Coord(q_rows, Idx[NUM_HEADS], Idx[NOPE_DEPTH]))
+        o_dev, row_major(q_rows, Idx[NUM_HEADS], Idx[NOPE_DEPTH])
     )
     var input_row_offsets_tt = TileTensor(
-        input_row_offsets_dev, row_major(Coord(batch_size + 1))
+        input_row_offsets_dev, row_major(batch_size + 1)
     )
     var cache_row_offsets_tt = TileTensor(
-        cache_row_offsets_dev, row_major(Coord(batch_size + 1))
+        cache_row_offsets_dev, row_major(batch_size + 1)
     )
 
     # Kernel under test: on AMD this routes to

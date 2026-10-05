@@ -14,12 +14,16 @@
 
 ``test_mla_decode_graph_sparse_smoke`` and ``test_mla_decode_graph_sparse_bf16_smoke``
 build the sparse ``mla_decode_graph`` graph only (no execution).
+``test_mla_decode_graph_sparse_omitted_operands_match`` checks that omitting
+``topk_lengths`` / ``sink`` matches passing their no-op values.
 ``test_mla_decode_graph_sparse_multi_step_smoke`` runs prefill and decode through
 :class:`SparseLatentAttentionWithRopeFp8` and :class:`PagedKVCacheManager`.
 The prefill-routing tests live in ``test_mla_sparse_prefill_graph_gpu.py``.
 """
 
 from __future__ import annotations
+
+import dataclasses
 
 import numpy as np
 import pytest
@@ -31,7 +35,7 @@ from _mla_sparse_test_utils import (
 from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.attention.mask_config import MHAMaskVariant
 from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
@@ -63,6 +67,7 @@ from max.pipelines.architectures.deepseekV3_2.layers.sparse_mla import (
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from test_common.graph_utils import is_b100_b200
+from test_common.simple_kv_cache import paged_kv_cache_inputs
 from torch.utils.dlpack import from_dlpack
 
 
@@ -386,6 +391,239 @@ def test_mla_decode_graph_sparse_bf16_smoke() -> None:
 
     _ = attn.state_dict()
     _ = construct()
+
+
+@pytest.mark.skipif(
+    accelerator_api() == "hip",
+    reason="Sparse MLA decode graph is only wired for NVIDIA GPUs.",
+)
+@pytest.mark.skipif(
+    not is_b100_b200(),
+    reason="Sparse MLA decode kernel is SM100-class (B100/B200); skip elsewhere.",
+)
+@pytest.mark.parametrize(
+    "topk",
+    [
+        8,  # one partition: the decode kernel applies the sink
+        1024,  # split-K against a 4096 cache: the combine kernel applies it
+    ],
+)
+@pytest.mark.parametrize(
+    "sink",
+    [
+        -np.inf,
+        -1.0e38,  # what GLM-5.x / DSv3.2 passed before omitting the sink
+    ],
+)
+def test_mla_decode_graph_sparse_omitted_operands_match(
+    topk: int, sink: float
+) -> None:
+    """Omitted ``topk_lengths`` / ``sink`` match their no-op explicit values.
+
+    ``None`` makes the op build the kernels specialized on the operand's
+    absence. Full-length top-k and a ``-inf`` or ``-1e38`` sink are exact
+    no-ops, so the explicit graph must produce bit-identical output.
+    """
+    num_heads = 16
+    cache_len = 4096
+    hidden_size = 1024
+    q_lora_rank = 256
+    kv_lora_rank = 512
+    qk_nope_head_dim = 128
+    qk_rope_head_dim = 64
+    v_head_dim = 128
+    page_size = 128
+
+    quant_config = QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 128),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float32,
+            block_size=(128, 128),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        embedding_output_dtype=None,
+        format=QuantFormat.BLOCKSCALED_FP8,
+    )
+    kv_params = MLAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        head_dim=kv_lora_rank + qk_rope_head_dim,
+        num_layers=1,
+        page_size=page_size,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+    )
+
+    def make_layers() -> tuple[
+        DeepseekYarnRotaryEmbedding, LatentAttentionWithRopeFp8
+    ]:
+        # Fresh layers per graph: weight values bind to the first graph.
+        rope = DeepseekYarnRotaryEmbedding(
+            dim=qk_rope_head_dim,
+            n_heads=num_heads,
+            theta=10000.0,
+            max_seq_len=2 * cache_len,
+            scaling_params=DeepseekYarnRopeScalingParams(
+                scaling_factor=40.0,
+                original_max_position_embeddings=4096,
+                beta_fast=32,
+                beta_slow=1,
+                mscale=1.0,
+                mscale_all_dim=1.0,
+            ),
+        )
+        attn = LatentAttentionWithRopeFp8(
+            rope=rope,
+            num_attention_heads=num_heads,
+            num_key_value_heads=1,
+            hidden_size=hidden_size,
+            kv_params=kv_params,
+            quant_config=quant_config,
+            devices=[DeviceRef.GPU()],
+            graph_mode="decode",
+            q_lora_rank=q_lora_rank,
+            kv_lora_rank=kv_lora_rank,
+            qk_nope_head_dim=qk_nope_head_dim,
+            qk_rope_head_dim=qk_rope_head_dim,
+            v_head_dim=v_head_dim,
+            buffer_size=4096,
+        )
+        _ = attn.state_dict()
+        return rope, attn
+
+    gpu = DeviceRef.GPU()
+    data_types = [
+        TensorType(
+            DType.bfloat16,
+            ["total_tokens", num_heads, qk_nope_head_dim + qk_rope_head_dim],
+            gpu,
+        ),
+        TensorType(
+            DType.bfloat16,
+            ["total_tokens", kv_lora_rank + qk_rope_head_dim],
+            gpu,
+        ),
+        TensorType(DType.uint32, ["row_offsets_len"], gpu),
+        TensorType(DType.int32, ["total_tokens", topk], gpu),
+    ]
+    explicit_types = [
+        TensorType(DType.int32, ["total_tokens"], gpu),
+        TensorType(DType.float32, [num_heads], gpu),
+    ]
+    kv_sym = tree.leaves(kv_params.get_symbolic_inputs()[0])
+
+    def construct(explicit: bool) -> Graph:
+        extra_types = explicit_types if explicit else []
+        with Graph(
+            f"mla_decode_sparse_{'explicit' if explicit else 'omitted'}",
+            input_types=[*data_types, *extra_types, *kv_sym],
+        ) as g:
+            q, kv, input_row_offsets, sparse_indices = (
+                x.tensor for x in g.inputs[:4]
+            )
+            topk_lengths = g.inputs[4].tensor if explicit else None
+            attn_sink = g.inputs[5].tensor if explicit else None
+            kv_collection = paged_kv_from_flat_graph_inputs(
+                kv_params, list(g.inputs[4 + len(extra_types) :])
+            )
+            assert kv_collection.attention_dispatch_metadata is not None
+            assert kv_collection.mla_num_partitions is not None
+            rope, attn = make_layers()
+            w_uk, w_uk_scale = attn.w_uk
+            w_uv, w_uv_scale = attn.w_uv
+            out = mla_decode_graph(
+                q,
+                kv,
+                input_row_offsets,
+                ops.cast(rope.freqs_cis, q.dtype).to(q.device),
+                attn.kv_a_proj_layernorm,
+                w_uk,
+                w_uv,
+                kv_params,
+                kv_collection,
+                ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+                MHAMaskVariant.CAUSAL_MASK,
+                attn.scale,
+                1e-6,
+                v_head_dim,
+                kv_collection.attention_dispatch_metadata,
+                kv_collection.mla_num_partitions,
+                w_uk_scale=w_uk_scale,
+                w_uv_scale=w_uv_scale,
+                quant_config=quant_config,
+                sparse_indices=sparse_indices,
+                sparse_topk_lengths=topk_lengths,
+                sparse_attn_sink=attn_sink,
+                sparse_indices_stride=topk,
+            )
+            g.output(out)
+        return g
+
+    device = Accelerator(0)
+    session = InferenceSession(devices=[Accelerator()])
+    weights = random_weights(make_layers()[1])
+    omitted = session.load(construct(False), weights_registry=weights)
+    explicit = session.load(construct(True), weights_registry=weights)
+
+    kv_inputs = paged_kv_cache_inputs(kv_params, [1], cache_lengths=[cache_len])
+    blocks = (
+        torch.randn(tuple(kv_inputs.kv_blocks.shape), dtype=torch.float32) * 0.5
+    ).to(torch.float8_e4m3fn)
+    kv_inputs = dataclasses.replace(
+        kv_inputs,
+        kv_blocks=Buffer.from_dlpack(blocks.view(torch.uint8))
+        .view(DType.float8_e4m3fn)
+        .to(device),
+    )
+
+    rng = np.random.default_rng(0)
+    q = Buffer.from_dlpack(
+        (
+            torch.randn(
+                (1, num_heads, qk_nope_head_dim + qk_rope_head_dim),
+                dtype=torch.float32,
+            )
+            * 0.1
+        ).to(torch.bfloat16)
+    ).to(device)
+    kv = Buffer.from_dlpack(
+        (
+            torch.randn(
+                (1, kv_lora_rank + qk_rope_head_dim), dtype=torch.float32
+            )
+            * 0.1
+        ).to(torch.bfloat16)
+    ).to(device)
+    row_offsets = Buffer.from_numpy(np.array([0, 1], dtype=np.uint32)).to(
+        device
+    )
+    indices = Buffer.from_numpy(
+        rng.choice(cache_len + 1, size=(1, topk), replace=False).astype(
+            np.int32
+        )
+    ).to(device)
+    full_topk = Buffer.from_numpy(np.array([topk], dtype=np.int32)).to(device)
+    no_sink = Buffer.from_numpy(np.full(num_heads, sink, dtype=np.float32)).to(
+        device
+    )
+
+    def run(model: Model, *extra: Buffer) -> np.ndarray:
+        out = model.execute(
+            q, kv, row_offsets, indices, *extra, *tree.leaves(kv_inputs)
+        )[0]
+        return from_dlpack(out).cpu().view(torch.int16).numpy()
+
+    # Both graphs write the same new latent row into the cache, so the second
+    # run sees the state the first one left.
+    want = run(omitted)
+    got = run(explicit, full_topk, no_sink)
+    assert np.array_equal(got, want)
 
 
 @pytest.mark.skipif(

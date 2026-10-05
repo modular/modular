@@ -62,7 +62,7 @@ _CHUNKS = 4
 _FULL = (3072, 192, 128)
 _SLIDING = (3072, 384, 256)
 _STACK = re.compile(
-    r"^layers\.(\d+)\.mlp\.experts_(gate_up|down)_proj(_scale)?$"
+    r"^layers\.(\d+)\.mlp\.experts\.(gate_up|down)_proj(_scale)?$"
 )
 
 

@@ -52,7 +52,6 @@ class UnifiedMTPGlm5_2BatchProcessor(
     ) -> UnifiedMTPGlm5_2Inputs:
         from .model import UnifiedMTPGlm5_2Inputs
 
-        speculative = self.runtime.pipeline_config.speculative
         return UnifiedMTPGlm5_2Inputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
@@ -65,8 +64,4 @@ class UnifiedMTPGlm5_2BatchProcessor(
             ep_inputs=ep_inputs,
             draft_tokens=None,
             structured_output=self.runtime.pipeline_config.needs_bitmask_constraints,
-            sampled_draft_proposal=(
-                speculative is not None
-                and speculative.draft_proposal == "sampled"
-            ),
         )

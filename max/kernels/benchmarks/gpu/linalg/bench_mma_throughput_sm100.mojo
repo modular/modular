@@ -87,12 +87,9 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.memory import external_memory
-from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
-from layout.tensor_core_async import (
-    tile_layout_k_major,
-    tile_to_descriptor,
-)
+from layout import TensorLayout, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -179,7 +176,7 @@ def mma_throughput_kernel[
     b_tile_rank: Int,
     b_tile_shape: IndexList[b_tile_rank],
     b_desc_shape: IndexList[b_tile_rank],
-    sink_layout: Layout,
+    sink_layout: TensorLayout,
     BM: Int,
     BN: Int,
     BK_DESC: Int,
@@ -193,7 +190,7 @@ def mma_throughput_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[a_type, b_tile_rank, b_tile_shape, b_desc_shape],
-    sink: LayoutTensor[accum_type, sink_layout, MutAnyOrigin],
+    sink: TileTensor[accum_type, sink_layout, MutAnyOrigin],
 ):
     """SM100 single-CTA tcgen05 MMA-instruction throughput kernel.
 
@@ -266,14 +263,15 @@ def mma_throughput_kernel[
     comptime assert (
         num_m_tiles * per_m_col_stride <= max_tmem_cols
     ), "TMEM column budget exceeded"
+    comptime assert sink.flat_rank == 2
 
     # SMEM layouts: A tile (BM, BK_DESC), B tile (BN, BK_DESC), both k-major.
-    comptime a_smem_layout = tile_layout_k_major[
-        a_type, BM, BK_DESC, swizzle_mode=a_swizzle
-    ]()
-    comptime b_smem_layout = tile_layout_k_major[
-        a_type, BN, BK_DESC, swizzle_mode=b_swizzle
-    ]()
+    comptime a_smem_layout = tile_layout_k_major_typed[
+        a_type, BM, BK_DESC, a_swizzle
+    ]
+    comptime b_smem_layout = tile_layout_k_major_typed[
+        a_type, BN, BK_DESC, b_swizzle
+    ]
 
     var a_smem = rebind[
         MutPointer[
@@ -287,23 +285,9 @@ def mma_throughput_kernel[
             name="mma_throughput_dynamic_shared_memory",
         ]()
     )
-    comptime a_smem_tile_t = LayoutTensor[
-        a_type,
-        a_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ]
-    comptime b_smem_tile_t = LayoutTensor[
-        a_type,
-        b_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ]
 
-    comptime a_size = a_smem_layout.size()
-    comptime b_size = b_smem_layout.size()
+    comptime a_size = BM * BK_DESC
+    comptime b_size = BN * BK_DESC
 
     comptime assert (
         (a_size * size_of[a_type]()) % 128
@@ -314,8 +298,8 @@ def mma_throughput_kernel[
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[a_type]]()
 
-    var a_smem_tile = a_smem_tile_t(a_smem.as_unsafe_any_origin())
-    var b_smem_tile = b_smem_tile_t(b_smem.as_unsafe_any_origin())
+    var a_smem_tile = TileTensor(a_smem, a_smem_layout)
+    var b_smem_tile = TileTensor(b_smem, b_smem_layout)
 
     # Shared memory pointer for tensor memory address handshake + mbarriers.
     var ptr_tmem_addr = (b_smem + b_size).bitcast[UInt32]()
@@ -343,24 +327,21 @@ def mma_throughput_kernel[
     var tmem_addr = ptr_tmem_addr[0]
 
     # MMA descriptors. Both tiles are k-major; transpose_b=True is the standard
-    # B-as-N-major-transposed case for canonical matmul.
-    comptime a_canonical_layout = tile_to_descriptor[
-        a_type, a_smem_layout, is_k_major=True
-    ]()
-    comptime b_canonical_layout = tile_to_descriptor[
-        a_type, b_smem_layout, is_k_major=True
-    ]()
-    comptime a_stride01 = a_canonical_layout[0].stride[1].value()
-    comptime a_stride11 = a_canonical_layout[1].stride[1].value()
-    comptime aSBO = a_stride01 * size_of[a_type]()
-    comptime aLBO = a_stride11 * size_of[a_type]()
-    comptime b_stride01 = b_canonical_layout[0].stride[1].value()
-    comptime b_stride11 = b_canonical_layout[1].stride[1].value()
-    comptime bSBO = b_stride01 * size_of[a_type]()
-    comptime bLBO = b_stride11 * size_of[a_type]()
+    # B-as-N-major-transposed case for canonical matmul. The K-major layout is
+    # ((8, MN/8), (sw, K/sw)): SBO is the stride between 8-row core-matrix
+    # groups and LBO the stride between swizzle atoms along K, i.e. the
+    # flattened strides 1 and 3.
+    comptime aSBO = type_of(a_smem_layout).static_stride[1] * size_of[a_type]()
+    comptime aLBO = type_of(a_smem_layout).static_stride[3] * size_of[a_type]()
+    comptime bSBO = type_of(b_smem_layout).static_stride[1] * size_of[a_type]()
+    comptime bLBO = type_of(b_smem_layout).static_stride[3] * size_of[a_type]()
 
-    var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
-    var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
+    var adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](
+        a_smem_tile.unsafe_ptr()
+    )
+    var bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](
+        b_smem_tile.unsafe_ptr()
+    )
 
     comptime mma_kind = (
         UMMAKind.KIND_F8F6F4 if a_type == .float8_e4m3fn else UMMAKind.KIND_F16
@@ -484,7 +465,7 @@ def mma_throughput_kernel[
 
     # One scalar per thread to a 1 x 128 sink so the compiler can't drop the
     # MMA stream. We don't care about correctness — just observability.
-    sink[0, thread_idx.x] = c_frag[0]
+    sink[0, Int(thread_idx.x)] = c_frag[0]
 
 
 # ===----------------------------------------------------------------------=== #
@@ -544,11 +525,12 @@ def main() raises:
     with DeviceContext() as ctx:
         # Device A (BM, BK_DESC), B (BN, BK_DESC), sink (1, num_threads).
         # Data values do not affect MMA throughput; we don't initialize.
-        var a = ManagedLayoutTensor[dtype, Layout.row_major(BM, BK_DESC)](ctx)
-        var b = ManagedLayoutTensor[dtype, Layout.row_major(BN, BK_DESC)](ctx)
-        var sink = ManagedLayoutTensor[
-            accum_type, Layout.row_major(1, num_threads)
-        ](ctx)
+        var a = HostDeviceTileTensor[dtype](row_major[BM, BK_DESC](), ctx)
+        var b = HostDeviceTileTensor[dtype](row_major[BN, BK_DESC](), ctx)
+        var sink = HostDeviceTileTensor[accum_type](
+            row_major[1, num_threads](), ctx
+        )
+        var sink_dev = sink.device_tensor()
 
         var a_tma_op = create_tensor_tile[
             Index(BM, BK_DESC), swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
@@ -567,7 +549,7 @@ def main() raises:
             type_of(b_tma_op).rank,
             type_of(b_tma_op).tile_shape,
             type_of(b_tma_op).desc_shape,
-            Layout.row_major(1, num_threads),
+            type_of(sink_dev).LayoutType,
             BM=BM,
             BN=BN,
             BK_DESC=BK_DESC,

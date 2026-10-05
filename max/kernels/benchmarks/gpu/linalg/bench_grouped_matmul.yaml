@@ -1,0 +1,111 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+#
+# bf16 grouped matmul through the `grouped_matmul` dispatch, at MoE and LoRA
+# shapes.
+#
+# MoE: 32 experts, gate_up [32, 6144, 3584] and down [32, 3584, 3072]. Decode
+# at batch 1 (top-16: one token on each of 16 experts) and at 2, 4 and 16
+# tokens on each of the 32 experts; prefill at 1024 tokens on each.
+# LoRA SGMV (`mo.lora_sgmv.ragged`): 4 adapters of rank 16 on a 4096-wide
+# layer, shrink [4, 16, 4096] and expand [4, 4096, 16], at decode (2 tokens
+# per adapter) and prefill (512 per adapter).
+#
+# kbench evaluates each value as a Python expression, so the token and expert
+# lists are quoted twice to reach the benchmark as one string each.
+##===----------------------------------------------------------------------===##
+
+name: bench_grouped_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_grouped_matmul.mojo
+
+moe_batch1: &moe_batch1
+  ASSERT: none
+  num_experts: 32
+  $num_active_experts: 16
+  $num_tokens_by_expert: "'[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]'"
+  $expert_ids: "'[0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30]'"
+
+moe: &moe
+  ASSERT: none
+  num_experts: 32
+  $num_active_experts: 32
+  $expert_ids: "'[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]'"
+
+lora: &lora
+  ASSERT: none
+  num_experts: 4
+  $num_active_experts: 4
+  $expert_ids: "'[0,1,2,3]'"
+
+params:
+# MoE gate_up
+- <<: *moe_batch1
+  N: 6144
+  K: 3584
+- <<: *moe
+  N: 6144
+  K: 3584
+  $num_tokens_by_expert: "'[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]'"
+- <<: *moe
+  N: 6144
+  K: 3584
+  $num_tokens_by_expert: "'[4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]'"
+- <<: *moe
+  N: 6144
+  K: 3584
+  $num_tokens_by_expert: "'[16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16]'"
+- <<: *moe
+  N: 6144
+  K: 3584
+  $num_tokens_by_expert: "'[1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024]'"
+
+# MoE down
+- <<: *moe_batch1
+  N: 3584
+  K: 3072
+- <<: *moe
+  N: 3584
+  K: 3072
+  $num_tokens_by_expert: "'[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]'"
+- <<: *moe
+  N: 3584
+  K: 3072
+  $num_tokens_by_expert: "'[4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]'"
+- <<: *moe
+  N: 3584
+  K: 3072
+  $num_tokens_by_expert: "'[16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16]'"
+- <<: *moe
+  N: 3584
+  K: 3072
+  $num_tokens_by_expert: "'[1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024,1024]'"
+
+# LoRA shrink
+- <<: *lora
+  N: 16
+  K: 4096
+  $num_tokens_by_expert: "'[2,2,2,2]'"
+- <<: *lora
+  N: 16
+  K: 4096
+  $num_tokens_by_expert: "'[512,512,512,512]'"
+
+# LoRA expand
+- <<: *lora
+  N: 4096
+  K: 16
+  $num_tokens_by_expert: "'[2,2,2,2]'"
+- <<: *lora
+  N: 4096
+  K: 16
+  $num_tokens_by_expert: "'[512,512,512,512]'"

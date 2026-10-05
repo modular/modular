@@ -87,8 +87,8 @@ from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.sys import has_nvidia_gpu_accelerator, size_of
 from std.utils.index import Index, IndexList
 
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import UNKNOWN_VALUE, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import (
     SharedMemBarrier,
     SplitLastDimTMATensorTile,
@@ -355,18 +355,17 @@ def run_spike[
     ), "need a multi-atom-row page (this is the whole point of the spike)"
 
     # ---- gmem [BN, num_heads, head_size] row-major, distinguishable values ----
-    comptime gmem_layout = Layout.row_major[3]()
-    var gmem_shape = IndexList[3](BN, num_heads, head_size)
-    var gmem_runtime = RuntimeLayout[gmem_layout].row_major(gmem_shape)
-    var gmem = ManagedLayoutTensor[dtype, gmem_layout](gmem_runtime, ctx)
-    var gmem_host = gmem.tensor[update=False]()
-    unsafe_memset_zero(gmem_host.ptr, gmem_runtime.size())
+    var gmem = HostDeviceTileTensor[dtype](
+        row_major[BN, num_heads, head_size](), ctx
+    )
+    var gmem_host = gmem.host_tensor()
     for r in range(BN):
         for h in range(num_heads):
             for d in range(head_size):
                 var v = Float64(r * 1000 + h * 100 + d) * 0.001
                 gmem_host[r, h, d] = Scalar[dtype](v)
-    var gmem_dev = gmem.device_tensor()
+    gmem.to_device()
+    var gmem_ptr = gmem.device_tensor().unsafe_ptr()
 
     # ---- REFERENCE descriptor: rank-2 box (CM, gran) over [BN, head_size] -----
     # for the chosen head, viewed k-major (depth, row).  The base pointer is
@@ -374,7 +373,7 @@ def run_spike[
     # gmem[row, head_idx, depth].  globalDim/strides describe the 2D
     # [row, depth] sub-view with row stride = num_heads*head_size.
     comptime ref_box = Index(CM, gran)
-    var head_base = gmem_dev.ptr + head_idx * head_size
+    var head_base = gmem_ptr + head_idx * head_size
     var ref_desc = create_tma_descriptor[dtype, 2, swizzle](
         DeviceBuffer(
             ctx,
@@ -412,16 +411,14 @@ def run_spike[
             swizzle,
             fold_chunks=num_chunks,
             row_major=True,
-        ](ctx, gmem_dev.ptr, BN)
+        ](ctx, gmem_ptr, BN)
     else:
         # Step A: hand-rolled rank-5 descriptor (slowest-first / repo order =
         # [head, atom_row, chunk, CM, gran]).
         var test_desc = create_tma_descriptor[dtype, 5, swizzle](
             DeviceBuffer(
                 ctx,
-                gmem_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    .GENERIC
-                ](),
+                gmem_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
                 1,
                 owning=False,
             ),

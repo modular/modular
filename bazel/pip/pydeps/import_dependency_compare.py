@@ -59,10 +59,14 @@ _THIRD_PARTY_IMPORTS = {
         "opentelemetry.util",
         "opentelemetry.version",
     ],
+    "opentelemetry_exporter_otlp_proto_grpc": [
+        "opentelemetry.exporter.otlp.proto.grpc"
+    ],
     "opentelemetry_exporter_otlp_proto_http": [
         "opentelemetry.exporter.otlp.proto.http"
     ],
     "opentelemetry_exporter_prometheus": ["opentelemetry.exporter.prometheus"],
+    "opentelemetry_proto": ["opentelemetry.proto"],
     "opentelemetry_sdk": ["opentelemetry.sdk"],
     "pillow": ["PIL"],
     "python_json_logger": ["pythonjsonlogger"],

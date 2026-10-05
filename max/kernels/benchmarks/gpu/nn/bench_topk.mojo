@@ -911,7 +911,7 @@ def main() raises:
             num_blocks_per_input=num_blocks_per_input,
         )
 
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             if masked_probs or use_dist:
                 raise Error(
                     "the masked_probs and topp_dist benchmarks require"
@@ -920,8 +920,7 @@ def main() raises:
         else:
             if masked_probs:
 
-                @__parameter
-                def run_masked[in_dtype: DType]() raises:
+                def run_masked[in_dtype: DType]() raises {mut m, imm}:
                     bench_topk_topp_masked[in_dtype](
                         ctx,
                         m,
@@ -940,8 +939,7 @@ def main() raises:
 
             if use_dist:
 
-                @__parameter
-                def run_dist[in_dtype: DType, emit: Bool]() raises:
+                def run_dist[in_dtype: DType, emit: Bool]() raises {mut m, imm}:
                     bench_topk_topp_dist[in_dtype, DType.int64, emit](
                         ctx,
                         m,
@@ -954,8 +952,7 @@ def main() raises:
                 # The pipeline feeds this kernel f32 logits today; bf16
                 # halves the bytes every pass of the search re-reads, so
                 # both are benchmarked.
-                @__parameter
-                def run_dist_emit[emit: Bool]() raises:
+                def run_dist_emit[emit: Bool]() raises {imm}:
                     if in_dtype_name == "bfloat16":
                         run_dist[.bfloat16, emit]()
                     else:
@@ -1080,6 +1077,7 @@ def bench_dispatch_all() raises:
         for bs in batch_sizes:
             for v in vocab_sizes:
                 bench_dispatch[dtype, -1](b, ctx, bs, v)
+                bench_dispatch[dtype, 1](b, ctx, bs, v)
                 bench_dispatch[dtype, 5](b, ctx, bs, v)
                 bench_dispatch[dtype, 20](b, ctx, bs, v)
                 bench_dispatch[dtype, 50](b, ctx, bs, v)

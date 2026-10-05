@@ -27,6 +27,7 @@ from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     CompletedTransfer,
+    KVLoadFailed,
 )
 from max.pipelines.kv_cache.paged_kv_cache import PrefixCacheHits
 from max.pipelines.modeling.types import (
@@ -301,9 +302,9 @@ def test_text_batch_constructor__structured_output_enabled_mirrors_bitmask_const
 ) -> None:
     """``structured_output_enabled`` forwards
     ``PipelineConfig.needs_bitmask_constraints`` -- on for either
-    ``--enable-structured-output`` or a grammar-capable tool parser with
-    ``--enable-tool-call-constrained-decode`` -- and stays off if the
-    pipeline exposes no ``pipeline_config`` at all."""
+    ``--enable-structured-output`` or a grammar-capable tool parser with a
+    ``--tool-call-policy`` other than ``force_unconstrained`` -- and stays off
+    if the pipeline exposes no ``pipeline_config`` at all."""
     batch_constructor = TextBatchConstructor(
         scheduler_config=TokenGenerationSchedulerConfig(
             max_batch_size=5,
@@ -2721,11 +2722,13 @@ class _IncompleteOnload:
 
     Models the ``rust_tiered`` connector's async handle: ``is_complete`` stays
     ``False`` until the test flips it (via ``synchronize``), so the batch
-    constructor cordons the request instead of scheduling it.
+    constructor cordons the request instead of scheduling it. Setting
+    ``fails`` makes every poll raise, as a copy that failed does.
     """
 
     def __init__(self) -> None:
         self.complete = False
+        self.fails = False
 
     @property
     @property
@@ -2733,6 +2736,8 @@ class _IncompleteOnload:
         return {}
 
     def is_complete(self) -> bool:
+        if self.fails:
+            raise KVLoadFailed("memory transfer failed")
         return self.complete
 
     def synchronize(self) -> None:
@@ -2822,6 +2827,66 @@ def test_text_batch_constructor__readmits_request_when_onload_completes(
     inputs = batch_constructor.construct_batch()
     assert has_request(inputs.batches[0], ctx.request_id)
     assert ctx.request_id not in batch_constructor._onloading_reqs
+
+
+def test_text_batch_constructor__readmits_request_whose_onload_failed(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A failed onload brings its request back rather than the worker down.
+
+    The request is re-admitted like one whose onload landed. Its next
+    ``alloc`` is where the cache manager rolls the onloaded prefix back, so
+    the second ``alloc`` here returning a complete transfer stands in for the
+    recompute.
+    """
+    onload = _IncompleteOnload()
+    alloc = Mock(side_effect=[onload, CompletedTransfer()])
+    kv_cache = _make_cordon_kv_cache(alloc)
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+    batch_constructor.construct_batch()
+    assert ctx.request_id in batch_constructor._onloading_reqs
+
+    onload.fails = True
+    inputs = batch_constructor.construct_batch()
+
+    assert has_request(inputs.batches[0], ctx.request_id)
+    assert ctx.request_id not in batch_constructor._onloading_reqs
+    assert alloc.call_count == 2
+
+
+def test_text_batch_constructor__cordons_onload_that_fails_at_admission(
+    pipeline: Pipeline[TextGenerationInputs[TextContext], TextGenerationOutput],
+) -> None:
+    """A copy that has already failed when admission polls it is cordoned.
+
+    Scheduling it would run a forward over pages the copy never filled. The
+    cordon holds it until the sweep sees the failure and re-admits it.
+    """
+    onload = _IncompleteOnload()
+    onload.fails = True
+    alloc = Mock(side_effect=[onload, CompletedTransfer()])
+    kv_cache = _make_cordon_kv_cache(alloc)
+    batch_constructor = TextBatchConstructor(
+        scheduler_config=_cordon_config(),
+        pipeline=pipeline,
+        kv_cache=kv_cache,
+    )
+    ctx = _ce_ctx()
+    batch_constructor.enqueue_new_request(ctx)
+
+    inputs = batch_constructor.construct_batch()
+    assert len(inputs.batches[0]) == 0
+    assert ctx.request_id in batch_constructor._onloading_reqs
+
+    inputs = batch_constructor.construct_batch()
+    assert has_request(inputs.batches[0], ctx.request_id)
+    assert alloc.call_count == 2
 
 
 def test_text_batch_constructor__oom_deferred_while_onload_in_flight(

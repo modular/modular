@@ -83,12 +83,12 @@ def answer_position_warning(rows: list[dict[str, Any]]) -> str | None:
 
     openbench's gpqa_diamond calls ``random.seed(0)`` inside its per-record
     mapper before shuffling the options, so every question gets the same
-    permutation and the correct answer is always the same letter. Measured on
-    the full 198-question set: all 198 targets came back 'B'. The score then
-    reflects the model's position bias as much as its knowledge, and a model
-    that always answers that letter scores near 100%. Detected here rather than
-    corrected, because correcting it would diverge from the methodology this
-    runner exists to reproduce.
+    permutation and the correct answer is always the same letter: all 198
+    targets come back 'B'. The score then reflects the model's position bias
+    as much as its knowledge, and a model that always answers that letter
+    scores near 100%. The GPQA runner now uses OpenRouter's per-question
+    shuffle (see ``exacto_gpqa_openrouter``), so this guards logs from
+    openbench's task or from any other task with the same flaw.
 
     Returns:
         A warning string, or ``None`` when the answer positions look spread.
@@ -193,6 +193,9 @@ def parse_openbench_log(
     eval_meta = log.get("eval") or {}
     config = eval_meta.get("config") or {}
     dataset = eval_meta.get("dataset") or {}
+    plan_config = (log.get("plan") or {}).get("config") or {}
+    # The task names the harness it reproduces; openbench's own tasks do not.
+    task_metadata = eval_meta.get("metadata") or {}
 
     summary: dict[str, Any] = {
         "accuracy": _metric(score, "accuracy"),
@@ -214,7 +217,9 @@ def parse_openbench_log(
         "finish_length": finish_length,
         "stop_ratio": (finish_stop / graded) if graded else None,
         # Provenance: the knobs that make a score comparable to OpenRouter's.
-        "harness": "openbench",
+        "harness": task_metadata.get("harness", "openbench"),
+        "harness_commit": task_metadata.get("harness_commit"),
+        "dataset_revision": task_metadata.get("dataset_revision"),
         "harness_status": log.get("status"),
         "task": eval_meta.get("task"),
         "dataset_name": dataset.get("name"),
@@ -224,9 +229,8 @@ def parse_openbench_log(
         "epochs": config.get("epochs"),
         "epochs_reducer": config.get("epochs_reducer"),
         "limit": config.get("limit"),
-        "temperature": ((log.get("plan") or {}).get("config") or {}).get(
-            "temperature"
-        ),
+        "temperature": plan_config.get("temperature"),
+        "reasoning_effort": plan_config.get("reasoning_effort"),
         "inspect_version": (eval_meta.get("packages") or {}).get("inspect_ai"),
     }
     return rows, summary
