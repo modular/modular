@@ -319,6 +319,7 @@ def _config(
     method: str = "eagle",
     mixed_width: int | None = None,
     widths: str | None = None,
+    min_batch_size: int = 1,
     configured: int | None = 3,
 ) -> SpeculativeConfig:
     return SpeculativeConfig(
@@ -326,6 +327,7 @@ def _config(
         num_speculative_tokens=configured,
         num_speculative_tokens_mixed_batch=mixed_width,
         adaptive_speculative_widths=widths,
+        adaptive_speculative_min_batch_size=min_batch_size,
         num_speculative_tokens_per_batch_size=(
             None
             if schedule is None
@@ -541,8 +543,31 @@ def test_adaptive_widths_do_not_depend_on_the_batch_ceiling() -> None:
 
 
 def test_adaptive_table_offers_every_candidate_at_every_batch_size() -> None:
+    """The default floor of 1 captures what it did before the floor existed."""
     config = _config(None, widths="1,3,7", configured=7)
     assert _verify_widths_by_batch_size(config, 7, 3)[1:] == [[1, 3, 7]] * 3
+
+
+def test_adaptive_table_keeps_only_the_widest_below_the_floor() -> None:
+    config = _config(None, widths="1,3,7", min_batch_size=3, configured=7)
+    assert _verify_widths_by_batch_size(config, 7, 4) == [
+        [7],
+        [7],
+        [7],
+        [1, 3, 7],
+        [1, 3, 7],
+    ]
+
+
+def test_the_floor_does_not_shrink_the_bitmask_widths() -> None:
+    """A narrow width stays reachable at batch sizes above the floor."""
+    config = _config(None, widths="1,3,7", min_batch_size=64, configured=7)
+    assert _reachable_verify_widths(config, 7, 32) == [1, 3, 7]
+
+
+def test_a_floor_without_adaptive_widths_is_refused() -> None:
+    with pytest.raises(ValueError, match="requires adaptive_speculative"):
+        _config(None, min_batch_size=4)
 
 
 def test_adaptive_widths_and_a_schedule_are_exclusive() -> None:
@@ -577,12 +602,14 @@ def _adaptive_pipeline(
     *,
     configured: int = 7,
     mixed_width: int | None = None,
+    min_batch_size: int = 1,
 ) -> OverlapTextGenerationPipeline[Any]:
     """A pipeline wired from the flag the way ``__init__`` wires one."""
     config = _config(
         None,
         widths=widths,
         mixed_width=mixed_width,
+        min_batch_size=min_batch_size,
         configured=configured,
     )
     pipeline = _pipeline(
@@ -591,7 +618,8 @@ def _adaptive_pipeline(
         mixed_width=_mixed_verify_width(config, configured),
         allow_mixed=True,
         adaptive=AdaptiveVerifyWidth(
-            _verify_width_candidates(config, configured, 32)
+            _verify_width_candidates(config, configured, 32),
+            min_batch_size=min_batch_size,
         ),
     )
     pipeline._widths_by_batch_size = _verify_widths_by_batch_size(
@@ -684,6 +712,33 @@ def test_low_acceptance_narrows_and_high_acceptance_widens() -> None:
     assert _width_of(pipeline, inputs) == 7
 
 
+def test_below_the_floor_a_narrow_width_rounds_up_to_a_captured_one() -> None:
+    pipeline = _adaptive_pipeline(min_batch_size=10)
+    for _ in range(30):
+        _step(pipeline, _decode_batches(12), 0.0)
+    # 9 and 10 share 12's bucket, but only 10 captured the narrow widths.
+    assert _width_of(pipeline, _decode_batches(10)) == 1
+    assert _width_of(pipeline, _decode_batches(9)) == 7
+
+
+@pytest.mark.parametrize(
+    ("steps_below_floor", "widens"), [(0, False), (40, True)]
+)
+def test_rounded_up_steps_below_the_floor_train_acceptance(
+    steps_below_floor: int, widens: bool
+) -> None:
+    """Steps widened by the floor measure the drafts a narrow bucket skips."""
+    pipeline = _adaptive_pipeline(min_batch_size=8)
+    for _ in range(30):
+        _step(pipeline, _decode_batches(16), 1 / 7)
+    assert _width_of(pipeline, _decode_batches(16)) == 1
+    for _ in range(steps_below_floor):
+        assert _step(pipeline, _decode_batches(4), 1.0) == 7
+    for _ in range(5):
+        _step(pipeline, _decode_batches(16), 1.0)
+    assert (_width_of(pipeline, _decode_batches(16)) > 1) is widens
+
+
 def test_a_step_in_flight_across_a_switch_times_its_own_width() -> None:
     """Were a width-7 step's time filed under width 1, width 1 would look
     slow and the width would switch back."""
@@ -729,7 +784,7 @@ def test_every_width_is_captured_at_its_batch_size() -> None:
     """Graph capture probes only these widths; any other fails replay."""
     rng = random.Random(0)
     for _ in range(300):
-        pipeline = _adaptive_pipeline()
+        pipeline = _adaptive_pipeline(min_batch_size=rng.randrange(1, 33))
         for _ in range(rng.randrange(1, 60)):
             batch_size = rng.randrange(1, 33)
             width = _step(
@@ -799,3 +854,20 @@ def test_the_generated_flag_reaches_the_speculative_config(
 def test_the_flag_is_unset_by_default() -> None:
     spec = _speculative_from_cli(["--speculative-method", "eagle"])
     assert spec.adaptive_speculative_widths is None
+    assert spec.adaptive_speculative_min_batch_size == 1
+
+
+def test_the_generated_floor_flag_reaches_the_speculative_config() -> None:
+    spec = _speculative_from_cli(
+        [
+            "--speculative-method",
+            "eagle",
+            "--num-speculative-tokens",
+            "5",
+            "--adaptive-speculative-widths",
+            "all",
+            "--adaptive-speculative-min-batch-size",
+            "16",
+        ]
+    )
+    assert spec.adaptive_speculative_min_batch_size == 16

@@ -240,7 +240,13 @@ def _verify_widths_by_batch_size(
         widths = parse_adaptive_widths(
             spec_config.adaptive_speculative_widths, num_speculative_tokens
         )
-        return [widths] * num_rows
+        # Small batches are memory-bound, so a narrower width barely saves
+        # time there but would still cost a captured graph per width.
+        floor = spec_config.adaptive_speculative_min_batch_size
+        return [
+            widths if batch_size >= floor else widths[-1:]
+            for batch_size in range(num_rows)
+        ]
     schedule = spec_config.verify_width_schedule
     if schedule is None:
         return [[num_speculative_tokens]] * num_rows
@@ -264,8 +270,8 @@ def _verify_width_candidates(
     """
     if spec_config is None or num_speculative_tokens <= 0:
         return [num_speculative_tokens]
-    # Independent of the batch ceiling: the bitmask is sized at a higher
-    # ceiling than graph capture.
+    # Independent of the batch ceiling and the capture floor: the bitmask is
+    # sized at a higher ceiling than graph capture.
     if spec_config.adaptive_speculative_widths is not None:
         return parse_adaptive_widths(
             spec_config.adaptive_speculative_widths, num_speculative_tokens
@@ -2033,7 +2039,24 @@ class OverlapTextGenerationPipeline(
                     "per second.",
                     self._verify_widths,
                 )
-                self._adaptive_width = AdaptiveVerifyWidth(self._verify_widths)
+                floor = spec_config.adaptive_speculative_min_batch_size
+                self._adaptive_width = AdaptiveVerifyWidth(
+                    self._verify_widths, min_batch_size=floor
+                )
+                if floor > self._max_batch_size:
+                    logger.warning(
+                        "adaptive_speculative_min_batch_size=%d exceeds "
+                        "max_batch_size=%d, so every step verifies %d drafts.",
+                        floor,
+                        self._max_batch_size,
+                        self._verify_widths[-1],
+                    )
+                elif floor > 1:
+                    logger.info(
+                        "Verifying %d drafts below decode batch size %d.",
+                        self._verify_widths[-1],
+                        floor,
+                    )
             if (
                 spec_config is not None
                 and spec_config.verify_width_schedule is not None
@@ -2850,11 +2873,16 @@ class OverlapTextGenerationPipeline(
         ):
             return self._mixed_verify_width
         batch_size = max((len(b) for b in inputs.batches), default=0)
-        if self._adaptive_width is not None:
-            return self._adaptive_width.next_step_width(batch_size)
-        return self._widths_by_batch_size[
+        allowed = self._widths_by_batch_size[
             min(max(batch_size, 1), len(self._widths_by_batch_size) - 1)
-        ][0]
+        ]
+        if self._adaptive_width is not None:
+            # Every row holds the widest candidate, so a width below the
+            # capture floor rounds up to it. Verifying extra drafts is safe:
+            # the step drafted them all.
+            wanted = self._adaptive_width.next_step_width(batch_size)
+            return next(width for width in allowed if width >= wanted)
+        return allowed[0]
 
     def _record_spec_decode_metrics(
         self,

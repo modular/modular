@@ -119,6 +119,7 @@ class SpeculativeConfig(ConfigFileModel):
     ``--num-speculative-tokens``,
     ``--num-speculative-tokens-per-batch-size``,
     ``--adaptive-speculative-widths``,
+    ``--adaptive-speculative-min-batch-size``,
     ``--num-speculative-tokens-mixed-batch``,
     ``--rejection-sampling-strategy``, and ``--synthetic-acceptance-rate``.
     Construct the config directly when configuring a pipeline
@@ -253,9 +254,30 @@ class SpeculativeConfig(ConfigFileModel):
     how many widths are named.
     """
 
+    adaptive_speculative_min_batch_size: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Smallest decode batch size that captures every adaptive verify "
+            "width. Smaller batches capture only the widest and round a "
+            "narrower request up to it. Requires adaptive_speculative_widths."
+        ),
+    )
+    """Decode batch size below which only the widest adaptive width is captured.
+
+    Small batches are memory-bound, so narrowing barely changes their step cost
+    while each extra width multiplies the captured graphs. Verifying more
+    drafts than asked is always correct, since every step drafts them all.
+    """
+
     @model_validator(mode="after")
     def _validate_adaptive_speculative_widths(self) -> Self:
         if self.adaptive_speculative_widths is None:
+            if self.adaptive_speculative_min_batch_size > 1:
+                raise ValueError(
+                    "adaptive_speculative_min_batch_size requires "
+                    "adaptive_speculative_widths."
+                )
             return self
         if self.num_speculative_tokens_per_batch_size is not None:
             raise ValueError(

@@ -405,6 +405,10 @@ This version is still a work in progress.
   instead of a fixed width. Takes a list such as `1,3,5`, or `all`. Each
   width adds graph capture time at startup.
 
+- Added `--adaptive-speculative-min-batch-size` to capture narrower adaptive
+  verify widths only from that decode batch size up. Smaller batches verify
+  the widest width, which cuts startup time and graph memory.
+
 - With `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set, MAX Serve starts an HTTP
   server span for each request except health, version, ping and metrics
   probes, such as `/v1/health`. It continues any inbound `traceparent` and

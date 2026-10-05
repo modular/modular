@@ -151,6 +151,16 @@ def test_batch_buckets_choose_independently() -> None:
     assert policy.next_step_width(3) == 7
 
 
+def test_a_bucket_below_the_floor_keeps_the_widest_width() -> None:
+    """Below the floor only the widest is captured, so choosing another
+    width there would never be run or timed."""
+    policy = AdaptiveVerifyWidth(CANDIDATES, min_batch_size=8)
+    steep = _geometric(0.1)
+    assert set(_run(policy, 100, steep, lambda w: 1 + w, batch_size=4)) == {7}
+    _run(policy, 100, steep, lambda w: 1 + w, batch_size=8)
+    assert policy.next_step_width(8) < 7
+
+
 def test_unmeasured_positions_extrapolate_the_measured_decay() -> None:
     policy = AdaptiveVerifyWidth([3, 7], ema_alpha=1.0)
     # Nothing measured yet: no decay.
