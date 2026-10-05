@@ -727,9 +727,10 @@ struct MLA_SM100_Decode_QKV_FP8[
         )
         if is_leader:
             # Q TMA: load FP8 Q directly into q_smem
-            comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
-                q_tma
-            ).tile_shape[1]
+            comptime q_elems = (
+                type_of(q_tma).tile_shape.element_types[0].static_value
+                * type_of(q_tma).tile_shape.element_types[1].static_value
+            )
             comptime q_tt_layout = tt_row_major[q_elems]()
             var q_smem_tensor = TileTensor[
                 Self.kv_type,

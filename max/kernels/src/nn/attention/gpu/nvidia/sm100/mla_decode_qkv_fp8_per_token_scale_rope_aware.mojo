@@ -798,15 +798,21 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             MutAnyOrigin,
             address_space=.SHARED,
         ]
-        comptime q_nope_elems = type_of(q_nope_tma).tile_shape[0] * type_of(
-            q_nope_tma
-        ).tile_shape[1]
-        comptime q_rope_elems = type_of(q_rope_tma).tile_shape[0] * type_of(
-            q_rope_tma
-        ).tile_shape[1]
-        comptime scale_elems = type_of(scale_tma).tile_shape[0] * type_of(
-            scale_tma
-        ).tile_shape[1]
+        comptime q_nope_elems = type_of(q_nope_tma).tile_shape.element_types[
+            0
+        ].static_value * type_of(q_nope_tma).tile_shape.element_types[
+            1
+        ].static_value
+        comptime q_rope_elems = type_of(q_rope_tma).tile_shape.element_types[
+            0
+        ].static_value * type_of(q_rope_tma).tile_shape.element_types[
+            1
+        ].static_value
+        comptime scale_elems = type_of(scale_tma).tile_shape.element_types[
+            0
+        ].static_value * type_of(scale_tma).tile_shape.element_types[
+            1
+        ].static_value
 
         # Load Q: Q_nope (FP8) and Q_rope (BF16) on the same barrier
         if is_leader:

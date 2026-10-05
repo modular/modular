@@ -87,7 +87,7 @@ from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.sys import default_accelerator, size_of
 from std.utils.index import Index, IndexList
 
-from layout import UNKNOWN_VALUE, row_major
+from layout import UNKNOWN_VALUE, coord, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import (
     SharedMemBarrier,
@@ -130,9 +130,7 @@ def _rowmajor_fold_spike_kernel[
     # REFERENCE: rank-2 box (CM, gran) -- one TMA per swizzle atom.
     ref_tma: TMATensorTile[
         dtype,
-        2,
-        IndexList[2](_CM_NUM_ROWS, gran),
-        IndexList[2](_CM_NUM_ROWS, gran),
+        coord[_CM_NUM_ROWS, gran],
         is_k_major=True,
     ],
     # TEST: rank-5 chunk-inner box -- one TMA per page covering all atom-rows x
@@ -144,7 +142,7 @@ def _rowmajor_fold_spike_kernel[
     # wrapper's declared rank-3 shape is irrelevant.
     test_tma: SplitLastDimTMATensorTile[
         dtype,
-        IndexList[3](page_size, 1, head_size),
+        coord[page_size, 1, head_size],
         TensorMapSwizzle.SWIZZLE_128B,
     ],
     mismatch_count: MutPointer[UInt32, MutAnyOrigin],
@@ -388,23 +386,21 @@ def run_spike[
         Index(num_heads * head_size, 1),
         ref_box,
     )
-    var ref_tma = TMATensorTile[dtype, 2, ref_box, ref_box, is_k_major=True](
+    var ref_tma = TMATensorTile[dtype, coord[CM, gran], is_k_major=True](
         ref_desc
     )
 
     # ---- TEST descriptor: rank-5 chunk-inner page box -------------------------
     # Both paths produce the SAME rank-5 box; carry it in the rank-3
     # `SplitLastDimTMATensorTile` wrapper (the builder's public return type).
-    comptime test_smem_dim = IndexList[3](page_size, 1, head_size)
+    comptime test_smem_dim = coord[page_size, 1, head_size]
     var test_tma: SplitLastDimTMATensorTile[dtype, test_smem_dim, swizzle]
 
     comptime if via_builder:
         # Step B: the production builder. gmem view [rows, num_heads, head_size]
         # (rows = BN here); fold_chunks = num_chunks (BK = head_size, single stage);
         # row_major=True selects the rank-5 chunk-inner box.
-        comptime test_gmem_dim = IndexList[3](
-            UNKNOWN_VALUE, num_heads, head_size
-        )
+        comptime test_gmem_dim = coord[UNKNOWN_VALUE, num_heads, head_size]
         test_tma = create_split_tma[
             test_smem_dim,
             test_gmem_dim,

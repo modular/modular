@@ -109,12 +109,12 @@ from layout import (
     RowMajorLayout,
     TensorEngine,
     TileTensor,
+    coord,
 )
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -289,9 +289,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         # MLA_SM100_Decode_Sparse_KV_FP8's efficient contiguous gather).
         k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         o_tma: ORaggedTMATile[
             dtype=Self.output_type,
@@ -316,9 +315,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         attn_sink_ptr: Self.AttnSinkPtrType,
         extra_k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -886,9 +884,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         ],
         k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -921,9 +918,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         topk: Int,
         extra_k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_topk: Int,
     ):
@@ -963,9 +959,11 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             elect_mask,
         )
         if is_leader:
-            comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
-                q_tma
-            ).tile_shape[1]
+            comptime q_elems = type_of(q_tma).tile_shape.element_types[
+                0
+            ].static_value * type_of(q_tma).tile_shape.element_types[
+                1
+            ].static_value
             comptime q_tt_layout = tt_row_major[q_elems]()
             var q_smem_tensor = TileTensor[
                 Self.fp8_type,
@@ -1042,9 +1040,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         is_leader: Bool,
         cur_k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         mut idx_cons: ConsumerPipeline[Self.num_stages],
         idx_smem_base: SharedMemPointer[Int32],
@@ -1085,9 +1082,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         is_leader: Bool,
         cur_k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         mut idx_cons: ConsumerPipeline[Self.num_stages],
         idx_smem_base: SharedMemPointer[Int32],

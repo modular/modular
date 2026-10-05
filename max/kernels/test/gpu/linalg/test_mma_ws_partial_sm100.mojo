@@ -145,7 +145,7 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_load_wait,
     tcgen05_release_allocation_lock,
 )
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core_async import (
     tile_layout_k_major,
@@ -169,7 +169,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
 )
 from std.testing import assert_almost_equal, assert_true
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 # ---------------------------------------------------------------------------
 # Shared compile-time constants
@@ -229,17 +229,15 @@ comptime QK_STAGE0 = 9  # multi-stage split point (variant 4).
 def ss_qk_partial_kernel[
     NUM_K_MMAS: Int,
     USE_PARTIAL: Bool,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     USE_STRUCT: Bool = False,
     NUM_STAGES: Int = 1,
 ](
-    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_shape, b_desc_shape],
     c_output: TileTensor[ACC_TYPE, type_of(QK_C_LAYOUT), MutAnyOrigin],
     valid_k_mmas: UInt32,
 ):
@@ -435,15 +433,13 @@ def ss_qk_partial_kernel[
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def ss_qk_multistage_kernel[
     S: Int,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
 ](
-    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_shape, b_desc_shape],
     c_output: TileTensor[ACC_TYPE, type_of(QK_C_LAYOUT), MutAnyOrigin],
     valid_k_mmas: UInt32,
 ):
@@ -811,10 +807,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_ref_dev, b_ref_host)
 
     var a_tma_op = create_tensor_tile[
-        Index(QK_M, QK_K), swizzle_mode=QK_SWIZZLE
+        coord[QK_M, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, a_inp.device_tensor())
     var b_tma_op = create_tensor_tile[
-        Index(QK_N, QK_K), swizzle_mode=QK_SWIZZLE
+        coord[QK_N, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, b_inp.device_tensor())
 
     # Reference for K=576 (variants 1, 2, 4).
@@ -828,10 +824,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     comptime kern_full = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         False,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
     ]
@@ -861,10 +855,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     comptime kern_partial = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
     ]
@@ -893,10 +885,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     var c_ms_buf = HostDeviceTileTensor[ACC_TYPE](QK_C_LAYOUT, ctx)
     comptime kern_ms = ss_qk_multistage_kernel[
         QK_STAGE0,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
     ]
@@ -928,10 +918,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     comptime kern_struct = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         False,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         USE_STRUCT=True,
@@ -967,10 +955,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     comptime kern_struct_ms = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         False,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         USE_STRUCT=True,
@@ -1005,10 +991,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     comptime kern_struct_pd = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         USE_STRUCT=True,
@@ -1101,10 +1085,10 @@ def test_ss_partial(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_nan_ref_dev, b_nan_ref_host)
 
     var a_nan_tma = create_tensor_tile[
-        Index(QK_M, QK_K), swizzle_mode=QK_SWIZZLE
+        coord[QK_M, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, a_nan.device_tensor())
     var b_nan_tma = create_tensor_tile[
-        Index(QK_N, QK_K), swizzle_mode=QK_SWIZZLE
+        coord[QK_N, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, b_nan.device_tensor())
 
     var c_ref_v_dev = _ss_naive_ref[QK_VALID_K](
@@ -1118,10 +1102,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     comptime kern_nan = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_nan_tma).rank,
         type_of(a_nan_tma).tile_shape,
         type_of(a_nan_tma).desc_shape,
-        type_of(b_nan_tma).rank,
         type_of(b_nan_tma).tile_shape,
         type_of(b_nan_tma).desc_shape,
     ]
@@ -1153,10 +1135,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     comptime kern_st_nan = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_nan_tma).rank,
         type_of(a_nan_tma).tile_shape,
         type_of(a_nan_tma).desc_shape,
-        type_of(b_nan_tma).rank,
         type_of(b_nan_tma).tile_shape,
         type_of(b_nan_tma).desc_shape,
         USE_STRUCT=True,
@@ -1190,10 +1170,8 @@ def test_ss_partial(ctx: DeviceContext) raises:
     comptime kern_st_nan_ms = ss_qk_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_nan_tma).rank,
         type_of(a_nan_tma).tile_shape,
         type_of(a_nan_tma).desc_shape,
-        type_of(b_nan_tma).rank,
         type_of(b_nan_tma).tile_shape,
         type_of(b_nan_tma).desc_shape,
         USE_STRUCT=True,
@@ -1270,17 +1248,15 @@ comptime NW_B_LAYOUT = tile_layout_k_major[FP8_TYPE, QK_N, QK_K, QK_SWIZZLE]()
 def ss_nonws_partial_kernel[
     NUM_K_MMAS: Int,
     USE_PARTIAL: Bool,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     USE_STRUCT: Bool = False,
     NUM_STAGES: Int = 1,
 ](
-    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[FP8_TYPE, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[FP8_TYPE, b_tile_shape, b_desc_shape],
     c_output: TileTensor[ACC_TYPE, type_of(NW_C_LAYOUT), MutAnyOrigin],
     valid_k_mmas: UInt32,
 ):
@@ -1481,10 +1457,10 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_ref_dev, b_ref_host)
 
     var a_tma_op = create_tensor_tile[
-        Index(NW_M, QK_K), swizzle_mode=QK_SWIZZLE
+        coord[NW_M, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, a_inp.device_tensor())
     var b_tma_op = create_tensor_tile[
-        Index(QK_N, QK_K), swizzle_mode=QK_SWIZZLE
+        coord[QK_N, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, b_inp.device_tensor())
 
     var c_ref_full_dev = _ss_naive_ref[QK_K, M=NW_M](ctx, a_ref_dev, b_ref_dev)
@@ -1497,10 +1473,8 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     comptime kern_full = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         False,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
     ]
@@ -1530,10 +1504,8 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     comptime kern_partial = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
     ]
@@ -1563,10 +1535,8 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     comptime kern_st_deg = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         USE_STRUCT=True,
@@ -1648,10 +1618,10 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     ctx.enqueue_copy(b_nan_ref_dev, b_nan_ref_host)
 
     var a_nan_tma = create_tensor_tile[
-        Index(NW_M, QK_K), swizzle_mode=QK_SWIZZLE
+        coord[NW_M, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, a_nan.device_tensor())
     var b_nan_tma = create_tensor_tile[
-        Index(QK_N, QK_K), swizzle_mode=QK_SWIZZLE
+        coord[QK_N, QK_K], swizzle_mode=QK_SWIZZLE
     ](ctx, b_nan.device_tensor())
 
     var c_ref_v_dev = _ss_naive_ref[QK_VALID_K, M=NW_M](
@@ -1666,10 +1636,8 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     comptime kern_nan = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_nan_tma).rank,
         type_of(a_nan_tma).tile_shape,
         type_of(a_nan_tma).desc_shape,
-        type_of(b_nan_tma).rank,
         type_of(b_nan_tma).tile_shape,
         type_of(b_nan_tma).desc_shape,
     ]
@@ -1699,10 +1667,8 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     comptime kern_st_nan = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_nan_tma).rank,
         type_of(a_nan_tma).tile_shape,
         type_of(a_nan_tma).desc_shape,
-        type_of(b_nan_tma).rank,
         type_of(b_nan_tma).tile_shape,
         type_of(b_nan_tma).desc_shape,
         USE_STRUCT=True,
@@ -1736,10 +1702,8 @@ def test_ss_nonws_partial(ctx: DeviceContext) raises:
     comptime kern_st_nan_ms = ss_nonws_partial_kernel[
         QK_NUM_K_MMAS,
         True,
-        type_of(a_nan_tma).rank,
         type_of(a_nan_tma).tile_shape,
         type_of(a_nan_tma).desc_shape,
-        type_of(b_nan_tma).rank,
         type_of(b_nan_tma).tile_shape,
         type_of(b_nan_tma).desc_shape,
         USE_STRUCT=True,
@@ -1869,21 +1833,15 @@ comptime TS_VALID = 10  # loaded folded MMA_K blocks (variant 3).
 def ts_partial_kernel[
     NUM_K_MMAS_MMA: Int,
     USE_PARTIAL: Bool,
-    q_tile_rank: Int,
-    q_tile_shape: IndexList[q_tile_rank],
-    q_desc_shape: IndexList[q_tile_rank],
-    k_tile_rank: Int,
-    k_tile_shape: IndexList[k_tile_rank],
-    k_desc_shape: IndexList[k_tile_rank],
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
+    k_tile_shape: Coord,
+    k_desc_shape: Coord,
     USE_STRUCT: Bool = False,
     NUM_STAGES: Int = 1,
 ](
-    q_tma_op: TMATensorTile[
-        TS_OP_TYPE, q_tile_rank, q_tile_shape, q_desc_shape
-    ],
-    k_tma_op: TMATensorTile[
-        TS_OP_TYPE, k_tile_rank, k_tile_shape, k_desc_shape
-    ],
+    q_tma_op: TMATensorTile[TS_OP_TYPE, q_tile_shape, q_desc_shape],
+    k_tma_op: TMATensorTile[TS_OP_TYPE, k_tile_shape, k_desc_shape],
     p_output: TileTensor[TS_ACCUM_TYPE, type_of(TS_P_LAYOUT), MutAnyOrigin],
     valid_k_mmas: UInt32,
 ):
@@ -2091,21 +2049,19 @@ def _ts_launch[
 ) raises:
     """Runs one TS kernel instantiation into `p_out_buf`."""
     var q_tma_op = create_tensor_tile[
-        Index(TS_ROWS, TS_COLS),
+        coord[TS_ROWS, TS_COLS],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
     ](ctx, q_inp.device_tensor())
     var k_tma_op = create_tensor_tile[
-        Index(TS_K_ROWS, TS_K_COLS),
+        coord[TS_K_ROWS, TS_K_COLS],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
     ](ctx, k_inp.device_tensor())
 
     comptime kernel = ts_partial_kernel[
         NUM_K_MMAS_MMA,
         USE_PARTIAL,
-        type_of(q_tma_op).rank,
         type_of(q_tma_op).tile_shape,
         type_of(q_tma_op).desc_shape,
-        type_of(k_tma_op).rank,
         type_of(k_tma_op).tile_shape,
         type_of(k_tma_op).desc_shape,
         USE_STRUCT=USE_STRUCT,

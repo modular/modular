@@ -253,31 +253,23 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @inline(.always)
     def init_ab_tensormaps[
         a_dtype: DType,
-        a_rank: Int,
-        a_tile_shape: IndexList[a_rank],
-        a_desc_shape: IndexList[a_rank],
+        a_tile_shape: Coord,
+        a_desc_shape: Coord,
         b_dtype: DType,
-        b_rank: Int,
-        b_tile_shape: IndexList[b_rank],
-        b_desc_shape: IndexList[b_rank],
+        b_tile_shape: Coord,
+        b_desc_shape: Coord,
         sfa_dtype: DType,
-        sfa_rank: Int,
-        sfa_tile_shape: IndexList[sfa_rank],
-        sfa_desc_shape: IndexList[sfa_rank],
+        sfa_tile_shape: Coord,
+        sfa_desc_shape: Coord,
         sfb_dtype: DType,
-        sfb_rank: Int,
-        sfb_tile_shape: IndexList[sfb_rank],
-        sfb_desc_shape: IndexList[sfb_rank],
+        sfb_tile_shape: Coord,
+        sfb_desc_shape: Coord,
     ](
         self,
-        template_a: TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
-        template_b: TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
-        template_sfa: TMATensorTile[
-            sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape
-        ],
-        template_sfb: TMATensorTile[
-            sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape
-        ],
+        template_a: TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
+        template_b: TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
+        template_sfa: TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
+        template_sfb: TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
     ):
         """Initialize A/B/SFA/SFB tensormaps in SMEM from grid-constant templates.
 
@@ -286,23 +278,19 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Parameters:
             a_dtype: Element type of the A matrix tensor.
-            a_rank: Tensor rank of the A matrix TMA descriptor.
             a_tile_shape: Per-tile shape of the A TMA load in each rank.
             a_desc_shape: Full tensor shape of the A matrix described by
                 the TMA descriptor.
             b_dtype: Element type of the B matrix tensor.
-            b_rank: Tensor rank of the B matrix TMA descriptor.
             b_tile_shape: Per-tile shape of the B TMA load in each rank.
             b_desc_shape: Full tensor shape of the B matrix described by
                 the TMA descriptor.
             sfa_dtype: Element type of the A scale-factor tensor.
-            sfa_rank: Tensor rank of the SFA TMA descriptor.
             sfa_tile_shape: Per-tile shape of the SFA TMA load in each
                 rank.
             sfa_desc_shape: Full tensor shape of the SFA scale-factor
                 tensor described by the TMA descriptor.
             sfb_dtype: Element type of the B scale-factor tensor.
-            sfb_rank: Tensor rank of the SFB TMA descriptor.
             sfb_tile_shape: Per-tile shape of the SFB TMA load in each
                 rank.
             sfb_desc_shape: Full tensor shape of the SFB scale-factor
@@ -327,20 +315,15 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @inline(.always)
     def init_c_tensormap[
         c_dtype: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
-    ](
-        self,
-        template_c: TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
-    ):
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
+    ](self, template_c: TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],):
         """Initialize C tensormap in SMEM from grid-constant template.
 
         Called by epilogue warp (lane 0). Copies template descriptor to SMEM.
 
         Parameters:
             c_dtype: Element type of the C output matrix tensor.
-            c_rank: Tensor rank of the C matrix TMA descriptor.
             c_tile_shape: Per-tile shape of the C TMA store in each rank.
             c_desc_shape: Full tensor shape of the C matrix described by
                 the TMA descriptor.
@@ -355,21 +338,17 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @inline(.always)
     def update_ab_for_group[
         a_dtype: DType,
-        a_rank: Int,
-        a_tile_shape: IndexList[a_rank],
-        a_desc_shape: IndexList[a_rank],
+        a_tile_shape: Coord,
+        a_desc_shape: Coord,
         b_dtype: DType,
-        b_rank: Int,
-        b_tile_shape: IndexList[b_rank],
-        b_desc_shape: IndexList[b_rank],
+        b_tile_shape: Coord,
+        b_desc_shape: Coord,
         sfa_dtype: DType,
-        sfa_rank: Int,
-        sfa_tile_shape: IndexList[sfa_rank],
-        sfa_desc_shape: IndexList[sfa_rank],
+        sfa_tile_shape: Coord,
+        sfa_desc_shape: Coord,
         sfb_dtype: DType,
-        sfb_rank: Int,
-        sfb_tile_shape: IndexList[sfb_rank],
-        sfb_desc_shape: IndexList[sfb_rank],
+        sfb_tile_shape: Coord,
+        sfb_desc_shape: Coord,
         max_groups: Int,
         group_ptr_engine: TensorEngine,
     ](
@@ -380,19 +359,19 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_sfa_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         group_sfb_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         tma_a: UnsafePointer[
-            TMATensorTile[a_dtype, a_rank, a_tile_shape, a_desc_shape],
+            TMATensorTile[a_dtype, a_tile_shape, a_desc_shape],
             MutAnyOrigin,
         ],
         tma_b: UnsafePointer[
-            TMATensorTile[b_dtype, b_rank, b_tile_shape, b_desc_shape],
+            TMATensorTile[b_dtype, b_tile_shape, b_desc_shape],
             MutAnyOrigin,
         ],
         tma_sfa: UnsafePointer[
-            TMATensorTile[sfa_dtype, sfa_rank, sfa_tile_shape, sfa_desc_shape],
+            TMATensorTile[sfa_dtype, sfa_tile_shape, sfa_desc_shape],
             MutAnyOrigin,
         ],
         tma_sfb: UnsafePointer[
-            TMATensorTile[sfb_dtype, sfb_rank, sfb_tile_shape, sfb_desc_shape],
+            TMATensorTile[sfb_dtype, sfb_tile_shape, sfb_desc_shape],
             MutAnyOrigin,
         ],
     ):
@@ -403,23 +382,19 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Parameters:
             a_dtype: Element type of the A matrix tensor.
-            a_rank: Tensor rank of the A matrix TMA descriptor.
             a_tile_shape: Per-tile shape of the A TMA load in each rank.
             a_desc_shape: Full tensor shape of the A matrix described by
                 the TMA descriptor.
             b_dtype: Element type of the B matrix tensor.
-            b_rank: Tensor rank of the B matrix TMA descriptor.
             b_tile_shape: Per-tile shape of the B TMA load in each rank.
             b_desc_shape: Full tensor shape of the B matrix described by
                 the TMA descriptor.
             sfa_dtype: Element type of the A scale-factor tensor.
-            sfa_rank: Tensor rank of the SFA TMA descriptor.
             sfa_tile_shape: Per-tile shape of the SFA TMA load in each
                 rank.
             sfa_desc_shape: Full tensor shape of the SFA scale-factor
                 tensor described by the TMA descriptor.
             sfb_dtype: Element type of the B scale-factor tensor.
-            sfb_rank: Tensor rank of the SFB TMA descriptor.
             sfb_tile_shape: Per-tile shape of the SFB TMA load in each
                 rank.
             sfb_desc_shape: Full tensor shape of the SFB scale-factor
@@ -498,9 +473,8 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
     @inline(.always)
     def update_c_for_group[
         c_dtype: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         max_groups: Int,
         group_ptr_engine: TensorEngine,
     ](
@@ -508,7 +482,7 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
         group_idx: UInt32,
         group_c_ptrs: _GroupPtrTile[max_groups, group_ptr_engine],
         tma_c: UnsafePointer[
-            TMATensorTile[c_dtype, c_rank, c_tile_shape, c_desc_shape],
+            TMATensorTile[c_dtype, c_tile_shape, c_desc_shape],
             MutAnyOrigin,
         ],
     ):
@@ -519,7 +493,6 @@ struct GroupedTensormapManager(TrivialRegisterPassable):
 
         Parameters:
             c_dtype: Element type of the C output matrix tensor.
-            c_rank: Tensor rank of the C matrix TMA descriptor.
             c_tile_shape: Per-tile shape of the C TMA store in each rank.
             c_desc_shape: Full tensor shape of the C matrix described by
                 the TMA descriptor.
@@ -857,35 +830,30 @@ struct GroupedBlockScaledMatmulKernel[
     comptime TMATensorTileArrayA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.a_type,
-        Self.ATmaOp.rank,
         Self.ATmaOp.tile_shape,
         Self.ATmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.b_type,
-        Self.BTmaOp.rank,
         Self.BTmaOp.tile_shape,
         Self.BTmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFA = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfa_dtype,
-        Self.SFATmaOp.rank,
         Self.SFATmaOp.tile_shape,
         Self.SFATmaOp.desc_shape,
     ]
     comptime TMATensorTileArraySFB = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.sfb_dtype,
-        Self.SFBTmaOp.rank,
         Self.SFBTmaOp.tile_shape,
         Self.SFBTmaOp.desc_shape,
     ]
     comptime TMATensorTileArrayC = TMATensorTileArray[
         Self.CLUSTER_SIZE,
         Self.c_type,
-        Self.CTmaOp.rank,
         Self.CTmaOp.tile_shape,
         Self.CTmaOp.desc_shape,
     ]
@@ -1209,12 +1177,11 @@ struct GroupedBlockScaledMatmulKernel[
     @inline(.always)
     def _update_tensormap_address[
         dtype: DType,
-        tma_rank: Int,
-        cta_tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        cta_tile_shape: Coord,
+        desc_shape: Coord,
     ](
         tma_desc_ptr: UnsafePointer[
-            TMATensorTile[dtype, tma_rank, cta_tile_shape, desc_shape],
+            TMATensorTile[dtype, cta_tile_shape, desc_shape],
             MutAnyOrigin,
         ],
         new_addr: Int,

@@ -57,7 +57,14 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
 )
 
-from layout import ComptimeInt, RowMajorLayout, TileTensor, row_major
+from layout import (
+    ComptimeInt,
+    Coord,
+    RowMajorLayout,
+    TileTensor,
+    coord,
+    row_major,
+)
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core_async import tile_layout_k_major_typed
@@ -113,20 +120,18 @@ def cpu_qk_naive[
 def qk_consumer_kernel[
     ab_type: DType,
     c_type: DType,
-    q_tile_rank: Int,
-    q_tile_shape: IndexList[q_tile_rank],
-    q_desc_shape: IndexList[q_tile_rank],
-    k_tile_rank: Int,
-    k_tile_shape: IndexList[k_tile_rank],
-    k_desc_shape: IndexList[k_tile_rank],
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
+    k_tile_shape: Coord,
+    k_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     swizzle_mode: TensorMapSwizzle,
     use_pagedense: Bool,
     num_threads: Int = 128,
 ](
-    q_tma_op: TMATensorTile[ab_type, q_tile_rank, q_tile_shape, q_desc_shape],
+    q_tma_op: TMATensorTile[ab_type, q_tile_shape, q_desc_shape],
     k_tma_op: TMATensorTile[
-        ab_type, k_tile_rank, k_tile_shape, k_desc_shape, is_k_major=True
+        ab_type, k_tile_shape, k_desc_shape, is_k_major=True
     ],
     c: TileTensor[
         c_type,
@@ -311,11 +316,14 @@ def run_qk_consumer[
     k.to_device()
 
     # A=Q k-major tile (M,K), default (chunk-outer) box.
-    var q_tma_op = create_tensor_tile[Index(M, K), swizzle_mode=swizzle_mode](
+    var q_tma_op = create_tensor_tile[coord[M, K], swizzle_mode=swizzle_mode](
         ctx, q.device_tensor()
     )
     comptime smem_use = (M + N) * size_of[ab_type]() * K + 64
-    comptime native_box = Index(_CM_NUM_ROWS, gran)
+    comptime native_box = coord[_CM_NUM_ROWS, gran]
+    # `create_tma_descriptor` still takes IndexList for shared_mem_shape (low-level
+    # TMA-builder API); only the high-level TMATensorTile uses Coord.
+    comptime native_box_idx = Index(_CM_NUM_ROWS, gran)
 
     comptime if use_pagedense:
         # Page-dense arm: box (_CM_NUM_ROWS, gran) so each 8-row atom is one
@@ -332,18 +340,16 @@ def run_qk_consumer[
             ),
             Index(N, K),  # gmem [seq_k, head_size], row-major
             Index(K, 1),  # head_size contiguous
-            native_box,  # (_CM_NUM_ROWS, gran) core-matrix box
+            native_box_idx,  # (_CM_NUM_ROWS, gran) core-matrix box
         )
         var k_tma_op = TMATensorTile[
-            ab_type, 2, Index(N, K), native_box, is_k_major=True
+            ab_type, coord[N, K], native_box, is_k_major=True
         ](k_desc)
         comptime kernel = qk_consumer_kernel[
             ab_type,
             c_type,
-            type_of(q_tma_op).rank,
             type_of(q_tma_op).tile_shape,
             type_of(q_tma_op).desc_shape,
-            type_of(k_tma_op).rank,
             type_of(k_tma_op).tile_shape,
             type_of(k_tma_op).desc_shape,
             block_tile_shape,
@@ -365,15 +371,13 @@ def run_qk_consumer[
     else:
         # Baseline arm: default box (BN, gran) -> chunk-outer.
         var k_tma_op = create_tensor_tile[
-            Index(N, K), swizzle_mode=swizzle_mode
+            coord[N, K], swizzle_mode=swizzle_mode
         ](ctx, k.device_tensor())
         comptime kernel = qk_consumer_kernel[
             ab_type,
             c_type,
-            type_of(q_tma_op).rank,
             type_of(q_tma_op).tile_shape,
             type_of(q_tma_op).desc_shape,
-            type_of(k_tma_op).rank,
             type_of(k_tma_op).tile_shape,
             type_of(k_tma_op).desc_shape,
             block_tile_shape,

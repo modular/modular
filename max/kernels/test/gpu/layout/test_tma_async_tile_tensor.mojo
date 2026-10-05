@@ -50,7 +50,6 @@ from layout.tma_async import (
 )
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
-from std.utils.index import IndexList
 
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
@@ -58,21 +57,18 @@ def tma_tile_tensor_load_kernel[
     dtype: DType,
     dst_rows: Int,
     dst_cols: Int,
-    tile_rank: Int,
-    tile_shape: IndexList[tile_rank],
+    tile_shape: Coord,
 ](
     dst: TileTensor[
         dtype,
         RowMajorLayout[ComptimeInt[dst_rows], ComptimeInt[dst_cols]],
         MutAnyOrigin,
     ],
-    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape],
+    tma_tile: TMATensorTile[dtype, tile_shape],
 ):
-    comptime tileM = tile_shape[0]
-    comptime tileN = tile_shape[1]
-    comptime expected_bytes = _idx_product[tile_rank, tile_shape]() * size_of[
-        dtype
-    ]()
+    comptime tileM = Int(tile_shape.element_types[0].static_value.value())
+    comptime tileN = Int(tile_shape.element_types[1].static_value.value())
+    comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     var tile = TileTensor(
         unsafe_stack_allocation[
@@ -146,7 +142,6 @@ def test_tma_load_tile_tensor[
         type_of(tma_tensor).dtype,
         M_roundup,
         N_roundup,
-        type_of(tma_tensor).rank,  # tile rank
         type_of(tma_tensor).tile_shape,  # tile shape
     ]
     ctx.enqueue_function[kernel](

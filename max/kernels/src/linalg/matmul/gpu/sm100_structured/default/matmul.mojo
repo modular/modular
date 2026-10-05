@@ -28,6 +28,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    coord,
     Coord,
     Idx,
     DefaultEngine,
@@ -290,7 +291,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     # Create 3D TMA descriptors using kernel's primary layout types
     comptime KernelType = type_of(matmul_kernel)
 
-    comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
+    comptime a_tma_tile_shape = coord[1, BM // cluster_shape[1], BK]
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
@@ -299,11 +300,10 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     ](ctx, a_device)
 
     # fmt: off
-    comptime b_tma_tile_shape = Index(
-        1, BN // (cluster_shape[0] // config.cta_group), BK
-    ) if transpose_b else Index(
-        1, BK, BN // (cluster_shape[0] // config.cta_group)
-    )
+    comptime dm_b_n = BN // (cluster_shape[0] // config.cta_group)
+    comptime dm_b_m = dm_b_n if transpose_b else BK
+    comptime dm_b_n2 = BK if transpose_b else dm_b_n
+    comptime b_tma_tile_shape = coord[1, dm_b_m, dm_b_n2]
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
@@ -313,18 +313,34 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
-    comptime c_tma_tile_shape_mma128 = Index(
-        1, 64, config.output_tile_shape[1]
-    ) if not config.AB_swapped else Index(1, config.output_tile_shape[0], 64)
-    comptime c_tma_tile_shape = Index(
-        1, config.output_tile_shape[0], config.output_tile_shape[1]
-    ) if (MMA_M == 256 or config.cta_group == 1) else c_tma_tile_shape_mma128
+    # Int-folded branch selection: selecting between two distinct Coord
+    # *types* does not fold at comptime; selecting Ints does.
+    comptime m128_1 = (
+        64 if not config.AB_swapped else config.output_tile_shape[0]
+    )
+    comptime m128_2 = (
+        config.output_tile_shape[1] if not config.AB_swapped else 64
+    )
+    comptime use_full_c = MMA_M == 256 or config.cta_group == 1
+    comptime c_m = (
+        config.output_tile_shape[0] if use_full_c else m128_1
+    )
+    comptime c_n = (
+        config.output_tile_shape[1] if use_full_c else m128_2
+    )
+    comptime c_tma_tile_shape = coord[1, c_m, c_n]
 
     comptime assert (not config.AB_swapped) or config.c_swizzle.bytes() in (128, 16), "Only support 128B or None swizzle mode when AB_swapped is True"
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
-    comptime c_tma_tile_shape_final = c_tma_tile_shape if not config.AB_swapped else Index(
-        1, c_tma_tile_shape[1], c_tma_tile_shape_1
+    comptime fin_1 = (
+        c_m
+        if not config.AB_swapped
+        else c_tma_tile_shape.element_types[1].static_value
     )
+    comptime fin_2 = (
+        c_n if not config.AB_swapped else c_tma_tile_shape_1
+    )
+    comptime c_tma_tile_shape_final = coord[1, fin_1, fin_2]
 
     var c_tma_op = create_tma_tile[
         KernelType.CTileLayout,
@@ -348,9 +364,9 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     comptime epi_load_tma_tile_cols = BM if config.AB_swapped else config.output_tile_shape[
         1
     ]
-    comptime epi_load_tma_tile_shape = Index(
+    comptime epi_load_tma_tile_shape = coord[
         epi_load_tma_tile_rows, epi_load_tma_tile_cols
-    )
+    ]
     comptime MutPtr = UnsafePointer[Scalar[c_type], MutAnyOrigin]
     var epi_load_tma_ptr: MutPtr
     var epi_load_tma_rows: Int
@@ -919,40 +935,47 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout_splitk,
         KernelType.ADescLayout_splitk,
-        Index(BM // cluster_shape[1], BK),
+        coord[BM // cluster_shape[1], BK],
         swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout_splitk,
         KernelType.BDescLayout_splitk,
-        Index(
-            BN // (cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (cluster_shape[0] // config.cta_group)
-        ),
+        coord[
+            BN // (cluster_shape[0] // config.cta_group) if transpose_b else BK,
+            BK if transpose_b else BN // (cluster_shape[0] // config.cta_group),
+        ],
         swizzle_mode=config.b_swizzle,
     ](ctx, b_device)
 
     # For MMA_M=128, output tile has 128 rows and each 64 rows belongs to one c tile.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/#tcgen05-data-path-layout-b
-    comptime c_tma_tile_shape_mma128 = Index(
-        64, config.output_tile_shape[1]
-    ) if not config.AB_swapped else Index(config.output_tile_shape[0], 64)
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
+    comptime sk_m128_m = (
+        64 if not config.AB_swapped else config.output_tile_shape[0]
+    )
+    comptime sk_m128_n = (
+        config.output_tile_shape[1] if not config.AB_swapped else 64
+    )
+    comptime sk_use_full = MMA_M == 256 or config.cta_group == 1
+    comptime sk_m = (config.output_tile_shape[0] if sk_use_full else sk_m128_m)
+    comptime sk_n = (config.output_tile_shape[1] if sk_use_full else sk_m128_n)
+    comptime c_tma_tile_shape = coord[sk_m, sk_n]
 
     # c_swizzle is set to 32B mode when swapAB is enabled so we need to adjust
     # the tile shape with 128B swizzle mode, there should always be 64 elements
     # on the contiguous dim.
     comptime c_tma_tile_shape_1 = config.c_swizzle.bytes() // size_of[c_type]()
+    comptime sk_fin_m = (
+        sk_m if not config.AB_swapped else c_tma_tile_shape.element_types[
+            0
+        ].static_value
+    )
+    comptime sk_fin_n = (sk_n if not config.AB_swapped else c_tma_tile_shape_1)
     var c_tma_op = create_tma_tile[
         KernelType.CTileLayout_splitk,
         KernelType.CDescLayout_splitk,
-        c_tma_tile_shape if not config.AB_swapped else Index(
-            c_tma_tile_shape[0], c_tma_tile_shape_1
-        ),
+        coord[sk_fin_m, sk_fin_n],
         swizzle_mode=config.c_swizzle,
     ](ctx, c_device)
 
@@ -1272,13 +1295,16 @@ def matmul_sm100_fallback[
     var a_tma_op = create_tma_tile[
         FallbackKernelType.ATileLayout,
         FallbackKernelType.ADescLayout,
-        Index(BM, BK),
+        coord[BM, BK],
         swizzle_mode=a_swizzle,
     ](ctx, a)
     var b_tma_op = create_tma_tile[
         FallbackKernelType.BTileLayout,
         FallbackKernelType.BDescLayout,
-        Index(BN, BK) if transpose_b else Index(BK, BN),
+        coord[
+            BN if transpose_b else BK,
+            BK if transpose_b else BN,
+        ],
         swizzle_mode=b_swizzle,
     ](ctx, b)
 

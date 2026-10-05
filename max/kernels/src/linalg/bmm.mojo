@@ -30,6 +30,7 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import A100, is_cpu, is_valid_target
 from layout import (
+    coord,
     ComptimeInt,
     Coord,
     CoordLike,
@@ -1102,15 +1103,12 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    a_scales_tile_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_tile_rank],
-    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -1121,12 +1119,11 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_scaling_block_n: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c_tensor: TileTensor[c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
         a_scales_type,
-        a_scales_tile_rank,
         a_scales_tile_shape,
         a_scales_desc_shape,
     ],
@@ -1180,13 +1177,10 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
         type_of(c_tt).LayoutType,
         a_scales_layout,
         type_of(b_scales_tt).LayoutType,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,
@@ -1345,13 +1339,13 @@ def bmm_sm100_blockwise_scaled_fp8[
     )
 
     var a_tma_op = create_tensor_tile[
-        Index(1, BM, BK),
+        coord[1, BM, BK],
         swizzle_mode=a_swizzle,
     ](ctx, a_)
 
-    comptime b_tile_shape = Index(1, BN, BK) if transpose_b else Index(
-        1, BK, BN
-    )
+    comptime b_m = BN if transpose_b else BK
+    comptime b_n = BK if transpose_b else BN
+    comptime b_tile_shape = coord[1, b_m, b_n]
 
     var b_tma_op = create_tensor_tile[
         b_tile_shape,
@@ -1359,8 +1353,8 @@ def bmm_sm100_blockwise_scaled_fp8[
     ](ctx, b_)
 
     var a_scales_tma_op = create_tensor_tile[
-        Index(1, 1, BM),
-        __desc_shape=Index(1, 1, BM),
+        coord[1, 1, BM],
+        __desc_shape=coord[1, 1, BM],
     ](ctx, a_scales_)
     # NOTE: desc shape must be specified otherwise a constraint fails
 
@@ -1380,13 +1374,10 @@ def bmm_sm100_blockwise_scaled_fp8[
         type_of(c_).LayoutType,
         type_of(a_scales_).LayoutType,
         type_of(b_scales_).LayoutType,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,

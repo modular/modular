@@ -379,9 +379,8 @@ struct TileWriter[
     # Inferred from constructor arg
     tma_origin: ImmOrigin,
     c_type: DType,
-    c_rank: Int,
-    c_tile_shape: IndexList[c_rank],
-    c_desc_shape: IndexList[c_rank],
+    c_tile_shape: Coord,
+    c_desc_shape: Coord,
     //,
     # Explicit config parameters (works with any config type)
     a_type: DType,
@@ -431,7 +430,6 @@ struct TileWriter[
         tma_origin: Memory origin of the TMA descriptor pointer
             (inferred).
         c_type: Element dtype of the C output tensor (inferred).
-        c_rank: Rank of the C output tensor (inferred).
         c_tile_shape: Per-tile shape of the C output (inferred).
         c_desc_shape: TMA descriptor shape for C (inferred).
         a_type: Element dtype of the A input matrix.
@@ -485,7 +483,7 @@ struct TileWriter[
 
     # Type aliases
     comptime TmaOp = TMATensorTile[
-        Self.c_type, Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+        Self.c_type, Self.c_tile_shape, Self.c_desc_shape
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
     # Whole-array pointer accepted by the `TileWriterLike` ctor (one descriptor
@@ -1177,9 +1175,7 @@ struct TileWriter[
             (c_coord[0], c_coord[1], batch_idx if Self.batched else 0),
             warp_id,
         )
-        StoreExecutor.execute[
-            Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
-        ](
+        StoreExecutor.execute[Self.c_tile_shape, Self.c_desc_shape](
             c_smem_tile,
             store_coords,
             self.c_tma_op[],
@@ -1189,7 +1185,6 @@ struct TileWriter[
 
         tma_wait_pipelined[
             Self.c_type,
-            Self.c_rank,
             Self.c_tile_shape,
             Self.c_desc_shape,
             stage == Self.num_stages - 1,
@@ -2196,7 +2191,7 @@ struct TileWriter[
                     store_coords.coord_n = Int(n_abs) + loop_stage * Self.stageN
 
                 StoreExecutorLocal.execute[
-                    Self.c_rank, Self.c_tile_shape, Self.c_desc_shape
+                    Self.c_tile_shape, Self.c_desc_shape
                 ](
                     c_smem_tile,
                     store_coords,
@@ -2213,7 +2208,6 @@ struct TileWriter[
             if not (p5_c_store_dead and p5_elide_dead_tma):
                 tma_wait_pipelined[
                     Self.c_type,
-                    Self.c_rank,
                     Self.c_tile_shape,
                     Self.c_desc_shape,
                     loop_stage == Self.num_stages - 1,
@@ -3395,9 +3389,8 @@ struct StandardOutputWriter(OutputWriter):
         //,
         tma_origin: ImmOrigin,
         c_type: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         a_type: DType,
         accum_type: DType,
         block_tile_shape: IndexList[3],
@@ -3415,7 +3408,7 @@ struct StandardOutputWriter(OutputWriter):
     ](
         c_tma_ops: Pointer[
             Array[
-                TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
+                TMATensorTile[c_type, c_tile_shape, c_desc_shape],
                 Self.num_peers,
             ],
             tma_origin,
@@ -3436,7 +3429,6 @@ struct StandardOutputWriter(OutputWriter):
             tma_origin: Memory origin of the TMA descriptor pointer
                 (inferred).
             c_type: Element dtype of the C output tensor (inferred).
-            c_rank: Rank of the C output tensor (inferred).
             c_tile_shape: Per-tile shape of the C output (inferred).
             c_desc_shape: TMA descriptor shape for C (inferred).
             a_type: Element dtype of the A input matrix.
@@ -3471,7 +3463,7 @@ struct StandardOutputWriter(OutputWriter):
             alpha: Scalar applied to fragments before the store
                 (defaults to 1.0).
         """
-        # The descriptor params (tma_origin, c_type, c_rank, c_tile_shape,
+        # The descriptor params (tma_origin, c_type, c_tile_shape,
         # c_desc_shape) are inferred from the `c_tma_ops` ctor arg.
         var writer = TileWriter[
             a_type=a_type,

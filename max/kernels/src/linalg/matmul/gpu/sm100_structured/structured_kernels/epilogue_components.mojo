@@ -73,11 +73,10 @@ from structured_kernels.tile_types import SMemTileArray2DRowMajor
 @inline(.always)
 def tma_wait_pipelined[
     c_type: DType,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     is_last_stage: Bool,
-](c_tma_op: TMATensorTile[c_type, tma_rank, tile_shape, desc_shape]):
+](c_tma_op: TMATensorTile[c_type, tile_shape, desc_shape]):
     """Wait for TMA stores with pipelining.
 
     For SM100 output pipeline:
@@ -527,9 +526,8 @@ struct TMAStoreExecutor[
     @staticmethod
     @inline(.always)
     def _store_non_transpose[
-        tma_rank: Int,
-        tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        tile_shape: Coord,
+        desc_shape: Coord,
         //,
     ](
         c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
@@ -539,7 +537,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, tile_shape, desc_shape],
     ):
         """Handle non-transpose TMA store path."""
         # Path C: Simple tile selection by TMA_BM
@@ -566,9 +564,8 @@ struct TMAStoreExecutor[
     @staticmethod
     @inline(.always)
     def execute[
-        tma_rank: Int,
-        tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        tile_shape: Coord,
+        desc_shape: Coord,
     ](
         c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
@@ -577,7 +574,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, tile_shape, desc_shape],
         warp_id: UInt32,
         lane: UInt32,
     ):
@@ -586,7 +583,7 @@ struct TMAStoreExecutor[
             fence_async_view_proxy()
 
             comptime if Self.transpose_c:
-                Self._store_transpose[tma_rank, tile_shape, desc_shape](
+                Self._store_transpose[tile_shape, desc_shape](
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
@@ -597,9 +594,8 @@ struct TMAStoreExecutor[
     @staticmethod
     @inline(.always)
     def _store_transpose[
-        tma_rank: Int,
-        tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        tile_shape: Coord,
+        desc_shape: Coord,
     ](
         c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
@@ -608,7 +604,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, tile_shape, desc_shape],
         warp_id: UInt32,
     ):
         """Transpose TMA store using reshape."""
@@ -718,9 +714,8 @@ struct TMAReduceExecutor[
     @staticmethod
     @inline(.always)
     def execute[
-        tma_rank: Int,
-        tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        tile_shape: Coord,
+        desc_shape: Coord,
     ](
         c_smem_tile: TileTensor[
             Self.c_type,
@@ -734,7 +729,7 @@ struct TMAReduceExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, tile_shape, desc_shape],
         warp_id: UInt32,
         lane: UInt32,
     ):

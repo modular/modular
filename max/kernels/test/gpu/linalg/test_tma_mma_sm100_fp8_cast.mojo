@@ -36,6 +36,7 @@ from layout import (
     MixedLayout,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout._fillers import random
@@ -95,9 +96,8 @@ def tma_umma_kernel_sgs[
     a_type: DType,  # A type in gmem and smem (bfloat16)
     b_gmem_type: DType,  # B type in gmem (float8_e4m3fn)
     c_type: DType,  # Output type (bfloat16)
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
     b_layout: TensorLayout,  # B's gmem layout (FP8)
     c_layout: TensorLayout,
     block_tile_shape: IndexList[3],
@@ -108,7 +108,7 @@ def tma_umma_kernel_sgs[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b: TileTensor[b_gmem_type, b_layout, ImmutAnyOrigin],  # FP8 in gmem
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
@@ -499,7 +499,7 @@ def test_tma_umma_fp8_b[
 
     # Only A uses TMA
     var a_tma_op = create_tensor_tile[
-        Index(BM, BK),
+        coord[BM, BK],
         swizzle_mode=a_swizzle,
     ](ctx, a.device_tensor())
 
@@ -516,7 +516,6 @@ def test_tma_umma_fp8_b[
         a_type,
         b_gmem_type,
         c_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
         type_of(b_dev).LayoutType,

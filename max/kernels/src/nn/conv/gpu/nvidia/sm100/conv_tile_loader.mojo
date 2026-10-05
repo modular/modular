@@ -20,16 +20,14 @@ on-the-fly during memory loads.
 """
 
 from layout.tma_async import SharedMemBarrier, TMATensorTileIm2col
-from layout import TensorLayout, TileTensor
-from std.utils.index import IndexList
+from layout import Coord, TensorLayout, TileTensor
 
 
 struct TileLoaderTMAIm2col[
     tma_origin: ImmOrigin,
     dtype: DType,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     /,
     *,
     cta_group: Int,
@@ -44,14 +42,13 @@ struct TileLoaderTMAIm2col[
     Parameters:
         tma_origin: Origin of the TMA descriptor pointer.
         dtype: Element data type.
-        tma_rank: Rank of the TMA tile/descriptor shapes.
-        tile_shape: TMA tile shape as IndexList.
-        desc_shape: TMA descriptor shape as IndexList.
+        tile_shape: TMA tile shape.
+        desc_shape: TMA descriptor shape.
         cta_group: CTA group size (1 or 2 for SM100).
     """
 
     comptime TmaOp = TMATensorTileIm2col[
-        Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
+        Self.dtype, Self.tile_shape, Self.desc_shape
     ]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 

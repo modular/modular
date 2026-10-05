@@ -47,8 +47,8 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     Pack,
     q_coord,
-    q_tma,
-    QTMATile,
+    q_tma_prefill,
+    QTMATilePrefill,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -155,13 +155,11 @@ __extension SM100MLA:
     def mla_prefill_kernel_blockscale[
         blockwise_scale: Int = 0,
     ](
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.BM // 2,
             depth=Self.config.BK0,
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -512,13 +510,11 @@ __extension SM100MLA:
         seq_info: SeqInfo,
         max_seq_len: Self.MaxSeqLenType,
         mask: Self.MaskType,
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.BM // 2,
             depth=Self.config.BK0,  # padded depth -> 192
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -565,9 +561,15 @@ __extension SM100MLA:
             MutAnyOrigin,
             address_space=.SHARED,
         ]
-        comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+        comptime q_elems = type_of(q_tma_op).tile_shape.element_types[
+            0
+        ].static_value * type_of(q_tma_op).tile_shape.element_types[
+            1
+        ].static_value * type_of(
             q_tma_op
-        ).tile_shape[1] * type_of(q_tma_op).tile_shape[2]
+        ).tile_shape.element_types[
+            2
+        ].static_value
         comptime QType = SMemTensorLT[q_elems]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
@@ -1831,13 +1833,11 @@ def mla_sm100_prefill_blockscale[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    var q_tma_op = q_tma[
+    var q_tma_op = q_tma_prefill[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.BM // 2,
         depth=fa4_config.qk_depth,
         q_num_heads=fa4_config.num_q_heads,
-        group=fa4_config.group,
-        decoding=False,
     ](
         ctx,
         q.ptr,
@@ -1922,13 +1922,11 @@ def _mla_prefill_sm100_valid_length_dispatch[
         middle_dim=_,
         tma_blocks_per_op=_,
     ],
-    q_tma_op: QTMATile[
+    q_tma_op: QTMATilePrefill[
         q_type,
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.BM // 2,
         depth=fa4_config.qk_depth,
-        group=fa4_config.group,
-        decoding=False,
     ],
     k_nope_tma_op: KVTMATile[
         KVType.dtype,

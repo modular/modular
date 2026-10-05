@@ -23,6 +23,7 @@ from layout import (
     Layout,
     RowMajorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tma_async import (
@@ -47,7 +48,7 @@ from nn.attention.mha_utils import (
 )
 from nn.attention.gpu.nvidia.common import KVTMATile
 from std.utils.numerics import get_accum_type, nan
-from std.utils.index import Index, IndexList
+
 
 comptime logger = Logger()
 
@@ -3237,44 +3238,42 @@ def launch_mla_sm100_decode_sparse[
     # tile_width = padded_depth / 8 = 64 INT64 elements (nope only).
     k_nope_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.padded_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.padded_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     # K_rope gather4 TMA: BF16, SWIZZLE_128B.
     k_rope_tma: TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
                 (config.padded_depth + config.rope_depth * 2) // 2,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.bfloat16,
                 (config.padded_depth + config.rope_depth * 2) // 2,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
+        ],
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3299,43 +3298,41 @@ def launch_mla_sm100_decode_sparse[
     # Extra KV parameters (separate always-attend cache).
     extra_k_nope_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.padded_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.padded_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     extra_k_rope_tma: TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
                 (config.padded_depth + config.rope_depth * 2) // 2,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.bfloat16,
                 (config.padded_depth + config.rope_depth * 2) // 2,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
+        ],
     ],
     extra_kv_lut: KVLUTType,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -3454,23 +3451,22 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     # Single K gather4 TMA: INT64, SWIZZLE_NONE, tile_width=72 INT64 (576 B).
     k_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3495,23 +3491,22 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     # Extra KV parameters (separate always-attend cache).
     extra_k_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     extra_kv_lut: KVLUTType,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -3628,23 +3623,22 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     # and so is the same at either row width. Only the column-group count moves.
     k_tma: TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
                 config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.bfloat16,
                 config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
+        ],
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3669,23 +3663,22 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     # same descriptor shape as the main K TMA.
     extra_k_tma: TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
                 config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.bfloat16,
                 config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
+        ],
     ],
     extra_kv_lut: KVLUTType,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -3795,23 +3788,22 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     # the SW64 layout the native FP8 MMA operand expects from this in SMEM.
     k_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3835,23 +3827,22 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     attn_sink_ptr: AttnSinkPtrType,
     extra_k_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     extra_kv_lut: KVLUTType,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],

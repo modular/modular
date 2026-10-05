@@ -826,7 +826,6 @@ struct BlackwellMatmulSM100Kernel[
         Self.output_writer_type.write_batched[
             tma_origin,
             Self.CTmaOp.dtype,
-            Self.CTmaOp.rank,
             Self.CTmaOp.tile_shape,
             Self.CTmaOp.desc_shape,
             Self.a_type,

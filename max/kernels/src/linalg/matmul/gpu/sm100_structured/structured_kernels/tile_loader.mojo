@@ -32,21 +32,19 @@ Usage:
 from layout import (
     TensorLayout,
     TileTensor,
+    Coord,
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile
 
 # Import TileTensor types for overloaded load methods
 from structured_kernels.tile_types import SMemTile2D, TmaOpType
 
-from std.utils.index import IndexList
-
 
 struct TileLoaderTMA[
     tma_origin: ImmOrigin,
     dtype: DType,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     /,
     *,
     cta_group: Int,
@@ -59,15 +57,12 @@ struct TileLoaderTMA[
     Parameters:
         tma_origin: Origin of the TMA descriptor pointer.
         dtype: Element data type.
-        tma_rank: Rank of the TMA tile/descriptor shapes.
-        tile_shape: TMA tile shape as IndexList.
-        desc_shape: TMA descriptor shape as IndexList.
+        tile_shape: TMA tile shape as Coord.
+        desc_shape: TMA descriptor shape as Coord.
         cta_group: CTA group size (1 or 2 for SM100 2-SM MMA).
     """
 
-    comptime TmaOp = TMATensorTile[
-        Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
-    ]
+    comptime TmaOp = TMATensorTile[Self.dtype, Self.tile_shape, Self.desc_shape]
     comptime TmaOpPtr = Pointer[Self.TmaOp, Self.tma_origin]
 
     # TMA descriptor pointer (referencing grid constant)

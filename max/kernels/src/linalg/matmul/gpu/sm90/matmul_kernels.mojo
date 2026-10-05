@@ -627,7 +627,7 @@ struct HopperMatmulSM90Kernel[
         *,
         has_epilogue_fn: Bool = False,
     ](
-        c_tma_op: TMATensorTile[Self.c_type, _, _, _],
+        c_tma_op: TMATensorTile[Self.c_type, _, _],
         c: TileTensor[mut=True, Self.c_type, address_space=.GENERIC, ...],
         c_tile: Self.SMem.CTile,
         output_reg_tile: Self.AccumRegTile,
@@ -690,27 +690,20 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @inline(.always)
     def build_tma_loaders[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
         //,
     ](
-        a_tma_op: TMATensorTile[
-            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
-        ],
-        b_tma_op: TMATensorTile[
-            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
-        ],
+        a_tma_op: TMATensorTile[Self.a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[Self.b_type, b_tile_shape, b_desc_shape],
         rank_m: Int,
         rank_n: Int,
     ) -> Tuple[
         TileLoaderTMA[
             origin_of(a_tma_op),
             Self.a_type,
-            a_tma_rank,
             a_tile_shape,
             a_desc_shape,
             BK=Self.BK,
@@ -720,7 +713,6 @@ struct HopperMatmulSM90Kernel[
         TileLoaderTMA[
             origin_of(b_tma_op),
             Self.b_type,
-            b_tma_rank,
             b_tile_shape,
             b_desc_shape,
             BK=Self.BK,
@@ -894,28 +886,19 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     def run[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        c_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        c_tile_shape: IndexList[c_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
-        c_desc_shape: IndexList[c_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        c_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
+        c_desc_shape: Coord,
         a_tensor_layout: TensorLayout,
         b_tensor_layout: TensorLayout,
         c_tensor_layout: TensorLayout,
     ](
-        a_tma_op: TMATensorTile[
-            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
-        ],
-        b_tma_op: TMATensorTile[
-            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
-        ],
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
-        ],
+        a_tma_op: TMATensorTile[Self.a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[Self.b_type, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         a: TileTensor[
             Self.a_type, a_tensor_layout, ImmutAnyOrigin, Engine=Self.a_engine
         ],
@@ -937,12 +920,6 @@ struct HopperMatmulSM90Kernel[
         achieving high throughput on Hopper GPUs.
 
         Parameters:
-            a_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix A.
-            b_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix B.
-            c_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix C.
             a_tile_shape: Shape of each A tile loaded by TMA.
             b_tile_shape: Shape of each B tile loaded by TMA.
             c_tile_shape: Shape of each C tile stored by TMA.
@@ -1081,28 +1058,19 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     def run_splitk[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        c_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        c_tile_shape: IndexList[c_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
-        c_desc_shape: IndexList[c_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        c_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
+        c_desc_shape: Coord,
         splits: Int,
         raster_order: RasterOrder,
         c_tensor_layout: TensorLayout,
     ](
-        a_tma_op: TMATensorTile[
-            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
-        ],
-        b_tma_op: TMATensorTile[
-            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
-        ],
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
-        ],
+        a_tma_op: TMATensorTile[Self.a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[Self.b_type, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         c: TileTensor[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
@@ -1113,12 +1081,6 @@ struct HopperMatmulSM90Kernel[
         """Split-K variant of the kernel for better load balancing on small problems.
 
         Parameters:
-            a_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix A.
-            b_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix B.
-            c_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix C.
             a_tile_shape: Shape of each A tile loaded by TMA.
             b_tile_shape: Shape of each B tile loaded by TMA.
             c_tile_shape: Shape of each C tile stored by TMA.
@@ -1310,15 +1272,12 @@ struct HopperMatmulSM90Kernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     def run_grouped[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        c_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        c_tile_shape: IndexList[c_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
-        c_desc_shape: IndexList[c_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        c_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
+        c_desc_shape: Coord,
         AOffsetsLayout: TensorLayout,
         ExpertIdsLayout: TensorLayout,
         c_tensor_layout: TensorLayout,
@@ -1327,15 +1286,9 @@ struct HopperMatmulSM90Kernel[
         ComputeFnType: ElementwiseComputeFn,
         has_compute_fn: Bool,
     ](
-        a_tma_op: TMATensorTile[
-            Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
-        ],
-        b_tma_op: TMATensorTile[
-            Self.b_type, b_tma_rank, b_tile_shape, b_desc_shape
-        ],
-        c_tma_op: TMATensorTile[
-            Self.c_type, c_tma_rank, c_tile_shape, c_desc_shape
-        ],
+        a_tma_op: TMATensorTile[Self.a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[Self.b_type, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, c_tile_shape, c_desc_shape],
         a_offsets: TileTensor[
             mut=False,
             .uint32,
@@ -1362,12 +1315,6 @@ struct HopperMatmulSM90Kernel[
         The a_offsets array indicates token boundaries for each expert.
 
         Parameters:
-            a_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix A.
-            b_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix B.
-            c_tma_rank: Number of dimensions in the TMA descriptor for
-                matrix C.
             a_tile_shape: Shape of each A tile loaded by TMA.
             b_tile_shape: Shape of each B tile loaded by TMA.
             c_tile_shape: Shape of each C tile stored by TMA.

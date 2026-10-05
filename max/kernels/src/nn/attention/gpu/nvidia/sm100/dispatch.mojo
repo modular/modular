@@ -28,8 +28,8 @@ from max.gpu.host import (
     FuncAttribute,
 )
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
-from layout import TensorEngine
-from layout.tma_async import RaggedTMA3DTile
+from layout import Coord, TensorEngine
+from layout.tma_async import RaggedTMA3DTile, TMATensorTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
@@ -38,7 +38,8 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     OptionalPointer,
     Pack,
-    q_tma,
+    q_tma_fused,
+    q_tma_prefill,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -561,16 +562,23 @@ def mha_sm100_dispatch[
                 rows=num_rows_q,
             )
 
-        var q_tma_op = q_tma[
-            swizzle_mode,
-            BM=BM_per_mma,
-            depth=fa4_config.qk_depth,
-            q_num_heads=fa4_config.num_q_heads,
-            group=fa4_config.group,
-            decoding=False,
-            fuse_gqa=fuse_gqa,
-            num_qk_stages=fa4_config.num_qk_stages,
-        ](ctx, q, num_rows_q)
+        # KGEN cannot fold a Coord-valued conditional, so the rank-3 (prefill)
+        # vs rank-4 (fused-GQA) Q tile choice must be made by spelling one
+        # alias per `comptime if` branch. The Q descriptor shape threads into
+        # the SM100MHA2Q struct via inferred `q_tile_shape`/`q_desc_shape`
+        # Coord params so the rank choice is invisible to the struct's
+        # signature.
+        comptime PairBM_eff = fa4_config.PairBM_eff()
+        comptime SchedulerType = TransientScheduler[
+            UInt32(PairBM_eff),
+            UInt32(
+                fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads
+            ),
+            flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+            pair_cta=fa4_config.pair_cta,
+            splitk_partitions=UInt32(fa4_config.splitk_partitions),
+        ]
+        var scheduler: SchedulerType = SchedulerType()
         # Depth-chunk TMA fold (SM100): fold the BK0 (K) / v_cols_per_cta (V)
         # depth chunks into one rank-4 TMA when byte-equivalent. Each
         # `kv_tma_fold_chunks` is the single source of truth shared with the
@@ -663,183 +671,369 @@ def mha_sm100_dispatch[
             fold_chunks=v_fold_chunks,
             row_major=v_row_major,
         ](ctx)
-        comptime PairBM_eff = fa4_config.PairBM_eff()
-        comptime SchedulerType = TransientScheduler[
-            UInt32(PairBM_eff),
-            UInt32(
-                fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads
-            ),
-            flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
-            pair_cta=fa4_config.pair_cta,
-            splitk_partitions=UInt32(fa4_config.splitk_partitions),
-        ]
-        var scheduler: SchedulerType = SchedulerType()
+        comptime if fuse_gqa:
+            var q_tma_op = q_tma_fused[
+                swizzle_mode,
+                BM=BM_per_mma,
+                depth=fa4_config.qk_depth,
+                q_num_heads=fa4_config.num_q_heads,
+                group=fa4_config.group,
+                decoding=False,
+                fuse_gqa=True,
+                num_qk_stages=fa4_config.num_qk_stages,
+            ](ctx, q, num_rows_q)
 
-        @__parameter
-        @inline(.always)
-        def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
             @__parameter
             @inline(.always)
-            def with_kv_offsets[
-                KVRowOffsetsType: OptionalPointer
-            ](kv_row_offsets: KVRowOffsetsType) raises:
+            def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
                 @__parameter
                 @inline(.always)
-                def with_valid_length[
-                    ValidLengthType: OptionalPointer
-                ](valid_len: ValidLengthType) raises:
-                    # the pack contains all possibly 0-sized objects
-                    comptime PackType = Pack[
-                        MaskType,
-                        SchedulerType,
-                        ValidLengthType,
-                        SinkType,
-                        KVRowOffsetsType,
-                        MaxPromptLenType,
-                        PartitionType,
-                    ]
-                    var pack: PackType = {
-                        mask,
-                        scheduler,
-                        valid_len,
-                        sink_ptr,
-                        kv_row_offsets,
-                        max_prompt_len_arg,
-                        partition,
-                    }
+                def with_kv_offsets[
+                    KVRowOffsetsType: OptionalPointer
+                ](kv_row_offsets: KVRowOffsetsType) raises:
+                    @__parameter
+                    @inline(.always)
+                    def with_valid_length[
+                        ValidLengthType: OptionalPointer
+                    ](valid_len: ValidLengthType) raises:
+                        # the pack contains all possibly 0-sized objects
+                        comptime PackType = Pack[
+                            MaskType,
+                            SchedulerType,
+                            ValidLengthType,
+                            SinkType,
+                            KVRowOffsetsType,
+                            MaxPromptLenType,
+                            PartitionType,
+                        ]
+                        var pack: PackType = {
+                            mask,
+                            scheduler,
+                            valid_len,
+                            sink_ptr,
+                            kv_row_offsets,
+                            max_prompt_len_arg,
+                            partition,
+                        }
 
-                    var max_num_prompt_tiles: UInt32 = ceildiv(
-                        max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
-                    )
-                    # Over-launch the prompt-tile (x) axis by the partition count
-                    # for the traditional (workspace) split-K scheme. For
-                    # `NoPartition` this is `*1` (byte-identical to the non-split
-                    # launch); for `SplitKPartition` it widens x by `P` so the grid
-                    # has one CTA per (tile, partition). This matches `get_seq_info`,
-                    # which inflates the scheduler tile space by the runtime
-                    # `partition.num_partitions()` (see `common.mojo`). No cluster is
-                    # formed (workspace split-K keeps `splitk_partitions == 1`, so
-                    # `cluster_size()==1` and `cluster_dim=None`); over-launched CTAs
-                    # that map past the real prompt are marked invalid by
-                    # `SeqInfo.is_valid` and early-return.
-                    var block_x: UInt32 = (
-                        max_num_prompt_tiles * partition.max_num_partitions()
-                    )
-                    logger.info(
-                        "------ Dispatching to SM100 FMHA-",
-                        fa4_config.num_q,
-                        "Q ------",
-                    )
-                    logger.info(
-                        "QKV Type:",
-                        KVType.dtype,
-                        "Depth:",
-                        fa4_config.qk_depth,
-                        "Number of Q // KV Heads:",
-                        fa4_config.num_q_heads,
-                        "//",
-                        fa4_config.num_kv_heads,
-                        "Batch Size:",
-                        batch_size,
-                        "Max Num Prompt Tiles:",
-                        max_num_prompt_tiles,
-                    )
+                        var max_num_prompt_tiles: UInt32 = ceildiv(
+                            max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
+                        )
+                        # Over-launch the prompt-tile (x) axis by the partition count
+                        # for the traditional (workspace) split-K scheme. For
+                        # `NoPartition` this is `*1` (byte-identical to the non-split
+                        # launch); for `SplitKPartition` it widens x by `P` so the grid
+                        # has one CTA per (tile, partition). This matches `get_seq_info`,
+                        # which inflates the scheduler tile space by the runtime
+                        # `partition.num_partitions()` (see `common.mojo`). No cluster is
+                        # formed (workspace split-K keeps `splitk_partitions == 1`, so
+                        # `cluster_size()==1` and `cluster_dim=None`); over-launched CTAs
+                        # that map past the real prompt are marked invalid by
+                        # `SeqInfo.is_valid` and early-return.
+                        var block_x: UInt32 = (
+                            max_num_prompt_tiles
+                            * partition.max_num_partitions()
+                        )
+                        logger.info(
+                            "------ Dispatching to SM100 FMHA-",
+                            fa4_config.num_q,
+                            "Q ------",
+                        )
+                        logger.info(
+                            "QKV Type:",
+                            KVType.dtype,
+                            "Depth:",
+                            fa4_config.qk_depth,
+                            "Number of Q // KV Heads:",
+                            fa4_config.num_q_heads,
+                            "//",
+                            fa4_config.num_kv_heads,
+                            "Batch Size:",
+                            batch_size,
+                            "Max Num Prompt Tiles:",
+                            max_num_prompt_tiles,
+                        )
 
-                    # Covers the in-kernel 1Q/2Q switch: when
-                    # `can_switch_to_1q()` the kernel constructs the 1Q smem
-                    # layout over the same dynamic smem region, so this is the
-                    # max of both footprints (see `FA4Config.launch_smem_used`).
-                    comptime smem_use = fa4_config.launch_smem_used()
+                        # Covers the in-kernel 1Q/2Q switch: when
+                        # `can_switch_to_1q()` the kernel constructs the 1Q smem
+                        # layout over the same dynamic smem region, so this is the
+                        # max of both footprints (see `FA4Config.launch_smem_used`).
+                        comptime smem_use = fa4_config.launch_smem_used()
 
-                    comptime KernelStruct = SM100MHA2Q[
-                        KVType,
-                        output_type,
-                        MaskType,
-                        SchedulerType,
-                        fa4_config,
-                        ValidLengthType,
-                        SinkType,
-                        KVRowOffsetsType,
-                        _is_cache_length_accurate,
-                        MaxPromptLenType,
-                        PartitionType,
-                    ]
-                    # Every config uses the static `kernel` entry; the cluster
-                    # size is baked into its `nvvm.cluster_dim` metadata.
-                    comptime kernel = KernelStruct.kernel
+                        comptime KernelStruct = SM100MHA2Q[
+                            q_tma_op.tile_shape,
+                            q_tma_op.desc_shape,
+                            KVType,
+                            output_type,
+                            MaskType,
+                            SchedulerType,
+                            fa4_config,
+                            ValidLengthType,
+                            SinkType,
+                            KVRowOffsetsType,
+                            _is_cache_length_accurate,
+                            MaxPromptLenType,
+                            PartitionType,
+                        ]
+                        # Every config uses the static `kernel` entry; the cluster
+                        # size is baked into its `nvvm.cluster_dim` metadata.
+                        comptime kernel = KernelStruct.kernel
 
-                    var cluster_dim: OptionalReg[Dim] = None
-                    # Unifies pair-CTA (cluster_size==2) and num_q==1 split-K
-                    # (cluster_size==P): both are the comptime `cluster_size()`,
-                    # matching the static `nvvm.cluster_dim` metadata on the
-                    # `kernel` entry (split-K is compiled once per static P).
-                    comptime if fa4_config.cluster_size() > 1:
-                        cluster_dim = Dim(fa4_config.cluster_size(), 1, 1)
-                    comptime name = String(
-                        "nq",
-                        fa4_config.num_q,
-                        "d",
-                        fa4_config.qk_depth,
-                        "qh",
-                        fa4_config.num_q_heads,
-                        "kvh",
-                        fa4_config.num_kv_heads,
-                        ".",
-                    )
-                    ctx.enqueue_function[kernel](
-                        q_tma_op,
-                        k_tma_op,
-                        v_tma_op,
-                        ragged_tma_store,
-                        k,
-                        scale,
-                        batch_size,
-                        max_cache_valid_length,
-                        pack,
-                        # Total query-row count, used only by the workspace
-                        # (traditional/unfused) split-K egress as the per-partition
-                        # `o_partial`/`lse_partial` row stride; harmless (unused)
-                        # for every other config.
-                        UInt32(num_rows_q),
-                        grid_dim=SchedulerType.grid_dim(
-                            batch_size, block_x, num_partitions.as_uint32()
-                        ),
-                        block_dim=(num_threads, 1, 1),
-                        cluster_dim=cluster_dim,
-                        shared_mem_bytes=smem_use,
-                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                            UInt32(smem_use)
-                        ),
-                        attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
-                    )
+                        var cluster_dim: OptionalReg[Dim] = None
+                        # Unifies pair-CTA (cluster_size==2) and num_q==1 split-K
+                        # (cluster_size==P): both are the comptime `cluster_size()`,
+                        # matching the static `nvvm.cluster_dim` metadata on the
+                        # `kernel` entry (split-K is compiled once per static P).
+                        comptime if fa4_config.cluster_size() > 1:
+                            cluster_dim = Dim(fa4_config.cluster_size(), 1, 1)
+                        comptime name = String(
+                            "nq",
+                            fa4_config.num_q,
+                            "d",
+                            fa4_config.qk_depth,
+                            "qh",
+                            fa4_config.num_q_heads,
+                            "kvh",
+                            fa4_config.num_kv_heads,
+                            ".",
+                        )
+                        ctx.enqueue_function[kernel](
+                            q_tma_op,
+                            k_tma_op,
+                            v_tma_op,
+                            ragged_tma_store,
+                            k,
+                            scale,
+                            batch_size,
+                            max_cache_valid_length,
+                            pack,
+                            # Total query-row count, used only by the workspace
+                            # (traditional/unfused) split-K egress as the per-partition
+                            # `o_partial`/`lse_partial` row stride; harmless (unused)
+                            # for every other config.
+                            UInt32(num_rows_q),
+                            grid_dim=SchedulerType.grid_dim(
+                                batch_size,
+                                block_x,
+                                num_partitions.as_uint32(),
+                            ),
+                            block_dim=(num_threads, 1, 1),
+                            cluster_dim=cluster_dim,
+                            shared_mem_bytes=smem_use,
+                            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                                UInt32(smem_use)
+                            ),
+                            attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
+                        )
 
-                # --- ragged dispatch ---
-                comptime if ragged:
-                    with_valid_length[NonNullPointer[.uint32]](
-                        {valid_length.as_imm().as_unsafe_any_origin()}
+                    # --- ragged dispatch ---
+                    comptime if ragged:
+                        with_valid_length[NonNullPointer[.uint32]](
+                            {valid_length.as_imm().as_unsafe_any_origin()}
+                        )
+                    else:
+                        with_valid_length[NullPointer[.uint32]]({})
+
+                # --- kv_input_row_offsets dispatch ---
+                if kv_input_row_offsets:
+                    with_kv_offsets[NonNullPointer[.uint32]](
+                        {kv_input_row_offsets.value().ptr}
                     )
                 else:
-                    with_valid_length[NullPointer[.uint32]]({})
+                    with_kv_offsets[NullPointer[.uint32]]({})
 
-            # --- kv_input_row_offsets dispatch ---
-            if kv_input_row_offsets:
-                with_kv_offsets[NonNullPointer[.uint32]](
-                    {kv_input_row_offsets.value().ptr}
+            # --- sink dispatch ---
+            comptime if sink:
+                with_sink[NonNullPointer[KVType.dtype]](
+                    {
+                        rebind[
+                            UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]
+                        ](sink_weights.value().ptr)
+                    }
                 )
             else:
-                with_kv_offsets[NullPointer[.uint32]]({})
-
-        # --- sink dispatch ---
-        comptime if sink:
-            with_sink[NonNullPointer[KVType.dtype]](
-                {
-                    rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
-                        sink_weights.value().ptr
-                    )
-                }
-            )
+                with_sink[NullPointer[KVType.dtype]]({})
         else:
-            with_sink[NullPointer[KVType.dtype]]({})
+            var q_tma_op = q_tma_prefill[
+                swizzle_mode,
+                BM=BM_per_mma,
+                depth=fa4_config.qk_depth,
+                q_num_heads=fa4_config.num_q_heads,
+                num_qk_stages=fa4_config.num_qk_stages,
+            ](ctx, q, num_rows_q)
+
+            @__parameter
+            @inline(.always)
+            def with_sink_q[
+                SinkType: OptionalPointer
+            ](sink_ptr: SinkType) raises:
+                @__parameter
+                @inline(.always)
+                def with_kv_offsets[
+                    KVRowOffsetsType: OptionalPointer
+                ](kv_row_offsets: KVRowOffsetsType) raises:
+                    @__parameter
+                    @inline(.always)
+                    def with_valid_length[
+                        ValidLengthType: OptionalPointer
+                    ](valid_len: ValidLengthType) raises:
+                        # the pack contains all possibly 0-sized objects
+                        comptime PackType = Pack[
+                            MaskType,
+                            SchedulerType,
+                            ValidLengthType,
+                            SinkType,
+                            KVRowOffsetsType,
+                            MaxPromptLenType,
+                            PartitionType,
+                        ]
+                        var pack: PackType = {
+                            mask,
+                            scheduler,
+                            valid_len,
+                            sink_ptr,
+                            kv_row_offsets,
+                            max_prompt_len_arg,
+                            partition,
+                        }
+
+                        var max_num_prompt_tiles: UInt32 = ceildiv(
+                            max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
+                        )
+                        # Over-launch the prompt-tile (x) axis by the partition count
+                        # for the traditional (workspace) split-K scheme. For
+                        # `NoPartition` this is `*1` (byte-identical to the non-split
+                        # launch); for `SplitKPartition` it widens x by `P` so the grid
+                        # has one CTA per (tile, partition). This matches `get_seq_info`,
+                        # which inflates the scheduler tile space by the runtime
+                        # `partition.num_partitions()` (see `common.mojo`). No cluster is
+                        # formed (workspace split-K keeps `splitk_partitions == 1`, so
+                        # `cluster_size()==1` and `cluster_dim=None`); over-launched CTAs
+                        # that map past the real prompt are marked invalid by
+                        # `SeqInfo.is_valid` and early-return.
+                        var block_x: UInt32 = (
+                            max_num_prompt_tiles
+                            * partition.max_num_partitions()
+                        )
+                        logger.info(
+                            "------ Dispatching to SM100 FMHA-",
+                            fa4_config.num_q,
+                            "Q ------",
+                        )
+                        logger.info(
+                            "QKV Type:",
+                            KVType.dtype,
+                            "Depth:",
+                            fa4_config.qk_depth,
+                            "Number of Q // KV Heads:",
+                            fa4_config.num_q_heads,
+                            "//",
+                            fa4_config.num_kv_heads,
+                            "Batch Size:",
+                            batch_size,
+                            "Max Num Prompt Tiles:",
+                            max_num_prompt_tiles,
+                        )
+
+                        # Covers the in-kernel 1Q/2Q switch: when
+                        # `can_switch_to_1q()` the kernel constructs the 1Q smem
+                        # layout over the same dynamic smem region, so this is the
+                        # max of both footprints (see `FA4Config.launch_smem_used`).
+                        comptime smem_use = fa4_config.launch_smem_used()
+
+                        comptime KernelStruct = SM100MHA2Q[
+                            q_tma_op.tile_shape,
+                            q_tma_op.desc_shape,
+                            KVType,
+                            output_type,
+                            MaskType,
+                            SchedulerType,
+                            fa4_config,
+                            ValidLengthType,
+                            SinkType,
+                            KVRowOffsetsType,
+                            _is_cache_length_accurate,
+                            MaxPromptLenType,
+                            PartitionType,
+                        ]
+                        # Every config uses the static `kernel` entry; the cluster
+                        # size is baked into its `nvvm.cluster_dim` metadata.
+                        comptime kernel = KernelStruct.kernel
+
+                        var cluster_dim: OptionalReg[Dim] = None
+                        # Unifies pair-CTA (cluster_size==2) and num_q==1 split-K
+                        # (cluster_size==P): both are the comptime `cluster_size()`,
+                        # matching the static `nvvm.cluster_dim` metadata on the
+                        # `kernel` entry (split-K is compiled once per static P).
+                        comptime if fa4_config.cluster_size() > 1:
+                            cluster_dim = Dim(fa4_config.cluster_size(), 1, 1)
+                        comptime name = String(
+                            "nq",
+                            fa4_config.num_q,
+                            "d",
+                            fa4_config.qk_depth,
+                            "qh",
+                            fa4_config.num_q_heads,
+                            "kvh",
+                            fa4_config.num_kv_heads,
+                            ".",
+                        )
+                        ctx.enqueue_function[kernel](
+                            q_tma_op,
+                            k_tma_op,
+                            v_tma_op,
+                            ragged_tma_store,
+                            k,
+                            scale,
+                            batch_size,
+                            max_cache_valid_length,
+                            pack,
+                            # Total query-row count, used only by the workspace
+                            # (traditional/unfused) split-K egress as the per-partition
+                            # `o_partial`/`lse_partial` row stride; harmless (unused)
+                            # for every other config.
+                            UInt32(num_rows_q),
+                            grid_dim=SchedulerType.grid_dim(
+                                batch_size,
+                                block_x,
+                                num_partitions.as_uint32(),
+                            ),
+                            block_dim=(num_threads, 1, 1),
+                            cluster_dim=cluster_dim,
+                            shared_mem_bytes=smem_use,
+                            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                                UInt32(smem_use)
+                            ),
+                            attributes=pdl_launch_attributes(MHA_PDL_LEVEL),
+                        )
+
+                    # --- ragged dispatch ---
+                    comptime if ragged:
+                        with_valid_length[NonNullPointer[.uint32]](
+                            {valid_length.as_imm().as_unsafe_any_origin()}
+                        )
+                    else:
+                        with_valid_length[NullPointer[.uint32]]({})
+
+                # --- kv_input_row_offsets dispatch ---
+                if kv_input_row_offsets:
+                    with_kv_offsets[NonNullPointer[.uint32]](
+                        {kv_input_row_offsets.value().ptr}
+                    )
+                else:
+                    with_kv_offsets[NullPointer[.uint32]]({})
+
+            # --- sink dispatch ---
+            comptime if sink:
+                with_sink_q[NonNullPointer[KVType.dtype]](
+                    {
+                        rebind[
+                            UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]
+                        ](sink_weights.value().ptr)
+                    }
+                )
+            else:
+                with_sink_q[NullPointer[KVType.dtype]]({})
 
     @__parameter
     @inline(.always)

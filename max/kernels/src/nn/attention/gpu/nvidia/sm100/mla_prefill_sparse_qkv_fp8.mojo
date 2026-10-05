@@ -50,7 +50,7 @@ and head=128 (cta_group=2, 2-CTA f8f6f4) are follow-ups.
 """
 
 from std.sys import size_of
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -117,6 +117,7 @@ from layout import (
     TensorLayout,
     TensorEngine,
     Coord,
+    coord,
 )
 from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
 from layout.tma_async import (
@@ -305,23 +306,23 @@ struct MLAPrefillSparseQKVFP8[
     comptime SMemType = MLASparseSharedMemoryQKVFP8[Self.config]
 
     # ---- TMA tile shapes ----
-    comptime q_tile_shape = Index(
+    comptime q_tile_shape = coord[
         1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
-    )
+    ]
     comptime q_desc_shape = _default_desc_shape[
-        3, FP8_TYPE, Self.q_tile_shape, SW64
+        FP8_TYPE, Self.q_tile_shape, SW64
     ]()
-    comptime Q_SWIZZLE_COLS = Self.q_desc_shape[2]
+    comptime Q_SWIZZLE_COLS = Self.q_desc_shape.element_types[2].static_value
 
     comptime kv_gather_box = _gather4_box_width[
         FP8_TYPE, Self.config.input_qk_depth, SW64
     ]()
-    comptime kv_tile_shape = Index(Self.B_TOPK, Self.kv_gather_box)
-    comptime kv_desc_shape = Index(1, Self.kv_gather_box)
+    comptime kv_tile_shape = coord[Self.B_TOPK, Self.kv_gather_box]
+    comptime kv_desc_shape = coord[1, Self.kv_gather_box]
 
     # O TMA store: bf16 SWIZZLE_128B (unchanged from the BF16-KV kernel).
-    comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
-    comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
+    comptime o_tile_shape = coord[Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth]
+    comptime o_desc_shape = coord[Self.NUM_Q_HEADS_PER_CTA, 64]
 
     # ---- TMEM layout (512 cols) ----
     comptime O_TMEM_ADDR = 0
@@ -440,7 +441,7 @@ struct MLAPrefillSparseQKVFP8[
     @staticmethod
     def _load_kv_fp8(
         kv_tma_op: TMATensorTile[
-            FP8_TYPE, 2, Self.kv_tile_shape, Self.kv_desc_shape
+            FP8_TYPE, Self.kv_tile_shape, Self.kv_desc_shape
         ],
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
@@ -528,7 +529,7 @@ struct MLAPrefillSparseQKVFP8[
     @staticmethod
     def _load_v_fp8(
         kv_tma_op: TMATensorTile[
-            FP8_TYPE, 2, Self.kv_tile_shape, Self.kv_desc_shape
+            FP8_TYPE, Self.kv_tile_shape, Self.kv_desc_shape
         ],
         indices: TileTensor[.uint32, address_space=.GENERIC, ...],
         kv_lut: Self.KVLUTType,
@@ -636,9 +637,7 @@ struct MLAPrefillSparseQKVFP8[
         q_smem: UnsafePointer[
             mut=True, Scalar[FP8_TYPE], address_space=.SHARED, ...
         ],
-        q_tma_op: TMATensorTile[
-            FP8_TYPE, 3, Self.q_tile_shape, Self.q_desc_shape
-        ],
+        q_tma_op: TMATensorTile[FP8_TYPE, Self.q_tile_shape, Self.q_desc_shape],
         prologue_q: UnsafePointer[
             mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
@@ -727,14 +726,12 @@ struct MLAPrefillSparseQKVFP8[
         TopKLengthEngine: TensorEngine,
         IndicesEngine: TensorEngine,
     ](
-        q_tma_op: TMATensorTile[
-            FP8_TYPE, 3, Self.q_tile_shape, Self.q_desc_shape
-        ],
+        q_tma_op: TMATensorTile[FP8_TYPE, Self.q_tile_shape, Self.q_desc_shape],
         kv_tma_op: TMATensorTile[
-            FP8_TYPE, 2, Self.kv_tile_shape, Self.kv_desc_shape
+            FP8_TYPE, Self.kv_tile_shape, Self.kv_desc_shape
         ],
         o_tma_op: TMATensorTile[
-            Self.output_dtype, 2, Self.o_tile_shape, Self.o_desc_shape
+            Self.output_dtype, Self.o_tile_shape, Self.o_desc_shape
         ],
         topk_lengths: TileTensor[
             .uint32, TopKLengthLayout, MutAnyOrigin, Engine=TopKLengthEngine
@@ -1258,7 +1255,7 @@ struct MLAPrefillSparseQKVFP8[
             mut=True, UInt32, address_space=.SHARED, ...
         ],
         o_tma_op: TMATensorTile[
-            Self.output_dtype, 2, Self.o_tile_shape, Self.o_desc_shape
+            Self.output_dtype, Self.o_tile_shape, Self.o_desc_shape
         ],
         scale: Float32,
         attn_sink_ptr: Optional[UnsafePointer[Float32, ImmutAnyOrigin]],
@@ -1626,7 +1623,7 @@ def mla_prefill_sparse_qkv_fp8[
     var kv_operand = KVCacheMHAOperand(kv_cache)
 
     var q_tma_op = create_tensor_tile[
-        Index(1, config.num_q_heads // config.cta_group, q_depth),
+        coord[1, config.num_q_heads // config.cta_group, q_depth],
         swizzle_mode=SW64,
     ](ctx, q)
 
@@ -1647,9 +1644,9 @@ def mla_prefill_sparse_qkv_fp8[
         row_major(num_q_rows * config.num_q_heads, config.v_depth),
     )
     var o_tma_op = create_tensor_tile[
-        Index(config.num_q_heads // config.cta_group, config.v_depth),
+        coord[config.num_q_heads // config.cta_group, config.v_depth],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-        __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
+        __desc_shape=coord[config.num_q_heads // config.cta_group, 64],
     ](ctx, output_2d)
 
     comptime assert type_of(topk_lengths).flat_rank == 1

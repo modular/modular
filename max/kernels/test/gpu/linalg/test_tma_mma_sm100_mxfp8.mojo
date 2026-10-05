@@ -46,7 +46,7 @@ from std.utils.numerics import get_accum_type
 from std.math import align_up, ceildiv, inf
 from std.testing import assert_equal
 from std.math.uutils import udivmod
-from layout import CoordLike, Coord, Idx, TileTensor, row_major
+from layout import CoordLike, Coord, Idx, TileTensor, coord, row_major
 from internal_utils import assert_almost_equal
 from std.random import rand
 from std.collections import Optional
@@ -81,18 +81,14 @@ def block_scaled_mxfp8_kernel[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    a_scales_tile_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_tile_rank],
-    a_scales_desc_shape: IndexList[a_scales_tile_rank],
-    b_scales_tile_rank: Int,
-    b_scales_tile_shape: IndexList[b_scales_tile_rank],
-    b_scales_desc_shape: IndexList[b_scales_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
+    b_scales_tile_shape: Coord,
+    b_scales_desc_shape: Coord,
     c_layout: TensorLayout,
     block_tile_shape: IndexList[3],
     umma_shape: IndexList[3],
@@ -101,17 +97,15 @@ def block_scaled_mxfp8_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 256,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     a_scales_tma_op: TMATensorTile[
         a_scales_type,
-        a_scales_tile_rank,
         a_scales_tile_shape,
         a_scales_desc_shape,
     ],
     b_scales_tma_op: TMATensorTile[
         b_scales_type,
-        b_scales_tile_rank,
         b_scales_tile_shape,
         b_scales_desc_shape,
     ],
@@ -530,11 +524,11 @@ def sm100_block_scaled_mxfp8[
         256,
     ), "Only support 128x128x128 or 128x256x128 block size"
 
-    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    var a_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=a_swizzle](
         ctx, a
     )
     var b_tma_op = create_tensor_tile[
-        Index(BN, BK),
+        coord[BN, BK],
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -576,23 +570,23 @@ def sm100_block_scaled_mxfp8[
     )
 
     var a_scales_tma_op = create_tensor_tile[
-        Index(
+        coord[
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-        ),
+        ],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_shape=Index(
+        __tile_shape=coord[
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-        ),
+        ],
     ](ctx, a_scales_4d)
 
     var b_scales_tma_op = create_tensor_tile[
-        Index(
+        coord[
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-        ),
+        ],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_shape=Index(
+        __tile_shape=coord[
             BN // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-        ),
+        ],
     ](ctx, b_scales_4d)
 
     comptime block_dim = 256
@@ -609,16 +603,12 @@ def sm100_block_scaled_mxfp8[
         c_type,
         a_scales_type,
         b_scales_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
-        type_of(b_scales_tma_op).rank,
         type_of(b_scales_tma_op).tile_shape,
         type_of(b_scales_tma_op).desc_shape,
         c_layout,

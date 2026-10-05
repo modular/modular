@@ -314,6 +314,33 @@ This version is still a work in progress.
   v.reduce[2](add)       # was: v.reduce[add, 2]()
   ```
 
+- The TMA descriptor types `TMATensorTile`, `TMATensorTileArray`,
+  `TMATensorTileIm2col`, and `SplitLastDimTMATensorTile` in
+  `max.kernels.layout.tma_async` now take `tile_shape` and `desc_shape` as
+  flat `Coord` values instead of `IndexList[rank]`, and the separate `rank`
+  parameter is gone (rank is now derived as `tile_shape.rank`). Shape helpers
+  `_default_desc_shape`, `_padded_shape`, `_ragged_shape`, and
+  `_im2col_desc_shape` are now out-param functions returning concrete `Coord`
+  types. Migrate callers by passing `coord[...]` values directly and reading
+  shape dimensions via `.element_types[i].static_value`:
+
+  ```mojo
+  # was: TMATensorTile[dtype, rank=3, tile_shape=Index(BM,1,depth),
+  #                     desc_shape=Index(BM,1,depth)]
+  # now:
+  var tile = TMATensorTile[
+      dtype, coord[BM, 1, depth], coord[BM, 1, depth]
+  ]()
+  comptime BM_i = type_of(tile).tile_shape.element_types[0].static_value
+  ```
+
+  `QTMATile` split into `QTMATilePrefill` (rank-3, prefill/non-fused) and
+  `QTMATileFused` (rank-4, decoding or fused-GQA); the rank choice must now
+  be spelled at each use site. The companion factories `q_tma_prefill` and
+  `q_tma_fused` replace the deleted `q_tma`. The `QTMATile` alias itself was
+  removed outright after all in-tree consumers migrated; spell the rank
+  choice explicitly with `QTMATilePrefill` or `QTMATileFused`.
+
 ## Tooling changes
 
 - The `mojo` compiler now uses jemalloc as its allocator on Linux. Compiling

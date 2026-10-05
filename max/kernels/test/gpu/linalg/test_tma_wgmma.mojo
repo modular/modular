@@ -26,6 +26,7 @@ from layout import (
     Layout,
     LayoutTensor,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tile_layout import Layout as NativeLayout
@@ -128,12 +129,10 @@ def tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -141,8 +140,8 @@ def tma_wgmma_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[c_type, CLayout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
@@ -340,11 +339,11 @@ def test_tma_wgmma[
     a.to_device()
     b.to_device()
 
-    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    var a_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=a_swizzle](
         ctx, a.device_tensor()
     )
     var b_tma_op = create_tensor_tile[
-        Index(BN, BK) if transpose_b else Index(BK, BN),
+        coord[BN if transpose_b else BK, BK if transpose_b else BN],
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
@@ -353,10 +352,8 @@ def test_tma_wgmma[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         block_tile_shape,

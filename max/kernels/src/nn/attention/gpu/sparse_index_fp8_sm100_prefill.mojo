@@ -106,7 +106,7 @@ from std.sys import (
     get_defined_int,
     size_of,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from layout import (
@@ -116,6 +116,7 @@ from layout import (
     TensorEngine,
     TileTensor,
     UNKNOWN_VALUE,
+    coord,
 )
 from layout.tile_layout import row_major as tt_row_major
 from layout.tma_async import (
@@ -151,12 +152,10 @@ from nn.attention.gpu.nvidia.sm100.attention import SM100_RESERVED_SMEM_BYTES
 comptime _INDEX_SWIZZLE = TensorMapSwizzle.SWIZZLE_128B
 comptime QTMATileT[
     dtype: DType, MMA_N: Int, depth: Int
-] = SplitLastDimTMATensorTile[dtype, Index(MMA_N, 1, depth), _INDEX_SWIZZLE]
+] = SplitLastDimTMATensorTile[dtype, coord[MMA_N, 1, depth], _INDEX_SWIZZLE]
 comptime KTMATileT[dtype: DType, BM_key: Int, depth: Int] = TMATensorTile[
     dtype,
-    4,
-    Index(1, BM_key, 1, depth),
-    Index(1, BM_key, 1, depth),
+    coord[1, BM_key, 1, depth],
 ]
 # The k-scale ring's descriptor: a flat `1 x KS_BOX` window on the scale pool,
 # unswizzled because one scalar per key has no depth to swizzle. A SECOND
@@ -164,7 +163,7 @@ comptime KTMATileT[dtype: DType, BM_key: Int, depth: Int] = TMATensorTile[
 # their own pool with their own paging. `KS_BOX` is one 16-byte alignment unit
 # WIDER than the key tile -- see `flat_scale_window`.
 comptime KSTMATileT[ks_dtype: DType, KS_BOX: Int] = TMATensorTile[
-    ks_dtype, 2, Index(1, KS_BOX), Index(1, KS_BOX)
+    ks_dtype, coord[1, KS_BOX]
 ]
 
 
@@ -2211,8 +2210,8 @@ def _create_prefill_q_tma[
         res = QTMATileT[dtype, N_TOKENS * num_heads, depth](desc)
     else:
         res = create_split_tma[
-            Index(N_TOKENS * num_heads, 1, depth),
-            Index(UNKNOWN_VALUE, 1, depth),
+            coord[N_TOKENS * num_heads, 1, depth],
+            coord[UNKNOWN_VALUE, 1, depth],
             _INDEX_SWIZZLE,
         ](ctx, q_ptr, num_q_tokens * num_heads)
 

@@ -45,7 +45,8 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.primitives.warp import _vote_nvidia_helper
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
-from layout import TileTensor, row_major, Idx, stack_allocation
+from layout import TileTensor, row_major, Idx, stack_allocation, coord
+from std.utils.coord import coord_to_index_list
 from layout.tile_layout import row_major as tt_row_major
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.tensor_core_async import (
@@ -99,9 +100,8 @@ comptime QOTMATile[
     dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
 ] = TMATensorTile[
     dtype,
-    2,
-    IndexList[2](BM, BK),
-    _default_desc_shape[2, dtype, (BM, BK), swizzle_mode](),
+    coord[BM, BK],
+    _default_desc_shape[dtype, coord[BM, BK], swizzle_mode](),
     is_k_major=True,
 ]
 
@@ -140,7 +140,7 @@ def tma_tile_qo[
 
     res = rebind[QOTMATile[dtype, BM, BK, swizzle_mode]](
         create_tensor_tile[
-            IndexList[2](BM, BK),
+            coord[BM, BK],
             swizzle_mode=swizzle_mode,
         ](ctx, tensor)
     )
@@ -157,9 +157,8 @@ comptime ORaggedTMATile[
     dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
 ] = TMATensorTile[
     dtype,
-    3,
-    IndexList[3](1, BM, BK),
-    _default_desc_shape[3, dtype, (1, BM, BK), swizzle_mode](),
+    coord[1, BM, BK],
+    _default_desc_shape[dtype, coord[1, BM, BK], swizzle_mode](),
     is_k_major=True,
 ]
 
@@ -207,7 +206,9 @@ def tma_tile_o[
         DeviceBuffer(ctx, ptr.unsafe_offset(-depth * BM), 1, owning=False),
         IndexList[3](rows + 1, BM, depth),
         IndexList[3](depth, depth, 1),
-        _default_desc_shape[3, dtype, (1, BM, BK), swizzle_mode](),
+        coord_to_index_list(
+            _default_desc_shape[dtype, coord[1, BM, BK], swizzle_mode]()
+        ),
     )
 
 
@@ -239,9 +240,7 @@ def store_row_coords[
 # not triggered. With BN_QK=64, tile_bytes = 256 which is already 128-aligned.
 comptime ScalesTMATile[BN_QK: Int] = TMATensorTile[
     DType.float32,
-    2,
-    IndexList[2](1, BN_QK),
-    IndexList[2](1, BN_QK),
+    coord[1, BN_QK],
     is_k_major=True,
 ]
 
@@ -278,9 +277,9 @@ def tma_tile_scales[
     var tensor = TileTensor(ptr, rt_layout)
     res = rebind[ScalesTMATile[BN_QK]](
         create_tensor_tile[
-            IndexList[2](1, BN_QK),
+            coord[1, BN_QK],
             swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-            __desc_shape=IndexList[2](1, BN_QK),
+            __desc_shape=coord[1, BN_QK],
         ](ctx, tensor)
     )
 

@@ -63,6 +63,7 @@ from layout import (
     RowMajorLayout,
     TensorEngine,
     TileTensor,
+    coord,
 )
 from nn.attention.gpu.nvidia.common import (
     NullPointer,
@@ -70,7 +71,6 @@ from nn.attention.gpu.nvidia.common import (
 )
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -230,9 +230,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         # 9 col-groups by `async_copy_gather4_tile` internally.
         k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         o_tma: ORaggedTMATile[
             dtype=Self.output_type,
@@ -256,9 +255,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         # Same descriptor shape as the main K_TMA.
         extra_k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -631,9 +629,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         elect_mask: Int32,
         cur_k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         cur_kv_lut: Self.KVLUTType,
         cur_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -734,9 +731,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         ],
         k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -764,9 +760,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],

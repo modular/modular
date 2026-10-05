@@ -46,7 +46,7 @@ from max.gpu.memory import external_memory, fence_mbarrier_init
 from max.gpu.compute.arch.mma_nvidia_sm100 import *
 from max.gpu.sync import syncwarp
 from max.gpu.compute.arch.tcgen05 import *
-from layout import Layout as LegacyLayout
+from layout import Coord, Layout as LegacyLayout
 from layout.tma_async import TMATensorTile
 from structured_kernels.tile_types import (
     TmaOpType,
@@ -600,7 +600,6 @@ struct Conv2dFpropKernel[
         act_loader: TileLoaderTMAIm2col[
             act_tma_origin,
             Self.act_type,
-            Self.ActTmaOp.rank,
             Self.ActTmaOp.tile_shape,
             Self.ActTmaOp.desc_shape,
             cta_group=Self.cta_group,
@@ -608,7 +607,6 @@ struct Conv2dFpropKernel[
         filter_loader: TileLoaderTMA[
             filter_tma_origin,
             Self.filter_type,
-            Self.FilterTmaOp.rank,
             Self.FilterTmaOp.tile_shape,
             Self.FilterTmaOp.desc_shape,
             cta_group=Self.cta_group,
@@ -731,7 +729,6 @@ struct Conv2dFpropKernel[
         """
         Self._run_impl[
             has_residual=False,
-            _src_rank=Self.OutTmaOp.rank,
             _src_tile_shape=Self.OutTmaOp.tile_shape,
             _src_desc_shape=Self.OutTmaOp.desc_shape,
         ](
@@ -780,7 +777,6 @@ struct Conv2dFpropKernel[
         Self._run_impl[
             has_residual=False,
             has_compute_fn=True,
-            _src_rank=Self.OutTmaOp.rank,
             _src_tile_shape=Self.OutTmaOp.tile_shape,
             _src_desc_shape=Self.OutTmaOp.desc_shape,
         ](
@@ -826,7 +822,6 @@ struct Conv2dFpropKernel[
         """
         Self._run_impl[
             has_residual=True,
-            _src_rank=Self.SrcTmaOp.rank,
             _src_tile_shape=Self.SrcTmaOp.tile_shape,
             _src_desc_shape=Self.SrcTmaOp.desc_shape,
         ](
@@ -849,15 +844,14 @@ struct Conv2dFpropKernel[
         //,
         has_residual: Bool,
         has_compute_fn: Bool = False,
-        _src_rank: Int = Self.SrcTmaOp.rank,
-        _src_tile_shape: IndexList[_src_rank] = Self.SrcTmaOp.tile_shape,
-        _src_desc_shape: IndexList[_src_rank] = Self.SrcTmaOp.desc_shape,
+        _src_tile_shape: Coord = Self.SrcTmaOp.tile_shape,
+        _src_desc_shape: Coord = Self.SrcTmaOp.desc_shape,
     ](
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
         out_tma_op: Self.OutTmaOp,
         src_tma_op: TMATensorTile[
-            Self.out_type, _src_rank, _src_tile_shape, _src_desc_shape
+            Self.out_type, _src_tile_shape, _src_desc_shape
         ],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
@@ -875,8 +869,6 @@ struct Conv2dFpropKernel[
             ComputeFnType: Type of `compute_fn` (inferred).
             has_residual: Whether to load source C and apply residual add.
             has_compute_fn: Whether to apply `compute_fn` in the epilogue.
-            _src_rank: Rank of source C TMA tile/descriptor shapes (internal,
-                set by entry points).
             _src_tile_shape: Source C TMA tile shape (internal, set by
                 entry points).
             _src_desc_shape: Source C TMA descriptor shape (internal, set

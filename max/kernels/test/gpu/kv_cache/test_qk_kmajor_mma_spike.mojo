@@ -81,6 +81,7 @@ from layout import (
     RowMajorLayout,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout._fillers import arange
@@ -237,12 +238,10 @@ def cpu_qk_naive[
 def qk_mma_kernel[
     ab_type: DType,
     c_type: DType,
-    q_tile_rank: Int,
-    q_tile_shape: IndexList[q_tile_rank],
-    q_desc_shape: IndexList[q_tile_rank],
-    k_tile_rank: Int,
-    k_tile_shape: IndexList[k_tile_rank],
-    k_desc_shape: IndexList[k_tile_rank],
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
+    k_tile_shape: Coord,
+    k_desc_shape: Coord,
     c_layout: TensorLayout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -250,9 +249,9 @@ def qk_mma_kernel[
     use_native: Bool,
     num_threads: Int = 128,
 ](
-    q_tma_op: TMATensorTile[ab_type, q_tile_rank, q_tile_shape, q_desc_shape],
+    q_tma_op: TMATensorTile[ab_type, q_tile_shape, q_desc_shape],
     k_tma_op: TMATensorTile[
-        ab_type, k_tile_rank, k_tile_shape, k_desc_shape, is_k_major=True
+        ab_type, k_tile_shape, k_desc_shape, is_k_major=True
     ],
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
@@ -505,12 +504,15 @@ def run_qk_spike[
     k.to_device()
 
     # A=Q k-major tile (BM,BK), default box.
-    var q_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=swizzle_mode](
+    var q_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=swizzle_mode](
         ctx, q.device_tensor()
     )
     comptime block_dim = 128
     comptime smem_use = (BM + BN) * size_of[ab_type]() * BK + 64
-    comptime native_box = Index(_CM_NUM_ROWS, gran)
+    comptime native_box = coord[_CM_NUM_ROWS, gran]
+    # `create_tma_descriptor` still takes IndexList for shared_mem_shape (low-level
+    # TMA-builder API); only the high-level TMATensorTile uses Coord.
+    comptime native_box_idx = Index(_CM_NUM_ROWS, gran)
 
     # The kernel + enqueue is duplicated in each comptime-if arm because the two
     # arms produce K tiles with different `desc_shape` (default `(BN, gran)` vs
@@ -536,18 +538,16 @@ def run_qk_spike[
             ),
             Index(N, K),  # gmem [seq_k, head_size], row-major
             Index(K, 1),  # head_size contiguous
-            native_box,  # (_CM_NUM_ROWS, gran) core-matrix box
+            native_box_idx,  # (_CM_NUM_ROWS, gran) core-matrix box
         )
         var k_tma_op = TMATensorTile[
-            ab_type, 2, Index(BN, BK), native_box, is_k_major=True
+            ab_type, coord[BN, BK], native_box, is_k_major=True
         ](k_desc)
         comptime kernel = qk_mma_kernel[
             ab_type,
             c_type,
-            type_of(q_tma_op).rank,
             type_of(q_tma_op).tile_shape,
             type_of(q_tma_op).desc_shape,
-            type_of(k_tma_op).rank,
             type_of(k_tma_op).tile_shape,
             type_of(k_tma_op).desc_shape,
             type_of(o).LayoutType,
@@ -573,15 +573,13 @@ def run_qk_spike[
         # Baseline arm: default box (BN, gran) -> global chunk-outer, matching
         # the current `tile_layout_k_major`.
         var k_tma_op = create_tensor_tile[
-            Index(BN, BK), swizzle_mode=swizzle_mode
+            coord[BN, BK], swizzle_mode=swizzle_mode
         ](ctx, k.device_tensor())
         comptime kernel = qk_mma_kernel[
             ab_type,
             c_type,
-            type_of(q_tma_op).rank,
             type_of(q_tma_op).tile_shape,
             type_of(q_tma_op).desc_shape,
-            type_of(k_tma_op).rank,
             type_of(k_tma_op).tile_shape,
             type_of(k_tma_op).desc_shape,
             type_of(o).LayoutType,

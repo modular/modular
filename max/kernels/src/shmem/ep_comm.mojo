@@ -94,6 +94,7 @@ from max.gpu.sync import (
 )
 from layout import (
     Coord,
+    coord,
     Idx,
     DefaultEngine,
     TensorLayout,
@@ -1372,14 +1373,14 @@ struct NVBlockScaledTokenFormat[
     comptime group_size = Self.get_group_size()
 
     comptime _n_k_tiles = Self.dispatch_wait_tile_shape[1]
-    comptime tma_tile_shape = Index(
+    comptime tma_tile_shape = coord[
         1,
         Self._hid_dim // Self.group_size // SF_ATOM_K // Self._n_k_tiles,
         1,
         SF_ATOM_K * SF_ATOM_M[1],
-    )
+    ]
     comptime _scales_smem_per_warp = align_up(
-        Int(Coord(Self.tma_tile_shape).product()), 128
+        Int(Self.tma_tile_shape.product()), 128
     ) * size_of[Self.scales_dtype]()
     comptime _quant_smem_per_warp = align_up(
         Self.quant_size() // Self._n_k_tiles, 16
@@ -1394,10 +1395,8 @@ struct NVBlockScaledTokenFormat[
 
     comptime ScalesTMATensorTileType = TMATensorTile[
         Self.scales_dtype,
-        4,
         Self.tma_tile_shape,
         _default_desc_shape[
-            4,
             Self.scales_dtype,
             Self.tma_tile_shape,
             TensorMapSwizzle.SWIZZLE_NONE,
@@ -2016,7 +2015,7 @@ struct NVBlockScaledTokenFormat[
 
         # --- Scales: sub-warp shuffle into SMEM, then 2D TMA store ---
         comptime aligned_tile_size = align_up(
-            Int(Coord(Self.tma_tile_shape).product()), 128
+            Int(Self.tma_tile_shape.product()), 128
         )
         var smem_ptr = external_memory[
             Scalar[Self.scales_dtype],
@@ -2028,7 +2027,7 @@ struct NVBlockScaledTokenFormat[
             smem_ptr += smem_base_offset // size_of[Self.scales_dtype]()
         var scales_tile = TileTensor(
             smem_ptr + aligned_tile_size * w,
-            row_major(Coord(Self.tma_tile_shape)),
+            row_major(Self.tma_tile_shape),
         )
 
         # Each warp is divided into SF_ATOM_M[1] sub-warps. Each sub-warp

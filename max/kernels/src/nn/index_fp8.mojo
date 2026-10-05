@@ -32,7 +32,6 @@ from max.gpu.sync import barrier
 from max.gpu.memory import external_memory
 from kv_cache.types import create_flat_kv_tma_tile
 from nn.attention.mha_operand import RaggedMHAOperand, MHAOperand
-from nn.attention.gpu.nvidia.common import q_tma
 from nn.attention.gpu.sparse_index_fp8_sm100 import (
     _BM_KEY,
     _INDEX_SWIZZLE,

@@ -60,6 +60,8 @@ from layout import (
     RowMajorLayout,
     TensorEngine,
     TileTensor,
+    TensorEngine,
+    coord,
     row_major,
     stack_allocation as tt_stack_allocation,
 )
@@ -69,7 +71,7 @@ from nn.attention.gpu.nvidia.common import (
 )
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
-from std.utils.index import IndexList
+
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -384,16 +386,14 @@ struct MLA_SM100_Decode_Sparse[
         # K_nope gather4 TMA: INT64, BN_QK(64) rows, SWIZZLE_NONE
         k_nope_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.nope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.nope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.nope_gather4_box_w],
+            desc_shape=coord[1, Self.nope_gather4_box_w],
         ],
         # K_rope gather4 TMA: BF16, BN_QK(64) rows, SWIZZLE_128B
         k_rope_tma: TMATensorTile[
             Self.bf16_type,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.rope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.rope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.rope_gather4_box_w],
+            desc_shape=coord[1, Self.rope_gather4_box_w],
         ],
         o_tma: ORaggedTMATile[
             dtype=Self.output_type,
@@ -419,15 +419,13 @@ struct MLA_SM100_Decode_Sparse[
         # with its own TMA descriptors, indices, and scales.
         extra_k_nope_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.nope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.nope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.nope_gather4_box_w],
+            desc_shape=coord[1, Self.nope_gather4_box_w],
         ],
         extra_k_rope_tma: TMATensorTile[
             Self.bf16_type,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.rope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.rope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.rope_gather4_box_w],
+            desc_shape=coord[1, Self.rope_gather4_box_w],
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -1191,16 +1189,14 @@ struct MLA_SM100_Decode_Sparse[
         # K_nope gather4 TMA: INT64, 64 rows, SWIZZLE_NONE
         k_nope_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.nope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.nope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.nope_gather4_box_w],
+            desc_shape=coord[1, Self.nope_gather4_box_w],
         ],
         # K_rope gather4 TMA: BF16, 64 rows, SWIZZLE_128B
         k_rope_tma: TMATensorTile[
             Self.bf16_type,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.rope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.rope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.rope_gather4_box_w],
+            desc_shape=coord[1, Self.rope_gather4_box_w],
         ],
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
         kv_nope_smem_fp8: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -1234,15 +1230,13 @@ struct MLA_SM100_Decode_Sparse[
         topk: Int,
         extra_k_nope_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.nope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.nope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.nope_gather4_box_w],
+            desc_shape=coord[1, Self.nope_gather4_box_w],
         ],
         extra_k_rope_tma: TMATensorTile[
             Self.bf16_type,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.rope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.rope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.rope_gather4_box_w],
+            desc_shape=coord[1, Self.rope_gather4_box_w],
         ],
         extra_topk: Int,
     ):
@@ -1403,15 +1397,13 @@ struct MLA_SM100_Decode_Sparse[
         is_leader: Bool,
         cur_nope_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.nope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.nope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.nope_gather4_box_w],
+            desc_shape=coord[1, Self.nope_gather4_box_w],
         ],
         cur_rope_tma: TMATensorTile[
             Self.bf16_type,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.rope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.rope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.rope_gather4_box_w],
+            desc_shape=coord[1, Self.rope_gather4_box_w],
         ],
         mut idx_cons: ConsumerPipeline[2],
         idx_smem_base: SharedMemPointer[Int32],
@@ -1476,15 +1468,13 @@ struct MLA_SM100_Decode_Sparse[
         is_leader: Bool,
         cur_nope_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.nope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.nope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.nope_gather4_box_w],
+            desc_shape=coord[1, Self.nope_gather4_box_w],
         ],
         cur_rope_tma: TMATensorTile[
             Self.bf16_type,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.rope_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.rope_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.rope_gather4_box_w],
+            desc_shape=coord[1, Self.rope_gather4_box_w],
         ],
         mut idx_cons: ConsumerPipeline[2],
         idx_smem_base: SharedMemPointer[Int32],

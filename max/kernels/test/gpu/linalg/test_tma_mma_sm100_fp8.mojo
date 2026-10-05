@@ -32,6 +32,7 @@ from layout import (
     MixedLayout,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout._fillers import random
@@ -91,12 +92,10 @@ def tma_umma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     c_layout: TensorLayout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -107,8 +106,8 @@ def tma_umma_kernel_ss[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
@@ -364,9 +363,8 @@ def tma_umma_kernel_ts_fp8[
     b_type: DType,
     c_type: DType,
     a_layout: TensorLayout,
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     c_layout: TensorLayout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -375,7 +373,7 @@ def tma_umma_kernel_ts_fp8[
     num_threads: Int = 128,
 ](
     a: TileTensor[a_type, a_layout, ImmutAnyOrigin],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
@@ -712,12 +710,19 @@ def test_tma_umma[
     var a_dev = a.device_tensor()
     var c_dev = c.device_tensor()
 
+    # Int-folded dims: selecting between two distinct Coord types does not
+    # fold at comptime; selecting Ints does. Matches the pre-migration
+    # `Index(BK, BM) if transpose_a else Index(BM, BK)` semantics.
+    comptime a_rows = BK if transpose_a else BM
+    comptime a_cols = BM if transpose_a else BK
     var a_tma_op = create_tensor_tile[
-        Index(BK, BM) if transpose_a else Index(BM, BK),
+        coord[a_rows, a_cols],
         swizzle_mode=a_swizzle,
     ](ctx, a_dev)
+    comptime b_rows = BN if transpose_b else BK
+    comptime b_cols = BK if transpose_b else BN
     var b_tma_op = create_tensor_tile[
-        Index(BN, BK) if transpose_b else Index(BK, BN),
+        coord[b_rows, b_cols],
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
@@ -729,10 +734,8 @@ def test_tma_umma[
             a_type,
             b_type,
             c_type,
-            type_of(a_tma_op).rank,
             type_of(a_tma_op).tile_shape,
             type_of(a_tma_op).desc_shape,
-            type_of(b_tma_op).rank,
             type_of(b_tma_op).tile_shape,
             type_of(b_tma_op).desc_shape,
             type_of(c_dev).LayoutType,
@@ -765,7 +768,6 @@ def test_tma_umma[
             b_type,
             c_type,
             type_of(a_dev).LayoutType,
-            type_of(b_tma_op).rank,
             type_of(b_tma_op).tile_shape,
             type_of(b_tma_op).desc_shape,
             type_of(c_dev).LayoutType,

@@ -28,6 +28,7 @@ from max.gpu import (
 )
 from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
 from layout import (
+    coord,
     Coord,
     Idx,
     RowMajorLayout,
@@ -864,17 +865,14 @@ def naive_block_scaled_matmul_kernel[
 @__name("quantize_dynamic_scaled_async_fp4_kernel")
 def quantize_dynamic_scaled_async_fp4_kernel[
     input_dtype: DType,
-    input_tile_rank: Int,
-    input_tile_shape: IndexList[input_tile_rank],
-    input_desc_shape: IndexList[input_tile_rank],
+    input_tile_shape: Coord,
+    input_desc_shape: Coord,
     output_dtype: DType,
-    output_tile_rank: Int,
-    output_tile_shape: IndexList[output_tile_rank],
-    output_desc_shape: IndexList[output_tile_rank],
+    output_tile_shape: Coord,
+    output_desc_shape: Coord,
     scales_dtype: DType,
-    scales_tile_rank: Int,
-    scales_tile_shape: IndexList[scales_tile_rank],
-    scales_desc_shape: IndexList[scales_tile_rank],
+    scales_tile_shape: Coord,
+    scales_desc_shape: Coord,
     input_swizzle_mode: TensorMapSwizzle,
     output_swizzle_mode: TensorMapSwizzle,
     scales_swizzle_mode: TensorMapSwizzle,
@@ -882,13 +880,13 @@ def quantize_dynamic_scaled_async_fp4_kernel[
     NUM_PIPELINES_STAGES: Int,
 ](
     input_tma_op: TMATensorTile[
-        input_dtype, input_tile_rank, input_tile_shape, input_desc_shape
+        input_dtype, input_tile_shape, input_desc_shape
     ],
     output_tma_op: TMATensorTile[
-        output_dtype, output_tile_rank, output_tile_shape, output_desc_shape
+        output_dtype, output_tile_shape, output_desc_shape
     ],
     scales_tma_op: TMATensorTile[
-        scales_dtype, scales_tile_rank, scales_tile_shape, scales_desc_shape
+        scales_dtype, scales_tile_shape, scales_desc_shape
     ],
     tensor_sf: Float32,  # tensor-wise scale factor
 ):
@@ -900,17 +898,14 @@ def quantize_dynamic_scaled_async_fp4_kernel[
 
     Parameters:
         input_dtype: Element type of the input activation tensor.
-        input_tile_rank: Rank of the input TMA tile descriptor.
         input_tile_shape: Per-dimension shape of the input TMA tile.
         input_desc_shape: Per-dimension descriptor shape of the input TMA
             tile.
         output_dtype: Element type of the quantized output tensor.
-        output_tile_rank: Rank of the output TMA tile descriptor.
         output_tile_shape: Per-dimension shape of the output TMA tile.
         output_desc_shape: Per-dimension descriptor shape of the output
             TMA tile.
         scales_dtype: Element type of the block scale-factor tensor.
-        scales_tile_rank: Rank of the scales TMA tile descriptor.
         scales_tile_shape: Per-dimension shape of the scales TMA tile.
         scales_desc_shape: Per-dimension descriptor shape of the scales
             TMA tile.
@@ -937,18 +932,12 @@ def quantize_dynamic_scaled_async_fp4_kernel[
         ]()
     )
 
-    comptime input_stage_tile_size = _idx_product[
-        input_tile_rank, input_tile_shape
-    ]()
+    comptime input_stage_tile_size = _idx_product[input_tile_shape]()
     comptime input_smem_tile_size = (
         input_stage_tile_size * NUM_PIPELINES_STAGES
     )
-    comptime output_smem_tile_size = _idx_product[
-        output_tile_rank, output_tile_shape
-    ]()
-    comptime scales_smem_tile_size = _idx_product[
-        scales_tile_rank, scales_tile_shape
-    ]()
+    comptime output_smem_tile_size = _idx_product[output_tile_shape]()
+    comptime scales_smem_tile_size = _idx_product[scales_tile_shape]()
 
     comptime SF_K_GROUP_SIZE: Int = SF_VECTOR_SIZE * Int(SF_ATOM_K)
     comptime STAGE_GROUP_SIZE = SF_K_GROUP_SIZE // NUM_PIPELINES_STAGES
@@ -974,12 +963,8 @@ def quantize_dynamic_scaled_async_fp4_kernel[
     ]()
     var mbar_ptr = scales_smem_ptr + scales_smem_tile_size
 
-    var output_smem = TileTensor(
-        output_smem_ptr, row_major(Coord(output_tile_shape))
-    )
-    var scales_smem = TileTensor(
-        scales_smem_ptr, row_major(Coord(scales_tile_shape))
-    )
+    var output_smem = TileTensor(output_smem_ptr, row_major(output_tile_shape))
+    var scales_smem = TileTensor(scales_smem_ptr, row_major(scales_tile_shape))
 
     var tma_mbar = mbar_ptr.bitcast[SharedMemBarrier]()
 
@@ -993,9 +978,9 @@ def quantize_dynamic_scaled_async_fp4_kernel[
 
     barrier()
 
-    comptime expected_bytes = _idx_product[
-        input_tile_rank, input_tile_shape
-    ]() * size_of[input_dtype]()
+    comptime expected_bytes = (
+        _idx_product[input_tile_shape]() * size_of[input_dtype]()
+    )
 
     with PDL():
         if thread_idx.x >= 128:
@@ -1006,7 +991,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                     input_smem_ptr.unsafe_offset(
                         iter_idx * input_stage_tile_size
                     ),
-                    row_major(Coord(input_tile_shape)),
+                    row_major(input_tile_shape),
                 )
 
                 if lane_id() == 0:
@@ -1029,7 +1014,7 @@ def quantize_dynamic_scaled_async_fp4_kernel[
                     input_smem_ptr.unsafe_offset(
                         iter_idx * input_stage_tile_size
                     ),
-                    row_major(Coord(input_tile_shape)),
+                    row_major(input_tile_shape),
                 )
 
                 tma_mbar[iter_idx].wait(tma_phase[iter_idx])
@@ -1218,13 +1203,13 @@ def quantize_dynamic_scaled_fp4_async[
     comptime SF_K_GROUP_SIZE = SF_VECTOR_SIZE * SF_ATOM_K
     comptime NUM_PIPELINES_STAGES = 1
 
-    comptime input_tma_tile_shape = Index(128, SF_K_GROUP_SIZE)
+    comptime input_tma_tile_shape = coord[128, SF_K_GROUP_SIZE]
     var input_tma_op = create_tensor_tile[
         input_tma_tile_shape,
         swizzle_mode=input_swizzle_mode,
     ](ctx, input_tensor_tile)
 
-    comptime output_tma_tile_shape = Index(128, 32)
+    comptime output_tma_tile_shape = coord[128, 32]
     var output_tma_op = create_tensor_tile[
         output_tma_tile_shape,
         swizzle_mode=output_swizzle_mode,
@@ -1249,22 +1234,22 @@ def quantize_dynamic_scaled_fp4_async[
         ),
     )
 
-    comptime scales_tma_tile_shape = Index(
+    comptime scales_tma_tile_shape = coord[
         1, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-    )
+    ]
     var scales_tma_op = create_tensor_tile[
         scales_tma_tile_shape,
         swizzle_mode=scales_swizzle_mode,
     ](ctx, scales_4d_tensor)
 
     comptime smem_use = (
-        input_tma_tile_shape[0]
-        * input_tma_tile_shape[1]
+        input_tma_tile_shape.element_types[0].static_value
+        * input_tma_tile_shape.element_types[1].static_value
         * size_of[input_dtype]()
         * NUM_PIPELINES_STAGES
     ) + (
-        output_tma_tile_shape[0]
-        * output_tma_tile_shape[1]
+        output_tma_tile_shape.element_types[0].static_value
+        * output_tma_tile_shape.element_types[1].static_value
         * size_of[output_dtype]()
     ) + (
         size_of[SharedMemBarrier]() * NUM_PIPELINES_STAGES
@@ -1274,15 +1259,12 @@ def quantize_dynamic_scaled_fp4_async[
 
     comptime kernel = quantize_dynamic_scaled_async_fp4_kernel[
         type_of(input_tma_op).dtype,
-        type_of(input_tma_op).rank,
         type_of(input_tma_op).tile_shape,
         type_of(input_tma_op).desc_shape,
         type_of(output_tma_op).dtype,
-        type_of(output_tma_op).rank,
         type_of(output_tma_op).tile_shape,
         type_of(output_tma_op).desc_shape,
         type_of(scales_tma_op).dtype,
-        type_of(scales_tma_op).rank,
         type_of(scales_tma_op).tile_shape,
         type_of(scales_tma_op).desc_shape,
         input_swizzle_mode,
@@ -1320,9 +1302,8 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     output_dtype: DType,
     scales_dtype: DType,
     input_dtype: DType,
-    scales_tile_rank: Int,
-    scales_tile_shape: IndexList[scales_tile_rank],
-    scales_desc_shape: IndexList[scales_tile_rank],
+    scales_tile_shape: Coord,
+    scales_desc_shape: Coord,
     scales_swizzle_mode: TensorMapSwizzle,
     output_layout: TensorLayout,
     input_layout: TensorLayout,
@@ -1347,7 +1328,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         output_dtype, output_layout, MutAnyOrigin, Engine=OutputEngine
     ],
     scales_tma_op: TMATensorTile[
-        scales_dtype, scales_tile_rank, scales_tile_shape, scales_desc_shape
+        scales_dtype, scales_tile_shape, scales_desc_shape
     ],
     input_tensor: TileTensor[
         input_dtype, input_layout, ImmutAnyOrigin, Engine=InputEngine
@@ -1386,8 +1367,6 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         scales_dtype: Element type of the block scale-factor tensor
             (inferred).
         input_dtype: Element type of the input activation tensor
-            (inferred).
-        scales_tile_rank: Rank of the scales TMA tile descriptor
             (inferred).
         scales_tile_shape: Per-dimension tile shape of the scales
             TMA descriptor (inferred).
@@ -1554,7 +1533,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     var num_tokens = min(curr_expert_end - token_start, SF_MN_GROUP_SIZE)
 
     comptime scales_smem_tile_size = align_up(
-        Int(Coord(scales_tile_shape).product()), 128
+        Int(scales_tile_shape.product()), 128
     )
     var smem_ptr = unsafe_stack_allocation[
         scales_smem_tile_size * k_tiles_per_block,
@@ -1603,7 +1582,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
 
         var scales_smem = TileTensor(
             smem_ptr.unsafe_offset(kt_local * scales_smem_tile_size),
-            row_major(Coord(scales_tile_shape)),
+            row_major(scales_tile_shape),
         )
         var input_col = (
             k_idx * SF_K_GROUP_SIZE + col_thread_idx * ELEMENTS_PER_THREAD
@@ -1715,7 +1694,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
                 scales_tma_op.async_store_4d(
                     TileTensor(
                         smem_ptr.unsafe_offset(kt * scales_smem_tile_size),
-                        row_major(Coord(scales_tile_shape)),
+                        row_major(scales_tile_shape),
                     ),
                     (0, 0, store_k_idx, Int(scale_tile_idx)),
                 )
@@ -1855,9 +1834,9 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         ),
     )
 
-    comptime scales_tma_tile_shape = Index(
+    comptime scales_tma_tile_shape = coord[
         1, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-    )
+    ]
     var scales_tma_op = create_tensor_tile[
         scales_tma_tile_shape,
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
@@ -1891,7 +1870,6 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             output_dtype,
             scales_dtype,
             input_dtype,
-            scales_tma_op.rank,
             scales_tma_op.tile_shape,
             scales_tma_op.desc_shape,
             TensorMapSwizzle.SWIZZLE_NONE,

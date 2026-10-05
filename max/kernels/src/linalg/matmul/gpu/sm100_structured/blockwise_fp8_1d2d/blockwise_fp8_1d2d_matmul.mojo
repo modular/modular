@@ -34,7 +34,7 @@ from std.sys import size_of
 
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.info import B200
-from layout import TileTensor, flatten_leading
+from layout import TileTensor, coord, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
 
 from std.utils.index import Index, IndexList
@@ -170,25 +170,28 @@ def grouped_matmul_1d2d_blockwise_fp8[
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
-        Index(BM // config.cluster_shape[1], BK),
+        coord[BM // config.cluster_shape[1], BK],
         swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
+        coord[
+            BN
+            // (
+                config.cluster_shape[0] // config.cta_group
+            ) if transpose_b else BK,
+            BK if transpose_b else BN
+            // (config.cluster_shape[0] // config.cta_group),
+        ],
         swizzle_mode=config.b_swizzle,
     ](ctx, b_2d)
 
     var a_scales_tma_op = create_tma_tile[
         KernelType.AScalesLayout,
         KernelType.AScalesLayout,
-        Index(1, BM),
+        coord[1, BM],
     ](ctx, a_scales)
 
     var grid_dim = (

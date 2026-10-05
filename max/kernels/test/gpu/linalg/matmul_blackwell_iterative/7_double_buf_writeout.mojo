@@ -42,6 +42,7 @@ from layout import (
     Coord,
     Idx,
     TileTensor,
+    coord,
     row_major,
 )
 
@@ -113,12 +114,10 @@ struct WarpRole(TrivialRegisterPassable):
 def load_AB[
     a_type: DType,
     b_type: DType,
-    a_tma_rank: Int,
-    b_tma_rank: Int,
-    a_tile_shape: IndexList[a_tma_rank],
-    b_tile_shape: IndexList[b_tma_rank],
-    a_desc_shape: IndexList[a_tma_rank],
-    b_desc_shape: IndexList[b_tma_rank],
+    a_tile_shape: Coord,
+    b_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_desc_shape: Coord,
     num_pipeline_stages: Int,
     /,
     *,
@@ -126,8 +125,8 @@ def load_AB[
     mma_shape: IndexList[3],
     cta_group: Int = 1,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     a_smem: SMemTileArray[a_type, _, _, num_pipeline_stages],
     b_smem: SMemTileArray[b_type, _, _, num_pipeline_stages],
     mma_mbar: MutPointer[SharedMemBarrier, address_space=.SHARED, _],
@@ -152,10 +151,10 @@ def load_AB[
     # Leader CTAs expect SMEM from itself and their peers
     comptime expected_bytes = cta_group * (a_expected_bytes + b_expected_bytes)
 
-    comptime a_tma_load_size = _idx_product[a_tma_rank, a_desc_shape]()
-    comptime b_tma_load_size = _idx_product[b_tma_rank, b_desc_shape]()
-    comptime a_tma_rows = a_desc_shape[0]
-    comptime b_tma_rows = b_desc_shape[0]
+    comptime a_tma_load_size = _idx_product[a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape.element_types[0].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[0].static_value
 
     var stage = producer_phase.index()
     var phase = producer_phase.phase()
@@ -303,9 +302,8 @@ def stsm_helper[
 @inline(.always)
 def multi_stage_store_C[
     c_type: DType,
-    c_tma_rank: Int,
-    c_tile_shape: IndexList[c_tma_rank],
-    c_desc_shape: IndexList[c_tma_rank],
+    c_tile_shape: Coord,
+    c_desc_shape: Coord,
     /,
     *,
     accum_type: DType,
@@ -317,7 +315,7 @@ def multi_stage_store_C[
     max_tmem_cols: Int = 512,
 ](
     c_iter: SMemTileArray[c_type, _, _, _],
-    c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
     tmem_addr: UInt32,
     work_tile_coord: Tuple[Int, Int],
     elect_one_warp: Bool,
@@ -436,30 +434,27 @@ def kernel_7[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_tma_rank: Int,
-    b_tma_rank: Int,
-    c_tma_rank: Int,
-    a_tile_shape: IndexList[a_tma_rank],
-    b_tile_shape: IndexList[b_tma_rank],
-    c_tile_shape: IndexList[c_tma_rank],
-    a_desc_shape: IndexList[a_tma_rank],
-    b_desc_shape: IndexList[b_tma_rank],
-    c_desc_shape: IndexList[c_tma_rank],
+    a_tile_shape: Coord,
+    b_tile_shape: Coord,
+    c_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_desc_shape: Coord,
+    c_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     cluster_shape: StaticTuple[Int32, 3],
     num_pipeline_stages: Int,
     num_output_stages: Int = 2,
-    output_tile_shape: IndexList[2] = Index(128, 32),
+    output_tile_shape: Coord = coord[128, 32],
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     cta_group: Int = 2,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
-    c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
     num_iters_dev: Int32,
 ):
     var num_iters = Int(num_iters_dev)
@@ -478,10 +473,10 @@ def kernel_7[
     comptime CLUSTER_M = Int(cluster_shape[0])
     comptime CLUSTER_N = Int(cluster_shape[1])
 
-    comptime a_tma_load_size = _idx_product[a_tma_rank, a_desc_shape]()
-    comptime b_tma_load_size = _idx_product[b_tma_rank, b_desc_shape]()
-    comptime a_tma_rows = a_desc_shape[0]
-    comptime b_tma_rows = b_desc_shape[0]
+    comptime a_tma_load_size = _idx_product[a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape.element_types[0].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[0].static_value
     comptime assert transpose_b, "Only support transposed B"
     comptime a_smem_layout = tile_layout_k_major_typed[
         a_type, BM, BK, a_swizzle
@@ -502,7 +497,8 @@ def kernel_7[
         num_pipeline_stages,
     ]
     comptime c_stage_layout = row_major[
-        output_tile_shape[0], output_tile_shape[1]
+        output_tile_shape.element_types[0].static_value,
+        output_tile_shape.element_types[1].static_value,
     ]()
     comptime CTileArray = SMemTileArray[
         c_type,
@@ -523,9 +519,11 @@ def kernel_7[
 
     comptime a_smem_size = BM * BK
     comptime b_smem_size = BN * BK
-    comptime c_smem_size = output_tile_shape[0] * output_tile_shape[
+    comptime c_smem_size = output_tile_shape.element_types[
+        0
+    ].static_value * output_tile_shape.element_types[
         1
-    ] * num_output_stages
+    ].static_value * num_output_stages
 
     var a_smem_base = base_ptr_smem  # need space for 4096 (64 x 64) elements by 2 bytes or 8192 total, which is 0x2000
     var b_smem_base = (a_smem_base + a_smem_size * num_pipeline_stages).bitcast[
@@ -740,19 +738,15 @@ def blackwell_kernel_7[
     comptime MMA_K = umma_shape[2]
 
     var a_tma_op = create_tensor_tile[
-        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        coord[Int(BM) // Int(cluster_shape[1]), BK], swizzle_mode=a_swizzle
     ](ctx, a)
 
     var b_tma_op = create_tensor_tile[
-        Index(
-            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
-        ) if transpose_b else Index(
-            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
-        ),
+        coord[Int(BN) // (Int(cluster_shape[0]) // Int(cta_group)), BK],
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
-    comptime output_tile_shape = Index(BM, 32)
+    comptime output_tile_shape = coord[BM, 32]
     comptime c_swizzle = TensorMapSwizzle.SWIZZLE_64B
     var c_tma_op = create_tensor_tile[
         output_tile_shape, swizzle_mode=c_swizzle
@@ -767,9 +761,13 @@ def blackwell_kernel_7[
     ]() + BN * BK * size_of[b_type]()
     # Support double-buffer for output stages.
     comptime num_output_stages = 2
-    comptime C_smem = output_tile_shape[0] * output_tile_shape[
+    comptime C_smem = output_tile_shape.element_types[
+        0
+    ].static_value * output_tile_shape.element_types[
         1
-    ] * num_output_stages * size_of[c_type]()
+    ].static_value * num_output_stages * size_of[
+        c_type
+    ]()
     # Usage reserved for mbar and others
     # - tma_mbar_ptr: 8 bytes per pipeline stage
     # - mma_mbar_ptr: 8 bytes per pipeline stage
@@ -789,9 +787,6 @@ def blackwell_kernel_7[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).rank,
-        type_of(b_tma_op).rank,
-        type_of(c_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(b_tma_op).tile_shape,
         type_of(c_tma_op).tile_shape,
@@ -1010,7 +1005,9 @@ def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     comptime c_type = DType.bfloat16
     comptime block_tile_shape = Index(128, 128, 64)
     comptime umma_shape = Index(
-        block_tile_shape[0] * 2, block_tile_shape[1] * 2, 16
+        block_tile_shape[0] * 2,
+        block_tile_shape[1] * 2,
+        16,
     )
     comptime shapes_dict = make_shapes_dict()
 

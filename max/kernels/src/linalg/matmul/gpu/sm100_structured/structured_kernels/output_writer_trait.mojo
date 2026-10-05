@@ -61,6 +61,7 @@ from std.collections import Optional
 from std.memory import Pointer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
+from layout import Coord
 from layout.tma_async import TMATensorTile
 
 from linalg.utils import ElementwiseComputeFn, elementwise_epilogue_type
@@ -96,9 +97,8 @@ trait OutputWriter:
         //,
         tma_origin: ImmOrigin,
         c_type: DType,
-        c_rank: Int,
-        c_tile_shape: IndexList[c_rank],
-        c_desc_shape: IndexList[c_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
         a_type: DType,
         accum_type: DType,
         block_tile_shape: IndexList[3],
@@ -116,7 +116,7 @@ trait OutputWriter:
     ](
         c_tma_ops: Pointer[
             Array[
-                TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
+                TMATensorTile[c_type, c_tile_shape, c_desc_shape],
                 Self.num_peers,
             ],
             tma_origin,
@@ -143,7 +143,6 @@ trait OutputWriter:
             ComputeFnType: Type of the compute epilogue closure.
             tma_origin: Origin of the C TMA descriptor memory.
             c_type: Element `DType` of the output C tensor.
-            c_rank: Rank (number of dimensions) of the C tensor.
             c_tile_shape: Per-dimension tile shape of the C TMA descriptor.
             c_desc_shape: Per-dimension shape of the C output tensor.
             a_type: Element `DType` of the A operand.
