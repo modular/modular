@@ -53,7 +53,6 @@ from eval_runner import (
     resolve_canonical_repo_id,
     safe_model_name,
     test_single_request,
-    validate_hf_token,
     write_github_output,
     write_results,
 )
@@ -710,8 +709,6 @@ def smoke_test(
     A 1.0 value means 100% accuracy.
 
     """
-    validate_hf_token()
-
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
 

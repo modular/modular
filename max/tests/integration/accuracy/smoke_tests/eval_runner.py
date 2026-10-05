@@ -76,29 +76,27 @@ def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
-def validate_hf_token() -> None:
-    if os.getenv("HF_TOKEN") is None:
-        raise ValueError(
-            "Environment variable `HF_TOKEN` must be set. "
-            "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
-        )
-
-
 def resolve_canonical_repo_id(repo_id: str) -> str:
     """HF disk cache is case-sensitive, so do what we can to avoid issues"""
     if os.environ.get("HF_HUB_OFFLINE") == "1":
         return repo_id
-    try:
-        r = requests.get(
-            f"https://huggingface.co/api/models/{repo_id}",
-            headers={"Authorization": f"Bearer {os.environ['HF_TOKEN']}"},
-            timeout=(5, 10),
-        )
-        r.raise_for_status()
-        return r.json()["id"]
-    except Exception as e:
-        logger.warning("Failed repo id lookup for %s: %s", repo_id, e)
-        return repo_id
+    url = f"https://huggingface.co/api/models/{repo_id}"
+    # Private repos need a token; public ones resolve without one, so only
+    # fall back to authenticating when the anonymous lookup fails.
+    token = os.environ.get("HF_TOKEN")
+    attempts: list[dict[str, str]] = [{}]
+    if token:
+        attempts.append({"Authorization": f"Bearer {token}"})
+    error: Exception | None = None
+    for headers in attempts:
+        try:
+            r = requests.get(url, headers=headers, timeout=(5, 10))
+            r.raise_for_status()
+            return r.json()["id"]
+        except Exception as e:
+            error = e
+    logger.warning("Failed repo id lookup for %s: %s", repo_id, error)
+    return repo_id
 
 
 @cache
