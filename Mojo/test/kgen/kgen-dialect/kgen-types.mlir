@@ -41,6 +41,29 @@ kgen.func @memory_only_struct(
   hlcf.return
 }
 
+// COM: A param pack keeps its elements' type values, so an element whose type
+// COM: value differs from its layout cannot use the parenthesized form, which
+// COM: holds layouts only.
+// CHECK-LABEL: @param_pack_type_values
+// CHECK-SAME: %arg0: !kgen.struct<{{\[\[}}typevalue<#kgen.genref<@Span>>, struct<(pointer<none>, scalar<index>)>{{\]\]}} isParamPack>,
+// CHECK-SAME: %arg1: !kgen.struct<(struct<(pointer<none>, scalar<index>)>) isParamPack>
+kgen.func @param_pack_type_values(
+  %arg0: !kgen.struct<[[typevalue<#kgen.genref<@Span>>, struct<(pointer<none>, scalar<index>)>]] isParamPack>,
+  %arg1: !kgen.struct<(struct<(pointer<none>, scalar<index>)>) isParamPack>
+) {
+  hlcf.return
+}
+
+// COM: A param pack over a trait metatype already prints its element list in
+// COM: full, so the parenthesized-form check must not touch it.
+// CHECK-LABEL: @trait_param_pack
+// CHECK-SAME: %arg0: !kgen.struct<:param_list<trait<@AnyType>> [index] isParamPack>
+kgen.func @trait_param_pack(
+  %arg0: !kgen.struct<:!kgen.param_list<!lit.trait<@AnyType>> [index] isParamPack>
+) {
+  hlcf.return
+}
+
 // CHECK-LABEL: @aligned_struct
 // CHECK-SAME: %arg0: !kgen.struct<(index) align(64)>,
 // CHECK-SAME: %arg1: !kgen.struct<(index) memoryOnly align(128)>

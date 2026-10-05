@@ -212,7 +212,7 @@ lit.struct.decl @Tup<Ts: !kgen.param_list<!lit.trait<@AnyType>>> register_passab
 }
 
 // CHECK-LABEL: kgen.struct.generator @Node
-// CHECK-SAME:    , struct<(pointer<none>) isParamPack>]) memoryOnly>
+// CHECK-SAME:    , pointer<none>{{\]\]}} isParamPack>]) memoryOnly>
 lit.struct.decl @Node {
   lit.struct.field next : !lit.struct<@Tup<:param_list<trait<@AnyType>>
       [!lit.struct<@Ptr<:type !lit.struct<@Node>>>]>>
