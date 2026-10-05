@@ -293,21 +293,31 @@ struct TileWriterThreadwise[
     ]
     var dst: Self.DstType
     var thread_idx: Int
+    var dst_rows: Int
+    var dst_cols: Int
 
     @inline(.always)
     def __init__(
         out self,
         dst: Self.DstType,
         thread_idx: Int,
+        dst_rows: Int,
+        dst_cols: Int,
     ):
         """Initialize the threadwise tile writer.
 
         Args:
             dst: Destination tensor in global memory.
             thread_idx: Thread index within the consumer warp group.
+            dst_rows: Number of leading rows of `dst` inside the output.
+            dst_cols: Number of leading columns of `dst` inside the output.
+                Stores outside these are skipped, so a tile that extends past
+                the edge of the output does not write out of bounds.
         """
         self.dst = dst
         self.thread_idx = thread_idx
+        self.dst_rows = dst_rows
+        self.dst_cols = dst_cols
 
     @inline(.always)
     def write_tile(
@@ -364,9 +374,13 @@ struct TileWriterThreadwise[
                     copy_sram_to_dram[
                         thread_layout=half_thread_layout,
                         swizzle=swizzle,
+                        num_threads=num_threads,
                     ](
                         masked_dst.vectorize[1, Self.simd_size](),
                         masked_src.vectorize[1, Self.simd_size](),
+                        self.thread_idx,
+                        self.dst_rows,
+                        self.dst_cols,
                     )
 
             else:
@@ -395,6 +409,9 @@ struct TileWriterThreadwise[
                     ](
                         masked_dst.vectorize[1, Self.simd_size](),
                         masked_src.vectorize[1, Self.simd_size](),
+                        self.thread_idx,
+                        self.dst_rows,
+                        self.dst_cols,
                     )
         else:
             # Normal case - write full tile
@@ -404,6 +421,9 @@ struct TileWriterThreadwise[
             ](
                 self.dst.vectorize[1, Self.simd_size](),
                 src.vectorize[1, Self.simd_size](),
+                self.thread_idx,
+                self.dst_rows,
+                self.dst_cols,
             )
 
 

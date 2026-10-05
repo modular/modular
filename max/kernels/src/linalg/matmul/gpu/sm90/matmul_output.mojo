@@ -525,6 +525,12 @@ struct MatmulTileWriter[
                         Self.WG_BN // Self.simd_size,
                     ]()
 
+                    var rows_valid = max(
+                        0, min(tile_rows, Int(max_row) - global_coords[0])
+                    )
+                    var cols_valid = max(
+                        0, min(tile_cols, Int(max_col) - global_coords[1])
+                    )
                     var threadwise_writer = TileWriterThreadwise[
                         thread_layout=thread_layout,
                         simd_size=Self.simd_size,
@@ -533,6 +539,8 @@ struct MatmulTileWriter[
                     ](
                         workgroup_tile.address_space_cast[.GENERIC](),
                         self.local_thread_idx,
+                        rows_valid,
+                        cols_valid,
                     )
 
                     threadwise_writer.write_tile(self.smem_tile, (0, 0))
