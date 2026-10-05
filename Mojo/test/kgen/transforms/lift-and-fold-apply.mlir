@@ -4,8 +4,11 @@ kgen.generator @pass(%arg0: index) -> index {
   hlcf.return %arg0 : index
 }
 
+// The lifted signature no longer rebuilds the self-contained one, so that is
+// printed too.
 // CHECK-LABEL: kgen.generator @take_and_pass
-// CHECK-SAME: !pop.array<*[[L0:.*]], index>
+// CHECK-SAME: !pop.array<*[[L0:"[^"]*"]], index>
+// CHECK-SAME: attributes {funcTypeGenerator = !kgen.generator<<index>() -> !pop.array<apply(:(index) -> index @pass, *(0,0)), index>>}
 kgen.generator @take_and_pass<N>() -> !pop.array<apply(:(index) -> index @pass, N), index> {
   // CHECK-NEXT: apply *[[L0]] = [(index) -> index: @pass](N)
   hlcf.unreachable

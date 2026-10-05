@@ -186,6 +186,15 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     SymbolNameAttr:$sym_name,
     OptionalAttr<StrAttr>:$sym_visibility,
     OptionalAttr<StrAttr>:$sourceName,
+    // The op keeps the signature in two forms.
+    // `funcTypeGenerator` is the form for use outside the generator. It
+    // refers to input parameters by index and writes each expression in full.
+    // `functionType` is the form that the body uses. The entry block
+    // arguments have its types. It can refer to a parameter that the body
+    // declares, for example a lifted `kgen.param.apply`.
+    // The printer writes only `functionType`, and the parser makes
+    // `funcTypeGenerator` from it. If the result is not correct, the printer
+    // also writes `funcTypeGenerator`.
     TypeAttrOf<KGEN_FuncTypeGeneratorType>:$funcTypeGenerator,
     TypeAttrOf<FunctionType>:$functionType,
     KGEN_ParamDeclArrayAttr:$inputParams,
