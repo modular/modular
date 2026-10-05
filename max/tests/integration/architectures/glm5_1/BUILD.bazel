@@ -60,6 +60,32 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_chat_template",
+    srcs = ["test_chat_template.py"],
+    data = [
+        "//max/tests/integration/architectures/glm5_1/testdata",
+    ],
+    env = {
+        "PIPELINES_TESTDATA": "max/tests/integration/architectures/glm5_1/testdata",
+    },
+    ignore_extra_deps = [
+        requirement("jinja2"),  # Required by transformers' chat-template renderer
+    ],
+    # tokenizers is a transitive dependency of transformers but doesn't have
+    # an unversioned bazel alias, so we need to ignore its unresolved imports
+    ignore_unresolved_imports = [
+        "tokenizers.Tokenizer",
+        "tokenizers.models.WordLevel",
+    ],
+    deps = [
+        "//max/python/max/pipelines/architectures/glm5_1",
+        "//max/python/max/pipelines/modeling",
+        requirement("jinja2"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "test_tokenizer",
     srcs = ["test_tokenizer.py"],
     deps = [
@@ -73,6 +99,7 @@ modular_py_test(
     srcs = glob(
         ["**/test_*.py"],
         exclude = [
+            "test_chat_template.py",
             "test_memory_planner.py",
             "test_tokenizer.py",
             "test_tool_parser.py",
