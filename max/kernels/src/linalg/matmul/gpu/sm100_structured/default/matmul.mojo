@@ -414,6 +414,12 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     # This is wrapped in an Array to match reduce-scatter friendly kernel interface
     var c_tma_ops: Array[type_of(c_tma_op), 1] = [c_tma_op]
+    var rank_sigs: Optional[
+        Array[
+            UnsafePointer[Signal, MutAnyOrigin],
+            KernelType.num_c_tma_descriptors,
+        ]
+    ] = None
     comptime if has_compute_fn:
         # Passing `c_device` to the same call as this closure would alias
         # the capture.
@@ -445,6 +451,8 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
             cluster_dim,
             mnk,
             workspace,
+            rank_sigs,
+            Int32(0),
             host_arg=compute_with_c,
             grid_dim=grid_dim,
             block_dim=KernelType.NUM_THREADS,
@@ -456,13 +464,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
         )
     else:
         comptime kernel = matmul_kernel.run
-        var rank_sigs: Optional[
-            Array[
-                UnsafePointer[Signal, MutAnyOrigin],
-                KernelType.num_c_tma_descriptors,
-            ]
-        ] = None
-
         ctx.enqueue_function[kernel](
             a_tma_op,
             b_tma_op,

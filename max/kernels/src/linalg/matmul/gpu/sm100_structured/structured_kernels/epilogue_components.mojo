@@ -55,7 +55,6 @@ from layout.tma_async import TMATensorTile
 from std.utils.index import Index, IndexList
 from linalg.utils import (
     ElementwiseComputeFn,
-    elementwise_compute_lambda_type,
     elementwise_epilogue_type,
 )
 from std.utils.fast_div import FastDiv
@@ -865,32 +864,6 @@ struct EpilogueApplier[
 
     @inline(.always)
     def apply_to_fragment[
-        epilogue_dtype: DType,
-        frag_size: Int,
-        compute_lambda_fn: elementwise_compute_lambda_type,
-        is_in_bounds: Bool = False,
-    ](
-        self,
-        mut frag: Array[Scalar[epilogue_dtype], frag_size],
-        staged_row: UInt32,
-        staged_col: UInt32,
-        is_upper: Bool,
-    ):
-        """Apply a comptime epilogue lambda; see the `compute_fn` overload."""
-
-        def forward[
-            dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-            return compute_lambda_fn[dtype, width, alignment=alignment](
-                idx, val
-            )
-
-        self.apply_to_fragment[
-            epilogue_dtype, frag_size, is_in_bounds=is_in_bounds
-        ](frag, staged_row, staged_col, is_upper, forward)
-
-    @inline(.always)
-    def apply_to_fragment[
         ComputeFnType: ElementwiseComputeFn,
         //,
         epilogue_dtype: DType,
@@ -1018,40 +991,6 @@ struct EpilogueApplier[
                         )
                         frag[offset + 2] = elem23[0]
                         frag[offset + 3] = elem23[1]
-
-    @inline(.always)
-    def apply_to_both_fragments[
-        epilogue_dtype: DType,
-        frag_size: Int,
-        compute_lambda_fn: elementwise_compute_lambda_type,
-        is_lower_frag_required: Bool,
-        is_in_bounds: Bool = False,
-    ](
-        self,
-        mut upper_frag: Array[Scalar[epilogue_dtype], frag_size],
-        mut lower_frag: Array[Scalar[epilogue_dtype], frag_size],
-        stage: UInt32,
-        c_row: UInt32,
-        c_col: UInt32,
-    ) -> Tuple[
-        Array[Scalar[epilogue_dtype], frag_size],
-        Array[Scalar[epilogue_dtype], frag_size],
-    ]:
-        """Apply a comptime epilogue lambda; see the `compute_fn` overload."""
-
-        def forward[
-            dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-            return compute_lambda_fn[dtype, width, alignment=alignment](
-                idx, val
-            )
-
-        return self.apply_to_both_fragments[
-            epilogue_dtype,
-            frag_size,
-            is_lower_frag_required,
-            is_in_bounds=is_in_bounds,
-        ](upper_frag, lower_frag, stage, c_row, c_col, forward)
 
     @inline(.always)
     def apply_to_both_fragments[
@@ -1695,13 +1634,8 @@ struct SMemEpilogueWriter[
     simd_size: Int,
     stage: Int,
     rep_frag_size: Int,
-    compute_lambda_fn: Optional[elementwise_compute_lambda_type] = None,
 ](TrivialRegisterPassable):
-    """SMEM-based epilogue: write accumulators and apply lambda in SMEM.
-
-    `compute_lambda_fn` is only read by the `write_tile` overload that takes
-    no `compute_fn`; leave it unset when passing the epilogue as a value.
-    """
+    """SMEM-based epilogue: write accumulators and apply lambda in SMEM."""
 
     # Local aliases from EpilogueConfig
     comptime BM = Self.epc.BM
@@ -1763,22 +1697,6 @@ struct SMemEpilogueWriter[
         self.N = c_shape[1]
         self.c_row = c_coord[0] * UInt32(Self.BM)
         self.c_col = c_coord[1] * UInt32(Self.MMA_N)
-
-    @inline(.always)
-    def write_tile(self, tile: Self.Tile):
-        """Apply the `compute_lambda_fn` parameter; see the `compute_fn`
-        overload."""
-        comptime assert Self.compute_lambda_fn, "compute_lambda_fn is unset"
-        comptime compute_lambda_fn = Self.compute_lambda_fn.value()
-
-        def forward[
-            dtype: DType, width: SIMDLength, *, alignment: Int
-        ](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
-            return compute_lambda_fn[dtype, width, alignment=alignment](
-                idx, val
-            )
-
-        self.write_tile(tile, forward)
 
     @inline(.always)
     def write_tile[

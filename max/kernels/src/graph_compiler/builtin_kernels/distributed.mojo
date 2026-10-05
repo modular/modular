@@ -87,9 +87,6 @@ from std.collections import Array, Optional
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from linalg.utils import (
-    elementwise_compute_lambda_type as matmul_elementwise_compute_lambda_type,
-)
 from matmul_rs.matmul_reducescatter import matmul_reducescatter_dispatch
 
 # ===-----------------------------------------------------------------------===#
@@ -2127,27 +2124,21 @@ struct DistributedMatmulReduceScatterSum:
                     + String(inputs_a[0].dim_size(0))
                 )
 
-        # Build the residual-add compute lambda. The residual lives on a
+        # Build the residual-add compute closure. The residual lives on a
         # single peer (the device of the residual tensor in the graph).
         # Mirroring the asymmetric DeepseekV3/KimiK2.5 pattern, only that
-        # peer applies the residual-add lambda; the other peers launch
-        # without it, so after RS-sum the output contains
+        # peer applies the residual add; the other peers launch without
+        # it, so after RS-sum the output contains
         # `sum_j(A_j @ B_j) + residual` rather than `... + ngpus*residual`.
-        @__parameter
         @inline(.always)
-        @__copy_capture(residual)
         def residual_add_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_dtype, _width]) capturing -> SIMD[
-            _dtype, _width
-        ]:
+            _dtype: DType, _width: SIMDLength, *, alignment: Int
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) {
+            var residual
+        } -> SIMD[_dtype, _width]:
             return val + rebind[SIMD[_dtype, _width]](
                 residual.load[width=_width, element_alignment=alignment](coords)
             )
-
-        comptime compute_lambda = Optional[
-            matmul_elementwise_compute_lambda_type
-        ](residual_add_fn)
 
         # Marshal per-peer input TileTensors. All peers' A (and B) share
         # the same comptime spec; rebind to a common type so we can build
@@ -2175,8 +2166,14 @@ struct DistributedMatmulReduceScatterSum:
             ngpus=num_devices,
             has_residual=has_residual,
             residual_peer=residual_peer,
-            elementwise_compute_lambda_fn=compute_lambda,
-        ](c_peer_tt, a_per_peer, b_per_peer, rank_sigs, dev_ctxs_input)
+        ](
+            c_peer_tt,
+            a_per_peer,
+            b_per_peer,
+            rank_sigs,
+            dev_ctxs_input,
+            residual_add_fn,
+        )
 
 
 @extensibility.register("lamport_allreduce_rmsnorm")

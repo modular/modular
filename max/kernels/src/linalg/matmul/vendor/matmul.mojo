@@ -167,8 +167,7 @@ def matmul[
     comptime simd_size = _epilogue_simd_size[c_type]()
 
     var c_tt = TileTensor(
-        rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c.ptr),
-        row_major(Coord(Int(c.dim[0]()), Int(c.dim[1]()))),
+        c.ptr, row_major(Coord(Int(c.dim[0]()), Int(c.dim[1]())))
     )
 
     def epilogue_wrapper[
