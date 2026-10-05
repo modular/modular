@@ -41,6 +41,7 @@ from layout.tile_layout import Layout, TensorLayout, row_major, col_major
 """
 
 import std.sys
+from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections.string.string import _calc_initial_buffer_size_int32
 from std.math.uutils import udivmod_unchecked
 
@@ -96,7 +97,7 @@ def _mod_by_shape[ShapeType: CoordLike](val: Int, shape_val: Int) -> Int:
         return r
 
 
-trait TensorLayout(TrivialRegisterPassable):
+trait TensorLayout(DevicePassable, TrivialRegisterPassable):
     """Trait defining the interface for mixed compile-time/runtime layouts.
 
     Implementors map logical multi-dimensional coordinates to linear memory
@@ -301,7 +302,13 @@ Parameters:
 struct Layout[
     shape_types: TypeList[Trait=CoordLike, ...],
     stride_types: TypeList[Trait=CoordLike, ...],
-](ImplicitlyCopyable, TensorLayout, TrivialRegisterPassable, Writable):
+](
+    DevicePassable,
+    ImplicitlyCopyable,
+    TensorLayout,
+    TrivialRegisterPassable,
+    Writable,
+):
     """A layout that supports mixed compile-time and runtime dimensions.
 
     This layout provides a unified interface for layouts where some dimensions
@@ -715,6 +722,26 @@ struct Layout[
             writer: The object to write to.
         """
         writer.write(t"({self.shape_coord()}:{self.stride_coord()})")
+
+    comptime device_type = Self
+    """Device-side type for GPU kernel parameter passing."""
+
+    def _to_device_type(
+        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
+    ):
+        encoder.encode_fields[Self](self, target)
+
+    @staticmethod
+    def get_type_name() -> String:
+        """Gets the name of the host type.
+
+        Returns:
+            The host type's name.
+        """
+        return String(
+            t"Layout[{Coord[*Self.shape_types].get_type_name()},"
+            t" {Coord[*Self.stride_types].get_type_name()}]"
+        )
 
 
 # ===----------------------------------------------------------------------=== #

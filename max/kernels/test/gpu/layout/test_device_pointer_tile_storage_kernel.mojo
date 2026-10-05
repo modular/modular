@@ -53,7 +53,8 @@ which walks the struct and encodes each field at its device-layout offset: a
 `DevicePassable` field runs its own `_to_device_type` (so the `_storage`
 handle's `DevicePointer` substitutes its device-side leaf — a real device
 address written via `encode_device_ptr` — rather than being byte-copied as the
-host `DeviceBuffer` reference), while the plain `layout` field is bit-copied.
+host `DeviceBuffer` reference), while the `layout` field's `Coord`s are
+bit-copied.
 A flat `encoder.encode(self, target)` would instead byte-copy the whole host
 struct — correct only for a plain `DefaultEngine`-backed tile, but for a
 `DevicePointer` handle it would copy the host reference verbatim and the kernel
