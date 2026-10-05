@@ -877,4 +877,15 @@ This version is still a work in progress.
   return the GPU time between the start and stop points, as on NVIDIA and AMD
   GPUs.
 
+- Fixed grouped collectives failing to compile when device groups carried
+  different shapes. `ops.allreduce.sum`, `ops.reducescatter.sum`,
+  `ops.allgather_rms_norm` (including its MXFP8 and MXFP6 variants), and
+  `ops.reduce_scatter_rms_norm` with a `group_size` smaller than the device
+  count packed every device's tensor into an array typed from device 0, so
+  a second group with another row count failed graph compilation with "The
+  graph compiler could not elaborate the generated KGEN". The fused RMSNorm
+  ops now also reject groups whose shapes differ outside axis 0 at graph
+  construction, since their kernels size every group from device 0's column
+  count; that case never compiled before.
+
 ## Mojo language

@@ -244,6 +244,25 @@ def test_reduce_scatter_rms_norm_differing_shapes_across_groups_ok() -> None:
             assert out.shape == [expected_rows[dev_idx], H]
 
 
+def test_reduce_scatter_rms_norm_column_mismatch_across_groups_rejected() -> (
+    None
+):
+    """Rows may differ per group, columns may not.
+
+    The handler packs every device into one dynamic world-view array, so the
+    kernel would otherwise gate its fused path and index the second group
+    from device 0's columns.
+    """
+    num_gpus = 4
+    devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    shapes = [[8, H], [8, H], [8, 2 * H], [8, 2 * H]]
+    with pytest.raises(
+        ValueError,
+        match=r"same shape in all dimensions except axis 0.*across groups",
+    ):
+        _build(shapes, devices, group_size=2)
+
+
 def test_reduce_scatter_rms_norm_rank_mismatch_rejected() -> None:
     """Rank must match across the whole world, not just within a group."""
     num_gpus = 4

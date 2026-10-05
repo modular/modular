@@ -39,3 +39,32 @@ modular_py_test(
         "//max/python/max/graph",
     ],
 )
+
+# Same virtual-device latching as above, so also its own target.
+modular_py_test(
+    name = "test_grouped_collectives_compile",
+    size = "large",
+    srcs = ["test_grouped_collectives_compile.py"],
+    deps = [
+        "//max/python/max:_core",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)
+
+# The quantizing variants ride the CDNA4 path, so this one targets virtual AMD.
+modular_py_test(
+    name = "test_grouped_quant_collectives_compile",
+    size = "large",
+    srcs = ["test_grouped_quant_collectives_compile.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)
