@@ -30,6 +30,8 @@ bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 bazel_dep(name = "xxhash", version = "0.8.3.bcr.1")
 
 # Necessary for LLVM
+bazel_dep(name = "libxml2", version = "2.15.3")
+bazel_dep(name = "xz", version = "5.4.5.bcr.9", repo_name = "llvm_xz")
 bazel_dep(name = "zlib-ng", version = "2.3.3", repo_name = "llvm_zlib")
 bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
 

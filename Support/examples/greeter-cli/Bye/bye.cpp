@@ -32,10 +32,8 @@ using namespace M;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct ByeOptTable : public llvm::opt::PrecomputedOptTable {
-  ByeOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct ByeOptTable : public llvm::opt::OptTable {
+  ByeOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 } // namespace
 

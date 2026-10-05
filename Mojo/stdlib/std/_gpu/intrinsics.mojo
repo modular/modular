@@ -362,14 +362,8 @@ def mulhi(a: UInt16, b: UInt16) -> UInt32:
         The high 32 bits of the product a * b
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MULHI.U16 PTX instruction.
-        On others, it performs multiplication using 32-bit arithmetic.
+        This performs the multiplication using 32-bit arithmetic.
     """
-
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
-        ](a, b)
 
     var au32 = a.cast[.uint32]()
     var bu32 = b.cast[.uint32]()
@@ -392,14 +386,8 @@ def mulhi(a: Int16, b: Int16) -> Int32:
         The high 32 bits of the product a * b
 
     Note:
-        On NVIDIA GPUs, this maps directly to the MULHI.S16 PTX instruction.
-        On others, it performs multiplication using 32-bit arithmetic.
+        This performs the multiplication using 32-bit arithmetic.
     """
-
-    comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
-        ](a, b)
 
     var ai32 = a.cast[.int32]()
     var bi32 = b.cast[.int32]()
@@ -427,9 +415,7 @@ def mulhi(a: UInt32, b: UInt32) -> UInt32:
     """
 
     comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
-        ](a, b)
+        return llvm_intrinsic["llvm.umulh", UInt32, has_side_effect=False](a, b)
 
     var au64 = a.cast[.uint64]()
     var bu64 = b.cast[.uint64]()
@@ -457,9 +443,7 @@ def mulhi(a: Int32, b: Int32) -> Int32:
     """
 
     comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
-        ](a, b)
+        return llvm_intrinsic["llvm.smulh", Int32, has_side_effect=False](a, b)
 
     var ai64 = a.cast[.int64]()
     var bi64 = b.cast[.int64]()
@@ -487,9 +471,7 @@ def mulhi(a: UInt64, b: UInt64) -> UInt64:
     """
 
     comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.ull", UInt64, has_side_effect=False
-        ](a, b)
+        return llvm_intrinsic["llvm.umulh", UInt64, has_side_effect=False](a, b)
 
     var au128 = a.cast[.uint128]()
     var bu128 = b.cast[.uint128]()
@@ -517,9 +499,7 @@ def mulhi(a: Int64, b: Int64) -> Int64:
     """
 
     comptime if is_nvidia_gpu():
-        return llvm_intrinsic[
-            "llvm.nvvm.mulhi.ll", Int64, has_side_effect=False
-        ](a, b)
+        return llvm_intrinsic["llvm.smulh", Int64, has_side_effect=False](a, b)
 
     var ai128 = a.cast[.int128]()
     var bi128 = b.cast[.int128]()

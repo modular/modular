@@ -53,10 +53,8 @@ using namespace M;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct DriverOptTable : public llvm::opt::PrecomputedOptTable {
-  DriverOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct DriverOptTable : public llvm::opt::OptTable {
+  DriverOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 } // namespace
 
