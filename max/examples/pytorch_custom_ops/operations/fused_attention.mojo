@@ -305,9 +305,9 @@ def fused_attention_kernel[
     BN: Int,
     BD: Int,
 ](
-    Q: LayoutTensor[q_dtype, q_layout, MutAnyOrigin],
-    K: LayoutTensor[k_dtype, k_layout, MutAnyOrigin],
-    V: LayoutTensor[v_dtype, v_layout, MutAnyOrigin],
+    Q: LayoutTensor[q_dtype, q_layout, ImmutAnyOrigin],
+    K: LayoutTensor[k_dtype, k_layout, ImmutAnyOrigin],
+    V: LayoutTensor[v_dtype, v_layout, ImmutAnyOrigin],
     O: LayoutTensor[o_dtype, o_layout, MutAnyOrigin],
 ):
     comptime N = Q.shape[0]()

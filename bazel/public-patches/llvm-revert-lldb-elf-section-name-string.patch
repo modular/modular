@@ -1,11 +1,11 @@
 diff --git a/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.cpp b/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.cpp
-index 7c42451a8df8..2d6cd901606c 100644
+index 617cfb1fc37e..034a31d3ee6a 100644
 --- a/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.cpp
 +++ b/lldb/source/Plugins/ObjectFile/ELF/ObjectFileELF.cpp
 @@ -1754,7 +1754,7 @@ size_t ObjectFileELF::GetSectionHeaderInfo(SectionHeaderColl &section_headers,
          const uint64_t section_size =
              sheader.sh_type == SHT_NOBITS ? 0 : sheader.sh_size;
-         llvm::StringRef name(shstr_data.PeekCStr(I->sh_name));
+         llvm::StringRef name = shstr_data.PeekCStr(I->sh_name).value_or("");
 -        I->section_name = name.str();
 +        I->section_name = ConstString(name);
  
@@ -47,7 +47,7 @@ index 7c42451a8df8..2d6cd901606c 100644
          sect_type,       // Section type.
          InfoOr->Range.GetRangeBase(), // VM address.
          InfoOr->Range.GetByteSize(),  // VM size in bytes of this section.
-@@ -3423,7 +3423,7 @@ void ObjectFileELF::RelocateSection(lldb_private::Section *section)
+@@ -3418,7 +3418,7 @@ void ObjectFileELF::RelocateSection(lldb_private::Section *section)
    for (SectionHeaderCollIter I = m_section_headers.begin();
         I != m_section_headers.end(); ++I) {
      if (I->sh_type == SHT_RELA || I->sh_type == SHT_REL) {
@@ -56,7 +56,7 @@ index 7c42451a8df8..2d6cd901606c 100644
        if (hay_name.empty())
          continue;
        if (needle == hay_name || needlea == hay_name) {
-@@ -3770,7 +3770,7 @@ void ObjectFileELF::DumpELFSectionHeaders(Stream *s) {
+@@ -3765,7 +3765,7 @@ void ObjectFileELF::DumpELFSectionHeaders(Stream *s) {
         I != m_section_headers.end(); ++I, ++idx) {
      s->Printf("[%2u] ", idx);
      ObjectFileELF::DumpELFSectionHeader(s, *I);

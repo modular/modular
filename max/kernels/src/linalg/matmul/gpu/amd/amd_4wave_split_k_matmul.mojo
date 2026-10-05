@@ -41,7 +41,12 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import Coord, Idx, TileTensor
 from layout.tile_layout import row_major
 
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    ElementwiseEpilogueFn,
+    apply_elementwise_epilogue,
+    elementwise_epilogue_type,
+    no_epilogue_fn,
+)
 
 from .amd_4wave_matmul import AMD4WaveMatmul, KernelConfig
 
@@ -77,6 +82,51 @@ def _split_k_reduce_kernel[
     sum, not on each partial), which is the correct epilogue semantics
     for split-K.
     """
+    _split_k_reduce_impl[
+        num_splits,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=False,
+    ](scratch, c_ptr, total_elems, elems_per_split, n_dim, no_epilogue_fn)
+
+
+@__name(t"amd_4wave_split_k_reduce_epilogue_fn_{c_type}_SK{num_splits}")
+def _split_k_reduce_kernel_epilogue_fn[
+    num_splits: Int,
+    c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+](
+    scratch: UnsafePointer[Float32, MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    total_elems: Int32,
+    elems_per_split: Int32,
+    n_dim: Int32,
+    epilogue_fn: EpilogueFnType,
+):
+    """Same as `_split_k_reduce_kernel`, delivering each reduced value to
+    `epilogue_fn` instead of `c_ptr`. Launch with `host_arg=epilogue_fn`.
+    """
+    _split_k_reduce_impl[
+        num_splits, elementwise_lambda_fn=None, has_epilogue_fn=True
+    ](scratch, c_ptr, total_elems, elems_per_split, n_dim, epilogue_fn)
+
+
+@inline(.always)
+def _split_k_reduce_impl[
+    c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    num_splits: Int,
+    *,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+](
+    scratch: UnsafePointer[Float32, MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
+    total_elems: Int32,
+    elems_per_split: Int32,
+    n_dim: Int32,
+    epilogue_fn: EpilogueFnType,
+):
     var _total_elems = Int(total_elems)
     var _elems_per_split = Int(elems_per_split)
     var _n_dim = Int(n_dim)
@@ -86,11 +136,13 @@ def _split_k_reduce_kernel[
         var acc = Float32(0.0)
         comptime for s in range(num_splits):
             acc += scratch[s * _elems_per_split + tid]
-        comptime if Bool(elementwise_lambda_fn):
-            comptime epilogue_fn = elementwise_lambda_fn.value()
+        comptime if Bool(elementwise_lambda_fn) or has_epilogue_fn:
             var m = tid // _n_dim
             var n = tid - m * _n_dim
-            epilogue_fn[alignment=align_of[Scalar[c_type]]()](
+            apply_elementwise_epilogue[
+                elementwise_lambda_fn, alignment=align_of[Scalar[c_type]]()
+            ](
+                epilogue_fn,
                 IndexList[2](m, n),
                 SIMD[c_type, 1](acc.cast[c_type]()),
             )
@@ -219,6 +271,97 @@ def amd_4wave_split_k_matmul[
     Raises:
         An error if device enqueue or any comptime invariant check fails.
     """
+    _amd_4wave_split_k_matmul_impl[
+        num_splits,
+        enable_swizzle=enable_swizzle,
+        block_m_override=block_m_override,
+        block_n_override=block_n_override,
+        block_k_override=block_k_override,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=False,
+    ](a, b, c, no_epilogue_fn, ctx, workspace=workspace)
+
+
+def amd_4wave_split_k_matmul[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    num_splits: Int,
+    enable_swizzle: Bool = True,
+    block_m_override: Int = 0,
+    block_n_override: Int = 0,
+    block_k_override: Int = 0,
+](
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+    *,
+    mut workspace: SplitKWorkspace[num_splits],
+) raises:
+    """Launches the split-K 4-wave matmul, delivering each reduced output
+    value to an epilogue closure value instead of writing `c`.
+
+    Parameters:
+        a_type: Element type of `a`.
+        b_type: Element type of `b`.
+        c_type: Element type of `c`.
+        EpilogueFnType: Type of `epilogue_fn`.
+        num_splits: Number of K-splits to launch concurrently.
+        enable_swizzle: Enable LDS bank-conflict avoidance.
+        block_m_override: If > 0, force BM (see the other overload).
+        block_n_override: If > 0, force BN (see the other overload).
+        block_k_override: If > 0, force BK (see the other overload).
+
+    Args:
+        a: Input tile-tensor for A.
+        b: Input tile-tensor for B.
+        c: Output tile-tensor for C. Only its shape is read.
+        epilogue_fn: Receives each reduced output cell.
+        ctx: Device context used to enqueue the matmul and reduce kernels.
+        workspace: Pre-allocated split-K scratch.
+
+    Raises:
+        An error if device enqueue or any comptime invariant check fails.
+    """
+    _amd_4wave_split_k_matmul_impl[
+        num_splits,
+        enable_swizzle=enable_swizzle,
+        block_m_override=block_m_override,
+        block_n_override=block_n_override,
+        block_k_override=block_k_override,
+        elementwise_lambda_fn=None,
+        has_epilogue_fn=True,
+    ](a, b, c, epilogue_fn, ctx, workspace=workspace)
+
+
+@inline(.always)
+def _amd_4wave_split_k_matmul_impl[
+    a_type: DType,
+    b_type: DType,
+    c_type: DType,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    num_splits: Int,
+    *,
+    enable_swizzle: Bool,
+    block_m_override: Int,
+    block_n_override: Int,
+    block_k_override: Int,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
+](
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+    *,
+    mut workspace: SplitKWorkspace[num_splits],
+) raises:
     comptime assert a_type == b_type, "A and B must have the same type"
     comptime assert (
         a_type.is_float8() or a_type == .bfloat16 or a_type == .float16
@@ -332,15 +475,30 @@ def amd_4wave_split_k_matmul[
     comptime block_dim_x: Int = 256
     var total_elems = M * N
     var num_blocks = ceildiv(total_elems, block_dim_x)
-    comptime reduce_kernel = _split_k_reduce_kernel[
-        num_splits, c_type, elementwise_lambda_fn=elementwise_lambda_fn
-    ]
-    ctx.enqueue_function[reduce_kernel](
-        workspace.scratch.unsafe_ptr(),
-        c.ptr,
-        Int32(total_elems),
-        Int32(elems_per_split),
-        Int32(N),
-        grid_dim=(num_blocks,),
-        block_dim=(block_dim_x,),
-    )
+    comptime if has_epilogue_fn:
+        comptime reduce_kernel = _split_k_reduce_kernel_epilogue_fn[
+            num_splits, c_type, EpilogueFnType
+        ]
+        ctx.enqueue_function[reduce_kernel](
+            workspace.scratch.unsafe_ptr(),
+            c.ptr,
+            Int32(total_elems),
+            Int32(elems_per_split),
+            Int32(N),
+            host_arg=epilogue_fn,
+            grid_dim=(num_blocks,),
+            block_dim=(block_dim_x,),
+        )
+    else:
+        comptime reduce_kernel = _split_k_reduce_kernel[
+            num_splits, c_type, elementwise_lambda_fn=elementwise_lambda_fn
+        ]
+        ctx.enqueue_function[reduce_kernel](
+            workspace.scratch.unsafe_ptr(),
+            c.ptr,
+            Int32(total_elems),
+            Int32(elems_per_split),
+            Int32(N),
+            grid_dim=(num_blocks,),
+            block_dim=(block_dim_x,),
+        )

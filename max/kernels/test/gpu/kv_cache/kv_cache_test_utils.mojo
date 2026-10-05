@@ -19,13 +19,9 @@ from std.utils.numerics import isinf, isnan
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import (
     Coord,
-    Layout,
-    LayoutTensor,
     RowMajorLayout,
-    RuntimeLayout,
     TensorLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from layout._host_device_tile_tensor import HostDeviceTileTensor
@@ -148,15 +144,13 @@ def assert_no_nan_inf[
             )
 
 
-struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
-    comptime tensor_type = LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
-    # TODO(GPUA-6): make this the only tensor type once every caller takes a
-    # `TileTensor`.
-    comptime tile_tensor_type = TileTensor[
+struct _KVCacheTestTensor[dtype: DType, rank: Int](Copyable):
+    comptime tensor_type = TileTensor[
         Self.dtype,
         RowMajorLayout[*DynamicCoord[.int64, Self.rank].element_types],
         ImmutAnyOrigin,
     ]
+    comptime tile_tensor_type = Self.tensor_type
 
     var shape: IndexList[Self.rank]
     var host_ptr: MutPointer[Scalar[Self.dtype], MutUntrackedOrigin]
@@ -183,35 +177,21 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
         return self._tensor(self.device_buf.value().unsafe_ptr())
 
     def host_tile_tensor(self) -> Self.tile_tensor_type:
-        return self._tile_tensor(self.host_ptr)
+        return self.host_tensor()
 
     def device_tile_tensor(self) -> Self.tile_tensor_type:
-        return self._tile_tensor(self.device_buf.value().unsafe_ptr())
+        return self.device_tensor()
 
-    def _tile_tensor(
-        self, ptr: Pointer[Scalar[Self.dtype], _]
-    ) -> Self.tile_tensor_type:
-        return Self.tile_tensor_type(
+    def _tensor(self, ptr: Pointer[Scalar[Self.dtype], _]) -> Self.tensor_type:
+        return Self.tensor_type(
             ptr=ptr.as_imm().as_unsafe_any_origin(),
             layout=row_major(Coord(self.shape)),
         )
 
-    def _runtime_layout(self) -> RuntimeLayout[Self.layout]:
-        return RuntimeLayout[Self.layout].row_major(self.shape)
-
-    def _tensor(self, ptr: Pointer[Scalar[Self.dtype], _]) -> Self.tensor_type:
-        return Self.tensor_type(
-            ptr.as_imm().as_unsafe_any_origin(), self._runtime_layout()
-        )
-
 
 struct CacheLengthsTable(Copyable):
-    var cache_lengths: _KVCacheTestTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), 1
-    ]
-    var input_row_offsets: _KVCacheTestTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), 1
-    ]
+    var cache_lengths: _KVCacheTestTensor[DType.uint32, 1]
+    var input_row_offsets: _KVCacheTestTensor[DType.uint32, 1]
 
     var batch_size: Int
     var max_full_context_length: Int
@@ -276,7 +256,7 @@ struct CacheLengthsTable(Copyable):
 
 
 struct PagedLookupTable[page_size: Int](Copyable):
-    var paged_lut: _KVCacheTestTensor[.uint32, Layout.row_major[2](), 2]
+    var paged_lut: _KVCacheTestTensor[.uint32, 2]
 
     def __init__(
         out self, batch_size: Int, max_full_context_length: Int
@@ -301,9 +281,8 @@ struct PagedLookupTable[page_size: Int](Copyable):
     ) raises:
         var batch_size = len(prompt_lens)
 
-        var host_tensor = LayoutTensor[.uint32, type_of(self.paged_lut).layout](
-            self.paged_lut.host_ptr,
-            self.paged_lut._runtime_layout(),
+        var host_tensor = TileTensor(
+            self.paged_lut.host_ptr, row_major(Coord(self.paged_lut.shape))
         )
         # Sample one distinct paged block per page across the whole batch up
         # front, then hand them out in iteration order. Total pages needed is

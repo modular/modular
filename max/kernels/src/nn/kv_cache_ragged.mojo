@@ -41,15 +41,10 @@ from layout import (
     CoordLike,
     Idx,
     ImmTileTensor,
-    Layout,
-    LayoutTensor,
     RowMajorLayout,
-    RuntimeLayout,
     TileTensor,
     TensorLayout,
-    UNKNOWN_VALUE,
     coord_to_index_list,
-    lt_to_tt,
     row_major,
 )
 from linalg.matmul import elementwise_epilogue_type, matmul
@@ -984,14 +979,13 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
             weight_dtype == .uint8
         ), "Expect GPTQ weights in an uint8 tensor."
 
-        # GPTQ remains on the legacy quantized launcher boundary.
         _qmatmul_common[
             group_size=group_size.value(),
             target=target,
             elementwise_lambda_fn=write_to_cache,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[.uint8]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[.uint8](),
             context,
         )
 
@@ -1001,8 +995,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl[
         ), "Mismatch in dtype between weight and QKV tensors"
 
         _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -1125,8 +1119,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
             target=target,
             elementwise_lambda_fn=write_to_cache,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[.uint8]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[.uint8](),
             context,
         )
 
@@ -1136,8 +1130,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_bias[
         ), "Mismatch in dtype between weight and QKV tensors"
 
         _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -1334,8 +1328,8 @@ def _fused_qkv_matmul_kv_cache_ragged_impl_scale[
             elementwise_lambda_fn=write_to_cache,
             output_dtype=output_dtype,
         ](
-            hidden_state.to_layout_tensor(),
-            weight.bitcast[dtype]().to_layout_tensor(),
+            hidden_state,
+            weight.bitcast[dtype](),
             context,
         )
 
@@ -2296,8 +2290,8 @@ def _fused_qkv_index_matmul_kv_cache_ragged_impl[
     ), "Mismatch in dtype between weight and QKV tensors"
 
     _matmul_common[target=target, elementwise_lambda_fn=write_to_caches](
-        hidden_state.to_layout_tensor(),
-        weight.bitcast[dtype]().to_layout_tensor(),
+        hidden_state,
+        weight.bitcast[dtype](),
         context,
     )
 
@@ -2311,49 +2305,39 @@ def _matmul_common[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     output_dtype: DType = dtype,
 ](
-    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    weight: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
-    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    comptime N = Int(weight.layout.shape[0])
+    var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
+    comptime N = weight.static_shape[0]
 
     var c_alloc_layout = AllocLayout[Scalar[output_dtype]](
         count=TOTAL_SEQ_LEN * N
     )
-    var c_nd: LayoutTensor[
-        output_dtype, Layout.row_major(UNKNOWN_VALUE, N), MutUntrackedOrigin
-    ]
+    var c_ptr: Optional[
+        UnsafePointer[Scalar[output_dtype], MutUntrackedOrigin]
+    ] = None
 
     comptime if is_cpu[target]():
-        # The CPU matmul codepath uses the C buffer as a workspace
-        # even if an epilogue is provided, here we just allocate
-        # something to ensure we don't segfault.
-        var c_ptr = alloc(c_alloc_layout).unsafe_leak()
+        # CPU matmul uses C as workspace even when an epilogue owns the output.
+        c_ptr = alloc(c_alloc_layout).unsafe_leak()
 
-        c_nd = {
-            c_ptr,
-            RuntimeLayout[c_nd.layout].row_major(
-                IndexList[2](TOTAL_SEQ_LEN, N)
-            ),
-        }
-    else:
-        c_nd = {
-            None,
-            RuntimeLayout[c_nd.layout].row_major(
-                IndexList[2](TOTAL_SEQ_LEN, N)
-            ),
-        }
+    # Preserve the null GPU placeholder: TMA setup may inspect C's alignment
+    # even though the epilogue redirects all stores to the cache.
+    var c_nd = TileTensor(
+        c_ptr._unsafe_nullable(), row_major(TOTAL_SEQ_LEN, Idx[N])
+    )
 
     matmul[
         target=target,
         transpose_b=True,
         elementwise_lambda_fn=elementwise_lambda_fn,
-    ](lt_to_tt(c_nd), lt_to_tt(hidden_state), lt_to_tt(weight), context)
+    ](c_nd, hidden_state, weight, context)
 
     comptime if is_cpu[target]():
         dealloc(
-            ThinAllocation(unsafe_owned_ptr=c_nd.ptr).unsafe_with_layout(
+            ThinAllocation(unsafe_owned_ptr=c_ptr.value()).unsafe_with_layout(
                 c_alloc_layout
             )
         )
@@ -2368,31 +2352,29 @@ def _qmatmul_common[
     target: StaticString,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    hidden_state: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    weight: LayoutTensor[mut=False, .uint8, address_space=.GENERIC, ...],
+    hidden_state: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    weight: TileTensor[mut=False, .uint8, address_space=.GENERIC, ...],
     context: Optional[DeviceContext],
 ) raises:
     comptime assert is_gpu[target](), "GPTQ quantization only works on GPU."
 
-    var TOTAL_SEQ_LEN = hidden_state.dim[0]()
-    comptime N = Int(weight.layout.shape[0])
-    var c_nd: LayoutTensor[
-        dtype, Layout.row_major(UNKNOWN_VALUE, N), MutAnyOrigin
-    ]
+    var TOTAL_SEQ_LEN = Int(hidden_state.dim[0]())
+    comptime N = weight.static_shape[0]
+    var c_ptr: Optional[UnsafePointer[Scalar[dtype], MutUntrackedOrigin]] = None
 
-    c_nd = {
-        None,
-        RuntimeLayout[c_nd.layout].row_major(IndexList[2](TOTAL_SEQ_LEN, N)),
-    }
+    # The epilogue owns all stores; C remains a null output view.
+    var c_nd = TileTensor(
+        c_ptr._unsafe_nullable(), row_major(TOTAL_SEQ_LEN, Idx[N])
+    )
 
     matmul_gpu_qint4_impl[
         target=target,
         group_size=group_size,
         elementwise_lambda_fn=elementwise_lambda_fn,
     ](
-        lt_to_tt(c_nd),
-        lt_to_tt(hidden_state),
-        lt_to_tt(weight),
+        c_nd,
+        hidden_state,
+        weight,
         context,
     )
 
@@ -2825,7 +2807,7 @@ def _matmul_kv_cache_ragged_impl[
 
     _matmul_common[
         target=target, elementwise_lambda_fn=write_to_cache_continuous
-    ](hidden_state.to_layout_tensor(), weight.to_layout_tensor(), ctx)
+    ](hidden_state, weight, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3029,7 +3011,7 @@ def _matmul_k_cache_ragged_impl[
         )
 
     _matmul_common[target=target, elementwise_lambda_fn=write_to_cache](
-        hidden_state.to_layout_tensor(), weight.to_layout_tensor(), ctx
+        hidden_state, weight, ctx
     )
 
 
@@ -4978,24 +4960,20 @@ def _cross_attention_dispatch[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     q_max_seq_len: UInt32,
-    kv_input_row_offsets: LayoutTensor[
+    kv_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_cache: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
@@ -5016,25 +4994,22 @@ def _cross_attention_dispatch[
                 "CPU flash attention requires output dtype == q dtype;"
                 " the distinct-output-dtype (fp8->bf16) path is GPU-only."
             )
-            var sink_weights_tt = OptionalReg[ImmutTileTensor1D[dtype]]()
-            if sink_weights:
-                var weights = sink_weights.value()
-                sink_weights_tt = immut_tile_tensor_1d(
-                    weights.ptr, weights.dim[0]()
-                )
             return flash_attention_kv_cache_cpu(
-                lt_to_tt(q),
-                lt_to_tt(q_input_row_offsets),
+                q,
+                q_input_row_offsets,
                 # Use KV offsets for cross attention.
-                lt_to_tt(kv_input_row_offsets),
+                kv_input_row_offsets,
                 k,
                 v,
                 mask,
                 scale,
-                lt_to_tt(output.bitcast[dtype]()),
-                sink_weights_tt,
+                output.bitcast[dtype](),
+                sink_weights,
             )
         else:
+            comptime assert kv_input_row_offsets.flat_rank == 1
+            if Int(kv_input_row_offsets.layout.stride[0]().value()) != 1:
+                raise Error("kv_input_row_offsets must have unit stride")
             gpu_flash_attention[ragged=True, sink=False](
                 output,
                 q,
@@ -5045,15 +5020,9 @@ def _cross_attention_dispatch[
                 scale,
                 context,
                 Int(q_max_seq_len),
-                LayoutTensor[
-                    kv_input_row_offsets.dtype,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                ](
-                    kv_input_row_offsets.ptr.as_imm().as_unsafe_any_origin(),
-                    RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                        kv_input_row_offsets.runtime_layout.shape.value.canonicalize()
-                    ),
+                immut_tile_tensor_1d(
+                    kv_input_row_offsets.unsafe_ptr(),
+                    Int(kv_input_row_offsets.dim[0]()),
                 ),
                 None,
             )
@@ -5074,24 +5043,20 @@ def generic_cross_attention_kv_cache[
     local_window_size: Int = -1,
     output_dtype: DType = dtype,
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    q_max_seq_len: LayoutTensor[
-        mut=False, .uint32, address_space=.GENERIC, ...
-    ],
-    kv_input_row_offsets: LayoutTensor[
+    q_max_seq_len: TileTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    kv_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     kv_collection: collection_t,
     layer_idx: UInt32,
     scale: Float32,
-    output: LayoutTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_dtype, address_space=.GENERIC, ...],
     context: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     """Dispatches cross-attention flash attention over a ragged batch against a paged KV cache.
 
@@ -5114,6 +5079,7 @@ def generic_cross_attention_kv_cache[
         q_max_seq_len: Scalar tensor holding the maximum query sequence length.
         kv_input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
             start of each KV sequence along the ragged sequence dimension.
+            GPU dispatch requires unit stride.
         kv_collection: The collection storing the KVCache entries for this
             layer, retrieved via layer_idx.
         layer_idx: The index of the layer being executed, used to retrieve the
@@ -5127,20 +5093,31 @@ def generic_cross_attention_kv_cache[
             leading cache slots.
     """
 
+    comptime assert q_max_seq_len.flat_rank == 1
+    if q_max_seq_len.num_elements() != 1:
+        raise Error("q_max_seq_len must contain exactly one element")
+
     @inline(.always)
     def description_fn() {imm} -> String:
         return String(";").join(
             Span(
                 [
-                    trace_arg("output", output.runtime_layout.shape.value),
-                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg(
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
                     trace_arg(
                         "q_input_row_offsets",
-                        q_input_row_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(
+                            q_input_row_offsets.layout.shape_coord()
+                        ),
                     ),
                     trace_arg(
                         "kv_input_row_offsets",
-                        kv_input_row_offsets.runtime_layout.shape.value,
+                        coord_to_index_list(
+                            kv_input_row_offsets.layout.shape_coord()
+                        ),
                     ),
                     "layer_idx=" + String(layer_idx),
                     "num_heads=" + String(collection_t.kv_params.num_heads),

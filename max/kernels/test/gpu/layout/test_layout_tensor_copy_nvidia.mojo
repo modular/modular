@@ -24,12 +24,10 @@ from max.gpu.memory import (
 )
 from layout import *
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.swizzle import make_ldmatrix_swizzle
 from layout.layout_tensor import (
     copy_dram_to_sram,
-    copy_sram_to_dram as copy_sram_to_dram_legacy,
 )
 
 from layout.tile_io import copy_dram_to_sram_async, copy_sram_to_dram
@@ -93,49 +91,34 @@ def test_dynamic_async_copy[
 ](ctx: DeviceContext) raises:
     print("=== test_dynamic_async_copy")
 
-    comptime unknown_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-
-    comptime input_runtime_layout = RuntimeLayout[
-        unknown_layout,
-        element_type=.int64,
-        linear_idx_type=.int64,
-    ].row_major(IndexList[2, element_type=.int64](M, N))
-
-    comptime output_runtime_layout = RuntimeLayout[
-        unknown_layout,
-        element_type=.int64,
-        linear_idx_type=.int64,
-    ].row_major(IndexList[2, element_type=.int64](num_rows, N))
-
-    var input = ManagedLayoutTensor[
-        .float32,
-        unknown_layout,
-    ](input_runtime_layout, ctx)
-    arange(input.tensor())
-
-    var output = ManagedLayoutTensor[
-        .float32,
-        unknown_layout,
-    ](output_runtime_layout, ctx)
+    comptime input_layout = row_major((Int64(M), Int64(N)))
+    comptime output_layout = row_major((Int64(num_rows), Int64(N)))
+    var input = HostDeviceTileTensor[.float32](input_layout, ctx)
+    arange(input.host_tensor())
+    var output = HostDeviceTileTensor[.float32](output_layout, ctx)
+    input.to_device()
+    var input_view = (
+        input.device_tensor().as_unsafe_any_origin().to_layout_tensor()
+    )
+    var output_view = (
+        output.device_tensor().as_unsafe_any_origin().to_layout_tensor()
+    )
 
     comptime kernel_type = async_dynamic_copy_kernel[
-        unknown_layout,
-        unknown_layout,
+        input_view.layout,
+        output_view.layout,
         BM,
         BN,
         num_rows,
     ]
-
     ctx.enqueue_function[kernel_type](
-        input.device_tensor(),
-        output.device_tensor(),
+        input_view,
+        output_view,
         grid_dim=(ceildiv(M, BM), ceildiv(M, BN)),
         block_dim=(1, 1),
     )
-
-    ctx.synchronize()
-
-    print(output.tensor())
+    output.to_host()
+    print_tile_tensor(output.host_tensor())
 
 
 def run_dynamic_async_copy_tests(ctx: DeviceContext) raises:
@@ -325,86 +308,59 @@ def run_masked_async_copy_tests(ctx: DeviceContext) raises:
 
 @inline(.always)
 def masked_copy_kernel[
-    layout: Layout, num_rows: Int
-](input: LayoutTensor[.float32, layout, MutAnyOrigin]):
+    layout: TensorLayout, num_rows: Int
+](input: TileTensor[.float32, layout, MutAnyOrigin]):
     comptime thread_layout = Layout.row_major(4, 2)
 
+    var input_legacy = input.to_layout_tensor()
     var masked_input = LayoutTensor[
         .float32,
-        layout,
+        input_legacy.layout,
         MutAnyOrigin,
         masked=True,
     ](
-        input.ptr,
-        type_of(input.runtime_layout)(
-            type_of(input.runtime_layout.shape)(num_rows, input.dim[1]()),
-            input.runtime_layout.stride,
+        input_legacy.ptr,
+        type_of(input_legacy.runtime_layout)(
+            type_of(input_legacy.runtime_layout.shape)(
+                num_rows, Int(input.dim[1]())
+            ),
+            input_legacy.runtime_layout.stride,
         ),
     )
 
-    var smem_tile = (
-        LayoutTensor[
-            .float32,
-            layout,
-            MutAnyOrigin,
-            address_space=.SHARED,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
+    var smem_tile = stack_allocation[.float32, address_space=.SHARED](
+        row_major[input.static_shape[0], input.static_shape[1]]()
+    ).fill(0)
 
     copy_dram_to_sram[thread_layout=thread_layout](
-        smem_tile.vectorize[1, 4](), masked_input.vectorize[1, 4]()
+        smem_tile.to_layout_tensor().vectorize[1, 4](),
+        masked_input.vectorize[1, 4](),
     )
 
     barrier()
 
-    copy_sram_to_dram_legacy[thread_layout=thread_layout](
+    copy_sram_to_dram[thread_layout=row_major[4, 2]()](
         input.vectorize[1, 4](),
         smem_tile.vectorize[1, 4](),
     )
 
 
 def test_masked_copy[
-    layout: Layout, M: Int, N: Int, skew_rows: Int
+    layout: MixedLayout, M: Int, N: Int, skew_rows: Int
 ](ctx: DeviceContext) raises:
     print("=== test_masked_copy")
-
-    comptime managed_layout_tensor_type = ManagedLayoutTensor[
-        .float32,
-        layout,
-    ]
-
-    comptime element_type = managed_layout_tensor_type.element_type
-    comptime idx_type = managed_layout_tensor_type.index_type
-
-    comptime runtime_layout = RuntimeLayout[
-        layout, element_type=element_type, linear_idx_type=idx_type
-    ].row_major(IndexList[2, element_type=element_type](M, N))
-
-    var input = ManagedLayoutTensor[
-        .float32,
-        layout,
-    ](runtime_layout, ctx)
-
-    arange(input.tensor())
-
-    var input_tensor = LayoutTensor[
-        .float32,
-        Layout.row_major(M, N),
-        MutAnyOrigin,
-    ](input.device_tensor().ptr)
-
+    var input = HostDeviceTileTensor[.float32](layout, ctx)
+    arange(input.host_tensor())
+    input.to_device()
+    var input_tensor = input.device_tensor().reshape(row_major[M, N]())
     comptime kernel_type = masked_copy_kernel[
-        input_tensor.layout, M - skew_rows
+        input_tensor.LayoutType, M - skew_rows
     ]
     ctx.enqueue_function[kernel_type](
-        input_tensor, grid_dim=(1,), block_dim=(8,)
+        input_tensor.as_unsafe_any_origin(), grid_dim=(1,), block_dim=(8,)
     )
-
-    ctx.synchronize()
-
-    print(input.tensor())
+    input.to_host()
+    print_tile_tensor(input.host_tensor())
 
 
 def run_masked_copy_tests(ctx: DeviceContext) raises:
@@ -418,7 +374,7 @@ def run_masked_copy_tests(ctx: DeviceContext) raises:
     # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     test_masked_copy[
-        Layout.row_major(8, 8),
+        row_major[8, 8](),
         M=8,
         N=8,
         skew_rows=1,
@@ -434,7 +390,7 @@ def run_masked_copy_tests(ctx: DeviceContext) raises:
     # CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0
     # CHECK: 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
     test_masked_copy[
-        Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE),
+        row_major((8, 8)),
         M=8,
         N=8,
         skew_rows=1,

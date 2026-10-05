@@ -257,9 +257,7 @@ def flare_mla_decoding[
         DType.int64, address_space=.GENERIC, ...
     ],
     q_max_seq_len: OptionalReg[Int] = None,
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
     num_partitions: Optional[Int] = None,
     # Per-token Q scale pointer: float32 array with one scale per Q token.
     # sigma_Q[q_token_idx] is folded into scale_log2e inside the Softmax function.
@@ -570,9 +568,7 @@ def flare_mla_decoding[
     # Runtime dimensions.
     var num_keys = Int(k.dim[1]())
 
-    # Re-view `k` as a row-major TileTensor directly (no throwaway
-    # LayoutTensor round-trip). `shape_coord()` preserves the static/runtime
-    # dim types, and the operand infers `buffer_layout` from this TileTensor.
+    # Preserve static/runtime dimension types for the operand's buffer layout.
     var k_operand = LayoutTensorMHAOperand(
         TileTensor(k.ptr, row_major(k.layout.shape_coord()))
     )
@@ -647,9 +643,7 @@ def flare_mla_decoding_dispatch[
     scalar_args_buf: NullableTileTensor[
         DType.int64, address_space=.GENERIC, ...
     ],
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
     num_partitions: Optional[Int] = None,
     q_scale_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
@@ -2622,8 +2616,7 @@ def _ragged_kv_view(
 
     The MLA prefill K/V operands are contiguous row-major
     `[total_keys, num_heads, depth]` tensors. Rebuilding the view directly
-    from the source pointer (instead of round-tripping through a
-    `LayoutTensor` + `lt_to_tt`) normalizes the origin, address space, and
+    from the source pointer normalizes the origin, address space, and
     linear-index type to the canonical GENERIC + `ImmutAnyOrigin` form the
     `RaggedMHAOperand` buffer field expects.
     """
@@ -3162,8 +3155,6 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var q_rope_lt = q_rope.to_layout_tensor()
-        var q_scale_lt = q_scale.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
             _ragged_kv_view(k),
@@ -3205,8 +3196,8 @@ def flare_mla_prefill[
         ](
             output,
             q_nope,
-            q_rope_lt,
-            q_scale_lt,
+            q_rope,
+            q_scale,
             k_operand,
             k_rope_operand,
             v_operand,
@@ -3302,8 +3293,6 @@ def flare_mla_prefill[
             " num_keys, 1]"
         )
 
-        var q_rope_lt = q_rope.to_layout_tensor()
-        var q_scale_lt = q_scale.to_layout_tensor()
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(
             _ragged_kv_view(k),
@@ -3342,8 +3331,8 @@ def flare_mla_prefill[
         ](
             output,
             q_nope,
-            q_rope_lt,
-            q_scale_lt,
+            q_rope,
+            q_scale,
             k_operand,
             k_rope_operand,
             v_operand,

@@ -62,10 +62,7 @@ from std.utils.numerics import get_accum_type
 
 
 from layout import (
-    UNKNOWN_VALUE,
     Idx,
-    Layout,
-    LayoutTensor,
     TensorEngine,
     TileTensor,
 )
@@ -83,7 +80,6 @@ from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
-    immut_tile_tensor_1d,
 )
 
 comptime NEG_INF = Float32(-3.0e38)
@@ -918,98 +914,12 @@ def fa_prefill_apple[
     ctx: DeviceContext,
     sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
 ) raises:
-    """TileTensor overload of `fa_prefill_apple`. Converts the query and
-    output operands to `LayoutTensor` internally.
-
-    Parameters:
-        output_type: Element type of the attention output.
-        k_t: Key operand type (dense or KV-cache).
-        v_t: Value operand type (dense or KV-cache).
-        mask_t: Attention mask type.
-        ragged: `True` for ragged-batch inputs.
-        sink: `True` to enable attention-sink mode.
-        _use_valid_length: `True` to honour per-sequence valid lengths.
-        _is_cache_length_accurate: `True` when the cache length already
-            excludes the current prompt.
-        num_simdgroups: Number of SIMD groups per threadgroup.
-
-    Args:
-        q: Query `TileTensor` with BSHD layout.
-        k: Key operand.
-        v: Value operand.
-        mask_functor: Mask instance used to apply the attention mask.
-        output: Mutable output `TileTensor`.
-        valid_length: Per-sequence valid lengths as a `TileTensor`.
-        scale: Softmax temperature scale applied to Q·Kᵀ.
-        batch_size: Number of sequences in the batch.
-        max_prompt_len: Maximum query sequence length in the batch.
-        max_cache_size: Maximum key/value sequence length.
-        num_heads: Number of query heads.
-        depth: Attention head depth (key/value dimension per head).
-        group: GQA group size (query heads per key/value head).
-        ctx: GPU device context for kernel dispatch.
-        sink_weights: Optional sink-token weight tensor for attention sinks.
-    """
-    fa_prefill_apple[
-        ragged=ragged,
-        sink=sink,
-        _use_valid_length=_use_valid_length,
-        _is_cache_length_accurate=_is_cache_length_accurate,
-        num_simdgroups=num_simdgroups,
-    ](
-        q.to_layout_tensor(),
-        k,
-        v,
-        mask_functor,
-        output.to_layout_tensor(),
-        immut_tile_tensor_1d(valid_length.ptr, valid_length.num_elements()),
-        scale,
-        batch_size,
-        max_prompt_len,
-        max_cache_size,
-        num_heads,
-        depth,
-        group,
-        ctx,
-        sink_weights,
-    )
-
-
-def fa_prefill_apple[
-    output_type: DType,
-    k_t: MHAOperand,
-    v_t: MHAOperand,
-    mask_t: MHAMask,
-    //,
-    ragged: Bool = False,
-    sink: Bool = False,
-    _use_valid_length: Bool = False,
-    _is_cache_length_accurate: Bool = False,
-    num_simdgroups: Int = 4,
-](
-    q: LayoutTensor[mut=False, address_space=.GENERIC, ...],
-    k: k_t,
-    v: v_t,
-    mask_functor: mask_t,
-    output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: ImmutTileTensor1D[.uint32],
-    scale: Float32,
-    batch_size: Int,
-    max_prompt_len: Int,
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
-    ctx: DeviceContext,
-    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
-) raises:
     """Host launcher for the Apple M5 flash-attention prefill kernel.
 
     Mirrors `mha_gpu_naive`'s `MHAOperand` overload so `flash_attention_dispatch`
     routes to it like the fallback, and specializes one kernel per supported
     `depth` (a multiple of 16 up to `FA_PREFILL_APPLE_MAX_HEAD_DIM`). The external
-    `LayoutTensor` ABI is converted to `TileTensor` at the enqueue boundary so the
-    kernel is TileTensor-only.
+    tensor operands remain native through the enqueue boundary.
 
     Parameters:
         output_type: The dtype of the output tensor (inferred).
@@ -1070,15 +980,15 @@ def fa_prefill_apple[
     comptime NumNMmas = DEFAULT_NUM_N_MMAS
     comptime SQ = MMA_DIM
 
-    # Flatten the LayoutTensor ABI to 1D TileTensors; the kernel bakes the
+    # Flatten to 1-D views; the kernel bakes the
     # ragged/BSHD + q_row0 offset into each per-simdgroup tile base.
     var q_flat = TileTensor(
-        q.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(q.size()),
+        q.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+        row_major(q.num_elements()),
     )
     var output_flat = TileTensor(
-        output.ptr.as_unsafe_any_origin(),
-        row_major(output.size()),
+        output.unsafe_ptr().as_unsafe_any_origin(),
+        row_major(output.num_elements()),
     )
 
     # MODULAR_APPLE_FA_PREFILL_NUM_SIMDGROUPS={4,8,16,32} overrides the
@@ -1122,7 +1032,7 @@ def fa_prefill_apple[
                     k,
                     v,
                     mask_functor,
-                    valid_length,
+                    valid_length.as_unsafe_any_origin(),
                     sink_weights,
                     scale,
                     Int32(batch_size),

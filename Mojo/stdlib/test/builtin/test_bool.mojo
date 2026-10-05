@@ -142,13 +142,10 @@ def test_all() raises:
     # empty
     assert_true(all(List[Int]()))
 
-    def gt0(x: Int) -> Bool:
-        return x > 0
-
     var l = [1, 2, 3]
-    assert_true(all(map[gt0](l)))
+    assert_true(all(map[lambda (x: Int) -> Bool: x > 0](l)))
     var l2 = [-1, 2, 3]
-    assert_false(all(map[gt0](l2)))
+    assert_false(all(map[lambda (x: Int) -> Bool: x > 0](l2)))
 
 
 def test_any() raises:

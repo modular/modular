@@ -27,8 +27,20 @@ from layout import (
 
 from std.utils import Index, IndexList
 
-from ...utils import elementwise_epilogue_type
+from ...utils import ElementwiseEpilogueFn, elementwise_epilogue_type
 from .blas import matmul as vendor_matmul
+
+
+def _epilogue_simd_size[c_type: DType]() -> Int:
+    # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
+    # arch support 32B load/store to global memory, see KERN-2037.
+    comptime use_32b_simd = (
+        DeviceContext.target.is_nvidia_gpu()
+        and DeviceContext.default_device_info.compute >= B200.compute
+    )
+    return 32 // size_of[c_type]() if use_32b_simd else (
+        simd_width_of[c_type, target=get_gpu_target()]()
+    )
 
 
 def matmul[
@@ -81,15 +93,7 @@ def matmul[
         return
     else:
         comptime epilogue = elementwise_lambda_fn.value()
-        # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
-        # arch support 32B load/store to global memory, see KERN-2037.
-        comptime use_32b_simd = (
-            ctx.target.is_nvidia_gpu()
-            and ctx.default_device_info.compute >= B200.compute
-        )
-        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
-            simd_width_of[c_type, target=get_gpu_target()]()
-        )
+        comptime simd_size = _epilogue_simd_size[c_type]()
 
         var c_tt = TileTensor(
             rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c.ptr),
@@ -122,3 +126,72 @@ def matmul[
             transpose_b=transpose_b,
         )
         elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
+
+
+def matmul[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    transpose_b: Bool = False,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Vendor matmul into `c`, followed by a pass that hands each output
+    chunk to an epilogue closure value.
+
+    `c` holds the raw matmul result; `epilogue_fn` stores the final output.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        transpose_b: Whether to treat `b` as transposed, computing
+            `a @ b.T` instead of `a @ b` (defaults to `False`).
+
+    Args:
+        c: Output matrix of shape `(m, n)` and rank 2 that receives the
+            raw matmul result. Caller-allocated and mutable.
+        a: Left-hand input matrix of rank 2.
+        b: Right-hand input matrix of rank 2, transposed when
+            `transpose_b` is `True`.
+        epilogue_fn: Receives each output chunk after the matmul.
+        ctx: Device context used to select the vendor dispatch path and
+            query device capabilities.
+    """
+    comptime assert c.flat_rank == 2, "c must be of rank 2"
+    comptime assert a.flat_rank == 2, "a must be of rank 2"
+    comptime assert b.flat_rank == 2, "b must be of rank 2"
+
+    comptime c_type = c.dtype
+    comptime simd_size = _epilogue_simd_size[c_type]()
+
+    var c_tt = TileTensor(
+        rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c.ptr),
+        row_major(Coord(Int(c.dim[0]()), Int(c.dim[1]()))),
+    )
+
+    def epilogue_wrapper[
+        simd_width: Int, alignment: Int = 1
+    ](idx: Coord) {var c_tt, var epilogue_fn}:
+        var c_val = c_tt.load[
+            width=simd_width,
+            # Load takes alignment in bytes, the epilogue takes elements.
+            alignment=alignment * size_of[c_type](),
+        ](idx)
+        epilogue_fn[c_type, simd_width, alignment=alignment](
+            Index(idx[0].value(), idx[1].value()), c_val
+        )
+
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
+
+    vendor_matmul[use_tf32=True](
+        ctx,
+        c,
+        a,
+        b,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
+    elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)

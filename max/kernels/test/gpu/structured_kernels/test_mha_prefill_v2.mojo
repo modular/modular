@@ -35,7 +35,7 @@ within a row of V. So o_reg[i, m] = mean over all k_global of
 from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
-from layout import LayoutTensor, TileTensor
+from layout import TileTensor
 from layout.coord import Coord, Idx
 from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major

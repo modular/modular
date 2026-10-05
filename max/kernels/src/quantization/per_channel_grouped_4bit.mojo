@@ -15,7 +15,7 @@
 from std.math import ceil, ceildiv
 from std.sys.info import size_of
 
-from layout import Layout, LayoutTensor, TileTensor
+from layout import Layout, TileTensor
 from std.memory import UnsafePointer, bitcast, unsafe_memcpy
 from std.utils import IndexList, StaticTuple, product
 

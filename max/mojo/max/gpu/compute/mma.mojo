@@ -81,16 +81,21 @@ def get_amd_bf8_dtype() -> Optional[DType]:
 
 
 @inline(.always)
-def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    # fmt: off
+def _unsupported_mma_op[
+    d_dtype: DType,
+    d_length: SIMDLength,
+    a_dtype: DType,
+    a_length: SIMDLength,
+    b_dtype: DType,
+    b_length: SIMDLength,
+    c_dtype: DType,
+    c_length: SIMDLength,
+]():
     comptime assert False, String(
-        "no valid implementation of mma for a=",
-        Int(a.length), "x",  a.dtype,
-        ", b=",  Int(b.length), "x",  b.dtype,
-        ", c=",  Int(c.length), "x",  c.dtype,
-        ", and d=", Int(d.length), "x", d.dtype,
+        t"no valid implementation of mma for a={Int(a_length)}x{a_dtype},"
+        t" b={Int(b_length)}x{b_dtype},"
+        t" c={Int(c_length)}x{c_dtype}, d={Int(d_length)}x{d_dtype}"
     )
-    # fmt: on
 
 
 @inline(.always)

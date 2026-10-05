@@ -16,13 +16,14 @@ from layout import (
     CoordLike,
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
     TileTensor,
+    col_major,
     row_major,
+    stack_allocation,
 )
 from layout.tile_layout import blocked_product
 from layout._fillers import arange
+from layout.tensor_engine import DefaultEngine
 from std.testing import assert_equal
 
 from std.utils.index import IndexList
@@ -90,23 +91,22 @@ def test_nested_layout_shape() raises:
     assert_equal(simple_shape1, 32, "Non-nested shape[1] should still work")
 
 
-def _create_tensor_2x2[
-    dtype: DType
-]() -> LayoutTensor[dtype, Layout.row_major(2, 2), MutAnyOrigin]:
-    """Helper to create a 2x2 row-major tensor on the stack."""
-    return LayoutTensor[
-        dtype,
-        Layout.row_major(2, 2),
-        MutAnyOrigin,
-        address_space=.GENERIC,
-    ].stack_allocation()
-
-
 def _copy_transpose[
-    dtype: DType
+    dtype: DType, //
 ](
-    src: LayoutTensor[dtype, Layout.row_major(2, 2), MutAnyOrigin],
-    mut dst: LayoutTensor[dtype, Layout.row_major(2, 2), MutAnyOrigin],
+    src: TileTensor[
+        dtype,
+        type_of(row_major[2, 2]()),
+        Engine=DefaultEngine[element_width=1],
+        ...,
+    ],
+    mut dst: TileTensor[
+        mut=True,
+        dtype,
+        type_of(row_major[2, 2]()),
+        Engine=DefaultEngine[element_width=1],
+        ...,
+    ],
 ):
     """Copy tensor src into dst with transposed indices."""
     for i, j in product(range(2), range(2)):
@@ -121,44 +121,82 @@ def test_transpose_arithmetic() raises:
     transpose operation properly maintains stride information for arithmetic.
     """
     # Test with arange values: a = [[0, 1], [2, 3]]
-    var a = _create_tensor_2x2[.float32]()
+    var a_storage = Array[Float32, 4](uninitialized=True)
+    var a = TileTensor(a_storage, row_major[2, 2]())
     arange(a)
 
-    var b = _create_tensor_2x2[.float32]()
+    var b_storage = Array[Float32, 4](uninitialized=True)
+    var b = TileTensor(b_storage, row_major[2, 2]())
     _copy_transpose(a, b)
 
     # After transpose, a.transpose() = [[0, 2], [1, 3]] = b
     # Test subtraction: should be all zeros
-    var sub_result = a.transpose() - b
+    var a_transposed = a.transpose()
+    var sub_result_storage = Array[Float32, 4](uninitialized=True)
+    var sub_result = TileTensor(sub_result_storage, a_transposed.layout)
+    type_of(sub_result).Engine.sub[
+        LhsEngine=type_of(a_transposed).Engine, RhsEngine=type_of(b).Engine
+    ](
+        dst=(sub_result._unsafe_storage_cast[to_mut=True](), sub_result.layout),
+        lhs=(a_transposed._storage, a_transposed.layout),
+        rhs=(b._storage, b.layout),
+    )
     assert_equal(sub_result[0, 0], 0.0)
     assert_equal(sub_result[0, 1], 0.0)
     assert_equal(sub_result[1, 0], 0.0)
     assert_equal(sub_result[1, 1], 0.0)
 
     # Test addition: a.transpose() + b = 2 * [[0, 2], [1, 3]]
-    var add_result = a.transpose() + b
+    var add_result_storage = Array[Float32, 4](uninitialized=True)
+    var add_result = TileTensor(add_result_storage, a_transposed.layout)
+    type_of(add_result).Engine.add[
+        LhsEngine=type_of(a_transposed).Engine, RhsEngine=type_of(b).Engine
+    ](
+        dst=(add_result._unsafe_storage_cast[to_mut=True](), add_result.layout),
+        lhs=(a_transposed._storage, a_transposed.layout),
+        rhs=(b._storage, b.layout),
+    )
     assert_equal(add_result[0, 0], 0.0)
     assert_equal(add_result[0, 1], 4.0)
     assert_equal(add_result[1, 0], 2.0)
     assert_equal(add_result[1, 1], 6.0)
 
     # Test multiplication: element-wise product
-    var mul_result = a.transpose() * b
+    var mul_result_storage = Array[Float32, 4](uninitialized=True)
+    var mul_result = TileTensor(mul_result_storage, a_transposed.layout)
+    type_of(mul_result).Engine.mul[
+        LhsEngine=type_of(a_transposed).Engine, RhsEngine=type_of(b).Engine
+    ](
+        dst=(mul_result._unsafe_storage_cast[to_mut=True](), mul_result.layout),
+        lhs=(a_transposed._storage, a_transposed.layout),
+        rhs=(b._storage, b.layout),
+    )
     assert_equal(mul_result[0, 0], 0.0)  # 0 * 0
     assert_equal(mul_result[0, 1], 4.0)  # 2 * 2
     assert_equal(mul_result[1, 0], 1.0)  # 1 * 1
     assert_equal(mul_result[1, 1], 9.0)  # 3 * 3
 
     # Test division with non-zero values: c = [[2, 4], [6, 8]]
-    var c = _create_tensor_2x2[.float32]()
+    var c_storage = Array[Float32, 4](uninitialized=True)
+    var c = TileTensor(c_storage, row_major[2, 2]())
     for i, j in product(range(2), range(2)):
         c[i, j] = Float32((i * 2 + j + 1) * 2)
 
-    var d = _create_tensor_2x2[.float32]()
+    var d_storage = Array[Float32, 4](uninitialized=True)
+    var d = TileTensor(d_storage, row_major[2, 2]())
     _copy_transpose(c, d)
 
     # c.transpose() / d should be all ones
-    var div_result = c.transpose() / d
+    var c_transposed = c.transpose()
+    var div_result_storage = Array[Float32, 4](uninitialized=True)
+    var div_result = TileTensor(div_result_storage, c_transposed.layout)
+    type_of(div_result).Engine.truediv[
+        LhsEngine=type_of(c_transposed).Engine, RhsEngine=type_of(d).Engine
+    ](
+        dst=(div_result._unsafe_storage_cast[to_mut=True](), div_result.layout),
+        lhs=(c_transposed._storage, c_transposed.layout),
+        rhs=(d._storage, d.layout),
+    )
     assert_equal(div_result[0, 0], 1.0)
     assert_equal(div_result[0, 1], 1.0)
     assert_equal(div_result[1, 0], 1.0)
@@ -171,21 +209,26 @@ def test_different_layouts_arithmetic() raises:
     This verifies that tensors with different memory layouts can still
     perform arithmetic operations correctly based on their logical indices.
     """
-    var a = _create_tensor_2x2[.float32]()
+    var a_storage = Array[Float32, 4](uninitialized=True)
+    var a = TileTensor(a_storage, row_major[2, 2]())
     arange(a)
 
     # Create column-major tensor with same logical values
-    var b = LayoutTensor[
-        .float32,
-        Layout.col_major(2, 2),
-        MutAnyOrigin,
-        address_space=.GENERIC,
-    ].stack_allocation()
+    var b_storage = Array[Float32, 4](uninitialized=True)
+    var b = TileTensor(b_storage, col_major[2, 2]())
     for i, j in product(range(2), range(2)):
         b[i, j] = a[i, j]
 
     # Subtraction should yield zeros despite different memory layouts
-    var result = a - b
+    var result_storage = Array[Float32, 4](uninitialized=True)
+    var result = TileTensor(result_storage, a.layout)
+    type_of(result).Engine.sub[
+        LhsEngine=type_of(a).Engine, RhsEngine=type_of(b).Engine
+    ](
+        dst=(result._unsafe_storage_cast[to_mut=True](), result.layout),
+        lhs=(a._storage, a.layout),
+        rhs=(b._storage, b.layout),
+    )
     assert_equal(result[0, 0], 0.0)
     assert_equal(result[0, 1], 0.0)
     assert_equal(result[1, 0], 0.0)
@@ -216,39 +259,38 @@ def test_reshape() raises:
 
 
 def test_aligned_load() raises:
-    """Tests aligned_load with both index types."""
-    # Use a 4x7 tensor so we can load 4 elements starting at columns 0,1,2,3
-    # without going out of bounds (column 3 + width 4 = 7)
-    var storage = Array[Float32, 4 * 7](fill=0.0)
-    var tensor = LayoutTensor[
-        .float32,
-        Layout([4, 7]),
-    ](storage)
+    """Tests aligned SIMD loads with coordinate and index-list arguments."""
+    var tensor = stack_allocation[.float32, alignment=16](row_major[4, 16]())
 
-    tensor.store[4](0, 0, 1.0)  # Store 4 elements starting at column 0
-    tensor.store[4](0, 1, 2.0)  # Store 4 elements starting at column 1
-    tensor.store[4](0, 2, 3.0)  # Store 4 elements starting at column 2
-    tensor.store[4](0, 3, 4.0)  # Store 4 elements starting at column 3
+    for column in range(0, 16, 4):
+        var expected = SIMD[.float32, 4](Float32(column // 4 + 1))
+        tensor.store[width=4, alignment=16](Coord(0, column), expected)
+        var value = tensor.load[width=4, alignment=16](Coord(0, column))
+        var linear_value = tensor.load_linear[width=4, alignment=16](
+            IndexList[2](0, column)
+        )
+        assert_equal(value, linear_value)
+        assert_equal(value, expected)
 
-    # Load 4 elements starting at column 0
-    var a0 = tensor.aligned_load[4](0, 0)
-    var b0 = tensor.aligned_load[4](IndexList[2](0, 0))
-    assert_equal(a0, b0)
 
-    # Load 4 elements starting at column 1
-    var a1 = tensor.aligned_load[4](0, 1)
-    var b1 = tensor.aligned_load[4](IndexList[2](0, 1))
-    assert_equal(a1, b1)
+def test_unaligned_load() raises:
+    """Tests SIMD loads at scalar-aligned offsets across multiple rows."""
+    var tensor = stack_allocation[.float32, alignment=16](row_major[2, 16]())
+    for row in range(2):
+        for column in range(16):
+            tensor[row, column] = Float32(row * 16 + column)
 
-    # Load 4 elements starting at column 2
-    var a2 = tensor.aligned_load[4](0, 2)
-    var b2 = tensor.aligned_load[4](IndexList[2](0, 2))
-    assert_equal(a2, b2)
-
-    # Load 4 elements starting at column 3
-    var a3 = tensor.aligned_load[4](0, 3)
-    var b3 = tensor.aligned_load[4](IndexList[2](0, 3))
-    assert_equal(a3, b3)
+    for row in range(2):
+        for column in range(1, 4):
+            var expected = SIMD[.float32, 4]()
+            comptime for lane in range(4):
+                expected[lane] = Float32(row * 16 + column + lane)
+            var value = tensor.load[width=4, alignment=4](Coord(row, column))
+            var linear_value = tensor.load_linear[width=4, alignment=4](
+                IndexList[2](row, column)
+            )
+            assert_equal(value, expected)
+            assert_equal(linear_value, expected)
 
 
 def main() raises:
@@ -257,6 +299,7 @@ def main() raises:
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()
     test_aligned_load()
+    test_unaligned_load()
     test_coalesce()
     test_get_shape()
     test_reshape()

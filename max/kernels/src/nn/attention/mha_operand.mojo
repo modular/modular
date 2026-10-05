@@ -34,7 +34,6 @@ from kv_cache.types import (
 )
 from layout import (
     Layout,
-    LayoutTensor,
     DefaultEngine,
     TensorEngine,
     UNKNOWN_VALUE,
@@ -87,7 +86,7 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     ]:
         ...
 
-    # TODO: change this to return a LayoutTensor once MOCO-1471 is fixed
+    # TODO: change this to return a TileTensor once MOCO-1471 is fixed
     @inline(.always)
     def block_paged_ptr[
         tile_size: Int,
@@ -1646,10 +1645,10 @@ struct LayoutTensorMHAOperand[
     def scales_raw_ptr(
         self,
     ) -> UnsafePointer[Float32, MutAnyOrigin]:
-        """Returns a dangling pointer. Contiguous operands do not support
-        quantization."""
-        # SAFETY: LayoutTensor operands are never quantized; callers only
-        # dereference behind comptime quantization guards.
+        """Returns a dangling pointer for unsupported raw-scale access."""
+        # SAFETY: This raw-scale API is unsupported; the returned sentinel must
+        # not be dereferenced. Contiguous scales are accessed through
+        # scales_block_paged_ptr or load_scale.
         return UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
 
 

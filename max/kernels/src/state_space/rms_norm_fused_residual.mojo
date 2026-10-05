@@ -472,8 +472,8 @@ struct _FusedResidualBlockKernel[
     `enqueue_function` arguments. An argument that conforms to `DevicePassable`
     is re-encoded field by field through each capture's `device_type`, and a
     callback here captures an output `ManagedTensorSlice`, whose `device_type`
-    is `LayoutTensor` -- so the kernel would read its layout and fusion state
-    back out of the wrong bytes. This struct is deliberately not
+    is `TileTensor` and omits fusion fields. Re-encoding would change the
+    callback's capture representation. This struct is deliberately not
     `DevicePassable`, which selects the `enqueue_function` overload that
     bit-copies the payload verbatim. `rowwise`'s `_BlockKernel` crosses its own
     value closures the same way.

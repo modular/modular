@@ -24,6 +24,7 @@
 /bazel/public-patches/grpc-no-macos-x86.patch @modular/sdlc
 /bazel/public-patches/grpc-warnings.patch @modular/sdlc
 /bazel/public-patches/llvm-config-musl-select.patch @modular/sdlc
+/bazel/public-patches/llvm-libxml2-config-setting-visibility.patch @modular/sdlc
 /bazel/public-patches/opentelemetry-cpp-loads.patch @modular/sdlc
 /bazel/public-patches/protobuf-dev-dep.patch @modular/sdlc
 /bazel/public-patches/rules_mojo_toolchain.patch @modular/sdlc

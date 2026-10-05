@@ -2254,12 +2254,8 @@ def _multistage_gemm_runtime_impl[
     epilogue_fn: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
-    var tensor_c = c.to_layout_tensor()
-    var tensor_a = a.to_layout_tensor()
-    var tensor_b = b.to_layout_tensor()
-
-    var M = tensor_c.dim[0]()
-    var N = tensor_c.dim[1]()
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
 
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
@@ -2273,39 +2269,30 @@ def _multistage_gemm_runtime_impl[
         var work_space_data = ctx.enqueue_create_buffer[work_space_type](
             runtime_config.num_k_partitions * M * N
         )
-        comptime static_N = tensor_c.layout.shape[1].value()
-        comptime work_space_layout = Layout.row_major(
-            UNKNOWN_VALUE, UNKNOWN_VALUE, static_N
+        var tensor_work_space = TileTensor(
+            work_space_data, row_major(runtime_config.num_k_partitions, M, N)
         )
-        var work_space_runtime_layout = RuntimeLayout[
-            work_space_layout
-        ].row_major(Index(runtime_config.num_k_partitions, M, N))
-
-        var tensor_work_space = LayoutTensor[
-            work_space_type,
-            work_space_layout,
-            MutAnyOrigin,
-        ](work_space_data, work_space_runtime_layout)
 
         comptime gemm_kernel_type = multistage_gemm_split_k_kernel[
-            c_type,
-            tensor_c.layout,
-            a_type,
-            tensor_a.layout,
-            b_type,
-            tensor_b.layout,
-            work_space_type,
-            tensor_work_space.layout,
-            transpose_b,
-            config,
-            elementwise_lambda_fn,
+            CLT=c.LayoutType,
+            ALT=a.LayoutType,
+            BLT=b.LayoutType,
+            work_space_type=work_space_type,
+            WLT=tensor_work_space.LayoutType,
+            transpose_b=transpose_b,
+            c_linear_idx_type=c.linear_idx_type,
+            a_linear_idx_type=a.linear_idx_type,
+            b_linear_idx_type=b.linear_idx_type,
+            workspace_linear_idx_type=tensor_work_space.linear_idx_type,
+            config=config,
+            elementwise_lambda_fn=elementwise_lambda_fn,
         ]
 
         comptime if ctx.target.is_amd_gpu() and not has_amd_rdna_gpu_accelerator():
             ctx.enqueue_function[gemm_kernel_type](
-                tensor_c,
-                tensor_a,
-                tensor_b,
+                c,
+                a,
+                b,
                 tensor_work_space,
                 Int32(runtime_config.num_k_partitions),
                 grid_dim=runtime_config.grid_dim(M, N),
@@ -2313,9 +2300,9 @@ def _multistage_gemm_runtime_impl[
             )
         else:
             ctx.enqueue_function[gemm_kernel_type](
-                tensor_c,
-                tensor_a,
-                tensor_b,
+                c,
+                a,
+                b,
                 tensor_work_space,
                 Int32(runtime_config.num_k_partitions),
                 grid_dim=runtime_config.grid_dim(M, N),
@@ -2326,14 +2313,10 @@ def _multistage_gemm_runtime_impl[
                 ),
             )
 
-        var tt_work_space = TileTensor(
-            work_space_data,
-            row_major(runtime_config.num_k_partitions, M, N),
-        )
         _split_k_reduce_impl[
             elementwise_lambda_fn=elementwise_lambda_fn,
             has_epilogue_fn=has_epilogue_fn,
-        ](c, tt_work_space, epilogue_fn, ctx)
+        ](c, tensor_work_space, epilogue_fn, ctx)
 
         _ = work_space_data^
         return

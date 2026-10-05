@@ -85,7 +85,9 @@ comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
 ]() else PDLLevel.OFF
 
 
-struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
+struct FlashAttentionAlgorithm(
+    Defaultable, EnumLike, TrivialRegisterPassable, Writable
+):
     """Identifies which flash-attention algorithm variant to use for a kernel launch.
 
     The four variants range from a naive reference implementation to the
@@ -100,6 +102,33 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
     comptime FLASH_ATTENTION_1 = Self(1)
     comptime FLASH_ATTENTION_2 = Self(2)
     comptime FLASH_ATTENTION_3 = Self(3)
+
+    # `-1` ("unspecified") is a runtime-resolved state outside the named
+    # cases, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "NAIVE".value,
+        "FLASH_ATTENTION_1".value,
+        "FLASH_ATTENTION_2".value,
+        "FLASH_ATTENTION_3".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "FlashAttentionAlgorithm has no payload"
 
     def __init__(out self):
         self._value = 3

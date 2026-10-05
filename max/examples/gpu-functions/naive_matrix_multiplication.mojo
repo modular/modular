@@ -91,8 +91,8 @@ def main() raises:
 
 
 def naive_matrix_multiplication(
-    m: TileTensor[float_dtype, type_of(m_layout), MutAnyOrigin],
-    n: TileTensor[float_dtype, type_of(n_layout), MutAnyOrigin],
+    m: TileTensor[float_dtype, type_of(m_layout), ImmutAnyOrigin],
+    n: TileTensor[float_dtype, type_of(n_layout), ImmutAnyOrigin],
     p: TileTensor[float_dtype, type_of(p_layout), MutAnyOrigin],
 ):
     """Naive matrix multiplication of M_ij x N_jk = P_ik."""

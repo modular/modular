@@ -223,20 +223,20 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
     prefill: Bool = True,
 ](
     ngroups: Int32,
-    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin, Engine=Engine],
-    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin, Engine=Engine],
+    A: TileTensor[kernel_dtype, A_LT, ImmUntrackedOrigin, Engine=Engine],
+    D: TileTensor[kernel_dtype, D_LT, ImmUntrackedOrigin, Engine=Engine],
     dt_bias: TileTensor[
-        kernel_dtype, dt_bias_LT, MutUntrackedOrigin, Engine=Engine
+        kernel_dtype, dt_bias_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin, Engine=Engine],
     ssm_pool: TileTensor[
         state_dtype, ssm_pool_LT, MutUntrackedOrigin, Engine=Engine
     ],
     query_start_loc: TileTensor[
-        .int32, query_start_loc_LT, MutUntrackedOrigin, Engine=Engine
+        .int32, query_start_loc_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     has_initial_state: TileTensor[
-        .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
+        .bool, has_initial_state_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     x_fn: XFn,
     dt_fn: DtFn,
@@ -521,20 +521,20 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_apple[
     VEC: Int = 4,
 ](
     ngroups: Int32,
-    A: TileTensor[kernel_dtype, A_LT, MutUntrackedOrigin, Engine=Engine],
-    D: TileTensor[kernel_dtype, D_LT, MutUntrackedOrigin, Engine=Engine],
+    A: TileTensor[kernel_dtype, A_LT, ImmUntrackedOrigin, Engine=Engine],
+    D: TileTensor[kernel_dtype, D_LT, ImmUntrackedOrigin, Engine=Engine],
     dt_bias: TileTensor[
-        kernel_dtype, dt_bias_LT, MutUntrackedOrigin, Engine=Engine
+        kernel_dtype, dt_bias_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     y: TileTensor[kernel_dtype, y_LT, MutUntrackedOrigin, Engine=Engine],
     ssm_pool: TileTensor[
         state_dtype, ssm_pool_LT, MutUntrackedOrigin, Engine=Engine
     ],
     query_start_loc: TileTensor[
-        .int32, query_start_loc_LT, MutUntrackedOrigin, Engine=Engine
+        .int32, query_start_loc_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     has_initial_state: TileTensor[
-        .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
+        .bool, has_initial_state_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     x_fn: XFn,
     dt_fn: DtFn,

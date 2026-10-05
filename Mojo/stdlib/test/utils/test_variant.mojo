@@ -231,10 +231,9 @@ def test_variant_linear_type_deinit_with() raises:
 
 
 def test_variant_pinned_linear_type_deinit_with() raises:
-    def make() -> PinnedExplicitDelOnly:
-        return PinnedExplicitDelOnly(5)
-
-    var v = Variant[PinnedExplicitDelOnly, Int](init_with=make)
+    var v = Variant[PinnedExplicitDelOnly, Int](
+        init_with=lambda () -> PinnedExplicitDelOnly: PinnedExplicitDelOnly(5)
+    )
     var data = v[PinnedExplicitDelOnly].data
     # Destroy before potentially raising after assert
     v^.deinit_with[PinnedExplicitDelOnly](PinnedExplicitDelOnly.destroy)
@@ -503,19 +502,13 @@ def test_variant_admits_non_movable_type() raises:
 
 def test_variant_closure_construction() raises:
     # Populate a non-`Movable` (pinned) type in place via a closure.
-    def make_pinned() -> _Pinned:
-        return _Pinned(7)
-
-    var v = Variant[_Pinned, Int](init_with=make_pinned)
+    var v = Variant[_Pinned, Int](init_with=lambda () -> _Pinned: _Pinned(7))
     assert_true(v.isa[_Pinned]())
     assert_false(v.isa[Int]())
     assert_equal(v[_Pinned].value, 7)
 
     # The closure's return type selects the type; here a `Movable` one.
-    def make_int() -> Int:
-        return 42
-
-    var v2 = Variant[_Pinned, Int](init_with=make_int)
+    var v2 = Variant[_Pinned, Int](init_with=lambda () -> Int: 42)
     assert_true(v2.isa[Int]())
     assert_equal(v2[Int], 42)
 

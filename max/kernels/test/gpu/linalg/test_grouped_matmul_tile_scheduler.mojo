@@ -20,7 +20,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from linalg.grouped_matmul_tile_scheduler import TileScheduler
+from linalg.grouped_matmul_tile_scheduler import RasterOrder, TileScheduler
 from std.utils.index import Index
 
 
@@ -149,6 +149,31 @@ def test(ctx: DeviceContext) raises:
     _ = dev_group_offsets_buffer^
 
 
+def _raster_order_rank(order: RasterOrder) -> Int:
+    """Returns the 0-based case index selected by `__match`.
+
+    Every case is named so the match fails to compile if `_enum_case_names`
+    drifts from the comptime case constants.
+    """
+    __match order:
+        case .AlongN:
+            return 0
+        case .AlongM:
+            return 1
+
+
 def main() raises:
+    # EnumLike conformance check for this scheduler's own `RasterOrder`
+    # (distinct from `linalg.matmul.gpu.tile_scheduler.RasterOrder`).
+    var along_n = RasterOrder.AlongN
+    assert (
+        _raster_order_rank(along_n) == 0
+    ), "expected RasterOrder.AlongN to match case .AlongN"
+
+    var along_m = RasterOrder.AlongM
+    assert (
+        _raster_order_rank(along_m) == 1
+    ), "expected RasterOrder.AlongM to match case .AlongM"
+
     with DeviceContext() as ctx:
         test(ctx)

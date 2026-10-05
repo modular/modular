@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""TFLOPS bench for `MhaPrefillV2` against contiguous (LayoutTensor) K/V.
+"""TFLOPS bench for `MhaPrefillV2` against contiguous TileTensor K/V.
 
 Measures `mha_prefill_v2` at canonical BF16 causal shapes. Q/K/V/O are
 oversized via `CacheBustingBuffer` and offset per iteration to defeat
@@ -41,9 +41,7 @@ from std.utils.numerics import min_or_neg_inf
 
 from internal_utils import CacheBustingBuffer, arg_parse
 from internal_utils._utils import InitializationType
-from layout import Idx, LayoutTensor, TileTensor, row_major
-from layout.coord import Coord
-from layout.runtime_layout import RuntimeLayout
+from layout import Idx, TileTensor, row_major
 
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand

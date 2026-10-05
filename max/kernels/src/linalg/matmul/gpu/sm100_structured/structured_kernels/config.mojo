@@ -48,7 +48,9 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 
 
 @fieldwise_init("implicit")
-struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
+struct GEMMKind(
+    EnumLike, Equatable, Hashable, TrivialRegisterPassable, Writable
+):
     """Struct for GEMM types.
 
     This struct defines the different types of GEMM that is supported by BlackWell Such as BMM, GEMM, GMM, etc.
@@ -67,6 +69,34 @@ struct GEMMKind(Equatable, Hashable, TrivialRegisterPassable, Writable):
 
     comptime BLOCK_SCALED_1D2D_FP8 = Self(3)
     """BLOCK_SCALED_1D2D_FP8 type."""
+
+    # The implicit fieldwise initializer permits raw backing values the named
+    # cases do not cover; `write_to` / `__str__` keep their `unknown` catch-alls
+    # for them, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "GEMM".value,
+        "BMM".value,
+        "GMM".value,
+        "BLOCK_SCALED_1D2D_FP8".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "GEMMKind has no payload"
 
     @inline(.nodebug)
     def __int__(self) -> Int:

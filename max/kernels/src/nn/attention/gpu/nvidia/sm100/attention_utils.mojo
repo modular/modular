@@ -124,7 +124,7 @@ comptime LocalLT[
     address_space=.LOCAL,
     element_layout=element_layout,
 ]
-comptime SharedMemPointer[type: AnyType] = UnsafePointer[
+comptime SharedMemPointer[type: AnyType] = Pointer[
     type, MutAnyOrigin, address_space=.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
@@ -161,22 +161,20 @@ def cumulative_power_of_two(N: Int, i: Int) -> Int:
 # to enable use of this function with pipelining.
 @inline(.nodebug)
 def break_into_powers_of_two[
-    origins: OriginSet,
-    //,
-    func: def[pow_two: Int, offset: Int]() capturing[origins] -> None,
     N: Int,
     *,
     max_value: Int = 128,
-]():
+](func: Some[def[pow_two: Int, offset: Int]() -> None]):
     """Calls `func` for each power-of-two-sized chunk of `N`, plus a final `pow_two=0` call for pipeline cleanup.
 
     Parameters:
-        origins: Origin set captured by the callback (inferred).
-        func: Callback invoked once per power-of-two chunk with the chunk
-            size and starting offset, plus a final `pow_two=0` cleanup call.
         N: Total size to decompose into power-of-two chunks.
         max_value: Upper bound on the largest power-of-two chunk size
             (defaults to 128).
+
+    Args:
+        func: Callback invoked once per power-of-two chunk with the chunk
+            size and starting offset, plus a final `pow_two=0` cleanup call.
     """
     comptime power_of_two = prev_power_of_two(min(max_value, N))
 
@@ -798,7 +796,7 @@ struct TMemTile[
         ].TensorType[Self.dtype],
     ):
         comptime assert Self.dtype_size <= 4
-        var ptr = src.ptr.bitcast[UInt32]()
+        var ptr = src.ptr.unsafe_bitcast[UInt32]()
         comptime st_mat_layout = STMatrixLayout[
             Self.BM,
             Self.BN,
@@ -807,9 +805,8 @@ struct TMemTile[
         ]
         comptime assert st_mat_layout.bits == 128 or st_mat_layout.bits == 256
 
-        @__parameter
         @inline(.always)
-        def store_fn[pow_two: Int, offset: Int]():
+        def store_fn[pow_two: Int, offset: Int]() {var}:
             # pow_two is current repeat, offset total so far
             comptime if pow_two > 0:
                 comptime for m_mma in range(st_mat_layout.num_m_tiles):
@@ -825,7 +822,7 @@ struct TMemTile[
                     var tmem = self.tmem_addr + UInt32(offsets.tmem_offset)
                     var frag = Array[_, offsets.local_frag_size_b32](
                         fill_with_unrolled=lambda [i: Int]() -> UInt32: (
-                            ptr.load(offsets.ptr_offset + i)
+                            ptr.unsafe_load(offsets.ptr_offset + i)
                         )
                     )
                     # 16 x 256b results in repeated 8x4 matrix of <1,2> vector pattern
@@ -837,9 +834,9 @@ struct TMemTile[
                     ](tmem, frag)
 
         comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[
-            func=store_fn, N=st_mat_layout.repeat, max_value=max_value
-        ]()
+        break_into_powers_of_two[N=st_mat_layout.repeat, max_value=max_value](
+            store_fn
+        )
 
     @inline(.always)
     def load_async_with_st_matrix_layout[
@@ -908,14 +905,11 @@ struct TMemTile[
         ]()
         comptime load_dtype = DType.uint32
         var ptr = rebind[
-            UnsafePointer[
-                Scalar[load_dtype], MutAnyOrigin, address_space=.LOCAL
-            ]
+            Pointer[Scalar[load_dtype], MutAnyOrigin, address_space=.LOCAL]
         ](dst.ptr)
 
-        @__parameter
         @inline(.always)
-        def load_fn[pow_two: Int, local_offset: Int]():
+        def load_fn[pow_two: Int, local_offset: Int]() {var}:
             comptime assert pow_two + local_offset <= num_repeats
             comptime if pow_two > 0:
                 comptime for m_mma in range(st_mat_layout.num_m_tiles):
@@ -939,12 +933,10 @@ struct TMemTile[
                     ](tmem)
 
                     comptime for _i in range(offsets.local_frag_size_b32):
-                        ptr.store(offsets.ptr_offset + _i, frag[_i])
+                        ptr.unsafe_store(offsets.ptr_offset + _i, frag[_i])
 
         comptime max_value = 64 if st_mat_layout.bits == 128 else 32
-        break_into_powers_of_two[
-            func=load_fn, N=num_repeats, max_value=max_value
-        ]()
+        break_into_powers_of_two[N=num_repeats, max_value=max_value](load_fn)
 
     @inline(.always)
     def load_async(
@@ -961,9 +953,8 @@ struct TMemTile[
         comptime repeat = Self.dtype_size * Self.BN // 4
         comptime dtype = Self.dtype if Self.dtype_size == 4 else DType.uint32
 
-        @__parameter
         @inline(.always)
-        def load_fn[pow_two: Int, offset: Int]():
+        def load_fn[pow_two: Int, offset: Int]() {var, mut dst}:
             comptime if pow_two > 0:
                 comptime if dtype == Self.dtype:
                     var frag0 = tcgen05_ld[
@@ -990,22 +981,23 @@ struct TMemTile[
                     comptime for _i in range(pow_two):
                         dst[offset + _i] = bitcast[Self.dtype](frag1[_i])
 
-        break_into_powers_of_two[func=load_fn, N=repeat, max_value=128]()
+        break_into_powers_of_two[N=repeat, max_value=128](load_fn)
 
     @inline(.always)
     def store_async[
         src_type: DType
     ](self, src: LocalTensor[src_type, row_major[Self.BN](), _]):
-        @__parameter
         @inline(.always)
-        def store_fn[pow_two: Int, offset: Int]():
+        def store_fn[pow_two: Int, offset: Int]() {var}:
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
                 var frag = Array[UInt32, frag_width](uninitialized=True)
 
                 comptime if src_type == Self.dtype:
                     comptime for _i in range(frag_width):
-                        frag[_i] = src.ptr.bitcast[UInt32]().load(offset + _i)
+                        frag[_i] = src.ptr.unsafe_bitcast[UInt32]().load(
+                            offset + _i
+                        )
                 elif pow_two > 1:
                     comptime size_ratio = size_of[src_type]() // Self.dtype_size
                     comptime cast_width = min(
@@ -1047,7 +1039,7 @@ struct TMemTile[
                     pack=False,
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
-        break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
+        break_into_powers_of_two[N=Self.BN, max_value=128](store_fn)
 
     @inline(.always)
     def store_async[
@@ -1055,9 +1047,8 @@ struct TMemTile[
         src_len: Int,
         src_offset: Int = 0,
     ](self, src: Array[Scalar[src_type], src_len]):
-        @__parameter
         @inline(.always)
-        def store_fn[pow_two: Int, offset: Int]():
+        def store_fn[pow_two: Int, offset: Int]() {var, imm src}:
             comptime if pow_two > 0:
                 comptime frag_width = pow_two * Self.dtype_size // 4
                 var frag = Array[UInt32, frag_width](uninitialized=True)
@@ -1107,7 +1098,7 @@ struct TMemTile[
                     pack=False,
                 ](self.tmem_addr + UInt32(offset * Self.dtype_size // 4), frag)
 
-        break_into_powers_of_two[func=store_fn, N=Self.BN, max_value=128]()
+        break_into_powers_of_two[N=Self.BN, max_value=128](store_fn)
 
 
 struct SM100TensorAccumulator[
@@ -2842,7 +2833,7 @@ def exp2_emulation[
 @inline(.always)
 def elect_mma_arrive[
     cta_group: Int = 1
-](mbar_ptr: UnsafePointer[address_space=.SHARED, ...], elect: Int32,):
+](mbar_ptr: ImmPointer[address_space=.SHARED, ...], elect: Int32,):
     """Arrive at the mbar pointer for the MMA instruction.
 
     Parameters:

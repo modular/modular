@@ -76,10 +76,10 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
     "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
-    "test_layout_mma.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_layout_tensor_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_tensor_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
+    "test_gemm_vectorized_views.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_tile_io.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2834
     "test_tile_io_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2834
 }
@@ -147,6 +147,7 @@ _FILECHECK_EXTRA_DEPS = {
             "test_tensor_core_amd_utils.mojo",  # Imported source, not a test
             "matmul_kernels.mojo",  # Imported source, not a test
             "tensor_core_kernels.mojo",  # Imported source, not a test
+            "test_layout_mma.mojo",  # Dedicated minimal-deps target below
             # Depend only on `layout` + `std`; given dedicated minimal-deps
             # targets below so they are not coupled to `nn`/`linalg`.
             "test_device_pointer_tile_storage_kernel.mojo",
@@ -156,6 +157,24 @@ _FILECHECK_EXTRA_DEPS = {
         ],
     )
 ]
+
+# Keep the accumulator oracle independent of unrelated NN and GEMM packages.
+mojo_test(
+    name = "test_layout_mma.mojo.test",
+    size = "large",
+    srcs = ["test_layout_mma.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
 
 # `DevicePointerEngine` probes. They only import `layout` and `std`, so they
 # get dedicated targets with minimal dependencies rather than the heavy

@@ -163,19 +163,16 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
     )
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     # Normal epilogue: store the matmul result unchanged (exercises the lambda
     # store path; reference is plain vendor BLAS).
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[store_alignment=alignment * size_of[c_type]()](
-            idx, rebind[SIMD[c_type, width]](val)
-        )
+        c_tensor.store_linear[
+            width=width, alignment=alignment * size_of[c_type]()
+        ](idx, rebind[SIMD[c_type, width]](val))
 
     # Compute epilogue: out = matmul * C_initial (also checks the coordinate).
     @inline(.always)

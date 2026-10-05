@@ -755,18 +755,19 @@ struct TileTensor[
         ref[Self.origin] device_buffer: DeviceBuffer[Self.dtype],
         var layout: Self.LayoutType,
     ):
-        """Create a `LayoutTensor` from a `DeviceBuffer`. The layout must have
-        statically known dimensions.
+        """Creates a `TileTensor` view of a `DeviceBuffer`.
+
+        The layout supports both static and runtime dimensions.
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
         [`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/) to
-        allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
+        allocate a `DeviceBuffer` and use that to construct a `TileTensor`
         that can be accessed on the GPU. You cannot directly access data in the
-        `DeviceBuffer` or `LayoutTensor` from the CPU.
+        `DeviceBuffer` or `TileTensor` from the CPU.
 
         The following example shows a typical pattern for using `DeviceBuffer`
-        to construct a `LayoutTensor` that you can use on the GPU.
+        to construct a `TileTensor` that you can use on the GPU.
 
         ```mojo
         from max.gpu.host import DeviceContext, DeviceBuffer
@@ -841,8 +842,9 @@ struct TileTensor[
         ref[Self.origin] host_buffer: HostBuffer[Self.dtype],
         var layout: Self.LayoutType,
     ):
-        """Create a `LayoutTensor` from a `HostBuffer`. The layout must have
-        statically known dimensions.
+        """Creates a `TileTensor` view of a `HostBuffer`.
+
+        The layout supports both static and runtime dimensions.
 
         The resulting tensor's data can only be accessed on the CPU.
 
@@ -855,7 +857,7 @@ struct TileTensor[
         comptime dtype = DType.float32
 
         var ctx = DeviceContext()
-        var host_buf = ctx.enqueue_create_host_buffer[dtype](8)
+        var host_buf = ctx.enqueue_create_host_buffer[dtype](16)
 
         var tensor = TileTensor(
             host_buf,

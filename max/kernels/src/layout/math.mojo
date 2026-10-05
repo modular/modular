@@ -19,6 +19,7 @@ from std.math.math import max as b_max
 from std.sys import align_of
 from layout import (
     Coord,
+    DefaultEngine,
     Idx,
     IntTuple,
     Layout,
@@ -357,6 +358,64 @@ def max[
         comptime idx = x.layout(i)
         res_tensor.ptr[idx] = b_max(x.ptr[idx], y.ptr[idx])
     return res_tensor
+
+
+@inline(.always)
+def max(
+    x: TileTensor,
+    y: TileTensor[x.dtype, x.LayoutType, ...],
+    out result: TileTensor[
+        x.dtype,
+        x.LayoutType,
+        MutUntrackedOrigin,
+        Engine=DefaultEngine[element_width=x.element_size],
+        address_space=x.address_space,
+    ],
+):
+    """Computes element-wise maxima into a new tensor with the input layout.
+
+    Args:
+        x: First input tensor.
+        y: Second input tensor with the same dtype, layout, and element width.
+
+    Returns:
+        An independently allocated tensor with the input layout and SIMD width.
+
+    Constraints:
+        Shapes and strides must be static, and strides must be nonnegative.
+    """
+    comptime assert x.all_dims_known, "max expects a statically known layout"
+    comptime assert (
+        x.element_size == y.element_size
+    ), "max expects inputs with the same element size"
+    comptime for axis in range(x.flat_rank):
+        comptime assert (
+            x.LayoutType.static_stride[axis] >= 0
+        ), "max expects nonnegative strides"
+
+    # Cosize includes each cell's first scalar, not its remaining SIMD lanes.
+    comptime storage_size = b_max(
+        1, x.LayoutType.static_cosize + x.element_size - 1
+    )
+    var storage = stack_allocation[
+        x.dtype,
+        address_space=x.address_space,
+        alignment=align_of[x.ElementType](),
+    ](row_major[storage_size]())
+    var res = type_of(result)(
+        storage.unsafe_ptr().unsafe_bitcast[x.ElementType](), x.layout
+    )
+    comptime for i in range(x.LayoutType.static_product):
+        var offset = x.layout(Idx[i])
+        # Strided SIMD cells may have only scalar alignment.
+        var a = x.raw_load[width=x.element_size, alignment=align_of[x.dtype]()](
+            offset
+        )
+        var b = y.raw_load[width=x.element_size, alignment=align_of[y.dtype]()](
+            offset
+        )
+        res.raw_store(offset, b_max(a, b))
+    return res
 
 
 @inline(.always)

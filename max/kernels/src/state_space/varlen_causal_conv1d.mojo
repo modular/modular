@@ -707,12 +707,12 @@ def causal_conv1d_varlen_states_gpu[
     batch: Int32,
     state_len: Int32,
     x: TileTensor[
-        x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine
+        x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine
     ],  # Shape (total_tokens, dim)
     cu_seqlens: TileTensor[
         cu_seqlens_dtype,
         cu_seqlens_LT,
-        MutUntrackedOrigin,
+        ImmUntrackedOrigin,
         Engine=cu_seqlens_engine,
     ],  # Shape (batch + 1,)
     states: TileTensor[
@@ -815,10 +815,10 @@ def _causal_conv1d_varlen_fwd_kernel[
     weight: TileTensor[dtype, weight_LT, MutUntrackedOrigin, Engine=Engine],
     bias: TileTensor[dtype, bias_LT, MutUntrackedOrigin, Engine=Engine],
     query_start_loc: TileTensor[
-        .int32, query_start_loc_LT, MutUntrackedOrigin, Engine=Engine
+        .int32, query_start_loc_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     has_initial_state: TileTensor[
-        .bool, has_initial_state_LT, MutUntrackedOrigin, Engine=Engine
+        .bool, has_initial_state_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     conv_states: TileTensor[
         conv_states_dtype, conv_states_LT, MutUntrackedOrigin, Engine=Engine
@@ -1219,7 +1219,7 @@ def causal_conv1d_varlen_update_gpu[
     dim: Int32,
     seqlen: Int32,
     state_len: Int32,
-    x: TileTensor[x_dtype, x_LT, MutUntrackedOrigin, Engine=x_engine],
+    x: TileTensor[x_dtype, x_LT, ImmUntrackedOrigin, Engine=x_engine],
     weight: TileTensor[
         weight_dtype, weight_LT, MutUntrackedOrigin, Engine=weight_engine
     ],
@@ -1235,13 +1235,13 @@ def causal_conv1d_varlen_update_gpu[
     cache_seqlens: TileTensor[
         cache_seqlens_dtype,
         cache_seqlens_LT,
-        MutUntrackedOrigin,
+        ImmUntrackedOrigin,
         Engine=cache_seqlens_engine,
     ],
     conv_state_indices: TileTensor[
         conv_state_indices_dtype,
         conv_state_indices_LT,
-        MutUntrackedOrigin,
+        ImmUntrackedOrigin,
         Engine=conv_state_indices_engine,
     ],
     output: TileTensor[

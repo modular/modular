@@ -81,7 +81,7 @@ def _build_info_asyncrt_max_profiling_level() -> OptionalReg[Int]:
 
 
 @fieldwise_init
-struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
+struct TraceCategory(EnumLike, Equatable, Intable, TrivialRegisterPassable):
     """An enum-like struct specifying the type of tracing to perform."""
 
     comptime OTHER = Self(0)
@@ -98,6 +98,30 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
     var value: Int
     """The integer value representing the trace category. Used for bitwise operations
     when determining if profiling is enabled for a specific category."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "OTHER".value,
+        "ASYNCRT".value,
+        "MEM".value,
+        "Kernel".value,
+        "MAX".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self.value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TraceCategory has no payload"
 
     @inline(.nodebug)
     def __eq__(self, rhs: Self) -> Bool:
@@ -138,7 +162,7 @@ struct TraceCategory(Equatable, Intable, TrivialRegisterPassable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct TraceLevel(Comparable, TrivialRegisterPassable):
+struct TraceLevel(Comparable, EnumLike, TrivialRegisterPassable):
     """An enum-like struct specifying the level of tracing to perform."""
 
     comptime ALWAYS = Self(0)
@@ -156,6 +180,28 @@ struct TraceLevel(Comparable, TrivialRegisterPassable):
     - 1 (OP): Operation-level tracing
     - 2 (THREAD): Thread-level tracing
     """
+
+    comptime _enum_case_names = ParameterList.of[
+        "ALWAYS".value,
+        "OP".value,
+        "THREAD".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self.value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TraceLevel has no payload"
 
     @inline(.always)
     def __init__(out self, value: Int):

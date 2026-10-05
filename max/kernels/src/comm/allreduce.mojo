@@ -165,7 +165,7 @@ comptime elementwise_epilogue_type = def[
 
 
 @fieldwise_init
-struct AllReduceAlgorithm(TrivialRegisterPassable, Writable):
+struct AllReduceAlgorithm(EnumLike, TrivialRegisterPassable, Writable):
     """Selects which P2P allreduce kernel `_allreduce_p2p` launches.
 
     Replaces the former pair of `use_2stage` / `use_lamport` booleans with a
@@ -181,6 +181,28 @@ struct AllReduceAlgorithm(TrivialRegisterPassable, Writable):
     """Bandwidth-bound: reduce-scatter into peer payloads, then all-gather."""
     comptime LAMPORT = Self(2)
     """Barrier-free negative-zero sentinel path (small messages only)."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "ONE_STAGE".value,
+        "TWO_STAGE".value,
+        "LAMPORT".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "AllReduceAlgorithm has no payload"
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:

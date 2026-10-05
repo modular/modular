@@ -166,6 +166,10 @@ _CPU_TESTS = glob(
         "autotune/**",
         "demos/**",
         "gpu/**",
+        # Has a dedicated `mojo_test` below carrying the -D shape defines and
+        # TEST_ONLY gate; one rule per source (see "Lint files in multiple
+        # targets"), so it must leave the generic glob.
+        "linalg/bench_layout_tensor.mojo",
         "misc/**",
         "packages/**",
     ] + _RUN_BENCHMARKS,
@@ -598,4 +602,26 @@ filegroup(
     name = "ncu_scripts",
     srcs = glob(["gpu/**/*_ncu.sh"]),
     tags = ["maybe-unused"],
+)
+
+# Small tile-compatible M/N/K exercise every matmul variant; TEST_ONLY skips
+# timing so this target checks correctness rather than benchmark performance.
+mojo_test(
+    name = "linalg/bench_tile_tensor_correctness",
+    srcs = ["linalg/bench_layout_tensor.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "M=16",
+        "-D",
+        "N=64",
+        "-D",
+        "K=128",
+        "-D",
+        "TEST_ONLY=true",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
 )

@@ -337,4 +337,13 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = rebind[type_of(d)](SIMD[.float64, 4](r[0], r[1], r[2], r[3]))
 
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()

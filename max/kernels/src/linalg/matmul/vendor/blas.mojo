@@ -130,7 +130,7 @@ from linalg.fp4_utils import (
 # ===----------------------------------------------------------------------===#
 
 
-struct Backend(Equatable, TrivialRegisterPassable, Writable):
+struct Backend(EnumLike, Equatable, TrivialRegisterPassable, Writable):
     """Identifies which vendor BLAS library backs a matmul operation.
 
     Acts as a comptime-selectable tag (`AUTOMATIC`, `CUBLAS`, `CUBLASLT`,
@@ -145,6 +145,30 @@ struct Backend(Equatable, TrivialRegisterPassable, Writable):
     comptime CUBLASLT = Self(2)
     comptime ROCBLAS = Self(3)
     comptime HIPBLASLT = Self(4)
+
+    comptime _enum_case_names = ParameterList.of[
+        "AUTOMATIC".value,
+        "CUBLAS".value,
+        "CUBLASLT".value,
+        "ROCBLAS".value,
+        "HIPBLASLT".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Backend has no payload"
 
     def __init__(out self, value: Int):
         self._value = Int32(value)

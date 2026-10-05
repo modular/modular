@@ -43,7 +43,7 @@ from layout.tma_async import (
 )
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
-from std.math import ceildiv, inf
+from std.math import align_up, ceildiv, inf
 from std.testing import assert_equal
 from std.math.uutils import udivmod
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
@@ -802,7 +802,7 @@ def test_block_scaled_mxfp8[
     var a_size = M * k
     var b_size = N * k
     var c_size = M * N
-    var c_storage_size = (ceildiv(M, BM) * BM + 1) * N
+    var c_storage_size = (align_up(M, BM) + 1) * N
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)

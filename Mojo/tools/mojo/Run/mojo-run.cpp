@@ -80,10 +80,8 @@ using namespace mlir;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct RunOptTable : public llvm::opt::PrecomputedOptTable {
-  RunOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct RunOptTable : public llvm::opt::OptTable {
+  RunOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 
 } // namespace

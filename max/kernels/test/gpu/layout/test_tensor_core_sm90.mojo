@@ -12,39 +12,48 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from max.gpu.compute.mma import mma
-from layout import Layout, LayoutTensor
-from layout._utils import ManagedLayoutTensor
+from layout import TensorLayout, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core import TensorCore
 
-from std.utils.index import IndexList
 
-
-def arange(tensor: LayoutTensor[mut=True, ...]):
-    comptime for i in range(tensor.shape[0]()):
-        comptime for j in range(tensor.shape[1]()):
+def arange(tensor: TileTensor[mut=True, ...]):
+    comptime assert tensor.rank == tensor.flat_rank == 2
+    comptime assert tensor.all_dims_known and tensor.element_size == 1
+    comptime for i in range(tensor.static_shape[0]):
+        comptime for j in range(tensor.static_shape[1]):
             tensor[i, j] = Scalar[tensor.dtype](i + j)
+
+
+def print_matrix(tensor: TileTensor):
+    comptime assert tensor.rank == tensor.flat_rank == 2
+    for row in range(tensor.dim[0]()):
+        for column in range(tensor.dim[1]()):
+            print(tensor[row, column], end=" ")
+        print()
 
 
 def load_and_mma_16x8x32[
     out_type: DType,
     in_type: DType,
-    layout_c: Layout,
-    layout_a: Layout,
-    layout_b: Layout,
+    layout_c: TensorLayout,
+    layout_a: TensorLayout,
+    layout_b: TensorLayout,
 ](
-    mat_c: LayoutTensor[mut=True, out_type, layout_c, MutAnyOrigin],
-    mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
-    mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
+    mat_c: TileTensor[mut=True, out_type, layout_c, MutAnyOrigin],
+    mat_a: TileTensor[mut=False, in_type, layout_a, ImmutAnyOrigin],
+    mat_b: TileTensor[mut=False, in_type, layout_b, ImmutAnyOrigin],
 ):
     comptime assert (
         in_type == .float8_e4m3fn or in_type == .float8_e5m2
     ), "This kernel only supports E4M3 and E5M2 combinations"
 
-    var mma = TensorCore[DType.float32, in_type, (16, 8, 32), False]()
-    var a_reg_tile = mma.load_a(mat_a)
-    var b_reg_tile = mma.load_b(mat_b)
-    var c_reg_tile = mma.load_c(mat_c)
+    comptime assert out_type == .float32
+    var mma = TensorCore[out_type, in_type, (16, 8, 32), False]()
+    # NVIDIA register loaders still require legacy fragment-layout views.
+    var a_reg_tile = mma.load_a(mat_a.to_layout_tensor())
+    var b_reg_tile = mma.load_b(mat_b.to_layout_tensor())
+    var c_reg_tile = mma.load_c(mat_c.to_layout_tensor())
     var d_reg_tile = mma.mma_op(a_reg_tile, b_reg_tile, c_reg_tile)
     mma.store_d(mat_c, d_reg_tile)
 
@@ -73,40 +82,35 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext) raises:
     comptime K = 32
     comptime in_type = DType.float8_e4m3fn
     comptime out_type = DType.float32
-    var mat_a = ManagedLayoutTensor[
-        in_type,
-        Layout.row_major(M, K),
-    ](ctx)
-    arange(mat_a.tensor())
-    var mat_b = ManagedLayoutTensor[
-        in_type,
-        Layout.row_major(K, N),
-    ](ctx)
-    arange(mat_b.tensor())
+    var mat_a = HostDeviceTileTensor[in_type](row_major[M, K](), ctx)
+    arange(mat_a.host_tensor())
+    var mat_b = HostDeviceTileTensor[in_type](row_major[K, N](), ctx)
+    arange(mat_b.host_tensor())
 
-    var mat_c = ManagedLayoutTensor[
-        out_type,
-        Layout.row_major(M, N),
-    ](ctx)
-    _ = mat_c.tensor().fill(0)
+    var mat_c = HostDeviceTileTensor[out_type](row_major[M, N](), ctx)
+    _ = mat_c.host_tensor().fill(0)
+
+    mat_a.to_device()
+    mat_b.to_device()
+    mat_c.to_device()
 
     comptime load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
         out_type,
         in_type,
-        mat_c.layout,
-        mat_a.layout,
-        mat_b.layout,
+        mat_c.LayoutType,
+        mat_a.LayoutType,
+        mat_b.LayoutType,
     ]
 
     ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
-        mat_c.device_tensor(),
-        mat_a.device_tensor(),
-        mat_b.device_tensor(),
+        mat_c.device_tensor().as_unsafe_any_origin(),
+        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
-    ctx.synchronize()
-    print(mat_c.tensor())
+    mat_c.to_host()
+    print_matrix(mat_c.host_tensor())
     _ = mat_a^
     _ = mat_b^
     _ = mat_c^
@@ -136,40 +140,35 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext) raises:
     comptime K = 32
     comptime in_type = DType.float8_e5m2
     comptime out_type = DType.float32
-    var mat_a = ManagedLayoutTensor[
-        in_type,
-        Layout.row_major(M, K),
-    ](ctx)
-    arange(mat_a.tensor())
-    var mat_b = ManagedLayoutTensor[
-        in_type,
-        Layout.row_major(K, N),
-    ](ctx)
-    arange(mat_b.tensor())
+    var mat_a = HostDeviceTileTensor[in_type](row_major[M, K](), ctx)
+    arange(mat_a.host_tensor())
+    var mat_b = HostDeviceTileTensor[in_type](row_major[K, N](), ctx)
+    arange(mat_b.host_tensor())
 
-    var mat_c = ManagedLayoutTensor[
-        out_type,
-        Layout.row_major(M, N),
-    ](ctx)
-    _ = mat_c.tensor().fill(0)
+    var mat_c = HostDeviceTileTensor[out_type](row_major[M, N](), ctx)
+    _ = mat_c.host_tensor().fill(0)
 
-    comptime load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
+    mat_a.to_device()
+    mat_b.to_device()
+    mat_c.to_device()
+
+    comptime load_and_mma_e5m2_e5m2_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
         out_type,
         in_type,
-        mat_c.layout,
-        mat_a.layout,
-        mat_b.layout,
+        mat_c.LayoutType,
+        mat_a.LayoutType,
+        mat_b.LayoutType,
     ]
 
-    ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
-        mat_c.device_tensor(),
-        mat_a.device_tensor(),
-        mat_b.device_tensor(),
+    ctx.enqueue_function[load_and_mma_e5m2_e5m2_f32_16x8x32_kernel_fn](
+        mat_c.device_tensor().as_unsafe_any_origin(),
+        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
-    ctx.synchronize()
-    print(mat_c.tensor())
+    mat_c.to_host()
+    print_matrix(mat_c.host_tensor())
     _ = mat_a^
     _ = mat_b^
     _ = mat_c^

@@ -253,4 +253,13 @@ def _mma_amd(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = _f8f6f4_intrinsic()
 
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()

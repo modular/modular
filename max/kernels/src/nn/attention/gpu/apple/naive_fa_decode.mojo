@@ -54,10 +54,7 @@ from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from layout import (
-    UNKNOWN_VALUE,
     Idx,
-    Layout,
-    LayoutTensor,
     TensorEngine,
     TileTensor,
 )
@@ -287,7 +284,7 @@ def naive_fa_decode_apple_core[
     var kv_head = head_id // _group
     var lane = Int(lane_id())
 
-    # Decode offset math — mirror `_bmm0_bs` (mha.mojo:5560-5589). The
+    # Decode offset math — mirror `_bmm0_bs` in `mha.mojo`. The
     # `cur_cache_len` (number of keys to attend) is set PER BRANCH because the
     # dense (`else`) path takes it from `_max_cache_size` (the K tensor's full
     # seq dim), NOT from `cur_query_len` / `cache_length` — exactly as the naive
@@ -308,14 +305,14 @@ def naive_fa_decode_apple_core[
         cur_query_len = seq_end - seq_start
         q_offset = _depth * (seq_start * _num_heads + head_id)
         # The new token's own KV sits at index `cache_length`, so an inaccurate
-        # cache length must include it. Mirror `_bmm0_bs` (mha.mojo:5567-5575).
+        # cache length must include it. Mirror `_bmm0_bs` in `mha.mojo`.
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
         else:
             cur_cache_len = k.cache_length(batch_id) + cur_query_len
     elif _use_valid_length:
         # KVCache decode: valid_length holds per-sequence query lengths, not row
-        # offsets. Mirror `_bmm0_bs` (mha.mojo:5576-5582).
+        # offsets. Mirror `_bmm0_bs` in `mha.mojo`.
         seq_start = batch_id
         cur_query_len = Int(valid_length[batch_id])
         q_offset = _depth * (head_id + _num_heads * _max_prompt_len * batch_id)
@@ -326,7 +323,7 @@ def naive_fa_decode_apple_core[
     else:
         # Dense decode: all sequences share one length and cache length; the
         # full key count is `_max_cache_size` (the K tensor's seq dim). Mirror
-        # `_bmm0_bs` (mha.mojo:5585-5589).
+        # `_bmm0_bs` in `mha.mojo`.
         seq_start = batch_id
         cur_query_len = _max_prompt_len
         q_offset = _depth * (head_id + _num_heads * _max_prompt_len * batch_id)
@@ -338,7 +335,7 @@ def naive_fa_decode_apple_core[
         return
     var end = min(start + SplitSize, seq_len)
 
-    # Decode token's score-matrix row (== cache_length). Mirror mha.mojo:5324.
+    # Decode token's score-matrix row (== cache_length). Mirror `_bmm0_bs` in `mha.mojo`.
     var score_row = cur_cache_len - cur_query_len
 
     # Q is a flat 1D TileTensor over the whole buffer; this lane owns the
@@ -520,7 +517,7 @@ def naive_fa_decode_apple_stitch[
     if d >= _depth:
         return
 
-    # Output offset — mirror mha.mojo:5390. `cur_cache_len` (the attend span)
+    # Output offset — mirror `_bmm1_bs` in `mha.mojo`. `cur_cache_len` (the attend span)
     # is set PER BRANCH and MUST match the producer's exactly, so the combine
     # reads precisely the splits the producer wrote (the dense path takes it
     # from `_max_cache_size`, not `cur_query_len`).
@@ -580,7 +577,7 @@ def naive_fa_decode_apple_stitch[
 
 
 # ===-------------------------------------------------------------------=== #
-# Host launcher. Mirrors `mha_gpu_naive` (MHAOperand overload, mha.mojo:5066)
+# Host launcher. Mirrors `mha_gpu_naive` (MHAOperand overload)
 # signature; enqueues the producer/stitch pair. Dispatches the runtime `_depth`
 # to a compile-time `Depth` specialization over multiples of WARP_SIZE.
 # ===-------------------------------------------------------------------=== #
@@ -595,11 +592,11 @@ def naive_fa_decode_apple[
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
 ](
-    q: LayoutTensor[mut=False, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, address_space=.GENERIC, ...],
     k: k_t,
     v: v_t,
     mask_functor: mask_t,
-    output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, output_type, address_space=.GENERIC, ...],
     valid_length: ImmutTileTensor1D[.uint32],
     scale: Float32,
     batch_size: Int,
@@ -703,12 +700,12 @@ def naive_fa_decode_apple[
     # just carry the storage handles with TileTensor typing (no raw pointers /
     # DeviceBuffer-as-pointer inside the kernels).
     var q_flat = TileTensor(
-        q.ptr.as_imm().as_unsafe_any_origin(),
-        row_major(q.size()),
+        q.unsafe_ptr().as_imm().as_unsafe_any_origin(),
+        row_major(q.num_elements()),
     )
     var output_flat = TileTensor(
-        output.ptr.as_unsafe_any_origin(),
-        row_major(output.size()),
+        output.unsafe_ptr().as_unsafe_any_origin(),
+        row_major(output.num_elements()),
     )
     var o_partial_t = TileTensor(o_partial_dev, row_major(o_partial_n))
     var m_partial_t = TileTensor(m_partial_dev, row_major(ml_partial_n))

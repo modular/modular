@@ -104,19 +104,19 @@ def gated_delta_conv1d_fwd_gpu[
     conv_dim: Int32,
     tokens_per_block: Int32,
     qkv_input_ragged: TileTensor[
-        work_dtype, qkv_input_ragged_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, qkv_input_ragged_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     conv_weight: TileTensor[
-        work_dtype, conv_weight_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, conv_weight_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     conv_state: TileTensor[
         state_dtype, conv_state_LT, MutUntrackedOrigin, Engine=Engine
     ],
     slot_idx: TileTensor[
-        .uint32, slot_idx_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, slot_idx_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     input_row_offsets: TileTensor[
-        .uint32, input_row_offsets_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, input_row_offsets_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     conv_output_ragged: TileTensor[
         work_dtype, conv_output_ragged_LT, MutUntrackedOrigin, Engine=Engine

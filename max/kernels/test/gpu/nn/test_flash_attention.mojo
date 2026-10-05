@@ -26,7 +26,6 @@ from max.gpu.host.info import (
 from layout import (
     Idx,
     Layout,
-    LayoutTensor,
     RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,

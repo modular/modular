@@ -21,7 +21,7 @@ from std.sys.intrinsics import masked_load, masked_store
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from layout.layout import *
-from layout import LayoutTensor, TileTensor, Coord, TensorLayout
+from layout import TileTensor, Coord, TensorLayout
 from layout.tile_layout import Layout as _NewLayout
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.reflection import reflect
@@ -522,42 +522,6 @@ struct GemmShape(TrivialRegisterPassable):
     var M: Int
     var N: Int
     var K: Int
-
-    @staticmethod
-    def get[
-        transpose_b: Bool,
-        layout_c: Layout,
-        layout_a: Layout,
-        layout_b: Layout,
-    ](
-        c: LayoutTensor[mut=False, _, layout_c, ...],
-        a: LayoutTensor[mut=False, _, layout_a, ...],
-        b: LayoutTensor[mut=False, _, layout_b, ...],
-    ) -> GemmShape:
-        """Constructor of a gemm shape record from input buffers.
-
-        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
-        is because `b` may be padded to a multiple of the tile size if it has
-        been pre-packed.
-
-        Parameters:
-            transpose_b: Whether matrix B is stored in transposed form.
-            layout_c: The memory layout of the output C tensor.
-            layout_a: The memory layout of the input A tensor.
-            layout_b: The memory layout of the input B tensor.
-
-        Args:
-            c: LayoutTensor with allocated output space.
-            a: LayoutTensor containing matrix operand A.
-            b: LayoutTensor containing matrix operand B.
-        """
-
-        # We only want a 2D tensor for now
-        comptime assert c.rank == 2
-        comptime assert a.rank == 2
-        comptime assert b.rank == 2
-
-        return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
     @staticmethod
     def get[
