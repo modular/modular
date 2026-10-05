@@ -650,7 +650,7 @@ def _ss_naive_ref[
     via the naive matmul kernel (reads only the leading k_valid K-columns)."""
     var c_ref_dev = ctx.enqueue_create_buffer[ACC_TYPE](M * QK_N)
 
-    var c_ref_tt = TileTensor(c_ref_dev, row_major(Coord(M, QK_N)))
+    var c_ref_tt = TileTensor(c_ref_dev, row_major(M, QK_N))
     # A and B keep their physical row stride QK_K; only the K extent passed to
     # the kernel (k_valid) changes, so the naive reference reads cols
     # [0, k_valid) of each row.
@@ -658,13 +658,13 @@ def _ss_naive_ref[
         ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(a_ref_dev.unsafe_ptr())
         ),
-        row_major(Coord(M, QK_K)),
+        row_major(M, QK_K),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[REF_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(b_ref_dev.unsafe_ptr())
         ),
-        row_major(Coord(QK_N, QK_K)),
+        row_major(QK_N, QK_K),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -2183,19 +2183,19 @@ def test_ts_partial(ctx: DeviceContext) raises:
     var q_dev_ptr = q_inp.device_tensor().unsafe_ptr()
     var k_dev_ptr = k_inp.device_tensor().unsafe_ptr()
     var c_ref_tt = TileTensor(
-        p_ref_dev, row_major(Coord(TS_P_REF_ROWS, TS_P_REF_COLS))
+        p_ref_dev, row_major(TS_P_REF_ROWS, TS_P_REF_COLS)
     )
     var a_tt = TileTensor(
         ImmPointer[Scalar[TS_OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(q_dev_ptr)
         ),
-        row_major(Coord(TS_ROWS, TS_COLS)),
+        row_major(TS_ROWS, TS_COLS),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[TS_OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(k_dev_ptr)
         ),
-        row_major(Coord(TS_K_ROWS, TS_K_COLS)),
+        row_major(TS_K_ROWS, TS_K_COLS),
     )
     comptime gemm_naive = matmul_kernel_naive[
         .float32,

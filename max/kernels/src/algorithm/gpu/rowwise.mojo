@@ -423,7 +423,7 @@ struct BlockReducer[BLOCK_SIZE: Int](Reducer, TrivialRegisterPassable):
             var shmem = stack_allocation[
                 Self.BLOCK_SIZE, S, address_space=.SHARED
             ]()
-            var tid = Int(thread_idx.x)
+            var tid = thread_idx.x
             shmem[tid] = state
             barrier()
 
@@ -1027,7 +1027,7 @@ def _pointwise_splitk_combine[
     """
     var num_splits = Int(ctx._blocks_per_row)
     var base = _pointwise_splitk_slot_base(ctx, reduce_index)
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var local = State()
     if tid < num_splits:
         var off = base + tid * _SPLITK_STATE_BYTES
@@ -1171,12 +1171,10 @@ struct _TiledKernel[rank: Int, params: ContextParams, Body: RowBody](
         # Index math is not data-dependent — compute it before the PDL
         # wait so it overlaps with the prior grid's tail.
         var stride = (
-            Int(grid_dim.x)
-            * Self.params.BLOCK_SIZE
-            * Self.params.emit_tile_width
+            grid_dim.x * Self.params.BLOCK_SIZE * Self.params.emit_tile_width
         )
         var base = (
-            Int(block_idx.x) * Self.params.BLOCK_SIZE + Int(thread_idx.x)
+            block_idx.x * Self.params.BLOCK_SIZE + thread_idx.x
         ) * Self.params.emit_tile_width
         with PDL():
             var ctx = Context[Self.params].empty()
@@ -1226,7 +1224,7 @@ struct _SplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __call__(self) capturing:
         var num_rows = _num_outputs_excluding_axis[Self.params.axis](self.shape)
 
-        var qr = udivmod(Int(block_idx.x), Int(self.blocks_per_row))
+        var qr = udivmod(block_idx.x, Int(self.blocks_per_row))
         var row_idx_ = qr[0]
         var block_in_row_ = qr[1]
         if row_idx_ >= num_rows:
@@ -1287,7 +1285,7 @@ struct _PointwiseSplitkKernel[rank: Int, params: ContextParams, Body: RowBody](
     def __call__(self) capturing:
         var num_rows = _num_outputs_excluding_axis[Self.params.axis](self.shape)
 
-        var qr = udivmod(Int(block_idx.x), Int(self.num_splits))
+        var qr = udivmod(block_idx.x, Int(self.num_splits))
         var row_idx_ = qr[0]
         var split_ = qr[1]
         if row_idx_ >= num_rows:

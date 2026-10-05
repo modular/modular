@@ -101,19 +101,15 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     comptime K_SCALES = ceildiv(KType.static_value, BLOCK_SCALE_K)
     comptime N_SCALES = ceildiv(NType.static_value, BLOCK_SCALE_K)
 
-    var a_shape = row_major(Coord(batch_size, m, k))
+    var a_shape = row_major(batch_size, m, k)
     var b_shape = row_major(
-        Coord(
-            batch_size,
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        batch_size,
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(batch_size, m, n))
-    var a_scales_shape = row_major(Coord(batch_size, Idx[K_SCALES], m))
-    var b_scales_shape = row_major(
-        Coord(batch_size, Idx[N_SCALES], Idx[K_SCALES])
-    )
+    var c_shape = row_major(batch_size, m, n)
+    var a_scales_shape = row_major(batch_size, Idx[K_SCALES], m)
+    var b_scales_shape = row_major(batch_size, Idx[N_SCALES], Idx[K_SCALES])
 
     var a_size = bs * M * K
     var b_size = bs * N * K if transpose_b else bs * K * N
@@ -291,28 +287,16 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    var a_shape = row_major(Coord(Idx[B], Int(M), Idx[K]))
+    var a_shape = row_major(Idx[B], M, Idx[K])
     var b_shape = row_major(
-        Coord(
-            Idx[B],
-            Idx[N if transpose_b else K],
-            Idx[K if transpose_b else N],
-        )
+        Idx[B], Idx[N if transpose_b else K], Idx[K if transpose_b else N]
     )
-    var c_shape = row_major(Coord(Idx[B], Int(M), Idx[N]))
+    var c_shape = row_major(Idx[B], M, Idx[N])
     var a_scales_shape = row_major(
-        Coord(
-            Idx[B],
-            Idx[K // BLOCK_SCALE_K],
-            Int(M_aligned_for_scales),
-        )
+        Idx[B], Idx[K // BLOCK_SCALE_K], M_aligned_for_scales
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[B],
-            Idx[N // BLOCK_SCALE_K],
-            Idx[K // BLOCK_SCALE_K],
-        )
+        Idx[B], Idx[N // BLOCK_SCALE_K], Idx[K // BLOCK_SCALE_K]
     )
 
     var a_size = bs * M * K

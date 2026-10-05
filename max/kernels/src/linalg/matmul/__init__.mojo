@@ -120,9 +120,9 @@ def matmul[
             return String(
                 "(",
                 target,
-                ";", trace_arg("A", IndexList[2](shape.M, shape.K), a.dtype),
-                ";", trace_arg("B", IndexList[2](shape.K, shape.N), b.dtype),
-                ";", trace_arg("C", IndexList[2](shape.M, shape.N), c.dtype),
+                ";", trace_arg("A", (shape.M, shape.K), a.dtype),
+                ";", trace_arg("B", (shape.K, shape.N), b.dtype),
+                ";", trace_arg("C", (shape.M, shape.N), c.dtype),
                 ";transpose_a=", transpose_a,
                 ";transpose_b=", transpose_b,
                 ")"
@@ -160,9 +160,9 @@ def matmul[
             return String(
                 "(",
                 target,
-                ";", trace_arg("A", IndexList[2](shape.M, shape.K), a.dtype),
-                ";", trace_arg("B", IndexList[2](shape.K, shape.N), b.dtype),
-                ";", trace_arg("C", IndexList[2](shape.M, shape.N), c.dtype),
+                ";", trace_arg("A", (shape.M, shape.K), a.dtype),
+                ";", trace_arg("B", (shape.K, shape.N), b.dtype),
+                ";", trace_arg("C", (shape.M, shape.N), c.dtype),
                 ";transpose_a=", transpose_a,
                 ";transpose_b=", transpose_b,
                 ";b_packed=", b_packed,

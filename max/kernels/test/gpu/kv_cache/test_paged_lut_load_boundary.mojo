@@ -102,7 +102,7 @@ def run_one[
 
     # LUT [batch=1, lut_columns] uint32. Fill: valid IDs then sentinel.
     var lut = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(1), Int64(lut_columns))), ctx
+        row_major(Int64(1), Int64(lut_columns)), ctx
     )
     var lut_host = lut.host_tensor()
     for c in range(lut_columns):
@@ -114,9 +114,7 @@ def run_one[
 
     # cache_lengths [batch=1] uint32. Cover all valid blocks so the kernel
     # treats every `base_kv_row` as in-cache.
-    var cache_lengths = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(1))), ctx
-    )
+    var cache_lengths = HostDeviceTileTensor[.uint32](row_major(Int64(1)), ctx)
     cache_lengths.host_tensor()[0] = UInt32(num_used * page_size)
     cache_lengths.to_device()
 
@@ -124,14 +122,12 @@ def run_one[
     var num_paged_blocks = max(num_used, 1)
     var blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(1),  # num_layers
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(1),  # num_layers
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -155,13 +151,8 @@ def run_one[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s for a generic
-    # `kv_params`; the two layouts are structurally identical.
     var collection = Collection(
-        rebind[Collection.blocks_tt_type](
-            blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        blocks.device_tensor().as_unsafe_any_origin(),
         cache_lengths.device_tensor().as_imm().as_unsafe_any_origin(),
         lut.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(num_used * page_size),

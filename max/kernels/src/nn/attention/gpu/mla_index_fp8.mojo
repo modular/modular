@@ -256,7 +256,7 @@ def fill_invalid_topk_kernel[
     # is smaller than _top_k when _top_k > 1024 (e.g. the indexer's _top_k=2048),
     # so each thread strides across multiple columns. Without this grid-stride
     # loop, columns [block_dim, _top_k) were never written (garbage, not -1).
-    var k_idx = Int(thread_idx.x)
+    var k_idx = thread_idx.x
     while k_idx < _top_k:
         # Output index: [token_idx, k_idx] with _top_k stride
         var out_idx = Int(token_idx) * _top_k + k_idx
@@ -281,7 +281,7 @@ def fill_invalid_topk_kernel[
             else:
                 output_indices[unsafe_offset=out_idx] = Int32(idx_val)
 
-        k_idx += Int(block_dim.x)
+        k_idx += block_dim.x
 
 
 @__name(t"mla_topk_row_bounds_{use_causal_mask}_{kpool}")
@@ -342,7 +342,7 @@ def topk_row_bounds_kernel[
     comptime assert cache_lengths.element_size == 1
     comptime assert cache_lengths.flat_rank == 1
 
-    var token_idx = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var token_idx = block_idx.x * block_dim.x + thread_idx.x
     if token_idx >= Int(total_seq_len):
         return
 

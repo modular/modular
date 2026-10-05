@@ -31,9 +31,7 @@ from max.gpu.host.info import is_cpu, is_gpu
 from internal_utils.fp8_utils import fp8_quantize
 from builtin_primitives.primitives import foreach
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
@@ -144,7 +142,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         var rows = in_shape.flattened_length() // in_shape[rank - 1]
         var scale_t = TileTensor(
             scales.to_tile_tensor[.int64]()._storage,
-            row_major(Coord(rows)),
+            row_major(rows),
         )
 
         @inline(.always)
@@ -816,16 +814,13 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        var perm_idx_lt = perm_idx.to_layout_tensor()
+        var permutation = perm_idx.to_tile_tensor()
         gpu_qint4_repack_GPTQ[128, target](
             b.to_tile_tensor(),
             b_packed.to_tile_tensor(),
-            LayoutTensor[.int32, Layout.row_major(UNKNOWN_VALUE)](
-                perm_idx_lt.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    perm_idx_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ).as_imm(),
+            TileTensor(permutation.ptr, row_major(Int(permutation.dim[0]())))
+            .as_imm()
+            .as_unsafe_any_origin(),
             ctx=ctx,
         )
 
@@ -1301,14 +1296,14 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
             quantization_encoding_k,
             quantization_encoding_v,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            q_weight.to_layout_tensor(),
-            k_weight.to_layout_tensor(),
-            v_weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            q_weight.to_tile_tensor(),
+            k_weight.to_tile_tensor(),
+            v_weight.to_tile_tensor(),
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor(),
             ctx,
         )
 

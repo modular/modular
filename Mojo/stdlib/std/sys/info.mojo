@@ -35,6 +35,98 @@ def _current_target() -> _TargetType:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
 
 
+def default_accelerator() -> type_of(get_gpu_target()):
+    """Get the default accelerator target.
+
+    The default accelerator is determined automatically by the compiler, but
+    may be overridden by the `--target-accelerator` command line flag.
+
+    This function will always return the same value, whether called in host or
+    accelerator offload (`compile_info`) compilation context.
+
+    Constraints:
+        An accelerator target must be configured.
+
+    Returns:
+        A value representing the current accelerator target.
+    """
+    comptime current = CompilationTarget.current()
+
+    comptime accelerator = get_gpu_target()
+
+    # Note:
+    #   Defensively assert that there aren't multiple different accelerator
+    #   targets in play in a program that depends on calling
+    #   `default_accelerator()`. In theory, this should never be hit in
+    #   Mojo programs doing accelerator programming in the standard way,
+    #   without hard-coding targets, using the `--target-accelerator`.
+    comptime if current.is_accelerator():
+        # This function is being called from non-host code.
+        comptime assert current._eq_triple_and_arch[accelerator](), String(
+            __get_current_function_name(),
+            "() called while compiling for accelerator target '",
+            StaticString(current.__triple()),
+            "' (arch: '",
+            StaticString(current.__arch()),
+            "'), which is not the default accelerator '",
+            StaticString(accelerator.__triple()),
+            "' (arch: '",
+            StaticString(accelerator.__arch()),
+            (
+                "'). This divergence could mean subtle behavior differences"
+                " between host and accelerator code. The default accelerator"
+                " comes from `--target-accelerator` or the detected GPU, and"
+                " this function assumes a program only compiles for that one"
+                " accelerator. This may happens when code is offloaded with an"
+                " explicit `target` that differs from the default. In"
+                " accelerator-only code, use `current_accelerator()`, or pass"
+                " the target explicitly. This error may be overly cautious,"
+                " please file a bug if it blocks your progress."
+            ),
+        )
+
+    return {}
+
+
+def current_accelerator() -> type_of(CompilationTarget.current()):
+    """Get the current compilation target, which must be an accelerator.
+
+    This function returns a value identical to `CompilationTarget.current()`,
+    but will error during compilation if the current target is not an
+    accelerator.
+
+    This function is expected to only be called within an offload compilation
+    (`compile_info`).
+
+    Prefer this function over `default_accelerator()` when used in Mojo code
+    intended only for use on an accelerators, such as kernel implementations.
+    Code that may run in host elaboration context should avoid this function.
+
+    Constraints:
+        The compilation target of the current compilation context must be an
+        accelerator target.
+
+    Returns:
+        A value representing the current accelerator target.
+    """
+    var target = CompilationTarget.current()
+
+    comptime assert target.is_accelerator(), String(
+        __get_current_function_name(),
+        "() requires an accelerator compilation target,",
+        " but the current compilation target is '",
+        StaticString(target.__triple()),
+        "' (arch: '",
+        StaticString(target.__arch()),
+        "'). This function is only valid in code compiled for an accelerator,",
+        " such as a GPU kernel or a function passed to `compile_info` with an",
+        " accelerator `target`. To get the accelerator configured for this",
+        " build from host code, use `default_accelerator()` instead.",
+    )
+
+    return target
+
+
 comptime _ANY = "<any>"
 
 
@@ -66,7 +158,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         such as `--target-triple`, `--target-cpu`, and `--target-features`.
 
     * Within an accelerator "offload" compilation, this is the accelerator
-        target, equivalent to `CompilationTarget.current_accelerator()`.
+        target, equivalent to `CompilationTarget.default_accelerator()`.
 
     Returns:
         A value representing the current compilation target.
@@ -74,7 +166,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
 
     @staticmethod
     @inline(.nodebug)
-    def current_accelerator() -> type_of(get_gpu_target()):
+    def default_accelerator() -> type_of(get_gpu_target()):
         """Get the accelerator target.
 
         This value is derived from the `--target-accelerator` command line flag.
@@ -248,6 +340,26 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         """
         return StringLiteral[Self.__triple_arch()]()._is_identical(
             StringLiteral._from[name]()
+        )
+
+    @staticmethod
+    def _eq_triple_and_arch[other: CompilationTarget]() -> Bool:
+        """Checks whether this target and `other` have the same triple and
+        processor architecture.
+
+        Other target properties, such as features, are not compared.
+
+        Parameters:
+            other: The target to compare against.
+
+        Returns:
+            True if both the triple and the processor architecture are the same
+            as those of `other`, False otherwise.
+        """
+        return StringLiteral[Self.__triple()]()._is_identical(
+            StringLiteral[other.__triple()]()
+        ) and StringLiteral[Self.__arch()]()._is_identical(
+            StringLiteral[other.__arch()]()
         )
 
     @inline(.nodebug)
@@ -562,6 +674,20 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
     # ===----------------------------------------------------------------------=== #
     # Accelerators
     # ===----------------------------------------------------------------------=== #
+
+    @inline(.nodebug)
+    @staticmethod
+    def is_accelerator() -> Bool:
+        """Returns True if the target triple is an accelerator, and False
+        otherwise.
+
+        Returns:
+            True if the triple target is an accelerator and False otherwise.
+        """
+        # FIXME(MSTDL-3256):
+        #   What about non-GPU accelerators? Non-builtin targets? Support
+        #   extending this via plugin hooks.
+        return Self.is_gpu()
 
     @inline(.nodebug)
     @staticmethod
@@ -1696,7 +1822,7 @@ def has_amd_gpu_accelerator() -> Bool:
     Returns:
         True if the host system has an AMD GPU.
     """
-    return is_amd_gpu() or CompilationTarget.current_accelerator().is_amd_gpu()
+    return is_amd_gpu() or CompilationTarget.default_accelerator().is_amd_gpu()
 
 
 @inline(.nodebug)
@@ -1721,7 +1847,7 @@ def has_nvidia_gpu_accelerator() -> Bool:
     """
     return (
         is_nvidia_gpu()
-        or CompilationTarget.current_accelerator().is_nvidia_gpu()
+        or CompilationTarget.default_accelerator().is_nvidia_gpu()
     )
 
 
@@ -1763,5 +1889,5 @@ def has_apple_gpu_accelerator() -> Bool:
         True if the host system has a Metal GPU.
     """
     return (
-        is_apple_gpu() or CompilationTarget.current_accelerator().is_apple_gpu()
+        is_apple_gpu() or CompilationTarget.default_accelerator().is_apple_gpu()
     )

@@ -274,13 +274,13 @@ class KVCacheConfig(ConfigFileModel):
         default=None,
         description=(
             "Override the storage dtype of a hybrid model's recurrent state "
-            "pools (SSM/linear-attention conv and recurrent state). Defaults "
-            "to the model's compute dtype (bfloat16 for supported "
-            "architectures). ``float32`` makes a speculated generation follow "
-            "the exact state trajectory of an unspeculated one, at roughly "
-            "double the per-request state memory (Qwen3.8-27B: 74.8 to "
-            "149.6 MiB per seated request). Supported values: ``bfloat16``, "
-            "``float32``."
+            "pools (SSM/linear-attention conv and recurrent state). The "
+            "architecture determines the default. An architecture that keeps "
+            "convolution history and recurrence in separate pools applies "
+            "the override to recurrence only; one with a shared pool dtype "
+            "applies it to both. Float32 storage preserves recurrent "
+            "accumulations across model calls and increases state memory. "
+            "Supported values: ``bfloat16``, ``float32``."
         ),
     )
     """An override for the storage dtype of recurrent (SSM) state pools."""

@@ -36,7 +36,7 @@ def _gmem_kernel(
     in_ptr: MutPointer[BFloat16, MutAnyOrigin],
     out_ptr: MutPointer[BFloat16, MutAnyOrigin],
 ):
-    var lane = Int(thread_idx.x)
+    var lane = thread_idx.x
     var base = lane * IN_COLS
     var mask = build_edge_mask(Int32(base), Int32(0), Int32(base + IN_COLS))
     var v = gmem_edge_masked_load[4](in_ptr + base, mask)
@@ -47,7 +47,7 @@ def _general_kernel(
     in_ptr: MutPointer[BFloat16, MutAnyOrigin],
     out_ptr: MutPointer[BFloat16, MutAnyOrigin],
 ):
-    var lane = Int(thread_idx.x)
+    var lane = thread_idx.x
     var base = lane * IN_COLS
     var mask = build_edge_mask(Int32(base), Int32(0), Int32(base + IN_COLS))
     var src = (in_ptr + base).address_space_cast[.GLOBAL]()

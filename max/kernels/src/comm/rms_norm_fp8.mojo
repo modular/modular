@@ -68,11 +68,11 @@ def block_reduce_sum_and_max[
 
     var results = block._block_reduce[
         max_warps_per_block * WARP_SIZE,
-        warp_reduce_fn=_reduce_fn,
         broadcast=True,
     ](
         StaticTuple[Scalar[dtype], 2](sum_val, max_val),
         initial_vals=StaticTuple[Scalar[dtype], 2](0, Scalar[dtype].MIN_FINITE),
+        warp_reduce_fn=_reduce_fn,
     )
     return (results[0], results[1])
 
@@ -221,12 +221,10 @@ def _rms_norm_fused_fp8_gpu[
         return input_fn[simd_width, rank](indices.canonicalize())
 
     # Create 2D output TileTensor view
-    var output_2d = TileTensor(output._storage, row_major(Coord(rows, cols)))
+    var output_2d = TileTensor(output._storage, row_major(rows, cols))
 
     # Create 1D view of scale_output for internal kernel use
-    var scale_output_1d = TileTensor(
-        scale_output._storage, row_major(Coord(rows))
-    )
+    var scale_output_1d = TileTensor(scale_output._storage, row_major(rows))
 
     # Dispatch based on column count (following rms_norm_gpu pattern)
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE

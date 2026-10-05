@@ -107,19 +107,17 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Shapes
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
-    var b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
-    )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
+    var b_shape = row_major(Idx[NType.static_value], Idx[KType.static_value])
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
     var b_scales_shape_n = ceildiv(N, BLOCK_SCALE_K)
     var b_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
 
-    var a_scales_shape = row_major(Coord(a_scales_shape_k, m))
-    var b_scales_shape = row_major(Coord(b_scales_shape_n, b_scales_shape_k))
+    var a_scales_shape = row_major(a_scales_shape_k, m)
+    var b_scales_shape = row_major(b_scales_shape_n, b_scales_shape_k)
 
     # Allocate host memory
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)

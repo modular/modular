@@ -420,6 +420,12 @@ _EXTRA_CONSTRAINTS = {
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # TODO(GEX-3342): the router's warp bitonic top-k is wrong on Metal, so
+    # the op rejects Apple GPUs.
+    "test_moe_sigmoid_gemv_router.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # TODO(GEX-3342): Metal GPU sorting produces incorrect results
     "test_warp_bitonic_sort.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],

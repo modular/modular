@@ -524,8 +524,8 @@ def _matmul_cpu_impl[
     var k = shape.K
     # Matrix by vector pattern -> use gemv
     if n == 1:
-        var out = TileTensor(c.ptr, row_major(Coord(Int(c.dim[0]()))))
-        var rhs = TileTensor(b.ptr, row_major(Coord(Int(b.dim[0]()))))
+        var out = TileTensor(c.ptr, row_major(Int(c.dim[0]())))
+        var rhs = TileTensor(b.ptr, row_major(Int(b.dim[0]())))
         gemv[parallelize=True, elementwise_lambda_fn=elementwise_lambda_fn](
             out, a, rhs
         )
@@ -633,7 +633,7 @@ def _matmul_cpu_impl[
                     c,
                     TileTensor(
                         a_packed_alloc.unsafe_value().unsafe_ptr(),
-                        row_major(Coord(mh, kh)),
+                        row_major(mh, kh),
                     ),
                     b,
                     GemmShape(sub_matmul_config.shape),
@@ -740,9 +740,7 @@ def matmul[
         var scratch_ptr: UnsafePointer[
             Scalar[scratch_type], origin_of(scratch_alloc)
         ] = scratch_alloc.unsafe_ptr()
-        var scratch = TileTensor(
-            scratch_ptr, row_major(Coord(scratch_m, scratch_n))
-        )
+        var scratch = TileTensor(scratch_ptr, row_major(scratch_m, scratch_n))
 
         @__parameter
         @inline(.always)

@@ -211,7 +211,10 @@ class Fp8Strategy:
         swiglu_alpha: float = 0.0,
         swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies fused SiLU gate and returns quantized activations.
+        """Applies the SiLU gate and returns quantized activations.
+
+        The gate is plain graph ops feeding the row-bounded quantize, which
+        the graph compiler fuses into a single kernel.
 
         ``max_padded_M`` and the ``clamp_activation``/``swiglu_*`` args are
         accepted for ``QuantStrategy`` conformance; they only apply to the
@@ -221,12 +224,19 @@ class Fp8Strategy:
             "clamped SwiGLU-OAI activation is only supported on the MXFP4 EP"
             " path"
         )
-        _, _, expert_start_indices, _, _ = expert_inputs
-        return fused_silu_quantized(
-            gate_up_projs,
+        _, _, expert_start_indices, expert_ids, _ = expert_inputs
+        moe_dim = int(gate_up_projs.shape[1]) // 2
+        activated = (
+            ops.silu(gate_up_projs[:, :moe_dim]) * gate_up_projs[:, moe_dim:]
+        )
+        assert self.config.input_scale.block_size is not None
+        return self.grouped_quantize(
+            activated,
+            self.config.input_scale.block_size[1],
+            None,
             expert_start_indices,
-            self.config,
-            self.dtype,
+            None,
+            expert_ids,
         )
 
 

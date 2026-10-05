@@ -1036,7 +1036,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     # store OFFSET goes back to 64-bit, and it has to (see the store).
     var max_num_keys = max_num_keys_dev
     var causal = causal_dev
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     # FA4 stateless S = K @ Q^T accumulator. `MMA_M = BM_key = 128 > 64` keeps
     # `use_ws` False (the standard, non-packed TMEM datapath). It carries no
@@ -1271,7 +1271,7 @@ def _fp8_index_score_prefill_kernel_sm100[
     # header loads below and overlaps their global round trip instead of
     # queuing behind it; a CTA that retires early just discards it. On a
     # 6-token decode that moves the CTA barrier ~100 ns earlier.
-    var b = Int(block_idx.x)
+    var b = block_idx.x
 
     var start_of_seq = Int32(valid_length[b])
     var end_of_seq = Int32(valid_length[b + 1])

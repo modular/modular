@@ -82,14 +82,12 @@ def run_case(
     )
     var swa_blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(swa_pages),
-                Idx[1],
-                Int64(NUM_LAYERS),
-                Idx[PAGE_SIZE],
-                Idx[1],
-                Idx[HEAD_DIM],
-            )
+            Int64(swa_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[PAGE_SIZE],
+            Idx[1],
+            Idx[HEAD_DIM],
         ),
         ctx,
     )
@@ -118,14 +116,12 @@ def run_case(
     )
     var comp_blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(comp_pages),
-                Idx[1],
-                Int64(NUM_LAYERS),
-                Idx[COMP_SLOTS],
-                Idx[1],
-                Idx[HEAD_DIM],
-            )
+            Int64(comp_pages),
+            Idx[1],
+            Int64(NUM_LAYERS),
+            Idx[COMP_SLOTS],
+            Idx[1],
+            Idx[HEAD_DIM],
         ),
         ctx,
     )
@@ -140,9 +136,7 @@ def run_case(
     )
 
     # --- q, sink, compressed indices -------------------------------------
-    var q_layout = row_major(
-        Coord(Int64(total_rows), Idx[NUM_HEADS], Idx[HEAD_DIM])
-    )
+    var q_layout = row_major(Int64(total_rows), Idx[NUM_HEADS], Idx[HEAD_DIM])
     var q = HostDeviceTileTensor[dtype](q_layout, ctx)
     _fill_random(q.host_tensor())
     q.to_device()
@@ -156,7 +150,7 @@ def run_case(
 
     var idx_cols = max(num_comp, 1)
     var idx = HostDeviceTileTensor[.int32](
-        row_major(Coord(Int64(total_rows), Int64(idx_cols))), ctx
+        row_major(Int64(total_rows), Int64(idx_cols)), ctx
     )
     var idx_host = idx.host_tensor()
     var row_offsets_host = swa_lengths.input_row_offsets.host_tile_tensor()
@@ -175,24 +169,17 @@ def run_case(
     idx.to_device()
 
     # --- device run --------------------------------------------------------
-    # The collections spell their block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the two layouts
-    # are structurally identical.
     comptime SwaCollection = Collection[PAGE_SIZE]
     comptime CompCollection = Collection[COMP_SLOTS]
     var swa_dev = SwaCollection(
-        rebind[SwaCollection.blocks_tt_type](
-            swa_blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        swa_blocks.device_tensor().as_unsafe_any_origin(),
         swa_lengths.cache_lengths.device_tile_tensor(),
         swa_lut.device_tile_tensor(),
         UInt32(swa_lengths.max_seq_length_batch),
         UInt32(swa_lengths.max_full_context_length),
     )
     var comp_dev = CompCollection(
-        rebind[CompCollection.blocks_tt_type](
-            comp_blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        comp_blocks.device_tensor().as_unsafe_any_origin(),
         comp_lengths.cache_lengths.device_tile_tensor(),
         comp_lut.device_tile_tensor(),
         UInt32(comp_lengths.max_seq_length_batch),
@@ -216,18 +203,14 @@ def run_case(
 
     # --- host reference: plain two-pass softmax ------------------------------
     var swa_host = SwaCollection(
-        rebind[SwaCollection.blocks_tt_type](
-            swa_blocks.host_tensor().as_unsafe_any_origin()
-        ),
+        swa_blocks.host_tensor().as_unsafe_any_origin(),
         swa_lengths.cache_lengths.host_tile_tensor(),
         swa_lut.host_tile_tensor(),
         UInt32(swa_lengths.max_seq_length_batch),
         UInt32(swa_lengths.max_full_context_length),
     ).get_key_cache(layer_swa)
     var comp_host = CompCollection(
-        rebind[CompCollection.blocks_tt_type](
-            comp_blocks.host_tensor().as_unsafe_any_origin()
-        ),
+        comp_blocks.host_tensor().as_unsafe_any_origin(),
         comp_lengths.cache_lengths.host_tile_tensor(),
         comp_lut.host_tile_tensor(),
         UInt32(comp_lengths.max_seq_length_batch),

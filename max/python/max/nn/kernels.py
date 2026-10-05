@@ -6053,6 +6053,191 @@ def moe_router_group_limited(
     return (results[0].tensor, results[1].tensor)
 
 
+def _moe_sigmoid_gemv_router_unsupported(
+    n_routed_experts: int,
+    n_experts_per_tok: int,
+    hidden_size: int,
+    warp_size: int,
+    weight_dtype: DType = DType.float32,
+) -> str | None:
+    """Returns why the fused sigmoid GEMV router can't run a shape, or None.
+
+    The router runs one thread per routed expert in a single block, and warp
+    0 sorts the last top-k round, so the survivors of the round before it
+    must fit one warp. The gate GEMV reads ``hidden_size`` in 4-wide vectors
+    and stages a slice of it for 32 rows in shared memory, which must fit in
+    48 KiB.
+
+    Args:
+        n_routed_experts: The number of routed experts.
+        n_experts_per_tok: The number of experts selected per token.
+        hidden_size: The gate GEMV's reduction length.
+        warp_size: The target's warp width (32 on NVIDIA, 64 on AMD).
+        weight_dtype: The gate weight's dtype, which the GEMV stages in.
+
+    Returns:
+        A description of the first unsupported dimension, or None if the
+        kernel supports the shape.
+    """
+    if (
+        n_routed_experts <= 0
+        or n_routed_experts % warp_size
+        or n_routed_experts > 1024
+    ):
+        return (
+            f"n_routed_experts must be a positive multiple of {warp_size} and"
+            f" fit in one block (<= 1024) but got {n_routed_experts}"
+        )
+    if n_experts_per_tok <= 0 or n_experts_per_tok > warp_size:
+        return (
+            f"n_experts_per_tok must be in [1, {warp_size}] but got"
+            f" {n_experts_per_tok}"
+        )
+    num_warps = n_routed_experts // warp_size
+    phase2_warps = -(-(num_warps * n_experts_per_tok) // warp_size)
+    if phase2_warps * n_experts_per_tok > warp_size:
+        return (
+            f"{n_routed_experts} routed experts with n_experts_per_tok"
+            f" {n_experts_per_tok} leaves"
+            f" {phase2_warps * n_experts_per_tok} top-k survivors, which"
+            f" exceeds the target's warp width of {warp_size}"
+        )
+    if hidden_size % 4:
+        return f"hidden_size must be a multiple of 4 but got {hidden_size}"
+    # Mirrors the kernel's split count: the most splits, up to 16, that keep
+    # each slice a whole number of 4-wide vectors.
+    num_splits = next(n for n in (16, 8, 4, 2, 1) if hidden_size % (4 * n) == 0)
+    smem_bytes = (
+        32 * (hidden_size // num_splits + 4) * weight_dtype.size_in_bytes
+    )
+    if smem_bytes > 48 * 1024:
+        return (
+            f"hidden_size {hidden_size} needs {smem_bytes} bytes of shared"
+            " memory per block, over the 48 KiB limit"
+        )
+    return None
+
+
+def _moe_sigmoid_gemv_router(
+    hidden_states: TensorValue,
+    gate_weight: TensorValue,
+    expert_bias: TensorValue,
+    n_experts_per_tok: int,
+    norm_weights: bool,
+    routed_scaling_factor: float,
+) -> tuple[TensorValue, TensorValue]:
+    """Routes tokens with a sigmoid gate, fusing the gate GEMV into the router.
+
+    Equivalent to :func:`moe_router_group_limited` with ``n_groups == 1`` on
+    ``sigmoid(hidden_states.cast(gate_weight.dtype) @ gate_weight.T)``, as
+    one op (``mo.moe.sigmoid.gemv.single.group.router``). On GPU it runs a
+    split-K gate GEMV that writes partial dot products, and the router kernel
+    adds them and applies the sigmoid as it loads its scores, so no separate
+    matmul reduction or sigmoid runs. The gate GEMV accumulates in
+    ``gate_weight.dtype``.
+
+    NVIDIA and AMD GPUs only. The router runs one thread per routed expert, so
+    ``n_routed_experts`` must be a multiple of the warp width (32 on NVIDIA,
+    64 on AMD) and at most 1024, and its top-k survivors must fit one warp.
+    ``hidden_size`` must be a multiple of 4, and the GEMV's staged slice of
+    it must fit in 48 KiB of shared memory.
+
+    Args:
+        hidden_states: The token hidden states. Shape:
+            ``[num_tokens, hidden_size]``.
+        gate_weight: The router weight. Shape:
+            ``[n_routed_experts, hidden_size]``.
+        expert_bias: The per-expert correction bias, used for selection
+            only. Shape: ``[n_routed_experts]``.
+        n_experts_per_tok: The number of experts to select per token.
+        norm_weights: Whether to normalize the selected weights to sum to
+            one before scaling.
+        routed_scaling_factor: The factor multiplied into every weight.
+
+    Returns:
+        A tuple of two tensors:
+
+        - expert_indices: The indices of the routed experts for each
+          token. Shape: ``[num_tokens, n_experts_per_tok]``.
+        - expert_weights: The weights of the routed experts for each
+          token, in ``gate_weight.dtype``. Shape:
+          ``[num_tokens, n_experts_per_tok]``.
+
+    Raises:
+        ValueError: If the inputs aren't on a GPU, or their shapes or the
+            routing configuration aren't supported by the kernel.
+    """
+    if not hidden_states.device.is_gpu() or _is_apple_gpu():
+        raise ValueError(
+            "moe_sigmoid_gemv_router is only supported on NVIDIA and AMD GPUs"
+        )
+    if gate_weight.rank != 2 or hidden_states.rank != 2:
+        raise ValueError(
+            "expected rank-2 hidden_states and gate_weight but got"
+            f" {hidden_states.rank} and {gate_weight.rank}"
+        )
+    if gate_weight.shape[1] != hidden_states.shape[1]:
+        raise ValueError(
+            "expected gate_weight of shape [n_routed_experts, hidden_size]"
+            f" but got {gate_weight.shape}"
+        )
+    if expert_bias.rank != 1 or expert_bias.shape[0] != gate_weight.shape[0]:
+        raise ValueError(
+            "expected expert_bias of shape [n_routed_experts] but got"
+            f" {expert_bias.shape}"
+        )
+    if not gate_weight.dtype.is_float() or not hidden_states.dtype.is_float():
+        raise ValueError(
+            "expected floating point hidden_states and gate_weight but got"
+            f" {hidden_states.dtype} and {gate_weight.dtype}"
+        )
+
+    # Check the kernel's shape limits here so an unsupported model fails at
+    # graph construction instead of in the Mojo compiler.
+    n_routed_experts = int(gate_weight.shape[0])
+    reason = _moe_sigmoid_gemv_router_unsupported(
+        n_routed_experts=n_routed_experts,
+        n_experts_per_tok=n_experts_per_tok,
+        hidden_size=int(gate_weight.shape[1]),
+        warp_size=64 if _is_amd_gpu() else 32,
+        weight_dtype=gate_weight.dtype,
+    )
+    if reason is not None:
+        raise ValueError(reason)
+
+    results = ops.custom(
+        "mo.moe.sigmoid.gemv.single.group.router",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            gate_weight,
+            expert_bias,
+            ops.constant(
+                routed_scaling_factor, DType.float32, device=DeviceRef.CPU()
+            ),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.int32,
+                shape=[hidden_states.shape[0], n_experts_per_tok],
+                device=hidden_states.device,
+            ),  # expert_indices
+            TensorType(
+                dtype=gate_weight.dtype,
+                shape=[hidden_states.shape[0], n_experts_per_tok],
+                device=hidden_states.device,
+            ),  # expert_weights
+        ],
+        parameters={
+            "n_routed_experts": n_routed_experts,
+            "n_experts_per_tok": n_experts_per_tok,
+            "norm_weights": norm_weights,
+        },
+    )
+
+    return (results[0].tensor, results[1].tensor)
+
+
 def moe_sink_gate_router(
     logits: TensorValue,
     expert_bias: TensorValue,
@@ -6617,12 +6802,13 @@ def grouped_dynamic_block_scaled_matmul_amd(
     decode_grid_m_cap: int = 0,
     decode_grid_m_rows: int = 0,
 ) -> TensorValue:
-    """Performs grouped NVFP4 matmul for MoE layers.
+    """Performs grouped block-scaled AMD matmul for MoE layers.
 
-    Performs a grouped matmul with MXFP4 (4-bit) quantized inputs and weights.
-    The inputs are packed as uint8 (2 MXFP4 values per byte) with float8_e8m0fnu
-    scaling factors. MXFP4 uses fixed 1D block scaling with 32 elements per
-    scale factor along the K dimension.
+    Performs a grouped matmul with MX block-scaled inputs and weights: MXFP4
+    on both (packed as uint8, 2 values per byte), MXFP8 on both
+    (float8_e4m3fn), or W4A8 with MXFP8 inputs against packed MXFP4 weights.
+    Every format uses float8_e8m0fnu scaling factors with fixed 1D block
+    scaling, 32 elements per scale factor along the K dimension.
 
     ``hidden_states`` and ``expert_start_indices`` together implement the ragged
     tensor representation for variable-length expert inputs.
@@ -6630,10 +6816,12 @@ def grouped_dynamic_block_scaled_matmul_amd(
     Args:
         hidden_states: The input activations with shape
             ``[total_tokens, K/2]`` at MXFP4 or ``[total_tokens, K]`` at MXFP8,
-            where K is the unpacked hidden dimension.
+            where K is the unpacked hidden dimension. float8_e4m3fn
+            activations are accepted against either float8_e4m3fn or packed
+            uint8 weights.
         weight: The expert weights, shaped ``[num_experts, N, K/2]`` at MXFP4
-            or ``[num_experts, N, K]`` at MXFP8. Must share ``hidden_states``'
-            dtype: uint8 (packed MXFP4) or float8_e4m3fn (MXFP8).
+            or ``[num_experts, N, K]`` at MXFP8. Equal MX formats are supported;
+            dense W4A8 uses E4M3 activations and packed uint8 MXFP4 weights.
         a_scales: Scaling factors for inputs with shape
             ``[num_scale_rows, K/32]``. Dtype must be float8_e8m0fnu.
         b_scales: Scaling factors for weights with shape
@@ -6666,25 +6854,35 @@ def grouped_dynamic_block_scaled_matmul_amd(
             f"expected hidden_states of rank 2 but got {hidden_states.rank}"
         )
 
-    weight_k = weight.shape[2]
-    hidden_k = hidden_states.shape[1]
-    if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
-        raise ValueError(
-            "expected weight is of shape [num_experts, *, "
-            f"{hidden_k}] but got {weight.shape}"
-        )
-
-    # The kernel infers the packing from the shapes, so both operands need only
-    # agree on one MX dtype: uint8 (MXFP4) or float8_e4m3fn (MXFP8).
-    if hidden_states.dtype != weight.dtype or hidden_states.dtype not in (
+    mixed_w4a8 = (
+        hidden_states.dtype == DType.float8_e4m3fn
+        and weight.dtype == DType.uint8
+    )
+    equal_mx = hidden_states.dtype == weight.dtype and hidden_states.dtype in (
         DType.uint8,
         DType.float8_e4m3fn,
-    ):
+    )
+    if not equal_mx and not mixed_w4a8:
         raise TypeError(
-            "hidden_states and weight must share one MX dtype, either uint8 "
-            "(MXFP4) or float8_e4m3fn (MXFP8), but got "
-            f"{hidden_states.dtype}, {weight.dtype}"
+            "operands must share an MX dtype or use E4M3 activations with"
+            " packed uint8 MXFP4 weights, but got"
+            f" {hidden_states.dtype}, {weight.dtype}"
         )
+    if mixed_w4a8 and (preshuffled_b or a_scales_preshuffled):
+        raise ValueError(
+            "mixed AMD W4A8 requires row-major operands and scales"
+        )
+
+    a_elems_per_byte = 2 if hidden_states.dtype == DType.uint8 else 1
+    b_elems_per_byte = 2 if weight.dtype == DType.uint8 else 1
+    hidden_k = hidden_states.shape[1] * a_elems_per_byte
+    weight_k = weight.shape[2] * b_elems_per_byte
+    if weight_k != hidden_k:
+        raise ValueError(
+            f"logical K mismatch: activations have {hidden_k}, weights {weight_k}"
+        )
+    if mixed_w4a8 and int(hidden_k) % 128:
+        raise ValueError("mixed AMD W4A8 logical K must be a multiple of 128")
 
     if (a_scales.dtype != b_scales.dtype) or (
         a_scales.dtype != DType.float8_e8m0fnu
@@ -6703,6 +6901,11 @@ def grouped_dynamic_block_scaled_matmul_amd(
         raise ValueError(
             f"expected expert_ids of rank 1 but got {expert_ids.rank}"
         )
+    if weight.shape[0] != expert_ids.shape[0]:
+        raise ValueError(
+            f"weight expert extent {weight.shape[0]} must match expert_ids"
+            f" length {expert_ids.shape[0]}; weight shape is {weight.shape}"
+        )
     if expert_start_indices.dtype != DType.uint32:
         raise TypeError(
             "expert_start_indices dtype must be uint32, but got"
@@ -6720,14 +6923,18 @@ def grouped_dynamic_block_scaled_matmul_amd(
             f" {a_scales.rank} and {b_scales.rank}"
         )
 
+    if not preshuffled_b and not a_scales_preshuffled:
+        if a_scales.shape[0] != hidden_states.shape[0]:
+            raise ValueError(
+                "row-major a_scales rows must match activation rows"
+            )
+
     MXFP4_SF_VECTOR_SIZE = 32
 
     # Shapes are in BYTES, so recover the element count before counting scale
     # groups: MXFP4 stores two elements per byte, MXFP8 one.
-    elems_per_byte = 2 if hidden_states.dtype == DType.uint8 else 1
-
     a_scales_dim_1 = ceildiv(
-        hidden_states.shape[1] * elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
+        hidden_states.shape[1] * a_elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
     )
     if a_scales.shape[1] != a_scales_dim_1:
         raise ValueError(
@@ -6737,7 +6944,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
         )
 
     b_scales_dim_2 = ceildiv(
-        weight.shape[2] * elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
+        weight.shape[2] * b_elems_per_byte, Dim(MXFP4_SF_VECTOR_SIZE)
     )
     if (
         b_scales.shape[0] != weight.shape[0]
@@ -6840,7 +7047,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
             "preshuffled_b": preshuffled_b,
             # Both formats reach the kernel as raw bytes, so this is what tells
             # them apart: 16 bytes per lane at MXFP4, 32 at MXFP8.
-            "lane_bytes": 32 // elems_per_byte,
+            "lane_bytes": 32 // a_elems_per_byte,
         },
     )[0].tensor
 

@@ -23,11 +23,12 @@ import os
 import platform
 import signal
 import uuid
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from time import time
 from types import FrameType
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import numpy as np
@@ -72,10 +73,15 @@ from opentelemetry.sdk.metrics.export import (
 )
 from opentelemetry.sdk.metrics.view import View
 from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace import SpanLimits, TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter
 from opentelemetry.trace import set_tracer_provider
 from pythonjsonlogger import jsonlogger
+
+if TYPE_CHECKING:
+    # For annotations only: the CLI imports this module early.
+    from max.pipelines.context import TextContext
+    from max.pipelines.request import RequestID
 
 otelBaseUrl = "https://telemetry.modular.com:443"
 
@@ -128,6 +134,14 @@ _batch_id_ctx: ContextVar[int | None] = ContextVar(
 """The ID of the forward pass the text-generation scheduler is executing, or
 None. It is set around ``pipeline.execute`` only when tracing is enabled; the
 API process and the disaggregated workers never set it."""
+
+
+_trace_level_header_enabled = False
+"""Whether per-request trace levels are honored in this process: the API
+server reads the ``x-max-trace-level`` header and the model worker may arm
+captures. Set by :func:`configure_tracing` when it installs a provider and
+``kernel_trace_headers`` is on. Read it through the module: that call
+rebinds it."""
 
 
 def _tracing_enabled() -> bool:
@@ -927,7 +941,15 @@ def _span_exporter() -> SpanExporter:
     return OTLPSpanExporter()
 
 
-def configure_tracing(settings: Settings) -> None:
+def configure_tracing(settings: Settings, max_links: int | None = None) -> None:
+    """Installs the process's tracer provider if it is to export spans.
+
+    Args:
+        settings: Server settings.
+        max_links: A per-span link limit to use in place of the SDK's.
+    """
+    global _trace_level_header_enabled
+    _trace_level_header_enabled = False
     # Spans cost work on every request, so only the traces-specific variable
     # turns them on: the generic endpoint may be set for metrics alone.
     telemetry_on = not _telemetry_disabled(settings)
@@ -935,10 +957,18 @@ def configure_tracing(settings: Settings) -> None:
         os.environ.get("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
     )
     if export_spans:
-        provider = TracerProvider(resource=logs_resource)
+        provider = TracerProvider(
+            resource=logs_resource,
+            span_limits=(
+                SpanLimits(max_links=max_links)
+                if max_links is not None
+                else None
+            ),
+        )
         exporter = _span_exporter()
         provider.add_span_processor(BatchSpanProcessor(exporter))
         set_tracer_provider(provider)
+        _trace_level_header_enabled = settings.kernel_trace_headers
 
     logger = logging.getLogger()
     if export_spans:
@@ -967,6 +997,81 @@ def batch_spans_enabled() -> bool:
     return _kernel_trace_level >= KernelTraceLevel.BATCH
 
 
+def _sampled_link(parent: OtelContext) -> trace.Link | None:
+    """Returns a link to the span in ``parent``, or None when it has none or
+    it is not sampled, since an unsampled span is never exported.
+
+    Args:
+        parent: A request's context, as extracted from its trace carrier.
+    """
+    span_context = trace.get_current_span(parent).get_span_context()
+    if span_context.is_valid and span_context.trace_flags.sampled:
+        return trace.Link(span_context)
+    return None
+
+
+class _BatchLinks:
+    """The links from the scheduler's ``max.batch`` spans to their members'
+    sampled request spans, kept from admission until each request leaves.
+
+    Args:
+        link_every_member: Whether every member is linked, as at global level
+            ``batch`` or higher, rather than only traced members.
+        max_links: The most links one ``max.batch`` span keeps.
+    """
+
+    def __init__(self, link_every_member: bool, max_links: int) -> None:
+        self._link_every_member = link_every_member
+        self._max_links = max_links
+        self._links: dict[RequestID, trace.Link] = {}
+
+    def admit(
+        self, request_id: RequestID, parent: OtelContext | None, traced: bool
+    ) -> None:
+        """Keeps a link to a new request's span if its passes link to it.
+
+        Args:
+            request_id: The request.
+            parent: The request's context, from its trace carrier.
+            traced: Whether the request is traced.
+        """
+        if parent is None or not (traced or self._link_every_member):
+            return
+        if (link := _sampled_link(parent)) is not None:
+            self._links[request_id] = link
+
+    def for_pass(
+        self,
+        batch: Sequence[TextContext],
+        is_traced: Callable[[RequestID], bool] | None,
+    ) -> list[trace.Link]:
+        """Returns a pass's links, and over the cap keeps traced members'
+        first, so the requests that asked for the pass's capture can find it.
+
+        Args:
+            batch: The pass's requests.
+            is_traced: Says whether a request is traced, as the scheduler's
+                kernel capture does, or None without a capture.
+        """
+        members = [
+            ctx.request_id for ctx in batch if ctx.request_id in self._links
+        ]
+        if len(members) > self._max_links and is_traced is not None:
+            members.sort(key=lambda r: not is_traced(r))
+        return [self._links[r] for r in members[: self._max_links]]
+
+    def drop_untraced(self, request_ids: Iterable[RequestID]) -> None:
+        """Drops the links of running requests that are no longer traced,
+        which only traced requests have below global level ``batch``."""
+        if not self._link_every_member:
+            for request_id in request_ids:
+                self._links.pop(request_id, None)
+
+    def drop(self, request_id: RequestID) -> None:
+        """Drops the link of a request that has left."""
+        self._links.pop(request_id, None)
+
+
 def _exit_on_sigterm(signum: int, frame: FrameType | None) -> None:
     """Raises ``SystemExit`` so that SIGTERM runs the process's exit hooks.
 
@@ -982,8 +1087,8 @@ def configure_kernel_tracing(settings: Settings) -> None:
     Must be called in the model worker process before ``InferenceSession``
     is constructed so that the libkineto auto-start picks up the enabled
     flag. Also records the level read by :func:`batch_spans_enabled`, so it
-    must run before the scheduler starts. At ``kernel`` level it installs a
-    SIGTERM handler, so it must run on the main thread.
+    must run before the scheduler is built. At ``kernel`` level it installs
+    a SIGTERM handler, so it must run on the main thread.
 
     Args:
         settings: Server settings carrying ``kernel_trace_level``.

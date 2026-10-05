@@ -311,6 +311,13 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
         skip_fields.add("denoising_cache")
     elif cls is MAXModelConfig:
         skip_fields.add("kv_cache")
+    elif cls is ProfilingConfig:
+        # Kernel-tracing limits are set only from a config file.
+        skip_fields.update(
+            field_name
+            for field_name in cls.model_fields
+            if field_name.startswith("kernel_trace_")
+        )
     skip_fields.update(
         field_name
         for field_name in cls.model_fields

@@ -996,7 +996,7 @@ struct BlockScaledMatmulAMD_PreB[
 
     comptime MmaOpType = BlockScaledMmaOp_PreB[
         mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
-        warp_tile=IndexList[3](Self.WM, Self.WN, Self.BK_ELEMS),
+        warp_tile=(Self.WM, Self.WN, Self.BK_ELEMS),
         num_b_slots=Self.num_b_slots,
         num_scale_slots=Self.num_scale_slots,
         scale_group=Self.scale_group,

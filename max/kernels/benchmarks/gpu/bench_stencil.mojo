@@ -76,36 +76,21 @@ def bench_stencil_avg_pool[
     var h_input = TileTensor(
         h_input_ptr,
         row_major(
-            Coord(
-                Idx[1],
-                Idx[input_height],
-                Idx[input_width],
-                Idx[num_channels],
-            )
+            Idx[1], Idx[input_height], Idx[input_width], Idx[num_channels]
         ),
     )
     var h_output_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output = TileTensor(
         h_output_ptr,
         row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[num_channels],
-            )
+            Idx[1], Int64(output_height), Int64(output_width), Idx[num_channels]
         ),
     )
     var h_output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output_ref = TileTensor(
         h_output_ref_ptr,
         row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[num_channels],
-            )
+            Idx[1], Int64(output_height), Int64(output_width), Idx[num_channels]
         ),
     )
 
@@ -118,24 +103,14 @@ def bench_stencil_avg_pool[
     var d_input = TileTensor(
         d_input_buf,
         row_major(
-            Coord(
-                Idx[1],
-                Idx[input_height],
-                Idx[input_width],
-                Idx[num_channels],
-            )
+            Idx[1], Idx[input_height], Idx[input_width], Idx[num_channels]
         ),
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
     var d_output = TileTensor(
         d_output_buf,
         row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[num_channels],
-            )
+            Idx[1], Int64(output_height), Int64(output_width), Idx[num_channels]
         ),
     )
 
@@ -362,36 +337,21 @@ def bench_stencil_max_pool[
     var h_input = TileTensor(
         h_input_ptr,
         row_major(
-            Coord(
-                Idx[1],
-                Idx[input_height],
-                Idx[input_width],
-                Idx[num_channels],
-            )
+            Idx[1], Idx[input_height], Idx[input_width], Idx[num_channels]
         ),
     )
     var h_output_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output = TileTensor(
         h_output_ptr,
         row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[num_channels],
-            )
+            Idx[1], Int64(output_height), Int64(output_width), Idx[num_channels]
         ),
     )
     var h_output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output_ref = TileTensor(
         h_output_ref_ptr,
         row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[num_channels],
-            )
+            Idx[1], Int64(output_height), Int64(output_width), Idx[num_channels]
         ),
     )
 
@@ -404,24 +364,14 @@ def bench_stencil_max_pool[
     var d_input = TileTensor(
         d_input_buf,
         row_major(
-            Coord(
-                Idx[1],
-                Idx[input_height],
-                Idx[input_width],
-                Idx[num_channels],
-            )
+            Idx[1], Idx[input_height], Idx[input_width], Idx[num_channels]
         ),
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
     var d_output = TileTensor(
         d_output_buf,
         row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[num_channels],
-            )
+            Idx[1], Int64(output_height), Int64(output_width), Idx[num_channels]
         ),
     )
 
@@ -641,31 +591,17 @@ def bench_stencil_avg_pool_padded[
     var h_input_ptr = List(length=input_size, fill=Scalar[dtype](0))
     var h_input = TileTensor(
         h_input_ptr,
-        row_major(Coord(Idx[1], Idx[input_height], Idx[input_width], Idx[1])),
+        row_major(Idx[1], Idx[input_height], Idx[input_width], Idx[1]),
     )
     var h_output_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output = TileTensor(
         h_output_ptr,
-        row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[1],
-            )
-        ),
+        row_major(Idx[1], Int64(output_height), Int64(output_width), Idx[1]),
     )
     var h_output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output_ref = TileTensor(
         h_output_ref_ptr,
-        row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[1],
-            )
-        ),
+        row_major(Idx[1], Int64(output_height), Int64(output_width), Idx[1]),
     )
 
     # Initialize input data
@@ -676,26 +612,12 @@ def bench_stencil_avg_pool_padded[
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
     var d_input = TileTensor(
         d_input_buf,
-        row_major(
-            Coord(
-                Idx[1],
-                Idx[input_height],
-                Idx[input_width],
-                Idx[1],
-            )
-        ),
+        row_major(Idx[1], Idx[input_height], Idx[input_width], Idx[1]),
     )
     var d_output_buf = ctx.enqueue_create_buffer[dtype](output_size)
     var d_output = TileTensor(
         d_output_buf,
-        row_major(
-            Coord(
-                Idx[1],
-                Int64(output_height),
-                Int64(output_width),
-                Idx[1],
-            )
-        ),
+        row_major(Idx[1], Int64(output_height), Int64(output_width), Idx[1]),
     )
 
     # Copy to device

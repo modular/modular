@@ -719,7 +719,7 @@ def mgp_buffer_constant(
     # Constant memory is owned by the resource system, not refcounted, so the
     # storage handle is the empty (non-tracked) reference.
     var view = MutByteBuffer(
-        resource_ptr.unsafe_bitcast[Int8](), IndexList[1](resource_bytecount)
+        resource_ptr.unsafe_bitcast[Int8](), (resource_bytecount,)
     )
     return OwnedByteBuffer(view, AnyAsyncValueRef())
 
@@ -945,18 +945,16 @@ def mgp_buffer_concat[
 ) raises:
     var output_lt = TileTensor(
         output.unsafe_ptr(),
-        row_major(Coord(output.size())),
+        row_major(output.size()),
     )
     var input_tensors = StaticTuple[_, inputs.length](
-        TileTensor(inputs[0].unsafe_ptr(), row_major(Coord(inputs[0].size())))
+        TileTensor(inputs[0].unsafe_ptr(), row_major(inputs[0].size()))
         .as_unsafe_any_origin()
         .as_imm()
     )
     for i in range(1, len(inputs)):
         input_tensors[i] = (
-            TileTensor(
-                inputs[i].unsafe_ptr(), row_major(Coord(inputs[i].size()))
-            )
+            TileTensor(inputs[i].unsafe_ptr(), row_major(inputs[i].size()))
             .as_unsafe_any_origin()
             .as_imm()
         )
@@ -1316,7 +1314,7 @@ def _get_scalar_from_managed_tensor_slice[
     # Assumes that tensor is on the host!
     # This is used instead of [0] since __getitem__ for `ManagedTesnorSlice`
     # does not work with `register_internal` out of the box.
-    return tensor.load[width=1](IndexList[1](0))
+    return tensor.load[width=1]((0,))
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2782,9 +2780,7 @@ struct _ElementwiseFusionTileAdapter[
         # column. Carried into the kernel as a closure (the adapter is not
         # `DevicePassable`, so its captures cross via the same mechanism
         # `functional.elementwise` uses for its body closure).
-        var tile_coords = IndexList[Self.rank](
-            Int(block_idx.y), Int(block_idx.x)
-        )
+        var tile_coords = IndexList[Self.rank](block_idx.y, block_idx.x)
         # NOTE(GEX-3913): we likely want to replace the adapter defining the
         # load copier here with a `functional.tile_elementwise` primitive, so
         # the load / tiling policy is reusable.

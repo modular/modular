@@ -130,27 +130,19 @@ def _run(poison_row: Int, ctx: DeviceContext) raises -> Float32:
 
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH])
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH])
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH])
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
     var k_op = LayoutTensorMHAOperand(k_tt)
     var v_op = LayoutTensorMHAOperand(v_tt)

@@ -104,12 +104,13 @@ from max.gpu import (
     block_idx,
     lane_id,
     thread_idx,
+    warp_id,
 )
 from max.gpu.primitives import warp
 from max.gpu.sync import barrier
-from std.math import fma, rsqrt
+from std.math import ceildiv, fma, rsqrt
 from std.memory import unsafe_stack_allocation
-from layout import Coord, TensorEngine, TensorLayout, TileTensor
+from layout import TensorEngine, TensorLayout, TileTensor
 
 
 comptime _SharedF32 = Pointer[
@@ -159,11 +160,11 @@ def _gated_delta_token_step[
     Returns:
         The readout for this thread's value element.
     """
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     q_raw_s[tid] = q_value
     k_raw_s[tid] = k_value
 
-    comptime NUM_WARPS = (KEY_HEAD_DIM + WARP_SIZE - 1) // WARP_SIZE
+    comptime NUM_WARPS = ceildiv(KEY_HEAD_DIM, WARP_SIZE)
     # A head narrower than a warp leaves lanes unlaunched, which must not
     # join the shuffle.
     comptime REDUCE_LANES = min(KEY_HEAD_DIM, WARP_SIZE)
@@ -174,8 +175,8 @@ def _gated_delta_token_step[
         k_value * k_value
     )
     if lane_id() == 0:
-        q_warp_sumsq_s[tid // WARP_SIZE] = warp_q_sum
-        k_warp_sumsq_s[tid // WARP_SIZE] = warp_k_sum
+        q_warp_sumsq_s[warp_id()] = warp_q_sum
+        k_warp_sumsq_s[warp_id()] = warp_k_sum
     barrier()
     var q_squared_sum = Float32(0.0)
     var key_squared_sum = Float32(0.0)
@@ -259,15 +260,6 @@ def gated_delta_recurrence_fwd_gpu[
     input_row_offsets: TileTensor[
         .uint32, input_row_offsets_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    # Strides for [total_seq_len, conv_dim] tensors
-    qkv_conv_output_seqlen_stride: UInt32,
-    qkv_conv_output_channel_stride: UInt32,
-    # Strides for [total_seq_len, num_value_heads] tensors (decay, beta)
-    per_token_seqlen_stride: UInt32,
-    per_token_head_stride: UInt32,
-    # Strides for [total_seq_len, value_dim] recurrence output
-    recurrence_output_seqlen_stride: UInt32,
-    recurrence_output_valuedim_stride: UInt32,
 ):
     """GPU kernel: slot-indexed gated delta rule recurrence, one CTA per head.
 
@@ -326,18 +318,6 @@ def gated_delta_recurrence_fwd_gpu[
         input_row_offsets: Ragged offsets of shape `[batch_size + 1]`;
             sequence `b` spans flat indices
             `[input_row_offsets[b], input_row_offsets[b+1])`.
-        qkv_conv_output_seqlen_stride: Stride between consecutive
-            sequence positions in `qkv_conv_output`.
-        qkv_conv_output_channel_stride: Stride between consecutive
-            channels in `qkv_conv_output`.
-        per_token_seqlen_stride: Stride between consecutive sequence
-            positions in `decay_per_token` and `beta_per_token`.
-        per_token_head_stride: Stride between consecutive heads in
-            `decay_per_token` and `beta_per_token`.
-        recurrence_output_seqlen_stride: Stride between consecutive
-            sequence positions in `recurrence_output`.
-        recurrence_output_valuedim_stride: Stride between consecutive
-            value-dim elements in `recurrence_output`.
     """
     var _num_value_heads = Int(num_value_heads)
     var _key_dim = Int(key_dim)
@@ -345,8 +325,8 @@ def gated_delta_recurrence_fwd_gpu[
         KEY_HEAD_DIM == VALUE_HEAD_DIM
     ), "gated_delta_recurrence_fwd_gpu requires KEY_HEAD_DIM == VALUE_HEAD_DIM"
 
-    var tid = Int(thread_idx.x)
-    var block = Int(block_idx.x)
+    var tid = thread_idx.x
+    var block = block_idx.x
 
     # ── block -> (batch_item, value_head) ───────────────────────────────────
     var batch_item_idx, value_head_idx = divmod(block, _num_value_heads)
@@ -360,7 +340,7 @@ def gated_delta_recurrence_fwd_gpu[
 
     # Read the pool slot for this batch item exactly once. The caller
     # (`GatedDeltaNetStateCache.claim`) guarantees `slot < max_slots`.
-    var slot = Int(slot_idx.raw_load(batch_item_idx))
+    var slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
 
     var q_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM, Float32, address_space=.SHARED
@@ -368,7 +348,7 @@ def gated_delta_recurrence_fwd_gpu[
     var k_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM, Float32, address_space=.SHARED
     ]()
-    comptime NUM_WARPS = (KEY_HEAD_DIM + WARP_SIZE - 1) // WARP_SIZE
+    comptime NUM_WARPS = ceildiv(KEY_HEAD_DIM, WARP_SIZE)
     var q_warp_sumsq_s = unsafe_stack_allocation[
         NUM_WARPS, Float32, address_space=.SHARED
     ]()
@@ -376,47 +356,25 @@ def gated_delta_recurrence_fwd_gpu[
         NUM_WARPS, Float32, address_space=.SHARED
     ]()
 
-    # The pool is dense row-major, so its strides follow from the shape
-    # instead of per-element `Coord` resolution.
-    comptime pool_stride_head = KEY_HEAD_DIM * VALUE_HEAD_DIM
-    comptime pool_stride_kd = VALUE_HEAD_DIM
-    # 64-bit, since a deep slot's offset exceeds 2**32. Recomputed at the
-    # final store instead of held live across the per-token loop.
-    var pool_base_offset = (
-        slot * (_num_value_heads * pool_stride_head)
-        + value_head_idx * pool_stride_head
-        + tid
-    )
-
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────
     var state_col = SIMD[.float32, KEY_HEAD_DIM](0.0)
     comptime for kd in range(KEY_HEAD_DIM):
         state_col[kd] = Float32(
-            recurrent_state.raw_load(pool_base_offset + kd * pool_stride_kd)
+            recurrent_state.load[width=1]((slot, value_head_idx, kd, tid))
         )
 
     var sequence_start_flat_idx = Int(
-        input_row_offsets.raw_load(batch_item_idx)
+        input_row_offsets.load[width=1]((batch_item_idx,))
     )
     var sequence_end_flat_idx = Int(
-        input_row_offsets.raw_load(batch_item_idx + 1)
+        input_row_offsets.load[width=1]((batch_item_idx + 1,))
     )
 
-    # Precompute constant channel offsets for Q, K, V in the conv_dim layout.
-    var query_channel = UInt32(key_head_idx * KEY_HEAD_DIM + tid)
-    var key_channel = UInt32(_key_dim + key_head_idx * KEY_HEAD_DIM + tid)
-    var value_channel = UInt32(
-        2 * _key_dim + value_head_idx * VALUE_HEAD_DIM + tid
-    )
+    var query_channel = key_head_idx * KEY_HEAD_DIM + tid
+    var key_channel = _key_dim + key_head_idx * KEY_HEAD_DIM + tid
+    var value_channel = 2 * _key_dim + value_head_idx * VALUE_HEAD_DIM + tid
 
     for flat_token_idx in range(sequence_start_flat_idx, sequence_end_flat_idx):
-        var token_qkv_row_offset = (
-            UInt32(flat_token_idx) * qkv_conv_output_seqlen_stride
-        )
-        var head_token_offset = (
-            UInt32(flat_token_idx) * per_token_seqlen_stride
-            + UInt32(value_head_idx) * per_token_head_stride
-        )
         var key_update_factor = Float32(0.0)
         var output_value = _gated_delta_token_step(
             state_col,
@@ -425,43 +383,34 @@ def gated_delta_recurrence_fwd_gpu[
             q_warp_sumsq_s,
             k_warp_sumsq_s,
             Float32(
-                qkv_conv_output.raw_load(
-                    token_qkv_row_offset
-                    + query_channel * qkv_conv_output_channel_stride
-                )
+                qkv_conv_output.load[width=1]((flat_token_idx, query_channel))
             ),
             Float32(
-                qkv_conv_output.raw_load(
-                    token_qkv_row_offset
-                    + key_channel * qkv_conv_output_channel_stride
-                )
+                qkv_conv_output.load[width=1]((flat_token_idx, key_channel))
             ),
             Float32(
-                qkv_conv_output.raw_load(
-                    token_qkv_row_offset
-                    + value_channel * qkv_conv_output_channel_stride
-                )
+                qkv_conv_output.load[width=1]((flat_token_idx, value_channel))
             ),
-            Float32(decay_per_token.raw_load(head_token_offset)),
-            Float32(beta_per_token.raw_load(head_token_offset)),
+            Float32(
+                decay_per_token.load[width=1]((flat_token_idx, value_head_idx))
+            ),
+            Float32(
+                beta_per_token.load[width=1]((flat_token_idx, value_head_idx))
+            ),
             key_update_factor,
         )
-        recurrence_output.raw_store(
-            UInt32(flat_token_idx) * recurrence_output_seqlen_stride
-            + UInt32(value_head_idx * VALUE_HEAD_DIM + tid)
-            * recurrence_output_valuedim_stride,
+        recurrence_output.store(
+            (flat_token_idx, value_head_idx * VALUE_HEAD_DIM + tid),
             Scalar[work_dtype](output_value),
         )
 
     # ── Write final state column back into pool[slot, ...] ──────────────────
-    var pool_final_base_offset = (
-        slot * (_num_value_heads * pool_stride_head)
-        + value_head_idx * pool_stride_head
-        + tid
-    )
+    # Reread the slot, so the compiler cannot reuse the load-time address of
+    # each state row and keep all KEY_HEAD_DIM of them live across the loop.
+    var final_slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
     comptime for kd in range(KEY_HEAD_DIM):
-        recurrent_state.raw_store(
-            pool_final_base_offset + kd * pool_stride_kd,
+        recurrent_state.store(
+            (final_slot, value_head_idx, kd, tid),
             Scalar[state_dtype](state_col[kd]),
         )
 
@@ -570,13 +519,6 @@ def gated_delta_recurrence_verify_ring_gpu[
     ring_slot_idx: TileTensor[
         .uint32, ring_slot_idx_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    ring_record_stride: Int32,
-    qkv_conv_output_seqlen_stride: UInt32,
-    qkv_conv_output_channel_stride: UInt32,
-    per_token_seqlen_stride: UInt32,
-    per_token_head_stride: UInt32,
-    recurrence_output_seqlen_stride: UInt32,
-    recurrence_output_valuedim_stride: UInt32,
 ):
     """GPU kernel: runs the gated delta recurrence over a verify window and
     records a ring instead of writing the state back.
@@ -624,22 +566,10 @@ def gated_delta_recurrence_verify_ring_gpu[
         decay_per_token: `[total_seq_len, nv]` per-token decay.
         beta_per_token: `[total_seq_len, nv]` per-token beta gate.
         input_row_offsets: `[batch_size + 1]` ragged offsets.
-        ring: `[ring_rows, nk, RING_LEN, ring_record_stride]` dense ring pool.
-        ring_slot_idx: `[batch_size]` ring row per batch item.
-        ring_record_stride: Elements between consecutive records, at least
+        ring: `[ring_rows, nk, RING_LEN, record_stride]` ring pool, where
+            `record_stride` is at least
             `gated_delta_ring_record_elements(nv // nk)`.
-        qkv_conv_output_seqlen_stride: Stride between sequence positions in
-            `qkv_conv_output`.
-        qkv_conv_output_channel_stride: Stride between channels in
-            `qkv_conv_output`.
-        per_token_seqlen_stride: Stride between sequence positions in
-            `decay_per_token` and `beta_per_token`.
-        per_token_head_stride: Stride between heads in `decay_per_token` and
-            `beta_per_token`.
-        recurrence_output_seqlen_stride: Stride between sequence positions in
-            `recurrence_output`.
-        recurrence_output_valuedim_stride: Stride between value-dim elements
-            in `recurrence_output`.
+        ring_slot_idx: `[batch_size]` ring row per batch item.
     """
     var _num_value_heads = Int(num_value_heads)
     var _key_dim = Int(key_dim)
@@ -648,8 +578,8 @@ def gated_delta_recurrence_verify_ring_gpu[
         " VALUE_HEAD_DIM"
     )
 
-    var tid = Int(thread_idx.x)
-    var block = Int(block_idx.x)
+    var tid = thread_idx.x
+    var block = block_idx.x
 
     var batch_item_idx, value_head_idx = divmod(block, _num_value_heads)
     if batch_item_idx >= Int(batch_size):
@@ -661,8 +591,8 @@ def gated_delta_recurrence_verify_ring_gpu[
     # One value head per GQA group writes the shared raw key.
     var writes_ring_key = group_head == 0
 
-    var slot = Int(slot_idx.raw_load(batch_item_idx))
-    var ring_row = Int(ring_slot_idx.raw_load(batch_item_idx))
+    var slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
+    var ring_row = Int(ring_slot_idx.load[width=1]((batch_item_idx,)))
 
     var q_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM, Float32, address_space=.SHARED
@@ -670,7 +600,7 @@ def gated_delta_recurrence_verify_ring_gpu[
     var k_raw_s = unsafe_stack_allocation[
         KEY_HEAD_DIM, Float32, address_space=.SHARED
     ]()
-    comptime NUM_WARPS = (KEY_HEAD_DIM + WARP_SIZE - 1) // WARP_SIZE
+    comptime NUM_WARPS = ceildiv(KEY_HEAD_DIM, WARP_SIZE)
     var q_warp_sumsq_s = unsafe_stack_allocation[
         NUM_WARPS, Float32, address_space=.SHARED
     ]()
@@ -678,25 +608,12 @@ def gated_delta_recurrence_verify_ring_gpu[
         NUM_WARPS, Float32, address_space=.SHARED
     ]()
 
-    comptime pool_stride_head = KEY_HEAD_DIM * VALUE_HEAD_DIM
-    comptime pool_stride_kd = VALUE_HEAD_DIM
-    var pool_base_offset = (
-        slot * (_num_value_heads * pool_stride_head)
-        + value_head_idx * pool_stride_head
-        + tid
-    )
     var state_col = SIMD[.float32, KEY_HEAD_DIM](0.0)
     comptime for kd in range(KEY_HEAD_DIM):
         state_col[kd] = Float32(
-            recurrent_state.raw_load(pool_base_offset + kd * pool_stride_kd)
+            recurrent_state.load[width=1]((slot, value_head_idx, kd, tid))
         )
 
-    # 64-bit, like the pool offset.
-    var ring_record_base = (
-        (ring_row * Int(num_key_heads) + key_head_idx)
-        * RING_LEN
-        * Int(ring_record_stride)
-    )
     var ring_delta_offset = (
         _ring_delta_offset[KEY_HEAD_DIM, VALUE_HEAD_DIM](group_head) + tid
     )
@@ -705,37 +622,27 @@ def gated_delta_recurrence_verify_ring_gpu[
     )
 
     var sequence_start_flat_idx = Int(
-        input_row_offsets.raw_load(batch_item_idx)
+        input_row_offsets.load[width=1]((batch_item_idx,))
     )
     var sequence_length = (
-        Int(input_row_offsets.raw_load(batch_item_idx + 1))
+        Int(input_row_offsets.load[width=1]((batch_item_idx + 1,)))
         - sequence_start_flat_idx
     )
     # Block-uniform, since a CTA covers one batch item.
     var records = sequence_length <= RING_LEN
 
-    var query_channel = UInt32(key_head_idx * KEY_HEAD_DIM + tid)
-    var key_channel = UInt32(_key_dim + key_head_idx * KEY_HEAD_DIM + tid)
-    var value_channel = UInt32(
-        2 * _key_dim + value_head_idx * VALUE_HEAD_DIM + tid
-    )
+    var query_channel = key_head_idx * KEY_HEAD_DIM + tid
+    var key_channel = _key_dim + key_head_idx * KEY_HEAD_DIM + tid
+    var value_channel = 2 * _key_dim + value_head_idx * VALUE_HEAD_DIM + tid
 
     for position in range(sequence_length):
         var flat_token_idx = sequence_start_flat_idx + position
-        var token_qkv_row_offset = (
-            UInt32(flat_token_idx) * qkv_conv_output_seqlen_stride
-        )
-        var head_token_offset = (
-            UInt32(flat_token_idx) * per_token_seqlen_stride
-            + UInt32(value_head_idx) * per_token_head_stride
-        )
         var k_value = Float32(
-            qkv_conv_output.raw_load(
-                token_qkv_row_offset
-                + key_channel * qkv_conv_output_channel_stride
-            )
+            qkv_conv_output.load[width=1]((flat_token_idx, key_channel))
         )
-        var decay_value = Float32(decay_per_token.raw_load(head_token_offset))
+        var decay_value = Float32(
+            decay_per_token.load[width=1]((flat_token_idx, value_head_idx))
+        )
         var key_update_factor = Float32(0.0)
         var output_value = _gated_delta_token_step(
             state_col,
@@ -744,41 +651,38 @@ def gated_delta_recurrence_verify_ring_gpu[
             q_warp_sumsq_s,
             k_warp_sumsq_s,
             Float32(
-                qkv_conv_output.raw_load(
-                    token_qkv_row_offset
-                    + query_channel * qkv_conv_output_channel_stride
-                )
+                qkv_conv_output.load[width=1]((flat_token_idx, query_channel))
             ),
             k_value,
             Float32(
-                qkv_conv_output.raw_load(
-                    token_qkv_row_offset
-                    + value_channel * qkv_conv_output_channel_stride
-                )
+                qkv_conv_output.load[width=1]((flat_token_idx, value_channel))
             ),
             decay_value,
-            Float32(beta_per_token.raw_load(head_token_offset)),
+            Float32(
+                beta_per_token.load[width=1]((flat_token_idx, value_head_idx))
+            ),
             key_update_factor,
         )
-        recurrence_output.raw_store(
-            UInt32(flat_token_idx) * recurrence_output_seqlen_stride
-            + UInt32(value_head_idx * VALUE_HEAD_DIM + tid)
-            * recurrence_output_valuedim_stride,
+        recurrence_output.store(
+            (flat_token_idx, value_head_idx * VALUE_HEAD_DIM + tid),
             Scalar[work_dtype](output_value),
         )
 
         if records:
-            var record = ring_record_base + position * Int(ring_record_stride)
-            ring.raw_store(
-                record + ring_delta_offset,
+            ring.store(
+                (ring_row, key_head_idx, position, ring_delta_offset),
                 Scalar[ring_dtype](key_update_factor),
             )
             if tid == 0:
-                ring.raw_store(
-                    record + ring_decay_offset, Scalar[ring_dtype](decay_value)
+                ring.store(
+                    (ring_row, key_head_idx, position, ring_decay_offset),
+                    Scalar[ring_dtype](decay_value),
                 )
             if writes_ring_key:
-                ring.raw_store(record + tid, Scalar[ring_dtype](k_value))
+                ring.store(
+                    (ring_row, key_head_idx, position, tid),
+                    Scalar[ring_dtype](k_value),
+                )
 
     # TODO(MXSERV-555): this writeback keeps state_col live to the exit, which
     # costs the recording path about 5% in spills even though no row the
@@ -786,9 +690,11 @@ def gated_delta_recurrence_verify_ring_gpu[
     # verify shows up in a profile, launch rows longer than the ring on a
     # separate kernel, which needs the host row offsets as an operand.
     if not records:
+        # Reread the slot; see `gated_delta_recurrence_fwd_gpu`.
+        var final_slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
         comptime for kd in range(KEY_HEAD_DIM):
-            recurrent_state.raw_store(
-                pool_base_offset + kd * pool_stride_kd,
+            recurrent_state.store(
+                (final_slot, value_head_idx, kd, tid),
                 Scalar[state_dtype](state_col[kd]),
             )
 
@@ -819,7 +725,6 @@ def gated_delta_state_fold_gpu[
     ring_row_ids: TileTensor[
         .uint32, ring_row_ids_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    ring_record_stride: Int32,
     num_accepted: TileTensor[
         .uint32, num_accepted_LT, MutUntrackedOrigin, Engine=Engine
     ],
@@ -861,10 +766,9 @@ def gated_delta_state_fold_gpu[
         recurrent_state: `[rows, nv, KEY_HEAD_DIM, VALUE_HEAD_DIM]` dense live
             pool, folded in place.
         row_ids: `[num_layers, batch_size]` live pool row per (layer, request).
-        ring: `[ring_rows, nk, RING_LEN, ring_record_stride]` dense ring pool.
+        ring: `[ring_rows, nk, RING_LEN, record_stride]` ring pool.
         ring_row_ids: `[num_layers, batch_size]` ring row per (layer,
             request).
-        ring_record_stride: Elements between consecutive records.
         num_accepted: `[batch_size]` records to fold.
     """
     var _batch_size = Int(batch_size)
@@ -877,8 +781,8 @@ def gated_delta_state_fold_gpu[
         KEY_HEAD_DIM % KEY_DIM_TILE == 0
     ), "gated_delta_state_fold_gpu requires KEY_DIM_TILE to divide KEY_HEAD_DIM"
 
-    var tid = Int(thread_idx.x)
-    var block = Int(block_idx.x)
+    var tid = thread_idx.x
+    var block = block_idx.x
 
     # block -> (batch_item, layer, value_head), value head fastest.
     var layer_and_batch, value_head_idx = divmod(block, _num_value_heads)
@@ -886,7 +790,7 @@ def gated_delta_state_fold_gpu[
     if batch_item_idx >= _batch_size:
         return
 
-    var accepted = Int(num_accepted.raw_load(batch_item_idx))
+    var accepted = Int(num_accepted.load[width=1]((batch_item_idx,)))
     if accepted <= 0 or accepted > RING_LEN:
         return
 
@@ -894,14 +798,8 @@ def gated_delta_state_fold_gpu[
     var key_head_idx = value_head_idx // group_size
     var group_head = value_head_idx % group_size
 
-    var table_offset = layer_idx * _batch_size + batch_item_idx
-    var slot = Int(row_ids.raw_load(table_offset))
-    var ring_row = Int(ring_row_ids.raw_load(table_offset))
-    var ring_record_base = (
-        (ring_row * Int(num_key_heads) + key_head_idx)
-        * RING_LEN
-        * Int(ring_record_stride)
-    )
+    var slot = Int(row_ids.load[width=1]((layer_idx, batch_item_idx)))
+    var ring_row = Int(ring_row_ids.load[width=1]((layer_idx, batch_item_idx)))
     var ring_delta_offset = (
         _ring_delta_offset[KEY_HEAD_DIM, VALUE_HEAD_DIM](group_head) + tid
     )
@@ -918,11 +816,7 @@ def gated_delta_state_fold_gpu[
     comptime for record_idx in range(RING_LEN):
         if record_idx < accepted:
             k_raw_s[record_idx * KEY_HEAD_DIM + tid] = Float32(
-                ring.raw_load(
-                    ring_record_base
-                    + record_idx * Int(ring_record_stride)
-                    + tid
-                )
+                ring.load[width=1]((ring_row, key_head_idx, record_idx, tid))
             )
     barrier()
 
@@ -931,14 +825,20 @@ def gated_delta_state_fold_gpu[
     var update_factors = SIMD[.float32, RING_LEN](0.0)
     comptime for record_idx in range(RING_LEN):
         if record_idx < accepted:
-            var record = ring_record_base + record_idx * Int(ring_record_stride)
             decays[record_idx] = Float32(
-                ring.raw_load(record + ring_decay_offset)
+                ring.load[width=1](
+                    (ring_row, key_head_idx, record_idx, ring_decay_offset)
+                )
             )
             update_factors[record_idx] = Float32(
-                ring.raw_load(record + ring_delta_offset)
+                ring.load[width=1](
+                    (ring_row, key_head_idx, record_idx, ring_delta_offset)
+                )
             )
 
+    # The pool is dense, so a row's offset is a runtime base plus a
+    # compile-time stride per key-dim row. Indexing through the layout
+    # instead multiplies each row by a runtime stride and costs registers.
     comptime pool_stride_head = KEY_HEAD_DIM * VALUE_HEAD_DIM
     comptime pool_stride_kd = VALUE_HEAD_DIM
     var pool_base_offset = (

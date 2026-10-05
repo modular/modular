@@ -48,6 +48,7 @@ from linalg.fp6_quantization import (
     quantize_mxfp6_lane_group,
 )
 from linalg.fp6_utils import FP6Format, MXFP6_SF_VECTOR_SIZE, pack_fp6_x4
+from std.math import ceildiv
 
 comptime SF = MXFP6_SF_VECTOR_SIZE  # 32
 
@@ -76,8 +77,8 @@ def _lane_group_kernel[
     Threads are laid out so that consecutive lanes hold consecutive columns,
     which is what puts one MX block on one aligned lane group.
     """
-    var row = Int(block_idx.y)
-    var col = (Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)) * width
+    var row = block_idx.y
+    var col = (block_idx.x * block_dim.x + thread_idx.x) * width
     if col >= Int(num_cols):
         return
 
@@ -132,12 +133,12 @@ def _run_case[
     var d_got_sc = ctx.enqueue_create_buffer[.float8_e8m0fnu](rows * scale_cols)
     ctx.enqueue_copy(d_in, inp)
 
-    var in_tt_mut = TileTensor(d_in, row_major(Coord(rows, cols)))
+    var in_tt_mut = TileTensor(d_in, row_major(rows, cols))
     var in_tt = in_tt_mut.as_imm()
-    var ref_out_tt = TileTensor(d_ref_out, row_major(Coord(rows, packed_cols)))
-    var ref_sc_tt = TileTensor(d_ref_sc, row_major(Coord(rows, scale_cols)))
-    var got_out_tt = TileTensor(d_got_out, row_major(Coord(rows, packed_cols)))
-    var got_sc_tt = TileTensor(d_got_sc, row_major(Coord(rows, scale_cols)))
+    var ref_out_tt = TileTensor(d_ref_out, row_major(rows, packed_cols))
+    var ref_sc_tt = TileTensor(d_ref_sc, row_major(rows, scale_cols))
+    var got_out_tt = TileTensor(d_got_out, row_major(rows, packed_cols))
+    var got_sc_tt = TileTensor(d_got_sc, row_major(rows, scale_cols))
 
     quantize_mxfp6_amd[fmt](ctx, ref_out_tt, ref_sc_tt, in_tt)
 
@@ -204,7 +205,7 @@ def _run_case[
 
 
 def ceildiv_int(a: Int, b: Int) -> Int:
-    return (a + b - 1) // b
+    return ceildiv(a, b)
 
 
 def main() raises:

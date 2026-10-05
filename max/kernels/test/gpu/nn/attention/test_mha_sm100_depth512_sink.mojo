@@ -35,7 +35,7 @@ from std.math import align_up, ceildiv, inf, isfinite, rsqrt
 from std.random import rand, random_ui64, seed
 
 from max.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from kv_cache.types import (
     KVCacheStaticParams,
@@ -48,8 +48,6 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
     SlidingWindowNonCausalMask,
 )
-
-from std.utils import IndexList
 
 
 # Mirrors `padded_lut_cols` in `kv_cache_test_utils.mojo`, which is in another
@@ -142,18 +140,24 @@ def execute_sink_test[
         sep="",
     )
 
-    # --- Layouts ---
-    comptime row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime q_ragged_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime output_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, head_size
-    )
-    comptime paged_lut_layout = Layout.row_major[2]()
-    comptime kv_block_6d_layout = Layout.row_major[6]()
-    comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime RefCollection = PagedKVCacheCollection[
+        ref_dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
 
     # --- Host metadata: row offsets + cache lengths ---
     var input_row_offsets = ctx.enqueue_create_host_buffer[.uint32](
@@ -177,11 +181,9 @@ def execute_sink_test[
     # --- Q (ragged: [total_length, num_q_heads, head_size]) ---
     var q_size = total_length * num_q_heads * head_size
     var q_ref_host = ctx.enqueue_create_host_buffer[ref_dtype](q_size)
-    var q_ref_host_tt = LayoutTensor[ref_dtype, q_ragged_layout](
-        q_ref_host.unsafe_ptr(),
-        RuntimeLayout[q_ragged_layout].row_major(
-            IndexList[3](total_length, num_q_heads, head_size)
-        ),
+    var q_ref_host_tt = TileTensor(
+        q_ref_host,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     # Zero-mean Q keeps the scores near zero, so the sink stays significant
     # even against a few hundred keys.
@@ -199,14 +201,18 @@ def execute_sink_test[
     var num_paged_blocks = (
         ceildiv(max_full_context_length, page_size) * batch_size + 4
     )
-    var kv_block_paged_shape = IndexList[6](
-        num_paged_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_params.num_heads,
-        head_size,
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_paged_blocks)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        2 * num_layers * page_size * kv_params.num_heads * head_size
     )
+    blocks_strides[1] = Int64(
+        num_layers * page_size * kv_params.num_heads * head_size
+    )
+    var blocks_layout = BlocksLayout(blocks_shape, blocks_strides)
     var kv_block_size = (
         num_paged_blocks
         * 2
@@ -218,10 +224,7 @@ def execute_sink_test[
     var kv_block_ref_host = ctx.enqueue_create_host_buffer[ref_dtype](
         kv_block_size
     )
-    var kv_block_ref_host_tt = LayoutTensor[ref_dtype, kv_block_6d_layout](
-        kv_block_ref_host.unsafe_ptr(),
-        RuntimeLayout[kv_block_6d_layout].row_major(kv_block_paged_shape),
-    )
+    var kv_block_ref_host_tt = TileTensor(kv_block_ref_host, blocks_layout)
     random(kv_block_ref_host_tt)
     var kv_block_host = ctx.enqueue_create_host_buffer[dtype](kv_block_size)
     for i in range(kv_block_size):
@@ -234,7 +237,6 @@ def execute_sink_test[
 
     # --- Paged lookup table (unique random physical blocks per (bs, blk)) ---
     var lut_cols = padded_lut_cols(ceildiv(max_full_context_length, page_size))
-    var paged_lut_shape = IndexList[2](batch_size, lut_cols)
     var paged_lut_host = ctx.enqueue_create_host_buffer[.uint32](
         batch_size * lut_cols
     )
@@ -272,103 +274,91 @@ def execute_sink_test[
     ctx.enqueue_copy(sinks_dev, sinks_host)
     ctx.enqueue_copy(sinks_ref_dev, sinks_ref_host)
 
-    var input_row_offsets_lt = LayoutTensor[
-        mut=False, .uint32, row_offsets_layout
-    ](
-        input_row_offsets_dev,
-        RuntimeLayout[row_offsets_layout].row_major(
-            IndexList[1](batch_size + 1)
-        ),
+    var input_row_offsets_tt = (
+        TileTensor(
+            input_row_offsets_dev,
+            row_major(Int64(len(input_row_offsets_dev))),
+        )
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var cache_lengths_lt = LayoutTensor[
-        mut=False, .uint32, cache_lengths_layout
-    ](
-        cache_lengths_dev,
-        RuntimeLayout[cache_lengths_layout].row_major(IndexList[1](batch_size)),
+    var cache_lengths_tt = (
+        TileTensor(cache_lengths_dev, row_major(Int64(len(cache_lengths_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var paged_lut_lt = LayoutTensor[mut=False, .uint32, paged_lut_layout](
-        paged_lut_dev,
-        RuntimeLayout[paged_lut_layout].row_major(paged_lut_shape),
+    var paged_lut_tt = (
+        TileTensor(paged_lut_dev, row_major(Int64(batch_size), Int64(lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var q_runtime_layout = RuntimeLayout[q_ragged_layout].row_major(
-        IndexList[3](total_length, num_q_heads, head_size)
+    var q_tt = TileTensor(
+        q_dev, row_major(total_length, Idx[num_q_heads], Idx[head_size])
+    ).as_imm()
+    var q_ref_tt = TileTensor(
+        q_ref_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
+    ).as_imm()
+    var sinks_tt = (
+        TileTensor(sinks_dev, row_major(Int64(len(sinks_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var q_lt = LayoutTensor[mut=False, dtype, q_ragged_layout](
-        q_dev, q_runtime_layout
-    )
-    var q_ref_lt = LayoutTensor[mut=False, ref_dtype, q_ragged_layout](
-        q_ref_dev, q_runtime_layout
-    )
-    var sink_runtime_layout = RuntimeLayout[sink_layout].row_major(
-        IndexList[1](num_q_heads)
-    )
-    var sinks_lt = LayoutTensor[mut=False, dtype, sink_layout](
-        sinks_dev.unsafe_ptr().as_unsafe_any_origin(), sink_runtime_layout
-    )
-    var sinks_ref_lt = LayoutTensor[mut=False, ref_dtype, sink_layout](
-        sinks_ref_dev.unsafe_ptr().as_unsafe_any_origin(), sink_runtime_layout
+    var sinks_ref_tt = (
+        TileTensor(sinks_ref_dev, row_major(Int64(len(sinks_ref_dev))))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
 
-    var kv_runtime_layout = RuntimeLayout[kv_block_6d_layout].row_major(
-        kv_block_paged_shape
-    )
-    var kv_block_lt = LayoutTensor[dtype, kv_block_6d_layout](
-        kv_block_dev, kv_runtime_layout
-    )
-    var kv_block_ref_lt = LayoutTensor[ref_dtype, kv_block_6d_layout](
-        kv_block_ref_dev, kv_runtime_layout
-    )
-    # The K and V views are disjoint halves of one `blocks` buffer, which the
-    # origin exclusivity check would reject, so opt out with an unsafe origin.
-    var kv_collection = PagedKVCacheCollection[dtype, kv_params, page_size](
-        kv_block_lt.as_unsafe_any_origin(),
-        cache_lengths_lt,
-        paged_lut_lt,
+    var kv_block_tt = TileTensor(kv_block_dev, blocks_layout)
+    var kv_block_ref_tt = TileTensor(kv_block_ref_dev, blocks_layout)
+    # K and V occupy disjoint per-page regions; erased origins allow the
+    # attention kernel to borrow both cache views.
+    var kv_collection = Collection(
+        kv_block_tt.as_unsafe_any_origin(),
+        cache_lengths_tt,
+        paged_lut_tt,
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
-    var kv_ref_collection = PagedKVCacheCollection[
-        ref_dtype, kv_params, page_size
-    ](
-        kv_block_ref_lt.as_unsafe_any_origin(),
-        cache_lengths_lt,
-        paged_lut_lt,
+    var kv_ref_collection = RefCollection(
+        kv_block_ref_tt.as_unsafe_any_origin(),
+        cache_lengths_tt,
+        paged_lut_tt,
         UInt32(max_prompt_length),
         UInt32(max_full_context_length),
     )
 
     # --- Kernel under test ---
     var out_size = total_length * num_q_heads * head_size
-    var out_runtime_layout = RuntimeLayout[output_layout].row_major(
-        IndexList[3](total_length, num_q_heads, head_size)
-    )
     var test_out_dev = ctx.enqueue_create_buffer[ref_dtype](out_size)
-    var test_out_lt = LayoutTensor[ref_dtype, output_layout](
-        test_out_dev.unsafe_ptr(), out_runtime_layout
+    var test_out_tt = TileTensor(
+        test_out_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     var k_cache = kv_collection.get_key_cache(layer_idx)
     var v_cache = kv_collection.get_value_cache(layer_idx)
     if use_sink:
         flash_attention[ragged=True, sink=True](
-            test_out_lt,
-            q_lt,
+            test_out_tt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            input_row_offsets_lt,
+            input_row_offsets_tt,
             scale,
             ctx,
             num_partitions=num_partitions,
-            sink_weights=sinks_lt,
+            sink_weights=sinks_tt,
         )
     else:
         flash_attention[ragged=True](
-            test_out_lt,
-            q_lt,
+            test_out_tt,
+            q_tt,
             k_cache,
             v_cache,
             mask,
-            input_row_offsets_lt,
+            input_row_offsets_tt,
             scale,
             ctx,
             num_partitions=num_partitions,
@@ -376,19 +366,20 @@ def execute_sink_test[
 
     # --- Reference ---
     var ref_out_dev = ctx.enqueue_create_buffer[ref_dtype](out_size)
-    var ref_out_lt = LayoutTensor[ref_dtype, output_layout](
-        ref_out_dev.unsafe_ptr(), out_runtime_layout
+    var ref_out_tt = TileTensor(
+        ref_out_dev,
+        row_major(total_length, Idx[num_q_heads], Idx[head_size]),
     )
     var k_ref_cache = kv_ref_collection.get_key_cache(layer_idx)
     var v_ref_cache = kv_ref_collection.get_value_cache(layer_idx)
     if use_sink:
         mha_gpu_naive[ragged=True, sink=True](
-            q_ref_lt,
+            q_ref_tt,
             k_ref_cache,
             v_ref_cache,
             mask,
-            ref_out_lt,
-            input_row_offsets_lt,
+            ref_out_tt,
+            input_row_offsets_tt,
             scale,
             batch_size,
             max_prompt_length,
@@ -397,16 +388,16 @@ def execute_sink_test[
             head_size,
             group,
             ctx,
-            sinks_ref_lt,
+            sinks_ref_tt,
         )
     else:
         mha_gpu_naive[ragged=True](
-            q_ref_lt,
+            q_ref_tt,
             k_ref_cache,
             v_ref_cache,
             mask,
-            ref_out_lt,
-            input_row_offsets_lt,
+            ref_out_tt,
+            input_row_offsets_tt,
             scale,
             batch_size,
             max_prompt_length,

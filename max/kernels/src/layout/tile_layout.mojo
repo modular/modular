@@ -1127,7 +1127,7 @@ def row_major_nested(
         comptime idx = rank - 1 - i
         var stride_ptr = Pointer(to=strides[idx])
         comptime StrideType = RowMajorTypes[idx]
-        stride_ptr.write(rebind[StrideType](StrideType()))
+        stride_ptr.write(StrideType())
 
     return {shape, Coord(strides^)}
 
@@ -1341,7 +1341,7 @@ def col_major_nested(
     comptime for i in range(rank):
         var stride_ptr = Pointer(to=strides[i])
         comptime StrideType = ColMajorTypes[i]
-        stride_ptr.write(rebind[StrideType](StrideType()))
+        stride_ptr.write(StrideType())
 
     return Layout(shape, Coord[*ColMajorTypes](strides^))
 

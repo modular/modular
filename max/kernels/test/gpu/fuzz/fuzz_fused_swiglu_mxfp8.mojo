@@ -180,13 +180,11 @@ def run_one_case(
 
     comptime k_groups = ceildiv(H, SF_VECTOR_SIZE * SF_ATOM_K)
     var scales_shape = row_major(
-        Coord(
-            scales_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        scales_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var scales_size = scales_shape.product()
 
@@ -205,13 +203,11 @@ def run_one_case(
     ctx.enqueue_copy(row_off_dev, row_off_host)
     ctx.enqueue_copy(sc_off_dev, sc_off_host)
 
-    var out_tt = TileTensor(out_dev, row_major(Coord(total_m, Idx[H])))
+    var out_tt = TileTensor(out_dev, row_major(total_m, Idx[H]))
     var scales_tt = TileTensor(scales_dev, scales_shape)
-    var in_tt = TileTensor(in_dev, row_major(Coord(total_m, Idx[two_H])))
-    var row_off_tt = TileTensor(
-        row_off_dev, row_major(Coord(Idx[NUM_ACTIVE + 1]))
-    )
-    var sc_off_tt = TileTensor(sc_off_dev, row_major(Coord(Idx[NUM_ACTIVE])))
+    var in_tt = TileTensor(in_dev, row_major(total_m, Idx[two_H]))
+    var row_off_tt = TileTensor(row_off_dev, row_major(Idx[NUM_ACTIVE + 1]))
+    var sc_off_tt = TileTensor(sc_off_dev, row_major(Idx[NUM_ACTIVE]))
 
     var in_immut = in_tt.as_imm()
     var row_off_immut = row_off_tt.as_imm()

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the DSA indexer's k-pool compression kernel."""
 
-from std.math import exp
+from std.math import ceildiv, exp
 from std.random import rand
 from std.testing import assert_almost_equal, assert_equal, assert_true
 
@@ -1217,7 +1217,7 @@ def _run_ring[
 ) raises -> Int:
     """Drives the ring `seq_len // next_n` times, collecting the closed pools.
     """
-    comptime max_closed = (next_n + kpool - 1) // kpool
+    comptime max_closed = ceildiv(next_n, kpool)
     var steps = seq_len // next_n
 
     var tail_d = ctx.enqueue_create_buffer[.bfloat16](
@@ -1461,7 +1461,7 @@ def _ring_after[
     The first `n_valid` slots carry real positions; the rest carry -1, which is
     what a padded entry in a speculative batch holds.
     """
-    comptime max_closed = (next_n + kpool - 1) // kpool
+    comptime max_closed = ceildiv(next_n, kpool)
     var ring_elems = 2 * kpool * head_dim
     var ring_d = ctx.enqueue_create_buffer[.bfloat16](ring_elems)
     ctx.enqueue_memset(ring_d, 0)

@@ -760,19 +760,19 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(P_REF_ROWS, P_REF_COLS)),
+        row_major(P_REF_ROWS, P_REF_COLS),
     )
     var a_tt = TileTensor(
         ImmPointer[Scalar[OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(ROWS, COLS)),
+        row_major(ROWS, COLS),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[OP_TYPE], ImmutAnyOrigin](
             unsafe_from_address=Int(k_device_ptr)
         ),
-        row_major(Coord(K_ROWS, K_COLS)),
+        row_major(K_ROWS, K_COLS),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -1007,19 +1007,19 @@ def test_sparse_mma_ws_ts[
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(p_ref_rows, p_ref_cols)),
+        row_major(p_ref_rows, p_ref_cols),
     )
     var a_tt = TileTensor(
         ImmPointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(k_ref_device.unsafe_ptr())
         ),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
 
     comptime gemm_naive = matmul_kernel_naive[
@@ -1222,7 +1222,7 @@ def test_sparse_paged_mma_ws_ts[
     cache_lengths_managed.to_device()
 
     # ---- Build lookup_table with shuffled page assignments ----
-    var max_pages_per_seq = (total_tokens + page_size - 1) // page_size
+    var max_pages_per_seq = ceildiv(total_tokens, page_size)
     var lut_managed = HostDeviceTileTensor[.uint32](
         Collection.CacheType.lookup_table_tt_layout(
             Coord(Int64(batch_size), Int64(num_blocks)),
@@ -1344,19 +1344,19 @@ def test_sparse_paged_mma_ws_ts[
 
     var c_ref_tt = TileTensor(
         p_ref_device,
-        row_major(Coord(p_ref_rows, p_ref_cols)),
+        row_major(p_ref_rows, p_ref_cols),
     )
     var a_tt = TileTensor(
         ImmPointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(q_device_ptr)
         ),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var b_tt = TileTensor(
         ImmPointer[Scalar[op_type], ImmutAnyOrigin](
             unsafe_from_address=Int(k_ref_device.unsafe_ptr())
         ),
-        row_major(Coord(topk, row_width)),
+        row_major(topk, row_width),
     )
 
     comptime gemm_naive = matmul_kernel_naive[

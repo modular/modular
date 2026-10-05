@@ -405,6 +405,19 @@ This version is still a work in progress.
   trace ID without a `traceparent`. It ends when the response body finishes,
   so a streamed response's span covers the whole stream.
 
+- A request can now ask for a kernel trace of the forward passes it runs in
+  by setting the `x-max-trace-level` header to `batch`, `op`,
+  `kernel-sampled`, `kernel` or `full`. This needs
+  `MAX_SERVE_KERNEL_TRACE_HEADERS=true`, span export through
+  `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, and a MAX build that ships the
+  profiler plugin. Each traced pass exports a `max.batch` span with GPU spans
+  beneath it, and `max.batch` spans now link to their requests' spans: every
+  request's at `MAX_SERVE_KERNEL_TRACE_LEVEL=batch` or higher, otherwise only
+  traced ones. The `kernel_trace_max_passes`, `kernel_trace_max_spans`,
+  `kernel_trace_max_capture_bytes` and `kernel_trace_max_batch_links` fields
+  in the `profiling` section of a `max serve --config-file` set its limits of
+  64 passes, 20,000 spans, a 64 MiB capture file and 128 links per span.
+
 ### Server metrics
 
 - Added counters for how much traffic uses tool calling and structured

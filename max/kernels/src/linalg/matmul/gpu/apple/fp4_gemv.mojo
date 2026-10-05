@@ -172,7 +172,7 @@ def fp4_gemv_kernel[
 
         comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
-            epilogue[c_type, 1](IndexList[2](0, n_idx), y)
+            epilogue[c_type, 1]((0, n_idx), y)
         else:
             c.store[width=1](Coord(0, n_idx), y)
 

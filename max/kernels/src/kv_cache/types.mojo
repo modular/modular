@@ -438,6 +438,53 @@ def _make_cache_tt[
     )
 
 
+@inline(.always)
+def _as_cache_tt[
+    ResultLayout: TensorLayout,
+    Engine: TensorEngine,
+](tt: TileTensor[address_space=.GENERIC, ...]) -> TileTensor[
+    tt.dtype,
+    InternalLayout[
+        shape_types=ResultLayout._shape_types,
+        stride_types=ResultLayout._stride_types,
+    ],
+    tt.origin,
+    Engine=Engine,
+]:
+    """Views `tt` through a cache field's layout type.
+
+    `ResultLayout`'s runtime dimensions are read from `tt`. Its static
+    dimensions and strides are fixed by the cache's parameters, so `tt` must
+    already match them; that is checked with `debug_assert`.
+    """
+    comptime rank = ResultLayout.rank
+    comptime assert (
+        tt.flat_rank == rank
+    ), "tensor rank must match the cache layout's rank"
+
+    var shape = DynamicCoord[.int64, rank]()
+    var strides = DynamicCoord[.int64, rank]()
+    comptime for i in range(rank):
+        var dim = Int64(tt.layout.shape[i]().value())
+        var stride = Int64(tt.layout.stride[i]().value())
+        comptime if ResultLayout._shape_types[i].is_static_value:
+            debug_assert(
+                Int(dim) == ResultLayout.static_shape[i],
+                "tensor dimension does not match the cache's static shape",
+            )
+        comptime if ResultLayout._stride_types[i].is_static_value:
+            debug_assert(
+                Int(stride) == ResultLayout.static_stride[i],
+                "tensor stride does not match the cache's static stride",
+            )
+        shape[i] = rebind[shape.element_types[i]](dim)
+        strides[i] = rebind[strides.element_types[i]](stride)
+
+    return _make_cache_tt[tt.dtype, ResultLayout, rank, Engine=Engine](
+        tt.ptr, shape, strides
+    )
+
+
 struct KVCacheStaticParams(Equatable, TrivialRegisterPassable):
     """Compile-time shape parameters shared across all layers of a KV cache.
 
@@ -2028,12 +2075,31 @@ struct ContinuousBatchingKVCache[
 
     def __init__(
         out self,
-        blocks: Self.blocks_tt_type,
-        cache_lengths: Self.cache_lengths_tt_type,
-        lookup_table: Self.lookup_table_tt_type,
+        blocks: TileTensor[
+            Self.dtype,
+            _,
+            Self.blocks_origin,
+            Engine=Self.blocks_engine,
+            linear_idx_type=_,
+        ],
+        cache_lengths: TileTensor[
+            .uint32,
+            _,
+            Self.cache_lengths_origin,
+            Engine=Self.cache_lengths_engine,
+            linear_idx_type=_,
+        ],
+        lookup_table: TileTensor[
+            .uint32,
+            _,
+            Self.lookup_table_origin,
+            Engine=Self.lookup_table_engine,
+            linear_idx_type=_,
+        ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
+        """Constructs the cache from tensors of any layout with its shape."""
         comptime assert (
             not self.quantization_enabled
         ), "ContinuousBatchingKVCache does not support quantization"
@@ -2044,9 +2110,15 @@ struct ContinuousBatchingKVCache[
             Int(blocks.dim[3]()) == Self.kv_params.head_size
         ), "blocks.dim[3]() must be equal to kv_params.head_size"
 
-        self.blocks = blocks
-        self.cache_lengths = cache_lengths
-        self.lookup_table = lookup_table
+        self.blocks = _as_cache_tt[Self.blocks_tt_layout, Self.blocks_engine](
+            blocks
+        )
+        self.cache_lengths = _as_cache_tt[
+            Self.cache_lengths_tt_layout, Self.cache_lengths_engine
+        ](cache_lengths)
+        self.lookup_table = _as_cache_tt[
+            Self.lookup_table_tt_layout, Self.lookup_table_engine
+        ](lookup_table)
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
 
@@ -2761,9 +2833,27 @@ struct PagedKVCache[
 
     def __init__(
         out self,
-        blocks: Self.blocks_tt_type,
-        cache_lengths: Self.cache_lengths_tt_type,
-        lookup_table: Self.lookup_table_tt_type,
+        blocks: TileTensor[
+            Self.dtype,
+            _,
+            Self.blocks_origin,
+            Engine=Self.blocks_engine,
+            linear_idx_type=_,
+        ],
+        cache_lengths: TileTensor[
+            .uint32,
+            _,
+            Self.cache_lengths_origin,
+            Engine=Self.cache_lengths_engine,
+            linear_idx_type=_,
+        ],
+        lookup_table: TileTensor[
+            .uint32,
+            _,
+            Self.lookup_table_origin,
+            Engine=Self.lookup_table_engine,
+            linear_idx_type=_,
+        ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         scales: OptionalReg[Self.scales_tt_type] = None,
@@ -2772,6 +2862,7 @@ struct PagedKVCache[
         # independent block-id space.
         scales_lookup_table: OptionalReg[Self.lookup_table_tt_type] = None,
     ):
+        """Constructs the cache from tensors of any layout with its shape."""
         assert (
             Int(blocks.dim[1]()) == Self.page_size
         ), "blocks.dim[1]() must be equal to page_size"
@@ -2782,16 +2873,22 @@ struct PagedKVCache[
             Int(blocks.dim[3]()) == Self.kv_params.head_size
         ), "blocks.dim[3]() must be equal to kv_params.head_size"
 
-        self.blocks = blocks
-        self.cache_lengths = cache_lengths
-        self.lookup_table = lookup_table
+        self.blocks = _as_cache_tt[Self.blocks_tt_layout, Self.blocks_engine](
+            blocks
+        )
+        self.cache_lengths = _as_cache_tt[
+            Self.cache_lengths_tt_layout, Self.cache_lengths_engine
+        ](cache_lengths)
+        self.lookup_table = _as_cache_tt[
+            Self.lookup_table_tt_layout, Self.lookup_table_engine
+        ](lookup_table)
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.scales = scales
         if scales_lookup_table:
             self.scales_lookup_table = scales_lookup_table.value()
         else:
-            self.scales_lookup_table = lookup_table
+            self.scales_lookup_table = self.lookup_table
 
     @staticmethod
     def max_tile_size() -> Int:
@@ -4049,16 +4146,31 @@ struct ContinuousBatchingKVCacheCollection[
 
     def __init__(
         out self,
-        blocks: Self.blocks_tt_type,
-        cache_lengths: Self.CacheType.cache_lengths_tt_type,
-        lookup_table: Self.CacheType.lookup_table_tt_type,
+        blocks: TileTensor[
+            Self.dtype, _, Self.blocks_origin, linear_idx_type=_
+        ],
+        cache_lengths: TileTensor[
+            .uint32, _, Self.cache_lengths_origin, linear_idx_type=_
+        ],
+        lookup_table: TileTensor[
+            .uint32, _, Self.lookup_table_origin, linear_idx_type=_
+        ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
     ):
-        """Construct from TileTensor fields directly."""
-        self.blocks = blocks
-        self.cache_lengths = cache_lengths
-        self.lookup_table = lookup_table
+        """Constructs the collection from tensors of any layout with its
+        shape, such as the graph compiler's `to_tile_tensor()` views."""
+        self.blocks = _as_cache_tt[
+            Self.blocks_tt_layout, Self.blocks_tt_type.Engine
+        ](blocks)
+        self.cache_lengths = _as_cache_tt[
+            Self.CacheType.cache_lengths_tt_layout,
+            Self.CacheType.cache_lengths_tt_type.Engine,
+        ](cache_lengths)
+        self.lookup_table = _as_cache_tt[
+            Self.CacheType.lookup_table_tt_layout,
+            Self.CacheType.lookup_table_tt_type.Engine,
+        ](lookup_table)
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
@@ -4362,9 +4474,15 @@ struct PagedKVCacheCollection[
 
     def __init__(
         out self,
-        blocks: Self.blocks_tt_type,
-        cache_lengths: Self.CacheType.cache_lengths_tt_type,
-        lookup_table: Self.CacheType.lookup_table_tt_type,
+        blocks: TileTensor[
+            Self.dtype, _, Self.blocks_origin, linear_idx_type=_
+        ],
+        cache_lengths: TileTensor[
+            .uint32, _, Self.cache_lengths_origin, linear_idx_type=_
+        ],
+        lookup_table: TileTensor[
+            .uint32, _, Self.lookup_table_origin, linear_idx_type=_
+        ],
         max_seq_length: UInt32,
         max_cache_length: UInt32,
         scales: OptionalReg[Self.scales_tt_type] = None,
@@ -4378,14 +4496,23 @@ struct PagedKVCacheCollection[
         # The same distance for `scales`, which pads independently.
         scales_page_stride: Int = -1,
     ):
-        """Construct from TileTensor fields directly."""
-        self.blocks = blocks
-        self.cache_lengths = cache_lengths
-        self.lookup_table = lookup_table
+        """Constructs the collection from tensors of any layout with its
+        shape, such as the graph compiler's `to_tile_tensor()` views."""
+        self.blocks = _as_cache_tt[
+            Self.blocks_tt_layout, Self.blocks_tt_type.Engine
+        ](blocks)
+        self.cache_lengths = _as_cache_tt[
+            Self.CacheType.cache_lengths_tt_layout,
+            Self.CacheType.cache_lengths_tt_type.Engine,
+        ](cache_lengths)
+        self.lookup_table = _as_cache_tt[
+            Self.CacheType.lookup_table_tt_layout,
+            Self.CacheType.lookup_table_tt_type.Engine,
+        ](lookup_table)
         if scales_lookup_table:
             self.scales_lookup_table = scales_lookup_table.value()
         else:
-            self.scales_lookup_table = lookup_table
+            self.scales_lookup_table = self.lookup_table
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
@@ -4406,6 +4533,64 @@ struct PagedKVCacheCollection[
             self.kv_cache_scales_dynamic_strides = DynamicCoord[
                 DType.int64, 4
             ]()
+
+    def __init__[
+        scales_dtype: DType = Self.scale_dtype
+    ](
+        out self,
+        blocks: TileTensor[
+            Self.dtype, _, Self.blocks_origin, linear_idx_type=_
+        ],
+        cache_lengths: TileTensor[
+            .uint32, _, Self.cache_lengths_origin, linear_idx_type=_
+        ],
+        lookup_table: TileTensor[
+            .uint32, _, Self.lookup_table_origin, linear_idx_type=_
+        ],
+        max_seq_length: UInt32,
+        max_cache_length: UInt32,
+        scales: TileTensor[
+            scales_dtype, _, Self.scales_origin, linear_idx_type=_
+        ],
+        scales_lookup_table: TileTensor[
+            .uint32, _, Self.lookup_table_origin, linear_idx_type=_
+        ],
+        page_stride: Int = -1,
+        scales_page_stride: Int = -1,
+    ):
+        """Constructs a quantized collection from tensors of any layout with
+        its shape. `scales_lookup_table` is `lookup_table` itself when the
+        scales share the values' block-id space."""
+        # `scales_dtype` is inferred from `scales` and equals
+        # `Self.scale_dtype`, which the compiler cannot fold through the
+        # derived alias (MOCO-4337), hence the rebind below.
+        comptime assert (
+            scales_dtype == Self.scale_dtype
+        ), "scales element dtype must match the collection's scale_dtype"
+        self = Self(
+            blocks,
+            cache_lengths,
+            lookup_table,
+            max_seq_length,
+            max_cache_length,
+            scales=OptionalReg[Self.scales_tt_type](
+                rebind[Self.scales_tt_type](
+                    _as_cache_tt[
+                        Self.scales_tt_layout, Self.scales_tt_type.Engine
+                    ](scales)
+                )
+            ),
+            scales_lookup_table=OptionalReg[
+                Self.CacheType.lookup_table_tt_type
+            ](
+                _as_cache_tt[
+                    Self.CacheType.lookup_table_tt_layout,
+                    Self.CacheType.lookup_table_tt_type.Engine,
+                ](scales_lookup_table)
+            ),
+            page_stride=page_stride,
+            scales_page_stride=scales_page_stride,
+        )
 
     @inline(.always)
     def get_key_cache(self, layer_idx: Int) -> Self.CacheType:

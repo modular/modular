@@ -81,9 +81,7 @@ def test_scheduler_kernel[
 
     var work_iter = scheduler.work_iterator()
 
-    for linear_idx, current in zip(
-        count(Int(block_idx.x), Int(grid_dim.x)), work_iter
-    ):
+    for linear_idx, current in zip(count(block_idx.x, grid_dim.x), work_iter):
         # Record visited tile (only thread 0 writes)
         if thread_idx.x == 0:
             if linear_idx < max_tiles:

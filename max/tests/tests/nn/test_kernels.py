@@ -21,12 +21,16 @@ encoding without any shape or dtype check catching it.
 
 from __future__ import annotations
 
+from typing import Any
+from unittest import mock
+
 import pytest
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import (
     _fp6_format_code,
     block_scaled_preshuffle_grouped_scale_4d,
+    grouped_dynamic_block_scaled_matmul_amd,
 )
 
 
@@ -158,3 +162,120 @@ def test_preshuffled_scale_buffer_rejects_a_non_positive_bound(
         _preshuffled_scale_rows(
             32, _K3_TOP_K, _K3_EXPERTS, _K3_K_SCALES, row_bound
         )
+
+
+# The AMD grouped matmul takes MXFP8 activations against packed MXFP4 weights
+# (W4A8), whose byte widths differ for the same logical K. The kernel runs only
+# on MI355, so these pin what the graph builder decides on a CPU: which operand
+# pairs reach the custom op, and which it rejects before compilation.
+_W4A8_EXPERTS, _W4A8_N, _W4A8_K = 3, 128, 384
+
+
+def _grouped_amd_matmul_custom_call(
+    hidden: tuple[DType, int],
+    weight: tuple[DType, int],
+    **kwargs: Any,
+) -> mock.MagicMock:
+    """Builds the grouped AMD matmul and returns its ``ops.custom`` call."""
+    hidden_dtype, hidden_k_bytes = hidden
+    weight_dtype, weight_k_bytes = weight
+    k_scales = _W4A8_K // 32
+    gpu = DeviceRef.GPU(0)
+    with (
+        mock.patch.object(ops, "custom", wraps=ops.custom) as custom,
+        Graph(
+            "grouped_amd_matmul",
+            input_types=[
+                TensorType(
+                    hidden_dtype, ("tokens", hidden_k_bytes), device=gpu
+                ),
+                TensorType(
+                    weight_dtype,
+                    (_W4A8_EXPERTS, _W4A8_N, weight_k_bytes),
+                    device=gpu,
+                ),
+                TensorType(
+                    DType.float8_e8m0fnu, ("tokens", k_scales), device=gpu
+                ),
+                TensorType(
+                    DType.float8_e8m0fnu,
+                    (_W4A8_EXPERTS, _W4A8_N, k_scales),
+                    device=gpu,
+                ),
+                TensorType(DType.uint32, (_W4A8_EXPERTS + 1,), device=gpu),
+                TensorType(DType.int32, (_W4A8_EXPERTS,), device=gpu),
+                TensorType(DType.uint32, (2,), device=DeviceRef.CPU()),
+            ],
+        ) as graph,
+    ):
+        hidden_states, weights, a_scales, b_scales, starts, ids, stats = (
+            value.tensor for value in graph.inputs
+        )
+        out = grouped_dynamic_block_scaled_matmul_amd(
+            hidden_states,
+            weights,
+            a_scales,
+            b_scales,
+            starts,
+            ids,
+            stats,
+            **kwargs,
+        )
+        graph.output(out)
+    return custom
+
+
+def test_grouped_amd_matmul_dispatches_mixed_w4a8() -> None:
+    """E4M3 activations and packed E2M1 weights reach the dense custom op."""
+    custom = _grouped_amd_matmul_custom_call(
+        (DType.float8_e4m3fn, _W4A8_K), (DType.uint8, _W4A8_K // 2)
+    )
+    custom.assert_called_once()
+    (name,) = custom.call_args.args
+    values = custom.call_args.kwargs["values"]
+    (out_type,) = custom.call_args.kwargs["out_types"]
+    assert name == "mo.grouped.matmul.block.scaled.amd"
+    assert values[0].dtype == DType.float8_e4m3fn
+    assert values[1].dtype == DType.uint8
+    assert custom.call_args.kwargs["parameters"]["preshuffled_b"] is False
+    assert out_type.dtype == DType.bfloat16
+    assert out_type.shape == ["tokens", _W4A8_N]
+
+
+@pytest.mark.parametrize(
+    "hidden, weight, kwargs, error, match",
+    [
+        (
+            (DType.uint8, _W4A8_K // 2),
+            (DType.float8_e4m3fn, _W4A8_K),
+            {},
+            TypeError,
+            "operands must share an MX dtype",
+        ),
+        (
+            (DType.float8_e4m3fn, _W4A8_K),
+            (DType.uint8, _W4A8_K // 2),
+            {"preshuffled_b": True},
+            ValueError,
+            "requires row-major operands",
+        ),
+        (
+            (DType.float8_e4m3fn, _W4A8_K),
+            (DType.uint8, _W4A8_K),
+            {},
+            ValueError,
+            "logical K mismatch",
+        ),
+    ],
+    ids=["fp4_activations_fp8_weights", "preshuffled_b", "unpacked_weights"],
+)
+def test_grouped_amd_matmul_rejects_unsupported_w4a8(
+    hidden: tuple[DType, int],
+    weight: tuple[DType, int],
+    kwargs: dict[str, Any],
+    error: type[Exception],
+    match: str,
+) -> None:
+    """Operand pairs the dense W4A8 kernel cannot read never reach it."""
+    with pytest.raises(error, match=match):
+        _grouped_amd_matmul_custom_call(hidden, weight, **kwargs)

@@ -191,15 +191,12 @@ def _to_nvvm_layout[s: StaticString]() -> __mlir_type.`!kgen.deferred`:
 
 
 @inline(.always)
-def mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+def mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs warp sync Tensor Core based Matrix-multiply and accumulate (MMA) operation.
 
     This function executes a matrix multiply-accumulate operation using GPU Tensor Cores,
     synchronizing across the warp. It dispatches to architecture-specific implementations
     for NVIDIA and AMD GPUs.
-
-    Parameters:
-        block_size: The size of the block of the MMA operation (e.g., 4x4x4_16B). Applies to AMD GPUs only.
 
     Args:
         d: Output SIMD vector to store the result.
@@ -222,7 +219,7 @@ def mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime if is_nvidia_gpu():
         _mma_nvidia(d, a, b, c)
     elif is_amd_gpu():
-        _mma_amd[block_size](d, a, b, c)
+        _mma_amd(d, a, b, c)
     # MSTDL-2556: Compilation Target Check doesn't match above
     elif is_apple_m5() and CompilationTarget._has_feature["metal4_0"]():
         _mma_apple(d, a, b, c)

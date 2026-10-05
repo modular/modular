@@ -48,7 +48,8 @@ struct Struct_short_conv_ring_fwd:
         ring: MutableInputTensor[dtype=ring_dtype, rank=3, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         positions: InputTensor[dtype=.uint32, rank=1, ...],
-        conv_row: InputTensor[dtype=.uint32, rank=1, ...],
+        conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_row: UInt32,
         context: DeviceContext,
     ) raises:
         short_conv_ring_fwd[target=target](
@@ -57,7 +58,8 @@ struct Struct_short_conv_ring_fwd:
             ring.to_tile_tensor[.int64](),
             input_row_offsets.to_tile_tensor[.int64](),
             positions.to_tile_tensor[.int64](),
-            conv_row.to_tile_tensor[.int64](),
+            conv_rows.to_tile_tensor[.int64](),
+            layer_row,
             output.to_tile_tensor[.int64](),
             context,
         )
@@ -79,7 +81,8 @@ struct Struct_short_conv_ring_commit:
         x: InputTensor[dtype=dtype, rank=2, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         positions: InputTensor[dtype=.uint32, rank=1, ...],
-        conv_row: InputTensor[dtype=.uint32, rank=1, ...],
+        conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        layer_row: UInt32,
         context: DeviceContext,
     ) raises:
         short_conv_ring_commit[target=target](
@@ -87,7 +90,8 @@ struct Struct_short_conv_ring_commit:
             ring.to_tile_tensor[.int64](),
             input_row_offsets.to_tile_tensor[.int64](),
             positions.to_tile_tensor[.int64](),
-            conv_row.to_tile_tensor[.int64](),
+            conv_rows.to_tile_tensor[.int64](),
+            layer_row,
             context,
         )
 
@@ -113,8 +117,10 @@ struct Struct_short_conv_ring_commit_kv[k_col: Int]:
         qkvr: InputTensor[dtype=dtype, rank=2, ...],
         input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         positions: InputTensor[dtype=.uint32, rank=1, ...],
-        k_conv_row: InputTensor[dtype=.uint32, rank=1, ...],
-        v_conv_row: InputTensor[dtype=.uint32, rank=1, ...],
+        k_conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        v_conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        k_layer_row: UInt32,
+        v_layer_row: UInt32,
         context: DeviceContext,
     ) raises:
         short_conv_ring_commit_kv[target=target, k_col=Self.k_col](
@@ -123,8 +129,10 @@ struct Struct_short_conv_ring_commit_kv[k_col: Int]:
             v_ring.to_tile_tensor[.int64](),
             input_row_offsets.to_tile_tensor[.int64](),
             positions.to_tile_tensor[.int64](),
-            k_conv_row.to_tile_tensor[.int64](),
-            v_conv_row.to_tile_tensor[.int64](),
+            k_conv_rows.to_tile_tensor[.int64](),
+            v_conv_rows.to_tile_tensor[.int64](),
+            k_layer_row,
+            v_layer_row,
             context,
         )
 
@@ -162,8 +170,10 @@ struct Struct_fused_qk_rms_norm_short_conv_ragged_paged:
         # Only read here; mutable so the graph orders the commit after it.
         k_conv_ring: MutableInputTensor[dtype=ring_dtype, rank=3, ...],
         v_conv_ring: MutableInputTensor[dtype=ring_dtype, rank=3, ...],
-        k_conv_row: InputTensor[dtype=.uint32, rank=1, ...],
-        v_conv_row: InputTensor[dtype=.uint32, rank=1, ...],
+        k_conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        v_conv_rows: InputTensor[dtype=.uint32, rank=2, ...],
+        k_layer_row: UInt32,
+        v_layer_row: UInt32,
         log_scaling: InputTensor[dtype=.float32, rank=1, ...],
         epsilon: Float32,
         layer_idx: UInt32,
@@ -194,8 +204,10 @@ struct Struct_fused_qk_rms_norm_short_conv_ragged_paged:
             layer_idx,
             input_row_offsets.to_tile_tensor[.int64](),
             positions.to_tile_tensor[.int64](),
-            k_conv_row.to_tile_tensor[.int64](),
-            v_conv_row.to_tile_tensor[.int64](),
+            k_conv_rows.to_tile_tensor[.int64](),
+            v_conv_rows.to_tile_tensor[.int64](),
+            k_layer_row,
+            v_layer_row,
             log_scaling.to_tile_tensor[.int64](),
             q_output.to_tile_tensor[.int64](),
             context,

@@ -46,15 +46,15 @@ def test_matmul[
 
     var a_tt = TileTensor(
         a_device,
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         b_device,
-        row_major(Coord(N, K)),
+        row_major(N, K),
     )
     var c_tt = TileTensor(
         c_device,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
 
     matmul(
@@ -71,19 +71,19 @@ def test_matmul[
     # Create immutable TileTensors for the naive kernel reference.
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_immut_tt = TileTensor(
         ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_immut_tt = TileTensor(
         ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(N, K)),
+        row_major(N, K),
     )
 
     # Run naive matmul.

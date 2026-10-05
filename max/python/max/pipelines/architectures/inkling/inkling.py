@@ -204,6 +204,7 @@ class InklingDecoderLayer(Module):
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
         conv_rows: Sequence[Sequence[TensorValue]],
+        layer_rows: Sequence[TensorValue],
         cache_layer_idx: TensorValue,
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
@@ -229,6 +230,7 @@ class InklingDecoderLayer(Module):
             log_scaling,
             conv_pools,
             conv_rows,
+            layer_rows,
             cache_layer_idx,
             signal_buffers,
         )
@@ -243,6 +245,7 @@ class InklingDecoderLayer(Module):
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
         conv_rows: Sequence[Sequence[TensorValue]],
+        layer_rows: Sequence[TensorValue],
         cache_layer_idx: TensorValue,
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
@@ -259,9 +262,11 @@ class InklingDecoderLayer(Module):
                 positions=positions[rank],
                 log_scaling=log_scaling[rank],
                 k_conv_ring=conv_pools[rank][ConvSite.K],
-                k_conv_row=conv_rows[rank][ConvSite.K],
+                k_conv_rows=conv_rows[rank][ConvSite.K],
+                k_layer_row=layer_rows[ConvSite.K],
                 v_conv_ring=conv_pools[rank][ConvSite.V],
-                v_conv_row=conv_rows[rank][ConvSite.V],
+                v_conv_rows=conv_rows[rank][ConvSite.V],
+                v_layer_row=layer_rows[ConvSite.V],
                 cache_layer_idx=cache_layer_idx,
             )
             for rank, shard in enumerate(self.attn_shards)
@@ -272,6 +277,7 @@ class InklingDecoderLayer(Module):
             attention,
             [pools[ConvSite.ATTN_OUT] for pools in conv_pools],
             [rows[ConvSite.ATTN_OUT] for rows in conv_rows],
+            layer_rows[ConvSite.ATTN_OUT],
             input_row_offsets,
             positions,
         )
@@ -283,6 +289,7 @@ class InklingDecoderLayer(Module):
             self._feed_forward(norm_outs),
             [pools[ConvSite.MLP_OUT] for pools in conv_pools],
             [rows[ConvSite.MLP_OUT] for rows in conv_rows],
+            layer_rows[ConvSite.MLP_OUT],
             input_row_offsets,
             positions,
         )
@@ -297,6 +304,7 @@ class InklingDecoderLayer(Module):
         log_scaling: Sequence[TensorValue],
         conv_pools: Sequence[Sequence[BufferValue]],
         conv_rows: Sequence[Sequence[TensorValue]],
+        layer_rows: Sequence[TensorValue],
         cache_layer_idx: TensorValue,
         signal_buffers: Sequence[BufferValue],
     ) -> list[TensorValue]:
@@ -317,6 +325,7 @@ class InklingDecoderLayer(Module):
             log_scaling,
             conv_pools,
             conv_rows,
+            layer_rows,
             cache_layer_idx,
             signal_buffers,
         )
@@ -329,6 +338,7 @@ class InklingDecoderLayer(Module):
         partials: Sequence[TensorValue],
         pools: Sequence[BufferValue],
         rows: Sequence[TensorValue],
+        layer_row: TensorValue,
         input_row_offsets: Sequence[TensorValue],
         positions: Sequence[TensorValue],
     ) -> list[TensorValue]:
@@ -342,6 +352,7 @@ class InklingDecoderLayer(Module):
                 partials[rank],
                 pools[rank],
                 rows[rank],
+                layer_row,
                 input_row_offsets[rank],
                 positions[rank],
             )
@@ -614,25 +625,33 @@ class Inkling(Module):
 
         def sites_for_layer(
             layer_idx: int,
-        ) -> tuple[list[list[BufferValue]], list[list[TensorValue]]]:
-            """This layer's four pools and the row it holds in each."""
+        ) -> tuple[
+            list[list[BufferValue]], list[list[TensorValue]], list[TensorValue]
+        ]:
+            """Returns a layer's pools, its slot tables, and its row in each.
+
+            The kernels index the whole ``[num_layers, batch]`` table, so no
+            per-layer slice is materialized.
+            """
             pools: list[list[BufferValue]] = []
-            rows: list[list[TensorValue]] = []
+            tables: list[list[TensorValue]] = []
             sites = [
                 self.conv_layout.row_for(layer_idx, site) for site in ConvSite
             ]
             for rank in range(num_devices):
                 leaves = state[rank].leaves
                 pools.append([leaves[leaf].pool for leaf, _ in sites])
-                rows.append(
-                    [leaves[leaf].live_row_id(row) for leaf, row in sites]
-                )
-            return pools, rows
+                tables.append([leaves[leaf].live_row_ids for leaf, _ in sites])
+            layer_rows = [
+                ops.constant(row, DType.uint32, device=DeviceRef.CPU())
+                for _, row in sites
+            ]
+            return pools, tables, layer_rows
 
         def inputs_for_layer(
             layer_idx: int, previous: list[TensorValue]
         ) -> list[Tree[Any]]:
-            pools, rows = sites_for_layer(layer_idx)
+            pools, rows, layer_rows = sites_for_layer(layer_idx)
             # Each layer consumes and returns [hs..., delta...].
             return [
                 previous[:num_devices],
@@ -643,6 +662,7 @@ class Inkling(Module):
                 log_scaling,
                 pools,
                 rows,
+                layer_rows,
                 ops.constant(
                     self.layer_cache_indices[layer_idx],
                     DType.uint32,

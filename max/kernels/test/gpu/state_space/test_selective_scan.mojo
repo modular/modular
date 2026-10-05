@@ -24,10 +24,6 @@ from state_space.selective_scan import (
     selective_scan_fwd_gpu,
     selective_scan_update_cpu,
     selective_scan_update_gpu,
-    Strides1D,
-    Strides2D,
-    Strides3D,
-    Strides4D,
 )
 from std.testing import TestSuite, assert_almost_equal
 
@@ -57,7 +53,7 @@ def run_selective_scan_gpu[
 
     var group_size = dim // n_groups
     var chunk_size = 2048
-    var n_chunks = (seqlen + chunk_size - 1) // chunk_size
+    var n_chunks = ceildiv(seqlen, chunk_size)
 
     # Allocate host memory
 
@@ -149,25 +145,6 @@ def run_selective_scan_gpu[
     if has_delta_bias:
         ctx.enqueue_copy(delta_bias_d, delta_bias_h)
 
-    # Strides for row-major layout
-    var output_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var x_strides = Strides4D(
-        dim * n_chunks * 2 * dstate, n_chunks * 2 * dstate, 2 * dstate, 1
-    )
-    var out_z_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var u_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var delta_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var A_strides = Strides2D(dstate, 1)
-    var B_strides = Strides4D(
-        n_groups * dstate * seqlen, dstate * seqlen, seqlen, 1
-    )
-    var C_strides = Strides4D(
-        n_groups * dstate * seqlen, dstate * seqlen, seqlen, 1
-    )
-    var D_strides = Strides1D(1)
-    var z_strides = Strides3D(dim * seqlen, seqlen, 1)
-    var delta_bias_strides = Strides1D(1)
-
     comptime delta_softplus_int8: Int8 = Int8(1) if delta_softplus else Int8(0)
 
     # Create TileTensors for CPU kernel
@@ -232,17 +209,6 @@ def run_selective_scan_gpu[
         D_cpu_tt,
         z_cpu_tt,
         delta_bias_cpu_tt,
-        output_strides,
-        x_strides,
-        out_z_strides,
-        u_strides,
-        delta_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        delta_bias_strides,
     )
 
     # Create TileTensors for GPU kernel
@@ -345,17 +311,6 @@ def run_selective_scan_gpu[
         D_gpu_tt,
         z_gpu_tt,
         delta_bias_gpu_tt,
-        output_strides,
-        x_strides,
-        out_z_strides,
-        u_strides,
-        delta_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        delta_bias_strides,
         grid_dim=(num_blocks,),
         block_dim=(BLOCK_SIZE,),
     )
@@ -492,19 +447,6 @@ def run_selective_scan_update_gpu[
 
     # Create device tensors
 
-    # Strides for row-major layout
-    var state_out_strides = Strides3D(dim * dstate, dstate, 1)
-    var output_strides = Strides2D(dim, 1)
-    var state_in_strides = Strides3D(dim * dstate, dstate, 1)
-    var x_strides = Strides2D(dim, 1)
-    var dt_strides = Strides2D(dim, 1)
-    var A_strides = Strides2D(dstate, 1)
-    var B_strides = Strides3D(n_groups * dstate, dstate, 1)
-    var C_strides = Strides3D(n_groups * dstate, dstate, 1)
-    var D_strides = Strides1D(1)
-    var z_strides = Strides2D(dim, 1)
-    var dt_bias_strides = Strides1D(1)
-
     # Create TileTensors for GPU kernel
     var state_in_device_tt = TileTensor(
         state_in_device,
@@ -598,17 +540,6 @@ def run_selective_scan_update_gpu[
             D_device_tt,
             z_device_tt,
             dt_bias_device_tt,
-            state_out_strides,
-            output_strides,
-            state_in_strides,
-            x_strides,
-            dt_strides,
-            A_strides,
-            B_strides,
-            C_strides,
-            D_strides,
-            z_strides,
-            dt_bias_strides,
             grid_dim=(ceildiv(total_batch_dim, 256),),
             block_dim=(256,),
         )
@@ -672,17 +603,6 @@ def run_selective_scan_update_gpu[
         D_cpu_tt,
         z_cpu_tt,
         dt_bias_cpu_tt,
-        state_out_strides,
-        output_strides,
-        state_in_strides,
-        x_strides,
-        dt_strides,
-        A_strides,
-        B_strides,
-        C_strides,
-        D_strides,
-        z_strides,
-        dt_bias_strides,
     )
 
     # Compare results

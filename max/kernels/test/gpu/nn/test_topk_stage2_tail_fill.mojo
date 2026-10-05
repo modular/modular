@@ -62,9 +62,9 @@ def check_short_row_tail_is_padded(ctx: DeviceContext, batch_size: Int) raises:
     var out_vals = ctx.enqueue_create_buffer[DTYPE](batch_size * MAX_K)
     var out_idxs = ctx.enqueue_create_buffer[IDX](batch_size * MAX_K)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(batch_size, N)))
+    var in_t = TileTensor(in_buf, row_major(batch_size, N))
     with in_buf.map_to_host() as h:
-        var t = TileTensor(h, row_major(Coord(batch_size, N)))
+        var t = TileTensor(h, row_major(batch_size, N))
         for b in range(batch_size):
             for i in range(N):
                 t[b, i] = dead
@@ -81,8 +81,8 @@ def check_short_row_tail_is_padded(ctx: DeviceContext, batch_size: Int) raises:
         ctx,
         MAX_K,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(out_vals, row_major(Coord(batch_size, MAX_K))),
-        TileTensor(out_idxs, row_major(Coord(batch_size, MAX_K))),
+        TileTensor(out_vals, row_major(batch_size, MAX_K)),
+        TileTensor(out_idxs, row_major(batch_size, MAX_K)),
         block_size=BLOCK_SIZE,
         num_blocks_per_input=NUM_BLOCKS,
     )
@@ -135,9 +135,9 @@ def check_full_row_keeps_every_slot(ctx: DeviceContext) raises:
     var out_vals = ctx.enqueue_create_buffer[DTYPE](MAX_K)
     var out_idxs = ctx.enqueue_create_buffer[IDX](MAX_K)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(1, N)))
+    var in_t = TileTensor(in_buf, row_major(1, N))
     with in_buf.map_to_host() as h:
-        var t = TileTensor(h, row_major(Coord(1, N)))
+        var t = TileTensor(h, row_major(1, N))
         for i in range(N):
             t[0, i] = dead
         for j in range(MAX_K):
@@ -153,8 +153,8 @@ def check_full_row_keeps_every_slot(ctx: DeviceContext) raises:
         ctx,
         MAX_K,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(out_vals, row_major(Coord(1, MAX_K))),
-        TileTensor(out_idxs, row_major(Coord(1, MAX_K))),
+        TileTensor(out_vals, row_major(1, MAX_K)),
+        TileTensor(out_idxs, row_major(1, MAX_K)),
         block_size=BLOCK_SIZE,
         num_blocks_per_input=NUM_BLOCKS,
     )
@@ -188,7 +188,7 @@ def check_single_block_fills_past_block_size(ctx: DeviceContext) raises:
     var out_vals = ctx.enqueue_create_buffer[DTYPE](max_k)
     var out_idxs = ctx.enqueue_create_buffer[IDX](max_k)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(1, n)))
+    var in_t = TileTensor(in_buf, row_major(1, n))
     with in_buf.map_to_host() as h:
         # Descending, so slot j holds index j.
         for i in range(n):
@@ -204,8 +204,8 @@ def check_single_block_fills_past_block_size(ctx: DeviceContext) raises:
         ctx,
         max_k,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(out_vals, row_major(Coord(1, max_k))),
-        TileTensor(out_idxs, row_major(Coord(1, max_k))),
+        TileTensor(out_vals, row_major(1, max_k)),
+        TileTensor(out_idxs, row_major(1, max_k)),
         block_size=block_size,
         num_blocks_per_input=1,
     )

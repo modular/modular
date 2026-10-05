@@ -12,18 +12,24 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, isclose
-from std.math.uutils import udivmod
-from std.sys import argv, simd_width_of
-from std.sys.info import is_nvidia_gpu
+from std.sys import align_of, argv, simd_width_of
 
 from max.gpu import WARP_SIZE, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.memory import async_copy_wait_all
-from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major
-from layout.layout import *
-from layout.layout_tensor import copy_dram_to_sram_async, copy_local_to_dram
+from layout import (
+    Coord,
+    Idx,
+    MixedLayout,
+    TensorLayout,
+    TileTensor,
+    col_major,
+    row_major,
+    stack_allocation,
+)
 from layout.math import outer_product_acc
+from layout.tile_io import copy_dram_to_sram_async
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.testing import assert_almost_equal
 
@@ -37,12 +43,11 @@ def is_benchmark() -> Bool:
 
 def sgemm_double_buffer[
     c_type: DType,
-    c_layout: Layout,
+    CLayoutType: TensorLayout,
     a_type: DType,
-    a_layout: Layout,
+    ALayoutType: TensorLayout,
     b_type: DType,
-    b_layout: Layout,
-    itype: DType,
+    BLayoutType: TensorLayout,
     BM: Int,
     BN: Int,
     BK: Int,
@@ -52,262 +57,232 @@ def sgemm_double_buffer[
     TN: Int,
     NUM_THREADS: Int,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+    c: TileTensor[c_type, CLayoutType, MutUntrackedOrigin],
+    a: TileTensor[a_type, ALayoutType, ImmUntrackedOrigin],
+    b: TileTensor[b_type, BLayoutType, ImmUntrackedOrigin],
 ):
-    comptime _uint = Scalar[itype]
+    comptime assert a.rank == 2 and b.rank == 2 and c.rank == 2
+    comptime assert a.all_dims_known and b.all_dims_known and c.all_dims_known
 
     comptime simd_size = simd_width_of[c_type]()
+    # The B copies and the fragment loads move whole SIMD vectors, so every
+    # buffer is aligned to one.
+    comptime alignment = align_of[SIMD[c_type, simd_size]]()
 
-    var M = c.shape[0]()
-    var N = c.shape[1]()
-    var K = a.shape[1]()
+    var K = Int(a.dim[1]())
 
-    comptime num_warps_m = (BM // WM)
-    comptime num_warps_n = (BN // WN)
+    comptime num_warps_n = BN // WN
 
-    var tid = thread_idx.x
-    var warp_id, lane_id = udivmod(tid, WARP_SIZE)
+    var tid = Int(thread_idx.x)
+    var warp_id, lane_id = divmod(tid, WARP_SIZE)
 
     # Coordinates of the current warp.
-    var warp_y, warp_x = udivmod(warp_id, num_warps_n)
+    var warp_y, warp_x = divmod(warp_id, num_warps_n)
 
     # Warp shape in 2D.
     comptime warp_dim_x = WN // TN
     comptime warp_dim_y = WM // TM
     comptime assert (
         warp_dim_x * warp_dim_y == WARP_SIZE
-    ), "Warp 2d shape doesn't match 32 threads"
+    ), "Warp 2d shape doesn't match the warp size"
 
-    # Pad BM to avoid back conflict
-    comptime pad_avoid_bank_conflict = 4
-    comptime BM_padded = BM + pad_avoid_bank_conflict
-
-    # Double buffer in shared memory.
-    comptime a_smem_size = BK * BM_padded
-    var a_smem_tile = (
-        LayoutTensor[
-            a_type,
-            Layout.row_major(2 * BK, BM_padded),
-            MutAnyOrigin,
-            address_space=.SHARED,
-        ]
-        .stack_allocation()
-        .slice[:, :BM]()
-        .split[2]()
-    )
-
-    # Align the address by the maximum async copy size (16 bytes).
-    comptime b_smem_size = BK * BN
-    var b_smem_tile = (
-        LayoutTensor[
-            b_type,
-            Layout.row_major(2 * BK, BN),
-            MutAnyOrigin,
-            address_space=.SHARED,
-        ]
-        .stack_allocation()
-        .split[2]()
-    )
-
-    # Global memory tile.
-    var a_gmem_tile = a.tile[BM, BK](block_idx.y, 0)
-    var b_gmem_tile = b.tile[BK, BN](0, block_idx.x)
-
-    # Load A tile from global memory to shared.
-    # Row major thread layout for coalesced access.
-    comptime thread_loada_gmem_layout = Layout.row_major(NUM_THREADS // BK, BK)
-    comptime thread_storea_smem_layout = Layout.col_major(BK, NUM_THREADS // BK)
-    copy_dram_to_sram_async[
-        src_thread_layout=thread_loada_gmem_layout,
-        dst_thread_layout=thread_storea_smem_layout,
-    ](a_smem_tile[0], a_gmem_tile)
-
-    # Load B tile from global memory to shared.
-    # Row major thread layout for coalesced access.
-    comptime thread_layout_loadb = Layout.row_major(
-        (NUM_THREADS // BN) * simd_size, BN // simd_size
-    )
-    copy_dram_to_sram_async[
-        src_thread_layout=thread_layout_loadb,
-        dst_thread_layout=thread_layout_loadb,
-    ](
-        b_smem_tile[0].vectorize[1, simd_size](),
-        b_gmem_tile.vectorize[1, simd_size](),
-    )
-
-    async_copy_wait_all()
-    barrier()
-
-    # Advance A and B to next k tile.
-    a_gmem_tile = a.tile[BM, BK](block_idx.y, 1)
-    b_gmem_tile = b.tile[BK, BN](1, block_idx.x)
-
-    # Double buffer in registers (fragments in nvidia terms).
-    comptime layout_a = Layout.row_major(TM)
-    var a_reg: Array[
-        LayoutTensor[
-            a_type,
-            layout_a,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ],
-        2,
-    ] = [
-        LayoutTensor[
-            a_type,
-            layout_a,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ].stack_allocation(),
-        LayoutTensor[
-            a_type,
-            layout_a,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ].stack_allocation(),
-    ]
-    comptime layout_b = Layout.row_major(TN)
-    var b_reg: Array[
-        LayoutTensor[
-            b_type,
-            layout_b,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ],
-        2,
-    ] = [
-        LayoutTensor[
-            b_type,
-            layout_b,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ].stack_allocation(),
-        LayoutTensor[
-            b_type,
-            layout_b,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ].stack_allocation(),
-    ]
-    comptime layout_c = Layout.row_major(TM, TN)
-    var c_reg = (
-        LayoutTensor[
-            c_type,
-            layout_c,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
-
-    # Thread swizzling
-    # Warp has 2D Layout [warp_dim_x, warp_dim_y]. Current thread is mapped to
-    # (mma_x, mma_y) in this layout as follow (the number is thread id).
+    # Thread swizzling. The warp is a [warp_dim_y, warp_dim_x] grid and each
+    # lane is placed in it as follows (the number is the lane id), so that
+    # the lanes of a quad touch neighbouring rows and columns:
     # 0  2  4  6  8  10 12 14
     # 1  3  5  7  9  11 13 15
     # 16 18 20 22 24 26 28 30
     # 17 19 21 23 25 27 29 31
-    comptime thread_layout = Layout(
-        IntTuple(IntTuple(2, 2), 8), IntTuple(IntTuple(1, 16), 2)
-    ) if is_nvidia_gpu() else Layout(
-        IntTuple(IntTuple(2, 2), 16), IntTuple(IntTuple(1, 32), 2)
-    )
+    # Row `q` and column `p` of the lane in that grid. The row is the nested
+    # (2, 2) mode with strides (1, 2 * warp_dim_x); the column has stride 2.
+    var lane_q = (lane_id % 2) + 2 * ((lane_id // (2 * warp_dim_x)) % 2)
+    var lane_p = (lane_id // 2) % warp_dim_x
 
-    # Load A fragments to the first buffer.
-    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
-    var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
-    a_reg[0].vectorize[simd_size]().copy_from(
-        a_smem_warp_row.vectorize[simd_size]().distribute[
-            thread_layout, axis=0
-        ](thread_idx.x)
-    )
+    # Pad BM to avoid bank conflicts.
+    comptime pad_avoid_bank_conflict = 4
+    comptime BM_padded = BM + pad_avoid_bank_conflict
 
-    # Load B fragments to the first buffer.
-    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
-    var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
-    b_reg[0].vectorize[simd_size]().copy_from(
-        b_smem_warp_row.vectorize[simd_size]().distribute[
-            thread_layout, axis=1
-        ](thread_idx.x)
+    # Double buffer in shared memory. A is stored transposed, [BK, BM], with a
+    # padded row stride.
+    var a_smem = stack_allocation[
+        a_type, address_space=.SHARED, alignment=alignment
+    ](row_major[2 * BK, BM_padded]())
+    comptime a_smem_layout = MixedLayout(
+        Coord(Idx[BK], Idx[BM]), Coord(Idx[BM_padded], Idx[1])
     )
+    var a_smem_tiles: Array[
+        TileTensor[
+            a_type,
+            type_of(a_smem_layout),
+            MutUntrackedOrigin,
+            address_space=.SHARED,
+        ],
+        2,
+    ] = [
+        TileTensor(a_smem.ptr, a_smem_layout),
+        TileTensor(a_smem.ptr.unsafe_offset(BK * BM_padded), a_smem_layout),
+    ]
+
+    var b_smem = stack_allocation[
+        b_type, address_space=.SHARED, alignment=alignment
+    ](row_major[2 * BK, BN]())
+    var b_smem_tiles: Array[
+        TileTensor[
+            b_type,
+            type_of(row_major[BK, BN]()),
+            MutUntrackedOrigin,
+            address_space=.SHARED,
+        ],
+        2,
+    ] = [
+        TileTensor(b_smem.ptr, row_major[BK, BN]()),
+        TileTensor(b_smem.ptr.unsafe_offset(BK * BN), row_major[BK, BN]()),
+    ]
+
+    # Row major thread layout over the [BM, BK] global tile for coalesced
+    # loads, column major over the [BK, BM] shared tile so the copy
+    # transposes.
+    comptime thread_loada_gmem_layout = row_major[NUM_THREADS // BK, BK]()
+    comptime thread_storea_smem_layout = col_major[BK, NUM_THREADS // BK]()
+    comptime thread_layout_loadb = row_major[
+        (NUM_THREADS // BN) * simd_size, BN // simd_size
+    ]()
+
+    @inline(.always)
+    def load_k_tile(k_tile_id: Int, buffer_id: Int) {imm}:
+        var a_gmem_tile = a.tile[BM, BK]((Int(block_idx.y), k_tile_id))
+        a_smem_tiles[buffer_id].distribute[thread_storea_smem_layout](
+            tid
+        ).copy_from_async(a_gmem_tile.distribute[thread_loada_gmem_layout](tid))
+
+        var b_gmem_tile = b.tile[BK, BN]((k_tile_id, Int(block_idx.x)))
+        copy_dram_to_sram_async[thread_layout=thread_layout_loadb](
+            b_smem_tiles[buffer_id].vectorize[1, simd_size](),
+            b_gmem_tile.vectorize[1, simd_size](),
+        )
+
+    load_k_tile(0, 0)
+    async_copy_wait_all()
+    barrier()
+
+    # Double buffer in registers (fragments in nvidia terms).
+    var a_reg: Array[
+        TileTensor[
+            a_type,
+            type_of(row_major[TM]()),
+            MutUntrackedOrigin,
+            address_space=.LOCAL,
+        ],
+        2,
+    ] = [
+        stack_allocation[a_type, address_space=.LOCAL, alignment=alignment](
+            row_major[TM]()
+        ),
+        stack_allocation[a_type, address_space=.LOCAL, alignment=alignment](
+            row_major[TM]()
+        ),
+    ]
+    var b_reg: Array[
+        TileTensor[
+            b_type,
+            type_of(row_major[TN]()),
+            MutUntrackedOrigin,
+            address_space=.LOCAL,
+        ],
+        2,
+    ] = [
+        stack_allocation[b_type, address_space=.LOCAL, alignment=alignment](
+            row_major[TN]()
+        ),
+        stack_allocation[b_type, address_space=.LOCAL, alignment=alignment](
+            row_major[TN]()
+        ),
+    ]
+    var c_reg = stack_allocation[
+        c_type, address_space=.LOCAL, alignment=alignment
+    ](row_major[TM, TN]()).fill(0)
+
+    # Loads row `k` of the warp's [BK, WM] shared A tile into a fragment
+    # buffer: lane row `q` takes vectors `q`, `q + warp_dim_y`, ...
+    @inline(.always)
+    def load_a_frag(smem_id: Int, k: Int, reg_id: Int) {imm}:
+        var a_smem_warp_row = TileTensor(
+            a_smem_tiles[smem_id].ptr.unsafe_offset(
+                k * BM_padded + warp_y * WM
+            ),
+            row_major[WM](),
+        )
+        a_reg[reg_id].vectorize[simd_size]().copy_from(
+            a_smem_warp_row.vectorize[simd_size]().distribute[
+                row_major[warp_dim_y]()
+            ](lane_q)
+        )
+
+    # Same for row `k` of the warp's [BK, WN] shared B tile and lane column
+    # `p`.
+    @inline(.always)
+    def load_b_frag(smem_id: Int, k: Int, reg_id: Int) {imm}:
+        var b_smem_warp_row = TileTensor(
+            b_smem_tiles[smem_id].ptr.unsafe_offset(k * BN + warp_x * WN),
+            row_major[WN](),
+        )
+        b_reg[reg_id].vectorize[simd_size]().copy_from(
+            b_smem_warp_row.vectorize[simd_size]().distribute[
+                row_major[warp_dim_x]()
+            ](lane_p)
+        )
+
+    # Load the first fragments.
+    var frag_smem_id = 0
+    load_a_frag(frag_smem_id, 0, 0)
+    load_b_frag(frag_smem_id, 0, 0)
 
     var num_k_tiles = ceildiv(K, BK)
 
-    # Update (num_k_tile - 1) tiles while switching buffers.
-    # for k_tile_id in range(num_k_tiles - 1):
     for k_tile_id in range(num_k_tiles):
-        # The shared memory buffer to be prefetched
+        # The shared memory buffer to be prefetched.
         var prefetch_id = 1 if k_tile_id % 2 == 0 else 0
 
         comptime for k in range(BK):
-            var next_k = (k + 1) % BK
+            comptime next_k = (k + 1) % BK
 
             # Buffer id for the double register buffers. They alternate.
-            var buffer_id = k % 2
-            var next_buffer_id = (k + 1) % 2
+            comptime buffer_id = k % 2
+            comptime next_buffer_id = (k + 1) % 2
 
             if k == BK - 1:
                 async_copy_wait_all()
                 barrier()
+                frag_smem_id = prefetch_id
 
-                a_smem_warp_tile = a_smem_tile[prefetch_id].tile[BK, WM](
-                    0, warp_y
-                )
-                b_smem_warp_tile = b_smem_tile[prefetch_id].tile[BK, WN](
-                    0, warp_x
-                )
+            # Fill the other fragment buffers using the next row.
+            load_a_frag(frag_smem_id, next_k, next_buffer_id)
+            load_b_frag(frag_smem_id, next_k, next_buffer_id)
 
-            # Fill the other A fragments buffer using the next row in A.
-            var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](
-                next_k, 0
-            ).coalesce()
-            a_reg[next_buffer_id].vectorize[simd_size]().copy_from(
-                a_smem_warp_row.vectorize[simd_size]().distribute[
-                    thread_layout, axis=0
-                ](thread_idx.x)
-            )
-
-            var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](
-                next_k, 0
-            ).coalesce()
-            b_reg[next_buffer_id].vectorize[simd_size]().copy_from(
-                b_smem_warp_row.vectorize[simd_size]().distribute[
-                    thread_layout, axis=1
-                ](thread_idx.x)
-            )
-
-            # Load next k tile from global memory to shared memory.
+            # Load the next k tile from global memory to shared memory.
             if k == 0 and k_tile_id < num_k_tiles - 1:
-                a_gmem_tile = a.tile[BM, BK](block_idx.y, k_tile_id + 1)
-                copy_dram_to_sram_async[
-                    src_thread_layout=thread_loada_gmem_layout,
-                    dst_thread_layout=thread_storea_smem_layout,
-                ](a_smem_tile[prefetch_id], a_gmem_tile)
-
-                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, block_idx.x)
-                copy_dram_to_sram_async[
-                    src_thread_layout=thread_layout_loadb,
-                    dst_thread_layout=thread_layout_loadb,
-                ](
-                    b_smem_tile[prefetch_id].vectorize[1, simd_size](),
-                    b_gmem_tile.vectorize[1, simd_size](),
-                )
+                load_k_tile(k_tile_id + 1, prefetch_id)
 
             outer_product_acc(c_reg, a_reg[buffer_id], b_reg[buffer_id])
 
-    # Map global memory tile down to thread.
-    var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
-    # Copy results to global memory.
-    # Vectorize by [simd_size, simd_size] because the outer product results are
-    # implicitly organized by simd_size x simd_size tiles.
-    copy_local_to_dram[dst_thread_layout=thread_layout](
-        c_gmem_warp_tile.vectorize[simd_size, simd_size](),
-        c_reg.vectorize[simd_size, simd_size](),
-    )
+    # Map the global memory tile down to the thread. The outer product
+    # results are organized as simd_size x simd_size blocks: block row
+    # `rv` of this lane holds warp rows `simd_size * (lane_q + warp_dim_y *
+    # rv)` onwards, and its columns are distributed like the B fragments.
+    var c_gmem_warp_tile = c.tile[BM, BN](
+        (Int(block_idx.y), Int(block_idx.x))
+    ).tile[WM, WN]((warp_y, warp_x))
+
+    comptime for rv in range(TM // simd_size):
+        comptime for ii in range(simd_size):
+            var warp_row = simd_size * (lane_q + warp_dim_y * rv) + ii
+            c_gmem_warp_tile.tile[1, WN]((warp_row, 0)).vectorize[
+                1, simd_size
+            ]().distribute[row_major[1, warp_dim_x]()](lane_p).copy_from(
+                c_reg.tile[1, TN]((rv * simd_size + ii, 0)).vectorize[
+                    1, simd_size
+                ]()
+            )
 
 
 def test(ctx: DeviceContext) raises:
@@ -322,10 +297,6 @@ def test(ctx: DeviceContext) raises:
     comptime WN = 64 if ctx.target.is_nvidia_gpu() else 128
     comptime TM = 8
     comptime TN = 8
-
-    comptime a_layout = Layout(IntTuple(M, K), IntTuple(K, 1))
-    comptime b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
-    comptime c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
 
     var a_host = ctx.enqueue_create_host_buffer[.float32](M * K)
     var b_host = ctx.enqueue_create_host_buffer[.float32](K * N)
@@ -347,18 +318,17 @@ def test(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var c_tensor = LayoutTensor[.float32, c_layout](c_device)
-    var a_tensor = LayoutTensor[.float32, a_layout](a_device)
-    var b_tensor = LayoutTensor[.float32, b_layout](b_device)
+    var c_tensor = TileTensor(c_device, row_major[M, N]())
+    var a_tensor = TileTensor(a_device, row_major[M, K]())
+    var b_tensor = TileTensor(b_device, row_major[K, N]())
 
     comptime gemm = sgemm_double_buffer[
-        DType.float32,
-        c_layout,
-        DType.float32,
-        a_layout,
-        DType.float32,
-        b_layout,
-        DType.uint32,
+        .float32,
+        c_tensor.LayoutType,
+        .float32,
+        a_tensor.LayoutType,
+        .float32,
+        b_tensor.LayoutType,
         BM,
         BN,
         BK,
@@ -368,19 +338,20 @@ def test(ctx: DeviceContext) raises:
         TN,
         NUM_THREADS,
     ]
+
+    @inline(.always)
+    def run_func(ctx: DeviceContext) raises {imm}:
+        ctx.enqueue_function[gemm](
+            c_tensor,
+            a_tensor.as_imm(),
+            b_tensor.as_imm(),
+            grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
+            block_dim=(NUM_THREADS, 1, 1),
+        )
+
     if is_benchmark():
         comptime nrun = 200
         comptime nwarmup = 2
-
-        @inline(.always)
-        def run_func(ctx: DeviceContext) raises {imm}:
-            ctx.enqueue_function[gemm](
-                c_tensor,
-                a_tensor,
-                b_tensor,
-                grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-                block_dim=(NUM_THREADS, 1, 1),
-            )
 
         # Warmup
         for _ in range(nwarmup):
@@ -391,38 +362,31 @@ def test(ctx: DeviceContext) raises:
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
 
-    ctx.enqueue_function[gemm](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        grid_dim=(ceildiv(N, BN), ceildiv(M, BM), 1),
-        block_dim=(NUM_THREADS, 1, 1),
-    )
+    run_func(ctx)
 
     ctx.enqueue_copy(c_host, c_device)
 
     # Naive gemm.
     comptime BLOCK_DIM = 16
 
-    # Create TileTensors for the naive kernel.
     # a/b are constructed as immutable to match the ImmutAnyOrigin
     # parameters that matmul_kernel_naive expects (enqueue_function
     # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
     comptime gemm_naive = matmul_kernel_naive[

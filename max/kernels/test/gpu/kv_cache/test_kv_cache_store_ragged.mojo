@@ -62,14 +62,12 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
 
     var kv_block = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -91,13 +89,8 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s for a generic
-    # `kv_params`; the two layouts are structurally identical.
     var kv_collection_paged_device = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_block.device_tensor().as_unsafe_any_origin(),
         cache_lengths_table.cache_lengths.device_tile_tensor(),
         paged_lut.device_tile_tensor(),
         UInt32(max_seq_length_batch),
@@ -107,9 +100,7 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     var q_shape = IndexList[3](total_length, num_kv_heads, kv_params.head_size)
     var q = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(total_length), Idx[num_kv_heads], Idx[kv_params.head_size]
-            )
+            Int64(total_length), Idx[num_kv_heads], Idx[kv_params.head_size]
         ),
         ctx,
     )
@@ -156,9 +147,7 @@ def test_kv_cache_store_ragged_basic(ctx: DeviceContext) raises:
     kv_block.to_host()
 
     var kv_collection_paged_host = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block.host_tensor().as_unsafe_any_origin()
-        ),
+        kv_block.host_tensor().as_unsafe_any_origin(),
         cache_lengths_table.cache_lengths.host_tile_tensor(),
         paged_lut.host_tile_tensor(),
         UInt32(max_seq_length_batch),
@@ -246,14 +235,12 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
 
     var kv_block = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_paged_blocks),
-                Idx[2],
-                Int64(num_layers),
-                Idx[page_size],
-                Idx[kv_params.num_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(num_paged_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -278,9 +265,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
         MutAnyOrigin,
     ]
     var kv_collection_paged_device = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block.device_tensor().as_unsafe_any_origin()
-        ),
+        kv_block.device_tensor().as_unsafe_any_origin(),
         cache_lengths_table.cache_lengths.device_tile_tensor(),
         paged_lut.device_tile_tensor(),
         UInt32(max_seq_length_batch),
@@ -295,12 +280,10 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     )
     var q = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(batch_size),
-                Int64(max_seq_length_batch),
-                Idx[num_kv_heads],
-                Idx[kv_params.head_size],
-            )
+            Int64(batch_size),
+            Int64(max_seq_length_batch),
+            Idx[num_kv_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
@@ -329,7 +312,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
             valid_lengths_host[i] = UInt32(valid_lengths[i])
 
     var valid_lengths_tensor = TileTensor(
-        valid_lengths_device, row_major(Coord(Int64(batch_size)))
+        valid_lengths_device, row_major(Int64(batch_size))
     )
 
     q.to_device()
@@ -351,9 +334,7 @@ def test_kv_cache_store_padded_basic(ctx: DeviceContext) raises:
     kv_block.to_host()
 
     var kv_collection_paged_host = Collection(
-        rebind[Collection.blocks_tt_type](
-            kv_block.host_tensor().as_unsafe_any_origin()
-        ),
+        kv_block.host_tensor().as_unsafe_any_origin(),
         cache_lengths_table.cache_lengths.host_tile_tensor(),
         paged_lut.host_tile_tensor(),
         UInt32(max_seq_length_batch),

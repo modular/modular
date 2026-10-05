@@ -257,6 +257,18 @@ def identity_compute_fn[
     return val
 
 
+@inline(.always)
+def _as_compute_fn[
+    ComputeFnType: ElementwiseComputeFn
+](compute_fn: ComputeFnType) -> ComputeFnType:
+    return compute_fn
+
+
+comptime no_compute_fn = _as_compute_fn(identity_compute_fn)
+"""`identity_compute_fn` as a value, the default for a compute closure
+argument."""
+
+
 trait TileConsumer(DevicePassable, TrivialRegisterPassable):
     """Trait for an epilogue operation which consumes a tile of data.
 

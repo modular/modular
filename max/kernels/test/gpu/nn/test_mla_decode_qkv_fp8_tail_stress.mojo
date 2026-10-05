@@ -114,31 +114,22 @@ def share[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s; the two layouts
-    # are structurally identical.
     var kv_collection = Collection(
-        rebind[Collection.blocks_tt_type](
-            TileTensor(
-                blocks_dev.unsafe_ptr(),
-                row_major(
-                    Coord(
-                        Int64(pages),
-                        Idx[1],
-                        Int64(NUM_LAYERS),
-                        Idx[PAGE_SIZE],
-                        Idx[1],
-                        Idx[Q_DEPTH],
-                    )
-                ),
-            ).as_unsafe_any_origin()
-        ),
-        TileTensor(cl_dev.unsafe_ptr(), row_major(Coord(Int64(1))))
+        TileTensor(
+            blocks_dev.unsafe_ptr(),
+            row_major(
+                Int64(pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[1],
+                Idx[Q_DEPTH],
+            ),
+        ).as_unsafe_any_origin(),
+        TileTensor(cl_dev.unsafe_ptr(), row_major(Int64(1)))
         .as_imm()
         .as_unsafe_any_origin(),
-        TileTensor(
-            lut_dev.unsafe_ptr(), row_major(Coord(Int64(1), Int64(pages)))
-        )
+        TileTensor(lut_dev.unsafe_ptr(), row_major(Int64(1), Int64(pages)))
         .as_imm()
         .as_unsafe_any_origin(),
         UInt32(1),

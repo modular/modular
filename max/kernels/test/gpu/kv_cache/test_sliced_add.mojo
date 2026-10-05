@@ -44,15 +44,13 @@ def test_sliced_add[
     # a: all ones, b: all twos, c: zeros
     for i in range(rows):
         for j in range(cols):
-            var idx = a_host.layout(Coord(IndexList[2](i, j)))
+            var idx = a_host.layout(Coord(i, j))
             a_host.raw_store(idx, 1.0)
             b_host.raw_store(idx, 2.0)
             c_host.raw_store(idx, 0.0)
 
     # Keep lora_end_idx on host; sliced_add reads this scalar on host.
-    var lora_end_idx = HostDeviceTileTensor[.int64](
-        row_major(Coord(IndexList[1](1)))
-    )
+    var lora_end_idx = HostDeviceTileTensor[.int64](row_major(1))
     var lora_end_idx_host = lora_end_idx.host_tensor()
     lora_end_idx_host.raw_store(0, Int64(batch_end_idx))
 
@@ -85,7 +83,7 @@ def test_sliced_add[
                 # Should be just a = 1
                 expected = 1.0
 
-            var idx = c_host.layout(Coord(IndexList[2](i, j)))
+            var idx = c_host.layout(Coord(i, j))
             var actual = c_host.raw_load(idx)
             if actual != expected:
                 raise Error(

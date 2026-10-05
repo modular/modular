@@ -93,11 +93,9 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
-from linalg.bmm import batched_matmul
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils_gpu import _apple_m5_allow_lossy_f32_attention
-from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
-from std.memory.alloc import Layout as AllocLayout
+from std.memory import unsafe_stack_allocation
 
 from .amd_rdna.attention import AttentionRDNA
 from .amd_rdna.mha_decode import AttentionRDNA
@@ -143,7 +141,10 @@ from nn.attention.gpu.mha_decode_partition_heuristic import (
     mha_decoding_num_partitions,
 )
 from nn.attention.gpu.nvidia.sm90.mha import mha_sm90_dispatch
-from nn.attention.gpu.nvidia.sm90.attention import _optional_lt_to_tt
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.gpu.nvidia.sm100.dispatch import (
     mha_sm100_dispatch as mha_sm100_2q_dispatch,
 )
@@ -266,15 +267,9 @@ def flash_attention[
             k,
             v,
             MaterializedMask(
-                LayoutTensor[
-                    mask.dtype,
-                    Layout.row_major(mask.layout.shape),
-                    mask.origin,
-                ](
+                TileTensor(
                     mask.ptr,
-                    RuntimeLayout[
-                        Layout.row_major(mask.layout.shape)
-                    ].row_major(mask.runtime_layout.shape.value.canonicalize()),
+                    row_major(lt_to_tt(mask).layout.shape_coord()),
                 )
             ),
             scale,
@@ -573,7 +568,7 @@ def depth_supported_by_gpu[
 
 # Entry point for flash_attention with batch_size > 1.
 @inline(.always)
-def flash_attention[
+def _flash_attention_kv_cache[
     cache_t: KVCacheT,
     mask_t: MHAMask,
     dtype: DType,
@@ -593,77 +588,20 @@ def flash_attention[
     k: cache_t,
     v: cache_t,
     mask_functor: mask_t,
-    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    valid_length: ImmutTileTensor1D[.uint32],
     scale: Float32,
     ctx: DeviceContext,
     q_max_seq_len: Optional[Int] = None,
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
     num_partitions: Optional[Int] = None,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
     decode_dispatch_metadata: OptionalReg[MHADecodeDispatchMetadata] = None,
 ) raises:
-    """Flash attention 2 algorithm.
-    Compute:
-        (1) Transpose (Q) BSHD -> BHSD;
-        (2) Transpose (K) BSHD -> BHSD;
-        (3) Transpose (V) BSHD -> BHSD;
-        (4) P = Bmm(Q, K), P is also called "score";
-        (5) P = P * scale + mask;
-        (6) P = softmax(P);
-        (7) O = Bmm(P, V)
-        (8) Output = Transpose(O).
+    """Shared implementation behind the KV-cache `flash_attention` overloads.
 
-    B, S, H, D denote batch size, sequence length, head count and depth, respectively.
-    (1), (2), (3) happens while loading the data into shared memory.
-    (8) happens when writing output to global memory.
-
-    All inputs (query, key, and value) must have BSHD layout. The mask can be
-    BSS or BHSS.
-
-    This kernel also handles grouped attention optimization. In this case the shape of
-    K and V are BShD where h = H / num_groups.
-
-    This kernels handles batches with different valid lengths (i.e., before the
-    padding). Such lengths are passed in valid_length argument.
-
-    Parameters:
-        cache_t: KV-cache type backing the key and value tensors (inferred).
-        mask_t: Attention mask type implementing `MHAMask` (inferred).
-        dtype: Element type shared by Q, K, V, and the output (inferred).
-        q_layout: Compile-time layout of the query tensor (inferred).
-        config: Tile/pipeline configuration; defaults are derived from the
-            query layout's last two dimensions.
-        ragged: `True` for ragged-batch (variable-length) inputs (defaults
-            to `False`).
-        sink: `True` to enable attention-sink mode where the first tokens
-            always attend (defaults to `False`).
-        decoding_warp_split_k: `True` to enable warp-level split-K for
-            decode (defaults to `False`).
-        naive_kernel: `True` to force the fallback naive attention kernel
-            (defaults to `False`).
-
-    Args:
-        output: Mutable destination tensor for the attention output.
-        q: Query tensor with BSHD layout.
-        k: Key operand backed by a KV cache.
-        v: Value operand backed by a KV cache.
-        mask_functor: Mask instance used to apply the attention mask.
-        valid_length: Per-sequence valid lengths for masking padded batches.
-        scale: Softmax temperature scale applied to Q·Kᵀ.
-        ctx: GPU device context for kernel dispatch.
-        q_max_seq_len: Maximum query sequence length in the batch; `None`
-            infers it from the KV cache.
-        kv_input_row_offsets: Row offsets for ragged KV inputs; `None` for
-            self-attention.
-        num_partitions: Override the number of split-K partitions; `None`
-            selects automatically.
-        sink_weights: Optional sink-token weight tensor for attention sinks.
-        decode_dispatch_metadata: Pre-computed decode dispatch metadata;
-            `None` recomputes it.
+    Picks the flash-attention variant for the detected GPU and launches it
+    through `flash_attention_dispatch`. The 1-D operands are already
+    `TileTensor`s.
     """
     comptime assert (
         ragged or q.rank == 4
@@ -793,18 +731,252 @@ def flash_attention[
             scale,
             is_token_generation,
             ctx,
-            rebind[
-                LayoutTensor[
-                    .uint32,
-                    Layout.row_major(UNKNOWN_VALUE),
-                    ImmutAnyOrigin,
-                ]
-            ](valid_length),
+            valid_length,
             kv_input_row_offsets,
             num_partitions,
             sink_weights,
             decode_dispatch_metadata=decode_dispatch_metadata,
         )
+
+
+def flash_attention[
+    cache_t: KVCacheT,
+    mask_t: MHAMask,
+    dtype: DType,
+    q_layout: Layout,
+    //,
+    config: MHAConfig[dtype] = {
+        Int(q_layout.shape[q_layout.rank() - 2]),
+        Int(q_layout.shape[q_layout.rank() - 1]),
+    },
+    ragged: Bool = False,
+    sink: Bool = False,
+    decoding_warp_split_k: Bool = False,
+    naive_kernel: Bool = False,
+](
+    output: LayoutTensor[mut=True, address_space=.GENERIC, ...],
+    q: LayoutTensor[mut=False, dtype, q_layout, address_space=.GENERIC, ...],
+    k: cache_t,
+    v: cache_t,
+    mask_functor: mask_t,
+    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    scale: Float32,
+    ctx: DeviceContext,
+    q_max_seq_len: Optional[Int] = None,
+    kv_input_row_offsets: OptionalReg[
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+    num_partitions: Optional[Int] = None,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+    decode_dispatch_metadata: OptionalReg[MHADecodeDispatchMetadata] = None,
+) raises:
+    """Flash attention 2 algorithm.
+    Compute:
+        (1) Transpose (Q) BSHD -> BHSD;
+        (2) Transpose (K) BSHD -> BHSD;
+        (3) Transpose (V) BSHD -> BHSD;
+        (4) P = Bmm(Q, K), P is also called "score";
+        (5) P = P * scale + mask;
+        (6) P = softmax(P);
+        (7) O = Bmm(P, V)
+        (8) Output = Transpose(O).
+
+    B, S, H, D denote batch size, sequence length, head count and depth, respectively.
+    (1), (2), (3) happens while loading the data into shared memory.
+    (8) happens when writing output to global memory.
+
+    All inputs (query, key, and value) must have BSHD layout. The mask can be
+    BSS or BHSS.
+
+    This kernel also handles grouped attention optimization. In this case the shape of
+    K and V are BShD where h = H / num_groups.
+
+    This kernels handles batches with different valid lengths (i.e., before the
+    padding). Such lengths are passed in valid_length argument.
+
+    Parameters:
+        cache_t: KV-cache type backing the key and value tensors (inferred).
+        mask_t: Attention mask type implementing `MHAMask` (inferred).
+        dtype: Element type shared by Q, K, V, and the output (inferred).
+        q_layout: Compile-time layout of the query tensor (inferred).
+        config: Tile/pipeline configuration; defaults are derived from the
+            query layout's last two dimensions.
+        ragged: `True` for ragged-batch (variable-length) inputs (defaults
+            to `False`).
+        sink: `True` to enable attention-sink mode where the first tokens
+            always attend (defaults to `False`).
+        decoding_warp_split_k: `True` to enable warp-level split-K for
+            decode (defaults to `False`).
+        naive_kernel: `True` to force the fallback naive attention kernel
+            (defaults to `False`).
+
+    Args:
+        output: Mutable destination tensor for the attention output.
+        q: Query tensor with BSHD layout.
+        k: Key operand backed by a KV cache.
+        v: Value operand backed by a KV cache.
+        mask_functor: Mask instance used to apply the attention mask.
+        valid_length: Per-sequence valid lengths for masking padded batches.
+        scale: Softmax temperature scale applied to Q·Kᵀ.
+        ctx: GPU device context for kernel dispatch.
+        q_max_seq_len: Maximum query sequence length in the batch; `None`
+            infers it from the KV cache.
+        kv_input_row_offsets: Row offsets for ragged KV inputs; `None` for
+            self-attention.
+        num_partitions: Override the number of split-K partitions; `None`
+            selects automatically.
+        sink_weights: Optional sink-token weight tensor for attention sinks.
+        decode_dispatch_metadata: Pre-computed decode dispatch metadata;
+            `None` recomputes it.
+    """
+    _flash_attention_kv_cache[
+        config=config,
+        ragged=ragged,
+        sink=sink,
+        decoding_warp_split_k=decoding_warp_split_k,
+        naive_kernel=naive_kernel,
+    ](
+        output,
+        q,
+        k,
+        v,
+        mask_functor,
+        immut_tile_tensor_1d(valid_length.ptr, valid_length.size()),
+        scale,
+        ctx,
+        q_max_seq_len,
+        _optional_lt_1d(kv_input_row_offsets),
+        num_partitions,
+        _optional_lt_1d(sink_weights),
+        decode_dispatch_metadata,
+    )
+
+
+def _optional_lt_1d[
+    dtype: DType,
+](
+    opt: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ],
+) -> OptionalReg[ImmutTileTensor1D[dtype]]:
+    """Views an optional 1-D `LayoutTensor` as an optional `TileTensor`."""
+    if opt:
+        var lt = opt.value()
+        return immut_tile_tensor_1d(lt.ptr, lt.size())
+    return None
+
+
+def flash_attention[
+    cache_t: KVCacheT,
+    mask_t: MHAMask,
+    dtype: DType,
+    output_type: DType,
+    q_tt_layout: TensorLayout,
+    output_tt_layout: TensorLayout,
+    valid_length_tt_layout: TensorLayout,
+    //,
+    config: MHAConfig[dtype] = {
+        q_tt_layout.static_shape[q_tt_layout.rank - 2],
+        q_tt_layout.static_shape[q_tt_layout.rank - 1],
+    },
+    ragged: Bool = False,
+    sink: Bool = False,
+    decoding_warp_split_k: Bool = False,
+    naive_kernel: Bool = False,
+](
+    output: TileTensor[
+        mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
+    ],
+    q: TileTensor[mut=False, dtype, q_tt_layout, address_space=.GENERIC, ...],
+    k: cache_t,
+    v: cache_t,
+    mask_functor: mask_t,
+    valid_length: TileTensor[
+        mut=False,
+        .uint32,
+        valid_length_tt_layout,
+        address_space=.GENERIC,
+        ...,
+    ],
+    scale: Float32,
+    ctx: DeviceContext,
+    q_max_seq_len: Optional[Int] = None,
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
+    num_partitions: Optional[Int] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
+    decode_dispatch_metadata: OptionalReg[MHADecodeDispatchMetadata] = None,
+) raises:
+    """`TileTensor` overload of the KV-cache flash attention entry point.
+
+    Converts the query and output operands to `LayoutTensor` and delegates
+    to the shared KV-cache implementation; the 1-D operands pass through
+    unchanged.
+
+    Parameters:
+        cache_t: KV-cache type backing the key and value tensors (inferred).
+        mask_t: Attention mask type implementing `MHAMask` (inferred).
+        dtype: Element type of the query tensor (inferred).
+        output_type: Element type of the output tensor, which may differ
+            from `dtype` on the native FP8 path (inferred).
+        q_tt_layout: Compile-time `TensorLayout` of the query tensor
+            (inferred).
+        output_tt_layout: Compile-time `TensorLayout` of the output tensor
+            (inferred).
+        valid_length_tt_layout: Compile-time `TensorLayout` of the
+            valid-length tensor (inferred).
+        config: Tile/pipeline configuration; defaults are derived from the
+            query layout's last two dimensions.
+        ragged: `True` for ragged-batch (variable-length) inputs (defaults
+            to `False`).
+        sink: `True` to enable attention-sink mode where the first tokens
+            always attend (defaults to `False`).
+        decoding_warp_split_k: `True` to enable warp-level split-K for
+            decode (defaults to `False`).
+        naive_kernel: `True` to force the fallback naive attention kernel
+            (defaults to `False`).
+
+    Args:
+        output: Mutable destination `TileTensor` for the attention output.
+        q: Query `TileTensor` with BSHD layout.
+        k: Key operand backed by a KV cache.
+        v: Value operand backed by a KV cache.
+        mask_functor: Mask instance used to apply the attention mask.
+        valid_length: Per-sequence valid lengths for masking padded batches.
+        scale: Softmax temperature scale applied to Q·Kᵀ.
+        ctx: GPU device context for kernel dispatch.
+        q_max_seq_len: Maximum query sequence length in the batch; `None`
+            infers it from the KV cache.
+        kv_input_row_offsets: Row offsets for ragged KV inputs; `None` for
+            self-attention.
+        num_partitions: Override the number of split-K partitions; `None`
+            selects automatically.
+        sink_weights: Optional sink-token weight tensor for attention sinks.
+        decode_dispatch_metadata: Pre-computed decode dispatch metadata;
+            `None` recomputes it.
+    """
+    _flash_attention_kv_cache[
+        config=config,
+        ragged=ragged,
+        sink=sink,
+        decoding_warp_split_k=decoding_warp_split_k,
+        naive_kernel=naive_kernel,
+    ](
+        output.to_layout_tensor(),
+        q.to_layout_tensor(),
+        k,
+        v,
+        mask_functor,
+        immut_tile_tensor_1d(valid_length.ptr, valid_length.num_elements()),
+        scale,
+        ctx,
+        q_max_seq_len,
+        kv_input_row_offsets,
+        num_partitions,
+        sink_weights,
+        decode_dispatch_metadata,
+    )
 
 
 @inline(.always)
@@ -894,16 +1066,10 @@ def flash_attention_dispatch[
     scale: Float32,
     is_token_generation: Bool,
     ctx: DeviceContext,
-    valid_length: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    valid_length: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
     num_partitions: Optional[Int] = None,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
     decode_dispatch_metadata: OptionalReg[MHADecodeDispatchMetadata] = None,
 ) raises:
     """Dispatch a flash-attention kernel for prefill or decode over dense or KV-cache operands.
@@ -968,7 +1134,7 @@ def flash_attention_dispatch[
     var batch_size: Int
 
     comptime if ragged:
-        batch_size = valid_length.value().dim[0]() - 1
+        batch_size = Int(valid_length.value().dim[0]()) - 1
     # This branch holds for both KVCache and dense tensor inputs.
     # Q is BSHD, S is either homogeneous or padded to same length.
     else:
@@ -1044,11 +1210,11 @@ def flash_attention_dispatch[
                         DynamicInt(max_prompt_len),
                         max_cache_valid_length,
                         scale,
-                        _optional_lt_to_tt(kv_input_row_offsets),
+                        kv_input_row_offsets,
                         batch_size,
                         NoPartition[get_accum_type[q.dtype]()](),
                         ctx,
-                        _optional_lt_to_tt(sink_weights),
+                        sink_weights,
                     )
                     return
                 # Only the deep arm runs the workspace split-K combine, so its
@@ -1079,10 +1245,10 @@ def flash_attention_dispatch[
                 DynamicInt(max_prompt_len),
                 fa4_max_cache_len,
                 scale,
-                _optional_lt_to_tt(kv_input_row_offsets),
+                kv_input_row_offsets,
                 batch_size,
                 ctx,
-                _optional_lt_to_tt(sink_weights),
+                sink_weights,
                 num_partitions_override=fa4_num_partitions,
             )
             # Early return rather than wrapping everything below in an `else:`.
@@ -1124,11 +1290,11 @@ def flash_attention_dispatch[
                         DynamicInt(max_prompt_len),
                         max_cache_valid_length,
                         scale,
-                        _optional_lt_to_tt(kv_input_row_offsets),
+                        kv_input_row_offsets,
                         batch_size,
                         NoPartition[get_accum_type[q.dtype]()](),
                         ctx,
-                        _optional_lt_to_tt(sink_weights),
+                        sink_weights,
                     )
                 else:
                     comptime assert is_sm100
@@ -1159,11 +1325,11 @@ def flash_attention_dispatch[
                             DynamicInt(max_prompt_len),
                             max_cache_valid_length,
                             scale,
-                            _optional_lt_to_tt(kv_input_row_offsets),
+                            kv_input_row_offsets,
                             batch_size,
                             NoPartition[get_accum_type[q.dtype]()](),
                             ctx,
-                            _optional_lt_to_tt(sink_weights),
+                            sink_weights,
                         )
                     else:
                         mha_sm100_2q_dispatch[
@@ -1185,10 +1351,10 @@ def flash_attention_dispatch[
                             DynamicInt(max_prompt_len),
                             max_cache_valid_length,
                             scale,
-                            _optional_lt_to_tt(kv_input_row_offsets),
+                            kv_input_row_offsets,
                             batch_size,
                             ctx,
-                            _optional_lt_to_tt(sink_weights),
+                            sink_weights,
                         )
 
             else:
@@ -1416,7 +1582,6 @@ def flash_attention_dispatch[
                     v_t,
                     output.dtype,
                     mask_t,
-                    type_of(valid_length.value()).layout,
                     config,
                     group=group,
                     ragged=ragged,
@@ -1736,7 +1901,6 @@ def flash_attention_dispatch[
                                         v_t,
                                         out_dtype,
                                         mask_t,
-                                        type_of(valid_length.value()).layout,
                                         BM=BM_S,
                                         BN=BN_S,
                                         BK=BK_S,
@@ -1809,11 +1973,11 @@ def flash_attention_dispatch[
                                     StaticInt[1](),
                                     max_cache_valid_length_value,
                                     scale,
-                                    _optional_lt_to_tt(kv_input_row_offsets),
+                                    kv_input_row_offsets,
                                     batch_size,
                                     NoPartition[accum_type](),
                                     ctx,
-                                    _optional_lt_to_tt(sink_weights),
+                                    sink_weights,
                                 )
                         else:
                             var nullptr_device = DeviceBuffer[accum_type].empty(
@@ -1859,56 +2023,36 @@ def flash_attention_dispatch[
                             )
                         )
 
-                        var output_intermediate = LayoutTensor[
-                            intermediate_dtype, Layout.row_major[4]()
-                        ](
-                            output_intermediate_data.unsafe_ptr(),
-                            RuntimeLayout[Layout.row_major[4]()].row_major(
-                                Index(
-                                    num_partitions_value,
-                                    num_q_rows,
-                                    num_heads,
-                                    depth,
-                                )
+                        var output_intermediate = TileTensor(
+                            output_intermediate_data,
+                            row_major(
+                                num_partitions_value,
+                                num_q_rows,
+                                Idx[num_heads],
+                                Idx[depth],
                             ),
                         )
 
                         var data_len = (
                             num_heads * num_q_rows * num_partitions_value
                         )
-                        var data_dim = Index(
-                            num_partitions_value,
-                            num_q_rows,
-                            num_heads,
+                        var stats_layout = row_major(
+                            num_partitions_value, num_q_rows, Idx[num_heads]
                         )
                         var exp_sum_qk_max_data = ctx.enqueue_create_buffer[
                             accum_type
                         ](2 * data_len)
 
-                        var exp_sum = LayoutTensor[
-                            accum_type, Layout.row_major[3]()
-                        ](
-                            exp_sum_qk_max_data.unsafe_ptr(),
-                            RuntimeLayout[Layout.row_major[3]()].row_major(
-                                data_dim
-                            ),
+                        var exp_sum = TileTensor(
+                            exp_sum_qk_max_data.unsafe_ptr(), stats_layout
                         )
-
-                        var qk_max = LayoutTensor[
-                            accum_type, Layout.row_major[3]()
-                        ](
+                        var qk_max = TileTensor(
                             exp_sum_qk_max_data.unsafe_ptr() + data_len,
-                            RuntimeLayout[Layout.row_major[3]()].row_major(
-                                data_dim
-                            ),
+                            stats_layout,
                         )
 
-                        var exp_sum_device = DeviceBuffer[accum_type](
-                            ctx, exp_sum.ptr, exp_sum.size(), owning=False
-                        )
-                        var qk_max_device = DeviceBuffer[accum_type](
-                            ctx, qk_max.ptr, qk_max.size(), owning=False
-                        )
+                        var exp_sum_device = exp_sum.to_device_buffer(ctx)
+                        var qk_max_device = qk_max.to_device_buffer(ctx)
 
                         comptime if use_fa3_kernel:
                             var num_rows_q = q_num_matrix_view_rows(q)
@@ -1931,7 +2075,7 @@ def flash_attention_dispatch[
                                     StaticInt[1](),
                                     max_cache_valid_length_value,
                                     scale,
-                                    _optional_lt_to_tt(kv_input_row_offsets),
+                                    kv_input_row_offsets,
                                     batch_size,
                                     SplitKPartition(
                                         exp_sum_qk_max_data.unsafe_ptr().as_unsafe_any_origin(),
@@ -1940,7 +2084,7 @@ def flash_attention_dispatch[
                                         UInt32(num_partitions_value),
                                     ),
                                     ctx,
-                                    _optional_lt_to_tt(sink_weights),
+                                    sink_weights,
                                 )
                         else:
                             # Same ladder, on the intermediate dtype and writing
@@ -2004,7 +2148,7 @@ def flash_attention_dispatch[
                     v,
                     mask_functor,
                     output,
-                    valid_length.value(),
+                    valid_length,
                     scale,
                     batch_size,
                     max_prompt_len,
@@ -2028,7 +2172,7 @@ def flash_attention_dispatch[
                 v,
                 mask_functor,
                 output,
-                valid_length.value(),
+                valid_length,
                 scale,
                 batch_size,
                 max_prompt_len,
@@ -2137,7 +2281,7 @@ def flash_attention_dispatch[
                             v,
                             mask_functor,
                             output,
-                            valid_length.value(),
+                            valid_length,
                             scale,
                             batch_size,
                             max_prompt_len,
@@ -2160,7 +2304,7 @@ def flash_attention_dispatch[
                         v,
                         mask_functor,
                         output,
-                        valid_length.value(),
+                        valid_length,
                         scale,
                         batch_size,
                         max_prompt_len,
@@ -2183,7 +2327,7 @@ def flash_attention_dispatch[
                 v,
                 mask_functor,
                 output,
-                valid_length.value(),
+                valid_length,
                 scale,
                 batch_size,
                 max_prompt_len,
@@ -2196,7 +2340,7 @@ def flash_attention_dispatch[
             )
 
 
-def flash_attention[
+def _flash_attention_dense[
     mask_t: MHAMask,
     dtype: DType,
     q_layout: Layout,
@@ -2220,48 +2364,13 @@ def flash_attention[
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
-    valid_length: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    valid_length: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
-    """Run flash attention with dense `LayoutTensor` K/V operands.
+    """Shared implementation behind the dense `flash_attention` overloads.
 
     Wraps K and V in `LayoutTensorMHAOperand` adapters and delegates to
-    `flash_attention_dispatch`. Handles zero-sized attention (e.g. VAE
-    mid-block on a placeholder image) by returning early.
-
-    Parameters:
-        mask_t: Attention mask type implementing `MHAMask` (inferred).
-        dtype: Element type shared by Q, K, V, and the output (inferred).
-        q_layout: Compile-time layout of the query tensor (inferred).
-        config: Tile/pipeline configuration; defaults are derived from
-            the query layout's last two dimensions.
-        decoding_warp_split_k: `True` to enable warp-level split-K for
-            decode (defaults to `False`).
-        _use_valid_length: `True` to mask output with per-sequence lengths
-            (defaults to `False`).
-        _padded_ndbuffer: `True` when the NBuffer holds padded dense inputs
-            (defaults to `False`).
-        naive_kernel: `True` to force the fallback naive attention kernel
-            (defaults to `False`).
-        sink: `True` to enable attention-sink mode where the first tokens
-            always attend (defaults to `False`).
-
-    Args:
-        output: Mutable destination tensor for the attention output.
-        q: Query tensor with BSHD layout.
-        k: Key tensor with BSHD layout.
-        v: Value tensor with BSHD layout.
-        mask_functor: Mask instance used to apply the attention mask.
-        scale: Softmax temperature scale applied to Q·Kᵀ.
-        ctx: GPU device context for kernel dispatch.
-        num_partitions: Override the number of split-K partitions; `None`
-            selects automatically.
-        valid_length: Per-sequence valid lengths for masking padded batches.
-        sink_weights: Optional sink-token weight tensor for attention sinks.
+    `flash_attention_dispatch`. The 1-D operands are already `TileTensor`s.
     """
     # See the kV cache overloads for comments.
 
@@ -2378,6 +2487,94 @@ def flash_attention[
 def flash_attention[
     mask_t: MHAMask,
     dtype: DType,
+    q_layout: Layout,
+    //,
+    config: MHAConfig[dtype] = {
+        Int(q_layout.shape[2]),
+        Int(q_layout.shape[3]),
+    },
+    decoding_warp_split_k: Bool = False,
+    _use_valid_length: Bool = False,
+    _padded_ndbuffer: Bool = False,
+    naive_kernel: Bool = False,
+    sink: Bool = False,
+](
+    output: LayoutTensor[mut=True, address_space=.GENERIC, ...],
+    q: LayoutTensor[mut=False, dtype, q_layout, address_space=.GENERIC, ...],
+    k: LayoutTensor[mut=False, address_space=.GENERIC, ...],
+    v: LayoutTensor[mut=False, address_space=.GENERIC, ...],
+    mask_functor: mask_t,
+    scale: Float32,
+    ctx: DeviceContext,
+    # if not set, we select num_partitions based on heuristics
+    num_partitions: Optional[Int] = None,
+    valid_length: OptionalReg[
+        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+    sink_weights: OptionalReg[
+        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
+    ] = None,
+) raises:
+    """Run flash attention with dense `LayoutTensor` K/V operands.
+
+    Wraps K and V in `LayoutTensorMHAOperand` adapters and delegates to
+    `flash_attention_dispatch`. Handles zero-sized attention (e.g. VAE
+    mid-block on a placeholder image) by returning early.
+
+    Parameters:
+        mask_t: Attention mask type implementing `MHAMask` (inferred).
+        dtype: Element type shared by Q, K, V, and the output (inferred).
+        q_layout: Compile-time layout of the query tensor (inferred).
+        config: Tile/pipeline configuration; defaults are derived from
+            the query layout's last two dimensions.
+        decoding_warp_split_k: `True` to enable warp-level split-K for
+            decode (defaults to `False`).
+        _use_valid_length: `True` to mask output with per-sequence lengths
+            (defaults to `False`).
+        _padded_ndbuffer: `True` when the NBuffer holds padded dense inputs
+            (defaults to `False`).
+        naive_kernel: `True` to force the fallback naive attention kernel
+            (defaults to `False`).
+        sink: `True` to enable attention-sink mode where the first tokens
+            always attend (defaults to `False`).
+
+    Args:
+        output: Mutable destination tensor for the attention output.
+        q: Query tensor with BSHD layout.
+        k: Key tensor with BSHD layout.
+        v: Value tensor with BSHD layout.
+        mask_functor: Mask instance used to apply the attention mask.
+        scale: Softmax temperature scale applied to Q·Kᵀ.
+        ctx: GPU device context for kernel dispatch.
+        num_partitions: Override the number of split-K partitions; `None`
+            selects automatically.
+        valid_length: Per-sequence valid lengths for masking padded batches.
+        sink_weights: Optional sink-token weight tensor for attention sinks.
+    """
+    _flash_attention_dense[
+        config=config,
+        decoding_warp_split_k=decoding_warp_split_k,
+        _use_valid_length=_use_valid_length,
+        _padded_ndbuffer=_padded_ndbuffer,
+        naive_kernel=naive_kernel,
+        sink=sink,
+    ](
+        output,
+        q,
+        k,
+        v,
+        mask_functor,
+        scale,
+        ctx,
+        num_partitions,
+        _optional_lt_1d(valid_length),
+        _optional_lt_1d(sink_weights),
+    )
+
+
+def flash_attention[
+    mask_t: MHAMask,
+    dtype: DType,
     output_type: DType,
     q_tt_layout: TensorLayout,
     k_tt_layout: TensorLayout,
@@ -2405,12 +2602,8 @@ def flash_attention[
     ctx: DeviceContext,
     # if not set, we select num_partitions based on heuristics
     num_partitions: Optional[Int] = None,
-    valid_length: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    valid_length: OptionalReg[ImmutTileTensor1D[.uint32]] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ) raises:
     """TileTensor overload of flash attention.
 
@@ -2456,7 +2649,7 @@ def flash_attention[
         valid_length: Per-sequence valid lengths for masking padded batches.
         sink_weights: Optional sink-token weight tensor for attention sinks.
     """
-    flash_attention[
+    _flash_attention_dense[
         config=config,
         decoding_warp_split_k=decoding_warp_split_k,
         _use_valid_length=_use_valid_length,
@@ -2565,14 +2758,14 @@ def flash_attention_ragged[
     var k_operand = RaggedMHAOperand(
         TileTensor(
             k.ptr,
-            row_major(Coord(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]()))),
+            row_major(Int(k.dim[0]()), Int(k.dim[1]()), Int(k.dim[2]())),
         ),
         lt_to_tt(cache_row_offsets),
     )
     var v_operand = RaggedMHAOperand(
         TileTensor(
             v.ptr,
-            row_major(Coord(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]()))),
+            row_major(Int(v.dim[0]()), Int(v.dim[1]()), Int(v.dim[2]())),
         ),
         lt_to_tt(cache_row_offsets),
     )
@@ -2594,11 +2787,11 @@ def flash_attention_ragged[
         scale,
         is_token_generation,
         ctx,
-        OptionalReg[
-            LayoutTensor[
-                .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ]
-        ](input_row_offsets),
+        OptionalReg[ImmutTileTensor1D[.uint32]](
+            immut_tile_tensor_1d(
+                input_row_offsets.ptr, input_row_offsets.size()
+            )
+        ),
         None,
         num_partitions,
     )
@@ -2656,7 +2849,6 @@ def mha[
     v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    valid_length_layout: Layout,
     config: MHAConfig,
     group: Int = 1,
     ragged: Bool = False,
@@ -2674,17 +2866,9 @@ def mha[
     batch_size: Int32,
     seq_len_arg: Int32,
     num_keys_arg: Int32,
-    valid_length: LayoutTensor[
-        .uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-    ],
-    kv_input_row_offsets: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    valid_length: ImmutTileTensor1D[.uint32],
+    kv_input_row_offsets: OptionalReg[ImmutTileTensor1D[.uint32]],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
     mask: mask_t,
 ):
     var _batch_size = Int(batch_size)
@@ -2891,9 +3075,7 @@ def mha_single_batch[
     mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
     batch_idx: Int,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -3100,8 +3282,7 @@ def mha_single_batch[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
-                sink_weights.value()[Int(head_idx)][0].cast[accum_type]()
-                * log2e
+                sink_weights.value()[Int(head_idx)].cast[accum_type]() * log2e
             )
             rowmax.store(
                 i,
@@ -3650,9 +3831,7 @@ def mha_single_batch_pipelined[
     mask_tensor_col: Int,  # second dimension of mask tensor
     mask: mask_t,
     batch_idx: Int,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ):
     """MHA for token gen where seqlen = 1 and num_keys >= 1.
 
@@ -3847,8 +4026,7 @@ def mha_single_batch_pipelined[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_logit_log2 = (
-                sink_weights.value()[Int(head_idx)][0].cast[accum_type]()
-                * log2e
+                sink_weights.value()[Int(head_idx)].cast[accum_type]() * log2e
             )
             rowmax.store(
                 i,
@@ -4363,7 +4541,6 @@ def mha_decoding[
     v_t: MHAOperand,
     output_type: DType,
     mask_t: MHAMask,
-    valid_length_layout: Layout,
     BM: Int,  # number of queries per block
     BN: Int,  # number of keys per block
     BK: Int,  # tile size in depth dimension
@@ -4391,14 +4568,8 @@ def mha_decoding[
     scale: Float32,
     batch_size: Int32,
     num_partitions: Int32,
-    valid_length: LayoutTensor[
-        .uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-    ],  # valid length per batch
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    valid_length: ImmutTileTensor1D[.uint32],  # valid length per batch
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
     mask: mask_t,
 ):
     """Flash-attention decode GPU kernel with optional split-K partitioning.
@@ -4415,7 +4586,6 @@ def mha_decoding[
         v_t: Value operand type (dense or KV-cache).
         output_type: Element type of the output and partial output buffer.
         mask_t: Attention mask type.
-        valid_length_layout: Layout of the per-sequence valid-length tensor.
         BM: Query tile height (rows per CTA).
         BN: Key tile width (columns per CTA).
         BK: Tile size along the head-depth dimension.
@@ -4849,9 +5019,7 @@ def mha_decoding_single_batch[
     num_partitions: Int,
     mask: mask_t,
     batch_idx: Int,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
 ):
     """Flash attention v2 algorithm.
 
@@ -5034,8 +5202,7 @@ def mha_decoding_single_batch[
             ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < 4 * group:
                 var sink_logit_log2 = (
-                    sink_weights.value()[q_head_idx][0].cast[accum_type]()
-                    * log2e
+                    sink_weights.value()[q_head_idx].cast[accum_type]() * log2e
                 )
                 rowmax[i] = sink_logit_log2
                 if partition_idx == 0 and umod(thread_idx.x, 4) == 0:
@@ -5561,9 +5728,7 @@ def mha_decoding_single_batch_pipelined[
     scale: Float32,
     num_keys: Int,
     num_partitions: Int,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]],
     mask: mask_t,
     batch_idx: Int,
 ):
@@ -5741,8 +5906,7 @@ def mha_decoding_single_batch_pipelined[
             ), "expect sink_weights to be non-null when sink=true"
             if thread_idx.x < 4 * group:
                 var sink_logit_log2 = (
-                    sink_weights.value()[q_head_idx][0].cast[accum_type]()
-                    * log2e
+                    sink_weights.value()[q_head_idx].cast[accum_type]() * log2e
                 )
                 rowmax[i] = sink_logit_log2
                 if partition_idx == 0 and umod(thread_idx.x, 4) == 0:
@@ -6143,23 +6307,12 @@ def mha_splitk_reduce[
         row_major[WARP_SIZE](),
     )
 
-    comptime intermediate_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth
-    )
-    var intermediate_output = LayoutTensor[
-        intermediate_type, intermediate_layout
-    ](
+    var intermediate_output = TileTensor(
         intermediate_ptr,
-        RuntimeLayout[intermediate_layout].row_major(
-            Index(_num_partitions, _batch_size, num_heads, depth)
-        ),
+        row_major((_num_partitions, _batch_size, Idx[num_heads], Idx[depth])),
     )
-    comptime output_layout = Layout.row_major(UNKNOWN_VALUE, num_heads, depth)
-    var output = LayoutTensor[output_type, output_layout](
-        output_ptr,
-        RuntimeLayout[output_layout].row_major(
-            Index(_batch_size, num_heads, depth)
-        ),
+    var output = TileTensor(
+        output_ptr, row_major((_batch_size, Idx[num_heads], Idx[depth]))
     )
 
     var rescaled_exp_sum: Scalar[accum_type] = 0
@@ -6186,27 +6339,27 @@ def mha_splitk_reduce[
     var compensation = SIMD[accum_type, width](0)
     var depth_idx = thread_idx.x * width
 
-    # Precompute base pointer and partition stride to avoid ptr_at_offset in inner loop
-    # Layout is [_num_partitions, _batch_size, num_heads, depth] in row-major
-    var partition_stride = _batch_size * num_heads * depth
-    var base_offset = (
-        batch_idx * num_heads * depth + q_head_idx * depth + depth_idx
-    )
-    var base_ptr = intermediate_output.ptr + base_offset
-
     def accum_fn[
         simd_width: Int
-    ](partition_idx: Int) {exp_sums, base_ptr, partition_stride, mut}:
+    ](partition_idx: Int) {
+        exp_sums,
+        intermediate_output,
+        imm batch_idx,
+        imm q_head_idx,
+        imm depth_idx,
+        mut,
+    }:
         var partition_exp_sum = exp_sums.vectorize[simd_width]()[
             partition_idx // simd_width
         ]
 
         comptime for i in range(simd_width):
-            var ptr = base_ptr + (partition_idx + i) * partition_stride
-            var x_load = ptr.load[
+            var x_load = intermediate_output.load[
                 width=width,
                 alignment=width * size_of[intermediate_type](),
-            ]().cast[accum_type]()
+            ]((partition_idx + i, batch_idx, q_head_idx, depth_idx)).cast[
+                accum_type
+            ]()
             var scale = partition_exp_sum[i]
             var mask = SIMD[.bool, width](fill=scale > 0)
             var safe_load = mask.select(x_load, type_of(x_load)(0))
@@ -6225,11 +6378,8 @@ def mha_splitk_reduce[
 
         acc *= inv_global_exp_sum
 
-        var ptr = output.ptr_at_offset(
-            IndexList[3](batch_idx, q_head_idx, depth_idx)
-        )
-        ptr.store[alignment=width * size_of[output_type](),](
-            acc.cast[output_type]()
+        output.store[alignment=width * size_of[output_type]()](
+            (batch_idx, q_head_idx, depth_idx), acc.cast[output_type]()
         )
 
 
@@ -6264,7 +6414,7 @@ def mha_gpu_naive[
     v: v_t,
     mask_functor: mask_t,
     output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: LayoutTensor[mut=False, .uint32, address_space=.GENERIC, ...],
+    valid_length: OptionalReg[ImmutTileTensor1D[.uint32]],
     scale: Float32,
     batch_size: Int,
     max_prompt_len: Int,
@@ -6273,11 +6423,7 @@ def mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, q.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
 ) raises:
     """Launch the naive (two-pass BMM) GPU attention implementation.
 
@@ -6303,7 +6449,7 @@ def mha_gpu_naive[
         v: Value operand.
         mask_functor: Mask instance.
         output: Mutable output tensor.
-        valid_length: Per-sequence valid lengths.
+        valid_length: Per-sequence valid lengths; `None` for dense inputs.
         scale: Softmax temperature scale.
         batch_size: Number of sequences in the batch.
         max_prompt_len: Maximum query sequence length.
@@ -6350,7 +6496,6 @@ def mha_gpu_naive[
         k_t,
         mask_t,
         p_type,
-        type_of(valid_length).layout,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -6390,13 +6535,12 @@ def mha_gpu_naive[
         p_buffer,
         2,
         ctx,
-        sink_weights=_optional_lt_to_tt(sink_weights),
+        sink_weights=sink_weights,
     )
     comptime kernel_1 = _bmm1_bs[
         output_type,
         p_type,
         v_t,
-        type_of(valid_length).layout,
         ragged=ragged,
         _use_valid_length=_use_valid_length,
         _is_cache_length_accurate=_is_cache_length_accurate,
@@ -6430,7 +6574,6 @@ def _bmm0_bs[
     k_t: MHAOperand,
     mask_t: MHAMask,
     p_type: DType,
-    valid_length_layout: Layout,
     ragged: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
@@ -6438,11 +6581,7 @@ def _bmm0_bs[
     p_ptr: UnsafePointer[Scalar[p_type], MutAnyOrigin],
     q_ptr: UnsafePointer[Scalar[q_type], ImmutAnyOrigin],
     k: k_t,
-    valid_length: LayoutTensor[
-        .uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-    ],
+    valid_length: OptionalReg[ImmutTileTensor1D[.uint32]],
     scale: Float32,
     batch_size: Int32,
     max_prompt_len: Int32,
@@ -6479,13 +6618,13 @@ def _bmm0_bs[
         comptime if not _is_cache_length_accurate:
             start_pos = UInt32(k.cache_length(batch))
 
-        var seq_start = Int(valid_length[batch])
-        var seq_end = Int(valid_length[batch + 1])
+        var seq_start = Int(valid_length.value()[batch])
+        var seq_end = Int(valid_length.value()[batch + 1])
         cur_query_len = seq_end - seq_start
         q_offset = _depth * (seq_start * _num_heads + head)
         cur_cache_len = Int(start_pos) + cur_query_len
     elif _use_valid_length:
-        cur_query_len = Int(valid_length[batch])
+        cur_query_len = Int(valid_length.value()[batch])
         q_offset = _depth * (head + _num_heads * _max_prompt_len * batch)
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
@@ -6568,7 +6707,6 @@ def _bmm1_bs[
     output_type: DType,
     p_type: DType,
     v_t: MHAOperand,
-    valid_length_layout: Layout,
     ragged: Bool = False,
     _use_valid_length: Bool = False,
     _is_cache_length_accurate: Bool = False,
@@ -6576,11 +6714,7 @@ def _bmm1_bs[
     output_ptr: UnsafePointer[Scalar[output_type], MutAnyOrigin],
     p_ptr: UnsafePointer[Scalar[p_type], ImmutAnyOrigin],
     v: v_t,
-    valid_length: LayoutTensor[
-        .uint32,
-        valid_length_layout,
-        ImmutAnyOrigin,
-    ],
+    valid_length: OptionalReg[ImmutTileTensor1D[.uint32]],
     max_prompt_len: Int32,
     max_cache_size: Int32,
     num_heads: Int32,
@@ -6613,13 +6747,13 @@ def _bmm1_bs[
         comptime if not _is_cache_length_accurate:
             start_pos = UInt32(v.cache_length(batch))
 
-        var seq_start = Int(valid_length[batch])
-        var seq_end = Int(valid_length[batch + 1])
+        var seq_start = Int(valid_length.value()[batch])
+        var seq_end = Int(valid_length.value()[batch + 1])
         cur_query_len = seq_end - seq_start
         output_offset = (seq_start * _num_heads + head) * _depth
         cur_cache_len = cur_query_len + Int(start_pos)
     elif _use_valid_length:
-        cur_query_len = Int(valid_length[batch])
+        cur_query_len = Int(valid_length.value()[batch])
         output_offset = _depth * (head + _num_heads * _max_prompt_len * batch)
         comptime if _is_cache_length_accurate:
             cur_cache_len = cur_query_len
@@ -6684,24 +6818,16 @@ def mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]] = None,
 ) raises:
     mha_gpu_naive[sink=sink](
         q,
         k,
         v,
         MaterializedMask(
-            LayoutTensor[
-                mask_type,
-                Layout.row_major(mask.layout.shape),
-                mask.origin,
-            ](
+            TileTensor(
                 mask.ptr,
-                RuntimeLayout[Layout.row_major(mask.layout.shape)].row_major(
-                    mask.runtime_layout.shape.value.canonicalize()
-                ),
+                row_major(lt_to_tt(mask).layout.shape_coord()),
             )
         ),
         output,
@@ -6739,50 +6865,23 @@ def mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]] = None,
 ) raises:
-    # The naive reference accepts K/V with either a fully static or a fully
-    # dynamic layout (e.g. `Layout.row_major[4]`), so reinterpret each as a
-    # row-major view over its own shape -- this preserves the static/dynamic
-    # pattern exactly. A static `Idx[k.layout.shape[i]]` would be UNKNOWN_VALUE
-    # for a dynamic dim (corrupting strides), while all-runtime dims regress the
-    # static-dim path.
+    # Preserve each input's static/dynamic shape pattern while re-viewing
+    # its contiguous storage as row-major for the attention operand.
     var k_operand = LayoutTensorMHAOperand(
-        lt_to_tt(
-            LayoutTensor[k.dtype, Layout.row_major(k.layout.shape), k.origin](
-                k.ptr,
-                RuntimeLayout[Layout.row_major(k.layout.shape)].row_major(
-                    k.runtime_layout.shape.value.canonicalize()
-                ),
-            )
-        )
+        TileTensor(k.ptr, row_major(lt_to_tt(k).layout.shape_coord()))
     )
     var v_operand = LayoutTensorMHAOperand(
-        lt_to_tt(
-            LayoutTensor[v.dtype, Layout.row_major(v.layout.shape), v.origin](
-                v.ptr,
-                RuntimeLayout[Layout.row_major(v.layout.shape)].row_major(
-                    v.runtime_layout.shape.value.canonicalize()
-                ),
-            )
-        )
+        TileTensor(v.ptr, row_major(lt_to_tt(v).layout.shape_coord()))
     )
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
-    )
-
     mha_gpu_naive[_is_cache_length_accurate=True, sink=sink](
         q,
         k_operand,
         v_operand,
         mask,
         output,
-        null_valid_length,
+        None,
         scale,
         batch_size,
         seq_len,
@@ -6826,9 +6925,7 @@ def mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]] = None,
 ) raises:
     """TileTensor overload of mha_gpu_naive (materialized mask). Bridges to
     LayoutTensor internally.
@@ -6908,9 +7005,7 @@ def mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]] = None,
 ) raises:
     """TileTensor overload of mha_gpu_naive (MHAMask functor). Bridges to
     LayoutTensor internally.
@@ -6998,14 +7093,10 @@ def mha_gpu_naive[
     depth: Int,
     group: Int,
     ctx: DeviceContext,
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]] = None,
 ) raises:
-    """TileTensor overload of mha_gpu_naive (`MHAOperand` key/value). Bridges
-    to LayoutTensor internally.
+    """TileTensor overload of mha_gpu_naive (`MHAOperand` key/value). Converts
+    the query and output operands to `LayoutTensor` internally.
 
     Parameters:
         q_type: Element type of the query tensor.
@@ -7051,7 +7142,9 @@ def mha_gpu_naive[
         v,
         mask_functor,
         output.to_layout_tensor(),
-        valid_length.to_layout_tensor(),
+        OptionalReg[ImmutTileTensor1D[.uint32]](
+            immut_tile_tensor_1d(valid_length.ptr, valid_length.num_elements())
+        ),
         scale,
         batch_size,
         max_prompt_len,
@@ -7105,7 +7198,108 @@ def mha_gpu_naive[
         v_operand,
         mask_functor,
         output,
-        valid_length,
+        OptionalReg[ImmutTileTensor1D[.uint32]](
+            immut_tile_tensor_1d(valid_length.ptr, valid_length.size())
+        ),
+        scale,
+        batch_size,
+        max_prompt_len,
+        max_cache_size,
+        num_heads,
+        depth,
+        group,
+        ctx,
+        _optional_lt_1d(sink_weights),
+    )
+
+
+def mha_gpu_naive[
+    q_type: DType,
+    output_type: DType,
+    cache_t: KVCacheT,
+    mask_t: MHAMask,
+    q_tt_layout: TensorLayout,
+    output_tt_layout: TensorLayout,
+    valid_length_tt_layout: TensorLayout,
+    //,
+    ragged: Bool = False,
+    sink: Bool = False,
+](
+    q: TileTensor[mut=False, q_type, q_tt_layout, address_space=.GENERIC, ...],
+    k: cache_t,
+    v: cache_t,
+    mask_functor: mask_t,
+    output: TileTensor[
+        mut=True, output_type, output_tt_layout, address_space=.GENERIC, ...
+    ],
+    valid_length: TileTensor[
+        mut=False,
+        .uint32,
+        valid_length_tt_layout,
+        address_space=.GENERIC,
+        ...,
+    ],
+    scale: Float32,
+    batch_size: Int,
+    max_prompt_len: Int,
+    max_cache_size: Int,
+    num_heads: Int,
+    depth: Int,
+    group: Int,
+    ctx: DeviceContext,
+    sink_weights: OptionalReg[ImmutTileTensor1D[q_type]] = None,
+) raises:
+    """`TileTensor` overload of `mha_gpu_naive` for KV-cache key/value.
+
+    Converts the query and output operands to `LayoutTensor` and delegates
+    to the `MHAOperand` overload; the 1-D operands pass through unchanged.
+
+    Parameters:
+        q_type: Element type of the query tensor.
+        output_type: Element type of the attention output.
+        cache_t: KV-cache type backing the key and value tensors.
+        mask_t: Attention mask type.
+        q_tt_layout: Compile-time `TensorLayout` of the query tensor.
+        output_tt_layout: Compile-time `TensorLayout` of the output tensor.
+        valid_length_tt_layout: Compile-time `TensorLayout` of the valid-length
+            tensor.
+        ragged: `True` for ragged-batch inputs.
+        sink: `True` to enable attention-sink mode.
+
+    Args:
+        q: Query `TileTensor` with BSHD layout.
+        k: Key operand backed by a KV cache.
+        v: Value operand backed by a KV cache.
+        mask_functor: Mask instance used to apply the attention mask.
+        output: Mutable output `TileTensor`.
+        valid_length: Per-sequence valid lengths as a `TileTensor`.
+        scale: Softmax temperature scale applied to Q·Kᵀ.
+        batch_size: Number of sequences in the batch.
+        max_prompt_len: Maximum query sequence length in the batch.
+        max_cache_size: Maximum key/value sequence length.
+        num_heads: Number of query heads.
+        depth: Attention head depth (key/value dimension per head).
+        group: GQA group size (query heads per key/value head).
+        ctx: GPU device context for kernel dispatch.
+        sink_weights: Optional sink-token weight tensor for attention sinks.
+    """
+    var k_operand = KVCacheMHAOperand(k)
+    var v_operand = KVCacheMHAOperand(v)
+
+    mha_gpu_naive[
+        ragged=ragged,
+        _use_valid_length=True,
+        _is_cache_length_accurate=False,
+        sink=sink,
+    ](
+        q.to_layout_tensor(),
+        k_operand,
+        v_operand,
+        mask_functor,
+        output.to_layout_tensor(),
+        OptionalReg[ImmutTileTensor1D[.uint32]](
+            immut_tile_tensor_1d(valid_length.ptr, valid_length.num_elements())
+        ),
         scale,
         batch_size,
         max_prompt_len,
@@ -7116,111 +7310,3 @@ def mha_gpu_naive[
         ctx,
         sink_weights,
     )
-
-
-def _naive_attention[
-    dtype: DType,
-    transpose_k: Bool = False,
-](
-    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    k: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    v: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    mask: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-    scale: Float32,
-    ctx: DeviceContext,
-) raises:
-    """This kernel provides reference values for flash attention in llama 2.
-    It can't be used in any model.
-    """
-    comptime simd_size = simd_width_of[dtype]()
-
-    var batch_size = q.dim[0]()
-    var num_heads = q.dim[1]()
-    var seq_len = q.dim[2]()
-    var num_keys = v.dim[2]()
-
-    # Allocate intermediate memory buffer.
-    var score_size = batch_size * num_heads * seq_len * num_keys
-    var score_alloc = alloc(
-        AllocLayout[Scalar[dtype]](count=score_size)
-    ).into_managed()
-    var score_ptr: UnsafePointer[
-        Scalar[dtype], origin_of(score_alloc)
-    ] = score_alloc.unsafe_ptr()
-    var score = TileTensor(
-        score_ptr,
-        row_major((batch_size, num_heads, seq_len, num_keys)),
-    )
-
-    var q_tt = TileTensor(
-        q.ptr,
-        row_major(
-            (
-                q.dim[0](),
-                q.dim[1](),
-                q.dim[2](),
-                q.dim[3](),
-            )
-        ),
-    )
-    var k_tt = TileTensor(
-        k.ptr,
-        row_major(
-            (
-                k.dim[0](),
-                k.dim[1](),
-                k.dim[2](),
-                k.dim[3](),
-            )
-        ),
-    )
-    batched_matmul[transpose_b=transpose_k](score, q_tt, k_tt)
-
-    @inline(.always)
-    def scale_and_mask[width: Int, alignment: Int = 1](coords: Coord) {var}:
-        var score_idx = coord_to_index_list(coords)
-        var vec = score.load_linear[width, alignment=alignment](score_idx)
-        vec = vec * scale.cast[dtype]()
-        vec = vec + mask.load[width=width](
-            IndexList[2](
-                Int(coords[coords.rank - 2].value()),
-                Int(coords[coords.rank - 1].value()),
-            )
-        )
-        score.store_linear[width, alignment=alignment](score_idx, vec)
-
-    elementwise[simd_size](
-        scale_and_mask, (batch_size, num_heads, seq_len, num_keys), ctx
-    )
-
-    # `as_unsafe_any_origin()` is used to avoid exclusivity violations
-    softmax_inline[dtype, simd_size, 4](
-        score, score.as_unsafe_any_origin(), axis=3
-    )
-
-    var output_tt = TileTensor(
-        output.ptr,
-        row_major(
-            (
-                output.dim[0](),
-                output.dim[1](),
-                output.dim[2](),
-                output.dim[3](),
-            )
-        ),
-    )
-    var v_tt = TileTensor(
-        v.ptr,
-        row_major(
-            (
-                v.dim[0](),
-                v.dim[1](),
-                v.dim[2](),
-                v.dim[3](),
-            )
-        ),
-    )
-    batched_matmul[transpose_b=False](output_tt, score, v_tt)
-
-    dealloc(score_alloc^)

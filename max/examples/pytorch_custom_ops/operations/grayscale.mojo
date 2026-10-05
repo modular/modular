@@ -67,9 +67,9 @@ struct Grayscale:
             var col = idx_l[1]
 
             # Load RGB values from input tensor
-            var r = load(IndexList[3](row, col, 0))
-            var g = load(IndexList[3](row, col, 1))
-            var b = load(IndexList[3](row, col, 2))
+            var r = load((row, col, 0))
+            var g = load((row, col, 1))
+            var b = load((row, col, 2))
 
             # Apply standard grayscale conversion formula
             # These weights are based on human visual perception

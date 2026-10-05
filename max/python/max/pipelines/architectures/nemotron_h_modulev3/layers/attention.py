@@ -29,28 +29,11 @@ from max.experimental.nn.common_layers.functional_kernels import (
 )
 from max.experimental.nn.common_layers.linear import QKVLinear
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
 from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import store_k_cache_ragged, store_v_cache_ragged
+from max.nn.kernels import fused_qkv_ragged_matmul
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 
 from ..model_config import NemotronHConfig
-
-
-def _store_kv_cache(
-    kv_collection: PagedCacheValues,
-    k: Tensor,
-    v: Tensor,
-    input_row_offsets: Tensor,
-    layer_idx: Tensor,
-) -> None:
-    offsets = TensorValue(input_row_offsets)
-    index = TensorValue(layer_idx)
-    store_k_cache_ragged(kv_collection, TensorValue(k), offsets, index)
-    store_v_cache_ragged(kv_collection, TensorValue(v), offsets, index)
-
-
-store_kv_cache = F.functional(_store_kv_cache)
 
 
 class NemotronHAttention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
@@ -73,12 +56,11 @@ class NemotronHAttention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         self.kv_params = kv_params
         self.layer_idx = layer_idx
         self.n_heads = config.num_attention_heads
-        self.n_kv_heads = config.num_key_value_heads
         self.head_dim = config.head_dim
         self.q_dim = self.n_heads * self.head_dim
-        self.kv_dim = self.n_kv_heads * self.head_dim
+        kv_dim = config.num_key_value_heads * self.head_dim
         self.qkv_proj = QKVLinear(
-            config.hidden_size, q_dim=self.q_dim, kv_dim=self.kv_dim
+            config.hidden_size, q_dim=self.q_dim, kv_dim=kv_dim
         )
         self.o_proj = Linear(self.q_dim, config.hidden_size, bias=False)
 
@@ -88,19 +70,21 @@ class NemotronHAttention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         kv_collection: PagedCacheValues,
         input_row_offsets: Tensor,
     ) -> Tensor:
-        q, k, v = F.split(
-            self.qkv_proj(x), [self.q_dim, self.kv_dim, self.kv_dim], axis=1
+        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
+        q = F.functional(fused_qkv_ragged_matmul)(
+            self.kv_params,
+            input=x,
+            input_row_offsets=input_row_offsets,
+            wqkv=self.qkv_proj.fused_weight,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            n_heads=self.n_heads,
         )
         q = q.reshape([-1, self.n_heads, self.head_dim])
-        k = k.reshape([-1, self.n_kv_heads, self.head_dim])
-        v = v.reshape([-1, self.n_kv_heads, self.head_dim])
         if self.kv_params.is_fp8_kv_dtype:
-            # An FP8 cache takes FP8 keys and values, and the FP8 attention
-            # kernel an FP8 query.
-            q, k, v = (F.cast(t, self.kv_params.dtype) for t in (q, k, v))
-
-        layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
-        store_kv_cache(kv_collection, k, v, input_row_offsets, layer_idx)
+            # The epilogue saturates K and V into an FP8 cache. The FP8
+            # attention kernel also takes an FP8 query.
+            q = q.cast(self.kv_params.dtype)
         out = flash_attention_ragged(
             self.kv_params,
             input=q,

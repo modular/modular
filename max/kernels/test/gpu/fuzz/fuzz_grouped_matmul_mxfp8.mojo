@@ -164,9 +164,9 @@ def run_one_case(
     for i in range(len(num_tokens_by_expert)):
         total_num_tokens += num_tokens_by_expert[i]
 
-    var a_shape = row_major(Coord(total_num_tokens, Idx[K]))
-    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    var c_shape = row_major(Coord(total_num_tokens, Idx[N]))
+    var a_shape = row_major(total_num_tokens, Idx[K])
+    var b_shape = row_major(Idx[num_experts], Idx[N], Idx[K])
+    var c_shape = row_major(total_num_tokens, Idx[N])
 
     var a_size = total_num_tokens * K
     var b_size = num_experts * N * K
@@ -192,19 +192,19 @@ def run_one_case(
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
-        a_offsets_device, row_major(Coord(num_active_experts + 1))
+        a_offsets_device, row_major(num_active_experts + 1)
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device, row_major(Coord(num_active_experts))
+        a_scale_offsets_device, row_major(num_active_experts)
     )
     var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
-        expert_ids_device, row_major(Coord(num_active_experts))
+        expert_ids_device, row_major(num_active_experts)
     )
     var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
 
@@ -237,23 +237,19 @@ def run_one_case(
         expert_ids_host_ptr[i] = Int32(expert_ids[i])
 
     var a_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
@@ -306,13 +302,11 @@ def run_one_case(
         var b_slice = TileTensor(
             b_scales_host_ptr.unsafe_ptr() + e * b_expert_scale_count,
             row_major(
-                Coord(
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for idx0 in range(align_up(N, SF_MN_GROUP_SIZE)):
@@ -356,30 +350,26 @@ def run_one_case(
     var a_scales_tt = TileTensor(
         a_scales_device,
         row_major(
-            Coord(
-                a_scale_dim0,
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            a_scale_dim0,
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
-        expert_scales_device, row_major(Coord(Idx[num_experts]))
+        expert_scales_device, row_major(Idx[num_experts])
     ).as_unsafe_any_origin()
 
     grouped_matmul_block_scaled[transpose_b=transpose_b, config=matmul_config](
@@ -457,13 +447,11 @@ def run_one_case(
             var b_scales_slice = TileTensor(
                 b_scales_tensor.ptr + expert_id * b_expert_scale_count,
                 row_major(
-                    Coord(
-                        Idx[n_groups],
-                        Idx[k_groups],
-                        Idx[SF_ATOM_M[0]],
-                        Idx[SF_ATOM_M[1]],
-                        Idx[SF_ATOM_K],
-                    )
+                    Idx[n_groups],
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 ),
             )
             var a_scales_start = start // SF_MN_GROUP_SIZE + Int(
@@ -472,13 +460,11 @@ def run_one_case(
             var a_scales_slice = TileTensor(
                 a_scales_tensor.ptr + a_scales_start * a_scales_row_stride,
                 row_major(
-                    Coord(
-                        ceildiv(end - start, SF_MN_GROUP_SIZE),
-                        Idx[k_groups],
-                        Idx[SF_ATOM_M[0]],
-                        Idx[SF_ATOM_M[1]],
-                        Idx[SF_ATOM_K],
-                    )
+                    ceildiv(end - start, SF_MN_GROUP_SIZE),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 ),
             )
             vendor_blas.matmul(
@@ -578,9 +564,9 @@ def _run_batch_composition(
     for i in range(len(counts)):
         total_num_tokens += counts[i]
 
-    var a_shape = row_major(Coord(total_num_tokens, Idx[K]))
-    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    var c_shape = row_major(Coord(total_num_tokens, Idx[N]))
+    var a_shape = row_major(total_num_tokens, Idx[K])
+    var b_shape = row_major(Idx[num_experts], Idx[N], Idx[K])
+    var c_shape = row_major(total_num_tokens, Idx[N])
 
     var a_size = total_num_tokens * K
     var b_size = num_experts * N * K
@@ -603,19 +589,19 @@ def _run_batch_composition(
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
-        a_offsets_device, row_major(Coord(num_active_experts + 1))
+        a_offsets_device, row_major(num_active_experts + 1)
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device, row_major(Coord(num_active_experts))
+        a_scale_offsets_device, row_major(num_active_experts)
     )
     var expert_ids_device = ctx.enqueue_create_buffer[.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
-        expert_ids_device, row_major(Coord(num_active_experts))
+        expert_ids_device, row_major(num_active_experts)
     )
     var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
 
@@ -648,23 +634,19 @@ def _run_batch_composition(
         expert_ids_host_ptr[i] = Int32(ids[i])
 
     var a_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
@@ -693,13 +675,11 @@ def _run_batch_composition(
         var b_slice = TileTensor(
             b_scales_host_ptr.unsafe_ptr() + e * b_expert_scale_count,
             row_major(
-                Coord(
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for idx0 in range(align_up(N, SF_MN_GROUP_SIZE)):
@@ -790,30 +770,26 @@ def _run_batch_composition(
     var a_scales_tt = TileTensor(
         a_scales_device,
         row_major(
-            Coord(
-                a_scale_dim0,
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            a_scale_dim0,
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
-        expert_scales_device, row_major(Coord(Idx[num_experts]))
+        expert_scales_device, row_major(Idx[num_experts])
     ).as_unsafe_any_origin()
 
     grouped_matmul_block_scaled[transpose_b=transpose_b, config=matmul_config](

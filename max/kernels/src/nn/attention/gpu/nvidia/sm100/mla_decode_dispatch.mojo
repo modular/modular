@@ -1231,13 +1231,7 @@ def _mla_decode_sm100_dispatch_impl[
         var o_accum_split = TileTensor(
             o_accum_split_data,
             row_major(
-                Coord(
-                    Int(num_partitions),
-                    Int(batch_size),
-                    Int(q_max_seq_len),
-                    Int(num_heads),
-                    Int(v_depth),
-                )
+                num_partitions, batch_size, q_max_seq_len, num_heads, v_depth
             ),
         )
         # Create LSE accumulator buffer (AccumType = float32 for numerical stability)
@@ -1249,14 +1243,7 @@ def _mla_decode_sm100_dispatch_impl[
             ctx.enqueue_memset(lse_accum_data, nan[AccumType]())
         var lse_accum_split = TileTensor(
             lse_accum_data,
-            row_major(
-                Coord(
-                    Int(num_partitions),
-                    Int(batch_size),
-                    Int(q_max_seq_len),
-                    Int(num_heads),
-                )
-            ),
+            row_major(num_partitions, batch_size, q_max_seq_len, num_heads),
         )
         var lse_accum_split_ptr: SplitAccumType = {
             lse_accum_split.to_device_buffer(ctx)

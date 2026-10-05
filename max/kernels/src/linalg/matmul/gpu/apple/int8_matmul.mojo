@@ -1047,8 +1047,8 @@ struct AppleInt8ActQuant[in_type: DType = .bfloat16, *, THREADS: Int = 64]:
         K_arg: Int32,
     ):
         var K = Int(K_arg)
-        var row = Int(block_idx.x)
-        var tid = Int(thread_idx.x)
+        var row = block_idx.x
+        var tid = thread_idx.x
 
         # Pass 1: per-thread partial absmax over strided columns of this row,
         # then a threadgroup all-reduce via a tiny shared-scratch max.
@@ -1086,7 +1086,7 @@ def _threadgroup_max[nthreads: Int](val: Float32) -> Float32:
     reduction is cheap and needs no tree.
     """
     var s = unsafe_stack_allocation[nthreads, Float32, address_space=.SHARED]()
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     s[tid] = val
     barrier()
     if tid == 0:

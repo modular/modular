@@ -51,6 +51,7 @@ from nn.attention.mha_mask import CausalMask, NullMask, MHAMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
 from nn.attention.gpu.apple.fa_prefill import fa_prefill_apple
 from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 
 
 def _mask_label[mask_t: MHAMask]() -> String:
@@ -112,9 +113,7 @@ def _bench_prefill[
     var vl_d = ctx.enqueue_create_buffer[.uint32](batch + 1)
     var vl_t = TileTensor(vl_d, row_major(batch + 1))
 
-    comptime SinkOpt = OptionalReg[
-        LayoutTensor[qkv_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ]
+    comptime SinkOpt = OptionalReg[ImmutTileTensor1D[qkv_type]]
     var sink_opt = SinkOpt(None)
 
     @inline(.always)
@@ -136,12 +135,12 @@ def _bench_prefill[
                 _use_valid_length=False,
                 _is_cache_length_accurate=True,
             ](
-                q_t.to_layout_tensor(),
+                q_t,
                 k_op,
                 v_op,
                 mask,
-                o_t.to_layout_tensor(),
-                vl_t.to_layout_tensor(),
+                o_t,
+                vl_t,
                 scale,
                 batch,
                 seq,
@@ -159,12 +158,12 @@ def _bench_prefill[
                 _is_cache_length_accurate=True,
                 num_simdgroups=num_simdgroups,
             ](
-                q_t.to_layout_tensor(),
+                q_t,
                 k_op,
                 v_op,
                 mask,
-                o_t.to_layout_tensor(),
-                vl_t.to_layout_tensor(),
+                o_t,
+                vl_t,
                 scale,
                 batch,
                 seq,

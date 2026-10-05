@@ -422,7 +422,7 @@ struct FusedMatmulAdd:
             epi_m = Int64(residual.dim_size(0))
             epi_n = Int64(residual.dim_size(1))
         var epilogue = TileTensor(
-            residual.unsafe_ptr(), row_major(Coord(epi_m, epi_n))
+            residual.unsafe_ptr(), row_major(epi_m, epi_n)
         ).as_imm()
 
         fused_bias_residual_matmul_dispatch_sm100[
@@ -481,6 +481,11 @@ struct LinalgBandPart:
 @extensibility.register("mo.grouped.matmul.ragged")
 struct Struct_grouped_matmul_ragged:
     """Registers the `mo.grouped.matmul.ragged` graph op with the graph compiler.
+
+    The output takes a fused elementwise epilogue, so a consumer such as an
+    activation runs in the matmul's store instead of as its own kernel. A
+    value-to-value consumer is applied before the matmul's own store, which
+    keeps the SM100 kernel's TMA store.
     """
 
     @inline(.always)
@@ -490,9 +495,10 @@ struct Struct_grouped_matmul_ragged:
         a_type: DType,
         b_type: DType,
         //,
+        has_epilogue_fusion: Bool,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
+        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=3, ...],
         expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
@@ -501,7 +507,48 @@ struct Struct_grouped_matmul_ragged:
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "grouped matmul only support GPUs"
-        grouped_matmul(
+
+        @__parameter
+        @inline(.always)
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[c_type, _width]](val),
+            )
+
+        @__parameter
+        @inline(.always)
+        def output_compute_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return rebind[SIMD[_dtype, _width]](
+                c._fused_compute_output_lambda[element_alignment=alignment](
+                    coords, rebind[SIMD[c_type, _width]](val)
+                )
+            )
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if has_epilogue_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if has_epilogue_fusion and has_compute_lambda else None
+
+        grouped_matmul[
+            elementwise_lambda_fn=elementwise_lambda,
+            elementwise_compute_lambda_fn=compute_lambda,
+        ](
             c.to_tile_tensor[.int64](),
             a.to_tile_tensor[.int64](),
             b.to_tile_tensor[.int64](),
@@ -1018,6 +1065,7 @@ struct Struct_grouped_matmul_block_scaled_amd[
             for MXFP8. The kernel reads `a`/`b` as raw bytes, so this rather
             than the operand dtype selects the format, and with it the K extent
             (`K` at MXFP8, `K // 2` at MXFP4). Preshuffled-B path only.
+            Dense mixed W4A8 derives independent formats from operand dtypes.
     """
 
     @inline(.always)
@@ -1054,8 +1102,12 @@ struct Struct_grouped_matmul_block_scaled_amd[
 
         Args:
             c: The output tensor of shape (total_tokens, N).
-            a: The input tensor of shape (total_tokens, K // 2).
-            b: The weight tensor of shape (num_experts, N, K // 2).
+            a: The input tensor of shape (total_tokens, K // 2) as packed
+                uint8 MXFP4, or (total_tokens, K) as float8_e4m3fn MXFP8 or
+                W4A8 activations.
+            b: The weight tensor of shape (num_experts, N, K // 2) as packed
+                uint8 MXFP4 (W4A4 or W4A8), or (num_experts, N, K) as
+                float8_e4m3fn MXFP8.
             a_scales: The A scale factors in 2D layout.
             b_scales: The B scale factors in 3D layout.
             expert_start_indices: The starting token index for each expert.
@@ -1082,9 +1134,16 @@ struct Struct_grouped_matmul_block_scaled_amd[
             "grouped block-scaled matmul operands must be one byte wide"
             " (uint8 for MXFP4, float8_e4m3fn for MXFP8)"
         )
-        if num_active_experts == 0:
-            return
+        comptime mixed_w4a8 = (a_type == .float8_e4m3fn and b_type == .uint8)
+        comptime assert (
+            a_type == b_type and (a_type == .uint8 or a_type == .float8_e4m3fn)
+        ) or mixed_w4a8, "unsupported AMD grouped block-scaled operand formats"
         comptime if Self.preshuffled_b:
+            comptime assert (
+                not mixed_w4a8
+            ), "mixed AMD W4A8 requires dense row-major B"
+            if num_active_experts == 0:
+                return
             # Preshuffled-B kernel path (block_scaled_grouped_matmul_amd_preb).
             # Requires B in the 5D layout from `Shuffler.preshuffle_b_5d`,
             # typically produced by the model's weight adapter at load
@@ -1109,11 +1168,17 @@ struct Struct_grouped_matmul_block_scaled_amd[
             # Dense row-major B path. Safe default for arbitrary callers.
             # MXFP8 is wired on the preshuffled-B path only; reject rather
             # than silently reinterpret the K extent as FP4-packed.
-            comptime assert Self.lane_bytes == 16, (
+            comptime assert Self.lane_bytes == 16 or mixed_w4a8, (
                 "lane_bytes=32 (MXFP8) requires preshuffled_b=True; the dense"
                 " row-major B path is MXFP4-only"
             )
-            block_scaled_grouped_matmul_amd(
+            comptime a_format = (
+                CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3 if mixed_w4a8 else CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1
+            )
+            block_scaled_grouped_matmul_amd[
+                matrix_format=a_format,
+                b_matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+            ](
                 c.to_tile_tensor[.int64](),
                 a.to_tile_tensor[.int64]().bitcast[.uint8](),
                 b.to_tile_tensor[.int64]().bitcast[.uint8](),
@@ -1550,10 +1615,8 @@ def _apple_int8_w8a8_dispatch[
     # (same lifetime idiom as the FP4 materialize path).
     var aq_buf = context.enqueue_create_buffer[.int8](M * K)
     var asc_buf = context.enqueue_create_buffer[.float32](M)
-    var aq_tt = TileTensor(
-        aq_buf.unsafe_ptr(), row_major(Coord(Int64(M), Int64(K)))
-    )
-    var asc_tt = TileTensor(asc_buf.unsafe_ptr(), row_major(Coord(Int64(M))))
+    var aq_tt = TileTensor(aq_buf.unsafe_ptr(), row_major(Int64(M), Int64(K)))
+    var asc_tt = TileTensor(asc_buf.unsafe_ptr(), row_major(Int64(M)))
 
     enqueue_apple_int8_quantize_activation[.bfloat16](
         aq_tt, a_tt.as_imm(), asc_tt, context
@@ -1604,9 +1667,7 @@ struct Struct_matmul_int8_w8a8_apple:
         # No bias: a length-1 dummy bias TileTensor (the `has_bias=False` GEMM
         # path ignores it). Reuse `b_scale` as the dummy source (same dtype is
         # not required -- it is never read -- but a valid 1-elem view is).
-        var dummy_bias = TileTensor(
-            c_tt._storage, row_major(Coord(Int64(1)))
-        ).as_imm()
+        var dummy_bias = TileTensor(c_tt._storage, row_major(Int64(1))).as_imm()
         _apple_int8_w8a8_dispatch[c_type, has_bias=False, target=target](
             c_tt,
             a.to_tile_tensor[.int64](),
@@ -1910,7 +1971,7 @@ struct MatmulStaticScaledFloat8:
             )
             var output_scratch = TileTensor(
                 scratch_buffer.unsafe_ptr(),
-                row_major(Coord(Int64(M), Idx[N])),
+                row_major(Int64(M), Idx[N]),
             )
 
             matmul[
@@ -2208,11 +2269,11 @@ struct Struct_router_gate_mixed_gemv:
             N != UNKNOWN_VALUE and K != UNKNOWN_VALUE
         ), "router-gate mixed GEMV requires a static [N, K] weight shape"
 
-        var c_tt = TileTensor(c.unsafe_ptr(), row_major(Coord(M, Idx[N])))
+        var c_tt = TileTensor(c.unsafe_ptr(), row_major(M, Idx[N]))
 
         if router_gate_use_mixed_gemv(M):
             # Tiny-M decode: fused mixed bf16-A × fp32-B GEMV, one launch.
-            var a_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
+            var a_tt = TileTensor(a.unsafe_ptr(), row_major(M, Idx[K]))
             router_gate_mixed_gemv[N](
                 c_tt,
                 a_tt.as_imm(),
@@ -2229,8 +2290,8 @@ struct Struct_router_gate_mixed_gemv:
         # avoids), then run the ordinary fp32 matmul against the fp32 weight.
         # Routing large M through the tiny-M GEMV is catastrophically slow.
         var a_f32 = context.enqueue_create_buffer[.float32](M * K)
-        var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(Coord(M, Idx[K])))
-        var a_f32_tt = TileTensor(a_f32, row_major(Coord(M, Idx[K])))
+        var a_bf16_tt = TileTensor(a.unsafe_ptr(), row_major(M, Idx[K]))
+        var a_f32_tt = TileTensor(a_f32, row_major(M, Idx[K]))
 
         @inline(.always)
         def _cast_bf16_to_fp32[
@@ -2321,14 +2382,14 @@ struct Struct_smallm_streaming_matmul:
                 unsafe_from_address=Int(c.unsafe_ptr())
             )
             var c_tt = TileTensor[
-                .bfloat16, type_of(row_major(Coord(1, Idx[N]))), MutAnyOrigin
-            ](c_ptr, row_major(Coord(M, Idx[N])))
+                .bfloat16, type_of(row_major(1, Idx[N])), MutAnyOrigin
+            ](c_ptr, row_major(M, Idx[N]))
             var a_ptr = UnsafePointer[BFloat16, ImmutAnyOrigin](
                 unsafe_from_address=Int(a.unsafe_ptr())
             )
             var a_tt = TileTensor[
-                .bfloat16, type_of(row_major(Coord(1, Idx[K]))), ImmutAnyOrigin
-            ](a_ptr, row_major(Coord(M, Idx[K])))
+                .bfloat16, type_of(row_major(1, Idx[K])), ImmutAnyOrigin
+            ](a_ptr, row_major(M, Idx[K]))
             var scratch_ptr = UnsafePointer[BFloat16, MutAnyOrigin](
                 unsafe_from_address=Int(a_scratch.unsafe_ptr())
             )

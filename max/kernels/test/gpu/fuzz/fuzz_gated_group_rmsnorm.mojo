@@ -17,17 +17,21 @@
 # 520 and 960 cover the vector-loop tail, 100 covers the scalar fallback). The
 # runtime axes are rows, group count, and the gate view: `gate_pad` widens the
 # gate row stride past the logical width and `gate_off` shifts its base pointer
-# into the row, so the sweep crosses the 16-byte alignment that selects between
-# the vectorized and scalar kernels. `y`, `weight` and `output` stay aligned.
+# into the row, so the sweep crosses the 16-byte alignment. A gate view that is
+# not 16-byte aligned claims no alignment, as the graph compiler's fused input
+# does. `y`, `weight` and `output` stay aligned.
 
 from std.math import rsqrt
 from std.random import random_ui64, seed
+from std.sys import size_of
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.activations import silu
-from state_space.gated_group_rmsnorm import gated_group_rmsnorm_gpu
+from state_space.gated_group_rmsnorm import (
+    gated_group_rmsnorm_gpu,
+)
 
 from _fuzz import (
     VD_NORMAL,
@@ -134,14 +138,36 @@ def run_one_case(
     var gate_view = gate_d.create_sub_buffer[dtype](
         spec.gate_off, rows * gstride - spec.gate_off
     )
-    var y_t = TileTensor(y_d, row_major(Coord(rows, inter)))
-    var gate_t = TileTensor(gate_view, row_major(Coord(rows, gstride)))
-    var w_t = TileTensor(w_d, row_major(Coord(inter)))
-    var out_t = TileTensor(out_d, row_major(Coord(rows, inter)))
+    var y_t = TileTensor(y_d, row_major(rows, inter))
+    var gate_t = TileTensor(gate_view, row_major(rows, gstride))
+    var w_t = TileTensor(w_d, row_major(inter))
+    var out_t = TileTensor(out_d, row_major(rows, inter))
 
-    gated_group_rmsnorm_gpu[dtype, dtype, group_size](
-        out_t, y_t, gate_t, w_t, rows, num_groups, EPS, ctx
+    def gate_aligned[
+        width: Int, alignment: Int
+    ](n: Int, col: Int) {var gate_t} -> SIMD[dtype, width]:
+        return gate_t.load[width=width, alignment=alignment * size_of[dtype]()](
+            (n, col)
+        )
+
+    # A view that cannot prove 16-byte alignment claims none, as the graph
+    # compiler's fused input does.
+    def gate_unaligned[
+        width: Int, alignment: Int
+    ](n: Int, col: Int) {var gate_t} -> SIMD[dtype, width]:
+        return gate_t.load[width=width, alignment=size_of[dtype]()]((n, col))
+
+    var gate_aligned_view = (
+        spec.gate_off % TILE == 0 and (gstride * size_of[dtype]()) % 16 == 0
     )
+    if gate_aligned_view:
+        gated_group_rmsnorm_gpu[dtype, dtype, group_size](
+            out_t, y_t, gate_aligned, w_t, rows, num_groups, EPS, ctx
+        )
+    else:
+        gated_group_rmsnorm_gpu[dtype, dtype, group_size](
+            out_t, y_t, gate_unaligned, w_t, rows, num_groups, EPS, ctx
+        )
     ctx.synchronize()
 
     if check:

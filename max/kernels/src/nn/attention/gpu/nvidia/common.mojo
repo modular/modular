@@ -144,6 +144,31 @@ comptime ImmutTileTensor1D[
 ] = TileTensor[dtype, _1d_row_major_tt_layout, ImmutAnyOrigin, Engine=Engine]
 
 
+def immut_tile_tensor_1d[
+    mut: Bool, dtype: DType, origin: Origin[mut=mut], //
+](ptr: UnsafePointer[Scalar[dtype], origin], size: Int) -> ImmutTileTensor1D[
+    dtype
+]:
+    """Views `size` contiguous elements at `ptr` as an `ImmutTileTensor1D`.
+
+    Parameters:
+        mut: Mutability of `ptr`'s origin (inferred).
+        dtype: Element type of the viewed memory (inferred).
+        origin: Origin of `ptr` (inferred).
+
+    Args:
+        ptr: Pointer to the first element.
+        size: Number of elements.
+
+    Returns:
+        An immutable, untracked-origin 1-D view over the elements.
+    """
+    return ImmutTileTensor1D[dtype](
+        ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+        _1d_row_major_tt_layout(Coord(Int64(size)), Coord(ComptimeInt[1]())),
+    )
+
+
 struct Pack[
     MaskType: MHAMask,
     SchedulerType: MHATileScheduler,

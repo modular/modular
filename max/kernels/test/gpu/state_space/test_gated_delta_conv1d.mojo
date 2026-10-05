@@ -75,7 +75,7 @@ def gated_delta_conv1d_sequential_reference[
     conv_output_seqlen_stride: UInt32,
     conv_output_channel_stride: UInt32,
 ):
-    """Retired sequential kernel, kept as the bit-exact reference."""
+    """Retired sequential kernel, kept as the FMA-tolerance reference."""
     var batch_item_idx = block_idx.x
     var conv_channel_idx = block_idx.y * CONV1D_BLOCK_DIM + thread_idx.x
 
@@ -188,8 +188,8 @@ def run_slot_indexed_gpu[
     ctx: DeviceContext,
     tokens_per_block: Int = CONV1D_TOKENS_PER_BLOCK,
     rtol: Float64 = 0.01,
-    # Host reference is too slow at production sizes; the bit-exact kernel
-    # comparison still runs.
+    # Host reference is too slow at production sizes; the sequential-kernel
+    # comparison (matches within FMA contraction tolerance) still runs.
     cpu_reference: Bool = True,
 ) raises:
     """Run the slot-indexed conv1d kernel and check it against a CPU reference.
@@ -373,12 +373,6 @@ def run_slot_indexed_gpu[
             slot_idx_tt,
             input_row_offsets_tt,
             conv_output_tt,
-            qkv_input_seqlen_stride,
-            qkv_input_channel_stride,
-            conv_weight_channel_stride,
-            conv_weight_offset_stride,
-            conv_output_seqlen_stride,
-            conv_output_channel_stride,
             grid_dim=(
                 ceildiv(total_seq_len, tokens_per_block),
                 ceildiv(conv_dim, CONV1D_BLOCK_DIM),
@@ -415,7 +409,11 @@ def run_slot_indexed_gpu[
     ctx.synchronize()
 
     for i in range(total_seq_len * conv_dim):
-        assert_equal(conv_output_gpu_heap[i], conv_output_ref_gpu_heap[i])
+        assert_almost_equal(
+            conv_output_gpu_heap[i],
+            conv_output_ref_gpu_heap[i],
+            rtol=1e-5,
+        )
 
     for i in range(pool_size):
         comptime if WRITE_STATE:
@@ -665,12 +663,6 @@ def _launch_conv[
         slot_tt,
         offsets_tt,
         out_tt,
-        UInt32(CONV_DIM),
-        UInt32(1),
-        UInt32(KERNEL_SIZE),
-        UInt32(1),
-        UInt32(CONV_DIM),
-        UInt32(1),
         grid_dim=(
             ceildiv(seq_len, tokens_per_block),
             ceildiv(CONV_DIM, CONV1D_BLOCK_DIM),
@@ -904,12 +896,6 @@ def test_gated_delta_conv1d_gpu_deep_slot_no_alias() raises:
         slot_idx_tt,
         input_row_offsets_tt,
         conv_output_tt,
-        UInt32(conv_dim),  # qkv_input_seqlen_stride
-        UInt32(1),  # qkv_input_channel_stride
-        UInt32(KERNEL_SIZE),  # conv_weight_channel_stride
-        UInt32(1),  # conv_weight_offset_stride
-        UInt32(conv_dim),  # conv_output_seqlen_stride
-        UInt32(1),  # conv_output_channel_stride
         grid_dim=(
             ceildiv(total_seq_len, CONV1D_TOKENS_PER_BLOCK),
             ceildiv(conv_dim, CONV1D_BLOCK_DIM),

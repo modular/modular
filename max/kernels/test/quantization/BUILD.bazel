@@ -5,13 +5,19 @@ package(default_visibility = ["//max:consumers"])
 
 _EXTRA_DEPS = {
     "test_qmatmul_k.mojo": ["//max:max_mojo"],
+    "test_gguf_kv_cache.mojo": [
+        "//max:kv_cache",
+        "//max:max_mojo",
+        "//max:nn",
+    ],
 }
 
 [
     mojo_test(
         name = src + ".test",
-        srcs = [src],
+        srcs = [src] + (["test_qmatmul_k.mojo"] if src == "test_gguf_kv_cache.mojo" else []),
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        main = src,
         deps = [
             "//max:quantization",
             "@mojo//:std",

@@ -65,14 +65,12 @@ def run_case[
     )
     var blocks = HostDeviceTileTensor[dtype](
         row_major(
-            Coord(
-                Int64(num_pages),
-                Idx[kv_dim],
-                Int64(NUM_LAYERS),
-                Idx[slots_per_page],
-                Idx[1],
-                Idx[head_dim],
-            )
+            Int64(num_pages),
+            Idx[kv_dim],
+            Int64(NUM_LAYERS),
+            Idx[slots_per_page],
+            Idx[1],
+            Idx[head_dim],
         ),
         ctx,
     )
@@ -82,7 +80,7 @@ def run_case[
     blocks.to_device()
 
     var offsets = HostDeviceTileTensor[.uint32](
-        row_major(Coord(Int64(batch_size + 1))), ctx
+        row_major(Int64(batch_size + 1)), ctx
     )
     var offsets_host = offsets.host_tensor()
     var num_rows = 0
@@ -93,7 +91,7 @@ def run_case[
     offsets.to_device()
 
     var slots = HostDeviceTileTensor[.int32](
-        row_major(Coord(Int64(num_rows), Int64(num_slots))), ctx
+        row_major(Int64(num_rows), Int64(num_slots)), ctx
     )
     var slots_host = slots.host_tensor()
     var row_batch = List[Int]()
@@ -107,9 +105,7 @@ def run_case[
             )
     slots.to_device()
 
-    var out_layout = row_major(
-        Coord(Int64(num_rows), Int64(num_slots), Idx[head_dim])
-    )
+    var out_layout = row_major(Int64(num_rows), Int64(num_slots), Idx[head_dim])
     var gpu_out = HostDeviceTileTensor[dtype](out_layout, ctx)
     _ = gpu_out.host_tensor().fill(0)
     gpu_out.to_device()
@@ -126,22 +122,15 @@ def run_case[
         ImmutAnyOrigin,
         MutAnyOrigin,
     ]
-    # The collection spells its block strides symbolically in `kv_params`,
-    # which the compiler cannot fold against `row_major`'s for a generic
-    # `kv_params`; the two layouts are structurally identical.
     var device_collection = Collection(
-        rebind[Collection.blocks_tt_type](
-            blocks.device_tensor().as_unsafe_any_origin()
-        ),
+        blocks.device_tensor().as_unsafe_any_origin(),
         lengths.cache_lengths.device_tile_tensor(),
         lut.device_tile_tensor(),
         UInt32(lengths.max_seq_length_batch),
         UInt32(lengths.max_full_context_length),
     )
     var host_collection = Collection(
-        rebind[Collection.blocks_tt_type](
-            blocks.host_tensor().as_unsafe_any_origin()
-        ),
+        blocks.host_tensor().as_unsafe_any_origin(),
         lengths.cache_lengths.host_tile_tensor(),
         lut.host_tile_tensor(),
         UInt32(lengths.max_seq_length_batch),

@@ -16,8 +16,8 @@ The builtin ``causal_conv1d_varlen_fwd`` (Nemotron-H mamba conv) historically
 required channels-first ``(dim, total_seqlen)`` tensors, forcing the model to
 materialize a transpose on each side of the op. The ``channels_last``
 parameter lets the op consume/produce tokens-major ``(total_seqlen, dim)``
-directly; the kernels index through runtime strides, so both layouts must run
-the exact same per-element arithmetic.
+directly. Channels-last moves several channels per thread, so the compiler
+may contract the arithmetic differently and the outputs can differ by an ulp.
 
 This test builds one graph containing BOTH paths on identical inputs:
 
@@ -28,10 +28,10 @@ This test builds one graph containing BOTH paths on identical inputs:
 Each pair runs twice, with ``use_residual`` off and on: the residual reads
 ``x`` through the same strided accessor the layout parameter steers.
 
-The test asserts bitwise-identical outputs and conv-state pools for a ragged
-prefill step followed by a state-carrying decode step (one token per
-sequence, ``has_initial_state=True``), reusing the same compiled model via a
-symbolic ``total_seqlen`` dimension.
+The test asserts outputs equal to within rounding and bitwise-identical
+conv-state pools for a ragged prefill step followed by a state-carrying decode
+step (one token per sequence, ``has_initial_state=True``), reusing the same
+compiled model via a symbolic ``total_seqlen`` dimension.
 """
 
 from __future__ import annotations
@@ -167,7 +167,7 @@ def _build_dual_layout_graph(gpu: DeviceRef) -> Graph:
 def test_causal_conv1d_channels_last_matches_channels_first(
     session: InferenceSession,
 ) -> None:
-    """channels_last output/state must be bitwise-equal to channels-first.
+    """channels_last output/state must match channels-first.
 
     Holds with the fused residual add on as well as off.
     """
@@ -214,10 +214,12 @@ def test_causal_conv1d_channels_last_matches_channels_first(
         return outs, pools
 
     def _check_step(outs: list[np.ndarray], pools: list[np.ndarray]) -> None:
-        """Each layout pair must agree bitwise, with and without residual."""
-        np.testing.assert_array_equal(outs[_CL], outs[_CF])
+        """Each layout pair must agree, with and without residual."""
+        np.testing.assert_allclose(outs[_CL], outs[_CF], rtol=1e-5, atol=1e-5)
         np.testing.assert_array_equal(pools[_CL], pools[_CF])
-        np.testing.assert_array_equal(outs[_CL_RES], outs[_CF_RES])
+        np.testing.assert_allclose(
+            outs[_CL_RES], outs[_CF_RES], rtol=1e-5, atol=1e-5
+        )
         np.testing.assert_array_equal(pools[_CL_RES], pools[_CF_RES])
         # The residual arms must not be silently computing the plain conv;
         # the conv state is the x window either way, so only outputs differ.

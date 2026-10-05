@@ -76,14 +76,12 @@ def test_matmul_sm100_epilogue[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} register_based_epilogue={register_based_epilogue} swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = Int(n.value()) * Int(k.value())
@@ -216,7 +214,7 @@ def test_matmul_sm100_epilogue[
                 for j in range(N):
                     comptime assert c_host_ref.flat_rank == 2
                     c_host_ref[i, j] = test_lambda_add_coords_prod_local(
-                        IndexList[2](i, j), c_host_ref[i, j]
+                        (i, j), c_host_ref[i, j]
                     )
 
         comptime rtol = 1e-2

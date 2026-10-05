@@ -111,31 +111,23 @@ def run_mamba_split_conv1d_scan_combined_gpu[
     var output_gpu_h = ctx.enqueue_create_host_buffer[dtype](output_size)
 
     # Initialize with random data
-    random(
-        TileTensor(zxbcdt_h, row_major(Coord(batch, seqlen, zxbcdt_channels)))
-    )
-    random(
-        TileTensor(conv_weight_h, row_major(Coord(conv_weight_channels, width)))
-    )
-    random(TileTensor(conv_bias_h, row_major(Coord(conv_bias_size))))
-    random(TileTensor(dt_bias_h, row_major(Coord(dt_bias_size))))
-    random(TileTensor(A_h, row_major(Coord(A_size))))
+    random(TileTensor(zxbcdt_h, row_major(batch, seqlen, zxbcdt_channels)))
+    random(TileTensor(conv_weight_h, row_major(conv_weight_channels, width)))
+    random(TileTensor(conv_bias_h, row_major(conv_bias_size)))
+    random(TileTensor(dt_bias_h, row_major(dt_bias_size)))
+    random(TileTensor(A_h, row_major(A_size)))
     if has_D:
         random(
             TileTensor(
                 D_h,
                 row_major(
-                    Coord(
-                        nheads if has_D else 0,
-                        headdim if has_D and D_size > nheads else 0,
-                    )
+                    nheads if has_D else 0,
+                    headdim if has_D and D_size > nheads else 0,
                 ),
             )
         )
     if has_rmsnorm:
-        random(
-            TileTensor(rmsnorm_weight_h, row_major(Coord(rmsnorm_weight_size)))
-        )
+        random(TileTensor(rmsnorm_weight_h, row_major(rmsnorm_weight_size)))
         for i in range(dim):
             rmsnorm_weight_h[i] = abs(rmsnorm_weight_h[i]) + Scalar[dtype](0.1)
     if has_outproj:
@@ -143,13 +135,11 @@ def run_mamba_split_conv1d_scan_combined_gpu[
             TileTensor(
                 outproj_weight_h,
                 row_major(
-                    Coord(
-                        out_dim if has_outproj else 0, dim if has_outproj else 0
-                    )
+                    out_dim if has_outproj else 0, dim if has_outproj else 0
                 ),
             )
         )
-        random(TileTensor(outproj_bias_h, row_major(Coord(outproj_bias_size))))
+        random(TileTensor(outproj_bias_h, row_major(outproj_bias_size)))
 
     # Allocate GPU memory
     var zxbcdt_d = ctx.enqueue_create_buffer[dtype](zxbcdt_size)
@@ -598,6 +588,32 @@ def test_mamba_combined_gpu_basic() raises:
         dim=4,
         nheads=2,
         headdim=2,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+        ctx=ctx,
+    )
+
+
+def test_mamba_combined_gpu_headdim1_multi_head_D() raises:
+    """With headdim == 1, D is (nheads, 0); each head needs its own D."""
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    run_mamba_split_conv1d_scan_combined_gpu[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=4,
+        headdim=1,
         ngroups=1,
         width=4,
         chunk_size=4,

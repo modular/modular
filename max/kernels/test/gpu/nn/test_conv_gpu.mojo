@@ -15,15 +15,7 @@ from std.math import ceildiv
 from std.random import rand
 from std.sys import align_of
 
-from layout import (
-    Coord,
-    Idx,
-    LTToTTLayout,
-    Layout,
-    LayoutTensor,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, LTToTTLayout, Layout, TileTensor
 from max.gpu.host import DeviceContext
 from nn.conv.conv import (
     Naive2dConvolution,
@@ -126,10 +118,16 @@ def test_conv3d_gpu[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    # create ndbuffer views, making it easier to work with
-    var input_buf = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
-    var filter_buf = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
-    var output_buf = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
+    # Create dense tensor views for the GPU kernel.
+    var input_buf = TileTensor(
+        input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
+    )
+    var filter_buf = TileTensor(
+        filter_dev.unsafe_ptr(), LTToTTLayout[filter_layout]()
+    )
+    var output_buf = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
+    )
 
     # define grid and block dimensions for the gpu kernel
     comptime block_size = 16
@@ -140,21 +138,24 @@ def test_conv3d_gpu[
     var grid_dim_z = N  # batch size is the z dimension
 
     comptime kernel = conv3d_gpu_naive_ndhwc_qrscf[
-        input_layout,
-        filter_layout,
-        output_layout,
+        input_buf.LayoutType,
+        filter_buf.LayoutType,
+        output_buf.LayoutType,
         dtype,
         dtype,
         dtype,
         block_size,
         None,
+        input_buf.Engine,
+        filter_buf.Engine,
+        output_buf.Engine,
     ]
 
     # run gpu implementation
     ctx.enqueue_function[kernel](
-        input_buf,
-        filter_buf,
-        output_buf,
+        input_buf.as_unsafe_any_origin(),
+        filter_buf.as_unsafe_any_origin(),
+        output_buf.as_unsafe_any_origin(),
         stride,
         dilation,
         pad,
@@ -270,7 +271,6 @@ def test_conv3d_gpu_dispatch[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
-    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -280,18 +280,19 @@ def test_conv3d_gpu_dispatch[
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
+    var output_epilogue = output_tt.as_unsafe_any_origin()
 
     @__parameter
     @inline(.always)
-    @__copy_capture(output_lt)
+    @__copy_capture(output_epilogue)
     def scale_epilogue[
         _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-        output_lt.store[
-            width=_width, store_alignment=align_of[dtype]() * _alignment
+        output_epilogue.store[
+            width=_width, alignment=align_of[dtype]() * _alignment
         ](
-            rebind[IndexList[5]](coords),
+            Coord(rebind[IndexList[5]](coords)),
             rebind[SIMD[dtype, _width]](scaled),
         )
 
@@ -425,7 +426,6 @@ def test_conv3d_im2col_multi_tile[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
-    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -435,20 +435,21 @@ def test_conv3d_im2col_multi_tile[
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
+    var output_epilogue = output_tt.as_unsafe_any_origin()
 
     comptime if with_epilogue:
 
         @__parameter
         @inline(.always)
-        @__copy_capture(output_lt)
+        @__copy_capture(output_epilogue)
         def scale_epilogue[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
+            output_epilogue.store[
+                width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                rebind[IndexList[5]](coords),
+                Coord(rebind[IndexList[5]](coords)),
                 rebind[SIMD[dtype, _width]](scaled),
             )
 
@@ -601,7 +602,6 @@ def test_conv2d_im2col_multi_tile[
     ctx.enqueue_copy(filter_dev, filter_host)
 
     comptime output_layout_ = Layout.row_major(N, H_out, W_out, F)
-    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -611,21 +611,22 @@ def test_conv2d_im2col_multi_tile[
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
+    var output_epilogue = output_tt.as_unsafe_any_origin()
 
     var handled: Bool
     comptime if with_epilogue:
 
         @__parameter
         @inline(.always)
-        @__copy_capture(output_lt)
+        @__copy_capture(output_epilogue)
         def scale_epilogue[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
+            output_epilogue.store[
+                width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                rebind[IndexList[4]](coords),
+                Coord(rebind[IndexList[4]](coords)),
                 rebind[SIMD[dtype, _width]](scaled),
             )
 
@@ -761,7 +762,6 @@ def test_conv3d_1x1x1_matmul_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -771,20 +771,21 @@ def test_conv3d_1x1x1_matmul_direct[
     var output_tt = TileTensor(
         output_dev.unsafe_ptr(), LTToTTLayout[output_layout_]()
     )
+    var output_epilogue = output_tt.as_unsafe_any_origin()
 
     comptime if with_epilogue:
 
         @__parameter
         @inline(.always)
-        @__copy_capture(output_lt)
+        @__copy_capture(output_epilogue)
         def scale_epilogue[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
+            output_epilogue.store[
+                width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                rebind[IndexList[5]](coords),
+                Coord(rebind[IndexList[5]](coords)),
                 rebind[SIMD[dtype, _width]](scaled),
             )
 

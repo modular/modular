@@ -99,19 +99,19 @@ def run_matvec(M: Int, N: Int, K: Int, *, ctx: DeviceContext) raises:
 
     var c_tt = TileTensor(
         c_device_n,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(a_device_n.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         ImmPointer[Float32, ImmutAnyOrigin](
             unsafe_from_address=Int(b_device_n.unsafe_ptr())
         ),
-        row_major(Coord(K, N)),
+        row_major(K, N),
     )
 
     @inline(.always)

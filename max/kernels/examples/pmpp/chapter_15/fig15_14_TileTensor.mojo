@@ -18,7 +18,8 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
-from layout.layout_tensor import Layout, LayoutTensor
+from layout import row_major, stack_allocation
+from std.testing import assert_equal
 
 comptime bM = 64
 comptime bN = 64
@@ -38,7 +39,7 @@ def mm_tiled_kernel_double_buffer(
 ):
     """Double-buffered tiled matrix multiplication kernel with software pipelining.
 
-    Uses LayoutTensor for shared/local memory management to demonstrate idiomatic
+    Uses TileTensor for shared/local memory management to demonstrate idiomatic
     Mojo GPU programming while maintaining CUDA algorithm structure.
 
     Args:
@@ -63,45 +64,23 @@ def mm_tiled_kernel_double_buffer(
     var tRow = tile_x * tM
     var tCol = tile_y * tN
 
-    # Allocate register tile using LayoutTensor (LOCAL address space)
-    var dst_reg = LayoutTensor[
-        dtype,
-        Layout.row_major(tM, tN),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
+    var dst_reg = stack_allocation[dtype, address_space=.LOCAL](
+        row_major[tM, tN]()
+    )
+    _ = dst_reg.fill(0)
 
-    # Initialize to zero
-    for i in range(tM):
-        for j in range(tN):
-            dst_reg[i, j] = 0.0
-
-    # Allocate double-buffered shared memory using LayoutTensor (SHARED address space)
-    var a_smem_0 = LayoutTensor[
-        dtype,
-        Layout.row_major(bM, bK),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
-    var a_smem_1 = LayoutTensor[
-        dtype,
-        Layout.row_major(bM, bK),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
-
-    var b_smem_0 = LayoutTensor[
-        dtype,
-        Layout.row_major(bK, bN),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
-    var b_smem_1 = LayoutTensor[
-        dtype,
-        Layout.row_major(bK, bN),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
+    var a_smem_0 = stack_allocation[dtype, address_space=.SHARED](
+        row_major[bM, bK]()
+    )
+    var a_smem_1 = stack_allocation[dtype, address_space=.SHARED](
+        row_major[bM, bK]()
+    )
+    var b_smem_0 = stack_allocation[dtype, address_space=.SHARED](
+        row_major[bK, bN]()
+    )
+    var b_smem_1 = stack_allocation[dtype, address_space=.SHARED](
+        row_major[bK, bN]()
+    )
 
     var numTiles = ceildiv(Int(K), bK)
     var curr_uses_0 = True
@@ -282,7 +261,7 @@ def main() raises:
         "x",
         N,
     )
-    print("Using LayoutTensor for shared/local memory management")
+    print("Using TileTensor for shared/local memory management")
 
     # Allocate host memory
     var h_A = alloc[Float32](M * K)
@@ -325,7 +304,7 @@ def main() raises:
             NUM_THREADS,
             ")...",
         )
-        print("Using LayoutTensor-based double buffering")
+        print("Using TileTensor-based double buffering")
 
         ctx.enqueue_function[mm_tiled_kernel_double_buffer](
             d_A,
@@ -394,6 +373,8 @@ def main() raises:
         print("✓ SUCCESS: All results match within tolerance!")
     else:
         print("✗ FAILED: Results do not match!")
+
+    assert_equal(num_errors, 0, "Double-buffered matmul disagrees with CPU")
 
     # Cleanup
     h_A.free()

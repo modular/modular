@@ -639,7 +639,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     # GPU output.
     var out_device = ctx.enqueue_create_buffer[type](length)
 
-    var rt_layout = row_major(Coord(batch_size, vocab_size))
+    var rt_layout = row_major(batch_size, vocab_size)
     var in_tt = TileTensor(in_device, rt_layout)
     var out_tt = TileTensor(out_device, rt_layout)
 
@@ -716,7 +716,7 @@ def main() raises:
         test_gpu_softmax(ctx)
         test_gpu_softmax_half[.bfloat16](ctx)
         test_gpu_softmax_half[.float16](ctx)
-        test_gpu_softmax_warp_short_axis[.bfloat16, IndexList[2](12, 5)](ctx)
+        test_gpu_softmax_warp_short_axis[.float16, IndexList[2](12, 5)](ctx)
         test_gpu_softmax_warp_short_axis[.float16, IndexList[2](12, 5)](ctx)
         test_gpu_softmax_verify_shapes[.bfloat16](ctx)
         test_gpu_softmax_verify_shapes[.float32](ctx)

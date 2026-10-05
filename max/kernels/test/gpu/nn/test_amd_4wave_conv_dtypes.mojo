@@ -49,6 +49,7 @@ from layout import TileTensor, row_major
 
 from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
+from std.math import align_up
 
 
 # Dtype to test, set via `-D DTYPE=<dtype>` in BUILD.bazel. Defaults to
@@ -101,10 +102,6 @@ def _host_im2col_general[
                                 ] = input_host_ptr[in_idx]
 
 
-def _round_up(x: Int, mod: Int) -> Int:
-    return ((x + mod - 1) // mod) * mod
-
-
 def test_conv[
     a_type: DType,
     c_type: DType,
@@ -126,7 +123,7 @@ def test_conv[
     comptime W_out = (W + 2 * pad_w - S) // stride_w + 1
     comptime M_total = N_batch * H_out * W_out
     comptime K_real = R * S * C_in
-    comptime K_padded = _round_up(K_real, 256)
+    comptime K_padded = align_up(K_real, 256)
 
     print(
         "== ",

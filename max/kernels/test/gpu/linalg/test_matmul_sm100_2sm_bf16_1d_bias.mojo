@@ -63,16 +63,14 @@ def test_blackwell_matmul_with_1d_bias[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
     # 1D bias: shape [N] — broadcast across all M rows.
-    var bias_shape = row_major(Coord(Idx[NType.static_value]))
+    var bias_shape = row_major(Idx[NType.static_value])
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N

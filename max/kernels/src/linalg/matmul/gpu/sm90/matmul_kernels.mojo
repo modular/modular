@@ -73,7 +73,13 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
-from ....utils import elementwise_compute_lambda_type, elementwise_epilogue_type
+from ....utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+    no_epilogue_fn,
+)
 from ....utils_gpu import block_swizzle
 from ..tile_scheduler import RasterOrder
 from ..tile_scheduler_splitk import SplitKTileScheduler
@@ -613,9 +619,13 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @inline(.always)
     def consumer_output[
+        EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
+        //,
         custom_elementwise_lambda_fn: Optional[
             elementwise_epilogue_type
-        ] = Self.elementwise_lambda_fn
+        ] = Self.elementwise_lambda_fn,
+        *,
+        has_epilogue_fn: Bool = False,
     ](
         c_tma_op: TMATensorTile[Self.c_type, _, _, _],
         c: TileTensor[mut=True, Self.c_type, address_space=.GENERIC, ...],
@@ -626,13 +636,16 @@ struct HopperMatmulSM90Kernel[
         local_thread_idx: Int,
         block_y: Int,
         block_x: Int,
+        epilogue_fn: EpilogueFnType = no_epilogue_fn,
     ):
         """Handle consumer output by writing GEMM results to global memory.
 
         Parameters:
+            EpilogueFnType: Type of `epilogue_fn` (inferred).
             custom_elementwise_lambda_fn: Optional epilogue function applied
                 to output elements (defaults to the struct's
                 `elementwise_lambda_fn`).
+            has_epilogue_fn: Whether `epilogue_fn` stores the output.
 
         Args:
             c_tma_op: TMA descriptor for the output matrix C, used for TMA
@@ -648,6 +661,8 @@ struct HopperMatmulSM90Kernel[
             local_thread_idx: Thread index within the consumer warp group.
             block_y: Block-level M coordinate (row) of the output tile.
             block_x: Block-level N coordinate (column) of the output tile.
+            epilogue_fn: Stores each output element at its coordinates in
+                `c` when `has_epilogue_fn` is set.
         """
         var matmul_tile_writer = MatmulTileWriter[
             BM=Self.BM,
@@ -668,7 +683,9 @@ struct HopperMatmulSM90Kernel[
             block_y,
             block_x,
         )
-        matmul_tile_writer.write_tile(c_tma_op, output_reg_tile)
+        matmul_tile_writer.write_tile[has_epilogue_fn=has_epilogue_fn](
+            c_tma_op, output_reg_tile, epilogue_fn
+        )
 
     @staticmethod
     @inline(.always)
@@ -1305,6 +1322,10 @@ struct HopperMatmulSM90Kernel[
         AOffsetsLayout: TensorLayout,
         ExpertIdsLayout: TensorLayout,
         c_tensor_layout: TensorLayout,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        has_epilogue_fn: Bool,
+        ComputeFnType: ElementwiseComputeFn,
+        has_compute_fn: Bool,
     ](
         a_tma_op: TMATensorTile[
             Self.a_type, a_tma_rank, a_tile_shape, a_desc_shape
@@ -1332,6 +1353,8 @@ struct HopperMatmulSM90Kernel[
         c: TileTensor[
             Self.c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
+        epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         """Grouped matmul variant for MoE (Mixture of Experts) models.
 
@@ -1357,6 +1380,13 @@ struct HopperMatmulSM90Kernel[
             AOffsetsLayout: Memory layout of the `a_offsets` tensor.
             ExpertIdsLayout: Memory layout of the `expert_ids` tensor.
             c_tensor_layout: Memory layout of output matrix C.
+            EpilogueFnType: Type of `epilogue_fn`.
+            has_epilogue_fn: Whether `epilogue_fn` stores the output, in
+                place of `elementwise_lambda_fn`. Launch with
+                `host_arg=epilogue_fn`.
+            ComputeFnType: Type of `compute_fn`.
+            has_compute_fn: Whether `compute_fn` maps each output before it
+                is stored. Launch with `host_arg2=compute_fn`.
 
         Args:
             a_tma_op: TMA descriptor for matrix A.
@@ -1370,6 +1400,10 @@ struct HopperMatmulSM90Kernel[
                 this block, and -1 marks an inactive block whose output
                 is zeroed.
             c: Output matrix C.
+            epilogue_fn: Stores each output element at its `(row, col)` in
+                `c` when `has_epilogue_fn` is set.
+            compute_fn: Maps each output element at its `(row, col)` in `c`
+                when `has_compute_fn` is set.
         """
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
         comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
@@ -1489,7 +1523,7 @@ struct HopperMatmulSM90Kernel[
             # C tile for current expert.
             var c_by_expert = TileTensor(
                 c._offset_storage(Coord(Int(a_start_row) * N)),
-                row_major(Coord(Int(M), Idx[N])),
+                row_major(M, Idx[N]),
             )
 
             @__parameter
@@ -1503,21 +1537,64 @@ struct HopperMatmulSM90Kernel[
                     )
                     elementwise_epilogue(batch_idx, val)
 
-            Self.consumer_output[
-                Optional[elementwise_epilogue_type](
-                    elementwise_epilogue_fn_wrapper
-                ) if Self.elementwise_lambda_fn else None
-            ](
-                c_tma_op,
-                c_by_expert,
-                smem.c_tile(),
-                output_reg_tile,
-                warp_group_thread_idx,
-                local_warp_group_idx,
-                thread_idx.x - WARPGROUP_SIZE,
-                block_idx_swizzle[1],
-                block_idx_swizzle[0],
-            )
+            comptime if has_compute_fn or has_epilogue_fn:
+                # `c_by_expert` indexes this group's rows from 0; the
+                # epilogues take rows of all of `c`.
+                var c_ptr = c.ptr
+
+                @inline(.always)
+                def group_epilogue_fn[
+                    dtype: DType, width: SIMDLength, *, alignment: Int
+                ](idx: IndexList[2], val: SIMD[dtype, width]) {
+                    var epilogue_fn, var compute_fn, var c_ptr, var a_start_row
+                }:
+                    var row_idx: IndexList[2] = (
+                        Int(a_start_row) + idx[0],
+                        idx[1],
+                    )
+                    comptime if has_compute_fn:
+                        (c_ptr + row_idx[0] * N + idx[1]).store[
+                            alignment=alignment
+                        ](
+                            rebind[SIMD[Self.c_type, width]](
+                                compute_fn[dtype, width, alignment=alignment](
+                                    row_idx, val
+                                )
+                            )
+                        )
+                    else:
+                        epilogue_fn[dtype, width, alignment=alignment](
+                            row_idx, val
+                        )
+
+                Self.consumer_output[None, has_epilogue_fn=True](
+                    c_tma_op,
+                    c_by_expert,
+                    smem.c_tile(),
+                    output_reg_tile,
+                    warp_group_thread_idx,
+                    local_warp_group_idx,
+                    thread_idx.x - WARPGROUP_SIZE,
+                    block_idx_swizzle[1],
+                    block_idx_swizzle[0],
+                    group_epilogue_fn,
+                )
+            else:
+                Self.consumer_output[
+                    Optional[elementwise_epilogue_type](
+                        elementwise_epilogue_fn_wrapper
+                    ) if Self.elementwise_lambda_fn else None
+                ](
+                    c_tma_op,
+                    c_by_expert,
+                    smem.c_tile(),
+                    output_reg_tile,
+                    warp_group_thread_idx,
+                    local_warp_group_idx,
+                    thread_idx.x - WARPGROUP_SIZE,
+                    block_idx_swizzle[1],
+                    block_idx_swizzle[0],
+                )
 
         Self.finalize_kernel()
 

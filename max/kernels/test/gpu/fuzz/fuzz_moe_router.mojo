@@ -285,12 +285,10 @@ def run_one_case(
     ctx.enqueue_copy(scores_dev, scores_host)
     ctx.enqueue_copy(bias_dev, bias_host)
 
-    var expert_scores = TileTensor(
-        scores_dev, row_major(Coord(nt, Idx[N_EXPERTS]))
-    )
+    var expert_scores = TileTensor(scores_dev, row_major(nt, Idx[N_EXPERTS]))
     var expert_bias = TileTensor(bias_dev, row_major(Idx[N_EXPERTS]))
-    var expert_indices = TileTensor(idx_dev, row_major(Coord(nt, Idx[TOPK])))
-    var expert_weights = TileTensor(w_dev, row_major(Coord(nt, Idx[TOPK])))
+    var expert_indices = TileTensor(idx_dev, row_major(nt, Idx[TOPK]))
+    var expert_weights = TileTensor(w_dev, row_major(nt, Idx[TOPK]))
 
     single_group_router[N_EXPERTS, TOPK, NORM, "gpu"](
         expert_indices,

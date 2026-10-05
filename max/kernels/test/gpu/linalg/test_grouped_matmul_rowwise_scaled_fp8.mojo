@@ -105,12 +105,12 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     var b_scales_size = num_experts * N
 
     # KUT TileTensor shapes.
-    var a_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[K]))
-    var b_tt_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    var c_tt_shape = row_major(Coord(Int(total_num_tokens), Idx[N]))
-    var a_scales_kut_shape = row_major(Coord(Int(total_num_tokens), Idx[1]))
-    var a_scales_ref_shape = row_major(Coord(Idx[1], Int(total_num_tokens)))
-    var b_scales_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[1]))
+    var a_tt_shape = row_major(total_num_tokens, Idx[K])
+    var b_tt_shape = row_major(Idx[num_experts], Idx[N], Idx[K])
+    var c_tt_shape = row_major(total_num_tokens, Idx[N])
+    var a_scales_kut_shape = row_major(total_num_tokens, Idx[1])
+    var a_scales_ref_shape = row_major(Idx[1], total_num_tokens)
+    var b_scales_shape = row_major(Idx[num_experts], Idx[N], Idx[1])
 
     # Host allocations.
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
@@ -191,11 +191,11 @@ def test_grouped_matmul_rowwise_scaled_fp8[
     var c_device_ref_tt = TileTensor(c_device_ref_buffer, c_tt_shape)
     var a_offsets_device_tt = TileTensor(
         a_offsets_device_buffer,
-        row_major(Coord(Int(num_active_experts + 1))),
+        row_major(num_active_experts + 1),
     )
     var expert_ids_device_tt = TileTensor(
         expert_ids_device_buffer,
-        row_major(Coord(Int(num_active_experts))),
+        row_major(num_active_experts),
     )
     var a_scales_kut_device_tt = TileTensor(
         a_scales_kut_device_buffer, a_scales_kut_shape

@@ -71,14 +71,12 @@ def test_partial_n_tile_compute_epilogue[
         " a multiple of 88"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
@@ -167,7 +165,7 @@ def test_partial_n_tile_compute_epilogue[
         for j in range(N):
             comptime assert c_host_ref.flat_rank == 2
             c_host_ref[i, j] = in_bounds_compute_lambda_local(
-                IndexList[2](i, j), c_host_ref[i, j]
+                (i, j), c_host_ref[i, j]
             )
 
     comptime rtol = 1e-2

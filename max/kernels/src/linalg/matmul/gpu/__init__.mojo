@@ -578,7 +578,7 @@ def _amdgpu_matmul_config_from_block_shape[
 
 
 def _amdgpu_matmul_build_block_shape_list[N: Int]() -> List[IndexList[2]]:
-    comptime sm_count = GPUInfo.current_accelerator().sm_count
+    comptime sm_count = GPUInfo.default_accelerator().sm_count
 
     comptime block_sizes_alias = [16, 32, 64, 96, 128, 160, 192, 224, 256]
     comptime len_block_sizes = len(block_sizes_alias)
@@ -718,7 +718,7 @@ def _matmul_gpu[
 
     # Capture the raw pointer: `@__copy_capture` byte-copies, so a
     # `DeviceBuffer`-backed tile would reach the device as a host reference.
-    var c_epilogue = TileTensor(c.ptr, c.layout)
+    var c_epilogue = c.reshape(c.layout)
 
     # Only the H100 version of gemm supports the compute lambda.
     # For the other kernels we wrap it around an epilogue lambda instead.
@@ -2328,13 +2328,7 @@ def _multistage_gemm_runtime_impl[
 
         var tt_work_space = TileTensor(
             work_space_data,
-            row_major(
-                Coord(
-                    runtime_config.num_k_partitions,
-                    M,
-                    N,
-                )
-            ),
+            row_major(runtime_config.num_k_partitions, M, N),
         )
         _split_k_reduce_impl[
             elementwise_lambda_fn=elementwise_lambda_fn,

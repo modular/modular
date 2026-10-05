@@ -181,23 +181,23 @@ def test_kscale_war(
     )
     var o_t = TileTensor(o_d.unsafe_ptr(), row_major((total_q, num_keys)))
     var cro_t = TileTensor[mut=False](
-        cro_d.unsafe_ptr(), row_major(Coord(batch_size + 1))
+        cro_d.unsafe_ptr(), row_major(batch_size + 1)
     )
     var k_op = RaggedMHAOperand(
         TileTensor[mut=False](
-            k_d.unsafe_ptr(), row_major(Coord(total_k, Idx[1], Idx[DEPTH]))
+            k_d.unsafe_ptr(), row_major(total_k, Idx[1], Idx[DEPTH])
         ),
         cro_t,
     )
     var ks_op = RaggedMHAOperand(
         TileTensor[mut=False](
-            ks_d.unsafe_ptr(), row_major(Coord(total_k, Idx[1], Idx[1]))
+            ks_d.unsafe_ptr(), row_major(total_k, Idx[1], Idx[1])
         ),
         cro_t,
     )
     var one_op = RaggedMHAOperand(
         TileTensor[mut=False](
-            one_d.unsafe_ptr(), row_major(Coord(total_k, Idx[1], Idx[1]))
+            one_d.unsafe_ptr(), row_major(total_k, Idx[1], Idx[1])
         ),
         cro_t,
     )

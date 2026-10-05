@@ -1792,7 +1792,7 @@ struct Grouped1D1DMatmulKernel[
                             and lane_id() == 0
                         ):
                             trace_buf.store(
-                                Int(block_idx.x)
+                                block_idx.x
                                 * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                 + 9 * tile_idx_load
                                 + 0,
@@ -1815,7 +1815,7 @@ struct Grouped1D1DMatmulKernel[
                                     and lane_id() == 0
                                 ):
                                     trace_buf.store(
-                                        Int(block_idx.x)
+                                        block_idx.x
                                         * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                         + 9 * tile_idx_load
                                         + 1,
@@ -1887,7 +1887,7 @@ struct Grouped1D1DMatmulKernel[
                                     and lane_id() == 0
                                 ):
                                     trace_buf.store(
-                                        Int(block_idx.x)
+                                        block_idx.x
                                         * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                         + 9 * tile_idx_load
                                         + 2,
@@ -1969,7 +1969,7 @@ struct Grouped1D1DMatmulKernel[
                                 and lane_id() == 0
                             ):
                                 trace_buf.store(
-                                    Int(block_idx.x)
+                                    block_idx.x
                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                     + 9 * tile_idx_mma
                                     + 3,
@@ -1988,7 +1988,7 @@ struct Grouped1D1DMatmulKernel[
                                     and lane_id() == 0
                                 ):
                                     trace_buf.store(
-                                        Int(block_idx.x)
+                                        block_idx.x
                                         * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                         + _GROUPED_TRACE_MMA_OUTPUT_ACQ_BASE
                                         + tile_idx_mma,
@@ -2024,7 +2024,7 @@ struct Grouped1D1DMatmulKernel[
                                                 and lane_id() == 0
                                             ):
                                                 trace_buf.store(
-                                                    Int(block_idx.x)
+                                                    block_idx.x
                                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                                     + _GROUPED_TRACE_MMA_INPUT_ACQ_BASE
                                                     + tile_idx_mma,
@@ -2052,7 +2052,7 @@ struct Grouped1D1DMatmulKernel[
                                                 and lane_id() == 0
                                             ):
                                                 trace_buf.store(
-                                                    Int(block_idx.x)
+                                                    block_idx.x
                                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                                     + 9 * tile_idx_mma
                                                     + 4,
@@ -2097,7 +2097,7 @@ struct Grouped1D1DMatmulKernel[
                                                 and lane_id() == 0
                                             ):
                                                 trace_buf.store(
-                                                    Int(block_idx.x)
+                                                    block_idx.x
                                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                                     + 9 * tile_idx_mma
                                                     + 5,
@@ -2147,7 +2147,7 @@ struct Grouped1D1DMatmulKernel[
                             and lane_id() == 0
                         ):
                             trace_buf.store(
-                                Int(block_idx.x)
+                                block_idx.x
                                 * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                 + 9 * tile_idx_epi
                                 + 6,
@@ -2164,7 +2164,7 @@ struct Grouped1D1DMatmulKernel[
                                 and lane_id() == 0
                             ):
                                 trace_buf.store(
-                                    Int(block_idx.x)
+                                    block_idx.x
                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                     + 9 * tile_idx_epi
                                     + 7,
@@ -2193,7 +2193,7 @@ struct Grouped1D1DMatmulKernel[
                                 and lane_id() == 0
                             ):
                                 trace_buf.store(
-                                    Int(block_idx.x)
+                                    block_idx.x
                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                     + 9 * tile_idx_epi
                                     + 8,
@@ -3890,8 +3890,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 0,
@@ -3963,8 +3962,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 1,
@@ -3981,8 +3979,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 2,
@@ -4146,8 +4143,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 3,
@@ -4164,8 +4160,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 4,

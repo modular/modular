@@ -83,22 +83,18 @@ def test_matmul_sm100_blockwise_scaled_fp8[
 
     assert K % BLOCK_SCALE_K == 0, "K must be divisible by BLOCK_SCALE_K"
 
-    var a_shape = row_major(Coord(m, k))
+    var a_shape = row_major(m, k)
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, n))
+    var c_shape = row_major(m, n)
     var a_scales_shape = row_major(
-        Coord(Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)], m)
+        Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)], m
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(NType.static_value, BLOCK_SCALE_K)],
-            Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)],
-        )
+        Idx[ceildiv(NType.static_value, BLOCK_SCALE_K)],
+        Idx[ceildiv(KType.static_value, BLOCK_SCALE_K)],
     )
 
     var a_size = M * K

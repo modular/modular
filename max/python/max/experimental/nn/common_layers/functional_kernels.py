@@ -40,6 +40,9 @@ from max.nn.comm.ep.ep_kernels import (
     fused_silu_quantized as _fused_silu_quantized,
 )
 from max.nn.kernels import (
+    _moe_sigmoid_gemv_router,
+)
+from max.nn.kernels import (
     flare_mla_prefill_plan as _flare_mla_prefill_plan,
 )
 from max.nn.kernels import (
@@ -189,14 +192,30 @@ def fused_silu_rule(x: TensorLayout, row_offsets: TensorLayout) -> ActionSet:
 
 
 fused_silu = F.functional(_fused_silu, rule=fused_silu_rule)
-# Fused SiLU+FP8-quantize. The EP grouped_silu routes through this so the
-# down-projection reads an already-quantized activation instead of a separate
-# quantize pass; the per-128-block scale is shard-invariant.
+# Fused SiLU+quantize for the FP4 and MX formats. The EP grouped_silu routes
+# through this so the down-projection reads an already-quantized activation
+# instead of a separate quantize pass; the block scale is shard-invariant.
 fused_silu_quantized = F.functional(_fused_silu_quantized)
 
 # Routing decisions must match the placement of the (replicated) router
 # scores so every device agrees on expert assignment under TP/EP.
 moe_router_group_limited = F.functional(_moe_router_group_limited)
+
+
+def _moe_sigmoid_gemv_router_rule(
+    hidden_states: TensorLayout,
+    gate_weight: TensorLayout,
+    expert_bias: TensorLayout,
+    *args: Any,
+) -> ActionSet:
+    # Sigmoid and top-k need the full gate dot product on every device, so
+    # this op runs on replicated inputs rather than on contraction shards.
+    return force_replicated_action_set(hidden_states, gate_weight, expert_bias)
+
+
+moe_sigmoid_gemv_router = F.functional(
+    _moe_sigmoid_gemv_router, rule=_moe_sigmoid_gemv_router_rule
+)
 
 
 def stack_device_shards(
@@ -219,6 +238,7 @@ __all__ = [
     "moe_create_indices",
     "moe_finalize",
     "moe_router_group_limited",
+    "moe_sigmoid_gemv_router",
     "rms_norm_key_cache",
     "rope_split_store_ragged",
     "stack_device_shards",

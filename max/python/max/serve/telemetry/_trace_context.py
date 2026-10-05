@@ -14,12 +14,15 @@
 
 from __future__ import annotations
 
+import functools
 import re
 from collections.abc import AsyncIterable, AsyncIterator, Mapping
 from contextvars import ContextVar
+from enum import Enum
 from typing import TypeVar
 
 from max.pipelines.context import BaseContextType, TextContext
+from max.serve.telemetry import common as telemetry
 from max.serve.telemetry.common import (
     _capture_request_context,
     request_trace_ctx,
@@ -44,6 +47,68 @@ _phase_parent_ctx: ContextVar[OtelContext | None] = ContextVar(
     "max.serve.phase_parent_ctx", default=None
 )
 """The OTel context whose span parents the worker's phase spans."""
+
+TRACE_LEVEL_HEADER = "x-max-trace-level"
+"""The request header naming a :class:`RequestTraceLevel`, and the
+``trace_carrier`` key that carries it to the model worker."""
+
+
+@functools.total_ordering
+class RequestTraceLevel(Enum):
+    """GPU trace depth one request asks for with the ``x-max-trace-level``
+    header, honored only when ``kernel_trace_headers`` is on.
+
+    Members compare in declaration order. A forward pass is traced at the
+    highest level among its traced requests.
+    """
+
+    OFF = "off"
+    """Not traced."""
+
+    BATCH = "batch"
+    """``max.batch`` and ``max.batch.gpu`` spans only."""
+
+    OP = "op"
+    """``batch``, plus one aggregate span per kernel name. Unlike
+    ``KernelTraceLevel.OP``, no NVTX ranges."""
+
+    KERNEL_SAMPLED = "kernel-sampled"
+    """``batch``, plus kernel spans on 1 traced pass in 8."""
+
+    KERNEL = "kernel"
+    """``batch``, plus kernel spans on every traced pass."""
+
+    FULL = "full"
+    """``kernel``, plus register, occupancy and shared memory attributes."""
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, RequestTraceLevel):
+            return NotImplemented
+        members = list(RequestTraceLevel)
+        return members.index(self) < members.index(other)
+
+    @classmethod
+    def parse(cls, value: str) -> RequestTraceLevel | None:
+        """Parses a header value case-insensitively, treating ``_`` as ``-``.
+
+        Returns None for an unknown value, which callers ignore.
+        """
+        try:
+            return cls(value.strip().lower().replace("_", "-"))
+        except ValueError:
+            return None
+
+
+request_trace_level: ContextVar[RequestTraceLevel | None] = ContextVar(
+    "max.serve.request_trace_level", default=None
+)
+"""The current request's :data:`TRACE_LEVEL_HEADER` level, or None."""
+
+
+def read_trace_level_header(headers: Mapping[str, str]) -> None:
+    """Records the request's trace level header in :data:`request_trace_level`."""
+    value = headers.get(TRACE_LEVEL_HEADER)
+    request_trace_level.set(RequestTraceLevel.parse(value) if value else None)
 
 
 def extract_inbound_context(headers: Mapping[str, str]) -> OtelContext:
@@ -132,8 +197,10 @@ def inject_trace_carrier(context: BaseContextType) -> None:
     the request queue), so neither ContextVar can follow it. It injects
     ``_phase_parent_ctx`` into a string-dict carrier instead, which the
     scheduler re-``extract``s, falling back to ``request_trace_ctx`` when no
-    handler set a phase parent. A no-op for non-``TextContext`` contexts, and
-    when the chosen context has nothing to propagate.
+    handler set a phase parent. When per-request trace levels are permitted,
+    it also records the request's level under :data:`TRACE_LEVEL_HEADER`. A
+    no-op for non-``TextContext`` contexts, and when the chosen context has
+    nothing to propagate and there is no level.
     """
     if not isinstance(context, TextContext):
         return
@@ -142,5 +209,9 @@ def inject_trace_carrier(context: BaseContextType) -> None:
         parent = request_trace_ctx.get()
     carrier: dict[str, str] = {}
     otel_propagate.inject(carrier, context=parent)
+    if telemetry._trace_level_header_enabled:
+        level = request_trace_level.get()
+        if level is not None:
+            carrier[TRACE_LEVEL_HEADER] = level.value
     if carrier:
         context.trace_carrier = carrier

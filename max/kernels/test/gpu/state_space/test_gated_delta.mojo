@@ -204,12 +204,6 @@ def run_slot_indexed_gpu[
             decay_tt,
             beta_tt,
             offsets_tt,
-            qkv_seqlen_stride,
-            qkv_channel_stride,
-            per_token_seqlen_stride,
-            per_token_head_stride,
-            output_seqlen_stride,
-            output_valuedim_stride,
             grid_dim=(num_blocks,),
             block_dim=(VALUE_HEAD_DIM,),
         )
@@ -611,12 +605,6 @@ def _launch_gdn_ragged_batch[
             decay_tt,
             beta_tt,
             offsets_tt,
-            UInt32(conv_dim),
-            UInt32(1),
-            UInt32(num_value_heads),
-            UInt32(1),
-            UInt32(value_dim),
-            UInt32(1),
             grid_dim=(num_rows * num_value_heads,),
             block_dim=(VALUE_HEAD_DIM,),
         )
@@ -934,12 +922,6 @@ def test_gated_delta_recurrence_gpu_deep_slot_no_alias() raises:
         decay_tt,
         beta_tt,
         offsets_tt,
-        UInt32(conv_dim),  # qkv_conv_output_seqlen_stride
-        UInt32(1),  # qkv_conv_output_channel_stride
-        UInt32(num_value_heads),  # per_token_seqlen_stride
-        UInt32(1),  # per_token_head_stride
-        UInt32(value_dim),  # recurrence_output_seqlen_stride
-        UInt32(1),  # recurrence_output_valuedim_stride
         grid_dim=(batch_size * num_value_heads,),
         block_dim=(VALUE_HEAD_DIM,),
     )

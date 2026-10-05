@@ -132,7 +132,7 @@ def test_should_count_request(path: str, expected: bool) -> None:
 def test_telemetry_common_does_not_import_propagate() -> None:
     # The metrics worker imports common.py but not the routes, and importing
     # opentelemetry.propagate scans entry points, so the extract lives in
-    # _trace_context, which only the API process imports.
+    # _trace_context, which the metrics worker doesn't import.
     code = (
         "import sys, max.serve.telemetry.common; "
         "assert 'opentelemetry.propagate' not in sys.modules"

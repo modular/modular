@@ -68,6 +68,7 @@ from std.testing import assert_equal, assert_true
 
 from comm.lamport import has_neg_zero, set_neg_zero
 from comm.sync import enable_p2p
+from std.math import ceildiv
 
 
 # Each pack is one naturally-aligned 128-bit line: 4 x fp32 / 4 x uint32.
@@ -244,7 +245,7 @@ def run_variant[
     var seen_ptr = seen_buf.unsafe_ptr().as_unsafe_any_origin()
 
     comptime BLOCK = 128
-    var grid = (NUM_SLOTS + BLOCK - 1) // BLOCK
+    var grid = ceildiv(NUM_SLOTS, BLOCK)
 
     # Launch reader first (it spins waiting), then the writer that feeds it.
     reader_ctx.enqueue_function[reader_kernel[use_fence, fence_scope]](

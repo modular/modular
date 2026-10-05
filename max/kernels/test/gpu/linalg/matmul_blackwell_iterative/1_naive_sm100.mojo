@@ -70,7 +70,7 @@ def test_kernel_1[
     c_type: DType,
     transpose_b: Bool = True,
     benchmark: Bool = False,
-    prob_shape: IndexList[3] = IndexList[3](1, 1, 1),
+    prob_shape: IndexList[3] = (1, 1, 1),
 ](ctx: DeviceContext) raises:
     comptime M = prob_shape[0]
     comptime N = prob_shape[1]

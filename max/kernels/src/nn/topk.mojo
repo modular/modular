@@ -1529,8 +1529,8 @@ def _topk_warp[
     """
     var _max_k = Int(max_k)
     var _num_elements = Int(num_elements)
-    var lane = Int(thread_idx.x)
-    var batch_id = Int(block_idx.x)
+    var lane = thread_idx.x
+    var batch_id = block_idx.x
 
     var row = in_buffer + batch_id * _num_elements
     var row_vals = out_vals + batch_id * _max_k
@@ -2597,11 +2597,11 @@ def _gumbel_argmax_fused_kernel[
     var tid = thread_idx.x
     var block_size = block_dim.x
     var blocks_per_row_int = Int(blocks_per_row)
-    var batch_id = Int(block_idx.x)
+    var batch_id = block_idx.x
     var block_in_row = 0
     comptime if multi_block:
-        batch_id = Int(block_idx.x) // blocks_per_row_int
-        block_in_row = Int(block_idx.x) % blocks_per_row_int
+        batch_id = block_idx.x // blocks_per_row_int
+        block_in_row = block_idx.x % blocks_per_row_int
 
     var temp_val = Float32(1.0)
     if temperature:

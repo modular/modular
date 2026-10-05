@@ -93,9 +93,9 @@ def multistage_gemm_fp32_run[
 
     print("M:", M, "N:", N, "K:", K, "use_epilogue:", use_epilogue)
 
-    var a_shape = row_major(Coord(Idx[M], Idx[K]))
-    var b_shape = row_major(Coord(Idx[N], Idx[K]))
-    var c_shape = row_major(Coord(Idx[M], Idx[N]))
+    var a_shape = row_major(Idx[M], Idx[K])
+    var b_shape = row_major(Idx[N], Idx[K])
+    var c_shape = row_major(Idx[M], Idx[N])
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](M * K)
     var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](N * K)

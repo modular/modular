@@ -20,13 +20,12 @@ from kv_cache.types import (
     KVCacheStaticParams,
     PagedKVCacheCollection,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, Idx, row_major
 from layout._fillers import random
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
-from std.utils import Index, IndexList
 
 comptime kv_params_replit = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime replit_num_q_heads = 24
@@ -39,11 +38,11 @@ def execute_flash_attention[
     num_q_heads: Int, dtype: DType, kv_params: KVCacheStaticParams
 ](
     batch_size: Int,
-    valid_length: LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), _],
+    valid_length: List[Int],
     max_seq_len: Int,
     num_layers: Int,
     layer_idx: Int,
-    cache_valid_length: LayoutTensor[.uint32, Layout(UNKNOWN_VALUE), _],
+    cache_valid_length: List[Int],
     ctx: DeviceContext,
 ) raises:
     comptime page_size = 128
@@ -56,99 +55,56 @@ def execute_flash_attention[
     var max_context_len = 0
 
     for i in range(batch_size):
-        max_prompt_len = max(max_prompt_len, Int(valid_length[i]))
+        max_prompt_len = max(max_prompt_len, valid_length[i])
         max_context_len = max(
-            max_context_len, Int(cache_valid_length[i] + valid_length[i])
+            max_context_len, cache_valid_length[i] + valid_length[i]
         )
 
-    # Define layouts for q tensor
-    comptime q_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, kv_params.head_size
+    var q_layout = row_major(
+        batch_size, max_prompt_len, Idx[num_q_heads], Idx[kv_params.head_size]
     )
-    var q_shape = IndexList[4](
-        batch_size, max_prompt_len, num_q_heads, kv_params.head_size
-    )
-    var q_runtime_layout = RuntimeLayout[q_static_layout].row_major(q_shape)
+    var q = HostDeviceTileTensor[dtype](q_layout, ctx)
+    random(q.host_tensor())
+    q.to_device()
 
-    var q = ManagedLayoutTensor[dtype, q_static_layout](q_runtime_layout, ctx)
-    random(q.tensor())
-
-    var valid_lengths = ManagedLayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            Index(batch_size)
-        ),
-        ctx,
+    var valid_lengths = HostDeviceTileTensor[.uint32](
+        row_major(Int64(batch_size)), ctx
     )
-    var valid_lengths_host = valid_lengths.tensor[update=False]()
+    var valid_lengths_host = valid_lengths.host_tensor()
     for i in range(batch_size):
-        valid_lengths_host[i] = valid_length[i]
+        valid_lengths_host[i] = UInt32(valid_length[i])
+    valid_lengths.to_device()
 
-    # Define layouts for output tensors
-    comptime output_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, kv_params.head_size
-    )
-    var output_shape = IndexList[4](
-        batch_size, max_prompt_len, num_q_heads, kv_params.head_size
-    )
-    var output_runtime_layout = RuntimeLayout[output_static_layout].row_major(
-        output_shape
-    )
-
-    var ref_output = ManagedLayoutTensor[dtype, output_static_layout](
-        output_runtime_layout, ctx
-    )
-    var test_output = ManagedLayoutTensor[dtype, output_static_layout](
-        output_runtime_layout, ctx
-    )
+    var ref_output = HostDeviceTileTensor[dtype](q_layout, ctx)
+    var test_output = HostDeviceTileTensor[dtype](q_layout, ctx)
 
     # initialize our KVCache
-    var cache_lengths_managed = ManagedLayoutTensor[
-        .uint32, Layout(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(batch_size)),
-        ctx,
+    var cache_lengths_managed = HostDeviceTileTensor[.uint32](
+        row_major(Int64(batch_size)), ctx
     )
-    var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
+    var cache_lengths_host = cache_lengths_managed.host_tensor()
     for i in range(batch_size):
-        cache_lengths_host[i] = cache_valid_length[i]
+        cache_lengths_host[i] = UInt32(cache_valid_length[i])
+    cache_lengths_managed.to_device()
 
-    var cache_lengths_device = cache_lengths_managed.device_tensor()
-
-    # Define layouts for kv_block tensor
-    comptime kv_block_static_layout = Layout.row_major[6]()
-    var kv_block_shape = IndexList[6](
-        num_blocks,
-        2,
-        num_layers,
-        page_size,
-        kv_params.num_heads,
-        kv_params.head_size,
-    )
-    var kv_block_runtime_layout = RuntimeLayout[
-        kv_block_static_layout
-    ].row_major(kv_block_shape)
-
-    var kv_block = ManagedLayoutTensor[dtype, kv_block_static_layout](
-        kv_block_runtime_layout, ctx
-    )
-
-    # Initialize kv_block once via host view.
-    var kv_block_host_tensor = kv_block.tensor()
-    random(kv_block_host_tensor)
-
-    # Create lookup table
-    comptime lut_layout = Layout.row_major[2]()
-    var lookup_table = ManagedLayoutTensor[.uint32, lut_layout](
-        RuntimeLayout[lut_layout].row_major(
-            IndexList[2](batch_size, pages_per_seq)
+    var kv_block = HostDeviceTileTensor[dtype](
+        row_major(
+            Int64(num_blocks),
+            Idx[2],
+            Int64(num_layers),
+            Idx[page_size],
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
         ),
         ctx,
     )
+    random(kv_block.host_tensor())
+    kv_block.to_device()
 
-    # Initialize lookup table
-    var lookup_table_host = lookup_table.tensor[update=False]()
+    var lookup_table = HostDeviceTileTensor[.uint32](
+        row_major(Int64(batch_size), Int64(pages_per_seq)), ctx
+    )
+    var lookup_table_host = lookup_table.host_tensor()
     # Every page of every sequence gets a distinct physical block, so an
     # off-by-one in the page lookup reads another sequence's data rather than
     # aliasing back onto the correct row.
@@ -158,21 +114,26 @@ def execute_flash_attention[
             lookup_table_host[batch_idx, page_idx] = UInt32(
                 lut_blocks[batch_idx * pages_per_seq + page_idx]
             )
+    lookup_table.to_device()
 
-    # Create layout tensors for GPU operations
     var q_tensor = q.device_tensor()
     var valid_lengths_tensor = valid_lengths.device_tensor()
     var ref_output_tensor = ref_output.device_tensor()
     var test_output_tensor = test_output.device_tensor()
-    var kv_block_tensor = kv_block.device_tensor()
-    var lookup_table_tensor = lookup_table.device_tensor()
 
-    var kv_collection_device = PagedKVCacheCollection[
-        dtype, kv_params, page_size
-    ](
-        kv_block_tensor,
-        cache_lengths_device,
-        lookup_table_tensor,
+    comptime Collection = PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection_device = Collection(
+        kv_block.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_managed.device_tensor().as_imm().as_unsafe_any_origin(),
+        lookup_table.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_len),
         UInt32(max_context_len),
     )
@@ -210,11 +171,13 @@ def execute_flash_attention[
 
     # Verify results
     var rtol = 8e-3
-    var test_out_tensor = test_output.tensor()
-    var ref_out_tensor = ref_output.tensor()
-    for bs in range(Int(batch_size)):
-        for s in range(Int(valid_length[bs])):
-            for h in range(Int(num_q_heads)):
+    test_output.to_host()
+    ref_output.to_host()
+    var test_out_tensor = test_output.host_tensor()
+    var ref_out_tensor = ref_output.host_tensor()
+    for bs in range(batch_size):
+        for s in range(valid_length[bs]):
+            for h in range(num_q_heads):
                 for hd in range(kv_params.head_size):
                     assert_almost_equal(
                         ref_out_tensor[bs, s, h, hd],
@@ -227,21 +190,8 @@ def execute_flash_attention[
 def execute_flash_attention_suite(ctx: DeviceContext) raises:
     comptime dtypes = (DType.float32, DType.bfloat16)
     var bs = 2
-    var valid_length_managed = ManagedLayoutTensor[
-        .uint32, Layout(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
-        ctx,
-    )
-    var valid_length = valid_length_managed.tensor[update=False]()
-
-    var cache_valid_length_managed = ManagedLayoutTensor[
-        .uint32, Layout(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(Index(bs)),
-        ctx,
-    )
-    var cache_valid_length = cache_valid_length_managed.tensor[update=False]()
+    var valid_length: List[Int] = [0, 0]
+    var cache_valid_length: List[Int] = [0, 0]
 
     comptime for dtype_idx in range(len(dtypes)):
         comptime dtype = dtypes[dtype_idx]

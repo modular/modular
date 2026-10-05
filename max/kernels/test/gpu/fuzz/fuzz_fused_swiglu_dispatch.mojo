@@ -173,27 +173,23 @@ def run_one_case(
     rand(b_host.unsafe_ptr(), num_experts * N * K)
 
     var a_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var a_scales_total = a_scales_shape.product()
     var a_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
         a_scales_total
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups_b],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups_b],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_total = b_scales_shape.product()
     var b_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
@@ -237,13 +233,11 @@ def run_one_case(
     var o_test_dev = ctx.enqueue_create_buffer[fp8_dtype](M * H)
 
     var swiglu_scales_shape = row_major(
-        Coord(
-            a_scale_dim0,
-            Idx[k_groups_swiglu],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups_swiglu],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var s_size = swiglu_scales_shape.product()
     var s_ref_dev = ctx.enqueue_create_buffer[scales_dtype](s_size)
@@ -274,18 +268,14 @@ def run_one_case(
     ctx.enqueue_copy(eids_dev, eids_host)
     ctx.enqueue_copy(escale_dev, escale_host)
 
-    var a_tt = TileTensor(a_dev, row_major(Coord(M, Idx[K])))
-    var b_tt = TileTensor(
-        b_dev, row_major(Coord(Idx[num_experts], Idx[N], Idx[K]))
-    )
-    var a_off_tt = TileTensor(a_off_dev, row_major(Coord(Idx[num_experts + 1])))
-    var a_sc_off_tt = TileTensor(
-        a_sc_off_dev, row_major(Coord(Idx[num_experts]))
-    )
-    var eids_tt = TileTensor(eids_dev, row_major(Coord(Idx[num_experts])))
-    var c_ref_tt = TileTensor(c_ref_dev, row_major(Coord(M, Idx[N])))
-    var o_ref_tt = TileTensor(o_ref_dev, row_major(Coord(M, Idx[H])))
-    var o_test_tt = TileTensor(o_test_dev, row_major(Coord(M, Idx[H])))
+    var a_tt = TileTensor(a_dev, row_major(M, Idx[K]))
+    var b_tt = TileTensor(b_dev, row_major(Idx[num_experts], Idx[N], Idx[K]))
+    var a_off_tt = TileTensor(a_off_dev, row_major(Idx[num_experts + 1]))
+    var a_sc_off_tt = TileTensor(a_sc_off_dev, row_major(Idx[num_experts]))
+    var eids_tt = TileTensor(eids_dev, row_major(Idx[num_experts]))
+    var c_ref_tt = TileTensor(c_ref_dev, row_major(M, Idx[N]))
+    var o_ref_tt = TileTensor(o_ref_dev, row_major(M, Idx[H]))
+    var o_test_tt = TileTensor(o_test_dev, row_major(M, Idx[H]))
     var s_ref_tt = TileTensor(s_ref_dev, swiglu_scales_shape)
     var s_test_tt = TileTensor(s_test_dev, swiglu_scales_shape)
 
@@ -296,7 +286,7 @@ def run_one_case(
         b_scales_dev, b_scales_shape
     ).as_unsafe_any_origin()
     var escale_tt = TileTensor(
-        escale_dev, row_major(Coord(Int64(num_experts)))
+        escale_dev, row_major(Int64(num_experts))
     ).as_unsafe_any_origin()
 
     # ---- REF: unfused matmul -> bf16 -> standalone SwiGLU epilogue. ----

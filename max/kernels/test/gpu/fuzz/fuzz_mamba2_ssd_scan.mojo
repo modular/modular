@@ -25,6 +25,7 @@
 from std.math import ceildiv
 from std.memory import alloc
 from std.random import rand, random_ui64, seed
+from std.sys import size_of
 from std.sys.defines import get_defined_int
 
 from layout import MixedLayout, TileTensor, row_major
@@ -44,6 +45,67 @@ comptime BLOCK_THREADS = 128
 comptime CH_PER_BLOCK = BLOCK_THREADS // DSTATE_SPLIT
 comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
 comptime budget = get_defined_int["budget", 16]()
+
+
+def _scan_cpu[
+    dtype: DType, state_dtype: DType, //, DSTATE: Int
+](
+    x: TileTensor[mut=False, dtype, ...],
+    dt: TileTensor[mut=False, dtype, ...],
+    A: TileTensor[mut=False, dtype, ...],
+    B: TileTensor[mut=False, dtype, ...],
+    C: TileTensor[mut=False, dtype, ...],
+    D: TileTensor[mut=False, dtype, ...],
+    dt_bias: TileTensor[mut=False, dtype, ...],
+    y: TileTensor[mut=True, dtype, ...],
+    ssm_pool: TileTensor[mut=True, state_dtype, ...],
+    query_start_loc: TileTensor[mut=False, .int32, ...],
+    has_initial_state: TileTensor[mut=False, .bool, ...],
+    cache_indices: TileTensor[mut=False, .uint32, ...],
+):
+    """Runs the CPU scan with operand functions that read these tensors."""
+    comptime elt = size_of[dtype]()
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int, p: Int) {var x} -> SIMD[dtype, width]:
+        return x.load[width=width, alignment=alignment * elt]((t, h, p))
+
+    def dt_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int) {var dt} -> SIMD[dtype, width]:
+        return dt.load[width=width, alignment=alignment * elt]((t, h))
+
+    def b_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var B} -> SIMD[dtype, width]:
+        return B.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def c_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var C} -> SIMD[dtype, width]:
+        return C.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var cache_indices} -> SIMD[.uint32, width]:
+        return cache_indices.load[width=width]((b,))
+
+    mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[DSTATE](
+        Int(B.dim[1]()),
+        A,
+        D,
+        dt_bias,
+        y,
+        ssm_pool,
+        query_start_loc,
+        has_initial_state,
+        x_fn,
+        dt_fn,
+        b_fn,
+        c_fn,
+        slot_fn,
+    )
 
 
 # Row padding is a multiple of 16 elements so the kernel's 32-byte B/C loads
@@ -108,7 +170,6 @@ def run_one_case(
     var batch = spec.batch
     var nheads = 8 * spec.nheads8
     var head_dim = spec.head_dim
-    var ratio = nheads // NGROUPS
     var pad = spec.pad_units * PAD_UNIT
     var pool_slots = 2 * batch
     var state_row = head_dim * DSTATE
@@ -230,45 +291,66 @@ def run_one_case(
     var his_g = TileTensor(his_d, row_major(his_len))
     var slot_g = TileTensor(slot_d, row_major(batch))
 
+    comptime elt = size_of[dtype]()
+
+    def x_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int, p: Int) {var x_g} -> SIMD[dtype, width]:
+        return x_g.load[width=width, alignment=alignment * elt]((t, h, p))
+
+    def dt_fn[
+        width: Int, alignment: Int
+    ](t: Int, h: Int) {var dt_g} -> SIMD[dtype, width]:
+        return dt_g.load[width=width, alignment=alignment * elt]((t, h))
+
+    def b_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var B_g} -> SIMD[dtype, width]:
+        return B_g.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def c_fn[
+        width: Int, alignment: Int
+    ](t: Int, g: Int, n: Int) {var C_g} -> SIMD[dtype, width]:
+        return C_g.load[width=width, alignment=alignment * elt]((t, g, n))
+
+    def slot_fn[
+        width: Int, alignment: Int
+    ](b: Int) {var slot_g} -> SIMD[.uint32, width]:
+        return slot_g.load[width=width]((b,))
+
     comptime kernel = mamba2_ssd_chunk_scan_varlen_fwd_inplace_gpu_dstate_split[
         dtype,
+        DType.float32,
         DSTATE,
-        x_g.LayoutType,
-        dt_g.LayoutType,
+        DSTATE_SPLIT,
         A_g.LayoutType,
-        B_g.LayoutType,
-        C_g.LayoutType,
         D_g.LayoutType,
         dt_bias_g.LayoutType,
         y_g.LayoutType,
         pool_g.LayoutType,
         qsl_g.LayoutType,
         his_g.LayoutType,
-        slot_g.LayoutType,
-        x_g.Engine,
-        DSTATE_SPLIT,
+        y_g.Engine,
+        type_of(x_fn),
+        type_of(dt_fn),
+        type_of(b_fn),
+        type_of(c_fn),
+        type_of(slot_fn),
     ]
-    var compiled = ctx.compile_function[kernel]()
-    ctx.enqueue_function(
-        compiled,
-        Int32(nheads),
-        Int32(head_dim),
+    ctx.enqueue_function[kernel](
         Int32(NGROUPS),
-        Int32(ratio),
-        Int32(batch),
-        Int8(1),
-        x_g,
-        dt_g,
         A_g,
-        B_g,
-        C_g,
         D_g,
         dt_bias_g,
         y_g,
         pool_g,
         qsl_g,
         his_g,
-        slot_g,
+        host_arg=x_fn,
+        host_arg2=dt_fn,
+        host_arg3=b_fn,
+        host_arg4=c_fn,
+        host_arg5=slot_fn,
         grid_dim=(ceildiv(head_dim, CH_PER_BLOCK), nheads, batch),
         block_dim=(DSTATE_SPLIT, CH_PER_BLOCK, 1),
     )
@@ -295,13 +377,7 @@ def run_one_case(
         var qsl_t = TileTensor(qsl_h, row_major(batch + 1))
         var his_t = TileTensor(his_h, row_major(his_len))
         var slot_t = TileTensor(slot_h, row_major(batch))
-        mamba2_ssd_chunk_scan_varlen_fwd_inplace_cpu[dtype, DSTATE](
-            nheads,
-            head_dim,
-            NGROUPS,
-            ratio,
-            batch,
-            Int8(1),
+        _scan_cpu[DSTATE](
             x_t,
             dt_t,
             A_t,

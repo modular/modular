@@ -23,11 +23,12 @@ from layout import (
     LayoutTensor,
     RowMajorLayout,
     RuntimeLayout,
+    TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 
 from std.utils import Index, IndexList
 from std.utils.coord import DynamicCoord
@@ -105,25 +106,26 @@ def random_distinct(n: Int, k: Int) -> List[Int]:
 
 
 def assert_no_nan_inf[
-    dtype: DType, layout: Layout
+    dtype: DType, LayoutType: TensorLayout
 ](
-    mut output: ManagedLayoutTensor[dtype, layout],
+    mut output: HostDeviceTileTensor[dtype, LayoutType],
     name: StaticString = "output",
 ) raises:
     """Assert no NaN/Inf is present in `output`.
 
-    Copies the managed tensor's device buffer back to host (via
-    `tensor[update=True]()`) and linearly scans every element. Raises on the
-    first NaN or Inf with the element's flat index, total size, and the
-    caller-supplied `name`. Use immediately after a kernel + `synchronize()`
-    to give a named, indexed failure rather than relying on tolerance
-    comparisons (which mask NaN-vs-NaN matches and produce vague error
-    messages).
+    Copies the device buffer back to host and linearly scans every element.
+    Raises on the first NaN or Inf with the element's flat index, total size,
+    and the caller-supplied `name`. Use immediately after a kernel +
+    `synchronize()` to give a named, indexed failure rather than relying on
+    tolerance comparisons (which mask NaN-vs-NaN matches and produce vague
+    error messages).
     """
-    var host = output.tensor[update=True]()
-    var n = host.runtime_layout.size()
+    output.to_host()
+    var host = output.host_tensor()
+    var n = host.num_elements()
+    var ptr = host.unsafe_ptr()
     for i in range(n):
-        var v = host.ptr[i].cast[.float32]()
+        var v = ptr[i].cast[.float32]()
         if isnan(v):
             raise Error(
                 String("NaN at element ")

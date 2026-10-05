@@ -38,7 +38,7 @@ comptime _MASK = DType.uint32 if WARP_SIZE <= 32 else DType.uint64
 # kernel would still be instantiated -- tripping `vote`'s NVIDIA uint32-only
 # constraint. `_accelerator_arch()` reflects the build's accelerator flag (the
 # same mechanism `WARP_SIZE` resolves through), so it is correct in host code.
-comptime _TARGET_API = GPUInfo.current_accelerator().api
+comptime _TARGET_API = GPUInfo.default_accelerator().api
 
 
 def _vote_probe[

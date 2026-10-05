@@ -36,7 +36,11 @@ from layout import TensorEngine, TileTensor, Idx
 from layout.tile_layout import Layout, TensorLayout, row_major
 from layout.coord import Coord
 from linalg.arch.apple.mma import ConvIm2colParams, MmaOpApple
-from linalg.utils import elementwise_epilogue_type
+from linalg.utils import (
+    ElementwiseEpilogueFn,
+    elementwise_epilogue_type,
+    no_epilogue_fn,
+)
 
 
 # === A-operand loader abstraction ========================================== #
@@ -699,11 +703,13 @@ struct AppleM5MatMul[
     @staticmethod
     def _run_gemm_body[
         L: AOperandLoader,
+        EpilogueFnType: ElementwiseEpilogueFn,
         //,
         W: WeightLoader,
         c_layout: TensorLayout,
         b_layout: TensorLayout,
         seed_from_output: Bool = False,
+        has_epilogue_fn: Bool = False,
     ](
         mut loader: L,
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=_],
@@ -714,6 +720,8 @@ struct AppleM5MatMul[
         log2_grid_n: UInt32,
         k_strip_start: Int = 0,
         k_strip_end: Int = -1,
+        *,
+        epilogue_fn: EpilogueFnType,
     ):
         """Shared GEMM body; A side from `loader`, B policy from `W`.
 
@@ -734,6 +742,10 @@ struct AppleM5MatMul[
         `seed_from_output`/`k_strip_start`/`k_strip_end` support
         `run_chained`'s 2-pass dispatch; other callers (`run`, `run_conv`)
         use the defaults for a single full-K pass.
+
+        With `has_epilogue_fn`, `epilogue_fn` receives each output at its
+        `(row, col)` in `c` in place of `elementwise_lambda_fn`; callers
+        without one pass `no_epilogue_fn`.
         """
         comptime assert (
             W.b_type == Self.b_type and W.accum_type == Self.accum_type
@@ -778,7 +790,9 @@ struct AppleM5MatMul[
         # `clamp_edge` only applies on the fast fp32 store path, never with
         # the cast/lambda epilogue below (see struct docstring).
         comptime clamp_active = Self.clamp_edge and not (
-            Self.c_type != .float32 or Self.elementwise_lambda_fn
+            Self.c_type != .float32
+            or Self.elementwise_lambda_fn
+            or has_epilogue_fn
         )
         # `c_type` / `elementwise_lambda_fn` / `transpose_b` are struct *params*:
         # spelled `Self.x` below (a param can't be aliased to a same-name local
@@ -919,7 +933,9 @@ struct AppleM5MatMul[
         # here was already written by pass 0, and a stray read of a
         # neighbor's cell gets discarded by this tile's own bounded store.
         comptime do_seed = seed_from_output and not (
-            Self.c_type != .float32 or Self.elementwise_lambda_fn
+            Self.c_type != .float32
+            or Self.elementwise_lambda_fn
+            or has_epilogue_fn
         )
         var accum: Mma.AccumType
         comptime if do_seed:
@@ -938,9 +954,10 @@ struct AppleM5MatMul[
 
         # fp32 out with no fused lambda takes the fast `mma_op.store` path;
         # every other (c_type, lambda) combo flows through the epilogue below.
-        comptime use_epilogue_path = (
-            Self.c_type != .float32 or Self.elementwise_lambda_fn
+        comptime has_epilogue = (
+            Bool(Self.elementwise_lambda_fn) or has_epilogue_fn
         )
+        comptime use_epilogue_path = Self.c_type != .float32 or has_epilogue
 
         # Cast-then-store epilogue (non-fp32 out and/or a fused
         # `elementwise_lambda_fn`). Writes through a `.tile`-derived simdgroup
@@ -975,7 +992,7 @@ struct AppleM5MatMul[
                     comptime if bounded:
                         if acol + 3 < n:
                             epilogue[Self.c_type, 4, alignment=elem_align](
-                                IndexList[2](arow, acol), y
+                                (arow, acol), y
                             )
                         else:
                             for e in range(min(4, n - acol)):
@@ -985,7 +1002,7 @@ struct AppleM5MatMul[
                                 )
                     else:
                         epilogue[Self.c_type, 4, alignment=elem_align](
-                            IndexList[2](arow, acol), y
+                            (arow, acol), y
                         )
                 else:
                     comptime if bounded:
@@ -1011,7 +1028,35 @@ struct AppleM5MatMul[
                     var lrow = mi * 16 + Int(mma_op.rb)
                     var acol = tile_col_base + lcol
                     var arow = tile_row_base + lrow
-                    comptime if bounded:
+                    comptime if has_epilogue_fn:
+                        # Inline rather than in `_write4`: capturing the
+                        # closure value there breaks `c_vec`'s capture.
+                        comptime for h in range(2):
+                            var row = arow + 8 * h
+                            var y = frag.slice[4, offset=4 * h]().cast[
+                                Self.c_type
+                            ]()
+                            comptime if bounded:
+                                if row < m:
+                                    if acol + 3 < n:
+                                        epilogue_fn[
+                                            Self.c_type,
+                                            4,
+                                            alignment=elem_align,
+                                        ]((row, acol), y)
+                                    else:
+                                        for e in range(min(4, n - acol)):
+                                            epilogue_fn[
+                                                Self.c_type, 1, alignment=1
+                                            ](
+                                                (row, acol + e),
+                                                SIMD[Self.c_type, 1](y[e]),
+                                            )
+                            else:
+                                epilogue_fn[
+                                    Self.c_type, 4, alignment=elem_align
+                                ]((row, acol), y)
+                    elif bounded:
                         if arow < m:
                             _write4(
                                 lrow,
@@ -1213,6 +1258,82 @@ struct AppleM5MatMul[
             log2_grid_n: Base-2 logarithm of the N-axis grid extent; the grid
                 spans `1<<log2_grid_n` threadgroups along N.
         """
+        Self._run[has_epilogue_fn=False](
+            c, a, b, log2_grid_m, log2_grid_n, no_epilogue_fn
+        )
+
+    @__name(
+        t"apple_matmul_run_epilogue_fn_{Self.in_type}_{Self.c_type}_tb{Self.transpose_b}_b{Self.b_type}"
+    )
+    @staticmethod
+    def run_with_epilogue_fn[
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+    ](
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        log2_grid_m: UInt32,
+        log2_grid_n: UInt32,
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Same as `run`, storing the output through `epilogue_fn`.
+
+        Launch with `host_arg=epilogue_fn`. Requires `elementwise_lambda_fn`
+        to be unset.
+
+        Parameters:
+            c_layout: `TensorLayout` of the output `C` operand.
+            a_layout: `TensorLayout` of the A operand.
+            b_layout: `TensorLayout` of the B operand.
+            c_engine: `TensorEngine` of the output `C` operand.
+            a_engine: `TensorEngine` of the A operand.
+            b_engine: `TensorEngine` of the B operand.
+            EpilogueFnType: Type of `epilogue_fn`.
+
+        Args:
+            c: Output matrix `(M, N)`. Gives the epilogue its shape.
+            a: A operand matrix `(M, K)` row-major.
+            b: B operand matrix, `(K, N)` for `transpose_b=False` or `(N, K)`
+                for `transpose_b=True`.
+            log2_grid_m: Base-2 logarithm of the M-axis grid extent.
+            log2_grid_n: Base-2 logarithm of the N-axis grid extent.
+            epilogue_fn: Stores each output element at its `(row, col)`.
+        """
+        comptime assert not Self.elementwise_lambda_fn, (
+            "run_with_epilogue_fn takes the epilogue as a value; leave"
+            " elementwise_lambda_fn unset"
+        )
+        Self._run[has_epilogue_fn=True](
+            c, a, b, log2_grid_m, log2_grid_n, epilogue_fn
+        )
+
+    @staticmethod
+    @inline(.always)
+    def _run[
+        c_layout: TensorLayout,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_engine: TensorEngine,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+    ](
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        a: TileTensor[Self.in_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        log2_grid_m: UInt32,
+        log2_grid_n: UInt32,
+        epilogue_fn: EpilogueFnType,
+    ):
         var m = Int(c.dim[0]())
         var k = Int(a.dim[1]())
 
@@ -1246,8 +1367,18 @@ struct AppleM5MatMul[
 
         var no_conv = ConvIm2colParams()  # dense path ignores conv
         # B policy: direct-DRAM (dense-bf16 or FP8-W8A16), no SMEM.
-        Self._run_gemm_body[W=DenseWeightLoader[Self.b_type, Self.accum_type]](
-            loader, c, b, k, no_conv, log2_grid_m, log2_grid_n
+        Self._run_gemm_body[
+            W=DenseWeightLoader[Self.b_type, Self.accum_type],
+            has_epilogue_fn=has_epilogue_fn,
+        ](
+            loader,
+            c,
+            b,
+            k,
+            no_conv,
+            log2_grid_m,
+            log2_grid_n,
+            epilogue_fn=epilogue_fn,
         )
 
     # === Chained clamp_v2 kernel: 2-pass, no partials buffer =============== #
@@ -1336,6 +1467,7 @@ struct AppleM5MatMul[
             log2_grid_n,
             k_strip_start,
             k_strip_end,
+            epilogue_fn=no_epilogue_fn,
         )
 
     # === Fused online-im2col conv kernel =================================== #
@@ -1445,7 +1577,14 @@ struct AppleM5MatMul[
         )
         # Conv B (the filter) is `in_type`; direct-DRAM policy, no SMEM.
         Self._run_gemm_body[W=DenseWeightLoader[Self.b_type, Self.accum_type]](
-            loader, c, b, k, conv, log2_grid_m, log2_grid_n
+            loader,
+            c,
+            b,
+            k,
+            conv,
+            log2_grid_m,
+            log2_grid_n,
+            epilogue_fn=no_epilogue_fn,
         )
 
     # === Split-K kernels =================================================== #
@@ -1675,7 +1814,7 @@ struct AppleM5MatMul[
         var m = Int(c.dim[0]())
         var n = Int(c.dim[1]())
 
-        var idx = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+        var idx = block_idx.x * block_dim.x + thread_idx.x
         var total = m * n
         if idx >= total:
             return
@@ -1689,7 +1828,7 @@ struct AppleM5MatMul[
         comptime if Self.elementwise_lambda_fn:
             comptime epilogue = Self.elementwise_lambda_fn.value()
             epilogue[Self.c_type, 1](
-                IndexList[2](idx // n, idx % n), SIMD[Self.c_type, 1](y)
+                (idx // n, idx % n), SIMD[Self.c_type, 1](y)
             )
         else:
             c_ptr[idx] = y

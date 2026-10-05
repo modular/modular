@@ -65,25 +65,23 @@ def bench_shape(ctx: DeviceContext, mut m: Bench, M: Int) raises:
     cb_bsf.init_on_device(InitializationType.uniform_distribution, ctx)
 
     var c_dev = ctx.enqueue_create_buffer[OUT_DTYPE](M * N)
-    var c = TileTensor(c_dev, row_major(Coord(M, Idx[N])))
+    var c = TileTensor(c_dev, row_major(M, Idx[N]))
 
     @inline(.always)
     def launch(
         ctx: DeviceContext, iteration: Int
     ) raises {mut cb_a, mut cb_b, mut cb_asf, mut cb_bsf, mut c, imm}:
-        var a = TileTensor(
-            cb_a.offset_ptr(iteration), row_major(Coord(M, Idx[K]))
-        )
+        var a = TileTensor(cb_a.offset_ptr(iteration), row_major(M, Idx[K]))
         var asf = TileTensor(
             cb_asf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-            row_major(Coord(M, Idx[K_SCALES])),
+            row_major(M, Idx[K_SCALES]),
         )
         var b = TileTensor(
-            cb_b.offset_ptr(iteration), row_major(Coord(Idx[N], Idx[K]))
+            cb_b.offset_ptr(iteration), row_major(Idx[N], Idx[K])
         )
         var bsf = TileTensor(
             cb_bsf.offset_ptr(iteration).bitcast[Scalar[SCALE_DTYPE]](),
-            row_major(Coord(Idx[N], Idx[K_SCALES])),
+            row_major(Idx[N], Idx[K_SCALES]),
         )
 
         block_scaled_matmul_amd[lane_bytes=LANE_BYTES](

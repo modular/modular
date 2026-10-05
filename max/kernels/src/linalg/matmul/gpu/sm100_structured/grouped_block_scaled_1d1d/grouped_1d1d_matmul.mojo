@@ -271,7 +271,7 @@ def grouped_matmul_block_scaled[
 
     # Reshape B from (num_experts, N, K bytes) to (num_experts * N, K bytes)
     var b_device = _b_device.reshape(
-        row_major(Coord(Idx[num_experts * N], Idx[K_WEIGHT_BYTES]))
+        row_major(Idx[num_experts * N], Idx[K_WEIGHT_BYTES])
     )
 
     comptime if config.cta_group == 2:

@@ -85,10 +85,8 @@ def _run_case[static_N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(c_dev, c_host)
 
-    var c_tt = TileTensor(
-        c_dev.unsafe_ptr(), row_major(Coord(m, Idx[static_N]))
-    )
-    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(Coord(m, Idx[K])))
+    var c_tt = TileTensor(c_dev.unsafe_ptr(), row_major(m, Idx[static_N]))
+    var a_tt = TileTensor(a_dev.unsafe_ptr(), row_major(m, Idx[K]))
     var b_tt = TileTensor(b_dev.unsafe_ptr(), row_major[static_N, K]())
 
     router_gate_mixed_gemv[static_N](

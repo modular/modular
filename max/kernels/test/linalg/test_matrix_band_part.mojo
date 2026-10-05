@@ -14,12 +14,12 @@
 from max.gpu.host import DeviceContext
 from layout import (
     Coord,
-    Layout,
-    LayoutTensor,
+    Idx,
+    TensorLayout,
+    stack_allocation,
     TileTensor,
     row_major,
 )
-from layout.int_tuple import to_index_list
 from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
 
 from std.testing import assert_equal
@@ -28,11 +28,11 @@ from std.utils import IndexList
 
 
 def matrix_band_part[
-    output_layout: Layout,
+    output_layout: TensorLayout,
     dtype: DType,
 ](
-    input: LayoutTensor[dtype, output_layout, ImmutAnyOrigin],
-    output: LayoutTensor[dtype, output_layout, MutAnyOrigin],
+    input: TileTensor[dtype, output_layout, ImmutAnyOrigin],
+    output: TileTensor[dtype, output_layout, MutAnyOrigin],
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,
@@ -40,41 +40,23 @@ def matrix_band_part[
     comptime int_type = DType.int
     comptime cond_type = DType.bool
 
-    var num_lower_buf = LayoutTensor[
-        int_type, Layout.row_major(1), MutAnyOrigin
-    ].stack_allocation()
-    var num_upper_buf = LayoutTensor[
-        int_type, Layout.row_major(1), MutAnyOrigin
-    ].stack_allocation()
-    var exclude_buf = LayoutTensor[
-        cond_type, Layout.row_major(1), MutAnyOrigin
-    ].stack_allocation()
+    var num_lower_buf = stack_allocation[int_type](row_major(Idx[1]))
+    var num_upper_buf = stack_allocation[int_type](row_major(Idx[1]))
+    var exclude_buf = stack_allocation[cond_type](row_major(Idx[1]))
 
     num_lower_buf[0] = Int(num_lower)
     num_upper_buf[0] = Int(num_upper)
     exclude_buf[0] = exclude
-    comptime rank = input.rank
-    var input_shape: IndexList[rank] = to_index_list[rank](input.layout.shape)
+    comptime assert input.flat_rank == 2
+    comptime assert output.flat_rank == 2
+    comptime rank = input.flat_rank
+    var input_shape = IndexList[rank](Int(input.dim(0)), Int(input.dim(1)))
 
     def input_fn[
         width: Int,
         _rank: Int,
     ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
-        return input.load[width=width](rebind[IndexList[rank]](coords))
-
-    # Create TileTensors for scalar parameters.
-    var num_lower_shape = Coord(Int64(1))
-    var num_lower_tt = TileTensor(num_lower_buf.ptr, row_major(num_lower_shape))
-    var num_upper_shape = Coord(Int64(1))
-    var num_upper_tt = TileTensor(num_upper_buf.ptr, row_major(num_upper_shape))
-    var exclude_shape = Coord(Int64(1))
-    var exclude_tt = TileTensor(exclude_buf.ptr, row_major(exclude_shape))
-
-    # Create TileTensor for output.
-    comptime m = output_layout.shape[0].value()
-    comptime n = output_layout.shape[1].value()
-    var output_shape = Coord(Int64(m), Int64(n))
-    var output_tt = TileTensor(output.ptr, row_major(output_shape))
+        return input.load[width=width](Coord(rebind[IndexList[rank]](coords)))
 
     _matrix_band_part[
         dtype,
@@ -85,20 +67,20 @@ def matrix_band_part[
     ](
         input_fn,
         input_shape,
-        num_lower_tt,
-        num_upper_tt,
-        exclude_tt,
-        output_tt,
+        num_lower_buf,
+        num_upper_buf,
+        exclude_buf,
+        output,
         DeviceContext(api="cpu"),
     )
 
 
 def test_matrix_band_part() raises:
-    comptime layout = Layout.row_major(3, 3)
+    comptime layout = row_major(Idx[3], Idx[3])
     comptime dtype = DType.float32
 
-    var input = LayoutTensor[dtype, layout, MutAnyOrigin].stack_allocation()
-    var output = LayoutTensor[dtype, layout, MutAnyOrigin].stack_allocation()
+    var input = stack_allocation[dtype](layout)
+    var output = stack_allocation[dtype](layout)
 
     input[0, 0] = 1
     input[0, 1] = 2

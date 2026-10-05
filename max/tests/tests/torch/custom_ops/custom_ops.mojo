@@ -121,7 +121,7 @@ struct ScalarAdd:
         A: Scalar[dtype],
         B: Scalar[dtype],
     ) raises:
-        C.store(IndexList[1](0), A + B)
+        C.store((0,), A + B)
 
 
 @register("unsupported_type_op")

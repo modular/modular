@@ -51,11 +51,11 @@ def test_epilogue_fn[
     ctx.enqueue_memset(c_dev, 0)
     ctx.enqueue_memset(c_out_dev, 0)
 
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K]))).as_imm()
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K]))).as_imm()
-    var c_ref = TileTensor(c_ref_dev, row_major(Coord(m, Idx[N])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
-    var c_out = TileTensor(c_out_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K])).as_imm()
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K])).as_imm()
+    var c_ref = TileTensor(c_ref_dev, row_major(m, Idx[N]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
+    var c_out = TileTensor(c_out_dev, row_major(m, Idx[N]))
 
     def store_doubled[
         dtype: DType, width: SIMDLength, *, alignment: Int

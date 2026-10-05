@@ -284,7 +284,7 @@ def _fp8_index_body[
 
     var tid = thread_idx.x
     var b = block_idx.x
-    var key_start = Int(block_idx.y) * BM_key
+    var key_start = block_idx.y * BM_key
 
     var start_of_seq = Int(valid_length[b])
     var end_of_seq = Int(valid_length[b + 1])
@@ -652,7 +652,7 @@ def _fp8_index_score_kernel_sm100[
     var max_num_keys = Int(max_num_keys_dev)
     var causal = Int(causal_dev)
     var b = block_idx.x
-    var key_start = Int(block_idx.y) * BM_key
+    var key_start = block_idx.y * BM_key
     var start_of_seq = Int(valid_length[b])
     var seq_len = Int(valid_length[b + 1]) - start_of_seq
     var num_keys = Int(k_operand.cache_length(b))
@@ -748,7 +748,7 @@ def _fp8_index_score_kernel_sm100_split[
     var max_num_keys = Int(max_num_keys_dev)
     var causal = Int(causal_dev)
     var b = block_idx.x
-    var key_start = Int(block_idx.y) * BM_key
+    var key_start = block_idx.y * BM_key
     var start_of_seq = Int(valid_length[b])
     var seq_len = Int(valid_length[b + 1]) - start_of_seq
     var num_keys = Int(k_operand.cache_length(b))
@@ -766,8 +766,8 @@ def _fp8_index_score_kernel_sm100_split[
     # grid.z splits this sequence's windowed token tiles across CTAs; bounds are
     # uniform per CTA.
     var n_token_tiles = ceildiv(win_tokens, N_TOKENS)
-    var tiles_per_slice = ceildiv(n_token_tiles, Int(grid_dim.z))
-    var nt_start = Int(block_idx.z) * tiles_per_slice
+    var tiles_per_slice = ceildiv(n_token_tiles, grid_dim.z)
+    var nt_start = block_idx.z * tiles_per_slice
 
     # Bail uniformly (every thread) before the helper's first collective op
     # (TMA mbar / tcgen05 alloc); a divergent early return would deadlock them.

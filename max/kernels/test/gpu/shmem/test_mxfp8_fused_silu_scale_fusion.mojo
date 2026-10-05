@@ -121,7 +121,7 @@ def _run_check[
     ctx.enqueue_copy(a_off_d, a_off_h)
 
     var input_tt = TileTensor[origin=ImmutAnyOrigin](
-        input_d, row_major(Coord(total_tokens, Idx[input_dim]))
+        input_d, row_major(total_tokens, Idx[input_dim])
     )
     var a_off_tt = TileTensor[origin=ImmutAnyOrigin](
         a_off_d, row_major[n_off]()
@@ -129,17 +129,17 @@ def _run_check[
 
     comptime out_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(total_tokens, Idx[output_dim]))
+            input_d, row_major(total_tokens, Idx[output_dim])
         )
     ).LayoutType
     comptime raw_scales_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(total_tokens, Idx[scale_K]))
+            input_d, row_major(total_tokens, Idx[scale_K])
         )
     ).LayoutType
     comptime slot_scales_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(num_active * max_padded_M, Idx[scale_K]))
+            input_d, row_major(num_active * max_padded_M, Idx[scale_K])
         )
     ).LayoutType
 
@@ -182,10 +182,10 @@ def _run_check[
 
     ctx.enqueue_function[kernel_ref](
         TileTensor[origin=MutAnyOrigin](
-            raw_out_d, row_major(Coord(total_tokens, Idx[output_dim]))
+            raw_out_d, row_major(total_tokens, Idx[output_dim])
         ),
         TileTensor[origin=MutAnyOrigin](
-            raw_scales_d, row_major(Coord(total_tokens, Idx[scale_K]))
+            raw_scales_d, row_major(total_tokens, Idx[scale_K])
         ),
         input_tt,
         a_off_tt,
@@ -200,10 +200,10 @@ def _run_check[
         raw_scales_d.unsafe_ptr()
         .unsafe_bitcast[UInt8]()
         .as_unsafe_any_origin(),
-        row_major(Coord(total_tokens, Idx[scale_K])),
+        row_major(total_tokens, Idx[scale_K]),
     )
     var ref_slots_tt = TileTensor[origin=MutAnyOrigin](
-        ref_d, row_major(Coord(num_active * max_padded_M, Idx[scale_K]))
+        ref_d, row_major(num_active * max_padded_M, Idx[scale_K])
     )
     # Same slot stride as the fused path, so the whole-buffer compare is valid.
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
@@ -225,11 +225,11 @@ def _run_check[
 
     ctx.enqueue_function[kernel_fused](
         TileTensor[origin=MutAnyOrigin](
-            fused_out_d, row_major(Coord(total_tokens, Idx[output_dim]))
+            fused_out_d, row_major(total_tokens, Idx[output_dim])
         ),
         TileTensor[origin=MutAnyOrigin](
             fused_scales_d,
-            row_major(Coord(num_active * max_padded_M, Idx[scale_K])),
+            row_major(num_active * max_padded_M, Idx[scale_K]),
         ),
         input_tt,
         a_off_tt,

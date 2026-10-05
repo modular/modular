@@ -24,6 +24,7 @@ from typing import ClassVar
 from max.driver import DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.kernels import _moe_sigmoid_gemv_router_unsupported
 from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
@@ -117,6 +118,30 @@ def _runs_w4a4_experts(device_specs: Sequence[DeviceSpec]) -> bool:
     )
 
 
+def _runs_fused_router(
+    device_specs: Sequence[DeviceSpec],
+    num_experts: int,
+    num_experts_per_tok: int,
+    hidden_size: int,
+) -> bool:
+    """Returns whether the MoE router fuses its gate GEMV into top-k.
+
+    Shapes the fused kernel can't run, such as fewer routed experts than one
+    warp, keep the separate float32 gate matmul.
+    """
+    return all(
+        device.api in ("hip", "cuda")
+        and _moe_sigmoid_gemv_router_unsupported(
+            n_routed_experts=num_experts,
+            n_experts_per_tok=num_experts_per_tok,
+            hidden_size=hidden_size,
+            warp_size=64 if device.api == "hip" else 32,
+        )
+        is None
+        for device in load_devices(device_specs)
+    )
+
+
 @dataclass(kw_only=True)
 class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     """Configuration for a Nemotron-H hybrid decoder.
@@ -165,6 +190,9 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     w4a4_experts: bool = False
     """Whether NVFP4 routed experts run the W4A4 grouped matmul, with their
     activations quantized to NVFP4, instead of being dequantized to BF16."""
+    fused_router: bool = False
+    """Whether the MoE router runs its gate GEMV, sigmoid and top-k as one
+    fused op instead of a separate float32 matmul."""
 
     def w4a4_mixers(self) -> frozenset[str]:
         """Returns the MoE mixers whose routed experts run W4A4.
@@ -291,6 +319,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             hf, kv_params=kv_params, devices=devices, max_seq_len=max_seq_len
         )
         config.w4a4_experts = _runs_w4a4_experts(model_config.device_specs)
+        config.fused_router = _runs_fused_router(
+            model_config.device_specs,
+            num_experts=config.num_experts,
+            num_experts_per_tok=config.num_experts_per_tok,
+            hidden_size=config.hidden_size,
+        )
         hf_quant_config = resolve_hf_quant_config(hf, {}) or {}
         if hf_quant_config.get("kv_cache_scheme") and kv_cache_format is None:
             logger.info(

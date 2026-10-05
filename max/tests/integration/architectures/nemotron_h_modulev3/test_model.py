@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from unittest.mock import Mock
 
@@ -21,9 +22,8 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.tensor import default_dtype
-from max.graph import BufferValue, DeviceRef, TensorValue
-from max.nn.kv_cache import RecurrentLeafInputs
+from max.experimental.tensor import Tensor, default_dtype
+from max.graph import DeviceRef
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
     NemotronHConfig,
 )
@@ -149,29 +149,30 @@ def test_each_mamba_layer_reads_its_own_state_row(
 ) -> None:
     """Sharing a row would load, run and return fluent nonsense.
 
-    The Mamba layers share one subgraph, so a row selected inside it would
-    be recorded once instead of once per layer.
+    The Mamba layers share one subgraph and slice their pool rows inside it,
+    so each call must pass its own layer index.
     """
     config = _config(_TINY_LAYERS, _TINY)
     model = _model(config)
-    selected: list[int] = []
-    original = RecurrentLeafInputs.live_row_id
+    layers: list[int] = []
+    original: Callable[..., Tensor] = F.constant
 
     def record(
-        self: RecurrentLeafInputs[TensorValue, BufferValue], layer: int
-    ) -> TensorValue:
-        selected.append(layer)
-        return original(self, layer)
+        value: object, dtype: DType, *args: object, **kwargs: object
+    ) -> Tensor:
+        if dtype == DType.int64 and isinstance(value, int):
+            layers.append(value)
+        return original(value, dtype, *args, **kwargs)
 
-    monkeypatch.setattr(RecurrentLeafInputs, "live_row_id", record)
+    monkeypatch.setattr(F, "constant", record)
     model.trace(
         *modulev3_ragged_kv_symbolic_inputs(
             kv_params=config.kv_params, device_refs=config.devices
         )
     )
 
-    # The conv then the SSM row of each of the three Mamba layers.
-    assert selected == [0, 0, 1, 1, 2, 2]
+    # One index per Mamba layer, in order.
+    assert layers == [0, 1, 2]
 
 
 def test_loading_is_strict() -> None:

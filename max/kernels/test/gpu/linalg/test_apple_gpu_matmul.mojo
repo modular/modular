@@ -78,6 +78,7 @@ def _launch[
 
 
 from linalg.utils import elementwise_epilogue_type
+from std.math import ceildiv
 
 
 def _host_matmul_nn[
@@ -179,7 +180,7 @@ def _run_8x8_case[
         Int32(M),
         Int32(N),
         Int32(K),
-        grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NSG * WARP_SIZE,),
     )
 
@@ -295,7 +296,7 @@ def _run_8x8_bias_case[
         Int32(M),
         Int32(N),
         Int32(K),
-        grid_dim=((N + BN - 1) // BN, (M + BM - 1) // BM),
+        grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NSG * WARP_SIZE,),
     )
 
@@ -2355,9 +2356,9 @@ def _run_gemv_case[
     ctx.enqueue_copy(w_d, w_h)
     ctx.enqueue_copy(c_d, c_h)
 
-    var a_tt = TileTensor(act_d, row_major(Coord(m, Idx[K]))).as_imm()
-    var w_tt = TileTensor(w_d, row_major(Coord(Idx[N], Idx[K]))).as_imm()
-    var c_tt = TileTensor(c_d, row_major(Coord(m, Idx[N])))
+    var a_tt = TileTensor(act_d, row_major(m, Idx[K])).as_imm()
+    var w_tt = TileTensor(w_d, row_major(Idx[N], Idx[K])).as_imm()
+    var c_tt = TileTensor(c_d, row_major(m, Idx[N]))
     enqueue_apple_gemv_config[
         tile_m=tile_m,
         rows_per_warp=rows_per_warp,
@@ -2497,9 +2498,9 @@ def _run_gemv_dispatch_case[
     ctx.enqueue_copy(bias_d, bias_h)
     ctx.enqueue_copy(c_d, c_h)
 
-    var a_tt = TileTensor(act_d, row_major(Coord(m, Idx[K]))).as_imm()
-    var w_tt = TileTensor(w_d, row_major(Coord(Idx[N], Idx[K]))).as_imm()
-    var c_tt = TileTensor(c_d, row_major(Coord(m, Idx[N])))
+    var a_tt = TileTensor(act_d, row_major(m, Idx[K])).as_imm()
+    var w_tt = TileTensor(w_d, row_major(Idx[N], Idx[K])).as_imm()
+    var c_tt = TileTensor(c_d, row_major(m, Idx[N]))
 
     var bias_tt = TileTensor(bias_d, row_major(Idx[N])).as_imm()
 

@@ -359,14 +359,12 @@ class NemotronHMoE(MoE):
     ``[num_experts, moe_intermediate_size, hidden]``.
 
     bf16 (no ``quant_config``) reuses the base :class:`~max.nn.moe.MoE`
-    grouped-matmul routing verbatim, which on Apple resolves to MAX's own
-    ``naive_grouped_matmul`` (the else-branch of ``grouped_matmul_ragged``).
+    grouped-matmul routing verbatim.
 
     FP8 (per-tensor static ``quant_config``, the 30B-A3B) keeps the routed
     expert weights as ``float8_e4m3fn`` and feeds them to the SAME grouped
-    matmul: the op is dtype-generic, so the naive kernel widens each E4M3 weight
-    to fp32 on load (bf16 activation x fp8 weight -> fp32 accumulate -> bf16),
-    i.e. weight-only W8A16 — the grouped analog of the dense Apple FP8 Linear.
+    matmul (bf16 activation x fp8 weight -> fp32 accumulate -> bf16), i.e.
+    weight-only W8A16 — the grouped analog of the dense Apple FP8 Linear.
     The per-tensor scalar ``weight_scale`` (one per expert) factors out of the
     matmul sum, so it is folded EXACTLY as a post-matmul per-row multiply
     (gathered by each permuted row's expert). The shared expert runs the dense
@@ -406,11 +404,9 @@ class NemotronHMoE(MoE):
             return super().__call__(x)
 
         # FP8 weight-only (W8A16): mirrors the base routing, but the routed
-        # expert grouped matmuls consume FP8-E4M3 weight stacks (widened to
-        # fp32 on load by the dtype-generic naive grouped-matmul kernel) and the
+        # expert grouped matmuls consume FP8-E4M3 weight stacks and the
         # per-expert scalar ``weight_scale`` is folded post-matmul. A per-tensor
-        # scalar factors out of the sum, so the fold is exact (not merely within
-        # tolerance) -- the grouped analog of the dense Apple FP8 Linear.
+        # scalar factors out of the sum, so the fold is exact.
         router_idx, router_weight = self.gate(x)
         router_idx = ops.reshape(router_idx, [-1])
 

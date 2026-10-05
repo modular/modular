@@ -2704,7 +2704,7 @@ def get_kernel_simd_width[dtype: DType, target: StaticString]() -> Int:
     comptime if _is_gpu[target]():
         # We hardcode simd width to 16B for Nvidia GPUs but >= sm_100
         # arch support 32B load/store to global memory, see KERN-2037.
-        comptime if CompilationTarget.current_accelerator()._is_arch[
+        comptime if CompilationTarget.default_accelerator()._is_arch[
             "sm_100a"
         ]():
             return 32 // size_of[dtype]()

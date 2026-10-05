@@ -131,11 +131,9 @@ def _latent_sparse_attention_gpu_kernel[
     scale: Float32,
 ):
     comptime lane_width = head_dim // WARP_SIZE
-    var t = Int(block_idx.x)
+    var t = block_idx.x
     var lane = Int(lane_id())
-    var h0 = (
-        Int(block_idx.y) * warps_per_block + Int(warp_id())
-    ) * heads_per_warp
+    var h0 = (block_idx.y * warps_per_block + Int(warp_id())) * heads_per_warp
     var nh = Int(num_heads)
     if h0 >= nh:
         return

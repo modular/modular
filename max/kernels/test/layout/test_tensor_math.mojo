@@ -13,35 +13,44 @@
 
 from std.math import exp
 
-from layout import Layout, LayoutTensor, stack_allocation_like
+from layout import (
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    row_major,
+    stack_allocation_like,
+)
 from layout._fillers import arange
 from layout.math import max, sum
+
+
+def print_vector(tensor: TileTensor):
+    for i in range(tensor.dim[0]()):
+        print(tensor[i])
 
 
 # CHECK-LABEL: test_reduce_sum
 def test_reduce_sum():
     print("== test_reduce_sum")
 
-    # this also tests that ops works for abstract types
-    def test_reduce_sum_impl(tensor: LayoutTensor[mut=True, ...]):
+    # Keep the parameter abstract to exercise generic reduction dispatch.
+    def test_reduce_sum_impl(tensor: TileTensor[mut=True, ...]):
         arange(tensor)
         # CHECK: 6.0
         # CHECK: 22.0
         # CHECK: 38.0
         # CHECK: 54.0
         var tensor_4_1 = sum[axis=1](tensor)
-        print(tensor_4_1)
+        print_vector(tensor_4_1)
         # CHECK: 24.0
         # CHECK: 28.0
         # CHECK: 32.0
         # CHECK: 36.0
         var tensor_4_0 = sum[axis=0](tensor)
-        print(tensor_4_0)
+        print_vector(tensor_4_0)
 
     var tensor_4x4_storage = Array[Float32, 4 * 4](fill={})
-    var tensor_4x4 = LayoutTensor[.float32, Layout.row_major(4, 4)](
-        tensor_4x4_storage
-    )
+    var tensor_4x4 = TileTensor(tensor_4x4_storage, row_major[4, 4]())
     test_reduce_sum_impl(tensor_4x4)
 
 
@@ -49,26 +58,24 @@ def test_reduce_sum():
 def test_reduce_max():
     print("== test_reduce_max")
 
-    def test_reduce_max_impl(tensor: LayoutTensor[mut=True, ...]):
+    def test_reduce_max_impl(tensor: TileTensor[mut=True, ...]):
         arange(tensor)
         var tensor_4_0 = max[axis=0](tensor)
         # CHECK: 12.0
         # CHECK: 13.0
         # CHECK: 14.0
         # CHECK: 15.0
-        print(tensor_4_0)
+        print_vector(tensor_4_0)
 
         var tensor_4_1 = max[axis=1](tensor)
         # CHECK: 3.0
         # CHECK: 7.0
         # CHECK: 11.0
         # CHECK: 15.0
-        print(tensor_4_1)
+        print_vector(tensor_4_1)
 
     var tensor_4x4_storage = Array[Float32, 4 * 4](fill={})
-    var tensor_4x4 = LayoutTensor[.float32, Layout.row_major(4, 4)](
-        tensor_4x4_storage
-    )
+    var tensor_4x4 = TileTensor(tensor_4x4_storage, row_major[4, 4]())
     test_reduce_max_impl(tensor_4x4)
 
 
@@ -76,20 +83,18 @@ def test_reduce_max():
 def test_reduce_res_allocated():
     print("== test_reduce_res_allocated")
     var tensor_4x4_storage = Array[Float32, 4 * 4](fill={})
-    var tensor_4x4 = LayoutTensor[.float32, Layout.row_major(4, 4)](
-        tensor_4x4_storage
-    )
+    var tensor_4x4 = TileTensor(tensor_4x4_storage, row_major[4, 4]())
     arange(tensor_4x4)
     # CHECK: 12.0
     # CHECK: 13.0
     # CHECK: 14.0
     # CHECK: 15.0
-    print(max[axis=0](tensor_4x4))
+    print_vector(max[axis=0](tensor_4x4))
     # CHECK: 6.0
     # CHECK: 22.0
     # CHECK: 38.0
     # CHECK: 54.0
-    print(sum[axis=1](tensor_4x4))
+    print_vector(sum[axis=1](tensor_4x4))
 
 
 # CHECK-LABEL: test_exp

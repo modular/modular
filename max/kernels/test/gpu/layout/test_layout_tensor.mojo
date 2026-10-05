@@ -18,11 +18,10 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
-from layout.layout import blocked_product
+from layout.tile_layout import blocked_product
 from layout._fillers import arange
 from std.testing import assert_equal
 
@@ -33,56 +32,60 @@ def test_runtime_and_compile_time_dim_and_stride[
     MType: CoordLike, KType: CoordLike, //
 ](m: MType, k: KType) raises:
     var shape = Coord(k, m)
-    var tt = TileTensor(
+    var tensor = TileTensor(
         MutPointer[Float32, MutAnyOrigin].unsafe_dangling(), row_major(shape)
     )
-    var tensor = tt.to_layout_tensor()
 
     var K = Int(k.value())
     var M = Int(m.value())
 
-    assert_equal(tensor.dim(0), K)
-    assert_equal(tensor.dim(1), M)
-    assert_equal(tensor.stride(0), M)
-    assert_equal(tensor.stride(1), 1)
+    assert_equal(Int(tensor.dim(0)), K)
+    assert_equal(Int(tensor.dim(1)), M)
+    assert_equal(Int(tensor.dynamic_stride(0)), M)
+    assert_equal(tensor.dynamic_stride(1), 1)
 
-    assert_equal(tensor.dim[0](), K)
-    assert_equal(tensor.dim[1](), M)
-    assert_equal(tensor.stride[0](), M)
-    assert_equal(tensor.stride[1](), 1)
+    assert_equal(Int(tensor.dim[0]()), K)
+    assert_equal(Int(tensor.dim[1]()), M)
+    assert_equal(Int(tensor.layout.stride[0]().value()), M)
+    assert_equal(tensor.layout.stride[1]().value(), 1)
 
 
 def test_nested_layout_shape() raises:
-    """Test that shape[idx]() works correctly for nested layouts."""
+    """Checks static and runtime extents for nested layouts."""
     # Test case 1: blocked_product creates nested layout
-    comptime tiler_layout = Layout.row_major(2, 4)
-    comptime base_layout = Layout.row_major(32, 32)
+    comptime tiler_layout = row_major[2, 4]()
+    comptime base_layout = row_major[32, 32]()
     comptime smem_layout = blocked_product(base_layout, tiler_layout)
 
-    var tensor = LayoutTensor[.float32, smem_layout, MutAnyOrigin](None)
+    var tensor = TileTensor(
+        MutPointer[Float32, MutAnyOrigin].unsafe_dangling(), smem_layout
+    )
 
     # Shape should be (64, 128) because:
     # - First dimension: 32 * 2 = 64
     # - Second dimension: 32 * 4 = 128
-    comptime shape0 = tensor.shape[0]()
-    comptime shape1 = tensor.shape[1]()
+    comptime shape0 = smem_layout.shape[0]().product()
+    comptime shape1 = smem_layout.shape[1]().product()
 
+    assert_equal(tensor.dim[0](), 64)
+    assert_equal(tensor.dim[1](), 128)
     assert_equal(shape0, 64, "Shape[0] should be 64 for nested layout")
     assert_equal(shape1, 128, "Shape[1] should be 128 for nested layout")
 
     # Total size should be 64 * 128 = 8192
-    var total_size = tensor.size()
+    var total_size = tensor.layout.size()
     assert_equal(total_size, 8192, "Total size should be 8192")
 
     # Test case 2: Ensure non-nested layouts still work (regression test)
-    comptime simple_layout = Layout.row_major(16, 32)
-    comptime simple_shape0 = LayoutTensor[
-        .float32, simple_layout, MutAnyOrigin
-    ].shape[0]()
-    comptime simple_shape1 = LayoutTensor[
-        .float32, simple_layout, MutAnyOrigin
-    ].shape[1]()
+    comptime simple_layout = row_major[16, 32]()
+    var simple_tensor = TileTensor(
+        MutPointer[Float32, MutAnyOrigin].unsafe_dangling(), simple_layout
+    )
+    comptime simple_shape0 = simple_tensor.static_shape[0]
+    comptime simple_shape1 = simple_tensor.static_shape[1]
 
+    assert_equal(simple_tensor.dim[0](), 16)
+    assert_equal(simple_tensor.dim[1](), 32)
     assert_equal(simple_shape0, 16, "Non-nested shape[0] should still work")
     assert_equal(simple_shape1, 32, "Non-nested shape[1] should still work")
 
@@ -189,29 +192,27 @@ def test_different_layouts_arithmetic() raises:
     assert_equal(result[1, 1], 0.0)
 
 
-def test_flatten() raises:
+def test_coalesce() raises:
     var stack = Array[Int8, 16](fill=0)
-    var tensor = LayoutTensor[.int8, Layout.row_major(4, 4)](stack).flatten()
-    assert_equal(tensor.size(), 16)
+    var tensor = TileTensor(stack, row_major[4, 4]()).coalesce()
+    assert_equal(tensor.num_elements(), 16)
     assert_equal(tensor.rank, 1)
-    assert_equal(tensor.stride[0](), 1)
+    assert_equal(tensor.layout.stride[0]().value(), 1)
 
 
 def test_get_shape() raises:
     var stack = Array[Int8, 16](fill=0)
-    var tensor = LayoutTensor[.int8, Layout.row_major(4, 4)](stack)
-    assert_equal(4, tensor.get_shape()[0])
-    assert_equal(4, tensor.get_shape()[1])
+    var tensor = TileTensor(stack, row_major[4, 4]())
+    assert_equal(4, tensor.layout.shape[0]().value())
+    assert_equal(4, tensor.layout.shape[1]().value())
 
 
 def test_reshape() raises:
     var stack = Array[Int8, 16](fill=0)
-    var tensor = LayoutTensor[.int8, Layout(16)](stack).reshape[
-        Layout.row_major[2]()
-    ](RuntimeLayout[Layout.row_major[2]()].row_major(IndexList[2](4, 4)))
-    assert_equal(tensor.size(), 16)
-    assert_equal(tensor.get_shape()[0], 4)
-    assert_equal(tensor.get_shape()[1], 4)
+    var tensor = TileTensor(stack, row_major[16]()).reshape(Coord(4, 4))
+    assert_equal(tensor.num_elements(), 16)
+    assert_equal(tensor.layout.shape[0]().value(), 4)
+    assert_equal(tensor.layout.shape[1]().value(), 4)
 
 
 def test_aligned_load() raises:
@@ -256,6 +257,6 @@ def main() raises:
     test_transpose_arithmetic()
     test_different_layouts_arithmetic()
     test_aligned_load()
-    test_flatten()
+    test_coalesce()
     test_get_shape()
     test_reshape()

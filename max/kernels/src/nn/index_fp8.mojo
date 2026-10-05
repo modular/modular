@@ -661,9 +661,7 @@ def fp8_index_naive[
     logits_dev.enqueue_fill(Float32(0.0))
     var logits_buf = TileTensor(
         logits_dev.unsafe_ptr(),
-        row_major(
-            Coord(batch_size * max_seq_len, max_num_keys, Idx[num_heads])
-        ),
+        row_major(batch_size * max_seq_len, max_num_keys, Idx[num_heads]),
     )
 
     comptime mm = _index_matmul_max[

@@ -450,7 +450,7 @@ struct EPRoleSplit[block_size: Int, n_items: Int, flag: Bool = False]:
     @staticmethod
     def copy_role_index() -> Int:
         """Returns this thread's linear index within the copy role."""
-        return Int(thread_idx.x)
+        return thread_idx.x
 
     @inline(.always)
     @staticmethod
@@ -4058,7 +4058,7 @@ struct EPDispatchKernel[
                                 ](
                                     trace_buf,
                                     trace_ring_base,
-                                    Int(block_idx.x),
+                                    block_idx.x,
                                     trace_comm_ring_id,
                                     44,  # E_SCAT_TILE_DONE
                                     pack_payload2(
@@ -4293,7 +4293,7 @@ def dispatch_async_kernel[
             expert_finished_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+            grid_dim.x - dispatch_impl.n_signal_sms,
         )
 
 
@@ -4389,7 +4389,7 @@ def dispatch_wait_kernel[
     # tokens from all the remote ranks. It will also calculate the offset where
     # the tokens start in the output tensor.
     # Use runtime grid_dim so the host can launch a smaller grid for decode.
-    if block_idx.x >= Int(grid_dim.x) - dispatch_impl.n_offset_sms:
+    if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
         dispatch_impl.wait_for_arrivals_and_compute_offsets(
             format_handler,
             row_offsets,
@@ -4397,7 +4397,7 @@ def dispatch_wait_kernel[
             recv_count_p,
             atomic_counter,
             my_rank,
-            Int(grid_dim.x) - dispatch_impl.n_offset_sms,
+            grid_dim.x - dispatch_impl.n_offset_sms,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -5457,7 +5457,7 @@ def combine_async_kernel[
         rank_completion_counter,
         my_rank,
         block_idx.x,
-        Int(grid_dim.x),
+        grid_dim.x,
     )
 
 
@@ -5541,7 +5541,7 @@ def combine_wait_kernel[
         combine_impl.wait_for_all_arrivals(
             recv_count_p,
             atomic_counter,
-            Int(grid_dim.x) - combine_impl.n_wait_sms,
+            grid_dim.x - combine_impl.n_wait_sms,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -5556,7 +5556,7 @@ def combine_wait_kernel[
             atomic_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x) - combine_impl.n_wait_sms,
+            grid_dim.x - combine_impl.n_wait_sms,
         )
 
 
@@ -5721,7 +5721,7 @@ def dispatch_kernel[
                 expert_finished_counter,
                 my_rank,
                 block_idx.x,
-                Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+                grid_dim.x - dispatch_impl.n_signal_sms,
             )
             comptime if fused_shared_expert:
                 # This RELEASE ensures that all previous writes to the send
@@ -5743,7 +5743,7 @@ def dispatch_kernel[
 
         # ===== dispatch_wait =====
         # Use runtime grid_dim so the host can launch a smaller grid for decode.
-        if block_idx.x >= Int(grid_dim.x) - dispatch_impl.n_offset_sms:
+        if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
             dispatch_impl.wait_for_arrivals_and_compute_offsets(
                 format_handler,
                 row_offsets,
@@ -5751,7 +5751,7 @@ def dispatch_kernel[
                 recv_count_ptrs[my_p2p_rank],
                 wait_atomic_counter,
                 my_rank,
-                Int(grid_dim.x) - dispatch_impl.n_offset_sms,
+                grid_dim.x - dispatch_impl.n_offset_sms,
                 shared_expert_token_count,
             )
         else:
@@ -5775,8 +5775,8 @@ def dispatch_kernel[
                     wait_atomic_counter + dispatch_impl.send_buf_ready_offset,
                     Int(shared_expert_token_count),
                     block_idx.x,
-                    Int(grid_dim.x) - dispatch_impl.n_offset_sms,
-                    Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+                    grid_dim.x - dispatch_impl.n_offset_sms,
+                    grid_dim.x - dispatch_impl.n_signal_sms,
                 )
 
             dispatch_impl.copy_received_tokens_to_output(
@@ -5930,7 +5930,7 @@ def combine_kernel[
             rank_completion_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x),
+            grid_dim.x,
         )
 
         # ===== combine_wait =====
@@ -5941,7 +5941,7 @@ def combine_kernel[
             combine_impl.wait_for_all_arrivals(
                 recv_count_ptrs[my_p2p_rank],
                 wait_atomic_counter,
-                Int(grid_dim.x) - combine_impl.n_wait_sms,
+                grid_dim.x - combine_impl.n_wait_sms,
             )
         else:
             # Create an elementwise lambda that adds shared expert output if enabled
@@ -6012,7 +6012,7 @@ def combine_kernel[
                     wait_atomic_counter,
                     my_rank,
                     block_idx.x,
-                    Int(grid_dim.x) - combine_impl.n_wait_sms,
+                    grid_dim.x - combine_impl.n_wait_sms,
                     topk_ids_p,
                 )
 
@@ -6027,7 +6027,7 @@ def combine_kernel[
                     wait_atomic_counter,
                     my_rank,
                     block_idx.x,
-                    Int(grid_dim.x) - combine_impl.n_wait_sms,
+                    grid_dim.x - combine_impl.n_wait_sms,
                     topk_ids_p,
                 )
 
@@ -6128,137 +6128,6 @@ def fused_silu_kernel[
             var output_val = gate_proj * up_proj
 
             output_tensor.store((m, k), output_val.cast[output_dtype]())
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
-)
-@__name(t"ep_fused_silu_fp8_{input_dtype}_{fp8_dtype}")
-def fused_silu_fp8_kernel[
-    fp8_dtype: DType,
-    scales_dtype: DType,
-    input_dtype: DType,
-    output_layout: TensorLayout,
-    scales_layout: TensorLayout,
-    input_layout: TensorLayout,
-    offsets_layout: TensorLayout,
-    num_threads: Int,
-    num_sms: Int,
-    group_size: Int = 128,
-](
-    output_tensor: TileTensor[fp8_dtype, output_layout, MutUntrackedOrigin],
-    scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
-    row_offsets: TileTensor[.uint32, offsets_layout, ImmUntrackedOrigin],
-):
-    """
-    This kernel performs the SILU operation for all the MLPs in the EP MoE
-    module. We need to manually implement the kernel here is because after the
-    EP dispatch phase, the actual number of received tokens is not known to the
-    host. This kernel will read the row offsets to determine the actual number of
-    received tokens in the input tensor.
-
-    Once the SILU operation is performed, the output tensor will be quantized to
-    the FP8 format. The scales tensor will be stored in a transposed way.
-
-    Parameters:
-        fp8_dtype: FP8 element type of the quantized `output_tensor` (e.g.
-            `.float8_e4m3fn`).
-        scales_dtype: Element type of the block-wise scale factors stored in
-            `scales_tensor`.
-        input_dtype: Element type of the `input_tensor`; its accumulation type
-            must be floating-point.
-        output_layout: Layout of the FP8 `output_tensor` `TileTensor`.
-        scales_layout: Layout of the `scales_tensor` `TileTensor`; scales are
-            stored transposed (group index in dim 0, token index in dim 1).
-        input_layout: Layout of the `input_tensor` `TileTensor`.
-        offsets_layout: Layout of the 1D `row_offsets` `TileTensor`.
-        num_threads: Number of threads per block; sets the
-            `MAX_THREADS_PER_BLOCK` launch metadata.
-        num_sms: Number of streaming multiprocessors (SMs) used to scatter
-            processing across thread blocks.
-        group_size: Number of elements per quantization group; the output
-            dimension must be divisible by this (defaults to 128).
-
-    Arguments:
-        output_tensor: The output tensor to store the result.
-        scales_tensor: The tensor to store the scales.
-        input_tensor: The input tensor to perform the SILU operation.
-        row_offsets: The row offsets to determine the actual number of received tokens.
-    """
-    comptime accum_dtype = get_accum_type[input_dtype]()
-    comptime assert (
-        accum_dtype.is_floating_point()
-    ), "accum_dtype must be floating point"
-    comptime assert (
-        output_tensor.flat_rank >= 2
-    ), "output_tensor must be at least 2D"
-    comptime assert (
-        scales_tensor.flat_rank >= 2
-    ), "scales_tensor must be at least 2D"
-    comptime assert (
-        input_tensor.flat_rank >= 2
-    ), "input_tensor must be at least 2D"
-    comptime assert row_offsets.flat_rank == 1, "row_offsets must be 1D"
-    comptime input_dim = input_tensor.static_shape[1]
-    comptime output_dim = output_tensor.static_shape[1]
-    comptime simd_width = simd_width_of[input_dtype]()
-
-    comptime assert (
-        input_dim == output_dim * 2
-    ), "Input dimension must be twice the output dimension."
-    comptime assert (
-        output_dim % simd_width == 0
-    ), "Output dimension must be divisible by the SIMD width."
-
-    comptime n_threads_per_group = group_size // simd_width
-    comptime assert (
-        WARP_SIZE % n_threads_per_group == 0
-    ), "Each warp must process a multiple of quantization groups"
-    comptime fp8_max_t = Scalar[fp8_dtype].MAX_FINITE.cast[accum_dtype]()
-
-    # Scatter processing of a single token across different thread blocks
-    # to improve the memory access performance.
-    var global_warp_id = block_idx.x + warp_id() * num_sms
-    var gid = lane_id() + global_warp_id * WARP_SIZE
-
-    with PDL():
-        var num_tokens = row_offsets[row_offsets.static_shape[0] - 1]
-        var num_elem = num_tokens * UInt32(output_dim)
-
-        for i in range(
-            gid,
-            Int(num_elem // UInt32(simd_width)),
-            num_threads * num_sms,
-        ):
-            var m, k = divmod((i * simd_width), output_dim)
-
-            var gate_proj = input_tensor.load[width=simd_width]((m, k)).cast[
-                accum_dtype
-            ]()
-            var up_proj = input_tensor.load[width=simd_width](
-                (m, k + output_dim)
-            ).cast[accum_dtype]()
-
-            gate_proj = gate_proj / (1.0 + exp(-gate_proj))
-            var output_val = gate_proj * up_proj
-
-            # Quantization logic.
-            var thread_max = abs(output_val).reduce_max()
-            var group_max = warp.lane_group_max[n_threads_per_group](thread_max)
-            var scale_factor = max(group_max, 1e-4) / fp8_max_t
-            output_val = (output_val / scale_factor).clamp(
-                -fp8_max_t, fp8_max_t
-            )
-
-            output_tensor.store((m, k), output_val.cast[fp8_dtype]())
-
-            # The first thread in each group stores the scale factor.
-            if umod(lane_id(), n_threads_per_group) == 0:
-                scales_tensor.store(
-                    (k // group_size, m),
-                    scale_factor.cast[scales_dtype](),
-                )
 
 
 @__llvm_metadata(

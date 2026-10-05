@@ -101,7 +101,7 @@ comptime QOTMATile[
     dtype,
     2,
     IndexList[2](BM, BK),
-    _default_desc_shape[2, dtype, IndexList[2](BM, BK), swizzle_mode](),
+    _default_desc_shape[2, dtype, (BM, BK), swizzle_mode](),
     is_k_major=True,
 ]
 
@@ -159,7 +159,7 @@ comptime ORaggedTMATile[
     dtype,
     3,
     IndexList[3](1, BM, BK),
-    _default_desc_shape[3, dtype, IndexList[3](1, BM, BK), swizzle_mode](),
+    _default_desc_shape[3, dtype, (1, BM, BK), swizzle_mode](),
     is_k_major=True,
 ]
 
@@ -207,7 +207,7 @@ def tma_tile_o[
         DeviceBuffer(ctx, ptr.unsafe_offset(-depth * BM), 1, owning=False),
         IndexList[3](rows + 1, BM, depth),
         IndexList[3](depth, depth, 1),
-        _default_desc_shape[3, dtype, IndexList[3](1, BM, BK), swizzle_mode](),
+        _default_desc_shape[3, dtype, (1, BM, BK), swizzle_mode](),
     )
 
 
@@ -1168,7 +1168,7 @@ struct OffsetPosition[
         # both ragged and fixed modes, so we swap block_idx.y for q_local.
         return (
             self.q_row_offset
-            + (q_local - Int(block_idx.y)) * Self.config.num_q_heads
+            + (q_local - block_idx.y) * Self.config.num_q_heads
         )
 
     @inline(.always)
@@ -1179,7 +1179,7 @@ struct OffsetPosition[
         # ragged/fixed x split/no-split mode.
         return (
             self.out_row_offset
-            + (q_local - Int(block_idx.y)) * Self.config.num_q_heads
+            + (q_local - block_idx.y) * Self.config.num_q_heads
         )
 
     @inline(.always)
@@ -1187,7 +1187,7 @@ struct OffsetPosition[
         # Global Q-token index for the q_local-th q_token in this CTA's
         # batch. Stored q_token_idx bakes in block_idx.y; swaps
         # block_idx.y for q_local in both ragged and fixed modes.
-        return self.q_token_idx + (q_local - Int(block_idx.y))
+        return self.q_token_idx + (q_local - block_idx.y)
 
 
 # ------------------------------------------------------------------------------
@@ -4699,7 +4699,7 @@ struct MLA_SM100_Decode_Common[
         var elect_mask = elect()
         var is_leader = elect_mask != 0
         var row: Int = offset_position.out_row_offset
-        var rows_to_store = rows_owned[Self.config](Int(block_idx.x))
+        var rows_to_store = rows_owned[Self.config](block_idx.x)
 
         #   0       64     128     192      256      320      384     448     512
         #   |-------|-------|-------|--------|--------|--------|-------|-------|

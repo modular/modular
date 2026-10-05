@@ -119,9 +119,9 @@ def run_one_case(
     ctx.enqueue_copy(b_dev, b_host)
 
     # M runtime (bare Int); N, K comptime (Idx[...]) so the tuned kernel engages.
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](c, a, b, ctx)
     ctx.synchronize()
@@ -233,9 +233,9 @@ def _run_rows(
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](c, a, b, ctx)
     ctx.synchronize()

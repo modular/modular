@@ -531,8 +531,8 @@ def _reducescatter_relay_kernel[
     # rank is the pair-local rank folded by the group width.
     var group_rank = _my_rank % ngpus
 
-    var bid = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var bid = block_idx.x
+    var tid = thread_idx.x
     var _relay_percent = Int(relay_percent)
 
     # Synchronize before reading. The domain spans both groups because a
@@ -602,7 +602,7 @@ def _reducescatter_relay_kernel[
         # already is between ranks, since the plain kernel rotates too.
         var relay_bid = bid - Int(num_direct_blocks)
         var dst = relay_bid % ngpus
-        var blocks_per_dst = (Int(grid_dim.x) - Int(num_direct_blocks)) // ngpus
+        var blocks_per_dst = (grid_dim.x - Int(num_direct_blocks)) // ngpus
         var dst_block = relay_bid // ngpus
 
         # Each destination's partition is split on its own length, so a

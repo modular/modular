@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import IntTuple, Layout, LayoutTensor
+from layout import TileTensor, row_major
 from layout._fillers import arange
 
 
@@ -24,7 +24,6 @@ def outer_product[
     DType.float32, TM * TN
 ]:
     var res = SIMD[.float32, TM * TN]()
-    # Note: Outputs are columns.
     for i in range(TM):
         for j in range(TN):
             res[i * TN + j] = lhs[i] * rhs[j]
@@ -44,41 +43,47 @@ def test_tiled_and_vectorized_matmul():
     comptime TM = 2
     comptime TN = 2
 
-    comptime a_layout = Layout(IntTuple(M, K), IntTuple(K, 1))
-    var a_stack = Array[Float32, a_layout.size()](fill={})
-    var tensor_a = LayoutTensor[.float32, a_layout](a_stack)
+    var a_stack = Array[Float32, M * K](fill={})
+    var tensor_a = TileTensor(a_stack, row_major[M, K]())
 
-    comptime b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
-    var b_stack = Array[Float32, b_layout.size()](fill={})
-    var tensor_b = LayoutTensor[.float32, b_layout](b_stack)
+    var b_stack = Array[Float32, K * N](fill={})
+    var tensor_b = TileTensor(b_stack, row_major[K, N]())
 
-    comptime c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
-    var c_stack = Array[Float32, c_layout.size()](fill={})
-    var tensor_c = LayoutTensor[.float32, c_layout](c_stack)
+    var c_stack = Array[Float32, M * N](fill={})
+    var tensor_c = TileTensor(c_stack, row_major[M, N]())
 
     arange(tensor_a)
     arange(tensor_b)
     _ = tensor_c.fill(0)
 
-    for bm in range(M // BK):
+    for bm in range(M // BM):
         for bn in range(N // BN):
             var tile_c = tensor_c.tile[BM, BN](bm, bn)
             for bk in range(K // BK):
                 var tile_a = tensor_a.tile[BM, BK](bm, bk)
                 var tile_b = tensor_b.tile[BK, BN](bk, bn)
 
-                var vec_c = tile_c.vectorize[TM, TN]()
-                var vec_a = tile_a.vectorize[TM, 1]()
+                var vec_c = tile_c.vectorize[1, TN]()
                 var vec_b = tile_b.vectorize[1, TN]()
 
-                for m_i in range(vec_c.shape[0]()):
-                    for n_i in range(vec_c.shape[1]()):
+                for m_i in range(BM // TM):
+                    for n_i in range(BN // TN):
                         for k_i in range(BK):
-                            vec_c[m_i, n_i] += rebind[vec_c.element_type](
-                                outer_product(vec_a[m_i, k_i], vec_b[k_i, n_i])
+                            var lhs = SIMD[.float32, TM]()
+                            comptime for tm in range(TM):
+                                lhs[tm] = tile_a[m_i * TM + tm, k_i]
+                            var product = outer_product[TM, TN](
+                                lhs, vec_b[k_i, n_i]
                             )
+                            comptime for tm in range(TM):
+                                vec_c[m_i * TM + tm, n_i] += product.slice[
+                                    TN, offset=tm * TN
+                                ]()
 
-    print(tensor_c)
+    for m in range(M):
+        for n in range(N):
+            print(tensor_c[m, n], end=" ")
+        print()
 
 
 def main():

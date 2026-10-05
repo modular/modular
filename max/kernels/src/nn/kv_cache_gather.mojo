@@ -114,4 +114,4 @@ def kv_cache_gather_rows_ragged[
         simd_width,
         target=target,
         _trace_description="kv_cache_gather_rows_ragged",
-    ](Coord(IndexList[3](num_rows, num_slots, head_dim)), ctx)
+    ](Coord(num_rows, num_slots, head_dim), ctx)

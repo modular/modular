@@ -99,23 +99,19 @@ def _bench_grouped[
     ctx.enqueue_copy(off_dev_buf, off_host)
     ctx.enqueue_copy(eid_dev_buf, eid_host)
 
-    var a_tt = TileTensor(
-        act_dev.unsafe_ptr(), row_major(Coord(total_M, Idx[K]))
-    )
+    var a_tt = TileTensor(act_dev.unsafe_ptr(), row_major(total_M, Idx[K]))
     var b_fp8_tt = TileTensor(
         b_fp8_dev.unsafe_ptr(), row_major[num_experts, N, K]()
     )
     var b_bf16_tt = TileTensor(
         b_bf16_dev.unsafe_ptr(), row_major[num_experts, N, K]()
     )
-    var out_tt = TileTensor(
-        out_dev.unsafe_ptr(), row_major(Coord(total_M, Idx[N]))
-    )
+    var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(total_M, Idx[N]))
     var off_tt = TileTensor(
-        off_dev_buf.unsafe_ptr(), row_major(Coord(num_experts + 1))
+        off_dev_buf.unsafe_ptr(), row_major(num_experts + 1)
     )
     var eid_tt = TileTensor(
-        eid_dev_buf.unsafe_ptr(), row_major(Coord(Idx[num_experts]))
+        eid_dev_buf.unsafe_ptr(), row_major(Idx[num_experts])
     )
     ctx.synchronize()
 

@@ -167,7 +167,7 @@ def _run_fusion_check[
     ctx.enqueue_copy(a_off_d, a_off_h)
 
     var input_tt = TileTensor[origin=ImmutAnyOrigin](
-        input_d, row_major(Coord(total_tokens, Idx[input_dim]))
+        input_d, row_major(total_tokens, Idx[input_dim])
     )
     var a_off_tt = TileTensor[origin=ImmutAnyOrigin](
         a_off_d, row_major[n_off]()
@@ -177,17 +177,17 @@ def _run_fusion_check[
     # comptime params (dtypes, layouts, threads/SMs) and `fuse_a_scale_preshuffle`.
     comptime out_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(total_tokens, Idx[output_dim]))
+            input_d, row_major(total_tokens, Idx[output_dim])
         )
     ).LayoutType
     comptime raw_scales_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(total_tokens, Idx[scale_K]))
+            input_d, row_major(total_tokens, Idx[scale_K])
         )
     ).LayoutType
     comptime slot_scales_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(num_active * max_padded_M, Idx[scale_K]))
+            input_d, row_major(num_active * max_padded_M, Idx[scale_K])
         )
     ).LayoutType
 
@@ -229,10 +229,10 @@ def _run_fusion_check[
 
     ctx.enqueue_function[kernel_ref](
         TileTensor[origin=MutAnyOrigin](
-            raw_out_d, row_major(Coord(total_tokens, Idx[output_dim]))
+            raw_out_d, row_major(total_tokens, Idx[output_dim])
         ),
         TileTensor[origin=MutAnyOrigin](
-            raw_scales_d, row_major(Coord(total_tokens, Idx[scale_K]))
+            raw_scales_d, row_major(total_tokens, Idx[scale_K])
         ),
         input_tt,
         a_off_tt,
@@ -245,10 +245,10 @@ def _run_fusion_check[
 
     var raw_scales_bytes = TileTensor[origin=ImmutAnyOrigin](
         raw_scales_d.unsafe_ptr().bitcast[UInt8]().as_unsafe_any_origin(),
-        row_major(Coord(total_tokens, Idx[scale_K])),
+        row_major(total_tokens, Idx[scale_K]),
     )
     var ref_slots_tt = TileTensor[origin=MutAnyOrigin](
-        ref_d, row_major(Coord(num_active * max_padded_M, Idx[scale_K]))
+        ref_d, row_major(num_active * max_padded_M, Idx[scale_K])
     )
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         raw_scales_bytes,
@@ -274,14 +274,14 @@ def _run_fusion_check[
 
     ctx.enqueue_function[kernel_fused](
         TileTensor[origin=MutAnyOrigin](
-            fused_out_d, row_major(Coord(total_tokens, Idx[output_dim]))
+            fused_out_d, row_major(total_tokens, Idx[output_dim])
         ),
         # When preshuffled the kernel treats `scales` as a flat slot byte
         # buffer via `scale_4d_byte_off`; the [slot_rows, scale_K] 2D wrapper
         # just supplies the base pointer and total element count.
         TileTensor[origin=MutAnyOrigin](
             fused_scales_d,
-            row_major(Coord(num_active * max_padded_M, Idx[scale_K])),
+            row_major(num_active * max_padded_M, Idx[scale_K]),
         ),
         input_tt,
         a_off_tt,
@@ -376,7 +376,7 @@ def _run_activation_probe[
     ctx.enqueue_copy(a_off_d, a_off_h)
 
     var input_tt = TileTensor[origin=ImmutAnyOrigin](
-        input_d, row_major(Coord(num_tokens, Idx[input_dim]))
+        input_d, row_major(num_tokens, Idx[input_dim])
     )
     var a_off_tt = TileTensor[origin=ImmutAnyOrigin](
         a_off_d, row_major[n_off]()
@@ -384,12 +384,12 @@ def _run_activation_probe[
 
     comptime out_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(num_tokens, Idx[output_dim]))
+            input_d, row_major(num_tokens, Idx[output_dim])
         )
     ).LayoutType
     comptime scales_layout = type_of(
         TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(num_tokens, Idx[scale_K]))
+            input_d, row_major(num_tokens, Idx[scale_K])
         )
     ).LayoutType
 
@@ -416,10 +416,10 @@ def _run_activation_probe[
 
     ctx.enqueue_function[kernel](
         TileTensor[origin=MutAnyOrigin](
-            out_d, row_major(Coord(num_tokens, Idx[output_dim]))
+            out_d, row_major(num_tokens, Idx[output_dim])
         ),
         TileTensor[origin=MutAnyOrigin](
-            scales_d, row_major(Coord(num_tokens, Idx[scale_K]))
+            scales_d, row_major(num_tokens, Idx[scale_K])
         ),
         input_tt,
         a_off_tt,

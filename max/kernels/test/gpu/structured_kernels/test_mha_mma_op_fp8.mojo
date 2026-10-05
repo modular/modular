@@ -310,7 +310,7 @@ def kernel_load_K_fp8[
     # Cooperatively fill SMEM from the pre-swizzled global init buffer.
     # Total bytes = _K_SLOT_ROWS * _K_SUB_COLS; 64 threads each write a
     # stride of 64.
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     comptime _total = _K_SLOT_ROWS * _K_SUB_COLS
     var i = tid
     while i < _total:
@@ -535,7 +535,7 @@ def kernel_load_V_fp8[
     )
 
     # Cooperatively fill SMEM from src.
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     comptime _total = _V_SLOT_ROWS * _V_SUB_COLS
     var i = tid
     while i < _total:

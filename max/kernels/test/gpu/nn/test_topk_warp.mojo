@@ -95,22 +95,22 @@ def check_matches_two_stage[
     with in_buf.map_to_host() as h:
         fill_row_major[dtype](h.unsafe_ptr(), batch_size, n, fill, num_distinct)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(batch_size, n)))
+    var in_t = TileTensor(in_buf, row_major(batch_size, n))
 
     topk_gpu[sampling=False, largest=largest](
         ctx,
         k,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(warp_vals, row_major(Coord(batch_size, k))),
-        TileTensor(warp_idxs, row_major(Coord(batch_size, k))),
+        TileTensor(warp_vals, row_major(batch_size, k)),
+        TileTensor(warp_idxs, row_major(batch_size, k)),
     )
 
     topk_gpu[sampling=False, largest=largest](
         ctx,
         k,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(ref_vals, row_major(Coord(batch_size, k))),
-        TileTensor(ref_idxs, row_major(Coord(batch_size, k))),
+        TileTensor(ref_vals, row_major(batch_size, k)),
+        TileTensor(ref_idxs, row_major(batch_size, k)),
         block_size=256,
         num_blocks_per_input=ceildiv(n, 256),
     )
@@ -177,14 +177,14 @@ def check_per_row_k(ctx: DeviceContext) raises:
         h[2] = Int64(-1)
         h[3] = Int64(max_k)
 
-    var in_t = TileTensor(in_buf, row_major(Coord(batch_size, n)))
+    var in_t = TileTensor(in_buf, row_major(batch_size, n))
     topk_gpu[sampling=False, largest=True](
         ctx,
         max_k,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(vals, row_major(Coord(batch_size, max_k))),
-        TileTensor(idxs, row_major(Coord(batch_size, max_k))),
-        k=TileTensor(k_buf, row_major(Coord(batch_size)))
+        TileTensor(vals, row_major(batch_size, max_k)),
+        TileTensor(idxs, row_major(batch_size, max_k)),
+        k=TileTensor(k_buf, row_major(batch_size))
         .as_unsafe_any_origin()
         .as_imm(),
     )
@@ -245,13 +245,13 @@ def check_neg_inf_rows(ctx: DeviceContext) raises:
             for j in range(k):
                 h[b * n + 3 + j * 17] = Scalar[dtype](Float64(k - j))
 
-    var in_t = TileTensor(in_buf, row_major(Coord(batch_size, n)))
+    var in_t = TileTensor(in_buf, row_major(batch_size, n))
     topk_gpu[sampling=False, largest=True](
         ctx,
         k,
         in_t.as_unsafe_any_origin().as_imm(),
-        TileTensor(vals, row_major(Coord(batch_size, k))),
-        TileTensor(idxs, row_major(Coord(batch_size, k))),
+        TileTensor(vals, row_major(batch_size, k)),
+        TileTensor(idxs, row_major(batch_size, k)),
     )
     ctx.synchronize()
 

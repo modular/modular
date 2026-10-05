@@ -1135,7 +1135,7 @@ struct Row[
         comptime if Self.params._tier == ReduceTier.Warp:
             return Int(lane_id())
         else:
-            return Int(thread_idx.x)
+            return thread_idx.x
 
     @staticmethod
     @inline(.always)

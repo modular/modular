@@ -439,6 +439,28 @@ def test_mamba_combined_basic() raises:
     )
 
 
+def test_mamba_combined_headdim1_multi_head_D() raises:
+    """With headdim == 1, D is (nheads, 0); each head needs its own D."""
+    run_mamba_split_conv1d_scan_combined[
+        DType.float32,
+        4,  # DSTATE
+        has_D=True,
+        has_rmsnorm=False,
+        has_outproj=False,
+        norm_before_gate=True,
+        delta_softplus=True,
+    ](
+        batch=2,
+        seqlen=8,
+        dim=4,
+        nheads=4,
+        headdim=1,
+        ngroups=1,
+        width=4,
+        chunk_size=4,
+    )
+
+
 def test_mamba_combined_without_D() raises:
     """Test mamba_split_conv1d_scan_combined without D."""
     run_mamba_split_conv1d_scan_combined[

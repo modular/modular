@@ -84,7 +84,7 @@ def _manual_copy[
     comptime rows_per_thread = M // thread_rows
     comptime row_stride = thread_rows * N
     comptime alignment = align_of[SIMD[dtype, simd_size]]()
-    var base = _thread_offset[N, thread_cols, simd_size](Int(thread_idx.x))
+    var base = _thread_offset[N, thread_cols, simd_size](thread_idx.x)
 
     comptime for i in range(rows_per_thread):
         var offset = base + i * row_stride

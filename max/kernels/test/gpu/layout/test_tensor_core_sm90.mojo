@@ -41,9 +41,7 @@ def load_and_mma_16x8x32[
         in_type == .float8_e4m3fn or in_type == .float8_e5m2
     ), "This kernel only supports E4M3 and E5M2 combinations"
 
-    var mma = TensorCore[
-        DType.float32, in_type, IndexList[3](16, 8, 32), False
-    ]()
+    var mma = TensorCore[DType.float32, in_type, (16, 8, 32), False]()
     var a_reg_tile = mma.load_a(mat_a)
     var b_reg_tile = mma.load_b(mat_b)
     var c_reg_tile = mma.load_c(mat_c)

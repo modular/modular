@@ -91,37 +91,33 @@ def launch_grouped_gemm_with_templates[
 ) raises:
     """Create template TileTensors and launch grouped block-scaled GEMM."""
     # 3D template tensors with batch=1
-    var a_3d_shape = row_major(Coord(Idx[1], Idx[M], Idx[k_array_size]))
+    var a_3d_shape = row_major(Idx[1], Idx[M], Idx[k_array_size])
     var a_template = TileTensor(a_ptr, a_3d_shape)
 
-    var c_3d_shape = row_major(Coord(Idx[1], Idx[M], Idx[N]))
+    var c_3d_shape = row_major(Idx[1], Idx[M], Idx[N])
     var c_template = TileTensor(c_ptr, c_3d_shape)
 
     # 5D scale factor templates with batch=1 and merged last dims
     var sfa_5d_shape = row_major(
-        Coord(
-            Idx[1],
-            Idx[ceildiv(M, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1] * SF_ATOM_K],
-        )
+        Idx[1],
+        Idx[ceildiv(M, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1] * SF_ATOM_K],
     )
     var sfa_template = TileTensor(sfa_ptr, sfa_5d_shape)
 
     var sfb_5d_shape = row_major(
-        Coord(
-            Idx[1],
-            Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1] * SF_ATOM_K],
-        )
+        Idx[1],
+        Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(k_sf_size, sf_vector_size * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1] * SF_ATOM_K],
     )
     var sfb_template = TileTensor(sfb_ptr, sfb_5d_shape)
 
     comptime if transpose_b:
-        var b_3d_shape = row_major(Coord(Idx[1], Idx[N], Idx[k_array_size]))
+        var b_3d_shape = row_major(Idx[1], Idx[N], Idx[k_array_size])
         var b_template = TileTensor(b_ptr, b_3d_shape)
         grouped_block_scaled_matmul[
             transpose_b=transpose_b,
@@ -144,7 +140,7 @@ def launch_grouped_gemm_with_templates[
             ctx,
         )
     else:
-        var b_3d_shape = row_major(Coord(Idx[1], Idx[k_array_size], Idx[N]))
+        var b_3d_shape = row_major(Idx[1], Idx[k_array_size], Idx[N])
         var b_template = TileTensor(b_ptr, b_3d_shape)
         grouped_block_scaled_matmul[
             transpose_b=transpose_b,
@@ -208,8 +204,8 @@ def test_grouped_kernel_nvfp4_single_group[
 
     # Create shapes - K dimension is halved for packed data
     comptime k_packed_static = KType.static_value // 2
-    var a_shape = row_major(Coord(m, Idx[k_packed_static]))
-    var c_shape = row_major(Coord(m, n))
+    var a_shape = row_major(m, Idx[k_packed_static])
+    var c_shape = row_major(m, n)
 
     var a_size = Int(m.value()) * k_packed
     var b_size = Int(n.value()) * k_packed
@@ -231,22 +227,18 @@ def test_grouped_kernel_nvfp4_single_group[
 
     # Scale factor shapes (5D) - using logical K for scale factor calculations
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -295,7 +287,7 @@ def test_grouped_kernel_nvfp4_single_group[
     print("  Running cuBLAS reference...")
 
     comptime if transpose_b:
-        var b_shape = row_major(Coord(n, Idx[k_packed_static]))
+        var b_shape = row_major(n, Idx[k_packed_static])
         var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
@@ -308,7 +300,7 @@ def test_grouped_kernel_nvfp4_single_group[
             c_row_major=True,
         )
     else:
-        var b_shape = row_major(Coord(Idx[k_packed_static], n))
+        var b_shape = row_major(Idx[k_packed_static], n)
         var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
@@ -546,25 +538,21 @@ def test_grouped_kernel_nvfp4_multi_group[
 
     # Shapes
     comptime k_packed_static = KType.static_value // 2
-    var a_shape = row_major(Coord(m, Idx[k_packed_static]))
-    var c_shape = row_major(Coord(m, n))
+    var a_shape = row_major(m, Idx[k_packed_static])
+    var c_shape = row_major(m, n)
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
-            Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE),
+        Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     # ========== Group 0 allocations ==========
@@ -652,7 +640,7 @@ def test_grouped_kernel_nvfp4_multi_group[
     print("  Running cuBLAS for group 0...")
 
     comptime if transpose_b:
-        var b_shape = row_major(Coord(n, Idx[k_packed_static]))
+        var b_shape = row_major(n, Idx[k_packed_static])
         var b0_tensor = TileTensor(b0_device, b_shape)
         var b1_tensor = TileTensor(b1_device, b_shape)
         vendor_blas.matmul(
@@ -677,7 +665,7 @@ def test_grouped_kernel_nvfp4_multi_group[
             c_row_major=True,
         )
     else:
-        var b_shape = row_major(Coord(Idx[k_packed_static], n))
+        var b_shape = row_major(Idx[k_packed_static], n)
         var b0_tensor = TileTensor(b0_device, b_shape)
         var b1_tensor = TileTensor(b1_device, b_shape)
         vendor_blas.matmul(

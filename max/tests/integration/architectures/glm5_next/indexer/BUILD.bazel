@@ -39,11 +39,8 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    # 14 cases, ~900s serial on B200, over the 810s "large" wall (observed
-    # `TIMEOUT in 810.0s`). Nearly all of that is graph compilation rather
-    # than GPU work, so sharding parallelizes it; bazel assigns case `i` to
-    # shard `i % 3`, which leaves the slowest shard around 340s.
-    shard_count = 3,
+    precompile_mefs = True,
+    precompile_shards = 4,
     tags = [
         "gpu",
         "no-sandbox",

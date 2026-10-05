@@ -29,9 +29,8 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.memory import external_memory
-from layout import Layout, LayoutTensor, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
-from layout.layout import size
+from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.layout_tensor import (
     LayoutTensorIter,
     copy_local_to_dram,
@@ -593,10 +592,10 @@ def multistage_b2b_gemm[
     ],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    D: LayoutTensor,
-    A: LayoutTensor,
-    B: LayoutTensor,
-    C: LayoutTensor,
+    D: TileTensor[mut=True, ...],
+    A: TileTensor[mut=True, ...],
+    B: TileTensor[mut=True, ...],
+    C: TileTensor[mut=True, ...],
     ctx: DeviceContext,
 ):
     try:
@@ -604,28 +603,31 @@ def multistage_b2b_gemm[
         comptime assert src_type == A.dtype
         comptime assert src_type == B.dtype
         comptime assert src_type == C.dtype
+        # The multistage device kernel still uses legacy fragment iterators.
+        var d_legacy = D.to_layout_tensor().as_unsafe_any_origin()
+        var a_legacy = A.to_layout_tensor().as_unsafe_any_origin()
+        var b_legacy = B.to_layout_tensor().as_unsafe_any_origin()
+        var c_legacy = C.to_layout_tensor().as_unsafe_any_origin()
         comptime b2b_fn = b2b_gemm[
             dst_type,
             src_type,
-            D.layout,
-            A.layout,
-            B.layout,
-            C.layout,
+            d_legacy.layout,
+            a_legacy.layout,
+            b_legacy.layout,
+            c_legacy.layout,
             transpose_b,
             transpose_c,
             config,
             elementwise_lambda_fn,
         ]
-        var smem_use: Int = config.shared_mem_usage(
-            size(Layout(A.layout.shape[1]))
-        )
+        var smem_use = config.shared_mem_usage(Int(A.dim[1]()))
         print("smem_use =", smem_use)
         ctx.enqueue_function[b2b_fn](
-            D,
-            A,
-            B,
-            C,
-            grid_dim=config.grid_dim(Int(D.runtime_layout.shape[0])),
+            d_legacy,
+            a_legacy,
+            b_legacy,
+            c_legacy,
+            grid_dim=config.grid_dim(Int(D.dim[0]())),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
@@ -637,91 +639,84 @@ def multistage_b2b_gemm[
 
 
 def matmul_naive(
-    C: LayoutTensor[mut=True, ...],
-    A: LayoutTensor,
-    B: LayoutTensor,
+    C: TileTensor[mut=True, ...],
+    A: TileTensor[mut=False, ...],
+    B: TileTensor[mut=False, ...],
 ):
-    comptime assert len(C.layout) == 2
-    comptime assert len(A.layout) == 2
-    comptime assert len(B.layout) == 2
-    comptime M: Int = size(Layout(C.layout.shape[0]))
-    comptime N: Int = size(Layout(C.layout.shape[1]))
-    comptime K: Int = size(Layout(A.layout.shape[1]))
-    comptime assert M == size(Layout(A.layout.shape[0]))
-    comptime assert N == size(Layout(B.layout.shape[1]))
-    comptime assert K == size(Layout(B.layout.shape[0]))
+    comptime assert C.rank == A.rank == B.rank == 2
+    comptime assert C.flat_rank == A.flat_rank == B.flat_rank == 2
+    comptime assert C.element_size == A.element_size == B.element_size == 1
+    comptime M = C.static_shape[0]
+    comptime N = C.static_shape[1]
+    comptime K = A.static_shape[1]
+    comptime assert M == A.static_shape[0]
+    comptime assert N == B.static_shape[1]
+    comptime assert K == B.static_shape[0]
     for m in range(M):
         for n in range(N):
             C[m, n] = Scalar[C.dtype]()
     for m in range(M):
         for k in range(K):
             for n in range(N):
-                # C[m, n] += A[m, k].cast[C.dtype]() * rebind[Scalar[C.dtype]](B[k, n].cast[C.dtype]())
                 C[m, n] += rebind[Scalar[C.dtype]](
                     A[m, k].cast[C.dtype]()
                 ) * rebind[Scalar[C.dtype]](B[k, n].cast[C.dtype]())
-                # C[m, n] += rebind[Scalar[C.dtype]](A[m, k].cast[C.dtype]()) * B[k, n].cast[C.dtype]()
 
 
 def test_b2b_matmul(ctx: DeviceContext) raises:
-    # alias M = 32
     comptime M = 640
     comptime N = 64
     comptime K = 64
-    # alias L = 64
-    # alias L = 128
     comptime L = 384
 
-    comptime layout_a = Layout.row_major(M, K)
-    comptime layout_b = Layout.row_major(K, L)
-    comptime layout_c = Layout.row_major(L, N)
-    comptime layout_d = Layout.row_major(M, N)
+    var layout_a = row_major[M, K]()
+    var layout_b = row_major[K, L]()
+    var layout_c = row_major[L, N]()
+    var layout_d = row_major[M, N]()
 
     comptime dst_type = DType.float32
     comptime src_type = DType.bfloat16
 
-    var mat_a = ManagedLayoutTensor[src_type, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[src_type, layout_b](ctx)
-    var mat_c = ManagedLayoutTensor[src_type, layout_c](ctx)
-    var mat_d = ManagedLayoutTensor[dst_type, layout_d](ctx)
-    var stack_d = Array[Scalar[dst_type], layout_d.size()](fill={})
-    comptime layout_ab = Layout.row_major(M, L)
-    var stack_ab = Array[Scalar[dst_type], layout_ab.size()](fill={})
-    var stack_ab_downcast = Array[Scalar[src_type], layout_ab.size()](fill={})
-    var host_d_ref = LayoutTensor[dst_type, layout_d](stack_d)
-    var host_ab = LayoutTensor[dst_type, layout_ab](stack_ab)
-    var host_ab_downcast = LayoutTensor[src_type, layout_ab](stack_ab_downcast)
+    var mat_a = HostDeviceTileTensor[src_type](layout_a, ctx)
+    var mat_b = HostDeviceTileTensor[src_type](layout_b, ctx)
+    var mat_c = HostDeviceTileTensor[src_type](layout_c, ctx)
+    var mat_d = HostDeviceTileTensor[dst_type](layout_d, ctx)
+    var stack_d = Array[Scalar[dst_type], M * N](fill={})
+    var layout_ab = row_major[M, L]()
+    var stack_ab = Array[Scalar[dst_type], M * L](fill={})
+    var stack_ab_downcast = Array[Scalar[src_type], M * L](fill={})
+    var host_d_ref = TileTensor(stack_d, layout_d)
+    var host_ab = TileTensor(stack_ab, layout_ab)
+    var host_ab_downcast = TileTensor(stack_ab_downcast, layout_ab)
 
-    var mat_a_tensor = mat_a.tensor()
-    var mat_b_tensor = mat_b.tensor()
-    var mat_c_tensor = mat_c.tensor()
+    var mat_a_tensor = mat_a.host_tensor()
+    var mat_b_tensor = mat_b.host_tensor()
+    var mat_c_tensor = mat_c.host_tensor()
     for m in range(M):
         for k in range(K):
-            # mat_a.tensor[m, k] = ((m + 1) / K).cast[src_type]()
-            # mat_a.tensor[m, k] = (1 / K).cast[src_type]()
             mat_a_tensor[m, k] = (Float64(k + m * K) / Float64(M * K)).cast[
                 src_type
             ]()
     for k in range(K):
         for l in range(L):
-            # mat_b.tensor[k, l] = 1
             mat_b_tensor[k, l] = BFloat16(l + k * L)
     for l in range(L):
         for n in range(N):
             mat_c_tensor[l, n] = (Float64((n * L + l)) * 0.125).cast[src_type]()
-            # mat_c.tensor[l, n] = n + l * N
-    matmul_naive(host_ab, mat_a_tensor, mat_b_tensor)
+    matmul_naive(host_ab, mat_a_tensor.as_imm(), mat_b_tensor.as_imm())
     for m in range(M):
         for l in range(L):
             host_ab_downcast[m, l] = host_ab[m, l].cast[src_type]()
-    matmul_naive(host_d_ref, host_ab_downcast, mat_c_tensor)
-    # print("Host Matrix:\n", host_d_ref)
+    matmul_naive(host_d_ref, host_ab_downcast.as_imm(), mat_c_tensor.as_imm())
 
     comptime config = BackToBackMatmulConfig[dst_type, src_type](
         IndexList[3, element_type=.uint64](32, 64, 64),
         IndexList[3, element_type=.uint64](16, 64, 16),
         num_pipeline_stages=2,
     )
+    mat_a.to_device()
+    mat_b.to_device()
+    mat_c.to_device()
     multistage_b2b_gemm[config](
         mat_d.device_tensor(),
         mat_a.device_tensor(),
@@ -730,9 +725,8 @@ def test_b2b_matmul(ctx: DeviceContext) raises:
         ctx,
     )
 
-    ctx.synchronize()
-    # print("Device Matrix:\n", mat_d.tensor)
-    var mat_d_tensor = mat_d.tensor()
+    mat_d.to_host()
+    var mat_d_tensor = mat_d.host_tensor()
     for m in range(M):
         for n in range(N):
             assert_almost_equal(

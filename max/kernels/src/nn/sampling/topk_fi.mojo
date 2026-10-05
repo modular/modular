@@ -114,13 +114,13 @@ def _block_minmax[
 
     var results = block._block_reduce[
         block_size,
-        warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Scalar[dtype], 2](min_val, max_val),
         initial_vals=StaticTuple[Scalar[dtype], 2](
             Scalar[dtype].MAX_FINITE, Scalar[dtype].MIN_FINITE
         ),
+        warp_reduce_fn=_reduce_fn,
     )
     return (results[0], results[1])
 
@@ -153,7 +153,6 @@ def _block_reduce_pivot_bounds[
 
     var results = block._block_reduce[
         block_size,
-        warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Float32, 4](
@@ -162,6 +161,7 @@ def _block_reduce_pivot_bounds[
         initial_vals=StaticTuple[Float32, 4](
             0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
         ),
+        warp_reduce_fn=_reduce_fn,
     )
     return (
         Int32(results[0]),
@@ -1366,7 +1366,6 @@ def _block_reduce_cutoff_stats[
 
     var results = block._block_reduce[
         block_size,
-        warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Float32, 6](
@@ -1380,6 +1379,7 @@ def _block_reduce_cutoff_stats[
         initial_vals=StaticTuple[Float32, 6](
             0, 0, 0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
         ),
+        warp_reduce_fn=_reduce_fn,
     )
     return (
         Int32(results[0]),
@@ -1415,7 +1415,6 @@ def _block_reduce_topp_stats[
 
     var results = block._block_reduce[
         block_size,
-        warp_reduce_fn=_reduce_fn,
         broadcast=broadcast,
     ](
         StaticTuple[Float32, 4](
@@ -1427,6 +1426,7 @@ def _block_reduce_topp_stats[
         initial_vals=StaticTuple[Float32, 4](
             0, 0, Float32.MAX_FINITE, Float32.MIN_FINITE
         ),
+        warp_reduce_fn=_reduce_fn,
     )
     return (results[0], results[1], results[2], results[3])
 
@@ -1457,7 +1457,7 @@ def _sampling_rejection_loop_coop[
     Each block scans a contiguous slice. Group-wide values keep every block
     on the same branch and barrier sequence.
     """
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var sampled_id_sram = unsafe_stack_allocation[
         1, Int, address_space=.SHARED
     ]()
@@ -1928,8 +1928,8 @@ def TopKTopPSamplingFromProbKernel[
         coop_size == 1 or from_logits
     ), "the cooperative split needs the fused softmax"
     var n_vec = _d // vec_size
-    var rank = Int(block_idx.x) % coop_size
-    var bx = Int(block_idx.x) // coop_size
+    var rank = block_idx.x % coop_size
+    var bx = block_idx.x // coop_size
     var tx = thread_idx.x
 
     # Contiguous slices make block-rank order match token order.
@@ -3286,8 +3286,8 @@ def TopKTopPMaskedProbsKernel[
     ), "TopKTopPMaskedProbsKernel is not supported on Apple GPUs"
     var _d = Int(d)
     var n_vec = _d // vec_size
-    var rank = Int(block_idx.x) % coop_size
-    var bx = Int(block_idx.x) // coop_size
+    var rank = block_idx.x % coop_size
+    var bx = block_idx.x // coop_size
     var tx = thread_idx.x
 
     # Contiguous slices make block-rank order match token order.

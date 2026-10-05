@@ -17,9 +17,6 @@ from std.random import randn
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -264,23 +261,14 @@ def test_prefill[
     )
 
     # create reference K and V
-    var k_ref = LayoutTensor[.bfloat16, Layout.row_major[4]()](
-        k_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var k_ref = TileTensor(
+        k_ref_ptr, row_major(batch_size, num_keys, num_heads, depth)
     )
-    var v_ref = LayoutTensor[.bfloat16, Layout.row_major[4]()](
-        v_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var v_ref = TileTensor(
+        v_ref_ptr, row_major(batch_size, num_keys, num_heads, depth)
     )
-    var output_ref = LayoutTensor[output_type, Layout.row_major[4]()](
-        output_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref = TileTensor(
+        output_ref_ptr, row_major(batch_size, seq_len, num_heads, depth)
     )
 
     # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
@@ -343,7 +331,7 @@ def test_prefill[
 
     var null_valid_length = TileTensor(
         MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-        row_major(Coord(Idx[0])),
+        row_major(Idx[0]),
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(k_ref_device)
@@ -371,11 +359,8 @@ def test_prefill[
     ctx.synchronize()
 
     # view output as a rank 4 buffer
-    var output_rank4 = LayoutTensor[output_type, Layout.row_major[4]()](
-        output_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, kv_depth)
-        ),
+    var output_rank4 = TileTensor(
+        output_ptr, row_major(batch_size, seq_len, num_heads, kv_depth)
     )
 
     # compare output with reference

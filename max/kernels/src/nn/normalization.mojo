@@ -675,9 +675,9 @@ def rms_norm_gpu_warp_tiling[
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
-    var tid = Int(thread_idx.x)
-    var row = Int(block_idx.x)
-    var bdim = Int(block_dim.x)
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var bdim = block_dim.x
 
     # Hoist the rank-N row translation ONCE; reuse the base for load and store.
     var base = _get_start_indices_of_nth_subvolume_static(row, row_spec.shape)
@@ -1616,8 +1616,7 @@ def apply_qk_rms_norm_gpu_block[
     with PDL():
         # rsqrt of the (already cross-rank reduced) per-row mean of squares.
         var rs = rsqrt(
-            qk_var.load[width=1](Coord(Index(Int(row), Int(block_idx.y))))
-            + epsilon
+            qk_var.load[width=1](Coord(Index(Int(row), block_idx.y))) + epsilon
         )
 
         # Each block owns a single (row, operand); threads grid-stride the cols.

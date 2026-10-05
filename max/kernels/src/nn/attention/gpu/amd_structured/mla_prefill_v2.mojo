@@ -2174,7 +2174,7 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         var end_of_seq = Int(input_row_offsets_ptr[batch_idx + 1])
         var seq_len = end_of_seq - start_of_seq
 
-        if Int(block_idx.y) * Self.BM >= seq_len:
+        if block_idx.y * Self.BM >= seq_len:
             return
 
         var start_pos = Int(k_nope_op.cache_length(batch_idx))
@@ -2188,10 +2188,10 @@ struct MlaPrefillV2[config: MlaConfigV2]:
         )
 
         var q_ragged_layout = row_major(
-            Coord(1, seq_len, Self.config.num_heads, Self.config.d_qk)
+            1, seq_len, Self.config.num_heads, Self.config.d_qk
         )
         var o_ragged_layout = row_major(
-            Coord(1, seq_len, Self.config.num_heads, Self.config.depth)
+            1, seq_len, Self.config.num_heads, Self.config.depth
         )
         var q_tt = TileTensor(q_ptr + q_batch_offset, q_ragged_layout)
         var o_tt = TileTensor(output_ptr + o_batch_offset, o_ragged_layout)

@@ -2027,7 +2027,7 @@ def _gemv_gpu_dispatch_impl[
                     # Runtime transpose (TileTensor.transpose needs a static
                     # shape). `reshape` reuses b's storage, so the view keeps b's
                     # engine.
-                    var b_tile_n_major = b.reshape(row_major(Coord(n, k)))
+                    var b_tile_n_major = b.reshape(row_major(n, k))
 
                     _enqueue_gemv_kernel_vector[
                         simd_width=simd_width,
@@ -3117,9 +3117,9 @@ def gemm_mma_cpasync_kernel[
     var lane_idx_ = lane_id()
 
     # CTA tile origin.
-    var cta_m = tile_m * Int(block_idx.x)
-    var cta_n = tile_n * Int(block_idx.y)
-    var batch_idx = Int(block_idx.z)
+    var cta_m = tile_m * block_idx.x
+    var cta_n = tile_n * block_idx.y
+    var batch_idx = block_idx.z
 
     var out_ptr = output.ptr + batch_idx * _gemm_m * _gemm_n
 

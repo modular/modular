@@ -415,6 +415,37 @@ def test_ref_decl_patterns(a: List[Int], mut b: List[Int]):
     ref r3 = r2 # no follow-on error.
 
 
+# An origin has to name storage that outlives the expression naming it.  A
+# temporary has storage, so it escapes the check for a value with no memory
+# origin at all, but that storage dies with the expression.
+
+@fieldwise_init
+struct OriginHolder(Movable):
+    var s: String
+
+def test_origin_of_temporary():
+    # expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+    comptime o = origin_of(String("lit"))
+
+# A projection reads out of the temporary, so the origin still names the
+# temporary's own declaration rather than the projection.
+def test_origin_of_projection_of_temporary():
+    # expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+    var p = origin_of(OriginHolder(String("x")).s)
+
+# A union is reported per member, so one dying member condemns it even though
+# the other names storage that outlives the expression.
+def test_origin_of_union_with_temporary():
+    var s = String("keep")
+    # expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+    comptime o = origin_of(s, String("lit"))
+
+# Having no storage at all is a different failure, with its own diagnostic.
+def test_origin_of_register_temporary():
+    # expected-error @+1 {{value of type 'Int' doesn't have a memory origin in origin specifier}}
+    comptime o = origin_of(Int(3))
+
+
 ##===----------------------------------------------------------------------===##
 # Tuples
 ##===----------------------------------------------------------------------===##

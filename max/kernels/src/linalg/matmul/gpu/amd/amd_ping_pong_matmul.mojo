@@ -508,8 +508,8 @@ struct AMDPingPongMatmul[
         # observed otherwise). The conv `TileLoaderLDSIm2col` sibling
         # still uses the anchor form because conv's im2col address
         # math can't fold the block origin into the SRD base.
-        var a_block_gmem = a_gmem.tile[BM, K](Int(block_idx.y), 0)
-        var b_block_gmem = b_gmem.tile[BN, K](Int(block_idx.x), 0)
+        var a_block_gmem = a_gmem.tile[BM, K](block_idx.y, 0)
+        var b_block_gmem = b_gmem.tile[BN, K](block_idx.x, 0)
         var a_loader = TileLoaderLDS[
             Self.in_type,
             half_BM,

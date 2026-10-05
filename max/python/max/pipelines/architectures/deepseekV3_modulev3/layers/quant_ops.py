@@ -37,7 +37,7 @@ from max.experimental.sharding.cost import (
 from max.experimental.sharding.placements import Placement, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
+from max.graph import TensorValue, ops
 from max.nn.comm.ep import EPConfig
 from max.nn.kernels import (
     block_scales_interleave as _block_scales_interleave,
@@ -1121,6 +1121,35 @@ def _grouped_fp8_matmul(
     )
 
 
+def _silu_quantize_fp8_graph(
+    x: TensorValue,
+    row_offsets: TensorValue,
+    input_spec: InputScaleSpec,
+    weight_spec: WeightScaleSpec,
+    block_k: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Gated SiLU of a ``[gate | up]`` grouped matmul output, FP8 block-quantized.
+
+    The graph compiler fuses the activation into the row-bounded quantize, so
+    the rows past ``row_offsets[-1]`` of the EP receive buffer are neither
+    activated nor quantized.
+    """
+    moe_dim = int(x.shape[1]) // 2
+    activated = ops.silu(x[:, :moe_dim]) * x[:, moe_dim:]
+    return _quantize_dynamic_scaled_float8(
+        activated,
+        input_spec,
+        weight_spec,
+        group_size_or_per_token=block_k,
+        scales_type=DType.float32,
+        out_type=DType.float8_e4m3fn,
+        row_offsets=row_offsets,
+    )
+
+
+_silu_quantize_fp8 = F.functional(_silu_quantize_fp8_graph)
+
+
 def grouped_silu(
     x: Tensor,
     expert_start_indices: Tensor,
@@ -1147,10 +1176,12 @@ def grouped_silu(
             scales_offset=scales_offset,
         )
     if isinstance(out_weight, FP8BlockTensor):
-        assert quant_config is not None
-        _, block_k = out_weight.block_size
-        data, weight_scale_inv = fused_silu_quantized(
-            x, expert_start_indices, quant_config, DType.float8_e4m3fn
+        block_m, block_k = out_weight.block_size
+        input_spec, weight_spec = _fp8_block_specs(
+            (block_m, block_k), input_block=(1, block_k)
+        )
+        data, weight_scale_inv = _silu_quantize_fp8(
+            x, expert_start_indices, input_spec, weight_spec, block_k
         )
         return FP8BlockTensor(
             data=data.rebind_mapping(x.mapping),

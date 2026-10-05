@@ -94,8 +94,8 @@ def _test_silu_mxfp8[
 
     # ---- Input / output / SF buffers ----
     comptime two_H = 2 * H
-    var in_shape = row_major(Coord(Int(M), Idx[two_H]))
-    var out_shape = row_major(Coord(Int(M), Idx[H]))
+    var in_shape = row_major(M, Idx[two_H])
+    var out_shape = row_major(M, Idx[H])
     var in_size = M * two_H
     var out_size = M * H
 
@@ -117,14 +117,14 @@ def _test_silu_mxfp8[
     )
     var row_offsets_tensor = TileTensor(
         row_offsets_device,
-        row_major(Coord(Idx[num_active_experts + 1])),
+        row_major(Idx[num_active_experts + 1]),
     )
     var scales_offsets_device = ctx.enqueue_create_buffer[.uint32](
         num_active_experts
     )
     var scales_offsets_tensor = TileTensor(
         scales_offsets_device,
-        row_major(Coord(Idx[num_active_experts])),
+        row_major(Idx[num_active_experts]),
     )
 
     var scales_dim0 = 0
@@ -140,13 +140,11 @@ def _test_silu_mxfp8[
 
     comptime k_groups = ceildiv(H, SF_VECTOR_SIZE * SF_ATOM_K)
     var scales_shape = row_major(
-        Coord(
-            Int(scales_dim0),
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        scales_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var scales_size = scales_shape.product()
 

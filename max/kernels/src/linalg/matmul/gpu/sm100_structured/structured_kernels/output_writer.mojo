@@ -1857,7 +1857,7 @@ struct TileWriter[
                                 sep="",
                             )
                     if p3_valid_rows > 0:
-                        var p3_tid = Int(thread_idx.x)
+                        var p3_tid = thread_idx.x
                         if p3_tid < p3_valid_rows:
                             # See `p3_n_inbound` above: this thread's
                             # absolute row is THIS STAGE's start
@@ -2061,7 +2061,7 @@ struct TileWriter[
                     p3_expert_id,
                     p3_cfg,
                     p3_control,
-                    Int(thread_idx.x),
+                    thread_idx.x,
                 )
 
             # Phase 4: TMA Store with bounds checking

@@ -29,12 +29,24 @@ from max.nn.state_space import (
 from ..model_config import NemotronHConfig
 
 
+def _layer_rows(rows: Tensor, layer: Tensor) -> TensorValue:
+    """Row ``layer`` of a ``[num_layers, batch_size]`` table, as
+    ``[1, batch_size]``.
+
+    The row keeps its leading dim so the slice fuses into the kernels' slot
+    input and is read in place rather than copied.
+    """
+    index = TensorValue(layer)
+    return TensorValue(rows)[(slice(index, index + 1), 1), :]
+
+
 def _causal_conv1d(
     x: Tensor,
     weight: Tensor,
     bias: Tensor,
     pool: Tensor,
     rows: Tensor,
+    layer: Tensor,
     query_start_loc: Tensor,
     has_initial_state: Tensor,
 ) -> TensorValue:
@@ -44,7 +56,7 @@ def _causal_conv1d(
         bias=TensorValue(bias),
         conv_states=BufferValue(pool),
         query_start_loc=TensorValue(query_start_loc),
-        cache_indices=TensorValue(rows),
+        cache_indices=_layer_rows(rows, layer),
         has_initial_state=TensorValue(has_initial_state),
         activation="silu",
         channels_last=True,
@@ -61,6 +73,7 @@ def _ssd_scan(
     dt_bias: Tensor,
     pool: Tensor,
     rows: Tensor,
+    layer: Tensor,
     query_start_loc: Tensor,
     has_initial_state: Tensor,
 ) -> TensorValue:
@@ -75,7 +88,7 @@ def _ssd_scan(
         ssm_pool=BufferValue(pool),
         query_start_loc=TensorValue(query_start_loc),
         has_initial_state=TensorValue(has_initial_state),
-        cache_indices=TensorValue(rows),
+        cache_indices=_layer_rows(rows, layer),
     )
 
 
@@ -87,17 +100,23 @@ ssd_scan = F.functional(_ssd_scan)
 class MambaStateAccess:
     """One Mamba layer's view of the state pools.
 
-    Each pool travels with the ``[batch_size]`` pool rows this layer reads
-    and writes, one per request.
+    Each pool travels with the ``[num_layers, batch_size]`` pool rows of
+    every layer, and the layer reads and writes the rows of ``layer``, one
+    per request. A row sliced out before the shared subgraph would be copied
+    to cross into it.
     """
 
     conv_pool: Tensor
     conv_rows: Tensor
     ssm_pool: Tensor
     ssm_rows: Tensor
+    layer: Tensor
+    """The int64 CPU scalar selecting this layer's rows."""
 
 
-class CausalConv1d(Module[[Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]):
+class CausalConv1d(
+    Module[[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]
+):
     """A depthwise causal conv with SiLU whose window lives in a state pool."""
 
     def __init__(self, dim: int, kernel_size: int) -> None:
@@ -109,6 +128,7 @@ class CausalConv1d(Module[[Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]):
         x: Tensor,
         pool: Tensor,
         rows: Tensor,
+        layer: Tensor,
         query_start_loc: Tensor,
         has_initial_state: Tensor,
     ) -> Tensor:
@@ -118,6 +138,7 @@ class CausalConv1d(Module[[Tensor, Tensor, Tensor, Tensor, Tensor], Tensor]):
             self.bias,
             pool,
             rows,
+            layer,
             query_start_loc,
             has_initial_state,
         )
@@ -196,6 +217,7 @@ class NemotronHMamba2Mixer(
             xbc,
             state.conv_pool,
             state.conv_rows,
+            state.layer,
             query_start_loc,
             has_initial_state,
         )
@@ -215,6 +237,7 @@ class NemotronHMamba2Mixer(
             self.dt_bias,
             state.ssm_pool,
             state.ssm_rows,
+            state.layer,
             query_start_loc,
             has_initial_state,
         )

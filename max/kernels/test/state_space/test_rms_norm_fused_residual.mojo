@@ -18,9 +18,6 @@ from std.sys.info import CompilationTarget
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -80,23 +77,21 @@ def _run_rms_norm_fused_residual_cpu_impl[
         gamma_ptr[i] = Scalar[dtype](Float64(i + cols) / Float64(cols))
 
     # Create tensors
-    comptime layout_nd = Layout.row_major[rank]()
-
-    var input_tensor = LayoutTensor[dtype, layout_nd, _](
+    var input_tensor = TileTensor(
         input_ptr,
-        RuntimeLayout[layout_nd].row_major(shape),
+        row_major(shape_coord),
     )
-    var residual_tensor = LayoutTensor[dtype, layout_nd, _](
+    var residual_tensor = TileTensor(
         residual_ptr,
-        RuntimeLayout[layout_nd].row_major(shape),
+        row_major(shape_coord),
     )
-    var output_tensor = LayoutTensor[dtype, layout_nd, _](
+    var output_tensor = TileTensor(
         output_ptr,
-        RuntimeLayout[layout_nd].row_major(shape),
+        row_major(shape_coord),
     )
-    var residual_output_tensor = LayoutTensor[dtype, layout_nd, _](
+    var residual_output_tensor = TileTensor(
         residual_output_ptr,
-        RuntimeLayout[layout_nd].row_major(shape),
+        row_major(shape_coord),
     )
     var gamma_tensor = TileTensor(gamma_ptr, row_major(cols))
 
@@ -108,34 +103,26 @@ def _run_rms_norm_fused_residual_cpu_impl[
     def input_fn[
         width: Int
     ](coords: Coord) {input_tensor} -> SIMD[dtype, width]:
-        return input_tensor.load[width=width](
-            rebind[IndexList[rank]](coord_to_index_list(coords))
-        )
+        return input_tensor.load[width=width](coords)
 
     @inline(.always)
     def residual_input_fn[
         width: Int
     ](coords: Coord) {residual_tensor} -> SIMD[dtype, width]:
-        return residual_tensor.load[width=width](
-            rebind[IndexList[rank]](coord_to_index_list(coords))
-        )
+        return residual_tensor.load[width=width](coords)
 
     # Define output functions
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {output_tensor} -> None:
-        output_tensor.store[width=width](
-            rebind[IndexList[rank]](coord_to_index_list(coords)), val
-        )
+        output_tensor.store[width=width](coords, val)
 
     @inline(.always)
     def residual_output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {residual_output_tensor} -> None:
-        residual_output_tensor.store[width=width](
-            rebind[IndexList[rank]](coord_to_index_list(coords)), val
-        )
+        residual_output_tensor.store[width=width](coords, val)
 
     # Read back the (input + residual) buffer the kernel wrote in its first pass.
     # This reader and the writable `residual_output_fn` alias it; as runtime args
@@ -149,9 +136,7 @@ def _run_rms_norm_fused_residual_cpu_impl[
     def residual_read_fn[
         width: Int
     ](coords: Coord) {residual_output_immut} -> SIMD[dtype, width]:
-        return residual_output_immut.load[width=width](
-            rebind[IndexList[rank]](coord_to_index_list(coords))
-        )
+        return residual_output_immut.load[width=width](coords)
 
     var dropout_p_scalar = Scalar[dtype](dropout_p)
 

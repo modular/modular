@@ -39,7 +39,14 @@ from std.bit import prev_power_of_two
 from max.gpu import WARP_SIZE, lane_id
 from max.gpu.host import DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import (
+    ImmTileTensor,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TensorLayout,
+    UNKNOWN_VALUE,
+)
 from layout.layout_tensor import LayoutTensorIter
 from layout.swizzle import make_ldmatrix_swizzle
 from nn.attention.mha_mask import (
@@ -47,7 +54,6 @@ from nn.attention.mha_mask import (
     ChunkedCausalMask,
     ChunkedMask,
     MaskName,
-    MaterializedMask,
     MHAMask,
     NullMask,
     RelativeLogitsMask,
@@ -77,36 +83,6 @@ comptime is_sm90or100 = is_sm90 or is_sm100
 comptime MHA_PDL_LEVEL = PDLLevel.OVERLAP_AT_END if get_defined_bool[
     "MHA_PDL", True
 ]() else PDLLevel.OFF
-
-
-@inline(.always)
-def as_dynamic_row_major_1d[
-    dtype: DType
-](
-    tensor: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
-) -> LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]:
-    """Reinterprets a generic-address `LayoutTensor` as a 1-D dynamic row-major tensor.
-
-    The pointer and total element count are preserved; the result has an
-    unknown-value row-major layout so it can be passed to routines that
-    require a 1-D runtime-layout tensor without copying data.
-
-    Parameters:
-        dtype: The element data type of the input tensor.
-
-    Args:
-        tensor: The immutable generic-address tensor to reinterpret.
-
-    Returns:
-        A 1-D `LayoutTensor` with a `row_major(UNKNOWN_VALUE)` layout backed
-        by the same storage as `tensor`.
-    """
-    return {
-        tensor.ptr.as_imm().as_unsafe_any_origin(),
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            tensor.get_shape()
-        ),
-    }
 
 
 struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
@@ -801,61 +777,30 @@ def dispatch_mask[
 
 
 @inline(.always)
-def dispatch_materialized_mask[
-    dtype: DType,
-    layout: Layout,
-    //,
-](
-    mask_nd: LayoutTensor[mut=False, dtype, layout, _],
-    callback_fn: Some[callback_fn_type],
-    start_pos_nd: OptionalReg[
-        LayoutTensor[.uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
-) raises -> None:
-    """Wrap a dense mask tensor in a `MaterializedMask` and invoke a callback.
-
-    Constructs a `MaterializedMask` from the provided tensor and optional
-    per-sequence start-position tensor, then calls `callback_fn` with the
-    resulting mask. Use this when the mask is provided as an explicit tensor
-    (e.g. an ALiBi or relative-positional-encoding bias) rather than a
-    compute-on-the-fly strategy.
-
-    Parameters:
-        dtype: Element type of the mask tensor.
-        layout: Layout of the mask tensor.
-
-    Args:
-        mask_nd: The mask values tensor with shape `(batch, heads, q, k)` or
-            compatible broadcast shape.
-        callback_fn: Parametric callback invoked with the `MaterializedMask`.
-        start_pos_nd: Optional per-sequence start positions used to offset the
-            key dimension.
-    """
-
-    var mask = MaterializedMask(mask_nd, start_pos_nd)
-    return callback_fn(mask)
-
-
-@inline(.always)
 def dispatch_relative_logits_mask[
     dtype: DType,
-    layout: Layout,
+    BiasLayout: TensorLayout,
+    bias_origin: ImmOrigin,
+    CacheLengthsLayout: TensorLayout,
+    cache_lengths_origin: ImmOrigin,
+    RowOffsetsLayout: TensorLayout,
+    row_offsets_origin: ImmOrigin,
     //,
     local_window_size: Int = -1,
 ](
-    bias_nd: LayoutTensor[mut=False, dtype, layout, _],
-    cache_lengths: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    bias_nd: ImmTileTensor[dtype, BiasLayout, bias_origin],
+    cache_lengths: ImmTileTensor[
+        .uint32, CacheLengthsLayout, cache_lengths_origin
     ],
-    input_row_offsets: LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
+    input_row_offsets: ImmTileTensor[
+        .uint32, RowOffsetsLayout, row_offsets_origin
     ],
     callback_fn: Some[callback_fn_type],
 ) raises -> None:
     """Wrap `bias_nd` in a `RelativeLogitsMask` and invoke `callback_fn`.
 
-    Like `dispatch_materialized_mask`, this carries runtime state (the bias
-    table plus the tensors that recover its ragged-flat row), so it lives
+    This carries runtime state (the bias table plus the tensors that recover
+    its ragged-flat row), so it lives
     outside `dispatch_mask`'s zero-arg string dispatch. `local_window_size`
     picks the visibility mask: `<= 0` (canonically `-1`, the graph-level
     "no window" value) -> `CausalMask`, else

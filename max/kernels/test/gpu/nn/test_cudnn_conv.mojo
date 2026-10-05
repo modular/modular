@@ -229,8 +229,11 @@ def main() raises:
 
         test_conv_cudnn[
             IndexList[4](1, 1, 550, 1024),  # input  (NHWC)
-            IndexList[4](
-                1, 7, 1024, 1024
+            (
+                1,
+                7,
+                1024,
+                1024,
             ),  # filter (RSCF) (height, width, in_channels, out_channels)
             IndexList[4](1, 1, 550, 1024),  # output (NHWC)
             DType.float32,
@@ -238,8 +241,11 @@ def main() raises:
             DType.float32,
             IndexList[2](1, 1),  # stride
             IndexList[2](1, 1),  # dilation
-            IndexList[4](
-                0, 0, 3, 3
+            (
+                0,
+                0,
+                3,
+                3,
             ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after] (symmetric: pad_h=0, pad_w=3)
         ](ctx)
 
@@ -256,8 +262,11 @@ def main() raises:
                 dtype,
                 IndexList[2](1, 1),  # stride
                 IndexList[2](1, 1),  # dilation
-                IndexList[4](
-                    0, 0, 0, 0
+                (
+                    0,
+                    0,
+                    0,
+                    0,
                 ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
             ](ctx)
 
@@ -290,8 +299,11 @@ def main() raises:
             DType.float32,
             IndexList[2](1, 1),  # stride
             IndexList[2](1, 1),  # dilation
-            IndexList[4](
-                0, 0, 0, 0
+            (
+                0,
+                0,
+                0,
+                0,
             ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
         ](ctx1)
 
@@ -308,8 +320,11 @@ def main() raises:
                 DType.float32,
                 IndexList[2](1, 1),  # stride
                 IndexList[2](1, 1),  # dilation
-                IndexList[4](
-                    0, 0, 0, 0
+                (
+                    0,
+                    0,
+                    0,
+                    0,
                 ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after]
             ](ctx2)
 

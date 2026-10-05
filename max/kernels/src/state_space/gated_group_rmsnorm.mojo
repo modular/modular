@@ -50,8 +50,10 @@ indexing (`.load`/`.store` with `Coord`) -- no raw pointer arithmetic -- so a
 strided `y`/`gate`/`output` view (a split of the fused in-proj) is read correctly
 with no host-side stride plumbing.
 
-On NVIDIA and AMD the launcher takes a vectorized single-pass path when every
-operand is 16-byte aligned and `group_size` is a multiple of the vector width:
+On NVIDIA and AMD the launcher takes a vectorized single-pass path when `y`,
+`weight` and `output` are 16-byte aligned and `group_size` is a multiple of the
+vector width (the gate's loads claim only the alignment its input fusion
+proves):
 each lane loads `y`, `gate` and `weight` vectors once, keeps the gated values in
 registers, and reuses them after the group reduction. The vector width is chosen
 so the wider of `y` and `gate` is 16 bytes. The fp32 sum of squares is
@@ -90,16 +92,16 @@ def gated_group_rmsnorm_kernel[
     gate_dtype: DType,
     OutLayout: TensorLayout,
     YLayout: TensorLayout,
-    GateLayout: TensorLayout,
     WeightLayout: TensorLayout,
     OutEngine: TensorEngine,
     YEngine: TensorEngine,
-    GateEngine: TensorEngine,
     WeightEngine: TensorEngine,
+    GateFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](Int, Int) -> SIMD[gate_dtype, width],
 ](
     output: TileTensor[dtype, OutLayout, MutAnyOrigin, Engine=OutEngine],
     y: TileTensor[dtype, YLayout, ImmutAnyOrigin, Engine=YEngine],
-    gate: TileTensor[gate_dtype, GateLayout, ImmutAnyOrigin, Engine=GateEngine],
     weight: TileTensor[
         .float32, WeightLayout, ImmutAnyOrigin, Engine=WeightEngine
     ],
@@ -107,12 +109,13 @@ def gated_group_rmsnorm_kernel[
     num_groups_dev: Int32,
     group_size_dev: Int32,
     eps: Float32,
+    gate_fn: GateFn,
 ):
     var n_rows = Int(n_rows_dev)
     var num_groups = Int(num_groups_dev)
     var group_size = Int(group_size_dev)
     comptime assert output.flat_rank == 2 and y.flat_rank == 2
-    comptime assert gate.flat_rank == 2 and weight.flat_rank == 1
+    comptime assert weight.flat_rank == 1
 
     # One warp owns one (row, group). All 32 lanes share `group_flat` (it is
     # `global_idx.x // WARP_SIZE`, constant within a simdgroup), so the early
@@ -130,7 +133,7 @@ def gated_group_rmsnorm_kernel[
     while j < group_size:
         var col = base + j
         var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
-        var gv = gate.load[width=1](Coord(n, col)).cast[.float32]()
+        var gv = gate_fn[1, 1](n, col).cast[.float32]()
         var gated = yv * silu(gv)
         acc += gated * gated
         j += WARP_SIZE
@@ -147,7 +150,7 @@ def gated_group_rmsnorm_kernel[
     while jj < group_size:
         var col = base + jj
         var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
-        var gv = gate.load[width=1](Coord(n, col)).cast[.float32]()
+        var gv = gate_fn[1, 1](n, col).cast[.float32]()
         var gated = yv * silu(gv)
         var t_in = (gated * nf).cast[dtype]()
         var w = weight.load[width=1](Coord(col)).cast[.float32]()
@@ -175,25 +178,26 @@ def gated_group_rmsnorm_vec_kernel[
     width: Int,
     OutLayout: TensorLayout,
     YLayout: TensorLayout,
-    GateLayout: TensorLayout,
     WeightLayout: TensorLayout,
     OutEngine: TensorEngine,
     YEngine: TensorEngine,
-    GateEngine: TensorEngine,
     WeightEngine: TensorEngine,
+    GateFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](Int, Int) -> SIMD[gate_dtype, width],
 ](
     output: TileTensor[dtype, OutLayout, MutAnyOrigin, Engine=OutEngine],
     y: TileTensor[dtype, YLayout, ImmutAnyOrigin, Engine=YEngine],
-    gate: TileTensor[gate_dtype, GateLayout, ImmutAnyOrigin, Engine=GateEngine],
     weight: TileTensor[
         .float32, WeightLayout, ImmutAnyOrigin, Engine=WeightEngine
     ],
     n_rows_dev: Int32,
     num_groups_dev: Int32,
     eps: Float32,
+    gate_fn: GateFn,
 ):
     comptime assert output.flat_rank == 2 and y.flat_rank == 2
-    comptime assert gate.flat_rank == 2 and weight.flat_rank == 1
+    comptime assert weight.flat_rank == 1
     comptime num_vecs = group_size // width
     comptime iters = ceildiv(num_vecs, WARP_SIZE)
     comptime has_tail = num_vecs % WARP_SIZE != 0
@@ -222,7 +226,7 @@ def gated_group_rmsnorm_vec_kernel[
                 w[k] = Vec(0)
                 continue
         var yv = y.load[width=width, alignment=y_align](Coord(n, col))
-        var gv = gate.load[width=width, alignment=gate_align](Coord(n, col))
+        var gv = gate_fn[width, gate_align // size_of[gate_dtype]()](n, col)
         w[k] = weight.load[width=width, alignment=w_align](Coord(col)).cast[
             accum_type
         ]()
@@ -266,10 +270,13 @@ def gated_group_rmsnorm_gpu[
     dtype: DType,
     gate_dtype: DType,
     group_size: Int,
+    GateFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](Int, Int) -> SIMD[gate_dtype, width],
 ](
     output: TileTensor[mut=True, dtype, ...],
     y: TileTensor[dtype, ...],
-    gate: TileTensor[gate_dtype, ...],
+    gate_fn: GateFn,
     weight: TileTensor[.float32, ...],
     n_rows: Int,
     num_groups: Int,
@@ -282,31 +289,29 @@ def gated_group_rmsnorm_gpu[
         dtype: Element type of `y` and `output`.
         gate_dtype: Element type of `gate`.
         group_size: Width of each independently normalized group.
+        GateFn: Reads the gate projection `[n_rows, num_groups * group_size]`,
+            claiming `alignment` elements of alignment.
 
     Args:
         output: The `[n_rows, num_groups * group_size]` result.
         y: The `[n_rows, num_groups * group_size]` SSD scan output.
-        gate: The gate projection; its row stride may exceed the logical width.
+        gate_fn: Reads the gate projection.
         weight: The fp32 RMSNorm weight.
         n_rows: Number of rows.
         num_groups: Number of groups per row.
         eps: Epsilon inside `rsqrt(mean_sq + eps)`.
         ctx: Device context to enqueue on.
     """
+
     var total_warps = n_rows * num_groups
 
     comptime vec_width = 16 // max(size_of[dtype](), size_of[gate_dtype]())
     comptime if (
         has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
     ) and group_size % vec_width == 0:
-        # Vector loads read contiguous elements, so every operand needs a
-        # unit inner stride as well as 16-byte aligned rows.
-        if (
-            _is_vec_ok(output)
-            and _is_vec_ok(y)
-            and _is_vec_ok(gate)
-            and _is_vec_ok(weight)
-        ):
+        # Vector loads read contiguous elements, so each tensor operand needs
+        # a unit inner stride as well as 16-byte aligned rows.
+        if _is_vec_ok(output) and _is_vec_ok(y) and _is_vec_ok(weight):
             comptime vec_kernel = gated_group_rmsnorm_vec_kernel[
                 dtype,
                 gate_dtype,
@@ -314,21 +319,20 @@ def gated_group_rmsnorm_gpu[
                 vec_width,
                 type_of(output).LayoutType,
                 type_of(y).LayoutType,
-                type_of(gate).LayoutType,
                 type_of(weight).LayoutType,
                 type_of(output).Engine,
                 type_of(y).Engine,
-                type_of(gate).Engine,
                 type_of(weight).Engine,
+                GateFn,
             ]
             ctx.enqueue_function[vec_kernel](
                 output,
                 y,
-                gate,
                 weight,
                 Int32(n_rows),
                 Int32(num_groups),
                 eps,
+                host_arg=gate_fn,
                 grid_dim=ceildiv(total_warps * WARP_SIZE, VEC_BLK),
                 block_dim=VEC_BLK,
             )
@@ -342,22 +346,21 @@ def gated_group_rmsnorm_gpu[
         gate_dtype,
         type_of(output).LayoutType,
         type_of(y).LayoutType,
-        type_of(gate).LayoutType,
         type_of(weight).LayoutType,
         type_of(output).Engine,
         type_of(y).Engine,
-        type_of(gate).Engine,
         type_of(weight).Engine,
+        GateFn,
     ]
     ctx.enqueue_function[kernel](
         output,
         y,
-        gate,
         weight,
         Int32(n_rows),
         Int32(num_groups),
         Int32(group_size),
         eps,
+        host_arg=gate_fn,
         grid_dim=grid,
         block_dim=BLK,
     )
@@ -371,10 +374,13 @@ def gated_group_rmsnorm_gpu[
 def gated_group_rmsnorm_cpu[
     dtype: DType,
     gate_dtype: DType,
+    GateFn: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](Int, Int) -> SIMD[gate_dtype, width],
 ](
     output: TileTensor[mut=True, dtype, ...],
     y: TileTensor[dtype, ...],
-    gate: TileTensor[gate_dtype, ...],
+    gate_fn: GateFn,
     weight: TileTensor[.float32, ...],
     n_rows: Int,
     num_groups: Int,
@@ -382,7 +388,7 @@ def gated_group_rmsnorm_cpu[
     eps: Float32,
 ):
     comptime assert output.flat_rank == 2 and y.flat_rank == 2
-    comptime assert gate.flat_rank == 2 and weight.flat_rank == 1
+    comptime assert weight.flat_rank == 1
 
     for n in range(n_rows):
         for g in range(num_groups):
@@ -391,14 +397,14 @@ def gated_group_rmsnorm_cpu[
             for j in range(group_size):
                 var col = base + j
                 var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
-                var gv = gate.load[width=1](Coord(n, col)).cast[.float32]()
+                var gv = gate_fn[1, 1](n, col).cast[.float32]()
                 var gated = yv * silu(gv)
                 m2 += gated * gated
             var nf = rsqrt(m2 / Float32(group_size) + eps)
             for j in range(group_size):
                 var col = base + j
                 var yv = y.load[width=1](Coord(n, col)).cast[.float32]()
-                var gv = gate.load[width=1](Coord(n, col)).cast[.float32]()
+                var gv = gate_fn[1, 1](n, col).cast[.float32]()
                 var gated = yv * silu(gv)
                 var t_in = (gated * nf).cast[dtype]()
                 var w = weight.load[width=1](Coord(col)).cast[.float32]()

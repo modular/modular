@@ -102,10 +102,10 @@ def test_matches_one_row_kernel[
     _fill_launch[dtype](act_dev, K, seed + 1, ctx)
     _fill_launch[c_type](bias_dev, N, seed + 2, ctx)
 
-    var w = TileTensor[mut=False](w_dev, row_major(Coord(Idx[N], Idx[K])))
-    var act = TileTensor[mut=False](act_dev, row_major(Coord(Idx[1], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(Idx[1], Idx[N])))
-    var bias = TileTensor[mut=False](bias_dev, row_major(Coord(Idx[1], Idx[N])))
+    var w = TileTensor[mut=False](w_dev, row_major(Idx[N], Idx[K]))
+    var act = TileTensor[mut=False](act_dev, row_major(Idx[1], Idx[K]))
+    var c = TileTensor(c_dev, row_major(Idx[1], Idx[N]))
+    var bias = TileTensor[mut=False](bias_dev, row_major(Idx[1], Idx[N]))
 
     @__parameter
     @inline(.always)
@@ -218,9 +218,9 @@ def test_matches_host_reference[
     _fill_launch[dtype, integral=True](act_dev, K, 13, ctx)
     c_dev.enqueue_fill(Scalar[c_type](-1))
 
-    var w = TileTensor[mut=False](w_dev, row_major(Coord(Idx[N], Idx[K])))
-    var act = TileTensor[mut=False](act_dev, row_major(Coord(Idx[1], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(Idx[1], Idx[N])))
+    var w = TileTensor[mut=False](w_dev, row_major(Idx[N], Idx[K]))
+    var act = TileTensor[mut=False](act_dev, row_major(Idx[1], Idx[K]))
+    var c = TileTensor(c_dev, row_major(Idx[1], Idx[N]))
 
     comptime multirow_kernel = gemv_kernel_vector_multirow[
         c_type,
