@@ -118,50 +118,6 @@ struct RoundMode(ImplicitlyCopyable):
         return self.value == other.value
 
 
-@fieldwise_init
-struct InterpolationMode(ImplicitlyCopyable):
-    """Specifies the interpolation method used during resize."""
-
-    var value: Int
-    comptime Linear = InterpolationMode(0)
-
-    @inline(.always)
-    def __eq__(self, other: InterpolationMode) -> Bool:
-        return self.value == other.value
-
-
-struct Interpolator[mode: InterpolationMode](
-    Defaultable, TrivialRegisterPassable
-):
-    """Holds interpolation filter state and applies the filter for a given interpolation mode.
-    """
-
-    var cubic_coeff: Float32
-
-    @inline(.always)
-    def __init__(out self, cubic_coeff: Float32):
-        self.cubic_coeff = cubic_coeff
-
-    @inline(.always)
-    def __init__(out self):
-        self.cubic_coeff = 0
-
-    @staticmethod
-    @inline(.always)
-    def filter_length() -> Int:
-        comptime assert (
-            Self.mode == InterpolationMode.Linear
-        ), "InterpolationMode not supported"
-        return 1
-
-    @inline(.always)
-    def filter(self, x: Float32) -> Float32:
-        comptime assert (
-            Self.mode == InterpolationMode.Linear
-        ), "InterpolationMode not supported"
-        return linear_filter(x)
-
-
 def resize_nearest_neighbor[
     coordinate_transformation_mode: CoordinateTransformationMode,
     round_mode: RoundMode,
@@ -259,9 +215,7 @@ def interpolate_point_1d[
     coordinate_transformation_mode: CoordinateTransformationMode,
     antialias: Bool,
     dtype: DType,
-    interpolation_mode: InterpolationMode,
 ](
-    interpolator: Interpolator[interpolation_mode],
     dim: Int,
     out_coords: IndexList[InputLayoutType.rank],
     scale: Float32,
@@ -277,10 +231,8 @@ def interpolate_point_1d[
         coordinate_transformation_mode: The coordinate transformation mode to apply.
         antialias: Whether to stretch the filter to antialias when downsampling.
         dtype: The element type of the input and output tensors.
-        interpolation_mode: The interpolation mode to use.
 
     Args:
-        interpolator: The interpolator providing the filter function.
         dim: The dimension along which to interpolate.
         out_coords: The multi-dimensional coordinates of the output point.
         scale: The ratio of output dimension size to input dimension size.
@@ -293,10 +245,10 @@ def interpolate_point_1d[
         )
         + 0.5
     )
+    # The tent filter has a half-width of 1, stretched by filter_scale.
     var filter_scale = 1 / scale if antialias and scale < 1 else 1
-    var support = Float32(interpolator.filter_length()) * filter_scale
-    var xmin = max(Int(center - support + 0.5), 0)
-    var xmax = min(Int(input.dim(dim)), Int(center + support + 0.5))
+    var xmin = max(Int(center - filter_scale + 0.5), 0)
+    var xmax = min(Int(input.dim(dim)), Int(center + filter_scale + 0.5))
     var in_coords = out_coords
     var sum = Scalar[dtype](0)
     var acc = Scalar[dtype](0)
@@ -306,7 +258,7 @@ def interpolate_point_1d[
         var dist_from_center = (
             (Float32(k + xmin) + Float32(0.5)) - center
         ) * ss
-        var filter_coeff = interpolator.filter(dist_from_center).cast[dtype]()
+        var filter_coeff = linear_filter(dist_from_center).cast[dtype]()
         var in_idx = input.layout(Coord(in_coords))
         acc += input.raw_load(in_idx) * filter_coeff
         sum += filter_coeff
@@ -329,30 +281,14 @@ def resize_linear[
 
     Parameters:
         coordinate_transformation_mode: How to map a coordinate in output to a coordinate in input.
-        antialias: Whether or not to use an antialiasing linear/cubic filter, which when downsampling, uses
-            more points to avoid aliasing artifacts. Effectively stretches the filter by a factor of 1 / scale.
+        antialias: Whether to stretch the linear filter by 1 / scale when
+            downsampling, which reads more input points to avoid aliasing.
         dtype: Type of input and output.
 
     Args:
         input: The input to be resized.
         output: The output containing the resized input.
-
-
     """
-    _resize[
-        InterpolationMode.Linear, coordinate_transformation_mode, antialias
-    ](input, output)
-
-
-def _resize[
-    interpolation_mode: InterpolationMode,
-    coordinate_transformation_mode: CoordinateTransformationMode,
-    antialias: Bool,
-    dtype: DType,
-](
-    input: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
-):
     comptime assert (
         input.rank == output.rank
     ), "input rank must match output rank"
@@ -376,7 +312,6 @@ def _resize[
         ]()
         if Int(input.dim(i)) != Int(output.dim(i)):
             resize_dims.append(i)
-    var interpolator = Interpolator[interpolation_mode]()
 
     var in_ptr = input.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     # SAFETY: Placeholder; always overwritten below.
@@ -428,7 +363,6 @@ def _resize[
                     coordinate_transformation_mode,
                     antialias,
                 ](
-                    interpolator,
                     resize_dim,
                     rebind[IndexList[in_buf.rank]](coords),
                     scales[resize_dim],
