@@ -572,7 +572,7 @@ ParseResult KGEN::parseI1Flag(AsmParser &p, TypedAttr &value,
     value = p.getBuilder().getBoolAttr(false);
     return success();
   }
-  if (failed(p.parseLess())) {
+  if (failed(p.parseOptionalLess())) {
     value = p.getBuilder().getBoolAttr(true);
     return success();
   }
