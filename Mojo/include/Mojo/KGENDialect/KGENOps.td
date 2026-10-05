@@ -220,7 +220,7 @@ def KGEN_GeneratorOp : KGENOp<"generator", [
     OptionalAttr<KGEN_PogListAttr>:$sourceParamList,
     // Stable snapshot of the source `FuncTypeGeneratorType` (parameter types +
     // body func type), captured during `LowerLIT` wrapped in a `TypeParamAttr`
-    // (`#kgen.type<...>`) so `LowerLITTypes` lowers it in the value domain: the
+    // (`#kgen.type<...>`) so its type lowering takes it in the value domain: the
     // snapshot's argument/result types (the generator body) come out in the
     // value domain, which reflection clients need. Its POG metadata is stripped
     // along with the live signature's; `sourceParamList` carries the
