@@ -21,7 +21,7 @@ import sys
 from collections.abc import Generator
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
@@ -88,6 +88,7 @@ from max.serve.router.openai_routes import (
     _batch_id,
     _coerce_positive_float,
     _coerce_positive_int,
+    _conversation_turn,
     _convert_chat_completion_tools_to_token_generator_tools,
     _create_response_format,
     _get_cache_salt,
@@ -99,6 +100,7 @@ from max.serve.router.openai_routes import (
     get_tool_parser,
     openai_create_chat_completion,
     openai_parse_chat_completion_request,
+    record_request_end,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -1410,6 +1412,7 @@ def _make_mock_request() -> Mock:
     mock_request.request_path = "/v1/chat/completions"
     mock_request.sampling_params = Mock()
     mock_request.sampling_params.stop = []
+    mock_request.messages = []
     return mock_request
 
 
@@ -1712,6 +1715,116 @@ async def test_openai_chat_completion_usage_present_with_max_tokens_one(
     assert response.usage.prompt_tokens == 12
     assert response.usage.completion_tokens == 0
     assert response.usage.total_tokens == 12
+
+
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        pytest.param([], None, id="no_messages"),
+        pytest.param(["user"], "first", id="opening_turn"),
+        pytest.param(["system", "user"], "first", id="system_prompt_only"),
+        pytest.param(
+            ["system", "user", "assistant", "user"], "later", id="second_turn"
+        ),
+        pytest.param(
+            ["user", "assistant", "tool"], "later", id="tool_result_turn"
+        ),
+    ],
+)
+def test_conversation_turn(
+    roles: list[Literal["system", "user", "assistant", "tool"]],
+    expected: str | None,
+) -> None:
+    messages = [
+        TextGenerationRequestMessage(role=role, content="x") for role in roles
+    ]
+    assert _conversation_turn(messages) == expected
+
+
+def test_record_request_end_labels_input_tokens_with_the_turn() -> None:
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end("/v1/chat/completions", 1.0, 3, 10, "later")
+
+    metrics_mock.input_tokens.assert_called_once_with(10)
+    metrics_mock.input_tokens_per_request.assert_called_once_with(10, "later")
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_reports_the_conversation_turn() -> None:
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="done",
+            token_count=1,
+            prompt_token_count=9,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+    mock_request = _make_mock_request()
+    mock_request.messages = [
+        TextGenerationRequestMessage(role="user", content="hi"),
+        TextGenerationRequestMessage(role="assistant", content="hello"),
+        TextGenerationRequestMessage(role="user", content="again"),
+    ]
+
+    with (
+        patch("max.serve.router.openai_routes.METRICS", MagicMock()),
+        patch("max.serve.router.openai_routes.record_request_start"),
+        patch("max.serve.router.openai_routes.record_request_end") as end_mock,
+    ):
+        await OpenAIChatResponseGenerator(mock_pipeline).complete(
+            [mock_request]
+        )
+
+    assert end_mock.call_count == 1
+    assert end_mock.call_args.args[3] == 9
+    assert end_mock.call_args.args[4] == "later"
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        pytest.param(["user"], "first", id="opening_turn"),
+        pytest.param(["user", "assistant", "user"], "later", id="second_turn"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_pretokenized_chat_completion_reports_the_conversation_turn(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    roles: list[str],
+    expected: str,
+) -> None:
+    # The orchestrator sends prompt_tokens beside the messages, and the
+    # route drops the messages from the token request it builds.
+    # sse-starlette binds this event to the first streaming test's loop
+    # (sysid/sse-starlette#59).
+    monkeypatch.setattr(AppStatus, "should_exit_event", None)
+    request = {
+        "model": "echo",
+        "messages": [{"role": role, "content": "hi"} for role in roles],
+        "prompt_tokens": [101, 202, 303],
+        "stream": stream,
+    }
+
+    with patch("max.serve.router.openai_routes.record_request_end") as end_mock:
+        async with AsyncTestClient(app, timeout=20.0) as client:
+            response = await client.post(
+                "/v1/chat/completions", json=request, stream=stream
+            )
+            assert response.status_code == 200
+            if stream:
+                async for _ in response.iter_content(1024):
+                    pass
+
+    assert end_mock.call_count == 1
+    assert end_mock.call_args.args[4] == expected
 
 
 def _all_reasoning_chunks(

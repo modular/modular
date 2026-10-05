@@ -25,7 +25,7 @@ from contextlib import (
     contextmanager,
 )
 from dataclasses import dataclass, field
-from typing import get_args
+from typing import Literal, get_args
 
 from max.serve.config import Settings
 from opentelemetry import context
@@ -59,6 +59,8 @@ _meter = get_meter_provider().get_meter("modular")
 
 NumberType = float | int
 OtelAttributes = dict[str, str] | None
+# The ``turn`` label on ``maxserve.input_tokens_per_request``.
+ConversationTurn = Literal["first", "later"]
 
 # API_PROXIES the "types" of measurements we make from a meter
 # SDK instruments are the "types" that actually do recording
@@ -329,7 +331,9 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.input_tokens_per_request": _meter.create_histogram(
         "maxserve.input_tokens_per_request",
         unit="tokens",
-        description="Distribution of input tokens per request.",
+        description=(
+            "Distribution of input tokens per request. Chat requests carry a `turn` label: `first` when the conversation has no assistant message yet, `later` when it resends earlier turns. Completion requests carry none."
+        ),
     ),  # type: ignore
     "maxserve.output_tokens_per_request": _meter.create_histogram(
         "maxserve.output_tokens_per_request",
@@ -1647,12 +1651,17 @@ class _AsyncMetrics:
             ),
         )
 
-    def input_tokens_per_request(self, value: int) -> None:
+    def input_tokens_per_request(
+        self, value: int, turn: ConversationTurn | None = None
+    ) -> None:
+        attributes = self.extra_attributes
+        if turn is not None:
+            attributes = {**attributes, "turn": turn}
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.input_tokens_per_request",
                 value,
-                self.extra_attributes,
+                attributes,
             ),
         )
 

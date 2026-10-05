@@ -154,7 +154,7 @@ from max.serve.schemas.openai import (
 )
 from max.serve.telemetry._trace_context import set_phase_parent
 from max.serve.telemetry.common import request_trace_ctx
-from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.metrics import METRICS, ConversationTurn
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import RequestQueueFull
 from openai.types.chat.chat_completion_chunk import (
@@ -354,12 +354,30 @@ def record_request_start() -> None:
     METRICS.reqs_running(1)
 
 
+def _conversation_turn(
+    messages: Sequence[TextGenerationRequestMessage],
+) -> ConversationTurn | None:
+    """Tells a conversation's opening request from one that resends history.
+
+    A chat API is stateless, so a client continuing a conversation sends
+    the earlier turns again, assistant replies included. Their absence is
+    what marks the opening turn. Returns None for a request without
+    messages, such as a completion.
+    """
+    if not messages:
+        return None
+    if any(message.role == "assistant" for message in messages):
+        return "later"
+    return "first"
+
+
 @traced
 def record_request_end(
     request_path: str,
     elapsed_ms: float,
     output_tokens: int | None = None,
     input_tokens: int | None = None,
+    turn: ConversationTurn | None = None,
 ) -> None:
     # The HTTP status code is labeled onto ``maxserve.request_count`` by the
     # ``register_request`` middleware, which knows the code actually returned to
@@ -371,7 +389,7 @@ def record_request_end(
         METRICS.output_tokens_per_request(output_tokens)
     if input_tokens is not None:
         METRICS.input_tokens(input_tokens)
-        METRICS.input_tokens_per_request(input_tokens)
+        METRICS.input_tokens_per_request(input_tokens, turn)
 
 
 @overload
@@ -549,10 +567,14 @@ class OpenAIChatResponseGenerator(
         emit_reasoning_content: bool = False,
         response_format_json_schema: dict[str, Any] | None = None,
         return_token_ids: bool = False,
+        turn: ConversationTurn | None = None,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
         self.return_token_ids = return_token_ids
+        # A pre-tokenized request reaches the generator without its
+        # messages, so the route classifies the turn and passes it in.
+        self._turn = turn
         # MiniMax ``reasoning_split=False`` folds reasoning into ``content`` as ``<think>...</think>``; ``_think_*`` track the stream fold.
         self.fold_reasoning_into_content = fold_reasoning_into_content
         self._think_opened = False
@@ -1154,6 +1176,7 @@ class OpenAIChatResponseGenerator(
                 # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
                 n_reasoning_tokens + n_tokens,
                 n_prompt_tokens,
+                self._turn or _conversation_turn(request.messages),
             )
 
     async def complete(
@@ -1398,6 +1421,7 @@ class OpenAIChatResponseGenerator(
                 # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
                 n_reasoning_tokens + n_tokens,
                 n_prompt_tokens,
+                self._turn or _conversation_turn(request.messages),
             )
 
     def _parse_resp_to_json(self, text: str) -> list[Any] | None:
@@ -2400,6 +2424,7 @@ async def openai_create_chat_completion(
             emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
             response_format_json_schema=response_format_json_schema,
             return_token_ids=completion_request.return_token_ids,
+            turn=_conversation_turn(request_messages),
         )
         # Use request-level sampling params if provided, else server defaults.
         temp = (
