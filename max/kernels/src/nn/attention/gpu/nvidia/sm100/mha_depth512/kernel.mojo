@@ -38,7 +38,12 @@ from max.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory, fence_mbarrier_init
-from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
+from max.gpu.primitives.cluster import (
+    block_rank_in_cluster,
+    cluster_arrive_relaxed,
+    cluster_sync,
+    cluster_wait,
+)
 from max.gpu.compute.arch.tcgen05 import (
     tcgen05_alloc,
     tcgen05_dealloc,
@@ -264,6 +269,15 @@ struct SM100MHADepth512[
 
         # ---- Initialization (per-CTA, then cluster sync) ----------------
 
+        # The pair-CTA `tcgen05.alloc` lowers to a handshake on an mbarrier in
+        # both CTAs' reserved SMEM, which the driver initializes before the
+        # kernel body runs. Nothing in the body orders that init before the
+        # peer's arrive, so compute-sanitizer racecheck reports a race unless a
+        # cluster barrier precedes the alloc. A full `cluster_sync()` here
+        # costs 1-4% on prefill (every CTA pays a round trip before barrier
+        # init); splitting it costs nothing measurable, because only the
+        # allocating warp waits, and the alloc already waits for the peer.
+        cluster_arrive_relaxed()
         var warp_idx = UInt32(warp_id[broadcast=True]())
         __match warp_idx:
             case 0:
@@ -273,6 +287,7 @@ struct SM100MHADepth512[
                 ).init(lane_idx=Int32(thread_idx.x))
             case 1:
                 # TMEM allocation (pair-CTA cooperative).
+                cluster_wait()
                 tcgen05_alloc[Int32(Self.cta_group)](
                     smem.tmem_addr_ptr(),
                     UInt32(Self.config.sm100_tmem_cols),
@@ -286,6 +301,8 @@ struct SM100MHADepth512[
                 if e != 0:
                     v_tma_op.prefetch_descriptor()
 
+        if warp_idx != 1:
+            cluster_wait()
         fence_mbarrier_init()
         cluster_sync()
 
