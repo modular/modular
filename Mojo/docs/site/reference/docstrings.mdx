@@ -9,11 +9,11 @@ description: >
   math, and the @doc_hidden decorator.
 ---
 
-<!--
+{/*
 VERIFIED: Mojo/lib/MojoParser/DocString.cpp,
   Mojo/lib/MojoTooling/ParserDriverREPL.cpp,
   Mojo/docs/contributing/stdlib/docstring-style-guide.md
--->
+*/}
 
 Mojo uses docstring literals to generate API reference documentation data,
 which can be processed to produce page content or read directly from
@@ -47,16 +47,16 @@ Mojo docstrings follow conventions used by
 Docstrings let you document declarations at the point they appear
 in the source file.
 
-| Declaration         | Position                                  |
-|---------------------|-------------------------------------------|
-| Function or method  | After the signature, before the body      |
-| Struct or trait     | After the opening line, before members    |
-| Field or `comptime` | After the declaration, not before it      |
-| Module or Package   | First string in the file, after imports   |
+| Declaration         | Position                                 |
+|---------------------|------------------------------------------|
+| Function or method  | After the signature, before the body     |
+| Struct or trait     | After the opening line, before members   |
+| Field or `comptime` | After the declaration, not before it     |
+| Module or Package   | First string in the file, before imports |
 
-Type, trait, and function docstrings use the same indentation level as the
-declaration. Field and `comptime` docstrings use the same indentation level
-as the field or `comptime` name.
+Type, trait, and function docstrings sit at the body's indentation Field
+and `comptime` docstrings use the same indentation level as the field or
+`comptime` name.
 
 ```mojo
 struct Color:
@@ -144,8 +144,8 @@ def resize[dtype: DType](
     ...
 ```
 
-Mojo doesn't define a canonical set of section labels. Any `Label:` starts
-a new section.
+`Parameters:`, `Args:`, `Returns:`, `Raises:`, `Constraints:` are sections;
+a body under `Notes:` draws no warning.
 
 ### `Parameters` and `Constraints`
 
@@ -215,17 +215,30 @@ print(numbers)  # [1, 2, 4, 9]
 ```
 ````
 
-### Custom labels
+### Ad hoc labels
 
-Mojo supports custom section labels. The following are recommended
-conventions:
+Mojo allows you to safely add custom section labels.
+
+- The compiler recognizes five real sections: `Parameters`, `Args`,
+  `Returns`, `Raises`, `Constraints`.
+- `Example`, `Examples`, `Note`, `Notes`, `Warning`, `Performance`, and
+  `Safety` are recognized by the documentation generator, but are not fully
+  supported by the compiler.
+- Additional custom labels are allowed but not rendered by the docs
+  generator. For example: `Preconditions` and `References` (like "`See`" in
+  other languages).
+
+These allow you to expand structured information in your docstrings
+without affecting the generated documentation.
+
+The following are recommended conventions:
 
 | Label            | Documents                                    |
 |------------------|----------------------------------------------|
 | `Preconditions:` | Runtime conditions the caller must satisfy   |
 | `Performance:`   | Performance characteristics and tradeoffs    |
 | `Safety:`        | Safety requirements and undefined behavior   |
-| `See:`           | Related APIs, concepts, and references       |
+| `References:`    | Related APIs, concepts, and references       |
 
 Use `Preconditions:` for runtime conditions the caller must satisfy
 before calling, where a violation aborts the program (for example, a
@@ -249,7 +262,7 @@ Use `Safety:` for requirements, invariants, and operations that can
 lead to undefined behavior, memory safety issues, invalid references,
 or other unsafe states when used incorrectly.
 
-Use `See:` to link to related APIs, standards documents, algorithms,
+Use `References:` to link to related APIs, standards documents, algorithms,
 and external references.
 
 Mojo also accepts other labels, such as `Notes:`, but prefer putting that
@@ -261,8 +274,13 @@ section.
 Mojo doesn't enforce an order among sections, but a consistent order helps
 readers scan. Recommended order:
 
+{/*
 `Parameters:` → `Args:` → `Returns:` → `Raises:` → `Preconditions:` →
-`Constraints:` → `Safety:` → `Performance:` → `See:` → `Examples:`
+`Constraints:` → `Safety:` → `Performance:` → `References:` → `Examples:`
+*/}
+
+`Parameters:` → `Args:` → `Returns:` → `Raises:` →
+`Constraints:` → `Examples:`
 
 Include only the sections that apply, and put `Examples:` last.
 
@@ -277,7 +295,8 @@ documentation output.
 ```mojo
 @doc_hidden
 def _internal_helper(data: Pointer[UInt8, MutAnyOrigin]) -> Int:
-    pass
+    # rest of some implementation
+    return 0
 ```
 
 Common uses include:
@@ -362,8 +381,7 @@ with 'd'
 
 ```sh
 $ mojo doc --diagnose-missing-doc-strings optionalref.mojo
-optionalref.mojo:1:1: warning: public module 'OptionalRef' is missing a
-doc string
+warning: public module 'optionalref' is missing a doc string
 @fieldwise_init
 ^
 optionalref.mojo:2:8: warning: struct takes parameters, but has no
