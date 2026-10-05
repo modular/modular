@@ -6464,7 +6464,7 @@ index 4f1cc65..fc159f2 100644
 
  namespace xgrammar {
 
-@@ -17,9 +27,29 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
+@@ -17,9 +27,39 @@ const std::string XMLToolCallingConverter::kXMLString = "xml_string";
  const std::string XMLToolCallingConverter::kXMLAny = "xml_any";
  const std::string XMLToolCallingConverter::kXMLObject = "xml_object";
  const std::string XMLToolCallingConverter::kXMLVariableName = "xml_variable_name";
@@ -6492,13 +6492,35 @@ index 4f1cc65..fc159f2 100644
 +          /*bare_value_regex_exact=*/true,
 +          /*any_string_is_json=*/true,
 +          /*container_value_balanced=*/true}},
-         {JSONFormat::kMiniMaxXML, {"<parameter name=\\\"", "\\\">", "", "</parameter>"}},
+-        {JSONFormat::kMiniMaxXML, {"<parameter name=\\\"", "\\\">", "", "</parameter>"}},
++        {JSONFormat::kMiniMaxXML,
++         {"<parameter name=\\\"",
++          "\\\">",
++          "",
++          "</parameter>",
++          /*key_is_tag=*/false,
++          /*xml_all_depths=*/false,
++          /*array_item_tag=*/"",
++          /*value_framing_stripped=*/false,
++          /*bare_value_regex_exact=*/false,
++          /*any_string_is_json=*/true}},
          {JSONFormat::kDeepSeekXML,
           {"<｜DSML｜parameter name=\\\"",
-@@ -28,6 +58,14 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
+@@ -28,6 +68,24 @@ const std::unordered_map<JSONFormat, XMLToolCallingConverter::XMLWrapper>
            // TODO(Linzhang): we do not validate the string's value, and we accept both.
            "</｜DSML｜parameter>"}},
-         {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
+-        {JSONFormat::kGlmXML, {"<arg_key>", "</arg_key>", "<arg_value>", "</arg_value>"}},
++        {JSONFormat::kGlmXML,
++         {"<arg_key>",
++          "</arg_key>",
++          "<arg_value>",
++          "</arg_value>",
++          /*key_is_tag=*/false,
++          /*xml_all_depths=*/false,
++          /*array_item_tag=*/"",
++          /*value_framing_stripped=*/false,
++          /*bare_value_regex_exact=*/false,
++          /*any_string_is_json=*/true}},
 +        {JSONFormat::kMiniMaxM3XML,
 +         {"",
 +          "",

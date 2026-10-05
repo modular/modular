@@ -4057,15 +4057,16 @@ def _compile_one_parameter(
     return _compiler().compile_structural_tag(tag)
 
 
+@pytest.mark.parametrize("style", ["qwen_xml", "minimax_xml", "glm_xml"])
 @pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
-def test_xml_nested_any_value_is_json_on_qwen(
-    parameter: dict[str, Any], valid: str, runaway: str
+def test_xml_nested_any_value_is_json(
+    style: _XmlStyle, parameter: dict[str, Any], valid: str, runaway: str
 ) -> None:
-    # An any-typed value inside a qwen_xml parameter's JSON is itself JSON; a
-    # bare-value string there would run to </parameter> and admit any text.
-    compiled = _compile_one_parameter(parameter, "qwen_xml")
-    assert _accepts(compiled, _xml_frame("qwen_xml", valid))
-    assert not _accepts(compiled, _xml_frame("qwen_xml", runaway))
+    # An any-typed value inside a parameter's JSON is itself JSON; a bare-value
+    # string there would run to the value's close delimiter and admit any text.
+    compiled = _compile_one_parameter(parameter, style)
+    assert _accepts(compiled, _xml_frame(style, valid))
+    assert not _accepts(compiled, _xml_frame(style, runaway))
 
 
 def test_xml_top_level_any_value_stays_bare_on_qwen() -> None:
@@ -4073,16 +4074,15 @@ def test_xml_top_level_any_value_stays_bare_on_qwen() -> None:
     assert _accepts(compiled, _xml_frame("qwen_xml", "free text, {a: 1 zzz"))
 
 
-@pytest.mark.parametrize("style", ["minimax_xml", "glm_xml", "deepseek_xml"])
 @pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
-def test_xml_nested_any_value_unchanged_on_other_styles(
-    style: _XmlStyle, parameter: dict[str, Any], valid: str, runaway: str
+def test_xml_nested_any_value_unchanged_on_deepseek(
+    parameter: dict[str, Any], valid: str, runaway: str
 ) -> None:
-    # TODO(qwen-hotfix-9 follow-up): these styles share the widening fixed
-    # for qwen_xml; the runaway assertion flips when they get the same fix.
-    compiled = _compile_one_parameter(parameter, style)
-    assert _accepts(compiled, _xml_frame(style, valid))
-    assert _accepts(compiled, _xml_frame(style, runaway))
+    # TODO(qwen-hotfix-9 follow-up): deepseek_xml shares the widening fixed for
+    # the other XML styles; the runaway assertion flips when it gets the fix.
+    compiled = _compile_one_parameter(parameter, "deepseek_xml")
+    assert _accepts(compiled, _xml_frame("deepseek_xml", valid))
+    assert _accepts(compiled, _xml_frame("deepseek_xml", runaway))
 
 
 def _pattern_keyed(pattern: str) -> dict[str, Any]:

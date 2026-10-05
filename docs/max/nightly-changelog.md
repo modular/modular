@@ -801,6 +801,13 @@ This version is still a work in progress.
   literal now keeps its JSON form inside the value markers. The tag-keyed
   formats, which spell an object as nested tags and so have no JSON form to
   fall back on, reject it with an explicit message instead.
+- Fixed GLM and MiniMax-M2 tool calls whose arguments hold free-form JSON
+  (for example a list of objects typed as a model or a plain dict) running to
+  `max_tokens` on `/v1/chat/completions`. The tool-call grammar gave a string
+  nested inside such a value the bare-value rule, which cannot be closed from
+  inside JSON, so the value's close marker and every EOS stayed masked for the
+  rest of the request. The call's argument was dropped and the response ran
+  to the length limit. A nested string is now a quoted JSON string.
 - Fixed a GLM tool-call argument pinned by `const` or `enum` to a string that
   reads as a number or a boolean (`"2.0"`, `"true"`) being reported as that
   number or boolean. GLM emits argument values bare, so the parser recovers the
