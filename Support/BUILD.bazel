@@ -618,8 +618,8 @@ PROFILING_DEPS = [
 })
 
 # Modular's Tracy profiler integration (CPU zones + the TracyCuda/TracyRocm
-# GPU backends). The FILES live under Support/internal/ so they follow the
-# standardized internal-directory exclusion and are never part of any
+# GPU backends). The headers live under Support/mcl/ and the GPU backend
+# sources under Support/internal/, so neither is part of the public
 # open-source export; this target keeps the long-standing name so the many
 # compiler-stack consumers keep their dep label and the OSS build keeps
 # stubbing it by name in oss/modular/bazel/api.bzl.
@@ -630,10 +630,10 @@ modular_cc_library(
         "internal/Tracy/TracyRocm.cpp",
     ],
     hdrs = [
-        "internal/Tracy/Tracy.h",
-        "internal/Tracy/TracyCuda.h",
-        "internal/Tracy/TracyRocm.h",
-        "internal/Tracy/TracyZone.h",
+        "mcl/Tracy/Tracy.h",
+        "mcl/Tracy/TracyCuda.h",
+        "mcl/Tracy/TracyRocm.h",
+        "mcl/Tracy/TracyZone.h",
     ],
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
