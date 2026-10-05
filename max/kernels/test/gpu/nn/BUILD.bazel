@@ -564,6 +564,7 @@ _FILECHECK_TESTS = [
             "test_mla_prefill_amd_cached_prefix.mojo",
             "test_mla_prefill_amd_plan_gather.mojo",
             "test_mla_prefill_amd_gather_sentinel_guard.mojo",
+            "test_mla_prefill_plan_chunk_overflow.mojo",
             "_paged_prefill_test_utils.mojo",
             # SM100 FA4 1Q split-K combine test: fully covered by the explicit
             # b200-gated (mask, depth, P) registrations below. Exclude the default
@@ -1581,6 +1582,34 @@ mojo_test(
         "//:mi355_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# `mla_prefill_plan_kernel`'s defense-in-depth backstop: a sequence whose
+# start position overflows the fixed MAX_CHUNKS buffer aborts loudly instead
+# of silently producing wrong gather offsets. Platform-generic (no MFMA/TMA),
+# unlike the AMD-only plan+gather test above, so this runs on any GPU.
+mojo_filecheck_test(
+    name = "test_mla_prefill_plan_chunk_overflow.mojo.test",
+    size = "large",
+    srcs = [
+        "_paged_prefill_test_utils.mojo",
+        "test_mla_prefill_plan_chunk_overflow.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    expect_crash = True,
+    main = "test_mla_prefill_plan_chunk_overflow.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
     deps = [
         "//max:internal_utils",
         "//max:kv_cache",

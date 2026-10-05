@@ -4709,6 +4709,16 @@ def mla_prefill_plan_kernel[
 
     # which chunk this sequence starts in
     var start_chunk = seq_start_pos // buffer_size
+    # The batch scheduler is expected to cap combined context so this
+    # never fires in practice. This is a backstop against that invariant ever
+    # breaking (which has happened before).
+    debug_assert(
+        start_chunk < MAX_CHUNKS,
+        (
+            "mla_prefill_plan_kernel: start_chunk exceeds MAX_CHUNKS; the"
+            " batch's combined context overflowed the prefill buffer"
+        ),
+    )
     var processed_seq_len = UInt32(0)
     var seq_len_left = curr_seq_len
 
