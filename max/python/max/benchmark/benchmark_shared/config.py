@@ -1180,7 +1180,8 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         default=None,
         description=(
             "When set, num_prompts is computed as num_prompts_multiplier * max_concurrency "
-            "for each concurrency level, replacing the default 300s duration timeout."
+            "for each concurrency level. Mutually exclusive with --num-prompts. Each level "
+            "still stops at --max-benchmark-duration-s, which defaults to 300s."
         ),
         json_schema_extra={"group": "Sweep Configuration"},
     )

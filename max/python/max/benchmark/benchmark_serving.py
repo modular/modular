@@ -1167,12 +1167,17 @@ def _load_workload_yaml(args: ServingBenchmarkConfig) -> None:
         # Workload should itself be parsed with Pydantic so we don't need to
         # defer validation like so.
         args.max_concurrency = yaml_max_concurrency
-    # Resolve num_prompts: CLI > YAML > default (deferred).
-    cli_num_prompts = args.num_prompts is not None
+    # --num-prompts and --num-prompts-multiplier both set the request count,
+    # so either one on the CLI overrides both in the YAML.
     yaml_num_prompts = workload.pop("num-prompts", None)
-    if not cli_num_prompts:
+    yaml_multiplier = workload.pop("num-prompts-multiplier", None)
+    if args.num_prompts is None and args.num_prompts_multiplier is None:
         if yaml_num_prompts is not None:
             args.num_prompts = int(yaml_num_prompts)
+        if yaml_multiplier is not None:
+            # Assign the raw value so validation rejects a fractional
+            # multiplier instead of int() truncating it.
+            args.num_prompts_multiplier = yaml_multiplier
     # Resolve max_benchmark_duration_s: CLI > YAML.
     w_duration = workload.pop("max-benchmark-duration-s", None)
     if w_duration is not None and args.max_benchmark_duration_s is None:
@@ -1181,48 +1186,77 @@ def _load_workload_yaml(args: ServingBenchmarkConfig) -> None:
     args.skip_test_prompt = True
 
 
-def _apply_run_length_defaults(args: ServingBenchmarkConfig) -> None:
-    has_prompts = args.num_prompts is not None
-    has_duration = args.max_benchmark_duration_s is not None
-    has_multiplier = args.num_prompts_multiplier is not None
-    # The multiplier dynamically computes num_prompts per-mc, but only
-    # when no explicit duration also constrains the run.
-    multiplier_will_resolve = has_multiplier and not has_duration
-    if not has_prompts and not has_duration and not has_multiplier:
-        logger.warning(
-            "Neither --num-prompts nor --max-benchmark-duration-s is"
-            " specified. Defaulting to --num-prompts 1000 and"
-            " --max-benchmark-duration-s 300"
-        )
-        args.num_prompts = 1000
-        args.max_benchmark_duration_s = 300
-    elif not has_prompts and not multiplier_will_resolve:
-        args.num_prompts = 1000
+_DEFAULT_NUM_PROMPTS = 1000
+_DEFAULT_MAX_BENCHMARK_DURATION_S = 300
 
 
-def _apply_dynamic_num_prompts(
+@dataclass(frozen=True)
+class EndCondition:
+    """When each run in a sweep stops sending requests.
+
+    A run ends once it has sent its request count or reached
+    ``max_duration_s``, whichever comes first. The count is either fixed
+    (``num_prompts``) or scales with the run's max concurrency
+    (``num_prompts_multiplier``); exactly one of the two is set.
+    """
+
+    num_prompts: int | None
+    num_prompts_multiplier: int | None
+    max_duration_s: int | None
+
+    def num_prompts_for(self, max_concurrency: int | None) -> int:
+        """Returns the request count for a run at ``max_concurrency``."""
+        if self.num_prompts_multiplier is None:
+            assert self.num_prompts is not None
+            return self.num_prompts
+        assert max_concurrency is not None
+        return self.num_prompts_multiplier * max_concurrency
+
+
+def _resolve_end_condition(
     args: ServingBenchmarkConfig,
     concurrency_range: Sequence[int | None],
-) -> bool:
-    use_dynamic_num_prompts = (
-        args.num_prompts_multiplier is not None
-        and args.num_prompts is None
-        and args.max_benchmark_duration_s is None
+) -> EndCondition:
+    num_prompts = args.num_prompts
+    multiplier = args.num_prompts_multiplier
+    duration_s = args.max_benchmark_duration_s
+    if num_prompts is not None and multiplier is not None:
+        raise ValueError(
+            "--num-prompts and --num-prompts-multiplier both set the request"
+            " count; pass only one."
+        )
+    if multiplier is not None:
+        if None in concurrency_range:
+            raise ValueError(
+                "--num-prompts-multiplier scales with --max-concurrency, so"
+                " every --max-concurrency value must be bounded; got"
+                f" {list(concurrency_range)} (the default is unbounded)."
+            )
+        # Without a time limit, the large counts the multiplier produces at
+        # high concurrency could run indefinitely.
+        if duration_s is None:
+            logger.info(
+                "Using --num-prompts-multiplier without"
+                " --max-benchmark-duration-s. Defaulting to"
+                f" {_DEFAULT_MAX_BENCHMARK_DURATION_S}s per max-concurrency"
+                " level."
+            )
+            duration_s = _DEFAULT_MAX_BENCHMARK_DURATION_S
+    elif num_prompts is None:
+        if duration_s is None:
+            logger.warning(
+                "Neither --num-prompts nor --max-benchmark-duration-s is"
+                f" specified. Defaulting to --num-prompts {_DEFAULT_NUM_PROMPTS}"
+                " and --max-benchmark-duration-s"
+                f" {_DEFAULT_MAX_BENCHMARK_DURATION_S}"
+            )
+            duration_s = _DEFAULT_MAX_BENCHMARK_DURATION_S
+        num_prompts = _DEFAULT_NUM_PROMPTS
+    return EndCondition(
+        num_prompts=num_prompts,
+        num_prompts_multiplier=multiplier,
+        max_duration_s=duration_s,
     )
-    if use_dynamic_num_prompts:
-        assert args.num_prompts_multiplier is not None
-        max_mc = max(
-            (mc for mc in concurrency_range if mc is not None), default=1
-        )
-        args.num_prompts = args.num_prompts_multiplier * max_mc
-        # When using num_prompts_multiplier without explicit duration, default to
-        # 300s timeout per MC config to prevent indefinitely long benchmark runs.
-        logger.info(
-            "Using --num-prompts-multiplier without --max-benchmark-duration-s."
-            " Defaulting to 300s timeout per max-concurrency configuration."
-        )
-        args.max_benchmark_duration_s = 300
-    return use_dynamic_num_prompts
 
 
 def _resolve_seed(args: ServingBenchmarkConfig) -> None:
@@ -1462,6 +1496,7 @@ def _build_session(args: ServingBenchmarkConfig) -> BenchmarkSession:
 def _run_dry_run_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
+    end_condition: EndCondition,
     concurrency_range: Sequence[int | None],
     request_rate_range: Sequence[float],
 ) -> Iterator[BenchmarkRunResult]:
@@ -1493,6 +1528,7 @@ def _run_dry_run_sweep(
             if report is not None:
                 log_warmup_sampling_report(report)
     for mc in concurrency_range:
+        num_prompts = end_condition.num_prompts_for(mc)
         for rr in request_rate_range:
             print(
                 f"Dry run: model={args.model}"
@@ -1500,32 +1536,33 @@ def _run_dry_run_sweep(
                 f" endpoint={args.endpoint}"
                 f" max_concurrency={mc}"
                 f" request_rate={rr}"
-                f" num_prompts={args.num_prompts}"
+                f" num_prompts={num_prompts}"
                 f" max_benchmark_duration_s="
-                f"{args.max_benchmark_duration_s}"
+                f"{end_condition.max_duration_s}"
             )
             yield BenchmarkRunResult(
                 max_concurrency=mc,
                 request_rate=rr,
-                num_prompts=args.num_prompts or 0,
+                num_prompts=num_prompts,
             )
 
 
 def _run_benchmark_sweep(
     args: ServingBenchmarkConfig,
     session: BenchmarkSession,
-    use_dynamic_num_prompts: bool,
+    end_condition: EndCondition,
 ) -> Iterator[BenchmarkRunResult]:
     # ---- Sweep loop ----
     for mc in args.max_concurrency:
-        if use_dynamic_num_prompts:
-            assert args.num_prompts_multiplier is not None
-            assert mc is not None
-            args.num_prompts = args.num_prompts_multiplier * mc
+        num_prompts = end_condition.num_prompts_for(mc)
+        if end_condition.num_prompts_multiplier is not None:
             logger.info(
-                f"Using num_prompts = {args.num_prompts_multiplier}"
-                f" * {mc} = {args.num_prompts}"
+                f"Using num_prompts = {end_condition.num_prompts_multiplier}"
+                f" * {mc} = {num_prompts}"
             )
+        # Sampling, the run itself, and the result JSON read the count
+        # from args.
+        args.num_prompts = num_prompts
 
         # Each concurrency level draws its own sample, derived from the base
         # seed, so levels are reproducible individually without replaying
@@ -1595,7 +1632,7 @@ def _run_benchmark_sweep(
             yield BenchmarkRunResult(
                 mc,
                 rr,
-                args.num_prompts or 0,
+                num_prompts,
                 result=best_result if save else None,
             )
 
@@ -1620,11 +1657,16 @@ def main_with_parsed_args(
         raise ValueError("--model is required when running benchmark")
 
     _load_workload_yaml(args)
-    _apply_run_length_defaults(args)
     _resolve_seed(args)
 
-    use_dynamic_num_prompts = _apply_dynamic_num_prompts(
-        args, args.max_concurrency
+    end_condition = _resolve_end_condition(
+        args=args, concurrency_range=args.max_concurrency
+    )
+    args.max_benchmark_duration_s = end_condition.max_duration_s
+    # The session samples once up front, so size it for the largest level.
+    args.num_prompts = max(
+        (end_condition.num_prompts_for(mc) for mc in args.max_concurrency),
+        default=end_condition.num_prompts_for(1),
     )
 
     session = _build_session(args)
@@ -1636,7 +1678,11 @@ def main_with_parsed_args(
 
     if args.dry_run:
         yield from _run_dry_run_sweep(
-            args, session, args.max_concurrency, args.request_rate
+            args=args,
+            session=session,
+            end_condition=end_condition,
+            concurrency_range=args.max_concurrency,
+            request_rate_range=args.request_rate,
         )
         return
 
@@ -1669,7 +1715,9 @@ def main_with_parsed_args(
             )
             session.tokenizer.model_max_length = max_model_len
 
-    yield from _run_benchmark_sweep(args, session, use_dynamic_num_prompts)
+    yield from _run_benchmark_sweep(
+        args=args, session=session, end_condition=end_condition
+    )
 
 
 def _extract_metadata_args(
