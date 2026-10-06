@@ -278,6 +278,10 @@ class _NamedTuple(Protocol[_T_co]):
     def __iter__(self) -> Iterator[_T_co]: ...
 
 
+#: A nested value: a leaf, or a node whose children are trees. Nodes are
+#: lists, tuples, dicts, named tuples, and classes declaring
+#: ``__tree_flatten__``. Rebuilding a node calls ``__tree_unflatten__`` or,
+#: when the node must exist before its children, ``__tree_empty__``.
 Tree: TypeAlias = (
     _T_co
     | list["Tree[_T_co]"]
