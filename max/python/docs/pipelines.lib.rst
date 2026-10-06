@@ -106,6 +106,7 @@ Functions
    get_default_max_config_file_section_name
    max_tokens_to_generate
    parse_quant_config
+   resolve_eos_token_ids
    resolve_max_config_inheritance
    try_to_load_from_cache
    validate_hf_repo_access
