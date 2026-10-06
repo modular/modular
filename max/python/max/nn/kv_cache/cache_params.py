@@ -3660,7 +3660,10 @@ def compute_num_device_blocks(
             ``max_seq_len`` cannot fit in the allocable device blocks. Set
             only when allocating a uniform pool; memory estimation probes
             oversized configs on purpose.
-        include_null_block: Whether to include room for the null block.
+        include_null_block: Whether to include room for the null block. The
+            limited path adds it to the required total; the unlimited path
+            reserves one allocable block for it. A budget that leaves no
+            request page after the null block raises.
 
     Returns:
         The number of blocks that can be allocated for a single replica.
@@ -3707,6 +3710,10 @@ def compute_num_device_blocks(
 
     if max_total_blocks is not None:
         num_blocks = min(num_allocable_blocks, max_total_blocks)
+    elif include_null_block:
+        # The unlimited path sizes the whole pool for requests. Reserve the
+        # null block's page so the capacity it reports leaves room for it.
+        num_blocks = num_allocable_blocks - 1
     else:
         num_blocks = num_allocable_blocks
 
@@ -3728,6 +3735,21 @@ def compute_num_device_blocks(
             f"One page requires {single_page_size_bytes_str} but only "
             f"{cache_memory_str} are available{across_x_devices_str}."
         )
+
+    if include_null_block:
+        # The null block holds no request. The limited path counts it in
+        # num_blocks; the unlimited path already reserved its page out.
+        request_blocks = (
+            num_blocks - 1 if max_total_blocks is not None else num_blocks
+        )
+        if request_blocks < 1:
+            two_pages_str = to_human_readable_bytes(2 * params.bytes_per_block)
+            raise RuntimeError(
+                "Insufficient cache memory to allocate the null block plus"
+                " a single request page.\nThe null block and one request page"
+                f" require {two_pages_str} but only {cache_memory_str} are"
+                f" available{across_x_devices_str}."
+            )
 
     if max_batch_size is not None and max_batch_size > num_allocable_blocks:
         memory_needed_str = to_human_readable_bytes(
@@ -3818,6 +3840,7 @@ def compute_max_seq_len_fitting_in_cache(
         available_cache_memory: The amount of cache memory available across
             all devices.
         include_null_block: Whether to include room for the null block.
+            Reserves one page of the reported capacity for it.
 
     Returns:
         The maximum sequence length that fits, or None where no length

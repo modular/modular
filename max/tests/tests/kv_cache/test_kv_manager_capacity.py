@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.nn.kv_cache import (
@@ -23,6 +24,7 @@ from max.nn.kv_cache import (
     RecurrentStateParams,
     RecurrentStateRegion,
     compute_max_seq_len_fitting_in_cache,
+    compute_num_device_blocks,
 )
 from max.pipelines.kv_cache import (
     JengaKVCacheManager,
@@ -114,10 +116,62 @@ def test_a_hybrid_is_capped_at_exactly_what_its_slab_admits() -> None:
 
 
 def test_a_homogeneous_cache_is_capped_the_same_either_way() -> None:
-    """With only full leaves both managers price a slot the same; Jenga alone
-    spends one page on the null block."""
+    """With only full leaves both managers price a slot the same, and both
+    spend a page of the budget on the null block."""
     params = _attention()
     uniform = _uniform_cap(params)
     slab = JengaKVCacheManager.max_seq_len_fitting_in_cache(params, BUDGET)
     assert slab is not None
     assert uniform - PAGE_SIZE <= slab <= uniform
+
+
+def test_the_uniform_cap_reserves_the_null_block() -> None:
+    """Reserving the null block lowers the reported capacity by one page."""
+    params = _attention()
+    without = compute_max_seq_len_fitting_in_cache(
+        params=params, available_cache_memory=BUDGET, include_null_block=False
+    )
+    assert without is not None
+    assert _uniform_cap(params) == without - PAGE_SIZE
+
+
+def test_the_advertised_cap_fits_the_pool_the_manager_builds() -> None:
+    """The cap must fit the pool ``load_kv_manager`` allocates.
+
+    ``load_kv_manager`` spends one block on the null block before sizing the
+    pool, so a cap computed without that page fails the pool's own fit
+    check on the auto-clamped path.
+    """
+    params = _attention()
+    cap = _uniform_cap(params)
+    budget = BUDGET - params.bytes_per_block * params.data_parallel_degree
+    # Raises when the cap overcommits the allocable blocks.
+    num_blocks = compute_num_device_blocks(
+        params=params,
+        available_cache_memory=budget,
+        max_batch_size=1,
+        max_seq_len=cap,
+        require_max_seq_len_fits=True,
+    )
+    assert num_blocks == ceildiv(cap, PAGE_SIZE)
+
+
+def test_a_one_page_budget_raises_rather_than_advertising_one_token() -> None:
+    """A budget that holds only the null block cannot serve a request.
+
+    Clamping the empty pool's capacity to one token would let memory
+    planning accept a config whose manager cannot reserve a request page.
+    """
+    params = _attention()
+    with pytest.raises(RuntimeError, match="null block plus"):
+        compute_max_seq_len_fitting_in_cache(
+            params=params,
+            available_cache_memory=params.bytes_per_block,
+            include_null_block=True,
+        )
+    two_pages = compute_max_seq_len_fitting_in_cache(
+        params=params,
+        available_cache_memory=params.bytes_per_block * 2,
+        include_null_block=True,
+    )
+    assert two_pages == PAGE_SIZE

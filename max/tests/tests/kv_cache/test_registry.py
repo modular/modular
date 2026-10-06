@@ -211,6 +211,32 @@ class TestLoadKvManager:
         assert call_kwargs["session"] == mock_session
         assert call_kwargs["total_num_pages"] > 0
 
+    @patch("max.pipelines.kv_cache.registry.PagedKVCacheManager")
+    def test_load_kv_manager_fits_null_block_in_budget(
+        self, mock_paged_manager_cls: MagicMock
+    ) -> None:
+        """The pages plus the manager's extra null block fit the budget.
+
+        Memory estimation can set the budget to the device's largest single
+        allocation, so a page past it fails to allocate. The batch asks for
+        more pages than the budget holds, so the budget sets the page count.
+        """
+        params = create_kv_params(num_layers=4)
+        budget = 100 * params.bytes_per_block
+
+        _load_kv_manager_with_defaults(
+            params=params,
+            max_batch_size=1000,
+            max_seq_len=params.page_size,
+            session=MagicMock(),
+            available_cache_memory=budget,
+        )
+
+        total_num_pages = mock_paged_manager_cls.call_args.kwargs[
+            "total_num_pages"
+        ]
+        assert (total_num_pages + 1) * params.bytes_per_block <= budget
+
     def test_load_kv_manager_rejects_zero_batch_size(self) -> None:
         """load_kv_manager should raise ValueError for batch_size <= 0."""
         params = create_kv_params()

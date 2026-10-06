@@ -699,6 +699,14 @@ This version is still a work in progress.
 
 ## Fixes
 
+- Fixed the paged KV cache overflowing its page budget when memory
+  estimation caps `max_length` to what fits. The pool sized itself without
+  reserving the null block's page, so the first request reserved past the
+  budget and `max serve` failed with `InsufficientBlocksError`. The budget
+  now holds the null block, and a budget too small for it plus one request
+  page fails startup with a clear error instead of advertising a one-token
+  context.
+
 - `ops.floor_div` on mixed integer dtypes such as `uint8 // int16` now
   applies the floor correction for the promoted signed dtype, so `7 // -2`
   returns `-4` instead of `-3`.

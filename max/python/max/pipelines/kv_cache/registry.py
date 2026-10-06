@@ -208,9 +208,14 @@ def load_kv_manager(
     # otherwise it cannot be preempted (there is nothing else to evict) and
     # overflows the pool at runtime, crashing the model worker with
     # InsufficientBlocksError. Fail startup instead.
+    # PagedKVCacheManager allocates one page past total_num_pages for the null
+    # block. Size the pages from a budget that already holds it: memory
+    # estimation can cap available_cache_memory at the device's largest
+    # single allocation, so a page beyond it fails to allocate.
+    null_block_bytes = params.bytes_per_block * params.data_parallel_degree
     total_num_pages = compute_num_device_blocks(
         params=params,
-        available_cache_memory=available_cache_memory,
+        available_cache_memory=available_cache_memory - null_block_bytes,
         max_batch_size=max_batch_size,
         max_seq_len=max_seq_len,
         require_max_seq_len_fits=True,
