@@ -23,7 +23,7 @@ from max.gpu import (
     thread_idx,
 )
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, FuncAttribute, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_gpu
 from max.gpu.memory import external_memory
 from max.gpu.primitives.grid_controls import (
@@ -648,11 +648,6 @@ def _enqueue_rms_norm_fused_residual_gpu_block[
         block_dim=launch_block_dim,
         attributes=pdl_launch_attributes(PDLLevel.ON),
         shared_mem_bytes=shared_mem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(
-                ctx.default_device_info.shared_memory_per_multiprocessor - 4096
-            )
-        ),
     )
 
 

@@ -342,6 +342,19 @@ def test_rms_norm_fused_residual_gpu_static_dims_bfloat16() raises:
     )
 
 
+def test_rms_norm_fused_residual_gpu_shared_mem_above_default_cap() raises:
+    """Test a row whose shared-memory stage exceeds CUDA's 48KB default.
+
+    The launch passes no function attribute, so this relies on the
+    `DeviceContext` inferring the opt-in from `shared_mem_bytes`.
+    """
+    var ctx = DeviceContext()
+    if not ctx.is_compatible():
+        return
+    # 16384 float32 columns stage 64KB per block.
+    run_rms_norm_fused_residual_gpu[.float32](ctx, Index(2, 16384), rtol=1e-3)
+
+
 # =============================================================================
 # Dropout tests (dropout_p > 0)
 # =============================================================================

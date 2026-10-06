@@ -1400,15 +1400,9 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             block_dim, location=call_location()
         )
 
-        var inferred_func_attribute = func_attribute
-        if not func_attribute and shared_mem_bytes:
-            var max_shared = self._ctx._get_max_dynamic_shared_memory_bytes(
-                shared_mem_bytes.value()
-            )
-            if max_shared > 0:
-                inferred_func_attribute = (
-                    FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(max_shared)
-                )
+        var inferred_func_attribute = self._ctx._func_attribute_for_launch(
+            func_attribute, shared_mem_bytes
+        )
 
         var gpu_kernel = self._ctx.compile_function[
             func,
