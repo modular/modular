@@ -68,6 +68,7 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_apple.mojo": ["//:apple_gpu"],
     "test_apple_mma_8x8.mojo": ["//:apple_gpu"],
     "test_tensor_core_nvidia.mojo": ["//:nvidia_gpu"],
+    "test_quantized_scale_stream.mojo": ["//:nvidia_gpu"],
     "test_tiled_matmul_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_vendor_blas_matmul.mojo": select({
         "//:h100_gpu": [],
