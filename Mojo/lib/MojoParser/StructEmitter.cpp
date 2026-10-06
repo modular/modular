@@ -1081,12 +1081,10 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
   }
 
   IREmitter emitter(structDecl, EC_AliasValue);
-  // NOTE: we have to first synthesize the bit to `i1` (instead of `Bool`) to
-  // avoid signature resolving `Bool::__init__`s, the implicit conversion will
-  // be taken care of when body resolve conformanceOp.
-  auto emitBoolAttr = [&](BoolAttr v) -> TypedAttr {
+  auto emitBoolAttr = [&](TypedAttr v) -> TypedAttr {
     SyntheticNode node(structDecl.getLoc());
-    return emitter.emitBool({v, &node}, EC_OperatorOperandValue).getIfPValue();
+    return getCanonicalAttr(
+        emitter.emitBool({v, &node}, EC_OperatorOperandValue).getIfPValue());
   };
 
   StringRef spName =
@@ -1110,42 +1108,12 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
     }
   }
 
-  // When forming a&b&a we can just treat subsequent uses of 'a' as true.
-  SmallPtrSet<Attribute, 4> seenExprs;
-  auto getBoolConstant = [&](CValue value) -> TriBool {
+  auto getScalarBool = [&](CValue value) -> PValue {
     SyntheticNode node(structDecl.getLoc());
     PValue i1 = emitter.emitScalarBool({value, &node}, EC_OperatorOperandValue)
                     .getIfPValue();
-    if (SIMDAttr asIntAttr = sugarDynCastIfPresent<SIMDAttr>(i1.get()))
-      return TriBool::fromBool(asIntAttr.getAsBool());
-    // No need to double check the same value. This crushes sugar bloat.
-    if (!seenExprs.insert(i1.get()).second)
-      return TriBool::yes();
-    return TriBool::unknown();
-  };
-
-  // This emits an "and" as a PValue expression, maintaining the type of lhs/rhs
-  // (which are Bool) instead of turning them into i1.
-  auto emitAnd = [&](CValue lhs, CValue rhs) -> CValue {
-    SyntheticNode node(structDecl.getLoc());
-    // Short circuit obvious cases to avoid piling up sugar.
-    TriBool lhsI1 = getBoolConstant(lhs);
-    if (lhsI1.isDefinite()) {
-      if (lhsI1.isTrue())
-        return rhs;
-      return lhs;
-    }
-    TriBool rhsI1 = getBoolConstant(rhs);
-    if (rhsI1.isDefinite()) {
-      if (rhsI1.isTrue())
-        return lhs;
-      return rhs;
-    }
-
-    ExprDest dest(EC_OperatorOperandValue);
-    return emitter.emitNamedMethodCall(
-        "__and__", CallOperands(CallSyntax::kOperator, &node, std::move(dest),
-                                {{lhs, &node}, {rhs, &node}}));
+    // The expression is compiler synthesized, sugar is not very useful.
+    return getCanonicalAttr(i1);
   };
 
   ASTDecl *traitDecl =
@@ -1154,9 +1122,9 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
       StringAttr::get(getContext(), Twine(baseName) + "is_trivial");
   auto traitSymbol = TraitSymbolAttr::get(traitDecl->getSymbolRef());
 
-  CValue ret = emitBoolAttr(BoolAttr::get(emitter.getContext(), true));
-  if (!ret.getIfPValue())
-    return nullptr;
+  ASTType boolType =
+      shared.lookupBuiltinType("Bool", structDecl, structDecl.getLoc());
+  PValue ret = SIMDAttr::getScalarBool(emitter.getContext(), true);
   for (StructFieldOp fieldOp : structDeclOp.getFieldDecls()) {
     // TODO: Add a nicer accessor.
     auto fieldEntries = structDecl.lookupInCurrentScope(fieldOp.getNameAttr());
@@ -1171,11 +1139,11 @@ TypedAttr StructEmitter::populateSpecialFnIsTrivial(SpecialFunctionKind kind) {
       continue; // skip MLIR types and TrivialRegisterPassable types.
 
     TypedAttr fieldIsTrivial =
-        shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
-            PValue(fieldOp.getType()), traitSymbol, witnessName, ret.getType());
-
-    ret = emitAnd(ret, fieldIsTrivial);
+        getScalarBool(shared.getEvaluationContext().getAndFold<GetWitnessAttr>(
+            PValue(fieldOp.getType()), traitSymbol, witnessName, boolType));
+    // Relying on POC::And for folding.
+    ret = ParamOperatorAttr::get(POC::And, ret, fieldIsTrivial);
   }
-
-  return ret.getIfPValue();
+  // convert from scalar<bool> to Bool.
+  return emitBoolAttr(ret);
 }
