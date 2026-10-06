@@ -78,7 +78,11 @@ from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     clusters_per_wave,
 )
-from nn.attention.gpu.nvidia.sm100.dispatch import _bucket_ws, ws_p_ceiling
+from nn.attention.gpu.nvidia.sm100.dispatch import (
+    _bucket_ws,
+    _ws_g_p_ceiling,
+    ws_p_ceiling,
+)
 from nn.attention.mha_mask import (
     MHAMask,
     NullMask,
@@ -541,6 +545,15 @@ def main() raises:
 
     assert_equal(ws_p_ceiling[148](24), UInt32(37))
     assert_equal(ws_p_ceiling[148](25), UInt32(35))
+
+    # The WS-G ceiling matches `ws_p_ceiling` inside the one-wave sweep and
+    # follows the one-wave split past it. Raw grids 128 and 256 are Inkling
+    # decode at batch 32 and 64 with 4 KV heads.
+    assert_equal(_ws_g_p_ceiling[148](24), UInt32(37))
+    assert_equal(_ws_g_p_ceiling[148](32), UInt32(4))
+    assert_equal(_ws_g_p_ceiling[148](64), UInt32(2))
+    assert_equal(_ws_g_p_ceiling[148](128), UInt32(1))
+    assert_equal(_ws_g_p_ceiling[148](256), UInt32(1))
 
     # The `_bucket_ws` saturation guard. A `by_cache` of 0 is a cache too short
     # for a rung, which is the only cache the guard applies to.

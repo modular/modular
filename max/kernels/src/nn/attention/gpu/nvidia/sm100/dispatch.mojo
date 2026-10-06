@@ -160,6 +160,22 @@ def ws_p_ceiling[sm_count: Int](raw_grid: UInt32) -> UInt32:
 
 
 @inline(.always)
+def _ws_g_p_ceiling[sm_count: Int](raw_grid: UInt32) -> UInt32:
+    """Partition-count ceiling for the WS-G decode route.
+
+    Past the one-wave sweep a split only helps while the split grid still fits
+    one wave. A larger P adds waves of CTAs that each pay the fixed per-CTA
+    cost, so the ceiling follows sm_count // raw_grid there. The decode graph of
+    a batch that fills the GPU is captured at the longest cache, so this ceiling
+    is the only bound that also holds for the short caches replayed on it.
+    """
+    var p = ws_p_ceiling[sm_count](raw_grid)
+    if raw_grid > WS_SWEEP_MAX_RAW_GRID:
+        p = clamp(p, UInt32(1), UInt32(sm_count) // raw_grid)
+    return p
+
+
+@inline(.always)
 def _raw_grid[
     dtype: DType, //, cfg: FA4Config[dtype]
 ](max_prompt_len: UInt32, batch_size: UInt32) -> UInt32:
@@ -1336,7 +1352,7 @@ def mha_sm100_dispatch[
                         ](mask, max_cache_valid_length) // UInt32(
                             512 * config.depth // 128
                         )
-                        var p_ceiling_ws: UInt32 = ws_p_ceiling[
+                        var p_ceiling_ws: UInt32 = _ws_g_p_ceiling[
                             ctx.default_device_info.sm_count
                         ](raw_grid_ws)
                         # `_bucket_ws` buckets UP then caps at the ceiling,
