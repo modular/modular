@@ -49,7 +49,7 @@ match the BF16-KV kernel's unit-scale formulas.  Tensorwise/blockwise scale-fold
 and head=128 (cta_group=2, 2-CTA f8f6f4) are follow-ups.
 """
 
-from std.sys import size_of
+from std.sys import get_defined_bool, size_of
 from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from max.gpu import (
@@ -59,6 +59,7 @@ from max.gpu import (
     warp_id,
     thread_idx,
     WARP_SIZE,
+    lane_id,
 )
 from max.gpu.sync import barrier
 from std.math import ceildiv, exp2
@@ -304,6 +305,9 @@ struct MLAPrefillSparseQKVFP8[
     comptime O_ATOM_PHYS_COLS = Self.SV_ATOM_MMA_N // 2  # 128
 
     comptime SMemType = MLASparseSharedMemoryQKVFP8[Self.config]
+    # Spread each producer warp's gather4 issues across its 32 lanes, each with
+    # its own operands; ptxas serializes the UTMALDGs with an ELECT/R2UR loop.
+    comptime warp_gather4 = get_defined_bool["MLA_SPARSE_WARP_GATHER4", False]()
 
     # ---- TMA tile shapes ----
     comptime q_tile_shape = coord[
@@ -491,8 +495,9 @@ struct MLAPrefillSparseQKVFP8[
 
         # Issue the gather4 col-group placement in parallel across WG1's 4
         # warps (the single-thread `async_copy_gather4_tile` serializes all
-        # NUM_CG*NUM_CHUNKS issues). Each warp's elected lane owns a disjoint
-        # 4-row-chunk range; every (chunk, col-group) lands at exactly the
+        # NUM_CG*NUM_CHUNKS issues). Each warp owns a disjoint 4-row-chunk
+        # range, issued by one elected lane or, under `warp_gather4`, spread
+        # across its lanes; every (chunk, col-group) lands at exactly the
         # SW64 offset `cg*BN*box_w + c*4*box_w` the k-major descriptor reads.
         comptime BN = Self.B_TOPK_PER_CTA
         comptime box_w = Self.kv_gather_box
@@ -500,22 +505,46 @@ struct MLAPrefillSparseQKVFP8[
         comptime NUM_CHUNKS = BN // 4
         comptime NUM_PROD_WARPS = WARPGROUP_SIZE // WARP_SIZE  # 4
         comptime CHUNKS_PER_WARP = NUM_CHUNKS // NUM_PROD_WARPS
-        if elect_one_sync():
-            comptime for lc in range(CHUNKS_PER_WARP):
-                var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(lc)
-                var base_i = c * UInt32(4)
-                var r0 = d_indices_buf[base_i]
-                var r1 = d_indices_buf[base_i + 1]
-                var r2 = d_indices_buf[base_i + 2]
-                var r3 = d_indices_buf[base_i + 3]
-                comptime for cg in range(NUM_CG):
+        var chunk0 = local_warp_idx * UInt32(CHUNKS_PER_WARP)
+        comptime if Self.warp_gather4:
+            comptime NUM_ISSUES = CHUNKS_PER_WARP * NUM_CG
+            var lane = UInt32(lane_id())
+            comptime for it in range(ceildiv(NUM_ISSUES, WARP_SIZE)):
+                var i = UInt32(it * WARP_SIZE) + lane
+                if NUM_ISSUES % WARP_SIZE == 0 or i < UInt32(NUM_ISSUES):
+                    var c = chunk0 + i / UInt32(NUM_CG)
+                    var cg = i % UInt32(NUM_CG)
+                    var base_i = c * UInt32(4)
                     var dst = TileTensor(
-                        kv_smem_buf + Int(c) * 4 * box_w + cg * BN * box_w,
+                        kv_smem_buf + Int(c) * 4 * box_w + Int(cg) * BN * box_w,
                         row_major[4, box_w](),
                     )
                     kv_tma_op.async_copy_gather4[cta_group=1](
-                        dst, kv_ready[], Int32(cg * box_w), r0, r1, r2, r3
+                        dst,
+                        kv_ready[],
+                        Int32(cg * UInt32(box_w)),
+                        d_indices_buf[base_i],
+                        d_indices_buf[base_i + 1],
+                        d_indices_buf[base_i + 2],
+                        d_indices_buf[base_i + 3],
                     )
+        else:
+            if elect_one_sync():
+                comptime for lc in range(CHUNKS_PER_WARP):
+                    var c = chunk0 + UInt32(lc)
+                    var base_i = c * UInt32(4)
+                    var r0 = d_indices_buf[base_i]
+                    var r1 = d_indices_buf[base_i + 1]
+                    var r2 = d_indices_buf[base_i + 2]
+                    var r3 = d_indices_buf[base_i + 3]
+                    comptime for cg in range(NUM_CG):
+                        var dst = TileTensor(
+                            kv_smem_buf + Int(c) * 4 * box_w + cg * BN * box_w,
+                            row_major[4, box_w](),
+                        )
+                        kv_tma_op.async_copy_gather4[cta_group=1](
+                            dst, kv_ready[], Int32(cg * box_w), r0, r1, r2, r3
+                        )
 
     # ------------------------------------------------------------------
     # V producer (WG2, cg2 only): gather ALL B_TOPK keys, this CTA's v_depth
@@ -590,40 +619,76 @@ struct MLAPrefillSparseQKVFP8[
         comptime NUM_PROD_WARPS = WARPGROUP_SIZE // WARP_SIZE  # 4
         comptime CHUNKS_PER_WARP = NUM_CHUNKS // NUM_PROD_WARPS
         comptime CHUNKS_PER_KHALF = Self.PV_BK // 4
-        if elect_one_sync():
-            comptime for lc in range(CHUNKS_PER_WARP):
-                var c = local_warp_idx * UInt32(CHUNKS_PER_WARP) + UInt32(lc)
-                var khalf = c / UInt32(CHUNKS_PER_KHALF)
-                var local_c = c % UInt32(CHUNKS_PER_KHALF)
-                var base_i = c * UInt32(4)
-                var r0 = d_indices_buf[base_i]
-                var r1 = d_indices_buf[base_i + 1]
-                var r2 = d_indices_buf[base_i + 2]
-                var r3 = d_indices_buf[base_i + 3]
-                comptime for v_cg in range(NUM_V_CG):
-                    comptime atom = v_cg // CG_PER_ATOM_LOCAL
-                    comptime j = v_cg % CG_PER_ATOM_LOCAL
+        var chunk0 = local_warp_idx * UInt32(CHUNKS_PER_WARP)
+        comptime if Self.warp_gather4:
+            comptime NUM_ISSUES = CHUNKS_PER_WARP * NUM_V_CG
+            var lane = UInt32(lane_id())
+            comptime for it in range(ceildiv(NUM_ISSUES, WARP_SIZE)):
+                var i = UInt32(it * WARP_SIZE) + lane
+                if NUM_ISSUES % WARP_SIZE == 0 or i < UInt32(NUM_ISSUES):
+                    var c = chunk0 + i / UInt32(NUM_V_CG)
+                    var v_cg = i % UInt32(NUM_V_CG)
+                    var khalf = c / UInt32(CHUNKS_PER_KHALF)
+                    var local_c = c % UInt32(CHUNKS_PER_KHALF)
+                    var base_i = c * UInt32(4)
+                    var atom = v_cg / UInt32(CG_PER_ATOM_LOCAL)
+                    var j = v_cg % UInt32(CG_PER_ATOM_LOCAL)
                     var src_cg = (
-                        UInt32(atom * CG_PER_ATOM_GLOBAL)
+                        atom * UInt32(CG_PER_ATOM_GLOBAL)
                         + cta_id * UInt32(CG_PER_ATOM_LOCAL)
-                        + UInt32(j)
+                        + j
                     )
                     var dst = TileTensor(
                         v_smem_buf
                         + Int(khalf) * Self.V_KHALF_STRIDE
                         + Int(local_c) * 4 * box_w
-                        + v_cg * Self.PV_BK * box_w,
+                        + Int(v_cg) * Self.PV_BK * box_w,
                         row_major[4, box_w](),
                     )
                     kv_tma_op.async_copy_gather4[cta_group=1](
                         dst,
                         v_tma_done[],
                         Int32(src_cg * UInt32(box_w)),
-                        r0,
-                        r1,
-                        r2,
-                        r3,
+                        d_indices_buf[base_i],
+                        d_indices_buf[base_i + 1],
+                        d_indices_buf[base_i + 2],
+                        d_indices_buf[base_i + 3],
                     )
+        else:
+            if elect_one_sync():
+                comptime for lc in range(CHUNKS_PER_WARP):
+                    var c = chunk0 + UInt32(lc)
+                    var khalf = c / UInt32(CHUNKS_PER_KHALF)
+                    var local_c = c % UInt32(CHUNKS_PER_KHALF)
+                    var base_i = c * UInt32(4)
+                    var r0 = d_indices_buf[base_i]
+                    var r1 = d_indices_buf[base_i + 1]
+                    var r2 = d_indices_buf[base_i + 2]
+                    var r3 = d_indices_buf[base_i + 3]
+                    comptime for v_cg in range(NUM_V_CG):
+                        comptime atom = v_cg // CG_PER_ATOM_LOCAL
+                        comptime j = v_cg % CG_PER_ATOM_LOCAL
+                        var src_cg = (
+                            UInt32(atom * CG_PER_ATOM_GLOBAL)
+                            + cta_id * UInt32(CG_PER_ATOM_LOCAL)
+                            + UInt32(j)
+                        )
+                        var dst = TileTensor(
+                            v_smem_buf
+                            + Int(khalf) * Self.V_KHALF_STRIDE
+                            + Int(local_c) * 4 * box_w
+                            + v_cg * Self.PV_BK * box_w,
+                            row_major[4, box_w](),
+                        )
+                        kv_tma_op.async_copy_gather4[cta_group=1](
+                            dst,
+                            v_tma_done[],
+                            Int32(src_cg * UInt32(box_w)),
+                            r0,
+                            r1,
+                            r2,
+                            r3,
+                        )
 
     # ------------------------------------------------------------------
     # Q load prologue (FP8 SW64).  For head==64 a plain 3D async_copy; for

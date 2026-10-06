@@ -3876,7 +3876,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         "------ Dispatching to SM100 Sparse MLA-DECODE (native FP8 Q+KV) ------"
     )
 
-    comptime kernel = MLA_SM100_Decode_Sparse_QKV_FP8[
+    comptime KernelType = MLA_SM100_Decode_Sparse_QKV_FP8[
         q_type=q_type,
         KVLUTType=KVLUTType,
         output_type=output_type,
@@ -3892,7 +3892,8 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         fold_shared_index=fold_shared_index,
         q_len_fold=q_len_fold,
         Engine=scalar_args_buf.Engine,
-    ].kernel
+    ]
+    comptime kernel = KernelType.kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Extra SMEM beyond config.smem_used (unified-gather native FP8, no
     # cvt_blk_bars -- the second KV buffer + its pipeline are already
@@ -3900,9 +3901,12 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     #   - idx_bars: 2*N barriers (depth matches config.num_kv_stages, N)
     #   - ptr_tmem_addr (4 bytes, UInt32)
     #   - idx_smem, N-deep (N * BN_QK * sizeof(Int32))
+    #   - up to 12 bytes to 16-byte align idx_smem when the gather4 indices
+    #     are loaded in ld.shared.v4 batches
     comptime sparse_extra_smem = (
         2 * config.num_kv_stages * config.mbar_size
         + 4
+        + KernelType.idx_smem_align_pad
         + config.num_kv_stages * config.BN_QK * 4
     )
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem

@@ -73,7 +73,7 @@ from std.collections import OptionalReg
 from std.memory import UnsafePointer
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
-from std.sys import size_of
+from std.sys import get_defined_bool, get_defined_int, size_of
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     thread_idx,
@@ -203,6 +203,19 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         Self.kv_gather4_tile_width,
         TensorMapSwizzle.SWIZZLE_NONE,
     ]()
+
+    # Lane l < BN_QK/4 issues the gather4 for rows [4l, 4l+4) with its own
+    # operands; ptxas serializes the UTMALDGs with an ELECT/R2UR loop.
+    comptime warp_gather4 = get_defined_bool["MLA_SPARSE_WARP_GATHER4", False]()
+    # >0: the elected lane loads the row indices of this many 4-row chunks
+    # with back-to-back ld.shared.v4 before issuing their gather4s, so the
+    # SMEM latency is paid once per batch instead of once per gather4.
+    comptime gather4_idx_batch = get_defined_int[
+        "MLA_SPARSE_GATHER4_IDX_BATCH", 0
+    ]()
+    # Worst-case padding that 16-byte aligns idx_smem for ld.shared.v4; the
+    # dispatch adds this to the SMEM it reserves.
+    comptime idx_smem_align_pad = 12 if Self.gather4_idx_batch > 0 else 0
 
     comptime UMMAQKTSS = DecodeSM100QKTSS_FP8[
         operand_type=Self.fp8_type,
@@ -546,6 +559,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
         var ptr_tmem_addr = (mbar_base9).bitcast[UInt32]()
         var idx_smem_base = (ptr_tmem_addr + 1).bitcast[Int32]()
+        comptime if Self.idx_smem_align_pad > 0:
+            idx_smem_base += ((16 - (Int(idx_smem_base) & 15)) & 15) // 4
         comptime idx_smem_stride = Self.config.BN_QK
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
@@ -1030,6 +1045,76 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
     @staticmethod
     @inline(.always)
+    def _issue_kv_gather(
+        cur_k_tma: TMATensorTile[
+            DType.int64,
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
+        ],
+        kv_stage_ptr: SharedMemPointer[Scalar[Self.fp8_type]],
+        k_mbar: MBarType,
+        idx_smem: SharedMemPointer[Int32],
+        is_leader: Bool,
+    ):
+        comptime box_w = Self.kv_gather4_box_w
+        comptime num_chunks = Self.config.BK_PV // 4
+        comptime if Self.warp_gather4 or Self.gather4_idx_batch > 0:
+            comptime assert (
+                box_w * 8 == Self.config.input_q_depth
+            ), "per-chunk gather4 assumes one column group per row"
+        comptime if Self.warp_gather4:
+            comptime assert num_chunks <= 32
+            var lane = Int(lane_id())
+            if lane < num_chunks:
+                var base = lane * 4
+                var dst = TileTensor(
+                    kv_stage_ptr.bitcast[Int64]() + base * box_w,
+                    tt_row_major[4, box_w](),
+                )
+                cur_k_tma.async_copy_gather4[
+                    eviction_policy=CacheEviction.EVICT_LAST
+                ](
+                    dst,
+                    k_mbar[],
+                    Int32(0),
+                    idx_smem[base],
+                    idx_smem[base + 1],
+                    idx_smem[base + 2],
+                    idx_smem[base + 3],
+                )
+        elif Self.gather4_idx_batch > 0:
+            comptime B = Self.gather4_idx_batch
+            comptime assert num_chunks % B == 0
+            if is_leader:
+                var idx_u8 = idx_smem.bitcast[UInt8]()
+                comptime for b in range(num_chunks // B):
+                    var rows = StaticTuple[SIMD[DType.uint32, 4], B]()
+                    comptime for j in range(B):
+                        rows[j] = ld_shared_v4_u32(idx_u8, (b * B + j) * 16)
+                    comptime for j in range(B):
+                        comptime c = b * B + j
+                        var dst = TileTensor(
+                            kv_stage_ptr.bitcast[Int64]() + c * 4 * box_w,
+                            tt_row_major[4, box_w](),
+                        )
+                        var r = rows[j].cast[DType.int32]()
+                        cur_k_tma.async_copy_gather4[
+                            eviction_policy=CacheEviction.EVICT_LAST
+                        ](dst, k_mbar[], Int32(0), r[0], r[1], r[2], r[3])
+        else:
+            if is_leader:
+                cur_k_tma.async_copy_gather4_tile[
+                    tile_width=Self.config.input_q_depth // 8,
+                    eviction_policy=CacheEviction.EVICT_LAST,
+                ](
+                    kv_stage_ptr.bitcast[Int64](),
+                    k_mbar[],
+                    idx_smem,
+                    start_idx=0,
+                )
+
+    @staticmethod
+    @inline(.always)
     def _load_one_tile(
         mut kv_prod: DecodeKVProducer[
             Self.fp8_type,
@@ -1056,16 +1141,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         )
 
         expect_bytes_pred(k_mbar, Int32(kv_bytes), Int32(is_leader))
-        if is_leader:
-            cur_k_tma.async_copy_gather4_tile[
-                tile_width=Self.config.input_q_depth // 8,
-                eviction_policy=CacheEviction.EVICT_LAST,
-            ](
-                kv_stage_ptr.bitcast[Int64](),
-                k_mbar[],
-                idx_smem,
-                start_idx=0,
-            )
+        Self._issue_kv_gather(
+            cur_k_tma, kv_stage_ptr, k_mbar, idx_smem, is_leader
+        )
 
         idx_cons.release()
         kv_prod.commit_step()
@@ -1106,16 +1184,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             )
 
             expect_bytes_pred(k_mbar, Int32(kv_bytes), Int32(is_leader))
-            if is_leader:
-                cur_k_tma.async_copy_gather4_tile[
-                    tile_width=Self.config.input_q_depth // 8,
-                    eviction_policy=CacheEviction.EVICT_LAST,
-                ](
-                    kv_stage_ptr.bitcast[Int64](),
-                    k_mbar[],
-                    idx_smem,
-                    start_idx=0,
-                )
+            Self._issue_kv_gather(
+                cur_k_tma, kv_stage_ptr, k_mbar, idx_smem, is_leader
+            )
 
             idx_cons.release()
             kv_prod.commit_step()
