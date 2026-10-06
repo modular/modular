@@ -78,15 +78,9 @@ from layout import (
     Idx,
     Layout,
     LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     coord,
-)
-from layout.runtime_tuple import (
-    coalesce_nested_tuple,
-    flatten,
-    to_index_list as runtime_tuple_to_index_list,
 )
 from layout.tile_layout import RowMajorLayout, row_major
 from layout.tensor_core_async import tile_layout_k_major
@@ -4137,6 +4131,7 @@ def _split_tma_gmem_tensor[
         ptr.origin,
     ],
 ):
+    comptime assert shape.is_flat, "gmem_shape must be a flat Coord"
     var runtime_shape = Coord[*ret.LayoutType.shape_types]()
     Pointer(to=runtime_shape[0]).write(
         rebind[type_of(runtime_shape[0])](Int64(dim0))
@@ -4164,6 +4159,7 @@ def _split_tma_gmem_tensor[
         ptr.origin,
     ],
 ):
+    comptime assert shape.is_flat, "gmem_shape must be a flat Coord"
     var runtime_shape = Coord[*ret.LayoutType.shape_types]()
     Pointer(to=runtime_shape[0]).write(
         rebind[type_of(runtime_shape[0])](Int64(dim0))

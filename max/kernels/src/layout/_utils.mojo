@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
+from std.sys import align_of
 from std.sys.intrinsics import readfirstlane
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
@@ -192,6 +193,30 @@ def load_to_simd(
     return rebind[type_of(res)](
         tensor.reshape[Layout(Int(size))]().vectorize[size]()[0]
     )
+
+
+@inline(.always)
+def load_to_simd(
+    tensor: TileTensor,
+    out res: SIMD[
+        tensor.dtype, tensor.static_shape[0] * tensor.static_shape[1]
+    ],
+):
+    comptime assert tensor.rank == tensor.flat_rank == 2
+    comptime assert tensor.element_size == 1
+    comptime assert tensor.static_shape[0] > 0 and tensor.static_shape[1] > 0
+    comptime size = type_of(res).length
+    comptime if tensor.static_shape[0] == 1:
+        comptime assert tensor.static_stride[1] == 1
+        var packed = tensor.vectorize[1, size]()
+        comptime assert packed.flat_rank == 2
+        return packed.load[alignment=align_of[tensor.dtype]()]((0, 0))
+    else:
+        comptime assert tensor.static_shape[1] == 1
+        comptime assert tensor.static_stride[0] == 1
+        var packed = tensor.vectorize[size, 1]()
+        comptime assert packed.flat_rank == 2
+        return packed.load[alignment=align_of[tensor.dtype]()]((0, 0))
 
 
 @inline(.always)

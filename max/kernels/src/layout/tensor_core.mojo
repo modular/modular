@@ -330,6 +330,35 @@ struct TensorCore[
             )
         ), "unsupported CDNA input fragment"
 
+    @staticmethod
+    @inline(.always)
+    def _nvidia_input_pack_width[registers: Int, a_operand: Bool]() -> Int:
+        comptime if Self.in_type == .float32:
+            comptime assert (
+                registers in (2, 4) if a_operand else registers in (1, 2, 4)
+            )
+            return 1
+        elif Self.in_type == .float64:
+            comptime assert (
+                registers
+                in (1, 2, 4, 8) if a_operand else registers
+                in (1, 2, 4)
+            )
+            return 1
+        elif Self.in_type in (DType.float16, DType.bfloat16):
+            comptime assert (
+                registers in (4, 8) if a_operand else registers in (2, 4)
+            )
+            return 2
+        else:
+            comptime assert Self.in_type in (
+                DType.float8_e4m3fn,
+                DType.float8_e5m2,
+            )
+            comptime assert _has_native_f8_support()
+            comptime assert registers == (16 if a_operand else 8)
+            return 4
+
     @inline(.always)
     def load_a[
         swizzle: Optional[Swizzle] = None
@@ -347,7 +376,7 @@ struct TensorCore[
             address_space=.LOCAL,
         ],
     ):
-        """Loads a native matrix tile into CDNA A registers.
+        """Loads a native matrix tile into hardware A registers.
 
         Parameters:
             swizzle: Must be `None`; the tile layout supplies the addressing.
@@ -359,18 +388,22 @@ struct TensorCore[
             The native register fragment accepted by `mma_op`.
 
         Constraints:
-            The target must be AMD CDNA and M must be 16 or 32. K must be a
-            positive multiple of the MMA K dimension. Consecutive MMA register
-            groups are packed per lane. NVIDIA, RDNA, and swizzled loads are not
-            supported by this overload.
+            NVIDIA loads require exactly one MMA K dimension. AMD CDNA loads
+            require M to be 16 or 32 and K to be a positive multiple of MMA K;
+            consecutive register groups are packed per lane. RDNA and swizzled
+            loads are not supported.
         """
         comptime assert a.rank == a.flat_rank == 2 and a.element_size == 1
         comptime assert swizzle is None, "native A loads do not support swizzle"
         comptime K = a.static_shape[1]
         comptime assert K > 0 and K % Self.shape[2] == 0
-        Self._check_cdna_input_fragment[
-            Self.shape[0], num_matrix_reg[Self.shape[0], Self.shape[2]]()
-        ]()
+        comptime if not is_nvidia_gpu():
+            Self._check_cdna_input_fragment[
+                Self.shape[0], num_matrix_reg[Self.shape[0], Self.shape[2]]()
+            ]()
+        else:
+            comptime assert K == Self.shape[2]
+            comptime assert Self.shape[0] in (8, 16)
         debug_assert(
             Int(a.dim[0]()) == Self.shape[0], "source must have MMA M rows"
         )
@@ -379,10 +412,26 @@ struct TensorCore[
             type_of(res).LayoutType()
         )
         comptime assert fragment.flat_rank == 2
-        var row = lane_id() % Self.shape[0]
-        var k_base = (lane_id() // Self.shape[0]) * registers
-        comptime for register in range(registers):
-            fragment[0, register] = a.load[width=1]((row, k_base + register))
+        comptime if is_nvidia_gpu():
+            comptime width = Self._nvidia_input_pack_width[registers, True]()
+            comptime row_groups = Self.shape[0] // 8
+            comptime for register in range(registers):
+                var row = lane_id() // 4 + 8 * (
+                    (register // width) % row_groups
+                )
+                var k = (
+                    (lane_id() % 4) * width
+                    + 4 * width * ((register // width) // row_groups)
+                    + register % width
+                )
+                fragment[0, register] = a.load[width=1]((row, k))
+        else:
+            var row = lane_id() % Self.shape[0]
+            var k_base = (lane_id() // Self.shape[0]) * registers
+            comptime for register in range(registers):
+                fragment[0, register] = a.load[width=1](
+                    (row, k_base + register)
+                )
         return fragment
 
     @inline(.always)
@@ -406,7 +455,7 @@ struct TensorCore[
             address_space=.LOCAL,
         ],
     ):
-        """Loads a native matrix tile into CDNA B registers.
+        """Loads a native matrix tile into hardware B registers.
 
         Parameters:
             swizzle: Must be `None`; the tile layout supplies the addressing.
@@ -419,18 +468,25 @@ struct TensorCore[
             The native register fragment accepted by `mma_op`.
 
         Constraints:
-            The target must be AMD CDNA and N must be 16 or 32. K must be a
-            positive multiple of the MMA K dimension. Consecutive MMA register
-            groups are packed per lane. NVIDIA, RDNA, and swizzled loads are not
-            supported by this overload.
+            NVIDIA loads require exactly one MMA K dimension. AMD CDNA loads
+            require N to be 16 or 32 and K to be a positive multiple of MMA K;
+            consecutive register groups are packed per lane. RDNA, swizzled
+            loads, and transposed NVIDIA FP8 loads are not supported.
         """
         comptime assert b.rank == b.flat_rank == 2 and b.element_size == 1
         comptime assert swizzle is None, "native B loads do not support swizzle"
         comptime K = b.static_shape[1 if Self.transpose_b else 0]
         comptime assert K > 0 and K % Self.shape[2] == 0
-        Self._check_cdna_input_fragment[
-            Self.shape[1], num_matrix_reg[Self.shape[2], Self.shape[1]]()
-        ]()
+        comptime if not is_nvidia_gpu():
+            Self._check_cdna_input_fragment[
+                Self.shape[1], num_matrix_reg[Self.shape[2], Self.shape[1]]()
+            ]()
+        else:
+            comptime assert K == Self.shape[2] and Self.shape[1] == 8
+            comptime assert not (
+                Self.transpose_b
+                and Self.in_type in (DType.float8_e4m3fn, DType.float8_e5m2)
+            ), "transposed NVIDIA FP8 native loads are not supported"
         debug_assert(
             Int(b.dim[0 if Self.transpose_b else 1]()) == Self.shape[1],
             "source must have MMA N columns",
@@ -440,17 +496,31 @@ struct TensorCore[
             type_of(res).LayoutType()
         )
         comptime assert fragment.flat_rank == 2
-        var col = lane_id() % Self.shape[1]
-        var k_base = (lane_id() // Self.shape[1]) * registers
-        comptime for register in range(registers):
-            comptime if Self.transpose_b:
-                fragment[register, 0] = b.load[width=1](
-                    (col, k_base + register)
+        comptime if is_nvidia_gpu():
+            comptime width = Self._nvidia_input_pack_width[registers, False]()
+            comptime for register in range(registers):
+                var col = lane_id() // 4
+                var k = (
+                    (lane_id() % 4) * width
+                    + 4 * width * (register // width)
+                    + register % width
                 )
-            else:
-                fragment[register, 0] = b.load[width=1](
-                    (k_base + register, col)
-                )
+                comptime if Self.transpose_b:
+                    fragment[register, 0] = b.load[width=1]((col, k))
+                else:
+                    fragment[register, 0] = b.load[width=1]((k, col))
+        else:
+            var col = lane_id() % Self.shape[1]
+            var k_base = (lane_id() // Self.shape[1]) * registers
+            comptime for register in range(registers):
+                comptime if Self.transpose_b:
+                    fragment[register, 0] = b.load[width=1](
+                        (col, k_base + register)
+                    )
+                else:
+                    fragment[register, 0] = b.load[width=1](
+                        (k_base + register, col)
+                    )
         return fragment
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid

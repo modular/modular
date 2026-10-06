@@ -16,11 +16,19 @@ from std.utils.numerics import min_or_neg_inf
 from std.random import rand, random_float64, seed
 from std.sys import simd_width_of
 
-from max.gpu import WARP_SIZE
+from max.gpu import WARP_SIZE, thread_idx, warp_id
 from max.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, TileTensor, row_major
+from layout import (
+    Coord,
+    Layout,
+    TensorLayout,
+    TileTensor,
+    row_major,
+    stack_allocation,
+)
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.softmax import (
+    _online_softmax_iter_for_mma_output,
     _softmax_cpu,
     _softmax_gpu,
     softmax_with_temperature,
@@ -711,8 +719,85 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     _ = scaled_host
 
 
+def _online_softmax_scratch_kernel[
+    OutputLayout: TensorLayout
+](output: TileTensor[.float32, OutputLayout, MutAnyOrigin]) where (
+    output.flat_rank == 2
+):
+    comptime frag_rows = 1 if WARP_SIZE == 32 else 4
+    comptime frag_cols = 2 if WARP_SIZE == 32 else 1
+    comptime frag_size = frag_rows * frag_cols
+    comptime rows = (WARP_SIZE // 4) * frag_rows
+    var scores = stack_allocation[dtype=.float32, address_space=.LOCAL](
+        row_major[1, frag_size]()
+    )
+    var accum = stack_allocation[dtype=.float32, address_space=.LOCAL](
+        row_major[1, frag_size]()
+    )
+    var rowmax = stack_allocation[dtype=.float32](row_major[1, frag_rows]())
+    var rowsum = stack_allocation[dtype=.float32](row_major[1, frag_rows]())
+    var scratch = stack_allocation[dtype=.float32, address_space=.SHARED](
+        row_major[4, rows]()
+    )
+    comptime for row in range(frag_rows):
+        rowmax[0, row] = 0
+        rowsum[0, row] = 0
+    comptime for col in range(frag_size):
+        accum[0, col] = 1
+    # The helper's register-fragment interface has not yet migrated.
+    var scores_fragment = scores.to_layout_tensor().vectorize[1, frag_size]()
+    var accum_fragment = accum.to_layout_tensor().vectorize[1, frag_size]()
+    comptime for iteration in range(2):
+        comptime for col in range(frag_size):
+            scores[0, col] = Float32(warp_id() + 2 * iteration)
+        _online_softmax_iter_for_mma_output[
+            .float32,
+            Layout.row_major(1, 1),
+            Layout.row_major(1, 2),
+            Layout.row_major(WARP_SIZE // 4, 4),
+            use_exp2=True,
+            fragment_layout=Layout.row_major(frag_rows, frag_cols),
+        ](accum_fragment, scores_fragment, scratch, rowmax.ptr, rowsum.ptr)
+    comptime for row in range(frag_rows):
+        output[thread_idx.x, 4 * row] = rowmax[0, row]
+        output[thread_idx.x, 4 * row + 1] = rowsum[0, row]
+        output[thread_idx.x, 4 * row + 2] = accum[0, row * frag_cols]
+        output[thread_idx.x, 4 * row + 3] = scores[0, row * frag_cols]
+
+
+def test_online_softmax_scratch(ctx: DeviceContext) raises:
+    comptime frag_rows = 1 if WARP_SIZE == 32 else 4
+    comptime frag_cols = 2 if WARP_SIZE == 32 else 1
+    comptime count = 2 * WARP_SIZE * 4 * frag_rows
+    var device = ctx.enqueue_create_buffer[.float32](count)
+    var host = ctx.enqueue_create_host_buffer[.float32](count)
+    var output = TileTensor(
+        device.unsafe_ptr(), row_major[2 * WARP_SIZE, 4 * frag_rows]()
+    ).as_unsafe_any_origin()
+    comptime kernel = _online_softmax_scratch_kernel[type_of(output).LayoutType]
+    ctx.enqueue_function[kernel](
+        output,
+        grid_dim=1,
+        block_dim=2 * WARP_SIZE,
+    )
+    ctx.enqueue_copy(host, device)
+    ctx.synchronize()
+    for thread in range(2 * WARP_SIZE):
+        for row in range(frag_rows):
+            var offset = thread * 4 * frag_rows + 4 * row
+            assert_almost_equal(host[offset], Float32(3))
+            assert_almost_equal(
+                host[offset + 1], Float32(1.875) * Float32(4 * frag_cols)
+            )
+            assert_almost_equal(host[offset + 2], Float32(0.125))
+            assert_almost_equal(
+                host[offset + 3], Float32(0.5 if thread < WARP_SIZE else 1.0)
+            )
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        test_online_softmax_scratch(ctx)
         test_gpu_softmax(ctx)
         test_gpu_softmax_half[.bfloat16](ctx)
         test_gpu_softmax_half[.float16](ctx)

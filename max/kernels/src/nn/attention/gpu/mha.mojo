@@ -3081,14 +3081,11 @@ def mha_single_batch[
     )
 
     # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ](
+    var warp_scratch = TileTensor(
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
-        ]()
+        ](),
+        row_major[2 * num_warps_n, BM](),
     )
 
     # Mask global memory iterator.
@@ -3378,7 +3375,7 @@ def mha_single_batch[
         ](
             output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_y)),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
         )
@@ -3831,14 +3828,11 @@ def mha_single_batch_pipelined[
     )
 
     # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
-        address_space=.SHARED,
-    ](
+    var warp_scratch = TileTensor(
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
-        ]()
+        ](),
+        row_major[p_frag_simdwidth * num_warps_n, BM](),
     )
 
     # Mask global memory iterator.
@@ -4120,7 +4114,7 @@ def mha_single_batch_pipelined[
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
                 1, p_frag_simdwidth
             ](),
-            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_y)),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
         )
@@ -5002,11 +4996,10 @@ def mha_decoding_single_batch[
     )
 
     # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    var warp_scratch = TileTensor(
+        (p_smem + BM * BN).bitcast[Scalar[accum_type]](),
+        row_major[2 * num_warps_n, BM](),
+    )
 
     # Account for group query.
     comptime kv_num_heads = num_heads // group
@@ -5723,12 +5716,10 @@ def mha_decoding_single_batch_pipelined[
     )
 
     # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_unsafe_any_origin())
+    var warp_scratch = TileTensor(
+        (p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_unsafe_any_origin(),
+        row_major[p_frag_simdwidth * num_warps_n, BM](),
+    )
 
     var q_offset = depth * kv_head_idx * group
 

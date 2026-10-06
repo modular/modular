@@ -2208,12 +2208,11 @@ def mla_decoding_single_batch[
         p_smem, IteratorTypeP.layout_uint_type(BM * BN)
     )
 
-    # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    # Each warp group needs separate maximum and sum slots.
+    var warp_scratch = TileTensor(
+        (p_smem + BM * BN).bitcast[Scalar[accum_type]](),
+        row_major[2 * num_warps_n, BM](),
+    )
 
     comptime kv_num_heads = 1
     comptime kv_head_idx = 0
@@ -2488,7 +2487,7 @@ def mla_decoding_single_batch[
                 1, 2
             ](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, warp_y),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, warp_y)),
             rowmax,
             rowsum,
         )
@@ -3936,15 +3935,12 @@ def mla_prefill_single_batch[
         p_smem, IteratorTypeP.layout_uint_type(BM * BN)
     )
 
-    # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ](
+    # Each warp group needs separate maximum and sum slots.
+    var warp_scratch = TileTensor(
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
-        ]()
+        ](),
+        row_major[2 * num_warps_n, BM](),
     )
 
     # Mask global memory iterator.
@@ -4296,7 +4292,7 @@ def mla_prefill_single_batch[
                 1, 2
             ](),
             p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
         )

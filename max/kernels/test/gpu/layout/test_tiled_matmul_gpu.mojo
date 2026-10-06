@@ -253,6 +253,30 @@ def single_warp_mma_sync_m16n8k8[
     mat_a: TileTensor[.float32, layout_a, ImmutAnyOrigin],
     mat_b: TileTensor[.float32, layout_b, ImmutAnyOrigin],
 ):
+    comptime assert (
+        layout_a.flat_rank == 2
+        and layout_b.flat_rank == 2
+        and layout_c.flat_rank == 2
+    )
+    comptime assert (
+        layout_a.static_shape[0] == 16
+        and layout_a.static_shape[1] == 8
+        and layout_a.static_stride[0] == 8
+        and layout_a.static_stride[1] == 1
+    ), "A storage must be row-major 16x8"
+    comptime assert (
+        layout_b.static_shape[0] == 8
+        and layout_b.static_shape[1] == 8
+        and layout_b.static_stride[0] == 1
+        and layout_b.static_stride[1] == 8
+    ), "B storage must be column-major 8x8"
+    comptime assert (
+        layout_c.static_shape[0] == 16
+        and layout_c.static_shape[1] == 8
+        and layout_c.static_stride[0] == 8
+        and layout_c.static_stride[1] == 1
+    ), "C storage must be row-major 16x8"
+
     # MMA fragments address the row-major A and column-major B storage
     # directly; each axis describes a lane or a value owned by that lane.
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
@@ -264,6 +288,7 @@ def single_warp_mma_sync_m16n8k8[
         ),
     )
     # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
+    # These strides address column-major KxN storage without a transpose.
     var mat_b_mma = TileTensor(
         ptr=mat_b.unsafe_ptr(),
         layout=MixedLayout(

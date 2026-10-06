@@ -1852,10 +1852,10 @@ def _online_softmax_iter_for_mma_output[
 ](
     output_reg_tile: LayoutTensor[mut=True, dtype, ...],
     score_reg_tile: LayoutTensor[mut=True, dtype, ...],
-    warp_scratch: LayoutTensor[mut=True, dtype, ...],
+    warp_scratch: TileTensor[mut=True, dtype, ...],
     rowmax: UnsafePointer[mut=True, Scalar[dtype], _],
     rowsum: UnsafePointer[mut=True, Scalar[dtype], _],
-):
+) where (warp_scratch.flat_rank == 2):
     comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
 
@@ -2043,7 +2043,7 @@ def _online_softmax_iter_for_mma_output[
     # Reduce rowsum via shared memory.
 
     comptime if num_rowwise_warps > 1 and not warp_split_k:
-        # Write per warp rowmax to shared memory.
+        # Write each warp's row sum to shared memory.
         if lane_contains_first_column:
             comptime for col_tile in range(num_colwise_tiles):
                 comptime for row in range(frag_num_rows):
@@ -2077,7 +2077,7 @@ def _online_softmax_iter_for_mma_output[
 
                     score_frag_rowsum[col_tile, row] = 0
 
-                    # Reduce rowmax. Warps in the same row do the same reduction.
+                    # Warps in the same row perform the same sum reduction.
                     comptime for row_warp in range(num_rowwise_warps):
                         score_frag_rowsum[col_tile, row] += rebind[
                             Scalar[dtype]
