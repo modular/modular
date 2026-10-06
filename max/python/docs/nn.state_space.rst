@@ -29,9 +29,15 @@ Functions
 
    causal_conv1d_varlen_fwd
    gated_delta_conv1d_fwd
+   gated_delta_conv1d_verify_fwd
    gated_delta_recurrence_fwd
+   gated_delta_recurrence_verify_ring_fwd
+   gated_delta_state_fold
    gated_group_rmsnorm
+   kda_chunk
+   kda_chunk_supports_head_dims
    kda_decode
    mamba2_ssd_chunk_scan_varlen_fwd_inplace
    short_conv_ring_commit
    short_conv_ring_fwd
+   verify_width_operand
