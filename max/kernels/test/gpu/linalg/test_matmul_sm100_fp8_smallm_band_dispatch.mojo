@@ -36,6 +36,10 @@
 #   1. the dispatcher returns DISPATCH_HIT (MAX Mojo kernel, not vendor MISS);
 #   2. the DISPATCH_HIT output matches the vendor-cuBLASLt reference within
 #      FP8/BF16-accum tolerance (rtol/atol = 1e-2).
+#
+# It also checks tuned outlier rows (Nemotron-3.5-Lightning TP=2 qkv at m=64)
+# against cuBLASLt. A tuned row and the heuristic both return DISPATCH_HIT, so
+# that case guards the row's numerics, not that the dispatcher selects it.
 
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
@@ -252,3 +256,7 @@ def main() raises:
         bf16_all[3136, 12544](ctx)
         bf16_all[7168, 3136](ctx)
         bf16_all[3136, 5120](ctx)
+
+        # Nemotron-3.5-Lightning TP=2 attention qkv, which has a tuned m=64
+        # row; the other m values take the heuristic.
+        bf16_all[2304, 2688](ctx)
