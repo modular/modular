@@ -575,7 +575,7 @@ class RecordingSampler(AcceptanceSampler):
         self,
         draft_tokens: TensorValue,
         target_logits: TensorValue,
-        **kwargs: TensorValue | None,
+        **kwargs: Any,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         self.target_logits = target_logits
         num_accepted, recovered, bonus = self.sampler(

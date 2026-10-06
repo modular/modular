@@ -26,6 +26,7 @@ from max.nn.kernels import (
     topk_topp_masked_probs,
 )
 from max.nn.layer import Module
+from max.nn.sampling.penalties import LogitPenalties
 
 logger = logging.getLogger("max.pipelines")
 
@@ -736,6 +737,7 @@ class AcceptanceSampler:
         in_thinking_phase: TensorValue | None = None,
         token_bitmasks: TensorValue | None = None,
         draft_probs_full: TensorValue | None = None,
+        penalties: LogitPenalties | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
 
@@ -770,7 +772,17 @@ class AcceptanceSampler:
             draft_probs_full: ``[batch, num_steps, vocab_size]`` distributions
                 the draft sampled from. Required when the sampler was built
                 with ``draft_proposal="sampled"``; forbidden otherwise.
+            penalties: Presence/frequency penalties, one CSR row per row of
+                ``target_logits``, subtracted before anything is sampled.
         """
+        if penalties is not None and (
+            not self._use_stochastic
+            or self._base_rate is not None
+            or token_bitmasks is None
+        ):
+            # Only the stochastic path's mask pass can carry them for free.
+            target_logits = penalties.apply(target_logits)
+            penalties = None
         if self._base_rate is not None:
             assert seed is not None, "synthetic acceptance requires a seed"
             return synthetic_acceptance_sampler(
@@ -808,6 +820,7 @@ class AcceptanceSampler:
                 draft_proposal=self._draft_proposal,
                 draft_probs_full=draft_probs_full,
                 vocab_size=self._vocab_size,
+                penalties=penalties,
             )
         return greedy_acceptance_sampler(
             draft_tokens, target_logits, token_bitmasks
@@ -1106,6 +1119,7 @@ def stochastic_acceptance_sampler(
     draft_proposal: Literal["argmax", "sampled"] = "argmax",
     draft_probs_full: TensorValue | None = None,
     vocab_size: int | None = None,
+    penalties: LogitPenalties | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Verifies speculative draft tokens against the target model.
 
@@ -1143,7 +1157,9 @@ def stochastic_acceptance_sampler(
 
     When ``token_bitmasks`` is provided, grammar constraints mask the
     target logits before anything is sampled, so recovered and bonus tokens
-    always satisfy structured-output constraints.
+    always satisfy structured-output constraints. ``penalties`` are
+    subtracted from the target logits before sampling too, in the mask's
+    pass when there is one.
 
     Returns:
         Tuple of ``(first_rejected_idx, recovered_tokens, bonus_tokens)``:
@@ -1205,8 +1221,17 @@ def stochastic_acceptance_sampler(
         # The fill is finite so a fully-masked row degrades to a uniform draw
         # instead of NaN; ``apply_packed_bitmask`` carries the model's own -inf
         # positions through it, so masking can only ever narrow the support.
-        target_logits_3d = apply_packed_bitmask(
-            target_logits_3d, bitmask_rebound, fill_val=_MASKED_LOGIT_VALUE
+        if penalties is not None:
+            target_logits_3d = penalties.apply_with_bitmask(
+                target_logits_3d, bitmask_rebound, _MASKED_LOGIT_VALUE
+            )
+        else:
+            target_logits_3d = apply_packed_bitmask(
+                target_logits_3d, bitmask_rebound, fill_val=_MASKED_LOGIT_VALUE
+            )
+    elif penalties is not None:
+        target_logits_3d = ops.reshape(
+            penalties.apply(target_logits), target_logits_3d.shape
         )
 
     draft_verification_logits = target_logits_3d[:, :-1]

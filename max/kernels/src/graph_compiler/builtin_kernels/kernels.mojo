@@ -64,7 +64,7 @@ from nn.conv.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
 from nn.fold import fold, fold_shape
-from nn.gather_scatter import normalize_neg_index
+from nn.gather_scatter import apply_packed_bitmask, normalize_neg_index
 from nn.irfft import irfft
 from nn.kv_cache import (
     generic_get_paged_cache,
@@ -102,7 +102,11 @@ from nn.rand_uniform import keyed_uniform, random_uniform
 from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.roi_align import roi_align_nhwc
 from nn.rope import rope_ragged
-from nn.sampling import apply_penalties_to_logits, update_frequency_data
+from nn.sampling import (
+    apply_masked_penalties_to_logits,
+    apply_penalties_to_logits,
+    update_frequency_data,
+)
 from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
@@ -2931,6 +2935,52 @@ struct Struct_sampler_apply_penalties:
             frequency_penalty.to_tile_tensor[.int64](),
             presence_penalty.to_tile_tensor[.int64](),
             repetition_penalty.to_tile_tensor[.int64](),
+            ctx,
+        )
+
+
+@extensibility.register("sampler.apply_packed_bitmask_with_penalties")
+struct Struct_sampler_apply_packed_bitmask_with_penalties:
+    """Registers `sampler.apply_packed_bitmask_with_penalties`: the packed
+    grammar mask plus presence/frequency penalties in one output, so the
+    penalties ride the mask's full pass over the logits instead of a copy.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        penalty_type: DType,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        logits: InputTensor[dtype=dtype, rank=2, ...],
+        packed: InputTensor[dtype=.int32, rank=2, ...],
+        fill_value: Scalar[dtype],
+        compressed_frequency_data: InputTensor[dtype=.int32, rank=2, ...],
+        frequency_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        frequency_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        presence_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_valid_target[target](), "not a valid target"
+
+        apply_packed_bitmask[target](
+            output.to_tile_tensor(),
+            logits.to_tile_tensor(),
+            packed.to_tile_tensor(),
+            fill_value,
+            ctx,
+        )
+        apply_masked_penalties_to_logits[target=target](
+            output.to_tile_tensor[.int64](),
+            packed.to_tile_tensor[.int64](),
+            compressed_frequency_data.to_tile_tensor[.int64](),
+            frequency_offsets.to_tile_tensor[.int64](),
+            frequency_penalty.to_tile_tensor[.int64](),
+            presence_penalty.to_tile_tensor[.int64](),
             ctx,
         )
 

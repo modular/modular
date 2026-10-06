@@ -34,6 +34,7 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import BufferType, TensorType, TensorValue
 from max.nn.kv_cache import KVCacheParamInterface
+from max.nn.sampling.penalties import LogitPenalties
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import SequentialDriver
@@ -138,6 +139,10 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
         self.config = config
         self.num_linear_layers = num_linear_layers
         self.state_regions = state_regions
+        self.logit_penalties = (
+            speculative_config is not None
+            and speculative_config.logit_penalties
+        )
 
     @override
     @property
@@ -177,5 +182,9 @@ class UnifiedMTPQwen3_5(SequentialDriver[list[TensorValue]]):
                     device=devices[0],
                 )
             )
+
+        # Last of all, so an export without them keeps every slot above.
+        if self.logit_penalties:
+            tail.extend(LogitPenalties.input_types(devices[0]))
 
         return (*spec_types, *tail)

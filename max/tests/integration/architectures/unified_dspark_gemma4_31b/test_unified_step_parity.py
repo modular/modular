@@ -275,7 +275,7 @@ class _RecordingUnified(UnifiedDSparkGemma4_31B):
         def acceptance_sampler(
             draft_tokens: TensorValue,
             target_logits: TensorValue,
-            **kwargs: TensorValue | None,
+            **kwargs: Any,
         ) -> tuple[TensorValue, TensorValue, TensorValue]:
             self.recorded["target_logits"] = target_logits
             return orig_sampler(draft_tokens, target_logits, **kwargs)

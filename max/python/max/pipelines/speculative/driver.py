@@ -48,6 +48,7 @@ from max.graph import (
 from max.nn.kernels import topk_fused_sampling_with_dist
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
+from max.nn.sampling.penalties import LogitPenalties
 from max.nn.sampling.rejection_sampler import (
     AcceptanceSampler,
     _draft_step_seed,
@@ -570,6 +571,7 @@ class SequentialDriver(
         device_bitmask_scratch: BufferValue | None = None,
         extra: Mapping[str, Any] | None = None,
         draft_probs_full: TensorValue | None = None,
+        penalties: LogitPenalties | None = None,
     ) -> tuple[TensorValue, ...]:
         """Runs one spec-decode iteration: verify K drafts, propose K more.
 
@@ -611,6 +613,8 @@ class SequentialDriver(
                 previous iteration's draft drew its proposals from. Required
                 iff the driver was built with ``draft_proposal="sampled"``,
                 which is also the only mode that returns a fourth output.
+            penalties: Presence/frequency penalties applied to the verified
+                logits before acceptance, or None.
 
         Returns:
             ``(num_accepted, next_tokens, next_draft_tokens)``, plus
@@ -724,6 +728,7 @@ class SequentialDriver(
                     in_thinking_phase=in_thinking_phase,
                     token_bitmasks=effective_bitmasks,
                     draft_probs_full=draft_probs_full,
+                    penalties=penalties,
                 )
             )
 

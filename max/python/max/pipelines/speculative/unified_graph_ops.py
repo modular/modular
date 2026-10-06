@@ -23,6 +23,7 @@ from max.nn.kernels import (
     inplace_memcpy,
     wait_host_value_with_dep,
 )
+from max.nn.sampling.penalties import LogitPenalties
 from max.nn.sampling.rejection_sampler import AcceptanceSampler
 
 from .ragged_token_merger import (
@@ -193,6 +194,7 @@ def accept_and_pick_next_tokens(
     in_thinking_phase: TensorValue | None = None,
     token_bitmasks: TensorValue | None = None,
     draft_probs_full: TensorValue | None = None,
+    penalties: LogitPenalties | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
     """Run acceptance sampling and pick the next token at the first reject."""
     # AcceptanceSampler defaults in_thinking_phase to None, so passing it
@@ -209,6 +211,7 @@ def accept_and_pick_next_tokens(
         in_thinking_phase=in_thinking_phase,
         token_bitmasks=token_bitmasks,
         draft_probs_full=draft_probs_full,
+        penalties=penalties,
     )
     # concat([recovered, bonus]) -> [batch, K+1]; gather_nd picks the token at
     # index num_accepted[b] per batch element (target argmax at first reject).

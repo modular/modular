@@ -25,6 +25,7 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     recurrent_leaf,
 )
+from max.nn.sampling.penalties import LogitPenalties
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib.interfaces.pipeline_model import (
     GraphPipelineModelWithKVCache,
@@ -223,6 +224,12 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
             if nn_model.target.mrope_enabled:
                 position_ids = next(trailing).tensor
 
+            penalties: LogitPenalties | None = None
+            if nn_model.logit_penalties:
+                penalties = LogitPenalties.from_inputs(
+                    [next(trailing).tensor for _ in range(4)]
+                )
+
             outputs = nn_model(
                 graph_inputs.tokens,
                 graph_inputs.input_row_offsets,
@@ -244,6 +251,7 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
                 wait_payload=graph_inputs.wait_payload,
                 device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
                 extra={**state, POSITION_IDS: position_ids},
+                penalties=penalties,
             )
             graph.output(*outputs)
 

@@ -425,6 +425,17 @@ class SpeculativeConfig(ConfigFileModel):
         ),
     )
 
+    logit_penalties: bool = Field(
+        default=False,
+        description=(
+            "Declares presence/frequency penalty inputs on the fused "
+            "speculative graph and applies them to the verified logits "
+            "before acceptance. For engines that feed those inputs (Mach); "
+            "MAX Serve's speculative pipeline does not, and only the "
+            "Qwen3.5 MTP graph declares them."
+        ),
+    )
+
     @model_validator(mode="after")
     def _validate_draft_proposal(self) -> Self:
         if (

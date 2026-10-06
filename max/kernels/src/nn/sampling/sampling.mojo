@@ -16,6 +16,7 @@ from std.math import ceildiv, iota
 from std.sys.info import simd_width_of
 
 from std.math import isfinite
+from std.utils.numerics import neg_inf
 import max.gpu.primitives.block as block
 from max.algorithm.functional import elementwise
 from max.gpu import block_idx, thread_idx
@@ -136,6 +137,84 @@ def apply_penalties_to_logits[
         target=target,
         _trace_description="apply_penalties_to_logits",
     ](apply_penalties_fn, dispatch_shape, ctx)
+
+
+def apply_masked_penalties_to_logits[
+    logit_type: DType,
+    penalty_type: DType,
+    //,
+    target: StaticString,
+](
+    logits: TileTensor[mut=True, logit_type, ...],
+    packed: TileTensor[mut=False, .int32, ...],
+    compressed_frequency_data: TileTensor[mut=False, .int32, ...],
+    frequency_offsets: TileTensor[mut=False, .uint32, ...],
+    frequency_penalty: TileTensor[mut=False, penalty_type, ...],
+    presence_penalty: TileTensor[mut=False, penalty_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Subtracts presence/frequency penalties from grammar-allowed logits.
+
+    Runs on logits a packed grammar bitmask was already applied to, so it
+    skips every token whose bit is clear and every `-inf` logit: a negative
+    penalty must not lift a masked-out token back above its fill value.
+    Otherwise matches `apply_penalties_to_logits` with no repetition penalty:
+    `logit -= frequency * count + presence` for each `[token, count]` entry.
+
+    Parameters:
+        logit_type: Element type of `logits` (inferred).
+        penalty_type: Element type of the per-row penalty tensors (inferred).
+        target: Target device to dispatch the elementwise kernel to.
+
+    Args:
+        logits: Masked logits, shape `[rows, vocab]`, updated in place.
+        packed: Packed `int32` bitmask the logits were masked with, shape
+            `[rows, ceil(vocab / 32)]`; a set bit means the token is allowed.
+        compressed_frequency_data: CSR `[entries, 2]` of `[token, count]`; a
+            negative token is padding.
+        frequency_offsets: `[rows + 1]` start of each row's entries.
+        frequency_penalty: Per-row scalar multiplied by the count.
+        presence_penalty: Per-row scalar subtracted once per seen token.
+        ctx: Device context used to dispatch the kernel.
+    """
+    comptime assert logits.flat_rank == 2
+    comptime assert packed.flat_rank == 2
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert frequency_penalty.flat_rank == 1
+    comptime assert presence_penalty.flat_rank == 1
+
+    @inline(.always)
+    def apply_masked_penalties_fn[
+        width: Int, alignment: Int = 1
+    ](idx: Coord) {var}:
+        comptime assert idx.rank == 1, "apply_masked_penalties_fn: rank 1"
+
+        var token = Int(compressed_frequency_data[idx[0], 0])
+        if token < 0:
+            return
+        var row = get_batch_from_row_offsets(
+            frequency_offsets, Int(idx[0].value())
+        )
+        var word = packed[row, token >> 5][0]
+        if ((word >> Int32(token & 31)) & 1) == 0:
+            return
+        var logit = logits[row, token][0]
+        if logit == neg_inf[logit_type]():
+            return
+        var count = compressed_frequency_data[idx[0], 1][0].cast[logit_type]()
+        logit -= (
+            frequency_penalty[row][0].cast[logit_type]() * count
+            + presence_penalty[row][0].cast[logit_type]()
+        )
+        logits[row, token] = logit
+
+    var dispatch_shape = Coord(Int(compressed_frequency_data.dim[0]()))
+    elementwise[
+        simd_width=1,
+        target=target,
+        _trace_description="apply_masked_penalties_to_logits",
+    ](apply_masked_penalties_fn, dispatch_shape, ctx)
 
 
 @__name(t"update_frequency_data_{token_type}")

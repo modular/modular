@@ -10427,6 +10427,82 @@ def apply_packed_bitmask(
     return masked
 
 
+def apply_packed_bitmask_with_penalties(
+    logits: TensorValueLike,
+    packed: TensorValueLike,
+    fill_val: float,
+    frequency_data: TensorValueLike,
+    frequency_offsets: TensorValueLike,
+    frequency_penalty: TensorValueLike,
+    presence_penalty: TensorValueLike,
+) -> TensorValue:
+    """Applies a packed grammar bitmask, then presence/frequency penalties.
+
+    Equal to :func:`apply_packed_bitmask` followed by
+    :func:`apply_penalties_to_logits` on the kept tokens only, in one output:
+    a masked-out or ``-inf`` token is never penalized, so a negative penalty
+    cannot lift it back. Zero penalties leave the mask's output unchanged.
+
+    Args:
+        logits: ``[rows, vocab]`` or ``[batch, num_positions, vocab]`` logits.
+        packed: Packed ``int32`` bitmask with leading dims matching ``logits``.
+        fill_val: Value written for masked-out tokens.
+        frequency_data: ``[entries, 2]`` int32 CSR of ``[token, count]``; a
+            negative token is padding.
+        frequency_offsets: ``[rows + 1]`` uint32 start of each logit row's
+            entries, rows counted after flattening the leading dims.
+        frequency_penalty: ``[rows]`` float32, multiplied by the count.
+        presence_penalty: ``[rows]`` float32, subtracted once per seen token.
+
+    Returns:
+        Masked, penalized logits, same shape and dtype as ``logits``.
+    """
+    logits = TensorValue(logits)
+    packed = TensorValue(packed)
+    if packed.dtype != DType.int32:
+        raise ValueError(
+            "apply_packed_bitmask_with_penalties requires an int32 bitmask,"
+            f" got {packed.dtype}"
+        )
+    if logits.rank != packed.rank or logits.rank not in (2, 3):
+        raise ValueError(
+            "apply_packed_bitmask_with_penalties requires 2d or 3d logits and"
+            f" a bitmask of equal rank, got {logits.rank} and {packed.rank}"
+        )
+    orig_shape = logits.shape
+    if logits.rank == 3:
+        rows = logits.shape[0] * logits.shape[1]
+        logits_2d = ops.reshape(logits, [rows, logits.shape[2]])
+        packed_2d = ops.reshape(packed, [rows, packed.shape[2]])
+    else:
+        logits_2d = logits
+        packed_2d = packed
+    row_dim = logits_2d.shape[0]
+    masked = ops.custom(
+        "sampler.apply_packed_bitmask_with_penalties",
+        device=logits.device,
+        values=[
+            logits_2d,
+            packed_2d,
+            ops.constant(fill_val, logits.dtype, device=DeviceRef.CPU()),
+            TensorValue(frequency_data),
+            TensorValue(frequency_offsets),
+            ops.rebind(TensorValue(frequency_penalty), [row_dim]),
+            ops.rebind(TensorValue(presence_penalty), [row_dim]),
+        ],
+        out_types=[
+            TensorType(
+                dtype=logits.dtype,
+                shape=logits_2d.shape,
+                device=logits.device,
+            )
+        ],
+    )[0].tensor
+    if logits.rank == 3:
+        return ops.reshape(masked, orig_shape)
+    return masked
+
+
 def scatter_nd_skip_oob_indices(
     input: TensorValueLike,
     updates: TensorValueLike,
