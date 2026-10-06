@@ -242,4 +242,7 @@ class NemotronHMamba2Mixer(
             has_initial_state,
         )
         y = self.norm(y.reshape([-1, self.intermediate]), gate)
-        return self.out_proj(y)
+        out = self.out_proj(y)
+        # The kernels have no sharding rules, so their outputs are Unknown.
+        # Every device runs the whole mixer on replicated input and state.
+        return out.rebind_mapping(x.mapping) if out.is_distributed else out

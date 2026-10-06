@@ -25,16 +25,18 @@ from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module, as_subgraph
+from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
+from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MHAKVCacheParams,
-    PagedCacheValues,
+    RecurrentLeafInputs,
     RecurrentStateInputsPerDevice,
 )
 from max.nn.transformer import ReturnLogits
@@ -48,6 +50,35 @@ from .model_config import (
     LayerKind,
     NemotronHConfig,
 )
+
+
+def _distributed_state(
+    per_device: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
+    mapping: DeviceMapping,
+) -> RecurrentStateInputsPerDevice[Tensor, Tensor]:
+    """Builds one state tensor per leaf from each device's pool.
+
+    Mamba state is full-width on every device, so the pools take the same
+    placement as the replicated token tensor.
+    """
+    leaves: list[RecurrentLeafInputs[Tensor, Tensor]] = []
+    for index in range(len(per_device[0].leaves)):
+        leaves.append(
+            RecurrentLeafInputs(
+                pool=Tensor.from_shard_values(
+                    [device.leaves[index].pool for device in per_device],
+                    mapping,
+                ),
+                live_row_ids=Tensor.from_shard_values(
+                    [
+                        device.leaves[index].live_row_ids
+                        for device in per_device
+                    ],
+                    mapping,
+                ),
+            )
+        )
+    return RecurrentStateInputsPerDevice(leaves=tuple(leaves))
 
 
 class NemotronHBlock(Module[..., Tensor]):
@@ -95,7 +126,7 @@ class NemotronHBackbone(Module[..., Tensor]):
         self,
         tokens: Tensor,
         kv_collection: PagedCacheValues,
-        state: RecurrentStateInputsPerDevice[TensorValue, BufferValue],
+        state: RecurrentStateInputsPerDevice[Tensor, Tensor],
         input_row_offsets: Tensor,
     ) -> Tensor:
         h = self.embeddings(tokens)
@@ -106,7 +137,7 @@ class NemotronHBackbone(Module[..., Tensor]):
         # every request can resume from its rows.
         batch_size = conv.live_row_ids.shape[1]
         has_initial_state = F.full(
-            [batch_size], True, dtype=DType.bool, device=h.device
+            [batch_size], True, dtype=DType.bool, device=h.mesh
         )
         mamba_idx = 0
         for kind, layer in zip(self.layer_kinds, self.layers, strict=True):
@@ -122,10 +153,10 @@ class NemotronHBackbone(Module[..., Tensor]):
                 # Every layer's rows go into the shared subgraph with the
                 # layer index, and the layer slices its own rows there.
                 access = MambaStateAccess(
-                    conv_pool=Tensor.from_graph_value(conv.pool),
-                    conv_rows=Tensor.from_graph_value(conv.live_row_ids),
-                    ssm_pool=Tensor.from_graph_value(ssm.pool),
-                    ssm_rows=Tensor.from_graph_value(ssm.live_row_ids),
+                    conv_pool=conv.pool,
+                    conv_rows=conv.live_row_ids,
+                    ssm_pool=ssm.pool,
+                    ssm_rows=ssm.live_row_ids,
                     layer=F.constant(mamba_idx, DType.int64, device=CPU()),
                 )
                 h = call(h, access, query_start_loc, has_initial_state)
@@ -161,18 +192,39 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
         *kv_inputs: Tensor,
     ) -> tuple[Tensor, ...]:
         del return_n_logits
+        mesh = self.lm_head.weight.mesh
+        row_offsets = input_row_offsets
+        if mesh.num_devices > 1:
+            # Device graph capture records each device's stream on its own,
+            # and a peer copy makes one stream wait on another, which
+            # invalidates the capture. The collective syncs on the devices.
+            tokens = F.distributed_broadcast(tokens, mesh)
+            input_row_offsets = F.distributed_broadcast(input_row_offsets, mesh)
+        else:
+            tokens = tokens.to(mesh)
+            input_row_offsets = input_row_offsets.to(mesh)
         kv_tree = self.kv_params.unflatten_kv_inputs(
             iter(x._graph_value for x in kv_inputs)
         )
-        (kv_collection,) = tree.leaves(
-            kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice
+        kv_collection = PagedCacheValues.from_upstream(
+            tree.leaves(kv_tree[ATTN_CACHE_KEY], leaf=KVCacheInputsPerDevice),
+            tokens.mapping,
         )
-        (state,) = tree.leaves(
-            kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+        state = _distributed_state(
+            tree.leaves(
+                kv_tree[STATE_CACHE_KEY], leaf=RecurrentStateInputsPerDevice
+            ),
+            tokens.mapping,
         )
         h = self.backbone(tokens, kv_collection, state, input_row_offsets)
 
         last = self._logits(F.gather(h, input_row_offsets[1:] - 1, axis=0))
+        # The head is replicated, so device 0 holds the full vocabulary.
+        # The sampler reads that one buffer.
         if self.return_logits == ReturnLogits.ALL:
-            return (last, self._logits(h), input_row_offsets)
-        return (last,)
+            return (
+                last.local_shards[0],
+                self._logits(h).local_shards[0],
+                row_offsets,
+            )
+        return (last.local_shards[0],)

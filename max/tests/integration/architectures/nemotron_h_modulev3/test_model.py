@@ -22,8 +22,12 @@ import pytest
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
+from max.experimental.sharding import DeviceMesh
+from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef
+from max.pipelines.architectures.nemotron_h_modulev3.memory_planner import (
+    NemotronHMemoryPlanner,
+)
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
     NemotronHConfig,
 )
@@ -59,8 +63,8 @@ _TINY = dict(
 )
 
 
-def _config(layers: list[str], dims: dict[str, int]) -> NemotronHConfig:
-    hf = HFNemotronHConfig(
+def _hf_config(layers: list[str], dims: dict[str, int]) -> HFNemotronHConfig:
+    return HFNemotronHConfig(
         layers_block_type=layers,
         vocab_size=64,
         intermediate_size=16,
@@ -71,9 +75,15 @@ def _config(layers: list[str], dims: dict[str, int]) -> NemotronHConfig:
         routed_scaling_factor=2.5,
         **dims,
     )
+
+
+def _config(
+    layers: list[str], dims: dict[str, int], n_devices: int = 1
+) -> NemotronHConfig:
+    hf = _hf_config(layers, dims)
     pipeline = Mock()
     pipeline.model.data_parallel_degree = 1
-    devices = [DeviceRef.CPU()]
+    devices = [DeviceRef.CPU()] * n_devices
     kv_params = NemotronHConfig.construct_kv_params(
         huggingface_config=hf,
         pipeline_config=pipeline,
@@ -175,6 +185,36 @@ def test_each_mamba_layer_reads_its_own_state_row(
     assert layers == [0, 1, 2]
 
 
+def test_inputs_reach_the_other_devices_by_collective(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Device graph capture records each device's stream on its own.
+
+    A peer copy of the inputs makes one device's stream wait on another's,
+    which invalidates the capture, so the tokens and row offsets reach the
+    other devices through the broadcast collective.
+    """
+    config = _config(_TINY_LAYERS, _TINY, n_devices=2)
+    broadcast: list[DType] = []
+
+    def record(t: Tensor, mesh: DeviceMesh) -> Tensor:
+        broadcast.append(t.dtype)
+        # A CPU mesh has no signal buffers to run the collective with.
+        return t.to(mesh)
+
+    monkeypatch.setattr(F, "distributed_broadcast", record)
+    mesh = DeviceMesh((CPU(), CPU()), (2,), ("tp",))
+    with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
+        model = NemotronH(config)
+    model.trace(
+        *modulev3_ragged_kv_symbolic_inputs(
+            kv_params=config.kv_params, device_refs=config.devices
+        )
+    )
+
+    assert broadcast == [DType.int64, DType.uint32]
+
+
 def test_loading_is_strict() -> None:
     """A missing weight or a stray scale fails the load by name."""
     config = _config(_TINY_LAYERS, _TINY)
@@ -205,3 +245,28 @@ def test_w4a4_selects_the_moe_mixers_with_nvfp4_experts() -> None:
         config, w4a4_experts=True, quant_scheme=NemotronHQuantScheme(nvfp4)
     )
     assert config.w4a4_mixers() == {"backbone.layers.1.mixer"}
+
+
+def test_attention_heads_must_divide_across_devices() -> None:
+    """Each device runs an equal share of the attention heads."""
+    config = _config(_TINY_LAYERS, _TINY)
+    hf = _hf_config(_TINY_LAYERS, {**_TINY, "num_attention_heads": 3})
+    with pytest.raises(ValueError, match="3 attention heads"):
+        NemotronHConfig.from_huggingface(
+            hf,
+            kv_params=config.kv_params,
+            devices=[DeviceRef.GPU(0), DeviceRef.GPU(1)],
+            max_seq_len=256,
+        )
+
+
+def test_weights_are_planned_on_every_device() -> None:
+    """Only attention is sharded, so each device holds about every weight."""
+    config = _config(_TINY_LAYERS, _TINY)
+    pipeline = Mock()
+    pipeline.model.weights_size.return_value = 1000
+    two_devices = replace(config, devices=[DeviceRef.GPU(0), DeviceRef.GPU(1)])
+
+    one = NemotronHMemoryPlanner(config).estimate_weights_size(pipeline)
+    two = NemotronHMemoryPlanner(two_devices).estimate_weights_size(pipeline)
+    assert (one, two) == (1000, 2000)

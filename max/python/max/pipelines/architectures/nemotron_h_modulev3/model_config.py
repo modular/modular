@@ -362,6 +362,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 f"Nemotron-H does not clamp dt, but the checkpoint sets "
                 f"time_step_limit={limit}"
             )
+        if hf.num_attention_heads % len(devices):
+            raise ValueError(
+                f"Nemotron-H shards its {hf.num_attention_heads} attention "
+                f"heads across devices, which {len(devices)} devices do not "
+                "divide"
+            )
         return cls(
             hidden_size=hf.hidden_size,
             vocab_size=hf.vocab_size,

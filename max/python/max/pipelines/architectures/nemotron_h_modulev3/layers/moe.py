@@ -292,4 +292,8 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
                 expert_usage_stats,
             )
         routed = moe_finalize(down, restore_token_order, weights, x.dtype)
-        return routed + self.shared_experts(x)
+        out = routed + self.shared_experts(x)
+        # Some routing and expert kernels have no sharding rules, so their
+        # outputs are Unknown. Every device runs every expert on replicated
+        # input.
+        return out.rebind_mapping(x.mapping) if out.is_distributed else out

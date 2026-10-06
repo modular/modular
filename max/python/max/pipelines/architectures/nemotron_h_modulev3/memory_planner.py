@@ -26,7 +26,7 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
     """Plans for the weights as loaded rather than as stored."""
 
     def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
-        """Estimates the device memory the weights occupy, in bytes.
+        """Estimates the memory the weights occupy across all devices, in bytes.
 
         Modules dequantized at load are larger on the device than in the
         checkpoint files the default estimate measures. Routed experts kept in
@@ -65,7 +65,9 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
             }[fmt]
             # Dequantized to two-byte BF16.
             size += int(inner * config.hidden_size * (2 - stored_bytes))
-        return size
+        # Only attention is sharded, so every device holds about the whole
+        # model, and the caller subtracts this from all devices' free memory.
+        return size * len(config.devices)
 
 
 def _block_scale_padding_bytes(config: NemotronHConfig, module: str) -> int:

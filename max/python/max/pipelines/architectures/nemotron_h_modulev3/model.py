@@ -18,6 +18,8 @@ import logging
 import time
 from typing import Any, ClassVar
 
+from max.experimental.sharding import DeviceMesh
+from max.experimental.tensor import default_device
 from max.pipelines.context import TextContext
 from max.pipelines.lib import ModuleV3PipelineModelWithKVCache
 from max.pipelines.lib.log_probabilities import LogProbabilitiesMixin
@@ -66,6 +68,7 @@ class NemotronHModel(
         return state_dict
 
     def _instantiate_module(self, model_config: NemotronHConfig) -> NemotronH:
-        nn_model = NemotronH(model_config)
-        nn_model.to(self.devices[0])
-        return nn_model
+        n_devices = len(self.devices)
+        mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
+        with default_device(mesh):
+            return NemotronH(model_config)
