@@ -677,3 +677,26 @@ def test():
     # CHECK-NEXT: [[X2:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: lit.call {{.*}}@"no_exclusivity_violation{{.*}}[muttoimm *"x`"]<:!Bool {:scalar<bool> false}{{.*}}([[X1]], [[X2]])
     no_exclusivity_violation[mut = False](x, x)
+
+
+@fieldwise_init
+struct Color(ImplicitlyCopyable):
+    var r: Int
+
+    @staticmethod
+    def gray(level: Int) -> Self:
+        return Self(level)
+
+
+def paint(c: Color):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"test_inferred_member_runtime_arg
+def test_inferred_member_runtime_arg(level: Int):
+    # `.gray` resolves against `paint`'s parameter type even when its argument
+    # is a runtime value rather than a literal.
+    # CHECK: lit.call @call_emission::@Color::@"gray({{.*}})"{{.*}}(%level, %[[TMP:[a-z_]+]])
+    # CHECK: %[[C:[0-9]+]] = lit.ref.immut %[[TMP]]
+    # CHECK: lit.call @call_emission::@"paint(call_emission::Color)"{{.*}}(%[[C]])
+    paint(.gray(level))

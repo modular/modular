@@ -1830,6 +1830,9 @@ struct DType(TrivialRegisterPassable):
     comptime uint32 = DType(
         mlir_value=__mlir_attr.`#kgen.dtype.constant<ui32> : !kgen.dtype`
     )
+    comptime float4_e2m1fn = DType(
+        mlir_value=__mlir_attr.`#kgen.dtype.constant<f4e2m1fn> : !kgen.dtype`
+    )
 
     @always_inline("builtin")
     @implicit

@@ -215,17 +215,12 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   }
 
   if (auto inferredAttr = operand.ir.getIfInferredBaseAttrRef()) {
-    // Resolve `.member` against the expected parameter type, e.g.
-    // `takes_dtype(.float32)` with `dtype: DType` becomes `DType.float32`.
-    IREmitter emitter(getDeclScope(), ExprContext::EC_CallArgValue);
-    ExprDest dest(expectedType, ExprContext::EC_CallArgValue);
-    if (auto cValue = inferredAttr.emitAsCValue(emitter, dest))
-      return SmartVariant<CValue, ASTType>(cValue);
-    // emitAsCValue diagnoses into the shared engine; also record on the
-    // ParamInf diag so overload fitness failure reporting stays consistent.
-    getMojoDiag(operand.expr->getLoc())
-        << "cannot resolve inferred attribute reference";
-    return failure();
+    // Simply take the expected type as the inferred type, according to the
+    // specification: If the contextual type is ambiguous, inference fails; we
+    // do not search the overload set for a type that would make `.member` work.
+    // So we can safely assume that the expected type would work and defer the
+    // error (if any) till call emission time.
+    return SmartVariant<CValue, ASTType>(expectedType);
   }
 
   auto orValue = operand.ir.getIfOverloadSet();
@@ -593,7 +588,8 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     if (!argVal) {
       argVal =
           emitter.emitPValue(binding, EC_ParameterList, cast<ASTType>(*cvOr));
-      assert(argVal && "This should always succeed; it was checked");
+      if (!argVal) // can fail if the this is a contextual member reference.
+        return failure();
     }
 
     // Finally, check that this CValue is a PValue.
