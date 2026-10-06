@@ -88,6 +88,7 @@ from layout.runtime_tuple import (
     flatten,
     to_index_list as runtime_tuple_to_index_list,
 )
+from layout.tile_layout import RowMajorLayout, row_major
 from layout.tensor_core_async import tile_layout_k_major
 
 from std.utils.index import Index, IndexList
@@ -4130,20 +4131,17 @@ def _split_tma_gmem_tensor[
 ](
     ptr: Pointer[Scalar[dtype], _],
     dim0: Int,
-    out ret: LayoutTensor[
+    out ret: TileTensor[
         dtype,
-        Layout.row_major(_coord_to_index_list[shape.rank, shape]()),
+        RowMajorLayout[*_CoordReplaceAt[shape.element_types, 0, Int64]],
         ptr.origin,
     ],
 ):
-    comptime split_rank = len(flatten(ret.layout.shape))
-    var runtime_shape: IndexList[split_rank] = {}
-    runtime_shape[0] = dim0
-
-    comptime for i in range(1, split_rank):
-        comptime dim_i: Int = ret.layout.shape[i].value()
-        runtime_shape[i] = dim_i
-    ret = {ptr, RuntimeLayout[ret.layout].row_major(runtime_shape)}
+    var runtime_shape = Coord[*ret.LayoutType.shape_types]()
+    Pointer(to=runtime_shape[0]).write(
+        rebind[type_of(runtime_shape[0])](Int64(dim0))
+    )
+    ret = {ptr, row_major(runtime_shape)}
 
 
 @inline(.always)
@@ -4156,23 +4154,24 @@ def _split_tma_gmem_tensor[
     ptr: Pointer[Scalar[dtype], _],
     dim0: Int,
     dim1: Int,
-    out ret: LayoutTensor[
+    out ret: TileTensor[
         dtype,
-        Layout.row_major(_coord_to_index_list[shape.rank, shape]()),
+        RowMajorLayout[
+            *_CoordReplaceAt[
+                _CoordReplaceAt[shape.element_types, 0, Int64], 1, Int64
+            ]
+        ],
         ptr.origin,
     ],
 ):
-    var runtime_shape = IndexList[shape.rank]()
-    runtime_shape[0] = dim0
-    runtime_shape[1] = dim1
-
-    comptime for i in range(2, shape.rank):
-        runtime_shape[i] = shape.element_types[i].static_value
-
-    comptime assert shape.rank == len(flatten(ret.layout.shape)), (
-        "rank = " + String(shape.rank) + "\nlayout = " + String(ret.layout)
+    var runtime_shape = Coord[*ret.LayoutType.shape_types]()
+    Pointer(to=runtime_shape[0]).write(
+        rebind[type_of(runtime_shape[0])](Int64(dim0))
     )
-    ret = {ptr, RuntimeLayout[ret.layout].row_major(runtime_shape)}
+    Pointer(to=runtime_shape[1]).write(
+        rebind[type_of(runtime_shape[1])](Int64(dim1))
+    )
+    ret = {ptr, row_major(runtime_shape)}
 
 
 def _create_split_tma_folded[

@@ -18,9 +18,7 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.compute.mma import mma
 from max.gpu.sync import barrier
 from layout import *
-from layout.layout_tensor import copy_dram_to_sram, copy_local_to_dram
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.math import outer_product_acc
 from layout.tile_io import copy_dram_to_sram as copy_tile_dram_to_sram
@@ -247,33 +245,52 @@ def test_sram_blocked_matmul(ctx: DeviceContext) raises:
 
 
 def single_warp_mma_sync_m16n8k8[
-    layout_c: Layout,
-    layout_a: Layout,
-    layout_b: Layout,
-    layout_c_mma: Layout,
-    layout_a_mma: Layout,
-    layout_b_mma: Layout,
+    layout_c: TensorLayout,
+    layout_a: TensorLayout,
+    layout_b: TensorLayout,
 ](
-    mat_c: LayoutTensor[.float32, layout_c, MutAnyOrigin],
-    mat_a: LayoutTensor[.float32, layout_a, MutAnyOrigin],
-    mat_b: LayoutTensor[.float32, layout_b, MutAnyOrigin],
+    mat_c: TileTensor[.float32, layout_c, MutAnyOrigin],
+    mat_a: TileTensor[.float32, layout_a, ImmutAnyOrigin],
+    mat_b: TileTensor[.float32, layout_b, ImmutAnyOrigin],
 ):
-    var mat_a_mma = mat_a.composition[layout_a_mma]()
-    # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
-    var mat_b_mma = mat_b.transpose().composition[layout_b_mma]()
-    var mat_c_mma = mat_c.composition[layout_c_mma]()
+    # MMA fragments address the row-major A and column-major B storage
+    # directly; each axis describes a lane or a value owned by that lane.
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
+    var mat_a_mma = TileTensor(
+        ptr=mat_a.unsafe_ptr(),
+        layout=MixedLayout(
+            Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
+            Coord(Idx[1], Idx[8], Idx[64], Idx[4]),
+        ),
+    )
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
+    var mat_b_mma = TileTensor(
+        ptr=mat_b.unsafe_ptr(),
+        layout=MixedLayout(
+            Coord(Idx[4], Idx[8], Idx[2]),
+            Coord(Idx[1], Idx[8], Idx[4]),
+        ),
+    )
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-c
+    var mat_c_mma = TileTensor(
+        ptr=mat_c.unsafe_ptr(),
+        layout=MixedLayout(
+            Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
+            Coord(Idx[2], Idx[8], Idx[1], Idx[64]),
+        ),
+    )
 
     var thread_y, thread_x = divmod(thread_idx.x, 4)
 
     var vec_a_layout = SIMD[.float32, 4](
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 0]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 1, 0]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 1]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 1, 1]),
+        mat_a_mma[thread_x, thread_y, 0, 0],
+        mat_a_mma[thread_x, thread_y, 1, 0],
+        mat_a_mma[thread_x, thread_y, 0, 1],
+        mat_a_mma[thread_x, thread_y, 1, 1],
     )
     var vec_b_layout = SIMD[.float32, 2](
-        rebind[Float32](mat_b_mma[thread_x, thread_y, 0]),
-        rebind[Float32](mat_b_mma[thread_x, thread_y, 1]),
+        mat_b_mma[thread_x, thread_y, 0],
+        mat_b_mma[thread_x, thread_y, 1],
     )
 
     var vec_d = SIMD[.float32, 4](0)
@@ -293,52 +310,39 @@ def test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     comptime N = 8
     comptime K = 8
 
-    comptime TH_M = 4
-    comptime TH_N = 8
+    comptime layout_a = row_major[M, K]()
+    comptime layout_b = col_major[K, N]()
+    comptime layout_c = row_major[M, N]()
 
-    comptime layout_a = Layout.row_major(M, K)
-    comptime layout_b = Layout.col_major(K, N)
-    comptime layout_c = Layout.row_major(M, N)
+    var mat_a = HostDeviceTileTensor[.float32](layout_a, ctx)
+    var mat_b = HostDeviceTileTensor[.float32](layout_b, ctx)
+    var mat_c = HostDeviceTileTensor[.float32](layout_c, ctx)
 
-    var mat_a = ManagedLayoutTensor[.float32, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[.float32, layout_b](ctx)
-    var mat_c = ManagedLayoutTensor[.float32, layout_c](ctx)
+    arange(mat_a.host_tensor())
+    arange(mat_b.host_tensor())
+    _ = mat_c.host_tensor().fill(0)
+    mat_a.to_device()
+    mat_b.to_device()
+    mat_c.to_device()
 
-    arange(mat_a.tensor())
-    arange(mat_b.tensor())
-    _ = mat_c.tensor().fill(0)
-
-    # MMA layout are copied from CUTLASS:
-    # https://sourcegraph.com/github.com/NVIDIA/cutlass@ffa34e70756b0bc744e1dfcc115b5a991a68f132/-/blob/include/cute/atom/mma_traits_sm80.hpp?L167
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
-    comptime layout_a_mma = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
-        IntTuple(IntTuple(16, 1), IntTuple(8, 64)),
-    )
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
-    comptime layout_b_mma = Layout(
-        IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(8, 1), 32)
-    )
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
-    comptime layout_c_mma = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
-        IntTuple(IntTuple(32, 1), IntTuple(16, 8)),
-    )
-
-    comptime single_warp_mma_sync_m16n8k8_kernel_kernel = single_warp_mma_sync_m16n8k8[
-        layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
+    comptime single_warp_mma_sync_m16n8k8_kernel = single_warp_mma_sync_m16n8k8[
+        type_of(layout_c), type_of(layout_a), type_of(layout_b)
     ]
 
-    ctx.enqueue_function[single_warp_mma_sync_m16n8k8_kernel_kernel](
-        mat_c.device_tensor(),
-        mat_a.device_tensor(),
-        mat_b.device_tensor(),
+    ctx.enqueue_function[single_warp_mma_sync_m16n8k8_kernel](
+        mat_c.device_tensor().as_unsafe_any_origin(),
+        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
 
-    ctx.synchronize()
-    print(mat_c.tensor())
+    mat_c.to_host()
+    var c = mat_c.host_tensor()
+    for m in range(M):
+        for n in range(N):
+            print(c[m, n], end=" ")
+        print()
 
 
 def sram_blocked_matmul_dynamic_nd_buffer[
