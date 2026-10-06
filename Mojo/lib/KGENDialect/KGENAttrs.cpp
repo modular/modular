@@ -1708,8 +1708,38 @@ SymbolConstantAttr::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   }
 
   FuncTypeGeneratorType declSignature = getSymbolSignature(func, symbolOps);
-  declSignature = declSignature.getSpecializedGenerator(
-      getParamValues(), &evaluationContext, [&] { return emitError(loc); });
+  if (getParamValues().empty() ||
+      !llvm::all_of(getParamValues(), llvm::IsaPred<UnboundAttr>)) {
+    // If all the provided bindings are unbound, use the original generator.
+    //
+    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
+    // type dependencies, which results in `getSpecializedGenerator` being
+    // computed in a wrong way.
+    //
+    // E.g.,
+    //
+    // def takeClosure[
+    //     origins: OriginSet,
+    //     //,
+    //     f: def() capturing[origins] -> None,
+    // ]():
+    //     pass
+    //
+    // where
+    //
+    // `f: def() capturing[origins]` will be replaced to
+    // `f: def() capturing[  ?    ]`. This will make the type dependency on
+    // `origins` unrecoverable.
+    declSignature = declSignature.getSpecializedGenerator(
+        getParamValues(), &evaluationContext, [&] { return emitError(loc); });
+  } else if (getParamValues().size() !=
+             declSignature.getInputParamTypes().size()) {
+    return mlir::emitError(loc)
+           << "generator type expects "
+           << declSignature.getInputParamTypes().size()
+           << " parameters but got bindings for " << getParamValues().size();
+  }
+
   if (!declSignature)
     return failure();
 

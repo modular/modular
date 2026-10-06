@@ -225,15 +225,33 @@ def _reduce_generator[
             reduce_dim=reduce_dim,
         ](shape, init)
     elif CurrentPlugin.reduce_generator_fn:
+
+        @inline(.always)
+        def input_fn[
+            dtype: DType, width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
+            return input_0_fn[dtype, width, rank](idx)
+
+        @inline(.always)
+        def output_fn[
+            dtype: DType, width: SIMDLength, rank: Int
+        ](
+            idx: IndexList[rank],
+            val: StaticTuple[SIMD[dtype, width], num_reductions],
+        ):
+            output_0_fn[dtype, width, rank](idx, val)
+
+        @inline(.always)
+        def reduce_fn[
+            ty: DType, width: SIMDLength, reduction_idx: Int
+        ](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
+            return reduce_function[ty, width, reduction_idx](lhs, rhs)
+
         # The plugin hook takes `reduce_dim` as a runtime argument; feed it the
         # compile-time value.
         return comptime (CurrentPlugin.reduce_generator_fn.value())[
-            num_reductions,
-            init_type,
-            input_0_fn,
-            output_0_fn,
-            reduce_function,
-        ](shape_index_list, init, reduce_dim)
+            num_reductions, init_type
+        ](shape_index_list, init, reduce_dim, input_fn, output_fn, reduce_fn)
     else:
         _reduce_generator_gpu[
             num_reductions,
