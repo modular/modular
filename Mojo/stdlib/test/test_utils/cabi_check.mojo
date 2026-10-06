@@ -12,18 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Checks Mojo mirrors of C declarations against the platform headers.
 
-Each set of mirrors under test has three parts:
+A suite is a manifest package defining `CABI_INCLUDES`,
+`CABI_STRUCTS`, `CABI_TYPEDEFS`, and `CABI_CONSTANTS`, built by the
+`mojo_cabi_test` macro (`Mojo/stdlib/test/cabi_test.bzl`), which:
 
-1. A generator binary prints a C file using this module's emitters:
-   `preamble`, then one `*_checks` call per declaration. The emitters
-   produce only names.
-2. The `mojo_abi_reference` macro (`Mojo/stdlib/test/abi_reference.bzl`)
-   compiles that file against the real platform headers, so every size,
+1. Runs a generator that prints `emit_cabi_checks_for` of the manifest:
+   a C file that contains only names.
+2. Compiles that file against the real platform headers, so every size,
    offset, alignment, and constant value comes from the C compiler.
-3. A `test_abi_*` suite links the result and compares the mirrors
-   against it with this module's `assert_cabi_*` functions, which call
-   the generated `mojo_check_cabi_*` reporters by name. A failure means
-   the mirror no longer matches the C ABI.
+3. Runs a test that calls `assert_cabi_checks_for` on the manifest,
+   comparing the mirrors against the generated `mojo_check_cabi_*`
+   reporters. A failure means the mirror no longer matches the C ABI.
 """
 
 from std.ffi import external_call
@@ -137,10 +136,10 @@ def typedef_checks[T: AbiTypedefLike]() -> String:
     return String(t"MOJO_CHECK_CABI_LAYOUT({name}, {name})")
 
 
-def constant_checks[name: StaticString]() -> String:
+def constant_checks(name: StaticString) -> String:
     """Returns the value, size, and signedness reporters for a constant.
 
-    Parameters:
+    Args:
         name: The constant's name as spelled in C.
 
     Returns:
@@ -149,8 +148,37 @@ def constant_checks[name: StaticString]() -> String:
     return String(t"MOJO_CHECK_CABI_CONST({name})")
 
 
-def _check[sym: StaticString](mojo_value: Int64) raises:
-    assert_equal(mojo_value, external_call[sym, Int64](), String(sym))
+def emit_cabi_checks_for(
+    *,
+    includes: ImmSpan[StaticString, _],
+    structs: TypeList[Trait=AnyType, ...],
+    typedefs: TypeList[Trait=AbiTypedefLike, ...],
+    constants: ImmSpan[AbiConstant, _],
+) -> String:
+    """Returns a complete C ABI reference file for a set of mirrors.
+
+    Args:
+        includes: The headers that declare the C side, each spelled as it
+            is included (for example `<netinet/in.h>`).
+        structs: The struct mirrors to check.
+        typedefs: The type aliases to check.
+        constants: The constants to check.
+
+    Returns:
+        The preamble followed by the checks for every declaration.
+    """
+    var out = preamble(includes)
+    comptime for i in range(structs.length):
+        out += "\n\n" + struct_checks[structs[i]]()
+    comptime for i in range(typedefs.length):
+        out += "\n\n" + typedef_checks[typedefs[i]]()
+    for constant in constants:
+        out += "\n\n" + constant_checks(constant.name)
+    return out^
+
+
+def _check[sym: String](mojo_value: Int64) raises:
+    assert_equal(mojo_value, external_call[sym, Int64](), sym)
 
 
 struct AbiConstant(ImplicitlyCopyable):
@@ -275,3 +303,30 @@ def assert_cabi_struct[T: AnyType]() raises:
         _check["mojo_check_cabi_fieldsizeof_" + name + "_" + names[i]](
             Int64(size_of[types[i]]())
         )
+
+
+def assert_cabi_checks_for[
+    structs: TypeList[Trait=AnyType, ...],
+    typedefs: TypeList[Trait=AbiTypedefLike, ...],
+    constants: List[AbiConstant],
+]() raises:
+    """Compares every declaration in a set of mirrors against C.
+
+    The test-side twin of `emit_cabi_checks_for`: the reporters it calls
+    are the ones that function generates for the same declarations.
+
+    Parameters:
+        structs: The struct mirrors to check.
+        typedefs: The type aliases to check.
+        constants: The constants to check.
+
+    Raises:
+        When any size, alignment, field offset or size, or constant
+        value, size, or signedness differs.
+    """
+    comptime for i in range(structs.length):
+        assert_cabi_struct[structs[i]]()
+    comptime for i in range(typedefs.length):
+        assert_cabi_layout[typedefs[i]]()
+    comptime for constant in constants:
+        assert_cabi_constant[constant]()

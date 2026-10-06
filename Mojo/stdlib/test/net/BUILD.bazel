@@ -1,0 +1,11 @@
+load("//Mojo/stdlib/test:cabi_test.bzl", "mojo_cabi_test")
+
+package(default_visibility = ["//visibility:private"])
+
+mojo_cabi_test(
+    name = "abi_posix",
+    platforms = [
+        "linux",
+        "macos",
+    ],
+)

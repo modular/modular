@@ -13,8 +13,11 @@
 
 from std.testing import TestSuite, assert_equal, assert_true
 from test_utils.cabi_check import (
+    AbiConstant,
     AbiTypedef,
+    AbiTypedefLike,
     constant_checks,
+    emit_cabi_checks_for,
     preamble,
     struct_checks,
     typedef_checks,
@@ -60,7 +63,26 @@ def test_typedef_checks() raises:
 
 
 def test_constant_checks() raises:
-    assert_equal(constant_checks["EPERM"](), "MOJO_CHECK_CABI_CONST(EPERM)")
+    assert_equal(constant_checks("EPERM"), "MOJO_CHECK_CABI_CONST(EPERM)")
+
+
+def test_emit_cabi_checks_for() raises:
+    comptime Typedef = AbiTypedef["probe_t", UInt16]
+    assert_equal(
+        emit_cabi_checks_for(
+            includes=["<errno.h>"],
+            structs=TypeList.of[Trait=AnyType, Probe](),
+            typedefs=TypeList.of[Trait=AbiTypedefLike, Typedef](),
+            constants=[AbiConstant("EPERM", Int32(1))],
+        ),
+        preamble(["<errno.h>"])
+        + "\n\n"
+        + struct_checks[Probe]()
+        + "\n\n"
+        + typedef_checks[Typedef]()
+        + "\n\n"
+        + constant_checks("EPERM"),
+    )
 
 
 def main() raises:
