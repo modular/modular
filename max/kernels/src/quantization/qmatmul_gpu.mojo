@@ -176,7 +176,7 @@ def multistage_mma_q[
     group_size: Int,
     pack_factor: Int,
     c_type: DType,
-    c_layout: Layout,
+    c_layout: TensorLayout,
     a_type: DType,
     a_layout: Layout,
     a_smem_layout: Layout,
@@ -199,7 +199,7 @@ def multistage_mma_q[
     next_op_b_iter_alignment: Int = align_of[b_type](),
     native_scale_stream: Bool = False,
 ](
-    c: LayoutTensor[mut=True, c_type, c_layout, address_space=.LOCAL, ...],
+    c: TileTensor[mut=True, c_type, c_layout, address_space=.LOCAL, ...],
     a_iter_arg: LayoutTensorIter[_, a_layout, ...],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
     a_smem_iter_arg: LayoutTensorIter[
@@ -283,6 +283,8 @@ def multistage_mma_q[
         num_iters: The number of K-tile iterations to execute.
         num_b_rows: The runtime row count of the B matrix, if known.
     """
+    comptime assert c.rank == c.flat_rank == 2
+    comptime assert c.element_size == 1
     comptime simd_size = simd_width_of[a_type]()
     comptime simd_b_size = simd_width_of[b_type]()
     comptime num_scales_stages = ceildiv(
@@ -372,33 +374,47 @@ def multistage_mma_q[
 
     @inline(.always)
     def _async_copy_a_tile(
-        dst: LayoutTensor[mut=True, a_type, address_space=.SHARED, ...],
-        src: LayoutTensor[a_type, address_space=.GENERIC, ...],
+        dst: TileTensor[
+            mut=True,
+            a_type,
+            address_space=.SHARED,
+            linear_idx_type=a_idx_t,
+            ...,
+        ],
+        src: TileTensor[
+            a_type, address_space=.GENERIC, linear_idx_type=a_idx_t, ...
+        ],
     ):
+        comptime assert dst.rank == dst.flat_rank == 2
+        comptime assert src.rank == src.flat_rank == 2
+        comptime assert dst.element_size == src.element_size == 1
         GenericToSharedAsyncTileCopier[
             async_copy_a_layout_tt,
             swizzle=async_swizzle_a,
         ]().copy(
-            lt_to_tt_idx[linear_idx_type=a_idx_t](dst).vectorize[
-                1, simd_size
-            ](),
-            lt_to_tt_idx[linear_idx_type=a_idx_t](src).vectorize[
-                1, simd_size
-            ](),
+            dst.vectorize[1, simd_size](),
+            src.vectorize[1, simd_size](),
         )
 
     @inline(.always)
     def _async_copy_b_tile(
-        dst: LayoutTensor[mut=True, b_type, address_space=.SHARED, ...],
-        src: LayoutTensor[b_type, address_space=.GENERIC, ...],
+        dst: TileTensor[
+            mut=True,
+            b_type,
+            address_space=.SHARED,
+            linear_idx_type=b_idx_t,
+            ...,
+        ],
+        src: TileTensor[
+            b_type, address_space=.GENERIC, linear_idx_type=b_idx_t, ...
+        ],
     ):
+        comptime assert dst.rank == dst.flat_rank == 2
+        comptime assert src.rank == src.flat_rank == 2
+        comptime assert dst.element_size == src.element_size == 1
         GenericToSharedAsyncTileCopier[async_copy_b_layout_tt]().copy(
-            lt_to_tt_idx[linear_idx_type=b_idx_t](dst).vectorize[
-                1, simd_b_size
-            ](),
-            lt_to_tt_idx[linear_idx_type=b_idx_t](src).vectorize[
-                1, simd_b_size
-            ](),
+            dst.vectorize[1, simd_b_size](),
+            src.vectorize[1, simd_b_size](),
         )
 
     # Prefetch (num_pipeline_stages - 1) stages.
@@ -410,8 +426,12 @@ def multistage_mma_q[
                 )[]
 
                 _async_copy_a_tile(
-                    a_smem_tile,
-                    a_iter[].bitcast[a_type, target_address_space=.GENERIC](),
+                    lt_to_tt_idx[linear_idx_type=a_idx_t](a_smem_tile),
+                    lt_to_tt_idx[linear_idx_type=a_idx_t](
+                        a_iter[].bitcast[
+                            a_type, target_address_space=.GENERIC
+                        ]()
+                    ),
                 )
 
                 a_iter._incr()
@@ -422,8 +442,12 @@ def multistage_mma_q[
                 )[]
 
                 _async_copy_b_tile(
-                    b_smem_tile,
-                    b_iter[].bitcast[b_type, target_address_space=.GENERIC](),
+                    lt_to_tt_idx[linear_idx_type=b_idx_t](b_smem_tile),
+                    lt_to_tt_idx[linear_idx_type=b_idx_t](
+                        b_iter[].bitcast[
+                            b_type, target_address_space=.GENERIC
+                        ]()
+                    ),
                 )
 
                 b_iter._incr()
@@ -499,9 +523,11 @@ def multistage_mma_q[
     comptime a_frag_size = frag_size[0]
     comptime b_frag_size = frag_size[1]
     comptime c_frag_size = frag_size[2]
+    comptime assert c.static_shape[0] == num_m_mmas * num_n_mmas
+    comptime assert c.static_shape[1] == c_frag_size
 
-    # A, scale copies, and unsupported B formats retain legacy views of these
-    # native double-buffered register tiles.
+    # A loads and fallback B/scale paths retain legacy views of these native
+    # register tiles.
     var a_reg_buffer = stack_allocation[a_type, address_space=.LOCAL](
         row_major[2 * num_m_mmas, a_frag_size]()
     )
@@ -669,7 +695,7 @@ def multistage_mma_q[
                 b_reg_buffer.tile[num_n_mmas, b_frag_size](
                     (current, 0)
                 ).vectorize[1, b_frag_size](),
-                lt_to_tt(c).vectorize[1, c_frag_size](),
+                c.vectorize[1, c_frag_size](),
             )
 
             if k_mma + 2 == num_k_mmas:
@@ -686,11 +712,14 @@ def multistage_mma_q[
                         )[]
 
                         _async_copy_a_tile(
-                            a_smem_prefetch_tile,
-                            a_iter[].bitcast[
-                                a_type,
-                                target_address_space=.GENERIC,
-                            ](),
+                            lt_to_tt_idx[linear_idx_type=a_idx_t](
+                                a_smem_prefetch_tile
+                            ),
+                            lt_to_tt_idx[linear_idx_type=a_idx_t](
+                                a_iter[].bitcast[
+                                    a_type, target_address_space=.GENERIC
+                                ]()
+                            ),
                         )
 
                         a_iter._incr()
@@ -703,11 +732,14 @@ def multistage_mma_q[
                         )[]
 
                         _async_copy_b_tile(
-                            b_smem_prefetch_tile,
-                            b_iter[].bitcast[
-                                b_type,
-                                target_address_space=.GENERIC,
-                            ](),
+                            lt_to_tt_idx[linear_idx_type=b_idx_t](
+                                b_smem_prefetch_tile
+                            ),
+                            lt_to_tt_idx[linear_idx_type=b_idx_t](
+                                b_iter[].bitcast[
+                                    b_type, target_address_space=.GENERIC
+                                ]()
+                            ),
                         )
 
                         b_iter._incr()
@@ -863,9 +895,9 @@ def multistage_qgemm_kernel[
     # Unpack quantized weights
     comptime scales_type = DType.bfloat16
     comptime b_type = DType.uint32
-    comptime b_weight_layout = Layout.row_major(N // 64, K * 64 // pack_factor)
-    var b = LayoutTensor[b_type, b_weight_layout](
+    var b = TileTensor(
         b_packed.ptr.bitcast[Scalar[b_type]](),
+        row_major[N // 64, K * 64 // pack_factor](),
     )
 
     var b_scales_ptr = b_packed.ptr + N * K // 2
@@ -974,9 +1006,9 @@ def multistage_qgemm_kernel[
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](block_idx[1], bk_start)
     var b_tile_coords = args_to_tuple[transpose_b](bk_start, block_idx[0])
     comptime b_tile_axis = 1 if transpose_b else 0
-    var b_gmem_iter = b.tiled_iterator[BD_0, BD_1, axis=b_tile_axis](
-        b_tile_coords[0], b_tile_coords[1]
-    )
+    var b_gmem_iter = b.to_layout_tensor().tiled_iterator[
+        BD_0, BD_1, axis=b_tile_axis
+    ](b_tile_coords[0], b_tile_coords[1])
     comptime groups_per_iter = ceildiv(BK, group_size)
     var bk_scales_start: Int = (
         K // (groups_per_iter * group_size) // num_warp_k_partitions
@@ -1016,20 +1048,11 @@ def multistage_qgemm_kernel[
     comptime frag_size = get_fragment_size[mma_shape]()
     comptime c_frag_size = frag_size[2]
 
-    comptime c_reg_layout = Layout.row_major(
-        num_m_mmas * num_n_mmas, c_frag_size
-    )
-    var c_reg_tile = (
-        LayoutTensor[
-            mut=True,
-            accum_type,
-            c_reg_layout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
+    var c_reg_tile_native = stack_allocation[accum_type, address_space=.LOCAL](
+        row_major[num_m_mmas * num_n_mmas, c_frag_size]()
+    ).fill(0)
+    # Reduction and epilogue helpers still consume the legacy scalar view.
+    var c_reg_tile = c_reg_tile_native.to_layout_tensor()
 
     multistage_mma_q[
         BM,
@@ -1044,7 +1067,7 @@ def multistage_qgemm_kernel[
         pack_factor,
         native_scale_stream=native_scale_stream,
     ](
-        c_reg_tile,
+        c_reg_tile_native,
         a_gmem_iter,
         b_gmem_iter,
         a_smem_iter,
