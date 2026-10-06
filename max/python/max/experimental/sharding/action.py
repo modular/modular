@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import Any, NamedTuple
+from typing import Any, Generic, NamedTuple, TypeVar
 
 from max.experimental.sharding.mappings import DeviceMapping
 from max.experimental.sharding.mesh import DeviceMesh
@@ -38,24 +38,32 @@ class AxisAssignment(NamedTuple):
     output: Placement
 
 
-class PerShard:
-    """A distinct value per mesh shard.
+_Value = TypeVar("_Value")
 
-    Wraps a sequence of per-shard values so the dispatcher can index
-    into it by mesh shard when forwarding a non-tensor argument to a
-    per-shard op call. Non-:class:`PerShard` values appearing in
-    :attr:`ActionSet.extras` are treated as uniform across shards.
+
+class PerShard(Generic[_Value]):
+    """One value per device of a mesh, in the mesh's row-major device order.
+
+    :func:`~max.experimental.functional.call_on_mesh` passes each device its
+    own entry, for example a device's local shape, its vocabulary bounds or
+    whether it is the first device. It is its own type because a plain
+    tuple argument reaches every device whole. A rule also returns one in
+    :attr:`ActionSet.extras` for an argument that differs per device; any
+    other value there is the same on every device.
     """
 
     __slots__ = ("values",)
 
-    values: tuple[Any, ...]
+    values: tuple[_Value, ...]
 
-    def __init__(self, values: Iterable[Any]) -> None:
+    def __init__(self, values: Iterable[_Value]) -> None:
         object.__setattr__(self, "values", tuple(values))
 
-    def __getitem__(self, i: int) -> Any:
+    def __getitem__(self, i: int) -> _Value:
         return self.values[i]
+
+    def __iter__(self) -> Iterator[_Value]:
+        return iter(self.values)
 
     def __len__(self) -> int:
         return len(self.values)

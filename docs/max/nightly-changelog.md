@@ -159,6 +159,14 @@ This version is still a work in progress.
   `max.experimental.nn.common_layers.functional_kernels.local_map()` is
   removed: wrap the per-device function in `F.functional()` and claim its
   output's placement with `Tensor.rebind_mapping()`.
+- Added `max.experimental.functional.call_on_mesh()`, which runs a function on
+  each device of a mesh, or on each group of devices along given mesh axes,
+  and returns its outputs as distributed tensors. Use it for code that a
+  sharding rule cannot express, such as a collective kernel. It replaces
+  `max.experimental.functional.per_shard_dispatch()`, which is removed.
+  `to_tensors()`, `map_tensors()`, `tensor_to_layout()` and `any_distributed()`
+  are no longer exported from `max.experimental.functional`; use
+  `Tensor.layout` for a tensor's layout.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
 - `max.experimental.nn.Module` is now a pytree: its attributes are its
   children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk

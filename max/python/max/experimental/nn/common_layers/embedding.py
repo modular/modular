@@ -15,14 +15,35 @@
 
 from __future__ import annotations
 
-import math
+import itertools
 
 from max.experimental import functional as F
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.embedding import Embedding
-from max.experimental.sharding import DeviceMapping, NamedMapping, Partial
+from max.experimental.sharding import (
+    DeviceMapping,
+    NamedMapping,
+    Partial,
+    Replicated,
+)
+from max.experimental.sharding.action import PerShard
 from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, DimLike, TensorValue, ops
+from max.graph import DimLike
+
+
+def _masked_gather(
+    weight: Tensor,
+    indices: Tensor,
+    vocab_start: int,
+    vocab_end: int,
+) -> Tensor:
+    """Gathers the rows of ``indices`` from one vocabulary shard of ``weight``.
+
+    Indices outside ``[vocab_start, vocab_end)`` read rows of zeros.
+    """
+    in_range = (indices >= vocab_start) & (indices < vocab_end)
+    gathered = F.gather(weight, (indices - vocab_start) * in_range, axis=0)
+    return gathered * in_range.unsqueeze(-1).cast(gathered.dtype)
 
 
 class VocabParallelEmbedding(Embedding):
@@ -31,7 +52,7 @@ class VocabParallelEmbedding(Embedding):
     On a single device this behaves identically to
     :class:`~max.experimental.nn.embedding.Embedding`.  On a multi-device
     mesh the vocabulary dimension (axis 0) is split so each device holds
-    ``ceil(vocab_size / n)`` rows.  A lookup gathers from the local shard,
+    a contiguous range of rows.  A lookup gathers from the local shard,
     masks out-of-range indices, and all-reduces the results.
     """
 
@@ -54,36 +75,25 @@ class VocabParallelEmbedding(Embedding):
     def _vocab_parallel_gather(self, indices: Tensor) -> Tensor:
         """Per-shard gather with masking and all-reduce."""
         mesh = self.weight.mesh
-        n = mesh.num_devices
-        vocab_size = int(self.weight.shape[0])
-        shard_size = math.ceil(vocab_size / n)
-
-        weight_shards = [TensorValue(w) for w in self.weight.local_shards]
-
-        if indices.is_distributed:
-            idx_shards = [TensorValue(i) for i in indices.local_shards]
-        else:
-            idx_tv = TensorValue(indices)
-            idx_shards = [
-                ops.transfer_to(idx_tv, DeviceRef.from_device(mesh.devices[i]))
-                for i in range(n)
-            ]
-
-        results = []
-        for i in range(n):
-            vocab_start = shard_size * i
-            vocab_end = min(shard_size * (i + 1), vocab_size)
-
-            in_range = ops.logical_and(
-                idx_shards[i] >= vocab_start, idx_shards[i] < vocab_end
+        # An uneven split gives the first devices one row more, so each
+        # device's vocabulary range comes from its own shard.
+        ends = list(
+            itertools.accumulate(
+                int(shard.shape[0]) for shard in self.weight.local_shards
             )
-            local_idx = (idx_shards[i] - vocab_start) * in_range
-
-            gathered = ops.gather(weight_shards[i], local_idx, axis=0)
-            mask = ops.cast(ops.unsqueeze(in_range, -1), gathered.dtype)
-            results.append(gathered * mask)
-
-        partial = Tensor.from_shard_values(
-            results, DeviceMapping(mesh, (Partial(),))
+        )
+        if not indices.is_distributed:
+            indices = indices.to(
+                DeviceMapping(mesh, (Replicated(),) * mesh.ndim)
+            )
+        # Each device gathers only its own vocabulary rows, so the rows
+        # summed across devices are the embedding.
+        partial = F.call_on_mesh(
+            _masked_gather, mesh, out_specs=DeviceMapping(mesh, (Partial(),))
+        )(
+            self.weight,
+            indices,
+            PerShard([0, *ends[:-1]]),
+            PerShard(ends),
         )
         return F.allreduce_sum(partial)

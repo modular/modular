@@ -11,18 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""SPMD op dispatch — explicit per-op wiring of graph ops and sharding rules.
+"""Provides the functional ops, which wrap graph ops to work with tensors.
 
-Each op is an explicit function that:
-
-1. Calls the sharding rule (with ``tensor_to_layout()`` to convert Tensors to TensorLayouts).
-2. Redistributes tensors to match the rule's suggestions.
-3. Dispatches per-shard via ``per_shard_dispatch``.
+Most ops are a graph op wrapped by :func:`functional` with a sharding rule,
+which decides how the op distributes its result.
 """
 
 from __future__ import annotations
 
-import builtins
 import inspect
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
@@ -36,12 +32,10 @@ from max.experimental.sharding import (
     DeviceMesh,
     Replicated,
     TensorLayout,
-    Unknown,
 )
 from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
 from max.graph import (
-    BufferValue,
     ShapeLike,
     TensorType,
     TensorValue,
@@ -55,7 +49,7 @@ from max.graph.quantization import QuantizationEncoding
 
 from ..sharding import ActionSet, ShardingError
 from ..sharding._auto_reshard import pick_reshard_action
-from ..sharding.action import PerShard
+from ..sharding.action import Action, PerShard
 from ..sharding.rules import (
     argsort_rule,
     as_interleaved_complex_rule,
@@ -118,13 +112,9 @@ from ..sharding.rules import (
 )
 from ._signatures import install_tensor_signature
 from .creation_ops import full_like
+from .dispatch import _graph_value, call_on_mesh
 
-__all__ = [
-    "ShardingError",
-    "any_distributed",
-    "map_tensors",
-    "to_tensors",
-]
+__all__ = ["ShardingError"]
 
 
 def to_tensors(values: Any) -> Any:
@@ -160,20 +150,26 @@ def map_tensors(
 ) -> tuple[Any, ...]:
     """Applies ``fn`` to every :class:`Tensor` leaf in ``args``.
 
-    Recurses into ``list`` and ``tuple`` containers; non-tensor leaves
-    pass through unchanged.
+    Recurses into lists, tuples, dicts and records such as a KV cache;
+    non-tensor leaves pass through unchanged.
     """
 
-    def _walk(x: Any) -> Any:
-        if isinstance(x, Tensor):
-            return fn(x)
-        if isinstance(x, list):
-            return [_walk(v) for v in x]
-        if isinstance(x, tuple):
-            return tuple(_walk(v) for v in x)
-        return x
+    def apply(leaf: Any) -> Any:
+        return fn(leaf) if isinstance(leaf, Tensor) else leaf
 
-    return tuple(_walk(a) for a in args)
+    return tuple(
+        tree.map(apply, arg, leaf=Tensor) if _tensors_in(arg) else arg
+        for arg in args
+    )
+
+
+def _tensors_in(value: Any) -> list[Tensor]:
+    """Returns the tensors inside ``value``, left to right."""
+    return [
+        leaf
+        for leaf in tree.leaves(value, leaf=Tensor)
+        if isinstance(leaf, Tensor)
+    ]
 
 
 def tensor_to_layout(t: Tensor) -> TensorLayout:
@@ -199,179 +195,112 @@ def tensor_to_layout(t: Tensor) -> TensorLayout:
 
 def any_distributed(args: tuple[object, ...]) -> bool:
     """True if any :class:`Tensor` in ``args`` is distributed (multi-device)."""
-    for a in args:
-        if isinstance(a, Tensor) and a.is_distributed:
-            return True
-        if isinstance(a, (list, tuple)):
-            for item in a:
-                if isinstance(item, Tensor) and item.is_distributed:
-                    return True
-    return False
-
-
-def per_shard_dispatch(
-    graph_op: Callable[..., Any],
-    args: tuple[Any, ...],
-    output_mappings: tuple[DeviceMapping, ...],
-    filtered_kwargs: Mapping[str, Any] | None = None,
-) -> Any:
-    """Runs ``graph_op`` once per shard and reassembles distributed outputs.
-
-    Args:
-        graph_op: The per-rank graph op to run.
-        args: Already-redistributed args.
-        output_mappings: One :class:`DeviceMapping` per output.
-        filtered_kwargs: Non-tensor or non-distributed tensor keyword arguments.
-    """
-    mesh = output_mappings[0].mesh
-
-    with ensure_context():
-        per_shard = _run_per_shard(
-            graph_op, args, mesh.num_devices, filtered_kwargs
-        )
-        first = per_shard[0]
-        if first is None:
-            return None
-
-        multi = isinstance(first, (list, tuple))
-        num_out = len(first) if multi else 1
-        outputs = [
-            _reassemble_output(
-                per_shard,
-                j,
-                output_mappings[builtins.min(j, len(output_mappings) - 1)],
-                multi=multi,
-            )
-            for j in builtins.range(num_out)
-        ]
-        return type(first)(outputs) if multi else outputs[0]
-
-
-def _graph_value(t: Tensor) -> TensorValue | BufferValue:
-    """Returns ``t``'s value in the current graph.
-
-    A buffer, such as a KV cache's blocks, stays a buffer so that ops can
-    write to it.
-    """
-    if isinstance(t._backing_value, BufferValue):
-        return BufferValue(t)
-    return TensorValue(t)
-
-
-def _map_tree_nodes(value: Any, fn: Callable[[Tensor], Any]) -> Any:
-    """Applies ``fn`` to the tensors inside tree nodes such as a KV cache.
-
-    Covers the tree nodes other than lists, tuples and dicts, for example a
-    dataclass. Ops read such a node's tensors by attribute, so they cannot
-    convert them the way they convert a tensor passed to them directly, also
-    inside a list, tuple or dict; those are left for the op.
-    """
-    if isinstance(value, list):
-        return [_map_tree_nodes(v, fn) for v in value]
-    if type(value) is tuple:
-        return tuple(_map_tree_nodes(v, fn) for v in value)
-    if type(value) is dict:
-        return {k: _map_tree_nodes(v, fn) for k, v in value.items()}
-    if hasattr(value, "to_graph_values"):
-        return value.to_graph_values()
-    if not isinstance(value, Tensor) and tree.is_node(value):
-        return tree.map(fn, value, leaf=Tensor)
-    return value
-
-
-def _run_per_shard(
-    graph_op: Callable[..., Any],
-    args: tuple[Any, ...],
-    num_devices: int,
-    filtered_kwargs: Mapping[str, Any] | None = None,
-) -> list[Any]:
-    """Calls ``graph_op`` once per shard with each argument's own shard.
-
-    Tensors are found anywhere in the arguments, keyword arguments and tree
-    nodes such as a KV cache included.
-    """
-    per_shard: list[Any] = []
-    if filtered_kwargs is None:
-        filtered_kwargs = {}
-
-    for i in builtins.range(num_devices):
-
-        def _shard(value: Any, _i: int = i) -> Any:
-            if isinstance(value, Tensor) and value.is_distributed:
-                return value.local_shards[_i]
-            return value
-
-        def _per_rank(value: Any, _i: int = i) -> Any:
-            if isinstance(value, PerShard):
-                return value[_i]
-            if hasattr(value, "to_graph_values"):
-                return tree.map(_shard, value, leaf=Tensor).to_graph_values()
-            if not isinstance(value, Tensor):
-                return value
-            return _graph_value(_shard(value))
-
-        shard_args, shard_kwargs = tree.map(
-            _per_rank,
-            (args, dict(filtered_kwargs)),
-            leaf=lambda v: (
-                isinstance(v, (Tensor, PerShard))
-                or hasattr(v, "to_graph_values")
-            ),
-        )
-        per_shard.append(graph_op(*shard_args, **shard_kwargs))
-    return per_shard
-
-
-def _reassemble_output(
-    per_shard: Sequence[Any],
-    j: int,
-    out_mapping: DeviceMapping,
-    *,
-    multi: bool,
-) -> Tensor:
-    """Reassembles output ``j`` from per-shard results into one distributed Tensor."""
-    tvs = [TensorValue(s[j] if multi else s) for s in per_shard]
-    return Tensor.from_shard_values(tvs, out_mapping)
+    return any(t.is_distributed for t in _tensors_in(args))
 
 
 def functional(
     graph_op: Callable[..., Any],
     rule: Callable[..., ActionSet] | None = None,
 ) -> Callable[..., Any]:
-    """Wraps a graph op as a distributed dispatch entry.
+    """Wraps a graph op to work with eager tensors.
 
-    Returns a callable that local-auto-shards when any argument is a
-    distributed :class:`Tensor` (and a rule is bound), and otherwise
-    forwards to the bare ``graph_op``. The returned wrapper carries
-    ``graph_op`` and ``rule`` as attributes; reassign ``wrapper.rule``
-    to swap the sharding rule at runtime without re-wrapping.
+    For a distributed tensor, the op runs on each device's shard, and
+    ``rule`` decides how the result is distributed.
+
+    Args:
+        graph_op: The graph op to wrap.
+        rule: The sharding rule for distributed tensors. Defaults to
+            ``None``, which runs the op on each device's shard as it is.
+
+    Returns:
+        The wrapped op, which takes and returns tensors. It carries
+        ``graph_op`` and ``rule`` as attributes; reassign its ``rule`` to swap
+        the sharding rule without re-wrapping.
     """
 
+    def lower(value: Any) -> Any:
+        # Records such as a KV cache convert themselves, since graph ops read
+        # their tensors by attribute.
+        if hasattr(value, "to_graph_values"):
+            return value.to_graph_values()
+        return _graph_value(value) if isinstance(value, Tensor) else value
+
+    def on_graph_values(*args: Any, **kwargs: Any) -> Any:
+        args, kwargs = tree.map(
+            lower,
+            (args, kwargs),
+            leaf=lambda value: (
+                isinstance(value, Tensor) or hasattr(value, "to_graph_values")
+            ),
+        )
+        return graph_op(*args, **kwargs)
+
     def wrapper(*args: Any, **kwargs: Any) -> Any:
-        active_rule = getattr(wrapper, "rule", None)
-        if any_distributed(args) and active_rule is not None:
-            return _local_dispatch(graph_op, active_rule, args, kwargs)
-        meshes = [
-            t.mesh
+        distributed = [
+            t
             for t in tree.leaves((args, kwargs), leaf=Tensor)
             if isinstance(t, Tensor) and t.is_distributed
         ]
-        # Device i of every input pairs with device i of the others, e.g. a
-        # CPU mesh's scalars with the accelerator mesh's shards.
-        if len({m.mesh_shape for m in meshes}) > 1:
-            raise ShardingError(
-                "An op without a sharding rule needs all its distributed "
-                f"inputs on meshes of one shape, got {meshes}."
-            )
-        if meshes:
-            mesh = meshes[0]
+        if not distributed:
+            # A graph op converts the tensors passed to it but reads a
+            # record's tensors by attribute, so records convert here. On one
+            # device, a PerShard holds that device's value.
+            with ensure_context():
+                args, kwargs = tree.map(
+                    lambda value: (
+                        value[0]
+                        if isinstance(value, PerShard)
+                        else value.to_graph_values()
+                        if hasattr(value, "to_graph_values")
+                        else value
+                    ),
+                    (args, kwargs),
+                    leaf=lambda value: (
+                        isinstance(value, PerShard)
+                        or hasattr(value, "to_graph_values")
+                    ),
+                )
+                return to_tensors(graph_op(*args, **kwargs))
+
+        active_rule = getattr(wrapper, "rule", None)
+        # The rule reads the operands bound to the op's positional
+        # parameters, whether they were passed by position or by keyword.
+        # TODO: keyword-only distributed tensor arguments are not supported.
+        flat_args, keyword_args, arg_names = _canonicalize_call(
+            graph_op, args, kwargs
+        )
+        if active_rule is None or not any_distributed(flat_args):
             # Without a rule nothing relates the per-device results, so the op
             # runs on each device's own shards and its result is Unknown.
-            unknown = DeviceMapping(mesh, (Unknown(),) * mesh.ndim)
-            return per_shard_dispatch(graph_op, args, (unknown,), kwargs)
-        with ensure_context():
-            args, kwargs = _map_tree_nodes((args, kwargs), _graph_value)
-            return to_tensors(graph_op(*args, **kwargs))
+            return call_on_mesh(on_graph_values, distributed[0].mesh)(
+                *args, **kwargs
+            )
+
+        layout_args = map_tensors(tensor_to_layout, flat_args)
+        action_set = active_rule(*layout_args)
+        action = pick_reshard_action(
+            action_set,
+            op_name=getattr(graph_op, "__name__", "<op>"),
+            operand_names=_input_names(
+                arg_names, layout_args, action_set.layouts
+            ),
+        )
+        out_specs = action.outputs or (
+            next(
+                t.mapping
+                for t in tree.leaves(flat_args, leaf=Tensor)
+                if isinstance(t, Tensor) and t.is_distributed
+            ),
+        )
+        # A rule that names one mapping names it for every result.
+        return call_on_mesh(
+            on_graph_values,
+            out_specs[0].mesh,
+            out_specs=out_specs[0] if len(out_specs) == 1 else out_specs,
+        )(
+            *_transfer_args(flat_args, layout_args, action, action_set),
+            **keyword_args,
+        )
 
     # ``Any``-typed alias so attribute writes are dynamic;
     # ``functools.wraps`` types the closure as ``_Wrapped[...]`` which
@@ -389,42 +318,6 @@ def functional(
     # parameter types (reads graph_op via ``__wrapped__``). From #87216.
     install_tensor_signature(wrapper)
     return wrapper
-
-
-def _local_dispatch(
-    graph_op: Callable[..., Any],
-    rule: Callable[..., ActionSet],
-    args: tuple[Any, ...],
-    kwargs: Mapping[str, Any],
-) -> Any:
-    """Picks one :class:`Action` for this call and applies it."""
-    # TODO: keyword-only distributed tensor arguments are not supported.
-    flat_args, filtered_kwargs, arg_names = _canonicalize_call(
-        graph_op, args, kwargs
-    )
-    layout_args = map_tensors(tensor_to_layout, flat_args)
-
-    action = pick_reshard_action(
-        rule(*layout_args),
-        op_name=getattr(graph_op, "__name__", "<op>"),
-        operand_names=_input_names(arg_names, layout_args),
-    )
-    redistributed = _transfer_args(flat_args, action.inputs)
-
-    if action.outputs:
-        out_mappings = action.outputs
-    else:
-        out_mappings = (
-            next(
-                t.mapping for t in _walk_tensors(flat_args) if t.is_distributed
-            ),
-        )
-    return per_shard_dispatch(
-        graph_op,
-        redistributed,
-        out_mappings,
-        filtered_kwargs,
-    )
 
 
 def _canonicalize_call(
@@ -455,45 +348,66 @@ def _canonicalize_call(
 
 
 def _input_names(
-    arg_names: Sequence[str], layout_args: Sequence[Any]
+    arg_names: Sequence[str],
+    layout_args: Sequence[Any],
+    layouts: Sequence[TensorLayout],
 ) -> tuple[str, ...]:
-    """Names each ``TensorLayout`` leaf, in ``_walk_tensor_layouts`` order."""
-    names: list[str] = []
+    """Names each of the rule's ``layouts`` by the argument that holds it."""
+    names: dict[int, str] = {}
     for name, value in zip(arg_names, layout_args, strict=False):
-        leaves = len(_walk_tensor_layouts(value))
-        if leaves == 1:
-            names.append(name)
-        else:
-            names.extend(f"{name}[{i}]" for i in range(leaves))
-    return tuple(names)
-
-
-def _walk_tensors(value: Any) -> Iterable[Tensor]:
-    """Yields every :class:`Tensor` reachable through tuples/lists."""
-    if isinstance(value, Tensor):
-        yield value
-    elif isinstance(value, (list, tuple)):
-        for v in value:
-            yield from _walk_tensors(v)
+        leaves = _walk_tensor_layouts(value)
+        for i, leaf in enumerate(leaves):
+            names[id(leaf)] = name if len(leaves) == 1 else f"{name}[{i}]"
+    return tuple(names.get(id(layout), "?") for layout in layouts)
 
 
 def _walk_tensor_layouts(value: Any) -> list[Any]:
     """Flattens TensorLayout leaves out of arbitrary nested args."""
-    out: list[Any] = []
-    if isinstance(value, (list, tuple)):
-        for v in value:
-            out.extend(_walk_tensor_layouts(v))
-        return out
-    if hasattr(value, "mapping") and hasattr(value, "shape"):
-        out.append(value)
-    return out
+    return [
+        leaf
+        for leaf in tree.leaves(value, leaf=TensorLayout)
+        if isinstance(leaf, TensorLayout)
+    ]
 
 
 def _transfer_args(
     args: tuple[Any, ...],
-    suggested: tuple[Any, ...],
+    layout_args: tuple[Any, ...],
+    action: Action,
+    action_set: ActionSet,
 ) -> tuple[Any, ...]:
-    """Reshards Tensor args to match the action's per-slot mappings."""
+    """Moves each tensor argument to the mapping ``action`` picks for it."""
+    if action_set.finalize is not None:
+        return _transfer_finalized_args(args, action.inputs)
+    from .collective_ops import transfer_to
+
+    slots = {id(layout): i for i, layout in enumerate(action_set.layouts)}
+    # The entries after the rule's layouts replace, in order, the arguments
+    # that hold no tensor.
+    extras = iter(action.inputs[len(action_set.layouts) :])
+
+    def place(value: Any, layout: Any) -> Any:
+        slot = slots.get(id(layout))
+        if not isinstance(value, Tensor) or slot is None:
+            return value
+        return transfer_to(value, action.inputs[slot])
+
+    placed: list[Any] = []
+    for arg, layout_arg in zip(args, layout_args, strict=True):
+        if _tensors_in(arg):
+            placed.append(
+                tree.map(place, arg, layout_arg, leaf=(Tensor, TensorLayout))
+            )
+        else:
+            extra = next(extras, None)
+            placed.append(arg if extra is None else extra)
+    return tuple(placed)
+
+
+def _transfer_finalized_args(
+    args: tuple[Any, ...], suggested: tuple[Any, ...]
+) -> tuple[Any, ...]:
+    """Reshards Tensor args to the per-argument entries of ``suggested``."""
     from .collective_ops import transfer_to
 
     result: list[object] = []
@@ -2182,6 +2096,7 @@ Raises:
     IndexError: If ``axis`` is out of range.
 """
 
+
 argsort = functional(ops.argsort, rule=argsort_rule)
 argsort.__doc__ = """Returns the indices that would sort a rank-1 tensor.
 
@@ -3812,30 +3727,6 @@ Raises:
 # Mutation ops: hand-rolled because they write in-place via __buffervalue__().
 
 
-def _spmd_buffer_write(
-    destination: Tensor,
-    source: Tensor,
-    write: Callable[[Any, Any], None],
-) -> None:
-    """Per-shard in-place write; flows each post-write value back to ``destination._state``."""
-    shards = list(destination.local_shards)
-    src_shards = list(source.local_shards) if source.is_distributed else None
-    for i, dest_tensor in enumerate(shards):
-        dest_shard = dest_tensor.__buffervalue__()
-        src_shard = (
-            src_shards[i].__tensorvalue__()
-            if src_shards is not None
-            else source.__tensorvalue__()
-        )
-        write(dest_shard, src_shard)
-        if destination._state is not None and dest_tensor._state is not None:
-            new_values = list(destination._state.values)
-            new_values[i] = dest_tensor._state.value
-            destination._state = type(destination._state)(
-                tuple(new_values), destination._state.ctx
-            )
-
-
 def buffer_store(destination: Tensor, source: Tensor) -> None:
     """Stores values from a tensor into a tensor buffer.
 
@@ -3849,13 +3740,17 @@ def buffer_store(destination: Tensor, source: Tensor) -> None:
             tensor_to_layout(destination), tensor_to_layout(source)
         )
 
+        call_on_mesh(
+            lambda shard, source_shard: ops.buffer_store(
+                shard.__buffervalue__(), TensorValue(source_shard)
+            ),
+            destination.mesh,
+        )(destination, source)
+        return
     with ensure_context():
-        if destination.is_distributed:
-            _spmd_buffer_write(destination, source, ops.buffer_store)
-        else:
-            ops.buffer_store(
-                destination.__buffervalue__(), source.__tensorvalue__()
-            )
+        ops.buffer_store(
+            destination.__buffervalue__(), source.__tensorvalue__()
+        )
 
 
 def buffer_store_slice(
@@ -3875,17 +3770,13 @@ def buffer_store_slice(
             tensor_to_layout(destination), tensor_to_layout(source), indices
         )
 
+        def store_slice(shard: Tensor, source_shard: Tensor) -> None:
+            shard.__buffervalue__()[indices] = TensorValue(source_shard)
+
+        call_on_mesh(store_slice, destination.mesh)(destination, source)
+        return
     with ensure_context():
-        if destination.is_distributed:
-
-            def _write(dest_buf: Any, src_tv: Any) -> None:
-                dest_buf[indices] = src_tv
-
-            _spmd_buffer_write(destination, source, _write)
-        else:
-            dest_buf = destination.__buffervalue__()
-            source_tv = source.__tensorvalue__()
-            dest_buf[indices] = source_tv
+        destination.__buffervalue__()[indices] = source.__tensorvalue__()
 
 
 #: Applies group normalization.

@@ -246,9 +246,9 @@ def test_tensor_parallel_moe_fp8_weights(
 
     assert list(out.shape) == [_SEQ_LEN, _FP8_HIDDEN_DIM]
     assert out.mapping.mesh == mesh
-    # The FP8 grouped matmul still runs per-device via local_map (see
-    # quant_moe.TensorParallelMoE.apply_experts), but the layer's output
-    # contract is unchanged: a Partial sum for the caller to all-reduce.
+    # The FP8 grouped matmul runs on each device's slice of moe_dim (see
+    # quant_moe.TensorParallelMoE.forward), so the layer returns a Partial sum
+    # for the caller to all-reduce.
     assert out.mapping.placements == (Partial(),)
 
 

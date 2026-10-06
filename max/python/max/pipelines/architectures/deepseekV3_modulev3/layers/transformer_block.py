@@ -28,7 +28,6 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.sharding import DeviceMapping, Partial
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
 
 from ..model_config import DeepseekV3Config
@@ -228,21 +227,23 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
                     attn_out = F.allreduce_sum(attn_out)
                     return x + attn_out
                 else:
-                    # attn_outs[i] is device i's partial sum (allreduce was
-                    # skipped).  Add the residual only on device 0 so it isn't
-                    # counted P times after the reduce-scatter.
-                    mesh = x.mesh
-                    attn_shards = [
-                        TensorValue(s) for s in attn_out.local_shards
-                    ]
-                    residual_shards = [TensorValue(s) for s in x.local_shards]
-                    folded = [
-                        residual_shards[0] + attn_shards[0],
-                        *attn_shards[1:],
-                    ]
-                    partial = Tensor.from_shard_values(
-                        folded, DeviceMapping(mesh, (Partial(),))
-                    )
+                    # Each device holds its partial sum (allreduce was
+                    # skipped). Add the residual only on the first device so
+                    # it isn't counted P times after the reduce-scatter.
+                    def add_residual_once(
+                        partial_sums: list[Tensor], residuals: list[Tensor]
+                    ) -> list[Tensor]:
+                        return [
+                            residuals[0] + partial_sums[0],
+                            *partial_sums[1:],
+                        ]
+
+                    partial = F.call_on_mesh(
+                        add_residual_once,
+                        x.mesh,
+                        x.mesh.axis_names,
+                        out_specs=DeviceMapping(x.mesh, (Partial(),)),
+                    )(attn_out, x)
 
                     # Partial -> Sharded(0): real reduce-scatter collective.
                     return F.reduce_scatter(partial, scatter_axis=0)

@@ -12,15 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Shared test logic for custom op dispatch.
 
-Demonstrates two ways to make a custom Mojo kernel distribution-aware:
-
-1. **Explicit dispatch** via ``per_shard_dispatch`` — the recommended approach.
-   The user writes the rule call and redistribution explicitly, then
-   delegates per-shard execution to ``per_shard_dispatch``.
-2. **Manual dispatch** — the user writes the per-shard loop explicitly
-   (educational, full control).
-
-Both approaches produce identical results and are tested here.
+Makes a custom kernel distribution-aware: the rule picks the placements,
+``transfer_to`` moves the inputs there, and ``call_on_mesh`` runs the
+kernel on each device.
 
 DO NOT run this file directly — it contains base classes that are
 subclassed by test_custom_dispatch_simulated_cpu.py.
@@ -38,9 +32,6 @@ import pytest
 from max.experimental import functional as F
 from max.experimental import tensor as _tensor_mod
 from max.experimental.functional import transfer_to
-from max.experimental.functional.spmd_ops import (
-    per_shard_dispatch,
-)
 from max.experimental.functional.spmd_ops import (
     tensor_to_layout as tl,
 )
@@ -93,51 +84,17 @@ def _rms_norm_kernel(
     return ops.rms_norm(x, weight, epsilon=eps, weight_offset=weight_offset)
 
 
-# ═════════════════════════════════════════════════════════════════════════
-#  Approach 1: explicit dispatch via per_shard_dispatch (recommended)
-# ═════════════════════════════════════════════════════════════════════════
-# The user calls the rule explicitly, redistributes, then delegates
-# per-shard execution to per_shard_dispatch.
-
-
 def rms_norm(
     x: _tensor_mod.Tensor,
     weight: _tensor_mod.Tensor,
     eps: float = 1e-6,
 ) -> _tensor_mod.Tensor:
-    (xm, wm, _eps), (out_m,) = rms_norm_rule(tl(x), tl(weight), eps)
-    return per_shard_dispatch(
-        _rms_norm_kernel,
-        (transfer_to(x, xm), transfer_to(weight, wm), _eps),
-        (out_m,),
+    (x_mapping, weight_mapping, eps), (out_mapping,) = rms_norm_rule(
+        tl(x), tl(weight), eps
     )
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Approach 2: manual dispatch (per-shard loop written out)
-# ═════════════════════════════════════════════════════════════════════════
-# Same logic as per_shard_dispatch, but written out explicitly so the user
-# can see every step.
-
-
-def rms_norm_manual(
-    x: _tensor_mod.Tensor,
-    weight: _tensor_mod.Tensor,
-    eps: float = 1e-6,
-) -> _tensor_mod.Tensor:
-    # 1. Rule
-    (xm, wm, _eps), output_mappings = rms_norm_rule(tl(x), tl(weight), eps)
-
-    # 2. Redistribute
-    x_rd = transfer_to(x, xm)
-    w_rd = transfer_to(weight, wm)
-
-    # 3. Dispatch
-    return per_shard_dispatch(
-        _rms_norm_kernel,
-        (x_rd, w_rd, _eps),
-        output_mappings,
-    )
+    return F.call_on_mesh(
+        _rms_norm_kernel, x_mapping.mesh, out_specs=out_mapping
+    )(transfer_to(x, x_mapping), transfer_to(weight, weight_mapping), eps)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -156,7 +113,7 @@ def _rms_norm_numpy(x: np.ndarray, w: np.ndarray, eps: float) -> np.ndarray:
 
 
 class _CustomDispatchExplicit:
-    """Tests for custom op dispatch via per_shard_dispatch (recommended path)."""
+    """Tests for a custom op that runs through call_on_mesh."""
 
     MESH_2: ClassVar[DeviceMesh]
 
@@ -191,43 +148,7 @@ class _CustomDispatchExplicit:
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-4)
 
 
-class _CustomDispatchManual:
-    """Tests for custom op dispatch via manual per-shard loop."""
-
-    MESH_2: ClassVar[DeviceMesh]
-
-    def test_rms_norm_manual_replicated(self) -> None:
-        rng = np.random.default_rng(42)
-        x_np = rng.standard_normal((4, 8)).astype(np.float32)
-        w_np = np.ones(8, dtype=np.float32)
-
-        x = transfer_to(
-            Tensor(x_np), DeviceMapping(self.MESH_2, (Replicated(),))
-        )
-        w = transfer_to(
-            Tensor(w_np), DeviceMapping(self.MESH_2, (Replicated(),))
-        )
-        result = rms_norm_manual(x, w, 1e-6)
-        assert result.placements == (Replicated(),)
-        expected = _rms_norm_numpy(x_np, w_np, 1e-6)
-        np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-4)
-
-    def test_rms_norm_manual_batch_sharded(self) -> None:
-        rng = np.random.default_rng(42)
-        x_np = rng.standard_normal((4, 8)).astype(np.float32)
-        w_np = np.ones(8, dtype=np.float32)
-
-        x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
-        w = transfer_to(
-            Tensor(w_np), DeviceMapping(self.MESH_2, (Replicated(),))
-        )
-        result = rms_norm_manual(x, w, 1e-6)
-        assert result.placements == (Sharded(0),)
-        expected = _rms_norm_numpy(x_np, w_np, 1e-6)
-        np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-4)
-
-
-class CustomDispatchTests(_CustomDispatchExplicit, _CustomDispatchManual):
+class CustomDispatchTests(_CustomDispatchExplicit):
     """Aggregates all custom dispatch test classes."""
 
     def test_rebind_mapping_moves_no_data(self) -> None:

@@ -929,29 +929,28 @@ class Tensor(DLPackArray, HasTensorValue):
     @classmethod
     def from_shard_values(
         cls,
-        shard_values: Sequence[GraphValue],
+        shard_values: Sequence[GraphValue | Tensor],
         mapping: DeviceMapping | None = None,
     ) -> Tensor:
-        """Creates a tensor from one or more per-shard graph values.
+        """Creates a tensor from one value per device, moving no data.
 
-        For a single shard value with no mapping, behaves like
-        :meth:`from_graph_value`. For multiple shard values, a
-        :class:`~max.experimental.sharding.DeviceMapping` is required
-        and the result is a distributed tensor.
+        Each value is one device's shard: a graph value, or a single-device
+        tensor in the graph being built. With one value and no mapping, the
+        result is that value as a tensor. With several values, ``mapping`` is
+        required and the result is a distributed tensor on the shards' own
+        devices.
 
         Args:
-            shard_values: Per-device graph values (TensorValue or
-                BufferValue). One per device in the mesh.
-            mapping: Device mapping describing how shards map to mesh
-                devices and their placements. Required when
-                ``len(shard_values) > 1``.
+            shard_values: The shards, one per device of the mesh.
+            mapping: The :class:`~max.experimental.sharding.DeviceMapping` of
+                the result. Required for more than one shard.
 
         Returns:
-            A tensor backed by the provided shard values.
+            A tensor backed by the given shards.
 
         Raises:
-            ValueError: If multiple shard values are given without a mapping.
-            TypeError: If any shard value is not a graph value.
+            ValueError: If several shards are given without a mapping.
+            TypeError: If a shard is neither a graph value nor a tensor.
         """
         if len(shard_values) > 1 and mapping is None:
             raise ValueError(
@@ -959,15 +958,48 @@ class Tensor(DLPackArray, HasTensorValue):
                 "shard values. Pass a DeviceMapping describing how "
                 "shards map to mesh devices."
             )
-        for v in shard_values:
-            if not isinstance(v, GraphValue):
-                raise TypeError(f"{v=} must be a tensor or buffer value")
+        values = []
+        for value in shard_values:
+            if isinstance(value, Tensor):
+                # A buffer stays a buffer, so that ops can write to it.
+                value = (
+                    value.__buffervalue__()
+                    if isinstance(value._backing_value, graph.BufferValue)
+                    else value.__tensorvalue__()
+                )
+            if not isinstance(value, GraphValue):
+                raise TypeError(f"{value=} must be a tensor or buffer value")
+            values.append(value)
         if mapping is None:
-            return current_realization_context().create_unrealized(
-                (shard_values[0],)
+            return current_realization_context().create_unrealized((values[0],))
+        # Shards that the placements declare equal, such as replicated
+        # copies, take the first one's shape; the rebind checks it at runtime.
+        mesh = mapping.mesh
+        differing_axes = [
+            axis
+            for axis, p in enumerate(mapping.placements)
+            if isinstance(p, (Sharded, Unknown))
+        ]
+        first_shards: dict[tuple[int, ...], GraphValue] = {}
+        for index, value in enumerate(values):
+            group = tuple(
+                mesh.device_coord(index, axis) for axis in differing_axes
+            )
+            first_shard = first_shards.setdefault(group, value)
+            if isinstance(value, graph.TensorValue) and (
+                value.shape != first_shard.shape
+            ):
+                values[index] = graph.ops.rebind(value, first_shard.shape)
+        devices = tuple(value.device.to_device() for value in values)
+        if devices != mapping.mesh.devices:
+            # Keeps the mapping's grid of mesh axes on the shards' devices.
+            mesh = mapping.mesh
+            mapping = DeviceMapping(
+                DeviceMesh(devices, mesh.mesh_shape, mesh.axis_names),
+                mapping.placements,
             )
         return current_realization_context().create_unrealized(
-            tuple(shard_values), mapping=mapping
+            tuple(values), mapping=mapping
         )
 
     @classmethod

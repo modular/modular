@@ -107,7 +107,7 @@ def _build_kv_collection(
     kv_params: KVCacheParams,
     batch_size: int | str,
     n_pages: int,
-    devices: Sequence[Device],
+    mesh: DeviceMesh,
 ) -> PagedCacheValues:
     kv_inputs = kv_params.get_symbolic_inputs()
 
@@ -142,9 +142,7 @@ def _build_kv_collection(
                 graph_values.append(TensorValue(t))
 
     kv_concrete = kv_params.unflatten_kv_inputs(iter(graph_values))
-    mapping = DeviceMapping(
-        DeviceMesh(tuple(devices), (len(devices),), ("axis",)), (Replicated(),)
-    )
+    mapping = DeviceMapping(mesh, (Replicated(),))
     return PagedCacheValues.from_upstream(kv_concrete, mapping)
 
 
@@ -351,7 +349,10 @@ def test_mla_bf16_forward(
         input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
         layer_idx = F.constant(0, DType.uint32, device=CPU())
         kv_collection = _build_kv_collection(
-            kv_params, batch_size, n_pages, [device]
+            kv_params,
+            batch_size,
+            n_pages,
+            DeviceMesh((device,), (1,), ("axis",)),
         )
         layer_idx = F.constant(0, DType.uint32, device=CPU())
 
@@ -391,7 +392,10 @@ def test_mla_fp8_forward(
         input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
         layer_idx = F.constant(0, DType.uint32, device=CPU())
         kv_collection = _build_kv_collection(
-            kv_params, batch_size, n_pages, [device]
+            kv_params,
+            batch_size,
+            n_pages,
+            DeviceMesh((device,), (1,), ("axis",)),
         )
 
         out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)
@@ -463,7 +467,7 @@ def test_mla_fp8_tensor_parallel(
         )
         layer_idx = F.constant(0, DType.uint32, device=CPU())
         kv_collection = _build_kv_collection(
-            kv_params, batch_size, n_pages, devices
+            kv_params, batch_size, n_pages, mesh
         )
 
         out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)
@@ -578,7 +582,10 @@ def test_mla_nvfp4_forward(
         input_row_offsets = Tensor.zeros([batch_size + 1], dtype=DType.uint32)
         layer_idx = F.constant(0, DType.uint32, device=CPU())
         kv_collection = _build_kv_collection(
-            kv_params, batch_size, n_pages, [device]
+            kv_params,
+            batch_size,
+            n_pages,
+            DeviceMesh((device,), (1,), ("axis",)),
         )
 
         out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)
@@ -636,7 +643,7 @@ def test_mla_nvfp4_tensor_parallel(
         )
         layer_idx = F.constant(0, DType.uint32, device=CPU())
         kv_collection = _build_kv_collection(
-            kv_params, batch_size, n_pages, devices
+            kv_params, batch_size, n_pages, mesh
         )
 
         out = layer(x, kv_collection, freqs_cis, layer_idx, input_row_offsets)

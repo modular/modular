@@ -52,7 +52,7 @@ def _localize_sizes(
     ndim: int,
     placements: tuple[Placement, ...],
     mesh: DeviceMesh,
-) -> list[Dim] | PerShard:
+) -> list[Dim] | PerShard[list[Dim]]:
     """Adaptive per-rank size kwarg for :func:`split`.
 
     When the split axis is sharded, divisible static sizes return one list
@@ -163,7 +163,7 @@ def _per_rank_target(
     src_shape: Sequence[DimLike],
     out_placements: tuple[Placement, ...],
     mesh: DeviceMesh,
-) -> PerShard:
+) -> PerShard[Shape]:
     """Returns the per-rank local target shape.
 
     Wrappers and ``-1`` pass through; other dims are lifted via the
