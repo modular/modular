@@ -33,6 +33,7 @@ Placements
    Placement
    Replicated
    Sharded
+   Unknown
 
 Layouts
 -------
