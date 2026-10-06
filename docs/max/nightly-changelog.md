@@ -247,6 +247,10 @@ This version is still a work in progress.
   are renamed `fraction` and `turn` to match
   `augment_samples_with_response_format`; the `--image-fraction` and
   `--image-turn` flags are unchanged.
+- `max benchmark`'s `--image-fraction` now picks exactly that share of
+  requests or chat sessions, rounding up or down at random when the share
+  isn't whole, instead of drawing each one independently. A run picks no images
+  only when that share is under one item or too few items can carry them.
 - `max benchmark` now reports its realized request mix in its own "Request
   Mix" section and `result_groups.request_mix`, rather than among the headline
   metrics in `result_groups.summary`. The group holds the structured-output and

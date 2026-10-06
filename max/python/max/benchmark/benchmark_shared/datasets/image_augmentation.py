@@ -157,18 +157,19 @@ def augment_samples_with_images(
     Dataset-agnostic: operates on the `Samples` any dataset produces, after
     sampling, so datasets never need their own image-generation logic.
 
-    Nothing is counted that will not be sent: a selected request or session
-    whose images could not reach the wire -- no user message to attach them
-    to, or a chat session the driver would abandon for exceeding
-    `max_chat_len` -- is left untouched rather than augmented and reported.
-    Chat-judge workloads are skipped outright, since their driver sends text
-    only.
+    Nothing is counted that will not be sent: a request or session whose
+    images could not reach the wire -- no user message to attach them to, or
+    a chat session the driver would abandon for exceeding `max_chat_len` --
+    is left untouched and the next one in the shuffled order is tried
+    instead. Chat-judge workloads are skipped outright, since their driver
+    sends text only.
 
     Args:
         samples: Already-sampled requests or chat sessions, mutated in place.
         fraction: Fraction (0.0-1.0) of requests (single-turn) or sessions
-            (multi-turn) selected for images. Selection is not a guarantee:
-            see above for when a selected one is left alone.
+            (multi-turn) that get images. Exactly ``fraction * n`` are
+            picked, rounded up or down at random so the mean is exact, and
+            fewer only when too few can carry images.
 
             Drawn per *session* in multi-turn, where
             `augment_samples_with_response_format` draws per turn. The
@@ -248,6 +249,26 @@ def augment_samples_with_images(
         raise TypeError(f"Unsupported samples type: {type(samples)}")
 
 
+class _Selection(NamedTuple):
+    """Items to try, in order, and how many of them to augment."""
+
+    order: list[int]
+    target: int
+
+
+def _select(population: int, fraction: float, rng: random.Random) -> _Selection:
+    """Shuffles the items and rounds ``fraction * population`` at random.
+
+    A draw per item makes a small population's share swing widely: at 0.068
+    over 40 sessions it often picks none.
+    """
+    expected = fraction * population
+    target = math.floor(expected)
+    if rng.random() < expected - target:
+        target += 1
+    return _Selection(rng.sample(range(population), population), target)
+
+
 def _prompt_accepts_images(prompt: str | list[ChatMessage]) -> bool:
     """Whether the request driver will actually put images on the wire.
 
@@ -271,9 +292,11 @@ def _augment_request_samples(
     augmented = 0
     added_images = 0
     no_user_message = 0
-    for request in samples.requests:
-        if rng.random() >= fraction:
-            continue
+    selection = _select(len(samples.requests), fraction, rng)
+    for index in selection.order:
+        if augmented == selection.target:
+            break
+        request = samples.requests[index]
         if not _prompt_accepts_images(request.prompt_formatted):
             no_user_message += 1
             continue
@@ -364,9 +387,11 @@ def _augment_chat_samples(
     augmented = 0
     added_images = 0
     unmeasurable: list[int | None] = []
-    for session in samples.chat_sessions:
-        if rng.random() >= fraction:
-            continue
+    selection = _select(len(samples.chat_sessions), fraction, rng)
+    for index in selection.order:
+        if augmented == selection.target:
+            break
+        session = samples.chat_sessions[index]
         user_turn_indices = [
             i for i, m in enumerate(session.messages) if m.source == "user"
         ]

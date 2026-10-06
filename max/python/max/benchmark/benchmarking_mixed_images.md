@@ -73,21 +73,26 @@ attach an image to every user turn instead of just one.
 
 ### What the fraction counts
 
-In a multi-turn run `--image-fraction` draws per *session*, not per request.
-That matters when you are calibrating against a per-request production figure,
-because the chat driver resends a session's history: once a turn carries an
-image, every later turn of that session carries it again.
+In a multi-turn run `--image-fraction` selects *sessions*, not requests: exactly
+that share of them, rounded at random when it isn't whole, or fewer if too few
+sessions can carry images (no user turn, or over the max chat length). That
+matters when you
+are calibrating against a per-request production figure, because the chat driver
+resends a session's history: once a turn carries an image, every later turn of
+that session carries it again.
 
-With `--image-turn every` and `--image-count 1` the two coincide — newly
-encoded images per request and the share of requests carrying one both equal
-`--image-fraction`, which is what makes that combination the one to reach for
-when matching production. With `first` or `last` one image is encoded per
-session, so the encoder rate falls by roughly the average turn count. The share
-of requests carrying an image then depends on where that image lands, because
-only the image turn and the turns after it resend it:
+With `--image-turn every` and `--image-count 1` the two coincide — newly encoded
+images per request and the share of requests carrying one are equal, and match
+`--image-fraction` on average, which is what makes that combination the one to
+reach for when matching production. In a single run they're weighted by how many
+turns the picked sessions have, so a run that picks long sessions lands above
+the fraction. With `first` or `last` one image is encoded per session, so the
+encoder rate falls by roughly the average turn count. The share of requests
+carrying an image then depends on where that image lands, because only the image
+turn and the turns after it resend it:
 
 - `first`: every turn of a selected session carries the image, so the share
-  stays at `--image-fraction`.
+  matches `--image-fraction` on average.
 - `last`: only the final request of a selected session carries it, so the share
   falls by the same factor as the encoder rate.
 
