@@ -421,7 +421,8 @@ class _MaxRequestExtensions(BaseModel):
             "entries from other requests. Combined with "
             "kv_cache_hash_seed via XOR. Works under any "
             "kv_cache_hash_algo: a cryptographic guarantee under "
-            "sha256/sha256_64, best-effort under ahash64."
+            "sha256 (64-bit key separation on the dKV external tier), "
+            "best-effort under ahash64."
         ),
     )
 

@@ -736,6 +736,14 @@ This version is still a work in progress.
   `PagedKVCacheManager`, `DummyKVCache`, `load_kv_manager`, and the other names
   it re-exported from `max.pipelines.kv_cache` instead.
 
+- The `sha256_64` value of `kv_cache_hash_algo` is removed, and a config that
+  sets it now fails validation at startup. It kept the first 8 bytes of each
+  block's SHA-256 digest but chained the next block onto the full digest, so a
+  request whose hash chain grew after its first block (decode past a block
+  boundary, chunked prefill) raised an error. Use `sha256` instead. The dKV
+  connector keys `sha256` blocks by the first 8 bytes of the digest, so dKV
+  keys are unchanged.
+
 ## Fixes
 
 - Fixed the paged KV cache overflowing its page budget when memory

@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Generic, Literal, Protocol, TypeVar, overload
+from typing import Any, Generic, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -52,7 +52,7 @@ def _make_root_parent_hash(seed: bytes | None, salt: str | None) -> bytes:
     for benchmark workloads). An empty-string salt is treated the same as
     no salt at all, not as its own distinct salt value.
 
-    Shared by both hash families: for `sha256`/`sha256_64` this is the
+    Shared by both hash families: for `sha256` this is the
     32-byte root parent hash for the SHA-256 chain; for `ahash64` these
     same 32 bytes are reinterpreted as the `AHasher` seed.
     """
@@ -68,78 +68,6 @@ def _make_root_parent_hash(seed: bytes | None, salt: str | None) -> bytes:
     return bytes(b ^ s for b, s in zip(base, salt_digest, strict=False))
 
 
-def _truncate_to_signed64(digest: bytes) -> int:
-    """Reduce a 32-byte SHA-256 digest to a signed 64-bit Python int.
-
-    Takes the first 8 bytes interpreted big-endian. Converts to a signed
-    int (high bit becomes negative), matching the existing
-    `mojo_block_hasher` behaviour.
-    """
-    n = int.from_bytes(digest[:8], "big", signed=False)
-    if n >= 1 << 63:
-        n -= 1 << 64
-    return n
-
-
-# ahash64 overload returning bytes
-@overload
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: bytes | None = ...,
-    prefix_length: int = ...,
-    token_hash_overrides: list[TokenHashOverride] | None = ...,
-    *,
-    algo: Literal["ahash64"] = ...,
-    seed: bytes | None = ...,
-    salt: str | None = ...,
-) -> list[bytes]: ...
-
-
-# sha256_64 overload returning bytes
-@overload
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: bytes | None = ...,
-    prefix_length: int = ...,
-    token_hash_overrides: list[TokenHashOverride] | None = ...,
-    *,
-    algo: Literal["sha256_64"],
-    seed: bytes | None = ...,
-    salt: str | None = ...,
-) -> list[bytes]: ...
-
-
-# sha256 overload returning bytes
-@overload
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: bytes | None = ...,
-    prefix_length: int = ...,
-    token_hash_overrides: list[TokenHashOverride] | None = ...,
-    *,
-    algo: Literal["sha256"],
-    seed: bytes | None = ...,
-    salt: str | None = ...,
-) -> list[bytes]: ...
-
-
-@overload
-def hash_request_tokens(
-    token_ids: npt.NDArray[np.integer[Any]],
-    block_size: int,
-    parent_hash: bytes | None = ...,
-    prefix_length: int = ...,
-    token_hash_overrides: list[TokenHashOverride] | None = ...,
-    *,
-    algo: KVHashAlgo,
-    seed: bytes | None = ...,
-    salt: str | None = ...,
-) -> list[bytes]: ...
-
-
 @traced
 def hash_request_tokens(
     token_ids: npt.NDArray[np.integer[Any]],
@@ -151,7 +79,7 @@ def hash_request_tokens(
     algo: KVHashAlgo = "ahash64",
     seed: bytes | None = None,
     salt: str | None = None,
-) -> list[bytes] | None:
+) -> list[bytes]:
     """Hash the tokens of a request using the Mojo implementation.
 
     Token hash overrides let callers replace one placeholder token per media
@@ -159,7 +87,7 @@ def hash_request_tokens(
 
     This method should leave the contents of the array unchanged on return.
 
-    `seed`/`salt` apply to all three algos: for `sha256`/`sha256_64` they
+    `seed`/`salt` apply to both algos: for `sha256` they
     combine into the 256-bit chain root (a cryptographic guarantee); for
     `ahash64` they seed AHash's runtime keyed state (fast, non-cryptographic
     -- best-effort collision resistance, not a cryptographic guarantee).
@@ -201,29 +129,23 @@ def hash_request_tokens(
             else:
                 hash_vals = block_hasher(token_ids, block_size, ph_bytes_ahash)
 
-        elif algo in ("sha256", "sha256_64"):
+        elif algo == "sha256":
             if parent_hash is None:
                 ph_bytes = _make_root_parent_hash(seed, salt)
             elif isinstance(parent_hash, bytes):
                 if len(parent_hash) != 32:
                     raise ValueError(
-                        f"algo={algo} requires 32-byte parent_hash, got"
+                        f"algo={algo} requires 32-byte parent_hash, got "
                         f"{len(parent_hash)}"
                     )
                 ph_bytes = parent_hash
             else:
                 raise TypeError(
-                    "algo=sha256/sha256_64 requires bytes parent_hash, got"
+                    "algo=sha256 requires bytes parent_hash, got "
                     f"{type(parent_hash).__name__}"
                 )
 
-            full_digests: list[bytes] = block_hasher_sha256(
-                token_ids, block_size, ph_bytes
-            )
-            if algo == "sha256":
-                hash_vals = full_digests
-            else:
-                hash_vals = [d[:8] for d in full_digests]
+            hash_vals = block_hasher_sha256(token_ids, block_size, ph_bytes)
         else:
             raise ValueError(f"unknown algo={algo}")
 

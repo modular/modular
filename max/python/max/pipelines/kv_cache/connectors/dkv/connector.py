@@ -191,10 +191,9 @@ def _to_dkv_u64(h: bytes) -> int:
     The dkv proto stays ``uint64 seq_hash``. Accepts the canonical bytes
     forms the block hasher produces:
 
-    * 8 bytes (``ahash64`` / ``sha256_64``): used as-is, big-endian unsigned.
+    * 8 bytes (``ahash64``): used as-is, big-endian unsigned.
     * 32 bytes (full ``sha256``): truncated to the first 8 bytes (big-endian
-      unsigned). Byte-identical to ``sha256_64`` of the same digest, so the
-      same logical block collapses to the same dkv key under either algo.
+      unsigned), because the dkv wire key is 64 bits wide.
 
     Args:
         h: Canonical block-hash bytes, length 8 or 32.

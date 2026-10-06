@@ -14,7 +14,7 @@
 """Resolve the kv_cache_hash_seed from operator config.
 
 The seed is an optional 64-character hex string, decoded here to 32 raw
-bytes. If none is configured, `sha256`/`sha256_64` get a random one
+bytes. If none is configured, `sha256` gets a random one
 (cached for the process lifetime); `ahash64` does not, so unconfigured
 deployments stay deterministic across restarts. The active seed hex is
 logged once.
@@ -45,7 +45,7 @@ def resolve_kv_hash_seed(
         seed_hex: Optional 64-character hex string (32 bytes after decode).
     Returns:
         - ``None`` if no seed is configured. ``ahash64`` never
-          auto-generates one; ``sha256``/``sha256_64`` do (random,
+          auto-generates one; ``sha256`` does (random,
           cached for the process lifetime).
         - 32 raw bytes when ``seed_hex`` is set, for any algo.
     Raises:

@@ -240,7 +240,7 @@ class KVConnector(Protocol):
     via load/offload methods.
 
     All block hashes crossing this Protocol are in canonical bytes form:
-    8 big-endian bytes for ahash64-family algos (including ``sha256_64``),
+    8 big-endian bytes for ``ahash64``,
     32 bytes for full SHA-256 digests. The block hasher produces this
     canonical form directly, so callers pass the hashes through unchanged;
     a connector that needs a narrower wire encoding (e.g. dKV's 64-bit key)

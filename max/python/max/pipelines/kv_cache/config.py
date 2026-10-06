@@ -317,10 +317,10 @@ class KVCacheConfig(ConfigFileModel):
         description=(
             "Hash algorithm used for KV-cache block identity. "
             "``ahash64`` (default) is fast and non-cryptographic; "
-            "``sha256`` is a cryptographic 256-bit hasher; both support "
-            "an optional seed/salt for prefix-cache isolation. "
-            "``sha256_64`` truncates the SHA-256 chain to 64 bits for "
-            "protocol compatibility."
+            "``sha256`` is a cryptographic 256-bit hasher (the dKV "
+            "external tier keys blocks by the first 64 bits of the "
+            "digest); both support an optional seed/salt for "
+            "prefix-cache isolation."
         ),
     )
     """Hash algorithm used for KV-cache block identity."""
@@ -329,8 +329,8 @@ class KVCacheConfig(ConfigFileModel):
         default=None,
         description=(
             "Optional 64-character hex string (32 bytes), a cluster-wide "
-            "seed for kv_cache_hash_algo. If omitted, sha256/sha256_64 "
-            "generate a random seed at startup; ahash64 does not, so "
+            "seed for kv_cache_hash_algo. If omitted, sha256 "
+            "generates a random seed at startup; ahash64 does not, so "
             "existing deployments are unaffected unless set explicitly."
         ),
     )

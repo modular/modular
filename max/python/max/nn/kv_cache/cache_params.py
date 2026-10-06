@@ -77,7 +77,7 @@ from .utils import (
 # Literals, so mypy treats them as the same type at use sites.
 SpeculativeMethod = Literal["eagle", "mtp", "dflash", "dflash2"]
 
-KVHashAlgo = Literal["ahash64", "sha256", "sha256_64"]
+KVHashAlgo = Literal["ahash64", "sha256"]
 """Supported hash algorithms for KV-cache block identity."""
 
 logger = logging.getLogger("max.pipelines")
@@ -1413,7 +1413,7 @@ class KVCacheParamInterface(CacheLeafParamInterface, Protocol):
 
     @property
     def kv_hash_seed(self) -> bytes | None:
-        """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``.
+        """Resolved 32-byte cluster seed for ``sha256``.
         ``None`` for ``ahash64``."""
         ...
 
@@ -1527,7 +1527,7 @@ class KVCacheParams(KVCacheParamInterface):
     """Hash algorithm used for KV-cache block identity."""
 
     kv_hash_seed: bytes | None = None
-    """Resolved 32-byte cluster seed for ``sha256``/``sha256_64``. ``None``
+    """Resolved 32-byte cluster seed for ``sha256``. ``None``
     for ``ahash64``.
 
     Set by ``KVCacheConfig.to_params`` via ``resolve_kv_hash_seed``.
@@ -3329,7 +3329,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     kv_hash_algo: KVHashAlgo = "ahash64"
     """Hash algorithm used for block identity."""
     kv_hash_seed: bytes | None = None
-    """Resolved cluster seed for ``sha256``/``sha256_64``."""
+    """Resolved cluster seed for ``sha256``."""
     speculative_method: SpeculativeMethod | None = None
     """Speculative decoding method propagated from ``SpeculativeConfig``."""
     num_draft_tokens: int = 0

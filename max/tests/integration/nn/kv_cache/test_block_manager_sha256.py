@@ -16,7 +16,7 @@
 Exercises the kv_hash_algo / kv_hash_seed / cache_salt plumbing added to
 BlockManager.compute_hashes_for_request:
 
-- sha256 produces 32-byte bytes hashes per block; sha256_64 truncates to 8.
+- sha256 produces 32-byte bytes hashes per block.
 - Identical tokens + identical seed/salt => identical hash chain (cache hit).
 - Different cache_salt => different hash chain (multi-tenant isolation).
 - Different kv_hash_seed => different hash chain (cluster isolation).
@@ -91,21 +91,6 @@ def test_sha256_produces_32_byte_hashes() -> None:
     for h in hashes:
         assert isinstance(h, bytes)
         assert len(h) == 32
-
-
-def test_sha256_64_produces_8_byte_hashes() -> None:
-    """sha256_64 truncates each digest to the canonical 8-byte hash form."""
-    bm = _make_block_manager(kv_hash_algo="sha256_64")
-    tokens = np.arange(33, dtype=np.int32)
-    ctx = _make_ctx(tokens)
-
-    bm.compute_hashes_for_request(ctx)
-
-    hashes = bm.req_to_hashes[ctx.request_id]
-    assert len(hashes) == 4
-    for h in hashes:
-        assert isinstance(h, bytes)
-        assert len(h) == 8
 
 
 def test_sha256_same_tokens_same_hashes() -> None:

@@ -545,8 +545,9 @@ class TextContext:
 
     Combined with ``kv_cache_hash_seed`` via XOR to seed the block hash.
     Works under any ``kv_cache_hash_algo``: a cryptographic guarantee
-    under ``sha256``/``sha256_64``, best-effort under ``ahash64``. Capped
-    at 512 chars at the OpenAI schema layer.
+    under ``sha256`` (64-bit key separation on the dKV external tier),
+    best-effort under ``ahash64``. Capped at 512 chars at the OpenAI
+    schema layer.
     """
 
     cached_prefix_length: int | None = field(default=None)
