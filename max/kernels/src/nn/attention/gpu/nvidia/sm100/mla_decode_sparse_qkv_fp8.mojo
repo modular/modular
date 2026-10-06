@@ -73,7 +73,7 @@ from std.collections import OptionalReg
 from std.memory import UnsafePointer
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
-from std.sys import get_defined_bool, get_defined_int, size_of
+from std.sys import get_defined_int, size_of
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     thread_idx,
@@ -204,14 +204,11 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         TensorMapSwizzle.SWIZZLE_NONE,
     ]()
 
-    # Lane l < BN_QK/4 issues the gather4 for rows [4l, 4l+4) with its own
-    # operands; ptxas serializes the UTMALDGs with an ELECT/R2UR loop.
-    comptime warp_gather4 = get_defined_bool["MLA_SPARSE_WARP_GATHER4", False]()
     # >0: the elected lane loads the row indices of this many 4-row chunks
     # with back-to-back ld.shared.v4 before issuing their gather4s, so the
     # SMEM latency is paid once per batch instead of once per gather4.
     comptime gather4_idx_batch = get_defined_int[
-        "MLA_SPARSE_GATHER4_IDX_BATCH", 0
+        "MLA_SPARSE_GATHER4_IDX_BATCH", 8
     ]()
     # Worst-case padding that 16-byte aligns idx_smem for ld.shared.v4; the
     # dispatch adds this to the SMEM it reserves.
@@ -1058,31 +1055,10 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
     ):
         comptime box_w = Self.kv_gather4_box_w
         comptime num_chunks = Self.config.BK_PV // 4
-        comptime if Self.warp_gather4 or Self.gather4_idx_batch > 0:
+        comptime if Self.gather4_idx_batch > 0:
             comptime assert (
                 box_w * 8 == Self.config.input_q_depth
             ), "per-chunk gather4 assumes one column group per row"
-        comptime if Self.warp_gather4:
-            comptime assert num_chunks <= 32
-            var lane = Int(lane_id())
-            if lane < num_chunks:
-                var base = lane * 4
-                var dst = TileTensor(
-                    kv_stage_ptr.bitcast[Int64]() + base * box_w,
-                    tt_row_major[4, box_w](),
-                )
-                cur_k_tma.async_copy_gather4[
-                    eviction_policy=CacheEviction.EVICT_LAST
-                ](
-                    dst,
-                    k_mbar[],
-                    Int32(0),
-                    idx_smem[base],
-                    idx_smem[base + 1],
-                    idx_smem[base + 2],
-                    idx_smem[base + 3],
-                )
-        elif Self.gather4_idx_batch > 0:
             comptime B = Self.gather4_idx_batch
             comptime assert num_chunks % B == 0
             if is_leader:
