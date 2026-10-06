@@ -5148,8 +5148,7 @@ struct TMATensorTileIm2col[
     ):
         """Schedules an asynchronous im2col TMA load.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
-        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+        Requires a shared-memory destination aligned to 128 bytes.
 
         Uses 2D GEMM-style coordinates:
         - coords[0]: K coordinate (indexes into C * R * S reduction dimension)
@@ -5255,8 +5254,7 @@ struct TMATensorTileIm2col[
     ):
         """Schedules an asynchronous im2col TMA load with multicast.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
-        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+        Requires a shared-memory destination aligned to 128 bytes.
 
         Uses 2D GEMM-style coordinates:
         - coords[0]: K coordinate (indexes into C * R * S reduction dimension)

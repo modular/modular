@@ -4042,8 +4042,9 @@ struct ContinuousBatchingKVCacheCollection[
     comptime name_str = "continuous_batching"
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
-    # A `LayoutTensor` is a bare pointer, so a collection built at the MOGG
-    # boundary is always raw-pointer backed.
+    # Collections at the MOGG boundary retain raw-pointer-backed DefaultEngine
+    # views, not owning DeviceBuffers. The runtime keeps buffers alive externally;
+    # those keepalives need not become DevicePassable collection fields.
     comptime CacheType = ContinuousBatchingKVCache[
         Self.dtype,
         Self.kv_params,
@@ -4244,8 +4245,9 @@ struct PagedKVCacheCollection[
     comptime dtype = Self.dtype_
     comptime kv_params = Self.kv_params_
     comptime scale_dtype = Self.scale_dtype_.or_else(Self.dtype_)
-    # A `LayoutTensor` is a bare pointer, so a collection built at the MOGG
-    # boundary is always raw-pointer backed.
+    # Collections at the MOGG boundary retain raw-pointer-backed DefaultEngine
+    # views, not owning DeviceBuffers. The runtime keeps buffers alive externally;
+    # those keepalives need not become DevicePassable collection fields.
     comptime CacheType = PagedKVCache[
         Self.dtype,
         Self.kv_params,
