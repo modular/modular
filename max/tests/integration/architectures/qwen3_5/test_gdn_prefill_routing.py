@@ -24,10 +24,10 @@ passes while the descriptor reads past its buffer.
 from __future__ import annotations
 
 import pytest
-from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.nn import Module
+from max.pipelines.architectures.qwen3_5.layers import gated_deltanet
 from max.pipelines.architectures.qwen3_5.layers.gated_deltanet import (
     GatedDeltaNet,
 )
@@ -54,7 +54,12 @@ def _qualify_weight_names(layer: Module, prefix: str = "gdn") -> None:
         _qualify_weight_names(sub, f"{prefix}.{name}")
 
 
-def _forward_mlir() -> str:
+def _forward_mlir(monkeypatch: pytest.MonkeyPatch, architecture: str) -> str:
+    """Builds the layer as if on an NVIDIA GPU of ``architecture``."""
+    monkeypatch.setattr(gated_deltanet, "accelerator_api", lambda: "cuda")
+    monkeypatch.setattr(
+        gated_deltanet, "accelerator_architecture_name", lambda: architecture
+    )
     layer = GatedDeltaNet(
         hidden_size=HIDDEN,
         num_key_heads=NUM_KEY_HEADS,
@@ -97,18 +102,49 @@ def _forward_mlir() -> str:
     return str(graph)
 
 
-# The layer only names the chunk op on an NVIDIA accelerator, so the
-# assertions below describe CUDA builds alone.
-cuda_only = pytest.mark.skipif(
-    accelerator_api() != "cuda",
-    reason="gated-DeltaNet prefill takes the chunk op on NVIDIA only",
+# The graph is only built, never compiled or run, so the routing is checked
+# for both sides of the SM100 gate from any host, with the driver queries
+# patched to report the architecture under test.
+PRE_SM100 = ["sm_86", "sm_90a"]
+SM100_PLUS = ["sm_100a", "sm_103"]
+
+
+@pytest.mark.parametrize("architecture", PRE_SM100)
+def test_pre_sm100_prefill_stays_sequential(
+    monkeypatch: pytest.MonkeyPatch, architecture: str
+) -> None:
+    """The fused chunk kernel doesn't instantiate below SM100 (A10G, H100)."""
+    mlir = _forward_mlir(monkeypatch, architecture)
+    assert "kda_chunk" not in mlir
+    assert "gated_delta_recurrence" in mlir
+
+
+@pytest.mark.parametrize(
+    ("architecture", "capability"),
+    [
+        ("sm_86", 86),
+        ("sm_90a", 90),
+        ("sm_100a", 100),
+        ("sm_103", 103),
+        ("gfx942", 0),
+        ("", 0),
+    ],
 )
+def test_compute_capability_is_read_from_the_architecture_name(
+    monkeypatch: pytest.MonkeyPatch, architecture: str, capability: int
+) -> None:
+    monkeypatch.setattr(
+        gated_deltanet, "accelerator_architecture_name", lambda: architecture
+    )
+    assert gated_deltanet._nvidia_compute_capability() == capability
 
 
-@cuda_only
-def test_prefill_and_decode_are_both_wired() -> None:
+@pytest.mark.parametrize("architecture", SM100_PLUS)
+def test_prefill_and_decode_are_both_wired(
+    monkeypatch: pytest.MonkeyPatch, architecture: str
+) -> None:
     """Both recurrences are present, behind a conditional."""
-    mlir = _forward_mlir()
+    mlir = _forward_mlir(monkeypatch, architecture)
     assert "kda_chunk" in mlir, "prefill is not routed to the fused chunk op"
     assert "gated_delta_recurrence" in mlir, (
         "decode must stay on the sequential recurrence"
@@ -118,8 +154,9 @@ def test_prefill_and_decode_are_both_wired() -> None:
     )
 
 
-@cuda_only
-def test_gate_spread_is_materialized_not_a_view() -> None:
+def test_gate_spread_is_materialized_not_a_view(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The gate spread must not lower to a broadcast view.
 
     ``mo.broadcast_to`` carries ``MO_ViewLike``, so its result may keep a
@@ -128,7 +165,7 @@ def test_gate_spread_is_materialized_not_a_view() -> None:
     ``K`` times past the end of such a buffer. An elementwise multiply is not
     view-like and allocates the whole thing, so the gate is spread that way.
     """
-    mlir = _forward_mlir()
+    mlir = _forward_mlir(monkeypatch, "sm_100a")
     kda_chunk_lines = [
         line for line in mlir.splitlines() if "kda_chunk" in line
     ]

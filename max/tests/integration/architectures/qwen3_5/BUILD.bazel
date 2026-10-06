@@ -298,10 +298,21 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_text_only",
+    srcs = ["test_text_only.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_test(
     name = "test_gdn_prefill_routing",
     srcs = ["test_gdn_prefill_routing.py"],
     deps = [
-        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",

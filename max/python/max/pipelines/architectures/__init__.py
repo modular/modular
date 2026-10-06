@@ -313,6 +313,7 @@ def register_all_models() -> None:
         _LazyArch(
             "Qwen3_5ForConditionalGeneration", ".qwen3_5", "qwen3_5_arch"
         ),
+        _LazyArch("Qwen3_5ForCausalLM", ".qwen3_5", "qwen3_5_text_arch"),
         _LazyArch(
             "Qwen3ForCausalLM", ".qwen3_embedding", "qwen3_embedding_arch"
         ),

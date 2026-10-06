@@ -55,7 +55,7 @@ from collections.abc import Callable, Iterable
 from typing import NamedTuple
 
 import numpy as np
-from max.driver import accelerator_api
+from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import (
     BufferValue,
@@ -82,6 +82,20 @@ from max.nn.state_space import (
 )
 
 from ..state_cache import GatedDeltaRingAccess
+
+_CHUNK_MIN_COMPUTE_CAPABILITY = 100
+"""Lowest NVIDIA compute capability (``sm_100`` -> 100) the fused chunk kernel supports."""
+
+
+def _nvidia_compute_capability() -> int:
+    """Returns the current accelerator's compute capability, e.g. 86 for ``sm_86``.
+
+    Returns 0 when the architecture name is not of the form ``sm_<digits>[a-z]``
+    (non-NVIDIA or no accelerator), which keeps callers on the portable path.
+    """
+    name = accelerator_architecture_name()
+    digits = name.removeprefix("sm_").rstrip("abcdefghijklmnopqrstuvwxyz")
+    return int(digits) if name.startswith("sm_") and digits.isdigit() else 0
 
 
 class GatedDeltaReplayInputs(NamedTuple):
@@ -660,9 +674,17 @@ class GatedDeltaNet(Module, Shardable):
         # thing.
         # The chunk op's kernels are written for NVIDIA GPUs: on any other
         # accelerator even the scan fallback fails to instantiate, so the
-        # decision has to happen here rather than inside the launcher.
-        chunk_servable = accelerator_api() == "cuda" and (
-            kda_chunk_supports_head_dims(self.key_head_dim, self.value_head_dim)
+        # decision has to happen here rather than inside the launcher. The
+        # fused prefill kernel also issues tcgen05 MMAs and 1D TMA copies, so
+        # it only instantiates on SM100+; older NVIDIA GPUs (e.g. A10G, sm_86)
+        # take the sequential recurrence for prefill.
+        # TODO(KERN-3635): drop this gate once kda_chunk compiles below SM100.
+        chunk_servable = (
+            accelerator_api() == "cuda"
+            and _nvidia_compute_capability() >= _CHUNK_MIN_COMPUTE_CAPABILITY
+            and kda_chunk_supports_head_dims(
+                self.key_head_dim, self.value_head_dim
+            )
         )
         output_types = [
             TensorType(DType.float32, [x.shape[0], self.value_dim], device)

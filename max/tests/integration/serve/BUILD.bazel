@@ -135,6 +135,7 @@ modular_py_test(
     srcs = [
         "__init__.py",
         "conftest.py",
+        "test_decider_gpu.py",
         "test_decisions_gpu.py",
         "test_smollm_serving_gpu.py",
     ],
@@ -159,6 +160,8 @@ modular_py_test(
         # SmolLM (Llama arch) is loaded via registry string lookup.
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
+        # Decider models are loaded via registry string lookup too.
+        "//max/python/max/pipelines/architectures/qwen3_5",
     ],
     tags = [
         "gpu",
@@ -172,6 +175,7 @@ modular_py_test(
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/llama3_modulev3",
+        "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",

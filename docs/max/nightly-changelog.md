@@ -324,6 +324,11 @@ This version is still a work in progress.
   `typesafe-sdk` can use a MAX server. See
   [Decisions](/serve/decisions#system-one-compatible-route).
 
+- Decision models such as `Mapika/decider-2b`, which read a plain
+  state-first prompt and pick an option letter, are served in that format
+  automatically. The Qwen3.5 text-only decider checkpoints load through the
+  existing `qwen3_5` architecture. See [Decisions](/serve/decisions).
+
 - `--draft-proposal sampled` now works with block speculative decoding
   (DFlash, DFlash2 and DSpark drafts). The draft samples each proposal at the
   request's temperature, top-k and top-p and hands the verifier the

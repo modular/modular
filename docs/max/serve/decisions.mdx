@@ -127,7 +127,7 @@ was reused.
 | `questions`               | One or more typed questions. Required.                                                                |
 | `temperature`             | Divides label scores before the softmax. Default `1.0`.                                               |
 | `chat_template_kwargs`    | Extra chat template arguments. Thinking is off by default and may not be turned on.                   |
-| `prompt_format_version`   | Pins the server's prompt wording. A different served version is rejected. The current version is `1`. |
+| `prompt_format_version`   | Pins the prompt wording; a different served version is rejected. Currently `1` (`2` for decider).     |
 | `return_prompt_token_ids` | Returns the exact prompt and label token ids scored, for reproducing a result offline.                |
 | `model`                   | The model to use.                                                                                     |
 
@@ -178,13 +178,39 @@ full-vocabulary probability of the answer labels. `usage` reports
 `input_tokens` and `output_tokens` (always `0`).
 
 Prompts, label checks and probabilities are the same as for `/v1/decisions`
-with temperature `1.0`. `state` may be empty when the questions
+with the model's default temperature. `state` may be empty when the questions
 carry everything. Schema errors return `422`, and requests MAX can't
 answer (unknown model, unsupported server features, labels that aren't single
 tokens)
 return `400`. Fields that only `/v1/decisions` has (`temperature`,
 `prompt_format_version`, `return_prompt_token_ids`) are refused with a `422`.
 Choice questions take up to 26 options.
+
+## Decider models
+
+Models trained for decisions, such as
+[`Mapika/decider-0.8b`](https://huggingface.co/Mapika/decider-0.8b) and
+[`Mapika/decider-2b`](https://huggingface.co/Mapika/decider-2b) (Apache-2.0,
+Qwen3.5 text-only), read a different prompt than a chat model. They need no
+extra flag: MAX finds the `decider_config.json` that ships with the checkpoint
+at startup and serves the decider prompt format:
+
+```sh
+max serve --model-path Mapika/decider-2b
+```
+
+With this format the prompt is plain text with the state first and the question
+last, with no chat template. The model picks an option letter, `A` to `J`, at
+the last position. MAX reads each model's `decider_config.json`: answers are
+divided by a temperature per question type (`choice`, `noul`, `score`), and a
+`score` question is read as one yes/no row per level whose "fits" probabilities
+are normalized. Both routes use this format, and the response reports
+`prompt_format_version` `2`. On `/v1/decisions`, a request's `temperature`
+still overrides the model's own; `/v1/systemone` always uses the model's.
+
+These models read at most 10 options or levels per question, so wider questions
+return a `400`. Because a `score` question becomes one row per level, its
+`usage.prompt_tokens` counts the state once per level.
 
 ## Limits
 
@@ -194,3 +220,5 @@ Choice questions take up to 26 options.
 - Servers that use speculative decoding, LoRA, or variable logits, and models
   with their own pipeline class (such as block diffusion), don't support
   decisions.
+- Decider models take at most 10 options per question, and chat-layout decider
+  configs aren't supported.

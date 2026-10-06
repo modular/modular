@@ -34,6 +34,9 @@ class Qwen3_5Tokenizer(ReasoningDelimitersMixin, Qwen3VLTokenizer):
     resolving the ``<think>``/``</think>`` delimiter token IDs at construction.
     """
 
+    # Text-only checkpoints (model_type "qwen3_5_text") carry no vision config.
+    _requires_vision_config = False
+
     def __init__(
         self,
         model_path: str,
