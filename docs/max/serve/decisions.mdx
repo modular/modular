@@ -1,0 +1,196 @@
+---
+title: Decisions
+sidebar_label: Decisions
+description: Answer typed questions about an input with a probability for every option, without generating text
+---
+
+The `/v1/decisions` endpoint turns a model into a decision model. You send an
+input and a list of typed questions, and each answer comes back with the
+probability of every option. The probabilities are read from the model's
+next-token scores at the answer position, so no text is generated and no output
+is parsed.
+
+Use it to route tickets, classify or filter text, rate content on a scale, or
+answer yes/no checks, where you need a number you can threshold or rank on
+rather than a sentence you have to parse.
+
+The wire format matches
+[SGLang's `/v1/decisions`](https://docs.sglang.io/docs/supported-models/decision_models),
+so existing clients work unchanged. `/v1/decisions` is an extension under `/v1`,
+like `/v1/embeddings`, and isn't part of the OpenAI API. Call it over HTTP
+rather than through an OpenAI SDK method.
+
+## Start the server
+
+Any text generation model serves decisions, with no extra flag:
+
+```sh
+max serve --model-path Qwen/Qwen3.5-2B
+```
+
+The first decision request compiles a small label-gather graph, so it takes a
+few seconds longer than the ones after it. Decisions work with the overlap
+scheduler and device graph capture, though a step that scores a request waits
+for the GPU rather than overlapping.
+
+A model that ships a `decider_config.json`, such as `Mapika/decider-2b`, is
+served in the decider prompt format that it was trained on. MAX checks for the
+file when the server starts. Every other model uses its chat template.
+
+The model needs a chat template whose answer position follows a closed (or
+absent) reasoning block. MAX turns thinking off for these requests. A request
+that turns it on, or a model that can't answer with one-token labels, is
+rejected with a `400` that names the question. A request that doesn't match the
+schema is a `422`.
+
+## Ask questions
+
+```sh
+curl -X POST http://localhost:8000/v1/decisions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "I was charged twice for order A-104. Please refund one.",
+    "questions": [
+      {
+        "id": "team",
+        "type": "choice",
+        "question": "Which team should handle this?",
+        "options": [
+          {"name": "billing", "description": "Charges and refunds"},
+          {"name": "technical", "description": "Bugs and outages"},
+          {"name": "other"}
+        ]
+      },
+      {"id": "refund", "type": "yes_no", "question": "Is a refund requested?"}
+    ]
+  }'
+```
+
+There are three question types:
+
+- `choice`: 2 to 26 `options`, each with a `name` and an optional
+  `description`. Options are labeled `A` to `Z` in order, and the answer
+  includes the winning `choice`.
+- `score`: 2 to 10 `levels`, labeled `0` to `9` in order. The answer includes
+  `score`, the expected level under the probabilities.
+- `yes_no`: answered by the labels `yes` and `no`, with optional `yes` and `no`
+  descriptions.
+
+Every question needs a distinct `id`, and a request takes up to 64 questions.
+Text fields accept a string, object, or array. Objects and arrays are rendered
+into the prompt as compact JSON. A malformed request returns `422`.
+
+## Read the response
+
+```json
+{
+  "object": "decisions",
+  "model": "Qwen/Qwen3.5-2B",
+  "prompt_format_version": 1,
+  "answers": {
+    "team": {
+      "type": "choice",
+      "choice": "billing",
+      "probabilities": {"billing": 0.97, "technical": 0.01, "other": 0.02},
+      "label_mass": 0.99
+    },
+    "refund": {
+      "type": "yes_no",
+      "probabilities": {"yes": 0.95, "no": 0.05},
+      "label_mass": 0.98
+    }
+  },
+  "usage": {"prompt_tokens": 412, "completion_tokens": 0, "total_tokens": 412}
+}
+```
+
+`probabilities` is a softmax over the answer labels' scores, divided by
+`temperature`, so it sums to 1 over the options. It is a ranking you can
+threshold. It isn't a calibrated probability that the answer is correct unless
+you fit the temperature on your own data.
+
+`label_mass` is the full-vocabulary probability of all the answer labels at the
+answer position. It stays near 1 when the model answers with a label and drops
+when it wants to say something else, which makes it a cheap out-of-scope
+signal. `temperature` scales `probabilities` only, never `label_mass`.
+
+`usage.completion_tokens` is always 0. `prompt_tokens` sums the prompt of every
+question. Questions that share the same input reuse its prefill when prefix
+caching is on, and `usage.prompt_tokens_details.cached_tokens` reports how much
+was reused.
+
+## Request fields
+
+| Field                     | Description                                                                                           |
+|---------------------------|-------------------------------------------------------------------------------------------------------|
+| `input`                   | The text or JSON value the questions are about. Required.                                             |
+| `questions`               | One or more typed questions. Required.                                                                |
+| `temperature`             | Divides label scores before the softmax. Default `1.0`.                                               |
+| `chat_template_kwargs`    | Extra chat template arguments. Thinking is off by default and may not be turned on.                   |
+| `prompt_format_version`   | Pins the server's prompt wording. A different served version is rejected. The current version is `1`. |
+| `return_prompt_token_ids` | Returns the exact prompt and label token ids scored, for reproducing a result offline.                |
+| `model`                   | The model to use.                                                                                     |
+
+## How a question is scored
+
+Each question becomes its own chat prompt: the input, a blank line, the
+question with its labeled options, and an instruction such as "Answer with the
+letter of one option only." The prompt ends where the assistant's answer would
+start. MAX runs one prefill step and reads the log-probability of each answer
+label at the last position, normalized over the whole vocabulary.
+
+Because each question is independent, adding, removing, or reordering questions
+never changes another question's answer. Before scoring, MAX checks that every
+label is exactly one distinct token after the rendered prompt for the model's
+tokenizer. If one isn't, the request fails with a `400` instead of returning a
+misleading number.
+
+## System One compatible route
+
+`POST /v1/systemone` accepts the System One request shape and answers it with
+the same scoring path, so System One clients (such as `typesafe-sdk`) and the
+Decision Index `http` engine can point at a MAX server.
+
+```json
+{
+  "state": "I was charged twice for order A-104. Please refund one.",
+  "model": "Qwen/Qwen3.5-0.8B",
+  "questions": {
+    "refund": {"type": "noul", "instructions": "Is a refund requested?"},
+    "team": {
+      "type": "choice",
+      "instructions": "Which team should handle this?",
+      "criteria": {"billing": "Charges and refunds", "technical": null}
+    },
+    "urgency": {
+      "type": "score",
+      "instructions": "How urgent is this?",
+      "criteria": ["no rush", "soon", "today", "immediately"]
+    }
+  }
+}
+```
+
+Answers come back keyed by your question ids: `noul` (the probability of yes),
+`choice` with `confidence` and `probabilities`, and `score` with `confidence`,
+a `legend` and `probabilities`. Each also carries `x_label_mass`, the
+full-vocabulary probability of the answer labels. `usage` reports
+`input_tokens` and `output_tokens` (always `0`).
+
+Prompts, label checks and probabilities are the same as for `/v1/decisions`
+with temperature `1.0`. `state` may be empty when the questions
+carry everything. Schema errors return `422`, and requests MAX can't
+answer (unknown model, unsupported server features, labels that aren't single
+tokens)
+return `400`. Fields that only `/v1/decisions` has (`temperature`,
+`prompt_format_version`, `return_prompt_token_ids`) are refused with a `422`.
+Choice questions take up to 26 options.
+
+## Limits
+
+- Text input only.
+- Thinking models whose chat template always reasons before answering aren't
+  supported.
+- Servers that use speculative decoding, LoRA, or variable logits, and models
+  with their own pipeline class (such as block diffusion), don't support
+  decisions.

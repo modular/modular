@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import socket
 import tempfile
@@ -52,11 +53,14 @@ from max.serve.recordreplay.jsonl import JSONLFileRecorder
 from max.serve.recordreplay.middleware import RecorderMiddleware
 from max.serve.request import register_request
 from max.serve.router import (
+    _decisions_routes,
+    _systemone_routes,
     kserve_routes,
     openai_routes,
     openresponses_routes,
     sagemaker_routes,
 )
+from max.serve.router._decision_format import detect_decision_format
 from max.serve.router._image_resolution import fetch_media_data_uri
 from max.serve.telemetry.common import (
     _telemetry_disabled,
@@ -69,11 +73,13 @@ from max.serve.worker_interface.lora_queue import LoRAQueue
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerInterface
 from uvicorn import Config
 
+# /v1/decisions and /v1/systemone are OpenAI-style extensions served beside
+# /v1/chat/*.
 ROUTES = {
-    APIType.KSERVE: kserve_routes,
-    APIType.OPENAI: openai_routes,
-    APIType.SAGEMAKER: sagemaker_routes,
-    APIType.OPENRESPONSES: openresponses_routes,
+    APIType.KSERVE: (kserve_routes,),
+    APIType.OPENAI: (openai_routes, _decisions_routes, _systemone_routes),
+    APIType.SAGEMAKER: (sagemaker_routes,),
+    APIType.OPENRESPONSES: (openresponses_routes,),
 }
 
 logger = logging.getLogger("max.serve")
@@ -233,6 +239,13 @@ async def lifespan(
         # every API type is mounted regardless, so a route with no counterpart
         # in the served model has to refuse the request itself.
         app.state.task = serving_settings.task
+        if serving_settings.task == PipelineTask.TEXT_GENERATION:
+            # Probes the checkpoint (a Hub request for a repo id), so keep it
+            # off the event loop.
+            app.state.decision_format = await asyncio.to_thread(
+                detect_decision_format,
+                serving_settings.pipeline_config.models["main"].model_path,
+            )
 
         # Also store as handler for OpenResponses API route compatibility
         # For the media tasks, this is the same as pipeline
@@ -435,7 +448,8 @@ def fastapi_app(
         "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
     )
     for api_type in settings.api_types:
-        app.include_router(ROUTES[api_type].router)
+        for route_module in ROUTES[api_type]:
+            app.include_router(route_module.router)
 
     app.state.settings = settings
 

@@ -14,7 +14,8 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncGenerator, Sequence
+from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from typing import Any, Generic, cast
 
@@ -40,6 +41,7 @@ from max.profiler import Tracer
 from max.serve.pipelines._chat_encoder_stats import (
     ChatEncoderOutcomesRecorder,
 )
+from max.serve.pipelines._label_scoring import LabelScoringOutput
 from max.serve.pipelines.incremental_detokenizer import (
     BufferedDetokenizer,
     create_buffered_detokenizer,
@@ -246,6 +248,24 @@ class BasePipeline(Generic[BaseContextType, RequestType, PipelineOutputType]):
         )
 
 
+@asynccontextmanager
+async def _awaiting_admission(
+    model_worker: ModelWorkerProxy[Any, Any],
+) -> AsyncIterator[None]:
+    """Counts a request as awaiting admission to the model worker.
+
+    The request has been accepted by the API server but is still API-side
+    (tokenization / pre-submit). The count drops once the body finishes or
+    fails, so a persistently high gauge points at an API-server backlog rather
+    than the scheduler queue.
+    """
+    model_worker.note_awaiting_admission(1)
+    try:
+        yield
+    finally:
+        model_worker.note_awaiting_admission(-1)
+
+
 class TokenGeneratorPipeline(
     BasePipeline[
         TextAndVisionContext | TextContext,
@@ -349,14 +369,7 @@ class TokenGeneratorPipeline(
             reasoning_parser.reset()
         is_still_reasoning = reasoning_parser is not None
 
-        # Count this request as awaiting admission to the model worker: it has
-        # been accepted by the API server but is still API-side (tokenization /
-        # pre-submit). Decremented once the handoff to the worker succeeds (or
-        # fails) below, so a persistently high gauge points at an API-server
-        # backlog rather than the scheduler queue.
-        self.model_worker.note_awaiting_admission(1)
-
-        try:
+        async with _awaiting_admission(self.model_worker):
             with record_ms(METRICS.input_time):
                 context = await self.tokenizer.new_context(request)
             # Read after tokenization, which is what moved the cache's
@@ -436,14 +449,6 @@ class TokenGeneratorPipeline(
             response_stream = await self.model_worker.stream(
                 context.request_id, context
             )
-        except BaseException:
-            # Balance the awaiting-admission counter if we never reached a
-            # successful handoff (tokenization failed or the submit raised).
-            self.model_worker.note_awaiting_admission(-1)
-            raise
-
-        # Handoff succeeded: the request is no longer awaiting admission.
-        self.model_worker.note_awaiting_admission(-1)
 
         async def _generate() -> AsyncGenerator[TokenGeneratorOutput, None]:
             nonlocal \
@@ -683,6 +688,76 @@ class TokenGeneratorPipeline(
             request, parse_reasoning=parse_reasoning
         )
         return [chunk async for chunk in generator]
+
+    async def score(
+        self,
+        request: TextGenerationRequest,
+        label_token_ids: Sequence[int],
+    ) -> LabelScoringOutput:
+        """Scores candidate label tokens for ``request`` without generating.
+
+        The request runs through a single prefill step, whatever its own
+        ``max_new_tokens``; the model worker returns the full-vocabulary
+        log-probability of each candidate token at the last prompt position.
+        The serving pipeline must support label scoring, which the standard
+        text generation pipelines do except with speculative decoding. Pass
+        the prompt as token ids when the candidates were validated against an
+        exact tokenization, since a label is only a valid next-token candidate
+        after that exact prompt.
+
+        Args:
+            request: The request to score.
+            label_token_ids: Candidate token ids to score, in the order the
+                scores are returned.
+
+        Returns:
+            The label log-probabilities and prompt accounting.
+
+        Raises:
+            ValueError: If no candidates are given.
+            RuntimeError: If the worker returns no label scores, which a
+                pipeline without label scoring support does.
+        """
+        if not label_token_ids:
+            raise ValueError("score() requires at least one label token id")
+        request = replace(
+            request,
+            sampling_params=replace(request.sampling_params, max_new_tokens=1),
+        )
+
+        total_sw = StopWatch()
+        try:
+            async with _awaiting_admission(self.model_worker):
+                with record_ms(METRICS.input_time):
+                    context = await self.tokenizer.new_context(request)
+                assert isinstance(context, (TextContext, TextAndVisionContext))
+                context.label_token_ids = list(label_token_ids)
+                inject_trace_carrier(context)
+                response_stream = await self.model_worker.stream(
+                    request.request_id, context
+                )
+
+            with record_ms(METRICS.output_time):
+                async for responses, _batch_id in response_stream:
+                    for response in responses:
+                        assert isinstance(response, TextGenerationOutput)
+                        if response.label_log_probabilities is None:
+                            continue
+                        return LabelScoringOutput(
+                            label_log_probabilities=response.label_log_probabilities,
+                            prompt_token_count=context.tokens.prompt_length,
+                            cached_token_count=response.num_cached_tokens,
+                        )
+            raise RuntimeError(
+                f"No label scores were returned for request {request.request_id}"
+            )
+        finally:
+            if self.debug_logging:
+                self.logger.debug(
+                    "%s: Scored: Elapsed: %0.2f ms",
+                    request.request_id,
+                    total_sw.elapsed_ms,
+                )
 
     async def encode(
         self, request: TextGenerationRequest

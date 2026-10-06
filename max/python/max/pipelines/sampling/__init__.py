@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .label_scoring import LabelScorer
 from .logits_processor import apply_logits_processors
 from .sampling import (
     RejectionRunner,
@@ -43,6 +44,7 @@ __all__ = [
     "DEFAULT_STRUCTURED_OUTPUT_BACKEND",
     "FrequencyData",
     "FusedSamplingProcessor",
+    "LabelScorer",
     "PenaltyInputs",
     "RejectionRunner",
     "SamplerInputs",

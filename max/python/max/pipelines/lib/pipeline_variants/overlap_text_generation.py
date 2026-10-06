@@ -168,6 +168,7 @@ from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
 
 from ..memory_estimation import MemoryPlan
+from ._label_scoring import BatchLabelScorer
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
 from .unified_spec_decode_model import _UnifiedSpecDecodeModelMixin
@@ -181,7 +182,7 @@ from .utils import (
 if TYPE_CHECKING:
     from ..config import MAXModelConfig, PipelineConfig
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from max.pipelines.sampling import (
     FusedSamplingProcessor,
@@ -968,6 +969,11 @@ class AsyncBatch(Generic[TextGenerationContextType]):
     think_end_token_id: int | None = None
     """``None`` disables ``in_reasoning_phase`` tracking on commit."""
 
+    label_log_probabilities: dict[RequestID, list[float]] = field(
+        default_factory=dict
+    )
+    """Label scores of the scoring requests in this batch, already on host."""
+
     @traced
     def sync_and_process_outputs(
         self,
@@ -1057,6 +1063,9 @@ class AsyncBatch(Generic[TextGenerationContextType]):
                 self.inputs.flat_batch,
                 overwrite_future=self.overwrite_future,
             )
+            for request_id, scores in self.label_log_probabilities.items():
+                if request_id in outputs:
+                    outputs[request_id].label_log_probabilities = scores
             wrapped_outputs = _AsyncBatchOutput(output_dict=outputs)
         else:
             spec_decode_batch = self.spec_decode
@@ -1939,6 +1948,12 @@ class OverlapTextGenerationPipeline(
             export_mefs=pipeline_config.runtime.export_mefs,
         )
         self.session = session
+        self._label_scorer = BatchLabelScorer(
+            session,
+            self._devices[0],
+            pipeline_config.sampling.in_dtype,
+            self.vocab_size,
+        )
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
@@ -3264,6 +3279,13 @@ class OverlapTextGenerationPipeline(
                     f"generated_lengths={[ctx.tokens.generated_length for ctx in flat_batch]}."
                 )
 
+        # Scoring precedes the logits processors, which edit the logits in
+        # place. It syncs the device, so only steps with a scoring request lose
+        # overlap.
+        label_log_probabilities = self._label_scorer.score(
+            model_outputs, flat_batch
+        )
+
         with Tracer("apply_logits_processors"):
             sample_logits, sample_offsets = (
                 sampling_processor.logits_for_sampling(
@@ -3336,6 +3358,7 @@ class OverlapTextGenerationPipeline(
             # sync_and_process_outputs() with the real token.
             overwrite_future=True,
             structured_output=self._structured_output,
+            label_log_probabilities=label_log_probabilities,
         )
 
     def _assign_bitmask_inputs(

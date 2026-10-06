@@ -29,6 +29,7 @@ Pipeline base
 
    ChatEncoderOutcomesProbe
    InputModality
+   LabelScoringTokenizer
    Pipeline
    PipelineInputs
    PipelineInputsType

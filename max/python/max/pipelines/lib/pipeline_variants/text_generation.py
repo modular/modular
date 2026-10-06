@@ -73,6 +73,7 @@ from max.pipelines.modeling.types import (
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
 
+from ._label_scoring import BatchLabelScorer
 from .utils import StructuredOutputHelper, update_context_and_prepare_responses
 
 if TYPE_CHECKING:
@@ -208,6 +209,12 @@ class TextGenerationPipeline(
             export_mefs=pipeline_config.runtime.export_mefs,
         )
         self.session = session
+        self._label_scorer = BatchLabelScorer(
+            session,
+            self._devices[0],
+            pipeline_config.sampling.in_dtype,
+            self.vocab_size,
+        )
 
         # Configure session with pipeline settings.
         self._pipeline_config.configure_session(session)
@@ -576,7 +583,13 @@ class TextGenerationPipeline(
             )
 
         # Execute the single step if the batch is not empty.
+        label_log_probabilities: dict[RequestID, list[float]] = {}
         if len(flat_batch) > 0:
+            # Scoring precedes sampling: the sampler's penalty and min-token
+            # processors edit the logits buffer in place.
+            label_log_probabilities = self._label_scorer.score(
+                model_outputs, flat_batch
+            )
             # Sample next token.
             with Tracer("sample_next_token"):
                 sample_logits, sample_offsets = (
@@ -644,6 +657,11 @@ class TextGenerationPipeline(
             batch_log_probabilities=batch_log_probabilities,
             enable_log_probs=inputs.enable_log_probs,
         )
+        # A chunked-prefill step emits no output for its request, so its
+        # scores wait for the step that finishes the prompt.
+        for request_id, scores in label_log_probabilities.items():
+            if request_id in res:
+                res[request_id].label_log_probabilities = scores
 
         # Update the cache lengths in our kv_cache manager.
         # This should be done after the contexts are updated.

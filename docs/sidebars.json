@@ -29,6 +29,7 @@
         "serve/video-generation",
         "serve/audio-generation",
         "serve/embeddings",
+        "serve/decisions",
         "serve/function-calling",
         "serve/chat-templates",
         "serve/reasoning",

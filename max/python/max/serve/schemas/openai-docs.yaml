@@ -976,6 +976,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+  /v1/decisions:
+    post:
+      operationId: createDecisions
+      summary: Create decisions
+      description: |
+        Answers typed questions about an input with a probability for every
+        option, read from the model's next-token scores at the answer position.
+        No text is generated, so `usage.completion_tokens` is always 0. Each
+        question is rendered as its own chat prompt, so adding or reordering
+        questions never changes another question's answer. Any text generation
+        model serves this endpoint. The wire format matches SGLang's
+        `/v1/decisions`.
+      x-codeSamples:
+        - lang: curl
+          source: |
+            curl -X POST http://0.0.0.0:8000/v1/decisions \
+              -H "Content-Type: application/json" \
+              -d '{
+                "model": "Qwen/Qwen3.5-2B",
+                "input": "I was charged twice for order A-104. Please refund one.",
+                "questions": [
+                  {
+                    "id": "team",
+                    "type": "choice",
+                    "question": "Which team should handle this?",
+                    "options": [
+                      {"name": "billing", "description": "Charges and refunds"},
+                      {"name": "technical", "description": "Bugs and outages"}
+                    ]
+                  },
+                  {"id": "refund", "type": "yes_no", "question": "Is a refund requested?"}
+                ]
+              }'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDecisionsRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateDecisionsResponse'
+        '400':
+          description: |
+            The request is invalid for this model: blank input, duplicate
+            option names, an answer label that is not a single token, a prompt
+            that exceeds the context length, a thinking-enabled chat template,
+            or a server that uses speculative decoding, LoRA, or variable
+            logits.
+        '422':
+          description: |
+            The body does not match the schema, for example a blank input, an
+            unknown field, or more than 64 questions.
+
+  /v1/systemone:
+    post:
+      operationId: createSystemOne
+      summary: Create System One answers
+      description: |
+        Answers System One `noul` (yes/no), `choice` and `score` questions with
+        the same label scorer as `/v1/decisions`, so System One clients can
+        point at a MAX server. Any text generation model serves this endpoint.
+        Fields that exist only on `/v1/decisions`
+        (`temperature`, `prompt_format_version`, `return_prompt_token_ids`) are
+        refused.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SystemOneRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemOneResponse'
+        '400':
+          description: |
+            The request is invalid for this model: an unknown model, an answer
+            label that is not a single token, a prompt that exceeds the context
+            length, or a server that uses speculative decoding, LoRA, or
+            variable logits.
+        '422':
+          description: |
+            The body does not match the schema, for example an unknown
+            question type, too many options or levels, or more than 64
+            questions.
+
   /v1/audio/speech:
     post:
       operationId: createSpeech
@@ -1752,6 +1846,278 @@ components:
           type: string
           description: |
             A unique identifier representing your end-user.
+
+    CreateDecisionsRequest:
+      type: object
+      required:
+        - input
+        - questions
+      properties:
+        input:
+          description: |
+            The text (a string, object or array) the questions are about.
+            Objects and arrays are rendered into the prompt as compact JSON.
+          oneOf:
+            - type: string
+            - type: object
+            - type: array
+        questions:
+          type: array
+          minItems: 1
+          maxItems: 64
+          description: |
+            Typed questions with distinct `id`s. A `choice` has 2-26 options
+            labeled A-Z, a `score` has 2-10 levels labeled 0-9, and a `yes_no`
+            is answered by the labels yes and no.
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/DecisionChoiceQuestion'
+              - $ref: '#/components/schemas/DecisionScoreQuestion'
+              - $ref: '#/components/schemas/DecisionYesNoQuestion'
+            discriminator:
+              propertyName: type
+              mapping:
+                choice: '#/components/schemas/DecisionChoiceQuestion'
+                score: '#/components/schemas/DecisionScoreQuestion'
+                yes_no: '#/components/schemas/DecisionYesNoQuestion'
+        temperature:
+          type: number
+          exclusiveMinimum: 0
+          default: 1.0
+          description: |
+            Divides the label scores before the softmax. It scales
+            `probabilities` only, not `label_mass`.
+        chat_template_kwargs:
+          type: object
+          description: |
+            Extra chat template arguments. Thinking is turned off by default
+            and may not be turned on.
+        prompt_format_version:
+          type: integer
+          description: |
+            Pins the server-owned prompt wording. A different version than the
+            one served is rejected.
+        return_prompt_token_ids:
+          type: boolean
+          default: false
+          description: |
+            Return the exact prompt and label token ids scored for each answer.
+        model:
+          type: string
+          description: ID of the model to use.
+
+    DecisionChoiceQuestion:
+      type: object
+      required: [id, type, question, options]
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [choice]}
+        question:
+          description: The question text (string, object or array).
+        options:
+          type: array
+          minItems: 2
+          maxItems: 26
+          items:
+            type: object
+            required: [name]
+            properties:
+              name: {type: string}
+              description: {}
+
+    DecisionScoreQuestion:
+      type: object
+      required: [id, type, question, levels]
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [score]}
+        question:
+          description: The question text (string, object or array).
+        levels:
+          type: array
+          minItems: 2
+          maxItems: 10
+          description: Level descriptions, labeled 0-9 in order.
+
+    DecisionYesNoQuestion:
+      type: object
+      required: [id, type, question]
+      properties:
+        id: {type: string}
+        type: {type: string, enum: [yes_no]}
+        question:
+          description: The question text (string, object or array).
+        yes:
+          description: Optional description of the yes answer.
+        "no":
+          description: Optional description of the no answer.
+
+    SystemOneRequest:
+      type: object
+      required: [state, model, questions]
+      properties:
+        state:
+          description: |
+            The text (a string, object or array) the questions are about. It
+            may be empty.
+        model:
+          type: string
+          description: ID of the model to use.
+        questions:
+          type: object
+          minProperties: 1
+          maxProperties: 64
+          description: Questions keyed by their id.
+          additionalProperties:
+            oneOf:
+              - $ref: '#/components/schemas/SystemOneNoulQuestion'
+              - $ref: '#/components/schemas/SystemOneChoiceQuestion'
+              - $ref: '#/components/schemas/SystemOneScoreQuestion'
+            discriminator:
+              propertyName: type
+              mapping:
+                noul: '#/components/schemas/SystemOneNoulQuestion'
+                choice: '#/components/schemas/SystemOneChoiceQuestion'
+                score: '#/components/schemas/SystemOneScoreQuestion'
+        chat_template_kwargs:
+          type: object
+          description: |
+            Extra chat template arguments. Thinking is turned off by default
+            and may not be turned on.
+
+    SystemOneNoulQuestion:
+      type: object
+      required: [type]
+      properties:
+        type: {type: string, enum: [noul]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: object
+          properties:
+            "true": {description: What makes the answer yes.}
+            "false": {description: What makes the answer no.}
+
+    SystemOneChoiceQuestion:
+      type: object
+      required: [type, criteria]
+      properties:
+        type: {type: string, enum: [choice]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: object
+          minProperties: 1
+          maxProperties: 26
+          description: Option name to its description, in label order A-Z.
+          additionalProperties: {}
+
+    SystemOneScoreQuestion:
+      type: object
+      required: [type, criteria]
+      properties:
+        type: {type: string, enum: [score]}
+        instructions:
+          description: What to decide.
+        criteria:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: Level descriptions, scored from 0 in order.
+
+    SystemOneResponse:
+      type: object
+      required: [model, answers, usage]
+      properties:
+        model: {type: string}
+        answers:
+          type: object
+          description: |
+            Answers keyed by question id. A `noul` answer has `noul` (the
+            probability of yes), a `choice` answer has `choice`, `confidence`
+            and `probabilities`, and a `score` answer has `score`,
+            `confidence`, `legend` and `probabilities`. Each also has
+            `x_label_mass`, the full-vocabulary probability of the labels.
+          additionalProperties:
+            type: object
+            required: [type, x_label_mass]
+            properties:
+              type: {type: string, enum: [noul, choice, score]}
+              x_label_mass: {type: number}
+        usage:
+          type: object
+          required: [input_tokens, output_tokens]
+          properties:
+            input_tokens: {type: integer}
+            output_tokens:
+              type: integer
+              description: Always 0, since nothing is generated.
+
+    CreateDecisionsResponse:
+      type: object
+      required: [object, model, prompt_format_version, answers, usage]
+      properties:
+        object:
+          type: string
+          enum: [decisions]
+        model:
+          type: string
+        prompt_format_version:
+          type: integer
+        answers:
+          type: object
+          description: Answers keyed by question `id`.
+          additionalProperties:
+            type: object
+            required: [type, probabilities, label_mass]
+            properties:
+              type:
+                type: string
+                enum: [choice, score, yes_no]
+              probabilities:
+                type: object
+                additionalProperties:
+                  type: number
+                description: |
+                  Probability of each candidate, summing to 1 over the
+                  candidates. This is a softmax of label scores, not a
+                  guarantee of correctness.
+              label_mass:
+                type: number
+                description: |
+                  Full-vocabulary probability of all answer labels at the
+                  answer position. A low value means the model wanted to say
+                  something other than a label.
+              choice:
+                type: string
+                description: The most probable option (`choice` questions).
+              score:
+                type: number
+                description: Expected level (`score` questions).
+              prompt_token_ids:
+                type: array
+                items: {type: integer}
+              label_token_ids:
+                type: array
+                items: {type: integer}
+        usage:
+          type: object
+          required: [prompt_tokens, completion_tokens, total_tokens]
+          properties:
+            prompt_tokens:
+              type: integer
+            completion_tokens:
+              type: integer
+              description: Always 0, since nothing is generated.
+            total_tokens:
+              type: integer
+            prompt_tokens_details:
+              type: object
+              description: Present when the server reports prefix-cache hits.
+              properties:
+                cached_tokens:
+                  type: integer
+                  description: Prompt tokens served from the prefix cache.
 
     CreateEmbeddingResponse:
       type: object

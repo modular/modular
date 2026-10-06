@@ -135,6 +135,7 @@ modular_py_test(
     srcs = [
         "__init__.py",
         "conftest.py",
+        "test_decisions_gpu.py",
         "test_smollm_serving_gpu.py",
     ],
     data = [

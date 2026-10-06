@@ -49,6 +49,11 @@ class TextGenerationOutput:
     num_cached_tokens: int | None = None
     """Number of prompt tokens served from the KV prefix cache."""
 
+    label_log_probabilities: list[float] | None = None
+    """Full-vocabulary log-probabilities of the request's candidate label
+    tokens at the last prompt position, in candidate order. Only set for
+    label-scoring requests."""
+
     @property
     def is_done(self) -> bool:
         """Indicates whether the text generation process is complete.
@@ -87,6 +92,14 @@ class TextGenerationOutput:
             log_probabilities=log_probabilities,
             final_status=outputs[-1].final_status,
             num_cached_tokens=outputs[0].num_cached_tokens,
+            label_log_probabilities=next(
+                (
+                    output.label_log_probabilities
+                    for output in outputs
+                    if output.label_log_probabilities is not None
+                ),
+                None,
+            ),
         )
 
 

@@ -65,6 +65,7 @@ from .reasoning import (
 from .task import InputModality, PipelineTask
 from .tokenizer import (
     ChatEncoderOutcomesProbe,
+    LabelScoringTokenizer,
     PipelineTokenizer,
     PreprocessCacheStatsProbe,
     PreprocessedImageProbe,
@@ -105,6 +106,7 @@ __all__ = [
     "EmbeddingsGenerationOutput",
     "ImageContentPart",
     "InputModality",
+    "LabelScoringTokenizer",
     "LogitsProcessor",
     "MessageContent",
     "OpenResponsesRequest",

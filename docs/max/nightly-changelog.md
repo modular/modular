@@ -311,6 +311,19 @@ This version is still a work in progress.
   resumes from the deepest checkpoint the tiers still hold. Configuring
   `--kv-connector-config` beside such a model used to be refused at startup.
 
+- Added `POST /v1/decisions`, which answers typed questions (`choice`,
+  `score`, `yes_no`) about an input with a probability for every option, read
+  from the model's next-token scores at the answer position. No text is
+  generated, and `usage.completion_tokens` is 0. The wire format matches
+  SGLang's `/v1/decisions`. It needs no server flag: any text generation model
+  serves it, and a model with a `decider_config.json` is served in the decider
+  prompt format. See [Decisions](/serve/decisions).
+
+- Added `POST /v1/systemone`, a System One compatible route over the same
+  scoring path as `/v1/decisions`, so System One clients such as
+  `typesafe-sdk` can use a MAX server. See
+  [Decisions](/serve/decisions#system-one-compatible-route).
+
 - `--draft-proposal sampled` now works with block speculative decoding
   (DFlash, DFlash2 and DSpark drafts). The draft samples each proposal at the
   request's temperature, top-k and top-p and hands the verifier the

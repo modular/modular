@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
+import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient
@@ -30,8 +31,10 @@ from fastapi import FastAPI
 from max.pipelines.context import (
     GenerationStatus,
     LogProbabilities,
+    SamplingParams,
     TextContext,
     TextGenerationOutput,
+    TokenBuffer,
 )
 from max.pipelines.lib import (
     PIPELINE_REGISTRY,
@@ -1122,3 +1125,62 @@ def test_merge_outputs_leaves_token_ids_unset_when_absent() -> None:
 
     assert merged.token_ids is None
     assert merged.prompt_token_ids is None
+
+
+@pytest.mark.asyncio
+async def test_score_caps_generation_at_one_token() -> None:
+    """``score`` owns the one-token cap, whatever the caller's request says."""
+    request_id = RequestID(value="score-request")
+    context = TextContext(
+        request_id=request_id,
+        max_length=16,
+        tokens=TokenBuffer(np.ones(4, dtype=np.int64)),
+    )
+    scored_requests: list[TextGenerationRequest] = []
+
+    async def new_context(request: TextGenerationRequest) -> TextContext:
+        scored_requests.append(request)
+        return context
+
+    async def stream(
+        request_id: RequestID, context: Any
+    ) -> AsyncGenerator[tuple[list[TextGenerationOutput], int | None], None]:
+        async def _gen() -> AsyncGenerator[
+            tuple[list[TextGenerationOutput], int | None], None
+        ]:
+            yield (
+                [
+                    TextGenerationOutput(
+                        request_id=request_id,
+                        tokens=[],
+                        final_status=GenerationStatus.ACTIVE,
+                        label_log_probabilities=[-0.5, -1.5],
+                        num_cached_tokens=2,
+                    )
+                ],
+                None,
+            )
+
+        return _gen()
+
+    pipeline = Mock()
+    pipeline.debug_logging = False
+    pipeline.tokenizer.new_context = new_context
+    pipeline.model_worker.stream = stream
+
+    request = TextGenerationRequest(
+        request_id=request_id,
+        model_name="m",
+        prompt=[1, 2, 3, 4],
+        sampling_params=SamplingParams(max_new_tokens=256),
+    )
+    output = await TokenGeneratorPipeline.score.__get__(pipeline)(
+        request, [7, 8]
+    )
+
+    assert scored_requests[0].sampling_params.max_new_tokens == 1
+    assert request.sampling_params.max_new_tokens == 256
+    assert context.label_token_ids == [7, 8]
+    assert output.label_log_probabilities == [-0.5, -1.5]
+    assert output.prompt_token_count == 4
+    assert output.cached_token_count == 2

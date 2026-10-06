@@ -104,6 +104,11 @@ from pydantic import (
 )
 from typing_extensions import NotRequired, TypedDict
 
+from max.serve.schemas._chat_template import (
+    thinking_requested,
+    with_thinking,
+)
+
 # ---------------------------------------------------------------------------
 # Response models.
 #
@@ -568,12 +573,10 @@ class CreateChatCompletionRequest(
 
         # Client may set either spelling of the thinking toggle, here we merge
         # both.
-        for key in ("enable_thinking", "thinking"):
-            if key in kwargs:
-                enable_thinking = bool(kwargs[key])
-                break
-        kwargs["enable_thinking"] = enable_thinking
-        kwargs["thinking"] = enable_thinking
+        requested = thinking_requested(kwargs)
+        if requested is not None:
+            enable_thinking = requested
+        kwargs = with_thinking(kwargs, enable_thinking)
         if effort is not None:
             kwargs["reasoning_effort"] = effort
         return kwargs

@@ -522,6 +522,15 @@ class TextContext:
 
     target_endpoint: str | None = field(default=None)
 
+    label_token_ids: list[int] | None = field(default=None)
+    """Candidate label token ids for a label-scoring request.
+
+    When set, the pipeline returns the full-vocabulary log-probability of each
+    of these tokens at the last prompt position (see
+    :attr:`TextGenerationOutput.label_log_probabilities`). ``None`` for ordinary
+    generation requests.
+    """
+
     dkv_cache_hint: bytes | None = field(default=None)
     """The Orchestrator's ``dkv_cache_hint`` for this request, as JSON bytes.
 

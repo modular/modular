@@ -76,3 +76,13 @@ Logits processing
    build_greedy_acceptance_sampler_graph
    build_stochastic_acceptance_sampler_graph
    build_synthetic_acceptance_sampler_graph
+
+Label scoring
+-------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   LabelScorer
