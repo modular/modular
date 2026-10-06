@@ -365,6 +365,12 @@ This version is still a work in progress.
 
 ## Fixed
 
+- `c_char` now reflects the target's actual `char` signedness: unsigned by
+  default on Linux running on ARM (AAPCS64), signed everywhere else Mojo
+  currently targets (x86-64 Linux, macOS on Apple silicon). Previously
+  `c_char` was always signed, which could bind an FFI declaration to the
+  wrong C type on Linux/ARM.
+
 - `atof()` now rounds large mantissas correctly. Values whose significant
   digits exceed 53 bits, such as `atof("123456789012345678")`, could round
   to the wrong neighbouring double, and exact ties such as

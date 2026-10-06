@@ -66,8 +66,12 @@ from .unsafe_union import UnsafeUnion
 # Primitive C type aliases
 # ===-----------------------------------------------------------------------===#
 
-comptime c_char = Int8
-"""C `char` type."""
+comptime c_char = Scalar[_c_char_dtype()]
+"""C `char` type.
+
+Plain `char`'s signedness is implementation-defined and differs by ABI.
+Use `c_uchar` for a field explicitly declared `unsigned char`, which is always
+unsigned."""
 
 comptime c_uchar = UInt8
 """C `unsigned char` type."""
@@ -140,6 +144,16 @@ def _get_max_path() -> Int:
     # Default POSIX limit
     else:
         return 256
+
+
+def _c_char_dtype() -> DType:
+    # Plain `char` is unsigned by default under AAPCS64 (Linux on ARM), and
+    # signed by default everywhere else this codebase targets (x86-64
+    # Linux, Apple's ARM64 ABI).
+    comptime if CompilationTarget.is_linux() and CompilationTarget.is_arm():
+        return DType.uint8
+    else:
+        return DType.int8
 
 
 def _c_long_dtype[unsigned: Bool = False]() -> DType:

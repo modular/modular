@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements C string interoperability utilities."""
 
+from std.ffi import c_char
 from std.collections.string.string_span import _unsafe_strlen
 from std.memory import MaybeUninit
 from std.sys import size_of
@@ -46,7 +47,7 @@ struct CStringSpan[origin: ImmOrigin](
         origin: The origin of the `CStringSpan`.
     """
 
-    comptime _PointerType = Pointer[Int8, Self.origin]
+    comptime _PointerType = Pointer[c_char, Self.origin]
 
     var _data: Self._PointerType
 
@@ -54,7 +55,7 @@ struct CStringSpan[origin: ImmOrigin](
     def __init__(
         out self,
         *,
-        unsafe_from_ptr: Pointer[Int8, Self.origin],
+        unsafe_from_ptr: Pointer[c_char, Self.origin],
     ):
         """Construct a `CStringSpan` from a `Pointer`.
 
@@ -116,7 +117,7 @@ struct CStringSpan[origin: ImmOrigin](
         """
         _validate_bytes(span.as_bytes())
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = span.as_bytes().unsafe_ptr().unsafe_bitcast[Int8]()
+        self._data = span.as_bytes().unsafe_ptr().unsafe_bitcast[c_char]()
 
     @inline(.always)
     def __init__(out self, span: Span[Byte, Self.origin]) raises:
@@ -131,7 +132,7 @@ struct CStringSpan[origin: ImmOrigin](
         """
         _validate_bytes(span)
         # Safety: _validate_bytes ensures span is a non-null terminated cstring.
-        self._data = span.unsafe_ptr().unsafe_bitcast[Int8]()
+        self._data = span.unsafe_ptr().unsafe_bitcast[c_char]()
 
     @inline(.always)
     def __eq__(self, rhs_same: Self) -> Bool:
@@ -161,7 +162,7 @@ struct CStringSpan[origin: ImmOrigin](
             return True
 
         while a[] == b[]:
-            if a[] == Int8(0):
+            if a[] == c_char(0):
                 return True
             a = a.unsafe_offset(1)
             b = b.unsafe_offset(1)
@@ -208,7 +209,7 @@ struct CStringSpan[origin: ImmOrigin](
         t"CStringSpan({self.as_bytes_with_nul()})".write_to(writer)
 
     @inline(.always)
-    def ptr(self) -> Pointer[Int8, Self.origin]:
+    def ptr(self) -> Pointer[c_char, Self.origin]:
         """Get a pointer to the underlying `CStringSpan`.
 
         Returns:
@@ -219,7 +220,7 @@ struct CStringSpan[origin: ImmOrigin](
     @doc_hidden
     @inline(.always)
     @deprecated(use=ptr)
-    def unsafe_ptr(self) -> Pointer[Int8, Self.origin]:
+    def unsafe_ptr(self) -> Pointer[c_char, Self.origin]:
         """Get a pointer to the underlying `CStringSpan`.
 
         Returns:

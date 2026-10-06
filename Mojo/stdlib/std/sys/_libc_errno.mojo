@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import CStringSpan, c_int, external_call
+from std.ffi import CStringSpan, c_char, c_int, external_call
 from std.sys.info import CompilationTarget, platform_map
 
 
@@ -417,15 +417,11 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
 
         comptime if CompilationTarget.is_macos():
             assert self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
-        var ptr = external_call["strerror", Pointer[Byte, MutUntrackedOrigin]](
-            self.value
-        )
+        var ptr = external_call[
+            "strerror", Pointer[c_char, MutUntrackedOrigin]
+        ](self.value)
         var string = StringSlice(
-            unsafe_from_utf8=CStringSpan(
-                unsafe_from_ptr=ptr.unsafe_bitcast[Int8]().unsafe_mut_cast[
-                    False
-                ]()
-            )
+            unsafe_from_utf8=CStringSpan(unsafe_from_ptr=ptr.as_imm())
         )
         string.write_to(writer)
 

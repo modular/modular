@@ -572,7 +572,7 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSpan(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr
                 )
             )
         )
@@ -591,7 +591,9 @@ struct String(
         self = String(
             StringSlice(
                 unsafe_from_utf8=CStringSpan(
-                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[Int8]()
+                    unsafe_from_ptr=unsafe_from_utf8_ptr.unsafe_bitcast[
+                        c_char
+                    ]()
                 )
             )
         )

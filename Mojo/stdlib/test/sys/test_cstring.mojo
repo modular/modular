@@ -18,7 +18,7 @@ from std.testing import (
     assert_true,
     assert_false,
 )
-from std.ffi import CStringSpan, external_call
+from std.ffi import CStringSpan, c_char, external_call
 from test_utils import check_write_to
 
 
@@ -46,7 +46,7 @@ def test_init_from_invalid_byte_span() raises:
 
 def test_c_string_span_from_ptr() raises:
     var string = String("mojo!\0")
-    var ptr = string.as_bytes().unsafe_ptr().unsafe_bitcast[Int8]()
+    var ptr = string.as_bytes().unsafe_ptr().unsafe_bitcast[c_char]()
     var cslice = CStringSpan(unsafe_from_ptr=ptr)
     assert_equal(len(cslice), 5)
     assert_equal(String(cslice), "mojo!")

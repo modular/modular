@@ -1029,7 +1029,7 @@ struct StringSpan[origin: ImmOrigin](
         Returns:
             A c-compatible CStringSpan.
         """
-        return {unsafe_from_ptr = self.unsafe_ptr().unsafe_bitcast[Int8]()}
+        return {unsafe_from_ptr = self.unsafe_ptr().unsafe_bitcast[c_char]()}
 
     @inline(.always)
     def as_imm(self) -> Self.Immutable:
