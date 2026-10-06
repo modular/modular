@@ -393,16 +393,17 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
         ```
     """
 
-    comptime if dtype == .float16:
-        return (1e-3, 1e-5)
-    elif dtype == .bfloat16:
-        return (1.6e-2, 1e-5)
-    elif dtype == .float32:
-        return (1.3e-6, 1e-5)
-    elif dtype == .float64:
-        return (1e-7, 1e-7)
-    else:
-        return (0.0, 0.0)
+    comptime __match dtype:
+        case .float16:
+            return (1e-3, 1e-5)
+        case .bfloat16:
+            return (1.6e-2, 1e-5)
+        case .float32:
+            return (1.3e-6, 1e-5)
+        case .float64:
+            return (1e-7, 1e-7)
+        case _:
+            return (0.0, 0.0)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -411,7 +412,6 @@ def pytorch_like_tolerances_for[dtype: DType]() -> Tuple[Float64, Float64]:
 
 
 @inline(.always)
-@__parameter
 def test_value_for_gpu_element[
     dtype: DType,
     modulo: Int = 251 if dtype == .float32 else 13,

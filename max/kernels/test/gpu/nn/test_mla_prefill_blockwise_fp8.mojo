@@ -381,7 +381,7 @@ def test_prefill[
 
     var null_valid_length = TileTensor(
         MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-        row_major(Coord(Idx[0])),
+        row_major(Idx[0]),
     )
 
     var k_ref_operand = LayoutTensorMHAOperand(

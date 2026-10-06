@@ -19,9 +19,9 @@ from typing import Any
 import numpy as np
 from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Placement,
-    PlacementMapping,
     Replicated,
 )
 from max.experimental.tensor import Tensor
@@ -37,11 +37,9 @@ def make_partial(
     Distributes with Replicated placement (full copy on each device),
     then re-labels as the requested Partial placement.
     """
-    replicated = PlacementMapping(mesh, tuple(Replicated() for _ in placements))
+    replicated = DeviceMapping(mesh, tuple(Replicated() for _ in placements))
     t = transfer_to(Tensor(data), replicated)
     return Tensor._from_shards(
         tuple(s.driver_tensor for s in t.local_shards),
-        mesh,
-        placements,
-        data.shape,
+        DeviceMapping(mesh, placements),
     )

@@ -28,7 +28,7 @@ from max.experimental.functional import (
     transfer_to,
     transpose,
 )
-from max.experimental.sharding import DeviceMesh, PlacementMapping, Sharded
+from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
 from max.experimental.tensor import Tensor
 
 MESH = DeviceMesh(
@@ -43,7 +43,7 @@ class TestShapeMultiGPU:
 
     def test_transpose(self) -> None:
         t_np = np.arange(32, dtype=np.float32).reshape(4, 8)
-        t = transfer_to(Tensor(t_np), PlacementMapping(MESH, (Sharded(0),)))
+        t = transfer_to(Tensor(t_np), DeviceMapping(MESH, (Sharded(0),)))
         out = transpose(t, 0, 1)
         assert isinstance(out, Tensor)
         assert out.placements == (Sharded(1),)
@@ -51,7 +51,7 @@ class TestShapeMultiGPU:
 
     def test_reshape(self) -> None:
         t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
-        t = transfer_to(Tensor(t_np), PlacementMapping(MESH, (Sharded(0),)))
+        t = transfer_to(Tensor(t_np), DeviceMapping(MESH, (Sharded(0),)))
         out = reshape(t, (8, 2, 2))
         assert isinstance(out, Tensor)
         assert out.placements == (Sharded(0),)
@@ -61,7 +61,7 @@ class TestShapeMultiGPU:
 
     def test_permute(self) -> None:
         t_np = np.arange(96, dtype=np.float32).reshape(4, 8, 3)
-        t = transfer_to(Tensor(t_np), PlacementMapping(MESH, (Sharded(0),)))
+        t = transfer_to(Tensor(t_np), DeviceMapping(MESH, (Sharded(0),)))
         out = permute(t, [2, 0, 1])
         assert isinstance(out, Tensor)
         assert out.placements == (Sharded(1),)

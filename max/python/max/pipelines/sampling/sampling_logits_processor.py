@@ -297,15 +297,14 @@ class FusedSamplingProcessor:
     def update_bitmask(self, packed_bitmask: npt.NDArray[np.int32]) -> None:
         """Update the GPU bitmask with new FSM state for multi-step execution.
 
-        Copies the packed int32 bitmask from llguidance into the pinned host
-        buffer and transfers it to the GPU, keeping the bitmask synchronized
-        with the FSM state after each token is sampled. Unpacking is done on the
-        GPU by the sampler graph (apply_packed_bitmask), not here.
+        Copies the packed int32 bitmask from the grammar backend into the
+        pinned host buffer and transfers it to the GPU, keeping the bitmask
+        synchronized with the FSM state after each token is sampled. Unpacking
+        is done on the GPU by the sampler graph (apply_packed_bitmask), not here.
 
         Args:
-            packed_bitmask: Packed int32 bitmask from
-                llguidance.numpy.allocate_token_bitmask. Shape is
-                [batch_size, ceil(vocab_size/32)].
+            packed_bitmask: Packed int32 bitmask from the grammar backend's
+                allocate_token_bitmask. Shape is [batch_size, ceil(vocab_size/32)].
         """
         if (
             self.tensor_bitmask is None

@@ -144,14 +144,12 @@ def _build_shared_b[
     var b_perm_host_ptr = alloc[Scalar[b_type]](b_size)
 
     var b_scales_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[n_groups_b],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[n_groups_b],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_total = b_scales_shape.product()
     var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
@@ -198,25 +196,21 @@ def _build_shared_b[
         var src_view = TileTensor(
             b_scales_host_ptr + e * b_expert_sf_size,
             row_major(
-                Coord(
-                    Idx[n_groups_b],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         var dst_view = TileTensor(
             b_scales_perm_host_ptr + e * b_expert_sf_size,
             row_major(
-                Coord(
-                    Idx[n_groups_b],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups_b],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for i in range(H):
@@ -335,9 +329,9 @@ def _test_swiglu_mxfp8_dispatch[
     )
 
     # ---- M-dependent A-side / output buffers ----
-    var a_shape = row_major(Coord(Int(M), Idx[packed_K]))
-    var b_shape = row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K]))
-    var c_shape = row_major(Coord(Int(M), Idx[N]))
+    var a_shape = row_major(M, Idx[packed_K])
+    var b_shape = row_major(Idx[num_experts], Idx[N], Idx[packed_K])
+    var c_shape = row_major(M, Idx[N])
 
     var a_size = M * packed_K
     var c_size = M * N
@@ -362,18 +356,18 @@ def _test_swiglu_mxfp8_dispatch[
 
     var a_offsets_device = ctx.enqueue_create_buffer[.uint32](num_experts + 1)
     var a_offsets_tensor = TileTensor(
-        a_offsets_device, row_major(Coord(Idx[num_experts + 1]))
+        a_offsets_device, row_major(Idx[num_experts + 1])
     )
     var a_scale_offsets_device = ctx.enqueue_create_buffer[.uint32](num_experts)
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device, row_major(Coord(Idx[num_experts]))
+        a_scale_offsets_device, row_major(Idx[num_experts])
     )
     var expert_ids_device = ctx.enqueue_create_buffer[.int32](num_experts)
     var expert_ids_tensor = TileTensor(
-        expert_ids_device, row_major(Coord(Idx[num_experts]))
+        expert_ids_device, row_major(Idx[num_experts])
     )
     var expert_scales_tensor = TileTensor(
-        shared.expert_scales, row_major(Coord(Idx[num_experts]))
+        shared.expert_scales, row_major(Idx[num_experts])
     )
 
     var a_scale_dim0 = 0
@@ -398,13 +392,11 @@ def _test_swiglu_mxfp8_dispatch[
     comptime k_groups = ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
 
     var a_scales_shape = row_major(
-        Coord(
-            Int(a_scale_dim0),
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var a_scales_total = a_scales_shape.product()
     var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
@@ -414,16 +406,14 @@ def _test_swiglu_mxfp8_dispatch[
 
     # ---- Output buffers (fused FP8 packed + 5D E8M0 SFs) ----
     comptime k_groups_swiglu = ceildiv(H, SF_VECTOR_SIZE * SF_ATOM_K)
-    var O_shape = row_major(Coord(Int(M), Idx[packed_H]))
+    var O_shape = row_major(M, Idx[packed_H])
     var O_size = M * packed_H
     var swiglu_scales_shape = row_major(
-        Coord(
-            Int(a_scale_dim0),
-            Idx[k_groups_swiglu],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        a_scale_dim0,
+        Idx[k_groups_swiglu],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var S_size = swiglu_scales_shape.product()
 
@@ -475,20 +465,18 @@ def _test_swiglu_mxfp8_dispatch[
         a_scales_device, a_scales_shape
     ).as_unsafe_any_origin()
     var b_scales_perm_shape = row_major(
-        Coord(
-            Idx[num_experts],
-            Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[num_experts],
+        Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_perm_tt = TileTensor(
         shared.b_scales_perm, b_scales_perm_shape
     ).as_unsafe_any_origin()
     var expert_scales_tt = TileTensor(
-        shared.expert_scales, row_major(Coord(Int64(num_experts)))
+        shared.expert_scales, row_major(Int64(num_experts))
     ).as_unsafe_any_origin()
 
     # ---- Path REF: non-fused matmul -> BF16 -> standalone SwiGLU. ----

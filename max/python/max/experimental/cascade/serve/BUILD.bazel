@@ -41,6 +41,7 @@ modular_py_library(
     deps = [
         requirement("cyclopts"),
         requirement("gguf"),  # Needed for loading gguf files
+        "//max/python/max/experimental/cascade/core",
         "//max/python/max/experimental/cascade/deployment:context_config",
         "//max/python/max/experimental/cascade/pipelines:all_pipelines",
         "//max/python/max/experimental/cascade/serve",

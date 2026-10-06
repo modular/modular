@@ -968,66 +968,6 @@ def _handle_unsqueeze_shape(
     return [Buffer.from_numpy(result_np)]
 
 
-@register_op_handler(mo.AddSingletonDimOp)
-def _handle_add_singleton_dim(
-    op: mo.AddSingletonDimOp,
-    inputs: Sequence[Buffer | None],
-) -> Sequence[Buffer]:
-    """Handle mo.add_singleton_dim - adds a dimension of size 1 at the given axis.
-
-    This is a shape-change op that does not copy data. It uses numpy.reshape
-    with the target shape from the MLIR result type.
-
-    Args:
-        op: The add singleton dim operation.
-        inputs: Input buffers - contains the tensor to reshape.
-
-    Returns:
-        List containing the reshaped tensor buffer.
-    """
-    return _reshape_common(op, inputs, "add_singleton_dim")
-
-
-@register_op_handler(mo.SplitDimOp)
-def _handle_split_dim(
-    op: mo.SplitDimOp,
-    inputs: Sequence[Buffer | None],
-) -> Sequence[Buffer]:
-    """Handle mo.split_dim - splits one dimension into two dimensions.
-
-    E.g., a tensor of shape [N, K] with axis=0 becomes [S1, S2, K] where
-    S1 * S2 = N. The target shape comes from the MLIR result type.
-
-    Args:
-        op: The split dim operation.
-        inputs: Input buffers - contains the tensor to reshape.
-
-    Returns:
-        List containing the reshaped tensor buffer.
-    """
-    return _reshape_common(op, inputs, "split_dim")
-
-
-@register_op_handler(mo.MergeDimOp)
-def _handle_merge_dim(
-    op: mo.MergeDimOp,
-    inputs: Sequence[Buffer | None],
-) -> Sequence[Buffer]:
-    """Handle mo.merge_dim - merges two adjacent dimensions into one.
-
-    E.g., a tensor of shape [A, B, C, D] with axis=1 becomes [A, B*C, D].
-    The target shape comes from the MLIR result type.
-
-    Args:
-        op: The merge dim operation.
-        inputs: Input buffers - contains the tensor to reshape.
-
-    Returns:
-        List containing the reshaped tensor buffer.
-    """
-    return _reshape_common(op, inputs, "merge_dim")
-
-
 @register_op_handler(mo.TransposeOp)
 def _handle_transpose(
     op: mo.TransposeOp, inputs: Sequence[Buffer | None]

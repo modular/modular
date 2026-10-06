@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -262,10 +263,14 @@ class _RecordingUnified(UnifiedDSparkGemma4_31B):
             )
 
         def sample_draft_tokens(
-            base_logits: TensorValue, anchor_tokens: TensorValue
+            base_logits: TensorValue,
+            anchor_tokens: TensorValue,
+            sampler: Callable[[TensorValue, int], TensorValue] | None = None,
         ) -> TensorValue:
             self.recorded["base_logits"] = base_logits
-            return orig_sample_draft_tokens(base_logits, anchor_tokens)
+            return orig_sample_draft_tokens(
+                base_logits, anchor_tokens, sampler=sampler
+            )
 
         def acceptance_sampler(
             draft_tokens: TensorValue,

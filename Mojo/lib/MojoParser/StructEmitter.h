@@ -53,7 +53,8 @@ public:
       Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
       ImplicitLocOpBuilder &builder, FnEffects fnEffects = FnEffects(),
       StringRef suffix = "", bool synthetic = true,
-      InlineLevel inlineLevel = InlineLevel::Automatic);
+      InlineLevel inlineLevel = InlineLevel::Automatic,
+      bool isNestedOriginsReadOnly = false);
 };
 
 class StructEmitter : public FunctionEmitter {

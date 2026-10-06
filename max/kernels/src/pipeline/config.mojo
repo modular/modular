@@ -87,7 +87,7 @@ struct FragOrder(ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-struct SchedulingStrategy(Equatable, ImplicitlyCopyable, Movable):
+struct SchedulingStrategy(EnumLike, Equatable, ImplicitlyCopyable, Movable):
     """Scheduling strategy for pipeline op ordering.
 
     IDENTITY: Declaration order (no scheduling).
@@ -100,6 +100,28 @@ struct SchedulingStrategy(Equatable, ImplicitlyCopyable, Movable):
     comptime IDENTITY = Self(0)
     comptime GREEDY = Self(1)
     comptime CSP = Self(2)
+
+    comptime _enum_case_names = ParameterList.of[
+        "IDENTITY".value,
+        "GREEDY".value,
+        "CSP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "SchedulingStrategy has no payload"
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value

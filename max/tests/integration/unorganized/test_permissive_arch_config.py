@@ -86,6 +86,8 @@ def test_olmo2_modulev3_kv_sizing_honors_max_length() -> None:
         max_batch_size=1,
         available_kv_cache_memory=ample_memory,
         max_seq_len=_olmo2_max_seq_len(bounded_config),
+        is_di_enabled=False,
+        model_name=bounded_config.model.model_name,
     )
     unbounded = MemoryEstimator._calculate_kv_cache_size(
         Olmo2Config.initialize(
@@ -94,6 +96,8 @@ def test_olmo2_modulev3_kv_sizing_honors_max_length() -> None:
         max_batch_size=1,
         available_kv_cache_memory=ample_memory,
         max_seq_len=_olmo2_max_seq_len(unbounded_config),
+        is_di_enabled=False,
+        model_name=unbounded_config.model.model_name,
     )
 
     assert 0 < bounded < unbounded

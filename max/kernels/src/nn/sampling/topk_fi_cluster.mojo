@@ -89,13 +89,11 @@ def _stage_smem_bytes(d: Int, vec_size: Int, cluster_size: Int) -> Int:
 
 
 @inline(.always)
-@__parameter
 def _max(x: SIMD, y: type_of(x)) -> type_of(x):
     return max(x, y)
 
 
 @inline(.always)
-@__parameter
 def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
@@ -119,7 +117,6 @@ def _block_reduce_cutoff_stats[
     """
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
@@ -134,9 +131,9 @@ def _block_reduce_cutoff_stats[
     initial[0] = Float32.MAX_FINITE
     initial[1] = Float32.MIN_FINITE
 
-    return block._block_reduce[
-        block_size, warp_reduce_fn=_reduce_fn, broadcast=broadcast
-    ](vals, initial_vals=initial)
+    return block._block_reduce[block_size, broadcast=broadcast](
+        vals, initial_vals=initial, warp_reduce_fn=_reduce_fn
+    )
 
 
 @inline(.always)
@@ -190,7 +187,7 @@ def _cluster_cutoff_search[
     var high = high_init
     var mass_above_low = mass_above_low_init
 
-    var g_begin = vec_begin + Int(thread_idx.x)
+    var g_begin = vec_begin + thread_idx.x
 
     var cluster_slot = unsafe_stack_allocation[
         2 * _CLUSTER_SLOT_FLOATS,
@@ -201,7 +198,6 @@ def _cluster_cutoff_search[
     var phase = 0
 
     @inline(.always)
-    @__parameter
     def _cutoff_stats_combine(x: SIMD, y: type_of(x)) -> type_of(x):
         # Same lane layout as `_block_reduce_cutoff_stats`, padded to a
         # power of two.
@@ -344,7 +340,7 @@ def TopKTopPMaskedProbsClusterKernel[
         not is_apple_gpu()
     ), "TopKTopPMaskedProbsClusterKernel is not supported on Apple GPUs"
     var _d = Int(d)
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     debug_assert(
         Int(cluster_dim.x) == cluster_size,
@@ -356,7 +352,7 @@ def TopKTopPMaskedProbsClusterKernel[
     # compact range it can address as `g - vec_begin`, and contiguity keeps
     # the allocation at exactly `ceil(d / cluster_size)` elements.
     var rank = Int(block_rank_in_cluster())
-    var bx = Int(block_idx.x) // cluster_size
+    var bx = block_idx.x // cluster_size
     var n_vec = _d // vec_size
     var slice_vec = ceildiv(n_vec, cluster_size)
     var vec_begin = min(rank * slice_vec, n_vec)
@@ -417,9 +413,8 @@ def TopKTopPMaskedProbsClusterKernel[
         Float32(block.max[block_size=block_size, broadcast=False](thread_max)),
     )[0]
 
-    @__parameter
     @inline(.always)
-    def load_e(offset: Int) -> SIMD[.float32, vec_size]:
+    def load_e(offset: Int) {imm} -> SIMD[.float32, vec_size]:
         var v = logits_row.load[width=vec_size]((Idx[0], offset)).cast[
             DType.float32
         ]()
@@ -630,8 +625,7 @@ def topk_topp_masked_probs_cluster[
             ):
                 cluster_size = c
 
-        @__parameter
-        def launch_cluster[vec_size: Int, cluster_size: Int]() raises:
+        def launch_cluster[vec_size: Int, cluster_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsClusterKernel[
                 block_size,
                 vec_size,
@@ -661,8 +655,7 @@ def topk_topp_masked_probs_cluster[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
-        @__parameter
-        def launch_single[vec_size: Int]() raises:
+        def launch_single[vec_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsKernel[
                 block_size,
                 vec_size,
@@ -705,15 +698,14 @@ def _block_reduce_sums[
     """
 
     @inline(.always)
-    @__parameter
     def _reduce_fn[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
         return warp.sum(v)
 
-    return block._block_reduce[
-        block_size, warp_reduce_fn=_reduce_fn, broadcast=broadcast
-    ](vals, initial_vals=StaticTuple[Float32, n](0))
+    return block._block_reduce[block_size, broadcast=broadcast](
+        vals, initial_vals=StaticTuple[Float32, n](0), warp_reduce_fn=_reduce_fn
+    )
 
 
 @inline(.always)
@@ -777,7 +769,7 @@ def _sampling_rejection_loop_cluster[
         vec_begin: First vector of this CTA's contiguous slice.
         vec_end: One past the last vector of the slice.
     """
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
     var sampled_id_sram = unsafe_stack_allocation[
         1, Int, address_space=.SHARED
     ]()
@@ -1050,7 +1042,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     ), "TopKTopPSamplingEmitDistClusterKernel is not supported on Apple GPUs"
     comptime assert output.flat_rank == 1
     var _d = Int(d)
-    var tx = Int(thread_idx.x)
+    var tx = thread_idx.x
 
     debug_assert(
         Int(cluster_dim.x) == cluster_size,
@@ -1060,7 +1052,7 @@ def TopKTopPSamplingEmitDistClusterKernel[
     # A cluster covers one row; each CTA owns a contiguous range of vectors
     # so it can address its staged slice as `g - vec_begin`.
     var rank = Int(block_rank_in_cluster())
-    var bx = Int(block_idx.x) // cluster_size
+    var bx = block_idx.x // cluster_size
     var n_vec = _d // vec_size
     var slice_vec = ceildiv(n_vec, cluster_size)
     var vec_begin = min(rank * slice_vec, n_vec)

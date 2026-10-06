@@ -33,6 +33,7 @@ from max.pipelines.modeling.types import (
     TextGenerationInputs,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TokenIds,
 )
 
 
@@ -80,17 +81,12 @@ class EchoPipelineTokenizer(
                 raise ValueError("Prompt cannot be empty")
             return np.array(tokens, dtype=np.int64)
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decode token IDs back to text.
 
         Convert ASCII values back to characters.
         """
-        if isinstance(encoded, int):
-            encoded = np.array([encoded])
-        elif encoded.ndim == 0:
-            encoded = np.array([encoded.item()])
+        encoded = np.atleast_1d(np.asarray(encoded))
 
         # Convert ASCII values back to characters
         try:

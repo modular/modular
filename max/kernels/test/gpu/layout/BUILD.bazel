@@ -8,10 +8,6 @@ _EXTRA_COPTS = {
         "--debug-level",
         "full",
     ],
-    "test_layout_tensor_copy_amd.mojo": [
-        "--debug-level",
-        "full",
-    ],
     "test_layout_tensor_copy_nvidia.mojo": [
         "--debug-level",
         "full",
@@ -60,10 +56,9 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 } | {
-    "test_layout_tensor_copy_amd.mojo": ["//:amd_gpu"],
     "test_layout_tensor_copy_nvidia.mojo": ["//:nvidia_gpu"],
     # compile_info emits PTX assembly, which is NVIDIA-specific
-    "test_layout_tensor_indexlist_codegen.mojo": ["//:nvidia_gpu"],
+    "test_tile_tensor_coordinate_codegen.mojo": ["//:nvidia_gpu"],
     "test_ldmatrix.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
     "test_tensor_core_amd.mojo": ["//:amd_gpu"],
     "test_tensor_core_mi300x.mojo": ["//:mi300x_gpu"],
@@ -81,10 +76,10 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_wgmma_e4m3_e5m2_layouts_f16.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
     "test_wgmma_e4m3_e5m2_layouts_f32.mojo": ["@platforms//:incompatible"],  # FIXME: KERN-1874
-    "test_layout_mma.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_layout_tensor_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_tensor_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
+    "test_gemm_vectorized_views.mojo": _APPLE_GPU_INCOMPATIBLE,
     "test_tile_io.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2834
     "test_tile_io_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2834
 }
@@ -92,7 +87,6 @@ _EXTRA_CONSTRAINTS = {
 _FILECHECK_TESTS = [
     "test_codegen_to_llvm.mojo",
     "test_layout_tensor_copy.mojo",
-    "test_layout_tensor_copy_amd.mojo",
     "test_layout_tensor_copy_nvidia.mojo",
     "test_tensor_core_amd.mojo",
     "test_tensor_core_apple.mojo",
@@ -143,6 +137,7 @@ _FILECHECK_EXTRA_DEPS = {
             "//max:max_mojo",
             "//max:nn",
             "//max:quantization",
+            "//max/kernels/test/gpu/layout/wgmma_test_utils",
             "@mojo//:std",
         ],
     )
@@ -152,17 +147,40 @@ _FILECHECK_EXTRA_DEPS = {
             "test_tensor_core_amd_utils.mojo",  # Imported source, not a test
             "matmul_kernels.mojo",  # Imported source, not a test
             "tensor_core_kernels.mojo",  # Imported source, not a test
+            "test_layout_mma.mojo",  # Dedicated minimal-deps target below
             # Depend only on `layout` + `std`; given dedicated minimal-deps
             # targets below so they are not coupled to `nn`/`linalg`.
             "test_device_pointer_tile_storage_kernel.mojo",
             "test_optional_device_pointer_tile.mojo",
+            "test_tile_layout_device_launch.mojo",
+            # Blackwell-only `TmemEngine` probe; dedicated target below.
+            "test_tmem_engine.mojo",
         ],
     )
 ]
 
-# `DevicePointerEngine` probes. They only import `layout` and `std`, so they
-# get dedicated targets with minimal dependencies rather than the heavy
-# `nn`/`linalg`/`kv_cache` set the glob above attaches to every other test.
+# Keep the accumulator oracle independent of unrelated NN and GEMM packages.
+mojo_test(
+    name = "test_layout_mma.mojo.test",
+    size = "large",
+    srcs = ["test_layout_mma.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# `DevicePointerEngine` and `Layout` launch probes. They only import `layout`
+# and `std`, so they get dedicated targets with minimal dependencies rather
+# than the heavy `nn`/`linalg`/`kv_cache` set the glob above attaches to every
+# other test.
 [
     mojo_test(
         name = src + ".test",
@@ -179,8 +197,27 @@ _FILECHECK_EXTRA_DEPS = {
     for src in [
         "test_device_pointer_tile_storage_kernel.mojo",
         "test_optional_device_pointer_tile.mojo",
+        "test_tile_layout_device_launch.mojo",
     ]
 ]
+
+# `TmemEngine` needs `tcgen05`, so it only runs on B200-class hardware.
+mojo_test(
+    name = "test_tmem_engine.mojo.test",
+    size = "large",
+    srcs = ["test_tmem_engine.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:b200_gpu",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
 
 [
     mojo_filecheck_test(
@@ -203,6 +240,7 @@ _FILECHECK_EXTRA_DEPS = {
             "//max:linalg",
             "//max:nn",
             "//max:quantization",
+            "//max/kernels/test/gpu/layout/wgmma_test_utils",
             "@mojo//:std",
         ] + _FILECHECK_EXTRA_DEPS.get(src, []),
     )

@@ -17,6 +17,7 @@ package_group(
         "//Cache/...",
         "//GraphCompiler/...",
         "//Mojo/...",
+        "//plugins/...",
     ],
 )
 

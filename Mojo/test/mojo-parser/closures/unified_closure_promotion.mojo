@@ -24,7 +24,7 @@
 # COM: Captures are threaded through the closure storage struct's initializer:
 # COM: a by mutable reference, b by mut-to-immutable reference, and c by move
 # COM: (owned_in_mem). d is omitted because it uses the default convention.
-# S0: lit.call {{.*}}::@"captures_with_default_convention()::my_fn::__storage"::@"__init__
+# S0: lit.call {{.*}}::@"closure$captures_with_default_convention()::my_fn::__storage"::@"__init__
 # S0-SAME: "a": !lit.ref<!String, mut *"a
 # S0-SAME: "b": !lit.ref<!String, muttoimm *"b
 # S0-SAME: "c": !lit.ref<!String, mut {{.*}}> owned_in_mem
@@ -56,9 +56,9 @@ def trigger_dtype():
     var x = SIMD[dtype, 1]()
     _ = x
 
-# COM: Verify async closures use an async trait name and async call op.
-# S2-DAG: lit.trait.decl @"async def() -> None"
-# S2-DAG: sourceName = #debuginfo.source_name<"async def() -> None">
+# COM: Verify async closures instantiate the closure trait with async
+# COM: metadata and use an async call op.
+# S2-DAG: lit.struct.decl @"closure$async_unified_closure()::inc::__storage"{{.*}}#kgen.fn_metadata<{{.*}}"async|capturing"
 # S2-LABEL: lit.fn @"async_unified_closure()"
 # S2-DAG: lit.async.call[!lit.generator<
 
@@ -68,7 +68,7 @@ def trigger_dtype():
 def async_unified_closure():
     var value = 0
 
-    async def inc() {mut value}:
+    __async def inc() {mut value}:
         value += 1
 
     _ = inc()
@@ -120,8 +120,8 @@ def trigger_promoted_params[n: Int]():
 # COM: Verify promoted stateless closures create a function wrapper
 # COM: when passed as a value to a thin-compatible parameter.
 # S5-LABEL: lit.fn @"trigger_promoted_param_wrapper{{.*}}"<n: !Int>() -> !kgen.none
-# S5-DAG: %[[S5_WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct<#PtrWrapper
-# S5-DAG: lit.call @{{.*}}::@"def[U: AnyType{{.*}}_PtrWrapper"{{.*}}(%[[S5_WRAP]])
+# S5-DAG: %[[S5_WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct<#_{{[0-9a-f]+}}
+# S5-DAG: lit.call @"inflated$def[::AnyType](impl: $0) thin -> ::DType|{{[0-9a-f]+}}"::@"__init__()"{{.*}}(%[[S5_WRAP]])
 # S5-DAG: %[[S5_WRAP_IMM:.*]] = lit.ref.immut %[[S5_WRAP]]
 # S5-DAG: lit.call @{{.*}}::@"takesFatVale{{.*}}"{{.*}}(%[[S5_WRAP_IMM]])
 # S5-DAG: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
@@ -150,9 +150,9 @@ def trigger_promoted_param_wrapper[n: Int]():
 # COM: parameter.
 # S6-LABEL: lit.fn @"s6_trigger
 # S6: lit.alias.decl *"X`": !alias_Int1 = <apply(
-# S6-SAME: @"take_closure_param[def[n: Int](arg: Int) -> Int & ::AnyType & ::Deinitable & ::Movable]($0)"
+# S6-SAME: @"take_closure_param[{{.*}}]($0)"
 # S6-SAME: store_to_mem(apply_result_slot(
-# S6-SAME: @"def[n: Int](arg: Int) capturing thin -> Int_PtrWrapper"::@"__init__()"
+# S6-SAME: @"inflated$def[::SIMD[DType.int, 1]](arg: ::SIMD[DType.int, 1]) capturing thin -> ::SIMD[DType.int, 1]|{{[0-9a-f]+}}"::@"__init__()"
 # S6: lit.call @{{.*}}::@"take_closure_param
 
 
@@ -173,18 +173,17 @@ def s6_trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
     comptime X = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
     var Y = take_closure_param[type_of(wrapped_ok)](wrapped_ok)
 
-# COM: Verify promoted top-level functions with captured parameters
-# COM: build a wrapper whose Impl type is self-contained while preserving the
-# COM: promoted function symbol's native parameter ordering.
-# S7-DAG: lit.struct.decl @"def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper"
-# S7-DAG: lit.alias.decl dtype: !DType = <__capture_dtype>
-# S7-DAG: lit.fn @"__call__[::DType,::SIMD[DType.int, 1]](unified_closure_promotion::def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
-# S7-DAG: {{.*}} = lit.call tail[!lit.generator<() -> !lit.struct<#SIMD {{.*}}: bind_params{{.*}}Impl, :!DType *"Closure_Syn#0", :!Int *"Closure_Syn#1")]()
-# S7-DAG: kgen.witness "dtype" : !DType = __capture_dtype
+# COM: Verify promoted top-level functions with captured parameters build a
+# COM: wrapper that takes the capture as its own parameter (rather than an
+# COM: alias witnessed off the trait) while preserving the promoted function
+# COM: symbol's native parameter ordering.
+# S7-DAG: lit.struct.decl @"inflated$def[::SIMD[DType.int, 1]]() thin -> ::SIMD[dtype, $0._mlir_value]|{{[0-9a-f]+}}"<dtype: !DType, *"#__CALL__#":
+# S7-DAG: lit.fn @"__call__[::SIMD[DType.int, 1]](inflated$def[::SIMD[DType.int, 1]]() thin -> ::SIMD[dtype, $0._mlir_value]|{{[0-9a-f]+}}[$0, $1])"
+# S7-DAG: {{.*}} = lit.call tail[!lit.generator<() -> !lit.struct<#SIMD {{.*}}: bind_params{{.*}}*"#__CALL__#", :!Int *"Closure_Syn#0")]()
 # S7-LABEL: lit.fn @"s7_trigger[::SIMD[DType.int, 1],::DType]()"
 # S7: %[[S7_WRAP:.*]] = lit.var.decl "__call_result_tmp__" synth : !lit.ref<!lit.struct
-# S7-SAME: @{{.*}}::@"compute_init2[::SIMD[DType.int, 1]](){{.*}}"<:!DType *(0,0), :!Int *(0,1)>
-# S7: %[[S7_INIT:.*]] = lit.call @{{.*}}::@"def[dtype: DType, //, simd_width: Int]() thin -> SIMD[dtype, simd_width]_PtrWrapper"::@"__init__()"{{.*}}(%[[S7_WRAP]])
+# S7-SAME: @{{.*}}::@"compute_init2[::SIMD[DType.int, 1]](){{.*}}"<:!DType dtype, :!Int ?>
+# S7: %[[S7_INIT:.*]] = lit.call @"inflated$def[::SIMD[DType.int, 1]]() thin -> ::SIMD[dtype, $0._mlir_value]|{{[0-9a-f]+}}"::@"__init__()"{{.*}}(%[[S7_WRAP]])
 # S7: %[[S7_IMM:.*]] = lit.ref.immut %[[S7_WRAP]]
 # S7: lit.call @{{.*}}::@"local_higher_order
 

@@ -630,18 +630,23 @@ def test_overlap_execution_with_preemption(
     )
 
 
+@pytest.mark.parametrize("via_env", [False, True])
 def test_disable_overlap_returns_outputs_immediately(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, via_env: bool
 ) -> None:
-    """Verify disable_overlap=True returns current-batch outputs in the same
-    execute() call, never deferring them to the next iteration."""
+    """Verify disable_overlap=True (or MAX_DISABLE_OVERLAP=1) returns
+    current-batch outputs in the same execute() call, never deferring them to
+    the next iteration."""
     monkeypatch_weight_and_kvcache_loading(monkeypatch)
     prime_host_buffer_cache()
+    if via_env:
+        monkeypatch.setenv("MAX_DISABLE_OVERLAP", "1")
 
     pipeline = create_overlap_pipeline(
         enable_overlap_scheduler=True,
-        disable_overlap=True,
+        disable_overlap=not via_env,
     )
+    assert not pipeline.overlap_active
 
     def create_inputs(
         contexts: list[TextContext],

@@ -256,7 +256,6 @@ def initialize_tensor_from_cpu_example() raises:
     comptime input_layout = Layout.row_major(rows, cols)
     comptime size: Int = rows * cols
 
-
     def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
         if (
             global_idx.y < tensor.shape[0]()
@@ -265,7 +264,6 @@ def initialize_tensor_from_cpu_example() raises:
             tensor[global_idx.y, global_idx.x] = (
                 tensor[global_idx.y, global_idx.x] + 1
             )
-
 
     try:
         var ctx = DeviceContext()
@@ -316,6 +314,7 @@ comptime tile_layout = Layout.row_major(16, 16)
 var shared_tile = LayoutTensor[
     dtype,
     tile_layout,
+    MutAnyOrigin,
     address_space=.SHARED,
 ].stack_allocation()
 ```
@@ -518,6 +517,16 @@ example, if you're working with 4 byte values and the GPU supports 16 byte copy
 operations, you can use a vector width of 4.) The `LayoutTensor` copy operations
 support copy sizes up to 16 bytes.
 
+You can query the SIMD width for a data type on the target GPU with
+[`simd_width_of()`](https://mojolang.org/docs/std/sys/info/simd_width_of/):
+
+```mojo
+from std.sys.info import simd_width_of
+from max.gpu.host.compile import get_gpu_target
+
+comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]
+```
+
 The
 [`vectorize()`](/api/mojo/layout/layout_tensor/LayoutTensor/#vectorize)
 method creates a new view of the tensor where each element of the tensor is a
@@ -602,78 +611,83 @@ tensor fragments, as described in
 [Partitioning a tensor across threads](#partitioning-a-tensor-across-threads).
 
 The following code sample demonstrates using both copy methods to copy data to
-and from shared memory.
+and from shared memory. The example skips Apple silicon GPUs, where this
+asynchronous copy path isn't currently supported.
 
 ```mojo
 def copy_from_async_example():
-    comptime dtype = DType.float32
-    comptime rows = 128
-    comptime cols = 128
-    comptime block_size = 16
-    comptime num_row_blocks = rows // block_size
-    comptime num_col_blocks = cols // block_size
-    comptime input_layout = Layout.row_major(rows, cols)
-    comptime simd_width = 4
+    comptime if not default_accelerator().is_apple_gpu():
+        comptime dtype = DType.float32
+        comptime rows = 128
+        comptime cols = 128
+        comptime block_size = 16
+        comptime num_row_blocks = rows // block_size
+        comptime num_col_blocks = cols // block_size
+        comptime input_layout = Layout.row_major(rows, cols)
+        comptime simd_width = 4
 
-    def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
-        # extract a tile from the input tensor.
-        var global_tile = tensor.tile[block_size, block_size](
-            Int(block_idx.y), Int(block_idx.x)
-        )
-        comptime tile_layout = Layout.row_major(block_size, block_size)
-        var shared_tile = LayoutTensor[
-            dtype,
-            tile_layout,
-            address_space=.SHARED,
-        ].stack_allocation()
-
-        # Create thread layouts for copying
-        comptime thread_layout = Layout.row_major(
-            WARP_SIZE // simd_width, simd_width
-        )
-        var global_fragment = global_tile.vectorize[
-            1, simd_width
-        ]().distribute[thread_layout](lane_id())
-        var shared_fragment = shared_tile.vectorize[
-            1, simd_width
-        ]().distribute[thread_layout](lane_id())
-
-        shared_fragment.copy_from_async(global_fragment)
-        comptime if is_nvidia_gpu():
-            async_copy_wait_all()
-        barrier()
-
-        # Put some data into the shared tile that we can verify on the host.
-        if global_idx.y < rows and global_idx.x < cols:
-            shared_tile[thread_idx.y, thread_idx.x] = (
-                shared_tile[thread_idx.y, thread_idx.x] + 1
+        def kernel(tensor: LayoutTensor[dtype, input_layout, MutAnyOrigin]):
+            # extract a tile from the input tensor.
+            var global_tile = tensor.tile[block_size, block_size](
+                block_idx.y, block_idx.x
             )
-        barrier()
-        global_fragment.copy_from(shared_fragment)
+            comptime tile_layout = Layout.row_major(block_size, block_size)
+            var shared_tile = LayoutTensor[
+                dtype,
+                tile_layout,
+                MutAnyOrigin,
+                address_space=.SHARED,
+            ].stack_allocation()
 
-    try:
-        var ctx = DeviceContext()
-        var host_buf = ctx.enqueue_create_host_buffer[dtype](rows * cols)
-        var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
-        for i in range(rows * cols):
-            host_buf[i] = Float32(i)
-        var tensor = LayoutTensor[dtype, input_layout](dev_buf)
+            # Create thread layouts for copying
+            comptime thread_layout = Layout.row_major(
+                WARP_SIZE // simd_width, simd_width
+            )
+            var global_fragment = global_tile.vectorize[
+                1, simd_width
+            ]().distribute[thread_layout](lane_id())
+            var shared_fragment = shared_tile.vectorize[
+                1, simd_width
+            ]().distribute[thread_layout](lane_id())
 
-        ctx.enqueue_copy(dev_buf, host_buf)
-        ctx.enqueue_function[kernel](
-            tensor,
-            grid_dim=(num_row_blocks, num_col_blocks),
-            block_dim=(block_size, block_size),
-        )
-        ctx.enqueue_copy(host_buf, dev_buf)
-        ctx.synchronize()
-        for i in range(rows * cols):
-            if host_buf[i] != Float32(i + 1):
-                raise Error(
-                    String("Unexpected value ", host_buf[i], " at position ", i)
+            shared_fragment.copy_from_async(global_fragment)
+
+            comptime if is_nvidia_gpu():
+                async_copy_wait_all()
+            barrier()
+
+            # Put some data into the shared tile that we can verify on the host.
+            if global_idx.y < rows and global_idx.x < cols:
+                shared_tile[thread_idx.y, thread_idx.x] = (
+                    shared_tile[thread_idx.y, thread_idx.x] + 1
                 )
-    except error:
-        print(error)
+            barrier()
+            global_fragment.copy_from(shared_fragment)
+
+        try:
+            var ctx = DeviceContext()
+            var host_buf = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+            var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
+            for i in range(rows * cols):
+                host_buf[i] = Float32(i)
+            var tensor = LayoutTensor[dtype, input_layout](dev_buf)
+            ctx.enqueue_copy(dev_buf, host_buf)
+            ctx.enqueue_function[kernel](
+                tensor,
+                grid_dim=(num_row_blocks, num_col_blocks),
+                block_dim=(block_size, block_size),
+            )
+            ctx.enqueue_copy(host_buf, dev_buf)
+            ctx.synchronize()
+            for i in range(rows * cols):
+                if host_buf[i] != Float32(i + 1):
+                    raise Error(
+                        String(
+                            "Unexpected value ", host_buf[i], " at position ", i
+                        )
+                    )
+        except error:
+            print(error)
 ```
 
 ### Thread-aware copy functions
@@ -681,7 +695,7 @@ def copy_from_async_example():
 The
 [`layout_tensor` package](/api/mojo/layout/layout_tensor/)
 also includes a number of specialized copy functions for different scenarios,
-such as copying from shared memory to local memory. These functions are all
+such as copying from global memory to shared memory. These functions are all
 *thread-aware*: instead of passing in tensor fragments, you pass in a thread
 layout which the function uses to partition the work.
 

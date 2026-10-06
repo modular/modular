@@ -291,6 +291,34 @@ def bench_string_endswith(mut b: Bencher, input: BenchInput) raises:
 
 
 # ===-----------------------------------------------------------------------===#
+# Benchmark string rjust
+# ===-----------------------------------------------------------------------===#
+def bench_string_rjust(mut b: Bencher, input: BenchInput) raises:
+    var items = make_string(input.length, input.filename + ".txt")
+
+    @inline(.always)
+    def call_fn() {imm}:
+        var res = black_box(items).ascii_rjust(black_box(input.length * 2))
+        keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string mul
+# ===-----------------------------------------------------------------------===#
+def bench_string_mul(mut b: Bencher, input: BenchInput) raises:
+    var items = make_string(input.length, input.filename + ".txt")
+
+    @inline(.always)
+    def call_fn() {imm}:
+        var res = StringSlice(black_box(items)) * black_box(4)
+        keep(res)
+
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
 # Benchmark string _is_valid_utf8
 # ===-----------------------------------------------------------------------===#
 def bench_string_is_valid_utf8(mut b: Bencher, input: BenchInput) raises:
@@ -476,6 +504,8 @@ def main() raises:
                 m, bench_string_startswith, "bench_string_startswith", input
             )
             _add_bench(m, bench_string_endswith, "bench_string_endswith", input)
+            _add_bench(m, bench_string_rjust, "bench_string_rjust", input)
+            _add_bench(m, bench_string_mul, "bench_string_mul", input)
             _add_bench(
                 m,
                 bench_string_is_valid_utf8,

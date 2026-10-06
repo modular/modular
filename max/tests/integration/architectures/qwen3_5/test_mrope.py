@@ -240,6 +240,9 @@ def test_freqs_table_matches_transformers(grid: tuple[int, int, int]) -> None:
             },
         )
     )
+    # Serial MKL VML warmup; see pytorch/pytorch#188792 (fix: #188791).
+    torch.cos(torch.ones(1))
+    torch.sin(torch.ones(1))
     cos, sin = hf_rope(torch.zeros(1, dtype=torch.float32), positions)
 
     table = _max_freqs_table(positions.squeeze(1).numpy())

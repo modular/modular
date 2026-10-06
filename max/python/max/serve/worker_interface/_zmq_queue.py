@@ -24,7 +24,6 @@ import weakref
 from collections.abc import Callable
 from typing import Any, Generic, NewType, TypeVar, overload
 
-import psutil
 import zmq
 import zmq.asyncio
 from max.pipelines.modeling.types import (
@@ -34,6 +33,10 @@ from max.pipelines.modeling.types import (
     msgpack_numpy_oob_encoder,
 )
 from max.serve.queue import MAXPullQueue, MAXPushQueue
+from max.support.host_memory import (
+    available_host_memory,
+    host_memory_limit,
+)
 
 logger = logging.getLogger("max.serve")
 
@@ -171,7 +174,6 @@ def _open_zmq_socket(
     worker; ZMQ enforces it approximately (the effective bound is roughly the
     sum of the send and receive HWMs, and ZMQ may round the value).
     """
-    mem = psutil.virtual_memory()
     # 0 is ZMQ's sentinel for "unbounded".
     resolved_high_water_mark = 0 if high_water_mark is None else high_water_mark
 
@@ -185,14 +187,19 @@ def _open_zmq_socket(
     # With IPV6 enabled, the socket still accepts IPv4 connections.
     socket.setsockopt(zmq.IPV6, 1)
 
-    # Calculate buffer size based on system memory
+    # Calculate buffer size based on the memory this process may use.
     GIB = 1024**3
-    total_mem_gb = mem.total / GIB
-    available_mem_gb = mem.available / GIB
+    total_mem = host_memory_limit()
+    available_mem = available_host_memory()
     # For systems with substantial memory (>32GB total, >16GB available):
     # - Set a large 0.5GB buffer to improve throughput
     # For systems with less memory:
-    if total_mem_gb > 32 and available_mem_gb > 16:
+    if (
+        total_mem is not None
+        and available_mem is not None
+        and total_mem > 32 * GIB
+        and available_mem > 16 * GIB
+    ):
         buf_size = int(0.5 * GIB)
     else:
         buf_size = -1

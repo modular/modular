@@ -18,6 +18,7 @@
 # -----
 # COM: Explicit conformance fully satisfied — no diagnostics.
 
+
 struct GoodCallable(def(Int) -> Int):
     def __call__(self, x: Int) capturing -> Int:
         return x
@@ -26,10 +27,9 @@ struct GoodCallable(def(Int) -> Int):
 # -----
 # COM: Missing __call__ is caught at struct declaration time.
 
+
 # expected-error @below {{'MissingCall' does not implement all requirements for 'def(Bool) -> Int'}}
 # expected-note @below {{required function '__call__' is not implemented}}
-# expected-note @below {{def __call__(self, : Bool, /) -> Int}}
-# expected-note @below {{trait 'def(Bool) -> Int' declared here}}
 struct MissingCall(def(Bool) -> Int):
     pass
 
@@ -37,9 +37,9 @@ struct MissingCall(def(Bool) -> Int):
 # -----
 # COM: Wrong return type is caught at struct declaration time.
 
+
 # expected-error @below {{'WrongReturnType' does not implement all requirements for 'def(String) -> Int'}}
 # expected-note @below {{no '__call__' candidates have type 'def(WrongReturnType, String) capturing thin -> Int'}}
-# expected-note @below {{trait 'def(String) -> Int' declared here}}
 struct WrongReturnType(def(String) -> Int):
     # expected-note @below {{candidate declared here with type 'def(self: WrongReturnType, x: String) capturing thin -> Bool'}}
     def __call__(self, x: String) capturing -> Bool:
@@ -50,6 +50,7 @@ struct WrongReturnType(def(String) -> Int):
 # COM: A struct that explicitly declares conformance can be passed to a
 # COM: `def(Int)` parameter and called (positive, end-to-end). `capturing` is
 # COM: not required on `__call__` to conform.
+
 
 # expected-note @below {{function declared here}}
 def call_it[F: def(Int)](func: F):
@@ -72,6 +73,7 @@ def test_explicit_conformance_end_to_end():
 # -----
 # COM: A struct with a compatible __call__ but no explicit `(def(Int))`
 # COM: declaration is rejected — implicit conformance is not allowed.
+
 
 @fieldwise_init
 struct NoExplicitConformance(Movable where False):

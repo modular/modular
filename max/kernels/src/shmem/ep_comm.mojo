@@ -61,6 +61,7 @@ from linalg.fp6_utils import (
 from linalg.mx_format import MXFormat
 from linalg.matmul.gpu.amd import Shuffler
 
+import max.gpu.primitives.block as block
 import max.gpu.primitives.warp as warp
 from std.collections import Array, OptionalReg
 from max.gpu import (
@@ -93,6 +94,7 @@ from max.gpu.sync import (
 )
 from layout import (
     Coord,
+    coord,
     Idx,
     DefaultEngine,
     TensorLayout,
@@ -449,7 +451,7 @@ struct EPRoleSplit[block_size: Int, n_items: Int, flag: Bool = False]:
     @staticmethod
     def copy_role_index() -> Int:
         """Returns this thread's linear index within the copy role."""
-        return Int(thread_idx.x)
+        return thread_idx.x
 
     @inline(.always)
     @staticmethod
@@ -475,7 +477,6 @@ struct EPRoleSplit[block_size: Int, n_items: Int, flag: Bool = False]:
 
 
 @inline(.always)
-@__parameter
 def ep_signal_completion[
     p2p_world_size: Int,
     //,
@@ -1273,6 +1274,7 @@ struct NVBlockScaledTokenFormat[
     sf_vec4: Bool = False,
     sf_kxg: Int = 0,
     sf_rows_per_expert: Int = 0,
+    nvfp4_dyn_global_scales: Bool = False,
 ](ImplicitlyCopyable, TokenFormat):
     """Token format for NVIDIA block-scaled FP4/FP8 quantization.
 
@@ -1319,6 +1321,13 @@ struct NVBlockScaledTokenFormat[
         sf_rows_per_expert: Rows reserved per expert in the final layout;
             forms the arena row as
             `dst_expert_local_idx * sf_rows_per_expert + final_row`.
+        nvfp4_dyn_global_scales: Whether each NVFP4 token is quantized
+            against its own global scale, `2688 / rowmax`, instead of the
+            kernel-wide `input_scale`. The sender reduces the token's
+            absolute max in a first pass and quantizes in a second; the
+            scale's BF16 inverse travels behind the per-block scales in the
+            message, and the receiver stores it in `output_rowwise_scales`.
+            A token then dequantizes as `fp4 * block_scale * rowwise_scale`.
     """
 
     comptime hid_dim = Self._hid_dim
@@ -1343,6 +1352,11 @@ struct NVBlockScaledTokenFormat[
     comptime ScalesOffsetTensorType = TileTensor[
         .uint32, Self.scales_offset_layout, MutUntrackedOrigin
     ]
+    # One scale per received row, so the layout is always 1D with unit
+    # stride and needs no struct parameter of its own.
+    comptime RowwiseScalesTensorType = TileTensor[
+        .bfloat16, type_of(row_major(Int64(1))), MutUntrackedOrigin
+    ]
 
     @staticmethod
     def get_group_size() -> Int:
@@ -1359,14 +1373,14 @@ struct NVBlockScaledTokenFormat[
     comptime group_size = Self.get_group_size()
 
     comptime _n_k_tiles = Self.dispatch_wait_tile_shape[1]
-    comptime tma_tile_shape = Index(
+    comptime tma_tile_shape = coord[
         1,
         Self._hid_dim // Self.group_size // SF_ATOM_K // Self._n_k_tiles,
         1,
         SF_ATOM_K * SF_ATOM_M[1],
-    )
+    ]
     comptime _scales_smem_per_warp = align_up(
-        Int(Coord(Self.tma_tile_shape).product()), 128
+        Int(Self.tma_tile_shape.product()), 128
     ) * size_of[Self.scales_dtype]()
     comptime _quant_smem_per_warp = align_up(
         Self.quant_size() // Self._n_k_tiles, 16
@@ -1381,10 +1395,8 @@ struct NVBlockScaledTokenFormat[
 
     comptime ScalesTMATensorTileType = TMATensorTile[
         Self.scales_dtype,
-        4,
         Self.tma_tile_shape,
         _default_desc_shape[
-            4,
             Self.scales_dtype,
             Self.tma_tile_shape,
             TensorMapSwizzle.SWIZZLE_NONE,
@@ -1393,6 +1405,7 @@ struct NVBlockScaledTokenFormat[
     var scales_tma_op: Self.ScalesTMATensorTileType
     var output_tokens: Self.TensorType
     var output_scales_offset: Self.ScalesOffsetTensorType
+    var output_rowwise_scales: Self.RowwiseScalesTensorType
 
     comptime device_type: AnyType = Self
 
@@ -1421,6 +1434,8 @@ struct NVBlockScaledTokenFormat[
             String(Self.top_k),
             ", alignment = ",
             String(Self.alignment),
+            # Named only when set, so every existing kernel keeps its symbol.
+            ", nvfp4_dyn_global_scales = True" if Self.nvfp4_dyn_global_scales else "",
             "]",
         )
 
@@ -1437,7 +1452,20 @@ struct NVBlockScaledTokenFormat[
             .uint32, Self.scales_offset_layout, Engine=DefaultEngine[], ...
         ],
         ctx: DeviceContext,
+        output_rowwise_scales: Optional[Pointer[BFloat16, MutAnyOrigin]] = None,
     ):
+        """Wraps the dispatch outputs and builds the scales TMA descriptor.
+
+        Args:
+            output_tokens: Quantized tokens, one row per received token.
+            output_scales: Per-block scale tiles in the grouped matmul's 5D
+                scale-factor layout.
+            output_scales_offset: Per-expert offsets into the scale tiles.
+            ctx: Device context the TMA descriptor is created on.
+            output_rowwise_scales: Per-token inverse global scales, one BF16
+                per row of `output_tokens`. Required with
+                `nvfp4_dyn_global_scales` and ignored otherwise.
+        """
         self.output_tokens = {
             UnsafePointer[Scalar[Self.quant_dtype], MutUntrackedOrigin](
                 unsafe_from_address=Int(output_tokens._storage)
@@ -1450,6 +1478,23 @@ struct NVBlockScaledTokenFormat[
             ),
             output_scales_offset.layout,
         }
+        comptime if Self.nvfp4_dyn_global_scales:
+            if not output_rowwise_scales:
+                abort(
+                    "nvfp4_dyn_global_scales requires an output_rowwise_scales"
+                    " buffer"
+                )
+            self.output_rowwise_scales = {
+                UnsafePointer[BFloat16, MutUntrackedOrigin](
+                    unsafe_from_address=Int(output_rowwise_scales.value())
+                ),
+                row_major(Int64(output_tokens.dim(0))),
+            }
+        else:
+            self.output_rowwise_scales = {
+                UnsafePointer[BFloat16, MutUntrackedOrigin].unsafe_dangling(),
+                row_major(Int64(0)),
+            }
 
         # Merge the last two dimensions of the output_scales tensor into a single
         # dimension. This is required by the TMA instructions that the leading
@@ -1489,10 +1534,12 @@ struct NVBlockScaledTokenFormat[
         comptime assert (
             Self.hid_dim % Self.group_size == 0
         ), "hid_dim must be divisible by group_size"
-        return align_up(
-            Self.hid_dim // Self.group_size * size_of[Self.scales_dtype](),
-            Self.alignment,
+        var scales_size = (
+            Self.hid_dim // Self.group_size * size_of[Self.scales_dtype]()
         )
+        comptime if Self.nvfp4_dyn_global_scales:
+            scales_size += size_of[BFloat16]()
+        return align_up(scales_size, Self.alignment)
 
     @inline(.always)
     @staticmethod
@@ -1503,6 +1550,16 @@ struct NVBlockScaledTokenFormat[
     @staticmethod
     def scales_offset() -> Int:
         return Self.quant_size()
+
+    @inline(.always)
+    @staticmethod
+    def global_scale_offset() -> Int:
+        """Returns the message offset of the token's BF16 inverse global
+        scale, which sits directly behind the per-block scales."""
+        return (
+            Self.quant_size()
+            + Self.hid_dim // Self.group_size * size_of[Self.scales_dtype]()
+        )
 
     @inline(.always)
     def pad_expert_offsets[
@@ -1604,6 +1661,45 @@ struct NVBlockScaledTokenFormat[
             block_size, n_items, Self.ep_copy_role_split
         ]
 
+        var global_scale = input_scale
+        comptime if Self.nvfp4_dyn_global_scales:
+            comptime assert (
+                Self.is_nvfp4
+            ), "dynamic global scales are NVFP4-only"
+            comptime assert thread_base == 0, (
+                "the row-max reduction synchronizes the whole CTA, so every"
+                " thread in it must be a comm thread"
+            )
+            var thread_max = Float32(0)
+            for i in range(thread_idx.x, n_items, block_size):
+                var item = src_p.load[
+                    width=src_width, alignment=Self.alignment, invariant=True
+                ](Int(i) * src_width)
+                thread_max = max(
+                    thread_max, abs(item).reduce_max().cast[DType.float32]()
+                )
+            var row_max = block.max[block_size=block_size](thread_max)
+
+            # 2688 is the E2M1 max (6) times the E4M3 max (448), so the global
+            # scale 2688 / rowmax puts the token's largest block at the top of
+            # both ranges. The message carries its BF16 inverse, the factor
+            # the grouped matmul multiplies by, and the payload is quantized
+            # with that inverse's reciprocal so both ends agree. The floor
+            # keeps the reciprocal finite for a vanishing row max; an all-zero
+            # row keeps 1.0, which leaves its zero payload unchanged.
+            var inv_global_scale = BFloat16(1.0)
+            if row_max > 0:
+                inv_global_scale = max(
+                    row_max / Float32(2688.0), Float32(2.0**-126)
+                ).cast[DType.bfloat16]()
+            if thread_idx.x == 0:
+                comptime scale_bytes = size_of[BFloat16]()
+                buf_p.store[alignment=scale_bytes](
+                    Self.global_scale_offset(),
+                    bitcast[DType.uint8, scale_bytes](inv_global_scale),
+                )
+            global_scale = recip(inv_global_scale.cast[DType.float32]())
+
         comptime if Roles.enabled:
             # Role split: the copy role alone carries every item, `n_trips` per
             # thread at `lane`, `lane + n_copy_threads`, `lane + 2 *
@@ -1624,13 +1720,13 @@ struct NVBlockScaledTokenFormat[
                     Self._copy_one_item[src_type, buf_addr_space](
                         buf_p,
                         src_p,
-                        input_scale,
+                        global_scale,
                         lane + t * Roles.n_copy_threads,
                     )
         else:
             for i in range(thread_idx.x - thread_base, n_items, block_size):
                 Self._copy_one_item[src_type, buf_addr_space](
-                    buf_p, src_p, input_scale, Int(i)
+                    buf_p, src_p, global_scale, Int(i)
                 )
 
     @inline(.always)
@@ -1919,7 +2015,7 @@ struct NVBlockScaledTokenFormat[
 
         # --- Scales: sub-warp shuffle into SMEM, then 2D TMA store ---
         comptime aligned_tile_size = align_up(
-            Int(Coord(Self.tma_tile_shape).product()), 128
+            Int(Self.tma_tile_shape.product()), 128
         )
         var smem_ptr = external_memory[
             Scalar[Self.scales_dtype],
@@ -1931,7 +2027,7 @@ struct NVBlockScaledTokenFormat[
             smem_ptr += smem_base_offset // size_of[Self.scales_dtype]()
         var scales_tile = TileTensor(
             smem_ptr + aligned_tile_size * w,
-            row_major(Coord(Self.tma_tile_shape)),
+            row_major(Self.tma_tile_shape),
         )
 
         # Each warp is divided into SF_ATOM_M[1] sub-warps. Each sub-warp
@@ -2053,6 +2149,17 @@ struct NVBlockScaledTokenFormat[
 
             if k_tile_idx == 0:
                 extract_topk_info_functor(token_ptr, output_pos)
+
+                comptime if Self.nvfp4_dyn_global_scales:
+                    if lane_id() == 0:
+                        comptime scale_bytes = size_of[BFloat16]()
+                        self.output_rowwise_scales[output_pos] = bitcast[
+                            DType.bfloat16, 1
+                        ](
+                            token_ptr.load[
+                                width=scale_bytes, alignment=scale_bytes
+                            ](Self.global_scale_offset())
+                        )
 
         # Filp the mbarrier phase to even if it is odd.
         if is_warp_leader:
@@ -3950,7 +4057,7 @@ struct EPDispatchKernel[
                                 ](
                                     trace_buf,
                                     trace_ring_base,
-                                    Int(block_idx.x),
+                                    block_idx.x,
                                     trace_comm_ring_id,
                                     44,  # E_SCAT_TILE_DONE
                                     pack_payload2(
@@ -4185,7 +4292,7 @@ def dispatch_async_kernel[
             expert_finished_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+            grid_dim.x - dispatch_impl.n_signal_sms,
         )
 
 
@@ -4281,7 +4388,7 @@ def dispatch_wait_kernel[
     # tokens from all the remote ranks. It will also calculate the offset where
     # the tokens start in the output tensor.
     # Use runtime grid_dim so the host can launch a smaller grid for decode.
-    if block_idx.x >= Int(grid_dim.x) - dispatch_impl.n_offset_sms:
+    if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
         dispatch_impl.wait_for_arrivals_and_compute_offsets(
             format_handler,
             row_offsets,
@@ -4289,7 +4396,7 @@ def dispatch_wait_kernel[
             recv_count_p,
             atomic_counter,
             my_rank,
-            Int(grid_dim.x) - dispatch_impl.n_offset_sms,
+            grid_dim.x - dispatch_impl.n_offset_sms,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -5349,7 +5456,7 @@ def combine_async_kernel[
         rank_completion_counter,
         my_rank,
         block_idx.x,
-        Int(grid_dim.x),
+        grid_dim.x,
     )
 
 
@@ -5433,7 +5540,7 @@ def combine_wait_kernel[
         combine_impl.wait_for_all_arrivals(
             recv_count_p,
             atomic_counter,
-            Int(grid_dim.x) - combine_impl.n_wait_sms,
+            grid_dim.x - combine_impl.n_wait_sms,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -5448,7 +5555,7 @@ def combine_wait_kernel[
             atomic_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x) - combine_impl.n_wait_sms,
+            grid_dim.x - combine_impl.n_wait_sms,
         )
 
 
@@ -5613,7 +5720,7 @@ def dispatch_kernel[
                 expert_finished_counter,
                 my_rank,
                 block_idx.x,
-                Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+                grid_dim.x - dispatch_impl.n_signal_sms,
             )
             comptime if fused_shared_expert:
                 # This RELEASE ensures that all previous writes to the send
@@ -5635,7 +5742,7 @@ def dispatch_kernel[
 
         # ===== dispatch_wait =====
         # Use runtime grid_dim so the host can launch a smaller grid for decode.
-        if block_idx.x >= Int(grid_dim.x) - dispatch_impl.n_offset_sms:
+        if block_idx.x >= grid_dim.x - dispatch_impl.n_offset_sms:
             dispatch_impl.wait_for_arrivals_and_compute_offsets(
                 format_handler,
                 row_offsets,
@@ -5643,7 +5750,7 @@ def dispatch_kernel[
                 recv_count_ptrs[my_p2p_rank],
                 wait_atomic_counter,
                 my_rank,
-                Int(grid_dim.x) - dispatch_impl.n_offset_sms,
+                grid_dim.x - dispatch_impl.n_offset_sms,
                 shared_expert_token_count,
             )
         else:
@@ -5667,8 +5774,8 @@ def dispatch_kernel[
                     wait_atomic_counter + dispatch_impl.send_buf_ready_offset,
                     Int(shared_expert_token_count),
                     block_idx.x,
-                    Int(grid_dim.x) - dispatch_impl.n_offset_sms,
-                    Int(grid_dim.x) - dispatch_impl.n_signal_sms,
+                    grid_dim.x - dispatch_impl.n_offset_sms,
+                    grid_dim.x - dispatch_impl.n_signal_sms,
                 )
 
             dispatch_impl.copy_received_tokens_to_output(
@@ -5822,7 +5929,7 @@ def combine_kernel[
             rank_completion_counter,
             my_rank,
             block_idx.x,
-            Int(grid_dim.x),
+            grid_dim.x,
         )
 
         # ===== combine_wait =====
@@ -5833,7 +5940,7 @@ def combine_kernel[
             combine_impl.wait_for_all_arrivals(
                 recv_count_ptrs[my_p2p_rank],
                 wait_atomic_counter,
-                Int(grid_dim.x) - combine_impl.n_wait_sms,
+                grid_dim.x - combine_impl.n_wait_sms,
             )
         else:
             # Create an elementwise lambda that adds shared expert output if enabled
@@ -5904,7 +6011,7 @@ def combine_kernel[
                     wait_atomic_counter,
                     my_rank,
                     block_idx.x,
-                    Int(grid_dim.x) - combine_impl.n_wait_sms,
+                    grid_dim.x - combine_impl.n_wait_sms,
                     topk_ids_p,
                 )
 
@@ -5919,7 +6026,7 @@ def combine_kernel[
                     wait_atomic_counter,
                     my_rank,
                     block_idx.x,
-                    Int(grid_dim.x) - combine_impl.n_wait_sms,
+                    grid_dim.x - combine_impl.n_wait_sms,
                     topk_ids_p,
                 )
 
@@ -6020,137 +6127,6 @@ def fused_silu_kernel[
             var output_val = gate_proj * up_proj
 
             output_tensor.store((m, k), output_val.cast[output_dtype]())
-
-
-@__llvm_metadata(
-    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
-)
-@__name(t"ep_fused_silu_fp8_{input_dtype}_{fp8_dtype}")
-def fused_silu_fp8_kernel[
-    fp8_dtype: DType,
-    scales_dtype: DType,
-    input_dtype: DType,
-    output_layout: TensorLayout,
-    scales_layout: TensorLayout,
-    input_layout: TensorLayout,
-    offsets_layout: TensorLayout,
-    num_threads: Int,
-    num_sms: Int,
-    group_size: Int = 128,
-](
-    output_tensor: TileTensor[fp8_dtype, output_layout, MutUntrackedOrigin],
-    scales_tensor: TileTensor[scales_dtype, scales_layout, MutUntrackedOrigin],
-    input_tensor: TileTensor[input_dtype, input_layout, ImmUntrackedOrigin],
-    row_offsets: TileTensor[.uint32, offsets_layout, ImmUntrackedOrigin],
-):
-    """
-    This kernel performs the SILU operation for all the MLPs in the EP MoE
-    module. We need to manually implement the kernel here is because after the
-    EP dispatch phase, the actual number of received tokens is not known to the
-    host. This kernel will read the row offsets to determine the actual number of
-    received tokens in the input tensor.
-
-    Once the SILU operation is performed, the output tensor will be quantized to
-    the FP8 format. The scales tensor will be stored in a transposed way.
-
-    Parameters:
-        fp8_dtype: FP8 element type of the quantized `output_tensor` (e.g.
-            `.float8_e4m3fn`).
-        scales_dtype: Element type of the block-wise scale factors stored in
-            `scales_tensor`.
-        input_dtype: Element type of the `input_tensor`; its accumulation type
-            must be floating-point.
-        output_layout: Layout of the FP8 `output_tensor` `TileTensor`.
-        scales_layout: Layout of the `scales_tensor` `TileTensor`; scales are
-            stored transposed (group index in dim 0, token index in dim 1).
-        input_layout: Layout of the `input_tensor` `TileTensor`.
-        offsets_layout: Layout of the 1D `row_offsets` `TileTensor`.
-        num_threads: Number of threads per block; sets the
-            `MAX_THREADS_PER_BLOCK` launch metadata.
-        num_sms: Number of streaming multiprocessors (SMs) used to scatter
-            processing across thread blocks.
-        group_size: Number of elements per quantization group; the output
-            dimension must be divisible by this (defaults to 128).
-
-    Arguments:
-        output_tensor: The output tensor to store the result.
-        scales_tensor: The tensor to store the scales.
-        input_tensor: The input tensor to perform the SILU operation.
-        row_offsets: The row offsets to determine the actual number of received tokens.
-    """
-    comptime accum_dtype = get_accum_type[input_dtype]()
-    comptime assert (
-        accum_dtype.is_floating_point()
-    ), "accum_dtype must be floating point"
-    comptime assert (
-        output_tensor.flat_rank >= 2
-    ), "output_tensor must be at least 2D"
-    comptime assert (
-        scales_tensor.flat_rank >= 2
-    ), "scales_tensor must be at least 2D"
-    comptime assert (
-        input_tensor.flat_rank >= 2
-    ), "input_tensor must be at least 2D"
-    comptime assert row_offsets.flat_rank == 1, "row_offsets must be 1D"
-    comptime input_dim = input_tensor.static_shape[1]
-    comptime output_dim = output_tensor.static_shape[1]
-    comptime simd_width = simd_width_of[input_dtype]()
-
-    comptime assert (
-        input_dim == output_dim * 2
-    ), "Input dimension must be twice the output dimension."
-    comptime assert (
-        output_dim % simd_width == 0
-    ), "Output dimension must be divisible by the SIMD width."
-
-    comptime n_threads_per_group = group_size // simd_width
-    comptime assert (
-        WARP_SIZE % n_threads_per_group == 0
-    ), "Each warp must process a multiple of quantization groups"
-    comptime fp8_max_t = Scalar[fp8_dtype].MAX_FINITE.cast[accum_dtype]()
-
-    # Scatter processing of a single token across different thread blocks
-    # to improve the memory access performance.
-    var global_warp_id = block_idx.x + warp_id() * num_sms
-    var gid = lane_id() + global_warp_id * WARP_SIZE
-
-    with PDL():
-        var num_tokens = row_offsets[row_offsets.static_shape[0] - 1]
-        var num_elem = num_tokens * UInt32(output_dim)
-
-        for i in range(
-            gid,
-            Int(num_elem // UInt32(simd_width)),
-            num_threads * num_sms,
-        ):
-            var m, k = divmod((i * simd_width), output_dim)
-
-            var gate_proj = input_tensor.load[width=simd_width]((m, k)).cast[
-                accum_dtype
-            ]()
-            var up_proj = input_tensor.load[width=simd_width](
-                (m, k + output_dim)
-            ).cast[accum_dtype]()
-
-            gate_proj = gate_proj / (1.0 + exp(-gate_proj))
-            var output_val = gate_proj * up_proj
-
-            # Quantization logic.
-            var thread_max = abs(output_val).reduce_max()
-            var group_max = warp.lane_group_max[n_threads_per_group](thread_max)
-            var scale_factor = max(group_max, 1e-4) / fp8_max_t
-            output_val = (output_val / scale_factor).clamp(
-                -fp8_max_t, fp8_max_t
-            )
-
-            output_tensor.store((m, k), output_val.cast[fp8_dtype]())
-
-            # The first thread in each group stores the scale factor.
-            if umod(lane_id(), n_threads_per_group) == 0:
-                scales_tensor.store(
-                    (k // group_size, m),
-                    scale_factor.cast[scales_dtype](),
-                )
 
 
 @__llvm_metadata(

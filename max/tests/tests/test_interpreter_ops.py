@@ -56,7 +56,6 @@ from max.experimental import realization_context as rc
 from max.experimental.executor import (
     CompilingExecutor,
     InterpreterExecutor,
-    UnsupportedGraphError,
     set_default_executor,
 )
 from max.experimental.functional import (
@@ -67,9 +66,9 @@ from max.experimental.functional import (
 )
 from max.experimental.realization_context import set_seed
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -189,6 +188,36 @@ class TestBinaryElementwiseOps:
         expected = np.divide(a_np, b_np)
         np.testing.assert_array_almost_equal(np.from_dlpack(c), expected)
 
+    @pytest.mark.parametrize("dtype", INT_DTYPES + UINT_DTYPES)
+    def test_floor_div_integer(self, dtype: DType) -> None:
+        """Int ``//`` stays integral and matches numpy on the interpreter.
+
+        Integer ``floor_div`` emits a raw ``DivOp`` on the integer operands, so
+        Div must sweep integer dtypes or the eager executor falls back to a
+        full graph compile.
+        """
+        shape = [3, 4]
+        np_dtype = dtype.to_numpy()
+        a_np = np.arange(12, dtype=np_dtype).reshape(shape)
+        if dtype.is_signed_integral():
+            a_np = a_np - 6
+        b_np = np.full(shape, 4, dtype=np_dtype)
+        if dtype.is_signed_integral():
+            b_np[0] = -4
+
+        a = Tensor.from_dlpack(a_np)
+        b = Tensor.from_dlpack(b_np)
+        with (
+            rc.EagerRealizationContext() as ctx,
+            realization_context(ctx),
+        ):
+            c = a // b
+
+        assert c.dtype == dtype
+        np.testing.assert_array_equal(
+            np.from_dlpack(c), np.floor_divide(a_np, b_np)
+        )
+
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_pow(self, dtype: DType) -> None:
         """Test pow op matches numpy."""
@@ -211,7 +240,7 @@ class TestBinaryElementwiseOps:
 
     @pytest.mark.parametrize("dtype", INT_DTYPES + UINT_DTYPES)
     def test_pow_integer(self, dtype: DType) -> None:
-        """Int ``pow`` matches numpy; Pow sweeps integer dtypes (``div`` does not)."""
+        """Int ``pow`` matches numpy; Pow sweeps integer dtypes."""
         shape = [3, 4]
         np_dtype = dtype.to_numpy()
         # Small bases / exponent 2 keep the result within every int width.
@@ -504,11 +533,6 @@ class TestUnaryElementwiseOps:
             np.from_dlpack(y), expected, decimal=5
         )
 
-    @pytest.mark.xfail(
-        raises=UnsupportedGraphError,
-        reason="mo.relu has no interpreter handler",
-        strict=True,
-    )
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_relu(self, dtype: DType) -> None:
         """Test relu op matches numpy maximum(x, 0)."""
@@ -3171,10 +3195,10 @@ class TestRandomUniformOp:
 class TestShapeChangeOps:
     """Tests for shape change operations (squeeze, unsqueeze, reshape variants).
 
-    These test the reshape semantics that SqueezeShapeOp, UnsqueezeShapeOp,
-    AddSingletonDimOp, SplitDimOp, and MergeDimOp implement. Since these ops
-    are emitted by MLIR lowering passes rather than the Python API directly,
-    we test through the Tensor API methods that produce equivalent reshapes.
+    These test the reshape semantics that SqueezeShapeOp and UnsqueezeShapeOp
+    implement, along with the reshape variants (add-singleton, split, and
+    merge) that the Tensor API expresses. We test through the Tensor API
+    methods that produce these reshapes.
     """
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
@@ -3287,7 +3311,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_split_dim(self, dtype: DType) -> None:
-        """Test reshape that splits a dimension (equivalent to SplitDimOp).
+        """Test reshape that splits a dimension.
 
         E.g., [12, 3] -> [3, 4, 3] splits dimension 0 into (3, 4).
         """
@@ -3308,7 +3332,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_merge_dims(self, dtype: DType) -> None:
-        """Test reshape that merges adjacent dimensions (equivalent to MergeDimOp).
+        """Test reshape that merges adjacent dimensions.
 
         E.g., [2, 3, 4] -> [6, 4] merges dimensions 0 and 1.
         """
@@ -3329,7 +3353,7 @@ class TestShapeChangeOps:
 
     @pytest.mark.parametrize("dtype", FLOAT_DTYPES)
     def test_reshape_add_singleton(self, dtype: DType) -> None:
-        """Test reshape that adds a singleton dimension (equiv to AddSingletonDimOp).
+        """Test reshape that adds a singleton dimension.
 
         E.g., [3, 4] -> [3, 1, 4] adds a dimension of size 1.
         """
@@ -9073,7 +9097,7 @@ class TestDistributedScatterSimulated:
         )
 
         data = np.arange(8, dtype=np.float32).reshape(4, 2)
-        mapping = PlacementMapping(mesh, (Sharded(0),))
+        mapping = DeviceMapping(mesh, (Sharded(0),))
 
         with (
             rc.EagerRealizationContext() as ctx,
@@ -9100,7 +9124,7 @@ class TestDistributedBroadcastSimulated:
         data = np.arange(8, dtype=np.float32).reshape(4, 2)
         t = Tensor.from_dlpack(data)
 
-        mapping = PlacementMapping(mesh, (Replicated(),))
+        mapping = DeviceMapping(mesh, (Replicated(),))
 
         with (
             rc.EagerRealizationContext() as ctx,
@@ -9137,7 +9161,7 @@ class TestDistributedReducescatterSumSimulated:
             shard_b = Tensor(data_b).__tensorvalue__()
             partial_t = Tensor.from_shard_values(
                 [shard_a, shard_b],
-                PlacementMapping(mesh, (Partial(),)),
+                DeviceMapping(mesh, (Partial(),)),
             )
             result = reduce_scatter(partial_t, scatter_axis=0, mesh_axis=0)
 
@@ -9637,14 +9661,14 @@ class TestLazyGCModelCompilation:
         assert model is not None
 
     def test_binary_model_unsupported_dtype_raises(self) -> None:
-        """Div sweeps floats only; an int dtype is outside the supported set."""
+        """And sweeps bool only; an int dtype is outside the supported set."""
         with pytest.raises(
             KeyError, match="Unsupported binary op/device/dtype"
         ):
-            elementwise_binary_gc.binary_model(mo.DivOp, CPU(), DType.int32)
+            elementwise_binary_gc.binary_model(mo.AndOp, CPU(), DType.int32)
 
     def test_binary_model_pow_integer_supported(self) -> None:
-        """Pow sweeps NUMERIC, so an int Pow compiles (not the Div case)."""
+        """Pow sweeps NUMERIC, so an int Pow compiles."""
         model = elementwise_binary_gc.binary_model(mo.PowOp, CPU(), DType.int32)
         assert model is not None
 

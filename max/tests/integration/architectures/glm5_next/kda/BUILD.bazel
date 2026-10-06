@@ -40,3 +40,35 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )
+
+modular_py_test(
+    name = "test_kda_state_cache",
+    srcs = ["test_kda_state_cache.py"],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_kda_module",
+    srcs = ["test_kda_module.py"],
+    deps = [
+        requirement("numpy"),
+        requirement("torch"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)

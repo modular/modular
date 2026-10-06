@@ -23,12 +23,7 @@ from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
 from std.builtin.device_passable import DevicePassable
-from std.sys import (
-    CompilationTarget,
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import CompilationTarget, argv, default_accelerator
 
 from max.gpu.host import (
     ConstantMemoryMapping,
@@ -103,9 +98,9 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         If SHMEM initialization or the launched function fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         _shmem_launch_mpi[func]()
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         _shmem_launch_tcp[func]()
     else:
         CompilationTarget.unsupported_target_error[
@@ -374,7 +369,6 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         return SHMEMBuffer[dtype](self._ctx, size)
 
     @inline(.always)
-    @__parameter
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -461,7 +455,6 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_module_finalize(gpu_kernel)
 
     @inline(.always)
-    @__parameter
     def enqueue_function_collective_checked[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -535,9 +528,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             ctx.synchronize()
         ```
         """
-        comptime assert (
-            has_nvidia_gpu_accelerator()
-        ), "only available on NVIDIA GPUs"
+        comptime assert type_of(
+            self._ctx
+        ).target.is_nvidia_gpu(), "only available on NVIDIA GPUs"
         var gpu_kernel = self._ctx.compile_function[
             func,
             dump_asm=dump_asm,

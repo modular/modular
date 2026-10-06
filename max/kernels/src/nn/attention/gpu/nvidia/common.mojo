@@ -32,6 +32,7 @@ from max.gpu.compute.mma import st_matrix
 from layout import (
     ComptimeInt,
     Coord,
+    coord,
     IntTuple,
     Layout,
     LayoutTensor,
@@ -79,7 +80,7 @@ from nn.attention.mha_utils import (
     get_start_and_end_for_partitions,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 
@@ -142,6 +143,31 @@ comptime _1d_row_major_tt_layout = InternalLayout[
 comptime ImmutTileTensor1D[
     dtype: DType, *, Engine: TensorEngine = DefaultEngine[element_width=1]
 ] = TileTensor[dtype, _1d_row_major_tt_layout, ImmutAnyOrigin, Engine=Engine]
+
+
+def immut_tile_tensor_1d[
+    mut: Bool, dtype: DType, origin: Origin[mut=mut], //
+](ptr: UnsafePointer[Scalar[dtype], origin], size: Int) -> ImmutTileTensor1D[
+    dtype
+]:
+    """Views `size` contiguous elements at `ptr` as an `ImmutTileTensor1D`.
+
+    Parameters:
+        mut: Mutability of `ptr`'s origin (inferred).
+        dtype: Element type of the viewed memory (inferred).
+        origin: Origin of `ptr` (inferred).
+
+    Args:
+        ptr: Pointer to the first element.
+        size: Number of elements.
+
+    Returns:
+        An immutable, untracked-origin 1-D view over the elements.
+    """
+    return ImmutTileTensor1D[dtype](
+        ptr.as_imm().unsafe_origin_cast[ImmutAnyOrigin](),
+        _1d_row_major_tt_layout(Coord(Int64(size)), Coord(ComptimeInt[1]())),
+    )
 
 
 struct Pack[
@@ -669,7 +695,39 @@ struct PositionSummary(TrivialRegisterPassable):
         return {num_keys, score_row}
 
 
-def q_smem_shape[
+def q_smem_shape_prefill[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    depth: Int,
+    num_qk_stages: Int = 1,
+](
+    out res: Coord[
+        ComptimeInt[BM],
+        ComptimeInt[1],
+        ComptimeInt[
+            depth if num_qk_stages
+            == 1 else align_up(depth, swizzle_mode.bytes() // size_of[dtype]())
+            // num_qk_stages
+        ],
+    ],
+):
+    """Computes the rank-3 shared-memory shape for a prefill (non-decoding,
+    non-fused) Q tensor TMA tile.
+
+    Parameters:
+        dtype: Element type of the Q tensor.
+        swizzle_mode: TMA swizzle mode for the Q tensor tile.
+        BM: Tile block size in the query (row) dimension, in elements.
+        depth: Head dimension of the attention layer, in elements.
+        num_qk_stages: Number of pipeline stages used to split the Q
+            shared-memory tile along the depth dimension (defaults to 1).
+    """
+    res = Coord[*res.element_types]()
+
+
+def q_smem_shape_fused[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
     *,
@@ -679,8 +737,23 @@ def q_smem_shape[
     decoding: Bool,
     fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
-](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
-    """Computes the shared-memory shape for a Q tensor TMA tile based on the tile configuration.
+](
+    out res: Coord[
+        ComptimeInt[1 if decoding else BM // group],
+        ComptimeInt[1],
+        ComptimeInt[max(group, 8) if decoding else group],
+        ComptimeInt[
+            swizzle_mode.bytes() // size_of[dtype]() if decoding
+            or fuse_gqa
+            and BM % group != 0 else depth if fuse_gqa
+            and num_qk_stages
+            == 1 else align_up(depth, swizzle_mode.bytes() // size_of[dtype]())
+            // num_qk_stages
+        ],
+    ],
+):
+    """Computes the rank-4 shared-memory shape for a decoding or
+    fused-GQA Q tensor TMA tile.
 
     Parameters:
         dtype: Element type of the Q tensor.
@@ -695,66 +768,72 @@ def q_smem_shape[
         num_qk_stages: Number of pipeline stages used to split the Q
             shared-memory tile along the depth dimension (defaults to 1).
     """
-    comptime L = res.size
-    comptime assert L in (3, 4)
-    comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
-
-    comptime if decoding:
-        return {1, 1, max(group, 8), swizzle_granularity}
-    elif fuse_gqa:
-        comptime if num_qk_stages == 1:
-            return {BM // group, 1, group, depth}
-        else:
-            return {
-                BM // group,
-                1,
-                group,
-                align_up(depth, swizzle_granularity) // num_qk_stages,
-            }
-    else:
-        comptime if num_qk_stages == 1:
-            return {BM, 1, depth}
-        else:
-            return {
-                BM,
-                1,
-                align_up(depth, swizzle_granularity) // num_qk_stages,
-            }
+    res = Coord[*res.element_types]()
 
 
-def q_gmem_shape[
-    dtype: DType,
-    swizzle_mode: TensorMapSwizzle,
+def q_gmem_shape_prefill[
+    *,
+    q_num_heads: Int,
+    depth: Int,
+](
+    out res: Coord[
+        ComptimeInt[UNKNOWN_VALUE],
+        ComptimeInt[q_num_heads],
+        ComptimeInt[depth],
+    ],
+):
+    """Computes the rank-3 global-memory shape for a prefill (non-decoding,
+    non-fused) Q tensor TMA tile.
+
+    Parameters:
+        q_num_heads: Number of query attention heads.
+        depth: Head dimension of the attention layer, in elements.
+    """
+    res = Coord[*res.element_types]()
+
+
+def q_gmem_shape_fused[
     *,
     group: Int,
     q_num_heads: Int,
     depth: Int,
-    decoding: Bool,
-    fuse_gqa: Bool = False,
-](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
-    """Computes the global-memory shape for a Q tensor TMA tile based on the tile configuration.
+](
+    out res: Coord[
+        ComptimeInt[UNKNOWN_VALUE],
+        ComptimeInt[q_num_heads // group],
+        ComptimeInt[group],
+        ComptimeInt[depth],
+    ],
+):
+    """Computes the rank-4 global-memory shape for a decoding or fused-GQA
+    Q tensor TMA tile.
 
     Parameters:
-        dtype: Element type of the Q tensor.
-        swizzle_mode: TMA swizzle mode for the Q tensor tile.
         group: Grouped-query attention group size, in query heads per KV
             head.
         q_num_heads: Number of query attention heads.
         depth: Head dimension of the attention layer, in elements.
-        decoding: Whether the kernel runs in single-token decoding mode.
-        fuse_gqa: Whether to fuse grouped-query attention into the tile
-            shape (defaults to `False`).
     """
-    comptime L = res.size
-    comptime assert L in (3, 4)
-
-    comptime if L == 3:  # prefill, no fusion
-        return {UNKNOWN_VALUE, q_num_heads, depth}
-    else:  # decoding or fuse_gqa prefill
-        return {UNKNOWN_VALUE, q_num_heads // group, group, depth}
+    res = Coord[*res.element_types]()
 
 
-comptime QTMATile[
+comptime QTMATilePrefill[
+    dtype: DType,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    depth: Int,
+    num_qk_stages: Int = 1,
+] = SplitLastDimTMATensorTile[
+    dtype,
+    q_smem_shape_prefill[
+        dtype, swizzle_mode, BM=BM, depth=depth, num_qk_stages=num_qk_stages
+    ](),
+    swizzle_mode,
+]
+"""Prefill (rank-3 Q tile) counterpart of the old `QTMATile`."""
+
+comptime QTMATileFused[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
     *,
@@ -766,7 +845,7 @@ comptime QTMATile[
     num_qk_stages: Int = 1,
 ] = SplitLastDimTMATensorTile[
     dtype,
-    q_smem_shape[
+    q_smem_shape_fused[
         dtype,
         swizzle_mode,
         BM=BM,
@@ -778,6 +857,14 @@ comptime QTMATile[
     ](),
     swizzle_mode,
 ]
+"""Decoding/fused-GQA (rank-4 Q tile) counterpart of the old `QTMATile`."""
+
+# Backward-compat alias: KGEN cannot fold a Coord-typed conditional, so the
+# rank-3/rank-4 choice must be made by spelling QTMATilePrefill or
+# QTMATileFused at the use site. This alias remains for the prefill shape
+# only; decoding/fuse_gqa callers MUST use QTMATileFused.
+# All callers migrated; the alias has been removed.
+
 
 comptime KVTMATile[
     dtype: DType,
@@ -787,13 +874,48 @@ comptime KVTMATile[
     BK: Int,
 ] = SplitLastDimTMATensorTile[
     dtype,
-    IndexList[3](BN, 1, BK),
+    coord[BN, 1, BK],
     swizzle_mode,
 ]
 
 
 @inline(.always)
-def q_tma[
+def q_tma_prefill[
+    dtype: DType,
+    //,
+    swizzle_mode: TensorMapSwizzle,
+    *,
+    BM: Int,
+    depth: Int,
+    q_num_heads: Int,
+    num_qk_stages: Int = 1,
+](
+    ctx: DeviceContext,
+    ptr: UnsafePointer[Scalar[dtype], _],
+    rows: Int,
+) raises -> QTMATilePrefill[
+    dtype, swizzle_mode, BM=BM, depth=depth, num_qk_stages=num_qk_stages
+]:
+    """Creates a split TMA descriptor for a prefill (rank-3) Q tensor tile,
+    pairing the shared-memory tile shape with the global-memory layout.
+
+    Args:
+        ctx: Device context used to create the TMA descriptor.
+        ptr: Base pointer to the Q tensor in global memory.
+        rows: Number of rows in the Q tensor exposed via the TMA
+            descriptor.
+    """
+    comptime smem_dim = q_smem_shape_prefill[
+        dtype, swizzle_mode, BM=BM, depth=depth, num_qk_stages=num_qk_stages
+    ]()
+    comptime gmem_dim = q_gmem_shape_prefill[
+        q_num_heads=q_num_heads, depth=depth
+    ]()
+    return create_split_tma[smem_dim, gmem_dim, swizzle_mode](ctx, ptr, rows)
+
+
+@inline(.always)
+def q_tma_fused[
     dtype: DType,
     //,
     swizzle_mode: TensorMapSwizzle,
@@ -809,7 +931,7 @@ def q_tma[
     ctx: DeviceContext,
     ptr: UnsafePointer[Scalar[dtype], _],
     rows: Int,
-) raises -> QTMATile[
+) raises -> QTMATileFused[
     dtype,
     swizzle_mode,
     BM=BM,
@@ -819,21 +941,9 @@ def q_tma[
     fuse_gqa=fuse_gqa,
     num_qk_stages=num_qk_stages,
 ]:
-    """Creates a split TMA descriptor for the Q tensor, pairing the shared-memory tile shape with the global-memory layout.
-
-    Parameters:
-        dtype: Element type of the Q tensor (inferred).
-        swizzle_mode: TMA swizzle mode for the Q tensor tile.
-        BM: Tile block size in the query (row) dimension, in elements.
-        depth: Head dimension of the attention layer, in elements.
-        q_num_heads: Number of query attention heads.
-        group: Grouped-query attention group size, in query heads per KV
-            head.
-        decoding: Whether the kernel runs in single-token decoding mode.
-        fuse_gqa: Whether to fuse grouped-query attention into the tile
-            shape (defaults to `False`).
-        num_qk_stages: Number of pipeline stages used to split the Q
-            shared-memory tile along the depth dimension (defaults to 1).
+    """Creates a split TMA descriptor for a decoding/fused-GQA (rank-4) Q
+    tensor tile, pairing the shared-memory tile shape with the global-memory
+    layout.
 
     Args:
         ctx: Device context used to create the TMA descriptor.
@@ -841,7 +951,7 @@ def q_tma[
         rows: Number of rows in the Q tensor exposed via the TMA
             descriptor.
     """
-    comptime smem_dim = q_smem_shape[
+    comptime smem_dim = q_smem_shape_fused[
         dtype,
         swizzle_mode,
         BM=BM,
@@ -851,14 +961,10 @@ def q_tma[
         fuse_gqa=fuse_gqa,
         num_qk_stages=num_qk_stages,
     ]()
-    comptime gmem_dim = q_gmem_shape[
-        dtype,
-        swizzle_mode,
+    comptime gmem_dim = q_gmem_shape_fused[
         group=group,
         q_num_heads=q_num_heads,
         depth=depth,
-        decoding=decoding,
-        fuse_gqa=fuse_gqa,
     ]()
     return create_split_tma[smem_dim, gmem_dim, swizzle_mode](ctx, ptr, rows)
 

@@ -117,8 +117,6 @@ from linalg.fp4_utils import (
     cast_fp32_to_fp4e2m1,
     set_scale_factor,
 )
-from linalg.utils import elementwise_compute_lambda_type
-
 from ..structured_kernels.config import (
     BlockScaledMatmulConfig,
     OutputPipelineConfig,
@@ -164,6 +162,11 @@ from ..structured_kernels.output_writer import (
     NullPeerSink,
     P3PeerSendConfig,
     TileWriter,
+)
+from ..structured_kernels.row_scales import (
+    NullRowScales,
+    RowScales,
+    TileRowScales,
 )
 
 
@@ -674,10 +677,6 @@ struct Grouped1D1DMatmulKernel[
     static_N: Int,
     # Cluster shape
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
-    # Epilogue fusion
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     # Programmatic dependent launch level.
     pdl_level: PDLLevel = PDLLevel(),
     # When True, treats adjacent matmul-N column pairs (2i, 2i+1) as
@@ -727,6 +726,7 @@ struct Grouped1D1DMatmulKernel[
     # A second destination for the epilogue's output tile. Stateless, so it
     # costs nothing to carry; the default keeps the local store.
     SinkT: EpiloguePeerSink = NullPeerSink,
+    RowScalesT: RowScales = NullRowScales,
 ]:
     """Grouped 1D-1D block-scaled matmul kernel.
 
@@ -750,8 +750,6 @@ struct Grouped1D1DMatmulKernel[
             time for TMA descriptor construction.
         cluster_shape: 3D `(x, y, z)` cluster shape passed to the
             `nvvm.cluster_dim` metadata (defaults to `(1, 1, 1)`).
-        elementwise_compute_lambda_fn: Optional fused elementwise lambda
-            applied in the epilogue (defaults to `None`).
         pdl_level: Programmatic dependent launch level controlling
             cross-grid ordering fences (defaults to `PDLLevel()`).
         fuse_swiglu: When `True`, treats adjacent matmul-N column pairs
@@ -802,6 +800,9 @@ struct Grouped1D1DMatmulKernel[
         SinkT: A second destination for the output tile, replacing the local
             store when its `Enabled` is set. Defaults to `NullPeerSink`, which
             keeps the local store.
+        RowScalesT: Per-row output scales multiplied into each token row
+            together with the expert scale, before the fused SwiGLU when
+            `fuse_swiglu`. Defaults to the zero-sized `NullRowScales`.
     """
 
     # ========== Derived Constants ==========
@@ -1531,13 +1532,7 @@ struct Grouped1D1DMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-    @__name(
-        StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
-    )
+    @__name(StaticString(Self.config.get_kernel_name()))
     def run(
         # Grid-constant TMA descriptors
         a_tma_op: Self.ATmaOp,
@@ -1569,6 +1564,7 @@ struct Grouped1D1DMatmulKernel[
         # `NullTrace()` is zero-sized — 0 bytes of kernel ABI when
         # `swiglu_enable_trace=False`.
         trace_buf: Self.TraceBufT,
+        row_scales: Self.RowScalesT,
     ):
         """Grouped 1D-1D block-scaled GEMM kernel entry point.
 
@@ -1625,6 +1621,8 @@ struct Grouped1D1DMatmulKernel[
             trace_buf: Diagnostic trace buffer for per-tile pipeline
                 timing; `NullTrace()` is zero-sized when
                 `swiglu_enable_trace=False`.
+            row_scales: Per-row output scales; `NullRowScales()` is
+                zero-sized.
         """
         var _num_active_experts = Int(num_active_experts)
         var _sfb_n_stride = Int(sfb_n_stride)
@@ -1794,7 +1792,7 @@ struct Grouped1D1DMatmulKernel[
                             and lane_id() == 0
                         ):
                             trace_buf.store(
-                                Int(block_idx.x)
+                                block_idx.x
                                 * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                 + 9 * tile_idx_load
                                 + 0,
@@ -1817,7 +1815,7 @@ struct Grouped1D1DMatmulKernel[
                                     and lane_id() == 0
                                 ):
                                     trace_buf.store(
-                                        Int(block_idx.x)
+                                        block_idx.x
                                         * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                         + 9 * tile_idx_load
                                         + 1,
@@ -1889,7 +1887,7 @@ struct Grouped1D1DMatmulKernel[
                                     and lane_id() == 0
                                 ):
                                     trace_buf.store(
-                                        Int(block_idx.x)
+                                        block_idx.x
                                         * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                         + 9 * tile_idx_load
                                         + 2,
@@ -1971,7 +1969,7 @@ struct Grouped1D1DMatmulKernel[
                                 and lane_id() == 0
                             ):
                                 trace_buf.store(
-                                    Int(block_idx.x)
+                                    block_idx.x
                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                     + 9 * tile_idx_mma
                                     + 3,
@@ -1990,7 +1988,7 @@ struct Grouped1D1DMatmulKernel[
                                     and lane_id() == 0
                                 ):
                                     trace_buf.store(
-                                        Int(block_idx.x)
+                                        block_idx.x
                                         * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                         + _GROUPED_TRACE_MMA_OUTPUT_ACQ_BASE
                                         + tile_idx_mma,
@@ -2026,7 +2024,7 @@ struct Grouped1D1DMatmulKernel[
                                                 and lane_id() == 0
                                             ):
                                                 trace_buf.store(
-                                                    Int(block_idx.x)
+                                                    block_idx.x
                                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                                     + _GROUPED_TRACE_MMA_INPUT_ACQ_BASE
                                                     + tile_idx_mma,
@@ -2054,7 +2052,7 @@ struct Grouped1D1DMatmulKernel[
                                                 and lane_id() == 0
                                             ):
                                                 trace_buf.store(
-                                                    Int(block_idx.x)
+                                                    block_idx.x
                                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                                     + 9 * tile_idx_mma
                                                     + 4,
@@ -2099,7 +2097,7 @@ struct Grouped1D1DMatmulKernel[
                                                 and lane_id() == 0
                                             ):
                                                 trace_buf.store(
-                                                    Int(block_idx.x)
+                                                    block_idx.x
                                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                                     + 9 * tile_idx_mma
                                                     + 5,
@@ -2149,7 +2147,7 @@ struct Grouped1D1DMatmulKernel[
                             and lane_id() == 0
                         ):
                             trace_buf.store(
-                                Int(block_idx.x)
+                                block_idx.x
                                 * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                 + 9 * tile_idx_epi
                                 + 6,
@@ -2166,7 +2164,7 @@ struct Grouped1D1DMatmulKernel[
                                 and lane_id() == 0
                             ):
                                 trace_buf.store(
-                                    Int(block_idx.x)
+                                    block_idx.x
                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                     + 9 * tile_idx_epi
                                     + 7,
@@ -2182,6 +2180,7 @@ struct Grouped1D1DMatmulKernel[
                             a_scale_offsets,
                             swiglu_out,
                             trace_buf,
+                            row_scales,
                             tile_idx_epi,
                         )
 
@@ -2194,7 +2193,7 @@ struct Grouped1D1DMatmulKernel[
                                 and lane_id() == 0
                             ):
                                 trace_buf.store(
-                                    Int(block_idx.x)
+                                    block_idx.x
                                     * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                                     + 9 * tile_idx_epi
                                     + 8,
@@ -2699,6 +2698,20 @@ struct Grouped1D1DMatmulKernel[
                             if sched_slot.expert_id < 0:
                                 break
                             it += 1
+
+        # KERN-3311: hold the cluster together until every CTA is finished.
+        # The epilogue's cluster-mapped `arrive_cluster` (signal_peer() in
+        # structured_kernels/tmem.mojo) needs the peer CTA to still be
+        # resident; if the peer retires first the arrive targets a departed
+        # block (CUDBG_EXCEPTION_CLUSTER_BLOCK_NOT_PRESENT) and TMEM is then
+        # freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` after mbarrier init only orders initialization.
+        # Gated on cta_group == 2, not merely CLUSTER_SIZE > 1: the hazard is
+        # the cluster-mapped arrive in signal_peer(), which only exists for
+        # cta_group == 2. A cta_group=1 config with a multicast cluster has
+        # no cross-CTA arrive and must not pay for this barrier.
+        comptime if Self.cta_group == 2:
+            cluster_sync()
 
     # ========== SFB Load to TMEM (MMA_N < 64) ==========
 
@@ -3276,12 +3289,17 @@ struct Grouped1D1DMatmulKernel[
         a_scale_offsets: Self.AScaleOffsetsTile,
         swiglu_out: Self.SwiGLUOutputT,
         trace_buf: Self.TraceBufT,
+        row_scales: Self.RowScalesT,
         tile_idx_epi: Int,
     ):
         """Fused SwiGLU + block-scaled quantization epilogue body.
 
         Caller must pre-permute `W` on the N axis with `σ(2i)=i, σ(2i+1)=H+i`
         so adjacent output-N positions hold `(gate, up)` pairs.
+
+        Each token's gate and up values are scaled by `expert_scale` times
+        its `row_scales` entry before SwiGLU, exactly as the BF16 epilogue
+        scales them, so the fused output matches the chained reference.
 
         Parametric on the carrier's `(SfDtype, SfVectorSize)`:
           - NVFP4: `SfVectorSize=16, SfDtype=NVFP4_SF_DTYPE` (E4M3).
@@ -3336,6 +3354,11 @@ struct Grouped1D1DMatmulKernel[
         comptime assert (
             Self.config.AB_swapped
         ), "fused SwiGLU+quant currently only supports AB_swapped=True"
+        # Row scales index tokens by stage; a layout that also splits the
+        # stage's columns across warps would need a per-warp offset.
+        comptime assert not Self.RowScalesT.Enabled or (
+            Self.MMA_M == 256 or Self.cta_group == 1
+        ), "row scales need every epilogue warp to span the whole stage"
 
         # Quant format is picked from the carrier's trait params. MXFP4
         # collides with MXFP8 on (SfVectorSize=32, SfDtype=E8M0) so the
@@ -3406,10 +3429,14 @@ struct Grouped1D1DMatmulKernel[
         var accum_tiles = AccumTmemArrayLocal(output_stage.tmem.offset())
         var warp_id_v = get_warp_id()
         var lane_v = lane_id()
-        var scale = expert_scale.cast[Self.accum_type]()
 
         var lane_row = UInt32(lane_v) // UInt32(threads_per_row)
         var lane_col = (UInt32(lane_v) % UInt32(threads_per_row)) * UInt32(2)
+
+        # Issued before the first TMEM load so the GMEM latency overlaps it.
+        var tile_scales = TileRowScales[Self.RowScalesT, num_stages * stageN](
+            row_scales, m_abs, m_end, UInt32(lane_v), expert_scale
+        )
 
         # Layout A/D/F per `epilogue_components.mojo:721-731`.
         var warp_row_offset: UInt32
@@ -3458,6 +3485,12 @@ struct Grouped1D1DMatmulKernel[
             var lane_row_is_even = (lane_row & UInt32(1)) == UInt32(0)
 
             comptime for loop_stage in range(num_stages):
+                # Element `2 * r + j` scales the fragment pair `(4 * r + j,
+                # 4 * r + 2 + j)`.
+                var token_scales = tile_scales.pairs[
+                    repeats, loop_stage * stageN
+                ](UInt32(lane_v))
+
                 var frags_ip = accum_tiles[loop_stage].load_fragments[repeats]()
                 AccumTmemArrayLocal.Tile.wait_load()
 
@@ -3487,13 +3520,17 @@ struct Grouped1D1DMatmulKernel[
                 # PROVABLY a no-op at repeats == 1: index set {0,1,2,3}.
                 comptime _n_pairs = 4 // SIMD_CAST_W
                 comptime for r0 in range(repeats):
+                    # A SIMD_CAST_W pair spans the two tokens of repeat r0.
+                    var pair_scale = token_scales.slice[
+                        SIMD_CAST_W, offset=2 * r0
+                    ]()
                     comptime for _pair in range(_n_pairs):
                         comptime _off = _pair * SIMD_CAST_W
                         var src_u = SIMD[Self.accum_type, SIMD_CAST_W]()
                         comptime for _j in range(SIMD_CAST_W):
                             src_u[_j] = upper_ip[r0 * 4 + _off + _j]
                         var dst_u = (
-                            (src_u * scale)
+                            (src_u * pair_scale)
                             .cast[.bfloat16]()
                             .cast[Self.accum_type]()
                         )
@@ -3505,7 +3542,7 @@ struct Grouped1D1DMatmulKernel[
                             comptime for _j in range(SIMD_CAST_W):
                                 src_l[_j] = lower_ip[r0 * 4 + _off + _j]
                             var dst_l = (
-                                (src_l * scale)
+                                (src_l * pair_scale)
                                 .cast[.bfloat16]()
                                 .cast[Self.accum_type]()
                             )
@@ -3822,17 +3859,22 @@ struct Grouped1D1DMatmulKernel[
         # bf16 SMEM scratchpad is byte-identical to the standalone
         # matmul's BF16 GMEM output (chain reference).
         @inline(.always)
-        @__parameter
         def store_scaled_pair(
             smem_idx_a: UInt32,
             smem_idx_b: UInt32,
             pair_fp32: SIMD[Self.accum_type, 2],
-        ):
+        ) {imm}:
             var pair_bf = pair_fp32.cast[.bfloat16]()
             smem_bf16_ptr.store(Int(SWIZZLE_BF(smem_idx_a)), pair_bf[0])
             smem_bf16_ptr.store(Int(SWIZZLE_BF(smem_idx_b)), pair_bf[1])
 
         comptime for loop_stage in range(num_stages):
+            # Element `2 * r + j` scales the fragment pair `(4 * r + j,
+            # 4 * r + 2 + j)`.
+            var token_scales = tile_scales.pairs[repeats, loop_stage * stageN](
+                UInt32(lane_v)
+            )
+
             var frags = accum_tiles[loop_stage].load_fragments[repeats]()
             AccumTmemArrayLocal.Tile.wait_load()
 
@@ -3848,8 +3890,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 0,
@@ -3874,6 +3915,8 @@ struct Grouped1D1DMatmulKernel[
             # Batch fragment slots into SIMD-2 chunks so the cast emits
             # `cvt.rn.bf16x2.f32` matching `tile_writer`'s cast width.
             comptime for r in range(repeats):
+                # Scales of tokens k_n_a and k_n_b in repeat r.
+                var pair_scale = token_scales.slice[2, offset=2 * r]()
                 comptime for _pair in range(2):  # pair f=0,1 and f=2,3
                     comptime f0 = _pair * 2
                     comptime f1 = f0 + 1
@@ -3887,7 +3930,9 @@ struct Grouped1D1DMatmulKernel[
                         upper_partial[r * 4 + f0],
                         upper_partial[r * 4 + f1],
                     )
-                    store_scaled_pair(smem_idx_a, smem_idx_b, pair_u * scale)
+                    store_scaled_pair(
+                        smem_idx_a, smem_idx_b, pair_u * pair_scale
+                    )
                     comptime if is_lower_frag_required:
                         var smem_idx_a_l = (
                             k_n_a * UInt32(BM)
@@ -3906,7 +3951,7 @@ struct Grouped1D1DMatmulKernel[
                             lower_partial[r * 4 + f1],
                         )
                         store_scaled_pair(
-                            smem_idx_a_l, smem_idx_b_l, pair_l * scale
+                            smem_idx_a_l, smem_idx_b_l, pair_l * pair_scale
                         )
 
             # Sub-phase trace: SCATTER_DONE (stage 0 only).
@@ -3917,8 +3962,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 1,
@@ -3935,8 +3979,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 2,
@@ -4100,8 +4143,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 3,
@@ -4118,8 +4160,7 @@ struct Grouped1D1DMatmulKernel[
                         and tid_within_epi == 0
                     ):
                         trace_buf.store(
-                            Int(block_idx.x)
-                            * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
+                            block_idx.x * GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK
                             + _GROUPED_TRACE_SUBPHASE_BASE
                             + 5 * tile_idx_epi
                             + 4,
@@ -4150,6 +4191,7 @@ struct Grouped1D1DMatmulKernel[
         a_scale_offsets: Self.AScaleOffsetsTile,
         swiglu_out: Self.SwiGLUOutputT,
         trace_buf: Self.TraceBufT,
+        row_scales: Self.RowScalesT,
         tile_idx_epi: Int = 0,
         # Forwarded verbatim to
         # `TileWriter.write_absolute_with_bounds_check`; see there and
@@ -4187,6 +4229,8 @@ struct Grouped1D1DMatmulKernel[
                 `NullSwiGLUOutput[]()` for non-fused callers.
             trace_buf: `TraceBufT` for diagnostic per-tile timing
                 records; zero-sized when `swiglu_enable_trace=False`.
+            row_scales: Per-row output scales, applied with the expert
+                scale; pass `NullRowScales()` for none.
             tile_idx_epi: Per-tile epilogue counter for trace event
                 indexing (defaults to 0).
             p3_control: Peer-send gate; `-1` disables the send.
@@ -4224,11 +4268,14 @@ struct Grouped1D1DMatmulKernel[
                 a_scale_offsets,
                 swiglu_out,
                 trace_buf,
+                row_scales,
                 tile_idx_epi,
             )
         else:
             var tile_writer = Self.TileWriterType(Pointer(to=c_tma_op))
-            tile_writer.write_absolute_with_bounds_check[Self.c_device_layout](
+            tile_writer.write_absolute_with_bounds_check[
+                Self.c_device_layout, RowScalesT=Self.RowScalesT
+            ](
                 c_tiles,
                 stage,
                 work_ctx.m(),  # Absolute M in contiguous token space
@@ -4239,4 +4286,5 @@ struct Grouped1D1DMatmulKernel[
                 p3_control=p3_control,
                 p3_expert_id=work_ctx.expert_id(),
                 p3_cfg=p3_cfg,
+                row_scales=row_scales,
             )

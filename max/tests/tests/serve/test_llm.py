@@ -29,6 +29,7 @@ from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.pipelines.context import (
     GenerationStatus,
+    LogProbabilities,
     TextContext,
     TextGenerationOutput,
 )
@@ -433,6 +434,7 @@ async def _recorded_preprocess_cache_media(
     order = Mock()
     order.attach_mock(pipeline.tokenizer.new_context, "new_context")
     order.attach_mock(pipeline._preprocess_cache_stats.record, "record")
+    order.attach_mock(pipeline._chat_encoder_outcomes.record, "outcomes")
 
     with patch("max.serve.pipelines.llm.METRICS", MagicMock()):
         bound = TokenGeneratorPipeline.next_token_chunk.__get__(
@@ -440,7 +442,11 @@ async def _recorded_preprocess_cache_media(
         )
         [chunk async for chunk in await bound(mock_request)]
 
-    assert [call[0] for call in order.mock_calls] == ["new_context", "record"]
+    assert [call[0] for call in order.mock_calls] == [
+        "new_context",
+        "record",
+        "outcomes",
+    ]
     pipeline._preprocess_cache_stats.record.assert_called_once()
     return pipeline._preprocess_cache_stats.record.call_args.kwargs[
         "carried_media"
@@ -553,6 +559,7 @@ async def _run_reasoning_pipeline(
     decode: Any = None,
     stop: list[str] | None = None,
     top_log_probs: AsyncMock | None = None,
+    parse_reasoning: bool = True,
 ) -> list[TokenGeneratorOutput]:
     """Build a mock TokenGeneratorPipeline with reasoning and collect all chunks."""
     from max.pipelines.architectures.kimik2_5.reasoning import (
@@ -606,7 +613,12 @@ async def _run_reasoning_pipeline(
         bound = TokenGeneratorPipeline.next_token_chunk.__get__(
             pipeline, type(pipeline)
         )
-        return [chunk async for chunk in await bound(mock_request)]
+        return [
+            chunk
+            async for chunk in await bound(
+                mock_request, parse_reasoning=parse_reasoning
+            )
+        ]
 
 
 def _make_responses(
@@ -738,6 +750,7 @@ async def test_next_token_chunk_reasoning_partitions_logprobs() -> None:
     """Test that logprobs are correctly partitioned between reasoning and content."""
     logprob_content = Mock()
     logprob_content.token_log_probabilities = [-0.4]
+    logprob_content.sampled_token_ids = [30]
 
     responses = [
         TextGenerationOutput(
@@ -759,6 +772,77 @@ async def test_next_token_chunk_reasoning_partitions_logprobs() -> None:
     assert chunks[0].reasoning_token_count == 1
     assert chunks[0].token_log_probabilities == [-0.4]
     assert chunks[0].top_log_probabilities == [{"tok": -0.5}]
+    assert chunks[0].sampled_tokens == ["text"]
+
+
+@pytest.mark.asyncio
+async def test_next_token_chunk_without_reasoning_parser_keeps_all_tokens() -> (
+    None
+):
+    """``/v1/completions`` has no reasoning field, so it opts out of the
+    parser: every generated token, delimiters and reasoning span included,
+    must come back as content with its logprob."""
+    tokens = [THINK_START_TOKEN_ID, 10, THINK_END_TOKEN_ID, 30]
+    values = [-0.1, -0.2, -0.3, -0.4]
+    log_probs = [
+        LogProbabilities(
+            token_log_probabilities=[value],
+            top_log_probabilities=[],
+            sampled_token_ids=[token],
+        )
+        for value, token in zip(values, tokens, strict=True)
+    ]
+    responses = [
+        TextGenerationOutput(
+            request_id=RequestID(value="test-request"),
+            tokens=tokens,
+            log_probabilities=log_probs,
+            final_status=GenerationStatus.END_OF_SEQUENCE,
+        ),
+    ]
+
+    chunks = await _run_reasoning_pipeline(
+        responses,
+        decode=AsyncMock(return_value="text"),
+        top_log_probs=AsyncMock(return_value=[{"tok": -0.5}]),
+        parse_reasoning=False,
+    )
+
+    assert len(chunks) == 1
+    assert chunks[0].token_count == 4
+    assert chunks[0].reasoning_token_count == 0
+    assert chunks[0].decoded_reasoning_tokens is None
+    assert chunks[0].decoded_tokens == "text"
+    assert chunks[0].token_log_probabilities == values
+    assert chunks[0].top_log_probabilities == [{"tok": -0.5}] * 4
+    assert chunks[0].token_ids == tokens
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("kwargs", "expected"), [({}, True), ({"parse_reasoning": False}, False)]
+)
+async def test_all_tokens_forwards_parse_reasoning(
+    kwargs: dict[str, bool], expected: bool
+) -> None:
+    """Non-streaming ``/v1/completions`` reaches the parser switch only
+    through ``all_tokens``."""
+    chunk = TokenGeneratorOutput(
+        status=GenerationStatus.END_OF_SEQUENCE, token_count=1
+    )
+
+    async def _gen() -> AsyncGenerator[TokenGeneratorOutput, None]:
+        yield chunk
+
+    pipeline = Mock()
+    pipeline.next_token_chunk = AsyncMock(return_value=_gen())
+    request = Mock()
+    bound = TokenGeneratorPipeline.all_tokens.__get__(pipeline, type(pipeline))
+
+    assert await bound(request, **kwargs) == [chunk]
+    pipeline.next_token_chunk.assert_awaited_once_with(
+        request, parse_reasoning=expected
+    )
 
 
 @pytest.mark.asyncio

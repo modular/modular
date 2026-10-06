@@ -20,10 +20,10 @@ import dataclasses
 import pytest
 from max.experimental.sharding import (
     Partial,
-    ReduceOp,
     Replicated,
     Sharded,
 )
+from max.experimental.sharding.placements import ReduceOp
 
 # ═════════════════════════════════════════════════════════════════════════
 #  Placement types

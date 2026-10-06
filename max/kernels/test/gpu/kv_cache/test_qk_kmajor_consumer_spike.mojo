@@ -40,7 +40,7 @@ bf16, SWIZZLE_128B, M=N=K=128 so `num_chunks = BK // gran = 2` makes the
 chunk-inner ordering observable. B200-only (SM100), single CTA.
 """
 
-from std.sys import size_of, has_nvidia_gpu_accelerator
+from std.sys import default_accelerator, size_of
 
 from max.gpu import WARP_SIZE, thread_idx, warp_id as get_warp_id
 from max.gpu.sync import barrier
@@ -57,10 +57,17 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_release_allocation_lock,
 )
 
-from layout import IntTuple, Layout, LayoutTensor
+from layout import (
+    ComptimeInt,
+    Coord,
+    RowMajorLayout,
+    TileTensor,
+    coord,
+    row_major,
+)
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
-from layout.tensor_core_async import tile_layout_k_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
+from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -85,25 +92,27 @@ comptime _CM_NUM_ROWS = 8
 comptime MAX_TMEM_COLS: UInt32 = 512
 
 
-def cpu_qk_naive(
-    O: LayoutTensor[mut=True, ...],
-    Q: LayoutTensor,
-    K: LayoutTensor,
+def cpu_qk_naive[
+    o_type: DType, ab_type: DType, M: Int, N: Int, D: Int
+](
+    O: TileTensor[
+        o_type, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin
+    ],
+    Q: TileTensor[
+        ab_type, RowMajorLayout[ComptimeInt[M], ComptimeInt[D]], MutAnyOrigin
+    ],
+    K: TileTensor[
+        ab_type, RowMajorLayout[ComptimeInt[N], ComptimeInt[D]], MutAnyOrigin
+    ],
 ):
     """Host reference `O = Q @ Kᵀ`. Q is M x D, K is N x D (both row-major);
     O is M x N. Contraction is D (= head_size)."""
-    comptime M = O.layout[0].size()
-    comptime N = O.layout[1].size()
-    comptime D = Q.layout[1].size()
     for m in range(M):
         for n in range(N):
             var acc: Float32 = 0.0
             for d in range(D):
-                acc += (
-                    Q.ptr.load(m * D + d).cast[.float32]()
-                    * K.ptr.load(n * D + d).cast[.float32]()
-                )
-            O.ptr.store(m * N + n, acc.cast[O.dtype]())
+                acc += Q[m, d].cast[.float32]() * K[n, d].cast[.float32]()
+            O[m, n] = acc.cast[o_type]()
 
 
 @__llvm_arg_metadata(q_tma_op, `nvvm.grid_constant`)
@@ -111,35 +120,40 @@ def cpu_qk_naive(
 def qk_consumer_kernel[
     ab_type: DType,
     c_type: DType,
-    q_tile_rank: Int,
-    q_tile_shape: IndexList[q_tile_rank],
-    q_desc_shape: IndexList[q_tile_rank],
-    k_tile_rank: Int,
-    k_tile_shape: IndexList[k_tile_rank],
-    k_desc_shape: IndexList[k_tile_rank],
-    c_layout: Layout,
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
+    k_tile_shape: Coord,
+    k_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     swizzle_mode: TensorMapSwizzle,
     use_pagedense: Bool,
     num_threads: Int = 128,
 ](
-    q_tma_op: TMATensorTile[ab_type, q_tile_rank, q_tile_shape, q_desc_shape],
+    q_tma_op: TMATensorTile[ab_type, q_tile_shape, q_desc_shape],
     k_tma_op: TMATensorTile[
-        ab_type, k_tile_rank, k_tile_shape, k_desc_shape, is_k_major=True
+        ab_type, k_tile_shape, k_desc_shape, is_k_major=True
     ],
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[
+        c_type,
+        RowMajorLayout[
+            ComptimeInt[block_tile_shape[0]], ComptimeInt[block_tile_shape[1]]
+        ],
+        MutAnyOrigin,
+    ],
 ):
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
     comptime BK = block_tile_shape[2]
 
-    # A = Q : k-major (chunk-outer). B = K : k-major, page-dense when requested.
-    comptime q_smem_layout = tile_layout_k_major[
-        ab_type, BM, BK, swizzle_mode=swizzle_mode
-    ]()
-    comptime k_smem_layout = tile_layout_k_major[
-        ab_type, BN, BK, swizzle_mode=swizzle_mode, page_dense=use_pagedense
-    ]()
+    # A = Q : k-major (chunk-outer). B = K : k-major; in the page-dense arm
+    # the TMA box and `smem_descriptor[page_dense=True]` own the SMEM order,
+    # so the tile's declared layout only sizes it.
+    comptime q_smem_layout = tile_layout_k_major_typed[
+        ab_type, BM, BK, swizzle_mode
+    ]
+    comptime k_smem_layout = tile_layout_k_major_typed[
+        ab_type, BN, BK, swizzle_mode
+    ]
 
     var q_smem = rebind[
         MutPointer[
@@ -153,27 +167,12 @@ def qk_consumer_kernel[
             name="qk_consumer_dynamic_smem",
         ]()
     )
-    comptime q_smem_tile_t = LayoutTensor[
-        ab_type,
-        q_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ]
-    comptime k_smem_tile_t = LayoutTensor[
-        ab_type,
-        k_smem_layout,
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ]
-
-    comptime q_size = q_smem_layout.size()
-    comptime k_size = k_smem_layout.size()
+    comptime q_size = BM * BK
+    comptime k_size = BN * BK
     var k_smem = (q_smem + q_size).bitcast[Scalar[ab_type]]()
 
-    var q_smem_tile = q_smem_tile_t(q_smem.as_unsafe_any_origin())
-    var k_smem_tile = k_smem_tile_t(k_smem.as_unsafe_any_origin())
+    var q_smem_tile = TileTensor(q_smem, q_smem_layout)
+    var k_smem_tile = TileTensor(k_smem, k_smem_layout)
 
     var ptr_tmem_addr = (k_smem + k_size).bitcast[UInt32]()
 
@@ -304,55 +303,55 @@ def run_qk_consumer[
         + String(K // gran)
     )
 
-    var q = ManagedLayoutTensor[ab_type, Layout.row_major(M, K)](ctx)
-    var k = ManagedLayoutTensor[ab_type, Layout.row_major(N, K)](ctx)
-    var o = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
-    var o_ref = ManagedLayoutTensor[c_type, Layout.row_major(M, N)](ctx)
+    var q = HostDeviceTileTensor[ab_type](row_major[M, K](), ctx)
+    var k = HostDeviceTileTensor[ab_type](row_major[N, K](), ctx)
+    var o = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
+    var o_ref = HostDeviceTileTensor[c_type](row_major[M, N](), ctx)
 
     # Small distinguishable values so a mis-strided advance mismatches visibly
     # rather than averaging out; bounded magnitude keeps bf16 error small.
-    arange(q.tensor[update=False](), start=0.0, step=0.001)
-    arange(k.tensor[update=False](), start=0.0, step=0.001)
+    arange(q.host_tensor(), start=0.0, step=0.001)
+    arange(k.host_tensor(), start=0.0, step=0.001)
+    q.to_device()
+    k.to_device()
 
     # A=Q k-major tile (M,K), default (chunk-outer) box.
-    var q_tma_op = create_tensor_tile[Index(M, K), swizzle_mode=swizzle_mode](
+    var q_tma_op = create_tensor_tile[coord[M, K], swizzle_mode=swizzle_mode](
         ctx, q.device_tensor()
     )
     comptime smem_use = (M + N) * size_of[ab_type]() * K + 64
-    comptime native_box = Index(_CM_NUM_ROWS, gran)
+    comptime native_box = coord[_CM_NUM_ROWS, gran]
+    # `create_tma_descriptor` still takes IndexList for shared_mem_shape (low-level
+    # TMA-builder API); only the high-level TMATensorTile uses Coord.
+    comptime native_box_idx = Index(_CM_NUM_ROWS, gran)
 
     comptime if use_pagedense:
         # Page-dense arm: box (_CM_NUM_ROWS, gran) so each 8-row atom is one
         # dense SMEM block laid out chunk-inner. `create_tensor_tile` ignores
         # the box override (same finding as the K/V spikes), so build the
         # descriptor low-level and wrap via TMATensorTile's @implicit ctor.
-        var k_dev = k.device_tensor()
+        var k_ptr = k.device_tensor().unsafe_ptr()
         var k_desc = create_tma_descriptor[ab_type, 2, swizzle_mode](
             DeviceBuffer(
                 ctx,
-                k_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    .GENERIC
-                ](),
+                k_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
                 1,
                 owning=False,
             ),
             Index(N, K),  # gmem [seq_k, head_size], row-major
             Index(K, 1),  # head_size contiguous
-            native_box,  # (_CM_NUM_ROWS, gran) core-matrix box
+            native_box_idx,  # (_CM_NUM_ROWS, gran) core-matrix box
         )
         var k_tma_op = TMATensorTile[
-            ab_type, 2, Index(N, K), native_box, is_k_major=True
+            ab_type, coord[N, K], native_box, is_k_major=True
         ](k_desc)
         comptime kernel = qk_consumer_kernel[
             ab_type,
             c_type,
-            type_of(q_tma_op).rank,
             type_of(q_tma_op).tile_shape,
             type_of(q_tma_op).desc_shape,
-            type_of(k_tma_op).rank,
             type_of(k_tma_op).tile_shape,
             type_of(k_tma_op).desc_shape,
-            Layout.row_major(M, N),
             block_tile_shape,
             swizzle_mode=swizzle_mode,
             use_pagedense=use_pagedense,
@@ -372,18 +371,15 @@ def run_qk_consumer[
     else:
         # Baseline arm: default box (BN, gran) -> chunk-outer.
         var k_tma_op = create_tensor_tile[
-            Index(N, K), swizzle_mode=swizzle_mode
+            coord[N, K], swizzle_mode=swizzle_mode
         ](ctx, k.device_tensor())
         comptime kernel = qk_consumer_kernel[
             ab_type,
             c_type,
-            type_of(q_tma_op).rank,
             type_of(q_tma_op).tile_shape,
             type_of(q_tma_op).desc_shape,
-            type_of(k_tma_op).rank,
             type_of(k_tma_op).tile_shape,
             type_of(k_tma_op).desc_shape,
-            Layout.row_major(M, N),
             block_tile_shape,
             swizzle_mode=swizzle_mode,
             use_pagedense=use_pagedense,
@@ -401,16 +397,12 @@ def run_qk_consumer[
             ),
         )
 
-    cpu_qk_naive(
-        o_ref.tensor[update=False](),
-        q.tensor[update=False](),
-        k.tensor[update=False](),
-    )
-    _ = o_ref.device_tensor()
+    cpu_qk_naive(o_ref.host_tensor(), q.host_tensor(), k.host_tensor())
     ctx.synchronize()
 
-    var o_host = o.tensor()
-    var o_host_ref = o_ref.tensor()
+    o.to_host()
+    var o_host = o.host_tensor()
+    var o_host_ref = o_ref.host_tensor()
     var mismatches = 0
     for m in range(M):
         for n in range(N):
@@ -454,7 +446,7 @@ def run_qk_consumer[
 
 
 def main() raises:
-    comptime if not has_nvidia_gpu_accelerator():
+    comptime if not default_accelerator().is_nvidia_gpu():
         return
     with DeviceContext() as ctx:
         # Arm 1: baseline (chunk-outer), validates the harness on B200.

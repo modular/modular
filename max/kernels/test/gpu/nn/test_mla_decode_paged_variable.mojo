@@ -26,12 +26,7 @@ The key stress scenarios:
 
 from std.math import align_up, ceildiv
 from std.random import randn, seed
-from std.sys import (
-    argv,
-    get_defined_int,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv, get_defined_int
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -3137,7 +3132,7 @@ def main() raises:
     seed(42)
 
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             if is_benchmark():
@@ -3473,7 +3468,7 @@ def main() raises:
                 print("=" * 72)
                 print("ALL TESTS PASSED")
                 print("=" * 72)
-        elif has_amd_gpu_accelerator():
+        elif ctx.target.is_amd_gpu():
             # ---------------------------------------------------------------
             # AMD MI355 / gfx950 path. The AMD MLA decode kernel supports
             # single-token decode (S=1) for any num_heads; the MTP token fold

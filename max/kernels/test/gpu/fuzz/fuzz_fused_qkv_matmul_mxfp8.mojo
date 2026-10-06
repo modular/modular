@@ -56,12 +56,9 @@ from std.sys.defines import get_defined_int
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from std.utils.index import IndexList
@@ -233,10 +230,8 @@ def gen_specs(n: Int) -> List[CaseSpec]:
 # ===----------------------------------------------------------------------=== #
 
 
-def fill_scales[
-    scales_layout: Layout
-](
-    scales: LayoutTensor[mut=True, scale_dtype, scales_layout, MutAnyOrigin],
+def fill_scales(
+    scales: TileTensor[mut=True, scale_dtype, ...],
     mn: Int,
     k: Int,
 ):
@@ -312,27 +307,16 @@ def run_one_case(
     )
 
     # --- hidden_state (M, HIDDEN) fp8 + weight (N_TOTAL, HIDDEN) fp8 ----------
-    comptime hs_layout = Layout.row_major(UNKNOWN_VALUE, HIDDEN)
     var hs_host = ctx.enqueue_create_host_buffer[data_dtype](max(1, M * HIDDEN))
-    var hs_host_lt = LayoutTensor[data_dtype, hs_layout](
-        hs_host.unsafe_ptr(),
-        RuntimeLayout[hs_layout].row_major(IndexList[2](M, HIDDEN)),
-    )
-    random(hs_host_lt)
+    var hs_host_tt = TileTensor(hs_host, row_major(M, Idx[HIDDEN]))
+    random(hs_host_tt)
 
-    comptime w_layout = Layout.row_major(N_TOTAL, HIDDEN)
     var w_host = ctx.enqueue_create_host_buffer[data_dtype](N_TOTAL * HIDDEN)
-    var w_host_lt = LayoutTensor[data_dtype, w_layout](
-        w_host.unsafe_ptr(),
-        RuntimeLayout[w_layout].row_major(IndexList[2](N_TOTAL, HIDDEN)),
-    )
-    random(w_host_lt)
+    var w_host_tt = TileTensor(w_host, row_major(Idx[N_TOTAL], Idx[HIDDEN]))
+    random(w_host_tt)
 
     # --- rank-5 SF-atom scales for input + weight ----------------------------
     comptime k_sf = ceildiv(HIDDEN, SF_VECTOR_SIZE * SF_ATOM_K)
-    comptime input_sf_layout = Layout.row_major(
-        UNKNOWN_VALUE, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
-    )
     var m_sf = ceildiv(M, SF_MN_GROUP_SIZE)
     var input_scale_shape = IndexList[5](
         m_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
@@ -343,29 +327,36 @@ def run_one_case(
     var input_scale_host = ctx.enqueue_create_host_buffer[scale_dtype](
         input_scale_elems
     )
-    var input_scale_host_lt = LayoutTensor[scale_dtype, input_sf_layout](
-        input_scale_host.unsafe_ptr(),
-        RuntimeLayout[input_sf_layout].row_major(input_scale_shape),
+    var input_scale_host_tt = TileTensor(
+        input_scale_host,
+        row_major(
+            m_sf,
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
+        ),
     )
-    fill_scales(input_scale_host_lt, M, HIDDEN)
+    fill_scales(input_scale_host_tt, M, HIDDEN)
 
     comptime n_sf = N_TOTAL // SF_MN_GROUP_SIZE
-    comptime weight_sf_layout = Layout.row_major(
-        n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
-    )
     var weight_scale_elems = (
         n_sf * k_sf * SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
     )
     var weight_scale_host = ctx.enqueue_create_host_buffer[scale_dtype](
         weight_scale_elems
     )
-    var weight_scale_host_lt = LayoutTensor[scale_dtype, weight_sf_layout](
-        weight_scale_host.unsafe_ptr(),
-        RuntimeLayout[weight_sf_layout].row_major(
-            IndexList[5](n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    var weight_scale_host_tt = TileTensor(
+        weight_scale_host,
+        row_major(
+            Idx[n_sf],
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
-    fill_scales(weight_scale_host_lt, N_TOTAL, HIDDEN)
+    fill_scales(weight_scale_host_tt, N_TOTAL, HIDDEN)
 
     # --- paged blocks (zero-init so unwritten K/V slots are well-defined) -----
     var blocks_host = ctx.enqueue_create_host_buffer[kv_dtype](block_elems)
@@ -429,76 +420,72 @@ def run_one_case(
     ctx.enqueue_copy(row_offsets_device, row_offsets_host)
     ctx.synchronize()
 
-    # --- device LayoutTensors ------------------------------------------------
-    var hs_dev_lt = LayoutTensor[data_dtype, hs_layout](
-        hs_device.unsafe_ptr(),
-        RuntimeLayout[hs_layout].row_major(IndexList[2](M, HIDDEN)),
-    )
-    var w_dev_lt = LayoutTensor[data_dtype, w_layout](
-        w_device.unsafe_ptr(),
-        RuntimeLayout[w_layout].row_major(IndexList[2](N_TOTAL, HIDDEN)),
-    )
-    var input_scale_dev_lt = LayoutTensor[scale_dtype, input_sf_layout](
-        input_scale_device.unsafe_ptr(),
-        RuntimeLayout[input_sf_layout].row_major(input_scale_shape),
-    )
-    var weight_scale_dev_lt = LayoutTensor[scale_dtype, weight_sf_layout](
-        weight_scale_device.unsafe_ptr(),
-        RuntimeLayout[weight_sf_layout].row_major(
-            IndexList[5](n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    # --- device tensor views ------------------------------------------------
+    var hs_dev_tt = TileTensor(hs_device, row_major(M, Idx[HIDDEN]))
+    var w_dev_tt = TileTensor(w_device, row_major(Idx[N_TOTAL], Idx[HIDDEN]))
+    var input_scale_dev_tt = TileTensor(
+        input_scale_device,
+        row_major(
+            m_sf,
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
-    comptime out_layout = Layout.row_major(UNKNOWN_VALUE, Q_DIM)
-    var output_dev_lt = LayoutTensor[out_dtype, out_layout](
-        output_device.unsafe_ptr(),
-        RuntimeLayout[out_layout].row_major(IndexList[2](M, Q_DIM)),
-    )
-    comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var row_offsets_lt = LayoutTensor[.uint32, ro_layout](
-        row_offsets_device.unsafe_ptr(),
-        RuntimeLayout[ro_layout].row_major(IndexList[1](batch_size + 1)),
-    )
-
-    # --- PagedKVCacheCollection ----------------------------------------------
-    var blocks_lt = LayoutTensor[kv_dtype, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-    )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
-    )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
+    var weight_scale_dev_tt = TileTensor(
+        weight_scale_device,
+        row_major(
+            Idx[n_sf],
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
+    var output_dev_tt = TileTensor(output_device, row_major(M, Idx[Q_DIM]))
+    var row_offsets_tt = TileTensor(
+        row_offsets_device, row_major(batch_size + 1)
+    )
 
-    var kv_collection = PagedKVCacheCollection[kv_dtype, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_dtype, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
+    comptime Collection = PagedKVCacheCollection[
+        kv_dtype,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime CollectionLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*CollectionLayout.shape_types]()
+    blocks_shape[0] = Int64(block_shape[0])
+    blocks_shape[2] = Int64(block_shape[2])
+    var blocks_strides = Coord[*CollectionLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        block_shape[1]
+        * block_shape[2]
+        * block_shape[3]
+        * block_shape[4]
+        * block_shape[5]
+    )
+    blocks_strides[1] = Int64(
+        block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
+    )
+    var blocks = TileTensor(
+        blocks_device, CollectionLayout(blocks_shape, blocks_strides)
+    )
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = Collection(
+        blocks.as_unsafe_any_origin(),
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -507,15 +494,15 @@ def run_one_case(
     generic_fused_qkv_matmul_kv_cache_paged_ragged_scale_float4[
         SF_VECTOR_SIZE=SF_VECTOR_SIZE, target="gpu"
     ](
-        hs_dev_lt,
-        row_offsets_lt,
-        w_dev_lt,
-        input_scale_dev_lt,
-        weight_scale_dev_lt,
+        hs_dev_tt.as_imm().as_unsafe_any_origin(),
+        row_offsets_tt,
+        w_dev_tt.as_imm().as_unsafe_any_origin(),
+        input_scale_dev_tt.as_imm().as_unsafe_any_origin(),
+        weight_scale_dev_tt.as_imm().as_unsafe_any_origin(),
         Float32(1.0),
         kv_collection,
         UInt32(0),  # layer_idx
-        output_dev_lt,
+        output_dev_tt,
         ctx,
     )
     ctx.synchronize()
@@ -582,22 +569,24 @@ def _verify_ref(
 
     comptime k_sf = ceildiv(HIDDEN, SF_VECTOR_SIZE * SF_ATOM_K)
     comptime n_sf = N_TOTAL // SF_MN_GROUP_SIZE
-    comptime input_sf_layout = Layout.row_major(
-        UNKNOWN_VALUE, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
-    )
-    comptime weight_sf_layout = Layout.row_major(
-        n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K
-    )
-    var input_scale_lt = LayoutTensor[scale_dtype, input_sf_layout](
-        input_scale_host.unsafe_ptr(),
-        RuntimeLayout[input_sf_layout].row_major(
-            IndexList[5](m_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    var input_scale_tt = TileTensor(
+        input_scale_host,
+        row_major(
+            m_sf,
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
-    var weight_scale_lt = LayoutTensor[scale_dtype, weight_sf_layout](
-        weight_scale_host.unsafe_ptr(),
-        RuntimeLayout[weight_sf_layout].row_major(
-            IndexList[5](n_sf, k_sf, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
+    var weight_scale_tt = TileTensor(
+        weight_scale_host,
+        row_major(
+            Idx[n_sf],
+            Idx[k_sf],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
 
@@ -613,10 +602,10 @@ def _verify_ref(
                 var a = hs_host[m * HIDDEN + k].cast[.float32]()
                 var b = w_host[n * HIDDEN + k].cast[.float32]()
                 var sa = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    input_scale_lt, m, k
+                    input_scale_tt, m, k
                 ).cast[.float32]()
                 var sb = get_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
-                    weight_scale_lt, n, k
+                    weight_scale_tt, n, k
                 ).cast[.float32]()
                 acc += (a * sa) * (b * sb)
             full[m * N_TOTAL + n] = acc

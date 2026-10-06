@@ -43,6 +43,16 @@ from .ep_config import NUM_GROUPS, EPConfig
 NVFP4_MN_GROUP_SIZE = 128
 
 
+def _reject_dyn_global_scales(config: EPConfig, caller: str) -> None:
+    """Raises if the config asks a non-fused dispatch for per-token global
+    scales, which only the fused kernels implement."""
+    if config.nvfp4_dyn_global_scales:
+        raise ValueError(
+            f"{caller} does not support nvfp4_dyn_global_scales; use the fused"
+            " dispatch (call_ep_dispatch or call_distributed_ep_dispatch)"
+        )
+
+
 def _uses_block_scaled_nv_ep_layout(config: EPConfig) -> bool:
     quant_config = config.dispatch_quant_config
     return (
@@ -209,9 +219,18 @@ def _ep_dispatch_output_types(
             padded_scales_type = quant_config.quantized_scales_type(
                 Shape([padded_scales_tokens, config.hidden_size]), device_ref
             )
+            scales_types = [padded_scales_type]
+            if config.nvfp4_dyn_global_scales:
+                scales_types.append(
+                    TensorType(
+                        dtype=DType.bfloat16,
+                        shape=[max_recv_tokens],
+                        device=device_ref,
+                    )
+                )
             return [
                 output_tokens_type,
-                padded_scales_type,
+                *scales_types,
                 expert_start_indices_type,
                 scales_offsets_type,
                 expert_ids_type,
@@ -345,6 +364,10 @@ def call_ep_init(
                 if config.dispatch_quant_config.is_nvfp4
                 else DType.float8_e8m0fnu
             )
+            # The per-token global scale enlarges every message, so the
+            # buffers allocated here must know about it.
+            if config.nvfp4_dyn_global_scales:
+                parameters["nvfp4_dyn_global_scales"] = True
         elif uses_mx_ep_token_format(config):
             parameters["dispatch_fmt_str"] = (
                 "MXFP6" if config.dispatch_quant_config.is_mxfp6 else "MXFP4"
@@ -414,10 +437,15 @@ def call_ep_dispatch_async(
         input_scales: Optional input scales tensor. Required for NVFP4
             dispatch. Shape: (1,) or (n_experts,).
 
+    Raises:
+        ValueError: If ``config.nvfp4_dyn_global_scales`` is set, which only
+            the fused dispatch supports.
+
     Note:
         This is a non-blocking operation. Call call_ep_dispatch_wait() to wait
         for completion and collect the dispatched tokens.
     """
+    _reject_dyn_global_scales(config, "call_ep_dispatch_async")
     parameters = _ep_common_parameters(config)
     parameters["dispatch_dtype"] = config.dispatch_dtype
 
@@ -518,11 +546,16 @@ def call_ep_dispatch_wait(
             Shape: (max_recv_tokens, 2)
             [original_token_index, topk_index] for each received token
 
+    Raises:
+        ValueError: If ``config.nvfp4_dyn_global_scales`` is set, which only
+            the fused dispatch supports.
+
     Note:
         This function blocks until all expected tokens have been received from
         remote devices. For Quantized dispatch format, the output will also
         include the aggregated scales as the second element of the tuple.
     """
+    _reject_dyn_global_scales(config, "call_ep_dispatch_wait")
     parameters = _ep_common_parameters(config)
     device_ref = atomic_counter.device
 
@@ -880,8 +913,9 @@ def call_ep_dispatch(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
-        input_scales: Optional input scales tensor. Needed for NVFP4 dispatch.
-            Shape: (1,)
+        input_scales: Optional input scales tensor. Needed for NVFP4 dispatch,
+            unless ``config.nvfp4_dyn_global_scales`` is set, in which case it
+            is ignored. Shape: (1,)
 
     Returns:
         A tuple containing:
@@ -897,7 +931,9 @@ def call_ep_dispatch(
 
     Note:
         For Quantized dispatch format, the output will also include the
-        aggregated scales as the second element of the tuple.
+        aggregated scales as the second element of the tuple. With
+        ``config.nvfp4_dyn_global_scales``, the per-row inverse global scales
+        follow as the third, shape ``(max_recv_tokens,)``.
     """
     parameters = _ep_common_parameters(config)
     parameters["fused_shared_expert"] = config.fused_shared_expert
@@ -922,7 +958,11 @@ def call_ep_dispatch(
         quant_config = config.dispatch_quant_config
 
         if _uses_block_scaled_nv_ep_layout(config):
-            if quant_config.is_nvfp4 and input_scales is None:
+            if (
+                quant_config.is_nvfp4
+                and not config.nvfp4_dyn_global_scales
+                and input_scales is None
+            ):
                 raise ValueError(
                     "input_scales must be provided when using NVFP4 dispatch"
                 )
@@ -932,7 +972,11 @@ def call_ep_dispatch(
                 if quant_config.is_nvfp4
                 else DType.float8_e8m0fnu
             )
-            if input_scales is not None:
+            if config.nvfp4_dyn_global_scales:
+                # The kernel derives each token's scale itself, so the op
+                # takes no input scale.
+                op_name += ".dyn_global_scales"
+            elif input_scales is not None:
                 input_vals.append(1.0 / input_scales.to(device_ref))
             else:
                 input_vals.append(
@@ -980,7 +1024,8 @@ def call_distributed_ep_dispatch(
 
     Returns:
         Per-device output tuples. The number of tensors per tuple depends on
-        the quantization format (4 for BF16, 5 for FP8/MXFP4, 6 for NVFP4).
+        the quantization format (4 for BF16, 5 for FP8/MXFP4, 6 for NVFP4, 7
+        for NVFP4 with ``config.nvfp4_dyn_global_scales``).
     """
     num_devices = len(input_tokens)
 
@@ -998,7 +1043,24 @@ def call_distributed_ep_dispatch(
         types = _ep_dispatch_output_types(config, device_ref)
         output_types_per_device.append(types)
 
-    if uses_nvidia_block_scaled:
+    if uses_nvidia_block_scaled and config.nvfp4_dyn_global_scales:
+        return ops.distributed_ep.dispatch_block_scaled_nv_dyn_global_scales(
+            input_tokens,
+            topk_ids,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            atomic_counters,
+            output_types_per_device,
+            hidden_size=config.hidden_size,
+            top_k=config.top_k,
+            n_experts=config.n_experts,
+            max_token_per_rank=config.max_tokens_per_rank,
+            n_gpus_per_node=config.n_gpus_per_node,
+            n_nodes=config.n_nodes,
+            fused_shared_expert=config.fused_shared_expert,
+        )
+    elif uses_nvidia_block_scaled:
         assert quant_config is not None
         if quant_config.is_nvfp4 and input_scales is None:
             raise ValueError("input_scales must be provided for NVFP4 dispatch")
@@ -1309,8 +1371,10 @@ def fused_silu_quantized(
     the host. This kernel will read the row offsets to determine the actual
     number of received tokens in the input tensor, and then only perform the
     SILU operation on the received tokens. Once the SILU operation is performed,
-    the output will be quantized to the FP8 format. The scales will be stored
-    in a transposed way.
+    the output will be quantized to the NVFP4, MXFP4, MXFP6 or MXFP8 format.
+    Block-scaled FP8 (group size 128) has no kernel here: apply the gated
+    activation and call :func:`~max.nn.kernels.quantize_dynamic_scaled_float8`
+    with ``row_offsets``, which the graph compiler fuses into one kernel.
 
     Args:
         input: Input tokens to perform the SILU operation.
@@ -1440,8 +1504,6 @@ def fused_silu_quantized(
                 Shape([n_local_experts * max_padded_M, raw_hidden]),
                 input.device,
             )
-    elif out_type.is_float8():
-        op_name += ".fp8"
     else:
         raise ValueError(
             f"Unsupported quantization format: {quant_config.format}"

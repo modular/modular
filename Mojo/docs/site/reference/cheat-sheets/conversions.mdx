@@ -4,9 +4,9 @@ sidebar_label: Conversions
 description: "Make one, convert one, access one. Remember to cast."
 hide_title: true
 hide_table_of_contents: true
-compiler_verified: "2026-08-17, Mojo 1.0.0 (ed45d567)"
-last_updated: "2026-08-17 (1.0.0 audit)"
-build_version: "1.1.0dev"
+compiler_verified: "2026-09-29, Mojo 1.2.0.dev2026092905 (aa3b777f)"
+last_updated: "2026-09-29 (1.2.0.dev nightly update)"
+build_version: "1.2.0.dev"
 ---
 
 import {
@@ -19,88 +19,149 @@ import {
 
 <Sheet slug="conversions">
 
+## Conversion
+
+<Panel title="Establishing types" summary="sideways conversions">
+
+To initialize across types, use a value that conforms to `Intable`,
+`Floatable`, `Boolable`, or (for string destinations) `Writable`.
+Use a raising form when conversions can fail:
+`IntableRaising`, `FloatableRaising`.
+
+```mojo
+Int(32), Int16(32) # explicit typing from literal expressions
+
+Int64(f), Float64(i), String(v) # assign new forms across types
+
+Int(s), Float64(s) # conversions can fail; raising
+```
+
+Each trait defines the types it builds:
+
+| Trait              | Builds                                       |
+|--------------------|----------------------------------------------|
+| `Intable`          | any integer type: `Int`, `Int16`, `UInt8`, … |
+| `Floatable`        | `Float64` only                               |
+| `IntableRaising`   | `Int` only                                   |
+| `FloatableRaising` | `Float64` only                               |
+
+For numeric parsing, strings convert only to `Int` and `Float64`, so
+`Int16(s)` won't compile. Convert to `Int` or `Float64`, then narrow—for
+example, `Int16(Int(s))`.
+
+String conversions can fail. For example: `Int("two")` raises from
+`IntableRaising`.
+
+</Panel>
+
+## Text
+
+<Panel title="String" summary="owned, growable UTF-8 text">
+
+<Intro>make</Intro>
+
+```mojo
+String(x) # any StringSpan, StringLiteral, Writable
+String(t"{x}") # realize the string
+
+String(from_utf8=bytes) # raises on bad UTF-8
+String(from_utf8_lossy=bytes) # replaces bad bytes
+```
+
+<Intro>convert</Intro>
+
+```mojo
+Int(s) # base-10 parse; raises on "3.5", "0xff", "", overflow
+Float64(s) # parse (1e3, inf ok); raises "", garbage
+Bool(s) # True if non-empty
+```
+
+<Intro>access (by byte / codepoint / grapheme)</Intro>
+
+```mojo
+# also for codepoint and single index grapheme
+s[byte=i], s[byte=i:j]
+
+# byte Span; iterators
+s.as_bytes(), s.codepoints(), s.graphemes()
+```
+
+</Panel>
+
 ## Numbers
 
-<Panel title="Int" summary="machine-width integer; a 1-lane SIMD">
+<Panel title="Numeric creation" summary="create numeric values of known types" table="zebra">
 
-<Intro>make</Intro>
-
-```mojo
-42 # IntLiteral
-Int(x) # any Intable: Bool, Int8 …
-Int(s) # any Intable that's raising: String
-Int(Int32(5)) # any numeric scalar, cross-dtype
-```
-
-<Intro>convert</Intro>
-
-```mojo
-Float64(i), UInt(i) # to float, to unsigned (same bits)
-String(i), Bool(i) # to text, True if non-zero
-i.cast[DType.int8]() # to another dtype
-```
-
-Float to Int truncates toward zero; cross-dtype casts wrap
-(two's complement). **Int** is **Scalar[DType.int]**, so **.cast**
-works like any SIMD scalar.
-
-**Int** and **UInt** share bits: Int(-1) is UInt 2^64-1.
+- Scalars are 1-lane `SIMD` values:
+  `SIMD[DType, 1]` == `Scalar[DType]`
+- `Int` is the machine-width integer; `Float64` is the default floating point
+- Integer-like literal expressions are `Int` by default, floating-point are
+  `Float64`
+- No bare `Float`, and no Float128/256
+- Initialize literals to set the destination type (`Int32(42)`,
+  `Float16(3.14)`)
 
 </Panel>
 
-<Panel title="Float64" summary="IEEE double; a 1-lane SIMD">
+<Panel title="Casting" summary="convert between numeric types" table="zebra">
 
-<Intro>make</Intro>
-
-```mojo
-3.14 # FloatLiteral
-Float64(x) # any Floatable: Int, Bool
-Float64(s) # any Floatable that's raising: String
-Float32(x).cast[DType.float64]() # widen a scalar
-```
-
-<Intro>convert</Intro>
+A same-width conversion between signed and unsigned keeps the bits exactly.
+Only the interpretation changes. For example, `UInt(Int(-1))` is
+`UInt.MAX`, the machine-width unsigned maximum.
 
 ```mojo
-Int(f) # truncates toward zero
-f.cast[DType.float32]() # narrow (precision loss)
-Bool(f), String(f) # True if non-zero, to text
+# convert a value, scalar, or vector with `.cast()`
+f64.cast[.int32]() # convert: 1.0 -> 1
+
+# reinterpret existing bits
+from std.memory import bitcast
+bitcast[.uint32](f32)
 ```
 
-No bare **Float**, and no Float128/256. Convert all other
-floats (including special purpose) with **.cast()**.
+Numbers don't convert implicitly:
+
+```mojo
+var result = f64 + i32 # no
+var result = f64 + Float64(i32) # yes
+```
+
+Mixed bitwidths require explicit casts. Narrowing may degrade precision.
+Widening preserves precision:
+
+```mojo
+Float64(f32) + f64 # widen one side to match
+```
+
+- Using `.cast()` converts between dtypes, including `Int` and `Float64`
+- Integer casts wrap with two's complement
+- `Int` and `UInt` share their machine-dependent width: converting
+  `Int(-1)` produces `UInt.MAX`
+- Float to integer truncates toward zero
+
+```mojo
+i64.cast[DType.int8]() # to another integer dtype; wraps
+fp64.cast[DType.float32]() # narrows (precision loss)
+```
 
 </Panel>
 
-<Panel title="Bool" summary="true / false, and what's truthy" table="zebra">
+<Panel title="Bool" summary="True / False, and what's truthy" table="zebra">
 
-<Intro>make</Intro>
+<Intro>Truthy is for `if` / `while` / `and` / `or` / `Bool()`.</Intro>
 
-```mojo
-Bool(x) # any Boolable
-```
+| Kind                  | Truthy when           |
+|-----------------------|-----------------------|
+| Numbers               | non-zero              |
+| Strings & collections | non-empty             |
+| `Optional`            | None False, else True |
+| `PythonObject`        | Python's own rules    |
 
-<Intro>convert</Intro>
-
-```mojo
-Int(b), Float64(b), String(b) # 0 or 1, 0.0 or 1.0, "True" or "False"
-```
-
-<Intro>truthy — for if / while / and / or / Bool()</Intro>
-
-| Kind                      | Truthy when           |
-|---------------------------|-----------------------|
-| **Numbers**               | non-zero              |
-| **Strings & collections** | non-empty             |
-| **Optional**              | None False, else True |
-| **PythonObject**          | Python's own rules    |
-
-Any type with a **\_\_bool\_\_** is truthy. Converting a
-**Bool** to a number is explicit: **Int(b)**, never implicit.
+Converting a `Bool` to a number is explicit: `Int(b)`. A type is truthy when
+it conforms to `Boolable` and implements `__bool__()`.
 
 </Panel>
 
-<Panel title="SIMD[T, N]" summary="N lanes of one dtype; Scalar = SIMD[T, 1]">
+<Panel title="SIMD[T, N]" summary="N lanes of one dtype; Scalar = SIMD[T, 1]" table="zebra">
 
 <Intro>make</Intro>
 
@@ -116,73 +177,67 @@ v.cast[DType.x]() # new dtype, same lane count
 SIMD[T, N](scalar) # splat a Scalar up to N lanes
 ```
 
-**N** is the lane count, not bit width; a lane's bit
-width is its **DType**. Int, Float64, Int8 … are all SIMD scalars.
-
-</Panel>
-
-## Text
-
-<Panel title="String" summary="owned, growable UTF-8 text">
-
-<Intro>make</Intro>
-
-```mojo
-String(x) # any StringSpan, StringLiteral, Writable (Int, Float64, Bool …)
-String(t"{x}") # Not needed for print()
-String(from_utf8=bytes) # raises on bad UTF-8
-String(from_utf8_lossy=bytes) # replaces bad bytes
-```
-
-<Intro>convert</Intro>
-
-```mojo
-Int(s) # base-10 parse; raises on "3.5", "0xff", ""
-Float64(s) # parse (1e3, inf ok); raises "", garbage
-Bool(s) # True if non-empty
-```
-
-<Intro>access (by byte / codepoint / grapheme)</Intro>
-
-```mojo
-s[byte=i], s[byte=i:j] # also for codepoint and single index grapheme
-s.as_bytes(), s.codepoints(), s.graphemes() # iterators
-```
-
-</Panel>
-
-## Pointers
-
-<Panel title="Pointer[T]" summary="to backing buffer">
-
-Use **unsafe_ptr()** to access: **List**, **String**,
-**StringSpan**, **Array**, and **Span**.
-
-<Intro>access through a pointer</Intro>
-
-```mojo
-buf.unsafe_ptr() # -> Pointer[T]
-p[unsafe_offset=i] # deref one element
-p.unsafe_offset(i)[] # pointer arithmetic, then deref
-p.unsafe_load[width=N]() # read N lanes -> SIMD[T, N]
-```
-
-<Intro>vectorize a buffer (the escape hatch)</Intro>
-
-```mojo
-var v = data.unsafe_ptr().unsafe_load[width=8]() # 8 elements -> one SIMD
-var total = v.reduce_add() # SIMD-wide reduce
-```
-
-**Pointer** is non-null by design. Use
-**OptionalPointer** for a nullable pointer. Unsafe operations carry the
-**unsafe\_** prefix or an **unsafe\_** keyword.
+`N` is the lane count, not bit width; a lane's bit
+width is its `DType`. `Int`, `Float64`, `Int8` … are all SIMD scalars.
 
 </Panel>
 
 ## Collections
 
-<Panel title="List[T]" summary="growable, homogeneous sequence">
+<Panel title="Collection literals" summary="what a bracket or brace makes" table="zebra">
+
+| Literal                 | Type    | Annotate?                  |
+|-------------------------|---------|----------------------------|
+| `[v1, v2, ...]`         | `Array` | No                         |
+| `[v1, v2, ...]`         | `List`  | Yes: `var x: List = [...]` |
+| `{k1: v1, k2: v2, ...}` | `Dict`  | No                         |
+
+`Optional` has no literal shorthand.
+
+</Panel>
+
+<Panel title="Array[T, n]" summary="fixed-size, homogeneous; the bracket-literal default" table="zebra">
+
+<Intro>make</Intro>
+
+```mojo
+[1, 2, 3] # unannotated literal -> Array[Int, 3]
+Array[T, n](fill=x) # n copies of x
+Array[T, n](fill_with=f) # f(i) for each index
+Array[T, n]() # default values (T: Defaultable)
+Array[T, n](uninitialized=True) # unsafe; initialize slots with unsafe_write()
+```
+
+<Intro>convert</Intro>
+
+```mojo
+List(a) # Array -> List: copies onto the heap
+Array[T, n](
+  fill_with=lambda (i: Int) {imm l} -> T: l[i]
+) # List -> Array; you pick n
+Span(a), Span(l) # view either one, no copy
+a.concat(b) # moves both into Array[T, n + m]
+a.copy() # explicit; no implicit copy
+```
+
+<Intro>access</Intro>
+
+```mojo
+a[i] # ref; a constant index is checked at compile time
+a.unsafe_ptr() # -> Pointer[T] to inline, contiguous storage
+a.unsafe_ptr().unsafe_bitcast[NoneType]() # type-erased, for C void *
+```
+
+Elements sit inline and back to back, like a C array, with no heap.
+Pass one to C or to any library that takes a raw block. For mixed
+types, use `Tuple`.
+
+`Array`: size in the type, stored inline, for C blocks, tables, and GPU
+arguments. `List`: size at runtime, on the heap, and it grows.
+
+</Panel>
+
+<Panel title="List[T]" summary="growable, homogeneous sequence" table="zebra">
 
 <Intro>make</Intro>
 
@@ -203,7 +258,28 @@ list.unsafe_take_allocation() # hand off the buffer as an Allocation[T]
 
 </Panel>
 
-<Panel title="Dict[K, V]" summary="hash map; keys Hashable + Equatable + Movable">
+<Panel title="SIMD, Array, and List" summary="move whole vectors in and out of memory" table="zebra">
+
+| From → to    | Code                                                                                   | Note                      |
+|--------------|----------------------------------------------------------------------------------------|---------------------------|
+| Array → List | `List(a)`                                                                              | copies                    |
+| List → Array | `l.unsafe_ptr()`<br/>&nbsp;&nbsp;&nbsp;&nbsp;`.unsafe_bitcast[Array[T, N]]()[].copy()` | `T: Copyable`             |
+| Array → SIMD | `a.unsafe_ptr()`<br/>&nbsp;&nbsp;&nbsp;&nbsp;`.unsafe_load[width=N]()`                 | numeric, `N` a power of 2 |
+| SIMD → Array | `a.unsafe_ptr()`<br/>&nbsp;&nbsp;&nbsp;&nbsp;`.unsafe_store(v)`                        | into an existing `Array`  |
+| List → SIMD  | `l.unsafe_ptr()`<br/>&nbsp;&nbsp;&nbsp;&nbsp;`.unsafe_load[width=N]()`                 | numeric, `N` a power of 2 |
+| SIMD → List  | `l.unsafe_ptr()`<br/>&nbsp;&nbsp;&nbsp;&nbsp;`.unsafe_store(v)`                        | needs `len(l) >= N`       |
+
+`N` must be known at compile time: `comptime N = type_of(a).length`, not
+`len(a)`. Nothing checks a `List`'s length; a short one reads or writes
+past its end.
+
+Elements are `Scalar[dtype]`, such as `Float32`. A load or store moves
+all `N` lanes at once and checks nothing: a `List` shorter than `N` reads
+past its end.
+
+</Panel>
+
+<Panel title="Dict[K, V]" summary="hash map; keys Hashable + Equatable + Movable" table="zebra">
 
 <Intro>make</Intro>
 
@@ -217,7 +293,8 @@ Dict.fromkeys(keys, v) # every key maps to v
 
 ```mojo
 d.setdefault(key, default) # ref; inserts default if absent
-d.get(key) d.find(key) # Optional[V]
+d.get(key), d.find(key) # Optional[V]
+d.get(key, default) # value, or default; never raises
 d.keys() d.values() # lazy iterators
 d.items() # iterator of DictEntry (.key / .value)
 d.pop(key) # value, removes it
@@ -225,7 +302,7 @@ d.pop(key) # value, removes it
 
 </Panel>
 
-<Panel title="Optional[T]" summary="a value, or nothing">
+<Panel title="Optional[T]" summary="a value, or nothing" table="zebra">
 
 <Intro>make</Intro>
 
@@ -243,4 +320,43 @@ o.or_else(default) # value, or default
 
 </Panel>
 
+## Pointers
+
+<Panel title="Pointer[T]" summary="to backing buffer" table="zebra">
+
+Use `unsafe_ptr()` to access: `List`, `String`,
+`StringSpan`, `Array`, and `Span`.
+
+<Intro>access through a pointer</Intro>
+
+```mojo
+buf.unsafe_ptr() # -> Pointer[T]
+p[unsafe_offset=i] # deref one element
+p.unsafe_offset(i)[] # pointer arithmetic, then deref
+p.unsafe_load[width=N]() # read N lanes -> SIMD[T, N]
+```
+
+<Intro>vectorize a buffer (the escape hatch)</Intro>
+
+```mojo
+var v = data.unsafe_ptr().unsafe_load[width=8]() # 8 elements -> one SIMD
+var total = v.reduce_add() # SIMD-wide reduce
+```
+
+<Intro>pointer safety</Intro>
+
+- Unsafe operations carry the `unsafe_` prefix or an `unsafe_` keyword
+- `unsafe_ptr()` has contiguous storage and is never null, even when
+  empty. Check lengths before access
+- `Pointer` is non-null by design; use `OptionalPointer` when the pointer
+  may be null
+- The pointer's origin keeps its owner alive until its last use, but it doesn't
+  protect against reallocation. After a `List` grows or a `String` changes,
+  reacquire the pointer before using it
+- `String.unsafe_ptr()` is read-only
+
+</Panel>
+
 </Sheet>
+
+{/* markdownlint-enable MD033 MD034 */}

@@ -709,19 +709,6 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
        << " has " << expectedType << " type, but value has type "
        << diagBindingVal.getType() << binding.expr->getRange();
 
-  // Add some extra note for binding a thin function to a closure trait, which
-  // would otherwise be confusing to many.
-  if (ClosureEmitter::isClosureType(shared, expectedType) &&
-      sugarIsa<FnLiteralTypeGeneratorType>(diagBindingVal.getType())) {
-    llvm::SMRange smRange =
-        shared.diags.convertToSMRange(binding.expr->getRange());
-    StringRef src(smRange.Start.getPointer(),
-                  smRange.End.getPointer() - smRange.Start.getPointer());
-    diag.attachNote(binding.expr->getLoc())
-        << "a thin function cannot bind to a closure trait; use 'type_of("
-        << src << ")' to pass its type instead";
-  }
-
   return failure();
 }
 
@@ -1188,13 +1175,20 @@ using EqualityPair = std::pair<TypedAttr, TypedAttr>;
 /// Collect the individual equality (`==`) propositions.
 static void collectEqualityPropositions(TypedAttr prop,
                                         SmallVectorImpl<EqualityPair> &out) {
-  if (std::optional<EqualityPair> identity = getIdentityProposition(prop)) {
-    out.push_back(*identity);
-  } else if (auto op = sugarDynCast<ParamOperatorAttr>(prop)) {
-    if (op.getOpcode() == POC::And)
-      for (TypedAttr operand : op.getOperands())
-        collectEqualityPropositions(operand, out);
+  // A merged identity class arrives as one n-ary `identical`. Consecutive
+  // pairs keep inference on the pairwise form it expects. The class rebinds
+  // every member to a representative type, which would hide a bare parameter
+  // reference from the matcher, so peel that rebind back off.
+  if (std::optional<ArrayRef<TypedAttr>> members = getIdentityClass(prop)) {
+    for (size_t i = 1, e = members->size(); i < e; ++i)
+      out.emplace_back(ParamOperatorAttr::stripRebind((*members)[i - 1]),
+                       ParamOperatorAttr::stripRebind((*members)[i]));
+    return;
   }
+  if (auto op = sugarDynCast<ParamOperatorAttr>(prop);
+      op && op.getOpcode() == POC::And)
+    for (TypedAttr operand : op.getOperands())
+      collectEqualityPropositions(operand, out);
 }
 
 LogicalResult ParamInf::inferFromBodyConstraints() {
@@ -2165,7 +2159,7 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       auto expectedMutable = expectedRefPackType.getOriginType().getIsMutable();
       auto bothMutable =
           ParamOperatorAttr::get(POC::And, actualMutable, expectedMutable);
-      if (bothMutable != expectedMutable) {
+      if (!isEqualCanon(bothMutable, expectedMutable)) {
         auto &diag = getMojoDiag(operand.expr->getLoc());
         diag << "cannot unpack a variadic pack into a call that requires a "
                 "stricter mutability. Expected "

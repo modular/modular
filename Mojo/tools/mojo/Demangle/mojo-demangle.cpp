@@ -36,10 +36,8 @@ using namespace M::KGEN::LIT;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct DemangleOptTable : public llvm::opt::PrecomputedOptTable {
-  DemangleOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct DemangleOptTable : public llvm::opt::OptTable {
+  DemangleOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 } // namespace
 

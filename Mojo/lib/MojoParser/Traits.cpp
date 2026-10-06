@@ -831,7 +831,7 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
         cast<FnTypeGeneratorType>(evaluator->replace(callAlias.getType()));
 
     auto name = StringAttr::get(shared.getContext(), "__call__");
-    allMatchFound = succeeded(checkMethod(name, decl, name, fullSig));
+    allMatchFound = succeeded(checkMethod(name, &structDecl, name, fullSig));
   } else {
     for (auto &[name, decls] : traitDecl.getDeclsInScope()) {
       for (ASTDecl *decl : decls) {
@@ -868,18 +868,22 @@ LIT::verifyAndBuildConformance(ASTDecl &structDecl, TraitSymbolAttr parent,
     return success();
   }
 
-  // Otherwise, emit the set of requirements that are missing.
-  diag->attachNote(traitDecl)
-      << "trait " << ASTType(shared.declResolver->getCanonicalTrait(parent))
-      << " declared here";
-  if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
-    if (auto it = inheritedFrom->find(parent);
-        it != inheritedFrom->end() && it->second.first != parent) {
-      ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
-          it->second.first.getSymbol());
-      diag->attachNote(parentDecl)
-          << "inherited through '" << *parentDecl.getUserNameIfOperation()
-          << "' here";
+  bool isSynthetic = shared.isUniversalParametricClosureTrait(&traitDecl);
+  // We don't have a location for synthetic decl for the attached note.
+  if (!isSynthetic) {
+    // Otherwise, emit the set of requirements that are missing.
+    diag->attachNote(traitDecl)
+        << "trait " << ASTType(shared.declResolver->getCanonicalTrait(parent))
+        << " declared here";
+    if (auto *inheritedFrom = structDecl.getTraitConformanceLineage()) {
+      if (auto it = inheritedFrom->find(parent);
+          it != inheritedFrom->end() && it->second.first != parent) {
+        ASTDecl &parentDecl = emitter.getDeclResolver().getDeclForTypeSymbol(
+            it->second.first.getSymbol());
+        diag->attachNote(parentDecl)
+            << "inherited through '" << *parentDecl.getUserNameIfOperation()
+            << "' here";
+      }
     }
   }
   return failure();
@@ -960,13 +964,12 @@ doesNominalTypeConformToCached(ASTDecl *self, TraitType trait,
     // If user requested failure details, we use the cached only if the verdict
     // was true.
     if (mayBeCached) {
-      std::optional<bool> conforms =
-          self->getShared().getCachedNominalConformance(self, trait,
-                                                        concreteType);
-      if (conforms.has_value() && (!details || *conforms)) {
+      TriBool conforms = self->getShared().getCachedNominalConformance(
+          self, trait, concreteType);
+      if (conforms.isDefinite() && (!details || conforms.isTrue())) {
         if (details)
           details->clear();
-        return TriBool::fromBool(*conforms);
+        return conforms;
       }
     }
 
@@ -1138,15 +1141,32 @@ static TriBool doesNominalTypeConformToUncached(
     }
   }
 
-  // Check the provided symbols against the required symbols by the target
-  // trait: a definitively-missing required symbol keeps the whole thing `no`,
-  // an unproven one makes it `unknown`, and all-present makes it `yes`.
   ArrayRef<ConstraintAttr> requiredConstraints = trait.getConstraints();
   SmallVector<TypedAttr> callerAssumptionProps =
       llvm::map_to_vector(callerAssumptions, [](ConstraintAttr constraint) {
         return constraint.getProposition();
       });
-  SmallVector<TypedAttr> scratch;
+  // Fold the caller conjunction on first use, not up front: most requirements
+  // are unconditionally provided and never consult the assumptions, and a
+  // scalar-bool AND now pays a full `insertClause` fold to build.
+  std::optional<TypedAttr> callerCanonicalCache;
+  auto callerCanonical = [&] {
+    if (!callerCanonicalCache) {
+      if (callerAssumptionProps.empty())
+        callerCanonicalCache =
+            SIMDAttr::getScalarBool(self->getContext(), true);
+      else if (callerAssumptionProps.size() == 1)
+        callerCanonicalCache = callerAssumptionProps.front();
+      else
+        callerCanonicalCache =
+            ParamOperatorAttr::get(POC::And, callerAssumptionProps);
+    }
+    return *callerCanonicalCache;
+  };
+
+  // Check the provided symbols against the required symbols by the target
+  // trait: a definitively-missing required symbol keeps the whole thing `no`,
+  // an unproven one makes it `unknown`, and all-present makes it `yes`.
 
   // With `details`, collect every provider constraint behind the verdict and
   // dedupe on (loc, proposition) so derived/ancestor copies of the same
@@ -1184,22 +1204,21 @@ static TriBool doesNominalTypeConformToUncached(
   for (auto [i, required] : llvm::enumerate(trait.getSymbols())) {
     // Assume each requirement's own condition while checking it. Remember that
     // an empty constraints array means every requirement is unconditional.
-    ArrayRef<TypedAttr> assumptions = callerAssumptionProps;
+    std::optional<TypedAttr> refined;
+    auto assumption = [&] { return refined ? *refined : callerCanonical(); };
     if (!requiredConstraints.empty()) {
       TypedAttr requiredCond = requiredConstraints[i].getProposition();
-      if (isPropositionImplied(requiredCond, callerAssumptionProps).isFalse())
+      if (isPropositionImplied(requiredCond, callerCanonical()).isFalse())
         continue;
-      scratch.assign(callerAssumptionProps.begin(),
-                     callerAssumptionProps.end());
-      scratch.push_back(requiredCond);
-      assumptions = scratch;
+      refined =
+          ParamOperatorAttr::get(POC::And, {callerCanonical(), requiredCond});
     }
 
     auto it = providedConditions.find(required);
     TriBool provided = it == providedConditions.end() ? TriBool::no()
                        : (!it->second || isTriviallyTrueProposition(it->second))
                            ? TriBool::yes()
-                           : isPropositionImplied(it->second, assumptions);
+                           : isPropositionImplied(it->second, assumption());
 
     if (provided.isTrue())
       continue; // Symbol is definitely provided.
@@ -1224,7 +1243,7 @@ static TriBool doesNominalTypeConformToUncached(
         if (isPropositionImplied(
                 TypeConformsToTraitAttr::get(PValue(concreteType).get(),
                                              singleTrait.getPValue()),
-                assumptions)
+                assumption())
                 .isTrue())
           continue;
         recordFailure(required, TriBool::unknown());
@@ -1438,17 +1457,8 @@ LogicalResult LIT::checkAtMostOneClosureTrait(SharedState &shared,
                                               SMLoc loc, SourceRange range) {
   SmallVector<TraitSymbolAttr> closures;
   for (TraitSymbolAttr symbol : symbols) {
-    if (shared.isUniversalParametricClosureTrait(symbol)) {
+    if (shared.isUniversalParametricClosureTrait(symbol))
       closures.push_back(symbol);
-    } else {
-      ASTDecl &decl =
-          shared.declResolver->getDeclForTypeSymbol(symbol.getSymbol());
-      auto traitOp = dyn_cast_if_present<TraitDeclOp>(decl.getIfOperation());
-      // Leaf closure trait is put in the top decl.
-      if (traitOp && traitOp.getDefinesClosure() &&
-          decl.getParentDecl() == &shared.getTopLevelDecl())
-        closures.push_back(symbol);
-    }
     if (closures.size() > 1)
       break;
   }

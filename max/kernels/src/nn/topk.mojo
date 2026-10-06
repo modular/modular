@@ -36,11 +36,7 @@ from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host.info import is_cpu
 from max.gpu.memory import external_memory
-from std.sys.info import (
-    has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
-    is_apple_gpu,
-)
+from std.sys.info import current_accelerator, is_apple_gpu
 from std.random import Random
 from layout import (
     Coord,
@@ -883,7 +879,6 @@ struct TopKHeap[T: DType, largest: Bool, M: Int]:
 
 # Function to perform warp-level reduction to find the maximum TopK_2
 @inline(.always)
-@__parameter
 def _warp_reduce_topk[
     T: DType,
     largest: Bool,
@@ -914,7 +909,6 @@ def _warp_reduce_topk[
     var res = val
 
     # Shuffle function for TopK_2 structure
-    @__parameter
     def shuffle_topk2(v: TopK_2[T, largest], offset: Int) -> TopK_2[T, largest]:
         comptime fn_type = def[dtype: DType, simd_width: SIMDLength](
             val: SIMD[dtype, simd_width], offset: UInt32
@@ -929,7 +923,6 @@ def _warp_reduce_topk[
             p=Int(shuffle_fn(Int32(v.p), UInt32(offset))),  # p is the index
         )
 
-    @__parameter
     def reduce_fn(
         a: TopK_2[T, largest], b: TopK_2[T, largest]
     ) -> TopK_2[T, largest]:
@@ -1095,7 +1088,22 @@ def _topk_stage1[
     var batch_id, block_lane = udivmod(bid, _num_blocks_per_input)
 
     var block_offset = block_lane * block_size
+    var block_end = _num_elements
     var stride = block_size * _num_blocks_per_input
+    comptime if is_apple_gpu():
+        # Stage 2 breaks ties between equal values by candidate slot, which is
+        # block-major, so ties come out smallest index first only when each
+        # block owns one ascending range of the row. The strided partition
+        # holds that up to `block_size * num_blocks_per_input` elements, and
+        # Apple's one-simdgroup blocks (see `topk_gpu`) pass that bound at row
+        # lengths `_topk_warp` also serves, so give each block a contiguous
+        # range there.
+        var block_len = align_up(
+            ceildiv(_num_elements, _num_blocks_per_input), block_size
+        )
+        block_offset = block_lane * block_len
+        block_end = min(block_offset + block_len, _num_elements)
+        stride = block_size
 
     var _in_buffer_tmp = in_buffer_tmp + batch_id * _num_elements
 
@@ -1121,7 +1129,7 @@ def _topk_stage1[
     with PDL():
         # Phase 1: Single scan to build per-thread register heap.
         var heap = TopKHeap[T, largest, HEAP_SIZE]()
-        for i in range(tid + block_offset, _num_elements, stride):
+        for i in range(tid + block_offset, block_end, stride):
             heap.insert(_in_buffer_tmp[i], i)
 
         # Phase 2: Extract winners from heaps without re-scanning.
@@ -1133,7 +1141,7 @@ def _topk_stage1[
             var partial = heap.best()
             if partial.p < 0:
                 partial = TopK_2[T, largest]()
-                for i in range(tid + block_offset, _num_elements, stride):
+                for i in range(tid + block_offset, block_end, stride):
                     partial.insert(_in_buffer_tmp[i], i)
 
             var total = _block_reduce_topk[ascending=largest](partial)
@@ -1156,7 +1164,7 @@ def _topk_stage1[
         for k in range(heap_iters, k_batch):
             var partial = TopK_2[T, largest]()
 
-            for i in range(tid + block_offset, _num_elements, stride):
+            for i in range(tid + block_offset, block_end, stride):
                 var val = _in_buffer_tmp[i]
                 partial.insert(val, i)
 
@@ -1289,14 +1297,15 @@ def _topk_stage2[
             k_batch = num_elem_reduced
 
         if _num_blocks_per_input == 1 and not sampling:
-            if tid < k_batch:
-                batch_i_topk_vals[tid] = _local_topk_vals[tid]
-                # cast to out_idx_type
-                batch_i_topk_idxs[tid] = _local_topk_idxs[tid]
-            elif tid >= k_batch and tid < _max_k:
-                # Fill unused positions with sentinel values
-                batch_i_topk_vals[tid] = _topk_dead_val[T, largest]()
-                batch_i_topk_idxs[tid] = Scalar[out_idx_type](-1)
+            # Strided because `max_k` can exceed the block, which on Apple is
+            # a single simdgroup.
+            for i in range(tid, _max_k, block_dim.x):
+                if i < k_batch:
+                    batch_i_topk_vals[i] = _local_topk_vals[i]
+                    batch_i_topk_idxs[i] = _local_topk_idxs[i]
+                else:
+                    batch_i_topk_vals[i] = _topk_dead_val[T, largest]()
+                    batch_i_topk_idxs[i] = Scalar[out_idx_type](-1)
             return
 
         comptime if sampling:
@@ -1456,6 +1465,129 @@ def _topk_stage2[
                         break
 
 
+# Longest row `_topk_warp` will take. The bound is two constraints at once:
+# it sizes the kernel's static shared-memory staging buffer, and it is the
+# point below which the two-stage path's block partition is still contiguous
+# (`ceildiv(N, 256) <= 8`, i.e. the `min(..., 8)` clamp on
+# `num_blocks_per_input` has not yet bound). Past that point the two-stage
+# path's tie order stops being "smallest index wins", so staying under it is
+# what makes the two paths bit-identical on ties rather than merely equivalent
+# in value.
+comptime _TOPK_WARP_MAX_N = 2048
+
+# Largest k `_topk_warp` will take. It extracts one element per pass, so cost
+# is linear in k; past a few dozen the two-stage path's wider grid wins, and
+# the MLA indexer's k=2048 request must not land here at all.
+comptime _TOPK_WARP_MAX_K = 64
+
+
+@__name(t"topk_warp_{T}_{out_idx_type}_{largest}")
+def _topk_warp[
+    T: DType,
+    out_idx_type: DType,
+    largest: Bool = True,
+](
+    K: Optional[UnsafePointer[Int64, ImmutAnyOrigin]],
+    max_k: Int32,
+    num_elements: Int32,
+    in_buffer: UnsafePointer[Scalar[T], ImmutAnyOrigin],
+    out_vals: UnsafePointer[Scalar[T], MutAnyOrigin],
+    out_idxs: UnsafePointer[Scalar[out_idx_type], MutAnyOrigin],
+):
+    """Selects the top-K of a short row with a single warp, in one launch.
+
+    Replaces the two-stage `_topk_stage1` + `_topk_stage2` pair for rows short
+    enough to stage in shared memory. The two-stage path pays `2 * k`
+    *block*-wide reductions (two warp reductions each), `5 * k` barriers and,
+    in stage 2, a dependent global load per extracted element, all inside a
+    single block; at an MoE router's shape that dependent chain, not the
+    arithmetic, is the whole cost. Here the row lives in shared memory owned by
+    one warp, so each pass is one *warp* reduction with no barrier and no
+    global round trip, and the second launch disappears.
+
+    The row is partitioned by lane: lane `l` owns elements `l, l + WARP_SIZE,
+    ...` and no other lane ever reads or writes them, so killing an extracted
+    element needs no cross-lane synchronization.
+
+    Parameters:
+        T: Data type of the elements.
+        out_idx_type: The data dtype of the output indices.
+        largest: Whether to find the maximum value (top k) or the minimum
+            (bottom k).
+
+    Args:
+        K: Optional per-row number of top elements to select.
+        max_k: Largest number of top elements to keep for each row.
+        num_elements: Size of the last dimension of the input, at most
+            `_TOPK_WARP_MAX_N`.
+        in_buffer: Input buffer, `[grid_dim.x, num_elements]`. Not modified.
+        out_vals: Output values, `[grid_dim.x, max_k]`.
+        out_idxs: Output indices, `[grid_dim.x, max_k]`.
+    """
+    var _max_k = Int(max_k)
+    var _num_elements = Int(num_elements)
+    var lane = thread_idx.x
+    var batch_id = block_idx.x
+
+    var row = in_buffer + batch_id * _num_elements
+    var row_vals = out_vals + batch_id * _max_k
+    var row_idxs = out_idxs + batch_id * _max_k
+
+    var k_batch = _max_k
+    if K:
+        var k_raw = Int(K.unsafe_value()[batch_id])
+        k_batch = _max_k if k_raw == -1 else k_raw
+    if k_batch > _num_elements:
+        k_batch = _num_elements
+
+    # Static, so no `shared_mem_bytes` launch argument and no dynamic
+    # allocation: Apple's static threadgroup budget is the tightest at 32 KB
+    # and this is 8 KB at fp32. Nothing here bounds `num_elements` against it
+    # -- the dispatch in `topk_gpu` does, and is the only caller. A
+    # `debug_assert` was tried and reverted: its failure path costs the kernel
+    # a private (scratch) segment in assertion builds, which is worse than the
+    # check is worth for a private kernel with one call site.
+    var scratch = unsafe_stack_allocation[
+        _TOPK_WARP_MAX_N,
+        Scalar[T],
+        address_space=.SHARED,
+    ]()
+
+    var dead_val = _topk_dead_val[T, largest]()
+
+    with PDL():
+        for i in range(lane, _num_elements, WARP_SIZE):
+            scratch[i] = row[i]
+        barrier()
+
+        var num_written = 0
+        while num_written < k_batch:
+            var partial = TopK_2[T, largest]()
+            for i in range(lane, _num_elements, WARP_SIZE):
+                partial.insert(scratch[i], i)
+
+            # `broadcast` so every lane learns the winner: the owning lane can
+            # then retire it itself, and the loop exit stays warp-uniform.
+            var total = _warp_reduce_topk[T, largest, broadcast=True](partial)
+
+            # No finite candidate left (a row of NaN, or fewer than `k_batch`
+            # values that beat the dead value). Everything from here is
+            # sentinel, which the tail below writes.
+            if total.u == dead_val:
+                break
+
+            if lane == 0:
+                row_vals[num_written] = total.u
+                row_idxs[num_written] = Int(total.p).cast[out_idx_type]()
+            if lane == total.p % WARP_SIZE:
+                scratch[total.p] = dead_val
+            num_written += 1
+
+        for j in range(num_written + lane, _max_k, WARP_SIZE):
+            row_vals[j] = dead_val
+            row_idxs[j] = Scalar[out_idx_type](-1)
+
+
 def _topk_gpu[
     dtype: DType,
     out_idx_type: DType,
@@ -1588,7 +1720,7 @@ def _topk_gpu[
     # top-k kernels stay within Apple's static shared-memory budget, then
     # recompute blocks.
     var effective_block_size = block_size
-    comptime if has_apple_gpu_accelerator():
+    comptime if ctx.target.is_apple_gpu():
         effective_block_size = WARP_SIZE
 
     # Define the number of blocks per grid
@@ -1638,7 +1770,7 @@ def _topk_gpu[
     )
     # align to warp size
     shared_mem_bytes_2 = align_up(shared_mem_bytes_2, WARP_SIZE)
-    comptime if has_apple_gpu_accelerator():
+    comptime if ctx.target.is_apple_gpu():
         if shared_mem_bytes_2 > _APPLE_STATIC_SHMEM_MAX_BYTES:
             raise Error(
                 t"shared memory of {shared_mem_bytes_2} exceeds static"
@@ -1838,7 +1970,7 @@ def topk_gpu[
 
         # On Apple GPUs, clamp block_size to a single warp so the shared-memory
         # top-k kernels stay within Apple's static shared-memory budget.
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             block_size_ = min(block_size_, WARP_SIZE)
 
         # This section handles different input ranks by reshaping to a 2D tensor
@@ -1924,6 +2056,39 @@ def topk_gpu[
             internal_input = reshape(input, internal_in_shape)
             internal_out_idxs = reshape(out_idxs, internal_out_idxs_shape)
             internal_out_vals = reshape(out_vals, internal_out_vals_shape)
+
+        # Short rows with a small k go to the single-warp, single-launch
+        # kernel. An explicit `num_blocks_per_input` is a caller pinning the
+        # two-stage partition (the NaN-contract test does exactly that), so
+        # honor it rather than routing around it.
+        comptime if not sampling:
+            if (
+                N <= _TOPK_WARP_MAX_N
+                and bound_max_k <= _TOPK_WARP_MAX_K
+                and not num_blocks_per_input
+                and internal_bs > 0
+            ):
+                var warp_k_ptr: Optional[
+                    UnsafePointer[Int64, ImmutAnyOrigin]
+                ] = None
+                if k:
+                    warp_k_ptr = rebind[UnsafePointer[Int64, ImmutAnyOrigin]](
+                        k.value().ptr
+                    )
+
+                comptime warp_kernel = _topk_warp[dtype, out_idx_type, largest]
+                ctx.enqueue_function[warp_kernel](
+                    warp_k_ptr,
+                    Int32(bound_max_k),
+                    Int32(N),
+                    internal_input.to_device_buffer(ctx),
+                    internal_out_vals.to_device_buffer(ctx),
+                    internal_out_idxs.to_device_buffer(ctx),
+                    grid_dim=internal_bs,
+                    block_dim=WARP_SIZE,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                )
+                return
 
         # Calculate the number of blocks per input
         var num_blocks_per_input_ = min(
@@ -2413,7 +2578,9 @@ def _gumbel_argmax_fused_kernel[
         not from_probs or not is_apple_gpu()
     ), "from_probs is not supported on Apple GPUs"
     comptime assert not multi_block or (
-        has_amd_gpu_accelerator() and from_probs and dtype == DType.float32
+        current_accelerator().is_amd_gpu()
+        and from_probs
+        and dtype == DType.float32
     ), "multi-block Gumbel requires AMD FP32 from-probs"
 
     comptime EPS = Float32(1e-20)
@@ -2429,11 +2596,11 @@ def _gumbel_argmax_fused_kernel[
     var tid = thread_idx.x
     var block_size = block_dim.x
     var blocks_per_row_int = Int(blocks_per_row)
-    var batch_id = Int(block_idx.x)
+    var batch_id = block_idx.x
     var block_in_row = 0
     comptime if multi_block:
-        batch_id = Int(block_idx.x) // blocks_per_row_int
-        block_in_row = Int(block_idx.x) % blocks_per_row_int
+        batch_id = block_idx.x // blocks_per_row_int
+        block_in_row = block_idx.x % blocks_per_row_int
 
     var temp_val = Float32(1.0)
     if temperature:
@@ -2642,7 +2809,7 @@ def gumbel_sampling_fused_gpu[
             seed_ptr = seed.value().ptr
 
         comptime split_capable = (
-            has_amd_gpu_accelerator() and from_probs and dtype == DType.float32
+            ctx.target.is_amd_gpu() and from_probs and dtype == DType.float32
         )
         comptime if split_capable:
             var vocab = Int(input.dim(1))

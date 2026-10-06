@@ -19,6 +19,7 @@ Submodules
 
    profiler.cpu
    profiler.gpu
+   profiler.oneshot
 
 Tracing
 -------

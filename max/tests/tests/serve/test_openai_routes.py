@@ -21,7 +21,7 @@ import sys
 from collections.abc import Generator
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
@@ -88,6 +88,7 @@ from max.serve.router.openai_routes import (
     _batch_id,
     _coerce_positive_float,
     _coerce_positive_int,
+    _conversation_turn,
     _convert_chat_completion_tools_to_token_generator_tools,
     _create_response_format,
     _get_cache_salt,
@@ -99,6 +100,7 @@ from max.serve.router.openai_routes import (
     get_tool_parser,
     openai_create_chat_completion,
     openai_parse_chat_completion_request,
+    record_request_end,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -116,6 +118,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
 )
 from PIL import Image
 from pydantic import AnyUrl, ValidationError
+from sse_starlette.sse import AppStatus
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -1150,6 +1153,7 @@ def test_process_chat_log_probabilities_with_logprobs() -> None:
             token_count=2,
             token_log_probabilities=token_log_probs,
             top_log_probabilities=top_log_probs,
+            sampled_tokens=["hello", "bar"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1184,6 +1188,7 @@ def test_process_chat_log_probabilities_multiple_outputs() -> None:
             token_count=1,
             token_log_probabilities=[-0.1],
             top_log_probabilities=[{"a": -0.1, "b": -0.5}],
+            sampled_tokens=["a"],
         ),
         TokenGeneratorOutput(
             status=GenerationStatus.END_OF_SEQUENCE,
@@ -1191,6 +1196,7 @@ def test_process_chat_log_probabilities_multiple_outputs() -> None:
             token_count=1,
             token_log_probabilities=[-0.2],
             top_log_probabilities=[{"b": -0.2, "c": -0.8}],
+            sampled_tokens=["b"],
         ),
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1218,6 +1224,7 @@ def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
             token_count=1,
             token_log_probabilities=[-1.0],
             top_log_probabilities=[{"x": -1.0, "y": -0.5, "z": -2.0}],
+            sampled_tokens=["x"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1237,6 +1244,40 @@ def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
     assert top_logprobs[2].logprob == -2.0
 
 
+def test_process_chat_log_probabilities_tied_sampled_token() -> None:
+    """Test that the entry names the sampled token when its logprob is tied."""
+    outputs = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_tokens=".b",
+            token_count=2,
+            token_log_probabilities=[-0.725921630859375, -0.5],
+            top_log_probabilities=[
+                {",": -0.725921630859375, ".": -0.725921630859375, "x": -2.0},
+                {"b": -0.5, "a": -0.25, "c": -3.0},
+            ],
+            sampled_tokens=[".", "b"],
+        )
+    ]
+    result = _process_chat_log_probabilities(outputs)
+
+    content = result.content
+    assert content is not None
+    assert len(content) == 2
+    assert content[0].token == "."
+    assert content[0].bytes == [46]
+    assert content[0].logprob == -0.725921630859375
+    assert [t.token for t in content[0].top_logprobs] == [",", ".", "x"]
+
+    assert content[1].token == "b"
+    assert content[1].logprob == -0.5
+    assert [(t.token, t.logprob) for t in content[1].top_logprobs] == [
+        ("a", -0.25),
+        ("b", -0.5),
+        ("c", -3.0),
+    ]
+
+
 def test_process_chat_log_probabilities_bytes_encoding() -> None:
     """Test that token bytes are correctly encoded as UTF-8."""
     outputs = [
@@ -1246,6 +1287,7 @@ def test_process_chat_log_probabilities_bytes_encoding() -> None:
             token_count=1,
             token_log_probabilities=[-0.3],
             top_log_probabilities=[{"é": -0.3}],
+            sampled_tokens=["é"],
         )
     ]
     result = _process_chat_log_probabilities(outputs)
@@ -1370,6 +1412,7 @@ def _make_mock_request() -> Mock:
     mock_request.request_path = "/v1/chat/completions"
     mock_request.sampling_params = Mock()
     mock_request.sampling_params.stop = []
+    mock_request.messages = []
     return mock_request
 
 
@@ -1674,6 +1717,116 @@ async def test_openai_chat_completion_usage_present_with_max_tokens_one(
     assert response.usage.total_tokens == 12
 
 
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        pytest.param([], None, id="no_messages"),
+        pytest.param(["user"], "first", id="opening_turn"),
+        pytest.param(["system", "user"], "first", id="system_prompt_only"),
+        pytest.param(
+            ["system", "user", "assistant", "user"], "later", id="second_turn"
+        ),
+        pytest.param(
+            ["user", "assistant", "tool"], "later", id="tool_result_turn"
+        ),
+    ],
+)
+def test_conversation_turn(
+    roles: list[Literal["system", "user", "assistant", "tool"]],
+    expected: str | None,
+) -> None:
+    messages = [
+        TextGenerationRequestMessage(role=role, content="x") for role in roles
+    ]
+    assert _conversation_turn(messages) == expected
+
+
+def test_record_request_end_labels_input_tokens_with_the_turn() -> None:
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end("/v1/chat/completions", 1.0, 3, 10, "later")
+
+    metrics_mock.input_tokens.assert_called_once_with(10)
+    metrics_mock.input_tokens_per_request.assert_called_once_with(10, "later")
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_reports_the_conversation_turn() -> None:
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="done",
+            token_count=1,
+            prompt_token_count=9,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+    mock_request = _make_mock_request()
+    mock_request.messages = [
+        TextGenerationRequestMessage(role="user", content="hi"),
+        TextGenerationRequestMessage(role="assistant", content="hello"),
+        TextGenerationRequestMessage(role="user", content="again"),
+    ]
+
+    with (
+        patch("max.serve.router.openai_routes.METRICS", MagicMock()),
+        patch("max.serve.router.openai_routes.record_request_start"),
+        patch("max.serve.router.openai_routes.record_request_end") as end_mock,
+    ):
+        await OpenAIChatResponseGenerator(mock_pipeline).complete(
+            [mock_request]
+        )
+
+    assert end_mock.call_count == 1
+    assert end_mock.call_args.args[3] == 9
+    assert end_mock.call_args.args[4] == "later"
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        pytest.param(["user"], "first", id="opening_turn"),
+        pytest.param(["user", "assistant", "user"], "later", id="second_turn"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_pretokenized_chat_completion_reports_the_conversation_turn(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    roles: list[str],
+    expected: str,
+) -> None:
+    # The orchestrator sends prompt_tokens beside the messages, and the
+    # route drops the messages from the token request it builds.
+    # sse-starlette binds this event to the first streaming test's loop
+    # (sysid/sse-starlette#59).
+    monkeypatch.setattr(AppStatus, "should_exit_event", None)
+    request = {
+        "model": "echo",
+        "messages": [{"role": role, "content": "hi"} for role in roles],
+        "prompt_tokens": [101, 202, 303],
+        "stream": stream,
+    }
+
+    with patch("max.serve.router.openai_routes.record_request_end") as end_mock:
+        async with AsyncTestClient(app, timeout=20.0) as client:
+            response = await client.post(
+                "/v1/chat/completions", json=request, stream=stream
+            )
+            assert response.status_code == 200
+            if stream:
+                async for _ in response.iter_content(1024):
+                    pass
+
+    assert end_mock.call_count == 1
+    assert end_mock.call_args.args[4] == expected
+
+
 def _all_reasoning_chunks(
     status: GenerationStatus,
 ) -> list[TokenGeneratorOutput]:
@@ -1847,7 +2000,7 @@ async def _run_completion_stream(
     mock_pipeline = Mock()
     mock_pipeline.model_name = "test-model"
 
-    async def mock_next_token_chunk(request: Any) -> Any:
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
         async def _gen() -> Any:
             for chunk in chunks:
                 yield chunk
@@ -2250,7 +2403,7 @@ async def test_openai_completion_stream_accounts_reasoning_tokens_for_metrics() 
     mock_pipeline = Mock()
     mock_pipeline.model_name = "test-model"
 
-    async def mock_next_token_chunk(request: Any) -> Any:
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
         async def _gen() -> Any:
             for chunk in chunks:
                 yield chunk
@@ -2912,8 +3065,7 @@ def test_create_response_format_boolean_schema_false() -> None:
     """A boolean schema ``false`` (matches nothing) de-sugars to the
     unsatisfiable ``{"anyOf": [False]}``, which the worker rejects as a 400 --
     no output can satisfy it. (``{"anyOf": [False]}`` is used over
-    ``{"not": {}}`` because llguidance lacks ``not`` and reports a misleading
-    error.)"""
+    ``{"not": {}}`` for broad grammar-backend compatibility.)"""
     result = _create_response_format(
         {
             "type": "json_schema",
@@ -4043,14 +4195,14 @@ def _token_id_pipeline(chunks: list[TokenGeneratorOutput]) -> Mock:
     pipeline.model_name = "test-model"
     pipeline.all_tokens = AsyncMock(return_value=chunks)
 
-    async def mock_next_token_chunk(request: Any) -> Any:
+    async def mock_next_token_chunk(request: Any, **kwargs: Any) -> Any:
         async def _gen() -> Any:
             for chunk in chunks:
                 yield chunk
 
         return _gen()
 
-    pipeline.next_token_chunk = mock_next_token_chunk
+    pipeline.next_token_chunk = AsyncMock(side_effect=mock_next_token_chunk)
     return pipeline
 
 
@@ -4123,6 +4275,63 @@ def _turn_with_a_suppressed_chunk() -> list[TokenGeneratorOutput]:
             token_ids=[13, 14],
         ),
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize(
+    ("extra", "parse_reasoning"),
+    [
+        ({}, True),
+        ({"reasoning_split": True}, True),
+        ({"reasoning_split": False}, False),
+    ],
+)
+async def test_completion_reasoning_split_controls_reasoning_parser(
+    app,  # noqa: ANN001
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    extra: dict[str, bool],
+    parse_reasoning: bool,
+) -> None:
+    """``/v1/completions`` keeps the reasoning parser unless the request sends
+    ``reasoning_split=False``."""
+    # sse-starlette binds this event to the first streaming test's loop
+    # (sysid/sse-starlette#59).
+    monkeypatch.setattr(AppStatus, "should_exit_event", None)
+    method = "next_token_chunk" if stream else "all_tokens"
+    original = getattr(TokenGeneratorPipeline, method)
+    calls: list[dict[str, Any]] = []
+
+    async def spy(self, request, **kwargs):  # noqa: ANN001, ANN202
+        calls.append(kwargs)
+        return await original(self, request, **kwargs)
+
+    with patch.object(TokenGeneratorPipeline, method, spy):
+        async with AsyncTestClient(app) as client:
+            response = await client.post(
+                "/v1/completions",
+                json={"model": "echo", "prompt": "hi", "stream": stream}
+                | extra,
+            )
+
+    assert response.status_code == 200
+    assert calls == [{"parse_reasoning": parse_reasoning}]
+
+
+@pytest.mark.asyncio
+async def test_chat_completion_keeps_reasoning_parser(
+    patch_openai_metrics: None,
+) -> None:
+    pipeline = _token_id_pipeline(_content_only_turn())
+    request = _make_mock_request()
+    generator = OpenAIChatResponseGenerator(pipeline)
+
+    await _raw_stream_payloads(generator, request)
+    await generator.complete([request])
+
+    pipeline.next_token_chunk.assert_awaited_once_with(request)
+    pipeline.all_tokens.assert_awaited_once_with(request)
 
 
 def test_return_token_ids_defaults_to_off() -> None:

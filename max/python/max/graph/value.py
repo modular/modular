@@ -1184,10 +1184,13 @@ class TensorValue(Value[mo.TensorType]):
     def __floordiv__(self, rhs: TensorValueLike) -> TensorValue:
         """Performs element-wise floor division.
 
+        Matches Python ``//``: see :obj:`~max.graph.ops.floor_div`. Integer
+        operands produce an integer result.
+
         Args:
             rhs: The right-hand side operand for floor division. Must be tensor-like.
         """
-        return ops.floor(ops.div(self, rhs))
+        return ops.floor_div(self, rhs)
 
     def __rfloordiv__(self, lhs: TensorValueLike) -> TensorValue:
         """Performs element-wise floor division with reversed operands.
@@ -1195,7 +1198,7 @@ class TensorValue(Value[mo.TensorType]):
         Args:
             lhs: The left-hand side operand for floor division. Must be tensor-like.
         """
-        return ops.floor(ops.div(lhs, self))
+        return ops.floor_div(lhs, self)
 
     def __mod__(self, rhs: TensorValueLike) -> TensorValue:
         """Performs element-wise modulo operation.

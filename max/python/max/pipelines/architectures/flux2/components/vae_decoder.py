@@ -130,12 +130,7 @@ class PostprocessAndDecode(Module):
             bn_var = self.decoder_bn_var.to(self._device)
             bn_mean_r = ops.reshape(bn_mean, (1, self._num_channels, 1, 1))
             bn_var_r = ops.reshape(bn_var, (1, self._num_channels, 1, 1))
-            bn_std = ops.sqrt(
-                bn_var_r
-                + ops.constant(
-                    self._batch_norm_eps, self._dtype, device=self._device
-                )
-            )
+            bn_std = ops.sqrt(bn_var_r + self._batch_norm_eps)
             latents = latents * bn_std + bn_mean_r
 
             # Unpatchify: (B, C, H, W) -> (B, C//4, H*2, W*2)

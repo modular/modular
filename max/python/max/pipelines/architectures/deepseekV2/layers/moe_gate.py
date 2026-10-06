@@ -119,7 +119,7 @@ class DeepSeekV2MoEGate(MoEGate):
             tmp_scores = ops.where(
                 score_mask.cast(DType.bool),
                 scores,
-                ops.constant(0, dtype=scores.dtype, device=scores.device),
+                0.0,
             )  # [n, e]
 
             topk_weight, topk_idx = ops.top_k(

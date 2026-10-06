@@ -21,14 +21,6 @@ Device mesh
 
    DeviceMesh
 
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   get_active_mesh
-   mesh_context
-
 Placements
 ----------
 
@@ -39,18 +31,8 @@ Placements
 
    Partial
    Placement
-   ReduceOp
    Replicated
    Sharded
-   Collective
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/data.rst
-
-   P
-   R
 
 Layouts
 -------
@@ -62,7 +44,6 @@ Layouts
 
    BufferLayout
    TensorLayout
-   PerShardDim
 
 Tensor-to-mesh mappings
 -----------------------
@@ -74,7 +55,6 @@ Tensor-to-mesh mappings
 
    DeviceMapping
    NamedMapping
-   PlacementMapping
 
 Per-op decisions
 ----------------
@@ -84,24 +64,27 @@ Per-op decisions
    :toctree: generated
    :template: autosummary/class.rst
 
-   Action
    ActionSet
    AxisAssignment
-   PerShard
 
-Pickers
--------
+Resharding
+----------
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
-   :template: autosummary/class.rst
+   :template: autosummary/function.rst
 
-   GreedyReshard
-   NoReshard
-   PartialsOnly
-   ReshardBehavior
-   Solver
+   auto_reshard
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/data.rst
+
+   ALL_TRANSITIONS
+   DEFAULT_TRANSITIONS
+   Transition
 
 Exceptions
 ----------
@@ -122,9 +105,5 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
-   as_device_mapping
-   as_layout
    build_action_set
    force_replicated_action_set
-   isolated_solver
-   mode

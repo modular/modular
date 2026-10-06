@@ -57,7 +57,7 @@ def causal_conv1d_varlen_fwd(
         query_start_loc: The ``[batch + 1]`` int32 cumulative sequence
             lengths.
         cache_indices: The ``[batch]`` uint32 slot indices into
-            ``conv_states``.
+            ``conv_states``, or one ``[1, batch]`` row of a per-layer table.
         has_initial_state: The ``[batch]`` bool, whether to use the
             stored state.
         activation: ``"silu"`` or ``"none"``.

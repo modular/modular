@@ -16,9 +16,11 @@
 from __future__ import annotations
 
 __all__ = [
+    "ChatEncoderOutcomesProbe",
     "PipelineTokenizer",
     "PreprocessCacheStatsProbe",
     "PreprocessedImageProbe",
+    "TokenIds",
     "TokenizerEncoded",
     "UnboundContextType",
     "VisionPreprocessCacheStats",
@@ -26,8 +28,17 @@ __all__ = [
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Protocol,
+    TypeAlias,
+    TypeVar,
+    runtime_checkable,
+)
 
+import numpy as np
+import numpy.typing as npt
 from max.pipelines.request import RequestType
 
 if TYPE_CHECKING:
@@ -38,6 +49,10 @@ if TYPE_CHECKING:
 # TODO: Bound this to TextContext, after we've audited the class.
 UnboundContextType = TypeVar("UnboundContextType", covariant=True)
 TokenizerEncoded = TypeVar("TokenizerEncoded")
+
+# Decode is typed independently of the encode output: serving decodes arrays,
+# log-probability responses decode one id, and the CLI decodes a token list.
+TokenIds: TypeAlias = npt.NDArray[np.integer[Any]] | Sequence[int] | int
 
 
 @runtime_checkable
@@ -107,6 +122,29 @@ class VisionPreprocessCacheStats:
     capacity_bytes: int
     """The byte budget, which ``size_bytes`` is evicted down to (``0``:
     caching is disabled)."""
+
+
+@runtime_checkable
+class ChatEncoderOutcomesProbe(Protocol):
+    """Optional tokenizer capability: report how its chat prompts encoded.
+
+    A tokenizer that can encode chats with a ``--tokenizer-impl`` encoder
+    implements this so the server can count the chats that encoder served
+    and the ones that fell back to HuggingFace. A separate protocol for the
+    reasons given on :class:`PreprocessCacheStatsProbe`.
+    """
+
+    def take_chat_encoder_outcomes(self) -> Mapping[str, int]:
+        """Returns the chats encoded since the last call, and forgets them.
+
+        Must be cheap: the server calls it per request on the event loop.
+
+        Returns:
+            A count per outcome: ``custom`` for a chat the encoder served, or
+            ``fallback`` for one it failed on, which HuggingFace encoded
+            instead.
+        """
+        ...
 
 
 @runtime_checkable
@@ -218,11 +256,12 @@ class PipelineTokenizer(
         """
         ...
 
-    async def decode(self, encoded: TokenizerEncoded, **kwargs) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decodes response tokens to text.
 
         Args:
-            encoded: Encoded response tokens.
+            encoded: Response token ids, as an array, a sequence, or a single
+                id.
             **kwargs: Additional decoder options (for example, ``skip_special_tokens``).
 
         Returns:

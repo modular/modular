@@ -15,14 +15,7 @@ from std.math import isclose
 from std.random import rand
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import (
     MASK_VALUE,
@@ -41,7 +34,7 @@ def build_ChunkedCausalMask[
     num_heads: Int,
     seq_len: Int,
     num_keys: Int,
-    mask: LayoutTensor[mut=True, mask_type, ...],
+    mask: TileTensor[mut=True, mask_type, ...],
 ) raises:
     # Initialize causal mask.
     for b in range(batch_size):
@@ -55,7 +48,7 @@ def build_ChunkedCausalMask[
                     var causal_masked = q_idx + start_pos < k_idx
                     var masked = chunk_masked or causal_masked
                     mask.store(
-                        Index(b, h, q_idx, k_idx),
+                        Coord(Index(b, h, q_idx, k_idx)),
                         Scalar[mask.dtype](MASK_VALUE) if masked else Scalar[
                             mask.dtype
                         ](0),
@@ -111,12 +104,8 @@ def test_attention[
         output_ptr[i] = Scalar[qkv_type](0)
 
     # Construct host mask buffer for initialization.
-    comptime layout_4d = Layout.row_major[4]()
-    var mask = LayoutTensor[mask_type, layout_4d, MutAnyOrigin](
-        mask_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
+    var mask = TileTensor(
+        mask_ptr, row_major((batch_size, num_heads, seq_len, num_keys))
     )
 
     # Q, K, V are randomly initialized.
@@ -275,7 +264,7 @@ def test_attention_suite(ctx: DeviceContext) raises:
     comptime types = (DType.bfloat16, DType.float32)
 
     comptime for type_idx in range(len(types)):
-        comptime type = rebind[DType](types[type_idx])
+        comptime type = types[type_idx]
         # context encoding
         test_attention[
             type,

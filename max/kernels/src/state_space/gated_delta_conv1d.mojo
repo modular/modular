@@ -47,25 +47,37 @@ Outputs:
   (conv_state is mutated in place; there is no separate state-out
    tensor.  Window slot j ends up holding the raw input at position
    seq_len - (kernel_size-1) + j within the sequence, carrying forward
-   from the old window when seq_len is shorter.)
+   from the old window when seq_len is shorter.  Under
+   WRITE_STATE = False the window is left alone and the only result is
+   the conv output.)
 
 Thread mapping (GPU)
 --------------------
-  Grid  : (batch_size, ceildiv(conv_dim, CONV1D_BLOCK_DIM))
+  Grid  : (ceildiv(total_seq_len, tokens_per_block),
+          ceildiv(conv_dim, CONV1D_BLOCK_DIM))
   Block : (CONV1D_BLOCK_DIM,)
-  One thread per (batch_item, conv_channel).  Each thread processes its
-  channel's full sequence sequentially, reading from conv_state at slot
-  `slot_idx[batch_item]` for the look-back that extends before the
-  current sequence.
+  One thread per (token tile, conv_channel).  The conv is parallel over
+  tokens, so long prefill rows spread across the whole GPU.
 """
 
+from std.bit import count_leading_zeros
+from std.sys.info import is_nvidia_gpu
+
+import max.gpu.primitives.warp as warp
 from max.gpu import (
+    WARP_SIZE,
     block_dim,
     block_idx,
+    lane_id,
     thread_idx,
 )
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from std.utils.index import IndexList
+
+
+# Upper bound on the runtime `tokens_per_block`; the host shrinks it to the
+# average row length so short rows do not serialize on one thread.
+comptime CONV1D_TOKENS_PER_BLOCK: Int = 8
 
 
 # ===----------------------------------------------------------------------=== #
@@ -78,6 +90,7 @@ def gated_delta_conv1d_fwd_gpu[
     state_dtype: DType,  # for the conv_state pool (typically bf16)
     KERNEL_SIZE: Int,
     CONV1D_BLOCK_DIM: Int,
+    WRITE_STATE: Bool,
     qkv_input_ragged_LT: TensorLayout,
     conv_weight_LT: TensorLayout,
     conv_state_LT: TensorLayout,
@@ -89,180 +102,245 @@ def gated_delta_conv1d_fwd_gpu[
     batch_size: Int32,
     total_seq_len: Int32,
     conv_dim: Int32,
+    tokens_per_block: Int32,
     qkv_input_ragged: TileTensor[
-        work_dtype, qkv_input_ragged_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, qkv_input_ragged_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     conv_weight: TileTensor[
-        work_dtype, conv_weight_LT, MutUntrackedOrigin, Engine=Engine
+        work_dtype, conv_weight_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     conv_state: TileTensor[
         state_dtype, conv_state_LT, MutUntrackedOrigin, Engine=Engine
     ],
     slot_idx: TileTensor[
-        .uint32, slot_idx_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, slot_idx_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     input_row_offsets: TileTensor[
-        .uint32, input_row_offsets_LT, MutUntrackedOrigin, Engine=Engine
+        .uint32, input_row_offsets_LT, ImmUntrackedOrigin, Engine=Engine
     ],
     conv_output_ragged: TileTensor[
         work_dtype, conv_output_ragged_LT, MutUntrackedOrigin, Engine=Engine
     ],
-    # Strides for [total_seq_len, conv_dim] tensors
-    qkv_input_seqlen_stride: UInt32,  # stride along total_seq_len axis
-    qkv_input_channel_stride: UInt32,  # stride along conv_dim axis (usually 1)
-    conv_weight_channel_stride: UInt32,  # stride along conv_dim axis
-    conv_weight_offset_stride: UInt32,  # stride along kernel_size axis
-    # Output strides (match input strides for conv_output_ragged)
-    conv_output_seqlen_stride: UInt32,
-    conv_output_channel_stride: UInt32,
 ):
-    """GPU kernel: slot-indexed causal depthwise conv1d over a ragged batch.
+    """Slot-indexed causal depthwise conv1d over a ragged batch.
 
-    The conv state lives in a single mutable pool of shape
-    ``[max_slots, conv_dim, K-1]``; the kernel reads/writes slot
-    ``slot_idx[batch_item_idx]`` for batch item ``batch_item_idx``. Reads of
-    the old window during look-back precede all writes of the new window, so
-    in-place mutation is safe. One thread handles one (batch_item,
-    conv_channel) pair for the entire sequence; the channel's K weights live
-    in registers across the token loop.
+    The thread owning a sequence's first token computes the outputs that
+    see the old conv window and then rewrites the window; later tokens read
+    only the ragged input. With `WRITE_STATE` False the window is left
+    unchanged.
     """
-    var _batch_size = Int(batch_size)
-    var _total_seq_len = Int(total_seq_len)
-    var _conv_dim = Int(conv_dim)
-    var batch_item_idx = Int(block_idx.x)
-    var channel_block_idx = Int(block_idx.y)
-    var thread_within_block = Int(thread_idx.x)
-
-    var conv_channel_idx = (
-        channel_block_idx * CONV1D_BLOCK_DIM + thread_within_block
-    )
-
-    if batch_item_idx >= _batch_size or conv_channel_idx >= _conv_dim:
-        return
-
-    # Read the pool slot for this batch item exactly once. The caller
-    # (`GatedDeltaNetStateCache.claim`) guarantees `slot < max_slots`.
-    var slot = Int(slot_idx.raw_load(batch_item_idx))
-
-    # ── Sequence boundaries from ragged offsets ─────────────────────────────
-    var sequence_start_flat_idx = Int(
-        input_row_offsets.raw_load(batch_item_idx)
-    )
-    var sequence_end_flat_idx = Int(
-        input_row_offsets.raw_load(batch_item_idx + 1)
-    )
-    var sequence_length = sequence_end_flat_idx - sequence_start_flat_idx
-
-    # ── Load conv weights for this channel into registers ───────────────────
-    # Avoids re-reading the same KERNEL_SIZE weights on every token step.
-    var weight_register = SIMD[work_dtype, KERNEL_SIZE](0)
-    comptime for kernel_offset_k in range(KERNEL_SIZE):
-        var weight_flat_offset = (
-            UInt32(conv_channel_idx) * conv_weight_channel_stride
-            + UInt32(kernel_offset_k) * conv_weight_offset_stride
-        )
-        weight_register[kernel_offset_k] = conv_weight.raw_load(
-            weight_flat_offset
-        )
-
     comptime KERNEL_SIZE_MINUS_ONE = KERNEL_SIZE - 1
 
-    # ── Process each token in this sequence ─────────────────────────────────
-    for token_position_in_sequence in range(sequence_length):
-        var flat_token_idx = (
-            sequence_start_flat_idx + token_position_in_sequence
+    var _total_seq_len = Int(total_seq_len)
+    var _batch_size = Int(batch_size)
+    var _tokens_per_block = Int(tokens_per_block)
+    var conv_channel_idx = block_idx.y * CONV1D_BLOCK_DIM + thread_idx.x
+
+    # Out-of-range threads must stay converged for the warp-wide batch lookup,
+    # so their reads are clamped and only their stores are suppressed.
+    var active = conv_channel_idx < Int(conv_dim)
+    var channel_read_idx = min(conv_channel_idx, Int(conv_dim) - 1)
+
+    var weight_register = SIMD[work_dtype, KERNEL_SIZE](0)
+    comptime for kernel_offset_k in range(KERNEL_SIZE):
+        weight_register[kernel_offset_k] = conv_weight.load[width=1](
+            (channel_read_idx, kernel_offset_k)
         )
-        var conv_sum = Float32(0.0)
 
-        # Convolve: sum over K offsets, looking back K-1 tokens.
-        # For kernel offset k, the input token is at relative position:
-        #   lookback_position = token_position_in_sequence - (KERNEL_SIZE - 1 - k)
-        # A negative lookback_position falls before the current sequence and
-        # is read from conv_state.  Non-negative positions come from the
-        # ragged input buffer.
-        comptime for kernel_offset_k in range(KERNEL_SIZE):
-            var lookback_position = token_position_in_sequence - (
-                KERNEL_SIZE_MINUS_ONE - kernel_offset_k
-            )
+    # The ragged input and output are addressed as row * stride + channel in
+    # 32 bits, instead of resolving a full 64-bit coordinate per access, so
+    # their linear offsets must stay below 2**32 (the host launcher checks
+    # this). The state pool uses coordinate access, which is 64-bit.
+    # TODO(bez): return to coordinate access for the ragged tensors once
+    # TileTensor coordinate loads/stores stop costing extra registers here.
+    var input_row_stride = UInt32(
+        qkv_input_ragged.layout[
+            linear_idx_type=qkv_input_ragged.linear_idx_type
+        ](Coord(1, 0))
+    )
+    var input_channel_offset = UInt32(
+        qkv_input_ragged.layout[
+            linear_idx_type=qkv_input_ragged.linear_idx_type
+        ](Coord(0, channel_read_idx))
+    )
+    var output_row_stride = UInt32(
+        conv_output_ragged.layout[
+            linear_idx_type=conv_output_ragged.linear_idx_type
+        ](Coord(1, 0))
+    )
+    var output_channel_offset = UInt32(
+        conv_output_ragged.layout[
+            linear_idx_type=conv_output_ragged.linear_idx_type
+        ](Coord(0, conv_channel_idx))
+    )
 
-            # Cast on read so the work-dtype qkv input and the state-dtype
-            # pool produce the same Float32 conv_sum accumulator.
-            var input_value: Float32 = 0
+    # Cached across the consecutive tokens this thread owns.
+    var batch_item_idx = 0
+    var sequence_start_flat_idx = 0
+    var sequence_end_flat_idx = 0
 
-            if lookback_position >= 0:
-                # Within the current sequence: read from ragged input buffer
-                var ragged_flat_offset = (
-                    UInt32(sequence_start_flat_idx + lookback_position)
-                    * qkv_input_seqlen_stride
-                    + UInt32(conv_channel_idx) * qkv_input_channel_stride
-                )
-                input_value = Float32(
-                    qkv_input_ragged.raw_load(ragged_flat_offset)
-                )
+    var first_flat_token_idx = block_idx.x * _tokens_per_block
+    for flat_token_idx in range(
+        first_flat_token_idx,
+        min(first_flat_token_idx + _tokens_per_block, _total_seq_len),
+    ):
+        if flat_token_idx >= sequence_end_flat_idx:
+            # Rightmost b with input_row_offsets[b] <= flat_token_idx, which
+            # skips zero-length sequences.
+            if _batch_size == 1:
+                batch_item_idx = 0
             else:
-                # Before the current sequence: read from conv_state pool slot.
-                # Map the negative lookback to a position within the K-1 window:
-                #   window_idx = KERNEL_SIZE_MINUS_ONE + lookback_position
-                # When lookback_position = -(KERNEL_SIZE-1) this is window_idx 0
-                # (oldest). When lookback_position = -1 this is window_idx
-                # KERNEL_SIZE-2 (newest).
-                var window_idx = KERNEL_SIZE_MINUS_ONE + lookback_position
-                if window_idx >= 0:
+                var looked_up = False
+                # The 32-bit ballot does not lower on 64-lane AMD wavefronts.
+                comptime if is_nvidia_gpu():
+                    comptime assert WARP_SIZE == 32, "ballot is 32 bits wide"
+                    if _batch_size <= WARP_SIZE:
+                        # One parallel load instead of a dependent-load chain.
+                        var lane = lane_id()
+                        var found = False
+                        if lane < _batch_size:
+                            found = (
+                                Int(input_row_offsets.load[width=1]((lane,)))
+                                <= flat_token_idx
+                            )
+                        var ballot = warp.vote[.uint32](found)
+                        var warp_lookup = (
+                            WARP_SIZE - 1 - Int(count_leading_zeros(ballot))
+                        )
+                        if warp_lookup < 0:
+                            warp_lookup = 0
+                        batch_item_idx = warp_lookup
+                        looked_up = True
+                if not looked_up:
+                    var lo = 0
+                    var hi = _batch_size - 1
+                    while lo < hi:
+                        var mid = (lo + hi + 1) >> 1
+                        if (
+                            Int(input_row_offsets.load[width=1]((mid,)))
+                            <= flat_token_idx
+                        ):
+                            lo = mid
+                        else:
+                            hi = mid - 1
+                    batch_item_idx = lo
+            sequence_start_flat_idx = Int(
+                input_row_offsets.load[width=1]((batch_item_idx,))
+            )
+            sequence_end_flat_idx = Int(
+                input_row_offsets.load[width=1]((batch_item_idx + 1,))
+            )
+
+        var sequence_length = sequence_end_flat_idx - sequence_start_flat_idx
+        var token_position_in_sequence = (
+            flat_token_idx - sequence_start_flat_idx
+        )
+
+        if token_position_in_sequence >= KERNEL_SIZE_MINUS_ONE:
+            # All K taps come from the ragged input; conv_state is untouched.
+            var conv_sum = Float32(0.0)
+            comptime for kernel_offset_k in range(KERNEL_SIZE):
+                var lookback_position = token_position_in_sequence - (
+                    KERNEL_SIZE_MINUS_ONE - kernel_offset_k
+                )
+                var tap_offset = (
+                    UInt32(sequence_start_flat_idx + lookback_position)
+                    * input_row_stride
+                    + input_channel_offset
+                )
+                conv_sum += Float32(
+                    qkv_input_ragged.raw_load(tap_offset)
+                ) * Float32(weight_register[kernel_offset_k])
+
+            if active:
+                conv_output_ragged.raw_store(
+                    UInt32(flat_token_idx) * output_row_stride
+                    + output_channel_offset,
+                    Scalar[work_dtype](conv_sum),
+                )
+            continue
+
+        if token_position_in_sequence >= 1:
+            # The head thread already computed this output.
+            continue
+
+        var slot = Int(slot_idx.load[width=1]((batch_item_idx,)))
+        debug_assert(
+            0 <= slot < Int(conv_state.dim[0]()), "conv state slot out of range"
+        )
+
+        for head_position in range(min(KERNEL_SIZE_MINUS_ONE, sequence_length)):
+            var conv_sum = Float32(0.0)
+
+            comptime for kernel_offset_k in range(KERNEL_SIZE):
+                var lookback_position = head_position - (
+                    KERNEL_SIZE_MINUS_ONE - kernel_offset_k
+                )
+
+                # Cast on read so the work-dtype qkv input and the state-dtype
+                # pool produce the same Float32 conv_sum accumulator.
+                var input_value: Float32 = 0
+
+                if lookback_position >= 0:
                     input_value = Float32(
-                        conv_state.load(
-                            Coord(slot, conv_channel_idx, window_idx)
-                        )[0]
+                        qkv_input_ragged.raw_load(
+                            UInt32(sequence_start_flat_idx + lookback_position)
+                            * input_row_stride
+                            + input_channel_offset
+                        )
                     )
+                else:
+                    # Window index 0 is the oldest entry.
+                    var window_idx = KERNEL_SIZE_MINUS_ONE + lookback_position
+                    if window_idx >= 0:
+                        input_value = Float32(
+                            conv_state.load[width=1](
+                                (slot, channel_read_idx, window_idx)
+                            )
+                        )
 
-            conv_sum += input_value * Float32(weight_register[kernel_offset_k])
+                conv_sum += input_value * Float32(
+                    weight_register[kernel_offset_k]
+                )
 
-        var output_flat_offset = (
-            UInt32(flat_token_idx) * conv_output_seqlen_stride
-            + UInt32(conv_channel_idx) * conv_output_channel_stride
-        )
-        conv_output_ragged.raw_store(
-            output_flat_offset, Scalar[work_dtype](conv_sum)
-        )
+            if active:
+                conv_output_ragged.raw_store(
+                    UInt32(sequence_start_flat_idx + head_position)
+                    * output_row_stride
+                    + output_channel_offset,
+                    Scalar[work_dtype](conv_sum),
+                )
 
-    # ── Update conv_state: the last KERNEL_SIZE-1 raw input tokens ──────────
-    # slot j should hold the raw input at position seq_len - (KERNEL_SIZE-1) + j.
-    # If that position is negative (sequence shorter than KERNEL_SIZE-1), the
-    # slot carries forward from the old conv_state at position
-    # KERNEL_SIZE_MINUS_ONE + (seq_len - KERNEL_SIZE_MINUS_ONE + j) = seq_len + j.
-    # This loop runs after the per-token loop, so all reads of the old window
-    # have completed before any write to the same buffer takes place.
-    comptime for state_slot_j in range(KERNEL_SIZE_MINUS_ONE):
-        var source_position_in_sequence = (
-            sequence_length - KERNEL_SIZE_MINUS_ONE + state_slot_j
-        )
+        # Safe in place: every old-window read precedes the write to its slot.
+        # Never return here; this thread may own more tokens in its tile.
+        comptime if WRITE_STATE:
+            comptime for state_slot_j in range(KERNEL_SIZE_MINUS_ONE):
+                var source_position_in_sequence = (
+                    sequence_length - KERNEL_SIZE_MINUS_ONE + state_slot_j
+                )
 
-        # The pool stores state_dtype; sources may be work_dtype (qkv_input)
-        # or state_dtype (carry-forward). Cast both into state_dtype on read,
-        # then write at state_dtype.
-        var state_value: Scalar[state_dtype] = 0
-        if source_position_in_sequence >= 0:
-            # Source token is within the current sequence
-            var source_flat_offset = (
-                UInt32(sequence_start_flat_idx + source_position_in_sequence)
-                * qkv_input_seqlen_stride
-                + UInt32(conv_channel_idx) * qkv_input_channel_stride
-            )
-            state_value = Scalar[state_dtype](
-                qkv_input_ragged.raw_load(source_flat_offset)
-            )
-        else:
-            # Source token is before the current sequence; carry from old state.
-            # The old window position is
-            #   KERNEL_SIZE_MINUS_ONE + source_position_in_sequence
-            # (still negative-offset from the old window end).
-            var old_window_idx = (
-                KERNEL_SIZE_MINUS_ONE + source_position_in_sequence
-            )
-            if old_window_idx >= 0:
-                state_value = conv_state.load(
-                    Coord(slot, conv_channel_idx, old_window_idx)
-                )[0]
+                var state_value: Scalar[state_dtype] = 0
+                if source_position_in_sequence >= 0:
+                    state_value = Scalar[state_dtype](
+                        qkv_input_ragged.raw_load(
+                            UInt32(
+                                sequence_start_flat_idx
+                                + source_position_in_sequence
+                            )
+                            * input_row_stride
+                            + input_channel_offset
+                        )
+                    )
+                else:
+                    var old_window_idx = (
+                        KERNEL_SIZE_MINUS_ONE + source_position_in_sequence
+                    )
+                    if old_window_idx >= 0:
+                        state_value = conv_state.load[width=1](
+                            (slot, channel_read_idx, old_window_idx)
+                        )
 
-        conv_state.store(
-            Coord(slot, conv_channel_idx, state_slot_j), state_value
-        )
+                if active:
+                    conv_state.store(
+                        (slot, conv_channel_idx, state_slot_j), state_value
+                    )

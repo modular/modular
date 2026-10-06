@@ -285,19 +285,13 @@ def test_case_sampling(
     var in_logits_ptr = ctx.enqueue_create_host_buffer[dtype](
         batch_size * vocab_size
     )
-    var in_logits = TileTensor(
-        in_logits_ptr, row_major(Coord(batch_size, vocab_size))
-    )
+    var in_logits = TileTensor(in_logits_ptr, row_major(batch_size, vocab_size))
     var token_ids_ptr = ctx.enqueue_create_host_buffer[out_idx_type](
         batch_size * 1
     )
-    var token_ids = TileTensor(
-        token_ids_ptr, row_major(Coord(batch_size, Int(1)))
-    )
+    var token_ids = TileTensor(token_ids_ptr, row_major(batch_size, Int(1)))
     var p_thresholds_ptr = ctx.enqueue_create_host_buffer[dtype](batch_size)
-    var p_thresholds = TileTensor(
-        p_thresholds_ptr, row_major(Coord(batch_size))
-    )
+    var p_thresholds = TileTensor(p_thresholds_ptr, row_major(batch_size))
 
     # Fill tensors
     fill_fn(in_logits)

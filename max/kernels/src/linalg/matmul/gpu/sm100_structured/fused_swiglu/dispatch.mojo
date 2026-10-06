@@ -80,7 +80,7 @@ def matmul_swiglu_dispatch_sm100[
         bias_ptr_c = rebind[
             UnsafePointer[Scalar[config.c_type], ImmutAnyOrigin]
         ](bias_ptr.value())
-    var bias_tile = TileTensor(bias_ptr_c, row_major(Coord(Int(b.dim[0]()))))
+    var bias_tile = TileTensor(bias_ptr_c, row_major(Int(b.dim[0]())))
     comptime if config.AB_swapped:
         # Swap inputs so the kernel sees A = W (b) and B = X (a). The
         # inner implementation reads kernel-frame M from a_device.dim[0]
@@ -140,7 +140,7 @@ def matmul_swiglu_dispatch_sm100_bf16[
     var bias_base = rebind[UnsafePointer[BFloat16, ImmutAnyOrigin]](c_out.ptr)
     comptime if has_bias:
         bias_base = bias_ptr.value()
-    var bias_tile = TileTensor(bias_base, row_major(Coord(Idx[static_N])))
+    var bias_tile = TileTensor(bias_base, row_major(Idx[static_N]))
     comptime assert static_N % 2 == 0, "N must be even for SwiGLU gate/up split"
 
     comptime tuning_table = Table(

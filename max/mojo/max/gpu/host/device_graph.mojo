@@ -51,6 +51,7 @@ from max.gpu.host.device_context import (
     _check_dim,
     _checked,
     _CString,
+    _DeviceBufferMode,
     _DeviceBufferPtr,
     _DeviceContextPtr,
     _DeviceFunctionPtr,
@@ -291,6 +292,40 @@ struct DeviceGraphCache(Movable):
         """
         return Self._make_key(build, inputs)
 
+    @staticmethod
+    def make_key[
+        *Ts: DeviceGraphInput
+    ](*inputs: *Ts,) -> String:
+        """Derives the input-only cache key for a graph.
+
+        The returned key covers only the inputs; the caller is responsible for
+        combining it with any closure/work-function identity. This is useful
+        when the closure identity is handled separately, e.g. by
+        `DeviceGraph.create_collective`.
+
+        Parameters:
+            Ts: Types of the device graph inputs.
+
+        Args:
+            inputs: The inputs whose contributions distinguish this graph.
+
+        Returns:
+            The cache key.
+        """
+        var key = String()
+
+        comptime for i in range(len(Ts)):
+            if i > 0:
+                key.write("|")
+            inputs[i].write_graph_key(key)
+
+        return key^
+
+    @staticmethod
+    def _closure_key(func: Some[AnyType]) -> String:
+        comptime name = reflect[type_of(func)].name()
+        return String(name)
+
     # Takes the pack itself so a variadic caller can forward its own inputs,
     # which the variadic spelling above cannot express.
     @staticmethod
@@ -301,8 +336,15 @@ struct DeviceGraphCache(Movable):
         inputs: VariadicPack[
             origin=origin, element_trait=DeviceGraphInput, False, *Ts
         ],
+        ctx: Optional[DeviceContext] = None,
     ) -> String:
-        var key = String(reflect[type_of(build)].name())
+        var key = Self._closure_key(build)
+
+        if ctx:
+            try:
+                key.write(t"Device({ctx.value().id()})", "|")
+            except e:
+                pass
 
         # Every contribution is separated, so no set of inputs can spell the
         # same key as a different set by running together -- inputs writing
@@ -465,7 +507,9 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         """
         # void AsyncRT_DeviceGraph_retain(DeviceGraph *graph)
         external_call[
-            "AsyncRT_DeviceGraph_retain", NoneType, _DeviceGraphPtr[mut=True]
+            "AsyncRT_DeviceGraph_retain",
+            NoneType,
+            _DeviceGraphPtr[mut=True],
         ](copy._handle)
         self._handle = copy._handle
 
@@ -473,7 +517,9 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         """Releases resources associated with this device graph."""
         # void AsyncRT_DeviceGraph_release(DeviceGraph *graph)
         external_call[
-            "AsyncRT_DeviceGraph_release", NoneType, _DeviceGraphPtr[mut=True]
+            "AsyncRT_DeviceGraph_release",
+            NoneType,
+            _DeviceGraphPtr[mut=True],
         ](self._handle)
 
     @doc_hidden
@@ -526,6 +572,152 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
                 _CString[],
                 _DeviceGraphPtr[mut=True],
             ](self._handle)
+        )
+
+    @staticmethod
+    def replay_collective[
+        N: Int
+    ](graphs: Array[DeviceGraph, N], ctxs: Array[DeviceContext, N],) raises:
+        """Replays the graphs of a collective.
+
+        Parameters:
+            N: Number of graphs in the collective.
+
+        Args:
+            graphs: The graphs `DeviceGraph.create_collective()` returned, in
+                the order it returned them.
+            ctxs: The device contexts the graphs were created on, in the same
+                order.
+
+        Raises:
+            If publishing a slot, enqueuing a wait, replaying a graph, or
+            synchronizing a context fails.
+        """
+        for graph in graphs:
+            graph.replay()
+
+        for ctx in ctxs:
+            ctx.synchronize()
+
+    @staticmethod
+    def create_collective[
+        N: Int,
+        //,
+    ](
+        ctxs: Array[DeviceContext, N],
+        build_for: Some[def[n: Int](mut DeviceGraphBuilder[_]) raises],
+        key_for: Some[def[n: Int]() raises -> String],
+        cache: Pointer[mut=True, DeviceGraphCache, _],
+    ) raises -> Array[DeviceGraph, N]:
+        """Builds a `DeviceGraph` for every device in `ctxs` against a shared
+        cache.
+
+        For each device `i` in `range(N)`, instantiates a graph from
+        `build_for[i]` on `ctxs[i]` and consults `cache` for a matching entry.
+        On a hit the cached graph is returned and `build_for[i]` is never
+        called.
+
+        Parameters:
+            N: Number of device contexts, and the resulting graph count.
+
+        Args:
+            ctxs: The device contexts to build graphs for.
+            build_for: Per-device callback, indexed by the device ordinal,
+                that adds nodes to the supplied builder. Invoked only on a
+                cache miss for that device.
+            key_for: Per-device function returning the runtime portion of the
+                cache key. This function is generated by the graph compiler
+                based on the computed interface of the device graph.
+            cache: The cache to consult and store newly built graphs in.
+
+        Returns:
+            One instantiated `DeviceGraph` per entry of `ctxs`, in the same
+            order.
+
+        Raises:
+            If any device in `ctxs` lacks graph support, or if `build_for[i]`,
+            `key_for[i]`, graph builder creation, or instantiation fails.
+
+        Example:
+
+        ```mojo
+        from max.gpu.host import (
+            DeviceContext, DeviceGraph, DeviceGraphBuilder, DeviceGraphCache
+        )
+
+        def kernel_a():
+            print("a")
+
+        def kernel_b():
+            print("b")
+
+        with DeviceContext() as ctx:
+            var f0 = ctx.compile_function[kernel_a]()
+            var f1 = ctx.compile_function[kernel_b]()
+            var contexts: Array[DeviceContext, 2] = [ctx, ctx]
+            var cache = DeviceGraphCache()
+
+            def build_for[n: Int](mut b: DeviceGraphBuilder[_]) raises {imm}:
+                comptime if n == 0:
+                    _ = b.add_function(f0, grid_dim=1, block_dim=1, dependencies=[])
+                else:
+                    _ = b.add_function(f1, grid_dim=1, block_dim=1, dependencies=[])
+
+            def key_for[n: Int]() {imm} -> String:
+                comptime if n == 0:
+                    return "graph_a"
+                else:
+                    return "graph_b"
+
+            var graphs = DeviceGraph.create_collective(
+                contexts,
+                build_for,
+                key_for,
+                cache=Pointer(to=cache),
+            )
+            graphs[0].replay()
+            graphs[1].replay()
+            ctx.synchronize()
+        ```
+        """
+        var result = Array[Optional[DeviceGraph], N]()
+
+        comptime for i in range(N):
+            var ctx = ctxs[i]
+            var key = DeviceGraphCache._closure_key(build_for)
+            key.write(t"|Device({ctx.id()})|")
+            key.write(key_for[i]())
+
+            def build(mut b: DeviceGraphBuilder[_]) raises {imm}:
+                build_for[i](b)
+
+            # Caching of command buffers can easily exceed the maximum number of
+            # supported command buffers. For now, restrict caching to genuine device
+            # graph implementations.
+            if ctx.api() not in ("cuda", "hip"):
+                result[i] = Self.create(ctx, build)
+                continue
+
+            var found = cache[].lookup(key)
+            if found:
+                _logger.info("found existing device graph for key", key)
+                result[i] = found.take()
+                continue
+
+            _logger.info("recording new device graph for key", key)
+
+            # Graphs built through the cache draw from one pool per device
+            # context, so they share activation memory. Cached graphs replay
+            # serially in recording order, which is what makes sharing sound.
+            var graph = Self._create(
+                ctxs[i], build, cache[].get_or_create_pool(ctxs[i])
+            )
+            result[i] = cache[].cache(key^, graph^)
+
+        return Array[DeviceGraph, N](
+            fill_with=lambda (i: Int) {mut result} -> DeviceGraph: result[
+                i
+            ].take()
         )
 
     @staticmethod
@@ -587,25 +779,26 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
             ctx.synchronize()
         ```
         """
-        # Caching of command buffers can easily exceed the maximum number of
-        # supported command buffers. For now, restrict caching to genuine device
-        # graph implementations.
-        if ctx.api() not in ("cuda", "hip"):
-            return Self.create(ctx, build)
+        var ctxs: Array[DeviceContext, 1] = [ctx]
 
-        var key = DeviceGraphCache._make_key(build, inputs)
+        def collective_key[n: Int]() {imm} -> String:
+            comptime assert n == 0
+            return DeviceGraphCache._make_key(build, inputs)
 
-        var found = cache[].lookup(key)
-        if found:
-            _logger.info("found existing device graph for key", key)
-            return found.take()
-        _logger.info("recording new device graph for key", key)
+        def collective_build[
+            n: Int
+        ](mut builder: DeviceGraphBuilder[_]) raises {imm}:
+            comptime assert n == 0
+            build(builder)
 
-        # Graphs built through the cache draw from one pool per device
-        # context, so they share activation memory. Cached graphs replay
-        # serially in recording order, which is what makes sharing sound.
-        var graph = Self._create(ctx, build, cache[].get_or_create_pool(ctx))
-        return cache[].cache(key^, graph^)
+        var graphs = Self.create_collective(
+            ctxs,
+            collective_build,
+            collective_key,
+            cache,
+        )
+
+        return graphs[0]
 
     @staticmethod
     def create(
@@ -967,7 +1160,6 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             return Self.Node(id.value())
         return None
 
-    @__parameter
     @inline(.always)
     def add_function[
         *Ts: DevicePassable
@@ -1678,14 +1870,14 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         var value: UInt64
 
         comptime __match bitwidth:
-        case 8:
-            value = UInt64(Int(bitcast[.uint8, 1](val)))
-        case 16:
-            value = UInt64(Int(bitcast[.uint16, 1](val)))
-        case 32:
-            value = UInt64(bitcast[.uint32, 1](val))
-        case _:
-            value = bitcast[.uint64, 1](val)
+            case 8:
+                value = UInt64(Int(bitcast[.uint8, 1](val)))
+            case 16:
+                value = UInt64(Int(bitcast[.uint16, 1](val)))
+            case 32:
+                value = UInt64(bitcast[.uint32, 1](val))
+            case _:
+                value = bitcast[.uint64, 1](val)
 
         dependencies = self._merge_implicit(dependencies^)
         var dep_args = _pack_dep_args(dependencies)

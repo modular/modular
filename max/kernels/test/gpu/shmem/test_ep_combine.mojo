@@ -259,8 +259,7 @@ def test_combine[
     var e2e_stat_m2: Float64 = 0
 
     @inline(.always)
-    @__parameter
-    def run_full_dispatch(ctx: DeviceContext) raises:
+    def run_full_dispatch(ctx: DeviceContext) raises {var atomic_counter, imm}:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
         var recv_buf_ptrs: Array[Pointer[UInt8, MutAnyOrigin], 1] = [recv_buf]
         var recv_count_ptrs: Array[Pointer[UInt64, MutAnyOrigin], 1] = [
@@ -433,7 +432,7 @@ def main() raises:
     comptime test_gpu_counts = (8,)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
-        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 

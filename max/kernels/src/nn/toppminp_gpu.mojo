@@ -22,7 +22,6 @@ from max.gpu.sync import barrier
 import max.gpu.primitives.warp as warp
 from max.gpu.host import DeviceContext, DeviceBuffer
 from max.gpu.host import Dim
-from std.sys.info import has_apple_gpu_accelerator
 from std.random import Random
 from layout import Coord, Idx, TileTensor, row_major
 from std.memory import bitcast, unsafe_stack_allocation
@@ -247,21 +246,22 @@ def normalize(
     """
     comptime dtype = value.dtype
 
-    comptime if dtype == .int32:
-        return normalize(rebind[Int32](value)).cast[result.dtype]()
-    elif dtype == .uint32:
-        return normalize(rebind[UInt32](value)).cast[result.dtype]()
-    elif dtype == .float32:
-        return normalize(rebind[Float32](value)).cast[result.dtype]()
-    # TODO: These below don't return uint32 so must generalize and fix
-    elif dtype == .uint16:
-        return normalize(rebind[UInt16](value)).cast[result.dtype]()
-    elif dtype == .float16:
-        return normalize(rebind[Float16](value)).cast[result.dtype]()
-    elif dtype == .bfloat16:
-        return normalize(rebind[BFloat16](value)).cast[result.dtype]()
-    else:
-        comptime assert False, "unhandled normalize type"
+    comptime __match dtype:
+        case .int32:
+            return normalize(rebind[Int32](value)).cast[result.dtype]()
+        case .uint32:
+            return normalize(rebind[UInt32](value)).cast[result.dtype]()
+        case .float32:
+            return normalize(rebind[Float32](value)).cast[result.dtype]()
+        # TODO: These below don't return uint32 so must generalize and fix
+        case .uint16:
+            return normalize(rebind[UInt16](value)).cast[result.dtype]()
+        case .float16:
+            return normalize(rebind[Float16](value)).cast[result.dtype]()
+        case .bfloat16:
+            return normalize(rebind[BFloat16](value)).cast[result.dtype]()
+        case _:
+            comptime assert False, "unhandled normalize type"
 
 
 @inline(.always)
@@ -779,7 +779,7 @@ def _topp_minp_sampling_gpu[
         "Unsupported dtype: ", dtype
     )
 
-    comptime BLOCK_SIZE = WARP_SIZE if has_apple_gpu_accelerator() else 256
+    comptime BLOCK_SIZE = WARP_SIZE if ctx.target.is_apple_gpu() else 256
 
     # Step 1; Apply temperature scaling to the logits and apply
     # softmax to get probabilities

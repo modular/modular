@@ -675,9 +675,9 @@ def rms_norm_gpu_warp_tiling[
     var eps_accum = epsilon.cast[accum_type]()
     var weight_offset_accum = weight_offset.cast[accum_type]()
 
-    var tid = Int(thread_idx.x)
-    var row = Int(block_idx.x)
-    var bdim = Int(block_dim.x)
+    var tid = thread_idx.x
+    var row = block_idx.x
+    var bdim = block_dim.x
 
     # Hoist the rank-N row translation ONCE; reuse the base for load and store.
     var base = _get_start_indices_of_nth_subvolume_static(row, row_spec.shape)
@@ -727,8 +727,7 @@ def rms_norm_gpu_warp_tiling[
             var col = (c * bdim + tid) * simd_width
 
             @inline(.always)
-            @__parameter
-            def _normalize() -> SIMD[dtype, simd_width]:
+            def _normalize() {imm} -> SIMD[dtype, simd_width]:
                 comptime if multiply_before_cast:
                     var gamma_accum = (
                         gamma_val[c].cast[accum_type]() + weight_offset_accum
@@ -983,9 +982,8 @@ def rms_norm_gpu[
     # warps, capped at the device max), each owning `eff_simd * chunks` columns.
     # Single source of truth for both the launcher and the warp-per-row gate
     # below.
-    @__parameter
     @inline(.always)
-    def _wt_threads_per_block[eff_simd: Int, chunks: Int]() -> Int:
+    def _wt_threads_per_block[eff_simd: Int, chunks: Int]() {imm} -> Int:
         var threads = ceildiv(ceildiv(cols, eff_simd), chunks)
         return min(
             align_up(threads, WARP_SIZE),
@@ -994,9 +992,8 @@ def rms_norm_gpu[
 
     # `exact` means every thread is fully active (the block tiles the row with
     # no ragged tail), so the unguarded kernel can be used.
-    @__parameter
     @inline(.always)
-    def _wt_exact[eff_simd: Int, chunks: Int]() -> Bool:
+    def _wt_exact[eff_simd: Int, chunks: Int]() {imm} -> Bool:
         return (
             _wt_threads_per_block[eff_simd, chunks]() * eff_simd * chunks
         ) == cols
@@ -1043,15 +1040,13 @@ def rms_norm_gpu[
     # Launch the multi-chunk warp-tiling kernel. `exact_fit` (every thread
     # fully active, no ragged tail) is decided at runtime and selects the
     # unguarded instantiation.
-    @__parameter
     @inline(.always)
-    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises:
+    def _launch_warp_tiling[eff_simd: Int, chunks: Int]() raises {imm}:
         var threads_per_block = _wt_threads_per_block[eff_simd, chunks]()
         var exact = _wt_exact[eff_simd, chunks]()
 
-        @__parameter
         @inline(.always)
-        def _enqueue[exact_fit: Bool]() raises:
+        def _enqueue[exact_fit: Bool]() raises {imm}:
             comptime kernel = rms_norm_gpu_warp_tiling[
                 mut=gamma.mut,
                 LayoutType=gamma.LayoutType,
@@ -1487,7 +1482,6 @@ def _rms_norm_impl[
         # Nothing to do.
         return
 
-    @__parameter
     @inline(.always)
     def input_fn_target[width: Int](coords: Coord) -> SIMD[dtype, width]:
         comptime align = _rms_norm_input_alignment[dtype, width, target]()
@@ -1622,8 +1616,7 @@ def apply_qk_rms_norm_gpu_block[
     with PDL():
         # rsqrt of the (already cross-rank reduced) per-row mean of squares.
         var rs = rsqrt(
-            qk_var.load[width=1](Coord(Index(Int(row), Int(block_idx.y))))
-            + epsilon
+            qk_var.load[width=1](Coord(Index(Int(row), block_idx.y))) + epsilon
         )
 
         # Each block owns a single (row, operand); threads grid-stride the cols.
@@ -1988,18 +1981,30 @@ def group_norm_gpu_warp_tiling[
     //,
     dtype: DType,
     simd_width: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
-    gamma_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    beta_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](row: Int, col: Int) -> SIMD[dtype, width],
+    GammaFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
+    BetaFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
 ](
     output: TileTensor[dtype, LayoutType, origin],
     epsilon: Float32,
     num_groups: Int32,
     channels_per_group: Int32,
     spatial: Int32,
+    input_fn: InputFnType,
+    gamma_fn: GammaFnType,
+    beta_fn: BetaFnType,
 ):
+    """Warp-tiling group_norm kernel.
+
+    `input_fn`, `gamma_fn`, and `beta_fn` are trailing host-layout arguments
+    so enqueue does not DevicePassable-encode those capturing closures.
+    """
     var _num_groups = Int(num_groups)
     var _channels_per_group = Int(channels_per_group)
     var _spatial = Int(spatial)
@@ -2065,18 +2070,30 @@ def group_norm_gpu_block[
     //,
     dtype: DType,
     simd_width: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
-    gamma_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    beta_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](row: Int, col: Int) -> SIMD[dtype, width],
+    GammaFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
+    BetaFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
 ](
     output: TileTensor[dtype, LayoutType, origin],
     epsilon: Float32,
     num_groups: Int32,
     channels_per_group: Int32,
     spatial: Int32,
+    input_fn: InputFnType,
+    gamma_fn: GammaFnType,
+    beta_fn: BetaFnType,
 ):
+    """Block-per-row group_norm kernel.
+
+    `input_fn`, `gamma_fn`, and `beta_fn` are trailing host-layout arguments
+    so enqueue does not DevicePassable-encode those capturing closures.
+    """
     var _num_groups = Int(num_groups)
     var _channels_per_group = Int(channels_per_group)
     var _spatial = Int(spatial)
@@ -2158,19 +2175,23 @@ def group_norm_gpu_multi_block_stats[
     //,
     dtype: DType,
     simd_width: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](row: Int, col: Int) -> SIMD[dtype, width],
 ](
     stats: TileTensor[get_accum_type[dtype](), StatsLayoutType, stats_origin],
     num_splits: Int32,
     group_size: Int32,
+    input_fn: InputFnType,
 ):
     """Multi-block stats kernel: computes partial Welford statistics per split.
 
     Grid: num_rows * _num_splits blocks. Each block handles one split of one
     group and writes partial (mean, m2, count) to the stats buffer.
     Stats layout: stats[block_idx * 3 + {0,1,2}] = {mean, m2, count}.
+
+    `input_fn` is a trailing host-layout argument so enqueue does not
+    DevicePassable-encode that capturing closure.
     """
     var _num_splits = Int(num_splits)
     var _group_size = Int(group_size)
@@ -2238,11 +2259,15 @@ def group_norm_gpu_multi_block_norm[
     //,
     dtype: DType,
     simd_width: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
-    gamma_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    beta_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](row: Int, col: Int) -> SIMD[dtype, width],
+    GammaFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
+    BetaFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & def[width: Int](Coord) -> SIMD[dtype, width],
 ](
     output: TileTensor[dtype, OutputLayoutType, output_origin],
     stats: TileTensor[get_accum_type[dtype](), StatsLayoutType, stats_origin],
@@ -2252,12 +2277,18 @@ def group_norm_gpu_multi_block_norm[
     spatial: Int32,
     num_splits: Int32,
     group_size: Int32,
+    input_fn: InputFnType,
+    gamma_fn: GammaFnType,
+    beta_fn: BetaFnType,
 ):
     """Multi-block normalize kernel: reduces partial stats and normalizes.
 
     Grid: num_rows * num_splits blocks. Each block reads all partial stats
     for its group, reduces to final mean/variance, then normalizes its
     chunk of elements.
+
+    `input_fn`, `gamma_fn`, and `beta_fn` are trailing host-layout arguments
+    so enqueue does not DevicePassable-encode those capturing closures.
     """
     var _num_groups = Int(num_groups)
     var _channels_per_group = Int(channels_per_group)
@@ -2350,10 +2381,19 @@ def group_norm_gpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    gamma_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    beta_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
+    GammaFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
+    BetaFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
 ](
+    input_fn: InputFn,
+    gamma_fn: GammaFn,
+    beta_fn: BetaFn,
     shape: Coord,
     epsilon: Float32,
     output: TileTensor[mut=True, dtype, ...],
@@ -2394,12 +2434,16 @@ def group_norm_gpu[
     if num_rows == OutputLinearIdxType(0) or num_cols == OutputLinearIdxType(0):
         return
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(spatial, last_dim, num_groups, channels_per_group)
     def input_fn_2d[
         simd_width: Int
-    ](row: Int, col: Int) capturing -> SIMD[dtype, simd_width]:
+    ](row: Int, col: Int) {
+        var spatial,
+        var last_dim,
+        var num_groups,
+        var channels_per_group,
+        var input_fn,
+    } -> SIMD[dtype, simd_width]:
         var n, g = divmod(row, num_groups)
         var c = g * channels_per_group
 
@@ -2485,9 +2529,9 @@ def group_norm_gpu[
                 origin=output_rs.origin,
                 dtype=dtype,
                 simd_width=simd_width,
-                input_fn=input_fn_2d,
-                gamma_fn=gamma_fn,
-                beta_fn=beta_fn,
+                InputFnType=type_of(input_fn_2d),
+                GammaFnType=GammaFn,
+                BetaFnType=BetaFn,
             ]
             ctx.enqueue_function[kernel](
                 output_rs,
@@ -2495,6 +2539,9 @@ def group_norm_gpu[
                 Int32(num_groups),
                 Int32(channels_per_group),
                 Int32(spatial),
+                host_arg=input_fn_2d,
+                host_arg2=gamma_fn,
+                host_arg3=beta_fn,
                 grid_dim=grid_dim,
                 block_dim=block_dim,
                 attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -2555,12 +2602,13 @@ def group_norm_gpu[
                     stats_origin=stats.origin,
                     dtype=dtype,
                     simd_width=simd_width,
-                    input_fn=input_fn_2d,
+                    InputFnType=type_of(input_fn_2d),
                 ]
                 ctx.enqueue_function[stats_kernel](
                     stats,
                     Int32(num_splits),
                     Int32(group_size),
+                    host_arg=input_fn_2d,
                     grid_dim=mb_grid_dim,
                     block_dim=mb_block_dim,
                     attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -2574,9 +2622,9 @@ def group_norm_gpu[
                     stats_origin=stats.origin,
                     dtype=dtype,
                     simd_width=simd_width,
-                    input_fn=input_fn_2d,
-                    gamma_fn=gamma_fn,
-                    beta_fn=beta_fn,
+                    InputFnType=type_of(input_fn_2d),
+                    GammaFnType=GammaFn,
+                    BetaFnType=BetaFn,
                 ]
                 ctx.enqueue_function[norm_kernel](
                     output_rs,
@@ -2587,6 +2635,9 @@ def group_norm_gpu[
                     Int32(spatial),
                     Int32(num_splits),
                     Int32(group_size),
+                    host_arg=input_fn_2d,
+                    host_arg2=gamma_fn,
+                    host_arg3=beta_fn,
                     grid_dim=mb_grid_dim,
                     block_dim=mb_block_dim,
                     attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -2599,9 +2650,9 @@ def group_norm_gpu[
                     origin=output_rs.origin,
                     dtype=dtype,
                     simd_width=simd_width,
-                    input_fn=input_fn_2d,
-                    gamma_fn=gamma_fn,
-                    beta_fn=beta_fn,
+                    InputFnType=type_of(input_fn_2d),
+                    GammaFnType=GammaFn,
+                    BetaFnType=BetaFn,
                 ]
                 ctx.enqueue_function[kernel](
                     output_rs,
@@ -2609,6 +2660,9 @@ def group_norm_gpu[
                     Int32(num_groups),
                     Int32(channels_per_group),
                     Int32(spatial),
+                    host_arg=input_fn_2d,
+                    host_arg2=gamma_fn,
+                    host_arg3=beta_fn,
                     grid_dim=grid_dim,
                     block_dim=block_dim,
                     attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -2619,9 +2673,9 @@ def group_norm_gpu[
             origin=output_rs.origin,
             dtype=dtype,
             simd_width=1,
-            input_fn=input_fn_2d,
-            gamma_fn=gamma_fn,
-            beta_fn=beta_fn,
+            InputFnType=type_of(input_fn_2d),
+            GammaFnType=GammaFn,
+            BetaFnType=BetaFn,
         ]
         ctx.enqueue_function[kernel](
             output_rs,
@@ -2629,6 +2683,9 @@ def group_norm_gpu[
             Int32(num_groups),
             Int32(channels_per_group),
             Int32(spatial),
+            host_arg=input_fn_2d,
+            host_arg2=gamma_fn,
+            host_arg3=beta_fn,
             grid_dim=grid_dim,
             block_dim=block_dim,
             attributes=pdl_launch_attributes(PDLLevel.ON),
@@ -2639,10 +2696,19 @@ def group_norm_cpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    gamma_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    beta_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
+    GammaFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
+    BetaFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
 ](
+    input_fn: InputFn,
+    gamma_fn: GammaFn,
+    beta_fn: BetaFn,
     shape: Coord,
     epsilon: Float32,
     output: TileTensor[mut=True, dtype, ...],
@@ -2659,11 +2725,14 @@ def group_norm_cpu[
     Parameters:
         dtype: Element type of the input and output tensors.
         rank: Tensor rank of the input and output tensors (3 or 4).
+        InputFn: Type of the input load closure.
+        GammaFn: Type of the gamma load closure.
+        BetaFn: Type of the beta load closure.
+
+    Args:
         input_fn: Function called to generate an input value.
         gamma_fn: Function called to generate a gamma value.
         beta_fn: Function called to generate a beta value.
-
-    Args:
         shape: The shape of the input/output tensor.
         epsilon: Small constant for numerical stability.
         output: Output tensor receiving the normalized result.
@@ -2704,10 +2773,12 @@ def group_norm_cpu[
             var n, g = divmod(row, num_groups)
             var c_base = g * channels_per_group
 
-            @__copy_capture(shape, n, c_base, spatial)
-            @__parameter
             @inline(.always)
-            def indices_for(col: Int) -> DynamicCoord[.int64, rank]:
+            def indices_for(
+                col: Int,
+            ) {var shape, var n, var c_base, var spatial} -> DynamicCoord[
+                .int64, rank
+            ]:
                 var c_offset, s = divmod(col, spatial)
                 comptime if rank == 4:
                     var h, w = divmod(s, Int(shape[3].value()))
@@ -2749,12 +2820,21 @@ def group_norm_cpu[
 def group_norm[
     dtype: DType,
     rank: Int,
-    input_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    gamma_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
-    beta_fn: def[width: Int](Coord) capturing -> SIMD[dtype, width],
+    InputFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
+    GammaFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
+    BetaFn: ImplicitlyCopyable
+    & RegisterPassable
+    & (def[width: Int](Coord) -> SIMD[dtype, width]),
     /,
     target: StaticString = "cpu",
 ](
+    input_fn: InputFn,
+    gamma_fn: GammaFn,
+    beta_fn: BetaFn,
     shape: Coord,
     epsilon: Float32,
     groups: Int32,
@@ -2791,13 +2871,10 @@ def group_norm[
         task_id=Int(ctx.id()),
     ):
         comptime if is_cpu[target]():
-            group_norm_cpu[
-                dtype=dtype,
-                rank=rank,
-                input_fn=input_fn,
-                gamma_fn=gamma_fn,
-                beta_fn=beta_fn,
-            ](
+            group_norm_cpu[dtype=dtype, rank=rank](
+                input_fn,
+                gamma_fn,
+                beta_fn,
                 shape,
                 epsilon,
                 output,
@@ -2805,13 +2882,10 @@ def group_norm[
                 Optional[DeviceContext](ctx),
             )
         elif is_gpu[target]():
-            group_norm_gpu[
-                dtype=dtype,
-                rank=rank,
-                input_fn=input_fn,
-                gamma_fn=gamma_fn,
-                beta_fn=beta_fn,
-            ](
+            group_norm_gpu[dtype=dtype, rank=rank](
+                input_fn,
+                gamma_fn,
+                beta_fn,
                 shape,
                 epsilon,
                 output,

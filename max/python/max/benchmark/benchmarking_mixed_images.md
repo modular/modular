@@ -71,6 +71,48 @@ max benchmark \
 This attaches an image to the last user turn of every session. Use `every` to
 attach an image to every user turn instead of just one.
 
+### What the fraction counts
+
+In a multi-turn run `--image-fraction` draws per *session*, not per request.
+That matters when you are calibrating against a per-request production figure,
+because the chat driver resends a session's history: once a turn carries an
+image, every later turn of that session carries it again.
+
+With `--image-turn every` and `--image-count 1` the two coincide — newly
+encoded images per request and the share of requests carrying one both equal
+`--image-fraction`, which is what makes that combination the one to reach for
+when matching production. With `first` or `last` one image is encoded per
+session, so the encoder rate falls by roughly the average turn count. The share
+of requests carrying an image then depends on where that image lands, because
+only the image turn and the turns after it resend it:
+
+- `first`: every turn of a selected session carries the image, so the share
+  stays at `--image-fraction`.
+- `last`: only the final request of a selected session carries it, so the share
+  falls by the same factor as the encoder rate.
+
+The run reports the realized share as `image_request_rate`, in the "Request
+Mix" section of its results.
+
+This is deliberately unlike `--response-format-fraction`, which draws per
+request and per turn. A structured-output constraint applies only to the
+request that sets it, so a per-turn draw lands directly on the share of
+requests that set `response_format`. The rule for both: draw per session when
+the payload persists into later turns, per turn when it does not.
+
+### `--image-turn first` on a warmed session
+
+`first` is the default, and it is safe on sessions that start mid-conversation
+(`--warmup-to-steady-state`, on by default). Those sessions build their opening
+turns locally, but the driver splices the images into the history it sends, so
+an image on a replayed turn still reaches the server on the first measured
+request.
+
+This is where images and `--response-format-turn first` differ: a
+`response_format` is a per-request field the prefix loop never sets, so a
+constraint on a replayed turn is genuinely lost (CENG-1086). An image is part
+of the message history, so it is not.
+
 ## Matching a real image-size distribution
 
 `--image-count`, `--image-long-side`, and `--image-aspect-ratio` each accept

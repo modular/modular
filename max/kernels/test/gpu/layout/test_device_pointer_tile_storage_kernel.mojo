@@ -38,8 +38,8 @@ through that storage. Together those two accesses close the loop on the
   the `layout` field.)
 - The kernel reads the extents with `tile.dim[i]()` (a load from the `layout`
   field) and writes through `tile.raw_store(...)` (the device pointer).
-  `DevicePointerEngine.store` reinterprets the handle's first bytes as a bare
-  device pointer — the cast pattern the lower-level probe validated in
+  `DevicePointerEngine.unsafe_ptr` reinterprets the handle's first bytes as a
+  bare device pointer — the cast pattern the lower-level probe validated in
   isolation. The two together prove the `layout` field decoded at the right
   device offset and the encoded pointer is the real device address. (We store
   at linear indices via `raw_store` rather than via `tile[r, c]`: the variadic
@@ -53,7 +53,8 @@ which walks the struct and encodes each field at its device-layout offset: a
 `DevicePassable` field runs its own `_to_device_type` (so the `_storage`
 handle's `DevicePointer` substitutes its device-side leaf — a real device
 address written via `encode_device_ptr` — rather than being byte-copied as the
-host `DeviceBuffer` reference), while the plain `layout` field is bit-copied.
+host `DeviceBuffer` reference), while the `layout` field's `Coord`s are
+bit-copied.
 A flat `encoder.encode(self, target)` would instead byte-copy the whole host
 struct — correct only for a plain `DefaultEngine`-backed tile, but for a
 `DevicePointer` handle it would copy the host reference verbatim and the kernel

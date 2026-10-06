@@ -63,6 +63,24 @@ def compute_output_len(
     tokenizer: PreTrainedTokenizerBase,
     output: RequestFuncOutput,
 ) -> int:
+    """Returns the number of tokens the server generated for ``output``.
+
+    Prefers the server's ``usage.completion_tokens``. Re-tokenizing the
+    streamed text undercounts whenever generated tokens stream no text, such
+    as special tokens past a forced EOS, or merge into fewer tokens on
+    re-encoding; the text count is the fallback for servers that report no
+    usage.
+
+    Args:
+        tokenizer: The tokenizer used to count tokens in the streamed text.
+        output: One request's output.
+
+    Returns:
+        The generated token count.
+    """
+    completion_tokens = output.server_token_stats.completion_tokens
+    if completion_tokens is not None:
+        return completion_tokens
     return len(
         tokenizer.encode(output.generated_text, add_special_tokens=False)
     )
@@ -268,6 +286,12 @@ def calculate_metrics(
     constrained_tpots: list[float] = []
     unconstrained_tpots: list[float] = []
     constrained_requests = 0
+    conforming_constrained_requests = 0
+    judged_constrained_requests = 0
+    tool_requests = 0
+    tool_call_responses = 0
+    image_requests = 0
+    lora_requests = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -347,6 +371,10 @@ def calculate_metrics(
         ttfts.append(o.ttft)
         if o.response_format_constrained:
             constrained_requests += 1
+            if o.response_format_conformed is not None:
+                judged_constrained_requests += 1
+                if o.response_format_conformed:
+                    conforming_constrained_requests += 1
             constrained_ttfts.append(o.ttft)
             if tpot is not None:
                 constrained_tpots.append(tpot)
@@ -354,6 +382,14 @@ def calculate_metrics(
             unconstrained_ttfts.append(o.ttft)
             if tpot is not None:
                 unconstrained_tpots.append(tpot)
+        if o.tools_offered:
+            tool_requests += 1
+            if o.tool_call_returned:
+                tool_call_responses += 1
+        if o.carries_image:
+            image_requests += 1
+        if o.lora_id is not None:
+            lora_requests += 1
         if o.ttft > 0:
             input_throughputs.append(o.prompt_len / o.ttft)
         if (o.latency - o.ttft) > 0:
@@ -556,6 +592,19 @@ def calculate_metrics(
         constrained_request_rate=(
             constrained_requests / len(measured) if measured else None
         ),
+        constrained_conformance_rate=(
+            conforming_constrained_requests / judged_constrained_requests
+            if judged_constrained_requests
+            else None
+        ),
+        tool_request_rate=(tool_requests / len(measured) if measured else None),
+        tool_call_response_rate=(
+            tool_call_responses / tool_requests if tool_requests else None
+        ),
+        image_request_rate=(
+            image_requests / len(measured) if measured else None
+        ),
+        lora_request_rate=(lora_requests / len(measured) if measured else None),
         step_tpot_ms=StandardPercentileMetrics(
             step_tpots, scale_factor=1000.0, unit="ms"
         )

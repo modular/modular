@@ -194,7 +194,8 @@ class ReasoningEffortEnum(str, Enum):
     - `low`: Minimal reasoning effort.
     - `medium`: Moderate reasoning effort.
     - `high`: Significant reasoning effort.
-    - `xhigh`: Maximum reasoning effort.
+    - `xhigh`: Very high reasoning effort.
+    - `max`: Maximum reasoning effort (GLM and MiniMax-M3.1 name this rung).
     """
 
     none = "none"
@@ -202,6 +203,7 @@ class ReasoningEffortEnum(str, Enum):
     medium = "medium"
     high = "high"
     xhigh = "xhigh"
+    max = "max"
 
 
 class ReasoningSummaryEnum(str, Enum):

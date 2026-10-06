@@ -166,13 +166,13 @@ def shard_invariance_test[
     comptime InputTileType = type_of(
         TileTensor[mut=False](
             in_bufs_list[0].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(rows, cols)),
+            row_major(rows, cols),
         )
     )
     var in_bufs = Array[InputTileType, ngpus](
         fill_with=lambda (i: Int) -> InputTileType: InputTileType(
             in_bufs_list[i].unsafe_ptr().as_unsafe_any_origin(),
-            row_major(Coord(rows, cols)),
+            row_major(rows, cols),
         )
     )
     comptime shape_type = DynamicCoord[.int, 2]

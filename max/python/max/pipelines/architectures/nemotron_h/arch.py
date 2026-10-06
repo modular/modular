@@ -17,6 +17,7 @@ from __future__ import annotations
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 # Nemotron-3's chat template is Qwen-format: it pre-fills ``<think>\n`` in the
@@ -33,7 +34,6 @@ from ..qwen3_5.tool_parser import (
 )
 from .model import NemotronHModel
 from .model_config import NemotronHConfig
-from .tokenizer import NemotronHTokenizer
 from .weight_adapters import convert_nemotron_h_state_dict
 
 nemotron_h_arch = SupportedArchitecture(
@@ -49,7 +49,7 @@ nemotron_h_arch = SupportedArchitecture(
     # MLP up/down projections; attention, conv1d, norms, lm_head stay bf16.
     supported_encodings=NemotronHConfig.SUPPORTED_ENCODINGS,
     pipeline_model=NemotronHModel,
-    tokenizer=NemotronHTokenizer,
+    tokenizer=ReasoningTextTokenizer,
     context_type=TextContext,
     # NoPE: attention adds no rotary embedding (position flows through the SSM).
     weight_adapters={

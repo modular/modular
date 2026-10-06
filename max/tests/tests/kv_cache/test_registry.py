@@ -27,8 +27,14 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
     RecurrentStateRegion,
+    estimated_memory_size,
 )
-from max.pipelines.kv_cache import PagedKVCacheManagerInterface, load_kv_manager
+from max.pipelines.kv_cache import (
+    JengaKVCacheManager,
+    PagedKVCacheManagerInterface,
+    kv_cache_memory_size,
+    load_kv_manager,
+)
 from max.pipelines.kv_cache.registry import _use_jenga_kv_cache
 
 
@@ -329,3 +335,84 @@ class TestLoadKvManagerVirtualDevice:
         )
 
         assert isinstance(result, Mock)
+
+
+class TestKvCacheMemorySize:
+    """Tests the KV budget a pipeline's memory plan reserves."""
+
+    PLENTY = 256 * 1024**3
+    BATCH = 8
+    SEQ = 8192
+
+    def _windowed(self) -> MultiKVCacheParams:
+        """A sliding-window leaf beside a full one, as Gemma declares them."""
+        full = create_kv_params(num_layers=4)
+        sliding = MHAKVCacheParams(
+            dtype=DType.bfloat16,
+            n_kv_heads=8,
+            head_dim=128,
+            num_layers=20,
+            devices=full.devices,
+            page_size=128,
+            window_size=1024,
+        )
+        return MultiKVCacheParams.from_params(
+            {"full": full, "sliding": sliding}
+        )
+
+    def _size(self, params: MultiKVCacheParams, model_name: str) -> int:
+        return kv_cache_memory_size(
+            params,
+            self.PLENTY,
+            self.BATCH,
+            self.SEQ,
+            is_di_enabled=False,
+            model_name=model_name,
+        )
+
+    def test_a_windowed_jenga_cache_keeps_the_generic_estimate(self) -> None:
+        """Checks Jenga never sizes a windowed cache below the generic estimate.
+
+        The generic estimate charges a windowed leaf for every token, and
+        that room holds cached prefixes, so the exact need alone would take
+        it away.
+        """
+        params = self._windowed()
+        generic = estimated_memory_size(
+            params=params,
+            available_cache_memory=self.PLENTY,
+            max_batch_size=self.BATCH,
+            max_seq_len=self.SEQ,
+            include_null_block=True,
+        )
+        exact = JengaKVCacheManager.memory_size(
+            params, self.PLENTY, self.BATCH, self.SEQ
+        )
+        assert exact < generic, "the fixture must over-count its window"
+
+        assert self._size(params, "google/gemma-4-31B-it") == generic
+
+    def test_a_state_cache_gets_at_least_its_exact_need(self) -> None:
+        """Checks a state the generic estimate does not price still fits."""
+        attn = create_kv_params()
+        params = MultiKVCacheParams.from_params(
+            {
+                "attn": attn,
+                "state": RecurrentStateParams(
+                    regions=(
+                        RecurrentStateRegion(
+                            leaf_id="conv_state",
+                            num_layers=64,
+                            row_shape=(4096, 3),
+                            dtype=DType.float32,
+                        ),
+                    ),
+                    devices=attn.devices,
+                ),
+            }
+        )
+        exact = JengaKVCacheManager.memory_size(
+            params, self.PLENTY, self.BATCH, self.SEQ
+        )
+
+        assert self._size(params, "FAKE") >= exact

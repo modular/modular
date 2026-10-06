@@ -134,6 +134,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         index_topk: int = 2048,
         skip_topk: bool = False,
         indexer_rope_interleave: bool = False,
+        kv_b_proj_dtype: DType | None = None,
     ):
         super().__init__(
             rope=rope,
@@ -153,6 +154,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             buffer_size=buffer_size,
             graph_mode=graph_mode,
             norm_dtype=norm_dtype,
+            kv_b_proj_dtype=kv_b_proj_dtype,
         )
 
         self.index_n_heads = index_n_heads
@@ -212,8 +214,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         _mla_prefill_metadata: MLAPrefillMetadata | None = None,
         *,
         sparse_indices: TensorValue | None = None,
-        sparse_topk_lengths: TensorValue | None = None,
-        sparse_attn_sink: TensorValue | None = None,
         sparse_indices_stride: int | None = None,
         index_share: bool = False,
     ) -> TensorValue:
@@ -303,8 +303,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
         if sparse_indices is not None:
             sparse_kw = {
                 "sparse_indices": sparse_indices,
-                "sparse_topk_lengths": sparse_topk_lengths,
-                "sparse_attn_sink": sparse_attn_sink,
                 "sparse_indices_stride": sparse_indices_stride,
                 # Read-once shared-KV fold (KERN-3141); only True when the
                 # caller has a shared top-k across folded MTP positions.
@@ -381,19 +379,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 )
             topk_indices = prev_topk_indices
 
-        sparse_topk_lengths = ops.broadcast_to(
-            ops.constant(
-                self.index_topk,
-                dtype=DType.int32,
-                device=xq.device,
-            ),
-            (xq.shape[0],),
-        )
-        sparse_attn_sink = ops.broadcast_to(
-            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
-            (self.n_heads,),
-        )
-
         # Read-once shared-index MTP fold (KERN-3141). Enable the fold only for
         # a *full* indexer layer (``skip_topk`` is False) that reuses a prior
         # selection: there the reused list is the single shared MTP top-k
@@ -414,8 +399,6 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
             sparse_indices=topk_indices,
-            sparse_topk_lengths=sparse_topk_lengths,
-            sparse_attn_sink=sparse_attn_sink,
             sparse_indices_stride=self.index_topk,
             index_share=index_share,
         )
@@ -462,7 +445,13 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
             devices
         )
         kv_b_proj_shards = self.kv_b_proj.shard(devices)
-        kv_b_proj_scale_shards = self.kv_b_proj_scale.shard(devices)
+        # `None` when the checkpoint leaves `kv_b_proj` unquantized; the absorb
+        # then needs no scale to shard alongside it.
+        kv_b_proj_scale_shards = (
+            self.kv_b_proj_scale.shard(devices)
+            if self.kv_b_proj_scale is not None
+            else None
+        )
         o_proj_shards = self.o_proj.shard(devices)
 
         if self.indexer is not None:
@@ -493,6 +482,7 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 v_head_dim=self.v_head_dim,
                 buffer_size=self.BUFFER_TOK_SIZE,
                 norm_dtype=self.norm_dtype,
+                kv_b_proj_dtype=self.kv_b_proj.dtype,
                 index_n_heads=self.index_n_heads,
                 index_head_dim=self.index_head_dim,
                 index_topk=self.index_topk,
@@ -514,7 +504,8 @@ class SparseLatentAttentionWithRopeFp8(LatentAttentionWithRopeFp8):
                 shard_idx
             ]
             replica.kv_b_proj = kv_b_proj_shards[shard_idx]
-            replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
+            if kv_b_proj_scale_shards is not None:
+                replica.kv_b_proj_scale = kv_b_proj_scale_shards[shard_idx]
             replica.o_proj = o_proj_shards[shard_idx]
 
             if self.indexer is not None:
@@ -876,8 +867,6 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         epsilon: float = 1e-6,
         *,
         sparse_indices: TensorValue | None = None,
-        sparse_topk_lengths: TensorValue | None = None,
-        sparse_attn_sink: TensorValue | None = None,
         sparse_indices_stride: int | None = None,
     ) -> TensorValue:
         attn_kwargs: dict[str, Any] = {
@@ -956,8 +945,6 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
         if sparse_indices is not None:
             sparse_kw = {
                 "sparse_indices": sparse_indices,
-                "sparse_topk_lengths": sparse_topk_lengths,
-                "sparse_attn_sink": sparse_attn_sink,
                 "sparse_indices_stride": sparse_indices_stride,
             }
 
@@ -1015,19 +1002,6 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
                 )
             topk_indices = prev_topk_indices
 
-        sparse_topk_lengths = ops.broadcast_to(
-            ops.constant(
-                self.index_topk,
-                dtype=DType.int32,
-                device=xq.device,
-            ),
-            (xq.shape[0],),
-        )
-        sparse_attn_sink = ops.broadcast_to(
-            ops.constant(-1.0e38, dtype=DType.float32, device=xq.device),
-            (self.n_heads,),
-        )
-
         attn_out = self._mla_impl_sparse(
             xq,
             kv,
@@ -1038,8 +1012,6 @@ class SparseLatentAttentionWithRope(LatentAttentionWithRope):
             self.kv_a_proj_layernorm,
             mla_prefill_metadata,
             sparse_indices=topk_indices,
-            sparse_topk_lengths=sparse_topk_lengths,
-            sparse_attn_sink=sparse_attn_sink,
             sparse_indices_stride=self.index_topk,
         )
 

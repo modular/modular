@@ -16,6 +16,7 @@
 #include "ClosureEmitter.h"
 #include "ModuleStore.h"
 
+#include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/Lexer.h"
@@ -1220,34 +1221,41 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
         DeclResolvedness::body);
     shared.declResolver->finalizeFuncSignature(thunk, thunkDecl);
   }
-  for (auto trait :
-       llvm::make_early_inc_range(tmpModule.getOps<TraitDeclOp>())) {
-    if (!trait.getClosureSignature().has_value())
-      continue;
+  for (auto structOp :
+       llvm::make_early_inc_range(tmpModule.getOps<StructDeclOp>())) {
+    auto creation = [&]() -> StructDeclOp {
+      if (failed(bytecodeReader->materialize(structOp, [](Operation *) {
+            // eagerly materialize every thing
+            return true;
+          })))
+        return {};
 
-    FnTypeGeneratorType key = *trait.getClosureSignature();
-    auto creation = [&]() -> ASTDecl * {
-      if (failed(bytecodeReader->materialize(trait)))
-        return nullptr;
-      // A closure trait with no methods is a stub from a package that
-      // references but does not define the closure type. Skip it so the cache
-      // slot stays empty and a later package with the full body can fill it.
-      if (trait.getOps<FnOp>().empty())
-        return nullptr;
-      trait->remove();
-      theModule.push_back(trait);
-      ASTDecl &traitDecl = shared.declResolver->addBytecodeDecl(
-          &*trait, trait.getSymNameAttr(), &shared.getTopLevelDecl(),
+      structOp->remove();
+      theModule.push_back(structOp);
+      ASTDecl &structDecl = shared.declResolver->addBytecodeDecl(
+          &*structOp, structOp.getSymNameAttr(), &shared.getTopLevelDecl(),
           DeclResolvedness::body);
-      traitDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForTrait(trait));
-      // Ensure that the trait's methods are registered, too.
-      for (auto fn : trait.getOps<FnOp>()) {
-        shared.declResolver->addBytecodeDecl(
-            fn, fn.getSourceNameAttr(), &traitDecl, DeclResolvedness::body);
+      structDecl.setTypeDeclSelf(ASTDecl::computeSelfTypeForStruct(structOp));
+      for (auto fn : structOp.getOps<FnOp>()) {
+        ASTDecl &fnDecl = shared.declResolver->addBytecodeDecl(
+            fn, fn.getSourceNameAttr(), &structDecl, DeclResolvedness::body);
+        shared.declResolver->finalizeFuncSignature(fn, fnDecl);
       }
-      return &traitDecl;
+      for (auto conformance : structOp.getOps<ConformanceOp>()) {
+        shared.declResolver->addBytecodeDecl(
+            conformance, conformance.getTraitSymbol().getFlattenedName(),
+            &structDecl, DeclResolvedness::body);
+      }
+      return structOp;
     };
-    shared.getClosureEmitter().getOrCreateClosureTrait(key, creation);
+    Attribute key = structOp.getClosureThunkKeyAttr();
+    assert(key && "expected closure-support struct to carry a thunk key");
+    if (structOp.getSymName().ends_with(kClosureDeviceTypeSuffix))
+      shared.getOrCreateClosureDeviceType(key, creation);
+    else if (structOp.getSymName().starts_with(kClosureExtensionPrefix))
+      shared.getOrCreateParamClosureExtension(key, creation);
+    else
+      shared.getOrCreateInflatedClosure(key, creation);
   }
   // Insert a new module decl. Use createUnlistedDecl instead of addBytecodeDecl
   // so the package is NOT added to parentState.decl->declsInScope.
@@ -1281,6 +1289,15 @@ ModuleState &ModuleLoader::createBinaryPackageState(SMLoc loc,
   origin.sourceMgr = sourceMgr;
   origin.tmpModule = tmpModule;
   origin.bytecodeImportLoc = loc;
+
+  // The package's references to the universal closure trait resolve against
+  // the top-level module, but each compilation synthesizes that trait lazily.
+  // Create it here, after the package state is registered, because creation
+  // imports `std.prelude` and may re-enter this package.
+  if (llvm::any_of(tmpModule.getOps<TraitDeclOp>(), [](TraitDeclOp trait) {
+        return trait.getSymName() == UNI_CLOSURE_TRAIT_NAME;
+      }))
+    shared.getUniversalParametricClosureTrait();
 
   return moduleState;
 }

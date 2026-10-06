@@ -27,11 +27,7 @@ against host references (full-H divisor, multiply-before-cast, bf16 last):
     rotation `(my_rank+i)%ngpus == circular_add`.
 """
 
-from std.sys import (
-    has_amd_gpu_accelerator,
-    simd_width_of,
-    size_of,
-)
+from std.sys import simd_width_of, size_of
 
 from std.math.uutils import ualign_down
 from std.math import align_down, rsqrt
@@ -91,7 +87,7 @@ def _run_case[
             comptime assert (
                 circular_add[ngpus](_r, _i) == (_r + _i) % ngpus
             ), "kernel peer rotation must equal RS circular_add"
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         comptime assert (
             simd_width == 8
         ), "sum_out bit-identity assumes simd=8 on AMD"
@@ -430,7 +426,7 @@ def _run_case[
         )
     # sum_out: bit-identical on AMD non-multimem; 1-ULP tolerance on NVIDIA
     # (RS may take the multimem path, undefined reduction order).
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -860,7 +856,7 @@ def _run_prod_oracle_case[
 
     # sum_out must be bit-identical to the standalone RS shard on AMD at every M
     # (residual stream is plain reduce-scatter on either branch).
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -876,7 +872,7 @@ def _run_prod_oracle_case[
     # Routing invariant: the dispatched op must be bit-identical to production at
     # EVERY M (fused below the threshold, two-launch above); a wrong sense would
     # fuse a diverging shape and fail here. AMD-scoped (gfx950-calibrated).
-    comptime if use_dispatch and has_amd_gpu_accelerator():
+    comptime if use_dispatch and list_of_ctx.T.target.is_amd_gpu():
         if normed_mismatch != 0:
             raise Error(
                 String(
@@ -1941,7 +1937,7 @@ def _run_suite[
         # to production. AMD-scoped (gfx950-calibrated); NVIDIA's `rms_norm_gpu`
         # has a different reduction geometry and may cross over elsewhere
         # (reported, not gated).
-        comptime if has_amd_gpu_accelerator():
+        comptime if list_of_ctx.T.target.is_amd_gpu():
             var cfg = ReduceScatterConfig[in_dtype, ngpus](
                 axis_size=num_rows, unit_numel=num_cols, threads_per_gpu=0
             )

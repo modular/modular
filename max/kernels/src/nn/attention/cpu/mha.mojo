@@ -33,14 +33,12 @@ from max.algorithm.reduction import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    Coord,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
 )
-from layout.int_tuple import to_index_list
+from layout.coord import coord_to_index_list
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from linalg.accumulate import _Accumulator
 from linalg.matmul.cpu.apple_accelerate import (
@@ -60,6 +58,7 @@ from std.memory.alloc import (
     ManagedAllocation,
     Layout as AllocLayout,
 )
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from nn.attention.mha_mask import MHAMask
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -616,12 +615,8 @@ struct _FlashAttention[
         if do_sink:
             sink_logit = sink_weight.value()
 
-        comptime layout_1d = Layout.row_major(UNKNOWN_VALUE)
         for m in range(count_m):
-            var qk_row = LayoutTensor[Self.dtype, layout_1d, _](
-                qk_row_ptr,
-                RuntimeLayout[layout_1d].row_major(IndexList[1](kv_seq_cnt)),
-            )
+            var qk_row = TileTensor(qk_row_ptr, row_major(Int64(kv_seq_cnt)))
 
             @__parameter
             @inline(.always)
@@ -638,8 +633,8 @@ struct _FlashAttention[
             def output_fn[
                 _dtype: DType, width: SIMDLength, rank: Int
             ](idx: Int, val: SIMD[_dtype, width]):
-                qk_row.store(
-                    IndexList[1](idx), rebind[SIMD[Self.dtype, width]](val)
+                qk_row.store[alignment=align_of[Self.dtype]()](
+                    Coord(idx), rebind[SIMD[Self.dtype, width]](val)
                 )
 
             # Update the row with the scale and mask. Find the maximum value
@@ -655,7 +650,7 @@ struct _FlashAttention[
                 _simd_max_elementwise,
                 _simd_max,
                 output_fn,
-            ](qk_row.size(), max_vals[m])
+            ](qk_row.num_elements(), max_vals[m])
 
             if do_sink:
                 max_val = max(max_val, sink_logit)
@@ -680,7 +675,7 @@ struct _FlashAttention[
                 _simd_sum_elementwise,
                 _simd_sum,
                 output_fn,
-            ](qk_row.size(), 0)
+            ](qk_row.num_elements(), 0)
 
             if do_sink:
                 accum_val += exp(sink_logit - max_val)
@@ -712,11 +707,7 @@ struct _FlashAttention[
         # Max sequence length of query states.
         max_seq_len: Int,
         scale: Float32,
-        sink_weights: OptionalReg[
-            LayoutTensor[
-                Self.dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ]
-        ] = None,
+        sink_weights: OptionalReg[ImmutTileTensor1D[Self.dtype]] = None,
         ctx: Optional[DeviceContext] = None,
     ):
         var kv_group_count = num_heads // num_kv_heads
@@ -992,21 +983,29 @@ def _flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
     ctx: Optional[DeviceContext] = None,
 ):
-    var num_batches = output.dim[0]()
-    var max_seq_len = output.dim[1]()
-    var num_heads = output.dim[rank - 2]() if rank == 4 else 1
-    var depth_dim = output.dim[rank - 1]()
+    comptime assert q.rank == q.flat_rank == rank
+    comptime assert output.rank == output.flat_rank == rank
+    comptime OutputType = type_of(output)
+
+    def output_static_shape() -> IndexList[rank]:
+        var result = IndexList[rank]()
+        comptime for i in range(rank):
+            result[i] = OutputType.static_shape[i]
+        return result
+
+    var num_batches = Int(output.dim[0]())
+    var max_seq_len = Int(output.dim[1]())
+    var num_heads = Int(output.dim[rank - 2]()) if rank == 4 else 1
+    var depth_dim = Int(output.dim[rank - 1]())
     var kv_cache_len = v_shape[1] - max_seq_len
     var num_kv_heads = k_shape[rank - 2] if rank == 4 else 1
 
@@ -1015,19 +1014,20 @@ def _flash_attention[
     def input_q_ptr_fn(
         coords: IndexList[rank],
     ) -> UnsafePointer[Scalar[dtype], q_origin]:
-        var idx = q._offset(coords)
-        return q.ptr + idx
+        var coord = Coord(coords)
+        comptime assert coord.flat_rank == q.flat_rank
+        return q.ptr_at_offset(coord)
 
     @inline(.always)
     @__parameter
     def output_ptr_fn(
         coords: IndexList[rank],
     ) -> UnsafePointer[Scalar[dtype], output_origin]:
-        var idx = output._offset(coords)
-        return output.ptr + idx
+        var coord = Coord(coords)
+        comptime assert coord.flat_rank == output.flat_rank
+        return output.ptr_at_offset(coord)
 
     @inline(.always)
-    @__parameter
     def mask_fn[
         simd_width: SIMDLength, rank: Int
     ](
@@ -1062,9 +1062,7 @@ def _flash_attention[
         # cross attention, which has different KV lengths.
         q_length_fn,
         kv_cache_length_fn,
-        rebind[IndexList[rank]](
-            to_index_list[output.rank](output.layout.shape)
-        ),
+        output_static_shape(),
     ].run(
         num_batches,
         num_heads,
@@ -1094,15 +1092,13 @@ def flash_attention[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
     scale: Float32,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
     ctx: Optional[DeviceContext] = None,
 ):
     """Computes scaled dot-product flash attention on CPU for the given query, key, value, and mask accessors.
@@ -1168,14 +1164,14 @@ def flash_attention_split_kv[
         IndexList[mask_rank]
     ) capturing -> SIMD[dtype, simd_width],
 ](
-    q: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     k_shape: IndexList[rank],
     v_shape: IndexList[rank],
     # {k,v}_cache_shape are rank + 1 because reshape in MO IR prevents fusion.
     k_cache_shape: IndexList[rank + 1],
     v_cache_shape: IndexList[rank + 1],
     mask_shape: IndexList[mask_rank],
-    output: LayoutTensor[mut=True, dtype, address_space=.GENERIC, ...],
+    output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     scale: Float32,
     ctx: Optional[DeviceContext] = None,
 ) raises:
@@ -1233,12 +1229,15 @@ def flash_attention_split_kv[
         return String(";").join(
             Span(
                 [
-                    trace_arg("q", q.runtime_layout.shape.value),
+                    trace_arg("q", coord_to_index_list(q.layout.shape_coord())),
                     trace_arg("k", k_shape),
                     trace_arg("v", v_shape),
                     trace_arg("k_cache", k_cache_shape),
                     trace_arg("v_cache", v_cache_shape),
-                    trace_arg("output", output.runtime_layout.shape.value),
+                    trace_arg(
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
                 ]
             )
         )
@@ -1252,7 +1251,6 @@ def flash_attention_split_kv[
         var kv_cache_len = v_cache_shape[3]
 
         @inline(.always)
-        @__parameter
         def kv_index[rank: Int](idx: IndexList[rank]) -> IndexList[kv_rank]:
             # Index into the previous kv_cache by unsqueezing dim 0.
             return IndexList[kv_rank](0, idx[0], idx[2], idx[1], idx[3])
@@ -1340,20 +1338,18 @@ def _flash_attention_kv_cache[
     ) capturing -> SIMD[dtype, simd_width],
     mask_rank: Int,
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     scale: Float32,
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
     comptime kv_params = cache_t.kv_params
 
-    var max_seq_len = q.dim[1]()
-    var num_batches = q.dim[0]()
-    comptime num_heads = Int(q.layout.shape[2])
+    var max_seq_len = Int(q.dim[1]())
+    var num_batches = Int(q.dim[0]())
+    comptime num_heads = q.static_shape[2]
     comptime head_size = cache_t.kv_params.head_size
     comptime output_shape = IndexList[4](
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size
@@ -1364,16 +1360,18 @@ def _flash_attention_kv_cache[
     def input_q_ptr_fn(
         coords: IndexList[4],
     ) -> UnsafePointer[Scalar[dtype], q_origin]:
-        var idx = q._offset(coords)
-        return q.ptr + idx
+        var coord = Coord(coords)
+        comptime assert coord.flat_rank == q.flat_rank
+        return q.ptr_at_offset(coord)
 
     @inline(.always)
     @__parameter
     def output_ptr_fn(
         coords: IndexList[4],
     ) -> UnsafePointer[Scalar[dtype], output_origin]:
-        var idx = output._offset(coords)
-        return output.ptr + idx
+        var coord = Coord(coords)
+        comptime assert coord.flat_rank == output.flat_rank
+        return output.ptr_at_offset(coord)
 
     @inline(.always)
     @__copy_capture(max_seq_len)
@@ -1422,9 +1420,7 @@ def _flash_attention_kv_cache[
     num_heads: Int,
     max_seq_len: Int,
     scale: Float32,
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
     comptime num_kv_heads = cache_t.kv_params.num_heads
     comptime depth_dim = cache_t.kv_params.head_size
@@ -1493,17 +1489,15 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
-    mask: LayoutTensor[mut=False, dtype, address_space=.GENERIC, ...],
+    mask: TileTensor[mut=False, dtype, address_space=.GENERIC, ...],
     scale: Float32,
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
-    """Computes flash attention on CPU using a KV cache with an additive LayoutTensor mask.
+    """Computes flash attention on CPU using a KV cache with an additive TileTensor mask.
 
     Args:
         q: Query tensor in BSHD layout.
@@ -1523,7 +1517,7 @@ def flash_attention_kv_cache[
         score_vec: SIMD[dtype, simd_width],
         kv_cache_len: Int,
     ) -> SIMD[dtype, simd_width]:
-        return score_vec + mask.load[width=simd_width](idx)
+        return score_vec + mask.load[width=simd_width](Coord(idx))
 
     _flash_attention_kv_cache[mask_fn, mask.rank](
         q, k, v, scale, output, sink_weights
@@ -1541,17 +1535,13 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
-    sink_weights: OptionalReg[
-        LayoutTensor[
-            mut=False, dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ]
-    ] = None,
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
     """Computes flash attention on CPU using a KV cache with an MHAMask-based mask.
 
@@ -1596,21 +1586,19 @@ def flash_attention_kv_cache[
     output_origin: Origin[mut=True],
     //,
 ](
-    q: LayoutTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
-    q_input_row_offsets: LayoutTensor[
+    q: TileTensor[dtype, _, q_origin, address_space=.GENERIC, ...],
+    q_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
-    kv_input_row_offsets: LayoutTensor[
+    kv_input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
     k: cache_t,
     v: cache_t,
     mask: mask_t,
     scale: Float32,
-    output: LayoutTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
-    sink_weights: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None,
+    output: TileTensor[dtype, _, output_origin, address_space=.GENERIC, ...],
+    sink_weights: OptionalReg[ImmutTileTensor1D[dtype]] = None,
 ):
     """Computes flash attention on CPU for ragged tensors using a KV cache with an `MHAMask`-based mask.
 
@@ -1675,9 +1663,8 @@ def flash_attention_kv_cache[
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
-        var flat_idx = IndexList[3](q_start, idx[2], idx[3])
-        var out_idx = q._offset(flat_idx)
-        return q.ptr + out_idx
+        comptime assert q.flat_rank == 3
+        return q.ptr_at_offset(Coord(q_start, idx[2], idx[3]))
 
     @inline(.always)
     @__parameter
@@ -1687,14 +1674,13 @@ def flash_attention_kv_cache[
         var bs = idx[0]
         var tok_idx = idx[1]
         var q_start = Int(q_input_row_offsets[bs]) + tok_idx
-        var flat_idx = IndexList[3](q_start, idx[2], idx[3])
-        var out_idx = output._offset(flat_idx)
-        return output.ptr + out_idx
+        comptime assert output.flat_rank == 3
+        return output.ptr_at_offset(Coord(q_start, idx[2], idx[3]))
 
     comptime mask_rank = 4
-    var num_batches = q_input_row_offsets.dim[0]() - 1
+    var num_batches = Int(q_input_row_offsets.dim[0]()) - 1
     var max_seq_len = k.max_prompt_length()
-    comptime num_heads = Int(q.layout.shape[q.rank - 2])
+    comptime num_heads = q.static_shape[q.rank - 2]
     comptime head_size = cache_t.kv_params.head_size
     comptime output_shape = IndexList[4](
         UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, head_size

@@ -382,11 +382,8 @@ class CLIPTextTransformer(Module[..., tuple[Tensor, Tensor]]):
         mask_float = F.cast(mask, self.config.dtype)
 
         min_val = DType.finfo(self.config.dtype).min  # type: ignore[attr-defined]
-        min_val_tensor = F.constant(
-            min_val, dtype=self.config.dtype, device=device
-        )
 
-        causal_mask = mask_float * min_val_tensor
+        causal_mask = mask_float * min_val
         causal_mask = F.unsqueeze(causal_mask, 0)
         causal_mask = F.unsqueeze(causal_mask, 1)
         return causal_mask
@@ -420,18 +417,9 @@ class CLIPTextTransformer(Module[..., tuple[Tensor, Tensor]]):
         )
 
         if attention_mask is not None:
-            mask_multiplier = F.constant(
-                DType.finfo(hidden_states.dtype).min,  # type: ignore[attr-defined]
-                dtype=hidden_states.dtype,
-                device=hidden_states.device,
-            )
+            mask_multiplier = DType.finfo(hidden_states.dtype).min  # type: ignore[attr-defined]
             inverted_mask = (
-                F.constant(
-                    1.0,
-                    dtype=hidden_states.dtype,
-                    device=hidden_states.device,
-                )
-                - F.cast(attention_mask, hidden_states.dtype)
+                1.0 - F.cast(attention_mask, hidden_states.dtype)
             ) * mask_multiplier
             attention_mask = F.unsqueeze(inverted_mask, 1)
             attention_mask = F.unsqueeze(attention_mask, 1)

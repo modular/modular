@@ -25,10 +25,10 @@ through the `builtin_kernels/mega_ffn.mojo` registration to
 This is a graph-level flow test: it asserts the graph compiles (the registration
 type-checks against the composite op -- no "no kernel registered for
 'mo.composite.mega_ffn_nvfp4'" / operand rank/dtype mismatch) and runs to a
-correctly shaped/typed output, and that the swigluoai clamp selector reaches the
-kernel through the fusion. Deep numerical correctness (fused vs. chained
-reference, byte-exact) is covered by the Mojo kernel test
-`test_mega_ffn_nvfp4.mojo`.
+correctly shaped/typed output, and that the swigluoai clamp selector and the
+gate-up leg's per-row input scales reach the kernel through the fusion. Deep
+numerical correctness (fused vs. chained reference, byte-exact) is covered by
+the Mojo kernel test `test_mega_ffn_nvfp4.mojo`.
 
 DEPENDENCY: the composite op defs + the fusion pattern + the composite-emitting
 `kernels.py` legs + the `mega_ffn.mojo` registration. Off SM100 the legs lower as
@@ -46,7 +46,7 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import (
     block_scales_interleave,
@@ -176,6 +176,8 @@ def _build_graph(
     device_ref: DeviceRef,
     cpu_ref: DeviceRef,
     clamp: bool = False,
+    row_scales: bool = False,
+    keep_intermediate: bool = False,
 ) -> Graph:
     """Build the chained L1 -> L2 NVFP4 MoE FFN graph.
 
@@ -183,6 +185,10 @@ def _build_graph(
     outputs feed ONLY L2, and ``estimated_total_m`` defaults to the same
     ``usage_stats[0]`` SSA on both legs. The `arrival_count` scratch is NOT a
     graph input here: the fusion mints it (`mo.buffer.create`) when it fires.
+
+    ``row_scales`` adds an ``(M,)`` bf16 input passed to L1 as ``a_row_scales``.
+    ``keep_intermediate`` also returns L1's packed output, which blocks the
+    fusion and leaves the two-launch chain.
     """
     K1_groups = K1 // NVFP4_SF_VECTOR_SIZE
     D_groups = D // NVFP4_SF_VECTOR_SIZE
@@ -210,6 +216,8 @@ def _build_graph(
         TensorType(DType.uint32, (2,), device=cpu_ref),  # usage_stats (host)
         TensorType(DType.float32, (E,), device=device_ref),  # raw_input_scales
     ]
+    if row_scales:
+        input_types.append(TensorType(DType.bfloat16, (M,), device=device_ref))
 
     with Graph("mega_ffn_nvfp4_fusion", input_types=input_types) as graph:
         (
@@ -226,7 +234,8 @@ def _build_graph(
             es_down_t,
             usage_stats_t,
             raw_input_scales_t,
-        ) = (inp.tensor for inp in graph.inputs)
+        ) = (inp.tensor for inp in graph.inputs[:13])
+        row_scales_t = graph.inputs[13].tensor if row_scales else None
 
         # Lift per-expert L1 b_scales (rank 3) to rank-6 tcgen05.
         b_scales13 = ops.stack(
@@ -273,6 +282,7 @@ def _build_graph(
             clamp_activation=clamp,
             swiglu_alpha=1.702,
             swiglu_limit=7.0,
+            a_row_scales=row_scales_t,
         )
 
         # L2: down GEMM. Emits mo.composite.grouped_matmul_block_scaled.
@@ -294,7 +304,10 @@ def _build_graph(
             out_type=DType.bfloat16,
         )
 
-        graph.output(out)
+        if keep_intermediate:
+            graph.output(out, packed_b)
+        else:
+            graph.output(out)
 
     return graph
 
@@ -317,7 +330,7 @@ def _to_buffers(
         torch.from_numpy(np_in["usage_stats"].copy())
     )
 
-    return [
+    buffers = [
         _gpu(np_in["hidden"], DType.uint8),
         _gpu(np_in["w13"], DType.uint8),
         _gpu(np_in["a_scales"], DType.float8_e4m3fn),
@@ -332,6 +345,11 @@ def _to_buffers(
         usage_stats_cpu,
         _gpu(np_in["raw_input_scales"], DType.float32),
     ]
+    if "row_scales" in np_in:
+        # Stored as bf16 bit patterns; numpy has no bfloat16.
+        bits = torch.from_numpy(np_in["row_scales"].copy())
+        buffers.append(Buffer.from_dlpack(bits.view(torch.bfloat16)).to(device))
+    return buffers
 
 
 # E=16 = the EP-8 per-device shard of a 128-expert model; <= 64 (the fusion's
@@ -519,6 +537,94 @@ def test_mega_ffn_nvfp4_fusion_fires_in_mo_ir() -> None:
     )
     print(
         "=== mega_ffn_nvfp4 fusion FIRED (both leg ops removed) ===", flush=True
+    )
+
+
+@pytest.mark.skipif(
+    not torch.cuda.is_available(),
+    reason="Fused MegaFFN NVFP4 kernel is SM100-only.",
+)
+def test_mega_ffn_nvfp4_fusion_row_scales() -> None:
+    """The gate-up leg's per-row input scales survive the fusion.
+
+    Compiles the chain with ``a_row_scales`` on L1 twice: fused, and unfused
+    (L1's packed output also returned, so the fusion bails). The fused IR must
+    carry the row scales, the fused output must match the unfused two-launch
+    chain, and all-ones row scales must change the fused output.
+    """
+    E, M, D, K1, N2 = 16, 256, 512, 512, 256
+    rng = np.random.default_rng(1234)
+    np_in, sf_dim_0 = _build_np_inputs(E, M, D, K1, N2, rng)
+
+    def _bf16_bits(values: np.ndarray) -> np.ndarray:
+        return (
+            torch.from_numpy(values)
+            .to(torch.bfloat16)
+            .view(torch.uint16)
+            .numpy()
+        )
+
+    # The random-byte scale tiles saturate the NVFP4 intermediate, so a row
+    # scale near 1 cannot move it. Log-uniform scales down to 2**-24 pull
+    # rows back into range.
+    np_rs = dict(np_in)
+    np_rs["row_scales"] = _bf16_bits(np.exp2(rng.uniform(-24.0, 0.0, size=M)))
+    np_ones = dict(np_in)
+    np_ones["row_scales"] = _bf16_bits(np.ones(M))
+
+    device = Accelerator()
+    device_ref = DeviceRef(device.label, device.id)
+    cpu_ref = DeviceRef.CPU()
+    session = InferenceSession(devices=[device])
+
+    def _load(keep_intermediate: bool, ir_dir: str | None = None) -> Model:
+        graph = _build_graph(
+            E,
+            M,
+            D,
+            K1,
+            N2,
+            sf_dim_0,
+            device_ref,
+            cpu_ref,
+            row_scales=True,
+            keep_intermediate=keep_intermediate,
+        )
+        prev_ir_dir = session.debug.ir_output_dir
+        if ir_dir is not None:
+            session.debug.ir_output_dir = ir_dir
+        try:
+            return session.load(graph)
+        finally:
+            session.debug.ir_output_dir = prev_ir_dir
+
+    def _run(model: Model, inputs: dict[str, np.ndarray]) -> torch.Tensor:
+        outputs = model.execute(*_to_buffers(inputs, device))
+        return from_dlpack(outputs[0]).cpu()
+
+    ir_dir = tempfile.mkdtemp(prefix="megaffn_row_scales_ir_")
+    fused_model = _load(keep_intermediate=False, ir_dir=ir_dir)
+    fused = _run(fused_model, np_rs)
+    unfused = _run(_load(keep_intermediate=True), np_rs)
+    unit_row_scales = _run(fused_model, np_ones)
+
+    post_mo = "\n".join(
+        pathlib.Path(p).read_text()
+        for p in glob.glob(f"{ir_dir}/*.mo-pre-mogg.mlir")
+    )
+    assert "= mo.composite.mega_ffn_nvfp4(" in post_mo, (
+        "MegaFFN fusion did NOT fire with gate-up row scales"
+    )
+    assert "has_gate_up_a_row_scales = true" in post_mo, (
+        "fused op lost the gate-up row scales"
+    )
+
+    assert torch.equal(fused, unfused), (
+        "fused output with row scales differs from the unfused chain: max"
+        f" |diff| = {(fused.float() - unfused.float()).abs().max().item()}"
+    )
+    assert not torch.equal(fused, unit_row_scales), (
+        "row scales did not reach the fused kernel"
     )
 
 

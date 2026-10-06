@@ -106,7 +106,11 @@ def _jj_changed_files(diff_target: str, cwd: str = ".") -> set[str]:
         ["jj", "diff", "--name-only", "--from", diff_target, "--to", "@"],
         cwd=cwd,
     )
-    return _get_files(result)
+    # `jj diff --name-only` has no equivalent of git's `--diff-filter=d`, so
+    # drop paths deleted in the working copy before linters try to open them.
+    return {
+        f for f in _get_files(result) if os.path.exists(os.path.join(cwd, f))
+    }
 
 
 def _submodule_diff_target(sm_path: str, super_target: str) -> str | None:

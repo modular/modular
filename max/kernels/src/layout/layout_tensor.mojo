@@ -32,7 +32,6 @@ from std.bit import log2_floor
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.dtype import _unsigned_integral_type_of
 from max.gpu.host import DeviceBuffer, HostBuffer, DeviceContext
-from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import (
     block_dim,
     block_idx,
@@ -44,7 +43,6 @@ from max.gpu.memory import CacheEviction, CacheOperation, Fill, async_copy
 from layout._fillers import BATCH_SIZE
 from layout._utils import make_amd_buffer_resource
 from layout.element import Element, MemoryElement
-from layout.tma_async import _tma_desc_tile_shape
 from std.memory import unsafe_stack_allocation
 from std.utils import IndexList, StaticTuple
 from std.utils.index import Index
@@ -1929,7 +1927,6 @@ struct LayoutTensor[
             Self.dtype.is_floating_point()
         ), "dtype must be floating point"
 
-        @__parameter
         def exp_func(val: Self.element_type) -> Self.element_type:
             return exp(val)
 
@@ -6008,7 +6005,7 @@ def stack_allocation_like[
     ].stack_allocation()
 
 
-struct ThreadScope(TrivialRegisterPassable, Writable):
+struct ThreadScope(EnumLike, TrivialRegisterPassable, Writable):
     """Represents the scope of thread operations in GPU programming.
 
     This struct defines the scope at which thread operations are performed,
@@ -6057,6 +6054,27 @@ struct ThreadScope(TrivialRegisterPassable, Writable):
     comptime WARP = Self(1)
     """Represents operations at the warp level, where only threads within the
     same warp participate."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "BLOCK".value,
+        "WARP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ThreadScope has no payload"
 
     def __init__(out self, value: Int):
         """Initialize a `ThreadScope` with the given integer value.
@@ -6347,271 +6365,6 @@ def copy_dram_to_sram[
                 dst_fragments.ptr.store[alignment=dst_align](
                     dst_idx, src_vec.cast[dst.dtype]()
                 )
-
-
-@inline(.nodebug)
-def copy_dram_to_sram[
-    src_thread_layout: Layout,
-    dst_thread_layout: Layout = src_thread_layout,
-    swizzle: Optional[Swizzle] = None,
-    num_threads: Int = src_thread_layout.size(),
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-    block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, ...], src_iter: LayoutTensorIter, bound: Int):
-    """Efficiently copy data from global memory (DRAM) to shared memory (SRAM)
-    on AMD GPUs.
-
-    This function implements an optimized memory transfer operation specifically
-    for AMD GPU architectures. It utilizes the hardware's `buffer_load`
-    intrinsic to efficiently transfer data while handling bounds checking. The
-    function distributes the copy operation across multiple threads for maximum
-    throughput.
-
-    Parameters:
-        src_thread_layout: The layout used to distribute the source tensor
-            across threads. This determines how the workload is divided among
-            participating threads.
-        dst_thread_layout: The layout used to distribute the destination tensor
-            across threads. Defaults to the same layout as `src_thread_layout`.
-        swizzle: Optional swizzling pattern to apply when distributing the
-            destination tensor. This can improve memory access patterns and
-            reduce bank conflicts. Defaults to None (no swizzling).
-        num_threads: Total number of threads in the thread block. Threads
-            beyond `src_thread_layout.size()` will be disabled and not
-            participate in the copy operation.
-        thread_scope: Defines whether operations are performed at `BLOCK` or
-            `WARP` level. `BLOCK` scope involves all threads in a thread block,
-            while `WARP` scope restricts operations to threads within the same
-            warp. Defaults to `ThreadScope.BLOCK`.
-        block_dim_count: The number of dimensions in the thread block.
-
-    Args:
-        dst: The destination tensor in shared memory (SRAM).
-        src_iter: The source tensor iterator in global memory (DRAM) to be
-            copied.
-        bound: The bound of the source tensor iterator.
-    """
-    comptime assert is_amd_gpu(), "This function is only supported on AMD GPUs."
-
-    var src_tensor = src_iter[].vectorize[
-        dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
-    ]()
-    _copy_dram_to_sram_validate_args(dst, src_tensor)
-
-    comptime num_busy_threads = src_thread_layout.size()
-    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
-
-    comptime if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
-            return
-
-    var src_fragments = src_tensor.distribute[src_thread_layout](worker_idx)
-    var dst_fragments = dst.distribute[dst_thread_layout, swizzle=swizzle](
-        worker_idx
-    )
-
-    comptime simd_width = src_tensor.element_layout.size()
-    comptime dst_align = align_of[SIMD[dst.dtype, simd_width]]()
-
-    comptime num_stores_per_thread = dst_fragments.layout.size()
-    var buffer = make_amd_buffer_resource(src_iter, bound)
-    var src_frag_offset = src_fragments.distance(src_tensor.ptr) + Scalar[
-        src_iter.linear_idx_type
-    ](Int(src_iter.offset))
-
-    comptime for i in range(num_stores_per_thread):
-        var src_frag_idx: Scalar[src_fragments.linear_idx_type]
-
-        comptime if src_tensor.layout.all_dims_known():
-            comptime frag_layout = src_fragments.layout(i)
-            src_frag_idx = Scalar[src_iter.linear_idx_type](frag_layout)
-        else:
-            src_frag_idx = src_fragments.runtime_layout(i)
-
-        comptime dst_frag_idx = dst_fragments.layout(i)
-        dst_fragments.ptr.store[alignment=dst_align](
-            dst_frag_idx,
-            buffer.load[src_tensor.dtype, simd_width](
-                Int32(src_frag_offset),
-                scalar_offset=Int32(src_frag_idx),
-            ).cast[dst.dtype](),
-        )
-
-
-@inline(.nodebug)
-def cp_async_k_major[
-    dtype: DType,
-    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
-](
-    dst: LayoutTensor[
-        mut=True,
-        dtype,
-        _,
-        address_space=gpu_memory.AddressSpace.SHARED,
-        ...,
-    ],
-    src: LayoutTensor[
-        dtype, _, address_space=gpu_memory.AddressSpace.GENERIC, ...
-    ],
-):
-    """Asynchronously copy data from DRAM to SRAM using TMA (Tensor Memory
-    Accelerator) with K-major layout.
-
-    This function performs an asynchronous copy operation from global memory
-    (DRAM) to shared memory (SRAM) using NVIDIA's Tensor Memory Accelerator
-    (TMA) hardware. It optimizes for K-major memory access patterns, which is
-    particularly beneficial for certain tensor operations like matrix
-    multiplications where the inner dimension (K) is accessed contiguously.
-
-    The function automatically determines the optimal tile size and thread
-    distribution based on the tensor shapes and hardware capabilities,
-    leveraging TMA's efficient memory transfer mechanisms.
-
-    Constraints:
-        - Requires NVIDIA GPUs with TMA support (compute capability 9.0+).
-        - Source tensor must be in GENERIC or GLOBAL address space.
-        - Destination tensor must be in SHARED address space.
-        - Both tensors must have the same data type.
-        - Source and destination tensors must be 2D.
-
-    Parameters:
-        dtype: The data type of the tensor elements.
-        eviction_policy: The cache eviction policy to use. Default is `CacheEviction.EVICT_NORMAL`.
-
-    Args:
-        dst: The destination tensor, which must be in shared memory (SRAM).
-        src: The source tensor, which must be in global or generic memory
-            (DRAM).
-
-    Performance:
-
-    - Uses TMA hardware acceleration for optimal memory transfer performance.
-    - Optimizes for K-major access patterns, which can significantly improve
-        performance for certain tensor operations like matrix multiplications.
-    - Performs asynchronous transfers, allowing computation to overlap with
-        memory operations.
-    - Automatically determines optimal tile sizes based on tensor dimensions.
-    - Uses hardware-accelerated swizzling to reduce shared memory bank
-        conflicts.
-
-    Notes:
-
-    - This function requires NVIDIA GPUs with TMA support (compute capability
-        9.0+).
-    - The source tensor must be in GENERIC or GLOBAL address space (DRAM).
-    - The destination tensor must be in SHARED address space (SRAM).
-    - Both tensors must have the same data type.
-    - This function is asynchronous, so you must call
-        [`async_copy_wait_all()`](/api/mojo/max/gpu/memory/memory/async_copy_wait_all/)
-        or
-        [`async_copy_wait_group()`](/api/mojo/max/gpu/memory/memory/async_copy_wait_group/)
-        to ensure the copy has completed before using the data.
-    - K-major layout is particularly beneficial for matrix multiplication
-        operations where the inner dimension (K) is accessed contiguously.
-    """
-    comptime dst_layout = dst.layout
-
-    comptime src_layout = src.layout
-    comptime src_shape0 = src_layout.shape[0].value()
-    comptime src_shape1 = src_layout.shape[1].value()
-
-    comptime tile_desc_shape = _tma_desc_tile_shape[
-        dtype,
-        2,
-        Index(src_shape0, src_shape1),
-        swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-    ]()
-    comptime desc_shape0 = tile_desc_shape[0]
-    comptime desc_shape1 = tile_desc_shape[1]
-    comptime desc_size = desc_shape0 * desc_shape1
-    comptime desc_layout = Layout.row_major(desc_shape0, desc_shape1)
-
-    comptime assert (
-        desc_shape0 == src_shape0
-    ), "k-major desc layout shouldn't alter 1st dim"
-
-    comptime num_tiles = src_shape1 // desc_shape1
-    comptime simd_size = simd_width_of[dtype]()
-    # single warp group
-    comptime thread_layout = Layout.row_major(
-        128 * simd_size // desc_shape1, desc_shape1 // simd_size
-    )
-
-    comptime for tile_id in range(num_tiles):
-        var src_tile = src.tile[desc_shape0, desc_shape1](0, tile_id)
-        var dst_tile = LayoutTensor[
-            dtype, desc_layout, address_space=gpu_memory.AddressSpace.SHARED
-        ](dst.ptr + tile_id * desc_size)
-
-        copy_dram_to_sram_async[
-            thread_layout, swizzle=True, eviction_policy=eviction_policy
-        ](
-            dst_tile.vectorize[1, simd_size](),
-            src_tile.vectorize[1, simd_size](),
-        )
-
-
-@inline(.nodebug)
-def copy_dram_to_sram[
-    thread_layout: Layout,
-    swizzle: Optional[Swizzle] = None,
-    num_threads: Int = thread_layout.size(),
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-    block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, ...], src_iter: LayoutTensorIter, bound: Int):
-    """Synchronously copy data from DRAM to SRAM using a unified thread layout
-    for AMD GPUs.
-
-    This is a convenience wrapper around the more general `copy_dram_to_sram()`
-    function that uses the same layout for both source and destination tensors.
-    It's specifically designed for AMD GPUs where the buffer_load intrinsic
-    requires the original base tensor.
-
-    Parameters:
-        thread_layout: Layout defining how threads are organized for both source
-            and destination. This determines how the workload is distributed
-            among threads.
-        swizzle: Optional swizzling function to rearrange the destination
-            indices, which can improve memory access patterns and reduce bank
-            conflicts.
-        num_threads: Total number of threads in the thread block. Threads
-            beyond `thread_layout.size()` will be disabled and not
-            participate in the copy operation.
-        thread_scope: Scope at which thread operations are performed (`BLOCK` or
-            `WARP`). Defaults to `BLOCK`, where all threads in a block
-            participate.
-        block_dim_count: The number of dimensions in the thread block.
-
-    Args:
-        dst: The destination tensor, which must be in shared memory (SRAM).
-        src_iter: The source tensor iterator, which must be in global or generic
-            memory (DRAM).
-        bound: The bound of the source tensor iterator.
-
-    Performance:
-
-    - Simplifies API usage when the same thread layout is appropriate for both
-        source and destination tensors.
-    - Optimized for AMD GPUs using buffer_load intrinsics for efficient memory
-        transfers.
-    - Distributes the copy workload across multiple threads for parallel
-        execution.
-
-    Notes:
-
-    - This function is only supported on AMD GPUs.
-    - The source tensor must be in GENERIC or GLOBAL address space (DRAM).
-    - The destination tensor must be in SHARED address space (SRAM).
-    - Both tensors must have the same data type.
-    """
-    copy_dram_to_sram[
-        src_thread_layout=thread_layout,
-        dst_thread_layout=thread_layout,
-        swizzle=swizzle,
-        num_threads=num_threads,
-        block_dim_count=block_dim_count,
-        thread_scope=thread_scope,
-    ](dst, src_iter, bound)
 
 
 @inline(.nodebug)
@@ -7124,64 +6877,6 @@ def copy_sram_to_dram[
 
 
 @inline(.nodebug)
-def copy_sram_to_local[
-    src_warp_layout: Layout,
-    axis: Optional[Int] = None,
-](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
-    """Synchronously copy data from SRAM (shared memory) to local memory.
-
-    This function performs a synchronous memory transfer from SRAM (shared
-    memory) to local memory (registers) using the specified thread layout for
-    workload distribution.
-
-    Constraints:
-        - The source tensor must be in SHARED address space (SRAM).
-        - The destination tensor must be in LOCAL address space (registers).
-        - Both tensors must have the same data type.
-
-    Parameters:
-        src_warp_layout: Layout defining how threads are organized for the
-            source tensor. This determines how the workload is distributed among
-            threads.
-        axis: Optional parameter specifying which axis to distribute along.
-            When provided, distribution happens along the specified axis.
-            When None (default), distribution uses the standard layout pattern.
-
-    Args:
-        dst: The destination tensor, which must be in local memory (registers).
-        src: The source tensor, which must be in shared memory (SRAM).
-
-    Performance:
-
-    - Distributes the copy workload across multiple threads for parallel
-        execution.
-    - Optimized for transferring data from shared memory to registers.
-    - Supports optional axis-specific distribution for specialized access
-        patterns.
-    """
-    comptime assert (
-        dst.dtype == src.dtype
-    ), "dst dtype must be the same as src dtype."
-
-    comptime assert (
-        src.address_space == .SHARED
-    ), "src address space must be SHARED."
-
-    comptime assert (
-        dst.address_space == .LOCAL
-    ), "dst address space must be LOCAL."
-
-    comptime if axis:
-        var src_fragments = src.distribute[src_warp_layout, axis=axis.value()](
-            thread_idx.x
-        )
-        dst.copy_from(src_fragments)
-    else:
-        var src_fragments = src.distribute[src_warp_layout](thread_idx.x)
-        dst.copy_from(src_fragments)
-
-
-@inline(.nodebug)
 def _copy_local_to_dram_validate_args(dst: LayoutTensor, src: LayoutTensor):
     comptime assert (
         src.address_space == .LOCAL
@@ -7486,8 +7181,7 @@ def _copy_dram_to_local[
     ), "src_fragments must have known layout."
 
     @inline(.always)
-    @__parameter
-    def offset_helper(offset_val: Int):
+    def offset_helper(offset_val: Int) {imm}:
         var src_frag_offset = Int32(
             src_fragments.distance(src.ptr)
             + Scalar[src.linear_idx_type](offset_val)
@@ -7580,187 +7274,6 @@ def copy_dram_to_local[
         block_dim_count,
         cache_policy,
     ](dst, src, buffer, offset)
-
-
-@inline(.nodebug)
-def _copy_dram_to_local[
-    src_thread_layout: Layout,
-    num_threads: Int = src_thread_layout.size(),
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-    block_dim_count: Int = 1,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    dst: LayoutTensor[mut=True, ...],
-    src_iter: LayoutTensorIter[mut=False, ...],
-    buffer: AMDBufferResource,
-):
-    comptime assert is_amd_gpu(), "This function is only supported on AMD GPUs."
-    var src_tensor = src_iter[].vectorize[
-        dst.element_layout.shape[0].value(), dst.element_layout.shape[1].value()
-    ]()
-
-    _copy_dram_to_local[
-        src_thread_layout,
-        num_threads,
-        thread_scope,
-        block_dim_count,
-        cache_policy,
-    ](dst, src_tensor, buffer, Int(src_iter.offset))
-
-
-@inline(.nodebug)
-def copy_dram_to_local[
-    src_thread_layout: Layout,
-    num_threads: Int = src_thread_layout.size(),
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-    block_dim_count: Int = 1,
-    cache_policy: CacheOperation = CacheOperation.ALWAYS,
-](
-    dst: LayoutTensor[mut=True, ...],
-    src_iter: LayoutTensorIter[mut=False, ...],
-    bounds: UInt32,
-):
-    """Efficiently copy data from global memory (DRAM) to registers for AMD GPUs.
-
-    This function implements an optimized memory transfer operation specifically
-    for AMD GPU architectures. It utilizes the hardware's buffer_load intrinsic
-    to efficiently transfer data from global memory to registers while handling
-    bounds checking. The function distributes the copy operation across multiple
-    threads for maximum throughput.
-
-    Parameters:
-        src_thread_layout: The layout used to distribute the source tensor
-            across threads. This determines how the workload is divided among
-            participating threads.
-        num_threads: Total number of threads in the thread block. Threads
-            beyond `src_thread_layout.size()` will be disabled and not
-            participate in the copy operation.
-        thread_scope: Defines whether operations are performed at `BLOCK` or
-            `WARP` level. `BLOCK` scope involves all threads in a thread block,
-            while `WARP` scope restricts operations to threads within the same
-            warp. Defaults to `ThreadScope.BLOCK`.
-        block_dim_count: The number of dimensions in the thread block.
-        cache_policy: The cache policy to use for the copy operation.
-            Defaults to `CacheOperation.ALWAYS`.
-
-    Args:
-        dst: The destination tensor in register memory (LOCAL address space).
-        src_iter: The source tensor iterator.
-        bounds: Bounds of the buffer, based on the ptr of the src_iter.
-
-    Constraints:
-        - Only supported on AMD GPUs.
-        - The destination element layout size must match the SIMD width.
-        - Source fragments must be rank 2 with known dimensions.
-
-    Notes:
-
-    - The offset calculation method significantly impacts performance.
-        Current implementation optimizes for throughput over flexibility.
-    - This function is particularly useful for prefetching data into registers
-        before performing computations, reducing memory access latency.
-    """
-    var buffer = make_amd_buffer_resource(src_iter, Int(bounds))
-
-    _copy_dram_to_local[
-        src_thread_layout,
-        num_threads,
-        thread_scope,
-        block_dim_count,
-        cache_policy,
-    ](dst, src_iter, buffer)
-
-
-@inline(.nodebug)
-def copy_dram_to_local[
-    src_thread_layout: Layout,
-    num_threads: Int = src_thread_layout.size(),
-    thread_scope: ThreadScope = ThreadScope.BLOCK,
-    block_dim_count: Int = 1,
-](dst: LayoutTensor[mut=True, ...], src: LayoutTensor[mut=False, ...]):
-    """Efficiently copy data from global memory (DRAM) to registers.
-
-    This function implements an optimized memory transfer operation from
-    global memory to register memory. It distributes the copy operation across
-    multiple threads for maximum throughput while handling bounds checking for
-    safety.
-
-    Constraints:
-        - The source tensor must be in GLOBAL address space (DRAM).
-        - The destination tensor must be in LOCAL address space (registers).
-        - Both tensors must have compatible data types.
-
-    Parameters:
-        src_thread_layout: The layout used to distribute the source tensor
-            across threads. This determines how the workload is divided among
-            participating threads.
-        num_threads: Total number of threads in the thread block. Threads
-            beyond `src_thread_layout.size()` will be disabled and not
-            participate in the copy operation.
-        thread_scope: Defines whether operations are performed at `BLOCK` or
-            `WARP` level. `BLOCK` scope involves all threads in a thread block,
-            while `WARP` scope restricts operations to threads within the same
-            warp. Defaults to `ThreadScope.BLOCK`.
-        block_dim_count: The number of dimensions in the thread block.
-
-    Args:
-        dst: The destination tensor in register memory (LOCAL address space).
-        src:  The source tensor in global memory (DRAM).
-    """
-
-    comptime num_busy_threads = src_thread_layout.size()
-    var worker_idx = _get_worker_idx[thread_scope, block_dim_count]()
-
-    comptime if num_threads > num_busy_threads:
-        if worker_idx >= num_busy_threads:
-            return
-
-    var src_fragments = src.distribute[src_thread_layout](worker_idx)
-
-    var stride: Int
-    comptime if not src_fragments.masked:
-        dst.copy_from(src_fragments)
-    else:
-        var src_frag_offset = src_fragments.distance(src.ptr)
-        comptime static_stride = src.layout.stride[0].value()
-
-        comptime if src.layout.all_dims_known():
-            stride = static_stride
-        else:
-            stride = src.runtime_layout.stride.value[0]
-        var src_idx_bound = (
-            Scalar[src.linear_idx_type](src.dim[0]() * stride) - src_frag_offset
-        ).cast[src_fragments.linear_idx_type]()
-
-        comptime num_stores_per_thread = src_fragments.layout.size()
-
-        comptime for i in range(num_stores_per_thread):
-            comptime dst_idx = dst.layout(i)
-            comptime src_uint_dtype = _get_unsigned_type(
-                src_fragments.layout, src_fragments.address_space
-            )
-            comptime src_static_idx = src_fragments.layout(i)
-
-            var src_idx: Scalar[src_fragments.linear_idx_type]
-
-            comptime if src_fragments.layout.all_dims_known():
-                src_idx = Scalar[src.linear_idx_type](src_static_idx)
-            else:
-                src_idx = src_fragments.runtime_layout(i)
-
-            if src_idx < src_idx_bound:
-                var src_element = Element[index_type=src.linear_idx_type].load(
-                    src_fragments.ptr + src_idx,
-                    src_fragments.runtime_element_layout,
-                )
-                comptime dst_element_type = Element[
-                    dst.dtype, dst.element_layout, dst.linear_idx_type
-                ]
-                dst_element_type(
-                    rebind[dst_element_type.element_data_type](
-                        src_element.element_data.cast[dst.dtype]()
-                    )
-                ).store(dst.ptr + dst_idx)
 
 
 @inline(.nodebug)

@@ -72,9 +72,7 @@ def sparse_attention(
     kv32 = ops.cast(kv, DType.float32)
 
     valid = topk_idxs >= 0
-    safe_idxs = ops.max(
-        topk_idxs, ops.constant(0, topk_idxs.dtype, topk_idxs.device)
-    )
+    safe_idxs = ops.max(topk_idxs, 0)
 
     # [b, seq, topk, head_dim]: one gather per (batch, query) row of indices.
     kv_gathered = ops.gather_nd(
@@ -95,8 +93,9 @@ def sparse_attention(
 
     # [b*seq, heads, topk]
     scores = ops.matmul(q3, ops.transpose(kv_gathered3, -1, -2)) * softmax_scale
-    neg_inf = ops.constant(float("-inf"), DType.float32, scores.device)
-    scores = ops.where(ops.reshape(valid, [rows, 1, topk]), scores, neg_inf)
+    scores = ops.where(
+        ops.reshape(valid, [rows, 1, topk]), scores, float("-inf")
+    )
 
     # The max is over gathered scores only -- the sink is excluded, matching
     # the kernel's reduce_max before its final sum_exp adjustment.

@@ -230,8 +230,8 @@ Mojo offers one postfix unary operator.
 Use the `^` sigil for ownership transfer. `consume(a^)` transfers
 ownership of `a` to the `consume` function.
 
-- If the `consume` argument uses the `var` convention, the transfer moves
-  the value.
+- If the `consume` argument uses the `var` convention, the transfer takes
+  ownership of the value being passed.
 - If not, the value is copied and the original is left intact.
 
 After transfer, the `a` variable is uninitialized. You can't re-use the

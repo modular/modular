@@ -1,4 +1,5 @@
 // RUN: kgen-opt -verify-parameters %s -allow-unregistered-dialect | FileCheck %s
+// RUN: kgen-opt %s -allow-unregistered-dialect | kgen-opt -verify-parameters -allow-unregistered-dialect | FileCheck %s
 
 // CHECK-LABEL: kgen.generator @pointer_type<dt: dtype>(
 kgen.generator @pointer_type<dt: dtype>
@@ -871,6 +872,9 @@ kgen.generator @call_intrinsic<intrin: string>(%arg0: !kgen.scalar<f32>) {
   %0 = pop.call_llvm_intrinsic "llvm.round", (%arg0) : (!kgen.scalar<f32>) -> !kgen.scalar<f32>
   // CHECK-NEXT: pop.call_llvm_intrinsic intrin, ()
   pop.call_llvm_intrinsic intrin, () : () -> ()
+  // A flag that is constant true prints as the bare keyword, which must parse.
+  // CHECK-NEXT: pop.call_llvm_intrinsic side_effecting "llvm.donothing", ()
+  pop.call_llvm_intrinsic side_effecting "llvm.donothing", () : () -> ()
   hlcf.return
 }
 

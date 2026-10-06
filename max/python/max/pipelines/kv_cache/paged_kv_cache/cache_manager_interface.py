@@ -100,12 +100,12 @@ class PagedKVCacheManagerInterface(ABC):
         return self.block_count(replica_idx).used_pct
 
     @abstractmethod
-    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the host KV tier occupancy in bytes for the given replica."""
+    def host_byte_count(self) -> ByteCount:
+        """Returns the host KV tier occupancy in bytes, shared by every replica."""
 
     @abstractmethod
-    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the disk KV tier occupancy in bytes for the given replica."""
+    def disk_byte_count(self) -> ByteCount:
+        """Returns the disk KV tier occupancy in bytes, shared by every replica."""
 
     @abstractmethod
     def release(self, ctx: TextContext) -> None:

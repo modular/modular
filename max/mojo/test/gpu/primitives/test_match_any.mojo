@@ -29,7 +29,7 @@ from std.testing import assert_equal, TestSuite
 def _match_any_probe[
     dtype: DType,
 ](
-    values: Pointer[Scalar[dtype], MutAnyOrigin],
+    values: Pointer[Scalar[dtype], ImmutAnyOrigin],
     out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())

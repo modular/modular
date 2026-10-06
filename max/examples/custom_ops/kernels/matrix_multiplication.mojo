@@ -15,7 +15,8 @@
 
 from std.math import ceildiv
 from std.math.uutils import udivmod
-from std.sys.info import has_accelerator, has_amd_gpu_accelerator, simd_width_of
+from std.sys import default_accelerator
+from std.sys.info import has_accelerator, simd_width_of
 
 import extensibility
 
@@ -54,10 +55,10 @@ from std.utils.index import Index
 # Used only in llvm_metadata for MAX_THREADS_PER_BLOCK_METADATA
 # Not the most performant for all kernels, used sparingly on nvidia accelerators
 
-comptime OPTIMIZED_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 1024
+comptime OPTIMIZED_NUM_THREADS = 256 if default_accelerator().is_amd_gpu() else 1024
 
 # The block size to use for the optimized kernels
-comptime OPTIMIZED_BLOCK_SIZE = 16 if has_amd_gpu_accelerator() else 32
+comptime OPTIMIZED_BLOCK_SIZE = 16 if default_accelerator().is_amd_gpu() else 32
 
 
 # ===-----------------------------------------------------------------------=== #
@@ -1128,7 +1129,7 @@ struct MatrixMultiplication[algorithm: StaticString]:
                     # different MMA shapes for AMD and NVIDIA, see:
                     # https://max.modular.com/api/mojo/layout/tensor_core/TensorCore/
                     comptime MMA_M = 16
-                    comptime MMA_N = 16 if has_amd_gpu_accelerator() else 8
+                    comptime MMA_N = 16 if gpu_ctx.target.is_amd_gpu() else 8
                     comptime MMA_K = 4
                     comptime NUM_WARPS = (BM // WM) * (BN // WN)
                     comptime tensor_core_matmul_kernel = tensor_core_matrix_multiplication[

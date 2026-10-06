@@ -40,7 +40,7 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from max.gpu.host import DeviceContext, get_gpu_target
+from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from max.gpu.host.info import _is_sm10x_gpu
 from std.utils.coord import Coord, Idx, coord_to_index_list
 from layout import (
@@ -70,6 +70,13 @@ from nn.kv_cache_ragged import (
     generic_flare_mla_prefill_kv_cache_ragged,
 )
 from nn.attention.gpu.mla import _k_cache_to_buffer, mla_decode_max_seq_len
+from nn.attention.mha_utils import (
+    NullPointer,
+    OptionalPointer,
+    as_optional_reg,
+    null_pointer,
+    unread_pointer,
+)
 from nn.attention.gpu.nvidia.sm100.mla_prefill import (
     mla_sm100_prefill_sparse,
     mla_sm100_prefill_sparse_fp8,
@@ -1062,6 +1069,12 @@ def mla_decode_branch_fp8[
     fold_shared_index: Bool = False,
     # Off keeps Q in `dtype`, so the two stagings can be compared.
     fp8_q: Bool = True,
+    # Whether `extra_k` is supplied; see `flare_mla_decoding`.
+    has_extra_k: Bool = False,
+    # Presence of `attn_sink_ptr` / `topk_lengths` + `extra_topk_lengths`
+    # (inferred from those arguments).
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -1080,12 +1093,14 @@ def mla_decode_branch_fp8[
     ctx: DeviceContext,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     extra_k: OptionalReg[collection_t.CacheType] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
+        TopkLengthsPtrType
+    ](),
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
@@ -1130,6 +1145,12 @@ def mla_decode_branch_fp8[
             decode supports it, so the producers below quantize as they store.
             Off stages Q in `dtype` and routes to the sparse kernel that reads
             a wider Q.
+        has_extra_k: Whether `extra_k` is supplied (defaults to False); see
+            `flare_mla_decoding`.
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred, defaults to `NullPointer`).
+        TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
+            `extra_topk_lengths` (inferred, defaults to `NullPointer`).
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -1315,6 +1336,7 @@ def mla_decode_branch_fp8[
         mask_str=mask_str,
         sparse_mla=sparse_mla,
         fold_shared_index=fold_shared_index,
+        has_extra_k=has_extra_k,
     ](
         mla_decode_input,
         input_row_offsets,
@@ -1671,6 +1693,12 @@ def mla_prefill_decode_graph_fp8[
     # Stage Q in the FP8 cache dtype where the sparse decode supports it; see
     # `mla_decode_branch_fp8`.
     fp8_q: Bool = True,
+    # Whether `extra_k` is supplied; see `flare_mla_decoding`.
+    has_extra_k: Bool = False,
+    # Presence of `attn_sink_ptr` / `topk_lengths` + `extra_topk_lengths`
+    # (inferred from those arguments).
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -1695,12 +1723,14 @@ def mla_prefill_decode_graph_fp8[
     ctx: DeviceContext,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     extra_k: OptionalReg[collection_t.CacheType] = None,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     extra_indices_stride: Int = 0,
-    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_topk_lengths: TopkLengthsPtrType = unread_pointer[
+        TopkLengthsPtrType
+    ](),
     extra_scales_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
@@ -1733,6 +1763,12 @@ def mla_prefill_decode_graph_fp8[
             fold threaded to `flare_mla_decoding` (defaults to False).
         fp8_q: Whether to stage Q in the FP8 cache dtype on the sparse decode
             path (defaults to True); see `mla_decode_branch_fp8`.
+        has_extra_k: Whether `extra_k` is supplied (defaults to False); see
+            `flare_mla_decoding`.
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred, defaults to `NullPointer`).
+        TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
+            `extra_topk_lengths` (inferred, defaults to `NullPointer`).
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -1809,6 +1845,7 @@ def mla_prefill_decode_graph_fp8[
             sparse_mla=sparse_mla,
             fold_shared_index=fold_shared_index,
             fp8_q=fp8_q,
+            has_extra_k=has_extra_k,
         ](
             output,
             q,
@@ -1839,6 +1876,26 @@ def mla_prefill_decode_graph_fp8[
 
     else:
         comptime if sparse_mla:
+            # The sparse prefill kernels read a per-token top-k length and
+            # branch on the sink at runtime, so hand them that form. Absent
+            # lengths mean every token keeps the full top-k stride.
+            var full_topk: Optional[DeviceBuffer[DType.int32]] = None
+            var prefill_topk_lengths: UnsafePointer[Int32, MutAnyOrigin]
+            comptime if TopkLengthsPtrType.is_null:
+                full_topk = ctx.enqueue_create_buffer[DType.int32](Int(seq_len))
+                full_topk.value().enqueue_fill(Int32(sparse_indices_stride))
+                prefill_topk_lengths = (
+                    full_topk.value()
+                    .unsafe_ptr()
+                    .unsafe_origin_cast[MutAnyOrigin]()
+                )
+            else:
+                prefill_topk_lengths = rebind[
+                    UnsafePointer[Int32, MutAnyOrigin]
+                ](as_optional_reg(topk_lengths).value())
+            var prefill_attn_sink = rebind[
+                OptionalReg[UnsafePointer[Float32, MutAnyOrigin]]
+            ](as_optional_reg(attn_sink_ptr))
             # Sparse MLA prefill for BOTH bf16 and fp8 latent caches: the
             # branch comptime-dispatches the attention kernel on the cache
             # dtype (fp8 cache => mla_sm100_prefill_sparse_fp8 read at unit
@@ -1868,9 +1925,10 @@ def mla_prefill_decode_graph_fp8[
                 w_uv_scale,
                 ctx,
                 d_indices.value(),
-                topk_lengths.value(),
-                attn_sink_ptr,
+                prefill_topk_lengths,
+                prefill_attn_sink,
             )
+            _ = full_topk^
         else:
             # Dense prefill for NON-sparse MLA only. Sparse MLA (both bf16 and
             # fp8 caches) is handled by the sparse branch above.
@@ -2289,6 +2347,10 @@ def mla_decode_branch_bf16[
     ],
     target: StaticString = "cpu",
     sparse_mla: Bool = False,
+    # Presence of `attn_sink_ptr` / `topk_lengths` + `extra_topk_lengths`
+    # (inferred from those arguments).
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -2305,8 +2367,8 @@ def mla_decode_branch_bf16[
     ctx: DeviceContext,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
 ) raises:
@@ -2323,6 +2385,10 @@ def mla_decode_branch_bf16[
             + qk_rope_head_dim.
         target: Target device (defaults to "cpu").
         sparse_mla: Whether to use sparse MLA (defaults to False).
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred, defaults to `NullPointer`).
+        TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
+            `extra_topk_lengths` (inferred, defaults to `NullPointer`).
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -2815,6 +2881,10 @@ def mla_prefill_decode_graph_bf16[
     target: StaticString = "cpu",
     sparse_mla: Bool = False,
     sparse_indices_stride: Int = 0,
+    # Presence of `attn_sink_ptr` / `topk_lengths` + `extra_topk_lengths`
+    # (inferred from those arguments).
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -2838,8 +2908,8 @@ def mla_prefill_decode_graph_bf16[
     ctx: DeviceContext,
     d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
     indices_stride: Int = 0,
-    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
-    attn_sink_ptr: OptionalReg[UnsafePointer[Float32, MutAnyOrigin]] = None,
+    topk_lengths: TopkLengthsPtrType = null_pointer[TopkLengthsPtrType](),
+    attn_sink_ptr: AttnSinkPtrType = null_pointer[AttnSinkPtrType](),
     # Capturable-graph scalar forwarded from the MoGG op input list.
     num_partitions_in: Optional[Int] = None,
 ) raises:
@@ -2857,6 +2927,10 @@ def mla_prefill_decode_graph_bf16[
         sparse_mla: Whether to use sparse MLA (defaults to False).
         sparse_indices_stride: Row stride of the sparse decode index buffer
             (defaults to 0).
+        AttnSinkPtrType: `OptionalPointer` type of `attn_sink_ptr`
+            (inferred, defaults to `NullPointer`).
+        TopkLengthsPtrType: `OptionalPointer` type of `topk_lengths` and
+            `extra_topk_lengths` (inferred, defaults to `NullPointer`).
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -2947,6 +3021,26 @@ def mla_prefill_decode_graph_bf16[
         )
     else:
         comptime if sparse_mla:
+            # The sparse prefill kernels read a per-token top-k length and
+            # branch on the sink at runtime, so hand them that form. Absent
+            # lengths mean every token keeps the full top-k stride.
+            var full_topk: Optional[DeviceBuffer[DType.int32]] = None
+            var prefill_topk_lengths: UnsafePointer[Int32, MutAnyOrigin]
+            comptime if TopkLengthsPtrType.is_null:
+                full_topk = ctx.enqueue_create_buffer[DType.int32](Int(seq_len))
+                full_topk.value().enqueue_fill(Int32(sparse_indices_stride))
+                prefill_topk_lengths = (
+                    full_topk.value()
+                    .unsafe_ptr()
+                    .unsafe_origin_cast[MutAnyOrigin]()
+                )
+            else:
+                prefill_topk_lengths = rebind[
+                    UnsafePointer[Int32, MutAnyOrigin]
+                ](as_optional_reg(topk_lengths).value())
+            var prefill_attn_sink = rebind[
+                OptionalReg[UnsafePointer[Float32, MutAnyOrigin]]
+            ](as_optional_reg(attn_sink_ptr))
             # Sparse MLA prefill for BOTH bf16 and fp8 latent caches: the
             # branch comptime-dispatches the attention kernel on the cache
             # dtype (fp8 cache => mla_sm100_prefill_sparse_fp8 read at unit
@@ -2971,9 +3065,10 @@ def mla_prefill_decode_graph_bf16[
                 w_uv,
                 ctx,
                 d_indices.value(),
-                topk_lengths.value(),
-                attn_sink_ptr,
+                prefill_topk_lengths,
+                prefill_attn_sink,
             )
+            _ = full_topk^
         else:
             # Dense prefill for NON-sparse MLA only. Sparse MLA (both bf16 and
             # fp8 caches) is handled by the sparse branch above.

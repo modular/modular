@@ -14,7 +14,6 @@
 from std.collections import Optional
 from std.math import ceildiv
 from std.math.uutils import udivmod, umod
-from std.sys import has_amd_gpu_accelerator
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import (
@@ -43,7 +42,6 @@ from max.gpu import (
 )
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from max.gpu.intrinsics import ldg
 from linalg.utils import elementwise_epilogue_type
 
 from std.utils import StaticTuple
@@ -170,8 +168,8 @@ def sgemm_warp_tiling_kernel[
     for _ in range(0, K, BK):
         for offset in range(0, BM - row_stride_a + 1, row_stride_a):
             # Load 4 elements at a time and store to shared memory.
-            var tmp = ldg[width=4](
-                aa_ptr + ((inner_row_a + offset) * K) + inner_col_a * 4
+            var tmp = aa_ptr.unsafe_load[width=4, invariant=True](
+                ((inner_row_a + offset) * K) + inner_col_a * 4
             )
 
             comptime for i in range(4):
@@ -181,8 +179,8 @@ def sgemm_warp_tiling_kernel[
 
         for offset in range(0, BK - row_stride_b + 1, row_stride_b):
             # Load 4 elements at a time and store to shared memory.
-            var tmp = ldg[width=4](
-                bb_ptr + (inner_row_b + offset) * N + inner_co_ib * 4
+            var tmp = bb_ptr.unsafe_load[width=4, invariant=True](
+                (inner_row_b + offset) * N + inner_co_ib * 4
             )
             b_sram.store[alignment=16](
                 ((inner_row_b + offset) * BN + inner_co_ib * 4,),
@@ -310,7 +308,7 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # TODO: Find best for target GPU.
     #       For A100 see below (based on siboehm repo).
     #       For MI300X we need to further autotune (below is a working version).
-    # alias K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
+    # alias K10_NUM_THREADS = 256 if ctx.target.is_amd_gpu() else 128
     # alias K10_BN = 128
     # alias K10_BM = 64
     # alias K10_BK = 16
@@ -320,12 +318,12 @@ def bench_matmuls(mut m: Bench, ctx: DeviceContext) raises:
     # alias K10_TN = 4
     # alias K10_TM = 4
     # Settings for A6000
-    comptime K10_NUM_THREADS = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_NUM_THREADS = 256 if ctx.target.is_amd_gpu() else 128
     comptime K10_BN = 128
-    comptime K10_BM = 256 if has_amd_gpu_accelerator() else 128
+    comptime K10_BM = 256 if ctx.target.is_amd_gpu() else 128
     comptime K10_BK = 16
     comptime K10_WN = 64
-    comptime K10_WM = 128 if has_amd_gpu_accelerator() else 64
+    comptime K10_WM = 128 if ctx.target.is_amd_gpu() else 64
     comptime K10_WNITER = 4
     comptime K10_TN = 4
     comptime K10_TM = 8

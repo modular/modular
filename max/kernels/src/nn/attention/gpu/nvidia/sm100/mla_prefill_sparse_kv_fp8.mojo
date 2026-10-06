@@ -21,11 +21,11 @@ the Q-load prologue and the MMA/softmax/correction machinery are shared through
 """
 
 from std.sys import size_of
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     block_idx,
+    lane_id,
     warp_id,
     thread_idx,
     WARP_SIZE,
@@ -102,6 +102,7 @@ from layout import (
     TensorLayout,
     TensorEngine,
     Coord,
+    coord,
     stack_allocation as tt_stack_allocation,
 )
 from layout.swizzle import make_swizzle
@@ -207,11 +208,11 @@ struct MLAPrefillSparseFP8[
     # the depth-tile sub-copies are issued manually so each real-head box
     # lands at the PADDED (64-row) depth-tile stride the BMN=64 QK-MMA reads
     # (see the Q-load in `kernel`). NFC at 64/128 (real == padded).
-    comptime q_tile_shape = Index(
+    comptime q_tile_shape = coord[
         1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
-    )
+    ]
     comptime q_desc_shape = _default_desc_shape[
-        3, Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
+        Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
     ]()
 
     comptime k_tile_width = Self.config.qk_depth
@@ -220,8 +221,8 @@ struct MLAPrefillSparseFP8[
     comptime k_gather_box = _gather4_box_width[
         Self.qkv_dtype, Self.k_tile_width, Self.k_swizzle_mode
     ]()
-    comptime k_tile_shape = Index(Self.k_tile_height, Self.k_gather_box)
-    comptime k_desc_shape = Index(1, Self.k_gather_box)
+    comptime k_tile_shape = coord[Self.k_tile_height, Self.k_gather_box]
+    comptime k_desc_shape = coord[1, Self.k_gather_box]
 
     comptime v_tile_width = Self.V_SMEM_COLS_PER_CTA
     # V uses SWIZZLE_128B; gather4 splits tile_width=128 into 2 col-groups
@@ -236,11 +237,11 @@ struct MLAPrefillSparseFP8[
     comptime v_gather_box = _gather4_box_width[
         Self.qkv_dtype, Self.v_tile_width, Self.v_swizzle_mode
     ]()
-    comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
-    comptime v_desc_shape = Index(1, Self.v_gather_box)
+    comptime v_tile_shape = coord[Self.v_tile_height, Self.v_gather_box]
+    comptime v_desc_shape = coord[1, Self.v_gather_box]
 
-    comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
-    comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
+    comptime o_tile_shape = coord[Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth]
+    comptime o_desc_shape = coord[Self.NUM_Q_HEADS_PER_CTA, 64]
 
     # FP8 TMA swizzle modes. SWIZZLE_NONE paired with INT64 packing means one
     # gather4 descriptor covers the full row without inner col-tiling.
@@ -259,10 +260,10 @@ struct MLAPrefillSparseFP8[
         Self.k_tma_tile_width_fp8,
         Self.k_tma_swizzle_fp8,
     ]()
-    comptime k_tma_tile_shape_fp8 = Index(
+    comptime k_tma_tile_shape_fp8 = coord[
         Self.k_tile_height, Self.k_tma_gather_box_fp8
-    )
-    comptime k_tma_desc_shape_fp8 = Index(1, Self.k_tma_gather_box_fp8)
+    ]
+    comptime k_tma_desc_shape_fp8 = coord[1, Self.k_tma_gather_box_fp8]
 
     # FP8 V TMA: INT64-packed, per-atom width (V_BMN_PER_ATOM / 8 INT64 elems).
     # Two gather4 calls per row group (one per SV atom) because the atoms'
@@ -277,10 +278,10 @@ struct MLAPrefillSparseFP8[
     ]()
     # FP8 V loads all B_TOPK rows at once (no key-half split like BF16).
     comptime v_tma_tile_height_fp8 = Self.config.B_TOPK
-    comptime v_tma_tile_shape_fp8 = Index(
+    comptime v_tma_tile_shape_fp8 = coord[
         Self.v_tma_tile_height_fp8, Self.v_tma_gather_box_fp8
-    )
-    comptime v_tma_desc_shape_fp8 = Index(1, Self.v_tma_gather_box_fp8)
+    ]
+    comptime v_tma_desc_shape_fp8 = coord[1, Self.v_tma_gather_box_fp8]
 
     comptime SMemType = MLASparseSharedMemory[Self.config]
     comptime FULL_Q_TYPE = Self.SMemType.FULL_Q_TYPE
@@ -318,7 +319,6 @@ struct MLAPrefillSparseFP8[
     def load_k_fp8_tma(
         k_tma_op_fp8: TMATensorTile[
             Self.k_tma_dtype_fp8,
-            2,
             Self.k_tma_tile_shape_fp8,
             Self.k_tma_desc_shape_fp8,
         ],
@@ -568,7 +568,6 @@ struct MLAPrefillSparseFP8[
     def load_v_fp8_tma(
         v_tma_op_fp8: TMATensorTile[
             Self.v_tma_dtype_fp8,
-            2,
             Self.v_tma_tile_shape_fp8,
             Self.v_tma_desc_shape_fp8,
         ],
@@ -893,25 +892,21 @@ struct MLAPrefillSparseFP8[
     ](
         q_tma_op: TMATensorTile[
             Self.qkv_dtype,
-            3,
             Self.q_tile_shape,
             Self.q_desc_shape,
         ],
         k_tma_op_fp8: TMATensorTile[
             Self.k_tma_dtype_fp8,
-            2,
             Self.k_tma_tile_shape_fp8,
             Self.k_tma_desc_shape_fp8,
         ],
         v_tma_op_fp8: TMATensorTile[
             Self.v_tma_dtype_fp8,
-            2,
             Self.v_tma_tile_shape_fp8,
             Self.v_tma_desc_shape_fp8,
         ],
         o_tma_op: TMATensorTile[
             Self.output_dtype,
-            2,
             Self.o_tile_shape,
             Self.o_desc_shape,
         ],
@@ -931,7 +926,7 @@ struct MLAPrefillSparseFP8[
         var cta_id = UInt32(block_idx.x % Self.config.cta_group)
         var seq_idx = UInt32(block_idx.x // Self.config.cta_group)
         var warp_idx = warp_id()
-        var lane_idx = thread_idx.x % WARP_SIZE
+        var lane_idx = lane_id()
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
         var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
         var num_k_blocks = max(
@@ -1756,7 +1751,7 @@ def mla_prefill_sparse_fp8[
     var kv_operand = KVCacheMHAOperand(kv_cache)
 
     var q_tma_op = create_tensor_tile[
-        Index(1, config.num_q_heads // config.cta_group, q_depth),
+        coord[1, config.num_q_heads // config.cta_group, q_depth],
         swizzle_mode=config.q_swizzle_mode,
     ](ctx, q)
 
@@ -1783,9 +1778,9 @@ def mla_prefill_sparse_fp8[
         row_major(num_q_rows * config.num_q_heads, config.v_depth),
     )
     var o_tma_op_fp8 = create_tensor_tile[
-        Index(config.num_q_heads // config.cta_group, config.v_depth),
+        coord[config.num_q_heads // config.cta_group, config.v_depth],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
-        __desc_shape=Index(config.num_q_heads // config.cta_group, 64),
+        __desc_shape=coord[config.num_q_heads // config.cta_group, 64],
     ](ctx, output_2d_fp8)
 
     comptime assert type_of(topk_lengths).flat_rank == 1

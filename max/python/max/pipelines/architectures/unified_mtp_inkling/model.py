@@ -21,6 +21,7 @@ from typing import Any, ClassVar
 from max import tree
 from max._core.driver import is_virtual_device_mode
 from max.driver import Buffer
+from max.engine import Model
 from max.graph import Graph, Module
 from max.nn.kv_cache import (
     MultiKVCacheParams,
@@ -170,11 +171,14 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
 
     @override
     def _wire_batch_processor(
-        self, model: Any = None, model_config: Any = None
+        self,
+        model: Model | None = None,
+        model_config: InklingConfig | None = None,
     ) -> None:
         super()._wire_batch_processor(model, model_config)
         if is_virtual_device_mode():
             return
+        assert model is not None
         self._draft_scratch = InklingConvScratchPools(
             self._fused_nn_model.draft.conv_layout, devices=self.devices
         )
@@ -193,8 +197,7 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
         del state_dict
         assert self.pipeline_config.speculative is not None
         assert isinstance(self.kv_params, MultiKVCacheParams)
-        draft_kv_params = self.kv_params.children["draft"]
-        assert isinstance(draft_kv_params, MultiKVCacheParams)
+        draft_kv_params = self.kv_params.child("draft", MultiKVCacheParams)
         draft = InklingMultiTokenPredictor(
             model_config, self._n_mtp_depths, draft_kv_params
         )

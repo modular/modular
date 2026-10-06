@@ -33,11 +33,13 @@ from max.gpu import thread_idx
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
+    Coord,
     IntTuple,
     Layout,
     LayoutTensor,
     UNKNOWN_VALUE,
     lt_to_tt,
+    coord_to_index_list,
     row_major,
 )
 from layout.layout_tensor import copy_local_to_shared
@@ -87,14 +89,16 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     OptionalPointer,
     Pack,
-    QTMATile,
+    QTMATilePrefill,
+    QTMATileFused,
     _LocalTT,
     _SharedMemTT,
     elect,
     kv_coord,
     output_reg_to_smem_st_matrix,
     q_coord,
-    q_tma,
+    q_tma_fused,
+    q_tma_prefill,
 )
 
 
@@ -416,9 +420,8 @@ def produce[
     qkv_type: DType,
     BM: Int,
     BN: Int,
-    q_rank: Int,
-    q_tile_shape: IndexList[q_rank],
-    q_desc_shape: IndexList[q_rank],
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     depth: Int,
     padded_depth: Int,
     num_heads: Int,
@@ -439,7 +442,6 @@ def produce[
 ](
     q_tma_op: TMATensorTile[
         qkv_type,
-        q_rank,
         q_tile_shape,
         q_desc_shape,
     ],
@@ -504,7 +506,6 @@ def produce[
             tile (inferred).
         BN: Block size in the key/value (N) dimension of the attention
             tile (inferred).
-        q_rank: Rank of the query TMA tensor map descriptor (inferred).
         q_tile_shape: Per-dimension tile shape for query TMA copies
             (inferred).
         q_desc_shape: Per-dimension descriptor shape of the query TMA
@@ -600,34 +601,14 @@ def produce[
         q_idx: UInt32, offset: UInt32 = 0
     ) -> LayoutTensor[
         qkv_type,
-        Layout.row_major(q_tile_shape),
+        Layout.row_major(coord_to_index_list(q_tile_shape)),
         type_of(q_smem).origin,
         address_space=.SHARED,
         alignment=128,
     ]:
         return {q_smem + UInt32(q_size) * q_idx + offset}
 
-    comptime k_smem_layout = tile_layout_k_major[
-        qkv_type, BN, padded_depth, swizzle_mode
-    ]()
     comptime assert pipeline_stages >= 2
-
-    @__parameter
-    @inline(.always)
-    def kv_tile(
-        idx: UInt32,
-        out tile: LayoutTensor[
-            qkv_type,
-            k_smem_layout,
-            type_of(kv_smem).origin,
-            address_space=.SHARED,
-            layout_int_type=.int32,
-            linear_idx_type=.int32,
-            alignment=128,
-        ],
-    ):
-        comptime sz = BN * padded_depth
-        tile = {kv_smem + UInt32(sz) * idx}
 
     comptime kv_sub_BN = kv_sub_tile_rows(BN, KVLUTType.page_size)
 

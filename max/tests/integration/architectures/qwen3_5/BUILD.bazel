@@ -296,3 +296,15 @@ modular_py_test(
         requirement("numpy"),
     ],
 )
+
+modular_py_test(
+    name = "test_gdn_prefill_routing",
+    srcs = ["test_gdn_prefill_routing.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+    ],
+)

@@ -22,12 +22,10 @@ reconnection, and metrics; this shim only adapts the MAX-side types (device
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import logging
 import math
 import os
-import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
@@ -49,9 +47,9 @@ from max.pipelines.kv_cache._nixl_backend import (
 )
 from max.pipelines.kv_cache._nixl_plugin_deps import preload_nixl_plugin_deps
 from max.pipelines.kv_cache.kv_connector import (
-    CompletedTransfer,
     KVConnector,
     KVConnectorTransfer,
+    KVLoadFailed,
     KVLoadRefused,
     KVTransfer,
 )
@@ -84,7 +82,7 @@ class _DkvClient(Protocol):
         block_ids: Sequence[int],
         end: int,
         num_blocks: int,
-    ) -> int: ...
+    ) -> tuple[int, KVTransfer]: ...
 
     def abandon_prepared(self) -> None: ...
 
@@ -94,13 +92,11 @@ class _DkvClient(Protocol):
         group_id: int,
         block_ids: Sequence[int],
         block_hashes: Sequence[int],
-    ) -> None: ...
+    ) -> KVTransfer: ...
 
     def touch(self, *, group_id: int, block_hashes: Sequence[int]) -> None: ...
 
-    def wait_for_loads(self) -> None: ...
-
-    def wait_for_offloads(self) -> None: ...
+    def poll_transfers(self) -> None: ...
 
     def metrics(self) -> Mapping[str, Any]: ...
 
@@ -335,8 +331,6 @@ def _shard_unit_strides(kv_memory: Sequence[KVCacheMemory]) -> list[int]:
 # rather than starting a second one, so what matters is that the budget spans
 # enough attempts to outlast it.
 _DEFAULT_ADMISSION_TIMEOUT_S = 600.0
-_ADMISSION_INITIAL_BACKOFF_S = 1.0
-_ADMISSION_MAX_BACKOFF_S = 10.0
 
 # The Rust client's default per-attempt handshake bound, mirrored from
 # DEFAULT_HANDSHAKE_REQUEST_TIMEOUT in dkv-connector/src/transport.rs, purely to
@@ -631,10 +625,10 @@ def _kv_config_hash(
     per-unit strides either way -- so without the bump a live share would take
     the matching-hash reattach branch in ``prepare_share_slot``, find a
     different geometry, and return ``StorageError::Config``. That surfaces as a
-    ``ValueError``, which ``_is_permanent_admission_error`` treats as permanent,
-    so the pod would crashloop rather than rebuild the share. (``v=2`` was
-    itself the bump for the block layout becoming the concatenation of every
-    buffer unit rather than the value buffer alone.)
+    ``ValueError``, which admission does not retry, so the pod would crashloop
+    rather than rebuild the share. (``v=2`` was itself the bump for the block
+    layout becoming the concatenation of every buffer unit rather than the
+    value buffer alone.)
 
     The bump invalidates EVERY share, not only the multi-unit trees whose
     geometry actually moved: ``v`` is folded for every config, so a
@@ -730,41 +724,6 @@ def _resolve_replica_identities(
     return _kv_config_hash(params, unit_strides), [(0, 0)] * num_replicas
 
 
-# Exception types that always signal a permanent config or programming bug in
-# the admission path, never a transient/connection failure. Retrying these just
-# burns the whole admission budget before a real bug surfaces, so they
-# short-circuit the retry loop. ``ValueError`` also covers the pyo3
-# ``ConnectorError::Config`` mapping and this module's own argument validation;
-# the rest are the shapes a bug inside ``_make_client`` raises (a bad attribute,
-# wrong call signature, undefined name, missing key, or a failed import).
-_PERMANENT_ADMISSION_EXC_TYPES: tuple[type[BaseException], ...] = (
-    ValueError,
-    TypeError,
-    AttributeError,
-    NameError,
-    KeyError,
-    ImportError,
-)
-
-
-def _is_permanent_admission_error(exc: Exception) -> bool:
-    """Returns whether an admission failure will not recover on retry.
-
-    Retrying is worthwhile for a still-starting dKV (connection refused),
-    ``NotReady`` timeouts, and transient transport errors; it is pointless for a
-    caller/config bug or a programming bug. A permanent failure is one of
-    :data:`_PERMANENT_ADMISSION_EXC_TYPES` — a config error (the pyo3
-    ``ConnectorError::Config`` maps to :class:`ValueError`) or a programming bug
-    such as :class:`AttributeError` / :class:`TypeError` raised inside
-    ``_make_client`` — or a runtime error the Rust layer tagged
-    ``[retriable=false]``. Everything else (including an untagged "failed to
-    connect to dKV" error) is treated as transient and retried.
-    """
-    if isinstance(exc, _PERMANENT_ADMISSION_EXC_TYPES):
-        return True
-    return "[retriable=false]" in str(exc)
-
-
 def _resolve_admission_timeout_s(env: Mapping[str, str] | None = None) -> float:
     """Resolves the admission retry budget, raising it to cover several attempts.
 
@@ -821,57 +780,143 @@ def _resolve_admission_timeout_s(env: Mapping[str, str] | None = None) -> float:
     return admission_s
 
 
-def _admit_with_retry(
-    factory: Callable[[], object],
-    *,
-    timeout_s: float,
-    label: str = "",
-    initial_backoff_s: float = _ADMISSION_INITIAL_BACKOFF_S,
-    max_backoff_s: float = _ADMISSION_MAX_BACKOFF_S,
-    monotonic: Callable[[], float] = time.monotonic,
-    sleep: Callable[[float], None] = time.sleep,
-) -> object:
-    """Calls ``factory`` until it succeeds, retrying transient failures.
+def _drain(transfers: Sequence[KVTransfer]) -> None:
+    """Waits for every transfer in ``transfers``, draining all of them.
 
-    Retries with exponential backoff (capped at ``max_backoff_s``) until
-    ``factory`` returns, a permanent error surfaces
-    (:func:`_is_permanent_admission_error`), or ``timeout_s`` is exhausted (the
-    last exception is then re-raised — the readiness gate: model load fails if a
-    replica never admits). ``monotonic`` and ``sleep`` are injectable for tests.
+    Guarded per transfer with the first failure re-raised at the END rather
+    than immediately: this is what stands between a short delivery and the
+    caller freeing a page with an H2D still landing in it, so one leaf's
+    transport error must not skip the leaves after it.
 
-    Args:
-        factory: Zero-arg callable performing one admission attempt.
-        timeout_s: Total wall-clock retry budget.
-        label: Short identifier for the retry log line (e.g. ``"replica 3"``).
-        initial_backoff_s: First backoff, doubled each retry.
-        max_backoff_s: Backoff ceiling.
-        monotonic: Monotonic clock source (injectable).
-        sleep: Sleep function (injectable).
-
-    Returns:
-        Whatever ``factory`` returns on success.
+    ``synchronize`` takes its handles out, so draining the same transfer twice
+    is a no-op and the unwind path can drain blindly.
     """
-    deadline = monotonic() + timeout_s
-    backoff = initial_backoff_s
-    attempt = 0
-    while True:
-        attempt += 1
+    first: BaseException | None = None
+    for transfer in transfers:
         try:
-            return factory()
-        except Exception as exc:
-            if _is_permanent_admission_error(exc):
-                raise
-            remaining = deadline - monotonic()
-            if remaining <= 0:
-                raise
-            _logger.warning(
-                "dKV admission%s attempt %d failed (%s); retrying",
-                f" ({label})" if label else "",
-                attempt,
-                exc,
-            )
-            sleep(min(backoff, max_backoff_s, remaining))
-            backoff *= 2
+            transfer.synchronize()
+        except BaseException as err:
+            if first is None:
+                first = err
+            else:
+                _logger.exception("dkv transfer synchronize failed")
+    if first is not None:
+        raise first
+
+
+def _as_load_failure(err: BaseException) -> BaseException:
+    """Types a transport error from the client as :class:`KVLoadFailed`.
+
+    The binding raises a plain ``RuntimeError`` for a transport or transfer
+    condition and ``ValueError`` for a caller bug. Anything else comes back
+    unchanged, a ``RuntimeError`` subclass included, so a bug in the shim or
+    the binding still crashes rather than reading as a copy the manager can
+    recompute.
+    """
+    if type(err) is not RuntimeError:
+        return err
+    failure = KVLoadFailed(str(err))
+    failure.__cause__ = err
+    return failure
+
+
+class _DkvBatchTransfer:
+    """One :class:`DKVConnector` call's transfers, polled as one.
+
+    One per leaf that posted, because a leaf's transfer settles that leaf's
+    own lease or writes. The manager pins the device blocks and defers what
+    depends on the copy -- committing an onloaded prefix, freeing an offload's
+    source -- until this reads complete, and the scheduler holds an onloading
+    request out of the batch meanwhile, so the GPU runs other ready work while
+    the copy drains.
+
+    ``g0_blocks_per_leaf`` is what an offload took; a load is handed the exact
+    blocks to fill and reports nothing back.
+    """
+
+    def __init__(
+        self,
+        transfers: Sequence[KVTransfer],
+        g0_blocks_per_leaf: Mapping[str, Sequence[int]] | None = None,
+    ) -> None:
+        self._pending = list(transfers)
+        self._g0_blocks_per_leaf: Mapping[str, Sequence[int]] = (
+            g0_blocks_per_leaf or {}
+        )
+        # A terminal failure, kept so every later poll reports it too. The
+        # scheduler's cordon sweep and the block manager poll the SAME object,
+        # in either order: if the failure were consumed by the first, the
+        # second would read complete and commit blocks the copy never filled
+        # into the device prefix cache.
+        self._failure: BaseException | None = None
+
+    @property
+    def g0_blocks_per_leaf(self) -> Mapping[str, Sequence[int]]:
+        """The device blocks this transfer pins until it completes, per leaf."""
+        return self._g0_blocks_per_leaf
+
+    def is_complete(self) -> bool:
+        """Whether every leaf's copy has landed. Never blocks.
+
+        Polls every outstanding leaf rather than stopping at the first one
+        still in flight, since settling is what releases a read's reader pin
+        and marks a write readable. A read whose transfer failed raises
+        :class:`KVLoadFailed` rather than reading complete, because its
+        destination blocks hold garbage; a write's failure is kept local,
+        since the engine cannot remediate a batch that was not cached.
+
+        A failure is sticky: it is re-raised to every later caller, so a
+        transfer cannot report failure to one poller and completion to the
+        next.
+        """
+        if self._failure is not None:
+            raise self._failure
+        if not self._pending:
+            return True
+        pending = self._pending
+        self._pending = []
+        first: BaseException | None = None
+        for transfer in pending:
+            try:
+                if not transfer.is_complete():
+                    self._pending.append(transfer)
+            except BaseException as err:
+                if first is None:
+                    first = err
+                else:
+                    _logger.exception("dkv transfer poll failed")
+        if first is not None:
+            # The caller unpins this transfer's blocks on the failure, so a
+            # leaf still in flight has to be waited out first or its copy
+            # lands in a page that has been freed and reused.
+            self._failure = _as_load_failure(first)
+            still_flying = self._pending
+            self._pending = []
+            try:
+                _drain(still_flying)
+            except BaseException:
+                _logger.exception(
+                    "draining the surviving leaves of a failed dkv load failed"
+                )
+            raise self._failure
+        return not self._pending
+
+    def synchronize(self) -> None:
+        """Blocks until every leaf's copy has landed. Drain and teardown only.
+
+        Idempotent in what it waits on: a drained transfer keeps no handle, so
+        a second call waits on nothing. A failure still surfaces every time,
+        for the same reason :meth:`is_complete` re-raises it.
+        """
+        pending = self._pending
+        self._pending = []
+        try:
+            _drain(pending)
+        except BaseException as err:
+            if self._failure is None:
+                self._failure = _as_load_failure(err)
+        if self._failure is not None:
+            raise self._failure
 
 
 class DKVConnector(KVConnector):
@@ -1038,10 +1083,11 @@ class DKVConnector(KVConnector):
                 heartbeat_overrides,
             )
 
-        # Each client's connect + handshake ("admission") is retried on transient
-        # failures (dKV still starting); model readiness is gated on ALL clients
-        # admitting, so a client whose retry budget is exhausted raises here and
-        # fails model load rather than serving with a partial dKV.
+        # Each client retries its own connect and handshake ("admission") on
+        # transient failures within ``admission_timeout_s``, on the one NIXL
+        # agent it builds; model readiness is gated on ALL clients admitting, so
+        # a client whose budget runs out raises here and fails model load rather
+        # than serving with a partial dKV.
         # ``self._clients[replica_idx][leaf_id]`` is one client per leaf per DP
         # replica: ``load`` / ``offload`` / ``touch`` index both, and the
         # client-wide fan-outs (wait_for_*, metrics, take_metrics) iterate
@@ -1062,17 +1108,15 @@ class DKVConnector(KVConnector):
         # kv_shard_id/replica_id, so every DP replica of a tenant resolves to
         # ONE store — and the per-block BlockKey tp_shard_id carries the
         # MHA/GQA-vs-MLA distinction.
-        for idx, (
+        for (
             replica_memory,
             replica_devices,
             (kv_shard_id, replica_id),
-        ) in enumerate(
-            zip(
-                replica_kv_memory,
-                devices_per_replica,
-                replica_identities,
-                strict=True,
-            )
+        ) in zip(
+            replica_kv_memory,
+            devices_per_replica,
+            replica_identities,
+            strict=True,
         ):
             clients_for_replica: dict[str, _DkvClient] = {}
             # One geometry per leaf so dKV pages are lcm(each leaf's
@@ -1091,8 +1135,7 @@ class DKVConnector(KVConnector):
                 )
             ]
             for leaf_id in self._leaves:
-                factory = functools.partial(
-                    self._make_client,
+                clients_for_replica[leaf_id] = self._make_client(
                     _DkvConnectorClient,
                     [replica_memory[leaf_id]],
                     local_block_store_endpoint,
@@ -1108,11 +1151,7 @@ class DKVConnector(KVConnector):
                     tenant_gpu_count=tenant_gpu_count,
                     tenant_gpu_device_ids=tenant_gpu_device_ids,
                     heartbeat_overrides=heartbeat_overrides,
-                )
-                clients_for_replica[leaf_id] = _admit_with_retry(
-                    factory,
-                    timeout_s=admission_timeout_s,
-                    label=f"replica {idx}, leaf {leaf_id}",
+                    admission_timeout_s=admission_timeout_s,
                 )
             self._clients.append(clients_for_replica)
         # One client per leaf per DP replica. load/offload index
@@ -1201,6 +1240,7 @@ class DKVConnector(KVConnector):
         tenant_gpu_count: int,
         tenant_gpu_device_ids: Sequence[int],
         heartbeat_overrides: Mapping[str, int],
+        admission_timeout_s: float,
     ) -> _DkvClient:
         # Group the per-leaf units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
@@ -1271,6 +1311,7 @@ class DKVConnector(KVConnector):
             replica_id=replica_id,
             tenant_gpu_count=tenant_gpu_count,
             tenant_gpu_device_ids=list(tenant_gpu_device_ids),
+            admission_timeout_s=admission_timeout_s,
             **heartbeat_overrides,
         )
 
@@ -1473,20 +1514,30 @@ class DKVConnector(KVConnector):
 
         Consumes the lease however this exits, raising included.
 
+        Returns:
+            A :class:`_DkvBatchTransfer` over the posted READs. It polls
+            complete once every leaf's H2D has landed, so the manager pins the
+            destination blocks and the scheduler holds the request out of the
+            batch until then, rather than ordering the copies on a pre-forward
+            barrier that stalls batch construction.
+
         Raises:
             ValueError: If the rows do not match the leaf tree one block per
                 hash, if no lookup leased this replica, or if the rows
                 disagree about where they end.
             KVLoadRefused: If a leaf delivered less than its own lease
                 promised.
+            KVLoadFailed: If posting a leaf's copy failed, or a copy that a
+                short delivery drained did. Every leaf that posted has been
+                drained by then.
         """
         clients = self._clients[replica_idx]
         leaf_ids = list(self._leaves)
         depths = self._leased_depths.pop(replica_idx, None)
-        # Leaves whose `load_prepared` posted, in call order. Filled as it
-        # goes, because an H2D landing in a staging row the caller is about to
-        # free has to be waited on however this returns.
-        posted_leaves: list[str] = []
+        # Transfers of the leaves whose `load_prepared` posted, in call order.
+        # Filled as it goes, because an H2D landing in a staging row the caller
+        # is about to free has to be waited on however this returns.
+        posted_transfers: list[KVTransfer] = []
         try:
             wanted = {
                 leaf_id: len(hashes) for leaf_id, hashes in block_hashes.items()
@@ -1521,14 +1572,17 @@ class DKVConnector(KVConnector):
                     clients[leaf_id].abandon_prepared()
                     posted[leaf_id] = 0
                     continue
-                posted[leaf_id] = clients[leaf_id].load_prepared(
+                posted[leaf_id], transfer = clients[leaf_id].load_prepared(
                     group_id=self._wire_ids[leaf_id],
                     block_ids=list(block_ids[leaf_id]),
                     end=end,
                     num_blocks=share,
                 )
+                # A zero post is exact: that leaf released its plan before
+                # anything went in flight, so its transfer holds nothing and
+                # collecting it would only cost a poll per scheduler iteration.
                 if posted[leaf_id]:
-                    posted_leaves.append(leaf_id)
+                    posted_transfers.append(transfer)
             if posted != wanted:
                 short_leaves = [
                     leaf_id
@@ -1537,11 +1591,13 @@ class DKVConnector(KVConnector):
                 ]
                 # Not an eviction race: the lease held across both halves.
                 # What is left is a fault -- degraded mid-request, an expired
-                # lease, or a hinted peer leaving the table. Drain only the
-                # leaves that posted; `wait_for_loads` is not scoped to one
-                # request, so draining the rest would wait on other requests'
-                # transfers from the scheduler thread.
-                self._drain_and_clear_posted(clients, posted_leaves)
+                # lease, or a hinted peer leaving the table. Drain the
+                # leaves that posted, and only those: each transfer covers one
+                # request's own reads, so this waits on nothing else. They
+                # come off the list first so the unwind does not drain them
+                # again, since a failed transfer re-raises on every drain.
+                drained, posted_transfers = posted_transfers, []
+                _drain(drained)
                 raise KVLoadRefused(
                     "dkv load_prepared fell short of its own lease: leaves "
                     f"{short_leaves} delivered "
@@ -1550,69 +1606,37 @@ class DKVConnector(KVConnector):
                     "connector degraded, the lease expired mid-request, or a "
                     "hinted peer left the table."
                 )
-            return CompletedTransfer()
-        except BaseException:
+            return _DkvBatchTransfer(posted_transfers)
+        except BaseException as err:
             # Every leaf leased before anything was decided, so any raise
             # above has to hand those pins back rather than wait for the TTL.
             self._abandon_leases(replica_idx)
             # A leaf that posted has reads landing into rows the caller frees
             # as soon as this raises. Swallowing: the original exception is
-            # the one worth propagating. Empty on the short-delivery path.
-            for leaf_id in posted_leaves:
-                try:
-                    clients[leaf_id].wait_for_loads()
-                except BaseException:
-                    _logger.exception(
-                        "dkv wait_for_loads failed for leaf %s while "
-                        "unwinding; its reads may still be landing",
-                        leaf_id,
-                    )
-            raise
-
-    @staticmethod
-    def _drain_and_clear_posted(
-        clients: Mapping[str, _DkvClient], leaves: list[str]
-    ) -> None:
-        """Waits for the reads ``leaves`` posted, draining every one of them.
-
-        Guarded per leaf with the first failure re-raised at the END rather
-        than immediately: this loop is what stands between a short delivery
-        and the caller freeing a page with an H2D still landing in it, so one
-        leaf's transport error must not skip the leaves after it.
-        ``wait_for_loads_inner`` collects every per-block failure for the same
-        reason.
-
-        Clears ``leaves`` before the waiting starts -- hence the name -- so a
-        raise from here does not have :meth:`load`'s unwind handler wait on
-        the same leaves a second time.
-        """
-        pending = list(leaves)
-        leaves.clear()
-        first: BaseException | None = None
-        for leaf_id in pending:
+            # the one worth propagating.
             try:
-                clients[leaf_id].wait_for_loads()
-            except BaseException as err:
-                if first is None:
-                    first = err
-                else:
-                    _logger.exception(
-                        "dkv wait_for_loads failed for leaf %s", leaf_id
-                    )
-        if first is not None:
-            raise first
+                _drain(posted_transfers)
+            except BaseException:
+                _logger.exception(
+                    "dkv transfer drain failed while unwinding a load; its "
+                    "reads may still be landing"
+                )
+            failure = _as_load_failure(err)
+            if failure is err:
+                raise
+            raise failure from err
 
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
 
-        Each ``block_hashes`` element follows the same 8-or-32 byte
-        contract as :meth:`load` (truncated to its first 8 bytes at the
-        dkv boundary; see :func:`_to_dkv_u64`).
+        Each hash follows the same 8-or-32 byte contract as :meth:`load`
+        (truncated to its first 8 bytes at the dkv boundary; see
+        :func:`_to_dkv_u64`).
 
         The dKV store dedups by composite key ``(tp_shard_id, group,
         seq_hash)`` and does not chain blocks under a parent, so the Rust
@@ -1620,24 +1644,33 @@ class DKVConnector(KVConnector):
         alone.
 
         Routes to the processing replica's per-leaf clients, one call per leaf.
+
+        Returns:
+            A :class:`_DkvBatchTransfer` over the posted WRITEs, reporting
+            ``block_ids`` as the device sources it pins. dKV marks a block
+            readable only when its write settles, so the manager holds the
+            source out of the eviction path until this reads complete rather
+            than letting a D2H drain into a page that has been reused.
         """
-        if set(block_ids) != set(self._leaves):
+        if set(block_ids) != set(self._leaves) or set(block_hashes) != set(
+            self._leaves
+        ):
             raise ValueError(
-                "DKVConnector.offload block IDs must match its leaf mapping. "
-                f"Expected {self._leaves}, got {block_ids}"
+                "DKVConnector.offload block IDs and hashes must match its leaf "
+                f"mapping. Expected {self._leaves}, got {block_ids} and "
+                f"{block_hashes}"
             )
-        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
-        # Every leaf commits the same run in lockstep, so a leaf whose row is
-        # not one block per hash would pair ids with the wrong hashes.
+        # Ids and hashes pair positionally within a leaf, so a leaf given a
+        # different number of each would write blocks under the wrong keys.
         ragged = {
-            leaf_id: len(ids)
+            leaf_id: (len(ids), len(block_hashes[leaf_id]))
             for leaf_id, ids in block_ids.items()
-            if len(ids) != len(dkv_hashes)
+            if len(ids) != len(block_hashes[leaf_id])
         }
         if ragged:
             raise ValueError(
                 "DKVConnector.offload needs one block per hash on every leaf; "
-                f"got {ragged} for {len(dkv_hashes)} hashes"
+                f"got (blocks, hashes) of {ragged}"
             )
         clients = self._clients[replica_idx]
         # Offload every block in the run for every leaf, sliding ones included.
@@ -1648,15 +1681,15 @@ class DKVConnector(KVConnector):
         # and that request then misses its window and discards the full leaf's
         # hit with it. Capacity is the server's job -- GROUP_RECENCY_SLIDING_WINDOW
         # is what makes dKV evict slid-out blocks first.
-        for leaf_id in self._leaves:
+        posted = [
             clients[leaf_id].offload(
                 group_id=self._wire_ids[leaf_id],
                 block_ids=list(block_ids[leaf_id]),
-                block_hashes=dkv_hashes,
+                block_hashes=[_to_dkv_u64(h) for h in block_hashes[leaf_id]],
             )
-        # dKV registers its posted WRITEs in the deprecated ``wait_for_offloads``
-        # barrier, so the manager keeps no pin on the source blocks.
-        return CompletedTransfer(block_ids)
+            for leaf_id in self._leaves
+        ]
+        return _DkvBatchTransfer(posted, block_ids)
 
     def touch(
         self,
@@ -1744,15 +1777,18 @@ class DKVConnector(KVConnector):
         except Exception as exc:
             _logger.debug("dKV touch skipped: %s", exc)
 
-    def wait_for_loads(self) -> None:
-        for clients in self._clients:
-            for client in clients.values():
-                client.wait_for_loads()
+    def poll_transfers(self) -> None:
+        """Drains what each leaf's settled transfers left behind.
 
-    def wait_for_offloads(self) -> None:
+        One call per leaf client, because each owns its own connector: a
+        transfer dropped before it settled defers its reader-pin release onto
+        that client's orphan queue, which nothing else in a MAX worker drains,
+        and a settled one records its throughput sample off to the side for a
+        live caller to land.
+        """
         for clients in self._clients:
             for client in clients.values():
-                client.wait_for_offloads()
+                client.poll_transfers()
 
     def shutdown(self) -> None:
         # No-op: the Rust client releases its NIXL agent, heartbeat poller, and

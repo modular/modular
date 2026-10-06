@@ -341,14 +341,6 @@ async def _validate_and_pin(
     return pinned_url, host_header, host, parsed
 
 
-# ``data:`` payloads at or below this size (in bytes of the base64 string) are
-# decoded inline; larger ones are offloaded to a worker thread. Base64 decoding
-# is pure-Python CPU work that blocks the event loop, so a multi-MB payload
-# decoded inline stalls every other in-flight request (the TTFT culprit in
-# CENG-640). The threshold keeps the common small-thumbnail case off the thread
-# pool while pushing the expensive large-payload case off the loop.
-_DATA_URI_OFFLOAD_THRESHOLD = 256 * 1024
-
 # Read remote media in bounded chunks so a streamed download can be aborted the
 # moment it crosses the size cap, instead of buffering the whole (potentially
 # huge) body before checking its length.
@@ -888,23 +880,8 @@ async def resolve_image_from_url(
         )
     elif image_ref.scheme == "data":
         data_uri = image_ref.unicode_string()
-        # Decode off the event loop for large payloads: base64 decoding is
-        # CPU-bound pure-Python work that otherwise stalls every concurrent
-        # request (CENG-640). Small thumbnails decode inline to skip the
-        # thread-pool hop. The budget is charged here on the event loop -- never
-        # inside the worker thread -- once the decoded size is known.
-        #
-        # Caught out here rather than at the raise: the large-payload arm
-        # runs in a worker thread, and the metric clients are not all
-        # thread-safe. ``binascii.Error`` is a ``ValueError``, so this covers
-        # both a missing payload and one that is not base64 at all.
         try:
-            if len(data_uri) > _DATA_URI_OFFLOAD_THRESHOLD:
-                images_bytes = await asyncio.to_thread(
-                    _decode_data_uri_base64, data_uri
-                )
-            else:
-                images_bytes = _decode_data_uri_base64(data_uri)
+            images_bytes = _decode_data_uri_base64(data_uri)
         except ValueError:
             _reject_media(
                 "bad_data_uri",
@@ -1098,10 +1075,6 @@ async def fetch_media_data_uri(url: str, settings: Settings) -> str:
     # may decode to. This is the fixed limit, not a second budget: the
     # decoded-size check is a stateless per-image comparison against it.
     max_decoded_bytes = _max_media_bytes(settings)
-    # Decoding for validation and base64-encoding are both CPU-bound, so a
-    # multi-MB image goes to a worker thread for the same reason the ``data:``
-    # decode does.
-    #
     # The list is allocated here, in the frame that also catches, for the
     # same reason the chat path allocates its own: the decode raises out of
     # the worker thread with no return value, and the handler above cannot
@@ -1109,12 +1082,9 @@ async def fetch_media_data_uri(url: str, settings: Settings) -> str:
     # event loop because the metric clients are not all thread-safe.
     facts: list[_ImageFact] = []
     try:
-        if len(image_bytes) > _DATA_URI_OFFLOAD_THRESHOLD:
-            data_uri = await asyncio.to_thread(
-                _encode_data_uri, image_bytes, max_decoded_bytes, facts
-            )
-        else:
-            data_uri = _encode_data_uri(image_bytes, max_decoded_bytes, facts)
+        data_uri = await asyncio.to_thread(
+            _encode_data_uri, image_bytes, max_decoded_bytes, facts
+        )
     except Exception:
         emit_media_facts(facts)
         raise

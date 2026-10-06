@@ -415,21 +415,19 @@ def _advanced_indexing_use_simd[
 @inline(.always)
 def advanced_indexing_getitem[
     input_rank: Int,
-    index_rank: Int,
     input_type: DType,
     //,
+    index_rank: Int,
     start_axis: Int,
     num_index_tensors: Int,
     target: StaticString,
     trace_description: StaticString,
     InputTensorFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[dtype: DType, width: Int](IndexList[input_rank]) -> SIMD[
-        dtype, width
-    ],
+    & def[dtype: DType, width: Int](Coord) -> SIMD[dtype, width],
     IndicesFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[indices_index: Int](IndexList[index_rank]) -> Int,
+    & def[indices_index: Int](Coord) -> Int,
 ](
     out_tensor: TileTensor[mut=True, input_type, ...],
     in_tensor_strides: IndexList[input_rank],
@@ -466,8 +464,8 @@ def advanced_indexing_getitem[
 
     Parameters:
         input_rank: The rank of the input tensor.
-        index_rank: The rank of the indexing tensors.
         input_type: The dtype of the input tensor.
+        index_rank: The rank of the indexing tensors.
         start_axis: The first dimension in input where the indexing tensors
             are applied. It is assumed the indexing tensors are applied in
             consecutive dimensions.
@@ -498,6 +496,8 @@ def advanced_indexing_getitem[
         width: Int,
         alignment: Int = 1,
     ](output_index: Coord) {var}:
+        comptime assert output_index.rank == out_tensor.rank
+
         var input_index = IndexList[input_rank]()
 
         # Find the associated output index from input index
@@ -519,12 +519,12 @@ def advanced_indexing_getitem[
                         output_index[offset + start_axis].value()
                     )
                 input_index[input_dim] = Int(
-                    indices_fn[index_tensor_offset](index_tensor_indices)
+                    indices_fn[index_tensor_offset](Coord(index_tensor_indices))
                 )
 
         out_tensor.store[width=width, alignment=1](
             output_index,
-            input_tensor_fn[input_type, width=width](input_index),
+            input_tensor_fn[input_type, width=width](Coord(input_index)),
         )
 
     comptime target_simd_width = (
@@ -605,12 +605,10 @@ def advanced_indexing_setitem_inplace[
     trace_description: StaticString,
     UpdatesTensorFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[dtype: DType, width: Int](IndexList[updates_rank]) -> SIMD[
-        dtype, width
-    ],
+    & def[dtype: DType, width: Int](Coord) -> SIMD[dtype, width],
     IndicesFn: ImplicitlyCopyable
     & RegisterPassable
-    & def[indices_index: Int](IndexList[index_rank]) -> Int,
+    & def[indices_index: Int](Coord) -> Int,
 ](
     input_tensor: TileTensor[mut=True, input_type, ...],
     index_tensor_shape: IndexList[index_rank],
@@ -715,6 +713,8 @@ def advanced_indexing_setitem_inplace[
     def elementwise_fn_wrapper[
         width: Int, alignment: Int = 1
     ](iteration_indices: Coord) {var}:
+        comptime assert iteration_indices.rank == iteration_rank
+
         var index_tensor_indices = IndexList[index_rank]()
 
         # Find the index into the indexing tensors from the common index
@@ -739,16 +739,13 @@ def advanced_indexing_setitem_inplace[
             else:
                 comptime index_tensor_offset = i - start_axis
                 input_tensor_indices[i] = Int(
-                    indices_fn[index_tensor_offset](index_tensor_indices)
+                    indices_fn[index_tensor_offset](Coord(index_tensor_indices))
                 )
 
         var input_tensor_coord = Coord(input_tensor_indices)
-        var updates_indices = IndexList[updates_rank]()
-        comptime for i in range(updates_rank):
-            updates_indices[i] = Int(iteration_indices[i].value())
         input_tensor.store[width=width, alignment=1](
             input_tensor_coord,
-            updates_tensor_fn[input_type, width=width](updates_indices),
+            updates_tensor_fn[input_type, width=width](iteration_indices),
         )
 
     # We can vectorize the assignment only if we are

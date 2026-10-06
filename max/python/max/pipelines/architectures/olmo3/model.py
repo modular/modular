@@ -19,19 +19,13 @@ from typing import Any, ClassVar, cast
 
 import numpy as np
 from max import tree
-from max.driver import Buffer, Device
-from max.engine import InferenceSession
-from max.graph.weights import Weights, WeightsAdapter
-from max.nn import ReturnLogits
+from max.driver import Buffer
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
-    KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     ModuleV3PipelineModelWithKVCache,
-    PipelineConfig,
 )
-from max.pipelines.lib.memory_estimation import MemoryPlan
 
 from .batch_processor import Olmo3BatchProcessor
 from .model_config import Olmo3Config
@@ -73,47 +67,6 @@ class Olmo3Model(
     batch_processor_cls: ClassVar[type[Olmo3BatchProcessor]] = (
         Olmo3BatchProcessor
     )
-
-    def __init__(
-        self,
-        pipeline_config: PipelineConfig,
-        session: InferenceSession,
-        devices: list[Device],
-        kv_cache_config: KVCacheConfig,
-        weights: Weights,
-        *,
-        memory_plan: MemoryPlan,
-        adapter: WeightsAdapter | None = None,
-        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
-        max_batch_size: int = 1,
-    ) -> None:
-        """
-        Args:
-            pipeline_config: The configuration settings for the entire pipeline.
-            session: The MAX Engine inference session managing the runtime.
-            devices: A list of MAX Engine devices (:obj:`max.driver.Device`) to
-                run the model on.
-            kv_cache_config: Configuration settings for the Key-Value cache
-                (:obj:`max.pipelines.max_config.KVCacheConfig`).
-            weights: The model weights (:obj:`max.graph.weights.Weights`).
-            adapter: An optional adapter to modify weights before loading
-                (:obj:`max.graph.weights.WeightsAdapter`).
-            return_logits: The number of top logits to return from the model
-                execution.
-        """
-        super().__init__(
-            pipeline_config,
-            session,
-            devices,
-            kv_cache_config,
-            weights,
-            adapter=adapter,
-            return_logits=return_logits,
-            max_batch_size=max_batch_size,
-            memory_plan=memory_plan,
-        )
-
-        self.model = self.load_model()
 
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
         model_config = Olmo3Config.initialize(
@@ -158,14 +111,4 @@ class Olmo3Model(
             input_row_offsets,
             *tree.leaves(curr_kv_cache_inputs),
         )
-        if len(model_outputs) == 3:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-            )
-        else:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[0].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-            )
+        return self._to_model_outputs(model_outputs)

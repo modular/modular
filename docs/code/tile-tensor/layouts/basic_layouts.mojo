@@ -91,7 +91,7 @@ def dynamic_dimensions():
 
     # Layout with run-time dimensions
     var a, b = 4, 8
-    var row_major_runtime = row_major(Coord(Int32(a), Int32(b)))
+    var row_major_runtime = row_major(Int32(a), Int32(b))
 
     # Mixed layout with one run-time dimension and one compile-time dimension
     var row_major_mixed = row_major((rows, Idx[columns]))

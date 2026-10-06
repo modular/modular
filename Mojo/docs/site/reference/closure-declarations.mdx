@@ -4,7 +4,7 @@ sidebar_label: Closure declarations
 sidebar_position: 9
 description: >
   Reference for Mojo closure declaration syntax. Covers capture
-  lists, capture conventions, the move operator, parametric
+  lists, capture conventions, the transfer sigil, parametric
   closures, declaration-level effects, nesting, and the common
   capture-list errors.
 ---
@@ -79,12 +79,12 @@ A capture list is a brace-enclosed, comma-separated sequence of
 
 <!-- markdownlint-disable MD013 -->
 
-| Form           | Meaning                                       |
-|----------------|-----------------------------------------------|
-| `<conv> name`  | Capture `name` with convention `<conv>`       |
-| `<conv>`       | Default convention for all free variables     |
-| `name`         | Capture `name` with convention `imm`          |
-| `<conv> name^` | Move-capture (only with `var` or no `<conv>`) |
+| Form           | Meaning                                           |
+|----------------|---------------------------------------------------|
+| `<conv> name`  | Capture `name` with convention `<conv>`           |
+| `<conv>`       | Default convention for all free variables         |
+| `name`         | Capture `name` with convention `imm`              |
+| `<conv> name^` | Transfer-capture (only with `var` or no `<conv>`) |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -109,7 +109,7 @@ convention keyword.
 | `mut`      | `{mut name}` / `{mut}`   | Mutable reference                 | Live                  |
 | `ref`      | `{ref name}` / `{ref}`   | Reference, mutability from origin | Live                  |
 | `var`      | `{var name}` / `{var}`   | Owned copy                        | Independent           |
-| Move       | `{var name^}`            | Owned, consumed from outer        | Consumes outer        |
+| Transfer   | `{var name^}`            | Owned, consumed from outer        | Consumes outer        |
 | Copyable   | `{var^}`                 | Owned, closure is `Copyable`      | Independent           |
 
 <!-- markdownlint-enable MD013 -->
@@ -203,7 +203,7 @@ closure body. The copy initializer runs once per closure declaration.
 Capturing a large `List` or `String` by `var` allocates at that point. Use
 `imm` or `mut` when an independent copy isn't needed.
 
-## Move capture: `var name^`
+## Transfer capture: `var name^`
 
 <!-- VERIFIED: unified_closures.mojo:260,
      Signatures.cpp:1371-1386 -->
@@ -220,11 +220,10 @@ def main():
 
     take_data()      # [1, 2, 3]
     # print(data)    # error: 'data' is uninitialized
-                     #        after move
+                     #        after transfer
 ```
 
-Move capture skips the copy that `var name` would perform and is the only
-way to capture a move-only type by value.
+Move capture skips the copy that `var name` would perform.
 
 Constraints:
 
@@ -237,7 +236,7 @@ Constraints:
 <!-- VERIFIED: unified_closures_mem.mojo:94-103,
      unified_closures.mojo:185, Signatures.cpp:1391-1406 -->
 
-`{var^}` with no variable name makes move capture the default for every free
+`{var^}` with no variable name makes owned capture the default for every free
 variable in the body. When every captured type is `Copyable`, the resulting
 closure value is also `Copyable`:
 
@@ -267,10 +266,10 @@ Comparison with `{var name^}`:
 
 <!-- markdownlint-disable MD013 -->
 
-| Form          | Captured names                | Closure value                         |
-|---------------|-------------------------------|---------------------------------------|
-| `{var name^}` | Only `name`, by move          | Not `Copyable` by default             |
-| `{var^}`      | All referenced names, by move | `Copyable` if captures are `Copyable` |
+| Form          | Captured names                  | Closure value                         |
+|---------------|---------------------------------|---------------------------------------|
+| `{var name^}` | Only `name`, transfers          | Not `Copyable` by default             |
+| `{var^}`      | All referenced names, transfers | `Copyable` if captures are `Copyable` |
 
 <!-- markdownlint-enable MD013 -->
 
@@ -513,15 +512,15 @@ other value.
 
 <!-- markdownlint-disable MD013 -->
 
-| Compiler complaint                                                                | Trigger                                                                      |
-|-----------------------------------------------------------------------------------|------------------------------------------------------------------------------|
-| Transfer sigil `^` without `var` convention                                       | `^` after `mut`, `imm`, or `ref`                                             |
-| Duplicate default convention                                                      | Two bare convention keywords in one list                                     |
-| Unrecognized token in capture position                                            | Token that isn't a convention keyword or name                                |
-| Missing comma between entries                                                     | Identifier followed by an unrecognized token                                 |
-| Unterminated capture list                                                         | Missing closing `}`                                                          |
-| Outer name not covered by capture list                                            | Body references an outer name the capture list doesn't cover                 |
-| Use after move capture                                                            | Reference to a name after `{var name^}` consumed it                          |
+| Compiler complaint                          | Trigger                                                      |
+|---------------------------------------------|--------------------------------------------------------------|
+| Transfer sigil `^` without `var` convention | `^` after `mut`, `imm`, or `ref`                             |
+| Duplicate default convention                | Two bare convention keywords in one list                     |
+| Unrecognized token in capture position      | Token that isn't a convention keyword or name                |
+| Missing comma between entries               | Identifier followed by an unrecognized token                 |
+| Unterminated capture list                   | Missing closing `}`                                          |
+| Outer name not covered by capture list      | Body references an outer name the capture list doesn't cover |
+| Use after move capture                      | Reference to a name after `{var name^}` consumed it          |
 
 <!-- markdownlint-enable MD013 -->
 

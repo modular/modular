@@ -53,7 +53,6 @@ from eval_runner import (
     resolve_canonical_repo_id,
     safe_model_name,
     test_single_request,
-    validate_hf_token,
     write_github_output,
     write_results,
 )
@@ -96,9 +95,11 @@ def _metrics_url(framework: str) -> str:
 MODEL_RECIPES = CaseInsensitiveDict({
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
     "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
+    "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": "max/pipelines/architectures/deepseekV4/recipes/flash_0731_fp8_tp2_b200.yaml",
     "google/gemma-4-12B-it__device_graph_synthesis": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_device_graph_synthesis.yaml",
     "google/gemma-4-12B-it__dspark": "max/pipelines/architectures/gemma4/recipes/gemma4_12b_dspark.yaml",
     "google/gemma-4-26B-A4B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_tuned.yaml",
+    "google/gemma-4-31B-it__cascade": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_cascade.yaml",
     "google/gemma-4-31B-it__modulev3": "max/pipelines/architectures/gemma4_modulev3/recipes/gemma4_31b.yaml",
     "google/gemma-4-31B-it__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_31b_tuned.yaml",
     "nvidia/Gemma-4-26B-A4B-NVFP4__tuned": "max/pipelines/architectures/gemma4/recipes/gemma4_26b_a4b_nvfp4_tuned.yaml",
@@ -108,6 +109,7 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_rust_tiered_kvconnector.yaml",
+    "meta-llama/Llama-3.1-8B-Instruct__mojo_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_mojo_tiered_kvconnector.yaml",
     "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
     "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
     "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
@@ -119,10 +121,14 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
+    "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_8x_b200.yaml",
     "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
     "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": "max/pipelines/architectures/kimik2_5_modulev3/recipes/nvfp4_kimi_k2_7_code_b200.yaml",
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
     "thinkingmachines/Inkling-Small-NVFP4__mtp": "max/pipelines/architectures/inkling/recipes/inkling_small_nvfp4_mtp.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__mtp": "max/pipelines/architectures/unified_mtp_qwen3_5/recipes/qwen38_27b_nvfp4_mtp.yaml",
+    "RadixArk/Qwen3.8-27B-NVFP4__dflash2": "max/pipelines/architectures/unified_dflash2_qwen3_5/recipes/qwen38_27b_nvfp4_dflash2.yaml",
 })
 # fmt: on
 
@@ -165,6 +171,7 @@ class RecipeConfig(BaseModel):
 
         num_speculative_tokens: int | None = None
 
+    cascade: bool = False
     model: Model = Field(default_factory=Model)
     draft_model: Model | None = None
     runtime: Runtime = Field(default_factory=Runtime)
@@ -194,6 +201,7 @@ def is_vision_model(model: str) -> bool:
             "kimi-k2",
             "kimi-vl",
             "minimax-m3",
+            "muse-glimmer",
             "olmocr",
             "pixtral",
             "qwen2.5-vl",
@@ -700,8 +708,6 @@ def smoke_test(
     A 1.0 value means 100% accuracy.
 
     """
-    validate_hf_token()
-
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
 
@@ -716,6 +722,9 @@ def smoke_test(
         result_dir.mkdir(parents=True, exist_ok=True)
 
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
+    cascade = recipe_path is not None and _load_recipe(recipe_path).cascade
+    if cascade and framework not in ("max", "max-ci"):
+        raise ValueError(f"Cascade is only supported for MAX, not {framework}")
     # A recipe can serve its weights under another name; requests must use it.
     served = hf_model_path
     if recipe_path:
@@ -732,7 +741,8 @@ def smoke_test(
 
     if override_tasks:
         tasks = list(override_tasks)
-    elif is_vision_model(model):
+    # TODO(SERVSYS-1330): Run the vision task with Cascade once it accepts images.
+    elif is_vision_model(model) and not cascade:
         tasks = [VISION_TASK, TEXT_TASK]
     else:
         tasks = [TEXT_TASK]
@@ -746,6 +756,8 @@ def smoke_test(
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
 
+    # TODO(SERVSYS-1318): Cascade serves no /metrics, so Cascade runs report
+    # no generated-token count.
     metrics_url = _metrics_url(framework)
     with start_server(cmd, timeout, env_overrides=server_env) as server:
         logger.info(f"Server started in {server.startup_time:.2f} seconds")

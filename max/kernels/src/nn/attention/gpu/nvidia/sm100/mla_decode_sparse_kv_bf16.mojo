@@ -63,13 +63,14 @@ from layout import (
     RowMajorLayout,
     TensorEngine,
     TileTensor,
+    coord,
 )
 from nn.attention.gpu.nvidia.common import (
+    NullPointer,
     OptionalPointer,
 )
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
@@ -121,11 +122,15 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
-    has_attn_sink: Bool = False,
+    AttnSinkPtrType: OptionalPointer = NullPointer[DType.float32],
     has_extra_kv: Bool = False,
-    has_variable_topk: Bool = False,
+    TopkLengthsPtrType: OptionalPointer = NullPointer[DType.int32],
     Engine: TensorEngine = DefaultEngine[element_width=1],
 ](TrivialRegisterPassable):
+    # Presence of the optional operands is carried by their pointer types.
+    comptime has_attn_sink = not Self.AttnSinkPtrType.is_null
+    comptime has_variable_topk = not Self.TopkLengthsPtrType.is_null
+
     comptime kv_type = Self.KVLUTType.dtype
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
@@ -225,9 +230,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         # 9 col-groups by `async_copy_gather4_tile` internally.
         k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         o_tma: ORaggedTMATile[
             dtype=Self.output_type,
@@ -244,20 +248,19 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         ],
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         indices_stride: Int32,
-        topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        attn_sink_ptr: OptionalReg[UnsafePointer[Float32, origin=MutAnyOrigin]],
+        topk_lengths: Self.TopkLengthsPtrType,
+        attn_sink_ptr: Self.AttnSinkPtrType,
         # Extra KV TMA: BF16, SWIZZLE_128B, tile_width=padded_q_depth=576,
         # box_w=_gather4_box_width[bfloat16, 576, SWIZZLE_128B]()=64.
         # Same descriptor shape as the main K_TMA.
         extra_k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
-        extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
+        extra_topk_lengths: Self.TopkLengthsPtrType,
         extra_indices_stride: Int32,
         scalar_args: TileTensor[
             .int64,
@@ -311,7 +314,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ](
             kv_lut,
             rebind[
@@ -335,18 +338,14 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         # inside the kernel loop.
         var topk: Int
         comptime if Self.has_variable_topk:
-            topk = Int(
-                topk_lengths.unsafe_value()[Int(offset_position.batch_idx)]
-            )
+            topk = Int(topk_lengths.value()[Int(offset_position.batch_idx)])
         else:
             topk = _indices_stride
         var extra_topk: Int = 0
         comptime if Self.has_extra_kv:
             comptime if Self.has_variable_topk:
                 extra_topk = Int(
-                    extra_topk_lengths.unsafe_value()[
-                        Int(offset_position.batch_idx)
-                    ]
+                    extra_topk_lengths.value()[Int(offset_position.batch_idx)]
                 )
             else:
                 extra_topk = _extra_indices_stride
@@ -510,11 +509,11 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             comptime if Self.has_attn_sink:
                 var lane_idx = Int(lane_id())
                 var row = lane_idx & 0x3F
-                var head_idx_local = Int(block_idx.x) * Self.config.BM + row
+                var head_idx_local = block_idx.x * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
-                    attn_sink_log2 = attn_sink_ptr.unsafe_value()[
-                        head_idx_local
-                    ] * Float32(log2e)
+                    attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
+                        DType.float32
+                    ]() * Float32(log2e)
 
             Self.Common_MLA_Op.Softmax[has_attn_sink=Self.has_attn_sink,](
                 ptr_tmem_addr[0],
@@ -630,9 +629,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         elect_mask: Int32,
         cur_k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         cur_kv_lut: Self.KVLUTType,
         cur_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -733,9 +731,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         ],
         k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -756,16 +753,15 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
         idx_smem_base: SharedMemPointer[Int32],
         topk: Int,
         d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
         extra_k_tma: TMATensorTile[
             DType.bfloat16,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -782,7 +778,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         )
         var elect_mask = elect()
         var warp_in_wg = Int(warp_id[broadcast=True]()) - Self.gather_warp0
-        var coop_tid = Int(thread_idx.x) - Self.gather_warp0 * WARP_SIZE
+        var coop_tid = thread_idx.x - Self.gather_warp0 * WARP_SIZE
         var row: Int = offset_position.q_row_offset
 
         # Q expect-bytes + TMA: warp 8's elected lane only.
@@ -889,7 +885,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -964,7 +960,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             Self.config.decoding_warp_split_k,
             sparse=True,
             has_extra_kv=Self.has_extra_kv,
-            has_variable_topk=Self.has_variable_topk,
+            TopkLengthsPtrType=Self.TopkLengthsPtrType,
         ],
     ):
         var o_tmem = tmem_addr + UInt32(Self.config.TMEM_O)

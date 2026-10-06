@@ -103,23 +103,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
             DType.int32
         ]()
 
-        var x_strides = x.strides()
-        var weight_strides = weight.strides()
-        var output_strides = output.strides()
-        var conv_state_strides = conv_state.strides()
-
-        var x_batch_stride = UInt32(x_strides[0])
-        var x_dim_stride = UInt32(x_strides[1])
-        var x_seqlen_stride = UInt32(x_strides[2])
-        var weight_dim_stride = UInt32(weight_strides[0])
-        var weight_width_stride = UInt32(weight_strides[1])
-        var conv_state_batch_stride = UInt32(conv_state_strides[0])
-        var conv_state_dim_stride = UInt32(conv_state_strides[1])
-        var conv_state_seqlen_stride = UInt32(conv_state_strides[2])
-        var out_batch_stride = UInt32(output_strides[0])
-        var out_dim_stride = UInt32(output_strides[1])
-        var out_seqlen_stride = UInt32(output_strides[2])
-
         var has_conv_state_indices = conv_state_indices.dim_size(0) > 0
         var has_cache_seqlens = cache_seqlens.dim_size(0) > 0
         var has_bias = bias.dim_size(0) > 0
@@ -149,17 +132,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 cache_seqlens_tt,
                 conv_state_indices_tt,
                 output_tt,
-                x_batch_stride,
-                x_dim_stride,
-                x_seqlen_stride,
-                weight_dim_stride,
-                weight_width_stride,
-                conv_state_batch_stride,
-                conv_state_dim_stride,
-                conv_state_seqlen_stride,
-                out_batch_stride,
-                out_dim_stride,
-                out_seqlen_stride,
                 silu_activation,
                 PAD_SLOT_ID,
                 has_conv_state_indices,
@@ -213,17 +185,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                     cache_seqlens_tt,
                     conv_state_indices_tt,
                     output_tt,
-                    x_batch_stride,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    conv_state_batch_stride,
-                    conv_state_dim_stride,
-                    conv_state_seqlen_stride,
-                    out_batch_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
                     silu_activation_int8,
                     PAD_SLOT_ID,
                     Int8(has_conv_state_indices),
@@ -274,17 +235,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                     cache_seqlens_tt,
                     conv_state_indices_tt,
                     output_tt,
-                    x_batch_stride,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    conv_state_batch_stride,
-                    conv_state_dim_stride,
-                    conv_state_seqlen_stride,
-                    out_batch_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
                     silu_activation_int8,
                     PAD_SLOT_ID,
                     Int8(has_conv_state_indices),
@@ -335,17 +285,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                     cache_seqlens_tt,
                     conv_state_indices_tt,
                     output_tt,
-                    x_batch_stride,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    conv_state_batch_stride,
-                    conv_state_dim_stride,
-                    conv_state_seqlen_stride,
-                    out_batch_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
                     silu_activation_int8,
                     PAD_SLOT_ID,
                     Int8(has_conv_state_indices),
@@ -396,17 +335,6 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                     cache_seqlens_tt,
                     conv_state_indices_tt,
                     output_tt,
-                    x_batch_stride,
-                    x_dim_stride,
-                    x_seqlen_stride,
-                    weight_dim_stride,
-                    weight_width_stride,
-                    conv_state_batch_stride,
-                    conv_state_dim_stride,
-                    conv_state_seqlen_stride,
-                    out_batch_stride,
-                    out_dim_stride,
-                    out_seqlen_stride,
                     silu_activation_int8,
                     PAD_SLOT_ID,
                     Int8(has_conv_state_indices),
@@ -493,15 +421,6 @@ struct CausalConv1DVarlenStates:
         var x_tt = x.to_tile_tensor[.int32]()
         var cu_seqlens_tt = cu_seqlens.to_tile_tensor[.int32]()
 
-        var x_strides = x.strides()
-        var states_strides = states.strides()
-
-        var x_seqlen_stride = UInt32(x_strides[0])
-        var x_dim_stride = UInt32(x_strides[1])
-        var states_batch_stride = UInt32(states_strides[0])
-        var states_dim_stride = UInt32(states_strides[1])
-        var states_seqlen_stride = UInt32(states_strides[2])
-
         comptime if is_cpu[target]():
             causal_conv1d_varlen_states_cpu[
                 x_tt.dtype,
@@ -515,11 +434,6 @@ struct CausalConv1DVarlenStates:
                 x_tt,
                 cu_seqlens_tt,
                 states_tt,
-                x_seqlen_stride,
-                x_dim_stride,
-                states_batch_stride,
-                states_dim_stride,
-                states_seqlen_stride,
             )
         elif is_gpu[target]():
             var gpu_ctx = ctx
@@ -548,11 +462,6 @@ struct CausalConv1DVarlenStates:
                 x_tt,
                 cu_seqlens_tt,
                 states_tt,
-                x_seqlen_stride,
-                x_dim_stride,
-                states_batch_stride,
-                states_dim_stride,
-                states_seqlen_stride,
                 grid_dim=(batch, ceildiv(dim, BLOCK_DIM)),
                 block_dim=(BLOCK_DIM,),
             )

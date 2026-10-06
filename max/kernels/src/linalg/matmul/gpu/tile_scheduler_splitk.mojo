@@ -74,7 +74,7 @@ def _check_scheduler_constraints[
 
 
 @fieldwise_init
-struct ReductionMode(TrivialRegisterPassable):
+struct ReductionMode(EnumLike, TrivialRegisterPassable):
     """Reduction strategy for split-K partial accumulations.
 
     `Deterministic` serializes CTA reductions using named-barrier semaphores
@@ -89,6 +89,27 @@ struct ReductionMode(TrivialRegisterPassable):
 
     # CTAs perform reduction atomically but we will have nondeterministic numeric behavior
     comptime Nondeterministic = Self(1)
+
+    comptime _enum_case_names = ParameterList.of[
+        "Deterministic".value,
+        "Nondeterministic".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ReductionMode has no payload"
 
     @inline(.always)
     def __eq__(self, other: Self) -> Bool:

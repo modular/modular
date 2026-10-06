@@ -374,6 +374,7 @@ struct KdaChunk:
         gate_mode: StaticString = "original",
         beta_mode: StaticString = "logits",
         state_layout: StaticString = "K_FIRST",
+        use_computebound: Bool = False,
     ](
         output: OutputTensor[dtype=output_dtype, rank=4, ...],
         q: InputTensor[dtype=qkv_dtype, rank=4, ...],
@@ -405,6 +406,11 @@ struct KdaChunk:
             + state_layout
         )
         comptime assert is_gpu[target](), "kda_chunk is only supported on GPU."
+        # The AMD build of the chunk pipeline compiles but does not yet match
+        # the reference, so reject it rather than return wrong results.
+        comptime assert (
+            not ctx.target.is_amd_gpu()
+        ), "kda_chunk is not yet supported on AMD GPUs; use kda_decode."
 
         var num_key_heads = q.dim_size(2)
         var key_head_dim = q.dim_size(3)
@@ -509,7 +515,14 @@ struct KdaChunk:
             comptime kVD = head_dims[1]
             if key_head_dim == kKD and value_head_dim == kVD:
                 dispatched = True
-                kda_chunk_launch[kKD, kVD, gate_mode, beta_mode, state_layout](
+                kda_chunk_launch[
+                    kKD,
+                    kVD,
+                    gate_mode,
+                    beta_mode,
+                    state_layout,
+                    use_computebound,
+                ](
                     num_key_heads,
                     num_value_heads,
                     batch_size,

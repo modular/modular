@@ -170,6 +170,7 @@ def token_sampler(
     return_logits: bool = False,
     needs_bitmask_input: bool | None = None,
     custom_extensions: Iterable[Path] = (),
+    unpadded_vocab_size: int | None = None,
 ) -> Graph:
     """Builds a sampling graph that samples tokens from logits.
 
@@ -184,6 +185,10 @@ def token_sampler(
             though ``--enable-structured-output`` is off.
         custom_extensions: Custom-op extension paths to compile the graph
             with. Empty by default.
+        unpadded_vocab_size: The tokenizer's token count. Logits for ids at
+            or past it are masked to -inf before sampling, so a padded
+            ``lm_head`` can never produce an id the tokenizer cannot decode.
+            ``None`` disables the mask.
 
     Returns:
         A graph that takes logits (and optional penalty inputs) and outputs tokens.
@@ -278,12 +283,27 @@ def token_sampler(
             logits = ops.gather(logits, logit_offsets[1:] - 1, axis=0)
             logits = ops.rebind(logits, shape=("batch", "vocab_size"))
 
+        if unpadded_vocab_size is not None:
+            # Not a slice: slicing past a narrower lm_head reads out of
+            # bounds instead of failing, and a mask is a no-op there.
+            vocab_dim = logits.shape[1]
+            token_ids = ops.range(
+                0,
+                vocab_dim,
+                out_dim=vocab_dim,
+                dtype=DType.int64,
+                device=logits.device,
+            )
+            logits = ops.where(
+                token_ids >= unpadded_vocab_size, float("-inf"), logits
+            )
+
         if "bitmask" in _input_dict:
             bitmask = graph.inputs[list(_input_dict).index("bitmask")].tensor
 
             # Unpack the packed int32 bitmask and mask the logits in one fused
             # pass. The kernel reads only words covering ``logits``' vocab dim,
-            # so llguidance's 32-bit alignment padding needs no explicit slice.
+            # so the packed bitmask's 32-bit alignment padding needs no explicit slice.
             logits = apply_packed_bitmask(logits, bitmask, fill_val=-10000.0)
 
         # Apply top_k sampling

@@ -53,7 +53,7 @@ See KERN-3085.
 Modeled on the sibling `msa.mojo` / `linalg.mojo` registrations (private
 `//Kernels` kernels registered in dedicated builtin_kernels files). MegaFFN is
 internal-only: unlike `msa` / `matmul_rs` it is NOT shipped in the OSS wheel, so
-open-source builds drop the `//Kernels/src/mega_ffn` dep (in `api.bzl`) and
+open-source builds drop the `//Kernels/lib/mega_ffn` dep (in `api.bzl`) and
 exclude this file from the public export (copybara).
 
 On-chip scratch (the composite op does not expose these): `c_packed` and
@@ -108,6 +108,9 @@ from linalg.fp4_utils import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
     P3_MAX_RANKS,
 )
+from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
+    RealRowScales,
+)
 
 from shmem import shmem_my_pe
 from shmem.ep import pack_ptrs_array
@@ -140,8 +143,10 @@ struct Struct_mega_ffn_nvfp4:
         a_type: DType,
         b_type: DType,
         scales_type: DType,
+        row_scales_type: DType,
         //,
         clamp_activation: Bool,
+        has_gate_up_a_row_scales: Bool,
         target: StaticString,
     ](
         output: OutputTensor[dtype=c_type, rank=2, ...],
@@ -155,6 +160,7 @@ struct Struct_mega_ffn_nvfp4:
         expert_ids: InputTensor[dtype=.int32, rank=1, ...],
         a_scale_offsets: InputTensor[dtype=.uint32, rank=1, ...],
         gate_up_expert_scales: InputTensor[dtype=.float32, rank=1, ...],
+        gate_up_a_row_scales: InputTensor[dtype=row_scales_type, rank=1, ...],
         down_expert_scales: InputTensor[dtype=.float32, rank=1, ...],
         c_input_scales: InputTensor[dtype=.float32, rank=1, ...],
         estimated_total_m: UInt32,
@@ -189,10 +195,15 @@ struct Struct_mega_ffn_nvfp4:
                 NVFP4 or `float8_e4m3fn` for MXFP8).
             scales_type: The block scale-factor dtype (`float8_e4m3fn` for
                 NVFP4, `float8_e8m0fnu` for MXFP8).
+            row_scales_type: The L1 per-row input scale dtype (`bfloat16`
+                when `has_gate_up_a_row_scales`).
             clamp_activation: Activation flavor for the fused L1 SwiGLU
                 epilogue. `False` = plain SwiGLU; `True` = clamped
                 (`swigluoai`). Bound from the op's `clamp_activation`
                 attribute.
+            has_gate_up_a_row_scales: Whether `gate_up_a_row_scales` holds
+                per-row input scales for the L1 leg. Constraints: NVFP4
+                only.
             target: The target GPU device.
 
         Args:
@@ -215,6 +226,9 @@ struct Struct_mega_ffn_nvfp4:
                 `(E,)` uint32.
             gate_up_expert_scales: L1 (gate+up) per-expert scaling
                 `(E,)` f32. Applied in the fused SwiGLU store.
+            gate_up_a_row_scales: L1 per-row input scales `(M_total,)`,
+                applied with `gate_up_expert_scales` before the SwiGLU.
+                Unread unless `has_gate_up_a_row_scales`.
             down_expert_scales: L2 / final-output per-expert scaling
                 `(E,)` f32. Applied in the down store. May differ from
                 `gate_up_expert_scales`.
@@ -315,7 +329,7 @@ struct Struct_mega_ffn_nvfp4:
         )
         var c_packed = TileTensor(
             c_packed_buf.unsafe_ptr(),
-            row_major(Coord(Int64(m_total), Idx[packed_K2])),
+            row_major(Int64(m_total), Idx[packed_K2]),
         )
 
         # Intermediate 5D SwiGLU scale tile, same SF dtype as the A-scale
@@ -335,13 +349,11 @@ struct Struct_mega_ffn_nvfp4:
         var c_swiglu_scales = TileTensor(
             c_swiglu_scales_buf.unsafe_ptr(),
             row_major(
-                Coord(
-                    Int64(a_scale_dim0),
-                    Idx[k_groups_swiglu],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Int64(a_scale_dim0),
+                Idx[k_groups_swiglu],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
 
@@ -372,9 +384,13 @@ struct Struct_mega_ffn_nvfp4:
         )
 
         comptime if is_mxfp8:
+            comptime assert (
+                not has_gate_up_a_row_scales
+            ), "per-row input scales are only supported for NVFP4"
             # MXFP8 carries no `tensor_sf`; the `c_input_scales` op operand is
             # unused on this path (consume for `-Werror`).
             _ = c_input_scales
+            _ = gate_up_a_row_scales
             mega_ffn_mxfp8_dispatch[
                 num_experts=num_experts,
                 transpose_b=True,
@@ -401,7 +417,45 @@ struct Struct_mega_ffn_nvfp4:
                 swiglu_alpha=swiglu_alpha,
                 swiglu_limit=swiglu_limit,
             )
+        elif has_gate_up_a_row_scales:
+            comptime assert (
+                row_scales_type == DType.bfloat16
+            ), "per-row input scales must be bfloat16"
+            mega_ffn_nvfp4_dispatch[
+                num_experts=num_experts,
+                transpose_b=True,
+                clamp_activation=clamp_activation,
+                RowScalesT=RealRowScales,
+            ](
+                output.to_tile_tensor[.int64](),
+                c_packed,
+                c_swiglu_scales,
+                hidden_states.to_tile_tensor[.int64](),
+                gate_up_weight.to_tile_tensor[.int64](),
+                down_weight.to_tile_tensor[.int64](),
+                gate_up_a_scales.to_tile_tensor[.int64](),
+                gate_up_b_scales.to_tile_tensor[.int64](),
+                down_b_scales.to_tile_tensor[.int64](),
+                expert_start_indices.to_tile_tensor[.int64](),
+                a_scale_offsets.to_tile_tensor[.int64](),
+                expert_ids.to_tile_tensor[.int64](),
+                gate_up_expert_scales.to_tile_tensor[.int64](),
+                down_expert_scales.to_tile_tensor[.int64](),
+                c_input_scales.to_tile_tensor[.int64](),
+                num_active,
+                Int(estimated_total_m),
+                context,
+                arrival_count_ptr,
+                swiglu_alpha=swiglu_alpha,
+                swiglu_limit=swiglu_limit,
+                a_row_scales=RealRowScales(
+                    rebind[Pointer[BFloat16, ImmutAnyOrigin]](
+                        gate_up_a_row_scales.unsafe_ptr()
+                    )
+                ),
+            )
         else:
+            _ = gate_up_a_row_scales
             mega_ffn_nvfp4_dispatch[
                 num_experts=num_experts,
                 transpose_b=True,
@@ -621,7 +675,7 @@ struct Struct_mega_ffn_ep_combine_send:
         )
         var c_packed = TileTensor(
             c_packed_buf.unsafe_ptr(),
-            row_major(Coord(Int64(m_total), Idx[packed_K2])),
+            row_major(Int64(m_total), Idx[packed_K2]),
         )
 
         var s_size = (
@@ -637,13 +691,11 @@ struct Struct_mega_ffn_ep_combine_send:
         var c_swiglu_scales = TileTensor(
             c_swiglu_scales_buf.unsafe_ptr(),
             row_major(
-                Coord(
-                    Int64(a_scale_dim0),
-                    Idx[k_groups_swiglu],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Int64(a_scale_dim0),
+                Idx[k_groups_swiglu],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
 
@@ -657,7 +709,7 @@ struct Struct_mega_ffn_ep_combine_send:
             UnsafePointer[
                 Scalar[combine_dtype], MutAnyOrigin
             ].unsafe_dangling(),
-            row_major(Coord(Int(0), Idx[N2])),
+            row_major(Int(0), Idx[N2]),
         )
 
         # Destination resolve reads the combine-async counter region; the

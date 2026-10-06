@@ -38,24 +38,13 @@ kernel they must still agree AND both be finite. A finite reference + NaN kernel
 
 from std.collections import Optional
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index
 from std.utils.numerics import isnan
-from layout import (
-    Coord,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -190,10 +179,6 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-
     var mla_args = MLADispatchScalarArgs[
         num_heads=num_heads,
         _is_cache_length_accurate=True,
@@ -201,10 +186,10 @@ def test[
     ](batch_size, num_keys, seq_len, ctx)
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(q_tt, k_tt, out_tt, scalar_args_buf_tt)
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {var q_tt, var k_tt, var out_tt, var scalar_args_buf_tt, imm}:
         # CAUSAL only (production MLA mask). See main() — every cell is CAUSAL.
         flare_mla_decoding[
             config=MHAConfig[q_type](num_heads, depth),
@@ -231,19 +216,17 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
     var k_ref_device_ptr = ctx.enqueue_create_buffer[q_type](k_size)
-    var k_ref_device = LayoutTensor[q_type, k_layout](
-        k_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
+    var k_ref_device = TileTensor(
+        k_ref_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
     ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
-        var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
+        var k_operand = LayoutTensorMHAOperand(k_ref_device)
         var null_valid_length = TileTensor(
             MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-            row_major(Coord(Idx[0])),
+            row_major(Idx[0]),
         )
         mha_gpu_naive[_is_cache_length_accurate=True,](
             q_tt,
@@ -393,7 +376,7 @@ def sweep_q[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # Two per-rank head counts: 16 (e.g. 128 heads at TP=8), 32 (TP=4).

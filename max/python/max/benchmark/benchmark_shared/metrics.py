@@ -48,6 +48,7 @@ from max.benchmark.benchmark_shared.result_groups import (
     DiagnosticsGroup,
     GpuStatsGroup,
     LatencyStatsGroup,
+    RequestMixGroup,
     SummaryGroup,
     ThroughputStatsGroup,
 )
@@ -623,6 +624,21 @@ class TextGenAggregates(_CompletedRunBase):
     # Share of the measured requests that carried a ``response_format``, over
     # the same window as ``ttft_ms`` and the other aggregates.
     constrained_request_rate: float | None = None
+    # Share of constrained requests whose content satisfied the schema, judged
+    # client-side. ``None`` when nothing was constrained, or when nothing
+    # constrained could be judged. Read against ``constrained_request_rate``: a
+    # high request rate with a collapsed rate here is a backend that took
+    # ``response_format`` and did nothing with it.
+    constrained_conformance_rate: float | None = None
+    # Share of the measured requests that offered ``tools``, and of those, the
+    # share whose response called one: the client-side counterparts of
+    # ``maxserve.tool_call.requests`` and ``.responses``.
+    tool_request_rate: float | None = None
+    tool_call_response_rate: float | None = None
+    # Share of the measured requests whose payload carried an image, and share
+    # routed to a LoRA adapter.
+    image_request_rate: float | None = None
+    lora_request_rate: float | None = None
 
     max_input: int
     max_output: int
@@ -714,6 +730,18 @@ class TextGenAggregates(_CompletedRunBase):
                 d.update(pm.confidence_to_flat_dict(name))
         if self.constrained_request_rate is not None:
             d["constrained_request_rate"] = self.constrained_request_rate
+        if self.constrained_conformance_rate is not None:
+            d["constrained_conformance_rate"] = (
+                self.constrained_conformance_rate
+            )
+        if self.tool_request_rate is not None:
+            d["tool_request_rate"] = self.tool_request_rate
+        if self.tool_call_response_rate is not None:
+            d["tool_call_response_rate"] = self.tool_call_response_rate
+        if self.image_request_rate is not None:
+            d["image_request_rate"] = self.image_request_rate
+        if self.lora_request_rate is not None:
+            d["lora_request_rate"] = self.lora_request_rate
         for name, spm in [
             ("ttft_ms", self.ttft_ms),
             ("tpot_ms", self.tpot_ms),
@@ -1208,10 +1236,18 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
         total_generated_outputs=(
             pixel_data.total_generated_outputs if pixel_data else None
         ),
-        constrained_request_rate=(
-            text_data.constrained_request_rate if text_data else None
-        ),
     )
+
+    request_mix: RequestMixGroup | None = None
+    if text_data is not None:
+        request_mix = RequestMixGroup(
+            constrained_request_rate=text_data.constrained_request_rate,
+            constrained_conformance_rate=text_data.constrained_conformance_rate,
+            tool_request_rate=text_data.tool_request_rate,
+            tool_call_response_rate=text_data.tool_call_response_rate,
+            image_request_rate=text_data.image_request_rate,
+            lora_request_rate=text_data.lora_request_rate,
+        )
 
     gpu_stats = (
         GpuStatsGroup(
@@ -1279,6 +1315,7 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
 
     return BenchmarkResultGroups(
         summary=summary,
+        request_mix=request_mix,
         gpu_stats=gpu_stats,
         latency_stats=latency_stats,
         throughput_stats=throughput_stats,

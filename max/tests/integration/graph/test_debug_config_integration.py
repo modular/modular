@@ -200,12 +200,14 @@ class TestEnvVarMechanism:
             assert InferenceSession.debug.op_log_level == "DEBUG"
             assert InferenceSession.debug.print_style == PrintStyle.COMPACT
             assert InferenceSession.debug.ir_output_dir == "/tmp/ir"
+            assert InferenceSession.debug.uninitialized_read_mode == "report"
             print("PASS")
             """,
             env_overrides={
                 "MODULAR_DEBUG": (
                     "assert-level=all,op-log-level=DEBUG,"
-                    "print-style=compact,ir-output-dir=/tmp/ir"
+                    "print-style=compact,ir-output-dir=/tmp/ir,"
+                    "uninitialized-read-mode=report"
                 )
             },
         )
@@ -360,10 +362,12 @@ class TestPythonAPIMechanism:
             from max.engine import InferenceSession
             from max.graph import Graph
             InferenceSession.debug.sensible_mode = True
+            InferenceSession.debug.uninitialized_read_mode = "report"
             InferenceSession.debug.reset()
             assert InferenceSession.debug.nan_check is False
             assert InferenceSession.debug.device_sync_mode is False
             assert InferenceSession.debug.assert_level == ""
+            assert InferenceSession.debug.uninitialized_read_mode == ""
             assert Graph.debug.source_tracebacks is False
             print("PASS")
             """,

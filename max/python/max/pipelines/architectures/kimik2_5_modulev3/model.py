@@ -45,7 +45,7 @@ from max.experimental.sharding import (
     Replicated,
     TensorLayout,
 )
-from max.experimental.tensor import default_dtype
+from max.experimental.tensor import default_device, default_dtype
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import (
@@ -402,11 +402,14 @@ class KimiK2_5Model(
         llm = model_config.llm_config
         assert llm.mesh is not None
 
-        with F.lazy(), default_dtype(self._module_default_dtype(model_config)):
+        with (
+            F.lazy(),
+            default_dtype(self._module_default_dtype(model_config)),
+            default_device(llm.mesh),
+        ):
             language_nn = KimiK2_5MoEDecoder(
                 llm, self.kv_params, self._ep_batch_manager
             )
-            language_nn.to(llm.mesh)
 
         # Base ModuleV3 ragged inputs: (tokens, return_n_logits,
         # input_row_offsets, *kv). Splice the two multimodal tensors in after

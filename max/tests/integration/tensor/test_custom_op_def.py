@@ -33,7 +33,7 @@ from max.experimental import custom as C
 from max.experimental import executor
 from max.experimental import functional as F
 from max.experimental import realization_context as rc
-from max.experimental.sharding import DeviceMesh, PlacementMapping, Sharded
+from max.experimental.sharding import DeviceMapping, DeviceMesh, Sharded
 from max.experimental.sharding.rules import unary_rule
 from max.experimental.tensor import Tensor, realization_context
 from max.experimental.testing import assert_all_close
@@ -814,6 +814,41 @@ def test_source_extensions_compile_at_declaration() -> None:
     call only registers the binary instead of rerunning `mojo precompile`."""
     op = make_downsample()
     assert all(p.suffix == ".mojoc" for p in op.extensions)
+
+
+def test_declare_refuses_a_kernel_its_own_extensions_lack() -> None:
+    """A declaration resolves its kernel against its own packages, even after
+    a neighbor's call has imported that kernel into the staging graph."""
+    scale = make_scale(2)
+    _one_tensor(scale(_full(1.0, 4)))  # imports KERNELS into the graph
+    (n,) = C.Symbols("n")
+    with pytest.raises(ValueError, match=r"no kernel named 'mxf353_scale'"):
+        C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, [n])},
+            outputs=[C.TemplateType(DType.float32, [n])],
+        )
+    with pytest.raises(ValueError, match=r"no kernel named 'mxf353_scale'"):
+        C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, [n])},
+            outputs=[C.TemplateType(DType.float32, [n])],
+            custom_extensions=[KERNEL_VERIFICATION_OPS],  # the wrong package
+        )
+
+
+def test_declare_resolves_the_kernel_through_the_overlay() -> None:
+    """The process-global overlay counts as the declaration's own
+    extensions."""
+    (n,) = C.Symbols("n")
+    with default_custom_extensions_scope(KERNELS):
+        op = C.declare(
+            "mxf353_scale",
+            inputs={"x": C.TemplateType(DType.float32, [n])},
+            outputs=[C.TemplateType(DType.float32, [n])],
+            parameters={"factor": 3},
+        )
+    assert op.extensions == ()
 
 
 def _quantize_signature() -> C.CustomOp:
@@ -1775,9 +1810,7 @@ def test_signature_and_functional_composition_scenario() -> None:
         devices=(CPU(), CPU()), mesh_shape=(2,), axis_names=("tp",)
     )
     sharded_op = F.functional(op, rule=unary_rule)
-    sharded_x = F.transfer_to(
-        _full(2.0, 8), PlacementMapping(mesh, (Sharded(0),))
-    )
+    sharded_x = F.transfer_to(_full(2.0, 8), DeviceMapping(mesh, (Sharded(0),)))
     result = sharded_op(sharded_x)
     assert result.is_distributed
     assert result.placements == (Sharded(0),)

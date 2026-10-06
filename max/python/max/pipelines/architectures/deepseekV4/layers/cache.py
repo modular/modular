@@ -36,11 +36,12 @@ page ``j // slots_per_page``, slot ``j % slots_per_page``, which is the same
 page the token page table already names.
 
 Attention reads the window leaf and the zone leaf through the fused
-``mo.latent_sparse_attention.ragged.paged`` kernel. The remaining graph-side
-reads -- the compressor's open state and the indexer's candidate table --
-gather rows out of the block buffer by ``(lookup_table[b, slot //
-slots_per_page], slot % slots_per_page)``; each copies the leaf
-(``buffer_load``), which is fine at bringup sizes and nowhere else.
+``mo.latent_sparse_attention.ragged.paged`` kernel, and the indexer scores its
+zone leaf through ``mo.indexer_score.ragged.paged``. The remaining graph-side
+read -- the compressor's open state -- gathers rows out of the block buffer by
+``(lookup_table[b, slot // slots_per_page], slot % slots_per_page)``; it
+copies the leaf (``buffer_load``), which is fine at bringup sizes and nowhere
+else.
 """
 
 from __future__ import annotations
@@ -66,16 +67,6 @@ def arange(n: int, device: DeviceRef) -> TensorValue:
 
 def scalar(value: int, device: DeviceRef) -> TensorValue:
     return ops.constant(value, DType.int32, device)
-
-
-def idiv(x: TensorValue, divisor: int) -> TensorValue:
-    """Exact integer floor division of a non-negative integer tensor.
-
-    ``TensorValue.__floordiv__`` is ``floor(div)`` and ``div`` promotes
-    integers to float, so its result is not an index dtype. The values here
-    (positions, slots) are far below 2**24, so the round trip is exact.
-    """
-    return ops.cast(ops.floor(ops.div(x, divisor)), x.dtype)
 
 
 def row_offsets(
@@ -124,7 +115,7 @@ class CacheLeaf:
         """
         blocks = ops.buffer_load(self.values.kv_blocks)
         b, n = slots.shape[0], slots.shape[1]
-        page_col = idiv(slots, self.slots_per_page)
+        page_col = slots // self.slots_per_page
         in_page = slots - page_col * self.slots_per_page
         lut = ops.cast(self.values.lookup_table, DType.int32)
         if lut_rows is not None:
@@ -176,8 +167,8 @@ class CacheLeaf:
                 values,
                 cache_lengths=ops.cast(cache_lengths, DType.uint32),
                 max_prompt_length=bound(rows_per_seq),
-                max_cache_length=idiv(
-                    values.max_cache_length + bound(ratio - 1), ratio
+                max_cache_length=(
+                    (values.max_cache_length + bound(ratio - 1)) // ratio
                 ),
             )
         x = ops.unsqueeze(rows, 1)

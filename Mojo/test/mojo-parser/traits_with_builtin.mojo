@@ -36,27 +36,27 @@ struct RegTypeTrivial(TraitForReg, TrivialRegisterPassable):
 
 
 trait AsyncTrait:
-    async def foo(self) -> Int:
+    __async def foo(self) -> Int:
         ...
 
-    async def bar(self) raises -> Int:
+    __async def bar(self) raises -> Int:
         ...
 
 
 struct AsyncStruct(AsyncTrait, Movable where False):
-    async def foo(self) -> Int:
+    __async def foo(self) -> Int:
         pass
 
-    async def bar(self) raises -> Int:
+    __async def bar(self) raises -> Int:
         pass
 
 
 # CHECK-LABEL: lit.struct.decl @AsyncStructReg
 struct AsyncStructReg(AsyncTrait, TrivialRegisterPassable):
-    async def foo(self) -> Int:
+    __async def foo(self) -> Int:
         pass
 
-    async def bar(self) raises -> Int:
+    __async def bar(self) raises -> Int:
         pass
 
 

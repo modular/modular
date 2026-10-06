@@ -17,6 +17,19 @@
 # code is put out in the right place.
 def case_callee[p: Int](): pass
 
+struct InitPattern(ImplicitlyCopyable):
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+    def __init__(out self, value: Int, *, offset: Int = 0):
+        self.value = value + offset
+
+    def __eq__(self, other: Self) -> Bool:
+        return self.value == other.value
+
+
 # CHECK-LABEL: lit.fn @"match_trivial
 def match_trivial(i: Int):
     # Irrefutable `case _` is not a match: the body is emitted inline.
@@ -161,6 +174,21 @@ def match_tuple_subject(point: Tuple[Int, Int]):
     case (0, 0):
         case_callee[0]()
     case _:
+        case_callee[1]()
+
+
+# CHECK-LABEL: lit.fn @"match_initializer_list
+# CHECK:       lit.call {{.*}}@InitPattern::@"__init__()"
+# CHECK:       lit.call {{.*}}@"__eq__({{.*}}InitPattern
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
+# CHECK:       lit.call {{.*}}@InitPattern::@"__init__(
+# CHECK:       lit.call {{.*}}@"__eq__({{.*}}InitPattern
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
+def match_initializer_list(value: InitPattern):
+    __match value:
+    case {}:
+        case_callee[0]()
+    case {1, offset=2}:
         case_callee[1]()
 
 
@@ -332,6 +360,51 @@ struct Color(ImplicitlyCopyable, EnumLike):
         # No payload. The body only exists so the trait method is implemented.
         while True:
             pass
+
+
+struct OpenColor(ImplicitlyCopyable, EnumLike):
+    comptime _enum_case_names = ParameterList.of[
+        "red".value, "green".value
+    ].values
+    comptime _enum_case_types = TypeList.of[
+        Trait=AnyType, NoneType, NoneType
+    ].values
+    comptime _enum_is_exhaustive = False
+
+    def __init__(out self):
+        pass
+
+    def _get_enum_discriminant(self) -> Int:
+        return 0
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Self._enum_case_types]()[id]:
+        while True:
+            pass
+
+
+# An open enum does not require every known case to appear.
+# CHECK-LABEL: lit.fn @"match_open_enum_partial
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 0
+def match_open_enum_partial(color: OpenColor):
+    __match color:
+    case .red:
+        case_callee[0]()
+
+
+# Covering every known case does not make the catch-all unreachable.
+# CHECK-LABEL: lit.fn @"match_open_enum_catch_all
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 1
+# CHECK:       lit.call {{.*}}@"case_callee{{.*}}<index> 2
+def match_open_enum_catch_all(color: OpenColor):
+    __match color:
+    case .red:
+        case_callee[1]()
+    case .green:
+        case_callee[1]()
+    case _:
+        case_callee[2]()
 
 
 # CHECK-LABEL: lit.fn @"match_color

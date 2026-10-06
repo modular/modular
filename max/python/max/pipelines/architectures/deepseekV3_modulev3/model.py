@@ -15,12 +15,13 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, ClassVar, cast
+from typing import Any, ClassVar
 
-from max.driver import Buffer, Device, is_virtual_device_mode
+from max.driver import Device, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.sharding import DeviceMesh
+from max.experimental.tensor import default_device
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, Weights, WeightsAdapter
 from max.nn.comm.ep import (
@@ -238,23 +239,12 @@ class DeepseekV3Model(DeepseekV2Model):
 
     @override
     def _instantiate_module(self, model_config: Any) -> Any:
-        nn_model = DeepseekV3(
-            model_config, self.kv_params, self._ep_batch_manager
-        )
         assert model_config.mesh is not None
-        nn_model.to(model_config.mesh)
-        return nn_model
+        with default_device(model_config.mesh):
+            return DeepseekV3(
+                model_config, self.kv_params, self._ep_batch_manager
+            )
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         """Execute the model."""
-        model_outputs = self.model(*model_inputs.buffers)
-        if len(model_outputs) == 3:
-            return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
-            )
-        return ModelOutputs(
-            logits=cast(Buffer, model_outputs[0].driver_tensor),
-            next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-        )
+        return self._to_model_outputs(self.model(*model_inputs.buffers))

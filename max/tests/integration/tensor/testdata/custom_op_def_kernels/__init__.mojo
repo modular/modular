@@ -184,7 +184,7 @@ def _block_absmax(
     """Returns the largest magnitude in *block* of *row*."""
     var hi: Float32 = 0.0
     for i in range(_NVFP4_BLOCK):
-        var v = abs(x.load[1](IndexList[2](row, block * _NVFP4_BLOCK + i))[0])
+        var v = abs(x.load[1]((row, block * _NVFP4_BLOCK + i))[0])
         if v > hi:
             hi = v
     return hi
@@ -228,8 +228,8 @@ struct Mxf353NVFP4Quantize:
             var scale = hi / _NVFP4_MAX
             if scale == 0.0:
                 scale = 1.0
-            var lo = x.load[1](IndexList[2](row, lo_k))[0] / scale
-            var up = x.load[1](IndexList[2](row, lo_k + 1))[0] / scale
+            var lo = x.load[1]((row, lo_k))[0] / scale
+            var up = x.load[1]((row, lo_k + 1))[0] / scale
             var byte = _nvfp4_encode(lo) | (_nvfp4_encode(up) << 4)
             return SIMD[DType.uint8, width](byte)
 
@@ -264,10 +264,10 @@ struct Mxf353NVFP4Matmul:
             var acc: Float32 = 0.0
             for j in range(bytes):
                 var block = (j * 2) // _NVFP4_BLOCK
-                var a_scale = a_scales.load[1](IndexList[2](row, block))[0]
-                var b_scale = b_scales.load[1](IndexList[2](col, block))[0]
-                var a_byte = a_packed.load[1](IndexList[2](row, j))[0]
-                var b_byte = b_packed.load[1](IndexList[2](col, j))[0]
+                var a_scale = a_scales.load[1]((row, block))[0]
+                var b_scale = b_scales.load[1]((col, block))[0]
+                var a_byte = a_packed.load[1]((row, j))[0]
+                var b_byte = b_packed.load[1]((col, j))[0]
                 acc += (
                     _nvfp4_decode(a_byte & 15)
                     * a_scale

@@ -51,6 +51,26 @@ class Modality(str, Enum):
     IMAGE = "image"
 
 
+class RawTextChunk(BaseModel):
+    """What a detokenizer emits: decoded text plus the tokens it came from.
+
+    Different from :class:`GenAITextChunk` in that the text has not been parsed
+    and may still hold the reasoning delimiters and tool-call markers.
+    """
+
+    text: str
+    """The decoded text."""
+
+    num_tokens: int = 0
+    """Generated tokens this chunk accounts for.
+
+    Not one per chunk: a token whose piece is held back mid-character
+    contributes to whichever chunk completes it. The sum over a stream is
+    therefore the exact generated total, which is what usage and the rate
+    metrics need.
+    """
+
+
 # --- content chunks -------------------------------------------------------
 #
 # Every chunk carries a literal ``type`` tag. The tag is what makes the union
@@ -66,6 +86,16 @@ class GenAITextChunk(BaseModel):
     text: str
     """The text itself. A fragment when streamed, the whole run in a message."""
 
+    num_tokens: int = 0
+    """Generated tokens this chunk accounts for, 0 when unknown.
+
+    Attributed by the parser, which buffers across deltas: the tokens consumed
+    since its last emission land on the first chunk of the next flush, and
+    later chunks in that flush carry 0. Individual values are therefore lumpy;
+    the sum over a stream is exact, which is what usage and the rate metrics
+    need.
+    """
+
 
 class GenAIReasoningChunk(BaseModel):
     """Model chain-of-thought, kept separate from assistant-visible text.
@@ -78,6 +108,16 @@ class GenAIReasoningChunk(BaseModel):
 
     text: str
     """The reasoning text. A fragment when streamed, the whole run in a message."""
+
+    num_tokens: int = 0
+    """Generated tokens this chunk accounts for, 0 when unknown.
+
+    Attributed by the parser, which buffers across deltas: the tokens consumed
+    since its last emission land on the first chunk of the next flush, and
+    later chunks in that flush carry 0. Individual values are therefore lumpy;
+    the sum over a stream is exact, which is what usage and the rate metrics
+    need.
+    """
 
 
 class GenAIToolCall(BaseModel):
@@ -106,6 +146,16 @@ class GenAIToolCall(BaseModel):
 
     arguments: str | None = None
     """Arguments as JSON. A fragment when streamed, the whole object in a message."""
+
+    num_tokens: int = 0
+    """Generated tokens this chunk accounts for, 0 when unknown.
+
+    Attributed by the parser, which buffers across deltas: the tokens consumed
+    since its last emission land on the first chunk of the next flush, and
+    later chunks in that flush carry 0. Individual values are therefore lumpy;
+    the sum over a stream is exact, which is what usage and the rate metrics
+    need.
+    """
 
 
 class GenAIImageChunk(BaseModel):

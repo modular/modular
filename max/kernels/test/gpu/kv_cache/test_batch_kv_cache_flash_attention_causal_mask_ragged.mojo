@@ -23,18 +23,18 @@ from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Coord, Idx, row_major
 from layout._fillers import random
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.attention.gpu.amd_structured.config import (
     mha_decode_fold_tile_q_seq_len,
     mha_decode_fold_wide_mma,
 )
 from nn.attention.gpu.mha import _mha_decode_fold_ok, flash_attention
+from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from nn.attention.mha_mask import CausalMask
 from std.testing import assert_almost_equal, assert_true
 
-from std.utils import Index, IndexList
 
 # Selects the AMD-only fp8 arm, which covers the decode fold's padded wide-MFMA
 # tile. `main` calls exactly one arm, so neither target elaborates the other's
@@ -85,19 +85,6 @@ def execute_ragged_flash_attention[
         cache_lengths
     ), "expected valid_lengths and cache_lengths size to be equal"
 
-    # Define layouts
-    comptime input_row_offsets_layout = Layout(UNKNOWN_VALUE)
-    comptime cache_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime valid_lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime lookup_table_layout = Layout(UNKNOWN_VALUE)
-    comptime q_ragged_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, num_q_heads, kv_params.head_size
-    )
-    comptime q_padded_static_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, kv_params.head_size
-    )
-    comptime kv_block_static_layout = Layout.row_major[6]()
-
     var total_length = 0
     var max_context_length = 0
     var max_prompt_length = 0
@@ -108,79 +95,64 @@ def execute_ragged_flash_attention[
         max_prompt_length = max(max_prompt_length, valid_lengths[i])
         total_length += valid_lengths[i]
 
-    # Create managed tensors for offset and length metadata.
-    var input_row_offsets = ManagedLayoutTensor[
-        .uint32, input_row_offsets_layout
-    ](
-        RuntimeLayout[input_row_offsets_layout].row_major(
-            Index(batch_size + 1)
-        ),
-        ctx,
+    # Create host/device tensors for offset and length metadata.
+    var lengths_layout = row_major(Int64(batch_size))
+    var input_row_offsets = HostDeviceTileTensor[.uint32](
+        row_major(Int64(batch_size + 1)), ctx
     )
-    var cache_lengths_managed = ManagedLayoutTensor[
-        .uint32, cache_lengths_layout
-    ](
-        RuntimeLayout[cache_lengths_layout].row_major(Index(batch_size)),
-        ctx,
+    var cache_lengths_managed = HostDeviceTileTensor[.uint32](
+        lengths_layout, ctx
     )
-    var valid_lengths_managed = ManagedLayoutTensor[
-        .uint32, valid_lengths_layout
-    ](
-        RuntimeLayout[valid_lengths_layout].row_major(Index(batch_size)),
-        ctx,
+    var valid_lengths_managed = HostDeviceTileTensor[.uint32](
+        lengths_layout, ctx
     )
 
     # Initialize row offsets and lengths
-    var input_row_offsets_host = input_row_offsets.tensor[update=False]()
+    var input_row_offsets_host = input_row_offsets.host_tensor()
     var running_total = 0
     for i in range(batch_size):
         input_row_offsets_host[i] = UInt32(running_total)
         running_total += valid_lengths[i]
     input_row_offsets_host[batch_size] = UInt32(running_total)
 
-    var cache_lengths_host = cache_lengths_managed.tensor[update=False]()
-    var valid_lengths_host = valid_lengths_managed.tensor[update=False]()
+    var cache_lengths_host = cache_lengths_managed.host_tensor()
+    var valid_lengths_host = valid_lengths_managed.host_tensor()
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
         valid_lengths_host[i] = UInt32(valid_lengths[i])
+    input_row_offsets.to_device()
+    cache_lengths_managed.to_device()
+    valid_lengths_managed.to_device()
 
     # Create q tensors
-    var q_ragged_shape = IndexList[3](
-        total_length, num_q_heads, kv_params.head_size
+    var q_ragged_layout = row_major(
+        total_length, Idx[num_q_heads], Idx[kv_params.head_size]
     )
-    var q_ragged_runtime_layout = RuntimeLayout[
-        q_ragged_static_layout
-    ].row_major(q_ragged_shape)
+    var q_padded_layout = row_major(
+        batch_size,
+        max_prompt_length,
+        Idx[num_q_heads],
+        Idx[kv_params.head_size],
+    )
 
-    var q_padded_shape = IndexList[4](
-        batch_size, max_prompt_length, num_q_heads, kv_params.head_size
-    )
-    var q_padded_runtime_layout = RuntimeLayout[
-        q_padded_static_layout
-    ].row_major(q_padded_shape)
-
-    var q_ragged = ManagedLayoutTensor[dtype, q_ragged_static_layout](
-        q_ragged_runtime_layout, ctx
-    )
-    var q_padded = ManagedLayoutTensor[dtype, q_padded_static_layout](
-        q_padded_runtime_layout, ctx
-    )
+    var q_ragged = HostDeviceTileTensor[dtype](q_ragged_layout, ctx)
+    var q_padded = HostDeviceTileTensor[dtype](q_padded_layout, ctx)
 
     # Initialize q_ragged with random data
-    var q_ragged_host = q_ragged.tensor()
+    var q_ragged_host = q_ragged.host_tensor()
     random(q_ragged_host)
 
     # Also initialize q_padded by copying from q_ragged
-    var q_padded_host = q_padded.tensor()
+    var q_padded_host = q_padded.host_tensor()
     # copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
     for bs in range(batch_size):
         var unpadded_seq_len = valid_lengths[bs]
         var ragged_start_idx = Int(input_row_offsets_host[bs])
-        var padded_ptr = q_padded_host.ptr + (
+        var padded_ptr = q_padded_host.unsafe_ptr() + (
             bs * max_prompt_length * num_q_heads * kv_params.head_size
         )
-        var ragged_ptr = q_ragged_host.ptr + (
+        var ragged_ptr = q_ragged_host.unsafe_ptr() + (
             ragged_start_idx * num_q_heads * kv_params.head_size
         )
         unsafe_memcpy(
@@ -188,82 +160,55 @@ def execute_ragged_flash_attention[
             src=ragged_ptr,
             count=unpadded_seq_len * num_q_heads * kv_params.head_size,
         )
+    q_ragged.to_device()
+    q_padded.to_device()
 
     # Create output tensors
-    var ref_output_shape = IndexList[4](
-        batch_size, max_prompt_length, num_q_heads, kv_params.head_size
-    )
-    var ref_output_runtime_layout = RuntimeLayout[
-        q_padded_static_layout
-    ].row_major(ref_output_shape)
-    var ref_output = ManagedLayoutTensor[output_type, q_padded_static_layout](
-        ref_output_runtime_layout, ctx
-    )
-
-    var test_output_shape = IndexList[3](
-        total_length, num_q_heads, kv_params.head_size
-    )
-    var test_output_runtime_layout = RuntimeLayout[
-        q_ragged_static_layout
-    ].row_major(test_output_shape)
-    var test_output = ManagedLayoutTensor[output_type, q_ragged_static_layout](
-        test_output_runtime_layout, ctx
-    )
+    var ref_output = HostDeviceTileTensor[output_type](q_padded_layout, ctx)
+    var test_output = HostDeviceTileTensor[output_type](q_ragged_layout, ctx)
 
     # Initialize kv_block with random data using regular host memory
     # (not host-pinned memory via map_to_host) to avoid exhausting
     # the limited host-pinned memory buffer cache
-    var kv_block_shape = IndexList[6](
-        num_blocks,
-        2,
-        num_layers,
-        max_seq_len_cache,
-        kv_params.num_heads,
-        kv_params.head_size,
+    var kv_block = HostDeviceTileTensor[dtype](
+        row_major(
+            Int64(num_blocks),
+            Int64(2),
+            Int64(num_layers),
+            Int64(max_seq_len_cache),
+            Idx[kv_params.num_heads],
+            Idx[kv_params.head_size],
+        ),
+        ctx,
     )
-    var kv_block_runtime_layout = RuntimeLayout[
-        kv_block_static_layout
-    ].row_major(kv_block_shape)
-
-    var kv_block = ManagedLayoutTensor[dtype, kv_block_static_layout](
-        kv_block_runtime_layout, ctx
-    )
-    var kv_block_host_tensor = kv_block.tensor()
-    random(kv_block_host_tensor)
+    random(kv_block.host_tensor())
+    kv_block.to_device()
 
     # Create lookup table
-    var lookup_table_managed = ManagedLayoutTensor[
-        .uint32, lookup_table_layout
-    ](
-        RuntimeLayout[lookup_table_layout].row_major(Index(batch_size)),
-        ctx,
+    var lookup_table_managed = HostDeviceTileTensor[.uint32](
+        lengths_layout, ctx
     )
 
     # Initialize lookup table with random block indices
-    var lookup_table_host = lookup_table_managed.tensor[update=False]()
+    var lookup_table_host = lookup_table_managed.host_tensor()
     # Assign each batch entry a distinct block. `random_ui64` is inclusive, so
     # the original draw range `[0, num_blocks - 1]` is a population of
     # `num_blocks` blocks.
     var lut_blocks = random_distinct(num_blocks, batch_size)
     for idx in range(batch_size):
         lookup_table_host[idx] = UInt32(lut_blocks[idx])
+    lookup_table_managed.to_device()
 
-    # Create layout tensors for GPU operations
     var input_row_offsets_tensor = input_row_offsets.device_tensor()
     var valid_lengths_tensor = valid_lengths_managed.device_tensor()
 
-    var cache_lengths_tensor = cache_lengths_managed.device_tensor()
-
-    var lookup_table_tensor = lookup_table_managed.device_tensor()
-
-    var kv_block_tensor = kv_block.device_tensor()
-
-    var kv_collection_device = ContinuousBatchingKVCacheCollection[
-        dtype, kv_params
-    ](
-        kv_block_tensor,
-        cache_lengths_tensor,
-        lookup_table_tensor,
+    comptime Collection = ContinuousBatchingKVCacheCollection[
+        dtype, kv_params, MutAnyOrigin, ImmutAnyOrigin, ImmutAnyOrigin
+    ]
+    var kv_collection_device = Collection(
+        kv_block.device_tensor().as_unsafe_any_origin(),
+        cache_lengths_managed.device_tensor().as_imm().as_unsafe_any_origin(),
+        lookup_table_managed.device_tensor().as_imm().as_unsafe_any_origin(),
         UInt32(max_prompt_length),
         UInt32(max_context_length),
     )
@@ -271,31 +216,20 @@ def execute_ragged_flash_attention[
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     # Create sink weights
-    var sink_weights_shape = IndexList[1](num_q_heads)
-    var sink_weights = ManagedLayoutTensor[
-        dtype, Layout.row_major(UNKNOWN_VALUE)
-    ](
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-            sink_weights_shape
-        ),
-        ctx,
+    var sink_weights = HostDeviceTileTensor[dtype](
+        row_major(Int64(num_q_heads)), ctx
     )
 
     # Initialize sink weights with varying negative values
-    var sink_weights_host = sink_weights.tensor[update=False]()
+    var sink_weights_host = sink_weights.host_tensor()
     for h in range(num_q_heads):
         sink_weights_host[h] = Scalar[dtype](-2.0 - 0.5 * Float64(h))
+    sink_weights.to_device()
 
-    var sink_weights_device_tensor: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ] = None
-
+    var sink_weights_device_tensor = OptionalReg[ImmutTileTensor1D[dtype]]()
     comptime if sink:
-        sink_weights_device_tensor = LayoutTensor[
-            dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-        ](
-            sink_weights.device_tensor().ptr,
-            sink_weights.device_tensor().runtime_layout,
+        sink_weights_device_tensor = (
+            sink_weights.device_tensor().as_imm().as_unsafe_any_origin()
         )
 
     var q_ragged_tensor = q_ragged.device_tensor()
@@ -328,9 +262,11 @@ def execute_ragged_flash_attention[
         sink_weights=sink_weights_device_tensor,
     )
     # Verify results
-    var row_offsets_tensor = input_row_offsets.tensor()
-    var test_out_tensor = test_output.tensor()
-    var ref_out_tensor = ref_output.tensor()
+    test_output.to_host()
+    ref_output.to_host()
+    var row_offsets_tensor = input_row_offsets.host_tensor()
+    var test_out_tensor = test_output.host_tensor()
+    var ref_out_tensor = ref_output.host_tensor()
 
     comptime rtol = 6e-2 if dtype.is_float8() else (
         1e-2 if dtype == .bfloat16 else 1e-4
@@ -369,7 +305,7 @@ def execute_flash_attention_suite(ctx: DeviceContext) raises:
 
     for bs in [1, 16]:
         comptime for dtype_idx in range(len(dtypes)):
-            comptime dtype = rebind[DType](dtypes[dtype_idx])
+            comptime dtype = dtypes[dtype_idx]
 
             var ce_cache_sizes = List[Int]()
             var ce_seq_lens = List[Int]()

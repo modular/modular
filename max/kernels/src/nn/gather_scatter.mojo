@@ -32,6 +32,7 @@ from layout import (
     coord_to_index_list,
     row_major,
 )
+from layout.coord import DynamicCoord
 from std.memory import unsafe_memcpy
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
@@ -343,15 +344,9 @@ def gather[
     @__parameter
     @__copy_capture(end_indices_ptr)
     @inline(.always)
-    def prefetch_fn[
-        _input_rank: Int, _indices_rank: Int
-    ](
-        _input_coords: IndexList[_input_rank],
-        _indices_coords: IndexList[_indices_rank],
-    ):
-        var __input_coords = _input_coords
-        var input_coords = Coord(__input_coords)
-        var indices_coords = Coord(_indices_coords)
+    def prefetch_fn(_input_coords: Coord, indices_coords: Coord):
+        # `input_coords` is written below; arguments are immutable.
+        var input_coords = _input_coords
         comptime assert indices_coords.rank == indices.rank
         comptime assert input_coords.rank == input.rank
         comptime assert indices_coords.flat_rank == indices.flat_rank
@@ -385,9 +380,8 @@ def gather[
 
     @inline(.always)
     def input_fn[
-        width: Int, _rank: Int, element_alignment: Int
-    ](index: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
-        var coords = Coord(index)
+        width: Int, element_alignment: Int
+    ](coords: Coord) {var input} -> SIMD[dtype, width]:
         comptime assert input.flat_rank >= coords.flat_rank
         return input.load[
             width=width, alignment=element_alignment * align_of[dtype]()
@@ -395,9 +389,8 @@ def gather[
 
     @inline(.always)
     def indices_fn[
-        width: Int, _rank: Int
-    ](index: IndexList[_rank]) {var indices} -> SIMD[indices_type, width]:
-        var coords = Coord(index)
+        width: Int
+    ](coords: Coord) {var indices} -> SIMD[indices_type, width]:
         comptime assert indices.flat_rank >= coords.flat_rank
         return indices.load[width=width, alignment=align_of[indices_type]()](
             coords
@@ -405,9 +398,8 @@ def gather[
 
     @inline(.always)
     def output_fn[
-        width: SIMDLength, _rank: Int, element_alignment: Int
-    ](index: IndexList[_rank], val: SIMD[dtype, width]) {var output}:
-        var coords = Coord(index)
+        width: SIMDLength, element_alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var output}:
         comptime assert output.flat_rank >= coords.flat_rank
         output.store[
             width=width, alignment=element_alignment * align_of[dtype]()
@@ -480,24 +472,18 @@ def gather_elementwise_fn_wrapper[
     indices_type: DType,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int, element_alignment: Int](
-        IndexList[rank]
-    ) -> SIMD[dtype, width],
+    & def[width: Int, element_alignment: Int](Coord) -> SIMD[dtype, width],
     IndicesFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[indices_type, width],
+    & def[width: Int](Coord) -> SIMD[indices_type, width],
     OutputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDLength, rank: Int, element_alignment: Int](
-        IndexList[rank], SIMD[dtype, width]
+    & def[width: SIMDLength, element_alignment: Int](
+        Coord, SIMD[dtype, width]
     ) -> None,
     *,
     simd_width: Int,
-    prefetch_fn: OptionalReg[
-        def[
-            input_rank: Int, indices_rank: Int
-        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
-    ] = None,
+    prefetch_fn: OptionalReg[def(Coord, Coord) capturing -> None] = None,
     target: StaticString = "cpu",
     element_alignment: Int = 1,
 ](
@@ -508,7 +494,7 @@ def gather_elementwise_fn_wrapper[
     input_shape: IndexList,
     indices_shape: IndexList,
     output_shape: IndexList,
-    coords: IndexList,
+    coords: Coord,
     error_index_ptr: OptionalReg[MutPointer[Int, MutAnyOrigin]] = None,
 ):
     """Performs a single elementwise gather step for one output coordinate.
@@ -549,34 +535,49 @@ def gather_elementwise_fn_wrapper[
         error_index_ptr: Optional pointer to record an out-of-bounds index
             for CPU error reporting (defaults to None).
     """
+    comptime assert coords.rank == output_shape.size
+    comptime assert (
+        output_shape.size == input_shape.size + indices_shape.size - 1
+    )
+
     # out_coords consists of 3 chunks:
     #   out_coords[0:axis] = input coords[0:axis]
     #   out_coords[axis:axis+indices_rank] = indices_coords
     #   out_coords[axis + indices_rank:] = input_coords[axis + 1:]
     # and input_coords[axis] = indices[indices_coords]
-    # Get the gather indices.
-    var indices_index = IndexList[indices_shape.size]()
+    var indices_index = DynamicCoord[.int64, indices_shape.size]()
 
-    # Get the indices of the index.
+    # Get the indices of the index. `axis` is a runtime value, so the source
+    # position is picked by a runtime predicate over comptime positions; a
+    # dynamic subscript would force `coords` out of registers and through
+    # memory.
     comptime for i in range(indices_shape.size):
-        indices_index[i] = coords[i + Int(axis)]
+        comptime for j in range(coords.rank):
+            if j == i + Int(axis):
+                indices_index[i] = rebind[indices_index.element_types[i]](
+                    Int64(coords[j].value())
+                )
 
     # The index we are gathering.
-    var data_index = indices_fn[1, indices_shape.size](indices_index)
+    var data_index = indices_fn[1](indices_index)
 
     # Update the indices with the new data index.
-    var data_indices = IndexList[input_shape.size]()
+    var data_indices = DynamicCoord[.int64, input_shape.size]()
 
-    var skip_factor = indices_shape.size - 1
+    comptime skip_factor = indices_shape.size - 1
 
     # Build the indices for the input. We have replaced in index in 'axis'
-    # with an index from the indices tensor.
+    # with an index from the indices tensor. `Coord` subscripts are checked
+    # at compile time, so the `comptime if`s skip positions that rank-0
+    # indices make out of range; the runtime `axis` test never reaches them.
     comptime for i in range(input_shape.size):
         if i == Int(axis):
             var normalized_coords = _unsafe_normalize_neg_index(
                 data_index, input_shape[axis]
             )
-            data_indices[i] = Int(normalized_coords)
+            data_indices[i] = rebind[data_indices.element_types[i]](
+                Int64(normalized_coords)
+            )
 
             # Do a real bounds check and provide a nice message on CPU.
             # Use debug_assert to validate normalized index is within bounds
@@ -595,22 +596,24 @@ def gather_elementwise_fn_wrapper[
             )
         elif i > Int(axis):
             # Skip over any extra indices dimensions. These are essentially new dimensions.
-            data_indices[i] = coords[i + skip_factor]
+            comptime if i + skip_factor >= 0:
+                data_indices[i] = rebind[data_indices.element_types[i]](
+                    Int64(coords[i + skip_factor].value())
+                )
         else:
-            data_indices[i] = coords[i]
+            comptime if i < coords.rank:
+                data_indices[i] = rebind[data_indices.element_types[i]](
+                    Int64(coords[i].value())
+                )
 
     # Load the data.
     comptime if prefetch_fn:
         comptime func = prefetch_fn.value()
-        func[input_shape.size, indices_shape.size](data_indices, indices_index)
-    var data = input_fn[simd_width, input_shape.size, element_alignment](
-        data_indices
-    )
+        func(data_indices, indices_index)
+    var data = input_fn[simd_width, element_alignment](data_indices)
 
     # Store it to the original index.
-    output_fn[simd_width, coords.size, element_alignment](
-        coords.canonicalize(), data
-    )
+    output_fn[simd_width, element_alignment](coords, data)
 
 
 # TODO: Delete / for testing purposes (test_gather.mojo)
@@ -620,23 +623,17 @@ def gather[
     indices_type: DType,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int, element_alignment: Int](
-        IndexList[rank]
-    ) -> SIMD[dtype, width],
+    & def[width: Int, element_alignment: Int](Coord) -> SIMD[dtype, width],
     IndicesFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[indices_type, width],
+    & def[width: Int](Coord) -> SIMD[indices_type, width],
     OutputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: SIMDLength, rank: Int, element_alignment: Int](
-        IndexList[rank], SIMD[dtype, width]
+    & def[width: SIMDLength, element_alignment: Int](
+        Coord, SIMD[dtype, width]
     ) -> None,
     *,
-    prefetch_fn: OptionalReg[
-        def[
-            input_rank: Int, indices_rank: Int
-        ](IndexList[input_rank], IndexList[indices_rank]) capturing -> None
-    ] = None,
+    prefetch_fn: OptionalReg[def(Coord, Coord) capturing -> None] = None,
     target: StaticString = "cpu",
 ](
     axis: Axis,
@@ -730,7 +727,7 @@ def gather[
                 input_shape.canonicalize(),
                 indices_shape.canonicalize(),
                 output_shape.canonicalize(),
-                coord_to_index_list(idx),
+                idx,
                 error_index_ptr,
             )
 
@@ -774,7 +771,9 @@ def gather[
 
 
 @fieldwise_init
-struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
+struct ScatterOobIndexStrategy(
+    EnumLike, Equatable, ImplicitlyCopyable, Writable
+):
     """Valid indices are within the range [-dim_size, dim_size). Indices which
     fall outside of that can be handled using different strategies. Note that
     negative indices are allowed in order to support negative relative indexing.
@@ -791,6 +790,27 @@ struct ScatterOobIndexStrategy(Equatable, ImplicitlyCopyable, Writable):
     comptime SKIP = Self(1)
     """Users may pass in indices outside of the range [-dim_size, dim_size). In
     which case the corresponding update will be skipped."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "UNDEFINED".value,
+        "SKIP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "ScatterOobIndexStrategy has no payload"
 
 
 @inline(.always)
@@ -1895,7 +1915,7 @@ def apply_packed_bitmask[
         logits: Input logits, shape `[batch, vocab]`.
         packed: Packed `int32` bitmask, shape `[batch, ceil(vocab / 32)]`. A set
             bit means the token is grammar-valid. Extra trailing bits beyond
-            `vocab` (32-bit alignment padding from llguidance) are never read.
+            `vocab` (32-bit alignment padding in the packed bitmask) are never read.
         fill_value: Value written for masked-out (grammar-invalid) tokens.
         ctx: The device context.
     """

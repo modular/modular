@@ -67,14 +67,39 @@ kgen.generator @type_values() {
 // Function-Typed Field Referring To Self
 //===----------------------------------------------------------------------===//
 
-// CHECK: kgen.struct.generator @Foo = struct_inst<"Foo"(callback: [(!kgen.pointer<typevalue<#kgen.genref<@Foo>>> owned_in_mem) -> !kgen.none, (!kgen.pointer<struct<((!kgen.pointer<struct<(pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none]) memoryOnly>
+// The occurrence of @Foo nested in its own layout is an opaque pointer.
+// CHECK: kgen.struct.generator @Foo = struct_inst<"Foo"(callback: [(!kgen.pointer<typevalue<#kgen.genref<@Foo>>> owned_in_mem) -> !kgen.none, (!kgen.pointer<struct<((!kgen.pointer<pointer<none>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none]) memoryOnly>
 lit.struct.decl @Foo {
   lit.struct.field callback :
       !kgen.generator<(!lit.ref<@Foo, mut #lit.any.origin> owned_in_mem) -> !kgen.none>
 }
 
 kgen.generator @type_values() {
-  // CHECK: kgen.param.declare foo: type = <[typevalue<#kgen.genref<@Foo>>, struct<((!kgen.pointer<struct<(pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>]>
+  // CHECK: kgen.param.declare foo: type = <[typevalue<#kgen.genref<@Foo>>, struct<((!kgen.pointer<pointer<none>> owned_in_mem) -> !kgen.none) memoryOnly>]>
+  kgen.param.declare foo: meta<!lit.struct<@Foo>> = <[@Foo]>
+  hlcf.return
+}
+
+// -----
+
+//===----------------------------------------------------------------------===//
+// Function-Typed Field Referring To Self, Beside A By-Value Struct Field
+//===----------------------------------------------------------------------===//
+
+lit.struct.decl @Pair {
+  lit.struct.field a : !kgen.scalar<index>
+  lit.struct.field b : !kgen.scalar<index>
+}
+
+// CHECK: kgen.struct.generator @Foo = struct_inst<"Foo"(p: [typevalue<#kgen.genref<@Pair>>, struct<(scalar<index>, scalar<index>) memoryOnly>], callback: [(!kgen.pointer<typevalue<#kgen.genref<@Foo>>> owned_in_mem) -> !kgen.none, (!kgen.pointer<struct<(struct<(scalar<index>, scalar<index>) memoryOnly>, (!kgen.pointer<pointer<none>> owned_in_mem) -> !kgen.none) memoryOnly>> owned_in_mem) -> !kgen.none]) memoryOnly>
+lit.struct.decl @Foo {
+  lit.struct.field p : !lit.struct<@Pair>
+  lit.struct.field callback :
+      !kgen.generator<(!lit.ref<@Foo, mut #lit.any.origin> owned_in_mem) -> !kgen.none>
+}
+
+kgen.generator @type_values() {
+  // CHECK: kgen.param.declare foo: type = <[typevalue<#kgen.genref<@Foo>>, struct<(struct<(scalar<index>, scalar<index>) memoryOnly>, (!kgen.pointer<pointer<none>> owned_in_mem) -> !kgen.none) memoryOnly>]>
   kgen.param.declare foo: meta<!lit.struct<@Foo>> = <[@Foo]>
   hlcf.return
 }
@@ -121,9 +146,9 @@ lit.struct.decl @Pong {
 }
 
 kgen.generator @type_values() {
-  // CHECK: kgen.param.declare ping: type = <[typevalue<#kgen.genref<@Ping>>, struct<(struct<((!kgen.pointer<struct<(pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>) memoryOnly>]>
+  // CHECK: kgen.param.declare ping: type = <[typevalue<#kgen.genref<@Ping>>, struct<(struct<((!kgen.pointer<pointer<none>> owned_in_mem) -> !kgen.none) memoryOnly>) memoryOnly>]>
   kgen.param.declare ping: meta<!lit.struct<@Ping>> = <[@Ping]>
-  // CHECK: kgen.param.declare pong: type = <[typevalue<#kgen.genref<@Pong>>, struct<((!kgen.pointer<struct<(struct<((!kgen.pointer<struct<(pointer<none>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>]>
+  // CHECK: kgen.param.declare pong: type = <[typevalue<#kgen.genref<@Pong>>, struct<((!kgen.pointer<struct<(struct<((!kgen.pointer<pointer<none>> owned_in_mem) -> !kgen.none) memoryOnly>) memoryOnly>> owned_in_mem) -> !kgen.none) memoryOnly>]>
   kgen.param.declare pong: meta<!lit.struct<@Pong>> = <[@Pong]>
   hlcf.return
 }

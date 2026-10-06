@@ -18,8 +18,7 @@ collapses into a single kernel under both pipelines: the matmul epilogue
 absorbs the transpose, both reshapes, the broadcast, and both adds. The
 new MAP-dialect system reaches the same single-kernel fusion once
 `LoopInvariantViewMotion` hoists the broadcast view sitting atop the
-reshaped store index; the `graph-adv-fusion` target runs this under
-`MAX_GC_USE_ADV_FUSION`.
+reshaped store index.
 """
 
 from __future__ import annotations

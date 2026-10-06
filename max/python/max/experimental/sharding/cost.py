@@ -32,6 +32,8 @@ from .placements import (
     ReduceOp,
     Replicated,
     Sharded,
+    ShardingError,
+    Unknown,
 )
 from .types import TensorLayout
 
@@ -85,7 +87,7 @@ def transition_cost(
     Dispatches on :meth:`Placement.transition_to`, so custom
     :class:`Placement` subclasses participate as long as they return a
     :class:`Collective` member. Anything else is reported as infeasible
-    (``+inf``) so solvers reject it.
+    (``+inf``) so the picker rejects it.
     """
     if source == dest:
         return 0.0
@@ -99,53 +101,6 @@ def transition_cost(
     if name == Collective.REDUCE_SCATTER:
         return _ring_reduce_scatter(message_bytes, mesh, axis_index)
     return float("inf")
-
-
-def rank_axis_assignments(
-    actuals: tuple[Placement, ...],
-    candidates: Iterable[AxisAssignment],
-    *,
-    mesh: DeviceMesh,
-    axis_index: int,
-    tensor_bytes: tuple[float, ...] | None = None,
-) -> tuple[tuple[AxisAssignment, float], ...]:
-    """Sorts arity-matching strategies ascending by cost (stable on ties)."""
-    n = len(actuals)
-    bpi = tensor_bytes or (1.0,) * n
-    if len(bpi) != n:
-        raise ValueError(f"tensor_bytes has length {len(bpi)}, expected {n}.")
-    scored = [
-        (
-            axs,
-            _action_cost(
-                actuals,
-                axs.needed_inputs,
-                bpi,
-                mesh=mesh,
-                axis_index=axis_index,
-            ),
-        )
-        for axs in candidates
-        if len(axs.needed_inputs) == n
-    ]
-    return tuple(sorted(scored, key=lambda x: x[1]))
-
-
-def _action_cost(
-    actuals: tuple[Placement, ...],
-    needed: tuple[Placement, ...],
-    tensor_bytes: tuple[float, ...],
-    *,
-    mesh: DeviceMesh,
-    axis_index: int,
-) -> float:
-    """Sum of per-input transition costs from ``actuals`` to ``needed`` on one axis."""
-    return sum(
-        transition_cost(
-            a, p, message_bytes=tb, mesh=mesh, axis_index=axis_index
-        )
-        for a, p, tb in zip(actuals, needed, tensor_bytes, strict=True)
-    )
 
 
 # ─── Feasibility ──────────────────────────────────────────────────────
@@ -244,7 +199,7 @@ def _cumulative_axis_group_size(
     placements = (
         ctx.input_placements[i]
         if ctx.input_placements is not None
-        else ctx.layouts[i].mapping.to_placements()
+        else ctx.layouts[i].mapping.placements
     )
     return ctx.group_size * math.prod(
         ctx.mesh.mesh_shape[j]
@@ -278,7 +233,7 @@ def _global_axis_size(layout: TensorLayout, tensor_axis: int) -> int:
     """Best-effort global static extent of tensor axis ``tensor_axis``."""
     dim = layout.shape[tensor_axis]
     mesh = layout.mapping.mesh
-    placements = layout.mapping.to_placements()
+    placements = layout.mapping.placements
     factor = 1
     for mesh_axis, p in enumerate(placements):
         if isinstance(p, Sharded) and p.localized_axis() == tensor_axis:
@@ -321,6 +276,13 @@ def feasible_rows_at_axis(
 ) -> tuple[AxisAssignment, ...]:
     """Rows of ``menu`` feasible at ``mesh_axis``."""
     actuals = input_placements_at_axis(per_input_placements, mesh_axis)
+    if any(isinstance(placement, Unknown) for placement in actuals):
+        if any(isinstance(placement, Partial) for placement in actuals):
+            raise ShardingError(
+                "Resolve Partial inputs before mixing them with Unknown inputs, "
+                "or rebind them as Unknown."
+            )
+        return (AxisAssignment(actuals, Unknown()),)
     ctx = _FeasibilityContext(
         layouts=menu.layouts,
         mesh=menu.mesh,
@@ -365,7 +327,7 @@ def build_action_set(
         raise ValueError("build_action_set: at least one layout required.")
 
     mesh = layouts[0].mapping.mesh
-    placements_per_input = [l.mapping.to_placements() for l in layouts]
+    placements_per_input = [l.mapping.placements for l in layouts]
     rows = tuple(rows)
     feasible = tuple(
         r

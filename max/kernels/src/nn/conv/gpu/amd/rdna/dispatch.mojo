@@ -303,17 +303,16 @@ def dispatch_rdna_conv2d[
         comptime BLOCK_K = 32
 
         # --- Helper to launch the implicit GEMM kernel ---
-        @__parameter
         @inline(.always)
         def _launch_implicit_gemm[
             _epilogue: Optional[elementwise_epilogue_type] = None,
-        ]() raises:
+        ]() raises {imm}:
             comptime NUM_WARPS = 16  # 8x2 warp grid
             comptime BLOCK_M = 128
             comptime BLOCK_N = 128
 
-            var filter_nk_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
-            var out_tt = TileTensor(output.ptr, row_major(Coord(M, N)))
+            var filter_nk_tt = TileTensor(filter_nk_ptr, row_major(N, K))
+            var out_tt = TileTensor(output.ptr, row_major(M, N))
 
             comptime conv_kernel = conv2d_kernel_rdna[
                 output_type,
@@ -348,11 +347,10 @@ def dispatch_rdna_conv2d[
             )
 
         # --- Helper to launch explicit im2col + matmul fallback ---
-        @__parameter
         @inline(.always)
         def _launch_explicit_im2col[
             _epilogue: Optional[elementwise_epilogue_type] = None,
-        ]() raises:
+        ]() raises {imm}:
             var im2col_size = M * K
             var im2col_buf = ctx.enqueue_create_buffer[input_type](im2col_size)
             var im2col_ptr = im2col_buf.unsafe_ptr()
@@ -376,9 +374,9 @@ def dispatch_rdna_conv2d[
                 block_dim=(im2col_block,),
             )
 
-            var a_tt = TileTensor(im2col_ptr, row_major(Coord(M, K)))
-            var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
-            var c_tt = output.reshape(row_major(Coord(M, N)))
+            var a_tt = TileTensor(im2col_ptr, row_major(M, K))
+            var b_tt = TileTensor(filter_nk_ptr, row_major(N, K))
+            var c_tt = output.reshape(row_major(M, N))
 
             _matmul_gpu[
                 use_tensor_core=True,

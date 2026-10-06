@@ -13,21 +13,11 @@
 
 from std.collections import Optional
 from std.random import randn
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
@@ -82,7 +72,9 @@ def host_cast_k_fp8_to_bf16[
             for h in range(kv_num_heads):
                 var base = b_off + (i * kv_num_heads + h) * depth
                 for j in range(depth):
-                    k_bf16[base + j] = k_fp8[base + j].cast[k_bf16_t]()
+                    k_bf16[unsafe_offset=base + j] = k_fp8[
+                        unsafe_offset=base + j
+                    ].cast[k_bf16_t]()
 
 
 def is_benchmark() -> Bool:
@@ -185,11 +177,6 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    # Keep LayoutTensors for mha_gpu_naive reference path.
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-
     comptime q_tile_num_rows = 32
     comptime k_tile_num_rows = 128
 
@@ -262,19 +249,17 @@ def test[
 
         var k_ref_device_ptr = ctx.enqueue_create_buffer[q_type](k_size)
 
-        var k_ref_device = LayoutTensor[q_type, k_layout](
-            k_ref_device_ptr.unsafe_ptr(),
-            RuntimeLayout[k_layout].row_major(
-                Index(batch_size, num_keys, kv_num_heads, depth)
-            ),
+        var k_ref_device = TileTensor(
+            k_ref_device_ptr,
+            row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
         )
         ctx.enqueue_copy(k_ref_device_ptr, k_bf16_ptr)
 
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            var k_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
+            var k_operand = LayoutTensorMHAOperand(k_ref_device)
             var null_valid_length = TileTensor(
                 MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-                row_major(Coord(Idx[0])),
+                row_major(Idx[0]),
             )
             mha_gpu_naive[_is_cache_length_accurate=True,](
                 q_tt,
@@ -468,7 +453,7 @@ def test_decoding_k3_head_counts[
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+        comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
             ctx.default_device_info
         ):
             # Test with benchmark parameters: batch_size=1, cache_len=32768, num_heads=128

@@ -357,8 +357,7 @@ def amd_4wave_conv[
     )
 
     @inline(.always)
-    @__parameter
-    def run_kernel[config: MatmulKernelConfig]() raises:
+    def run_kernel[config: MatmulKernelConfig]() raises {imm}:
         # Dispatch via `AMD4WaveMatmul.run_conv2d` — the unified entry
         # point that hosts the 4-wave conv2d body alongside the matmul.
         # `has_residual` carries through to the kernel's epilogue;

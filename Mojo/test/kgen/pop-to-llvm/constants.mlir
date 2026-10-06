@@ -38,6 +38,14 @@ kgen.func @simd_index_addr_constants() -> (!kgen.simd<2, index>, !kgen.simd<2, a
   hlcf.return %0, %1 : !kgen.simd<2, index>, !kgen.simd<2, address>
 }
 
+// CHECK-LABEL: @address_minus_one
+kgen.func @address_minus_one() -> !kgen.scalar<address> {
+  // Address is unsigned; -1 must materialize as the max pointer value.
+  // CHECK-NEXT: ret ptr inttoptr (i64 -1 to ptr)
+  %0 = kgen.param.constant: scalar<address> = <-1>
+  hlcf.return %0 : !kgen.scalar<address>
+}
+
 // CHECK-LABEL: @store_to_mem
 kgen.func @store_to_mem() -> !kgen.pointer<index> {
   // CHECK-NEXT: %[[ALLOCA:.*]] = alloca i64, i64 1, align 4

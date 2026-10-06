@@ -22,14 +22,12 @@ This file tests various code paths in nn/concat.mojo:
 5. Different data types and tensor ranks
 """
 
-from std.collections import Optional
-
 from max.gpu.host import DeviceContext
 from layout import Coord, TileTensor, row_major
 from nn.concat import (
     _concat_gpu,
+    _no_epilogue,
     concat,
-    elementwise_epilogue_type,
     fused_concat,
 )
 
@@ -106,7 +104,7 @@ def test_concat_d2d_copy_path(ctx: DeviceContext) raises:
     )
 
     # This should take the d2d copy path
-    _concat_gpu[epilogue_fn=None](
+    _concat_gpu[has_epilogue=False](
         output_dyn.as_unsafe_any_origin(),
         0,  # axis=0 makes outer_dims=1
         StaticTuple[
@@ -122,6 +120,7 @@ def test_concat_d2d_copy_path(ctx: DeviceContext) raises:
             input_1_dyn.as_unsafe_any_origin().as_imm(),
             input_2_dyn.as_unsafe_any_origin().as_imm(),
         ),
+        _no_epilogue,
         ctx,
     )
 
@@ -226,7 +225,7 @@ def test_concat_non_last_axis(ctx: DeviceContext) raises:
         row_major(Coord(IndexList[rank](2, 8, 4))),
     )
 
-    _concat_gpu[epilogue_fn=None](
+    _concat_gpu[has_epilogue=False](
         output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
@@ -241,6 +240,7 @@ def test_concat_non_last_axis(ctx: DeviceContext) raises:
             input_0_dyn.as_unsafe_any_origin().as_imm(),
             input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
+        _no_epilogue,
         ctx,
     )
 
@@ -330,7 +330,7 @@ def test_concat_last_axis_vectorized(ctx: DeviceContext) raises:
         row_major(Coord(IndexList[rank](2, 3, 24))),
     )
 
-    _concat_gpu[epilogue_fn=None](
+    _concat_gpu[has_epilogue=False](
         output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
@@ -345,6 +345,7 @@ def test_concat_last_axis_vectorized(ctx: DeviceContext) raises:
             input_0_dyn.as_unsafe_any_origin().as_imm(),
             input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
+        _no_epilogue,
         ctx,
     )
 
@@ -433,7 +434,7 @@ def test_concat_last_axis_unaligned(ctx: DeviceContext) raises:
         row_major(Coord(IndexList[rank](2, 3, 18))),
     )
 
-    _concat_gpu[epilogue_fn=None](
+    _concat_gpu[has_epilogue=False](
         output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
@@ -448,6 +449,7 @@ def test_concat_last_axis_unaligned(ctx: DeviceContext) raises:
             input_0_dyn.as_unsafe_any_origin().as_imm(),
             input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
+        _no_epilogue,
         ctx,
     )
 
@@ -508,7 +510,6 @@ def test_fused_concat_gpu(ctx: DeviceContext) raises:
     )
 
     # Input lambda: generates data on-the-fly
-    @__parameter
     @inline(.always)
     def input_fn[
         input_index: Int, width: Int, _rank: Int, alignment: Int = 1
@@ -632,21 +633,17 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
         row_major(Coord(IndexList[rank](8, 16))),
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(output_dyn)
     def epilogue_scale_by_2[
         c_type: DType, _rank: Int, width: SIMDLength, *, alignment: Int
-    ](indices: IndexList[_rank], val: SIMD[c_type, width]):
+    ](indices: IndexList[_rank], val: SIMD[c_type, width]) {var output_dyn}:
         var coord = Coord(indices)
         comptime assert output_dyn.flat_rank >= coord.flat_rank
         output_dyn.store[width=width](
             coord, rebind[SIMD[dtype, width]](val * 2)
         )
 
-    _concat_gpu[
-        epilogue_fn=Optional[elementwise_epilogue_type](epilogue_scale_by_2)
-    ](
+    _concat_gpu[has_epilogue=True](
         output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
@@ -661,6 +658,7 @@ def test_concat_with_epilogue(ctx: DeviceContext) raises:
             input_0_dyn.as_unsafe_any_origin().as_imm(),
             input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
+        epilogue_scale_by_2,
         ctx,
     )
 
@@ -749,7 +747,7 @@ def test_concat_different_dtypes(ctx: DeviceContext) raises:
         row_major(Coord(IndexList[rank](4, 20))),
     )
 
-    _concat_gpu[epilogue_fn=None](
+    _concat_gpu[has_epilogue=False](
         output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
@@ -764,6 +762,7 @@ def test_concat_different_dtypes(ctx: DeviceContext) raises:
             input_0_dyn.as_unsafe_any_origin().as_imm(),
             input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
+        _no_epilogue,
         ctx,
     )
 
@@ -850,7 +849,7 @@ def test_concat_high_rank(ctx: DeviceContext) raises:
         row_major(Coord(IndexList[rank](2, 3, 11, 4, 8))),
     )
 
-    _concat_gpu[epilogue_fn=None](
+    _concat_gpu[has_epilogue=False](
         output_dyn.as_unsafe_any_origin(),
         axis,
         StaticTuple[
@@ -865,6 +864,7 @@ def test_concat_high_rank(ctx: DeviceContext) raises:
             input_0_dyn.as_unsafe_any_origin().as_imm(),
             input_1_dyn.as_unsafe_any_origin().as_imm(),
         ),
+        _no_epilogue,
         ctx,
     )
 

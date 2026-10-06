@@ -318,7 +318,7 @@ kgen.generator @eq_compare_anything() {
 
 // CHECK-LABEL: @eq_compare_sub_elements
 kgen.generator @eq_compare_sub_elements<a: !kgen.param_list<index>, b: !kgen.param_list<index>, x: index, y: index>() {
-  // CHECK-NEXT: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> and(identical(:scalar<index> from_builtin(#kgen.param_list.size<:param_list<index> a>), 2), identical(:scalar<index> from_builtin(#kgen.param_list.size<:param_list<index> b>), 2)))>
+  // CHECK-NEXT: = kgen.param.constant: i1 = <to_builtin(:scalar<bool> identical(:scalar<index> from_builtin(#kgen.param_list.size<:param_list<index> a>), from_builtin(#kgen.param_list.size<:param_list<index> b>), 2))>
   kgen.param.constant: i1 = <and(
     to_builtin(:scalar<bool> eq(:index #kgen.param_list.size<:!kgen.param_list<index> b>, 2)),
     to_builtin(:scalar<bool> eq(:index #kgen.param_list.size<:!kgen.param_list<index> a>, 2)),
@@ -1380,5 +1380,14 @@ kgen.generator @param_identical_nested_unknown() {
       #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>,
       #kgen.param_list<#kgen.unknown : !kgen.scalar<si32>> : !kgen.param_list<!kgen.scalar<si32>>>
   } : () -> ()
+  hlcf.return
+}
+
+
+// CHECK-LABEL: @add_simplification
+kgen.generator @add_simplification<p1, p2, p3>()  {
+  // CHECK: = kgen.param.constant = <to_builtin(:scalar<index> add(from_builtin(p1), from_builtin(p2), from_builtin(p3), -3))>
+  %test = kgen.param.constant = <add(add(p1, -1), add(p2, -1), add(p3, -1))>
+
   hlcf.return
 }

@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from max.serve.parser.tool_call_validation import (
+from max.serve._tool_call_validation import (
     _VALIDATOR_CACHE_SIZE,
     _build_validator,
     check_response_format_conformance,

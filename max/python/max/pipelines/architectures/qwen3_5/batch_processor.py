@@ -37,6 +37,33 @@ _MROPE_AXES = 3
 """Temporal, height and width, the three axes M-RoPE positions carry."""
 
 
+def context_position_rows(ctx: TextContext) -> npt.NDArray[np.int64]:
+    """Returns one request's ``[3, active_length]`` M-RoPE positions.
+
+    A prompt whose images are still to be encoded takes its slice of the
+    positions the tokenizer precomputed. Otherwise positions count on from
+    the processed length, offset by the request's rope delta. The two agree
+    past the last image.
+    """
+    rope_delta = 0
+    if isinstance(ctx, Qwen3VLTextAndVisionContext):
+        precomputed = ctx.decoder_position_ids
+        if ctx.needs_vision_encoding and precomputed.shape[1] == len(
+            ctx.tokens
+        ):
+            return precomputed[
+                :,
+                ctx.tokens.processed_length : ctx.tokens.current_position,
+            ]
+        rope_delta = ctx.rope_delta
+    flat = np.arange(ctx.tokens.active_length, dtype=np.int64)
+    return (
+        np.tile(flat, (_MROPE_AXES, 1))
+        + ctx.tokens.processed_length
+        + rope_delta
+    )
+
+
 class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     """Ragged batching with linear-attention state pools and optional vision inputs."""
 
@@ -44,38 +71,8 @@ class Qwen3_5BatchProcessor(Llama3BatchProcessor):
     """Whether the compiled graph takes M-RoPE positions. Set by the model."""
 
     def _decoder_position_ids(self, contexts: Sequence[TextContext]) -> Buffer:
-        """Returns this step's ``[3, total_seq_len]`` M-RoPE positions.
-
-        A prompt whose images are still to be encoded takes the slice of the
-        positions the tokenizer precomputed for the whole prompt. Everything
-        else -- decode steps, and continuations of a prompt whose images are
-        already behind it -- counts on from the processed length, offset by
-        the request's rope delta. Past the last image those two agree, which
-        is what lets a decode step extend the corrected positions without
-        recomputing them.
-        """
-        rows: list[npt.NDArray[np.int64]] = []
-        for ctx in contexts:
-            rope_delta = 0
-            if isinstance(ctx, Qwen3VLTextAndVisionContext):
-                precomputed = ctx.decoder_position_ids
-                if ctx.needs_vision_encoding and precomputed.shape[1] == len(
-                    ctx.tokens
-                ):
-                    rows.append(
-                        precomputed[
-                            :,
-                            ctx.tokens.processed_length : ctx.tokens.current_position,
-                        ]
-                    )
-                    continue
-                rope_delta = ctx.rope_delta
-            flat = np.arange(ctx.tokens.active_length, dtype=np.int64)
-            rows.append(
-                np.tile(flat, (_MROPE_AXES, 1))
-                + ctx.tokens.processed_length
-                + rope_delta
-            )
+        """Returns this step's ``[3, total_seq_len]`` M-RoPE positions."""
+        rows = [context_position_rows(ctx) for ctx in contexts]
         return Buffer.from_numpy(
             np.concatenate(rows, axis=1).astype(np.int64)
         ).to(self.runtime.devices[0])

@@ -269,8 +269,9 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     draft_tokens: Buffer | None = None
     draft_probs_full: Buffer | None = None
     """The distribution each ``draft_tokens`` entry was sampled from,
-    ``[batch_size, num_speculative_tokens, vocab_size]``. Only set when
-    ``draft_proposal="sampled"``."""
+    ``[batch_size, num_speculative_tokens, vocab_size]``. The pipeline sets it
+    exactly when the compiled graph declares it (``draft_proposal="sampled"``),
+    so the tail packs it whenever it is present."""
     seed: Buffer | None = None
     temperature: Buffer | None = None
     top_k: Buffer | None = None
@@ -289,17 +290,11 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     so the buffer tail and the graph signature derive the decision from one
     place. Set by each capable module's ``prepare_initial_token_inputs``."""
 
-    sampled_draft_proposal: bool = False
-    """Whether this graph was compiled with ``draft_proposal="sampled"``,
-    which gates the ``draft_probs_full`` buffer in the tail. Only
-    ``UnifiedEagleLlama3`` and ``Eagle3MHAMiniMaxM3Unified`` set this today."""
-
     def _spec_decode_tail_buffers(
         self,
         *,
         include_in_thinking_phase: bool,
         supports_structured_output: bool = True,
-        include_draft_probs_full: bool = False,
     ) -> tuple[Buffer, ...]:
         # draft_tokens, seed, and the five sampling params are unconditional in
         # build_spec_decode_input_types; assert them so a missing one is a loud
@@ -307,8 +302,9 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         # {"target", "draft"} tree, packed by super().buffers.)
         assert self.draft_tokens is not None
         tail: tuple[Buffer, ...] = (self.draft_tokens,)
-        if include_draft_probs_full:
-            assert self.draft_probs_full is not None
+        # Keyed on presence rather than a per-architecture flag: the pipeline
+        # allocates it only after checking the compiled graph declares it.
+        if self.draft_probs_full is not None:
             tail += (self.draft_probs_full,)
         assert self.seed is not None
         tail += (self.seed,)
@@ -735,7 +731,7 @@ class GraphPipelineModel(PipelineModel[BaseContextType]):
         return None
 
     def _wire_batch_processor(
-        self, model: Any = None, model_config: Any = None
+        self, model: Model | None = None, model_config: Any = None
     ) -> None:
         """Optional hook to construct ``self.batch_processor`` after compile."""
         del model, model_config
@@ -917,6 +913,11 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         """HuggingFace config passed to the weight adapter, if any."""
         return None
 
+    # `model` is deliberately untyped here, unlike the hook on
+    # `GraphPipelineModel`: a graph subclass passes what a session load
+    # returned, while a ModuleV3 subclass passes the compiled callable, and
+    # naming the union of the two would stop either from declaring what it
+    # actually receives. Each override below says which it is.
     def _wire_batch_processor(
         self,
         model: Any = None,
@@ -1100,29 +1101,130 @@ class MultiGraphPipelineModelWithKVCache(
 class ModuleV3PipelineModelWithKVCache(
     PipelineModelWithKVCache[BaseContextType]
 ):
-    """ModuleV3 pipeline model with shared compile template.
+    """The base class for a ModuleV3 model architecture that uses a KV cache.
 
-    Subclasses override :meth:`_instantiate_module` (and optionally
-    :meth:`_create_model_config`, :meth:`_init_distributed_runtime`,
-    :meth:`_module_default_dtype`, :meth:`_get_compile_input_types`) rather than
-    duplicating weight loading, timing, and ``nn.compile`` wiring.
+    A subclass implements ``_create_model_config()``, which builds the
+    architecture's config, and ``_instantiate_module()``, which constructs the
+    root module and places it on a device or device mesh. :meth:`load_model`
+    loads and adapts the checkpoint weights, builds the module under
+    ``F.lazy()``, and compiles it with those weights. A subclass can also
+    override ``_prepare_state_dict()``, ``_init_distributed_runtime()``,
+    ``_module_default_dtype()``, or ``_get_compile_input_types()``.
 
-    Graph-API models should inherit :class:`GraphPipelineModelWithKVCache`
-    instead. Encoder models without KV cache should inherit
-    :class:`ModuleV3PipelineModel` instead. Multi-graph VLMs should inherit
-    :class:`MultiGraphPipelineModelWithKVCache` (graph API) or
-    :class:`ModuleV3MultiGraphPipelineModelWithKVCache` (ModuleV3).
-    ``ComponentModel`` types and unified spec-decode pipelines should override
-    :meth:`load_model` entirely.
+    An encoder model without a KV cache subclasses
+    :class:`ModuleV3PipelineModel`, and a vision-language model that compiles
+    several modules subclasses
+    :class:`ModuleV3MultiGraphPipelineModelWithKVCache`.
+    Component models and unified speculative-decoding pipelines override
+    :meth:`load_model`.
+
+    The constructor compiles the model into :attr:`model`, and the default
+    :meth:`execute` passes it ``model_inputs.buffers``.
+
+    Args:
+        pipeline_config: The pipeline configuration, including the model path
+            and its Hugging Face config.
+        session: The inference session the pipeline runs in.
+        devices: The devices to run the model on.
+        kv_cache_config: The KV cache configuration.
+        weights: The checkpoint weights to load.
+        memory_plan: The memory plan that sizes the KV cache.
+        adapter: The weight adapter that renames checkpoint keys to the root
+            module's parameter names. Defaults to ``None``, which loads the
+            checkpoint keys unchanged.
+        return_logits: Which logits the model returns. Defaults to
+            :obj:`ReturnLogits.LAST_TOKEN`.
+        return_hidden_states: Which hidden states the model returns. Defaults
+            to :obj:`ReturnHiddenStates.NONE`.
+        max_batch_size: The maximum number of requests in one batch. Defaults
+            to ``1``.
+
+    Raises:
+        ValueError: If the pipeline config enables LoRA while the KV cache
+            config enables prefix caching, or enables LoRA for a subclass
+            that doesn't set ``lora_modulev3``.
     """
 
+    model: Callable[..., Any]
     _modulev3_extra_input_types: list[Any]
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        session: InferenceSession,
+        devices: list[Device],
+        kv_cache_config: KVCacheConfig,
+        weights: Weights,
+        *,
+        memory_plan: MemoryPlan,
+        adapter: WeightsAdapter | None = None,
+        return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        max_batch_size: int = 1,
+    ) -> None:
+        super().__init__(
+            pipeline_config,
+            session,
+            devices,
+            kv_cache_config,
+            weights,
+            adapter=adapter,
+            return_logits=return_logits,
+            return_hidden_states=return_hidden_states,
+            max_batch_size=max_batch_size,
+            memory_plan=memory_plan,
+        )
+        self.model = self.load_model()
+
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
+        """Runs :attr:`model` on ``model_inputs.buffers``.
+
+        Args:
+            model_inputs: The prepared inputs, whose
+                :attr:`~ModelInputs.buffers` match the compiled input order.
+
+        Returns:
+            The outputs mapped by :meth:`_to_model_outputs`.
+        """
+        return self._to_model_outputs(self.model(*model_inputs.buffers))
+
+    def _to_model_outputs(self, model_outputs: Sequence[Any]) -> ModelOutputs:
+        """Maps the compiled model's outputs to :class:`ModelOutputs`.
+
+        The graph returns ``next_token_logits``, then ``logits`` and
+        ``logit_offsets`` when it returns all or variable logits, then
+        ``hidden_states`` when it returns hidden states. With a single logits
+        output, it serves as both ``logits`` and ``next_token_logits``.
+
+        Args:
+            model_outputs: The tensors returned by :attr:`model`.
+
+        Returns:
+            The outputs as driver buffers.
+        """
+        outputs = [
+            cast(Buffer, output.driver_tensor) for output in model_outputs
+        ]
+        hidden_states = outputs[-1] if len(outputs) in (2, 4) else None
+        if len(outputs) >= 3:
+            return ModelOutputs(
+                logits=outputs[1],
+                next_token_logits=outputs[0],
+                logit_offsets=outputs[2],
+                hidden_states=hidden_states,
+            )
+        return ModelOutputs(
+            logits=outputs[0],
+            next_token_logits=outputs[0],
+            hidden_states=hidden_states,
+        )
 
     @traced
     def load_model(self) -> Callable[..., Any]:
         """Build and compile the ModuleV3 callable."""
         state_dict = self._load_state_dict()
         model_config = self._create_model_config(state_dict)
+        state_dict = self._prepare_state_dict(state_dict, model_config)
         self._init_distributed_runtime(model_config)
         module_default_dtype = self._module_default_dtype(
             state_dict, model_config
@@ -1143,6 +1245,13 @@ class ModuleV3PipelineModelWithKVCache(
         raise NotImplementedError(
             f"{type(self).__qualname__} must implement `_create_model_config`."
         )
+
+    def _prepare_state_dict(
+        self, state_dict: dict[str, Any], model_config: Any
+    ) -> dict[str, Any]:
+        """Optional hook to cast or rewrite weights before ``nn.compile``."""
+        del model_config
+        return state_dict
 
     def _init_distributed_runtime(self, model_config: Any) -> None:
         """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""

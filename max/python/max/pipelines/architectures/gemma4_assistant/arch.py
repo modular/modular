@@ -45,5 +45,4 @@ gemma4_assistant_arch = SupportedArchitecture(
     memory_planner=PagedMemoryPlanner.with_activation_reservation(
         0, always_signal_buffers=True
     ),
-    default_structured_output_backend="xgrammar",
 )

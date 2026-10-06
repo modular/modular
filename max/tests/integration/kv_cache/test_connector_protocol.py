@@ -13,16 +13,16 @@
 
 """CPU conformance tests for the ``KVConnector`` protocol additions.
 
-Covers the ``wait_for_loads`` / ``wait_for_offloads`` barriers and the
-fire-and-forget ``touch`` method, verified against the no-op ``NullConnector``
-(which needs no device) plus the host/disk connector.
+Covers the per-step ``poll_transfers`` drain and the fire-and-forget ``touch``
+method, verified against the no-op ``NullConnector`` (which needs no device)
+plus the host/disk connector.
 """
 
 from __future__ import annotations
 
 from max.pipelines.kv_cache.connectors import NullConnector
-from max.pipelines.kv_cache.connectors.rust_tier_connector import (
-    RustTierConnector,
+from max.pipelines.kv_cache.connectors.tier_connector import (
+    TierConnector,
 )
 from max.pipelines.kv_cache.kv_connector import KVConnector
 
@@ -31,11 +31,11 @@ def test_null_connector_satisfies_protocol() -> None:
     assert isinstance(NullConnector(), KVConnector)
 
 
-def test_barrier_methods_are_callable() -> None:
+def test_poll_transfers_is_callable() -> None:
+    # The default drain is a no-op a connector need not override; the managers
+    # call it every time they drain, so it has to be callable on any connector.
     connector = NullConnector()
-    # Both are no-op barriers (return ``None``); just ensure they are callable.
-    connector.wait_for_loads()
-    connector.wait_for_offloads()
+    connector.poll_transfers()
 
 
 def test_touch_returns_none_and_never_raises() -> None:
@@ -46,12 +46,12 @@ def test_touch_returns_none_and_never_raises() -> None:
     connector.touch([b"\x01" * 8, b"\x02" * 8], replica_idx=1)
     connector.touch([])
 
-    # ``RustTierConnector`` needs device buffers and the Rust extension to fully
+    # ``TierConnector`` needs device buffers and the Rust extension to fully
     # construct (see the GPU connector tests), but ``touch`` ignores instance
     # state, so exercise it on an uninitialized instance -- the same ``__new__``
     # pattern used in ``test_kv_connector_take_metrics.py`` -- to prove it is a
     # no-op that never raises.
-    tier_connector = RustTierConnector.__new__(RustTierConnector)
+    tier_connector = TierConnector.__new__(TierConnector)
     tier_connector.touch([b"\x01" * 8])
     tier_connector.touch([b"\x01" * 8], replica_idx=2)
 
@@ -63,4 +63,4 @@ def test_touch_preserves_protocol_conformance() -> None:
     # its state-reading properties (GPU-bound to construct), so assert the new
     # Protocol member is present at the class level instead.
     assert isinstance(NullConnector(), KVConnector)
-    assert hasattr(RustTierConnector, "touch")
+    assert hasattr(TierConnector, "touch")

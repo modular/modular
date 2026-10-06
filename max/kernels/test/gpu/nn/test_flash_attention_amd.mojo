@@ -18,20 +18,9 @@ from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    row_major,
-)
+from layout import Idx, TileTensor, row_major
 from std.memory import unsafe_memset_zero
-from nn.attention.gpu.mha import (
-    _naive_attention_with_transpose,
-    flash_attention,
-    mha_gpu_naive,
-)
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import NullMask
 from std.testing import assert_almost_equal
 
@@ -163,58 +152,15 @@ def test[
         mask_ptr[i] = Scalar[mask_type](0)
 
     # Construct buffers.
-    comptime layout_4d = Layout.row_major[4]()
-    var q = LayoutTensor[qkv_type, layout_4d](
-        q_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
-    )
-    var k = LayoutTensor[qkv_type, layout_4d](
-        k_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var v = LayoutTensor[qkv_type, layout_4d](
-        v_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-    var mask = LayoutTensor[mask_type, Layout.row_major[2]()](
-        mask_ptr,
-        RuntimeLayout[Layout.row_major[2]()].row_major(
-            Index(seq_len, num_keys)
-        ),
-    )
-    var output = LayoutTensor[qkv_type, layout_4d](
+    var output = TileTensor(
         output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+        row_major((batch_size, seq_len, num_heads, depth)),
     )
 
-    var flash_output = LayoutTensor[qkv_type, layout_4d](
+    var flash_output = TileTensor(
         flash_output_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+        row_major((batch_size, seq_len, num_heads, depth)),
     )
-
-    comptime if not against_gpu_naive:
-        comptime assert (
-            qkv_type == mask_type
-        ), "expect qkv and mask have same type for CPU."
-        _naive_attention_with_transpose[qkv_type](
-            output,
-            q,
-            k,
-            v,
-            mask.bitcast[qkv_type](),
-            scale,
-            ctx,
-        )
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)

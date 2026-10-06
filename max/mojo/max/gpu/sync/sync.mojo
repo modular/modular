@@ -223,32 +223,32 @@ struct AMDScheduleBarrierMask(
             writer: The object to write to.
         """
         __match self:
-        case .NONE:
-            return writer.write_string("NONE")
-        case .ALL_ALU:
-            return writer.write_string("ALL_ALU")
-        case .VALU:
-            return writer.write_string("VALU")
-        case .SALU:
-            return writer.write_string("SALU")
-        case .MFMA:
-            return writer.write_string("MFMA")
-        case .ALL_VMEM:
-            return writer.write_string("ALL_VMEM")
-        case .VMEM_READ:
-            return writer.write_string("VMEM_READ")
-        case .VMEM_WRITE:
-            return writer.write_string("VMEM_WRITE")
-        case .ALL_DS:
-            return writer.write_string("ALL_DS")
-        case .DS_READ:
-            return writer.write_string("DS_READ")
-        case .DS_WRITE:
-            return writer.write_string("DS_WRITE")
-        case .TRANS:
-            return writer.write_string("TRANS")
-        case _:
-            abort("invalid AMDScheduleBarrierMask value")
+            case .NONE:
+                return writer.write_string("NONE")
+            case .ALL_ALU:
+                return writer.write_string("ALL_ALU")
+            case .VALU:
+                return writer.write_string("VALU")
+            case .SALU:
+                return writer.write_string("SALU")
+            case .MFMA:
+                return writer.write_string("MFMA")
+            case .ALL_VMEM:
+                return writer.write_string("ALL_VMEM")
+            case .VMEM_READ:
+                return writer.write_string("VMEM_READ")
+            case .VMEM_WRITE:
+                return writer.write_string("VMEM_WRITE")
+            case .ALL_DS:
+                return writer.write_string("ALL_DS")
+            case .DS_READ:
+                return writer.write_string("DS_READ")
+            case .DS_WRITE:
+                return writer.write_string("DS_WRITE")
+            case .TRANS:
+                return writer.write_string("TRANS")
+            case _:
+                abort("invalid AMDScheduleBarrierMask value")
 
     def __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.
@@ -498,16 +498,19 @@ def _mbarrier_impl[
         address: Pointer to the memory barrier object location.
     """
 
-    comptime if address_space == .SHARED:
-        llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType](
-            address
-        )
-    elif (address_space == .GLOBAL or address_space == .GENERIC):
-        llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
-            address.unsafe_address_space_cast[.GENERIC]()._get_kgen_pointer()
-        )
-    else:
-        comptime assert False, "invalid address space"
+    comptime __match address_space:
+        case .SHARED:
+            llvm_intrinsic[
+                "llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType
+            ](address)
+        case .GLOBAL | .GENERIC:
+            llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive", NoneType](
+                address.unsafe_address_space_cast[
+                    .GENERIC
+                ]()._get_kgen_pointer()
+            )
+        case _:
+            comptime assert False, "invalid address space"
 
 
 @inline(.nodebug)
@@ -895,7 +898,6 @@ def cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
         ```
     """
 
-    @__parameter
     def get_asm() -> String:
         comptime base = "llvm.nvvm.cp.async.bulk.wait.group"
         if read:

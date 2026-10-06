@@ -166,14 +166,20 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     ].tensor
 
 
+# Unlike `div`, keeps integer operands in the integer domain, truncating toward
+# zero.
+_trunc_div = _elementwise_binary(rmo.DivOp, "trunc_div")
+
+
 def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     """Divides two tensors element-wise using floor division (Python ``//``).
 
     The result is rounded toward negative infinity for all operands, matching
     Python's ``//``. Integer operands stay in the integer domain: the divide
     truncates toward zero, then a floor correction is applied for signed
-    integers (a no-op for unsigned or non-negative operands). Floating-point
-    operands compute ``floor(lhs / rhs)``.
+    integers (a no-op for unsigned or non-negative operands). As with the
+    hardware divide, integer division by zero and ``INT_MIN // -1`` are
+    undefined. Floating-point operands compute ``floor(lhs / rhs)``.
 
     Unlike :obj:`div`, integer operands are never promoted to ``float64``. This
     matters on backends without native 64-bit floating-point support (for
@@ -216,19 +222,15 @@ def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
     assert_same_device(lhs, rhs)
     if lhs.dtype.is_integral() and rhs.dtype.is_integral():
-        # Integer division stays in the integer domain, mirroring `mod`
-        # (`rmo.ModOp`), so there is no `float64` promotion like `div` does.
-        # `rmo.DivOp` truncates toward zero.
-        quotient = Graph.current._add_op_generated(
-            rmo.DivOp, input_x=lhs, input_y=rhs
-        )[0].tensor
-        if lhs.dtype.is_signed_integral():
-            # Truncation toward zero and floor division differ by one when the
-            # exact quotient is negative (operand signs differ) and the divide
-            # leaves a nonzero remainder. Correct so the result matches `//`.
-            remainder = mod(lhs, rhs)
+        quotient = _trunc_div(lhs, rhs)
+        # Mixed operands divide in the promoted dtype (`uint8 // int16` is
+        # signed), so test the quotient's dtype rather than the operands'.
+        if quotient.dtype.is_signed_integral():
+            # Truncation and floor differ by one when the remainder is nonzero
+            # and its sign (that of `lhs`) differs from the divisor's.
+            remainder = lhs - quotient * rhs
             quotient = quotient - (
-                (remainder != 0) & ((lhs < 0) ^ (rhs < 0))
+                (remainder != 0) & ((remainder < 0) ^ (rhs < 0))
             ).cast(quotient.dtype)
         return quotient
     return floor(div(lhs, rhs))

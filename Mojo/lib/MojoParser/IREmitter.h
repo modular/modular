@@ -312,6 +312,13 @@ public:
   MBValue emitMBValue(ASTExprAnd<AnyValue> value, ExprContext context,
                       ASTType resultType = {});
 
+  /// This helper emits the specified value into memory, so that it has an
+  /// origin that can be named and can bind to a `ref` parameter.  Unlike
+  /// emitMBValue it also works in a comptime context, where there is no
+  /// function body to hold a temporary.  This returns null if emission fails.
+  AnyValue emitMemoryValue(ASTExprAnd<AnyValue> value, ExprContext context,
+                           ASTType resultType = {});
+
   /// This helper emits the specified expression as a parameter value,
   /// diagnosing the problem if the expression is only valid as a runtime value.
   /// This returns null if emission fails.
@@ -520,13 +527,18 @@ public:
   /// parameter context.  When the result is computed, evaluate the specified
   /// callback on the result and then discard the result.
   ///
+  /// The callback gets the block the expression was emitted into, which is
+  /// erased once the callback returns: anything declared in it goes away with
+  /// the expression.
+  ///
   /// On failure, an error is emitted and the callback is not invoked.
   ///
   /// This is used for evaluating expressions like `origin_of(x)` and
   /// `type_of(x)` and `ref [x] T`.
   void emitExpressionWithoutEvaluatingIt(
       const ExprNode *expr, ExprContext exprContext,
-      std::function<void(CValue, IREmitter &emitter)> callback);
+      std::function<void(CValue, IREmitter &emitter, Block &exprBlock)>
+          callback);
 
   //===--------------------------------------------------------------------===//
   // Emission helpers for specific value types.
@@ -585,6 +597,11 @@ public:
 
   /// Verify inferred error types for escaping origins.
   void checkInferredErrorType(ASTType rvalueType, SMLoc loc);
+
+  /// Check that the declarations `origin` is rooted at outlive `block`,
+  /// emitting an error at `expr` and returning failure when one does not.
+  LogicalResult checkRootOriginsOutliveBlock(TypedAttr origin, Block &block,
+                                             const ExprNode *expr);
 
   /// Emit a normal return (not a 'raise' return) out of the function, along
   /// with any special logic that goes with it.  `funcDecl` indicates the

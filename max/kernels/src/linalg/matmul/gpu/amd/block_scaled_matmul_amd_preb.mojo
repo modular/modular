@@ -996,7 +996,7 @@ struct BlockScaledMatmulAMD_PreB[
 
     comptime MmaOpType = BlockScaledMmaOp_PreB[
         mma_shape=IndexList[3](Self.MMA_M, Self.MMA_N, Self.MMA_K),
-        warp_tile=IndexList[3](Self.WM, Self.WN, Self.BK_ELEMS),
+        warp_tile=(Self.WM, Self.WN, Self.BK_ELEMS),
         num_b_slots=Self.num_b_slots,
         num_scale_slots=Self.num_scale_slots,
         scale_group=Self.scale_group,
@@ -1307,21 +1307,18 @@ struct BlockScaledMatmulAMD_PreB[
                 )
 
         @inline(.always)
-        @__parameter
         def s_setprio[priority: Int16]():
             # Raise wave priority during MFMA clusters so the matrix unit
             # isn't preempted by memory-issuing waves; lower it for loads.
             llvm_intrinsic["llvm.amdgcn.s.setprio", NoneType](priority)
 
         @inline(.always)
-        @__parameter
         def _sched_barrier_zero():
             # Hard reorder fence: pins surrounding instrs to source order so the
             # scheduler can't hoist the interleaved B loads back into one block.
             llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(0))
 
         @inline(.always)
-        @__parameter
         def _s_barrier_raw():
             # Bare s_barrier (no vmcnt/lgkmcnt release) so in-flight B DMAs
             # cross it; stdlib barrier() forces vmcnt(0) and kills the prefetch.

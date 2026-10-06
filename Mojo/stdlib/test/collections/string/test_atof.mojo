@@ -158,8 +158,7 @@ def test_atof_generate_cases() raises:
 
 
 def test_normal_subnormal_boundary() raises:
-    def as_bits(f: Float64) -> UInt64:
-        return bitcast[.uint64](f)
+    var as_bits = lambda (f: Float64) -> UInt64: bitcast[.uint64](f)
 
     # Smallest normal: biased exponent 1, mantissa 0
     # Bit pattern: 0x0010000000000000
@@ -177,6 +176,21 @@ def test_normal_subnormal_boundary() raises:
     assert_equal(as_bits(reported_bug), as_bits(4.4501363245856945e-308))
     # Verify it's a normal number (biased exponent > 0)
     assert_true(as_bits(reported_bug) >= UInt64(0x0010000000000000))
+
+
+def test_large_mantissa_rounding() raises:
+    """Mantissas above 2^53 take the Eisel-Lemire path and must round to
+    nearest, ties to even."""
+    # Nearest double is ...680 (spacing 16); the exactness test used to
+    # misfire and round down to ...664.
+    assert_equal(atof("123456789012345678"), 1.2345678901234568e17)
+    assert_equal(atof("123456789012345679"), 1.2345678901234568e17)
+    # Exact ties to even.
+    assert_equal(atof("4503599627370497.5"), 4503599627370498.0)
+    assert_equal(atof("45035996273704975e-1"), 4503599627370498.0)
+    assert_equal(atof("9007199254740993"), 9007199254740992.0)
+    assert_equal(atof("18014398509481985"), 18014398509481984.0)
+    assert_equal(atof("1234567890123456789"), 1.2345678901234568e18)
 
 
 def main() raises:

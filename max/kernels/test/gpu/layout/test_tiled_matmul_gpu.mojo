@@ -11,106 +11,118 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.testing import assert_equal
+
 from max.gpu.host import DeviceContext
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.compute.mma import mma
 from max.gpu.sync import barrier
 from layout import *
-from layout.layout_tensor import copy_dram_to_sram, copy_local_to_dram
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.math import outer_product_acc
+from layout.tile_io import copy_dram_to_sram as copy_tile_dram_to_sram
 
 
 def naive_matmul[
-    layout_dst: Layout,
-    layout_lhs: Layout,
-    layout_rhs: Layout,
+    layout_dst: TensorLayout,
+    layout_lhs: TensorLayout,
+    layout_rhs: TensorLayout,
     BM: Int,
     BN: Int,
 ](
-    dst: LayoutTensor[.float32, layout_dst, MutAnyOrigin],
-    lhs: LayoutTensor[.float32, layout_dst, MutAnyOrigin],
-    rhs: LayoutTensor[.float32, layout_dst, MutAnyOrigin],
+    dst: TileTensor[.float32, layout_dst, MutAnyOrigin],
+    lhs: TileTensor[.float32, layout_lhs, ImmutAnyOrigin],
+    rhs: TileTensor[.float32, layout_rhs, ImmutAnyOrigin],
 ):
     var dst_tile = dst.tile[BM, BN](block_idx.y, block_idx.x)
     dst_tile[thread_idx.y, thread_idx.x] = 0
-    for k in range(dst.shape[0]()):
-        var lhs_tile = rhs.tile[BM, 1](block_idx.y, k)
-        var rhs_tile = lhs.tile[1, BN](k, block_idx.x)
+    for k in range(Int(lhs.dim[1]())):
+        var lhs_tile = lhs.tile[BM, 1](block_idx.y, k)
+        var rhs_tile = rhs.tile[1, BN](k, block_idx.x)
         dst_tile[thread_idx.y, thread_idx.x] += (
-            lhs_tile[thread_idx.y, k] * rhs_tile[k, thread_idx.x]
+            lhs_tile[thread_idx.y, 0] * rhs_tile[0, thread_idx.x]
         )
 
 
-def test_naive_matmul_kernel(ctx: DeviceContext) raises:
+def test_naive_matmul_kernel[
+    M: Int = 8, N: Int = 8, K: Int = 8
+](ctx: DeviceContext) raises:
     print("=== test_naive_matmul_kernel")
-    comptime M = 8
-    comptime N = 8
-    comptime K = 8
     comptime BM = 4
     comptime BN = 4
 
-    comptime layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
-    comptime layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
-    comptime layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
+    comptime layout_a = row_major[M, K]()
+    comptime layout_b = row_major[K, N]()
+    comptime layout_c = row_major[M, N]()
 
-    var mat_a = ManagedLayoutTensor[.float32, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[.float32, layout_b](ctx)
-    var mat_c = ManagedLayoutTensor[.float32, layout_c](ctx)
+    var mat_a = HostDeviceTileTensor[.float32](layout_a, ctx)
+    var mat_b = HostDeviceTileTensor[.float32](layout_b, ctx)
+    var mat_c = HostDeviceTileTensor[.float32](layout_c, ctx)
 
-    arange(mat_a.tensor())
-    arange(mat_b.tensor())
-    _ = mat_c.tensor().fill(0)
+    arange(mat_a.host_tensor())
+    arange(mat_b.host_tensor())
+    _ = mat_c.host_tensor().fill(0)
+    mat_a.to_device()
+    mat_b.to_device()
+    mat_c.to_device()
 
     comptime naive_matmul_kernel = naive_matmul[
-        layout_c, layout_a, layout_b, BM, BN
+        type_of(layout_c), type_of(layout_a), type_of(layout_b), BM, BN
     ]
 
     ctx.enqueue_function[naive_matmul_kernel](
-        mat_c.device_tensor(),
-        mat_a.device_tensor(),
-        mat_b.device_tensor(),
-        grid_dim=(M // BM, N // BN),
-        block_dim=(BM, BN),
+        mat_c.device_tensor().as_unsafe_any_origin(),
+        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
+        grid_dim=(N // BN, M // BM),
+        block_dim=(BN, BM),
     )
 
-    ctx.synchronize()
-    print(mat_c.tensor())
-    _ = mat_a^
-    _ = mat_b^
-    _ = mat_c^
+    mat_c.to_host()
+    var a = mat_a.host_tensor()
+    var b = mat_b.host_tensor()
+    var c = mat_c.host_tensor()
+    for m in range(M):
+        for n in range(N):
+            var expected = Float32(0)
+            for k in range(K):
+                expected += a[m, k] * b[k, n]
+            assert_equal(c[m, n], expected)
+            print(c[m, n], end=" ")
+        print()
 
 
 def sram_blocked_matmul[
-    layout_dst: Layout,
-    layout_lhs: Layout,
-    layout_rhs: Layout,
-    thread_layout: Layout,
+    layout_dst: TensorLayout,
+    layout_lhs: TensorLayout,
+    layout_rhs: TensorLayout,
+    thread_layout: MixedLayout,
     BM: Int,
     BN: Int,
     BK: Int,
 ](
-    dst: LayoutTensor[.float32, layout_dst, MutAnyOrigin],
-    lhs: LayoutTensor[.float32, layout_lhs, MutAnyOrigin],
-    rhs: LayoutTensor[.float32, layout_rhs, MutAnyOrigin],
+    dst: TileTensor[.float32, layout_dst, MutAnyOrigin],
+    lhs: TileTensor[.float32, layout_lhs, ImmutAnyOrigin],
+    rhs: TileTensor[.float32, layout_rhs, ImmutAnyOrigin],
 ):
-    # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
-    var lhs_sram_tile = LayoutTensor[
-        .float32,
-        Layout(IntTuple(BM, BK)),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
+    comptime assert dst.flat_rank == 2
+    comptime assert lhs.flat_rank == 2
+    comptime assert rhs.flat_rank == 2
+    comptime thread_m_size = type_of(thread_layout).static_shape[0]
+    comptime thread_n_size = type_of(thread_layout).static_shape[1]
+    var thread_m, thread_n = divmod(thread_idx.x, thread_n_size)
 
-    # Allocate an SRAM tile of (BK, BN) size with row-major layout for
+    # Preserve the original shape-only Layout's column-major SRAM strides.
+    var lhs_sram_tile = stack_allocation[.float32, address_space=.SHARED](
+        col_major[BM, BK]()
+    )
+
+    # Allocate an SRAM tile of (BK, BN) size with column-major layout for
     # the r.h.s.
-    var rhs_sram_tile = LayoutTensor[
-        .float32,
-        Layout(IntTuple(BK, BN)),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
+    var rhs_sram_tile = stack_allocation[.float32, address_space=.SHARED](
+        col_major[BK, BN]()
+    )
 
     # Block the dst matrix with [BM, BN] tile size.
     var dst_tile = dst.tile[BM, BN](block_idx.y, block_idx.x)
@@ -129,12 +141,14 @@ def sram_blocked_matmul[
     # |      .        .      ...   |     .         ...   .     |    .
     # |      .        .      ...   |     .         ...   .     |    .
     var dst_local_tile = dst_tile.distribute[thread_layout](thread_idx.x)
+    comptime assert dst_local_tile.flat_rank == 2
 
-    # Allocate a register tile for the dst matrix with the same layout.
-    var dst_register_tile = stack_allocation_like(dst_local_tile).fill(0)
+    var dst_register_tile = stack_allocation[.float32, address_space=.LOCAL](
+        row_major[BM // thread_m_size, BN // thread_n_size]()
+    ).fill(0)
 
     # Loop over tiles in K dim.
-    for k in range(lhs.shape[1]() // BK):
+    for k in range(Int(lhs.dim[1]()) // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
         var lhs_tile = lhs.tile[BM, BK](block_idx.y, k)
         var rhs_tile = rhs.tile[BK, BN](k, block_idx.x)
@@ -154,13 +168,13 @@ def sram_blocked_matmul[
         barrier()
 
         comptime for kk in range(BK):
-            var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
-            var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
-            var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
-                thread_idx.x
+            var lhs_row = lhs_sram_tile.slice[:, kk]()
+            var rhs_row = rhs_sram_tile.slice[kk, :]()
+            var lhs_frags = lhs_row.distribute[row_major[thread_m_size]()](
+                thread_m
             )
-            var rhs_frags = rhs_row.distribute[thread_layout, axis=1](
-                thread_idx.x
+            var rhs_frags = rhs_row.distribute[row_major[thread_n_size]()](
+                thread_n
             )
             outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
 
@@ -168,8 +182,8 @@ def sram_blocked_matmul[
     # FIXME: unrolled copy loop doesn't produce the correct results for some
     # tiles!!
     # dst_local_tile.copy_from(dst_register_tile)
-    for m in range(dst_local_tile.shape[0]()):
-        for n in range(dst_local_tile.shape[1]()):
+    for m in range(Int(dst_local_tile.dim[0]())):
+        for n in range(Int(dst_local_tile.dim[1]())):
             dst_local_tile[m, n] = dst_register_tile[m, n]
 
 
@@ -185,64 +199,98 @@ def test_sram_blocked_matmul(ctx: DeviceContext) raises:
     comptime TH_M = 2
     comptime TH_N = 2
 
-    comptime layout_a = Layout(IntTuple(M, K), IntTuple(K, 1))
-    comptime layout_b = Layout(IntTuple(K, N), IntTuple(N, 1))
-    comptime layout_c = Layout(IntTuple(M, N), IntTuple(N, 1))
+    comptime layout_a = row_major[M, K]()
+    comptime layout_b = row_major[K, N]()
+    comptime layout_c = row_major[M, N]()
 
-    comptime thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
+    comptime thread_layout = row_major[TH_M, TH_N]()
 
-    var mat_a = ManagedLayoutTensor[.float32, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[.float32, layout_b](ctx)
-    var mat_c = ManagedLayoutTensor[.float32, layout_c](ctx)
+    var mat_a = HostDeviceTileTensor[.float32](layout_a, ctx)
+    var mat_b = HostDeviceTileTensor[.float32](layout_b, ctx)
+    var mat_c = HostDeviceTileTensor[.float32](layout_c, ctx)
 
-    arange(mat_a.tensor())
-    arange(mat_b.tensor())
-    _ = mat_c.tensor().fill(0)
+    arange(mat_a.host_tensor())
+    arange(mat_b.host_tensor())
+    _ = mat_c.host_tensor().fill(0)
+    mat_a.to_device()
+    mat_b.to_device()
+    mat_c.to_device()
 
     comptime sram_blocked_matmul_kernel = sram_blocked_matmul[
-        layout_c, layout_a, layout_b, thread_layout, BM, BN, BK
+        type_of(layout_c),
+        type_of(layout_a),
+        type_of(layout_b),
+        thread_layout,
+        BM,
+        BN,
+        BK,
     ]
 
     ctx.enqueue_function[sram_blocked_matmul_kernel](
-        mat_c.device_tensor(),
-        mat_a.device_tensor(),
-        mat_b.device_tensor(),
+        mat_c.device_tensor().as_unsafe_any_origin(),
+        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
         grid_dim=(N // BN, M // BM),
         block_dim=(comptime (thread_layout.size())),
     )
 
     ctx.synchronize()
-    print(mat_c.tensor())
+    mat_c.to_host()
+    var c = mat_c.host_tensor()
+    comptime assert c.flat_rank == 2
+    for m in range(M):
+        for n in range(N):
+            print(c[m, n], end=" ")
+        print()
 
 
 def single_warp_mma_sync_m16n8k8[
-    layout_c: Layout,
-    layout_a: Layout,
-    layout_b: Layout,
-    layout_c_mma: Layout,
-    layout_a_mma: Layout,
-    layout_b_mma: Layout,
+    layout_c: TensorLayout,
+    layout_a: TensorLayout,
+    layout_b: TensorLayout,
 ](
-    mat_c: LayoutTensor[.float32, layout_c, MutAnyOrigin],
-    mat_a: LayoutTensor[.float32, layout_a, MutAnyOrigin],
-    mat_b: LayoutTensor[.float32, layout_b, MutAnyOrigin],
+    mat_c: TileTensor[.float32, layout_c, MutAnyOrigin],
+    mat_a: TileTensor[.float32, layout_a, ImmutAnyOrigin],
+    mat_b: TileTensor[.float32, layout_b, ImmutAnyOrigin],
 ):
-    var mat_a_mma = mat_a.composition[layout_a_mma]()
-    # Note: CUTLASS layout above assumes the same layout as the instruction itself, l.h.s row-major and r.h.s col-major.
-    var mat_b_mma = mat_b.transpose().composition[layout_b_mma]()
-    var mat_c_mma = mat_c.composition[layout_c_mma]()
+    # MMA fragments address the row-major A and column-major B storage
+    # directly; each axis describes a lane or a value owned by that lane.
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
+    var mat_a_mma = TileTensor(
+        ptr=mat_a.unsafe_ptr(),
+        layout=MixedLayout(
+            Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
+            Coord(Idx[1], Idx[8], Idx[64], Idx[4]),
+        ),
+    )
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
+    var mat_b_mma = TileTensor(
+        ptr=mat_b.unsafe_ptr(),
+        layout=MixedLayout(
+            Coord(Idx[4], Idx[8], Idx[2]),
+            Coord(Idx[1], Idx[8], Idx[4]),
+        ),
+    )
+    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-c
+    var mat_c_mma = TileTensor(
+        ptr=mat_c.unsafe_ptr(),
+        layout=MixedLayout(
+            Coord(Idx[4], Idx[8], Idx[2], Idx[2]),
+            Coord(Idx[2], Idx[8], Idx[1], Idx[64]),
+        ),
+    )
 
     var thread_y, thread_x = divmod(thread_idx.x, 4)
 
     var vec_a_layout = SIMD[.float32, 4](
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 0]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 1, 0]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 0, 1]),
-        rebind[Float32](mat_a_mma[thread_x, thread_y, 1, 1]),
+        mat_a_mma[thread_x, thread_y, 0, 0],
+        mat_a_mma[thread_x, thread_y, 1, 0],
+        mat_a_mma[thread_x, thread_y, 0, 1],
+        mat_a_mma[thread_x, thread_y, 1, 1],
     )
     var vec_b_layout = SIMD[.float32, 2](
-        rebind[Float32](mat_b_mma[thread_x, thread_y, 0]),
-        rebind[Float32](mat_b_mma[thread_x, thread_y, 1]),
+        mat_b_mma[thread_x, thread_y, 0],
+        mat_b_mma[thread_x, thread_y, 1],
     )
 
     var vec_d = SIMD[.float32, 4](0)
@@ -262,56 +310,43 @@ def test_single_warp_tf32_m16n8k8_matmul(ctx: DeviceContext) raises:
     comptime N = 8
     comptime K = 8
 
-    comptime TH_M = 4
-    comptime TH_N = 8
+    comptime layout_a = row_major[M, K]()
+    comptime layout_b = col_major[K, N]()
+    comptime layout_c = row_major[M, N]()
 
-    comptime layout_a = Layout.row_major(M, K)
-    comptime layout_b = Layout.col_major(K, N)
-    comptime layout_c = Layout.row_major(M, N)
+    var mat_a = HostDeviceTileTensor[.float32](layout_a, ctx)
+    var mat_b = HostDeviceTileTensor[.float32](layout_b, ctx)
+    var mat_c = HostDeviceTileTensor[.float32](layout_c, ctx)
 
-    var mat_a = ManagedLayoutTensor[.float32, layout_a](ctx)
-    var mat_b = ManagedLayoutTensor[.float32, layout_b](ctx)
-    var mat_c = ManagedLayoutTensor[.float32, layout_c](ctx)
+    arange(mat_a.host_tensor())
+    arange(mat_b.host_tensor())
+    _ = mat_c.host_tensor().fill(0)
+    mat_a.to_device()
+    mat_b.to_device()
+    mat_c.to_device()
 
-    arange(mat_a.tensor())
-    arange(mat_b.tensor())
-    _ = mat_c.tensor().fill(0)
-
-    # MMA layout are copied from CUTLASS:
-    # https://sourcegraph.com/github.com/NVIDIA/cutlass@ffa34e70756b0bc744e1dfcc115b5a991a68f132/-/blob/include/cute/atom/mma_traits_sm80.hpp?L167
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-a-tf32
-    comptime layout_a_mma = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
-        IntTuple(IntTuple(16, 1), IntTuple(8, 64)),
-    )
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
-    comptime layout_b_mma = Layout(
-        IntTuple(IntTuple(4, 8), 2), IntTuple(IntTuple(8, 1), 32)
-    )
-    # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#mma-1688-b-tf32
-    comptime layout_c_mma = Layout(
-        IntTuple(IntTuple(4, 8), IntTuple(2, 2)),
-        IntTuple(IntTuple(32, 1), IntTuple(16, 8)),
-    )
-
-    comptime single_warp_mma_sync_m16n8k8_kernel_kernel = single_warp_mma_sync_m16n8k8[
-        layout_c, layout_a, layout_b, layout_c_mma, layout_a_mma, layout_b_mma
+    comptime single_warp_mma_sync_m16n8k8_kernel = single_warp_mma_sync_m16n8k8[
+        type_of(layout_c), type_of(layout_a), type_of(layout_b)
     ]
 
-    ctx.enqueue_function[single_warp_mma_sync_m16n8k8_kernel_kernel](
-        mat_c.device_tensor(),
-        mat_a.device_tensor(),
-        mat_b.device_tensor(),
+    ctx.enqueue_function[single_warp_mma_sync_m16n8k8_kernel](
+        mat_c.device_tensor().as_unsafe_any_origin(),
+        mat_a.device_tensor().as_imm().as_unsafe_any_origin(),
+        mat_b.device_tensor().as_imm().as_unsafe_any_origin(),
         grid_dim=(1, 1),
         block_dim=(32),
     )
 
-    ctx.synchronize()
-    print(mat_c.tensor())
+    mat_c.to_host()
+    var c = mat_c.host_tensor()
+    for m in range(M):
+        for n in range(N):
+            print(c[m, n], end=" ")
+        print()
 
 
 def sram_blocked_matmul_dynamic_nd_buffer[
-    thread_layout: Layout,
+    thread_layout: MixedLayout,
     DstLayoutType: TensorLayout,
     LhsLayoutType: TensorLayout,
     RhsLayoutType: TensorLayout,
@@ -320,25 +355,15 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     BK: Int,
 ](
     dst: TileTensor[.float32, DstLayoutType, MutAnyOrigin],
-    lhs: TileTensor[.float32, LhsLayoutType, MutAnyOrigin],
-    rhs: TileTensor[.float32, RhsLayoutType, MutAnyOrigin],
+    lhs: TileTensor[.float32, LhsLayoutType, ImmutAnyOrigin],
+    rhs: TileTensor[.float32, RhsLayoutType, ImmutAnyOrigin],
 ):
-    # Allocate an SRAM tile of (BM, BK) size with row-major layout for the l.h.s.
-    var lhs_sram_tile = LayoutTensor[
-        .float32,
-        Layout(IntTuple(BM, BK)),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
-
-    # Allocate an SRAM tile of (BK, BN) size with row-major layout for
-    # the r.h.s.
-    var rhs_sram_tile = LayoutTensor[
-        .float32,
-        Layout(IntTuple(BK, BN)),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ].stack_allocation()
+    var lhs_sram_tile = stack_allocation[.float32, address_space=.SHARED](
+        col_major[BM, BK]()
+    )
+    var rhs_sram_tile = stack_allocation[.float32, address_space=.SHARED](
+        col_major[BK, BN]()
+    )
 
     # Block the dst matrix with [BM, BN] tile size.
     var dst_tile = dst.tile[BM, BN]((block_idx.y, block_idx.x))
@@ -357,51 +382,49 @@ def sram_blocked_matmul_dynamic_nd_buffer[
     # |      .        .      ...   |     .         ...   .     |    .
     # |      .        .      ...   |     .         ...   .     |    .
 
-    # Allocate a register tile for the dst matrix with the same layout.
-    # TODO: Is it useful to have stack_allocation_like[thread_layout](nd_buffer) ? We can do this if needed.
-    var dst_register_tile = (
-        LayoutTensor[
-            .float32,
-            Layout.row_major(2, 2),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
-    )
+    var dst_register_tile = stack_allocation[.float32, address_space=.LOCAL](
+        row_major[2, 2]()
+    ).fill(0)
 
     # Loop over tiles in K dim.
     for k in range(Int(lhs.dim(1)) // BK):
         # Block both l.h.s and r.h.s DRAM tensors.
-        var lhs_tile = lhs.tile[BM, BK]((block_idx.y, k)).to_layout_tensor()
-        var rhs_tile = rhs.tile[BK, BN]((k, block_idx.x)).to_layout_tensor()
+        var lhs_tile = lhs.tile[BM, BK]((block_idx.y, k))
+        var rhs_tile = rhs.tile[BK, BN]((k, block_idx.x))
 
         # Copy DRAM tiles to SRAM, distributing work across threads.
-        copy_dram_to_sram[thread_layout=thread_layout](lhs_sram_tile, lhs_tile)
-        copy_dram_to_sram[thread_layout=thread_layout](rhs_sram_tile, rhs_tile)
+        copy_tile_dram_to_sram[thread_layout=thread_layout](
+            lhs_sram_tile, lhs_tile
+        )
+        copy_tile_dram_to_sram[thread_layout=thread_layout](
+            rhs_sram_tile, rhs_tile
+        )
 
         barrier()
 
         comptime for kk in range(BK):
-            var lhs_row = lhs_sram_tile.slice[:, kk : kk + 1]().coalesce()
-            var rhs_row = rhs_sram_tile.slice[kk : kk + 1, :]().coalesce()
-            var lhs_frags = lhs_row.distribute[thread_layout, axis=0](
-                thread_idx.x
+            var lhs_row = lhs_sram_tile.slice[:, kk]()
+            var rhs_row = rhs_sram_tile.slice[kk, :]()
+            comptime thread_m_size = type_of(thread_layout).static_shape[0]
+            comptime thread_n_size = type_of(thread_layout).static_shape[1]
+            var thread_m, thread_n = divmod(thread_idx.x, thread_n_size)
+            var lhs_frags = lhs_row.distribute[row_major[thread_m_size]()](
+                thread_m
             )
-            var rhs_frags = rhs_row.distribute[thread_layout, axis=1](
-                thread_idx.x
+            var rhs_frags = rhs_row.distribute[row_major[thread_n_size]()](
+                thread_n
             )
             outer_product_acc(dst_register_tile, lhs_frags, rhs_frags)
 
     # Move data from register tile to DRAM.
-    comptime thread_shape_m = thread_layout.shape[0].value()
-    comptime thread_shape_n = thread_layout.shape[1].value()
-    var thread_m, thread_n = divmod(Int(thread_idx.x), thread_shape_n)
-    for m in range(dst_register_tile.shape[0]()):
-        for n in range(dst_register_tile.shape[1]()):
+    comptime thread_shape_m = type_of(thread_layout).static_shape[0]
+    comptime thread_shape_n = type_of(thread_layout).static_shape[1]
+    var thread_m, thread_n = divmod(thread_idx.x, thread_shape_n)
+    for m in range(Int(dst_register_tile.dim[0]())):
+        for n in range(Int(dst_register_tile.dim[1]())):
             dst_tile[
                 thread_m + m * thread_shape_m, thread_n + n * thread_shape_n
-            ] = dst_register_tile.load[width=1](m, n)[0]
+            ] = dst_register_tile[m, n]
 
 
 def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
@@ -416,7 +439,7 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
     comptime TH_M = 2
     comptime TH_N = 2
 
-    comptime thread_layout = Layout(IntTuple(TH_M, TH_N), IntTuple(TH_N, 1))
+    comptime thread_layout = row_major[TH_M, TH_N]()
 
     var mat_c_ptr = alloc[Float32](M * N)
     var mat_a_ptr = alloc[Float32](M * K)
@@ -453,8 +476,8 @@ def test_sram_blocked_matmul_dynamic_nd_buffer(ctx: DeviceContext) raises:
 
     ctx.enqueue_function[sram_blocked_matmul_dynamic_nd_buffer_kernel](
         mat_c.as_unsafe_any_origin(),
-        mat_a.as_unsafe_any_origin(),
-        mat_b.as_unsafe_any_origin(),
+        mat_a.as_imm().as_unsafe_any_origin(),
+        mat_b.as_imm().as_unsafe_any_origin(),
         grid_dim=(N // BN, M // BM),
         block_dim=(comptime (thread_layout.size())),
     )
@@ -480,6 +503,7 @@ def main() raises:
         # CHECK: 11872.0   12284.0   12696.0   13108.0   13520.0   13932.0   14344.0   14756.0
         # CHECK: 13664.0   14140.0   14616.0   15092.0   15568.0   16044.0   16520.0   16996.0
         test_naive_matmul_kernel(ctx)
+        test_naive_matmul_kernel[8, 12, 4](ctx)
 
         # CHECK: === test_sram_blocked_matmul
         # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0

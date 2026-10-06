@@ -237,3 +237,25 @@ def test_configure_ucx_env_skips_without_verbs_devices(
     configure_ucx_env(_FakeDevice(api="cuda", id=0))
     assert "UCX_TLS" not in os.environ
     assert "UCX_NET_DEVICES" not in os.environ
+
+
+@pytest.mark.parametrize(
+    ("flavor", "pinned"), [("cuda", False), ("cuda-verbs", True)]
+)
+def test_configure_ucx_env_gates_on_plugin_flavor(
+    flavor: str, pinned: bool, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # uverbs nodes exist either way; only the verbs flavor carries rc, so the
+    # plain flavor must leave UCX its tcp fallback. configure_ucx_env writes
+    # os.environ directly, so give it a copy that monkeypatch will restore.
+    monkeypatch.setattr(os, "environ", dict(os.environ))
+    monkeypatch.delenv("UCX_TLS", raising=False)
+    monkeypatch.delenv("UCX_NET_DEVICES", raising=False)
+    (tmp_path / "uverbs0").write_text("")
+    monkeypatch.setattr(_ucx_env, "_VERBS_DEV_ROOT", tmp_path)
+    monkeypatch.setattr(_ucx_env, "_gpu_pci_bus_id", lambda _: "0000:65:00.0")
+    monkeypatch.setattr(_ucx_env, "local_ib_device", lambda _: "mlx5_0:1")
+    monkeypatch.setenv("NIXL_PLUGIN_DIR", str(tmp_path / "nixl" / flavor))
+    configure_ucx_env(_FakeDevice(api="cuda", id=0))
+    assert ("UCX_NET_DEVICES" in os.environ) == pinned
+    assert ("UCX_TLS" in os.environ) == pinned

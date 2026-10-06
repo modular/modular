@@ -14,8 +14,8 @@
 
 Generates a Mojo file containing many `print(t"...")` statements, each with a
 distinct format string. Every distinct format string forces its own
-compile-time specialization of `TString[format_string, *Ts]`, and its own run
-of the comptime format-string encoder inside `write_to()`.
+specialization of `__make_tstring`, and its own run of the comptime
+format-string encoder that specialization performs.
 """
 
 from __future__ import annotations

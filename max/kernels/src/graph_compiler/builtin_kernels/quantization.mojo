@@ -31,9 +31,7 @@ from max.gpu.host.info import is_cpu, is_gpu
 from internal_utils.fp8_utils import fp8_quantize
 from builtin_primitives.primitives import foreach
 from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
+    TileTensor,
     UNKNOWN_VALUE,
     coord_to_index_list,
     row_major,
@@ -144,7 +142,7 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         var rows = in_shape.flattened_length() // in_shape[rank - 1]
         var scale_t = TileTensor(
             scales.to_tile_tensor[.int64]()._storage,
-            row_major(Coord(rows)),
+            row_major(rows),
         )
 
         @inline(.always)
@@ -816,16 +814,13 @@ struct QMatmulGPURepackGPTQ_b4_g128_desc_act:
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
 
-        var perm_idx_lt = perm_idx.to_layout_tensor()
+        var permutation = perm_idx.to_tile_tensor()
         gpu_qint4_repack_GPTQ[128, target](
             b.to_tile_tensor(),
             b_packed.to_tile_tensor(),
-            LayoutTensor[.int32, Layout.row_major(UNKNOWN_VALUE)](
-                perm_idx_lt.ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    perm_idx_lt.runtime_layout.shape.value.canonicalize()
-                ),
-            ).as_imm(),
+            TileTensor(permutation.ptr, row_major(Int(permutation.dim[0]())))
+            .as_imm()
+            .as_unsafe_any_origin(),
             ctx=ctx,
         )
 
@@ -1301,14 +1296,14 @@ struct Struct_unfused_qkv_matmul_ragged_paged_gguf_quantized:
             quantization_encoding_k,
             quantization_encoding_v,
         ](
-            hidden_state.to_layout_tensor(),
-            input_row_offsets.to_layout_tensor(),
-            q_weight.to_layout_tensor(),
-            k_weight.to_layout_tensor(),
-            v_weight.to_layout_tensor(),
+            hidden_state.to_tile_tensor(),
+            input_row_offsets.to_tile_tensor(),
+            q_weight.to_tile_tensor(),
+            k_weight.to_tile_tensor(),
+            v_weight.to_tile_tensor(),
             kv_collection,
             layer_idx,
-            output.to_layout_tensor(),
+            output.to_tile_tensor(),
             ctx,
         )
 
@@ -1413,7 +1408,6 @@ struct QuantizeDynamicScaledFloat8:
     """Registers the `mo.quantize_dynamic_scaled_float8` graph op with the graph compiler.
     """
 
-    @__parameter
     @inline(.always)
     @staticmethod
     def execute[
@@ -1423,6 +1417,7 @@ struct QuantizeDynamicScaledFloat8:
         //,
         group_size_or_per_token: Int,
         target: StaticString,
+        amax_floor: StaticString = "0",
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
         scales: OutputTensor[dtype=scales_type, rank=2, ...],
@@ -1431,6 +1426,11 @@ struct QuantizeDynamicScaledFloat8:
         ctx: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
+
+        # `ops.custom`'s extensibility bridge only accepts bool/int/str/DType
+        # parameters (no float), so `amax_floor` -- a host-known constant at
+        # every call site -- arrives string-encoded; `atof` is prelude.
+        var amax_floor_f32 = Float32(atof(amax_floor))
 
         @inline(.always)
         def input_fn[
@@ -1451,4 +1451,69 @@ struct QuantizeDynamicScaledFloat8:
             scale_ub,
             ctx,
             num_rows=input.dim_size(0),
+            amax_floor=amax_floor_f32,
+        )
+
+
+@extensibility.register("mo.quantize_dynamic_scaled_float8.row_bounded")
+struct QuantizeDynamicScaledFloat8RowBounded:
+    """Registers the `mo.quantize_dynamic_scaled_float8.row_bounded` graph op.
+
+    Same numerics as `mo.quantize_dynamic_scaled_float8`, but the rows it
+    touches stop at a count the GPU publishes rather than at the height of the
+    input tensor. The EP MoE down projection needs this: its activation buffer
+    is sized for the worst-case dispatch, the dispatch kernel writes the live
+    row count into `row_offsets`, and the host never learns that count.
+
+    A separate symbol rather than an operand on the shared op, because the
+    graph compiler's RMS-norm and all-reduce fusion patterns match the shared
+    op by its two-operand signature.
+    """
+
+    @__parameter
+    @inline(.always)
+    @staticmethod
+    def execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType,
+        //,
+        group_size_or_per_token: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        scale_ub: Float32,
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
+
+        # `row_offsets` is the grouped-matmul prefix sum, so its last entry is
+        # the total row count across all groups.
+        var offsets = row_offsets.to_tile_tensor[.int64]()
+        var row_limit = offsets.ptr.unsafe_offset(row_offsets.dim_size(0) - 1)
+
+        quantize_dynamic_scaled_fp8[
+            in_dtype=input_type,
+            group_size_or_per_token=group_size_or_per_token,
+            num_cols=Int(input.static_spec.shape_tuple[1]),
+            row_bounded=True,
+        ](
+            input_fn,
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            scale_ub,
+            ctx,
+            num_rows=input.dim_size(0),
+            row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](row_limit),
         )

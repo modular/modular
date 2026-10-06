@@ -1,0 +1,69 @@
+# GLM-5.3-Flash mHC (manifold-constrained hyper-connections) layer tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "torch_reference",
+    testonly = True,
+    srcs = ["torch_reference.py"],
+    imports = ["."],
+    deps = [
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_hyper_connection",
+    srcs = ["test_hyper_connection.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":torch_reference",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mapping_matmul",
+    srcs = ["test_mapping_matmul.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    gpu_constraints = ["//:has_gpu"],
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/glm5_next",
+    ],
+)

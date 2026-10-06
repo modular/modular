@@ -209,7 +209,9 @@ def test_jenga_scale_pages_outnumber_value_pages() -> None:
     assert per_device.kv_blocks.shape[0] != per_device.kv_scales.shape[0]
 
 
-def _state_only(page_size: int = 64) -> MultiKVCacheParams:
+def _state_only(
+    page_size: int = 64, *, caching: bool = True
+) -> MultiKVCacheParams:
     """A cache of nothing but state, as a pure-SSM model declares one."""
     attn = _params(quantized=False)
     return MultiKVCacheParams.from_params(
@@ -225,18 +227,21 @@ def _state_only(page_size: int = 64) -> MultiKVCacheParams:
                 ),
                 devices=attn.devices,
                 page_size=page_size,
+                enable_prefix_caching=caching,
             )
         }
     )
 
 
-def test_a_state_only_cache_sizes_from_its_requests() -> None:
+@pytest.mark.parametrize("caching", [True, False])
+def test_a_state_only_cache_sizes_from_its_requests(caching: bool) -> None:
     """Memory does not divide into blocks, so the batch decides the count.
 
-    A state keeps its live block and one checkpoint however long a request
-    runs, so two per leaf per request is the whole pool.
+    A state keeps its live block, plus one checkpoint with caching on,
+    however long a request runs.
     """
-    root = _state_only()
+    root = _state_only(caching=caching)
+    per_request = 2 if caching else 1
 
     assert (
         compute_num_device_blocks(
@@ -245,13 +250,15 @@ def test_a_state_only_cache_sizes_from_its_requests() -> None:
             max_batch_size=8,
             max_seq_len=4096,
         )
-        == 2 * 8
+        == per_request * 8
     )
 
 
-def test_a_state_only_cache_reports_the_bytes_it_needs() -> None:
+@pytest.mark.parametrize("caching", [True, False])
+def test_a_state_only_cache_reports_the_bytes_it_needs(caching: bool) -> None:
     """``bytes_per_block`` is zero here, so the leaves' pages are the size."""
-    root = _state_only()
+    root = _state_only(caching=caching)
+    per_request = 2 if caching else 1
     state = root.children["state"]
     assert isinstance(state, RecurrentStateParams)
 
@@ -263,7 +270,9 @@ def test_a_state_only_cache_reports_the_bytes_it_needs() -> None:
     )
 
     assert root.bytes_per_block == 0
-    assert size == 2 * 8 * state.bytes_per_state * root.tensor_parallel_degree
+    assert size == (
+        per_request * 8 * state.bytes_per_state * root.tensor_parallel_degree
+    )
 
 
 def test_a_hybrid_cache_still_divides_memory_into_blocks() -> None:

@@ -100,7 +100,6 @@ def fa4_correction[
     # Walks `correction_o_cols()` -- the PHYSICAL extent of one O accumulator,
     # not the logical depth. See its docstring: under shared-key the logical
     # depth runs 4x past the accumulator and silently corrupts.
-    @__parameter
     @inline(.always)
     def _rescale_o(o_tmem: TmemAddress, c_pair: SIMD[.float32, 2]):
         comptime o_cols = config.correction_o_cols()
@@ -193,8 +192,6 @@ def fa4_correction[
         tcgen05_store_wait()
         tcgen05_fence_before()
 
-    var change: Bool
-
     # ---- single-O correction (1Q wide-V) ----
     # Wide V forces single-O (aliased O0), so only WG0 runs: it folds EVERY
     # K-tile serially into the single O0 (WG1 no-op). The correction thus
@@ -225,7 +222,7 @@ def fa4_correction[
             t_left_so -= 1
             pipeline_c0_so.wait()
             var c_scalar = correction_smem_so[0]
-            change = _vote_nvidia_helper(c_scalar < 1.0) != 0
+            var change = _vote_nvidia_helper(c_scalar < 1.0) != 0
             pipeline_o_so.wait()
             if change:
                 _rescale_o(o0_tmem_so, SIMD[.float32, 2](c_scalar, c_scalar))
@@ -295,9 +292,10 @@ def fa4_correction[
     # of the main loop (i=0 then i=1) for the WG0+WG1-paired tail, and
     # once more after the main loop for any extra c0-only iter (1Q
     # odd-T case where WG0 has one more main-loop commit than WG1).
-    @__parameter
     @inline(.always)
-    def _correction_step[i: Int]():
+    def _correction_step[
+        i: Int
+    ]() {mut pipeline_c0, mut pipeline_c1, mut pipeline_o, imm}:
         # correct
         var c_scalar: Scalar[accum_type]
 
@@ -308,7 +306,7 @@ def fa4_correction[
             pipeline_c1.wait()
             c_scalar = correction_smem_1[0]
 
-        change = _vote_nvidia_helper(c_scalar < 1.0) != 0
+        var change = _vote_nvidia_helper(c_scalar < 1.0) != 0
         pipeline_o.wait()
         if change:
             var o_tmem: TmemAddress

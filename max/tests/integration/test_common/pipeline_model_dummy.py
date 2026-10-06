@@ -48,6 +48,7 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
+    TokenIds,
 )
 from transformers import AutoConfig
 
@@ -249,10 +250,8 @@ class DummyTextTokenizer(TextTokenizer):
     ) -> npt.NDArray[np.integer[Any]]:
         return self._delegate.encode(prompt, add_special_tokens)
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
-    ) -> str:
-        return self._delegate.decode(encoded, **kwargs)
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
+        return self._delegate.decode(np.atleast_1d(encoded), **kwargs)
 
     class Delegate:
         def __init__(self, max_length: int) -> None:
@@ -333,9 +332,7 @@ class DummyPixelTokenizer(
     ) -> npt.NDArray[np.integer[Any]]:
         return np.array([], dtype=np.int64)
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs: Any
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs: Any) -> str:
         return ""
 
 

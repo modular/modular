@@ -204,6 +204,13 @@ class _Echo(Worker):
         return "Hello " + ", ".join(p.name for p in people) + "!"
 
 
+class _SlowOpen(Worker):
+    @contextlib.asynccontextmanager
+    async def open(self) -> AsyncIterator[_SlowOpen]:
+        await asyncio.sleep(5)
+        yield self
+
+
 class _Failing(Worker):
     """Worker whose methods fail in various ways."""
 
@@ -349,7 +356,9 @@ async def test_textgen_pipeline(runtime: Runtime) -> None:
     tokens = [token async for token in pipeline.generate(req)]
 
     assert len(tokens) == 5
-    assert all(token == GenAITextChunk(text="A") for token in tokens)
+    assert all(
+        token == GenAITextChunk(text="A", num_tokens=1) for token in tokens
+    )
 
 
 @pytest.mark.asyncio
@@ -479,6 +488,12 @@ async def test_http_cross_runtime_result_forwarding() -> None:
 # ---------------------------------------------------------------------------
 # Error handling
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deploy_timeout(runtime: Runtime) -> None:
+    with pytest.raises(asyncio.TimeoutError):
+        await runtime.deploy(_SlowOpen(deploy_timeout=0.5))
 
 
 @pytest.mark.asyncio

@@ -16,8 +16,7 @@
 Each op has a ``{op}_rule(...)`` function that lists the valid sharding choices
 for that op's inputs and output as a set of rows. Each row says: if the inputs
 have these placements, the output has this placement. The dispatcher reads one
-op's rules at a time, hands them to the active solver, and gets back one chosen
-row per mesh axis.
+op's rules at a time and picks one row per mesh axis.
 
 A rule takes one :class:`~max.experimental.sharding.TensorLayout` per tensor
 input (plus the op's non-tensor args), builds a list of ``AxisAssignment`` rows
@@ -26,7 +25,7 @@ DSL, or registration step. Override an op's rule by reassigning
 ``op.rule = my_rule``.
 
 This module is internal: callers interact with sharding through placements and
-solvers, not by calling rule functions directly.
+``auto_reshard``, not by calling rule functions directly.
 """
 
 from .buffer import (

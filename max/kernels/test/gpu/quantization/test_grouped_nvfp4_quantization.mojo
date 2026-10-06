@@ -76,7 +76,7 @@ def test_grouped_nvfp4_quantization[
     # --- Grouped kernel buffers ---
     var host_input = alloc[Scalar[dtype]](total_tokens * N)
     var host_input_tensor = TileTensor(
-        host_input, row_major(Coord(total_tokens, Idx[N]))
+        host_input, row_major(total_tokens, Idx[N])
     )
     random(host_input_tensor, min=-1.0, max=1.0)
 
@@ -122,16 +122,16 @@ def test_grouped_nvfp4_quantization[
     var output_tensor = TileTensor(dev_output, row_major(output_shape))
     var scales_tensor = TileTensor(dev_scales, row_major(scales_shape))
     var row_offsets_tensor = TileTensor(
-        dev_row_offsets, row_major(Coord(Idx[num_experts + 1]))
+        dev_row_offsets, row_major(Idx[num_experts + 1])
     )
     var scales_offsets_tensor = TileTensor(
-        dev_scales_offsets, row_major(Coord(Idx[num_experts]))
+        dev_scales_offsets, row_major(Idx[num_experts])
     )
     var expert_ids_tensor = TileTensor(
-        dev_expert_ids, row_major(Coord(Idx[num_experts]))
+        dev_expert_ids, row_major(Idx[num_experts])
     )
     var sf_tensor_device = TileTensor(
-        dev_sf_tensor, row_major(Coord(Idx[num_experts]))
+        dev_sf_tensor, row_major(Idx[num_experts])
     )
 
     grouped_quantize_dynamic_scaled_fp4_async(
@@ -295,7 +295,7 @@ def test_grouped_nvfp4_quantization[
     var shuffled_tensor = TileTensor(dev_shuffled, row_major(input_shape))
     var output2_tensor = TileTensor(dev_output2, row_major(output_shape))
     var scales2_tensor = TileTensor(dev_scales2, row_major(scales_shape))
-    var indices_tensor = TileTensor(dev_indices, row_major(Coord(total_tokens)))
+    var indices_tensor = TileTensor(dev_indices, row_major(total_tokens))
 
     grouped_quantize_dynamic_scaled_fp4_async(
         output2_tensor,

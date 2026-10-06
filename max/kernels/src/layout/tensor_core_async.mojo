@@ -941,55 +941,6 @@ def _wgmma_descriptor[
     return WGMMADescriptor.create[SBO, LBO, swizzle](addr)
 
 
-def _lhs_descriptor[
-    dtype: DType,
-    layout: Layout,
-    //,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](
-    tensor: LayoutTensor[dtype, layout, address_space=.SHARED, ...]
-) -> WGMMADescriptor[tensor.dtype]:
-    comptime BM = layout[0].size()
-    comptime BK = layout[1].size()
-    comptime canonical_K = swizzle_mode.bytes() // size_of[
-        dtype
-    ]() if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE else BK
-    comptime canonical_layout_flat = tile_layout_k_major[
-        dtype, BM, canonical_K, swizzle_mode
-    ]()
-    comptime canonical_layout = tile_to_descriptor[
-        dtype, canonical_layout_flat, True
-    ]()
-    return _wgmma_descriptor[
-        layout=canonical_layout, is_k_major=True, swizzle=swizzle_mode
-    ](tensor.ptr)
-
-
-def _rhs_descriptor[
-    dtype: DType,
-    layout: Layout,
-    //,
-    transposed: Bool = False,
-    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-](
-    tensor: LayoutTensor[dtype, layout, address_space=.SHARED, ...]
-) -> WGMMADescriptor[tensor.dtype]:
-    comptime BN = layout[0].size()
-    comptime BK = layout[1].size()
-    comptime canonical_K = swizzle_mode.bytes() // size_of[
-        dtype
-    ]() if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE else BK
-    comptime canonical_layout_flat = tile_layout_k_major[
-        dtype, BN, canonical_K, swizzle_mode
-    ]() if transposed else layout
-    comptime canonical_layout = tile_to_descriptor[
-        dtype, canonical_layout_flat, transposed
-    ]()
-    return _wgmma_descriptor[
-        layout=canonical_layout, is_k_major=transposed, swizzle=swizzle_mode
-    ](tensor.ptr)
-
-
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
 def _output_register_size[mma_shape: IndexList[3]]() -> Int:
     comptime assert _supported_mma_shape[mma_shape](), (

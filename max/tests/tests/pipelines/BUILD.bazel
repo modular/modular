@@ -10,7 +10,10 @@ modular_py_test(
     name = "pipelines",
     srcs = glob(
         ["*.py"],
-        exclude = ["test_tokenizer_context_forwarding.py"],
+        exclude = [
+            "test_recurrent_spec_prefix_caching.py",
+            "test_tokenizer_context_forwarding.py",
+        ],
     ),
     data = glob(["testdata/*"]),
     target_compatible_with = select({
@@ -18,6 +21,7 @@ modular_py_test(
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
     deps = [
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/experimental/torch",
@@ -34,6 +38,7 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/llama3",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
         "//max/python/max/pipelines/architectures/step3p5",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/weights",
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
@@ -77,5 +82,33 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/qwen2_5vl",
         "//max/python/max/pipelines/architectures/qwen3vl_moe",
         "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Parses architecture sources with `ast`. A new recurrent speculative
+# architecture must be added to the deps below and to
+# _KNOWN_RECURRENT_SPEC_ARCHES.
+modular_py_test(
+    name = "test_recurrent_spec_prefix_caching",
+    srcs = ["test_recurrent_spec_prefix_caching.py"],
+    # Depended on for their source text in the runfiles, never imported, so
+    # pydeps sees every one of them as unused.
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_dflash2_qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_inkling",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_dflash2_qwen3_5",
+        "//max/python/max/pipelines/architectures/unified_mtp_inkling",
+        "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
     ],
 )

@@ -94,10 +94,8 @@ using namespace mlir;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct BuildOptTable : public llvm::opt::PrecomputedOptTable {
-  BuildOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct BuildOptTable : public llvm::opt::OptTable {
+  BuildOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 
 //===----------------------------------------------------------------------===//
@@ -490,20 +488,24 @@ enum class LinkProduct { kNone, kExecutable, kSharedLibrary, kObjectFile };
 /// Given a module representing a Mojo program, compile the program to a static
 /// archive. Returns an unsuccessful exit code if the archive could not be
 /// created successfully, and nullopt otherwise.
-static std::optional<int>
-compileModuleToArchive(const State &state, AsyncRT::CPUDevice &cpuDevice,
-                       MLIRContext &context, const CompilationOptions &options,
-                       OwningOpRef<ModuleOp> module, TargetInfoAttr target,
-                       BufferRef &archive, LinkProduct product, EmitAs emitAs,
-                       const llvm::opt::InputArgList &args,
-                       PassManagerConfigOptions pmOptions) {
+static std::optional<int> compileModuleToArchive(
+    const State &state, AsyncRT::CPUDevice &cpuDevice, MLIRContext &context,
+    const CompilationOptions &options, OwningOpRef<ModuleOp> module,
+    TargetInfoAttr target, BufferRef &archive, LinkProduct product,
+    EmitAs emitAs, const TargetBackend *deviceBackend,
+    const llvm::opt::InputArgList &args, PassManagerConfigOptions pmOptions) {
   // Set offloadOutputPrefix so compileOffloads() writes offload kernel files
   // alongside the host output; offloadOutputKind selects which kind to
   // produce. Must be set before runKGENPipeline().
   CompilationOptions effectiveOptions = options;
+  // Device-only kinds use the accelerator's extension.
+  llvm::StringRef deviceExt;
+  if (deviceBackend)
+    deviceExt = deviceBackend->traits()->extensionFor(emitAs);
   if (emitAs == EmitAs::ASM || emitAs == EmitAs::LLVM ||
       emitAs == EmitAs::LLVM_OPT_BITCODE) {
-    llvm::StringRef hostExt = emitAs == EmitAs::ASM    ? ".s"
+    llvm::StringRef hostExt = deviceBackend            ? deviceExt
+                              : emitAs == EmitAs::ASM  ? ".s"
                               : emitAs == EmitAs::LLVM ? ".ll"
                                                        : ".bc";
     std::string outPath = deriveOutputPath(args, hostExt);
@@ -534,6 +536,11 @@ compileModuleToArchive(const State &state, AsyncRT::CPUDevice &cpuDevice,
           module->getOperation()->getAttrOfType<LLVMBitcodeLibArrayAttr>(
               LLVMBitcodeLibArrayAttr::getBitcodeLibsAttrName()))
     arrayAttr.externalize(objectCompiler->getBitcodeLibs());
+
+  // Device-only kind: the pipeline wrote the kernel files; no host output.
+  // TODO: need to relax it if host is a plugin too
+  if (deviceBackend)
+    return EXIT_SUCCESS;
 
   // Generate a symbol table and an export map for the module post-compile.
   // "object" needs no check here: objects can be linked as an executable or a
@@ -926,6 +933,7 @@ static int build(const State &subcommandState) {
   // host's for the kinds every target supports, otherwise the accelerator's,
   // since target-declared kinds are emitted for the accelerator.
   EmitAs emitAs;
+  const TargetBackend *deviceBackend = nullptr;
   {
     ErrorOr<const TargetTraits *> hostTraitsOr =
         TargetTraitsRegistry::get().lookup(
@@ -952,6 +960,15 @@ static int build(const State &subcommandState) {
             "; pass a `--target-accelerator` that supports it "
             "(see --print-supported-accelerators)");
       emitAs = *emitAsOr;
+      // Backends hold their own traits instance.
+      if (traits != hostTraits) {
+        for (const std::unique_ptr<TargetBackend> &backend :
+             TargetBackendRegistry::get().backends()) {
+          if (backend->ownsOffloadLowering() && backend->traits() &&
+              backend->traits()->name() == traits->name())
+            deviceBackend = backend.get();
+        }
+      }
     } else {
       return state.reportError(
           Twine("unknown emission kind '") + emitFileType +
@@ -1006,7 +1023,8 @@ static int build(const State &subcommandState) {
   BufferRef archive;
   if (std::optional<int> exitCode = compileModuleToArchive(
           state, cpuDevice, mlirCtx, options, moduleOp.takeValue(), target,
-          archive, product, emitAs, args, timing.passManagerOptions()))
+          archive, product, emitAs, deviceBackend, args,
+          timing.passManagerOptions()))
     return *exitCode;
 
   // Check if any warnings were promoted to errors via -Werror.

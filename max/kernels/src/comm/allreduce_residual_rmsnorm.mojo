@@ -63,7 +63,6 @@ from std.math import align_up, ceildiv, rsqrt
 from std.sys import (
     align_of,
     get_defined_int,
-    has_amd_gpu_accelerator,
     simd_width_of,
     size_of,
 )
@@ -678,7 +677,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
 
 # --- Launcher ---
 
-comptime _ZeroSizedLayout = type_of(row_major(Coord(Idx[0], Idx[0])))
+comptime _ZeroSizedLayout = type_of(row_major(Idx[0], Idx[0]))
 
 
 def _allreduce_rmsnorm_fp8_launch[
@@ -962,12 +961,10 @@ def _launch_split_allreduce_rmsnorm_fp8[
     it avoids carrying bf16 residual data through scratch buffers.
     """
     # Construct TileTensor inputs for allreduce.
-    comptime _TT = type_of(
-        TileTensor(src_ptrs[0], row_major(Coord(rows, cols)))
-    )
+    comptime _TT = type_of(TileTensor(src_ptrs[0], row_major(rows, cols)))
     var input_buffers = Array[_, ngpus](
         fill_with=lambda (i: Int) -> _TT: TileTensor(
-            src_ptrs[i], row_major(Coord(rows, cols))
+            src_ptrs[i], row_major(rows, cols)
         )
     )
 
@@ -985,7 +982,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
 
     var shape = IndexList[2](rows, cols)
     var scale_output_2d = TileTensor(
-        scale_output_1d._storage, row_major(Coord(rows, Idx[1]))
+        scale_output_1d._storage, row_major(rows, Idx[1])
     )
 
     # Pre-compile the RMSNorm+FP8 kernel before launching allreduce.
@@ -1126,16 +1123,14 @@ def _dispatch_fused_kernel[
     #   MI355 8GPU:  80 KB non-res,  96 KB residual
     #   B200  4GPU: 512 KB non-res, 256 KB residual
     #   B200  8GPU:  80 KB non-res, 80/100 KB residual (column-aware, see below)
-    @__parameter
     def _rank_4_per_rank_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return 128 * 1024 if not has_residual else 96 * 1024
         else:
             return 512 * 1024 if not has_residual else 256 * 1024
 
-    @__parameter
     def _rank_8_per_rank_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return 80 * 1024 if not has_residual else 96 * 1024
         else:
             return 80 * 1024
@@ -1151,9 +1146,8 @@ def _dispatch_fused_kernel[
     # 36.3us, a 12% loss). Use a column-aware threshold: 100 KB for wide
     # columns (>= 6144, the large-hidden regime), 80 KB otherwise (matches the
     # validated narrow-column crossover; cols=4096 crosses near 72 KB).
-    @__parameter
     def _rank_8_residual_thresh_for_cols(c: Int) -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_8_per_rank_thresh()
         else:
             return 100 * 1024 if c >= 6144 else 80 * 1024
@@ -1167,7 +1161,7 @@ def _dispatch_fused_kernel[
         threshold = Int.MAX
     elif ngpus <= 4:
         threshold = _rank_4_per_rank_thresh()
-    elif has_residual and not has_amd_gpu_accelerator():
+    elif has_residual and not ctx.target.is_amd_gpu():
         threshold = _rank_8_residual_thresh_for_cols(cols)
     else:
         threshold = _rank_8_per_rank_thresh()
@@ -1179,14 +1173,12 @@ def _dispatch_fused_kernel[
     #          split beats 2-stage for cols > 8192. See dispatch below.
     #   B200 4GPU: 1536 KB per-rank crossover
     #   B200 8GPU: conservative, same as 2-stage threshold
-    @__parameter
     def _rank_4_split_thresh() -> Int:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_4_per_rank_thresh()
         else:
             return 1536 * 1024
 
-    @__parameter
     def _rank_8_split_thresh() -> Int:
         # For 8 GPUs the split threshold equals the 2-stage threshold on
         # both AMD and NVIDIA.  This intentionally means the 2-stage
@@ -1196,7 +1188,7 @@ def _dispatch_fused_kernel[
         # Benchmarks show the split (2-kernel) path is always faster than
         # fused 2-stage with residual at 8-GPU scale because the extra
         # bf16 scratch traffic in Stage 2 outweighs the launch overhead.
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             return _rank_8_per_rank_thresh()
         else:
             return _rank_8_per_rank_thresh()
@@ -1216,7 +1208,7 @@ def _dispatch_fused_kernel[
             use_split = True
     else:
         comptime if has_residual and quantize:
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 # MI355: 2-stage fused beats split for cols <= 8192,
                 # split beats 2-stage for wider columns (16384+).
                 if per_rank_bytes >= threshold:
@@ -1247,8 +1239,7 @@ def _dispatch_fused_kernel[
         else:
             use_2stage = ngpus <= 8 and per_rank_bytes >= threshold
 
-    @__parameter
-    def launch_1stage[sw: Int]() raises:
+    def launch_1stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch[
             sw,
             in_dtype,
@@ -1274,8 +1265,7 @@ def _dispatch_fused_kernel[
             residual_output,
         )
 
-    @__parameter
-    def launch_2stage[sw: Int]() raises:
+    def launch_2stage[sw: Int]() raises {imm}:
         _allreduce_rmsnorm_fp8_launch_2stage[
             sw,
             in_dtype,
@@ -1448,17 +1438,13 @@ def allreduce_rmsnorm[
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
         rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var scale_output_1d = TileTensor(
         rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
             scale_output._storage
         ),
-        row_major(
-            Coord(
-                rows,
-            )
-        ),
+        row_major(rows),
     )
 
     _dispatch_fused_kernel[in_dtype, out_dtype, scales_dtype, ngpus](
@@ -1562,27 +1548,23 @@ def allreduce_residual_rmsnorm[
     # Create internal 2D/1D TileTensor views for _dispatch_fused_kernel.
     var output_2d = TileTensor(
         rebind[MutPointer[Scalar[out_dtype], MutAnyOrigin]](output._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var residual_2d = TileTensor(
         rebind[ImmPointer[Scalar[in_dtype], ImmutAnyOrigin]](residual._storage),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var residual_output_2d = TileTensor(
         rebind[MutPointer[Scalar[in_dtype], MutAnyOrigin]](
             residual_output._storage
         ),
-        row_major(Coord(rows, cols)),
+        row_major(rows, cols),
     )
     var scale_output_1d = TileTensor(
         rebind[MutPointer[Scalar[scales_dtype], MutAnyOrigin]](
             scale_output._storage
         ),
-        row_major(
-            Coord(
-                rows,
-            )
-        ),
+        row_major(rows),
     )
 
     _dispatch_fused_kernel[

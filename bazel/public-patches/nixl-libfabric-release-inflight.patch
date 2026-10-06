@@ -1,0 +1,42 @@
+Refuse to release a libfabric transfer handle that is still in flight.
+
+NIXL 1.5.0's nixlLibfabricEngine::releaseReqH deletes the backend handle
+unconditionally. Every request it posted captured that raw pointer in its
+completion callback, so releasing a transfer before its completions land
+leaves the progress thread calling complete_request() on freed memory.
+NIXL 1.3.0 deleted nothing here, which is why the bump exposed this.
+
+The core already handles a refusal. nixlAgent::releaseXferReq calls
+releaseReqH on an IN_PROG request and, on a negative return, keeps the
+request alive and reports NIXL_ERR_REPOST_ACTIVE to its caller. So return
+that status and log at NIXL_WARN instead of freeing. A handle whose
+requests have all completed still deletes, as it did before.
+
+TODO(GEX-4324): propose this upstream and drop the patch once it lands.
+The closest upstream work on the same lifetime problem is
+ai-dynamo/nixl#2244.
+
+diff --git a/src/plugins/libfabric/libfabric_backend.cpp b/src/plugins/libfabric/libfabric_backend.cpp
+--- a/src/plugins/libfabric/libfabric_backend.cpp
++++ b/src/plugins/libfabric/libfabric_backend.cpp
+@@ -1704,7 +1704,19 @@
+         return NIXL_SUCCESS;
+     }
+ 
+-    delete static_cast<nixlLibfabricBackendH *>(handle);
++    auto *backend_handle = static_cast<nixlLibfabricBackendH *>(handle);
++    if (!backend_handle->is_completed()) {
++        // Every posted request captures this pointer in its completion callback, so
++        // freeing it now leaves the progress thread writing to released memory. The
++        // core keeps the transfer alive when releaseReqH returns an error.
++        NIXL_WARN << "releaseReqH called with "
++                  << backend_handle->get_completed_requests_count() << " of "
++                  << backend_handle->get_submitted_requests_count()
++                  << " requests complete, refusing to free an in-flight transfer";
++        return NIXL_ERR_REPOST_ACTIVE;
++    }
++
++    delete backend_handle;
+     NIXL_DEBUG << "releaseReqH completed successfully";
+     return NIXL_SUCCESS;
+ }

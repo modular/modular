@@ -28,6 +28,7 @@ from .sampling_config import (
     DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE,
     DEFAULT_STRUCTURED_OUTPUT_BACKEND,
     SamplingConfig,
+    ToolCallPolicy,
 )
 from .sampling_logits_processor import (
     FrequencyData,
@@ -48,6 +49,7 @@ __all__ = [
     "SamplingConfig",
     "SyntheticRunner",
     "TokenSampler",
+    "ToolCallPolicy",
     "apply_logits_processors",
     "build_greedy_acceptance_sampler_graph",
     "build_stochastic_acceptance_sampler_graph",

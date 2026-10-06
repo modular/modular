@@ -100,14 +100,14 @@ def _construct_mma_blocks(
         while op_idx < num_ops:
             var op = body.ops[order[op_idx]].op
             __match op.role:
-            case .COMPUTE:
-                mma_op = op
-                op_idx += 1
-                break
-            case .FRAGMENT_LOAD:
-                pre_ops.append(op)
-            case .GLOBAL_LOAD:
-                global_loads.append(op)
+                case .COMPUTE:
+                    mma_op = op
+                    op_idx += 1
+                    break
+                case .FRAGMENT_LOAD:
+                    pre_ops.append(op)
+                case .GLOBAL_LOAD:
+                    global_loads.append(op)
             op_idx += 1
 
         var pos_in_partition = block_idx % bph

@@ -81,16 +81,21 @@ def get_amd_bf8_dtype() -> Optional[DType]:
 
 
 @inline(.always)
-def _unsupported_mma_op(d: SIMD, a: SIMD, b: SIMD, c: SIMD):
-    # fmt: off
+def _unsupported_mma_op[
+    d_dtype: DType,
+    d_length: SIMDLength,
+    a_dtype: DType,
+    a_length: SIMDLength,
+    b_dtype: DType,
+    b_length: SIMDLength,
+    c_dtype: DType,
+    c_length: SIMDLength,
+]():
     comptime assert False, String(
-        "no valid implementation of mma for a=",
-        Int(a.length), "x",  a.dtype,
-        ", b=",  Int(b.length), "x",  b.dtype,
-        ", c=",  Int(c.length), "x",  c.dtype,
-        ", and d=", Int(d.length), "x", d.dtype,
+        t"no valid implementation of mma for a={Int(a_length)}x{a_dtype},"
+        t" b={Int(b_length)}x{b_dtype},"
+        t" c={Int(c_length)}x{c_dtype}, d={Int(d_length)}x{d_dtype}"
     )
-    # fmt: on
 
 
 @inline(.always)
@@ -191,15 +196,12 @@ def _to_nvvm_layout[s: StaticString]() -> __mlir_type.`!kgen.deferred`:
 
 
 @inline(.always)
-def mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
+def mma(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     """Performs warp sync Tensor Core based Matrix-multiply and accumulate (MMA) operation.
 
     This function executes a matrix multiply-accumulate operation using GPU Tensor Cores,
     synchronizing across the warp. It dispatches to architecture-specific implementations
     for NVIDIA and AMD GPUs.
-
-    Parameters:
-        block_size: The size of the block of the MMA operation (e.g., 4x4x4_16B). Applies to AMD GPUs only.
 
     Args:
         d: Output SIMD vector to store the result.
@@ -222,7 +224,7 @@ def mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     comptime if is_nvidia_gpu():
         _mma_nvidia(d, a, b, c)
     elif is_amd_gpu():
-        _mma_amd[block_size](d, a, b, c)
+        _mma_amd(d, a, b, c)
     # MSTDL-2556: Compilation Target Check doesn't match above
     elif is_apple_m5() and CompilationTarget._has_feature["metal4_0"]():
         _mma_apple(d, a, b, c)
@@ -298,7 +300,6 @@ def ld_matrix[
     # Full intrinsic is base + suffix
     comptime base = "llvm.nvvm.ldmatrix.sync.aligned.m8n8"
 
-    @__parameter
     def get_suffix() -> String:
         comptime sfx = ".b16.p3"
         if transpose:
@@ -404,7 +405,6 @@ def st_matrix[
 
     comptime base = "stmatrix.sync.aligned"
 
-    @__parameter
     def get_suffix() -> String:
         comptime sfx = ".m8n8"
         if transpose:
@@ -535,7 +535,6 @@ struct WGMMADescriptor[dtype: DType](
 
         # TMA enumerates no swizzle, 32, 64, 128B as 0, 1, 2, 3.
         # WGMMA enumerates these as 0, 3, 2, 1.
-        @__parameter
         def _convert_swizzle_enum[mode: Int32]() -> Int64:
             comptime if mode == 0:
                 return mode.cast[.int64]()

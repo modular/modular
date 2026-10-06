@@ -26,7 +26,6 @@ comptime epilogue_func_type = def[
 ](IndexList[2], IndexList[2], SIMD[type, width]) capturing -> SIMD[type, width]
 
 
-@__parameter
 @inline(.always)
 def epilogue_test_fn[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
@@ -102,20 +101,15 @@ def test[
     comptime static_b_dim1 = K if transpose_b else N
     var a_tensor = TileTensor(
         a_dev,
-        row_major(Coord(m, Idx[K.value()])),
+        row_major(m, Idx[K.value()]),
     )
     var b_tensor = TileTensor(
         b_dev,
-        row_major(
-            Coord(
-                Idx[static_b_dim0.value()],
-                Idx[static_b_dim1.value()],
-            )
-        ),
+        row_major(Idx[static_b_dim0.value()], Idx[static_b_dim1.value()]),
     )
     var c_tensor = TileTensor(
         c_dev,
-        row_major(Coord(m, Idx[N.value()])),
+        row_major(m, Idx[N.value()]),
     )
 
     _matmul_gpu[use_tensor_core=True, transpose_b=transpose_b](
@@ -129,14 +123,12 @@ def test[
 
     var c_tt = TileTensor(
         c_ref_dev,
-        row_major(Coord(m, n)),
+        row_major(m, n),
     )
-    var a_tt = TileTensor[mut=False](a_dev, row_major(Coord(m, k)))
+    var a_tt = TileTensor[mut=False](a_dev, row_major(m, k))
     var b_shape_0 = n if transpose_b else k
     var b_shape_1 = k if transpose_b else n
-    var b_tt = TileTensor[mut=False](
-        b_dev, row_major(Coord(b_shape_0, b_shape_1))
-    )
+    var b_tt = TileTensor[mut=False](b_dev, row_major(b_shape_0, b_shape_1))
 
     comptime BLOCK_DIM = 16
     comptime naive_kernel = matmul_kernel_naive[

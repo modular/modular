@@ -221,9 +221,10 @@ class StructuredOutputRegionDelimiters:
 class GrammarMatcher(Protocol):
     """Per-request grammar matcher stepped each decode step.
 
-    Backend-agnostic interface; method names mirror llguidance's ``LLMatcher``
-    so a context can hold any backend's matcher (llguidance, xgrammar) without
-    branching. The llguidance ``LLMatcher`` satisfies this protocol natively.
+    Backend-agnostic interface that any grammar backend's matcher must satisfy.
+    The methods are: ``try_consume_tokens`` to advance the matcher,
+    ``is_accepting`` / ``is_stopped`` to query terminal state, and
+    ``deep_copy`` for speculative walks.
     """
 
     def try_consume_tokens(self, tokens: list[int]) -> int:
@@ -236,14 +237,6 @@ class GrammarMatcher(Protocol):
 
     def is_stopped(self) -> bool:
         """Whether the matcher has reached a terminal state."""
-        ...
-
-    def get_error(self) -> str | None:
-        """Error message for the last rejection, if any (diagnostics)."""
-        ...
-
-    def get_grammar_warnings(self) -> Any:
-        """Grammar compilation warnings, if any (diagnostics)."""
         ...
 
     def deep_copy(self) -> GrammarMatcher:
@@ -576,10 +569,11 @@ class TextContext:
 
     trace_carrier: dict[str, str] | None = field(default=None)
     """Serialized W3C trace context (via ``opentelemetry.propagate.inject``)
-    captured from the inbound request's OTel context. Threaded onto this
-    context because it crosses into the model-worker process by value, so the
-    scheduler can re-``extract`` it and parent its phase spans under the
-    caller's trace instead of starting new root spans."""
+    captured from the request's ``max.request`` span, or its HTTP server span
+    where no handler set one. Threaded onto this context because it crosses
+    into the model-worker process by value, so the scheduler can re-``extract``
+    it and parent its phase spans instead of starting new root spans. May also
+    hold the request's ``x-max-trace-level`` level, which propagators ignore."""
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
@@ -976,13 +970,10 @@ class TextContext:
                     _logger.error(
                         "Matcher rejected %d token(s) ending at %d "
                         "(request %s); disabling enforcement for the rest "
-                        "of the request. matcher_errors=%s "
-                        "matcher_warnings=%s",
+                        "of the request.",
                         len(tokens),
                         token,
                         self.request_id,
-                        self.matcher.get_error(),
-                        self.matcher.get_grammar_warnings(),
                     )
                     self.grammar_state.grammar_enforced = False
 

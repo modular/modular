@@ -54,7 +54,9 @@ class LagunaTopKRouter(MoEGate):
         dtype: Data type carried by the parent ``MoEGate``.
         gate_dtype: Linear-projection dtype for the gate logits.
         correction_bias_dtype: Dtype of the per-expert
-            ``e_score_correction_bias`` weight.
+            ``e_score_correction_bias`` weight, and of the routing
+            weights this gate returns. Routing itself is computed in
+            float32 regardless.
         devices: Devices to place the gate on.
         linear_cls: Linear class for the gate projection.
         is_sharding: Whether this instance is being created during
@@ -119,18 +121,18 @@ class LagunaTopKRouter(MoEGate):
             experts and their routing weights, each of shape
             ``(seq_len, num_experts_per_token)``.
         """
-        logits = self.gate_score(hidden_states)
+        # Route in float32, as the reference does. The bias dtype is not
+        # always precise enough to rank experts: in bfloat16 the scores tie
+        # and top-k picks among them arbitrarily.
+        logits = self.gate_score(hidden_states).cast(DType.float32)
         # Optional tanh softcap on router logits — HF reference:
         #   if router_logit_softcapping > 0.0:
         #       router_logits = tanh(router_logits / softcap) * softcap
         if self.router_logit_softcapping > 0.0:
-            softcap = ops.constant(
-                self.router_logit_softcapping,
-                logits.dtype,
-                device=logits.device,
-            )
+            softcap = float(self.router_logit_softcapping)
             logits = ops.tanh(logits / softcap) * softcap
-        scores = ops.sigmoid(logits.cast(self.correction_bias_dtype))
+        scores = ops.sigmoid(logits)
+        correction_bias = self.e_score_correction_bias.cast(DType.float32)
 
         # Plain top-k routing — Laguna-M.1 has NO expert groups (unlike the
         # MiniMax-M2/DeepSeek lineage this gate was adapted from). Select experts
@@ -140,23 +142,21 @@ class LagunaTopKRouter(MoEGate):
         # WARP_SIZE`` constraint rejects top-k > 32 — M.1 is top-16 of 256
         # (XS.2 was top-8, which is why the donor idiom slipped through).
         # ``ops.top_k`` has no such constraint.
-        sel = scores + self.e_score_correction_bias
+        sel = scores + correction_bias
         topk_sel, topk_idx = ops.top_k(
             sel, k=self.num_experts_per_token, axis=-1
         )
         # Unbiased routing weight = (score + bias) - bias at the selected experts.
-        bias_at_idx = ops.gather(self.e_score_correction_bias, topk_idx, axis=0)
+        bias_at_idx = ops.gather(correction_bias, topk_idx, axis=0)
         topk_weight = topk_sel - bias_at_idx
         if self.norm_topk_prob:
             topk_weight = topk_weight / ops.sum(topk_weight, axis=-1)
         # Fold routed_scaling_factor into the weights (HF applies it to the
         # summed expert output, which is mathematically equivalent).
-        topk_weight = topk_weight * ops.constant(
-            self.routed_scaling_factor,
-            topk_weight.dtype,
-            device=topk_weight.device,
-        )
-        return topk_idx, topk_weight
+        topk_weight = topk_weight * float(self.routed_scaling_factor)
+        # The expert matmuls consume the routing weights in the correction
+        # bias's dtype.
+        return topk_idx, topk_weight.cast(self.correction_bias_dtype)
 
     def _set_sharding_strategy(self, strategy: ShardingStrategy) -> None:
         """Replicates the correction bias alongside the base gate weights."""

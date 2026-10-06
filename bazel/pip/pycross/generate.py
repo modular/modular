@@ -46,7 +46,7 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         # resolvable in `override-dependencies` (i.e. we
         # are required to diverge).
         "fastapi",  # vllm 0.24.0 caps fastapi below what other groups resolve to
-        "llguidance",  # We use >1.0, sglang pins to 0.7.30
+        "llguidance",  # Not used by MAX directly; vllm pulls 1.7.5, sglang pins 0.7.30
         "nvidia-cudnn-cu12",  # Differs between dependency groups' torch/CUDA versions
         "nvidia-cudnn-frontend",  # vllm 0.24.0 pins a newer version than the default group
         "nvidia-nccl-cu12",  # Differs between dependency groups' torch/CUDA versions

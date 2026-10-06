@@ -24,6 +24,8 @@ KEYWORDS = [
     "and",
     "as",
     "assert",
+    "__async",
+    "__await",
     "break",
     "capturing",
     "class",
@@ -139,6 +141,28 @@ def test_keyword_as_trait_name(kw):
         f"struct Foo(`{kw}`):\n"
         f"    def {kw}(self):\n"
         "        pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_async_await_keywords():
+    """`__async`/`__await` and the bare spellings are keywords."""
+    source = (
+        "__async def f() -> Int: return 1\n"
+        "__async def g() -> Int: return __await f()\n"
+        "async def h() -> Int: return await f()\n"
+    )
+    expected = (
+        "__async def f() -> Int:\n"
+        "    return 1\n"
+        "\n"
+        "\n"
+        "__async def g() -> Int:\n"
+        "    return __await f()\n"
+        "\n"
+        "\n"
+        "async def h() -> Int:\n"
+        "    return await f()\n"
     )
     assert_mojo_format(source, expected)
 

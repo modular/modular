@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file %s -canonicalize | FileCheck %s
+// RUN: kgen-opt -split-input-file -allow-unregistered-dialect %s -canonicalize | FileCheck %s
 
 // -----
 
@@ -224,7 +224,7 @@ kgen.func @div(%arg0: !kgen.scalar<si64>, %arg1: !kgen.simd<2, si32>, %arg2: !kg
   %0 = kgen.param.constant: scalar<si4> = <7>
   %1 = kgen.param.constant: scalar<si4> = <-2>
   %2 = kgen.param.constant: scalar<ui4> = <7>
-  %3 = kgen.param.constant: scalar<ui4> = <-2>
+  %3 = kgen.param.constant: scalar<ui4> = <14>
   %4 = kgen.param.constant: scalar<f32> = <"2.5">
   %5 = kgen.param.constant: scalar<f32> = <"2">
 
@@ -313,7 +313,7 @@ kgen.func @rem() -> (!kgen.scalar<si4>, !kgen.scalar<ui4>, !kgen.scalar<f32>, !k
   %0 = kgen.param.constant: scalar<si4> = <7>
   %1 = kgen.param.constant: scalar<si4> = <-2>
   %2 = kgen.param.constant: scalar<ui4> = <7>
-  %3 = kgen.param.constant: scalar<ui4> = <-2>
+  %3 = kgen.param.constant: scalar<ui4> = <14>
   %4 = kgen.param.constant: scalar<f32> = <"2.5">
   %5 = kgen.param.constant: scalar<f32> = <"2">
   %6 = pop.rem %0, %1 : !kgen.scalar<si4>
@@ -347,7 +347,7 @@ kgen.func @min() -> (!kgen.scalar<ui4>, !kgen.scalar<f32>, !kgen.scalar<f32>) {
   // CHECK-DAG: <"-2">
   // CHECK-DAG: <"1.25">
   %0 = kgen.param.constant: scalar<ui4> = <0>
-  %1 = kgen.param.constant: scalar<ui4> = <-1>
+  %1 = kgen.param.constant: scalar<ui4> = <15>
   %2 = kgen.param.constant: scalar<f32> = <"1.25">
   %3 = kgen.param.constant: scalar<f32> = <"-2">
   %4 = kgen.param.constant: scalar<f32> = <"NaN">
@@ -1043,6 +1043,123 @@ kgen.func @cast_uindex_index() -> (!kgen.scalar<index>, !kgen.scalar<uindex>) {
   %1 = pop.cast %ci : !kgen.scalar<index> to !kgen.scalar<uindex>
   // CHECK-NEXT: return %[[C0]], %[[C1]]
   hlcf.return %0, %1 : !kgen.scalar<index>, !kgen.scalar<uindex>
+}
+
+// MOCO-4909: Unsigned-to-index casts must preserve value, not sign-extend.
+// All unsigned max values cast to index (64-bit signed) must keep their
+// original value, not wrap to -1.
+// CHECK-LABEL: @cast_ui8_max_to_index
+kgen.func @cast_ui8_max_to_index() -> !kgen.scalar<index> {
+  // CHECK-NEXT: scalar<index> = <255>
+  %c = kgen.param.constant: scalar<ui8> = <255>
+  %0 = pop.cast %c : !kgen.scalar<ui8> to !kgen.scalar<index>
+  hlcf.return %0 : !kgen.scalar<index>
+}
+
+// CHECK-LABEL: @cast_ui16_max_to_index
+kgen.func @cast_ui16_max_to_index() -> !kgen.scalar<index> {
+  // CHECK-NEXT: scalar<index> = <65535>
+  %c = kgen.param.constant: scalar<ui16> = <65535>
+  %0 = pop.cast %c : !kgen.scalar<ui16> to !kgen.scalar<index>
+  hlcf.return %0 : !kgen.scalar<index>
+}
+
+// CHECK-LABEL: @cast_ui32_max_to_index
+kgen.func @cast_ui32_max_to_index() -> !kgen.scalar<index> {
+  // CHECK-NEXT: scalar<index> = <4294967295>
+  %c = kgen.param.constant: scalar<ui32> = <4294967295>
+  %0 = pop.cast %c : !kgen.scalar<ui32> to !kgen.scalar<index>
+  hlcf.return %0 : !kgen.scalar<index>
+}
+
+// ui64 max genuinely overflows 64-bit signed index to -1.
+// CHECK-LABEL: @cast_ui64_max_to_index
+kgen.func @cast_ui64_max_to_index() -> !kgen.scalar<index> {
+  // CHECK-NEXT: scalar<index> = <-1>
+  %c = kgen.param.constant: scalar<ui64> = <18446744073709551615>
+  %0 = pop.cast %c : !kgen.scalar<ui64> to !kgen.scalar<index>
+  hlcf.return %0 : !kgen.scalar<index>
+}
+
+// Unsigned-to-wider-signed must also preserve value.
+// CHECK-LABEL: @cast_ui32_max_to_si64
+kgen.func @cast_ui32_max_to_si64() -> !kgen.scalar<si64> {
+  // CHECK-NEXT: scalar<si64> = <4294967295>
+  %c = kgen.param.constant: scalar<ui32> = <4294967295>
+  %0 = pop.cast %c : !kgen.scalar<ui32> to !kgen.scalar<si64>
+  hlcf.return %0 : !kgen.scalar<si64>
+}
+
+// Boundary values around 32-bit signed/unsigned threshold.
+// CHECK-LABEL: @cast_ui32_boundary_to_index
+kgen.func @cast_ui32_boundary_to_index() -> (!kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>) {
+  // CHECK-DAG: scalar<index> = <2147483647>
+  // CHECK-DAG: scalar<index> = <2147483648>
+  // CHECK-DAG: scalar<index> = <2147483649>
+  %c0 = kgen.param.constant: scalar<ui32> = <2147483647>
+  %c1 = kgen.param.constant: scalar<ui32> = <2147483648>
+  %c2 = kgen.param.constant: scalar<ui32> = <2147483649>
+  %0 = pop.cast %c0 : !kgen.scalar<ui32> to !kgen.scalar<index>
+  %1 = pop.cast %c1 : !kgen.scalar<ui32> to !kgen.scalar<index>
+  %2 = pop.cast %c2 : !kgen.scalar<ui32> to !kgen.scalar<index>
+  // CHECK-NEXT: return %{{.*}}, %{{.*}}, %{{.*}}
+  hlcf.return %0, %1, %2 : !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>
+}
+
+// Truncation to narrower signed must still wrap.
+// CHECK-LABEL: @cast_ui32_max_to_si32
+kgen.func @cast_ui32_max_to_si32() -> !kgen.scalar<si32> {
+  // CHECK-NEXT: scalar<si32> = <-1>
+  %c = kgen.param.constant: scalar<ui32> = <4294967295>
+  %0 = pop.cast %c : !kgen.scalar<ui32> to !kgen.scalar<si32>
+  hlcf.return %0 : !kgen.scalar<si32>
+}
+
+// Signed negatives to index must preserve sign.
+// CHECK-LABEL: @cast_si32_neg1_to_index
+kgen.func @cast_si32_neg1_to_index() -> !kgen.scalar<index> {
+  // CHECK-NEXT: scalar<index> = <-1>
+  %c = kgen.param.constant: scalar<si32> = <-1>
+  %0 = pop.cast %c : !kgen.scalar<si32> to !kgen.scalar<index>
+  hlcf.return %0 : !kgen.scalar<index>
+}
+
+// CHECK-LABEL: @cast_si64_min_to_index
+kgen.func @cast_si64_min_to_index() -> !kgen.scalar<index> {
+  // CHECK-NEXT: scalar<index> = <-9223372036854775808>
+  %c = kgen.param.constant: scalar<si64> = <-9223372036854775808>
+  %0 = pop.cast %c : !kgen.scalar<si64> to !kgen.scalar<index>
+  hlcf.return %0 : !kgen.scalar<index>
+}
+
+// Index/uindex cross-casts.
+// CHECK-LABEL: @cast_index_neg1_to_uindex
+kgen.func @cast_index_neg1_to_uindex() -> !kgen.scalar<uindex> {
+  // CHECK-NEXT: scalar<uindex> = <18446744073709551615>
+  %c = kgen.param.constant: scalar<index> = <-1>
+  %0 = pop.cast %c : !kgen.scalar<index> to !kgen.scalar<uindex>
+  hlcf.return %0 : !kgen.scalar<uindex>
+}
+
+// CHECK-LABEL: @cast_uindex_max_to_index
+kgen.func @cast_uindex_max_to_index() -> !kgen.scalar<index> {
+  // CHECK-NEXT: scalar<index> = <-1>
+  %c = kgen.param.constant: scalar<uindex> = <18446744073709551615>
+  %0 = pop.cast %c : !kgen.scalar<uindex> to !kgen.scalar<index>
+  hlcf.return %0 : !kgen.scalar<index>
+}
+
+// Zero and one — trivial but guard against sign-extension regressions.
+// CHECK-LABEL: @cast_ui32_zero_one_to_index
+kgen.func @cast_ui32_zero_one_to_index() -> (!kgen.scalar<index>, !kgen.scalar<index>) {
+  // CHECK-DAG: scalar<index> = <0>
+  // CHECK-DAG: scalar<index> = <1>
+  %c0 = kgen.param.constant: scalar<ui32> = <0>
+  %c1 = kgen.param.constant: scalar<ui32> = <1>
+  %0 = pop.cast %c0 : !kgen.scalar<ui32> to !kgen.scalar<index>
+  %1 = pop.cast %c1 : !kgen.scalar<ui32> to !kgen.scalar<index>
+  // CHECK-NEXT: return %{{.*}}, %{{.*}}
+  hlcf.return %0, %1 : !kgen.scalar<index>, !kgen.scalar<index>
 }
 }
 

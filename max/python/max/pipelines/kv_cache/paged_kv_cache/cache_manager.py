@@ -404,20 +404,24 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
 
         Returns:
             The async onload transfer for the request's reused prefix -- an
-            already-complete :class:`CompletedTransfer` when nothing was onloaded
-            asynchronously (device hits and synchronous connectors). The caller
-            polls ``is_complete()`` to hold the request out of a batch until its
-            onloaded KV has landed -- an asynchronous connector's H2D runs off
-            the forward stream.
+            already-complete :class:`CompletedTransfer` when nothing was
+            onloaded (a device hit). The caller polls ``is_complete()`` to hold
+            the request out of a batch until its onloaded KV has landed, since
+            a connector's H2D runs off the forward stream. If it raises
+            :class:`KVLoadFailed` instead, the next ``alloc`` rolls the
+            onloaded prefix back and the request recomputes it.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation. The request is left as it was before the
             call, so the caller can release or retry it.
+            RuntimeError: If the request was run past an onload whose copy
+                failed, rather than held out of the batch until it landed.
         """
         # Drain completed async KV transfers first to release any g0 blocks of
         # completed transfers.
         self._block_manager.poll_transfers()
+        self._block_manager.rollback_failed_onload(ctx)
 
         skip_amount, load_event = (
             self._block_manager.reuse_blocks_from_prefix_cache(ctx)
@@ -470,8 +474,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 ``max_cache_length`` implies a LUT shape that is invalid, or if
                 the real batch shape exceeds ``batch_characteristics``.
         """
-        replica = self._replica[replica_idx]
-
         max_seq_len = 0
         for ctx in batch:
             # Allocate blocks for request if we need more.
@@ -587,14 +589,6 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                     ctx, self.params.num_draft_tokens
                 ),
             )
-
-        # Pre-forward load barrier (deprecated, dKV-only): dKV posts its READs in
-        # ``load`` and orders them here before the forward reads their KV.
-        # Asynchronous connectors instead hold a request out of the batch until
-        # its onload event polls complete (``poll_transfers`` + the batch
-        # constructor cordon), so the forward never reads KV that has not landed
-        # and this is a no-op for them.
-        replica.connector.wait_for_loads()
 
         # Initiate saves to external cache tiers.
         self._block_manager.offload(replica_idx)
@@ -743,23 +737,15 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
 
     def step(self, ctx: TextContext) -> None:
         """Commits the request's newly written tokens into the prefix cache."""
-        # Post-forward offload barrier (deprecated, dKV-only): dKV awaits its
-        # NIXL WRITEs here and registers the blocks. Asynchronous connectors
-        # settle offloads via ``poll_transfers`` (which unpins the D2H source
-        # blocks once the copy lands), so this is a no-op for them. Only
-        # ``runtime_inputs`` posts offloads, so every call after the first in a
-        # batch finds nothing left to settle.
-        self._connector.wait_for_offloads()
         self._block_manager.step(ctx)
 
     def poll_transfers(self) -> None:
         """Drains completed async KV transfers (onloads and offloads).
 
         Unpins the device blocks of completed transfers, commits completed
-        onloads into the device prefix cache, and lets asynchronous connectors
-        reclaim their host-side resources. Cheap to call every scheduler
-        iteration; a no-op unless an asynchronous connector (``rust_tiered``)
-        is in use.
+        onloads into the device prefix cache, and lets connectors reclaim their
+        host-side resources. Cheap to call every scheduler iteration, and a
+        no-op when no transfer is in flight.
         """
         self._block_manager.poll_transfers()
 
@@ -799,13 +785,13 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         """Returns block IDs the request holds on the replica it was claimed on."""
         return self._block_manager.get_req_blocks(ctx)
 
-    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the host KV tier occupancy in bytes for the given replica."""
-        return self._replica[replica_idx].connector.host_byte_count
+    def host_byte_count(self) -> ByteCount:
+        """Returns the host KV tier occupancy in bytes, shared by every replica."""
+        return self._connector.host_byte_count
 
-    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
-        """Returns the disk KV tier occupancy in bytes for the given replica."""
-        return self._replica[replica_idx].connector.disk_byte_count
+    def disk_byte_count(self) -> ByteCount:
+        """Returns the disk KV tier occupancy in bytes, shared by every replica."""
+        return self._connector.disk_byte_count
 
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:
         """Returns the replica's KV buffer (single leaf or tree).

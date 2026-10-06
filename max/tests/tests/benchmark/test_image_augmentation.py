@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import random
 
 import pytest
 from max.benchmark.benchmark_shared.datasets.chat_judge import (
@@ -113,7 +114,7 @@ def test_augment_request_samples_zero_fraction_is_noop() -> None:
     samples = RequestSamples(requests=[_make_request() for _ in range(20)])
     augment_samples_with_images(
         samples,
-        image_fraction=0.0,
+        fraction=0.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
@@ -129,7 +130,7 @@ def test_augment_rejects_out_of_range_fraction() -> None:
         with pytest.raises(ValueError, match=r"must be in \[0, 1\]"):
             augment_samples_with_images(
                 samples,
-                image_fraction=bad,
+                fraction=bad,
                 image_count=1,
                 image_long_side=512,
                 image_aspect_ratio=1.0,
@@ -140,7 +141,7 @@ def test_augment_request_samples_full_fraction_adds_images_to_all() -> None:
     samples = RequestSamples(requests=[_make_request() for _ in range(20)])
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count="DU(2,2)",
         image_long_side=512,
         image_aspect_ratio=1.0,
@@ -156,7 +157,7 @@ def test_augment_request_samples_partial_fraction_converges() -> None:
     samples = RequestSamples(requests=[_make_request() for _ in range(n)])
     augment_samples_with_images(
         samples,
-        image_fraction=0.3,
+        fraction=0.3,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
@@ -183,11 +184,11 @@ def test_augment_chat_samples_first_turn_only() -> None:
     samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(10)])
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
-        image_turn="first",
+        turn="first",
     )
     for session in samples.chat_sessions:
         user_messages = [m for m in session.messages if m.source == "user"]
@@ -200,11 +201,11 @@ def test_augment_chat_samples_last_turn_only() -> None:
     samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(10)])
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
-        image_turn="last",
+        turn="last",
     )
     for session in samples.chat_sessions:
         user_messages = [m for m in session.messages if m.source == "user"]
@@ -217,11 +218,11 @@ def test_augment_chat_samples_every_turn() -> None:
     samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(5)])
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
-        image_turn="every",
+        turn="every",
     )
     for session in samples.chat_sessions:
         for msg in session.messages:
@@ -240,11 +241,11 @@ def test_augment_chat_samples_skips_unmeasurable_sessions() -> None:
 
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
-        image_turn="first",
+        turn="first",
         max_chat_len=1,
     )
 
@@ -257,11 +258,11 @@ def test_augment_chat_samples_counts_sessions_that_still_fit() -> None:
     samples = ChatSamples(chat_sessions=[_make_session(0)])
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
-        image_turn="first",
+        turn="first",
         max_chat_len=10**6,
     )
     assert len(samples.chat_sessions[0].messages[0].images) == 1
@@ -319,11 +320,11 @@ def test_augment_chat_samples_excludes_warmup_session_over_budget(
     with caplog.at_level(logging.INFO):
         augment_samples_with_images(
             samples,
-            image_fraction=1.0,
+            fraction=1.0,
             image_count=1,
             image_long_side=512,
             image_aspect_ratio=1.0,
-            image_turn="first",
+            turn="first",
             max_chat_len=40,
         )
 
@@ -347,7 +348,7 @@ def test_augment_request_samples_skips_prompt_with_no_user_message() -> None:
 
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
@@ -372,7 +373,7 @@ def test_augment_request_samples_augments_prompt_with_a_user_message() -> None:
 
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
@@ -395,7 +396,7 @@ def test_augment_request_samples_augments_plain_string_prompt() -> None:
 
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
@@ -417,11 +418,11 @@ def test_augment_samples_skips_chat_judge() -> None:
 
     augment_samples_with_images(
         samples,
-        image_fraction=1.0,
+        fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
-        image_turn="every",
+        turn="every",
     )
 
     for session in samples.chat_sessions:
@@ -439,8 +440,91 @@ def test_augment_samples_invalid_fraction_raises() -> None:
     with pytest.raises(ValueError, match="image_fraction"):
         augment_samples_with_images(
             samples,
-            image_fraction=1.5,
+            fraction=1.5,
             image_count=1,
             image_long_side=512,
             image_aspect_ratio=1.0,
         )
+
+
+def test_selection_is_seeded_independently_of_the_global_stream() -> None:
+    """The same seed must pick the same sessions however the global stream sits.
+
+    Selection used to draw from the global `random`, so adding an augmentation
+    ahead of this one silently changed which sessions carried images.
+    """
+    picked: list[list[int | None]] = []
+    for global_draws in (0, 17):
+        random.seed(1234)
+        for _ in range(global_draws):
+            random.random()
+        samples = ChatSamples(
+            chat_sessions=[_make_session(i) for i in range(40)]
+        )
+        augment_samples_with_images(
+            samples,
+            fraction=0.3,
+            image_count=1,
+            image_long_side=512,
+            image_aspect_ratio=1.0,
+            turn="every",
+            seed=7,
+        )
+        picked.append(
+            [
+                s.id
+                for s in samples.chat_sessions
+                if any(m.images for m in s.messages)
+            ]
+        )
+    assert picked[0] == picked[1]
+    assert picked[0], "expected a non-empty selection at fraction=0.3"
+
+
+def test_distinct_seeds_pick_distinct_sessions() -> None:
+    picked: list[list[int | None]] = []
+    for seed in (7, 8):
+        samples = ChatSamples(
+            chat_sessions=[_make_session(i) for i in range(40)]
+        )
+        augment_samples_with_images(
+            samples,
+            fraction=0.3,
+            image_count=1,
+            image_long_side=512,
+            image_aspect_ratio=1.0,
+            turn="every",
+            seed=seed,
+        )
+        picked.append(
+            [
+                s.id
+                for s in samples.chat_sessions
+                if any(m.images for m in s.messages)
+            ]
+        )
+    assert picked[0] != picked[1]
+
+
+def test_logs_the_sampled_per_request_shares(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The log must report the quantities a workload is calibrated against.
+
+    With `every` and one image per turn, newly-encoded images per request and
+    the share of turns carrying one both equal the session fraction over the
+    sampled population -- the identity a multi-modal workload is built on, so
+    a run states it rather than leaving it to be re-derived by hand.
+    """
+    samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(4)])
+    with caplog.at_level(logging.INFO):
+        augment_samples_with_images(
+            samples,
+            fraction=1.0,
+            image_count=1,
+            image_long_side=512,
+            image_aspect_ratio=1.0,
+            turn="every",
+        )
+    assert "1.000 per request" in caplog.text
+    assert "100.0% of turns carrying at least one image part" in caplog.text

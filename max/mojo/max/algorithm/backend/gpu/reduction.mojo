@@ -78,7 +78,6 @@ def block_reduce[
     comptime num_reductions = 1
 
     @inline(.always)
-    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -135,7 +134,6 @@ def block_reduce[
     ), "block size must be a multiple of the warp size"
 
     @inline(.always)
-    @__parameter
     def do_warp_reduce(
         val: StaticTuple[SIMD[dtype, simd_width], num_reductions]
     ) -> StaticTuple[SIMD[dtype, simd_width], num_reductions]:
@@ -144,7 +142,6 @@ def block_reduce[
         comptime for i in range(num_reductions):
 
             @inline(.always)
-            @__parameter
             def reduce_wrapper[
                 dtype: DType, width: SIMDLength
             ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
@@ -152,7 +149,7 @@ def block_reduce[
             ]:
                 return reduce_fn[dtype, width, i](lhs, rhs)
 
-            result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](val[i])
+            result[i] = warp.reduce[warp.shuffle_down](val[i], reduce_wrapper)
 
         return result
 
@@ -191,9 +188,16 @@ def block_reduce[
     var result = StaticTuple[Scalar[dtype], num_reductions]()
 
     comptime for i in range(num_reductions):
-        result[i] = result_packed[i].reduce[
-            reduce_fn[dtype, reduction_idx=i, ...]
-        ]()
+
+        @inline(.always)
+        def reduce_wrapper[
+            width: SIMDLength
+        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
+            dtype, width
+        ]:
+            return reduce_fn[dtype, width, i](lhs, rhs)
+
+        result[i] = result_packed[i].reduce(reduce_wrapper)
 
     return result
 
@@ -243,7 +247,6 @@ def row_reduce[
     comptime num_reductions = 1
 
     @inline(.always)
-    @__parameter
     def reduce_wrapper[
         dtype: DType, width: SIMDLength, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -521,16 +524,15 @@ def small_reduce_kernel[
                 comptime for i in range(num_reductions):
 
                     @inline(.always)
-                    @__parameter
                     def reduce_wrapper[
                         dtype: DType, width: SIMDLength
-                    ](
-                        x: SIMD[dtype, width], y: SIMD[dtype, width]
-                    ) capturing -> SIMD[dtype, width]:
+                    ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[
+                        dtype, width
+                    ]:
                         return reduce_fn[dtype, width, i](x, y)
 
-                    result[i] = warp.reduce[warp.shuffle_down, reduce_wrapper](
-                        val[i]
+                    result[i] = warp.reduce[warp.shuffle_down](
+                        val[i], reduce_wrapper
                     )
 
                 if lane_id() == 0:

@@ -84,11 +84,11 @@ from max.gpu.memory import (
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, create_tma_descriptor
 from std.memory import unsafe_memset_zero, unsafe_stack_allocation
-from std.sys import has_nvidia_gpu_accelerator, size_of
+from std.sys import default_accelerator, size_of
 from std.utils.index import Index, IndexList
 
-from layout import Layout, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import UNKNOWN_VALUE, coord, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import (
     SharedMemBarrier,
     SplitLastDimTMATensorTile,
@@ -130,9 +130,7 @@ def _rowmajor_fold_spike_kernel[
     # REFERENCE: rank-2 box (CM, gran) -- one TMA per swizzle atom.
     ref_tma: TMATensorTile[
         dtype,
-        2,
-        IndexList[2](_CM_NUM_ROWS, gran),
-        IndexList[2](_CM_NUM_ROWS, gran),
+        coord[_CM_NUM_ROWS, gran],
         is_k_major=True,
     ],
     # TEST: rank-5 chunk-inner box -- one TMA per page covering all atom-rows x
@@ -144,7 +142,7 @@ def _rowmajor_fold_spike_kernel[
     # wrapper's declared rank-3 shape is irrelevant.
     test_tma: SplitLastDimTMATensorTile[
         dtype,
-        IndexList[3](page_size, 1, head_size),
+        coord[page_size, 1, head_size],
         TensorMapSwizzle.SWIZZLE_128B,
     ],
     mismatch_count: MutPointer[UInt32, MutAnyOrigin],
@@ -355,18 +353,17 @@ def run_spike[
     ), "need a multi-atom-row page (this is the whole point of the spike)"
 
     # ---- gmem [BN, num_heads, head_size] row-major, distinguishable values ----
-    comptime gmem_layout = Layout.row_major[3]()
-    var gmem_shape = IndexList[3](BN, num_heads, head_size)
-    var gmem_runtime = RuntimeLayout[gmem_layout].row_major(gmem_shape)
-    var gmem = ManagedLayoutTensor[dtype, gmem_layout](gmem_runtime, ctx)
-    var gmem_host = gmem.tensor[update=False]()
-    unsafe_memset_zero(gmem_host.ptr, gmem_runtime.size())
+    var gmem = HostDeviceTileTensor[dtype](
+        row_major[BN, num_heads, head_size](), ctx
+    )
+    var gmem_host = gmem.host_tensor()
     for r in range(BN):
         for h in range(num_heads):
             for d in range(head_size):
                 var v = Float64(r * 1000 + h * 100 + d) * 0.001
                 gmem_host[r, h, d] = Scalar[dtype](v)
-    var gmem_dev = gmem.device_tensor()
+    gmem.to_device()
+    var gmem_ptr = gmem.device_tensor().unsafe_ptr()
 
     # ---- REFERENCE descriptor: rank-2 box (CM, gran) over [BN, head_size] -----
     # for the chosen head, viewed k-major (depth, row).  The base pointer is
@@ -374,7 +371,7 @@ def run_spike[
     # gmem[row, head_idx, depth].  globalDim/strides describe the 2D
     # [row, depth] sub-view with row stride = num_heads*head_size.
     comptime ref_box = Index(CM, gran)
-    var head_base = gmem_dev.ptr + head_idx * head_size
+    var head_base = gmem_ptr + head_idx * head_size
     var ref_desc = create_tma_descriptor[dtype, 2, swizzle](
         DeviceBuffer(
             ctx,
@@ -389,39 +386,35 @@ def run_spike[
         Index(num_heads * head_size, 1),
         ref_box,
     )
-    var ref_tma = TMATensorTile[dtype, 2, ref_box, ref_box, is_k_major=True](
+    var ref_tma = TMATensorTile[dtype, coord[CM, gran], is_k_major=True](
         ref_desc
     )
 
     # ---- TEST descriptor: rank-5 chunk-inner page box -------------------------
     # Both paths produce the SAME rank-5 box; carry it in the rank-3
     # `SplitLastDimTMATensorTile` wrapper (the builder's public return type).
-    comptime test_smem_dim = IndexList[3](page_size, 1, head_size)
+    comptime test_smem_dim = coord[page_size, 1, head_size]
     var test_tma: SplitLastDimTMATensorTile[dtype, test_smem_dim, swizzle]
 
     comptime if via_builder:
         # Step B: the production builder. gmem view [rows, num_heads, head_size]
         # (rows = BN here); fold_chunks = num_chunks (BK = head_size, single stage);
         # row_major=True selects the rank-5 chunk-inner box.
-        comptime test_gmem_dim = IndexList[3](
-            UNKNOWN_VALUE, num_heads, head_size
-        )
+        comptime test_gmem_dim = coord[UNKNOWN_VALUE, num_heads, head_size]
         test_tma = create_split_tma[
             test_smem_dim,
             test_gmem_dim,
             swizzle,
             fold_chunks=num_chunks,
             row_major=True,
-        ](ctx, gmem_dev.ptr, BN)
+        ](ctx, gmem_ptr, BN)
     else:
         # Step A: hand-rolled rank-5 descriptor (slowest-first / repo order =
         # [head, atom_row, chunk, CM, gran]).
         var test_desc = create_tma_descriptor[dtype, 5, swizzle](
             DeviceBuffer(
                 ctx,
-                gmem_dev.ptr.unsafe_mut_cast[True]().address_space_cast[
-                    .GENERIC
-                ](),
+                gmem_ptr.unsafe_mut_cast[True]().address_space_cast[.GENERIC](),
                 1,
                 owning=False,
             ),
@@ -520,7 +513,7 @@ def run_spike[
 
 
 def main() raises:
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         with DeviceContext() as ctx:
             # Canonical config from the brief: bf16, SWIZZLE_128B, BN=128,
             # num_heads=2, head_size=128 -> gran=64, CM=8, num_chunks=2,

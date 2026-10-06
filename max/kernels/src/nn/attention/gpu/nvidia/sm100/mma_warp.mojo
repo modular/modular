@@ -386,7 +386,6 @@ def fa4_mma[
     # CALL, the only thing that makes the hoist safe: a captured `v_eff_keys`
     # read pre-rebase would over-count by the window start and run P@V over V
     # pages the producer never loaded (`0 * stale-NaN = NaN`).
-    @__parameter
     @inline(.always)
     def _vkm_tile0(v_eff: UInt32) -> UInt32:
         """Loaded `MMA_K` blocks of KV tile 0.
@@ -397,7 +396,6 @@ def fa4_mma[
         """
         return ceildiv(min(v_eff, UInt32(BN)), UInt32(UMMA1Type.MMA_K))
 
-    @__parameter
     @inline(.always)
     def _vkm_final(v_eff: UInt32, total_iters: UInt32) -> UInt32:
         """Loaded `MMA_K` blocks of the LAST KV tile.

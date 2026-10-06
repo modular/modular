@@ -42,9 +42,9 @@ INTERNAL_PACKAGES = [
     "//Kernels/lib/attn_res",
     "//Kernels/lib/kda",
     "//Kernels/lib/matmul_rs",
+    "//Kernels/lib/mega_ffn",
     "//Kernels/lib/msa",
     "//Kernels/lib/qsa",
-    "//Kernels/src/mega_ffn",
     "//max/internal/driver/src/_hal",
     "//max/internal/driver/src/machine",
 ]

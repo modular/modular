@@ -58,7 +58,13 @@ from max.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 from max.gpu.compute.mma import st_matrix
 from std.memory import bitcast
 from layout.tensor_core_async import st_matrix_n_layout, st_matrix_m_layout
-from ....utils import elementwise_epilogue_type, elementwise_compute_lambda_type
+from ....utils import (
+    ElementwiseEpilogueFn,
+    apply_elementwise_epilogue,
+    elementwise_compute_lambda_type,
+    elementwise_epilogue_type,
+    no_epilogue_fn,
+)
 from std.utils.index import IndexList
 from std.sys import align_of, size_of
 from layout.tile_io import copy_local_to_dram
@@ -170,9 +176,8 @@ trait SMemTileWriter(TrivialRegisterPassable):
 struct TileWriterTMA[
     tma_origin: ImmOrigin,
     dtype: DType,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     //,
 ](SMemTileWriter, TrivialRegisterPassable):
     """TMA-based tile writer for hardware-accelerated memory transfers.
@@ -183,7 +188,6 @@ struct TileWriterTMA[
     Parameters:
         tma_origin: Origin type for the TMA operation.
         dtype: Data type of the elements being written.
-        tma_rank: Rank of the TMA tile (number of dimensions).
         tile_shape: Shape of the TMA tile for async store operations.
         desc_shape: Shape described by the TMA descriptor.
     """
@@ -191,9 +195,7 @@ struct TileWriterTMA[
     comptime _dtype = Self.dtype
 
     comptime TMATensorTilePtr = Pointer[
-        TMATensorTile[
-            Self.dtype, Self.tma_rank, Self.tile_shape, Self.desc_shape
-        ],
+        TMATensorTile[Self.dtype, Self.tile_shape, Self.desc_shape],
         Self.tma_origin,
     ]
     var tma_op: Self.TMATensorTilePtr
@@ -795,16 +797,40 @@ struct RegisterToGMemWriter[
             c_reg_tile: Register tile containing accumulator values.
             coords: Tile coordinates (row, column) in the destination matrix.
         """
+        self._write_tile[has_epilogue_fn=False](
+            c_reg_tile, coords, no_epilogue_fn
+        )
+
+    @inline(.always)
+    def _write_tile[
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+    ](
+        self,
+        c_reg_tile: RegTile,
+        coords: Tuple[Int, Int],
+        value_epilogue_fn: EpilogueFnType,
+    ):
         var m_mma = coords[0]
         var n_mma = coords[1]
         var mma_id = self._get_mma_id(m_mma, n_mma)
 
         comptime if Self.check_runtime_bounds or Self.swapAB:
             # Element-by-element with runtime bounds checking
-            self._write_with_runtime_bounds(c_reg_tile, m_mma, n_mma, mma_id)
-        elif Self.epilogue_fn is not None or Self.compute_lambda_fn is not None:
+            self._write_with_runtime_bounds[has_epilogue_fn=has_epilogue_fn](
+                c_reg_tile, m_mma, n_mma, mma_id, value_epilogue_fn
+            )
+        elif (
+            Self.epilogue_fn is not None
+            or Self.compute_lambda_fn is not None
+            or has_epilogue_fn
+        ):
             # Vectorized with epilogue/compute_lambda
-            self._write_with_transform(c_reg_tile, m_mma, n_mma, mma_id)
+            self._write_with_transform[has_epilogue_fn=has_epilogue_fn](
+                c_reg_tile, m_mma, n_mma, mma_id, value_epilogue_fn
+            )
         else:
             # Direct vectorized copy
             self._write_direct_vectorized(c_reg_tile, m_mma, n_mma, mma_id)
@@ -833,12 +859,18 @@ struct RegisterToGMemWriter[
         )
 
     @inline(.always)
-    def _write_with_transform(
+    def _write_with_transform[
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+    ](
         self,
         c_reg_tile: RegTile,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
+        value_epilogue_fn: EpilogueFnType,
     ):
         """Vectorized write with epilogue or compute_lambda transformation."""
         # Get warp tile and coordinates
@@ -877,27 +909,32 @@ struct RegisterToGMemWriter[
 
             # Bounds check and apply transformation
             if m < Int(max_row) and n < Self.N:
-                Self._apply_transform_and_store[frag_idx](
-                    gmem_frag, c_reg_frag, mma_id, m, n
-                )
+                Self._apply_transform_and_store[
+                    frag_idx, has_epilogue_fn=has_epilogue_fn
+                ](gmem_frag, c_reg_frag, mma_id, m, n, value_epilogue_fn)
 
     @inline(.always)
     @staticmethod
     def _apply_transform_and_store[
-        frag_idx: Int
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        frag_idx: Int,
+        *,
+        has_epilogue_fn: Bool,
     ](
         gmem_frag: TileTensor[mut=True, Self.c_type, ...],
         c_reg_frag: RegTile,
         mma_id: Int,
         m: Int,
         n: Int,
+        value_epilogue_fn: EpilogueFnType,
     ) capturing:
         """Apply epilogue or compute_lambda and store result."""
         comptime alignment = align_of[SIMD[Self.c_type, 2]]()
 
-        comptime if Self.epilogue_fn:
-            comptime epilogue = Self.epilogue_fn.value()
-            epilogue[alignment=alignment](
+        comptime if Bool(Self.epilogue_fn) or has_epilogue_fn:
+            apply_elementwise_epilogue[Self.epilogue_fn, alignment=alignment](
+                value_epilogue_fn,
                 (m, n),
                 c_reg_frag[mma_id, frag_idx].cast[Self.c_type](),
             )
@@ -910,20 +947,32 @@ struct RegisterToGMemWriter[
             gmem_frag.store(Coord(Idx[frag_idx], Idx[0]), reg_val)
 
     @inline(.always)
-    def _write_with_runtime_bounds(
+    def _write_with_runtime_bounds[
+        EpilogueFnType: ElementwiseEpilogueFn,
+        //,
+        *,
+        has_epilogue_fn: Bool,
+    ](
         self,
         c_reg_tile: RegTile,
         m_mma: Int,
         n_mma: Int,
         mma_id: Int,
+        value_epilogue_fn: EpilogueFnType,
     ):
         """Element-by-element with full runtime bounds checking.
+
+        Parameters:
+            EpilogueFnType: Type of `value_epilogue_fn` (inferred).
+            has_epilogue_fn: Whether `value_epilogue_fn` stores the output.
 
         Args:
             c_reg_tile: Register tile containing accumulator values.
             m_mma: MMA tile index in M dimension.
             n_mma: MMA tile index in N dimension.
             mma_id: Linearized MMA tile ID.
+            value_epilogue_fn: Stores each output element when
+                `has_epilogue_fn`.
         """
 
         comptime warp_tile_size_m = Self.wgmma_shape[
@@ -984,8 +1033,7 @@ struct RegisterToGMemWriter[
                         Self.c_type
                     ]()
 
-                    @__parameter
-                    def epilogue_coordinates() -> Tuple[Int, Int]:
+                    def epilogue_coordinates() {imm} -> Tuple[Int, Int]:
                         comptime if Self.swapAB:
                             # In swapAB mode, coordinates are transposed
                             return (
@@ -1016,11 +1064,15 @@ struct RegisterToGMemWriter[
                                 ),
                             )
 
-                    comptime if Self.epilogue_fn:
-                        comptime epilogue = Self.epilogue_fn.value()
+                    comptime if Bool(Self.epilogue_fn) or has_epilogue_fn:
                         var frag_m, frag_n = epilogue_coordinates()
-                        epilogue[alignment=align_of[Scalar[Self.c_type]]()](
-                            (frag_m, frag_n), reg_val
+                        apply_elementwise_epilogue[
+                            Self.epilogue_fn,
+                            alignment=align_of[Scalar[Self.c_type]](),
+                        ](
+                            value_epilogue_fn,
+                            (frag_m, frag_n),
+                            reg_val,
                         )
                     else:
                         comptime if Self.compute_lambda_fn:

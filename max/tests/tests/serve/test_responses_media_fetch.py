@@ -242,19 +242,11 @@ async def test_request_budget_applies(
         )
 
 
-async def test_large_image_encoded_off_the_event_loop(
+async def test_image_encoded_off_the_event_loop(
     serve_media: _ServeMedia,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A payload over the offload threshold encodes on a worker thread.
-
-    Base64 encoding is pure-Python CPU work, so a multi-MB image must not block
-    the loop while other requests are in flight.
-    """
-    big = _image_bytes("PNG") + b"\x00" * (
-        _image_resolution._DATA_URI_OFFLOAD_THRESHOLD + 1
-    )
-    serve_media(big)
+    serve_media(_image_bytes("PNG"))
 
     offloaded: list[str] = []
     original = _image_resolution.asyncio.to_thread
@@ -264,8 +256,6 @@ async def test_large_image_encoded_off_the_event_loop(
         return await original(fn, *args, **kwargs)
 
     monkeypatch.setattr(_image_resolution.asyncio, "to_thread", spy)
-    # PNG bytes with trailing junk still open as a PNG, so this exercises the
-    # offload without needing a genuinely huge image.
     await fetch_media_data_uri("https://example.com/big.png", _settings())
     assert "_encode_data_uri" in offloaded
 

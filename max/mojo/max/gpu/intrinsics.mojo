@@ -42,7 +42,6 @@ from std._gpu.intrinsics import (
     ds_read_tr8_b64,
     ds_read_tr16_b64,
     get_ib_sts,
-    ldg,
     lop,
     mulhi,
     mulwide,

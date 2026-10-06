@@ -30,10 +30,8 @@ using namespace M;
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct HiOptTable : public llvm::opt::PrecomputedOptTable {
-  HiOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
+struct HiOptTable : public llvm::opt::OptTable {
+  HiOptTable() : llvm::opt::OptTable(optionTables()) {}
 };
 } // namespace
 

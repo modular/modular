@@ -383,7 +383,7 @@ static LogicalResult verifyCallOp(OpT op, FuncType sig, ValueRange operands,
              << expected.size() << " " << kind << "s but got " << types.size();
     }
     for (auto [i, type, exp] : llvm::enumerate(types, expected)) {
-      if (type == exp)
+      if (isEqualCanon(type, exp))
         continue;
       return op.emitOpError("callee expected call ")
              << kind << " #" << i << " to be " << exp << " but got " << type;
@@ -737,13 +737,11 @@ TypedAttr FnOp::getFuncLiteralGenerator(
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
                                        fullSig.getParamListAttrs());
-  if (!bindings || llvm::all_of(bindings, [](TypedAttr binding) {
-        return isa<UnboundAttr>(binding);
-      })) {
+  if (!bindings || llvm::all_of(bindings, llvm::IsaPred<UnboundAttr>)) {
     // If all the provided bindings are unbound, return the original generator.
-    // FIXME: this is a hack to avoid the bug when UnboundAttr erased type
-    // dependencies, which results in BindParamsAttr being folded in a wrong
-    // way.
+    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
+    // type dependencies, which results in BindParamsAttr being folded in a
+    // wrong way.
     //
     // E.g.,
     //
@@ -1446,10 +1444,10 @@ void StructDeclOp::build(OpBuilder &builder, OperationState &result,
         TypeAttr::get(TraitType::get(ctx, {})),
         /*isSynthetic=*/{},
         /*nonmaterializableTarget=*/{}, /*moveInit=*/{},
-        /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureSignature=*/{},
+        /*copyInit=*/{}, /*linearTypeErrorMsg*/ {}, /*closureThunkKey=*/{},
         /*docString=*/{}, /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{}, /*sourceName=*/{},
-        /*minAlignment=*/{}, /*convention=*/{}, /*definesClosure=*/{},
+        /*minAlignment=*/{}, /*convention=*/{},
         /*registerPassableConstraint=*/{}, /*annotations=*/{});
   result.regions[0]->push_back(new Block());
 }
@@ -2061,19 +2059,16 @@ DebugInfo::DIScopeAttr TraitDeclOp::getLocScope() {
 void TraitDeclOp::build(OpBuilder &builder, OperationState &result,
                         StringAttr name) {
   MLIRContext *ctx = builder.getContext();
-  UnitAttr none;
   build(builder, result, name, /*sym_visibility=*/nullptr,
         TypeAttr::get(TypeSignatureType::get(ctx)),
         ParamDeclArrayAttr::get(ctx, {}),
         TypeAttr::get(TraitType::get(ctx, {})),
         TraitSymbolArrayAttr::get(ctx, {}),
         /*convention=*/TypeConvention::Unspecified,
-        /*definesClosure=*/none,
         /*docString=*/{},
         /*deprecationInfo=*/{}, /*unavailableInfo=*/{},
         /*hasStableDecorator=*/{}, /*stableSinceVersion=*/{},
-        /*linearTypeErrorMsg*/ {}, /*closureSignature*/ {},
-        /*sourceName=*/{});
+        /*linearTypeErrorMsg*/ {}, /*sourceName=*/{});
   result.regions[0]->push_back(new Block());
 }
 

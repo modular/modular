@@ -264,6 +264,37 @@ __extension Attention:
         comptime has_interior_full_mask = Self.mask_t != CausalMask
 
         @inline(.always)
+        def prefetch_next_tile[
+            next_slot: Int
+        ](
+            mut k_buffer: KBufT,
+            mut k_rope_buffer: KRopeBufT,
+            mut v_buffer: VBufT,
+        ):
+            # The pipeline prefetches one tile ahead even from the final
+            # tile. Past `num_keys` that would be a paged-cache OOB read, so
+            # re-read the last valid tile instead: the data is unused, but
+            # the DMA count (and the `vmcnt` waits below) stays the same.
+            if (
+                k_buffer.kv_cache_iter.tile_start_row
+                >= k_buffer.kv_cache_iter.end
+            ):
+                k_buffer.kv_cache_iter.tile_start_row -= Self.BN
+            if (
+                k_rope_buffer.kv_cache_iter.tile_start_row
+                >= k_rope_buffer.kv_cache_iter.end
+            ):
+                k_rope_buffer.kv_cache_iter.tile_start_row -= Self.BN
+            if (
+                v_buffer.kv_cache_iter.tile_start_row
+                >= v_buffer.kv_cache_iter.end
+            ):
+                v_buffer.kv_cache_iter.tile_start_row -= Self.BN
+            _ = k_buffer.load_from_dram[next_slot]()
+            _ = k_rope_buffer.load_from_dram[next_slot]()
+            _ = v_buffer.load_from_dram[next_slot]()
+
+        @inline(.always)
         @__parameter
         def process_tile[slot: Int, has_next: Bool]():
             comptime next_slot = 1 - slot
@@ -287,9 +318,9 @@ __extension Attention:
                     self.kv_start_row += UInt32(Self.BN)
                     self.mask_advance()
                     comptime if has_next:
-                        _ = k_buffer.load_from_dram[next_slot]()
-                        _ = k_rope_buffer.load_from_dram[next_slot]()
-                        _ = v_buffer.load_from_dram[next_slot]()
+                        prefetch_next_tile[next_slot](
+                            k_buffer, k_rope_buffer, v_buffer
+                        )
                         barrier()
                     return
 
@@ -303,9 +334,7 @@ __extension Attention:
 
             # Prefetch next K+K_rope+V tile before softmax to hide latency.
             comptime if has_next:
-                _ = k_buffer.load_from_dram[next_slot]()
-                _ = k_rope_buffer.load_from_dram[next_slot]()
-                _ = v_buffer.load_from_dram[next_slot]()
+                prefetch_next_tile[next_slot](k_buffer, k_rope_buffer, v_buffer)
 
             # Online softmax: deferred-scale variant that emits packed FMAs
             # (`v_pk_fma_f32 score, scale, neg_scaled_max`) instead of the

@@ -1541,6 +1541,77 @@ def test_cache_shares_memory_pool(ctx: DeviceContext) raises:
             assert_equal(host[i], UInt8(0x22))
 
 
+def test_create_collective_two_graphs(ctx: DeviceContext) raises:
+    print(
+        "Test DeviceGraph.create_collective building and replaying two"
+        " device graphs through the parametric-index interface."
+    )
+    comptime length = 1024
+    comptime block_dim = 256
+
+    var in0 = ctx.enqueue_create_buffer[.float32](length)
+    var in1 = ctx.enqueue_create_buffer[.float32](length)
+    var out_add = ctx.enqueue_create_buffer[.float32](length)
+    var out_scale = ctx.enqueue_create_buffer[.float32](length)
+
+    with in0.map_to_host() as h0, in1.map_to_host() as h1:
+        for i in range(length):
+            h0[i] = Float32(i)
+            h1[i] = Float32(length - i)
+
+    var add_fn = ctx.compile_function[Kernels.vec_add]()
+    var scale_fn = ctx.compile_function[Kernels.scaled_vec_add]()
+    var scale = Float32(3.0)
+
+    def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {imm}:
+        comptime if n == 0:
+            _ = builder.add_function(
+                add_fn,
+                out_add,
+                in0,
+                in1,
+                Int32(length),
+                grid_dim=ceildiv(length, block_dim),
+                block_dim=block_dim,
+            )
+        else:
+            _ = builder.add_function(
+                scale_fn,
+                out_scale,
+                in0,
+                in1,
+                Int32(length),
+                scale,
+                grid_dim=ceildiv(length, block_dim),
+                block_dim=block_dim,
+            )
+
+    def key_for[n: Int]() {imm} -> String:
+        comptime if n == 0:
+            return "collective_vec_add"
+        else:
+            return "collective_scaled_vec_add"
+
+    var cache = DeviceGraphCache()
+    var ctxs: Array[DeviceContext, 2] = [ctx, ctx]
+    var graphs = DeviceGraph.create_collective(
+        ctxs,
+        build_for,
+        key_for,
+        cache=Pointer(to=cache),
+    )
+
+    DeviceGraph.replay_collective(graphs, ctxs)
+
+    with out_add.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], Float32(length))
+
+    with out_scale.map_to_host() as host:
+        for i in range(length):
+            assert_equal(host[i], Float32(length) * scale)
+
+
 comptime TestFunc = def(DeviceContext) thin raises -> None
 comptime TestFuncNoArgs = def() thin raises -> None
 

@@ -54,7 +54,7 @@ from layout.swizzle import Swizzle, make_swizzle as _make_swizzle
 from layout.tma_async import TMATensorTile
 from std.utils.index import Index, IndexList
 from linalg.utils import (
-    elementwise_compute_lambda_type,
+    ElementwiseComputeFn,
     elementwise_epilogue_type,
 )
 from std.utils.fast_div import FastDiv
@@ -73,11 +73,10 @@ from structured_kernels.tile_types import SMemTileArray2DRowMajor
 @inline(.always)
 def tma_wait_pipelined[
     c_type: DType,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     is_last_stage: Bool,
-](c_tma_op: TMATensorTile[c_type, tma_rank, tile_shape, desc_shape]):
+](c_tma_op: TMATensorTile[c_type, tile_shape, desc_shape]):
     """Wait for TMA stores with pipelining.
 
     For SM100 output pipeline:
@@ -527,9 +526,8 @@ struct TMAStoreExecutor[
     @staticmethod
     @inline(.always)
     def _store_non_transpose[
-        tma_rank: Int,
-        tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        tile_shape: Coord,
+        desc_shape: Coord,
         //,
     ](
         c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
@@ -539,7 +537,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, tile_shape, desc_shape],
     ):
         """Handle non-transpose TMA store path."""
         # Path C: Simple tile selection by TMA_BM
@@ -566,9 +564,8 @@ struct TMAStoreExecutor[
     @staticmethod
     @inline(.always)
     def execute[
-        tma_rank: Int,
-        tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        tile_shape: Coord,
+        desc_shape: Coord,
     ](
         c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
@@ -577,7 +574,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, tile_shape, desc_shape],
         warp_id: UInt32,
         lane: UInt32,
     ):
@@ -586,7 +583,7 @@ struct TMAStoreExecutor[
             fence_async_view_proxy()
 
             comptime if Self.transpose_c:
-                Self._store_transpose[tma_rank, tile_shape, desc_shape](
+                Self._store_transpose[tile_shape, desc_shape](
                     c_smem_tile, store_coords, c_tma_op, warp_id
                 )
             else:
@@ -597,9 +594,8 @@ struct TMAStoreExecutor[
     @staticmethod
     @inline(.always)
     def _store_transpose[
-        tma_rank: Int,
-        tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        tile_shape: Coord,
+        desc_shape: Coord,
     ](
         c_smem_tile: TileTensor[Self.c_type, address_space=.SHARED, ...],
         store_coords: TMAStoreCoords[
@@ -608,7 +604,7 @@ struct TMAStoreExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, tile_shape, desc_shape],
         warp_id: UInt32,
     ):
         """Transpose TMA store using reshape."""
@@ -718,9 +714,8 @@ struct TMAReduceExecutor[
     @staticmethod
     @inline(.always)
     def execute[
-        tma_rank: Int,
-        tile_shape: IndexList[tma_rank],
-        desc_shape: IndexList[tma_rank],
+        tile_shape: Coord,
+        desc_shape: Coord,
     ](
         c_smem_tile: TileTensor[
             Self.c_type,
@@ -734,7 +729,7 @@ struct TMAReduceExecutor[
             _,
             Self.batched,
         ],
-        c_tma_op: TMATensorTile[Self.c_type, tma_rank, tile_shape, desc_shape],
+        c_tma_op: TMATensorTile[Self.c_type, tile_shape, desc_shape],
         warp_id: UInt32,
         lane: UInt32,
     ):
@@ -864,9 +859,10 @@ struct EpilogueApplier[
 
     @inline(.always)
     def apply_to_fragment[
+        ComputeFnType: ElementwiseComputeFn,
+        //,
         epilogue_dtype: DType,
         frag_size: Int,
-        compute_lambda_fn: elementwise_compute_lambda_type,
         is_in_bounds: Bool = False,
     ](
         self,
@@ -874,6 +870,7 @@ struct EpilogueApplier[
         staged_row: UInt32,
         staged_col: UInt32,
         is_upper: Bool,
+        compute_fn: ComputeFnType,
     ):
         """Apply epilogue lambda to fragment elements with global coords.
 
@@ -908,53 +905,49 @@ struct EpilogueApplier[
 
             comptime if Self.transpose_c:
                 comptime if is_in_bounds:
-                    frag[offset] = compute_lambda_fn[epilogue_dtype, 1](
+                    frag[offset] = compute_fn[epilogue_dtype, 1, alignment=1](
                         IndexList[2](Int(top_col), Int(top_row)), elem0
                     )
-                    frag[offset + 1] = compute_lambda_fn[epilogue_dtype, 1](
-                        IndexList[2](Int(top_col + 1), Int(top_row)), elem1
-                    )
-                    frag[offset + 2] = compute_lambda_fn[epilogue_dtype, 1](
-                        IndexList[2](Int(bot_col), Int(bot_row)), elem2
-                    )
-                    frag[offset + 3] = compute_lambda_fn[epilogue_dtype, 1](
-                        IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3
-                    )
+                    frag[offset + 1] = compute_fn[
+                        epilogue_dtype, 1, alignment=1
+                    ](IndexList[2](Int(top_col + 1), Int(top_row)), elem1)
+                    frag[offset + 2] = compute_fn[
+                        epilogue_dtype, 1, alignment=1
+                    ](IndexList[2](Int(bot_col), Int(bot_row)), elem2)
+                    frag[offset + 3] = compute_fn[
+                        epilogue_dtype, 1, alignment=1
+                    ](IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3)
                 else:
                     var valid_top_row = top_row < self.N
                     var valid_bot_row = bot_row < self.N
 
                     if valid_top_row and top_col < self.M:
-                        frag[offset] = compute_lambda_fn[epilogue_dtype, 1](
-                            IndexList[2](Int(top_col), Int(top_row)), elem0
-                        )
+                        frag[offset] = compute_fn[
+                            epilogue_dtype, 1, alignment=1
+                        ](IndexList[2](Int(top_col), Int(top_row)), elem0)
                     if valid_bot_row and top_col < self.M:
-                        frag[offset + 2] = compute_lambda_fn[epilogue_dtype, 1](
-                            IndexList[2](Int(bot_col), Int(bot_row)), elem2
-                        )
+                        frag[offset + 2] = compute_fn[
+                            epilogue_dtype, 1, alignment=1
+                        ](IndexList[2](Int(bot_col), Int(bot_row)), elem2)
 
                     if valid_top_row and (top_col + 1) < self.M:
-                        frag[offset + 1] = compute_lambda_fn[epilogue_dtype, 1](
-                            IndexList[2](Int(top_col + 1), Int(top_row)), elem1
-                        )
+                        frag[offset + 1] = compute_fn[
+                            epilogue_dtype, 1, alignment=1
+                        ](IndexList[2](Int(top_col + 1), Int(top_row)), elem1)
                     if valid_bot_row and (top_col + 1) < self.M:
-                        frag[offset + 3] = compute_lambda_fn[epilogue_dtype, 1](
-                            IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3
-                        )
+                        frag[offset + 3] = compute_fn[
+                            epilogue_dtype, 1, alignment=1
+                        ](IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3)
             else:
                 comptime if is_in_bounds:
-                    var elem01 = compute_lambda_fn[
-                        epilogue_dtype, 2, alignment=2
-                    ](
+                    var elem01 = compute_fn[epilogue_dtype, 2, alignment=2](
                         IndexList[2](Int(top_row), Int(top_col)),
                         SIMD[epilogue_dtype, 2](
                             elem0,
                             elem1,
                         ),
                     )
-                    var elem23 = compute_lambda_fn[
-                        epilogue_dtype, 2, alignment=2
-                    ](
+                    var elem23 = compute_fn[epilogue_dtype, 2, alignment=2](
                         IndexList[2](Int(bot_row), Int(bot_col)),
                         SIMD[epilogue_dtype, 2](
                             elem2,
@@ -973,9 +966,7 @@ struct EpilogueApplier[
                     var valid_bot_row = bot_row < self.M
 
                     if valid_top_row:
-                        var elem01 = compute_lambda_fn[
-                            epilogue_dtype, 2, alignment=2
-                        ](
+                        var elem01 = compute_fn[epilogue_dtype, 2, alignment=2](
                             IndexList[2](Int(top_row), Int(top_col)),
                             SIMD[epilogue_dtype, 2](
                                 elem0,
@@ -986,9 +977,7 @@ struct EpilogueApplier[
                         frag[offset + 1] = elem01[1]
 
                     if valid_bot_row:
-                        var elem23 = compute_lambda_fn[
-                            epilogue_dtype, 2, alignment=2
-                        ](
+                        var elem23 = compute_fn[epilogue_dtype, 2, alignment=2](
                             IndexList[2](Int(bot_row), Int(bot_col)),
                             SIMD[epilogue_dtype, 2](
                                 elem2,
@@ -1000,9 +989,10 @@ struct EpilogueApplier[
 
     @inline(.always)
     def apply_to_both_fragments[
+        ComputeFnType: ElementwiseComputeFn,
+        //,
         epilogue_dtype: DType,
         frag_size: Int,
-        compute_lambda_fn: elementwise_compute_lambda_type,
         is_lower_frag_required: Bool,
         is_in_bounds: Bool = False,
     ](
@@ -1012,6 +1002,7 @@ struct EpilogueApplier[
         stage: UInt32,
         c_row: UInt32,
         c_col: UInt32,
+        compute_fn: ComputeFnType,
     ) -> Tuple[
         Array[Scalar[epilogue_dtype], frag_size],
         Array[Scalar[epilogue_dtype], frag_size],
@@ -1024,17 +1015,15 @@ struct EpilogueApplier[
         self.apply_to_fragment[
             epilogue_dtype,
             frag_size,
-            compute_lambda_fn,
             is_in_bounds=is_in_bounds,
-        ](upper_frag, staged_row, staged_col, is_upper=True)
+        ](upper_frag, staged_row, staged_col, True, compute_fn)
 
         comptime if is_lower_frag_required:
             self.apply_to_fragment[
                 epilogue_dtype,
                 frag_size,
-                compute_lambda_fn,
                 is_in_bounds=is_in_bounds,
-            ](lower_frag, staged_row, staged_col, is_upper=False)
+            ](lower_frag, staged_row, staged_col, False, compute_fn)
 
         return (upper_frag.copy(), lower_frag.copy())
 
@@ -1640,7 +1629,6 @@ struct SMemEpilogueWriter[
     simd_size: Int,
     stage: Int,
     rep_frag_size: Int,
-    compute_lambda_fn: elementwise_compute_lambda_type,
 ](TrivialRegisterPassable):
     """SMEM-based epilogue: write accumulators and apply lambda in SMEM."""
 
@@ -1706,18 +1694,34 @@ struct SMemEpilogueWriter[
         self.c_col = c_coord[1] * UInt32(Self.MMA_N)
 
     @inline(.always)
-    def write_tile(self, tile: Self.Tile):
-        """Write accumulator tile to SMEM and apply epilogue lambda."""
+    def write_tile[
+        ComputeFnType: ElementwiseComputeFn
+    ](self, tile: Self.Tile, compute_fn: ComputeFnType):
+        """Write accumulator tile to SMEM and apply `compute_fn`.
+
+        Parameters:
+            ComputeFnType: Type of the compute epilogue closure.
+
+        Args:
+            tile: Upper and lower accumulator fragments.
+            compute_fn: Element-wise epilogue applied to each output value.
+        """
         # Double-buffer tile selection
         var c_smem_tile = self.c_tiles[Self.stage % Self.num_output_stages]
 
         comptime if Self.transpose_c:
-            self._write_transpose(tile.upper, tile.lower, c_smem_tile)
+            self._write_transpose(
+                tile.upper, tile.lower, c_smem_tile, compute_fn
+            )
         else:
-            self._write_non_transpose(tile.upper, tile.lower, c_smem_tile)
+            self._write_non_transpose(
+                tile.upper, tile.lower, c_smem_tile, compute_fn
+            )
 
     @inline(.always)
-    def _write_transpose(
+    def _write_transpose[
+        ComputeFnType: ElementwiseComputeFn
+    ](
         self,
         upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
@@ -1727,6 +1731,7 @@ struct SMemEpilogueWriter[
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
+        compute_fn: ComputeFnType,
     ):
         """Transpose path: reshape tiles and apply epilogue."""
 
@@ -1802,7 +1807,6 @@ struct SMemEpilogueWriter[
                 Self.c_type,
                 smem_logical_layout,
                 Self.swizzle,
-                Self.compute_lambda_fn,
                 Self.num_output_warps,
                 2,  # warp_dim
                 Self.MMA_M,
@@ -1816,6 +1820,7 @@ struct SMemEpilogueWriter[
                 new_smem,
                 warp_i,
                 warp_j,
+                compute_fn,
             )
         else:
             # cta_group=1 path with only upper fragment
@@ -1853,7 +1858,6 @@ struct SMemEpilogueWriter[
                 Self.c_type,
                 smem_logical_layout,
                 Self.swizzle,
-                Self.compute_lambda_fn,
                 Self.num_output_warps,
                 1,  # warp_dim
                 Self.MMA_M,
@@ -1867,10 +1871,13 @@ struct SMemEpilogueWriter[
                 new_smem,
                 Int(self.warp_id),
                 0,
+                compute_fn,
             )
 
     @inline(.always)
-    def _write_non_transpose(
+    def _write_non_transpose[
+        ComputeFnType: ElementwiseComputeFn
+    ](
         self,
         upper_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
         lower_frag: Array[Scalar[Self.epilogue_dtype], Self.rep_frag_size],
@@ -1880,6 +1887,7 @@ struct SMemEpilogueWriter[
             Engine=DefaultEngine[element_width=1],
             ...,
         ],
+        compute_fn: ComputeFnType,
     ):
         """Non-transpose path: tile per warp and apply epilogue."""
         comptime c_smem_tile_m = 32 if Self.cta_group == 2 else Self.BM // Self.num_output_warps
@@ -1938,7 +1946,6 @@ struct SMemEpilogueWriter[
             c_smem_warp_layout,
             c_smem_warp_layout,
             Self.swizzle,
-            Self.compute_lambda_fn,
             Self.num_output_warps,
         ](
             self.M,
@@ -1947,6 +1954,7 @@ struct SMemEpilogueWriter[
             Int(self.c_row),
             upper_tile,
             lower_tile,
+            compute_fn,
         )
 
 
@@ -1959,12 +1967,13 @@ struct SMemEpilogueWriter[
 
 @inline(.always)
 def shared_memory_epilogue_transpose[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     stage: Int,
     stageN: Int,
     c_type: DType,
     c_smem_layout: Layout,
     swizzle: Swizzle,
-    compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: Int,
     warp_dim: Int,
     MMA_M: Int,
@@ -1983,6 +1992,7 @@ def shared_memory_epilogue_transpose[
     ],
     warp_i: Int,
     warp_j: Int,
+    compute_fn: ComputeFnType,
 ):
     """Apply element-wise epilogue to transposed SMEM tile.
 
@@ -2067,8 +2077,8 @@ def shared_memory_epilogue_transpose[
                 if row < UInt32(Int(M)) and col < UInt32(Int(N)):
                     var val = ptr.load[width=simd_size, alignment=alignment]()
                     ptr.store[width=simd_size, alignment=alignment](
-                        compute_lambda_fn[alignment=simd_size](
-                            (Int(row), Int(col)), val
+                        compute_fn[c_type, simd_size, alignment=simd_size](
+                            IndexList[2](Int(row), Int(col)), val
                         )
                     )
     else:
@@ -2132,8 +2142,8 @@ def shared_memory_epilogue_transpose[
                             width=simd_size, alignment=alignment
                         ]()
                         ptr.store[width=simd_size, alignment=alignment](
-                            compute_lambda_fn[alignment=simd_size](
-                                (Int(row), Int(col)), val
+                            compute_fn[c_type, simd_size, alignment=simd_size](
+                                IndexList[2](Int(row), Int(col)), val
                             )
                         )
 
@@ -2142,6 +2152,8 @@ def shared_memory_epilogue_transpose[
 
 @inline(.always)
 def shared_memory_epilogue[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     MMA_M: Int,
     data_paths: Int,
     num_stages: Int,
@@ -2153,7 +2165,6 @@ def shared_memory_epilogue[
     c_smem_upper_layout: Layout,
     c_smem_lower_layout: Layout,
     swizzle: Swizzle,
-    compute_lambda_fn: elementwise_compute_lambda_type,
     num_output_warps: Int,
 ](
     M: UInt32,
@@ -2172,6 +2183,7 @@ def shared_memory_epilogue[
         Engine=DefaultEngine[element_width=1],
         ...,
     ],
+    compute_fn: ComputeFnType,
 ):
     """Apply element-wise epilogue to non-transposed SMEM tile.
 
@@ -2311,20 +2323,20 @@ def shared_memory_epilogue[
             if gmem_upper_row < Int64(Int(M)) and gmem_upper_col < Int64(
                 Int(N)
             ):
-                c_smem_upper_frag[i, 0] = compute_lambda_fn[
-                    alignment=simd_size
+                c_smem_upper_frag[i, 0] = compute_fn[
+                    c_type, simd_size, alignment=simd_size
                 ](
-                    (Int(gmem_upper_row), Int(gmem_upper_col)),
+                    IndexList[2](Int(gmem_upper_row), Int(gmem_upper_col)),
                     c_smem_upper_frag[i, 0],
                 )
 
             if gmem_lower_row < Int64(Int(M)) and gmem_lower_col < Int64(
                 Int(N)
             ):
-                c_smem_lower_frag[i, 0] = compute_lambda_fn[
-                    alignment=simd_size
+                c_smem_lower_frag[i, 0] = compute_fn[
+                    c_type, simd_size, alignment=simd_size
                 ](
-                    (Int(gmem_lower_row), Int(gmem_lower_col)),
+                    IndexList[2](Int(gmem_lower_row), Int(gmem_lower_col)),
                     c_smem_lower_frag[i, 0],
                 )
 

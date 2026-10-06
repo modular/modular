@@ -153,15 +153,15 @@ def _test_grouped_1d1d_block_fp4_impl[
     # Construct TileTensors directly from pointers and layouts
     var a_tt = TileTensor(
         a_buf,
-        row_major(Coord(Int(total_tokens), Idx[packed_K])),
+        row_major(total_tokens, Idx[packed_K]),
     )
     var b_tt = TileTensor(
         b_buf,
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
+        row_major(Idx[num_experts], Idx[N], Idx[packed_K]),
     )
     var c_tt = TileTensor(
         c_buf,
-        row_major(Coord(Int(total_tokens), Idx[N])),
+        row_major(total_tokens, Idx[N]),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf,
@@ -186,26 +186,22 @@ def _test_grouped_1d1d_block_fp4_impl[
     var a_scales_tt = TileTensor(
         a_sf_buf,
         row_major(
-            Coord(
-                Int64(a_scale_dim0),
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Int64(a_scale_dim0),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_sf_buf,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
 
@@ -373,15 +369,15 @@ def _test_grouped_1d1d_mixed_experts[
 
     var a_tt = TileTensor(
         a_buf.unsafe_ptr(),
-        row_major(Coord(Int(total_tokens), Idx[packed_K])),
+        row_major(total_tokens, Idx[packed_K]),
     )
     var b_tt = TileTensor(
         b_buf.unsafe_ptr(),
-        row_major(Coord(Idx[num_experts], Idx[N], Idx[packed_K])),
+        row_major(Idx[num_experts], Idx[N], Idx[packed_K]),
     )
     var c_tt = TileTensor(
         c_buf.unsafe_ptr(),
-        row_major(Coord(Int(total_tokens), Idx[N])),
+        row_major(total_tokens, Idx[N]),
     )
     var a_offsets_tt = TileTensor(
         a_off_buf.unsafe_ptr(),
@@ -403,26 +399,22 @@ def _test_grouped_1d1d_mixed_experts[
     var a_scales_tt = TileTensor(
         a_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
-            Coord(
-                Int64(a_scale_dim0),
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Int64(a_scale_dim0),
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
     var b_scales_tt = TileTensor(
         b_sf_buf.unsafe_ptr().bitcast[Scalar[sf_dtype]](),
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     ).as_unsafe_any_origin()
 
@@ -476,7 +468,6 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
 ]() raises:
     var ctx = DeviceContext()
 
-    @__parameter
     @inline(.always)
     def test_grouped_1d1d_block_fp4[
         num_experts: Int,
@@ -629,7 +620,6 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
     # method per expert from group_size vs SF_MN_GROUP_SIZE.
     print("\n=== Grouped 1D1D NVFP4 Mixed-Expert Dynamic Switching Tests ===")
 
-    @__parameter
     @inline(.always)
     def mixed4[
         num_experts: Int,

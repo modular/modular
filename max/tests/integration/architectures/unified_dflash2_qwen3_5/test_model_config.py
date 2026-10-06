@@ -26,7 +26,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from max.dtype import DType
@@ -36,10 +36,12 @@ from max.pipelines.architectures.llama3.model_config import Llama3Config
 from max.pipelines.architectures.qwen3_5.model_config import Qwen3_5Config
 from max.pipelines.architectures.unified_dflash2_qwen3_5.model_config import (
     UnifiedDflash2Qwen3_5Config,
+    construct_dflash2_draft_kv_params,
     dflash2_draft_width,
     parse_dflash2_draft_hf_config,
     resolve_dflash2_num_speculative_tokens,
 )
+from max.pipelines.lib import KVCacheConfig, PipelineConfig
 from max.pipelines.lib.config.config import (
     _apply_speculative_target_architecture,
     _construct_from_user_fields,
@@ -391,3 +393,44 @@ def test_is_dflash_is_the_family_predicate_and_is_dflash2_is_exact() -> None:
     assert v1.is_dflash() and v2.is_dflash()
     assert not v1.is_dflash2() and v2.is_dflash2()
     assert not SpeculativeConfig(speculative_method="mtp").is_dflash()
+
+
+def test_the_draft_leaf_reserves_the_targets_draft_width() -> None:
+    """Checks the drafter's leaf takes the draft width from the target's.
+
+    A tree's leaves must agree on it, and the drafter's checkpoint does not
+    say what the target verifies.
+    """
+    target_kv = MHAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        devices=[DeviceRef.CPU()],
+        n_kv_heads=4,
+        head_dim=256,
+        num_layers=16,
+        page_size=256,
+        num_draft_tokens=7,
+    )
+    pipeline_config = cast(
+        "PipelineConfig",
+        SimpleNamespace(
+            model=SimpleNamespace(
+                kv_cache=KVCacheConfig(), data_parallel_degree=1
+            )
+        ),
+    )
+    draft_config = cast(
+        "Llama3Config",
+        SimpleNamespace(
+            num_key_value_heads=8,
+            kv_params=SimpleNamespace(head_dim=128),
+            num_hidden_layers=5,
+            devices=[DeviceRef.CPU()],
+        ),
+    )
+
+    draft_kv = construct_dflash2_draft_kv_params(
+        pipeline_config, draft_config, target_kv
+    )
+
+    assert draft_kv.num_draft_tokens == 7
+    assert draft_kv.page_size == target_kv.page_size

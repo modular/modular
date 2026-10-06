@@ -77,6 +77,7 @@ class _FakeBuffer:
     def __init__(self, device: _FakeDevice, *, value: object = None) -> None:
         self.device = device
         self.value = value
+        self.pinned = False
 
     def inplace_copy_from(self, src: _FakeBuffer) -> None:
         self.value = src.value
@@ -116,6 +117,7 @@ def _make_replay_runner() -> ServeGraphCaptureRunner:
     runner._records = {}
     runner.graph_entries = {}
     runner._model = MagicMock()
+    runner._host_input_guard_mode = None
     return runner
 
 
@@ -244,24 +246,24 @@ def test_batched_preface_multi_device_output_parity(
     assert [buf.value for buf in dst_buffers] == expected
 
 
-def test_batched_preface_host_destinations_copy_inline(
+def test_batched_preface_skips_host_destinations(
     fake_batch_copy: None,
 ) -> None:
-    """Host-resident destinations copy inline via inplace_copy_from.
+    """Host-resident destinations are not refreshed; device ones are.
 
-    Device ID 9 is modelled as host-resident; its copies must go through the
-    per-copy inline path (not the batch path) and still deliver the correct
-    values.
+    Device ID 9 is modelled as host-resident. Replay runs no host code, so the
+    graph only read that input at capture and it keeps its captured value.
     """
     runner = _make_replay_runner()
     bc, model_inputs, dst_buffers = _install_scenario(
         runner, [0, 9, 0], host_device_ids={9}
     )
-    expected = [src.value for src in model_inputs.buffers]
+    captured = [buf.value for buf in dst_buffers]
+    live = [src.value for src in model_inputs.buffers]
 
     runner.replay(model_inputs=model_inputs, batch_characteristics=bc)
 
-    assert [buf.value for buf in dst_buffers] == expected
+    assert [buf.value for buf in dst_buffers] == [live[0], captured[1], live[2]]
 
 
 def test_batched_preface_single_device(fake_batch_copy: None) -> None:

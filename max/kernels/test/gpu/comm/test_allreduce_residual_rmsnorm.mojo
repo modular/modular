@@ -246,7 +246,7 @@ def test_fused_allreduce_rmsnorm_fp8[
         ]: Signal.unsafe_ptr_from(signal_buffers[i])
     )
 
-    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
     comptime InputTileType = TileTensor[
         in_dtype, type_of(in_layout), ImmutAnyOrigin
     ]
@@ -304,11 +304,11 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     var ref_fp8_tile = TileTensor(
         ref_fp8_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var ref_scales_tile = TileTensor(
         ref_scales_dev,
-        row_major(Coord(Idx[rows], Idx[1])),
+        row_major(Idx[rows], Idx[1]),
     )
 
     rms_norm_fused_fp8[
@@ -342,11 +342,11 @@ def test_fused_allreduce_rmsnorm_fp8[
 
     var fused_fp8_tile = TileTensor(
         fused_fp8_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var fused_scales_tile = TileTensor(
         fused_scales_dev,
-        row_major(Coord(Idx[rows], Idx[1])),
+        row_major(Idx[rows], Idx[1]),
     )
 
     group_start()
@@ -451,7 +451,7 @@ def test_fused_allreduce_rmsnorm_noquant[
         ]: Signal.unsafe_ptr_from(signal_buffers[i])
     )
 
-    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
     comptime InputTileType = TileTensor[
         dtype, type_of(in_layout), ImmutAnyOrigin
     ]
@@ -508,10 +508,10 @@ def test_fused_allreduce_rmsnorm_noquant[
     var dummy_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
 
     var fused_out_tile = TileTensor(
-        fused_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+        fused_out_dev, row_major(Idx[rows], Idx[cols])
     )
     var dummy_scales_tile = TileTensor(
-        dummy_scales_dev, row_major(Coord(Idx[rows], Idx[1]))
+        dummy_scales_dev, row_major(Idx[rows], Idx[1])
     )
     var scale_ub = Float32(1.0)
 
@@ -608,7 +608,7 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
         ]: Signal.unsafe_ptr_from(signal_buffers[i])
     )
 
-    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
     comptime InputTileType = TileTensor[
         in_dtype, type_of(in_layout), ImmutAnyOrigin
     ]
@@ -676,11 +676,11 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
     comptime shape = IndexList[2](rows, cols)
     var ref_fp8_tile = TileTensor(
         ref_fp8_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var ref_scales_tile = TileTensor(
         ref_scales_dev,
-        row_major(Coord(Idx[rows], Idx[1])),
+        row_major(Idx[rows], Idx[1]),
     )
 
     rms_norm_fused_fp8[
@@ -715,19 +715,19 @@ def test_fused_allreduce_residual_rmsnorm_fp8[
 
     var fused_fp8_tile = TileTensor(
         fused_fp8_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var fused_scales_tile = TileTensor(
         fused_scales_dev,
-        row_major(Coord(Idx[rows], Idx[1])),
+        row_major(Idx[rows], Idx[1]),
     )
     var residual_tile = TileTensor(
         residual_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
     var fused_residual_output_tile = TileTensor(
         fused_residual_output_dev,
-        row_major(Coord(Idx[rows], Idx[cols])),
+        row_major(Idx[rows], Idx[cols]),
     )
 
     group_start()
@@ -876,7 +876,7 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
         ]: Signal.unsafe_ptr_from(signal_buffers[i])
     )
 
-    comptime in_layout = row_major(Coord(Idx[rows], Idx[cols]))
+    comptime in_layout = row_major(Idx[rows], Idx[cols])
     comptime InputTileType = TileTensor[
         dtype, type_of(in_layout), ImmutAnyOrigin
     ]
@@ -946,16 +946,16 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
     var dummy_scales_dev = ctx.enqueue_create_buffer[.float32](rows)
 
     var fused_out_tile = TileTensor(
-        fused_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+        fused_out_dev, row_major(Idx[rows], Idx[cols])
     )
     var fused_res_out_tile = TileTensor(
-        fused_res_out_dev, row_major(Coord(Idx[rows], Idx[cols]))
+        fused_res_out_dev, row_major(Idx[rows], Idx[cols])
     )
     var residual_tile = TileTensor(
-        residual_dev, row_major(Coord(Idx[rows], Idx[cols]))
+        residual_dev, row_major(Idx[rows], Idx[cols])
     )
     var dummy_scales_tile = TileTensor(
-        dummy_scales_dev, row_major(Coord(Idx[rows], Idx[1]))
+        dummy_scales_dev, row_major(Idx[rows], Idx[1])
     )
     var scale_ub = Float32(1.0)
 
@@ -1039,7 +1039,7 @@ def main() raises:
     print("FP8 output dtype:", out_fp8_dtype)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
-        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime num_gpus = test_gpu_counts[gpu_idx]
         if num_devices < num_gpus:
             continue
 

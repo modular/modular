@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, sqrt
-from std.memory import alloc, dealloc
+from std.memory import alloc
 from std.random import randn
 from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
@@ -32,11 +32,7 @@ from internal_utils._utils import InitializationType
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -51,7 +47,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def bench_decode[
@@ -104,51 +100,26 @@ def bench_decode[
         num_heads=num_heads,
         _is_cache_length_accurate=True,
     ](batch_size, num_keys, 1, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
 
     @inline(.always)
     def bench_func(
         mut b: Bencher,
-    ) {var cb_q, var cb_k, var cb_o, var scalar_args_buf_lt, imm,}:
+    ) {var cb_q, var cb_k, var cb_o, var scalar_args_tt, imm,}:
         @inline(.always)
         def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        seq_len,
-                        Idx[num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
             )
             var k_device = TileTensor(
                 cb_k.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        num_keys,
-                        Idx[kv_num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size, num_keys, Idx[kv_num_heads], Idx[depth]),
             )
             var output_device = TileTensor(
                 cb_o.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        seq_len,
-                        Idx[num_heads],
-                        Idx[v_depth],
-                    )
-                ),
+                row_major(batch_size, seq_len, Idx[num_heads], Idx[v_depth]),
             )
-            var scalar_args_tt = TileTensor(
-                scalar_args_buf_lt.ptr, row_major[3]()
-            )
-
             flare_mla_decoding[
                 config=MHAConfig[qkv_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
@@ -273,11 +244,11 @@ def bench_prefill[
     # Row offsets tensors (these don't need cache busting offsets).
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Coord(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Coord(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
     @inline(.always)
@@ -297,54 +268,25 @@ def bench_prefill[
         def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * seq_len,
-                        Idx[num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size * seq_len, Idx[num_heads], Idx[depth]),
             )
             var k_device = TileTensor(
                 cb_k.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * num_keys,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
             )
             var v_device = TileTensor(
                 cb_v.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * num_keys,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
             )
             var cache_device = TileTensor(
                 cb_cache.offset_ptr(iteration),
                 row_major(
-                    Coord(
-                        batch_size,
-                        num_keys,
-                        Idx[cache_num_heads],
-                        Idx[cache_depth],
-                    )
+                    batch_size, num_keys, Idx[cache_num_heads], Idx[cache_depth]
                 ),
             )
             var output_device = TileTensor(
                 cb_o.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * seq_len,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
             )
 
             flare_mla_prefill[rank=q_device.rank](
@@ -460,7 +402,7 @@ def bench_prefill_sparse[
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
-    # Physical indices: cycle through all valid (page, offset) pairs.
+    # Physical indices use cyclic page and intra-page offsets.
     var indices_host_alloc = alloc[UInt32](
         {count = total_indices}
     ).into_managed()
@@ -481,53 +423,51 @@ def bench_prefill_sparse[
 
     ctx.synchronize()
 
-    dealloc(kv_host_alloc^)
-    dealloc(lut_host_alloc^)
-    dealloc(cache_lengths_host_alloc^)
-    dealloc(indices_host_alloc^)
-    dealloc(topk_lengths_host_alloc^)
-
     # Build PagedKVCacheCollection from device buffers.
     comptime kv_params = KVCacheStaticParams(
         num_heads=kv_num_heads, head_size=qk_depth, is_mla=True
     )
-    comptime kv_block_layout = Layout.row_major[6]()
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lut_layout = Layout.row_major[2]()
-
-    var kv_block_lt = LayoutTensor[qkv_type, kv_block_layout](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](
-                num_pages, 1, num_layers, page_size, kv_num_heads, qk_depth
-            )
-        ),
+    comptime Collection = PagedKVCacheCollection[
+        qkv_type,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime blocks_layout_type = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*blocks_layout_type.shape_types]()
+    blocks_shape[0] = Int64(num_pages)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*blocks_layout_type.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var blocks = TileTensor(
+        blocks_device, blocks_layout_type(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var cache_lengths_lt = LayoutTensor[mut=False, .uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    var lookup_table = (
+        TileTensor(lut_device, row_major(Int64(batch_size), Int64(num_pages)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var lut_lt = LayoutTensor[mut=False, .uint32, lut_layout, _](
-        lut_device.unsafe_ptr(),
-        RuntimeLayout[lut_layout].row_major(
-            IndexList[2](batch_size, num_pages)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[qkv_type, kv_params, page_size](
-        kv_block_lt,
-        cache_lengths_lt,
-        lut_lt,
+    var kv_collection = Collection(
+        blocks,
+        cache_lengths,
+        lookup_table,
         UInt32(s_q),
         UInt32(num_kv_tokens),
     )
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var indices_tt = TileTensor(
-        indices_device.unsafe_ptr(), row_major(total_indices)
-    )
+    var indices_tt = TileTensor(indices_device, row_major(len(indices_device)))
     var topk_lengths_tt = TileTensor(
-        topk_lengths_device.unsafe_ptr(), row_major(s_q)
+        topk_lengths_device, row_major(len(topk_lengths_device))
     )
 
     comptime config = MLASparseConfig[
@@ -607,6 +547,11 @@ def bench_prefill_sparse[
 
     ctx.synchronize()
 
+    _ = kv_host_alloc
+    _ = lut_host_alloc
+    _ = cache_lengths_host_alloc
+    _ = indices_host_alloc
+    _ = topk_lengths_host_alloc
     _ = blocks_device
     _ = lut_device
     _ = cache_lengths_device

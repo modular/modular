@@ -423,6 +423,36 @@ def test_batch_inplace_copy_mixed_host_device_sources_parity() -> None:
         )
 
 
+def test_batch_inplace_copy_skips_zero_byte_pinned_prefix() -> None:
+    """A zero-byte pinned pair is skipped, and the copy beside it lands."""
+    gpu = Accelerator()
+    backing = Buffer(dtype=DType.int64, shape=(4,), device=gpu)
+    backing.inplace_copy_from(
+        Buffer.from_numpy(np.array([1, 2, 3, 4], dtype=np.int64))
+    )
+    empty_dst = backing[:0].view(DType.int64, (1, 0))
+    empty_src = Buffer(
+        dtype=DType.int64,
+        shape=(1, 0),
+        device=gpu,
+        usage=Usage.STAGING | Usage.UNTRACKED,
+    )
+    other_src = Buffer.from_numpy(np.array([99], dtype=np.int64))
+    other_dst = Buffer(dtype=DType.int64, shape=(1,), device=gpu)
+
+    assert empty_dst._data_ptr() != empty_src._data_ptr()
+
+    batch_inplace_copy([empty_dst, other_dst], [empty_src, other_src])
+    gpu.synchronize()
+
+    np.testing.assert_array_equal(
+        backing.to_numpy(), np.array([1, 2, 3, 4], dtype=np.int64)
+    )
+    np.testing.assert_array_equal(
+        other_dst.to_numpy(), np.array([99], dtype=np.int64)
+    )
+
+
 def test_batch_inplace_copy_skips_identity_on_accelerator() -> None:
     """Identity pairs on GPU are no-ops; adjacent pairs still copy."""
     gpu = Accelerator()
@@ -440,6 +470,27 @@ def test_batch_inplace_copy_skips_identity_on_accelerator() -> None:
 
     np.testing.assert_array_equal(stable.to(CPU()).to_numpy(), [42.0])
     np.testing.assert_array_equal(other_dst.to(CPU()).to_numpy(), [99.0])
+
+
+def test_batch_inplace_copy_lands_same_address_on_different_devices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Check inplace copies across devices don't get de-duplicated if the
+    addresses are identical.
+    """
+    gpu = Accelerator()
+    src = Buffer.from_numpy(np.array([1, 2, 3, 4], dtype=np.uint32))
+    cpu_dst = Buffer.from_numpy(np.zeros(4, dtype=np.uint32))
+    gpu_dst = Buffer.from_numpy(np.zeros(4, dtype=np.uint32)).to(gpu)
+    gpu.synchronize()
+
+    # Patch _data_ptr to return the same value
+    monkeypatch.setattr(Buffer, "_data_ptr", lambda self: 2)
+    batch_inplace_copy([cpu_dst, gpu_dst], [src, src])
+    gpu.synchronize()
+
+    np.testing.assert_array_equal(cpu_dst.to_numpy(), [1, 2, 3, 4])
+    np.testing.assert_array_equal(gpu_dst.to(CPU()).to_numpy(), [1, 2, 3, 4])
 
 
 def test_batch_inplace_copy_pinned_poison_pill_parity() -> None:

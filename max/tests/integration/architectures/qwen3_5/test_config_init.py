@@ -59,18 +59,25 @@ def _text_config(head_dim: int) -> SimpleNamespace:
     )
 
 
-def _pipeline_config() -> Mock:
+def _pipeline_config(num_speculative_tokens: int | None = None) -> Mock:
     pipeline_config = Mock()
     pipeline_config.model.data_parallel_degree = 1
+    pipeline_config.speculative = (
+        None
+        if num_speculative_tokens is None
+        else SimpleNamespace(num_speculative_tokens=num_speculative_tokens)
+    )
     return pipeline_config
 
 
 def _construct_kv_params(
-    head_dim: int, kv_cache_config: KVCacheConfig
+    head_dim: int,
+    kv_cache_config: KVCacheConfig,
+    num_speculative_tokens: int | None = None,
 ) -> KVCacheParams:
     return Qwen3_5Config._attn_kv_params(
         huggingface_config=_text_config(head_dim),
-        pipeline_config=_pipeline_config(),
+        pipeline_config=_pipeline_config(num_speculative_tokens),
         devices=[DeviceRef.CPU()],
         kv_cache_config=kv_cache_config,
         cache_dtype=DType.bfloat16,
@@ -98,6 +105,22 @@ def test_page_size_unchanged_for_small_head_dim() -> None:
     kv_cache_config = KVCacheConfig()
     kv_params = _construct_kv_params(128, kv_cache_config)
     assert kv_params.page_size == 128
+
+
+def test_a_speculative_cache_reserves_for_its_drafts() -> None:
+    """Checks the attention leaf carries the draft width, without a method.
+
+    A verify writes ``K + 1`` tokens, and the cache reserves a request's
+    pages from this width. The method would add a draft attention input the
+    graph does not take.
+    """
+    kv_params = _construct_kv_params(256, KVCacheConfig(), 7)
+    assert kv_params.num_draft_tokens == 7
+    assert kv_params.speculative_method is None
+
+
+def test_an_unspeculated_cache_reserves_no_drafts() -> None:
+    assert _construct_kv_params(256, KVCacheConfig()).num_draft_tokens == 0
 
 
 def test_declared_dtype_reads_the_normalized_torch_dtype() -> None:

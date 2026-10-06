@@ -45,12 +45,22 @@ def missing_ret_val() -> __mlir_type.index:
 def ret_type_mismatch() -> __mlir_type.index:
   return 4.0 # expected-error {{cannot implicitly convert 'FloatLiteral[4]' value to '__mlir_type.index' in return value}}
 
-async def testAsyncVoid(): pass
-async def testAsyncInt() -> Int: return 42
+__async def testAsyncVoid(): pass
+__async def testAsyncInt() -> Int: return 42
 
 def callsWith():
-  testAsyncVoid() # expected-warning {{'Coroutine[None, {}]' value is not awaited; use 'await' to get its result}}
-  testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value is not awaited; use 'await' to get its result}}
+  testAsyncVoid() # expected-warning {{'Coroutine[None, {}]' value is not awaited; use '__await' to get its result}}
+  testAsyncInt() # expected-warning {{'Coroutine[Int, {}]' value is not awaited; use '__await' to get its result}}
+
+# expected-warning @+1 {{async/await support in Mojo is experimental and unstable, there are many known issues. Please do not use it in production and do not expect correctness. To suppress this warning, use '__async' and '__await' keywords. That does not make the feature stable, it merely suppresses the warning.}}
+async def testUnprefixedAsync() -> Int: return 1
+
+__async def testUnprefixedAwait() -> Int:
+  # expected-warning @+1 {{async/await support in Mojo is experimental and unstable}}
+  return await testUnprefixedAsync()
+
+# expected-warning @+1 {{async/await support in Mojo is experimental and unstable}}
+def testUnprefixedAsyncFnType(f: async def() thin -> Int): pass
 
 
 struct ThingWithStaticMethod(Movable where False):
@@ -326,7 +336,7 @@ struct TestPackErrorMessage[*Ts: AnyType](Movable where False):
 
 # expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
 @always_inline("builtin")
-async def always_inline_builtin_1(): pass
+__async def always_inline_builtin_1(): pass
 
 # expected-error @+2 {{'@always_inline("builtin")' does not support this argument convention}}
 @always_inline("builtin")

@@ -24,6 +24,8 @@
 #include "mlir/Pass/PassOptions.h"
 #include "llvm/ADT/SmallSet.h"
 
+#include <optional>
+
 //===----------------------------------------------------------------------===//
 // Forward Declarations
 //===----------------------------------------------------------------------===//
@@ -212,6 +214,67 @@ createElaborateGenerators(TargetInfoAttr target,
 std::unique_ptr<mlir::Pass> createAutomaticInline(
     const AutomaticInlineOptions &options = {},
     std::function<void(mlir::OpPassManager &)> buildFuncPasses = {});
+
+//===----------------------------------------------------------------------===//
+// DecomposeFunctionArguments
+//===----------------------------------------------------------------------===//
+
+/// One flattened leaf surviving a decomposed argument.
+struct DecomposedArgLeaf {
+  mlir::Type type;
+  /// `struct.extract` index path from the original argument to this leaf.
+  llvm::SmallVector<unsigned> path;
+  /// The leaf's `fnArgAttrs` entry; may be null.
+  mlir::DictionaryAttr argAttrs;
+  /// The leaf's calling convention; unset inherits the original argument's.
+  std::optional<ArgConvention> convention;
+};
+
+/// Decides which arguments `DecomposeFunctionArguments` flattens and what
+/// each surviving leaf's attributes and convention are. All decomposition
+/// policy lives behind this interface; the pass only knows how to rewrite a
+/// function's signature, entry block and body once told which leaves
+/// survive a given argument.
+class FunctionArgumentDecompositionPolicy {
+public:
+  virtual ~FunctionArgumentDecompositionPolicy() = default;
+
+  /// Plans argument `argIdx` (of type `argType`) of `func`. Returns
+  /// - `std::nullopt` to leave the argument untouched, or the leaves it
+  ///   flattens to (an empty list drops the whole argument).
+  /// - `failure()` for a policy violation the implementation has already
+  ///   diagnosed on `func`.
+  /// - vector of decomposed leaves otherwise
+  virtual mlir::FailureOr<std::optional<llvm::SmallVector<DecomposedArgLeaf>>>
+  planArgument(FuncOp func, unsigned argIdx, mlir::Type argType) = 0;
+};
+
+/// Default policy: flattens every `kgen.struct` argument unconditionally,
+/// with no per-leaf attributes and inherited conventions. A pointer-typed
+/// field becomes a leaf as-is rather than being dereferenced.
+std::unique_ptr<FunctionArgumentDecompositionPolicy>
+createAlwaysDecomposeStructPolicy();
+
+/// Flattens `kgen.struct` arguments of every `kgen.func` into the leaves a
+/// `FunctionArgumentDecompositionPolicy` names. A leaf may stay a pointer,
+/// so a body use may narrow past a leaf or stop short of one; the former is
+/// re-rooted on the leaf, the latter rebuilt via `struct.create`. A gap in
+/// the policy's leaf coverage or a `pop.store` through a decomposed pointer
+/// is an error. Surviving `kgen.call`s to a decomposed callee are rewritten.
+///
+/// A changed function gets `kgen.decomposed_arg_map`: one `DenseI32ArrayAttr`
+/// `[newStart, newLength, wasDecomposed]` per original argument, so a target
+/// pass can remap old-arg-indexed metadata.
+///
+/// The generated `createDecomposeFunctionArguments()` uses the default
+/// policy; a target plugs its own scheme into its pipeline through this one.
+std::unique_ptr<mlir::Pass> createDecomposeFunctionArguments(
+    std::unique_ptr<FunctionArgumentDecompositionPolicy> policy);
+
+/// Function attribute `DecomposeFunctionArguments` sets on a changed
+/// function; see `createDecomposeFunctionArguments` for the format.
+inline constexpr llvm::StringLiteral kDecomposedArgMapAttrName =
+    "kgen.decomposed_arg_map";
 
 //===----------------------------------------------------------------------===//
 // ReorderParamOps

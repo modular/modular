@@ -37,8 +37,8 @@ def stencil1d(
     var coeff2 = Int(coeff2_dev)
     var tid = global_idx.x
 
-    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
-    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
+    var a = TileTensor(a_ptr, row_major(arr_size))
+    var b = TileTensor(b_ptr, row_major(arr_size))
 
     if 0 < tid < arr_size - 1:
         b.store(
@@ -65,8 +65,8 @@ def stencil1d_smem(
     var tid = global_idx.x
     var lindex = thread_idx.x + 1
 
-    var a = TileTensor(a_ptr, row_major(Coord(Int(arr_size))))
-    var b = TileTensor(b_ptr, row_major(Coord(Int(arr_size))))
+    var a = TileTensor(a_ptr, row_major(arr_size))
+    var b = TileTensor(b_ptr, row_major(arr_size))
 
     var a_shared = unsafe_stack_allocation[
         BLOCK_DIM + 2, DType.float32, address_space=.SHARED

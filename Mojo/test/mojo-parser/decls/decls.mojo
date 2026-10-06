@@ -948,21 +948,21 @@ struct Container[T: AnyType](TrivialRegisterPassable):
         self.address = __mlir_attr[`#interp.pointer<0> : `, Self._mlir_type]
 
 
-async def load(server_ptr: Container[__mlir_type.index]):
+__async def load(server_ptr: Container[__mlir_type.index]):
     pass
 
 
 # CHECK-LABEL: lit.fn @"awaitSomething()"
-async def awaitSomething():
+__async def awaitSomething():
     var ptr = Container[__mlir_type.index]()
     # CHECK: [[CORO:%.*]] = lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType [{{.*}}], :origin.set {}>(%{{.*}}) :
     # CHECK-SAME: !lit.generator<("handle": !alias_AnyCoroutine1) -> !lit.struct<#Coroutine <:!AnyType
-    await load(ptr)
+    __await load(ptr)
 
 
 # CHECK-LABEL: lit.fn @"coroutine
 # CHECK-SAME: [mut [[LT:.*]]](?, %__result__: !lit.ref<:meta<!Int> #alias_Int, mut [[LT]]> byref_result) async -> !kgen.none
-async def coroutine() -> Int:
+__async def coroutine() -> Int:
     # CHECK: lit.ref.store %0, %__result__
     # CHECK: lit.return %none
     return 0
@@ -971,7 +971,7 @@ async def coroutine() -> Int:
 # CHECK-LABEL: lit.struct.decl @StructWithAsync
 struct StructWithAsync(Movable where False):
     # CHECK-LABEL: lit.fn @"do_something{{.*}}({{.*}}) async
-    async def do_something(self: StructWithAsync):
+    __async def do_something(self: StructWithAsync):
         # CHECK-NEXT: [[CORO:%.*]] = lit.async.call[!lit.generator<[1](?, "__result__": !lit.ref<:meta<!Int> #alias_Int, mut *[0,0]> byref_result) async -> !kgen.none>: @decls::@"coroutine()"][imm {}]()
         # CHECK-NEXT: %1 = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
         # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}<:!AnyType !Int, :origin.set {}>(%1)
@@ -980,7 +980,7 @@ struct StructWithAsync(Movable where False):
 
 # CHECK-LABEL: lit.fn @"call_struct_async
 # CHECK-SAME: [imm [[LT:.*]], mut {{.*}}]{{.*}}) async -> !kgen.none
-async def call_struct_async(f: StructWithAsync):
+__async def call_struct_async(f: StructWithAsync):
     # CHECK-NEXT: lit.async.call[!lit.generator<[2]({{.*}}, "__result__":{{.*}}) async -> !kgen.none>: @{{.*}}][imm [[LT]], imm {}](%f)
     _ = f.do_something()
 
@@ -997,26 +997,26 @@ struct Awaitable(Movable where False):
 def awaitable() -> Int:
     # CHECK: call {{.*}}@Awaitable::@"__await__{{.*}}(%aw)
     var aw = Awaitable()
-    return await aw
+    return __await aw
 
 
 # COM: https://github.com/modular/mojo/issues/951
 @always_inline
-async def inline_async() -> Int:
+__async def inline_async() -> Int:
     return 0
 
 
 # CHECK-LABEL: lit.fn @"use_inline_async()"
-async def use_inline_async() -> Int:
+__async def use_inline_async() -> Int:
     # CHECK: [[ASYNC_RESULT:%.*]] = lit.async.call{{.*}}inline_async
     # CHECK: [[TMP2:%.*]] = kgen.rebind [[ASYNC_RESULT]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: [[TMP:%.*]] = lit.call {{.*}}Coroutine{{.*}}__init__{{.*}}([[TMP2]]) :
     # CHECK: lit.ref.store [[TMP]], [[CORO:%.*]] : <
     # CHECK: lit.call {{.*}}Coroutine{{.*}}__await__{{.*}}([[CORO]], %{{.*}})
-    return await inline_async()
+    return __await inline_async()
 
 
-async def capture_byref(mut x: Awaitable, y: Awaitable):
+__async def capture_byref(mut x: Awaitable, y: Awaitable):
     pass
 
 
@@ -1025,7 +1025,7 @@ struct LifetimeAccess[origin: __mlir_type.`!lit.origin<true>`](RegisterPassable)
     pass
 
 
-async def lifetime_access(var x: LifetimeAccess[_]):
+__async def lifetime_access(var x: LifetimeAccess[_]):
     pass
 
 
@@ -1049,7 +1049,7 @@ def coroutine_origins():
 
 
 # CHECK-LABEL: lit.fn @"mem_result{{.*}}(?, %__result__: !lit.ref<!Awaitable, {{.*}}> byref_result) async -> !kgen.none
-async def mem_result() -> Awaitable:
+__async def mem_result() -> Awaitable:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_result()"][imm {}]()
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: lit.call {{.*}}@Coroutine::@"__init__{{.*}}([[CORO2]])
@@ -1057,7 +1057,7 @@ async def mem_result() -> Awaitable:
 
 
 # CHECK-LABEL: lit.fn @"mem_raises{{.*}}(?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<:meta<!Int> #alias_Int, {{.*}}> byref_result) throws|async -> !kgen.scalar<bool>
-async def mem_raises() raises -> Int:
+__async def mem_raises() raises -> Int:
     # CHECK: [[CORO:%.*]] = lit.async.call[{{.*}}mem_raises()"][imm {}, imm {}]()
     # CHECK: [[CORO2:%.*]] = kgen.rebind [[CORO]] : !co.routine to !alias_AnyCoroutine1
     # CHECK: lit.call {{.*}}@RaisingCoroutine::@"__init__{{.*}}([[CORO2]])
@@ -1068,7 +1068,7 @@ async def mem_raises() raises -> Int:
 def async_closure_capture(x: String):
     @__parameter
     # CHECK: lit.fn *"capture_it
-    async def capture_it():
+    __async def capture_it():
         _ = x
 
     # CHECK: lit.async.call[{{.*}}capture_it

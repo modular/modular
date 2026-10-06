@@ -228,34 +228,35 @@ def _dtype_to_rocshmem_type[
     ptrdiff_t            ptrdiff       64
     """
 
-    comptime if dtype == .float16:
-        return get_static_string[prefix, "half", suffix]()
-    elif dtype == .float32:
-        return get_static_string[prefix, "float", suffix]()
-    elif dtype == .float64:
-        return get_static_string[prefix, "double", suffix]()
-    elif dtype == .int8:
-        return get_static_string[prefix, "schar", suffix]()
-    elif dtype == .uint8:
-        return get_static_string[prefix, "char", suffix]()
-    elif dtype == .int16:
-        return get_static_string[prefix, "short", suffix]()
-    elif dtype == .uint16:
-        return get_static_string[prefix, "ushort", suffix]()
-    elif dtype == .int32:
-        return get_static_string[prefix, "int", suffix]()
-    elif dtype == .uint32:
-        return get_static_string[prefix, "uint", suffix]()
-    elif dtype == .int64:
-        return get_static_string[prefix, "long", suffix]()
-    elif dtype == .uint64:
-        return get_static_string[prefix, "ulong", suffix]()
-    elif dtype == .int:
-        return get_static_string[prefix, "longlong", suffix]()
-    else:
-        CompilationTarget.unsupported_target_error[
-            operation=__get_current_function_name()
-        ]()
+    comptime __match dtype:
+        case .float16:
+            return get_static_string[prefix, "half", suffix]()
+        case .float32:
+            return get_static_string[prefix, "float", suffix]()
+        case .float64:
+            return get_static_string[prefix, "double", suffix]()
+        case .int8:
+            return get_static_string[prefix, "schar", suffix]()
+        case .uint8:
+            return get_static_string[prefix, "char", suffix]()
+        case .int16:
+            return get_static_string[prefix, "short", suffix]()
+        case .uint16:
+            return get_static_string[prefix, "ushort", suffix]()
+        case .int32:
+            return get_static_string[prefix, "int", suffix]()
+        case .uint32:
+            return get_static_string[prefix, "uint", suffix]()
+        case .int64:
+            return get_static_string[prefix, "long", suffix]()
+        case .uint64:
+            return get_static_string[prefix, "ulong", suffix]()
+        case .int:
+            return get_static_string[prefix, "longlong", suffix]()
+        case _:
+            CompilationTarget.unsupported_target_error[
+                operation=__get_current_function_name()
+            ]()
 
 
 # ===-----------------------------------------------------------------------===#

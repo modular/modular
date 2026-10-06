@@ -88,10 +88,12 @@ class InklingModel(
 
     @override
     def _wire_batch_processor(
-        self, model: Any = None, model_config: Any = None
+        self,
+        model: Model | None = None,
+        model_config: InklingConfig | None = None,
     ) -> None:
         super()._wire_batch_processor(model, model_config)
-        assert isinstance(model, Model)
+        assert model is not None
         assert isinstance(self._batch_processor, InklingBatchProcessor)
         self._batch_processor.bind_runtime_state(model)
 

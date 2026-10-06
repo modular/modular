@@ -42,7 +42,6 @@ modular_py_library(
         "//max/python/max/support",
         requirement("hf-transfer"),
         requirement("huggingface-hub"),
-        requirement("llguidance"),
         requirement("msgspec"),
         requirement("numpy"),
         requirement("pillow"),

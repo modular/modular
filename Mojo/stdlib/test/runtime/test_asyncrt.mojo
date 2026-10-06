@@ -24,13 +24,13 @@ from std.testing import assert_equal, TestSuite
 def test_runtime_task() raises:
     print("== test_runtime_task")
 
-    async def test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
+    __async def test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
-    async def test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
-        return await create_task(test_asyncrt_add[1](a)) + await create_task(
-            test_asyncrt_add[2](b)
-        )
+    __async def test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
+        return __await create_task(
+            test_asyncrt_add[1](a)
+        ) + __await create_task(test_asyncrt_add[2](b))
 
     var task = create_task(test_asyncrt_add_two_of_them(10, 20))
     # CHECK: 33
@@ -41,13 +41,13 @@ def test_runtime_task() raises:
 def test_runtime_taskgroup() raises:
     print("== test_runtime_taskgroup")
 
-    async def return_value[value: Int]() -> Int:
+    __async def return_value[value: Int]() -> Int:
         return value
 
-    async def run_as_group() -> Int:
+    __async def run_as_group() -> Int:
         var t0 = create_task(return_value[1]())
         var t1 = create_task(return_value[2]())
-        return await t0 + await t1
+        return __await t0 + __await t1
 
     var t0 = create_task(run_as_group())
     var t1 = create_task(run_as_group())
@@ -60,7 +60,7 @@ def test_runtime_unified_async_memory_result_raises() raises:
     print("== test_runtime_unified_async_memory_result_raises")
     var prefix = String("hello")
 
-    async def build_message() raises {mut prefix} -> String:
+    __async def build_message() raises {mut prefix} -> String:
         return prefix + String(" world")
 
     var task = create_raising_task(build_message())

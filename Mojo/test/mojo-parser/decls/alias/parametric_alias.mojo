@@ -355,6 +355,29 @@ def where_variadic(*p: WherePositive):
     pass
 
 
+# The propagated constraint is also a known assumption in the function body, so
+# it discharges the same constraint on callees, whether they spell it through
+# the alias or with an explicit `where`.
+
+
+def where_callee_explicit[n: Int](p: WhereTag[n]) where n > 0:
+    pass
+
+
+# CHECK-LABEL: lit.fn @"where_arg_body_use
+# CHECK: lit.call tail @parametric_alias::@"where_arg
+# CHECK: lit.call tail @parametric_alias::@"where_callee_explicit
+def where_arg_body_use(p: WherePositive):
+    where_arg(p)
+    where_callee_explicit(p)
+
+
+# CHECK-LABEL: lit.fn @"where_param_body_use
+# CHECK: lit.call tail @parametric_alias::@"where_param
+def where_param_body_use[p: WherePositive]():
+    where_param[p]()
+
+
 ##===----------------------------------------------------------------------===##
 # Handle type alias with extra constraints
 ##===----------------------------------------------------------------------===##

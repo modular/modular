@@ -18,7 +18,6 @@ from unittest.mock import MagicMock, call, patch
 
 import numpy as np
 import pytest
-from llguidance import LLMatcher
 from max.experimental.validation import EagerUsageValidator
 from max.pipelines.context import (
     ImageMetadata,
@@ -276,6 +275,40 @@ def test_warmup_graph_capture_batch_size(
             pipeline._max_graph_capture_batch_size
             == expected_capture_batch_size
         )
+
+
+def test_warmup_graph_capture_passes_the_table_up_to_the_capture_cap() -> None:
+    """Batch sizes past the capture cap run eager, so their rows are dropped."""
+    pipeline = OverlapTextGenerationPipeline.__new__(
+        OverlapTextGenerationPipeline
+    )
+    mock_model = MagicMock()
+    mock_model.model = MagicMock()
+    mock_model.max_seq_len = 2048
+    pipeline._pipeline_model = mock_model
+    pipeline._pipeline_config = MagicMock()
+    pipeline._max_batch_size = 3
+    pipeline._kv_manager = MagicMock()
+    mock_kv_params = MagicMock()
+    mock_kv_params.page_size = 128
+    mock_kv_params.num_draft_tokens = 3
+    mock_kv_params.num_draft_tokens_per_step = 1
+    pipeline._kv_manager.params = mock_kv_params
+    pipeline._kv_manager.effective_max_seq_length = 100 * 128
+    pipeline._kv_manager.num_caches = 1
+    pipeline._spec_decode_state = MagicMock()
+    pipeline._spec_decode_state.num_speculative_tokens = 3
+    pipeline._widths_by_batch_size = [[3], [3], [1, 3], [1, 3]]
+
+    module = "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+    with (
+        patch(f"{module}._MAX_GRAPH_CAPTURE_BATCH_SIZE", 2),
+        patch(f"{module}.ServeGraphCaptureRunner") as MockRunner,
+    ):
+        pipeline.warmup_graph_capture()
+
+    call_kwargs = MockRunner.call_args.kwargs
+    assert call_kwargs["widths_by_batch_size"] == [[3], [3], [1, 3]]
 
 
 def _make_effective_cache_length_pipeline(
@@ -892,14 +925,14 @@ class TestAdvanceFsmAndComputeBitmasks:
         # Mark as a continuing (non-initial-prompt) context so Part 2 writes
         # its row; is_initial_prompt=True causes Part 2 to skip the row.
         ctx._is_initial_prompt = False
-        mock_matcher = MagicMock(spec=LLMatcher)
+        mock_matcher = MagicMock()
         ret = 1 if always_accept else 0
         mock_matcher.try_consume_tokens = MagicMock(return_value=ret)
         # Part 2 speculates on a deep copy of the matcher (never the real one),
         # so the rollback-across-rule-boundary desync cannot occur. Mirror the
         # accept behavior on the copy; tests reach it via
         # ``mock_matcher.deep_copy.return_value``.
-        mock_matcher.deep_copy.return_value = MagicMock(spec=LLMatcher)
+        mock_matcher.deep_copy.return_value = MagicMock()
         mock_matcher.deep_copy.return_value.try_consume_tokens = MagicMock(
             return_value=ret
         )
@@ -922,7 +955,9 @@ class TestAdvanceFsmAndComputeBitmasks:
 
         bitmask_out = np.zeros((1, 3, 2), dtype=np.int32)
 
-        with patch("llguidance.numpy.fill_next_token_bitmask") as mock_fill:
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ) as mock_fill:
             helper.advance_fsm_and_compute_bitmasks(
                 context_batch=[ctx],
                 accepted_draft_tokens=np.zeros((1, 2), dtype=np.int64),
@@ -941,7 +976,9 @@ class TestAdvanceFsmAndComputeBitmasks:
         ctx, mock_matcher = self._make_context_with_matcher()
         bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
 
-        with patch("llguidance.numpy.fill_next_token_bitmask"):
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ):
             helper.advance_fsm_and_compute_bitmasks(
                 context_batch=[ctx],
                 accepted_draft_tokens=np.array([[7, 8]], dtype=np.int64),
@@ -963,7 +1000,9 @@ class TestAdvanceFsmAndComputeBitmasks:
         ctx, mock_matcher = self._make_context_with_matcher()
         bitmask_out = np.full((1, 2, 2), -1, dtype=np.int32)
 
-        with patch("llguidance.numpy.fill_next_token_bitmask"):
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ):
             helper.advance_fsm_and_compute_bitmasks(
                 context_batch=[ctx],
                 accepted_draft_tokens=np.array([[7, 8]], dtype=np.int64),
@@ -985,7 +1024,9 @@ class TestAdvanceFsmAndComputeBitmasks:
         ctx, _ = self._make_context_with_matcher()
         bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
 
-        with patch("llguidance.numpy.fill_next_token_bitmask") as mock_fill:
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ) as mock_fill:
             helper.advance_fsm_and_compute_bitmasks(
                 context_batch=[ctx],
                 accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
@@ -995,11 +1036,11 @@ class TestAdvanceFsmAndComputeBitmasks:
                 bitmask_out=bitmask_out,
             )
 
-        # fill_next_token_bitmask called at least once (position 0)
+        # _fill_slot_unless_matcher_dead called at least once (position 0)
         assert mock_fill.call_count >= 1
-        # First call is for position 0
-        first_kwargs = mock_fill.call_args_list[0][1]
-        assert first_kwargs["index"] == 0
+        # First call is for position 0: positional args are (ctx, matcher, bitmask, index)
+        first_args = mock_fill.call_args_list[0][0]
+        assert first_args[3] == 0
 
     def test_part2_speculatively_advances_on_deep_copy_not_real_matcher(
         self,
@@ -1007,16 +1048,18 @@ class TestAdvanceFsmAndComputeBitmasks:
         """Part 2 walks next draft tokens on a deep copy; the real matcher is
         never advanced or rolled back.
 
-        ``LLMatcher.rollback`` is not a perfect inverse across a grammar
-        rule/repetition boundary, so the speculative walk must not mutate the
-        real matcher. ``try_consume_tokens`` and ``rollback`` run on a deep copy.
+        Rollback is not a perfect inverse across a grammar rule/repetition
+        boundary, so the speculative walk must not mutate the real matcher.
+        ``try_consume_tokens`` and ``rollback`` run on a deep copy.
         """
         helper = self._make_helper()
         ctx, mock_matcher = self._make_context_with_matcher(always_accept=True)
         scratch = mock_matcher.deep_copy.return_value
         bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
 
-        with patch("llguidance.numpy.fill_next_token_bitmask"):
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ):
             helper.advance_fsm_and_compute_bitmasks(
                 context_batch=[ctx],
                 accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
@@ -1051,7 +1094,9 @@ class TestAdvanceFsmAndComputeBitmasks:
         scratch.try_consume_tokens.side_effect = [0]
         bitmask_out = np.full((1, 3, 2), -1, dtype=np.int32)
 
-        with patch("llguidance.numpy.fill_next_token_bitmask"):
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ):
             helper.advance_fsm_and_compute_bitmasks(
                 context_batch=[ctx],
                 accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
@@ -1083,7 +1128,9 @@ class TestAdvanceFsmAndComputeBitmasks:
         # iteration, so a row still holding 9 afterwards was never reached.
         bitmask_out = np.full((2, 3, 2), 9, dtype=np.int32)
 
-        with patch("llguidance.numpy.fill_next_token_bitmask"):
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ):
             helper.advance_fsm_and_compute_bitmasks(
                 context_batch=[ctx_prod],
                 accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
@@ -1106,7 +1153,9 @@ class TestAdvanceFsmAndComputeBitmasks:
 
         bitmask_out = np.full((1, 3, 2), 9, dtype=np.int32)
 
-        with patch("llguidance.numpy.fill_next_token_bitmask"):
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ):
             helper.advance_fsm_and_compute_bitmasks(
                 context_batch=[ctx],
                 accepted_draft_tokens=np.zeros((1, 0), dtype=np.int64),
@@ -1160,7 +1209,9 @@ class TestAdvanceFsmAndComputeBitmasks:
                 )
             )
 
-        with patch("llguidance.numpy.fill_next_token_bitmask"):
+        with patch(
+            "max.pipelines.lib.pipeline_variants.utils.StructuredOutputHelper._fill_slot_unless_matcher_dead"
+        ):
             with patch.object(
                 helper, "_speculatively_fill_bitmask_window", side_effect=_spy
             ):
@@ -1982,7 +2033,7 @@ class TestInitializeBitmaskWithGrammar:
             request_id=RequestID("grammar_only"),
             max_length=1000,
             tokens=TokenBuffer(np.array([42, 67, 21])),
-            grammar="<some llguidance grammar>",
+            grammar="<some grammar>",
         )
         assert ctx.json_schema is None
         assert ctx.grammar is not None
@@ -2000,7 +2051,7 @@ class TestInitializeBitmaskWithGrammar:
             request_id=RequestID("grammar_only"),
             max_length=1000,
             tokens=TokenBuffer(np.array([42, 67, 21])),
-            grammar="<some llguidance grammar>",
+            grammar="<some grammar>",
         )
 
         result = pipeline.initialize_bitmask([ctx])

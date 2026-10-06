@@ -39,11 +39,7 @@ from std.random import random_float64, seed
 from std.os import getenv
 from std.sys import get_defined_int
 from std.time import perf_counter_ns
-from std.sys import (
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-    size_of,
-)
+from std.sys import default_accelerator, size_of
 
 from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
@@ -647,7 +643,6 @@ def bench_combine[
         )
 
     @inline(.always)
-    @__parameter
     def run_full_dispatch(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
@@ -689,7 +684,6 @@ def bench_combine[
     # weights, so the benchmark does too. Unit weights keep the arithmetic
     # identical in cost to the real thing.
     @inline(.always)
-    @__parameter
     def unit_router_weight[
         width: Int
     ](token_idx: Int, topk_id: Int) capturing -> SIMD[.float32, width]:
@@ -741,7 +735,6 @@ def bench_combine[
         )
 
     @inline(.always)
-    @__parameter
     def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_combine_async(dev_idx, slot_idx)
         run_combine_async_wait(dev_idx, slot_idx)
@@ -1089,7 +1082,8 @@ def main() raises:
         raise Error("Cannot enable P2P Mem Access!")
 
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        default_accelerator().is_nvidia_gpu()
+        or default_accelerator().is_amd_gpu()
     ), "Only NVIDIA and AMD GPUs are supported"
 
     if DeviceContext.number_of_devices() != n_ranks:

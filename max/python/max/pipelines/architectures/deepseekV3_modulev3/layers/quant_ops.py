@@ -27,7 +27,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
     fused_silu_quantized,
     grouped_matmul_ragged,
 )
-from max.experimental.sharding import DeviceMesh, PlacementMapping
+from max.experimental.sharding import DeviceMapping, DeviceMesh
 from max.experimental.sharding.action import Action, ActionSet, AxisAssignment
 from max.experimental.sharding.cost import (
     P,
@@ -37,7 +37,7 @@ from max.experimental.sharding.cost import (
 from max.experimental.sharding.placements import Placement, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue
+from max.graph import TensorValue, ops
 from max.nn.comm.ep import EPConfig
 from max.nn.kernels import (
     block_scales_interleave as _block_scales_interleave,
@@ -112,7 +112,7 @@ def _quantize_finalize(action: Action) -> Action:
     mapping for the block-scale output (see :func:`_transpose2d_placement`).
     """
     (data_mapping,) = action.outputs
-    scales_mapping = PlacementMapping(
+    scales_mapping = DeviceMapping(
         data_mapping.mesh,
         tuple(_transpose2d_placement(p) for p in data_mapping.placements),
     )
@@ -362,7 +362,7 @@ class EPDispatchPayload:
     @classmethod
     def from_dispatch(
         cls,
-        dispatch_results: list[tuple[TensorValue, ...]],
+        dispatch_results: list[tuple[Tensor, ...]],
         quant_config: QuantConfig | None,
         ep_config: EPConfig,
     ) -> EPDispatchPayload:
@@ -377,8 +377,7 @@ class EPDispatchPayload:
                 weight quant format).
         """
         columns = [
-            [Tensor.from_graph_value(v) for v in column]
-            for column in zip(*dispatch_results, strict=True)
+            list(column) for column in zip(*dispatch_results, strict=True)
         ]
 
         if (
@@ -409,7 +408,7 @@ class EPDispatchPayload:
                 scales=columns[1] if fp8_dispatch else None,
             )
 
-    def local_map_tokens(
+    def per_device_tokens(
         self,
         quant_config: QuantConfig | None,
         *,
@@ -633,7 +632,7 @@ def stack_device_shards(
     """Reassembles a per-device weight-shard bundle into one ``Sharded`` tensor."""
     if len(shards) == 1:
         return shards[0]
-    mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
+    mapping = DeviceMapping(mesh, (Sharded(axis=axis),))
     first = shards[0]
     if isinstance(first, FP8BlockTensor):
         assert all_fp8_block(shards)
@@ -792,6 +791,7 @@ def grouped_matmul(
     *,
     scales_offset: Tensor | None = None,
     out_type: DType = DType.bfloat16,
+    estimated_total_m: Tensor | None = None,
 ) -> Tensor:
     """Grouped (MoE) matmul dispatching on the stacked-weight type.
 
@@ -815,6 +815,9 @@ def grouped_matmul(
             :func:`moe_create_indices` with ``needs_scales_offset=True``;
             required for the NVFP4 branch, ignored otherwise.
         out_type: Output dtype for the FP8/NVFP4 branch (bf16 by default).
+        estimated_total_m: Host scalar estimate of the non-padded token-expert
+            row count. The SM100 NVFP4 dispatch picks its tile regime from it;
+            ignored by the bf16/FP8 branches.
     """
     if isinstance(weight, NVFP4Tensor):
         if isinstance(x, NVFP4Activation):
@@ -849,6 +852,7 @@ def grouped_matmul(
             expert_start_indices,
             expert_ids,
             expert_scales,
+            estimated_total_m=estimated_total_m,
             out_type=out_type,
         )
     if isinstance(weight, FP8BlockTensor):
@@ -903,6 +907,7 @@ def _nvfp4_grouped_matmul(
     expert_ids: Tensor,
     expert_scales: Tensor,
     *,
+    estimated_total_m: Tensor | None = None,
     out_type: DType = DType.bfloat16,
 ) -> Tensor:
     """Block-scaled NVFP4 grouped matmul on already-quantized activations."""
@@ -922,6 +927,9 @@ def _nvfp4_grouped_matmul(
         expert_scales,
         usage_stats_host,
         out_type=out_type,
+        estimated_total_m=TensorValue(estimated_total_m)
+        if estimated_total_m is not None
+        else None,
     )
 
 
@@ -963,6 +971,8 @@ def grouped_matmul_swiglu_nvfp4_ep(
     expert_ids: Tensor,
     expert_scales: Tensor,
     down_input_scale: Tensor,
+    *,
+    estimated_total_m: Tensor | None = None,
 ) -> tuple[Tensor, Tensor]:
     """Fused NVFP4 gate/up grouped matmul + SwiGLU + re-quantize (EP path)."""
     b_scales = _interleave_grouped_scales(weight.weight_scale)
@@ -985,6 +995,9 @@ def grouped_matmul_swiglu_nvfp4_ep(
         TensorValue(usage_stats_host),
         expert_scales=TensorValue(expert_scales.to(tokens.device)),
         c_input_scales=TensorValue(c_input_scales.to(tokens.device)),
+        estimated_total_m=TensorValue(estimated_total_m)
+        if estimated_total_m is not None
+        else None,
     )
     return Tensor.from_graph_value(c_packed), Tensor.from_graph_value(c_scales)
 
@@ -998,6 +1011,7 @@ def grouped_matmul_silu(
     expert_usage_stats: Tensor | None,
     quant_config: QuantConfig | None,
     scales_offset: Tensor | None = None,
+    estimated_total_m: Tensor | None = None,
 ) -> QuantAwareTensor:
     """Gate/up grouped matmul + SwiGLU, returning the down-projection input."""
     # Pre-quantized EP activations carry their own per-expert scale offset;
@@ -1028,6 +1042,7 @@ def grouped_matmul_silu(
             expert_ids,
             gate_up_scale,
             down.input_scale,
+            estimated_total_m=estimated_total_m,
         )
         return NVFP4Activation(
             data=c_packed,
@@ -1106,6 +1121,35 @@ def _grouped_fp8_matmul(
     )
 
 
+def _silu_quantize_fp8_graph(
+    x: TensorValue,
+    row_offsets: TensorValue,
+    input_spec: InputScaleSpec,
+    weight_spec: WeightScaleSpec,
+    block_k: int,
+) -> tuple[TensorValue, TensorValue]:
+    """Gated SiLU of a ``[gate | up]`` grouped matmul output, FP8 block-quantized.
+
+    The graph compiler fuses the activation into the row-bounded quantize, so
+    the rows past ``row_offsets[-1]`` of the EP receive buffer are neither
+    activated nor quantized.
+    """
+    moe_dim = int(x.shape[1]) // 2
+    activated = ops.silu(x[:, :moe_dim]) * x[:, moe_dim:]
+    return _quantize_dynamic_scaled_float8(
+        activated,
+        input_spec,
+        weight_spec,
+        group_size_or_per_token=block_k,
+        scales_type=DType.float32,
+        out_type=DType.float8_e4m3fn,
+        row_offsets=row_offsets,
+    )
+
+
+_silu_quantize_fp8 = F.functional(_silu_quantize_fp8_graph)
+
+
 def grouped_silu(
     x: Tensor,
     expert_start_indices: Tensor,
@@ -1126,20 +1170,22 @@ def grouped_silu(
             scales_offsets=scales_offset,
         )
         return NVFP4Activation(
-            data=data,
-            scales=scales,
+            data=data.rebind_mapping(x.mapping),
+            scales=scales.rebind_mapping(x.mapping),
             input_scale=out_weight.input_scale,
             scales_offset=scales_offset,
         )
     if isinstance(out_weight, FP8BlockTensor):
-        assert quant_config is not None
-        _, block_k = out_weight.block_size
-        data, weight_scale_inv = fused_silu_quantized(
-            x, expert_start_indices, quant_config, DType.float8_e4m3fn
+        block_m, block_k = out_weight.block_size
+        input_spec, weight_spec = _fp8_block_specs(
+            (block_m, block_k), input_block=(1, block_k)
+        )
+        data, weight_scale_inv = _silu_quantize_fp8(
+            x, expert_start_indices, input_spec, weight_spec, block_k
         )
         return FP8BlockTensor(
-            data=data,
-            weight_scale_inv=weight_scale_inv,
+            data=data.rebind_mapping(x.mapping),
+            weight_scale_inv=weight_scale_inv.rebind_mapping(x.mapping),
             block_size=(1, block_k),
         )
     # Exhaustive: a new quantized down-weight must not silently skip its

@@ -41,6 +41,8 @@ from typing import (
     TypedDict,
 )
 
+from typing_extensions import NotRequired
+
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
@@ -65,6 +67,14 @@ class TextGenerationRequestFunction(TypedDict):
 
     parameters: dict[str, Any]
     """A dictionary describing the function's parameters, typically following a JSON schema."""
+
+    strict: NotRequired[bool | None]
+    """Whether constrained decoding enforces ``parameters`` for this tool.
+
+    ``False`` constrains only the tool-call envelope and leaves the arguments
+    free-form; ``True`` enforces the full argument schema. The default value,
+    and any potential override, depends on the server's tool-call policy.
+    """
 
 
 class TextGenerationRequestTool(TypedDict):

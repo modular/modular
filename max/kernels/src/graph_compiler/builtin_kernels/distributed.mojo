@@ -60,6 +60,7 @@ from max.gpu.host import DeviceContext, DeviceContextArray
 from max.gpu.primitives.grid_controls import PDLLevel
 from layout.tile_tensor import row_major
 from layout import Coord, TileTensor, coord_to_index_list, row_major
+from layout.int_tuple import UNKNOWN_VALUE
 from extensibility import (
     InputTensor,
     InputVariadicTensors,
@@ -87,9 +88,6 @@ from std.collections import Array, Optional
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from linalg.utils import (
-    elementwise_compute_lambda_type as matmul_elementwise_compute_lambda_type,
-)
 from matmul_rs.matmul_reducescatter import matmul_reducescatter_dispatch
 
 # ===-----------------------------------------------------------------------===#
@@ -99,6 +97,48 @@ from .kernels import (
     _launch_device_collective,
     _partitioned_scratch_requirement,
 )
+
+
+def _check_uniform_cols[
+    dtype: DType, rank: Int, //, op: StaticString
+](inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]) raises:
+    """Rejects a world whose devices disagree on the column count.
+
+    The fused norm collectives size every group's windows and fuse gate from
+    device 0's columns, and the dynamic world-view arrays accept any shape.
+    """
+    comptime last_dim_idx = rank - 1
+    comptime static_cols = Int(inputs.static_specs[0].shape_tuple[last_dim_idx])
+    comptime for i in range(1, inputs.size):
+        comptime static_cols_i = Int(
+            inputs.static_specs[i].shape_tuple[last_dim_idx]
+        )
+        comptime assert (
+            static_cols == UNKNOWN_VALUE
+            or static_cols_i == UNKNOWN_VALUE
+            or static_cols == static_cols_i
+        ), (
+            "fused norm collectives require the same column count on every"
+            " device; device groups may differ only in rows"
+        )
+    var cols = inputs[0].dim_size(last_dim_idx)
+    comptime for i in range(1, inputs.size):
+        var cols_i = inputs[i].dim_size(last_dim_idx)
+        if cols_i != cols:
+            raise Error(
+                String(
+                    op,
+                    (
+                        " requires the same column count on every device:"
+                        " device 0 has "
+                    ),
+                    cols,
+                    " columns, device ",
+                    i,
+                    " has ",
+                    cols_i,
+                )
+            )
 
 
 @extensibility.register("mo.distributed.allreduce.sum")
@@ -204,12 +244,15 @@ struct DistributedAllReduceSum:
         # (shared by every per-device launch below) since it does not depend
         # on which group a device belongs to.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_imm()
+            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_imm()
+                inputs[i]
+                .to_tile_tensor[.int64]()
+                .make_dynamic[.int64]()
+                .as_imm()
             )
 
         comptime if get_defined_bool["MODULAR_USE_VENDOR_CCL", False]():
@@ -344,7 +387,7 @@ struct DistributedReduceScatterSum:
         # World-view input tensors and signals, indexed by GLOBAL device rank;
         # `reducescatter` does its own group-local slicing internally.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_imm()
+            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -354,7 +397,10 @@ struct DistributedReduceScatterSum:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_imm()
+                inputs[i]
+                .to_tile_tensor[.int64]()
+                .make_dynamic[.int64]()
+                .as_imm()
             )
 
         # World-view output tensors, indexed by GLOBAL device rank; built once
@@ -965,7 +1011,7 @@ struct DistributedReduceScatterRMSNorm:
         # `reducescatter`/`_dispatch_rs_norm` do their own group-local slicing
         # internally.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_imm()
+            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -975,8 +1021,12 @@ struct DistributedReduceScatterRMSNorm:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_imm()
+                inputs[i]
+                .to_tile_tensor[.int64]()
+                .make_dynamic[.int64]()
+                .as_imm()
             )
+        _check_uniform_cols[op="reduce_scatter_rms_norm"](inputs)
 
         # `reducescatter`'s output and residual are world views too (every
         # device's own shard, indexed by global rank). Every slot has to name
@@ -985,7 +1035,7 @@ struct DistributedReduceScatterRMSNorm:
         # and write it directly, folding that group's residual as they go.
         # Nothing in either depends on which device is launching.
         comptime SumTensorType = type_of(
-            outputs_sum[0].to_tile_tensor[.int64]()
+            outputs_sum[0].to_tile_tensor[.int64]().make_dynamic[.int64]()
         )
         comptime ResPtrType = ImmPointer[Scalar[dtype], ImmutAnyOrigin]
         var world_sum_bufs = Array[SumTensorType, num_devices](
@@ -994,7 +1044,7 @@ struct DistributedReduceScatterRMSNorm:
         var world_res_ptrs = Array[ResPtrType, num_devices](uninitialized=True)
         comptime for i in range(num_devices):
             world_sum_bufs[i] = rebind[SumTensorType](
-                outputs_sum[i].to_tile_tensor[.int64]()
+                outputs_sum[i].to_tile_tensor[.int64]().make_dynamic[.int64]()
             )
             # The op's variadic groups match in size whether or not the
             # residual is read, so this is always a real tensor.
@@ -1030,7 +1080,10 @@ struct DistributedReduceScatterRMSNorm:
             var epsilon = epsilons[index].unsafe_ptr()[]
             var weight_offset = weight_offsets[index].unsafe_ptr()[]
             var residual_buf = rebind[InputTensorType](
-                residuals[index].to_tile_tensor[.int64]().as_imm()
+                residuals[index]
+                .to_tile_tensor[.int64]()
+                .make_dynamic[.int64]()
+                .as_imm()
             )
 
             @inline(.always)
@@ -1228,11 +1281,11 @@ struct DistributedAllGatherRMSNorm:
         var dev_ctxs = dev_ctxs_input.filter_gpu_contexts[num_devices]()
 
         # World-view input tensors and signals, indexed by GLOBAL device
-        # rank. Groups may carry different (symbolic) static shapes; the
-        # `rebind` below rejects differing STATIC extents -- hence the
-        # builder's same-shape-outside-the-gathered-axis rule.
+        # rank. Groups may carry different static shapes, so `make_dynamic`
+        # erases the extents: a `rebind` to a type still carrying device 0's
+        # would fail to elaborate.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_imm()
+            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -1242,8 +1295,12 @@ struct DistributedAllGatherRMSNorm:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_imm()
+                inputs[i]
+                .to_tile_tensor[.int64]()
+                .make_dynamic[.int64]()
+                .as_imm()
             )
+        _check_uniform_cols[op="allgather_rms_norm"](inputs)
 
         # `allgather`'s world-view output array holds every device's own
         # `group_size` output windows. Every slot has to name a real window,
@@ -1470,7 +1527,7 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         # World-view input tensors and signals, indexed by GLOBAL device
         # rank; see `DistributedAllGatherRMSNorm`.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_imm()
+            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -1480,8 +1537,12 @@ struct DistributedAllGatherRMSNormQuantMXFP8:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_imm()
+                inputs[i]
+                .to_tile_tensor[.int64]()
+                .make_dynamic[.int64]()
+                .as_imm()
             )
+        _check_uniform_cols[op="allgather_rms_norm_quant_mxfp8"](inputs)
 
         # `allgather`'s world-view output array holds every device's own
         # `group_size` output windows. Every slot has to name a real window,
@@ -1799,7 +1860,7 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         # World-view input tensors and signals, indexed by GLOBAL device
         # rank; see `DistributedAllGatherRMSNorm`.
         comptime InputTensorType = type_of(
-            inputs[0].to_tile_tensor[.int64]().as_imm()
+            inputs[0].to_tile_tensor[.int64]().make_dynamic[.int64]().as_imm()
         )
         var in_tensors = Array[InputTensorType, num_devices](uninitialized=True)
         var rank_sigs = Array[_, num_devices](
@@ -1809,8 +1870,12 @@ struct DistributedAllGatherRMSNormQuantMXFP6:
         )
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
-                inputs[i].to_tile_tensor[.int64]().as_imm()
+                inputs[i]
+                .to_tile_tensor[.int64]()
+                .make_dynamic[.int64]()
+                .as_imm()
             )
+        _check_uniform_cols[op="allgather_rms_norm_quant_mxfp6"](inputs)
 
         # `allgather`'s world-view output array holds every device's own
         # `group_size` output windows. Every slot has to name a real window,
@@ -2127,27 +2192,21 @@ struct DistributedMatmulReduceScatterSum:
                     + String(inputs_a[0].dim_size(0))
                 )
 
-        # Build the residual-add compute lambda. The residual lives on a
+        # Build the residual-add compute closure. The residual lives on a
         # single peer (the device of the residual tensor in the graph).
         # Mirroring the asymmetric DeepseekV3/KimiK2.5 pattern, only that
-        # peer applies the residual-add lambda; the other peers launch
-        # without it, so after RS-sum the output contains
+        # peer applies the residual add; the other peers launch without
+        # it, so after RS-sum the output contains
         # `sum_j(A_j @ B_j) + residual` rather than `... + ngpus*residual`.
-        @__parameter
         @inline(.always)
-        @__copy_capture(residual)
         def residual_add_fn[
-            _dtype: DType, _width: SIMDLength, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_dtype, _width]) capturing -> SIMD[
-            _dtype, _width
-        ]:
+            _dtype: DType, _width: SIMDLength, *, alignment: Int
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) {
+            var residual
+        } -> SIMD[_dtype, _width]:
             return val + rebind[SIMD[_dtype, _width]](
                 residual.load[width=_width, element_alignment=alignment](coords)
             )
-
-        comptime compute_lambda = Optional[
-            matmul_elementwise_compute_lambda_type
-        ](residual_add_fn)
 
         # Marshal per-peer input TileTensors. All peers' A (and B) share
         # the same comptime spec; rebind to a common type so we can build
@@ -2175,8 +2234,14 @@ struct DistributedMatmulReduceScatterSum:
             ngpus=num_devices,
             has_residual=has_residual,
             residual_peer=residual_peer,
-            elementwise_compute_lambda_fn=compute_lambda,
-        ](c_peer_tt, a_per_peer, b_per_peer, rank_sigs, dev_ctxs_input)
+        ](
+            c_peer_tt,
+            a_per_peer,
+            b_per_peer,
+            rank_sigs,
+            dev_ctxs_input,
+            residual_add_fn,
+        )
 
 
 @extensibility.register("lamport_allreduce_rmsnorm")

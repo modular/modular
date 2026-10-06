@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
 import pickle
 from pathlib import Path
 from types import SimpleNamespace
@@ -53,24 +52,19 @@ from max.pipelines.lib.config.model_config import (
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.modeling.types.task import PipelineTask
+from max.pipelines.sampling import ToolCallPolicy
 from max.pipelines.speculative.config import SpeculativeConfig
 from test_common.mocks import (
     mock_hf_repo_access,
     mock_pipeline_config_resolve,
     mock_plan_from_sizes,
 )
-from test_common.pipeline_model_dummy import DUMMY_GEMMA_ARCH, DUMMY_LLAMA_ARCH
+from test_common.pipeline_model_dummy import DUMMY_LLAMA_ARCH
 from test_common.registry import prepare_registry
 
 # ===----------------------------------------------------------------------=== #
 # Helpers
 # ===----------------------------------------------------------------------=== #
-
-requires_hf_network = pytest.mark.skipif(
-    os.environ.get("HF_HUB_OFFLINE", "0") == "1",
-    reason="Verifies weight files against live HuggingFace; presubmit runs "
-    "offline, the HF workflow covers this (SERVOPT-900)",
-)
 
 
 def _serve_optimization_arch(
@@ -353,31 +347,51 @@ class TestNeedsBitmaskConstraints:
 
     @mock_pipeline_config_resolve
     @pytest.mark.parametrize(
-        "enable_structured_output,tool_parser,enable_tool_call_constrained_decode,expected",
+        "enable_structured_output,tool_parser,tool_call_policy,expected",
         [
             # No structured output, no parser: never needs the bitmask path.
-            (False, None, True, False),
-            (False, None, False, False),
+            (False, None, ToolCallPolicy.FORCE_UNCONSTRAINED, False),
+            (
+                False,
+                None,
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                False,
+            ),
             # User structured output on: always needs it, regardless of the
-            # tool-call flag.
-            (True, None, True, True),
-            (True, None, False, True),
-            # Parser configured + tool-call constrained decode on (default):
-            # bitmask path wires in for server-generated tool grammars.
-            (False, "kimik2_5", True, True),
-            (True, "kimik2_5", True, True),
-            # Parser configured but tool-call constrained decode disabled: the
-            # parser still parses output, but no grammar/bitmask on its account.
-            (False, "kimik2_5", False, False),
+            # tool-call policy.
+            (True, None, ToolCallPolicy.FORCE_UNCONSTRAINED, True),
+            (
+                True,
+                None,
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
+            # Parser configured + any constrained policy (default): bitmask
+            # path wires in for server-generated tool grammars.
+            (
+                False,
+                "kimik2_5",
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
+            (
+                True,
+                "kimik2_5",
+                ToolCallPolicy.DEFAULT_STRICT_TRUE_AND_BEST_EFFORT,
+                True,
+            ),
+            # Parser configured but force_unconstrained: the parser still
+            # parses output, but no grammar or bitmask on its account.
+            (False, "kimik2_5", ToolCallPolicy.FORCE_UNCONSTRAINED, False),
             # ...unless user structured output independently requires it.
-            (True, "kimik2_5", False, True),
+            (True, "kimik2_5", ToolCallPolicy.FORCE_UNCONSTRAINED, True),
         ],
     )
     def test_truth_table(
         self,
         enable_structured_output: bool,
         tool_parser: str | None,
-        enable_tool_call_constrained_decode: bool,
+        tool_call_policy: ToolCallPolicy,
         expected: bool,
     ) -> None:
         config = PipelineConfig(
@@ -386,11 +400,21 @@ class TestNeedsBitmaskConstraints:
             ),
             sampling=SamplingConfig(
                 enable_structured_output=enable_structured_output,
-                enable_tool_call_constrained_decode=enable_tool_call_constrained_decode,
+                tool_call_policy=tool_call_policy,
             ),
             runtime=PipelineRuntimeConfig(tool_parser=tool_parser),
         )
         assert config.needs_bitmask_constraints is expected
+
+
+class TestToolCallPolicy:
+    """Tests for ``ToolCallPolicy.reject_unsupported``."""
+
+    @pytest.mark.parametrize("policy", list(ToolCallPolicy))
+    def test_reject_unsupported(self, policy: ToolCallPolicy) -> None:
+        assert policy.reject_unsupported is policy.value.endswith(
+            "_and_reject_unsupported"
+        )
 
 
 class TestSpeculativeArchitectureOverride:
@@ -427,6 +451,7 @@ class TestSpeculativeArchitectureOverride:
             SimpleNamespace(
                 is_dflash=lambda: is_dflash or is_dflash2,
                 is_dflash2=lambda: is_dflash2,
+                is_mtp=lambda: False,
             )
             if speculative
             else None
@@ -485,6 +510,28 @@ class TestSpeculativeArchitectureOverride:
         assert (
             self._resolved_arch(cfg) == "Gemma4UnifiedForConditionalGeneration"
         )
+
+    def test_minimax_m3_dspark(self) -> None:
+        cfg = self._make_config(
+            "MiniMaxM3SparseForConditionalGeneration",
+            is_dflash=True,
+            draft_arch="DSparkMiniMaxDraftModel",
+        )
+        assert (
+            self._resolved_arch(cfg)
+            == "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
+        )
+
+    def test_minimax_m3_dspark_rejects_other_methods(self) -> None:
+        """The DSpark graph only runs under the v1 dflash harness."""
+        for kwargs in ({}, {"is_dflash2": True}):
+            cfg = self._make_config(
+                "MiniMaxM3SparseForConditionalGeneration",
+                draft_arch="DSparkMiniMaxDraftModel",
+                **kwargs,
+            )
+            with pytest.raises(ValueError, match="dflash"):
+                self._resolved_arch(cfg)
 
     def test_no_speculative_is_noop(self) -> None:
         cfg = self._make_config(
@@ -862,93 +909,6 @@ def test_config_init__raises_with_no_model_path() -> None:
         _build_model_config(MAXModelConfig, weight_path=[Path("file.gguf")])
 
 
-@requires_hf_network
-@prepare_registry
-def test_config_post_init__with_weight_path_but_no_model_path() -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": _build_model_config(
-                    MAXModelConfig,
-                    weight_path=[
-                        Path(
-                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
-                        )
-                    ],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-        ),
-    )
-
-    assert config.model.model_path == "modularai/Llama-3.1-8B-Instruct-GGUF"
-    assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
-
-
-@requires_hf_network
-@prepare_registry
-@mock_plan_from_sizes
-def test_config_post_init__other_repo_weights(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": _build_model_config(
-                    MAXModelConfig,
-                    model_path=llama_3_1_8b_instruct_local_path,
-                    weight_path=[
-                        Path(
-                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
-                        )
-                    ],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-        ),
-    )
-
-    assert (
-        config.model._weights_repo_id == "modularai/Llama-3.1-8B-Instruct-GGUF"
-    )
-    assert config.model.weight_path == [Path("llama-3.1-8b-instruct-q4_0.gguf")]
-
-
-@requires_hf_network
-def test_config_init__reformats_with_str_weights_path(
-    modular_ai_llama_3_1_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-    # We expect this to convert the string.
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=modular_ai_llama_3_1_local_path,
-                    weight_path=[
-                        Path(
-                            "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-q4_0.gguf"
-                        )
-                    ],
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-        ),
-    )
-
-    assert isinstance(config.model.weight_path, list)
-    assert len(config.model.weight_path) == 1
-    assert isinstance(config.model.weight_path[0], Path)
-
-
 @pytest.mark.skip(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
@@ -971,53 +931,6 @@ def test_validate_model_path__correct_repo_id_provided(
     )
 
     assert config.model.model_path == modular_ai_llama_3_1_local_path
-
-
-@requires_hf_network
-@prepare_registry
-@mock_plan_from_sizes
-def test_config__test_incompatible_quantization_encoding(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    """Arch-dependent encoding validation runs on the ``from_args`` path."""
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    with pytest.raises(ValueError, match="'q4_k' not supported by MAX engine"):
-        # This should raise: the dummy Llama arch does not support q4_k.
-        PipelineConfig.from_args(
-            PipelineArgs(
-                model_path=llama_3_1_8b_instruct_local_path,
-                quantization_encoding="q4_k",
-                weight_path=[
-                    Path(
-                        "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
-                    )
-                ],
-                max_length=1,
-                runtime=PipelineRuntimeConfig(
-                    max_batch_size=1,
-                    prefer_module_v3=True,
-                ),
-            )
-        )
-
-    # This should not raise, as float32 == f32.
-    PipelineConfig.from_args(
-        PipelineArgs(
-            model_path=llama_3_1_8b_instruct_local_path,
-            quantization_encoding="float32",
-            weight_path=[
-                Path(
-                    "modularai/Llama-3.1-8B-Instruct-GGUF/llama-3.1-8b-instruct-f32.gguf"
-                )
-            ],
-            max_length=1,
-            runtime=PipelineRuntimeConfig(
-                max_batch_size=1,
-                prefer_module_v3=True,
-            ),
-        )
-    )
 
 
 @pytest.mark.skip(
@@ -1149,35 +1062,6 @@ def test_config__test_retrieve_factory_with_known_architecture(
     )
 
     PIPELINE_REGISTRY.retrieve_factory(PipelineConfig.from_args(config))
-
-
-@prepare_registry
-@mock_plan_from_sizes
-@requires_hf_network
-def test_config__test_retrieve_factory_with_unsupported_model_path(
-    gemma_3_1b_it_local_path: str,
-) -> None:
-    # Construction leaves unregistered architectures alone; the registry
-    # rejects them when the pipeline factory is retrieved.
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=gemma_3_1b_it_local_path, max_length=1
-                )
-            }
-        ),
-        runtime=PipelineRuntimeConfig(
-            max_batch_size=1,
-            prefer_module_v3=True,
-        ),
-    )
-
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    # Should raise an error since HuggingFace fallback is removed.
-    with pytest.raises(ValueError, match="No architecture found for"):
-        PIPELINE_REGISTRY.retrieve_factory(config)
 
 
 class LimitedPickler(pickle.Unpickler):
@@ -1342,38 +1226,6 @@ def test_config__validates_lora_configuration(
     assert config.lora.max_num_loras == 1
 
 
-@prepare_registry
-@mock_plan_from_sizes
-@requires_hf_network
-def test_config__validates_lora_only_supported_for_llama(
-    gemma_3_1b_it_local_path: str,
-) -> None:
-    """Test that LoRA validation fails for non-Llama models."""
-
-    PIPELINE_REGISTRY.register(DUMMY_GEMMA_ARCH, allow_override=True)
-
-    # Test that enabling LoRA on a non-Llama model raises ValueError
-    with pytest.raises(
-        ValueError,
-        match=r"LoRA is not currently supported for architecture.*LoRA support is currently only available for Llama-3\.x models",
-    ):
-        _ = PipelineConfig.from_args(
-            PipelineArgs(
-                model_path=gemma_3_1b_it_local_path,
-                device_specs=[DeviceSpec.accelerator()],
-                quantization_encoding="bfloat16",
-                kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                max_length=1,
-                lora=LoRAConfig(
-                    enable_lora=True, lora_paths=["/some/lora/path"]
-                ),
-                runtime=PipelineRuntimeConfig(
-                    prefer_module_v3=True,
-                ),
-            )
-        )
-
-
 @pytest.mark.skip(
     reason="PAQ-1936: Failing due to unfetchable safetensors weights"
 )
@@ -1407,71 +1259,6 @@ def test_config__validates_lora_works_for_llama(
     assert config.lora is not None
     assert config.lora.enable_lora is True
     assert config.lora.lora_paths == ["/some/lora/path"]
-
-
-@prepare_registry
-@mock_plan_from_sizes
-@requires_hf_network
-def test_config__validates_lora_incompatible_with_prefix_caching(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    """Test that LoRA and prefix caching cannot be enabled together."""
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    # Test that enabling both LoRA and prefix caching raises ValueError
-    with pytest.raises(
-        ValueError,
-        match=r"LoRA is not compatible with prefix caching\. Please disable prefix caching by using the --no-enable-prefix-caching flag\.",
-    ):
-        _ = PipelineConfig(
-            models=ModelManifest(
-                {
-                    "main": MAXModelConfig(
-                        model_path=llama_3_1_8b_instruct_local_path,
-                        device_specs=[DeviceSpec.accelerator()],
-                        quantization_encoding="bfloat16",
-                        kv_cache=KVCacheConfig(enable_prefix_caching=True),
-                        max_length=1,
-                    )
-                }
-            ),
-            lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-            runtime=PipelineRuntimeConfig(
-                prefer_module_v3=True,
-            ),
-        )
-
-
-@prepare_registry
-@mock_plan_from_sizes
-@requires_hf_network
-@pytest.mark.skipif(
-    accelerator_count() > 1, reason="Test requires single GPU or CPU"
-)
-def test_config__validates_lora_single_device_only(
-    llama_3_1_8b_instruct_local_path: str,
-) -> None:
-    PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH, allow_override=True)
-
-    config = PipelineConfig(
-        models=ModelManifest(
-            {
-                "main": MAXModelConfig(
-                    model_path=llama_3_1_8b_instruct_local_path,
-                    device_specs=[DeviceSpec.accelerator()],
-                    quantization_encoding="bfloat16",
-                    kv_cache=KVCacheConfig(enable_prefix_caching=False),
-                    max_length=1,
-                )
-            }
-        ),
-        lora=LoRAConfig(enable_lora=True, lora_paths=["/some/lora/path"]),
-        runtime=PipelineRuntimeConfig(
-            prefer_module_v3=True,
-        ),
-    )
-    assert config.lora is not None
-    assert config.lora.enable_lora is True
 
 
 @pytest.mark.skip(
@@ -2372,25 +2159,23 @@ def test_resolve_backend__unset_normal_arch_defaults_to_xgrammar() -> None:
 
 @mock_hf_repo_access
 def test_resolve_backend__unset_pinned_arch_uses_arch_default() -> None:
-    """Unset + an arch that pins ``llguidance`` (e.g. Gemma 3 / MiniMax-M2)
-    resolves to the arch default."""
+    """Unset + an arch that pins a backend resolves to the arch default."""
     config = PipelineConfig(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
     )
 
     assert (
         _resolve_default_structured_output_backend(
-            config.sampling, _backend_arch(default="llguidance")
+            config.sampling, _backend_arch(default="xgrammar")
         )
-        == "llguidance"
+        == "xgrammar"
     )
 
 
 @mock_hf_repo_access
 def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
-    """Regression: an explicit ``xgrammar`` on a ``llguidance``-pinned arch is
-    honored, not silently overwritten. This is the precedence bug this fix
-    closes (explicit ``xgrammar`` equalled the old hardcoded default)."""
+    """Regression: an explicit ``xgrammar`` on an arch-pinned arch is honored,
+    not silently overwritten by the arch default."""
     config = PipelineConfig(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
         sampling=SamplingConfig(structured_output_backend="xgrammar"),
@@ -2398,28 +2183,27 @@ def test_resolve_backend__explicit_xgrammar_overrides_pinned_arch() -> None:
 
     assert (
         _resolve_default_structured_output_backend(
-            config.sampling, _backend_arch(default="llguidance")
+            config.sampling, _backend_arch(default="xgrammar")
         )
         == "xgrammar"
     )
 
 
 @mock_hf_repo_access
-def test_resolve_backend__explicit_llguidance_on_normal_arch_is_honored() -> (
-    None
-):
-    """An explicit ``llguidance`` on a model with no arch preference is
-    honored over the global ``xgrammar`` default."""
+def test_resolve_backend__explicit_value_on_normal_arch_is_honored() -> None:
+    """An explicit backend on a model with no arch preference is honored over
+    the global ``xgrammar`` default. Resolution does not validate the name;
+    construction would reject an unknown backend."""
     config = PipelineConfig(
         models=ModelManifest({"main": MAXModelConfig(model_path="test/model")}),
-        sampling=SamplingConfig(structured_output_backend="llguidance"),
+        sampling=SamplingConfig(structured_output_backend="some_other_backend"),
     )
 
     assert (
         _resolve_default_structured_output_backend(
             config.sampling, _backend_arch(default=None)
         )
-        == "llguidance"
+        == "some_other_backend"
     )
 
 
@@ -2441,11 +2225,10 @@ def test_from_args__unset_backend_preserves_none_sentinel() -> None:
     """Regression: ``PipelineArgs`` with no ``--structured-output-backend``
     must carry the ``None`` sentinel into the built ``PipelineConfig``.
 
-    Before the fix, ``PipelineArgs.structured_output_backend`` defaulted to a
-    hardcoded ``"llguidance"`` string, so ``from_args`` produced a
-    ``SamplingConfig`` that already looked like an explicit user choice. That
-    short-circuited ``_resolve_default_structured_output_backend`` and the
-    global ``xgrammar`` default (and any arch pin) was never reached."""
+    If the arg defaulted to a hardcoded backend string, ``from_args`` would
+    produce a ``SamplingConfig`` that already looked like an explicit user
+    choice, short-circuiting ``_resolve_default_structured_output_backend``
+    and causing the global default and any arch pin to be ignored."""
     args = PipelineArgs(model_path="test/model")
     assert args.sampling.structured_output_backend is None
 
@@ -2457,9 +2240,8 @@ def test_from_args__unset_backend_preserves_none_sentinel() -> None:
 
 @mock_hf_repo_access
 def test_from_args__unset_backend_resolves_to_xgrammar() -> None:
-    """End-to-end guard for the reported bug: a model launched without an
-    explicit backend and no arch pin ends up on ``xgrammar``, not
-    ``llguidance``."""
+    """End-to-end guard: a model launched without an explicit backend and no
+    arch pin ends up on the global default ``xgrammar``."""
     args = PipelineArgs(model_path="test/model")
 
     with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
@@ -2478,16 +2260,16 @@ def test_from_args__explicit_backend_is_preserved() -> None:
     ``from_args`` and wins over resolution."""
     args = PipelineArgs(
         model_path="test/model",
-        sampling=SamplingConfig(structured_output_backend="llguidance"),
+        sampling=SamplingConfig(structured_output_backend="xgrammar"),
     )
 
     with patch("max.pipelines.lib.config.model_config.validate_hf_repo_access"):
         config = PipelineConfig.from_args(args)
-    assert config.sampling.structured_output_backend == "llguidance"
+    assert config.sampling.structured_output_backend == "xgrammar"
 
     assert (
         _resolve_default_structured_output_backend(
             config.sampling, _backend_arch(default=None)
         )
-        == "llguidance"
+        == "xgrammar"
     )

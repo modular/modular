@@ -203,7 +203,7 @@ where the closure is defined. For types with expensive copies
 when you don't need an independent copy.
 :::
 
-## Move capture: `var name^`
+## Transfer capture: `var name^`
 
 Use `var name^` to transfer ownership of a value into the closure.
 The closure consumes the outer binding, which can't be used after
@@ -218,12 +218,11 @@ def main():
 
     take_data()  # [1, 2, 3]
     # data can't be used here: ownership transferred to the closure
-    # print(data)  # Uncomment for error: 'data' is uninitialized after move
+    # print(data)  # Uncomment for error: 'data' is uninitialized after transfer
 ```
 
-Move capture avoids a copy entirely. The value moves into the
-closure's storage. This is useful for types that are expensive to
-copy or for transferring unique ownership.
+Transfer capture avoids a copy entirely. This is useful for types that
+are expensive to copy or for transferring unique ownership.
 
 :::note
 The `^` transfer operator only works with `var` or a bare name in
@@ -233,7 +232,7 @@ compiler errors.
 
 ## Copyable closures: `var^`
 
-The `{var^}` capture list moves all referenced outer values into the
+The `{var^}` capture list transfers all referenced outer values into the
 closure. When the captured types are `Copyable`, the closure value also
 becomes copyable.
 

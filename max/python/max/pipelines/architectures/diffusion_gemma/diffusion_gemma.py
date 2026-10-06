@@ -605,11 +605,7 @@ class DiffusionGemmaDecoderTextModel(_DiffusionGemmaTextModelBase):
         )
         soft_embeds = (
             soft_embeds
-            * ops.constant(
-                self.embed_tokens.embed_scale,
-                embed_weight.dtype,
-                device=self.devices[0],
-            )
+            * self.embed_tokens.embed_scale
             * ops.cast(sc_enabled, embed_weight.dtype)
         )
         h0 = self.self_conditioning(h[0], soft_embeds)

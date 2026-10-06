@@ -75,11 +75,16 @@ def run_group_norm_gpu[
         beta_h[i] = (Float64(i) / Float64(C)).cast[dtype]()
 
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    # Distinct output buffer: input_fn (reads) and output (writes) are
+    # separate value args, so they must reference distinct buffer origins
+    # (normalizing in place into `data_d` would alias the read).
+    var out_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](C)
     var beta_d = ctx.enqueue_create_buffer[dtype](C)
 
     var param_shape = Index(C)
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var out_buf = TileTensor(out_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
     var epsilon = Float32(1e-5)
@@ -88,32 +93,39 @@ def run_group_norm_gpu[
     ctx.enqueue_copy(gamma_d, gamma_h)
     ctx.enqueue_copy(beta_d, beta_h)
 
-    @__copy_capture(data_buf)
     @inline(.always)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
         var idx = data_buf.layout(coords)
 
         return data_buf.raw_load[width=width](idx)
 
-    @__copy_capture(gamma)
     @inline(.always)
-    @__parameter
-    def gamma_scalar_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def gamma_scalar_fn[
+        width: Int
+    ](coords: Coord) {var gamma} -> SIMD[dtype, width]:
         var idx = gamma.layout(coords)
         return gamma.raw_load[width=width](idx)
 
-    @__copy_capture(beta)
     @inline(.always)
-    @__parameter
-    def beta_scalar_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
+    def beta_scalar_fn[
+        width: Int
+    ](coords: Coord) {var beta} -> SIMD[dtype, width]:
         var idx = beta.layout(coords)
         return beta.raw_load[width=width](idx)
 
-    group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
-        Coord(shape), epsilon, Int32(num_groups), data_buf, ctx=ctx
+    group_norm[dtype, rank, target="gpu"](
+        input_fn,
+        gamma_scalar_fn,
+        beta_scalar_fn,
+        Coord(shape),
+        epsilon,
+        Int32(num_groups),
+        out_buf,
+        ctx=ctx,
     )
-    ctx.enqueue_copy(res, data_d)
+    ctx.enqueue_copy(res, out_d)
     ctx.synchronize()
 
     for r in range(rows):
@@ -141,6 +153,7 @@ def run_group_norm_gpu[
             assert_almost_equal(val, res[idx], rtol=rtol, atol=atol)
 
     _ = data_d^
+    _ = out_d^
     _ = gamma_d^
     _ = beta_d^
 

@@ -499,8 +499,15 @@ ParamNodeBase *IREvaluator::lookupParamNodeBase(SymbolRefAttr symbol) {
 }
 
 GeneratorOp IREvaluator::getGenerator(SymbolRefAttr symbol) {
-  return elaborator->oldSymTab.lookup<GeneratorOp>(
-      cast<FlatSymbolRefAttr>(symbol).getAttr());
+  StringAttr name = cast<FlatSymbolRefAttr>(symbol).getAttr();
+  if (auto gen = elaborator->oldSymTab.lookup<GeneratorOp>(name))
+    return gen;
+  // Instance names escape `@`, `"` and `~`, so may not match the generator.
+  ImplNode *impl = elaborator->concreteNodes.read(
+      [name](auto &map) -> ImplNode * { return map.lookup(name); });
+  if (impl && impl->parent)
+    return dyn_cast<GeneratorOp>(impl->parent->gen.getOperation());
+  return {};
 }
 
 ErrorOr<CrossDeviceFunction>

@@ -81,7 +81,7 @@ def _writeln[
 
 
 @fieldwise_init
-struct TestResult(Equatable, ImplicitlyCopyable, Writable):
+struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     """A test result code."""
 
     var _value: Int
@@ -94,6 +94,28 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
 
     comptime SKIP = Self(2)
     """The test was skipped."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "PASS".value,
+        "FAIL".value,
+        "SKIP".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].size, NoneType
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TestResult has no payload"
 
     def __eq__(self, rhs: Self) -> Bool:
         """Compare two test result codes for equality.
@@ -113,12 +135,12 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer: The writer to output the result code to.
         """
         __match self:
-        case .PASS:
-            writer.write(Text[Color.GREEN]("PASS"))
-        case .FAIL:
-            writer.write(Text[Color.RED]("FAIL"))
-        case .SKIP:
-            writer.write(Text[Color.YELLOW]("SKIP"))
+            case .PASS:
+                writer.write(Text[Color.GREEN]("PASS"))
+            case .FAIL:
+                writer.write(Text[Color.RED]("FAIL"))
+            case .SKIP:
+                writer.write(Text[Color.YELLOW]("SKIP"))
 
     @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -129,12 +151,12 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
         """
         writer.write_string("TestResult.")
         __match self:
-        case .PASS:
-            writer.write_string("PASS")
-        case .FAIL:
-            writer.write_string("FAIL")
-        case .SKIP:
-            writer.write_string("SKIP")
+            case .PASS:
+                writer.write_string("PASS")
+            case .FAIL:
+                writer.write_string("FAIL")
+            case .SKIP:
+                writer.write_string("SKIP")
 
 
 struct TestReport(Copyable, Writable):

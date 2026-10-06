@@ -13,6 +13,7 @@
 
 """Provides shared CPU matmul utilities including tile-consumer traits, kernel shape selection, and partial SIMD load/store helpers."""
 
+from std.collections import Optional
 from std.math import align_down, align_up, ceildiv, iota
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
@@ -20,7 +21,7 @@ from std.sys.intrinsics import masked_load, masked_store
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
 from layout.layout import *
-from layout import LayoutTensor, TileTensor, Coord, TensorLayout
+from layout import TileTensor, Coord, TensorLayout
 from layout.tile_layout import Layout as _NewLayout
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.reflection import reflect
@@ -113,6 +114,159 @@ comptime elementwise_epilogue_type = def[
 comptime elementwise_compute_lambda_type = def[
     dtype: DType, width: SIMDLength, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+
+comptime _elementwise_compute_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](IndexList[2], SIMD[dtype, width]) -> SIMD[dtype, width]
+
+comptime ElementwiseComputeFn = (
+    ImplicitlyCopyable & RegisterPassable & _elementwise_compute_fn_signature
+)
+"""Value-taking counterpart of `elementwise_compute_lambda_type`.
+
+A unified closure passed as a runtime value carries the origins of its
+captures, so the buffers it reads stay alive until the kernel that calls it
+has launched. `alignment` has no default; pass `alignment=1` where the
+legacy type relied on its default.
+"""
+
+comptime _elementwise_output_compute_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](IndexList[2], SIMD[dtype, width], SIMD[dtype, width]) -> SIMD[dtype, width]
+
+comptime ElementwiseOutputComputeFn = (
+    ImplicitlyCopyable
+    & RegisterPassable
+    & _elementwise_output_compute_fn_signature
+)
+"""An `ElementwiseComputeFn` that also receives the output's prior value.
+
+Called as `fn(idx, val, c_val)`, where `c_val` is the output tensor's value
+at `idx` before the kernel writes it, cast to `dtype`. The kernel reads
+`c_val` from its own output argument, so the closure never captures the
+output and cannot alias it.
+"""
+
+
+comptime _elementwise_epilogue_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](IndexList[2], SIMD[dtype, width]) -> None
+
+comptime ElementwiseEpilogueFn = (
+    ImplicitlyCopyable & RegisterPassable & _elementwise_epilogue_fn_signature
+)
+"""Value-taking counterpart of `elementwise_epilogue_type`.
+
+The closure stores the output itself, so a kernel that receives one writes
+nothing to its output argument. Pass it to a named kernel with `host_arg=`.
+`alignment` has no default; pass `alignment=1` where the legacy type relied
+on its default.
+"""
+
+
+@inline(.always)
+def _no_epilogue_body[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](idx: IndexList[2], val: SIMD[dtype, width]):
+    pass
+
+
+@inline(.always)
+def _as_epilogue_fn[
+    EpilogueFnType: ElementwiseEpilogueFn
+](epilogue_fn: EpilogueFnType) -> EpilogueFnType:
+    """Binds a parametric function to its `ElementwiseEpilogueFn` closure type.
+
+    A bare parametric function only converts where a function-type bound gives
+    it context, so neither `type_of` nor a `host_arg` slot accepts it directly.
+
+    Parameters:
+        EpilogueFnType: Type of the epilogue function (inferred).
+
+    Args:
+        epilogue_fn: The epilogue function to bind.
+
+    Returns:
+        `epilogue_fn` as a value of its closure type.
+    """
+    return epilogue_fn
+
+
+comptime no_epilogue_fn = _as_epilogue_fn(_no_epilogue_body)
+"""Stands in for an `ElementwiseEpilogueFn` argument on code paths that store
+the output directly."""
+
+
+@inline(.always)
+def apply_elementwise_epilogue[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    dtype: DType,
+    width: SIMDLength,
+    //,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    *,
+    alignment: Int = 1,
+](epilogue_fn: EpilogueFnType, idx: IndexList[2], val: SIMD[dtype, width],):
+    """Applies the legacy epilogue lambda if set, otherwise `epilogue_fn`.
+
+    Kernels that accept both epilogue forms call this under
+    `comptime if elementwise_lambda_fn or has_epilogue_fn`.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        dtype: Element dtype of `val` (inferred).
+        width: SIMD width of `val` (inferred).
+        elementwise_lambda_fn: Legacy epilogue lambda; takes precedence
+            when set.
+        alignment: Alignment of `val` in elements.
+
+    Args:
+        epilogue_fn: Value epilogue, used when `elementwise_lambda_fn` is
+            unset.
+        idx: Output coordinates.
+        val: Output value.
+    """
+    comptime if elementwise_lambda_fn:
+        comptime elementwise_lambda = elementwise_lambda_fn.value()
+        elementwise_lambda[dtype, width, alignment=alignment](idx, val)
+    else:
+        epilogue_fn[dtype, width, alignment=alignment](idx, val)
+
+
+@inline(.always)
+def identity_compute_fn[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](idx: IndexList[2], val: SIMD[dtype, width]) -> SIMD[dtype, width]:
+    """Returns `val` unchanged.
+
+    Stands in for an `ElementwiseComputeFn` argument on code paths that
+    apply no compute epilogue.
+
+    Parameters:
+        dtype: Element dtype of `val`.
+        width: SIMD width of `val`.
+        alignment: Alignment of `val` in elements.
+
+    Args:
+        idx: Output coordinates, unused.
+        val: Input value.
+
+    Returns:
+        `val`.
+    """
+    return val
+
+
+@inline(.always)
+def _as_compute_fn[
+    ComputeFnType: ElementwiseComputeFn
+](compute_fn: ComputeFnType) -> ComputeFnType:
+    return compute_fn
+
+
+comptime no_compute_fn = _as_compute_fn(identity_compute_fn)
+"""`identity_compute_fn` as a value, the default for a compute closure
+argument."""
 
 
 trait TileConsumer(DevicePassable, TrivialRegisterPassable):
@@ -368,42 +522,6 @@ struct GemmShape(TrivialRegisterPassable):
     var M: Int
     var N: Int
     var K: Int
-
-    @staticmethod
-    def get[
-        transpose_b: Bool,
-        layout_c: Layout,
-        layout_a: Layout,
-        layout_b: Layout,
-    ](
-        c: LayoutTensor[mut=False, _, layout_c, ...],
-        a: LayoutTensor[mut=False, _, layout_a, ...],
-        b: LayoutTensor[mut=False, _, layout_b, ...],
-    ) -> GemmShape:
-        """Constructor of a gemm shape record from input buffers.
-
-        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
-        is because `b` may be padded to a multiple of the tile size if it has
-        been pre-packed.
-
-        Parameters:
-            transpose_b: Whether matrix B is stored in transposed form.
-            layout_c: The memory layout of the output C tensor.
-            layout_a: The memory layout of the input A tensor.
-            layout_b: The memory layout of the input B tensor.
-
-        Args:
-            c: LayoutTensor with allocated output space.
-            a: LayoutTensor containing matrix operand A.
-            b: LayoutTensor containing matrix operand B.
-        """
-
-        # We only want a 2D tensor for now
-        comptime assert c.rank == 2
-        comptime assert a.rank == 2
-        comptime assert b.rank == 2
-
-        return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
     @staticmethod
     def get[

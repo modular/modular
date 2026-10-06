@@ -64,9 +64,11 @@ from .reasoning import (
 )
 from .task import InputModality, PipelineTask
 from .tokenizer import (
+    ChatEncoderOutcomesProbe,
     PipelineTokenizer,
     PreprocessCacheStatsProbe,
     PreprocessedImageProbe,
+    TokenIds,
     TokenizerEncoded,
     UnboundContextType,
     VisionPreprocessCacheStats,
@@ -95,6 +97,7 @@ __all__ = [
     "BatchLogitsProcessor",
     "BatchProcessorInputs",
     "BatchType",
+    "ChatEncoderOutcomesProbe",
     "CompletedBatchStats",
     "EmbeddingsContext",
     "EmbeddingsGenerationContextType",
@@ -135,6 +138,7 @@ __all__ = [
     "TextGenerationRequestFunction",
     "TextGenerationRequestMessage",
     "TextGenerationRequestTool",
+    "TokenIds",
     "TokenizerEncoded",
     "ToolParser",
     "UnboundContextType",

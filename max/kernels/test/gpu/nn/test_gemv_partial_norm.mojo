@@ -82,15 +82,13 @@ def test_gemv_partial_norm[
         t" shape=(M=1, N={N}, K={K}, N_normed={N_NORMED})"
     )
 
-    comptime ak_shape = row_major(Coord(Idx[1], Idx[KType.static_value]))
+    comptime ak_shape = row_major(Idx[1], Idx[KType.static_value])
     comptime b_shape = row_major(
-        Coord(Idx[NType.static_value], Idx[KType.static_value])
+        Idx[NType.static_value], Idx[KType.static_value]
     )
-    comptime c_shape = row_major(Coord(Idx[1], Idx[NType.static_value]))
-    comptime normed_shape = row_major(
-        Coord(Idx[1], Idx[NNormedType.static_value])
-    )
-    var unnormed_shape = row_major(Coord(Idx[1], N_UNNORMED))
+    comptime c_shape = row_major(Idx[1], Idx[NType.static_value])
+    comptime normed_shape = row_major(Idx[1], Idx[NNormedType.static_value])
+    var unnormed_shape = row_major(Idx[1], N_UNNORMED)
     comptime gamma_shape = row_major(Idx[NNormedType.static_value])
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)

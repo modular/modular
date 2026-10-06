@@ -37,10 +37,11 @@ from max.pipelines.lib import (
     TextAndVisionTokenizer,
     VisionPreprocessCache,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from max.pipelines.lib.tokenizer import (
+    ReasoningDelimitersMixin,
     encode_dkv_cache_hint,
-    resolve_single_special_token,
     run_with_default_executor,
 )
 from max.pipelines.modeling.types import (
@@ -148,7 +149,7 @@ def _sanitize_kimi_schema_node(node: Any) -> Any:
     return node
 
 
-class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
+class KimiK2_5VLTokenizer(ReasoningDelimitersMixin, TextAndVisionTokenizer):
     """Kimi K2.5 tokenizer for multimodal (text + vision) inputs.
 
     Extends ``TextAndVisionTokenizer`` with a custom vision processor
@@ -178,15 +179,9 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         config = pipeline_config.model.huggingface_config
 
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
-        if eos_token_id := getattr(config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._eos_token_ids.update(eos_token_id)
 
         im_end_id = self.delegate.convert_tokens_to_ids(IM_END)
         if isinstance(im_end_id, int):
@@ -210,12 +205,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.media_pad_token_id: int = media_pad_id
         self.vision_token_ids = [self.media_pad_token_id]
 
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, THINK_START
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, THINK_END
-        )
+        self._resolve_reasoning_delimiters(self.delegate)
 
         # Build the custom vision processor from HF config.
         media_proc_cfg = getattr(config, "media_proc_cfg", None)
@@ -232,16 +222,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         self.rope_max_width: int = int(
             getattr(vision_cfg, "rope_max_width", 512)
         )
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<think>`` (opens a Kimi K2.5 reasoning span)."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``</think>`` (closes a Kimi K2.5 reasoning span)."""
-        return self._reasoning_end_token_id
 
     async def encode(
         self, prompt: str | Sequence[int], add_special_tokens: bool = True

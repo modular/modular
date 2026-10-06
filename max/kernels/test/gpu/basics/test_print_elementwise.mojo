@@ -15,19 +15,17 @@ from std.sys import simd_width_of
 
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext, get_gpu_target
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Idx, TileTensor, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 
 
 def test_elementwise_print[
     c_type: DType,
-    c_layout: Layout,
-](c01: LayoutTensor[c_type, c_layout, ...], ctx: DeviceContext) raises:
-    var M = c01.dim[0]()
-    var N = c01.dim[1]() // 2
+](c01: TileTensor[c_type, ...], ctx: DeviceContext) raises:
+    var M = Int(c01.dim[0]())
+    var N = Int(c01.dim[1]()) // 2
     comptime simd_width = simd_width_of[
         c_type, target=get_gpu_target["sm_80"]()
     ]()
@@ -46,23 +44,11 @@ def test_elementwise_print[
     print("finished elementwise")
 
 
-def runtime_row_major[
-    cols: Int
-](
-    rows: Int,
-    out res: RuntimeLayout[
-        Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
-    ],
-):
-    return type_of(res).row_major(IndexList[2]((rows, cols)))
-
-
 def test_dual_matmul[
     N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512) raises:
     comptime dst_type = DType.float32
-    var layout_c01 = runtime_row_major[2 * N](M)
-    var mat_c01 = ManagedLayoutTensor[dst_type](layout_c01, ctx)
+    var mat_c01 = HostDeviceTileTensor[dst_type](row_major(M, Idx[2 * N]), ctx)
     test_elementwise_print(
         mat_c01.device_tensor(),
         ctx,

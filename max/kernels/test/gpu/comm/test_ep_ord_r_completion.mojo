@@ -61,7 +61,7 @@ def producer_kernel(
     cross-warp ordering production adds on top is the monitor ACQUIRE chain,
     which is out of scope for this primitive test.
     """
-    var expert = Int(block_idx.x)
+    var expert = block_idx.x
 
     # Unique per-(generation, expert, slot) payload markers, stored directly
     # into the destination GPU's buffer, BEFORE the election.

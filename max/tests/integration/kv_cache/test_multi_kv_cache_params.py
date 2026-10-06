@@ -1299,80 +1299,30 @@ class TestRuntimeInputComposition:
             state.build_runtime_inputs([_assignment(staged={})], buffers=[])
 
 
-class TestRowAddressedBudget:
-    """Tests the per-request state term in the pool budget."""
+class TestChild:
+    """A hybrid tree hands back each child as the type it was built from."""
 
-    BATCH = 16
-    SEQ = 4096
-    PAGE = 256
-    # Enough that the block cap binds, not memory.
-    PLENTY = 256 * 1024**3
+    def test_returns_the_child_as_its_kind(self) -> None:
+        attn = create_kv_cache_params()
+        state = create_state_params(attn)
+        root = MultiKVCacheParams.from_params({"attn": attn, "state": state})
 
-    def _sizes(self) -> tuple[int, int, int]:
-        attn = create_kv_cache_params(page_size=self.PAGE)
-        root = MultiKVCacheParams.from_params(
-            {"attn": attn, "state": create_state_params(attn)}
-        )
-        state_bytes = self.BATCH * root.per_request_row_bytes(
-            math.ceil(self.SEQ / self.PAGE)
-        )
-        return (
-            estimated_memory_size(
-                params=attn,
-                available_cache_memory=self.PLENTY,
-                max_batch_size=self.BATCH,
-                max_seq_len=self.SEQ,
-            ),
-            estimated_memory_size(
-                params=root,
-                available_cache_memory=self.PLENTY,
-                max_batch_size=self.BATCH,
-                max_seq_len=self.SEQ,
-            ),
-            state_bytes,
-        )
+        assert root.child("attn", MHAKVCacheParams) is attn
+        assert root.child("state", RecurrentStateParams) is state
 
-    def test_the_budget_counts_the_state_leaves(self) -> None:
-        attn_only, hybrid, state_bytes = self._sizes()
-
-        assert state_bytes > 0, "the fixture declares no state leaf"
-        assert hybrid == attn_only + state_bytes
-
-    def test_an_attention_only_cache_is_unchanged(self) -> None:
-        """Checks a cache with no row-addressed leaf prices the term zero."""
-        attn = create_kv_cache_params(page_size=self.PAGE)
-
-        assert attn.per_request_row_bytes(16) == 0
-
-    def test_the_state_cost_scales_with_the_batch_not_the_length(self) -> None:
-        """Checks the term does not vary with the blocks a request spans."""
-        attn = create_kv_cache_params(page_size=self.PAGE)
+    def test_a_child_of_another_kind_is_refused(self) -> None:
+        attn = create_kv_cache_params()
         root = MultiKVCacheParams.from_params(
             {"attn": attn, "state": create_state_params(attn)}
         )
 
-        short = root.per_request_row_bytes(1)
-        long = root.per_request_row_bytes(1024)
+        with pytest.raises(TypeError, match="'state' is a RecurrentState"):
+            root.child("state", MHAKVCacheParams)
 
-        assert short == long > 0
-
-    def test_a_pool_too_small_for_the_state_allocates_no_blocks(self) -> None:
-        """Checks a budget the state exhausts raises.
-
-        The budget is exactly one block, the least attention alone accepts.
-        """
-        attn = create_kv_cache_params(page_size=self.PAGE)
+    def test_a_missing_child_is_refused(self) -> None:
         root = MultiKVCacheParams.from_params(
-            {"attn": attn, "state": create_state_params(attn)}
+            {"attn": create_kv_cache_params()}
         )
-        assert (
-            root.per_request_row_bytes(math.ceil(self.SEQ / self.PAGE)) > 0
-        ), "the fixture declares no state leaf"
 
-        with pytest.raises(RuntimeError, match="Insufficient cache memory"):
-            estimated_memory_size(
-                params=root,
-                available_cache_memory=root.bytes_per_block,
-                max_batch_size=1,
-                max_seq_len=self.SEQ,
-            )
+        with pytest.raises(KeyError, match="state"):
+            root.child("state", RecurrentStateParams)

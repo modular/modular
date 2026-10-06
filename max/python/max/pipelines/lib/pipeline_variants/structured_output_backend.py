@@ -10,20 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Pluggable grammar backend for constrained decoding.
+"""Grammar backend for constrained decoding.
 
-Abstracts the grammar/matcher engine behind two protocols so MAX can support
-more than one structured-output backend:
+``xgrammar`` is the sole grammar/matcher engine. It sits behind two small
+protocols, each kept for a decoupling reason rather than to support a second
+backend:
 
 * :class:`GrammarBackend` owns grammar compilation, matcher construction, and
   bitmask allocation/filling (the engine-level, non-per-token entry points).
-* :class:`GrammarMatcher` is the per-request object stepped each decode step.
-  Method names mirror llguidance's ``LLMatcher`` so the hot decode path is
-  backend-agnostic by duck typing.
-
-``llguidance`` is the original (and default) backend; its native ``LLMatcher``
-already satisfies :class:`GrammarMatcher`, so :class:`LlguidanceBackend` is a
-thin pass-through with no behavior change.
+  :class:`XgrammarBackend` is its only production implementation; tests inject
+  fakes through the same protocol.
+* :class:`GrammarMatcher` (defined in the low-level ``context`` package) is the
+  per-request object stepped each decode step, held there so a context can carry
+  a matcher without importing this module.
 """
 
 from __future__ import annotations
@@ -36,13 +35,8 @@ from collections.abc import Callable, Collection
 from functools import wraps
 from typing import Any, Protocol, TypeVar, cast
 
-import llguidance
-import llguidance.hf
-import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
-from llguidance import LLMatcher, LLTokenizer
-from llguidance._tokenizer import TokenizerWrapper
 from max import _xgrammar as xgrammar
 from max._xgrammar.builtin_structural_tag import (
     get_inkling_response_format_branch,
@@ -178,13 +172,13 @@ def _log_if_slow(fn: _CompileFn) -> _CompileFn:
 
 
 class _TikTokenAdapter:
-    """Adapter to make TikToken-based tokenizers compatible with llguidance.
+    """Adapter exposing a TikToken-based tokenizer to the grammar backend.
 
-    llguidance's TokenizerWrapper expects a tokenizer object with specific
-    attributes (eos_token_id, bos_token_id, tokens, special_token_ids) and
-    a callable interface for encoding. This adapter wraps TikToken-based
-    tokenizers (which don't inherit from PreTrainedTokenizerFast) to provide
-    that interface.
+    The grammar backend needs a tokenizer object with specific attributes
+    (eos_token_id, bos_token_id, tokens, special_token_ids) and a callable
+    interface for encoding. This adapter wraps TikToken-based tokenizers
+    (which don't inherit from PreTrainedTokenizerFast) to provide that
+    interface.
 
     Raises:
         ValueError: If the tokenizer is not a TikToken-based tokenizer.
@@ -197,14 +191,11 @@ class _TikTokenAdapter:
                 f"TikToken-based tokenizers, but got {type(tokenizer).__name__}"
             )
 
-        self._tokenizer = tokenizer
         self.eos_token_id = tokenizer.eos_token_id
-        self.bos_token_id = tokenizer.bos_token_id
-        self.special_token_ids = getattr(tokenizer, "all_special_ids", [])
 
         # convert_ids_to_tokens returns the byte->unicode surface form, not the
         # token's true bytes; reverse it via the tokenizer's byte_decoder, or
-        # llguidance masks the wrong bytes and leaks control chars into output.
+        # the backend masks the wrong bytes and leaks control chars into output.
         byte_decoder = getattr(tokenizer, "byte_decoder", None)
         if byte_decoder is None:
             raise ValueError(
@@ -233,20 +224,8 @@ class _TikTokenAdapter:
         """Returns byte representation of each token in vocabulary."""
         return self._tokens
 
-    def __call__(self, text: str | bytes) -> list[int]:
-        """Encode text to token IDs."""
-        if isinstance(text, bytes):
-            text = text.decode("utf-8", errors="replace")
 
-        return self._tokenizer.encode(text, allow_special_tokens=True)
-
-
-# Backend-specific compiled-grammar handle, kept consistent across a backend's
-# compile/validate/create_matcher methods.
-GrammarT = TypeVar("GrammarT")
-
-
-class GrammarBackend(Protocol[GrammarT]):
+class GrammarBackend(Protocol):
     """Engine-level entry points: compile grammars, build matchers, bitmasks.
 
     Only the model worker holds a backend: it owns the single grammar
@@ -256,26 +235,17 @@ class GrammarBackend(Protocol[GrammarT]):
 
     name: str
 
-    def compile_json_schema(self, json_schema: str) -> GrammarT:
+    def compile_json_schema(self, json_schema: str) -> Any:
         """Compile a JSON schema to a grammar handle for this backend."""
         ...
 
-    def create_matcher(self, grammar: GrammarT | str) -> GrammarMatcher:
+    def create_matcher(self, grammar: Any) -> GrammarMatcher:
         """Build a matcher from a compiled grammar handle or grammar string.
 
         The string form is a raw serialized grammar (e.g. a tool-call grammar).
         """
         ...
 
-    def validate_grammar(self, grammar: GrammarT) -> None:
-        """Raise if the compiled grammar is invalid.
-
-        Catches grammars that compile but are semantically invalid (most
-        importantly unsatisfiable schemas). Backends that already reject
-        these at compile time may do nothing.
-        """
-        ...
-
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
     ) -> npt.NDArray[np.int32]:
@@ -290,83 +260,6 @@ class GrammarBackend(Protocol[GrammarT]):
     ) -> None:
         """Fill ``bitmask`` row ``index`` with the matcher's allowed tokens."""
         ...
-
-
-class LlguidanceBackend(GrammarBackend[Any]):
-    """llguidance backend. Thin pass-through over the native ``LLMatcher``."""
-
-    name = "llguidance"
-
-    def __init__(
-        self, tokenizer_info: Any, any_whitespace: bool = False
-    ) -> None:
-        self._tokenizer_info = tokenizer_info
-        self._any_whitespace = any_whitespace
-
-    @classmethod
-    def from_tokenizer_delegate(
-        cls,
-        tokenizer_delegate: PreTrainedTokenizerBase,
-        vocab_size: int,
-        any_whitespace: bool = False,
-    ) -> LlguidanceBackend:
-        """Build the llguidance tokenizer info from a tokenizer delegate."""
-        if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
-            tokenizer_info = llguidance.hf.from_tokenizer(
-                tokenizer_delegate, n_vocab=vocab_size
-            )
-        else:
-            adapter = _TikTokenAdapter(tokenizer_delegate)
-            wrapper = TokenizerWrapper(adapter)
-            tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
-        return cls(tokenizer_info, any_whitespace=any_whitespace)
-
-    @_log_if_slow
-    def compile_json_schema(self, json_schema: str) -> Any:
-        """Compile a JSON schema to a grammar handle for this backend."""
-        # The empty whitespace pattern pins compact JSON (no whitespace
-        # between tokens); omitting it uses llguidance's whitespace-tolerant
-        # default. Unlike xgrammar, llguidance has no whitespace-run cap: a
-        # bounded whitespace_pattern regex does not bound consecutive
-        # whitespace (the pattern repeats), so whitespace-tolerant mode on
-        # this backend is unbounded.
-        return LLMatcher.grammar_from_json_schema(
-            json_schema,
-            overrides=(
-                None if self._any_whitespace else {"whitespace_pattern": ""}
-            ),
-        )
-
-    @_log_if_slow
-    def create_matcher(self, grammar: Any) -> GrammarMatcher:
-        """Build a matcher from a compiled grammar (backend-specific handle)."""
-        return LLMatcher(self._tokenizer_info, grammar)
-
-    def validate_grammar(self, grammar: Any) -> None:
-        """Raise if the compiled grammar is invalid.
-
-        llguidance's matcher path fails open on unsatisfiable schemas, so
-        this explicit check is the gate that rejects them at admission.
-        """
-        error = LLMatcher.validate_grammar(grammar)
-        if error:
-            raise ValueError(error)
-
-    def allocate_token_bitmask(
-        self, batch_size: int, vocab_size: int
-    ) -> npt.NDArray[np.int32]:
-        """Allocate a packed ``[batch_size, ceil(vocab_size/32)]`` int32 bitmask."""
-        return llguidance.numpy.allocate_token_bitmask(batch_size, vocab_size)
-
-    def fill_next_token_bitmask(
-        self,
-        matcher: GrammarMatcher,
-        bitmask: npt.NDArray[np.int32],
-        index: int,
-    ) -> None:
-        """Fill ``bitmask`` row ``index`` with the matcher's allowed tokens."""
-        assert isinstance(matcher, LLMatcher)
-        llguidance.numpy.fill_next_token_bitmask(matcher, bitmask, index=index)
 
 
 class XgrammarMatcher:
@@ -391,14 +284,6 @@ class XgrammarMatcher:
     def is_stopped(self) -> bool:
         """Whether the matcher has reached a terminal state."""
         return bool(self._matcher.is_terminated())
-
-    def get_error(self) -> str | None:
-        """Error message for the last rejection, if any (diagnostics)."""
-        return None
-
-    def get_grammar_warnings(self) -> Any:
-        """Grammar compilation warnings, if any (diagnostics)."""
-        return None
 
     def deep_copy(self) -> XgrammarMatcher:
         """Independent copy for speculative walks (never mutates the original)."""
@@ -491,13 +376,14 @@ def _xgrammar_cache_limit_bytes() -> int:
     return (int(mb) if mb else _DEFAULT_XGRAMMAR_CACHE_MB) * 1024 * 1024
 
 
-class XgrammarBackend(GrammarBackend[Any]):
+class XgrammarBackend(GrammarBackend):
     """xgrammar backend.
 
     Compiles JSON schemas with full ``$ref``/``$defs``/``anyOf``/type-list
-    enforcement (where llguidance fails open). The packed int32 bitmask layout
-    matches llguidance's, and ``fill_next_token_bitmask`` writes numpy arrays
-    directly, so the decode hot path stays torch-free.
+    enforcement, failing closed on schemas it cannot faithfully enforce. The
+    packed int32 bitmask layout matches MAX's convention, and
+    ``fill_next_token_bitmask`` writes numpy arrays directly, so the decode hot
+    path stays torch-free.
     """
 
     name = "xgrammar"
@@ -588,20 +474,12 @@ class XgrammarBackend(GrammarBackend[Any]):
             )
         return XgrammarMatcher(xgrammar.GrammarMatcher(compiled))
 
-    def validate_grammar(self, grammar: Any) -> None:
-        """Raise if the compiled grammar is invalid.
-
-        Xgrammar rejects unsatisfiable schemas at compile time, so the
-        compiled grammar reaching here is already valid (nothing to check).
-        """
-        return
-
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
     ) -> npt.NDArray[np.int32]:
         """Allocate a packed ``[batch_size, ceil(vocab_size/32)]`` int32 bitmask."""
-        # -1 == all bits set == unconstrained (matches llguidance + MAX's
-        # bitmask convention); fill_next_token_bitmask overwrites filled rows.
+        # -1 == all bits set == unconstrained (MAX's bitmask convention);
+        # fill_next_token_bitmask overwrites filled rows.
         words = (vocab_size + 31) // 32
         return np.full((batch_size, words), -1, dtype=np.int32)
 
@@ -614,12 +492,10 @@ class XgrammarBackend(GrammarBackend[Any]):
         """Fill ``bitmask`` row ``index`` with the matcher's allowed tokens.
 
         Once ``matcher`` is stopped, xgrammar's own fill raises a fatal C++
-        check rather than returning a mask -- unlike llguidance, which
-        computes a real EOS-only mask in that state. ``stop_token_ids`` is a
-        plain property, safe to read even after termination, so the row is
-        built by hand here instead: only the stop tokens stay allowed,
-        giving xgrammar the same forced termination llguidance already
-        provides rather than leaving the row unconstrained.
+        check rather than returning a mask. ``stop_token_ids`` is a plain
+        property, safe to read even after termination, so the row is built by
+        hand here instead: only the stop tokens stay allowed, forcing
+        termination rather than leaving the row unconstrained.
         """
         assert isinstance(matcher, XgrammarMatcher)
         if matcher.is_stopped():
@@ -637,6 +513,7 @@ def build_xgrammar_tool_grammar(
     tools: list[dict[str, Any]],
     tool_choice: str | dict[str, Any],
     response_format_schema: dict[str, Any] | None = None,
+    reject_unsupported: bool = False,
 ) -> str:
     """Build a serialized xgrammar tool-call grammar (StructuralTag JSON).
 
@@ -646,8 +523,8 @@ def build_xgrammar_tool_grammar(
     as a grammar to :meth:`XgrammarBackend.create_matcher`.
 
     When ``response_format_schema`` is provided, the grammar accepts *either* a
-    tool call *or* a JSON response matching that schema, mirroring the
-    llguidance path's ``start: tool_calls | json_response`` alternation.
+    tool call *or* a JSON response matching that schema (a
+    ``tool_calls | json_response`` alternation).
 
     Args:
         model_format: xgrammar model-format key (e.g. ``"kimi"``).
@@ -656,6 +533,9 @@ def build_xgrammar_tool_grammar(
         response_format_schema: Optional JSON schema for a ``response_format``
             json_schema response. When set, the grammar allows a
             schema-conforming JSON response as an alternative to a tool call.
+        reject_unsupported: Whether to raise an error during grammar compilation
+            when a tool's schema cannot be enforced. Otherwise, the schema is
+            enforced best-effort.
 
     Returns:
         The StructuralTag serialized as a JSON string.
@@ -673,6 +553,7 @@ def build_xgrammar_tool_grammar(
         tools=tools,
         tool_choice=effective_tool_choice,
         reasoning=False,
+        reject_unsupported=reject_unsupported,
     )
     if response_format_schema is not None:
         json_branch: Format = JSONSchemaFormat(
@@ -697,11 +578,11 @@ def make_grammar_backend(
     tool_parser_name: str | None = None,
     stop_token_ids: Collection[int] | None = None,
     any_whitespace: bool = False,
-) -> GrammarBackend[Any]:
+) -> GrammarBackend:
     """Construct the structured-output backend selected by ``name``.
 
     Args:
-        name: Backend identifier (``"llguidance"`` or ``"xgrammar"``).
+        name: Backend identifier (``"xgrammar"``).
         tokenizer_delegate: HuggingFace/TikToken tokenizer to build vocab info.
         vocab_size: Vocabulary size from the tokenizer.
         tool_parser_name: Active tool parser, used to derive the special-token
@@ -716,10 +597,6 @@ def make_grammar_backend(
     Raises:
         ValueError: If ``name`` is not a known backend.
     """
-    if name == "llguidance":
-        return LlguidanceBackend.from_tokenizer_delegate(
-            tokenizer_delegate, vocab_size, any_whitespace=any_whitespace
-        )
     if name == "xgrammar":
         return XgrammarBackend.from_tokenizer_delegate(
             tokenizer_delegate,
@@ -731,6 +608,5 @@ def make_grammar_backend(
             any_whitespace=any_whitespace,
         )
     raise ValueError(
-        f"unknown structured output backend: {name!r} "
-        f"(supported: 'llguidance', 'xgrammar')"
+        f"unknown structured output backend: {name!r} (supported: 'xgrammar')"
     )

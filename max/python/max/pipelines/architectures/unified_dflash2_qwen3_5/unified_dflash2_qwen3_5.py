@@ -25,7 +25,6 @@ excludes.
 
 from __future__ import annotations
 
-from max.dtype import DType
 from max.graph import BufferType, TensorType, TensorValue
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
@@ -35,7 +34,8 @@ from typing_extensions import override
 
 from ..dflash2_qwen3_5 import DFlash2Qwen3_5
 from ..qwen3_5.qwen3_5 import Qwen3_5
-from ..qwen3_5.state_cache import linear_state_regions
+from ..qwen3_5.state_cache import linear_state_regions, ring_len_for_window
+from ..unified_mtp_qwen3_5.spec_state import state_tail_types
 from .model_config import UnifiedDflash2Qwen3_5Config
 from .spec_adapters import DFlash2Qwen3_5Proposer, Qwen3_5BlockTarget
 
@@ -80,8 +80,8 @@ class UnifiedDflash2Qwen3_5(BlockDriver[TensorValue, TensorValue]):
             layer_types=config.layer_types or None,
         )
 
-        # The same geometry the cache declares, so a shadow row is shaped
-        # like the live row it holds a copy of.
+        # The same geometry the cache declares, plus a ring that holds one
+        # block, which is the verify window.
         num_linear_layers = len(target.linear_layer_indices)
         state_regions = linear_state_regions(
             num_linear_layers=num_linear_layers,
@@ -92,6 +92,7 @@ class UnifiedDflash2Qwen3_5(BlockDriver[TensorValue, TensorValue]):
             conv_kernel_dim=config.target.linear_conv_kernel_dim,
             dtype=config.target.state_dtype,
             num_devices=len(config.target.devices),
+            ring_len=ring_len_for_window(config.block_size),
         )
 
         target_adapter = Qwen3_5BlockTarget(target, state_regions)
@@ -115,6 +116,7 @@ class UnifiedDflash2Qwen3_5(BlockDriver[TensorValue, TensorValue]):
             speculative_config=speculative_config,
             enable_structured_output=enable_structured_output,
             relaxed_acceptance=True,
+            vocab_size=config.target.vocab_size,
         )
         self.config = config
         self.target_layer_ids = list(config.target_layer_ids)
@@ -134,45 +136,12 @@ class UnifiedDflash2Qwen3_5(BlockDriver[TensorValue, TensorValue]):
     ) -> tuple[TensorType | BufferType, ...]:
         """Canonical spec-decode signature plus the Qwen state-pool tail.
 
-        Byte-for-byte the Qwen3.5 MTP graph's signature: the tail is the live
-        pools, then the rows addressing them, then the shadow pools, every
-        block device-major. Only the draft KV leaf's shapes differ (five
+        Byte-for-byte the Qwen3.5 MTP graph's signature at the same draft
+        width: the tail is :func:`.spec_state.state_tail_types` over the live
+        leaves and the ring. Only the draft KV leaf's shapes differ (five
         drafter layers of 8 x 128 rather than one target-shaped layer), so
-        Mach's Qwen slot layout carries over unchanged.
-
-        The shadow takes no rows; ``state_rollback.shadow_row_ids`` builds
-        them in-graph.
+        one engine-side slot layout binds both graphs.
         """
-        devices = self.config.target.devices
         spec_types = super().input_types(kv_params)
-
-        tail: list[TensorType | BufferType] = []
-        for region in self.state_regions:
-            tail.extend(
-                BufferType(
-                    region.dtype,
-                    shape=[region.rows_dim, *region.row_shape],
-                    device=device,
-                )
-                for device in devices
-            )
-        for region in self.state_regions:
-            tail.extend(
-                TensorType(
-                    DType.uint32,
-                    shape=[region.num_layers, "batch_size"],
-                    device=device,
-                )
-                for device in devices
-            )
-        for region in self.state_regions:
-            tail.extend(
-                BufferType(
-                    region.dtype,
-                    shape=[f"shadow_{region.rows_dim}", *region.row_shape],
-                    device=device,
-                )
-                for device in devices
-            )
-
+        tail = state_tail_types(self.state_regions, self.config.target.devices)
         return (*spec_types, *tail)

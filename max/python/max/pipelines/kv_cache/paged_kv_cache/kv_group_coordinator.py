@@ -266,7 +266,10 @@ class KVGroupCoordinatorInterface:
             req_blocks.append(pool.alloc_block(leaf_id))
 
     def _is_committable(
-        self, row: Sequence[LittleKVCacheBlock], block_idx: int
+        self,
+        req_id: RequestID,
+        row: Sequence[LittleKVCacheBlock],
+        block_idx: int,
     ) -> bool:
         """Whether the block at ``block_idx`` may be published."""
         block = row[block_idx]
@@ -293,7 +296,7 @@ class KVGroupCoordinatorInterface:
         pool = self.pools[replica_idx]
         req_blocks = self.rows[req_id][self.leaf_id]
         for block_idx in range(min(last_block, len(req_blocks))):
-            if not self._is_committable(req_blocks, block_idx):
+            if not self._is_committable(req_id, req_blocks, block_idx):
                 continue
             twin = pool.get_or_commit_into_prefix_cache(
                 hashes[block_idx], req_blocks[block_idx]

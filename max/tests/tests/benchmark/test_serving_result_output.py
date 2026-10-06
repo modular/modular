@@ -184,7 +184,12 @@ def test_format_gpu_statistics_title_names_device_count() -> None:
     )
 
 
-def _gpu_benchmark_result() -> BenchmarkResult:
+def _gpu_benchmark_result(
+    tool_request_rate: float | None = None,
+    tool_call_response_rate: float | None = None,
+    image_request_rate: float | None = None,
+    lora_request_rate: float | None = None,
+) -> BenchmarkResult:
     return BenchmarkResult(
         task_type="text",
         max_concurrency=8,
@@ -203,8 +208,49 @@ def _gpu_benchmark_result() -> BenchmarkResult:
             max_output=200,
             max_total=300,
             global_cached_token_rate=0.42,
+            tool_request_rate=tool_request_rate,
+            tool_call_response_rate=tool_call_response_rate,
+            image_request_rate=image_request_rate,
+            lora_request_rate=lora_request_rate,
         ),
     )
+
+
+def _print_summary(result: BenchmarkResult) -> None:
+    print_benchmark_summary(
+        metrics=result,
+        request_rate=float("inf"),
+        max_concurrency=8,
+        achieved_request_rate=1.66,
+        collect_gpu_stats=True,
+        collect_cpu_stats=False,
+    )
+
+
+def test_print_benchmark_summary_prints_request_mix_section(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(
+        _gpu_benchmark_result(
+            tool_request_rate=0.68,
+            tool_call_response_rate=0.5,
+            image_request_rate=0.2,
+            lora_request_rate=0.0,
+        )
+    )
+    out = capsys.readouterr().out
+    assert out.index("Request Mix") < out.index("Tool-offering requests:")
+    assert re.search(r"Tool-offering requests:\s+68\.00%", out)
+    assert re.search(r"of which called a tool:\s+50\.00%", out)
+    assert re.search(r"Image-carrying requests:\s+20\.00%", out)
+    assert "LoRA-routed requests:" not in out
+
+
+def test_print_benchmark_summary_omits_request_mix_when_unused(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(_gpu_benchmark_result(tool_request_rate=0.0))
+    assert "Request Mix" not in capsys.readouterr().out
 
 
 def test_print_benchmark_summary_tabulates_gpu_stats(

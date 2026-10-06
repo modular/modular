@@ -12,13 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from linalg.block_scaled_quantization import quantize_dynamic_scaled_fp4fp8
 from std.testing import assert_almost_equal
@@ -33,17 +27,15 @@ from linalg.fp4_utils import (
     NVFP4_SF_DTYPE,
     get_scale_factor,
 )
-from std.utils import IndexList
 
 
 def test_dynamic_fp4_quant[
     in_dtype: DType,
     scales_dtype: DType,
     SF_VECTOR_SIZE: Int,
-    M: Optional[Int],
-    N: Optional[Int],
+    N: Int,
 ](ctx: DeviceContext, m: Int, n: Int, tensor_sf: Float32 = 1.0) raises:
-    if N.or_else(n) % (SF_VECTOR_SIZE // 2) != 0:
+    if N % (SF_VECTOR_SIZE // 2) != 0:
         raise Error(
             "n must be a multiple of (SF_VECTOR_SIZE // 2) due to kernel"
             " constraints"
@@ -51,69 +43,28 @@ def test_dynamic_fp4_quant[
 
     comptime out_dtype = DType.uint8
 
-    # Input tensor layout and buffer
-    comptime input_static_shape = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE), N.or_else(UNKNOWN_VALUE)
-    )
-    var input_dynamic_shape = IndexList[2](M.or_else(m), N.or_else(n))
-    var input_runtime_layout = RuntimeLayout[input_static_shape].row_major(
-        input_dynamic_shape
-    )
-    var in_device = ctx.enqueue_create_buffer[in_dtype](
-        input_dynamic_shape.flattened_length()
-    )
-    var input_tensor = LayoutTensor[in_dtype, input_static_shape](
-        in_device, input_runtime_layout
-    )
-
-    # Output tensor layout and buffer
-    comptime output_static_shape = Layout.row_major(
-        M.or_else(UNKNOWN_VALUE),
-        ceildiv(N.or_else(UNKNOWN_VALUE), 2),
-    )
-    var output_dynamic_shape = IndexList[2](
-        M.or_else(m), ceildiv(N.or_else(n), 2)
-    )
-    var output_runtime_layout = RuntimeLayout[output_static_shape].row_major(
-        output_dynamic_shape
-    )
-    var out_device = ctx.enqueue_create_buffer[out_dtype](
-        output_dynamic_shape.flattened_length()
-    )
-    var output_tensor = LayoutTensor[out_dtype, output_static_shape](
-        out_device, output_runtime_layout
-    )
-
-    # Scales tensor layout and buffer
-    var scales_shape = IndexList[5](
+    var input_layout = row_major(m, Idx[N])
+    var output_layout = row_major(m, Idx[ceildiv(N, 2)])
+    var scales_layout = row_major(
         ceildiv(m, SF_MN_GROUP_SIZE),
         ceildiv(n, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
-    comptime scales_static_layout = Layout.row_major(
-        UNKNOWN_VALUE,
-        UNKNOWN_VALUE,
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    var scales_runtime_layout = RuntimeLayout[scales_static_layout].row_major(
-        scales_shape
-    )
+
+    var in_device = ctx.enqueue_create_buffer[in_dtype](input_layout.size())
+    var out_device = ctx.enqueue_create_buffer[out_dtype](output_layout.size())
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](
-        scales_shape.flattened_length()
+        scales_layout.size()
     )
-    var scales_tensor = LayoutTensor[scales_dtype, scales_static_layout](
-        scales_device, scales_runtime_layout
-    )
+    var input_tensor = TileTensor(in_device, input_layout)
+    var output_tensor = TileTensor(out_device, output_layout)
+    var scales_tensor = TileTensor(scales_device, scales_layout)
 
     # Initialize input with random data and output with zeros on host
     with in_device.map_to_host() as in_host:
-        var in_host_tensor = LayoutTensor[in_dtype, input_static_shape](
-            in_host, input_runtime_layout
-        )
+        var in_host_tensor = TileTensor(in_host, input_layout)
         random(in_host_tensor)
 
     with out_device.map_to_host() as out_host:
@@ -123,9 +74,9 @@ def test_dynamic_fp4_quant[
     # Run the quantization kernel
     quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
         ctx,
-        lt_to_tt(output_tensor).as_unsafe_any_origin(),
-        lt_to_tt(scales_tensor).as_unsafe_any_origin(),
-        lt_to_tt(input_tensor).as_unsafe_any_origin(),
+        output_tensor.as_unsafe_any_origin(),
+        scales_tensor.as_unsafe_any_origin(),
+        input_tensor.as_unsafe_any_origin(),
         num_cols=n,
         num_cols_padded=n,
         tensor_sf=tensor_sf,
@@ -137,15 +88,9 @@ def test_dynamic_fp4_quant[
     with in_device.map_to_host() as in_host:
         with out_device.map_to_host() as out_host:
             with scales_device.map_to_host() as scales_host:
-                var input_tensor_host = LayoutTensor[
-                    in_dtype, input_static_shape
-                ](in_host, input_runtime_layout)
-                var output_tensor_host = LayoutTensor[
-                    out_dtype, output_static_shape
-                ](out_host, output_runtime_layout)
-                var scales_tensor_host = LayoutTensor[
-                    scales_dtype, scales_static_layout
-                ](scales_host, scales_runtime_layout)
+                var input_tensor_host = TileTensor(in_host, input_layout)
+                var output_tensor_host = TileTensor(out_host, output_layout)
+                var scales_tensor_host = TileTensor(scales_host, scales_layout)
 
                 for row_idx in range(0, m):
                     for col_idx in range(0, n, SF_VECTOR_SIZE):
@@ -157,14 +102,14 @@ def test_dynamic_fp4_quant[
                         ):
                             var input_vector = input_tensor_host.load[
                                 SF_VECTOR_SIZE // 2
-                            ](row_idx, col_idx)
+                            ](Coord(row_idx, col_idx))
                             vec_max = (
                                 abs(input_vector).reduce_max().cast[.float32]()
                             )
                         else:
                             var input_vector = input_tensor_host.load[
                                 SF_VECTOR_SIZE
-                            ](row_idx, col_idx)
+                            ](Coord(row_idx, col_idx))
                             vec_max = (
                                 abs(input_vector).reduce_max().cast[.float32]()
                             )
@@ -202,7 +147,7 @@ def test_dynamic_fp4_quant[
                         ):
                             var input_f32 = (
                                 input_tensor_host.load[SF_VECTOR_SIZE // 2](
-                                    row_idx, col_idx
+                                    Coord(row_idx, col_idx)
                                 ).cast[.float32]()
                                 * output_scale
                             )
@@ -213,7 +158,7 @@ def test_dynamic_fp4_quant[
                             ](
                                 output_tensor_host.load[
                                     (SF_VECTOR_SIZE // 2) // 2
-                                ](row_idx, col_idx // 2)
+                                ](Coord(row_idx, col_idx // 2))
                             )
                             assert_almost_equal(
                                 ref_output_e2m1,
@@ -224,7 +169,7 @@ def test_dynamic_fp4_quant[
                         else:
                             var input_f32 = (
                                 input_tensor_host.load[SF_VECTOR_SIZE](
-                                    row_idx, col_idx
+                                    Coord(row_idx, col_idx)
                                 ).cast[.float32]()
                                 * output_scale
                             )
@@ -234,7 +179,7 @@ def test_dynamic_fp4_quant[
                                 out_width=SF_VECTOR_SIZE,
                             ](
                                 output_tensor_host.load[(SF_VECTOR_SIZE // 2)](
-                                    row_idx, col_idx // 2
+                                    Coord(row_idx, col_idx // 2)
                                 )
                             )
                             assert_almost_equal(
@@ -252,41 +197,35 @@ def main() raises:
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
-            M=None,
-            N=Int(128),
+            N=128,
         ](ctx, 0, 128)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
-            M=None,
-            N=Int(128),
+            N=128,
         ](ctx, 256, 128)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
-            M=None,
-            N=Int(128 + 8),
+            N=128 + 8,
         ](ctx, 258, 128 + 8)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
-            M=None,
-            N=Int(128 + 64 - 8),
+            N=128 + 64 - 8,
         ](ctx, 258, 128 + 64 - 8)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
-            M=None,
-            N=Int(8192 + 8),
+            N=8192 + 8,
         ](ctx, 1000, 8192 + 8, tensor_sf=0.43)
         test_dynamic_fp4_quant[
             DType.bfloat16,
             NVFP4_SF_DTYPE,
             NVFP4_SF_VECTOR_SIZE,
-            M=None,
-            N=Int(16384 + 8),
+            N=16384 + 8,
         ](ctx, 2048, 16384 + 8, tensor_sf=0.5)

@@ -36,7 +36,6 @@ comptime test_gpu_counts = (2, 4)
 
 
 @inline(.always)
-@__parameter
 def _input_value[dtype: DType](root: Int, j: Int) -> Scalar[dtype]:
     return Scalar[dtype](root + 1) + Scalar[dtype](j % 251)
 
@@ -146,9 +145,9 @@ def main() raises:
         range(len(test_dtypes)),
         range(len(test_lengths)),
     ):
-        comptime ngpus = rebind[Int](test_gpu_counts[gpu_idx])
-        comptime dtype = rebind[DType](test_dtypes[dtype_idx])
-        comptime length = rebind[Int](test_lengths[length_idx])
+        comptime ngpus = test_gpu_counts[gpu_idx]
+        comptime dtype = test_dtypes[dtype_idx]
+        comptime length = test_lengths[length_idx]
 
         # Trailing slice of the visible devices, so device id != group rank.
         var dev_offset = num_devices - ngpus

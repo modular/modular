@@ -11,6 +11,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: KERN-3121 — topk_topp_sampling_from_prob samples out-of-top-K index on Metal
+    "test_topk_greedy_tiebreak.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: KERN-3121 — same sampler as test_topk_gpu_fi.mojo
     # `emit_dist` uses block collectives the Apple search path avoids.
     "test_topk_topp_sampling_with_dist.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -55,6 +59,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # Cross-compiles to gfx950 and asserts AMDGPU-spelled ISA properties
+    # (`.vgpr_spill_count`, `ds_bpermute`, `s_barrier` counts). Nothing in it
+    # needs to run on the GPU, but the assertions only mean anything for AMD.
+    "test_topk_warp_isa_amd.mojo": ["//:amd_gpu"],
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
@@ -116,6 +124,11 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_index_fp8.mojo": select({
         "//:h100_gpu": [],
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The SM100 K-streaming scorer only (tcgen05, TMA).
+    "test_index_fp8_sm100_kscale_war.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -261,10 +274,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: GEX-2562
-    "test_moe_indices.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2489
     # The router's warp-bitonic top-k and lane-group reductions have never
     # been exercised on Metal; opt out until someone confirms them there.
     "test_sink_gate_router.mojo": select({
@@ -349,11 +358,20 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "attention/test_mha_sm100_d256_pack_gqa.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "attention/test_mha_sm100_qkv_fp8_d512_prefill.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "attention/test_mha_sm100_d512_fuse_gqa_crossrow_canary.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # SM100 depth512 pair-CTA and FA4 attention-sink routes.
+    "attention/test_mha_sm100_depth512_sink.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -402,6 +420,12 @@ _EXTRA_CONSTRAINTS = {
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    # TODO(GEX-3342): the router's warp bitonic top-k is wrong on Metal, so
+    # the op rejects Apple GPUs.
+    "test_moe_sigmoid_gemv_router.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # TODO(GEX-3342): Metal GPU sorting produces incorrect results
     "test_warp_bitonic_sort.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -447,19 +471,22 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _EXTRA_DEPS = {
-    "test_attn_res_mix.mojo": ["//Kernels/lib/attn_res"],
+    "attention/test_mha_sm100_depth512_sink.mojo": ["//max:kv_cache"],
     "test_mla_layout_g_mma_smoke.mojo": ["//max:max_mojo"],
     "test_mma_ws_ts.mojo": ["//max:max_mojo"],
     "test_mma_ws_ts_pv_m32.mojo": ["//max:max_mojo"],
     "test_rms_norm_fused_residual_add.mojo": ["//max:max_mojo"],
     "test_topk_gpu.mojo": ["//max:max_mojo"],
     "test_topk_gpu_fi.mojo": ["//max:max_mojo"],
+    "test_topk_greedy_tiebreak.mojo": ["//max:max_mojo"],
     "test_topk_topp_degenerate_row.mojo": ["//max:max_mojo"],
     "test_toppminp_gpu.mojo": ["//max:max_mojo"],
     "test_ws_intracta_combine.mojo": ["//max:max_mojo"],
 }
 
 _GPU_MEMORY = {
+    # The bs22 x 35k-context case needs ~3 GiB beyond the 4 GiB default.
+    "attention/test_mha_sm100_d256_pack_gqa.mojo": "16",
     "test_cudnn_conv.mojo": "7",
 }
 
@@ -534,6 +561,10 @@ _FILECHECK_TESTS = [
             "test_mla_prefill_blockscale_large_cache.mojo",
             "test_mla_prefill_per_token_scale_paged.mojo",
             "test_mla_prefill_vhead_repro.mojo",
+            "test_mla_prefill_amd_cached_prefix.mojo",
+            "test_mla_prefill_amd_plan_gather.mojo",
+            "test_mla_prefill_amd_gather_sentinel_guard.mojo",
+            "test_mla_prefill_plan_chunk_overflow.mojo",
             "_paged_prefill_test_utils.mojo",
             # SM100 FA4 1Q split-K combine test: fully covered by the explicit
             # b200-gated (mask, depth, P) registrations below. Exclude the default
@@ -1487,3 +1518,133 @@ _MLA_PREFILL_PAGED_VARIANTS = [
     for (src, label, page_sizes, gpu_memory) in _MLA_PREFILL_PAGED_VARIANTS
     for page_size in page_sizes
 ]
+
+# AMD/gfx950 counterpart to the paged-prefill variants above: drives the same
+# `run_test_paged_prefill` helper (`flare_mla_prefill` against a paged
+# `KVCacheT` for K_rope), whose dispatch already routes to
+# `Attention[...].mla_prefill` on AMD -- but at a `cache_length > 0` cached-
+# prefix geometry the B200-only variants above never exercise. MI355-only.
+_MLA_PREFILL_PAGED_AMD_PAGE_SIZES = [
+    "64",
+    "128",
+]
+
+[
+    mojo_test(
+        name = "test_mla_prefill_amd_cached_prefix_ps{}.mojo.test".format(page_size),
+        size = "large",
+        srcs = [
+            "_paged_prefill_test_utils.mojo",
+            "test_mla_prefill_amd_cached_prefix.mojo",
+        ],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "-D",
+            "page_size={}".format(page_size),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "4",
+        },
+        main = "test_mla_prefill_amd_cached_prefix.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:mi355_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for page_size in _MLA_PREFILL_PAGED_AMD_PAGE_SIZES
+]
+
+# AMD/gfx950 plan + gather/decompress stages -- the two stages that precede
+# the attention kernel in production and that `test_mla_prefill_amd_cached_
+# prefix.mojo` never reaches (its K-nope/V are randn-filled flat buffers,
+# not gathered from the paged cache). MI355-only.
+mojo_test(
+    name = "test_mla_prefill_amd_plan_gather.mojo.test",
+    size = "large",
+    srcs = [
+        "_paged_prefill_test_utils.mojo",
+        "test_mla_prefill_amd_plan_gather.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "test_mla_prefill_amd_plan_gather.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# `mla_prefill_plan_kernel`'s defense-in-depth backstop: a sequence whose
+# start position overflows the fixed MAX_CHUNKS buffer aborts loudly instead
+# of silently producing wrong gather offsets. Platform-generic (no MFMA/TMA),
+# unlike the AMD-only plan+gather test above, so this runs on any GPU.
+mojo_filecheck_test(
+    name = "test_mla_prefill_plan_chunk_overflow.mojo.test",
+    size = "large",
+    srcs = [
+        "_paged_prefill_test_utils.mojo",
+        "test_mla_prefill_plan_chunk_overflow.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    expect_crash = True,
+    main = "test_mla_prefill_plan_chunk_overflow.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+# KERN-3412: `_k_cache_to_buffer`'s guard against gathering rows past the
+# plan's real total (the out-of-range case, as opposed to the in-range
+# page-alignment tail the sibling plan+gather test above covers). MI355-only
+# for the same reason as that sibling.
+mojo_test(
+    name = "test_mla_prefill_amd_gather_sentinel_guard.mojo.test",
+    size = "large",
+    srcs = [
+        "_paged_prefill_test_utils.mojo",
+        "test_mla_prefill_amd_gather_sentinel_guard.mojo",
+    ],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "test_mla_prefill_amd_gather_sentinel_guard.mojo",
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:mi355_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)

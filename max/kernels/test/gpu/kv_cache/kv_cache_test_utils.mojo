@@ -17,10 +17,17 @@ from std.random import shuffle
 from std.utils.numerics import isinf, isnan
 
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import (
+    Coord,
+    RowMajorLayout,
+    TensorLayout,
+    TileTensor,
+    row_major,
+)
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 
 from std.utils import Index, IndexList
+from std.utils.coord import DynamicCoord
 
 
 # Mirror of `_LUT_TAIL_PAD` in
@@ -95,25 +102,26 @@ def random_distinct(n: Int, k: Int) -> List[Int]:
 
 
 def assert_no_nan_inf[
-    dtype: DType, layout: Layout
+    dtype: DType, LayoutType: TensorLayout
 ](
-    mut output: ManagedLayoutTensor[dtype, layout],
+    mut output: HostDeviceTileTensor[dtype, LayoutType],
     name: StaticString = "output",
 ) raises:
     """Assert no NaN/Inf is present in `output`.
 
-    Copies the managed tensor's device buffer back to host (via
-    `tensor[update=True]()`) and linearly scans every element. Raises on the
-    first NaN or Inf with the element's flat index, total size, and the
-    caller-supplied `name`. Use immediately after a kernel + `synchronize()`
-    to give a named, indexed failure rather than relying on tolerance
-    comparisons (which mask NaN-vs-NaN matches and produce vague error
-    messages).
+    Copies the device buffer back to host and linearly scans every element.
+    Raises on the first NaN or Inf with the element's flat index, total size,
+    and the caller-supplied `name`. Use immediately after a kernel +
+    `synchronize()` to give a named, indexed failure rather than relying on
+    tolerance comparisons (which mask NaN-vs-NaN matches and produce vague
+    error messages).
     """
-    var host = output.tensor[update=True]()
-    var n = host.runtime_layout.size()
+    output.to_host()
+    var host = output.host_tensor()
+    var n = host.num_elements()
+    var ptr = host.unsafe_ptr()
     for i in range(n):
-        var v = host.ptr[i].cast[.float32]()
+        var v = ptr[i].cast[.float32]()
         if isnan(v):
             raise Error(
                 String("NaN at element ")
@@ -136,8 +144,13 @@ def assert_no_nan_inf[
             )
 
 
-struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
-    comptime tensor_type = LayoutTensor[Self.dtype, Self.layout, ImmutAnyOrigin]
+struct _KVCacheTestTensor[dtype: DType, rank: Int](Copyable):
+    comptime tensor_type = TileTensor[
+        Self.dtype,
+        RowMajorLayout[*DynamicCoord[.int64, Self.rank].element_types],
+        ImmutAnyOrigin,
+    ]
+    comptime tile_tensor_type = Self.tensor_type
 
     var shape: IndexList[Self.rank]
     var host_ptr: MutPointer[Scalar[Self.dtype], MutUntrackedOrigin]
@@ -163,22 +176,22 @@ struct _KVCacheTestTensor[dtype: DType, layout: Layout, rank: Int](Copyable):
     def device_tensor(self) -> Self.tensor_type:
         return self._tensor(self.device_buf.value().unsafe_ptr())
 
-    def _runtime_layout(self) -> RuntimeLayout[Self.layout]:
-        return RuntimeLayout[Self.layout].row_major(self.shape)
+    def host_tile_tensor(self) -> Self.tile_tensor_type:
+        return self.host_tensor()
+
+    def device_tile_tensor(self) -> Self.tile_tensor_type:
+        return self.device_tensor()
 
     def _tensor(self, ptr: Pointer[Scalar[Self.dtype], _]) -> Self.tensor_type:
         return Self.tensor_type(
-            ptr.as_imm().as_unsafe_any_origin(), self._runtime_layout()
+            ptr=ptr.as_imm().as_unsafe_any_origin(),
+            layout=row_major(Coord(self.shape)),
         )
 
 
 struct CacheLengthsTable(Copyable):
-    var cache_lengths: _KVCacheTestTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), 1
-    ]
-    var input_row_offsets: _KVCacheTestTensor[
-        DType.uint32, Layout(UNKNOWN_VALUE), 1
-    ]
+    var cache_lengths: _KVCacheTestTensor[DType.uint32, 1]
+    var input_row_offsets: _KVCacheTestTensor[DType.uint32, 1]
 
     var batch_size: Int
     var max_full_context_length: Int
@@ -243,7 +256,7 @@ struct CacheLengthsTable(Copyable):
 
 
 struct PagedLookupTable[page_size: Int](Copyable):
-    var paged_lut: _KVCacheTestTensor[.uint32, Layout.row_major[2](), 2]
+    var paged_lut: _KVCacheTestTensor[.uint32, 2]
 
     def __init__(
         out self, batch_size: Int, max_full_context_length: Int
@@ -268,9 +281,8 @@ struct PagedLookupTable[page_size: Int](Copyable):
     ) raises:
         var batch_size = len(prompt_lens)
 
-        var host_tensor = LayoutTensor[.uint32, type_of(self.paged_lut).layout](
-            self.paged_lut.host_ptr,
-            self.paged_lut._runtime_layout(),
+        var host_tensor = TileTensor(
+            self.paged_lut.host_ptr, row_major(Coord(self.paged_lut.shape))
         )
         # Sample one distinct paged block per page across the whole batch up
         # front, then hand them out in iteration order. Total pages needed is
@@ -316,7 +328,6 @@ struct PagedLookupTable[page_size: Int](Copyable):
         num_paged_blocks: Int,
         ctx: DeviceContext,
     ) raises -> Self:
-        @__parameter
         def _to_list(idx_list: IndexList) -> List[Int]:
             var list = List[Int](capacity=idx_list.size)
             for i in range(idx_list.size):
@@ -336,3 +347,9 @@ struct PagedLookupTable[page_size: Int](Copyable):
 
     def device_tensor(self) -> type_of(self.paged_lut).tensor_type:
         return self.paged_lut.device_tensor()
+
+    def host_tile_tensor(self) -> type_of(self.paged_lut).tile_tensor_type:
+        return self.paged_lut.host_tile_tensor()
+
+    def device_tile_tensor(self) -> type_of(self.paged_lut).tile_tensor_type:
+        return self.paged_lut.device_tile_tensor()

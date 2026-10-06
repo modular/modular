@@ -289,6 +289,10 @@ def FuncPtrBitcastAttr : DialectAttribute<(attr
   ConcreteType<"FuncTypeGeneratorType">:$type
 )>;
 
+def QuoteAttr : DialectAttribute<(attr
+  ConcreteAttribute<"TypedAttr">:$quotedParam
+)>;
+
 def GeneratorAttr : DialectAttribute<(attr
   TypeArray:$inputParamTypes,
   ConcreteAttribute<"TypedAttr">:$body,
@@ -633,6 +637,7 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     DTypeConstantAttr,
     SymbolConstantAttr,
     FuncSymbolAttr,
+    QuoteAttr,
     GeneratorAttr,
     TargetParamAttr,
     StructDefFieldAttr,

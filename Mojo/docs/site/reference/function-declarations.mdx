@@ -366,8 +366,8 @@ def main():
     consume(greeting)   # Hello! (copied)
     print(greeting)     # Hello
 
-    consume(greeting^)  # Hello! (moved)
-    # print(greeting)   # Error because uninitialized after move
+    consume(greeting^)  # Hello!
+    # print(greeting)   # Error because uninitialized after transfer
 ```
 
 ### `out`

@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Sequence
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import max.pipelines.lib.pipeline_variants.structured_output_backend as _sob
 import numpy as np
@@ -63,19 +64,13 @@ class _RecordingMatcher(GrammarMatcher):
     def is_stopped(self) -> bool:
         return False
 
-    def get_error(self) -> str | None:
-        return None
-
-    def get_grammar_warnings(self) -> Any:
-        return None
-
     def deep_copy(self) -> _RecordingMatcher:
         # Speculative walks (Part 2) use a copy, never the original.
         return _RecordingMatcher()
 
 
-class _NoopBackend(GrammarBackend[Any]):
-    """GrammarBackend stub so Part 2's fills don't touch llguidance."""
+class _NoopBackend(GrammarBackend):
+    """GrammarBackend stub so Part 2's fills don't touch the real backend."""
 
     name = "noop"
 
@@ -84,9 +79,6 @@ class _NoopBackend(GrammarBackend[Any]):
 
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         return _RecordingMatcher()
-
-    def validate_grammar(self, grammar: Any) -> None:
-        return None
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
@@ -103,7 +95,7 @@ class _NoopBackend(GrammarBackend[Any]):
 
 
 class _DeadMatcher(_RecordingMatcher):
-    """Stopped without accepting: llguidance's state after a rejected token.
+    """Stopped without accepting: the state after a rejected token.
 
     Its mask is all-zero, since no token can continue the grammar.
     """
@@ -415,6 +407,127 @@ class TestSpecDecodeStopsExactlyAtPerRequestCap:
         assert ctx.status == GenerationStatus.MAXIMUM_LENGTH
 
 
+class TestUpdateSpecDecodeContextAndPrepareResponses:
+    """``update_spec_decode_context_and_prepare_responses``."""
+
+    def test_update_spec_decode_skip_fsm_advance_does_not_call_advance_fsm(
+        self,
+    ) -> None:
+        """With skip_fsm_advance=True, advance_fsm is never called for committed tokens.
+
+        When a CUDA host callback has already advanced the FSM, the Python-side
+        update should skip FSM calls to avoid double-advancing.
+        """
+        ctx = TextContext(
+            request_id=RequestID(),
+            max_length=2048,
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+        )
+        ctx.update_with_future_token()  # sets generated_length=1 so the loop runs
+
+        mock_matcher = MagicMock()
+        ctx._matcher = mock_matcher
+
+        with patch.object(ctx, "advance_fsm") as mock_advance_fsm:
+            update_spec_decode_context_and_prepare_responses(
+                draft_tokens=np.array([[1, 2]], dtype=np.int32),
+                next_draft_tokens=np.array([[3, 4]], dtype=np.int32),
+                num_accepted_draft_tokens=np.array([1], dtype=np.int32),
+                next_tokens=np.array([5], dtype=np.int32),
+                context_batch=[ctx],
+                max_seq_len=2048,
+                skip_fsm_advance=True,
+            )
+
+        mock_advance_fsm.assert_not_called()
+
+    def test_update_spec_decode_without_skip_fsm_advance_calls_advance_fsm(
+        self,
+    ) -> None:
+        """Without skip_fsm_advance, advance_fsm is called for each committed token.
+
+        Verifies the baseline (skip_fsm_advance=False) so the skip test has
+        a meaningful contrast.
+        """
+        ctx = TextContext(
+            request_id=RequestID(),
+            max_length=2048,
+            tokens=TokenBuffer(np.ones(10, dtype=np.int64)),
+        )
+        ctx.update_with_future_token()
+
+        mock_matcher = MagicMock()
+        ctx._matcher = mock_matcher
+
+        with patch.object(ctx, "advance_fsm") as mock_advance_fsm:
+            update_spec_decode_context_and_prepare_responses(
+                draft_tokens=np.array([[1, 2]], dtype=np.int32),
+                next_draft_tokens=np.array([[3, 4]], dtype=np.int32),
+                num_accepted_draft_tokens=np.array([1], dtype=np.int32),
+                next_tokens=np.array([5], dtype=np.int32),
+                context_batch=[ctx],
+                max_seq_len=2048,
+                skip_fsm_advance=False,
+            )
+
+        # advance_fsm called for the first token (realize_future_token path)
+        # and subsequent tokens go through update() which also calls advance_fsm
+        assert mock_advance_fsm.call_count >= 1
+
+    def test_update_spec_decode_does_not_early_stop_near_max_seq_len(
+        self,
+    ) -> None:
+        """update_spec_decode_context_and_prepare_responses keeps a near-limit
+        context live as long as there is room for at least one more token.
+
+        MAX-615 was originally mitigated by reserving worst-case
+        (num_spec_tokens + 1) growth in build_response, which stopped a sequence
+        up to num_spec_tokens tokens short of the cap. Now the KV pool carries
+        num_draft_tokens slack beyond max_seq_len (see overlap_text_generation
+        ``_effective_max_cache_length``), so a step may over-speculate into that
+        slack and the per-token commit loop truncates to the cap. A context that
+        still has room must therefore NOT be early-stopped here.
+        """
+        num_spec_tokens = 3
+
+        # At prompt_len=96 / max_seq_len=100 the old worst-case reservation
+        # (96 + 1 + 4 > 100) marked this MAXIMUM_LENGTH; it must no longer do so
+        # because there is still room for more tokens (97 < 100).
+        max_seq_len = 100
+        prompt_len = max_seq_len - (num_spec_tokens + 1)  # = 96
+        output_len = max_seq_len - prompt_len  # = 4
+
+        ctx = create_text_context(
+            prompt_len=prompt_len, max_length=prompt_len + output_len
+        )
+        assert ctx.max_length == max_seq_len
+
+        # Prepare the context for spec dec: add future token placeholder
+        ctx.update_with_future_token()
+        assert not ctx.is_done, "Context should not be done before the test"
+
+        next_draft = [4, 5, 6]
+        update_spec_decode_context_and_prepare_responses(
+            draft_tokens=np.array([[1, 2, 3]], dtype=np.int32),
+            next_draft_tokens=np.array([next_draft], dtype=np.int32),
+            num_accepted_draft_tokens=np.array([0], dtype=np.int32),
+            next_tokens=np.array([99], dtype=np.int32),
+            context_batch=[ctx],
+            max_seq_len=max_seq_len,
+        )
+
+        # Only the bonus token committed (current_position=97 < 100), so the
+        # context stays live and keeps its drafts for the next verify step.
+        assert ctx.status != GenerationStatus.MAXIMUM_LENGTH, (
+            "Context with room for more tokens must not be early-stopped: "
+            f"current_position={ctx.tokens.current_position}, "
+            f"max_seq_len={max_seq_len}"
+        )
+        assert ctx.spec_decoding_state.draft_tokens_to_verify == next_draft, (
+            "A still-active context must retain its next-step draft tokens"
+        )
+
+
 class TestTokensForConsume:
     """``StructuredOutputHelper._tokens_for_consume``.
 
@@ -484,7 +597,9 @@ class TestAdvanceFsmAndComputeBitmasks:
 
     def test_row_absent_from_producing_batch_degrades_not_raises(self) -> None:
         """A row absent from the producing batch is degraded, not raised on."""
-        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_NoopBackend()
+        )
 
         producer = self._decoding_ctx()
         transferred = self._decoding_ctx()
@@ -518,7 +633,9 @@ class TestAdvanceFsmAndComputeBitmasks:
     def test_row_preempted_in_flight_degrades_not_raises(self) -> None:
         """Regression: a row reset (preempted) after enqueue is degraded, not
         raised on, so the rest of the batch keeps its constraints."""
-        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_NoopBackend()
+        )
 
         survivor = self._decoding_ctx()
         preempted = self._decoding_ctx()
@@ -644,7 +761,9 @@ class TestAdvanceFsmAndComputeBitmasks:
         aggregated steady-state path), the callback attributes every consumer
         row and does not assert.
         """
-        helper = StructuredOutputHelper(enabled=True, vocab_size=16)
+        helper = StructuredOutputHelper(
+            enabled=True, vocab_size=16, backend=_NoopBackend()
+        )
 
         row_a = self._decoding_ctx()
         row_b = self._decoding_ctx()
@@ -720,7 +839,7 @@ class TestAdvanceFsmAndComputeBitmasks:
         assert matcher_b.consumed == [[5]]
 
 
-class _RaisingBackend(GrammarBackend[Any]):
+class _RaisingBackend(GrammarBackend):
     """GrammarBackend stub whose compiles always raise, to exercise the
     validator's exception translation."""
 
@@ -731,9 +850,6 @@ class _RaisingBackend(GrammarBackend[Any]):
 
     def create_matcher(self, grammar: Any) -> GrammarMatcher:
         raise ValueError("cannot compile grammar")
-
-    def validate_grammar(self, grammar: Any) -> None:
-        return None
 
     def allocate_token_bitmask(
         self, batch_size: int, vocab_size: int
@@ -839,7 +955,7 @@ class TestGrammarCompileFailure:
     """The worker owns the only compile, so it is what turns a compile
     failure into the InputError the API server returns as a 400."""
 
-    def _helper(self, backend: GrammarBackend[Any]) -> StructuredOutputHelper:
+    def _helper(self, backend: GrammarBackend) -> StructuredOutputHelper:
         return StructuredOutputHelper(
             enabled=True,
             enable_response_format_schema=True,
@@ -860,22 +976,6 @@ class TestGrammarCompileFailure:
         bitmask = np.zeros((1, 4), dtype=np.int32)
         with pytest.raises(InputError, match="boom"):
             self._helper(_RaisingBackend()).update_context(ctx, bitmask, 0)
-
-    def test_unsatisfiable_schema_is_rejected(self) -> None:
-        """llguidance's matcher fails open on unsatisfiable schemas, so
-        build_matcher's validate_grammar call is what rejects them."""
-
-        class _UnsatisfiableBackend(_NoopBackend):
-            def validate_grammar(self, grammar: Any) -> None:
-                raise ValueError("Unsatisfiable schema")
-
-        ctx = create_text_context(prompt_len=4, max_length=100)
-        ctx.json_schema = '{"anyOf": [false]}'
-        bitmask = np.zeros((1, 4), dtype=np.int32)
-        with pytest.raises(InputError, match="Unsatisfiable"):
-            self._helper(_UnsatisfiableBackend()).update_context(
-                ctx, bitmask, 0
-            )
 
 
 class TestSpecialTokenIdsForMarkers:

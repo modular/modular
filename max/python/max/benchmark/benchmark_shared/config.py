@@ -28,7 +28,6 @@ from .backend_names import Backend
 from .datasets import (
     DatasetMode,
     DistributionParameter,
-    ImageTurn,
     TurnSelector,
 )
 from .utils import int_or_none, parse_comma_separated
@@ -543,6 +542,19 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    disable_ignore_eos: bool = Field(
+        default=False,
+        description=(
+            "Let requests stop at EOS. By default requests ignore EOS and "
+            "generate their full target length, so every backend generates "
+            "the same number of tokens. With this flag the target length only "
+            "caps generation, which speculative decoding needs: a drafter "
+            "cannot predict tokens past a forced EOS. Matches SGLang's "
+            "--disable-ignore-eos."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
     temperature: float | None = Field(
         default=None,
         description="Temperature for sampling.",
@@ -609,6 +621,37 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
             "Which user turns of a multi-turn chat session "
             "--response-format-fraction may constrain: 'every', 'first', or "
             "'last'. Ignored for single-turn requests."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    tools: str | None = Field(
+        default=None,
+        description=(
+            "OpenAI chat-completions tool definitions to send, as a JSON list "
+            "or '@path/to/tools.json' to load from file. Applied to the share "
+            "of traffic --tools-fraction selects, except chat-judge "
+            "workloads, whose driver builds its own requests, and requests "
+            "whose dataset already attached tools. The rendered definitions "
+            "are carved out of a chat session's first turn or a single-turn "
+            "string prompt, so the drawn input length still describes the "
+            "whole prompt. Unrelated to --agentic-tool-profiles, which shapes "
+            "agent-loop load and sends no tools."
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    tools_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        allow_inf_nan=False,
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or of chat sessions "
+            "(multi-turn) that carry --tools. A selected session carries them "
+            "on every turn, as a real agent does, so the realized request "
+            "share tracks the fraction but is weighted by session length. "
+            "Defaults to 1.0, so --tools alone applies to everything."
         ),
         json_schema_extra={"group": "Output Control"},
     )
@@ -810,7 +853,21 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         ge=0.0,
         le=1.0,
         allow_inf_nan=False,
-        description="Fraction (0.0-1.0) of requests (single-turn) or chat sessions (multi-turn) that get at least one generated image mixed in, on top of whatever dataset is selected via --dataset-name. Mutually exclusive with --random-image-count/--random-image-size.",
+        description=(
+            "Fraction (0.0-1.0) of requests (single-turn) or chat sessions "
+            "(multi-turn) that get at least one generated image mixed in, on "
+            "top of whatever dataset is selected via --dataset-name. Drawn "
+            "per session in multi-turn rather than per request, because the "
+            "chat driver resends history: with --image-turn every and "
+            "--image-count 1 it equals both newly-encoded images per request "
+            "and the share of requests carrying one, whereas 'first'/'last' "
+            "encode once per session and so cut the encoder rate by roughly "
+            "the session's turn count. Only the image turn and later turns "
+            "resend it, so 'first' keeps the share of requests carrying one "
+            "at the fraction while 'last' cuts it like the encoder rate. "
+            "Mutually exclusive with "
+            "--random-image-count/--random-image-size."
+        ),
         json_schema_extra={"group": "Multimodal"},
     )
     image_count: DistributionParameter = Field(
@@ -828,9 +885,13 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         description="Distribution for each generated image's width/height ratio (used with --image-fraction). 1.0 produces square images.",
         json_schema_extra={"group": "Multimodal"},
     )
-    image_turn: ImageTurn = Field(
+    image_turn: TurnSelector = Field(
         default="first",
-        description="Which user turn(s) in a multi-turn chat session get images when selected: 'first', 'last', or 'every'. Ignored for single-turn requests.",
+        description=(
+            "Which user turn(s) in a multi-turn chat session get images when "
+            "selected: 'first', 'last', or 'every'. Ignored for single-turn "
+            "requests."
+        ),
         json_schema_extra={"group": "Multimodal"},
     )
     random_input_len: DistributionParameter = Field(

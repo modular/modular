@@ -60,13 +60,17 @@ class UnifiedDSparkDeepseekV4Inputs(UnifiedSpecDecodeInputs):
             *self.signal_buffers,
             *tree.leaves(self.kv_cache_inputs),
         ) + (
-            *self._spec_decode_tail_buffers(include_in_thinking_phase=False),
+            *self._spec_decode_tail_buffers(
+                include_in_thinking_phase=False,
+            ),
             *self.window_rows,
         )
 
 
 class UnifiedDSparkDeepseekV4BatchProcessor(
-    UnifiedSpecDecodeBatchProcessor[UnifiedDSparkDeepseekV4Inputs]
+    UnifiedSpecDecodeBatchProcessor[
+        UnifiedDSparkDeepseekV4Inputs, DeepseekV4Config
+    ]
 ):
     """Ragged batching with the spec-decode seed."""
 
@@ -88,7 +92,6 @@ class UnifiedDSparkDeepseekV4BatchProcessor(
             for batch in replica_batches
             for ctx in batch
         ]
-        assert isinstance(self.config, DeepseekV4Config)
         inputs.window_rows = [
             Buffer.from_numpy(np.zeros(window_count(lengths, r), np.uint8))
             for r in self.config.window_ratios

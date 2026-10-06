@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "dflash_mimo_v2",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("numpy"),
+        requirement("typing-extensions"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+    ],
+)

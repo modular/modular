@@ -98,7 +98,6 @@ def _build_local_ep_compute(fuse: bool) -> str:
         shared_experts_dim=MOE_DIM,
         ep_size=EP_SIZE,
         dtype=DType.uint8,
-        apply_router_weight_first=False,
         ep_batch_manager=batch_manager,
         quant_config=quant_config,
     )

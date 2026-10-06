@@ -12,14 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Optional
-from std.sys import size_of
 from std.sys.intrinsics import readfirstlane
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.compute.mma import mma
 from layout import *
-from layout.layout_tensor import LayoutTensor, LayoutTensorIter
+from layout.layout_tensor import LayoutTensor
 from std.memory.unsafe import bitcast
 
 from std.utils import IndexList
@@ -228,15 +227,6 @@ def make_amd_buffer_resource(
 
 
 @inline(.always)
-def make_amd_buffer_resource(
-    tensor_iter: LayoutTensorIter, bound: Int
-) -> AMDBufferResource:
-    return AMDBufferResource(
-        readfirstlane(tensor_iter.ptr), readfirstlane(bound)
-    )
-
-
-@inline(.always)
 def _get_bounds(tensor: TileTensor) -> Int:
     """Computes buffer bounds from a rank-2 TileTensor.
 
@@ -277,22 +267,3 @@ def idx2crd[layout: Layout](idx: Int) -> IndexList[layout.rank()]:
         comptime shape = layout.shape[i].value()
         res[i] = (idx // stride) % shape
     return res
-
-
-@inline(.always)
-def hash(tensor: LayoutTensor) -> Int:
-    # Calculate hash of the content of the layout tensor, it can be useful for debugging
-    comptime assert (
-        size_of[tensor.dtype]() == 2
-    ), "Only support 2 byte types for hash"
-    var hash_value: Int = 0
-    comptime size = tensor.layout.size()
-
-    for i in range(tensor.dim[0]()):
-        for j in range(tensor.dim[1]()):
-            var val = tensor[i, j]
-            var addr = ImmPointer(to=val)
-            var addr_int = addr.unsafe_bitcast[Int16]()
-            var val_int = addr_int[]
-            hash_value = ((hash_value << 5) + hash_value) + Int(val_int)
-    return hash_value

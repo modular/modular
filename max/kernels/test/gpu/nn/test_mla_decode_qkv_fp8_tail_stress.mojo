@@ -29,22 +29,13 @@ from std.collections import Optional
 
 from max.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig
 from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.utils.index import IndexList
 
 comptime Q_DEPTH = 576
 comptime V_DEPTH = 512
@@ -68,7 +59,6 @@ def share[
         num_heads=1, head_size=Q_DEPTH, is_mla=True
     )
     var pages = ceildiv(num_keys, PAGE_SIZE)
-    var block_shape = IndexList[6](pages, 1, NUM_LAYERS, PAGE_SIZE, 1, Q_DEPTH)
     var block_elems = pages * NUM_LAYERS * PAGE_SIZE * Q_DEPTH
     var blocks_host = ctx.enqueue_create_host_buffer[FP8](block_elems)
     var lut_host = ctx.enqueue_create_host_buffer[.uint32](pages)
@@ -115,21 +105,33 @@ def share[
     ctx.enqueue_copy(ro_dev, ro_host)
     ctx.synchronize()
 
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var kv_collection = PagedKVCacheCollection[FP8, kv_params, PAGE_SIZE](
-        LayoutTensor[FP8, Layout.row_major[6]()](
+    comptime Collection = PagedKVCacheCollection[
+        FP8,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    var kv_collection = Collection(
+        TileTensor(
             blocks_dev.unsafe_ptr(),
-            RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
-        ),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cl_dev.unsafe_ptr(),
-            RuntimeLayout[cl_layout].row_major(IndexList[1](1)),
-        ),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lut_dev.unsafe_ptr(),
-            RuntimeLayout[lt_layout_2d].row_major(IndexList[2](1, pages)),
-        ),
+            row_major(
+                Int64(pages),
+                Idx[1],
+                Int64(NUM_LAYERS),
+                Idx[PAGE_SIZE],
+                Idx[1],
+                Idx[Q_DEPTH],
+            ),
+        ).as_unsafe_any_origin(),
+        TileTensor(cl_dev.unsafe_ptr(), row_major(Int64(1)))
+        .as_imm()
+        .as_unsafe_any_origin(),
+        TileTensor(lut_dev.unsafe_ptr(), row_major(Int64(1), Int64(pages)))
+        .as_imm()
+        .as_unsafe_any_origin(),
         UInt32(1),
         UInt32(cache_len),
     )

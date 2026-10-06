@@ -164,7 +164,6 @@ def _reduce_along_inner_dimension[
     var simd_compatible_size = align_down(reduce_dim_size, simd_width)
 
     @inline(.always)
-    @__parameter
     def simd_reduce_helper_fn[
         in_width: SIMDLength,
         out_width: Int,
@@ -176,15 +175,21 @@ def _reduce_along_inner_dimension[
         ]()
 
         comptime for i in range(num_reductions):
-            out_acc_tup[i] = in_acc_tup[i].reduce[
-                reduce_function[init_type, reduction_idx=i, ...], out_width
-            ]()
+
+            @inline(.always)
+            def reduce_wrapper[
+                width: SIMDLength
+            ](lhs: SIMD[init_type, width], rhs: SIMD[init_type, width]) -> SIMD[
+                init_type, width
+            ]:
+                return reduce_function[init_type, width, i](lhs, rhs)
+
+            out_acc_tup[i] = in_acc_tup[i].reduce[out_width](reduce_wrapper)
 
         return out_acc_tup
 
     @inline(.always)
-    @__parameter
-    def reduce_rows_unrolled(start_row: Int, end_row: Int):
+    def reduce_rows_unrolled(start_row: Int, end_row: Int) {imm}:
         # Iterate over the non reduced dimensions.
         for flat_index in range(start_row, end_row):
             # In normal elementwise get_nd_indices skips the last dimension as
@@ -195,14 +200,15 @@ def _reduce_along_inner_dimension[
             )
 
             @inline(.always)
-            @__parameter
             def unrolled_reduce_helper_fn[
                 width: SIMDLength,
             ](
                 start: Int,
                 finish: Int,
                 init: StaticTuple[SIMD[init_type, width], num_reductions],
-            ) -> StaticTuple[SIMD[init_type, width], num_reductions]:
+            ) {mut indices, imm} -> StaticTuple[
+                SIMD[init_type, width], num_reductions
+            ]:
                 var acc = init
                 for idx in range(start, finish, width):
                     indices[reduce_dim] = idx

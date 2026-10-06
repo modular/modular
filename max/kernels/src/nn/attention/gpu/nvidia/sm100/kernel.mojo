@@ -37,7 +37,8 @@ from max.gpu.compute.arch.tcgen05 import (
 )
 from max.gpu.memory import fence_mbarrier_init
 from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from layout.tma_async import RaggedTMA3DTile
+from layout import Coord
+from layout.tma_async import RaggedTMA3DTile, TMATensorTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
@@ -45,7 +46,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SM100TensorAccumulator,
     elect,
     kv_sub_tile_rows,
-    o_store_tma_blocks_per_op,
+    fa4_o_store_swizzle,
 )
 from nn.attention.gpu.nvidia.common import (
     get_seq_info,
@@ -54,7 +55,6 @@ from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     Pack,
     PositionSummary,
-    QTMATile,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -78,6 +78,8 @@ from .mma_warp import fa4_mma
 
 
 struct SM100MHA2Q[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -95,6 +97,9 @@ struct SM100MHA2Q[
     Bundles the comptime tile configuration, TMA operand types, and warp-specialized dispatch (softmax, correction, load, and MMA warps) that together compute scaled dot-product attention over a KV cache. When the configuration admits a type-compatible one-query (1Q) variant, short sequences are routed to the cheaper 1Q body at runtime.
 
     Parameters:
+        q_tile_shape: Flat `Coord` tile shape for the Q tensor (rank is
+            derived from this value; rank-3 prefill or rank-4 fused-GQA).
+        q_desc_shape: Flat `Coord` descriptor shape for the Q tensor.
         KVLUTType: MHA operand describing the KV cache lookup table and dtype.
         output_type: Output dtype of the attention result.
         MaskType: Causal or unmasked attention mask type.
@@ -231,16 +236,16 @@ struct SM100MHA2Q[
 
     # TMA-op types as seen by `kernel`/`_kernel_impl`. Defined once so the 2Q
     # signatures and the 1Q-variant rebinds (see `kernel`) share a single
-    # definition.
-    comptime QTMAOpType = QTMATile[
+    # definition. The Q-tile shape is threaded in as inferred `Coord` params
+    # (`q_tile_shape`/`q_desc_shape`) so the struct supports BOTH the rank-3
+    # prefill shape (`fuse_gqa=False`) and the rank-4 fused-GQA decoding shape
+    # (`fuse_gqa=True`) without an in-struct Coord ternary (KGEN does not fold
+    # those). Dispatch picks the alias (`q_tma_prefill` or `q_tma_fused`) and
+    # passes its tile/desc shapes here.
+    comptime QTMAOpType = TMATensorTile[
         Self.KVLUTType.dtype,
-        Self.config.swizzle_mode,
-        BM=Self.config.BM // Self.config.num_q,
-        depth=Self.config.qk_depth,
-        group=Self.config.group,
-        decoding=False,
-        fuse_gqa=Self.fuse_gqa,
-        num_qk_stages=Self.config.num_qk_stages,
+        Self.q_tile_shape,
+        Self.q_desc_shape,
     ]
     comptime KTMAOpType = KVTMATile[
         Self.KVLUTType.dtype,
@@ -260,9 +265,8 @@ struct SM100MHA2Q[
     ]
     comptime OTMAStoreType = RaggedTMA3DTile[
         Self.output_type,
-        # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
-        # Q/K/V/S/P buffers governed by `config.swizzle_mode`).
-        TensorMapSwizzle.SWIZZLE_NONE,
+        # Must match dispatch.mojo's store (`fa4_o_store_swizzle`, per-block).
+        fa4_o_store_swizzle[Self.output_type, Self.config](),
         # 2Q: BM=128 (each WG writes one of two Q halves).
         # 1Q: BM=128 (both WGs cover the full BM=128 Q rows and write
         # disjoint depth-column ranges).
@@ -270,22 +274,7 @@ struct SM100MHA2Q[
         BN=Self.config.ov_depth,
         middle_dim=Self.config.num_kv_heads if Self.fuse_gqa else Self.config.num_q_heads,
         group=Self.config.group if Self.fuse_gqa else 1,
-        # Batched rank-5 O store (must match dispatch.mojo's store) for every
-        # non-split config; the 1Q split-K (reduce-scatter) config uses the
-        # PER-BLOCK (rank-3) store because each partition TMA-stores only its own
-        # depth band via `async_copy_from_col` at a non-{0,half} offset (see the
-        # matching conditional + rationale in dispatch.mojo).
-        # WS (MMA_M=32) also uses the per-block WG0 egress (fa4_tma_store_o_smem),
-        # so it takes the rank-3 store like the 1Q split-K path.
-        tma_blocks_per_op=0 if (
-            Self.config.splitk_partitions > 1 or Self.config.use_ws
-        ) else o_store_tma_blocks_per_op[
-            Self.output_type,
-            TensorMapSwizzle.SWIZZLE_NONE,
-            Self.config.ov_depth,
-            Self.config.group if Self.fuse_gqa else 1,
-            depth_splits=2,
-        ](),
+        tma_blocks_per_op=0,
     ]
     comptime PackType = Pack[
         Self.MaskType,
@@ -387,6 +376,8 @@ struct SM100MHA2Q[
 
         comptime if Self.config.can_switch_to_1q():
             comptime Kernel1Q = SM100MHA2Q[
+                Self.q_tile_shape,
+                Self.q_desc_shape,
                 Self.KVLUTType,
                 Self.output_type,
                 Self.MaskType,
@@ -407,6 +398,10 @@ struct SM100MHA2Q[
                 # matching `num_qk_stages` ⇒ matching `BK0`; per-half BM=128,
                 # BN/depth/group/swizzle already match), but the parser sees
                 # distinct parameter expressions, so `rebind`.
+                comptime assert (
+                    Kernel1Q.OTMAStoreType.swizzle_mode
+                    == Self.OTMAStoreType.swizzle_mode
+                ), "the 1Q switch reuses the 2Q O store and its smem layout"
                 Kernel1Q._kernel_impl(
                     rebind[Kernel1Q.QTMAOpType](q_tma_op),
                     rebind[Kernel1Q.KTMAOpType](k_tma_op),
@@ -753,7 +748,12 @@ struct SM100MHA2Q[
                     )
                     comptime if not Self.pair_cta:
                         fa4_load[
-                            Self.config,
+                            q_tile_shape=Self.q_tile_shape,
+                            q_desc_shape=Self.q_desc_shape,
+                            KVLUTType=Self.KVLUTType,
+                            MaxSeqLenType=Self.MaxSeqLenType,
+                            MaskType=Self.MaskType,
+                            config=Self.config,
                             ValidLengthType=Self.ValidLengthType,
                             _is_cache_length_accurate=Self._is_cache_length_accurate,
                             is_leader=True,
@@ -776,7 +776,12 @@ struct SM100MHA2Q[
                         var cta_rank = block_rank_in_cluster() % 2
                         if cta_rank == 0:
                             fa4_load[
-                                Self.config,
+                                q_tile_shape=Self.q_tile_shape,
+                                q_desc_shape=Self.q_desc_shape,
+                                KVLUTType=Self.KVLUTType,
+                                MaxSeqLenType=Self.MaxSeqLenType,
+                                MaskType=Self.MaskType,
+                                config=Self.config,
                                 ValidLengthType=Self.ValidLengthType,
                                 _is_cache_length_accurate=Self._is_cache_length_accurate,
                                 is_leader=True,
@@ -795,7 +800,12 @@ struct SM100MHA2Q[
                             )
                         else:
                             fa4_load[
-                                Self.config,
+                                q_tile_shape=Self.q_tile_shape,
+                                q_desc_shape=Self.q_desc_shape,
+                                KVLUTType=Self.KVLUTType,
+                                MaxSeqLenType=Self.MaxSeqLenType,
+                                MaskType=Self.MaskType,
+                                config=Self.config,
                                 ValidLengthType=Self.ValidLengthType,
                                 _is_cache_length_accurate=Self._is_cache_length_accurate,
                                 is_leader=False,

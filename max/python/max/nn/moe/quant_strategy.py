@@ -91,7 +91,7 @@ class QuantStrategy(Protocol):
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations with per-expert scales and padding."""
@@ -139,11 +139,26 @@ class Fp8Strategy:
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
-        """Falls back to ungrouped FP8 quantization."""
-        return self.quantize(tensor, group_size)
+        """Quantizes to FP8, stopping at the last row ``expert_start`` covers.
+
+        FP8 needs no per-expert scale padding, so this differs from
+        :meth:`quantize` only in what it skips: ``tensor`` is the EP receive
+        buffer, sized for the worst-case dispatch, and ``expert_start`` ends at
+        the row count this step actually received. The rows below that count
+        quantize identically either way.
+        """
+        return quantize_dynamic_scaled_float8(
+            tensor,
+            self.config.input_scale,
+            self.config.weight_scale,
+            group_size_or_per_token=group_size,
+            out_type=self.dtype,
+            scales_type=self.config.weight_scale.dtype,
+            row_offsets=expert_start,
+        )
 
     def grouped_matmul(
         self,
@@ -196,7 +211,10 @@ class Fp8Strategy:
         swiglu_alpha: float = 0.0,
         swiglu_limit: float = 0.0,
     ) -> tuple[TensorValue, TensorValue]:
-        """Applies fused SiLU gate and returns quantized activations.
+        """Applies the SiLU gate and returns quantized activations.
+
+        The gate is plain graph ops feeding the row-bounded quantize, which
+        the graph compiler fuses into a single kernel.
 
         ``max_padded_M`` and the ``clamp_activation``/``swiglu_*`` args are
         accepted for ``QuantStrategy`` conformance; they only apply to the
@@ -206,12 +224,19 @@ class Fp8Strategy:
             "clamped SwiGLU-OAI activation is only supported on the MXFP4 EP"
             " path"
         )
-        _, _, expert_start_indices, _, _ = expert_inputs
-        return fused_silu_quantized(
-            gate_up_projs,
+        _, _, expert_start_indices, expert_ids, _ = expert_inputs
+        moe_dim = int(gate_up_projs.shape[1]) // 2
+        activated = (
+            ops.silu(gate_up_projs[:, :moe_dim]) * gate_up_projs[:, moe_dim:]
+        )
+        assert self.config.input_scale.block_size is not None
+        return self.grouped_quantize(
+            activated,
+            self.config.input_scale.block_size[1],
+            None,
             expert_start_indices,
-            self.config,
-            self.dtype,
+            None,
+            expert_ids,
         )
 
 
@@ -255,13 +280,18 @@ class NvMxf4f8Strategy:
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
         indices: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Quantizes activations per-expert with padded scale alignment."""
         if self.is_nvfp4 and input_scale is None:
             raise ValueError("NVFP4 requires input_scale")
+        if scales_offset is None:
+            raise ValueError(
+                "block-scaled grouped quantize needs scales_offset to place"
+                " each expert's padded scale tile"
+            )
         sf_tensor = (
             (1.0 / input_scale).to(tensor.device)
             if input_scale is not None
@@ -464,6 +494,7 @@ class NvMxf4f8Strategy:
         use_swigluoai: bool = False,
         swiglu_alpha: float = 0.0,
         swiglu_limit: float = 0.0,
+        a_row_scales: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue]:
         """Runs the fused quantized grouped matmul + SwiGLU + quant kernel.
 
@@ -494,6 +525,8 @@ class NvMxf4f8Strategy:
                 function.
             swiglu_alpha: The alpha value for the clamped SwiGLU activation function.
             swiglu_limit: The limit value for the clamped SwiGLU activation function.
+            a_row_scales: Optional BF16 scale per ``hidden`` row, applied with
+                the expert scale before the SwiGLU. NVFP4 only.
 
         Returns:
             Tuple ``(c_packed, c_swiglu_scales)`` matching the chained
@@ -521,6 +554,7 @@ class NvMxf4f8Strategy:
             clamp_activation=use_swigluoai,
             swiglu_alpha=swiglu_alpha,
             swiglu_limit=swiglu_limit,
+            a_row_scales=a_row_scales,
         )
 
 
@@ -572,7 +606,7 @@ class BlockScaledStrategy:
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         """Falls back to ungrouped MXFP4 quantization."""
@@ -654,7 +688,7 @@ class Mxfp6Strategy:
     Preshuffled-B only: an FP6 lane fragment is 24 bytes, which the kernel
     reads plane-split, and the dense row-major grouped kernel has no path for
     that layout. The weight loader must apply
-    ``preshuffle_mxfp4_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
+    ``preshuffle_block_scaled_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
 
     Unlike :class:`Mxfp4Strategy` there is no fused activation kernel, so the
     down-projection input is produced as bf16 SwiGLU followed by a standalone
@@ -686,7 +720,7 @@ class Mxfp6Strategy:
         group_size: int,
         input_scale: TensorValue | None,
         expert_start: TensorValue,
-        scales_offset: TensorValue,
+        scales_offset: TensorValue | None,
         expert_ids: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
         """Falls back to ungrouped MXFP6 quantization."""
@@ -782,6 +816,49 @@ class Mxfp6Strategy:
             swiglu_alpha=swiglu_alpha,
             swiglu_limit=swiglu_limit,
         )
+
+
+# The SM100 block-scaled matmuls read scales in 128-row by 4-column granules,
+# each stored as a [32, 4, 4] atom: see `set_scale_factor` in
+# `linalg/fp4_utils.mojo`.
+_SF_ATOM_ROWS = 32
+_SF_GRANULE_ROWS = 128
+_SF_ATOM_COLS = 4
+
+
+def interleaved_block_scales_shape(rows: int, cols: int) -> list[int]:
+    """Returns the SM100 interleaved layout's shape for ``[rows, cols]`` scales.
+
+    The layout is ``[rows / 128, cols / 4, 32, 4, 4]``, the shape
+    :func:`~max.nn.kernels.block_scales_interleave` produces. Scale row ``r``,
+    column ``c`` is stored at
+    ``[r // 128, c // 4, r % 32, (r % 128) // 32, c % 4]``, so a range of whole
+    row granules or whole column granules of the interleaved tensor is the
+    interleave of the matching slice of the row-major scales.
+
+    Args:
+        rows: The number of scale rows, one per weight output row.
+        cols: The number of scale columns, one per 32-element block.
+
+    Returns:
+        The rank-5 interleaved shape.
+
+    Raises:
+        ValueError: If ``rows`` is not a multiple of 128 or ``cols`` is not a
+            multiple of 4.
+    """
+    if rows % _SF_GRANULE_ROWS or cols % _SF_ATOM_COLS:
+        raise ValueError(
+            f"block scales [{rows}, {cols}] are not whole "
+            f"{_SF_GRANULE_ROWS}x{_SF_ATOM_COLS} interleave granules"
+        )
+    return [
+        rows // _SF_GRANULE_ROWS,
+        cols // _SF_ATOM_COLS,
+        _SF_ATOM_ROWS,
+        _SF_GRANULE_ROWS // _SF_ATOM_ROWS,
+        _SF_ATOM_COLS,
+    ]
 
 
 def _nv_interleave_block_scales(

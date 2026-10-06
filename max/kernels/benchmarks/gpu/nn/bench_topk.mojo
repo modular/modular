@@ -38,11 +38,12 @@ from std.testing import assert_almost_equal, assert_equal
 
 from std.utils import IndexList
 from std.sys import (
+    default_accelerator,
+    size_of,
     get_defined_int,
     get_defined_bool,
     get_defined_dtype,
 )
-from std.sys.info import has_apple_gpu_accelerator, size_of
 
 
 def bench_topk_batched[
@@ -53,7 +54,20 @@ def bench_topk_batched[
     test_case: TestCase,
     fill_fn_name: String,
     top_p: Float32 = 1.0,
+    dispatch: Int = 0,
 ) raises:
+    """Benchmarks a rank-2 top-k selection.
+
+    `dispatch` selects the entry point, so the single-warp fast path and the
+    two-stage path can be A/B'd at one shape without rebuilding:
+
+    - 0: `_topk_gpu`, the two-stage kernels directly. The historical behavior.
+    - 1: the public `topk_gpu` with the partitioning left to its dispatch, so
+      a short row with a small k reaches `_topk_warp`.
+    - 2: the public `topk_gpu` with `num_blocks_per_input` pinned, which the
+      dispatch honors by staying on the two-stage path. This is the control
+      arm for 1: same entry point, same temporary allocations, old kernels.
+    """
     # Fetch arguments
 
     var batch_size = test_case.batch_size
@@ -161,26 +175,55 @@ def bench_topk_batched[
     ) {var K_dev_buffer, var top_p_dev_buffer, imm,}:
         @inline(.always)
         def kernel_launch(ctx: DeviceContext) raises {imm}:
-            _topk_gpu[sampling=sampling, largest=largest](
-                ctx,
-                max_k,
-                device_in,
-                device_local_topk_vals,
-                device_local_topk_idxs,
-                device_out_vals,
-                device_out_idxs,
-                k=TileTensor(k.ptr, row_major(Int64(batch_size)))
+            var k_imm = (
+                TileTensor(k.ptr, row_major(Int64(batch_size)))
                 .as_unsafe_any_origin()
-                .as_imm(),
-                block_size=block_size,
-                num_blocks_per_input=num_blocks_per_input,
-                top_p=top_p_tt.as_unsafe_any_origin().as_imm(),
+                .as_imm()
             )
+            var top_p_imm = top_p_tt.as_unsafe_any_origin().as_imm()
+            if dispatch == 0:
+                _topk_gpu[sampling=sampling, largest=largest](
+                    ctx,
+                    max_k,
+                    device_in,
+                    device_local_topk_vals,
+                    device_local_topk_idxs,
+                    device_out_vals,
+                    device_out_idxs,
+                    k=k_imm,
+                    block_size=block_size,
+                    num_blocks_per_input=num_blocks_per_input,
+                    top_p=top_p_imm,
+                )
+            else:
+                var pinned = (
+                    Optional[Int](num_blocks_per_input) if dispatch
+                    == 2 else Optional[Int]()
+                )
+                topk_gpu[sampling=sampling, largest=largest](
+                    ctx,
+                    max_k,
+                    device_in.as_unsafe_any_origin().as_imm(),
+                    device_out_vals,
+                    device_out_idxs,
+                    block_size=block_size,
+                    num_blocks_per_input=pinned,
+                    k=k_imm,
+                    top_p=top_p_imm,
+                )
 
         bencher_iter_custom(b, kernel_launch, ctx)
 
     var kernel_name = String(
-        "bench-topk", "/N=", N, "/K=", K, "/batch_size=", batch_size
+        "bench-topk",
+        "/N=",
+        N,
+        "/K=",
+        K,
+        "/batch_size=",
+        batch_size,
+        "/dispatch=",
+        dispatch,
     )
 
     var num_bytes = device_in.num_elements() * size_of[dtype]()
@@ -840,6 +883,7 @@ def main() raises:
     var batch_size = arg_parse("batch_size", 8)
     var num_blocks_per_input = arg_parse("num_blocks_per_input", 0)
     var fill_fn_name = arg_parse("fill_fn_name", "fill_iota")
+    var dispatch = arg_parse("dispatch", 0)
     var top_p = Float32(arg_parse("top_p", 0.95))
     var logit_sigma = arg_parse("logit_sigma", 2.0)
 
@@ -868,7 +912,7 @@ def main() raises:
             num_blocks_per_input=num_blocks_per_input,
         )
 
-        comptime if has_apple_gpu_accelerator():
+        comptime if ctx.target.is_apple_gpu():
             if masked_probs or use_dist:
                 raise Error(
                     "the masked_probs and topp_dist benchmarks require"
@@ -877,8 +921,7 @@ def main() raises:
         else:
             if masked_probs:
 
-                @__parameter
-                def run_masked[in_dtype: DType]() raises:
+                def run_masked[in_dtype: DType]() raises {mut m, imm}:
                     bench_topk_topp_masked[in_dtype](
                         ctx,
                         m,
@@ -897,8 +940,7 @@ def main() raises:
 
             if use_dist:
 
-                @__parameter
-                def run_dist[in_dtype: DType, emit: Bool]() raises:
+                def run_dist[in_dtype: DType, emit: Bool]() raises {mut m, imm}:
                     bench_topk_topp_dist[in_dtype, DType.int64, emit](
                         ctx,
                         m,
@@ -911,8 +953,7 @@ def main() raises:
                 # The pipeline feeds this kernel f32 logits today; bf16
                 # halves the bytes every pass of the search re-reads, so
                 # both are benchmarked.
-                @__parameter
-                def run_dist_emit[emit: Bool]() raises:
+                def run_dist_emit[emit: Bool]() raises {imm}:
                     if in_dtype_name == "bfloat16":
                         run_dist[.bfloat16, emit]()
                     else:
@@ -929,7 +970,7 @@ def main() raises:
             bench_topk_fi[dtype, out_idx_type](ctx, m, test_case, fill_fn_name)
         else:
             bench_topk_batched[dtype, out_idx_type, rank](
-                ctx, m, test_case, fill_fn_name
+                ctx, m, test_case, fill_fn_name, dispatch=dispatch
             )
 
     m.dump_report()
@@ -1037,6 +1078,7 @@ def bench_dispatch_all() raises:
         for bs in batch_sizes:
             for v in vocab_sizes:
                 bench_dispatch[dtype, -1](b, ctx, bs, v)
+                bench_dispatch[dtype, 1](b, ctx, bs, v)
                 bench_dispatch[dtype, 5](b, ctx, bs, v)
                 bench_dispatch[dtype, 20](b, ctx, bs, v)
                 bench_dispatch[dtype, 50](b, ctx, bs, v)
@@ -1057,7 +1099,7 @@ def bench_gumbel_from_probs() raises:
     # (`_block_reduce_topk` caps its shared storage at WARP_SIZE there while
     # the kernel launches full-sized blocks), so the benchmark cannot be
     # instantiated for Metal.
-    comptime if has_apple_gpu_accelerator():
+    comptime if default_accelerator().is_apple_gpu():
         raise Error("the gumbel_from_probs benchmark requires a non-Apple GPU")
     else:
         comptime dtype = DType.float32

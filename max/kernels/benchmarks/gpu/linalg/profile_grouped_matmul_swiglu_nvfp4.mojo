@@ -30,6 +30,9 @@
 #                            scatter (numerically a hair more accurate; not
 #                            byte-identical).
 #
+# `-D row_scales=true` passes bf16 per-row input scales to the matmul of the
+# unfused chain and of the fused match_bf16 path.
+#
 # Cache-busting on the four big tensors (B weights, B-scales, A activations,
 # A-scales) so each iter reads cold HBM. Small auxiliaries (offsets,
 # expert_ids, expert_scales, input_scales) stay L2-hot.
@@ -67,6 +70,9 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.grouped_1d1d_matmul_kernel import (
     GROUPED_SWIGLU_TRACE_EVENTS_PER_BLOCK,
     RealSwiGLUOutput,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
+    RealRowScales,
 )
 from shmem.ep_comm import fused_silu_nvfp4_interleaved_kernel
 from structured_kernels.trace_buf import GmemTrace, NullTrace
@@ -118,6 +124,7 @@ def main() raises:
     comptime tokens_per_expert_default = get_defined_int[
         "tokens_per_expert", 128
     ]()
+    comptime row_scales = get_defined_bool["row_scales", False]()
     var fused = arg_parse("fused", fused_default)
     var match_bf16 = arg_parse("match_bf16", match_bf16_default)
     var matmul_only = arg_parse("matmul_only", False)
@@ -395,62 +402,59 @@ def main() raises:
         var trace_buf_dev = ctx.enqueue_create_buffer[.uint64](trace_buf_size)
         ctx.enqueue_memset(trace_buf_dev, UInt64(0))
 
+        var row_scales_dev = ctx.enqueue_create_buffer[.bfloat16](M)
+        ctx.enqueue_memset(row_scales_dev, BFloat16(1.0))
+
         ctx.synchronize()
 
         def _ri(v: Int) -> Int64:
             return Int64(v)
 
-        comptime b_shape = row_major(
-            Coord(Idx[num_experts], Idx[N], Idx[packed_K])
-        )
+        comptime b_shape = row_major(Idx[num_experts], Idx[N], Idx[packed_K])
         comptime b_scales_shape = row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups_b],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups_b],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         )
 
         var a_offsets_tt = TileTensor(
             a_offsets_dev,
-            row_major(Coord(_ri(num_active_experts + 1))),
+            row_major(_ri(num_active_experts + 1)),
         ).as_unsafe_any_origin()
         var a_scale_offsets_tt = TileTensor(
             a_scale_offsets_dev,
-            row_major(Coord(_ri(num_active_experts))),
+            row_major(_ri(num_active_experts)),
         ).as_unsafe_any_origin()
         var expert_ids_tt = TileTensor(
             expert_ids_dev,
-            row_major(Coord(_ri(num_active_experts))),
+            row_major(_ri(num_active_experts)),
         ).as_unsafe_any_origin()
         var expert_scales_tt = TileTensor(
             expert_scales_dev,
-            row_major(Coord(Idx[num_experts])),
+            row_major(Idx[num_experts]),
         ).as_unsafe_any_origin()
         var input_scales_tt = TileTensor(
             input_scales_dev,
-            row_major(Coord(_ri(num_active_experts))),
+            row_major(_ri(num_active_experts)),
         ).as_unsafe_any_origin()
 
         var c_bf16_tt = TileTensor(
-            c_bf16_buf, row_major(Coord(_ri(M), Idx[N]))
+            c_bf16_buf, row_major(_ri(M), Idx[N])
         ).as_unsafe_any_origin()
         var o_tt = TileTensor(
-            o_buf, row_major(Coord(_ri(M), Idx[packed_H]))
+            o_buf, row_major(_ri(M), Idx[packed_H])
         ).as_unsafe_any_origin()
         var s_tt = TileTensor(
             s_buf,
             row_major(
-                Coord(
-                    _ri(a_scale_dim0),
-                    Idx[k_groups_swiglu],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                _ri(a_scale_dim0),
+                Idx[k_groups_swiglu],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         ).as_unsafe_any_origin()
 
@@ -496,7 +500,7 @@ def main() raises:
         }:
             var a_tt = TileTensor(
                 cb_a.offset_ptr(iteration),
-                row_major(Coord(_ri(M), Idx[packed_K])),
+                row_major(_ri(M), Idx[packed_K]),
             ).as_unsafe_any_origin()
             var b_tt = TileTensor(
                 cb_b.offset_ptr(iteration), b_shape
@@ -504,13 +508,11 @@ def main() raises:
             var a_scales_tt = TileTensor(
                 cb_a_scales.offset_ptr(iteration),
                 row_major(
-                    Coord(
-                        _ri(a_scale_dim0),
-                        Idx[k_groups],
-                        Idx[SF_ATOM_M[0]],
-                        Idx[SF_ATOM_M[1]],
-                        Idx[SF_ATOM_K],
-                    )
+                    _ri(a_scale_dim0),
+                    Idx[k_groups],
+                    Idx[SF_ATOM_M[0]],
+                    Idx[SF_ATOM_M[1]],
+                    Idx[SF_ATOM_K],
                 ),
             ).as_unsafe_any_origin()
             var b_scales_tt = TileTensor(
@@ -544,6 +546,35 @@ def main() raises:
                             ctx,
                             swiglu_out,
                             trace_buf_gmem,
+                        )
+                    elif row_scales:
+                        grouped_matmul_nvfp4_dispatch[
+                            transpose_b=True,
+                            fuse_swiglu=True,
+                            SwiGLUOutputT=type_of(swiglu_out),
+                            swiglu_match_bf16=True,
+                            swiglu_disable_compute=swiglu_disable_compute,
+                            swiglu_use_inplace=swiglu_use_inplace,
+                            RowScalesT=RealRowScales,
+                        ](
+                            c_bf16_tt,
+                            a_tt,
+                            b_tt,
+                            a_scales_tt,
+                            b_scales_tt,
+                            a_offsets_tt,
+                            a_scale_offsets_tt,
+                            expert_ids_tt,
+                            expert_scales_tt,
+                            num_active_experts,
+                            M,
+                            ctx,
+                            swiglu_out,
+                            a_row_scales=RealRowScales(
+                                rebind[ImmPointer[BFloat16, ImmutAnyOrigin]](
+                                    row_scales_dev.unsafe_ptr()
+                                )
+                            ),
                         )
                     else:
                         grouped_matmul_nvfp4_dispatch[
@@ -619,20 +650,44 @@ def main() raises:
                             swiglu_out,
                         )
             else:
-                grouped_matmul_nvfp4_dispatch[transpose_b=True](
-                    c_bf16_tt,
-                    a_tt,
-                    b_tt,
-                    a_scales_tt,
-                    b_scales_tt,
-                    a_offsets_tt,
-                    a_scale_offsets_tt,
-                    expert_ids_tt,
-                    expert_scales_tt,
-                    num_active_experts,
-                    M,
-                    ctx,
-                )
+                comptime if row_scales:
+                    grouped_matmul_nvfp4_dispatch[
+                        transpose_b=True,
+                        RowScalesT=RealRowScales,
+                    ](
+                        c_bf16_tt,
+                        a_tt,
+                        b_tt,
+                        a_scales_tt,
+                        b_scales_tt,
+                        a_offsets_tt,
+                        a_scale_offsets_tt,
+                        expert_ids_tt,
+                        expert_scales_tt,
+                        num_active_experts,
+                        M,
+                        ctx,
+                        a_row_scales=RealRowScales(
+                            rebind[ImmPointer[BFloat16, ImmutAnyOrigin]](
+                                row_scales_dev.unsafe_ptr()
+                            )
+                        ),
+                    )
+                else:
+                    grouped_matmul_nvfp4_dispatch[transpose_b=True](
+                        c_bf16_tt,
+                        a_tt,
+                        b_tt,
+                        a_scales_tt,
+                        b_scales_tt,
+                        a_offsets_tt,
+                        a_scale_offsets_tt,
+                        expert_ids_tt,
+                        expert_scales_tt,
+                        num_active_experts,
+                        M,
+                        ctx,
+                    )
 
                 comptime hw_info = ctx.default_device_info
                 var c_immut = c_bf16_tt.as_imm()

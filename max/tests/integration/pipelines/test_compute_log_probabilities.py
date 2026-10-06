@@ -35,6 +35,7 @@ def _check_log_probabilities_equal(
     np.testing.assert_allclose(
         actual.token_log_probabilities, expected.token_log_probabilities
     )
+    assert actual.sampled_token_ids == expected.sampled_token_ids
     assert len(actual.top_log_probabilities) == len(
         expected.top_log_probabilities
     )
@@ -100,6 +101,7 @@ def test_compute_log_probabilities(cpu_device: CPU, cpu_model: Model) -> None:
     assert len(output) == 1
     expected_log_probs = LogProbabilities(
         token_log_probabilities=[log_probs[0][1], log_probs[1][4]],
+        sampled_token_ids=[1, 4],
         top_log_probabilities=[
             {
                 0: log_probs[0][0].item(),
@@ -134,6 +136,7 @@ def test_compute_log_probabilities(cpu_device: CPU, cpu_model: Model) -> None:
     assert len(output) == 1
     expected_log_probs = LogProbabilities(
         token_log_probabilities=[log_probs[0][1], log_probs[1][4]],
+        sampled_token_ids=[1, 4],
         top_log_probabilities=[
             {
                 4: log_probs[0][4].item(),
@@ -204,6 +207,7 @@ def test_compute_log_probabilities_batch(
         output[0],
         LogProbabilities(
             token_log_probabilities=[log_probs1[0][1], log_probs1[1][4]],
+            sampled_token_ids=[1, 4],
             top_log_probabilities=[
                 {
                     4: log_probs1[0][4].item(),
@@ -224,6 +228,7 @@ def test_compute_log_probabilities_batch(
         output[1],
         LogProbabilities(
             token_log_probabilities=[log_probs2[0][3]],
+            sampled_token_ids=[3],
             top_log_probabilities=[
                 {
                     0: log_probs2[0][0].item(),
@@ -284,11 +289,13 @@ def test_compute_log_probabilities_ragged(
     assert output[0].top_log_probabilities[0].keys() == {1}
     assert output[0].top_log_probabilities[1].keys() == {0, 1}
     assert output[0].top_log_probabilities[2].keys() == {0, 1}
+    assert output[0].sampled_token_ids == [1, 0, 0]
     assert output[1] is None
     assert output[2] is not None
     assert len(output[2].token_log_probabilities) == 1
     assert len(output[2].top_log_probabilities) == 1
     assert output[2].top_log_probabilities[0].keys() == {0, 1}
+    assert output[2].sampled_token_ids == [0]
 
 
 @dataclass
@@ -402,12 +409,14 @@ class PackedInput:
 
 def verify_position(
     alleged_logprob: float,
+    alleged_sampled: int,
     top_mapping: Mapping[int, float],
     *,
     top_n: int,
     sampled: int,
     logits: np.ndarray,
 ) -> None:
+    assert alleged_sampled == sampled
     logsoftmaxed_logits = log_softmax(logits)
     threshold = 1e-4
     # Verify logit values -- keys are checked later.
@@ -469,6 +478,7 @@ def verify_output(
         for seq in range(item.tokens.shape[0] - 1):
             verify_position(
                 output.token_log_probabilities[seq],
+                output.sampled_token_ids[seq],
                 output.top_log_probabilities[seq],
                 top_n=item.top_n,
                 sampled=item.tokens[seq + 1],
@@ -479,6 +489,7 @@ def verify_output(
         assert len(output.top_log_probabilities) == 1
     verify_position(
         output.token_log_probabilities[-1],
+        output.sampled_token_ids[-1],
         output.top_log_probabilities[-1],
         top_n=item.top_n,
         sampled=item.sampled_token,

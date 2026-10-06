@@ -219,10 +219,12 @@ def test_copy_and_move_shorthands() raises:
     # `value.copy()` and `ValueType(copy=value)` are the same operation.
     assert_equal(value.copy().n, 7)
     assert_equal(ValueType(copy=value).n, 7)
-    # `value^` and `ValueType(move=value^)` are the same operation. The move
-    # initializer consumes its argument, so the long form needs the transfer.
-    var moved = value^
-    assert_equal(ValueType(move=moved^).n, 7)
+    # The move initializer consumes its argument, so calling it directly
+    # needs the transfer sigil. A bare `value^` is not the same operation:
+    # it transfers ownership, which the compiler may satisfy without
+    # invoking the move initializer at all.
+    var transferred = value^
+    assert_equal(ValueType(move=transferred^).n, 7)
 
 
 def copy_return[T: Copyable](foo: T) -> T:

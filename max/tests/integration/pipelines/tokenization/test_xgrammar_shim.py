@@ -1399,6 +1399,17 @@ def test_format_ipv4_enforced() -> None:
     assert not _accepts(compiled, '"a"')
 
 
+def test_format_email_quoted_local_part() -> None:
+    # The format regex matches the decoded string, so a quoted local part is
+    # spelled with one JSON escape per quote.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "format": "email"}'
+    )
+    assert _accepts(compiled, json.dumps('"john"@example.com'))
+    assert _accepts(compiled, json.dumps('"a b"@x.com'))
+    assert not _accepts(compiled, json.dumps('\\"john\\"@example.com'))
+
+
 def test_format_ipv4_octet_range_enforced() -> None:
     compiled = _compiler().compile_json_schema(
         '{"type": "string", "format": "ipv4"}'
@@ -1770,6 +1781,156 @@ def test_dot_excludes_forbidden() -> None:
     assert _accepts(compiled, '"axb"')
     assert not _accepts(compiled, '"a\x01b"')
     assert not _accepts(compiled, '"a"b"')
+
+
+def test_dot_admits_json_escapes() -> None:
+    # A pattern matches the decoded string, so the characters `.` admits but
+    # JSON must escape are admitted as their escapes.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^.+$"}'
+    )
+    for s in ('say "hi"', "a\\b", "a\tb", "a\x01b"):
+        assert _accepts(compiled, json.dumps(s))
+    assert not _accepts(compiled, '"a\x01b"')
+
+
+def test_dot_refuses_line_terminators() -> None:
+    # ECMA-262 `.` matches no line terminator, raw or spelled as an escape.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^.+$"}'
+    )
+    for s in ("a\nb", "a\rb", "a\u2028b", "a\u2029b"):
+        assert not _accepts(compiled, json.dumps(s, ensure_ascii=False)), s
+    for text in ('"a\\u000ab"', '"a\\u2028b"'):
+        assert not _accepts(compiled, text), text
+
+
+def test_negated_class_refuses_its_own_escapes() -> None:
+    # A negated class admits the escape of each JSON-unsafe character it
+    # admits, and not the escape of a character it excludes.
+    for pattern, refused, admitted in (
+        ('^[^"]+$', 'a"b', "a\\b"),
+        ("^[^\\\\]+$", "a\\b", 'a"b'),
+        ("^[^\\n]+$", "a\nb", "a\tb"),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        assert not _accepts(compiled, json.dumps(refused)), pattern
+        assert _accepts(compiled, json.dumps(admitted)), pattern
+
+
+def test_negated_shorthands_admit_escapes() -> None:
+    for pattern, admitted, refused in (
+        ("^\\D+$", ('a"b', "a\\b", "a\nb"), ("a1b",)),
+        ("^\\W+$", ('"', "\\", "\n"), ("a",)),
+        ("^\\S+$", ('a"b', "a\\b", "a[b"), ("a\nb", "a b")),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        for s in admitted:
+            assert _accepts(compiled, json.dumps(s)), (pattern, s)
+        for s in refused:
+            assert not _accepts(compiled, json.dumps(s)), (pattern, s)
+
+
+def test_counted_repeat_admits_only_escape_free_text() -> None:
+    # Under a counted repeat these atoms keep the escape-free class: plain
+    # text passes and a character that needs an escape does not.
+    for pattern, admitted, refused in (
+        ("^.{1,100}$", "plain text", 'say "hi"'),
+        ('^[^"]{1,100}$', "plain text", "a\\b"),
+        ("^\\S{1,8}$", "a[b", "a\\b"),
+        ("^(a.){1,3}$", "abac", 'a"'),
+        ("^((.)+){2}$", "ab", "a\\b"),
+    ):
+        compiled = _compiler().compile_json_schema(
+            json.dumps({"type": "string", "pattern": pattern})
+        )
+        assert _accepts(compiled, json.dumps(admitted)), pattern
+        assert not _accepts(compiled, json.dumps(refused)), pattern
+
+
+def _pair_vocab() -> list[str]:
+    # Every printable ASCII character and pair of them, so a fill the
+    # precomputed masks do not cover costs far more than one they do.
+    printable = [chr(c) for c in range(0x20, 0x7F)]
+    return ["<eos>", *printable, *(a + b for a in printable for b in printable)]
+
+
+def _fill_cpu_seconds(
+    compiler: xgr.GrammarCompiler, pattern: str, vocab_size: int
+) -> float:
+    compiled = compiler.compile_json_schema(
+        json.dumps({"type": "string", "pattern": pattern})
+    )
+    matcher = xgr.GrammarMatcher(compiled)
+    assert matcher.accept_string('"')
+    bitmask = xgr.allocate_token_bitmask(1, vocab_size)
+    started = time.process_time()
+    for _ in range(50):
+        assert matcher.fill_next_token_bitmask(bitmask)
+        assert matcher.accept_string("a")
+    return time.process_time() - started
+
+
+def test_counted_repeat_fill_costs_what_an_unbounded_fill_costs() -> None:
+    # Escape alternatives under a counted repeat defeat the precomputed token
+    # masks, and each fill then cost about 100x an unbounded one here. CPU
+    # time and the best of three runs keep host noise out of the ratio.
+    vocab = _pair_vocab()
+    compiler = xgr.GrammarCompiler(
+        xgr.TokenizerInfo(
+            vocab, vocab_type=xgr.VocabType.RAW, stop_token_ids=[0]
+        )
+    )
+    counted = min(
+        _fill_cpu_seconds(compiler, "^.{1,100}$", len(vocab)) for _ in range(3)
+    )
+    unbounded = min(
+        _fill_cpu_seconds(compiler, "^.+$", len(vocab)) for _ in range(3)
+    )
+    assert unbounded > 0
+    assert counted / unbounded < 10, (counted, unbounded)
+
+
+def test_top_level_alternation_keeps_the_quotes() -> None:
+    # Each branch of a top-level alternation opens and closes the string.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^[a-z]+$|^[0-9]+$"}'
+    )
+    assert _accepts(compiled, '"abc"')
+    assert _accepts(compiled, '"123"')
+    assert not _accepts(compiled, '"12a"')
+
+
+def test_top_level_alternation_in_a_key_pattern_keeps_the_quotes() -> None:
+    # The key of a patternProperties or propertyNames pattern is a quoted
+    # string too, so each branch opens and closes the key.
+    for schema in (
+        {
+            "type": "object",
+            "patternProperties": {"^a$|^b$": {"type": "integer"}},
+        },
+        {"type": "object", "propertyNames": {"pattern": "^a$|^b$"}},
+    ):
+        compiled = _compiler().compile_json_schema(json.dumps(schema))
+        assert _accepts(compiled, '{"a": 1}'), schema
+        assert _accepts(compiled, '{"b": 2}'), schema
+        assert not _accepts(compiled, '{"c": 1}'), schema
+
+
+def test_alternation_with_branch_anchors_is_measured() -> None:
+    # The length analysis drops the anchors that start and end each branch,
+    # so the pattern's lengths are measured against the bound.
+    compiled = _compiler().compile_json_schema(
+        '{"type": "string", "pattern": "^a$|^bb$", "maxLength": 5}',
+        reject_unsupported=True,
+    )
+    assert _accepts(compiled, '"a"')
+    assert _accepts(compiled, '"bb"')
+    assert not _accepts(compiled, '"ab"')
 
 
 def test_pattern_allowed_escape_compiles() -> None:
@@ -3598,7 +3759,7 @@ def test_xml_bare_value_bound_longer_than_delimiter() -> None:
     assert not _accepts(compiled, _qwen_state("ab</parameter>cd"))
 
 
-def test_xml_bare_value_bound_is_framed_tightly() -> None:
+def test_xml_bare_value_bound_is_framed_as_its_reader_reads_it() -> None:
     # Framing whitespace is part of the value to a parser that keeps it
     # (MiniMax-M3), so a bounded value gets none.
     compiled = _compile_xml_length(
@@ -3606,8 +3767,12 @@ def test_xml_bare_value_bound_is_framed_tightly() -> None:
     )
     assert not _accepts(compiled, _m3_state("\nNY\n"))
     assert not _accepts(compiled, _m3_state(" NY"))
+    # The Qwen templates write a newline on each side of a value and its
+    # readers strip them, so a bounded Qwen value keeps that framing; without
+    # it the model could not close the value the way it writes it.
     qwen = _compile_xml_length(2, 2)
-    assert not _accepts(qwen, _qwen_state("\nNY\n"))
+    assert _accepts(qwen, _qwen_state("\nNY\n"))
+    assert not _accepts(qwen, _qwen_state("\nNYC\n"))
     # An unbounded value keeps its framing.
     loose = _compile_xml_length(0, None)
     assert _accepts(loose, _qwen_state("\nNY\n"))
@@ -3656,9 +3821,12 @@ def test_xml_bare_value_bound_masks_tokens_by_remaining_length() -> None:
     assert not {" ", "true", "null"} & allowed
     assert matcher.accept_string("b")
     matcher.fill_next_token_bitmask(bitmask)
-    assert not any(
-        _gemma_bit_set(bitmask[0], i) for i in range(len(_VOCAB) - 1)
-    )
+    # At the bound only the framing before the close is left.
+    assert [
+        tok
+        for i, tok in enumerate(_VOCAB[:-1])
+        if _gemma_bit_set(bitmask[0], i)
+    ] == [" "]
 
 
 def _compile_xml_property(
@@ -3711,10 +3879,16 @@ def test_xml_bound_through_wrapper_is_framed_tightly(
     state: dict[str, Any],
 ) -> None:
     # A wrapper rule that reaches a bounded value is framed tightly as a whole.
-    compiled = _compile_xml_property(state)
-    assert _accepts(compiled, _qwen_state("NY"))
-    assert not _accepts(compiled, _qwen_state("\nNY\n"))
-    assert not _accepts(compiled, _qwen_state("NYC"))
+    compiled = _compile_xml_property(
+        state, style="minimax_m3_xml", xml_tag_prefix=_M3_PREFIX
+    )
+    assert _accepts(compiled, _m3_state("NY"))
+    assert not _accepts(compiled, _m3_state("\nNY\n"))
+    assert not _accepts(compiled, _m3_state("NYC"))
+    # Qwen's readers strip the framing, so its wrapped bound keeps it.
+    qwen = _compile_xml_property(state)
+    assert _accepts(qwen, _qwen_state("\nNY\n"))
+    assert not _accepts(qwen, _qwen_state("\nNYC\n"))
 
 
 _BYTE_VOCAB = [chr(c) for c in range(32, 127)] + [
@@ -3774,7 +3948,7 @@ def test_xml_bare_value_bound_counts_split_byte_tokens_as_one() -> None:
     assert not m.accept_token(_BYTE_ID["<"])
 
 
-def test_xml_additional_property_bound_is_framed_tightly() -> None:
+def test_xml_additional_property_bound_keeps_qwen_framing() -> None:
     compiled = _compiler().compile_structural_tag(
         xgr.StructuralTag(
             format=JSONSchemaFormat(
@@ -3791,8 +3965,258 @@ def test_xml_additional_property_bound_is_framed_tightly() -> None:
         )
     )
     assert _accepts(compiled, "<parameter=foo>NY</parameter>")
-    assert not _accepts(compiled, "<parameter=foo>\nNY\n</parameter>")
+    assert _accepts(compiled, "<parameter=foo>\nNY\n</parameter>")
     assert not _accepts(compiled, "<parameter=foo>NYC</parameter>")
+
+
+_UNEXACT_BARE_VALUES = [
+    {"type": "string", "pattern": "^.+$"},
+    {"type": "string", "pattern": "^[^/]+$"},
+    {"type": "string", "pattern": "^https"},
+    {"type": "string", "pattern": "[a-z]+$"},
+    {"type": "string", "format": "email"},
+]
+
+
+def _compile_rejecting_xml_property(
+    state: dict[str, Any], style: _XmlStyle
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"state": state},
+                "required": ["state"],
+            },
+            style=style,
+            reject_unsupported=True,
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+@pytest.mark.parametrize("state", _UNEXACT_BARE_VALUES)
+def test_xml_bare_value_regex_guards_are_qwen_only(
+    state: dict[str, Any],
+) -> None:
+    # Under reject_unsupported, a qwen_xml bare value refuses a pattern or
+    # format that can spell its close delimiter's first byte, and a pattern
+    # not anchored at both ends. Other XML styles convert them as before.
+    with pytest.raises(Exception, match="bare XML tool-call value"):
+        _compile_rejecting_xml_property(state, "qwen_xml")
+    for style in ("minimax_xml", "glm_xml"):
+        compiled = _compile_rejecting_xml_property(state, style)
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+_NESTED_ANY_PARAMETERS = [
+    ({"type": "object"}, '{"a": ["x", {"b": null}]}', '{"a": 1 zzz}'),
+    (
+        {"type": "object", "properties": {"a": {}}},
+        '{"a": ["x", {"b": null}]}',
+        '{"a": 1 zzz}',
+    ),
+    ({"type": "array"}, '[1, ["x", {"b": null}]]', "[1 zzz]"),
+    (
+        {"type": "object", "additionalProperties": {}},
+        '{"a": "x", "c": {"b": 2}}',
+        '{"a": 1 zzz}',
+    ),
+]
+
+
+def _xml_frame(style: _XmlStyle, value: str) -> str:
+    if style == "minimax_xml":
+        return f'<parameter name="m">{value}</parameter>'
+    if style == "glm_xml":
+        return f"<arg_key>m</arg_key><arg_value>{value}</arg_value>"
+    if style == "deepseek_xml":
+        bar = "\uff5c"
+        return (
+            f'<{bar}DSML{bar}parameter name="m" string="false">'
+            f"{value}</{bar}DSML{bar}parameter>"
+        )
+    return f"<parameter=m>{value}</parameter>"
+
+
+def _compile_one_parameter(
+    parameter: dict[str, Any], style: _XmlStyle
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema={
+                "type": "object",
+                "properties": {"m": parameter},
+                "required": ["m"],
+            },
+            style=style,
+            # Strict mode would close these objects and arrays outright.
+            strict_mode=False,
+        )
+    )
+    return _compiler().compile_structural_tag(tag)
+
+
+@pytest.mark.parametrize("style", ["qwen_xml", "minimax_xml", "glm_xml"])
+@pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
+def test_xml_nested_any_value_is_json(
+    style: _XmlStyle, parameter: dict[str, Any], valid: str, runaway: str
+) -> None:
+    # An any-typed value inside a parameter's JSON is itself JSON; a bare-value
+    # string there would run to the value's close delimiter and admit any text.
+    compiled = _compile_one_parameter(parameter, style)
+    assert _accepts(compiled, _xml_frame(style, valid))
+    assert not _accepts(compiled, _xml_frame(style, runaway))
+
+
+def test_xml_top_level_any_value_stays_bare_on_qwen() -> None:
+    compiled = _compile_one_parameter({}, "qwen_xml")
+    assert _accepts(compiled, _xml_frame("qwen_xml", "free text, {a: 1 zzz"))
+
+
+@pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
+def test_xml_nested_any_value_unchanged_on_deepseek(
+    parameter: dict[str, Any], valid: str, runaway: str
+) -> None:
+    # TODO(qwen-hotfix-9 follow-up): deepseek_xml shares the widening fixed for
+    # the other XML styles; the runaway assertion flips when it gets the fix.
+    compiled = _compile_one_parameter(parameter, "deepseek_xml")
+    assert _accepts(compiled, _xml_frame("deepseek_xml", valid))
+    assert _accepts(compiled, _xml_frame("deepseek_xml", runaway))
+
+
+def _pattern_keyed(pattern: str) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "patternProperties": {pattern: {"type": "string"}},
+    }
+
+
+def _compile_xml_arguments(
+    schema: dict[str, Any],
+    *,
+    style: _XmlStyle = "qwen_xml",
+    xml_tag_prefix: str = "",
+    reject_unsupported: bool = True,
+) -> xgr.CompiledGrammar:
+    tag = xgr.StructuralTag(
+        format=JSONSchemaFormat(
+            json_schema=schema,
+            style=style,
+            xml_tag_prefix=xml_tag_prefix,
+            reject_unsupported=reject_unsupported,
+        )
+    )
+    return _qwen_compiler().compile_structural_tag(tag)
+
+
+def _one_parameter(parameter: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"m": parameter},
+        "required": ["m"],
+    }
+
+
+def test_xml_pattern_properties_below_the_parameter_compile() -> None:
+    # Below a qwen_xml parameter tag an object's keys are JSON, so a key
+    # pattern compiles as it does for the json style.
+    compiled = _compile_xml_arguments(
+        _one_parameter(_pattern_keyed("^[a-z_]+$"))
+    )
+    assert _accepts(compiled, '<parameter=m>\n{"abc_def":"x"}\n</parameter>')
+    assert not _accepts(compiled, '<parameter=m>{"ABC":"x"}</parameter>')
+    assert not _accepts(compiled, '<parameter=m>{"abc":1}</parameter>')
+    assert not _accepts(
+        compiled, '<parameter=m>{"</parameter>":"x"}</parameter>'
+    )
+
+
+def test_xml_pattern_properties_on_xml_keys_stay_refused() -> None:
+    refusal = "patternProperties with empty properties on an XML object"
+    with pytest.raises(Exception, match=refusal):
+        _compile_xml_arguments(_pattern_keyed("^[a-z_]+$"))
+    # MiniMax-M3 spells an object's keys as tags at every depth.
+    with pytest.raises(Exception, match=refusal):
+        _compile_xml_arguments(
+            _one_parameter(_pattern_keyed("^[a-z_]+$")),
+            style="minimax_m3_xml",
+            xml_tag_prefix=_M3_PREFIX,
+        )
+
+
+@pytest.mark.parametrize("style", ["qwen_xml", "minimax_xml", "glm_xml"])
+def test_xml_properties_beside_pattern_properties_unchanged(
+    style: _XmlStyle,
+) -> None:
+    # Declared keys beside a key pattern need a per-key intersection, so the
+    # schema parser refuses them at any depth before the XML converter runs.
+    both = _pattern_keyed("^[a-z_]+$")
+    both["properties"] = {"a": {"type": "string"}}
+    for schema in (both, _one_parameter(both)):
+        with pytest.raises(Exception, match="declared or required properties"):
+            _compile_xml_arguments(schema, style=style)
+        compiled = _compile_xml_arguments(
+            schema, style=style, reject_unsupported=False
+        )
+        assert isinstance(compiled, xgr.CompiledGrammar)
+
+
+@pytest.mark.parametrize("style", ["minimax_xml", "glm_xml", "deepseek_xml"])
+@pytest.mark.parametrize("pattern", ["^.+$", "^[^/]+$", "^[a-z</>]+$"])
+def test_xml_nested_key_pattern_that_can_spell_the_close_is_refused(
+    style: _XmlStyle, pattern: str
+) -> None:
+    # These styles' readers may scan a parameter's value to its first close
+    # delimiter, so no key below the tag may spell it.
+    with pytest.raises(Exception, match="closing delimiter"):
+        _compile_xml_arguments(
+            _one_parameter(_pattern_keyed(pattern)), style=style
+        )
+
+
+@pytest.mark.parametrize(
+    "pattern,key",
+    [
+        ("^.*$", "</parameter>"),
+        ("^.+$", "</parameter>"),
+        ("^[^/]+$", "<parameter=m>"),
+        ("^[a-z</>]+$", "</parameter>"),
+    ],
+)
+def test_xml_qwen_nested_key_pattern_may_spell_the_close(
+    pattern: str, key: str
+) -> None:
+    # FormatSpec's Qwen reader reads an object-valued parameter as one
+    # balanced JSON value, so a key inside it may spell `</parameter>`, as a
+    # string value already may.
+    compiled = _compile_xml_arguments(_one_parameter(_pattern_keyed(pattern)))
+    assert _accepts(compiled, f'<parameter=m>\n{{"{key}":"x"}}\n</parameter>')
+
+
+@pytest.mark.parametrize(
+    "pattern,key",
+    [("\\wcole", "xcole"), ("[a-z]cole", "ecole"), ("^[A-Z_]+$", "ABC")],
+)
+def test_xml_closed_pattern_keyed_any_values_hold_every_key(
+    pattern: str, key: str
+) -> None:
+    # JSON-Schema-Test-Suite ecmascript-regex cases 16 and 17, plus an
+    # anchored pattern: every key of a closed object is held, not just the
+    # first.
+    compiled = _compile_one_parameter(
+        {
+            "type": "object",
+            "patternProperties": {pattern: True},
+            "additionalProperties": False,
+        },
+        "qwen_xml",
+    )
+    assert _accepts(compiled, _xml_frame("qwen_xml", f'{{"{key}": [1]}}'))
+    assert not _accepts(compiled, _xml_frame("qwen_xml", '{"value": 1}'))
+    assert not _accepts(
+        compiled, _xml_frame("qwen_xml", f'{{"{key}": 1, "value": 2}}')
+    )
 
 
 def test_xml_bare_value_bound_counts_code_points() -> None:
@@ -4556,6 +4980,7 @@ def _gemma_compile(params: dict[str, Any]) -> xgr.CompiledGrammar:
         tools=_gemma_tool_with_params(params),
         tool_choice="required",
         reasoning=False,
+        reject_unsupported=True,
     )
     return _gemma_compiler().compile_structural_tag(tag)
 

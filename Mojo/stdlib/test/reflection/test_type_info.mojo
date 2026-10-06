@@ -43,7 +43,7 @@ def test_get_linkage_name_nested() raises:
     assert_equal(
         name,
         (
-            "test_type_info::test_get_linkage_name_nested()::_nested_func::__storage::_nested_func(::SIMD[DType.int,"
+            "test_type_info::closure$test_get_linkage_name_nested()::_nested_func::__storage::_nested_func(::SIMD[DType.int,"
             " 1])`"
         ),
     )

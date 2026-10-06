@@ -17,6 +17,7 @@ from max.gpu.primitives.warp import vote, shuffle_idx
 from max.gpu.primitives.id import lane_id
 from std.bit import pop_count, count_trailing_zeros
 from std.atomic import Atomic
+from std.math import ceildiv
 
 
 # ========================== CONFIGURATION ==========================
@@ -107,7 +108,7 @@ def main() raises:
             h_size[0] = UInt32(0)
 
         # Launch kernel
-        var num_blocks = (N + BLOCK_DIM - 1) // BLOCK_DIM
+        var num_blocks = ceildiv(N, BLOCK_DIM)
         print(
             (
                 "Launching unstable filter kernel with coalesced atomics (Fig"

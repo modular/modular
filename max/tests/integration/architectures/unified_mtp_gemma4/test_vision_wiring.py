@@ -62,6 +62,10 @@ from max.pipelines.architectures.unified_mtp_gemma4.unified_mtp_gemma4 import (
 )
 from max.pipelines.context import ImageMetadata
 from max.pipelines.context.context import TokenBuffer
+from max.pipelines.lib import SamplingConfig
+from max.pipelines.lib.config.config import (
+    _resolve_default_structured_output_backend,
+)
 from max.pipelines.modeling.types import InputModality
 from max.pipelines.speculative import build_spec_decode_input_types
 
@@ -142,12 +146,15 @@ def test_unified_mtp_gemma4_defaults_to_xgrammar_backend() -> None:
 
     gemma4 structured output compiles through the xgrammar StructuralTag path
     (config-driven bare keys and <|"|> string delimiters), and the speculative
-    decoding fixes make that path safe under MTP, so the MTP arch tracks the
-    base gemma4 default of xgrammar rather than pinning llguidance. Override
-    with --structured-output-backend.
+    decoding fixes make that path safe under MTP. The arch pins no per-arch
+    backend, so it resolves to the global xgrammar default. Override with
+    --structured-output-backend.
     """
     assert (
-        unified_mtp_gemma4_arch.default_structured_output_backend == "xgrammar"
+        _resolve_default_structured_output_backend(
+            SamplingConfig(), unified_mtp_gemma4_arch
+        )
+        == "xgrammar"
     )
 
 

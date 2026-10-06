@@ -25,7 +25,6 @@ def run_func[
 ](
     ctx: DeviceContext, val: Scalar[dtype] = 0
 ) raises where dtype.is_floating_point():
-    @__parameter
     def kernel(
         output: Pointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
     ):
@@ -93,7 +92,6 @@ def powf_fn(val: SIMD) -> type_of(val):
 def test_math() raises:
     with DeviceContext() as ctx:
 
-        @__parameter
         def test[
             *kernel_fns: def[fn_dtype: DType, width: SIMDLength](
                 SIMD[fn_dtype, width]

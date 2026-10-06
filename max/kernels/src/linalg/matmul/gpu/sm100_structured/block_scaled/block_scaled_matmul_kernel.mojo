@@ -73,7 +73,6 @@ from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from linalg.arch.sm100 import MmaOpSM100_BlockScaled_SS
-from linalg.utils import elementwise_compute_lambda_type
 from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     SF_ATOM_M,
@@ -146,9 +145,6 @@ struct BlackwellBlockScaledMatmulKernel[
     # Cluster shape (for LLVM metadata)
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     # Optional features
-    elementwise_compute_lambda_fn: Optional[
-        elementwise_compute_lambda_type
-    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: UInt32 = 0,
 ]:
@@ -169,8 +165,6 @@ struct BlackwellBlockScaledMatmulKernel[
             group configuration for the kernel.
         cluster_shape: CTA cluster dimensions `(M, N, batch)` for LLVM
             cluster metadata (defaults to `(1, 1, 1)`).
-        elementwise_compute_lambda_fn: Optional fused elementwise compute
-            lambda applied during the epilogue (defaults to `None`).
         pdl_level: Programmatic dependency launch level controlling
             inter-grid synchronization (defaults to `PDLLevel.OFF`).
         max_profiled_tiles_per_SM: Maximum number of tiles to profile per
@@ -913,13 +907,7 @@ struct BlackwellBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
-    @__name(
-        StaticString(Self.config.get_kernel_name())
-        + StaticString(
-            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
-            is not None else ""
-        ),
-    )
+    @__name(StaticString(Self.config.get_kernel_name()))
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -1058,10 +1046,16 @@ struct BlackwellBlockScaledMatmulKernel[
                     producer.drain()  # wait for consumer before CTA exits
 
         # ===== SCHEDULER WARP =====
-        if WarpRole.is_scheduler() and ctx.is_first_cta_in_cluster:
-            comptime if Self.num_clc_pipeline_stages == 0:
-                return
-
+        # KERN-3311: with no CLC pipeline stages there is nothing to schedule.
+        # Fold that into the condition rather than `return`ing -- a return
+        # would skip the cluster exit barrier at the end of run(), leaving it
+        # divergent (undefined behavior).
+        comptime has_clc_scheduling = Self.num_clc_pipeline_stages != 0
+        if (
+            has_clc_scheduling
+            and WarpRole.is_scheduler()
+            and ctx.is_first_cta_in_cluster
+        ):
             var sched_iter = scheduler.scheduler_iterator()
 
             with MatmulProfilerType[1](workspace, 0):
@@ -1120,6 +1114,18 @@ struct BlackwellBlockScaledMatmulKernel[
                                                 Int(current.n),
                                             )
 
+                        # KERN-3311: the cta_group=2 peer never issues MMA (the
+                        # leader's multicast commit lands in both CTAs' TMEM),
+                        # so wait on the accumulator barrier the epilogue uses
+                        # before the TMEM dealloc handshake. Gated to no CLC
+                        # stages, where one tile (stage 0) runs per launch.
+                        comptime if (
+                            Self.cta_group == 2
+                            and Self.num_clc_pipeline_stages == 0
+                        ):
+                            if not ctx.elect_one_cta:
+                                mma_ctx.output_pipeline.pipeline.wait_producer()
+
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     launch_dependent_grids()
 
@@ -1155,3 +1161,13 @@ struct BlackwellBlockScaledMatmulKernel[
                                 N=mnk[1],
                                 alpha=alpha,
                             )
+
+        # KERN-3311: hold the cluster together until every CTA is finished. The
+        # epilogue's `signal_peer()` (structured_kernels/tmem.mojo) is a
+        # cluster-mapped `arrive_cluster` that needs the peer CTA resident; if
+        # the peer retires first the arrive targets a departed block and TMEM
+        # is freed for a pair that no longer jointly owns it. The setup-time
+        # `cluster_sync()` only orders mbarrier initialization. Gated on
+        # cta_group == 2, the only config with that cross-CTA arrive.
+        comptime if Self.cta_group == 2:
+            cluster_sync()

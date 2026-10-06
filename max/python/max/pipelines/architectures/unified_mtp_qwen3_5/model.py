@@ -16,18 +16,16 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
-from typing import Any
+from dataclasses import replace
+from typing import Any, ClassVar
 
-from max import tree
-from max.driver import Buffer
 from max.engine import InferenceSession, Model
-from max.graph import BufferValue, Graph, TensorValue
+from max.graph import Graph, TensorValue
 from max.nn.kv_cache import (
     MultiKVCacheParams,
+    recurrent_leaf,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.lib import UnifiedSpecDecodeInputs
 from max.pipelines.lib.interfaces.pipeline_model import (
     GraphPipelineModelWithKVCache,
 )
@@ -38,16 +36,10 @@ from typing_extensions import override
 
 from ..qwen3_5.model import _SCALE_SUFFIXES, Qwen3_5Model
 from ..qwen3_5.model_config import Qwen3_5Config
-from ..qwen3_5.state_cache import attn_cache
-from .spec_state import (
-    LIVE_CONV_POOLS,
-    LIVE_CONV_ROW_IDS,
-    LIVE_RECURRENT_POOLS,
-    LIVE_RECURRENT_ROW_IDS,
-    POSITION_IDS,
-    SHADOW_CONV_POOLS,
-    SHADOW_RECURRENT_POOLS,
-)
+from ..qwen3_5.state_cache import STATE_CACHE_KEY, attn_cache
+from .batch_processor import UnifiedMTPQwen3_5BatchProcessor
+from .model_config import UnifiedMTPQwen3_5Config
+from .spec_state import POSITION_IDS, graph_kv_params, state_tail
 from .unified_mtp_qwen3_5 import UnifiedMTPQwen3_5
 
 logger = logging.getLogger("max.pipelines")
@@ -59,65 +51,18 @@ _DRAFT_PREFIX = "draft."
 _TARGET_PREFIX = "target."
 
 
-@dataclass
-class UnifiedMTPQwen3_5Inputs(UnifiedSpecDecodeInputs):
-    """Inputs for the fused Qwen3.5 MTP graph.
-
-    The prefix and the spec-decode tail follow the canonical unified ordering;
-    everything after the bitmask triple is this architecture's state-pool tail,
-    which no other unified MTP graph has.
-    """
-
-    tokens: Buffer
-    input_row_offsets: Buffer
-    host_input_row_offsets: Buffer
-    return_n_logits: Buffer
-    data_parallel_splits: Buffer
-    signal_buffers: list[Buffer]
-    batch_context_lengths: list[Buffer]
-    live_conv_pools: list[Buffer]
-    live_recurrent_pools: list[Buffer]
-    live_conv_row_ids: list[Buffer]
-    live_recurrent_row_ids: list[Buffer]
-    shadow_conv_pools: list[Buffer]
-    shadow_recurrent_pools: list[Buffer]
-    #: ``[3, merged_total_seq_len]`` M-RoPE positions for the merged
-    #: ``[real, draft_1..draft_k]`` window. ``None`` on a text-only graph,
-    #: whose rotary stays on the static cache-derived table.
-    position_ids: Buffer | None = None
-
-    @property
-    def buffers(self) -> tuple[Buffer, ...]:
-        assert self.kv_cache_inputs is not None
-        prefix = (
-            self.tokens,
-            self.input_row_offsets,
-            self.host_input_row_offsets,
-            self.return_n_logits,
-            self.data_parallel_splits,
-            *self.signal_buffers,
-            *tree.leaves(self.kv_cache_inputs),
-            *self.batch_context_lengths,
-        )
-        return (
-            prefix
-            + self._spec_decode_tail_buffers(include_in_thinking_phase=True)
-            + (
-                *self.live_conv_pools,
-                *self.live_recurrent_pools,
-                *self.live_conv_row_ids,
-                *self.live_recurrent_row_ids,
-                *self.shadow_conv_pools,
-                *self.shadow_recurrent_pools,
-            )
-            + (() if self.position_ids is None else (self.position_ids,))
-        )
-
-
 class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
     """Qwen3.5 with MTP: merge, verify, roll the state back, and draft."""
 
+    batch_processor_cls: ClassVar[type[UnifiedMTPQwen3_5BatchProcessor]] = (
+        UnifiedMTPQwen3_5BatchProcessor
+    )
+    # The cache is built from this class, so it must be the one that declares
+    # the verify ring.
+    model_config_cls: ClassVar[type[Any]] = UnifiedMTPQwen3_5Config
+
     _draft_state_dict: dict[str, Any]
+    _fused_nn_model: UnifiedMTPQwen3_5
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         kwargs["return_logits"] = ReturnLogits.VARIABLE
@@ -128,12 +73,23 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
     def load_model(self, session: InferenceSession) -> Model:
         """Compiles the one fused graph.
 
-        The base architecture's ``load_model`` also compiles a vision encoder
-        and allocates the MAX-side state cache. Neither applies here: the spec
-        graph is text-only, and its pools (including the shadows) are supplied
-        by the serving engine.
+        Skips the base architecture's vision encoder, since this graph is
+        text-only.
         """
         return GraphPipelineModelWithKVCache.load_model(self, session)
+
+    @override
+    def _wire_batch_processor(
+        self, model: Any = None, model_config: Any = None
+    ) -> None:
+        """Tells the batch processor whether the graph declares positions."""
+        super()._wire_batch_processor(model, model_config)
+        assert isinstance(
+            self._batch_processor, UnifiedMTPQwen3_5BatchProcessor
+        )
+        self._batch_processor.mrope_enabled = (
+            self._fused_nn_model.target.mrope_enabled
+        )
 
     @override
     def _load_state_dict(self) -> dict[str, Any]:
@@ -191,11 +147,17 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
         config.mrope_without_encoder = config.vision_config is not None
         config.vision_config = None
 
-        # Attention only: this graph declares its own state pools in
-        # ``input_types``.
+        # The allocated cache keeps the state child. The graph signature is
+        # built from ``graph_kv_params``, which drops it.
         attn = attn_cache(self.kv_params)
+        state = recurrent_leaf(self.kv_params)
+        assert state is not None, "expected a recurrent state child"
         self.kv_params = MultiKVCacheParams.from_params(
-            {"target": attn, "draft": replace(attn, num_layers=1)}
+            {
+                "target": attn,
+                "draft": replace(attn, num_layers=1),
+                STATE_CACHE_KEY: state,
+            }
         )
         return config
 
@@ -239,9 +201,9 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
         )
         weights_registry = nn_model.state_dict()
         self.state_dict = weights_registry
+        self._fused_nn_model = nn_model
 
-        kv_params = self.kv_params
-        assert isinstance(kv_params, MultiKVCacheParams)
+        kv_params = graph_kv_params(self.kv_params)
         num_devices = len(self.devices)
 
         with Graph(
@@ -253,18 +215,7 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
             trailing = iter(graph_inputs.trailing)
 
             # The state tail, in the order ``input_types`` declares it.
-            def per_device_buffers() -> list[BufferValue]:
-                return [next(trailing).buffer for _ in range(num_devices)]
-
-            def per_device_tensors() -> list[TensorValue]:
-                return [next(trailing).tensor for _ in range(num_devices)]
-
-            live_conv_pools = per_device_buffers()
-            live_recurrent_pools = per_device_buffers()
-            live_conv_row_ids = per_device_tensors()
-            live_recurrent_row_ids = per_device_tensors()
-            shadow_conv_pools = per_device_buffers()
-            shadow_recurrent_pools = per_device_buffers()
+            state = state_tail(trailing, nn_model.state_regions, num_devices)
 
             # Declared last by ``input_types`` and only when the target runs
             # M-RoPE, so it is consumed after the whole state tail.
@@ -292,15 +243,7 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
                 pinned_bitmask=graph_inputs.pinned_bitmask,
                 wait_payload=graph_inputs.wait_payload,
                 device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
-                extra={
-                    LIVE_CONV_POOLS: live_conv_pools,
-                    LIVE_RECURRENT_POOLS: live_recurrent_pools,
-                    LIVE_CONV_ROW_IDS: live_conv_row_ids,
-                    LIVE_RECURRENT_ROW_IDS: live_recurrent_row_ids,
-                    SHADOW_CONV_POOLS: shadow_conv_pools,
-                    SHADOW_RECURRENT_POOLS: shadow_recurrent_pools,
-                    POSITION_IDS: position_ids,
-                },
+                extra={**state, POSITION_IDS: position_ids},
             )
             graph.output(*outputs)
 

@@ -81,11 +81,11 @@ class RecordingConnector:
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> KVConnectorTransfer:
         bids = list(block_ids["full"])
-        self.offloads.append((bids, list(block_hashes)))
+        self.offloads.append((bids, list(block_hashes["full"])))
         return CompletedTransfer({"full": bids})
 
     def touch(
@@ -118,8 +118,7 @@ class RecordingConnector:
         self.load_hints.append(hint)
         return CompletedTransfer()
 
-    def wait_for_loads(self) -> None: ...
-    def wait_for_offloads(self) -> None: ...
+    def poll_transfers(self) -> None: ...
     def shutdown(self) -> None: ...
     def reset_prefix_cache(self) -> None: ...
 

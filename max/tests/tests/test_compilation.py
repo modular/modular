@@ -54,7 +54,6 @@ from max.experimental.sharding import (
     BufferLayout,
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
     TensorLayout,
@@ -72,9 +71,7 @@ _F32 = DType.float32
 def _spec(*shape: int) -> TensorLayout:
     """One replicated slot on one device, every extent fixed."""
     mesh = DeviceMesh.single(CPU())
-    return TensorLayout(
-        _F32, list(shape), PlacementMapping(mesh, (Replicated(),))
-    )
+    return TensorLayout(_F32, list(shape), DeviceMapping(mesh, (Replicated(),)))
 
 
 def _symbolic(*shape: int | str) -> TensorLayout:
@@ -98,25 +95,26 @@ def _mesh2() -> DeviceMesh:
 
 def _replicated_spec(*shape: int) -> TensorLayout:
     return TensorLayout(
-        _F32, list(shape), PlacementMapping(_mesh2(), (Replicated(),))
+        _F32, list(shape), DeviceMapping(_mesh2(), (Replicated(),))
     )
 
 
 def _replicated(tensor: Tensor) -> Tensor:
     return Tensor._from_shards(
-        (tensor.driver_tensor,) * 2, _mesh2(), (Replicated(),)
+        (tensor.driver_tensor,) * 2, DeviceMapping(_mesh2(), (Replicated(),))
     )
 
 
 def _sharded_spec(*shape: int) -> TensorLayout:
     return TensorLayout(
-        _F32, list(shape), PlacementMapping(_mesh2(), (Sharded(0),))
+        _F32, list(shape), DeviceMapping(_mesh2(), (Sharded(0),))
     )
 
 
 def _sharded(*per_device: Tensor) -> Tensor:
     return Tensor._from_shards(
-        tuple(t.driver_tensor for t in per_device), _mesh2(), (Sharded(0),)
+        tuple(t.driver_tensor for t in per_device),
+        DeviceMapping(_mesh2(), (Sharded(0),)),
     )
 
 
@@ -709,7 +707,7 @@ def _offset_spec() -> TensorLayout:
     return TensorLayout(
         DType.int64,
         [],
-        PlacementMapping(DeviceMesh.single(CPU()), (Replicated(),)),
+        DeviceMapping(DeviceMesh.single(CPU()), (Replicated(),)),
     )
 
 
@@ -864,7 +862,7 @@ class TestModel:
         per device and the read has to cross them.
         """
         mesh = _mesh2()
-        sharded = PlacementMapping(mesh, (Sharded(0),))
+        sharded = DeviceMapping(mesh, (Sharded(0),))
         cache_spec = CacheSpec(
             blocks=BufferLayout(
                 _F32, [_SLOTS, _MODEL], DeviceMapping(mesh, (Sharded(0),))
@@ -1046,7 +1044,7 @@ class TestATensorIsALeaf:
     def test_a_leaf_everywhere_and_still_split_per_device_at_a_boundary(
         self,
     ) -> None:
-        mapping = PlacementMapping(_mesh2(), (Sharded(0),))
+        mapping = DeviceMapping(_mesh2(), (Sharded(0),))
         sharded = _tensor(1.0, 2.0, 3.0, 4.0).to(mapping)
 
         # A walk stops at a tensor, sharded or not, with no leaf= to ask for it.

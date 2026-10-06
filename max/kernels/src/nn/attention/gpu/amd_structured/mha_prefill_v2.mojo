@@ -2348,7 +2348,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # Out-of-range block guard: grid is sized by max_prompt_len;
         # if this sequence is shorter, the trailing q-blocks have
         # nothing to do.
-        if Int(block_idx.y) * Self.BM >= seq_len:
+        if block_idx.y * Self.BM >= seq_len:
             return
 
         var start_pos = Int(k.cache_length(batch_idx))
@@ -2371,12 +2371,7 @@ struct MhaPrefillV2[config: MhaConfigV2]:
         # the runtime seq_len field lives once. Halves the per-block
         # live state introduced by the layout construction.
         var ragged_layout = row_major(
-            Coord(
-                1,
-                seq_len,
-                Self.config.num_heads,
-                Self.config.depth,
-            )
+            1, seq_len, Self.config.num_heads, Self.config.depth
         )
         var q_tt = TileTensor(q_ptr + q_batch_offset, ragged_layout)
         var o_tt = TileTensor(output_ptr + q_batch_offset, ragged_layout)

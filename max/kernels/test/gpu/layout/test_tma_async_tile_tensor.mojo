@@ -32,9 +32,16 @@ from std.sys import size_of
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu import block_idx, thread_idx
-from layout import Coord, Idx, Layout, LayoutTensor, MixedLayout, TileTensor
-from layout._utils import ManagedLayoutTensor
-from layout.layout_tensor import copy_sram_to_dram
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
+    MixedLayout,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+)
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
@@ -43,34 +50,32 @@ from layout.tma_async import (
 )
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
-from std.utils.index import IndexList
 
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
 def tma_tile_tensor_load_kernel[
     dtype: DType,
-    layout: Layout,
-    tile_rank: Int,
-    tile_shape: IndexList[tile_rank],
-    thread_layout: Layout,
+    dst_rows: Int,
+    dst_cols: Int,
+    tile_shape: Coord,
 ](
-    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape],
-):
-    comptime tileM = tile_shape[0]
-    comptime tileN = tile_shape[1]
-    comptime expected_bytes = _idx_product[tile_rank, tile_shape]() * size_of[
-        dtype
-    ]()
-
-    comptime __tile_layout = Layout.row_major(tileM, tileN)
-    var tile = LayoutTensor[
+    dst: TileTensor[
         dtype,
-        __tile_layout,
+        RowMajorLayout[ComptimeInt[dst_rows], ComptimeInt[dst_cols]],
         MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    ],
+    tma_tile: TMATensorTile[dtype, tile_shape],
+):
+    comptime tileM = Int(tile_shape.element_types[0].static_value.value())
+    comptime tileN = Int(tile_shape.element_types[1].static_value.value())
+    comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
+
+    var tile = TileTensor(
+        unsafe_stack_allocation[
+            tileM * tileN, Scalar[dtype], address_space=.SHARED, alignment=128
+        ](),
+        row_major[tileM, tileN](),
+    )
 
     var mbar = unsafe_stack_allocation[
         1,
@@ -91,8 +96,10 @@ def tma_tile_tensor_load_kernel[
     barrier()
     mbar[0].wait()
 
-    var dst_tile = dst.tile[tileM, tileN](block_idx.y, block_idx.x)
-    copy_sram_to_dram[thread_layout](dst_tile, tile)
+    # One thread per tile element, so each thread copies its own element.
+    var row, col = divmod(Int(thread_idx.x), tileN)
+    var dst_tile = dst.tile[tileM, tileN](Int(block_idx.y), Int(block_idx.x))
+    dst_tile[row, col] = tile[row, col]
 
 
 def test_tma_load_tile_tensor[
@@ -127,17 +134,15 @@ def test_tma_load_tile_tensor[
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, src_tensor)
     ctx.synchronize()
 
-    var dst = ManagedLayoutTensor[
-        dtype, Layout.row_major(M_roundup, N_roundup)
-    ](ctx)
+    var dst = HostDeviceTileTensor[dtype](
+        row_major[M_roundup, N_roundup](), ctx
+    )
 
-    comptime __thread_layout = Layout.row_major(tileM, tileN)
     comptime kernel = tma_tile_tensor_load_kernel[
         type_of(tma_tensor).dtype,
-        Layout.row_major(M_roundup, N_roundup),  # dst layout
-        type_of(tma_tensor).rank,  # tile rank
+        M_roundup,
+        N_roundup,
         type_of(tma_tensor).tile_shape,  # tile shape
-        __thread_layout,  # thread layout
     ]
     ctx.enqueue_function[kernel](
         dst.device_tensor(),
@@ -146,7 +151,8 @@ def test_tma_load_tile_tensor[
         block_dim=(tileM * tileN),
     )
 
-    var dst_host = dst.tensor()
+    dst.to_host()
+    var dst_host = dst.host_tensor()
 
     # In-bounds elements keep their values, and the region rounded up to
     # the tile shape is zero-filled by TMA.
@@ -159,8 +165,6 @@ def test_tma_load_tile_tensor[
                 )
             else:
                 assert_equal(dst_host[m, n].cast[.float32](), 0.0)
-    ctx.synchronize()
-    _ = dst^
 
 
 def main() raises:

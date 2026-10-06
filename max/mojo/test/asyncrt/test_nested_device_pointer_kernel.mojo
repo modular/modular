@@ -31,7 +31,7 @@ A. A host-side struct containing a `DevicePointer` can be the host type of a
 
 B. On the device, code can reinterpret the struct's first
    `size_of[Pointer]` bytes as a `Pointer` and use it — the cast
-   pattern `DevicePointerEngine.load`/`store` use on device.
+   pattern `DevicePointerEngine.unsafe_ptr` uses on device.
 
 This stays in the OneS/TwoS pattern (distinct host and device types, manual
 conversion in `_to_device_type`) — the host struct keeps the full
@@ -122,7 +122,7 @@ def write_sentinel_via_reinterpret(arg: DevicePtrAndSentinel[MutAnyOrigin]):
     struct as a `Pointer` and write through it, instead of using the
     named field.
 
-    This is the cast pattern `DevicePointerEngine.load`/`store` use on device
+    This is the cast pattern `DevicePointerEngine.unsafe_ptr` uses on device
     — the struct's static type wouldn't necessarily expose a `Pointer`
     field, but its first bytes ARE one.
 

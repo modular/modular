@@ -250,47 +250,19 @@ def test_mha_vs_naive[
     # Q/K/V/O TileTensors at (BATCH, SEQ_LEN/NUM_KEYS, NUM_HEADS, DEPTH).
     var q_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
     var k_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var v_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var o_tt = TileTensor(
         dev_out,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
 
     var k_op = LayoutTensorMHAOperand(k_tt)
@@ -312,47 +284,19 @@ def test_mha_vs_naive[
     # mha_gpu_naive takes K and V at d=DEPTH (same as the MHA kernel).
     var q_naive_tt = TileTensor(
         dev_q,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
     var k_ref_tt = TileTensor(
         dev_k,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var v_ref_tt = TileTensor(
         dev_v,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(NUM_KEYS),
-                Idx[NUM_KV_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[DEPTH]),
     )
     var out_ref_tt = TileTensor(
         dev_out_ref,
-        row_major(
-            Coord(
-                Int32(BATCH),
-                Int32(SEQ_LEN),
-                Idx[NUM_HEADS],
-                Idx[DEPTH],
-            )
-        ),
+        row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[DEPTH]),
     )
     var k_ref_operand = LayoutTensorMHAOperand(
         k_ref_tt.as_imm().as_unsafe_any_origin()
@@ -362,7 +306,7 @@ def test_mha_vs_naive[
     )
     var null_valid_length = TileTensor(
         MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
-        row_major(Coord(Idx[0])),
+        row_major(Idx[0]),
     )
 
     # MHA: group = num_q_heads / num_kv_heads = 1.

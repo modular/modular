@@ -27,13 +27,14 @@ from types import UnionType
 from typing import Annotated, Any, Literal, Union, get_args, get_origin
 
 import click
+import click.testing
 import cyclopts
 import pytest
 import yaml
 from cyclopts import Parameter
 from max._entrypoints.cli.config import pipeline_config_options
 from max.config import ConfigFileModel
-from max.pipelines.lib import PipelineArgs, PipelineConfig
+from max.pipelines.lib import PipelineArgs, PipelineConfig, ProfilingConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_args import (
@@ -41,6 +42,7 @@ from max.pipelines.lib.pipeline_args import (
     _SHARED_CONFIG_FIELDS,
 )
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.sampling import ToolCallPolicy
 from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import ValidationError
 
@@ -78,6 +80,18 @@ def test_every_cli_flag_routes_to_a_known_destination() -> None:
     )
 
 
+def test_kernel_trace_limits_have_no_cli_flag() -> None:
+    """They are set only from a config file's ``profiling`` section."""
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None: ...
+
+    limits = {f for f in ProfilingConfig.model_fields if "kernel_trace" in f}
+    assert len(limits) == 4
+    assert not limits & {param.name for param in cli.params}
+
+
 def test_from_args_threads_runtime_flags() -> None:
     args = PipelineArgs(
         runtime=PipelineRuntimeConfig(execute_empty_batches=True)
@@ -111,6 +125,16 @@ def test_cascade_field_round_trips_through_flat_kwargs() -> None:
     # ``pipeline_args.cascade``.
     assert PipelineArgs.from_flat_kwargs(cascade=False).cascade is False
     assert PipelineArgs.from_flat_kwargs(cascade=True).cascade is True
+
+
+def test_tokenizer_impl_reaches_the_pipeline_config() -> None:
+    # Standard serving reads it off the config the tokenizer is built from;
+    # dropping it would silently serve the HuggingFace tokenizer.
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(tokenizer_impl="pkg.module:Encoder")
+    )
+    assert config.tokenizer_impl == "pkg.module:Encoder"
+    assert PipelineConfig.from_args(PipelineArgs()).tokenizer_impl is None
 
 
 def test_cascade_skips_huggingface_manifest_probe() -> None:
@@ -295,11 +319,10 @@ def test_from_args_preserves_every_explicitly_set_field(
     """Every explicitly-set field must survive ``PipelineConfig.from_args``.
 
     Regression guard for the kadabra-v5 incident (ENABLE-2881): ``from_args``
-    rebuilt ``SamplingConfig`` from a hand-picked field list that omitted
-    ``enable_tool_call_constrained_decode``, so production served with the
-    flag reset to its default and ``tool_choice="required"`` was
-    grammar-forced despite ``--no-enable-tool-call-constrained-decode``.
-    Sweeping ``model_fields`` covers future fields the day they are added.
+    rebuilt ``SamplingConfig`` from a hand-picked field list that omitted the
+    tool-call policy field, so production served with it reset to its default
+    and ``tool_choice="required"`` was grammar-forced. Sweeping ``model_fields``
+    covers future fields the day they are added.
     """
     config = PipelineConfig.from_args(
         PipelineArgs.from_flat_kwargs(**{field: value})
@@ -311,13 +334,17 @@ def test_from_args_preserves_every_explicitly_set_field(
     )
 
 
-def test_tool_call_constrained_decode_flag_reaches_worker_config() -> None:
+def test_tool_call_policy_reaches_worker_config() -> None:
     """The exact field production lost; kept explicit so the incident's
     reproducer survives even if the matrix's value derivation changes."""
     config = PipelineConfig.from_args(
-        PipelineArgs.from_flat_kwargs(enable_tool_call_constrained_decode=False)
+        PipelineArgs.from_flat_kwargs(
+            tool_call_policy=ToolCallPolicy.FORCE_UNCONSTRAINED
+        )
     )
-    assert config.sampling.enable_tool_call_constrained_decode is False
+    assert (
+        config.sampling.tool_call_policy is ToolCallPolicy.FORCE_UNCONSTRAINED
+    )
 
 
 def test_pipeline_args_surface_is_frozen() -> None:
@@ -379,3 +406,31 @@ def test_cyclopts_flat_binding_constructs_a_new_instance() -> None:
     assert args.max_length == 1234
     assert default_args.model_path == ""
     assert default_args.max_length is None
+
+
+@pytest.mark.parametrize(
+    ("flag", "field"),
+    [
+        ("--use-dummy-weights", "header_only_weights"),
+        ("--draft-use-dummy-weights", "draft_header_only_weights"),
+    ],
+)
+def test_use_dummy_weights_flag_routes_to_header_only_weights(
+    flag: str, field: str
+) -> None:
+    """The user-facing flag names the effect; the field names the mechanism."""
+    seen: dict[str, Any] = {}
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None:
+        seen.update(kwargs)
+
+    result = click.testing.CliRunner().invoke(cli, [flag])
+    assert result.exit_code == 0, result.output
+    assert seen[field] is True
+    assert "header_only_weights" not in {
+        opt.lstrip("-").replace("-", "_")
+        for param in cli.params
+        for opt in param.opts
+    }

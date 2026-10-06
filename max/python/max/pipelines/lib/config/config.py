@@ -36,10 +36,6 @@ from max.pipelines.lib.arch_lookup import (
     import_custom_architectures,
     select_speculator,
 )
-from max.pipelines.lib.host_memory import (
-    _PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY,
-    _host_memory_limit,
-)
 from max.pipelines.lib.interfaces import (
     ArchConfig,
     arch_has_vision_tower,
@@ -55,8 +51,10 @@ from max.pipelines.sampling import (
     DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE,
     DEFAULT_STRUCTURED_OUTPUT_BACKEND,
     SamplingConfig,
+    ToolCallPolicy,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.support.host_memory import host_memory_limit
 from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import (
     BaseModel,
@@ -79,6 +77,10 @@ from .model_config import (
 from .profiling_config import ProfilingConfig
 
 logger = logging.getLogger("max.pipelines")
+
+# The preprocessed-media caches live in host memory, and their multi-GiB
+# defaults can OOM a small container.
+_PREPROCESS_CACHE_MAX_FRACTION_OF_HOST_MEMORY = 0.25
 
 # ModelManifest is a dict[str, MAXModelConfig] subclass with extra methods.
 # cyclopts (CLI framework) only recognizes plain dict types via typing.get_origin(),
@@ -230,11 +232,9 @@ def _resolve_default_structured_output_backend(
     Resolution order (highest precedence first):
 
     1. An explicit user choice (``sampling.structured_output_backend`` is
-       not ``None``) always wins -- including an explicit ``"xgrammar"`` on
-       an architecture that pins ``"llguidance"``.
+       not ``None``) always wins.
     2. Otherwise, if the resolved ``SupportedArchitecture`` declares a
-       ``default_structured_output_backend`` (e.g. Gemma 3 / MiniMax-M2 pin
-       ``"llguidance"``), use it.
+       ``default_structured_output_backend``, use it.
     3. Otherwise, fall back to the global default ``"xgrammar"``.
 
     Runs whenever construction resolves an architecture, so the field is
@@ -461,7 +461,7 @@ def _resolve_preprocess_cache_budgets(
     ):
         return configured
 
-    host_bytes = _host_memory_limit()
+    host_bytes = host_memory_limit()
     if host_bytes is None:
         logger.debug(
             "Could not determine host memory; leaving the preprocessed-"
@@ -686,6 +686,13 @@ def _apply_speculative_target_architecture(
             target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
         else:
             target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
+    # Not a Speculator yet: memory planning would miss the drafter's KV group.
+    if (
+        target_archs[0] == "MiMoV2ForCausalLM"
+        and speculative.is_dflash()
+        and v1_or_eagle
+    ):
+        target_archs[0] = "UnifiedDflashMiMoV2ForCausalLM"
     if target_archs[0] == "KimiK25ForConditionalGeneration" and v1_or_eagle:
         draft_archs = (
             draft_model.huggingface_config.architectures
@@ -734,6 +741,22 @@ def _apply_speculative_target_architecture(
         )
         if draft_archs and draft_archs[0] == "Gemma4DSparkModel":
             target_archs[0] = "UnifiedDSparkGemma4_12BForCausalLM"
+    # Kimi K3's speculators-format DSpark drafter (
+    # RedHatAI/Kimi-K3-speculator.dspark) declares the same generic
+    # architectures: ["DSparkDraftModel"] the Gemma4 arm keys on; the
+    # verifier it names is what picks the fused graph apart.
+    if target_archs[0] == "KimiK3ForConditionalGeneration":
+        draft_archs = (
+            draft_model.huggingface_config.architectures
+            if draft_model is not None
+            else None
+        )
+        if (
+            speculative.speculative_method == "dflash"
+            and draft_archs
+            and draft_archs[0] == "DSparkDraftModel"
+        ):
+            target_archs[0] = "UnifiedDSparkKimiK3ForCausalLM"
     if target_archs[0] == "MiniMaxM3SparseForConditionalGeneration":
         draft_archs = (
             draft_model.huggingface_config.architectures
@@ -748,6 +771,18 @@ def _apply_speculative_target_architecture(
             # M3 target + MHA (Llama-style) Eagle3 draft. The v0 Eagle3
             # path forbids block-sparse attention.
             target_archs[0] = "Eagle3MHAMiniMaxM3SparseForConditionalGeneration"
+        elif draft_archs and draft_archs[0] == "DSparkMiniMaxDraftModel":
+            # The fused graph verifies one DSpark block per step, which only
+            # the v1 dflash harness drives; Eagle, MTP and DFlash2 would load
+            # it against a draft loop that does not match.
+            if not speculative.is_dflash() or speculative.is_dflash2():
+                raise ValueError(
+                    "The MiniMax-M3 DSpark draft requires"
+                    " --speculative-method dflash"
+                )
+            target_archs[0] = (
+                "UnifiedDSparkMiniMaxM3SparseForConditionalGeneration"
+            )
     if target_archs[0] == "Qwen3_5ForConditionalGeneration":
         # Qwen3.8 bakes a NextN MTP head into the target checkpoint, so
         # there is no separate draft model. Qwen3.5 shares the arch name
@@ -933,6 +968,18 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
     """Whether to run eager verification before device graph replay."""
+
+    tokenizer_impl: str | None = Field(
+        default=None,
+        description=(
+            "Import path of an alternative tokenizer implementation, as "
+            "``'module.path:ClassName'``, that encodes rendered chat prompts "
+            "for a checkpoint whose ``tokenizer.json`` it reproduces. Left "
+            "unset, or when it cannot be imported or does not match the "
+            "checkpoint, uses the HuggingFace tokenizer."
+        ),
+    )
+    """Import path of an alternative tokenizer implementation, if any."""
 
     models: _ModelsType = Field(
         default_factory=ModelManifest,
@@ -1156,11 +1203,10 @@ class PipelineConfig(ConfigFileModel):
         server-generated and gated on having a parser that can both produce
         the grammar and parse the resulting output).
 
-        Tool-call constrained decoding can be turned off independently via
-        ``sampling.enable_tool_call_constrained_decode``: when that is
-        ``False`` the tool parser still parses tool calls out of generated
-        text, but no grammar is generated and the bitmask path is not needed
-        on its account.
+        Tool-call constrained decoding is off when ``sampling.tool_call_policy``
+        is ``FORCE_UNCONSTRAINED``: the tool parser still parses tool calls out
+        of generated text, but no grammar is generated and the bitmask path is
+        not needed on its account.
 
         Always ``False`` on a ``prefill_only`` worker. Under disaggregated
         inference the decode worker discards prefill's token for a
@@ -1178,7 +1224,8 @@ class PipelineConfig(ConfigFileModel):
             return False
         return self.sampling.enable_structured_output or (
             self.runtime.tool_parser is not None
-            and self.sampling.enable_tool_call_constrained_decode
+            and self.sampling.tool_call_policy
+            is not ToolCallPolicy.FORCE_UNCONSTRAINED
         )
 
     _config_file_section_name: str = PrivateAttr(default="pipeline_config")
@@ -1202,6 +1249,29 @@ class PipelineConfig(ConfigFileModel):
                 "BLASST_LOG_THRESHOLD_MAG",
                 int(os.environ.get("BLASST_LOG_THRESHOLD_MAG", "13000")),
             )
+        if self._disable_vendor_blas_fallback():
+            session._set_mojo_define("MODULAR_DISABLE_VENDOR_FALLBACK", "true")
+
+    def _disable_vendor_blas_fallback(self) -> bool:
+        """Returns whether to compile kernels without the vendor-BLAS fallback.
+
+        ``_matmul_gpu`` reads ``MODULAR_DISABLE_VENDOR_FALLBACK`` through
+        ``get_defined_bool``, so it is a kernel-compile define and an
+        environment variable alone never reaches the kernels serve compiles.
+        Forwarding it here is what makes the documented escape hatch work.
+
+        It is forced on for HIP + device graph capture: the fallback's first
+        GEMM constructs the hipBLASLt handle, and ``hipblasLtCreate`` zeroes a
+        25 MiB workspace with a legacy-stream ``hipMemset`` and calls
+        ``exit(1)`` when that fails. Inside a capture region that memset
+        returns ``hipErrorStreamCaptureImplicit``, so the model worker dies
+        instead of raising. MAX's own kernels cover the same shapes.
+        """
+        if self.runtime.device_graph_capture and accelerator_api() == "hip":
+            return True
+        return os.environ.get(
+            "MODULAR_DISABLE_VENDOR_FALLBACK", ""
+        ).lower() in ("1", "true", "on", "yes")
 
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None
@@ -1615,6 +1685,7 @@ class PipelineConfig(ConfigFileModel):
             speculative=speculative,
             task=args.task,
             debug_verify_replay=args.debug_verify_replay,
+            tokenizer_impl=args.tokenizer_impl,
             **top_level,
         )
 

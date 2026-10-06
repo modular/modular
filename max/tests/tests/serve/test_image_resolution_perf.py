@@ -30,7 +30,6 @@ when the decode is offloaded -- exactly the regression behind the high TTFT.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import collections
 import io
@@ -73,13 +72,8 @@ def _png_bytes(size: tuple[int, int] = (8, 8)) -> bytes:
     return buf.getvalue()
 
 
-# ---------------------------------------------------------------------------
-# Fix 2: base64 decode runs off the event loop for large payloads.
-# ---------------------------------------------------------------------------
-
-
-async def test_large_data_uri_decode_runs_off_event_loop(monkeypatch) -> None:  # noqa: ANN001
-    """A large ``data:`` payload is decoded on a worker thread, not the loop."""
+async def test_data_uri_decode_runs_inline(monkeypatch) -> None:  # noqa: ANN001
+    """A ``data:`` payload decodes inline (no thread-pool hop)."""
     main_thread = threading.get_ident()
     recorded: dict[str, int] = {}
     original = _image_resolution._decode_base64
@@ -90,75 +84,12 @@ async def test_large_data_uri_decode_runs_off_event_loop(monkeypatch) -> None:  
 
     monkeypatch.setattr(_image_resolution, "_decode_base64", spy)
 
-    # >256KiB of base64 -> exceeds the offload threshold.
-    payload = b"\x00" * (400 * 1024)
-    out = await resolve_image_from_url(
-        AnyUrl(_data_uri(payload)), settings=Settings()
-    )
-    assert out == payload
-    assert recorded["thread"] != main_thread
-
-
-async def test_small_data_uri_decode_runs_inline(monkeypatch) -> None:  # noqa: ANN001
-    """A tiny ``data:`` payload decodes inline (no thread-pool hop)."""
-    main_thread = threading.get_ident()
-    recorded: dict[str, int] = {}
-    original = _image_resolution._decode_base64
-
-    def spy(b64: str) -> bytes:
-        recorded["thread"] = threading.get_ident()
-        return original(b64)
-
-    monkeypatch.setattr(_image_resolution, "_decode_base64", spy)
-
-    payload = b"\x01" * 512
+    payload = b"\x01" * (400 * 1024)
     out = await resolve_image_from_url(
         AnyUrl(_data_uri(payload)), settings=Settings()
     )
     assert out == payload
     assert recorded["thread"] == main_thread
-
-
-async def test_event_loop_not_blocked_during_decode(monkeypatch) -> None:  # noqa: ANN001
-    """Headline reproducer: the event loop stays responsive during decode.
-
-    The decode is made to block on an :class:`threading.Event` that can only be
-    released by a coroutine running concurrently on the event loop. If the
-    decode ran *on* the loop (the CENG-640 regression), the releaser could never
-    run and this would dead-lock until the timeout -> test failure. It passes
-    only because the decode is offloaded to a worker thread, leaving the loop
-    free to make progress.
-    """
-    started = threading.Event()
-    release = threading.Event()
-    original = _image_resolution._decode_base64
-
-    def blocking_decode(b64: str) -> bytes:
-        started.set()
-        if not release.wait(timeout=5.0):
-            raise AssertionError(
-                "decode was never released: the event loop was blocked"
-            )
-        return original(b64)
-
-    monkeypatch.setattr(_image_resolution, "_decode_base64", blocking_decode)
-
-    payload = b"\x00" * (400 * 1024)
-
-    async def releaser() -> None:
-        # Runs on the same event loop as resolve. It can only make progress if
-        # the loop is free while the decode is in flight.
-        while not started.is_set():
-            await asyncio.sleep(0.001)
-        release.set()
-
-    resolve_task = asyncio.create_task(
-        resolve_image_from_url(AnyUrl(_data_uri(payload)), settings=Settings())
-    )
-    out, _ = await asyncio.wait_for(
-        asyncio.gather(resolve_task, releaser()), timeout=15.0
-    )
-    assert out == payload
 
 
 # ---------------------------------------------------------------------------

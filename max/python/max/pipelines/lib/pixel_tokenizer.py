@@ -32,7 +32,7 @@ from max.pipelines.context.exceptions import PromptTooLongError
 from max.pipelines.context.outputs import GenerationOutput
 from max.pipelines.diffusion.schedulers import SchedulerFactory
 from max.pipelines.lib.request_text import retrieve_input_text
-from max.pipelines.modeling.types import PipelineTokenizer
+from max.pipelines.modeling.types import PipelineTokenizer, TokenIds
 from max.pipelines.request import OpenResponsesRequest
 from max.pipelines.request.open_responses import InputImageContent
 from max.pipelines.request.provider_options import (
@@ -643,11 +643,7 @@ class PixelGenerationTokenizer(
 
         return encoded_prompt, attention_mask_flat
 
-    async def decode(
-        self,
-        encoded: tuple[npt.NDArray[np.int64], npt.NDArray[np.bool_]],
-        **kwargs,
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Decodes token arrays to text (not implemented for this tokenizer)."""
         raise NotImplementedError(
             "Decoding is not implemented for this tokenizer."

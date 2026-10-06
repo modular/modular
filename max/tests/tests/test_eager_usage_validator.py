@@ -27,8 +27,8 @@ from max.engine import InferenceSession
 from max.experimental import functional as F
 from max.experimental import realization_context
 from max.experimental.compilation import CompiledCallable, compile
-from max.experimental.sharding import NoReshard, mode
-from max.experimental.sharding.mode import current_solver
+from max.experimental.sharding import Partial, Replicated, auto_reshard
+from max.experimental.sharding._auto_reshard import _AUTO_RESHARD_POLICY
 from max.experimental.tensor import Tensor
 from max.experimental.validation import EagerUsageValidator
 from max.graph import DeviceRef, Graph, TensorType
@@ -308,14 +308,17 @@ def test_a_batched_region_counts_once(warnings: _ValidatorLog) -> None:
     assert "2 eager execution(s)" in warnings.messages[0]
 
 
-def test_a_scope_leaves_the_sharding_solver_alone() -> None:
+def test_a_scope_leaves_the_reshard_policy_alone() -> None:
     """Entering a scope must not change what a distributed model compiles to."""
-    outside = current_solver()
+    outside = _AUTO_RESHARD_POLICY.get()
     with EagerUsageValidator():
-        assert type(current_solver()) is type(outside)
-    with mode(NoReshard()):
+        assert _AUTO_RESHARD_POLICY.get() == outside
+    with auto_reshard({(Partial, Replicated)}, mode="raise"):
         with EagerUsageValidator():
-            assert isinstance(current_solver(), NoReshard)
+            assert _AUTO_RESHARD_POLICY.get() == (
+                frozenset({(Partial, Replicated)}),
+                "raise",
+            )
 
 
 def test_a_host_side_item_is_not_a_transfer() -> None:

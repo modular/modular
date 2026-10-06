@@ -15,6 +15,7 @@ from std.collections import Array
 from layout.layout_tensor import LayoutTensorIter
 from layout import *
 from layout._fillers import arange
+from layout.tile_layout import Layout as TileLayout
 from layout.layout import (
     MakeLayoutList,
     blocked_product,
@@ -98,12 +99,12 @@ def test_layout_basic() raises:
 
     # testing col major
     assert_equal(
-        Layout.col_major[3](IndexList[3](3, 64, 128)),
+        Layout.col_major[3]((3, 64, 128)),
         Layout(IntTuple(3, 64, 128), IntTuple(1, 3, 192)),
     )
 
     assert_equal(
-        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 64, 128)),
+        Layout.col_major[3]((UNKNOWN_VALUE, 64, 128)),
         Layout(
             IntTuple(UNKNOWN_VALUE, 64, 128),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -117,7 +118,7 @@ def test_layout_basic() raises:
     )
 
     assert_equal(
-        Layout.col_major[3](IndexList[3](UNKNOWN_VALUE, 8, 16)),
+        Layout.col_major[3]((UNKNOWN_VALUE, 8, 16)),
         Layout(
             IntTuple(UNKNOWN_VALUE, 8, 16),
             IntTuple(1, UNKNOWN_VALUE, UNKNOWN_VALUE),
@@ -898,23 +899,19 @@ def test_iter() raises:
 def test_arange_nested_layout() raises:
     """Test arange function with nested layout structures."""
     # Test nested layout with tile structure similar to GPU shared memory tiles
-    var nested_tensor = LayoutTensor[
-        .float32,
-        Layout(
-            IntTuple(IntTuple(16, 8), IntTuple(32, 2)),
-            IntTuple(IntTuple(32, 1024), IntTuple(1, 512)),
+    var nested_storage = Array[Float32, 128 * 64](fill={})
+    var nested_tensor = TileTensor(
+        nested_storage,
+        TileLayout(
+            Coord(coord[16, 8], coord[32, 2]),
+            Coord(coord[32, 1024], coord[1, 512]),
         ),
-        MutAnyOrigin,
-        alignment=16,
-    ].stack_allocation()
+    )
     arange(nested_tensor)
 
     # Test simple 2D layout with row-major for comparison
-    var simple_tensor = LayoutTensor[
-        .float32,
-        Layout.row_major(4, 4),
-        MutAnyOrigin,
-    ].stack_allocation()
+    var simple_storage = Array[Float32, 16](fill={})
+    var simple_tensor = TileTensor(simple_storage, row_major[4, 4]())
     arange(simple_tensor)
 
     # Verify values are filled in logical order (row-major)
@@ -928,11 +925,8 @@ def test_arange_nested_layout() raises:
     assert_equal(simple_tensor[1, 3], 7.0)
 
     # Test column-major layout
-    var col_major_tensor = LayoutTensor[
-        .float32,
-        Layout.col_major(4, 4),
-        MutAnyOrigin,
-    ].stack_allocation()
+    var col_major_storage = Array[Float32, 16](fill={})
+    var col_major_tensor = TileTensor(col_major_storage, col_major[4, 4]())
     arange(col_major_tensor)
 
     # For column-major, values should still be in logical row-major order

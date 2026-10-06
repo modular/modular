@@ -266,8 +266,7 @@ def test_dispatch[
         run_dispatch_async_wait(ctx)
 
     @inline(.always)
-    @__parameter
-    def clean_up(ctx: DeviceContext) raises:
+    def clean_up(ctx: DeviceContext) raises {imm}:
         ctx.enqueue_memset(atomic_counter, Int32(0))
 
     for i in range(num_iters):
@@ -472,7 +471,7 @@ def main() raises:
     comptime test_gpu_counts = (2, 4, 8)
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
-        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 

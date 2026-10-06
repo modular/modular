@@ -25,7 +25,6 @@ from max.experimental.nn.module import module_dataclass
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Sharded,
 )
 from max.experimental.tensor import Tensor
@@ -51,6 +50,10 @@ class QTensor(Module[[], None]):
     @property
     def local_shards(self) -> tuple[Self, ...]:
         raise NotImplementedError("QTensor does not support local_shards")
+
+    @property
+    def mesh(self) -> DeviceMesh:
+        raise NotImplementedError("mesh is not implemented for QTensor")
 
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
         raise NotImplementedError("to() is not implemented for QTensor")
@@ -116,7 +119,7 @@ class FP8BlockTensor(QTensor):
             leaves are each distributed ``Sharded(axis=axis)`` across
             ``mesh``.
         """
-        mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
+        mapping = DeviceMapping(mesh, (Sharded(axis=axis),))
         return FP8BlockTensor(
             data=self.data.to(mapping),
             weight_scale_inv=self.weight_scale_inv.to(mapping),
@@ -229,7 +232,7 @@ class NVFP4Tensor(QTensor):
 
     def shard(self, axis: int, mesh: DeviceMesh) -> NVFP4Tensor:
         """Co-shard ``data``/``weight_scale`` along ``axis`` onto ``mesh``."""
-        mapping = PlacementMapping(mesh, (Sharded(axis=axis),))
+        mapping = DeviceMapping(mesh, (Sharded(axis=axis),))
         return NVFP4Tensor(
             data=self.data.to(mapping),
             weight_scale=self.weight_scale.to(mapping),

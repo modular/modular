@@ -42,33 +42,33 @@ class TestUnaryPassthrough:
     def test_replicated(self) -> None:
         layout = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(unary_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_sharded(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(unary_rule, layout)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_sharded_axis1(self) -> None:
         layout = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(unary_rule, layout)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_partial(self) -> None:
         """P input: cost model resolves to Sharded (reduce_scatter, 1x) over R (allreduce, 2x)."""
         layout = _layout(M(MESH_1D, P), (4, 8))
         _, (out,) = pick(unary_rule, layout)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_2d_mesh(self) -> None:
         layout = _layout(M(MESH_2D, S(0), R), (4, 8))
         _, (out,) = pick(unary_rule, layout)
-        assert out.to_placements() == (S(0), R)
+        assert out.placements == (S(0), R)
 
     def test_2d_mesh_both_sharded(self) -> None:
         layout = _layout(M(MESH_2D, S(0), S(1)), (4, 8))
         _, (out,) = pick(unary_rule, layout)
-        assert out.to_placements() == (S(0), S(1))
+        assert out.placements == (S(0), S(1))
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -81,32 +81,33 @@ class TestBinaryElementwise:
         lhs = _layout(M(MESH_1D, R), (4, 8))
         rhs = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(binary_rule, lhs, rhs)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_both_sharded_same(self) -> None:
         lhs = _layout(M(MESH_1D, S(0)), (4, 8))
         rhs = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(binary_rule, lhs, rhs)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
-    def test_sharded_plus_replicated(self) -> None:
+    def test_sharded_plus_replicated_slices_the_replicated_side(self) -> None:
         lhs = _layout(M(MESH_1D, S(0)), (4, 8))
         rhs = _layout(M(MESH_1D, R), (4, 8))
-        _, (out,) = pick(binary_rule, lhs, rhs)
-        assert out.to_placements() == (S(0),)
+        ins, (out,) = pick(binary_rule, lhs, rhs)
+        assert [m.placements for m in ins] == [(S(0),), (S(0),)]
+        assert out.placements == (S(0),)
 
     def test_replicated_plus_sharded(self) -> None:
         lhs = _layout(M(MESH_1D, R), (4, 8))
         rhs = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(binary_rule, lhs, rhs)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_incompatible_sharded_aligns_to_first(self) -> None:
         """Mismatched shards: cost model aligns rhs to lhs's S(0) via cheapest plan."""
         lhs = _layout(M(MESH_1D, S(0)), (4, 8))
         rhs = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(binary_rule, lhs, rhs)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_broadcast_rhs_lower_rank(self) -> None:
         """(4, 8) S(1) + (8,): rhs's only axis trailing-aligns to output axis 1."""
@@ -115,20 +116,20 @@ class TestBinaryElementwise:
         lhs = _layout(M(MESH_1D, S(1)), (4, 8))
         rhs = _layout(M(MESH_1D, R), (8,))
         _, (out,) = pick(binary_rule, lhs, rhs)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_broadcast_lhs_lower_rank(self) -> None:
         """(8,) + (4, 8) S(1): lhs's only axis trailing-aligns to output axis 1."""
         lhs = _layout(M(MESH_1D, R), (8,))
         rhs = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(binary_rule, lhs, rhs)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_2d_mesh(self) -> None:
         lhs = _layout(M(MESH_2D, S(0), R), (4, 8))
         rhs = _layout(M(MESH_2D, R, S(1)), (4, 8))
         _, (out,) = pick(binary_rule, lhs, rhs)
-        assert out.to_placements() == (S(0), S(1))
+        assert out.placements == (S(0), S(1))
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -142,35 +143,35 @@ class TestTernaryElementwise:
         b = _layout(M(MESH_1D, R), (4, 8))
         c = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(ternary_rule, a, b, c)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_all_sharded_same(self) -> None:
         a = _layout(M(MESH_1D, S(0)), (4, 8))
         b = _layout(M(MESH_1D, S(0)), (4, 8))
         c = _layout(M(MESH_1D, S(0)), (4, 8))
         _, (out,) = pick(ternary_rule, a, b, c)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_cond_sharded_values_replicated(self) -> None:
         a = _layout(M(MESH_1D, S(0)), (4, 8))
         b = _layout(M(MESH_1D, R), (4, 8))
         c = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(ternary_rule, a, b, c)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_values_sharded_cond_replicated(self) -> None:
         a = _layout(M(MESH_1D, R), (4, 8))
         b = _layout(M(MESH_1D, S(1)), (4, 8))
         c = _layout(M(MESH_1D, S(1)), (4, 8))
         _, (out,) = pick(ternary_rule, a, b, c)
-        assert out.to_placements() == (S(1),)
+        assert out.placements == (S(1),)
 
     def test_one_value_sharded(self) -> None:
         a = _layout(M(MESH_1D, R), (4, 8))
         b = _layout(M(MESH_1D, S(0)), (4, 8))
         c = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(ternary_rule, a, b, c)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_incompatible_aligns_to_first(self) -> None:
         """Mismatched shards: cost model aligns to cheapest valid plan (S(0))."""
@@ -178,4 +179,4 @@ class TestTernaryElementwise:
         b = _layout(M(MESH_1D, S(1)), (4, 8))
         c = _layout(M(MESH_1D, R), (4, 8))
         _, (out,) = pick(ternary_rule, a, b, c)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)

@@ -46,7 +46,7 @@ from std.benchmark import (
 from max.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
-from layout import Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 import linalg.matmul.vendor.blas as vendor_blas
 from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import (
@@ -133,13 +133,13 @@ def verify_mxfp4_matmul[
     ctx.synchronize()
 
     var c_ref = ctx.enqueue_create_buffer[.bfloat16](M * N)
-    var c_ref_lt = LayoutTensor[.bfloat16, Layout.row_major(N, N)](c_ref)
+    var c_ref_tt = TileTensor(c_ref, row_major((M, Idx[N])))
 
     vendor_blas.matmul(
         ctx,
-        c_ref_lt,
-        a_fp8_tt.to_layout_tensor(),
-        b_fp8_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_fp8_tt,
+        b_fp8_tt,
         c_row_major=True,
         transpose_b=True,
     )

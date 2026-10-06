@@ -567,7 +567,7 @@ def test_a_small_row_addressed_page_does_not_widen_the_paged_table() -> None:
     assert row_blocks > paged_blocks
 
     # Replica 0's staged page table, as the stager declares it.
-    declared = mgr._stager._declared[f"0/{attn_id}"].descriptor
+    declared = mgr._stager._slots[f"0/{attn_id}"].descriptor
     assert declared.max_shape == (
         max_batch_size,
         padded_lut_cols(paged_blocks),
@@ -609,8 +609,17 @@ def test_a_connector_keeps_the_sliding_window_group(
     }
 
 
-def test_a_connector_beside_a_state_is_refused() -> None:
-    """A connector cannot extend a hit past the state's published num_blocks."""
+def test_a_connector_beside_a_state_is_handed_the_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The connector is handed the state leaf and its pages."""
+    seen: dict[str, object] = {}
+
+    def fake_create_connector(**kwargs: object) -> NullConnector:
+        seen.update(kwargs)
+        return NullConnector()
+
+    monkeypatch.setattr(jenga_mod, "create_connector", fake_create_connector)
     attn = make_leaf(n_kv_heads=1, page_size=4)
     attn.enable_prefix_caching = True
     attn.kv_connector_config = KVConnectorConfig(
@@ -630,8 +639,15 @@ def test_a_connector_beside_a_state_is_refused() -> None:
     )
     params = MultiKVCacheParams.from_params({"attn": attn, "state": state})
 
-    with pytest.raises(ValueError, match="incompatible with KVConnector"):
-        create_manager(params, num_huge_blocks=16, max_batch_size=4)
+    mgr = create_manager(params, num_huge_blocks=16, max_batch_size=4)
+
+    assert mgr._connector is not None
+    leaves = seen["leaves"]
+    assert isinstance(leaves, dict)
+    assert leaves["lin/conv"].is_recurrent()
+    memory = seen["replica_kv_memory"]
+    assert isinstance(memory, list)
+    assert "lin/conv" in memory[0], "the state pool is not offload-ready"
 
 
 def _run_once(mgr: JengaKVCacheManager, ctx: TextContext) -> None:
@@ -869,3 +885,96 @@ def test_an_attention_only_tree_asks_for_no_alignment_either_way() -> None:
             max_batch_size=4,
         )
         assert mgr.chunk_alignment_tokens == 0
+
+
+# ===--------------------------------------------------------------------=== #
+# Sizing a slab for a full batch
+# ===--------------------------------------------------------------------=== #
+
+PLENTY = 1 << 30
+SCRATCH_LEAF = "lin/ring"
+
+
+def make_budget_params(*, caching: bool) -> MultiKVCacheParams:
+    """An attention leaf beside a state and a scratch leaf."""
+    attn = make_leaf(n_kv_heads=1, page_size=4)
+    attn.enable_prefix_caching = caching
+    state = RecurrentStateParams(
+        devices=attn.devices,
+        data_parallel_degree=attn.data_parallel_degree,
+        regions=(
+            RecurrentStateRegion(
+                leaf_id=STATE_LEAF,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+            ),
+            RecurrentStateRegion(
+                leaf_id=SCRATCH_LEAF,
+                num_layers=1,
+                row_shape=(4,),
+                dtype=DType.float32,
+                scratch=True,
+            ),
+        ),
+    )
+    return MultiKVCacheParams.from_params({"attn": attn, "state": state})
+
+
+@pytest.mark.parametrize("caching", [True, False])
+def test_a_slab_of_memory_size_admits_the_batch_it_was_sized_for(
+    caching: bool,
+) -> None:
+    """Checks the size holds every leaf of a full batch, states included."""
+    params = make_budget_params(caching=caching)
+    max_batch_size = 4
+    size = JengaKVCacheManager.memory_size(
+        params, PLENTY, max_batch_size=max_batch_size, max_seq_len=16
+    )
+    assert size < PLENTY, "the batch must bind before the budget does"
+
+    mgr = JengaKVCacheManager.create(
+        params=params, available_bytes=size, max_batch_size=max_batch_size
+    )
+    for _ in range(max_batch_size):
+        ctx = make_ctx(16)
+        mgr.claim(ctx)
+        mgr.alloc(ctx)
+
+
+def test_memory_size_counts_the_states() -> None:
+    """Checks the state and scratch leaves cost the slab more than attention."""
+    params = make_budget_params(caching=True)
+    attn = params.children["attn"]
+    assert isinstance(attn, MHAKVCacheParams)
+
+    def size(p: KVCacheParamInterface) -> int:
+        return JengaKVCacheManager.memory_size(
+            p, PLENTY, max_batch_size=4, max_seq_len=16
+        )
+
+    assert size(params) > size(attn)
+
+
+def test_memory_size_never_exceeds_the_budget() -> None:
+    """Checks a batch too big for the budget gets the whole budget."""
+    params = make_budget_params(caching=True)
+    small = JengaKVCacheManager.memory_size(
+        params, PLENTY, max_batch_size=1, max_seq_len=4
+    )
+
+    assert (
+        JengaKVCacheManager.memory_size(
+            params, small, max_batch_size=64, max_seq_len=4096
+        )
+        == small
+    )
+
+
+def test_memory_size_raises_when_the_budget_holds_no_block() -> None:
+    params = make_budget_params(caching=True)
+
+    with pytest.raises(RuntimeError, match="Insufficient cache memory"):
+        JengaKVCacheManager.memory_size(
+            params, 1, max_batch_size=1, max_seq_len=4
+        )

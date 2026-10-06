@@ -199,9 +199,7 @@ class Idefics3TextModel(
         )
 
         if self.embedding_multiplier != 1.0:
-            h = h * F.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         # Run through transformer layers.
         for idx, layer in enumerate(self.layers):

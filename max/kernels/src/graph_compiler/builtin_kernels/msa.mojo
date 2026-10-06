@@ -23,7 +23,7 @@ index-K head.  Two ops:
 
 Both ops are dual-arch, so the dead arch's kernels never codegen (the SM100
 tcgen05/TMA prefill cannot lower on gfx950, and the AMD MFMA path cannot lower
-on SM100).  The attention op forks here, on `has_amd_gpu_accelerator()`; its AMD
+on SM100).  The attention op forks here, on `is_amd_gpu()`; its AMD
 prefill `plan` is the arch-neutral `msa_sm100_prefill_plan` (host sizing +
 buffer alloc only -- no SM100 device kernel), shared by both arches, so only the
 pure-device run differs.  The indexer op forks at both levels: `USE_AMD_MTP_SCORER`
@@ -86,7 +86,6 @@ from std.collections import OptionalReg
 from max.gpu.host import DeviceContext, DeviceBuffer
 from std.math import ceildiv, min
 from std.memory import UnsafePointer
-from std.sys.info import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from layout import row_major, TileTensor, Coord
 from layout.tile_tensor import row_major as tt_row_major
@@ -310,7 +309,7 @@ struct Struct_msa_indexer_ragged_paged:
         # in_step_q, block_size)` never exceeds this `max_num_blocks` (which also
         # sizes the `score` scratch); if that cache invariant broke, `score`
         # would be under-sized. The decode top-k kernels `debug_assert` it.
-        var extra_keys = 0 if has_amd_gpu_accelerator() else Int(
+        var extra_keys = 0 if ctx.target.is_amd_gpu() else Int(
             k_cache.max_prompt_length()
         )
         var max_num_blocks = ceildiv(
@@ -325,7 +324,7 @@ struct Struct_msa_indexer_ragged_paged:
         # assert would pass. `topk` is unconstrained -- the MTP route selects
         # with the same unbounded `block_select_topk` as single-token decode.
         comptime MTP_DECODE_OK = (
-            has_nvidia_gpu_accelerator()
+            ctx.target.is_nvidia_gpu()
             and idx_head_dim == 128
             and block_size == 128
             and (type_of(k_operand).page_size % block_size) == 0
@@ -447,7 +446,7 @@ struct Struct_msa_indexer_ragged_paged:
             # each K vector once and reuses it across the compile-time query
             # width, so the whole draft window costs one pass over index-K.
             comptime USE_AMD_MTP_SCORER = (
-                has_amd_gpu_accelerator()
+                ctx.target.is_amd_gpu()
                 and num_index_heads == 1
                 and idx_head_dim == 128
                 and block_size == 128
@@ -719,7 +718,7 @@ struct Struct_msa_attention_ragged_paged:
             )
             var d_indices_tt = TileTensor(
                 d_indices.to_layout_tensor().ptr,
-                row_major(Coord(d_indices.to_layout_tensor().size())),
+                row_major(d_indices.to_layout_tensor().size()),
             ).as_imm()
 
             # `np` is owned by the decode entry (computed from batch_size,
@@ -734,7 +733,7 @@ struct Struct_msa_attention_ragged_paged:
             # AMD and SM100 take the same call signature; the two arms differ
             # only in kernel name.  No `valid_key` (the indexer's trailing
             # block is whole; a sub-BN partial would need per-batch clamp).
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 msa_amd_decode_dispatch[
                     config=config,
                     group=group,
@@ -812,7 +811,7 @@ struct Struct_msa_attention_ragged_paged:
             )
             var d_indices_tt = TileTensor(
                 d_indices.to_layout_tensor().ptr,
-                row_major(Coord(d_indices.to_layout_tensor().size())),
+                row_major(d_indices.to_layout_tensor().size()),
             ).as_imm()
             var topk_tokens = topk * page_size
             var batch = Int(input_row_offsets.dim_size[0]()) - 1
@@ -821,7 +820,7 @@ struct Struct_msa_attention_ragged_paged:
             # matched runtime length per branch.
             comptime for n in range(2, MAX_SPEC_DRAFT + 1):
                 if max_q_len == n:
-                    comptime if has_amd_gpu_accelerator():
+                    comptime if ctx.target.is_amd_gpu():
                         msa_amd_decode_dispatch[
                             config=config,
                             group=group,
@@ -931,7 +930,7 @@ struct Struct_msa_attention_ragged_paged:
             # differs: AMD chains CSR-build -> block-major fwd -> combine;
             # SM100 runs its tcgen05 path.  Both take the identical signature;
             # the comptime branch keeps the dead arch's kernels from codegen'ing.
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 msa_amd_prefill_run[
                     config=config,
                     group=group,
@@ -1057,7 +1056,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
             scale: QK scale.
             ctx: Device context.
         """
-        comptime if not has_amd_gpu_accelerator():
+        comptime if not ctx.target.is_amd_gpu():
             raise Error(
                 "mo.msa.attention.ragged.paged.mxfp8 is implemented for AMD"
                 " gfx950 only; use mo.msa.attention.ragged.paged elsewhere"
@@ -1126,7 +1125,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                 )
                 var d_indices_tt = TileTensor(
                     d_indices.to_layout_tensor().ptr,
-                    row_major(Coord(d_indices.to_layout_tensor().size())),
+                    row_major(d_indices.to_layout_tensor().size()),
                 ).as_imm()
 
                 msa_amd_decode_dispatch[
@@ -1170,7 +1169,7 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                 )
                 var d_indices_tt = TileTensor(
                     d_indices.to_layout_tensor().ptr,
-                    row_major(Coord(d_indices.to_layout_tensor().size())),
+                    row_major(d_indices.to_layout_tensor().size()),
                 ).as_imm()
                 var topk_tokens = topk * page_size
                 var batch = Int(input_row_offsets.dim_size[0]()) - 1
@@ -1374,7 +1373,7 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
             scale: QK scale.
             ctx: Device context.
         """
-        comptime if not has_amd_gpu_accelerator():
+        comptime if not ctx.target.is_amd_gpu():
             raise Error(
                 "mo.msa.attention.ragged.paged.mxfp6 is implemented for AMD"
                 " gfx950 only; use mo.msa.attention.ragged.paged elsewhere"
@@ -1445,7 +1444,7 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
                 )
                 var d_indices_tt = TileTensor(
                     d_indices.to_layout_tensor().ptr,
-                    row_major(Coord(d_indices.to_layout_tensor().size())),
+                    row_major(d_indices.to_layout_tensor().size()),
                 ).as_imm()
 
                 msa_amd_decode_dispatch[
@@ -1486,7 +1485,7 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
                 )
                 var d_indices_tt = TileTensor(
                     d_indices.to_layout_tensor().ptr,
-                    row_major(Coord(d_indices.to_layout_tensor().size())),
+                    row_major(d_indices.to_layout_tensor().size()),
                 ).as_imm()
                 var topk_tokens = topk * page_size
                 var batch = Int(input_row_offsets.dim_size[0]()) - 1

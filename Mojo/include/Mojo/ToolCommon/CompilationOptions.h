@@ -219,6 +219,9 @@ public:
   /// text (.ll) for all targets.
   /// --emit=asm and --emit=llvm are mutually exclusive, so only one value is
   /// ever active at a time.
+  /// A kind set here is produced in addition to the kind each kernel embeds,
+  /// so the toolchain behind that embedded kind still runs even when the host
+  /// output is discarded.
   EmitAs offloadOutputKind = EmitAs::ASM;
   std::string searchPaths;
   SmallVector<std::string> extraSearchPaths;

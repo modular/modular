@@ -40,7 +40,7 @@ from max.gpu.host.info import H100
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.sync import named_barrier
-from layout import IntTuple, Layout, LayoutTensor, TensorEngine
+from layout import Coord, IntTuple, Layout, LayoutTensor, TensorEngine
 from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
@@ -52,6 +52,7 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     PipelineState,
     SharedMemBarrier,
+    TMATensorTile,
 )
 from nn.attention.mha_operand import kv_sub_tile_rows as _kv_sub_tile_rows
 from nn.attention.gpu.nvidia.sm90.attention import (
@@ -67,8 +68,8 @@ from nn.attention.gpu.nvidia.sm90.attention import (
     output_reg_to_smem,
     Pack,
     produce,
-    q_tma,
-    QTMATile,
+    q_tma_fused,
+    q_tma_prefill,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -238,25 +239,6 @@ def mha_sm90_dispatch[
     comptime num_scheduler_heads = q_num_heads // group if decoding else q_num_heads
     # if decoding,
     comptime scheduler_tile_shape = 1 if decoding else BM
-    var q_tma_op = rebind[
-        QTMATile[
-            KVType.dtype,
-            swizzle_mode,
-            BM=new_config.block_m(),
-            depth=new_config.depth,
-            group=group,
-            decoding=_is_decoding[MaxPromptLenType](),
-        ]
-    ](
-        q_tma[
-            swizzle_mode,
-            BM=BM,
-            depth=new_config.depth,
-            q_num_heads=new_config.num_heads,
-            group=group,
-            decoding=decoding,
-        ](ctx, q, num_rows_q)
-    )
     comptime kv_sub_BN = _kv_sub_tile_rows(
         new_config.block_n(), KVType.page_size
     )
@@ -273,143 +255,325 @@ def mha_sm90_dispatch[
         BK=new_config.padded_depth,
     ](ctx)
 
-    # materialize scheduler, call max prompt len
-    comptime if persistent == 0:
-        comptime SchedulerType = TransientScheduler[
-            UInt32(scheduler_tile_shape),
-            UInt32(num_scheduler_heads),
-            flip_prompt_idx=not decoding
-            and MaskType.get_type_name() == "CausalMask",
-        ]
-        var scheduler: SchedulerType = SchedulerType()
-        _mha_sm90_sink_dispatch[
-            SchedulerType=SchedulerType,
-            KVLUTType=KVType,
-            output_type=output_type,
-            MaxSeqLenType=MaxPromptLenType,
-            PartitionType=PartitionType,
-            MaskType=MaskType,
-            KVRowOffsetsEngine=KVRowOffsetsEngine,
-            SinkEngine=SinkEngine,
-            config=new_config,
-            group=group,
-            ragged=ragged,
-            sink=sink,
-            _is_cache_length_accurate=_is_cache_length_accurate,
+    # KGEN cannot fold a Coord-valued conditional, so the rank-3 (prefill)
+    # vs rank-4 (decoding) Q tile choice must be made by spelling one
+    # alias per `comptime if` branch. The Q descriptor shape threads into
+    # the downstream dispatch chain via `q_tma_op.tile_shape` /
+    # `q_tma_op.desc_shape` so the rank choice is invisible to the
+    # rank-agnostic dispatch signatures. The launch body is inlined here
+    # (rather than wrapped in a local `launch_q` closure) so that all the
+    # captured locals keep direct, unambiguous capture conventions.
+    comptime if decoding:
+        var q_tma_op = q_tma_fused[
+            dtype=KVType.dtype,
             swizzle_mode=swizzle_mode,
-        ](
-            scheduler,
-            q_tma_op,
-            k_tma_op,
-            v_tma_op,
-            output,
-            k,
-            scale,
-            batch_size,
-            max_prompt_len_arg,
-            max_cache_valid_length,
-            valid_length,
-            kv_input_row_offsets,
-            rebind[
-                OptionalReg[ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]]
-            ](sink_weights),
-            partition,
-            mask_functor,
-            ctx,
-        )
-    elif persistent == 2:
-        comptime SchedulerType = TileScheduler[
-            UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
-        ]
-        var scheduler: SchedulerType = SchedulerType()
-        _mha_sm90_sink_dispatch[
-            SchedulerType=SchedulerType,
-            KVLUTType=KVType,
-            output_type=output_type,
-            MaxSeqLenType=MaxPromptLenType,
-            PartitionType=PartitionType,
-            MaskType=MaskType,
-            KVRowOffsetsEngine=KVRowOffsetsEngine,
-            SinkEngine=SinkEngine,
-            config=new_config,
+            BM=BM,
+            depth=new_config.depth,
+            q_num_heads=new_config.num_heads,
             group=group,
-            ragged=ragged,
-            sink=sink,
-            _is_cache_length_accurate=_is_cache_length_accurate,
-            swizzle_mode=swizzle_mode,
-        ](
-            scheduler,
-            q_tma_op,
-            k_tma_op,
-            v_tma_op,
-            output,
-            k,
-            scale,
-            batch_size,
-            max_prompt_len_arg,
-            max_cache_valid_length,
-            valid_length,
-            kv_input_row_offsets,
-            rebind[
-                OptionalReg[ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]]
-            ](sink_weights),
-            partition,
-            mask_functor,
-            ctx,
-        )
+            decoding=True,
+        ](ctx, q, num_rows_q)
+        comptime if persistent == 0:
+            comptime SchedulerType = TransientScheduler[
+                UInt32(scheduler_tile_shape),
+                UInt32(num_scheduler_heads),
+                flip_prompt_idx=not decoding
+                and MaskType.get_type_name() == "CausalMask",
+            ]
+            var scheduler: SchedulerType = SchedulerType()
+            _mha_sm90_sink_dispatch[
+                q_tma_op.tile_shape,
+                q_tma_op.desc_shape,
+                SchedulerType=SchedulerType,
+                KVLUTType=KVType,
+                output_type=output_type,
+                MaxSeqLenType=MaxPromptLenType,
+                PartitionType=PartitionType,
+                MaskType=MaskType,
+                KVRowOffsetsEngine=KVRowOffsetsEngine,
+                SinkEngine=SinkEngine,
+                config=new_config,
+                group=group,
+                ragged=ragged,
+                sink=sink,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                swizzle_mode=swizzle_mode,
+            ](
+                scheduler,
+                q_tma_op,
+                k_tma_op,
+                v_tma_op,
+                output,
+                k,
+                scale,
+                batch_size,
+                max_prompt_len_arg,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                rebind[
+                    OptionalReg[
+                        ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]
+                    ]
+                ](sink_weights),
+                partition,
+                mask_functor,
+                ctx,
+            )
+        elif persistent == 2:
+            comptime SchedulerType = TileScheduler[
+                UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
+            ]
+            var scheduler: SchedulerType = SchedulerType()
+            _mha_sm90_sink_dispatch[
+                q_tma_op.tile_shape,
+                q_tma_op.desc_shape,
+                SchedulerType=SchedulerType,
+                KVLUTType=KVType,
+                output_type=output_type,
+                MaxSeqLenType=MaxPromptLenType,
+                PartitionType=PartitionType,
+                MaskType=MaskType,
+                KVRowOffsetsEngine=KVRowOffsetsEngine,
+                SinkEngine=SinkEngine,
+                config=new_config,
+                group=group,
+                ragged=ragged,
+                sink=sink,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                swizzle_mode=swizzle_mode,
+            ](
+                scheduler,
+                q_tma_op,
+                k_tma_op,
+                v_tma_op,
+                output,
+                k,
+                scale,
+                batch_size,
+                max_prompt_len_arg,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                rebind[
+                    OptionalReg[
+                        ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]
+                    ]
+                ](sink_weights),
+                partition,
+                mask_functor,
+                ctx,
+            )
+        else:
+            comptime SchedulerType = QueuedTileScheduler[
+                UInt32(scheduler_tile_shape),
+                UInt32(num_scheduler_heads),
+                decoding=decoding,
+            ]
+            var schedule = ctx.enqueue_create_buffer[.uint32](1)
+            schedule.enqueue_fill(UInt32(H100.sm_count))
+            ctx.synchronize()
+            var scheduler: SchedulerType = SchedulerType(
+                schedule.unsafe_ptr().as_unsafe_any_origin()
+            )
+            _mha_sm90_sink_dispatch[
+                q_tma_op.tile_shape,
+                q_tma_op.desc_shape,
+                SchedulerType=SchedulerType,
+                KVLUTType=KVType,
+                output_type=output_type,
+                MaxSeqLenType=MaxPromptLenType,
+                PartitionType=PartitionType,
+                MaskType=MaskType,
+                KVRowOffsetsEngine=KVRowOffsetsEngine,
+                SinkEngine=SinkEngine,
+                config=new_config,
+                group=group,
+                ragged=ragged,
+                sink=sink,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                swizzle_mode=swizzle_mode,
+            ](
+                scheduler,
+                q_tma_op,
+                k_tma_op,
+                v_tma_op,
+                output,
+                k,
+                scale,
+                batch_size,
+                max_prompt_len_arg,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                rebind[
+                    OptionalReg[
+                        ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]
+                    ]
+                ](sink_weights),
+                partition,
+                mask_functor,
+                ctx,
+            )
+            _ = schedule
     else:
-        comptime SchedulerType = QueuedTileScheduler[
-            UInt32(scheduler_tile_shape),
-            UInt32(num_scheduler_heads),
-            decoding=decoding,
-        ]
-        var schedule = ctx.enqueue_create_buffer[.uint32](1)
-        schedule.enqueue_fill(UInt32(H100.sm_count))
-        ctx.synchronize()
-        var scheduler: SchedulerType = SchedulerType(
-            schedule.unsafe_ptr().as_unsafe_any_origin()
-        )
-        _mha_sm90_sink_dispatch[
-            SchedulerType=SchedulerType,
-            KVLUTType=KVType,
-            output_type=output_type,
-            MaxSeqLenType=MaxPromptLenType,
-            PartitionType=PartitionType,
-            MaskType=MaskType,
-            KVRowOffsetsEngine=KVRowOffsetsEngine,
-            SinkEngine=SinkEngine,
-            config=new_config,
-            group=group,
-            ragged=ragged,
-            sink=sink,
-            _is_cache_length_accurate=_is_cache_length_accurate,
+        var q_tma_op = q_tma_prefill[
+            dtype=KVType.dtype,
             swizzle_mode=swizzle_mode,
-        ](
-            scheduler,
-            q_tma_op,
-            k_tma_op,
-            v_tma_op,
-            output,
-            k,
-            scale,
-            batch_size,
-            max_prompt_len_arg,
-            max_cache_valid_length,
-            valid_length,
-            kv_input_row_offsets,
-            rebind[
-                OptionalReg[ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]]
-            ](sink_weights),
-            partition,
-            mask_functor,
-            ctx,
-        )
-        _ = schedule
+            BM=BM,
+            depth=new_config.depth,
+            q_num_heads=new_config.num_heads,
+        ](ctx, q, num_rows_q)
+        comptime if persistent == 0:
+            comptime SchedulerType = TransientScheduler[
+                UInt32(scheduler_tile_shape),
+                UInt32(num_scheduler_heads),
+                flip_prompt_idx=not decoding
+                and MaskType.get_type_name() == "CausalMask",
+            ]
+            var scheduler: SchedulerType = SchedulerType()
+            _mha_sm90_sink_dispatch[
+                q_tma_op.tile_shape,
+                q_tma_op.desc_shape,
+                SchedulerType=SchedulerType,
+                KVLUTType=KVType,
+                output_type=output_type,
+                MaxSeqLenType=MaxPromptLenType,
+                PartitionType=PartitionType,
+                MaskType=MaskType,
+                KVRowOffsetsEngine=KVRowOffsetsEngine,
+                SinkEngine=SinkEngine,
+                config=new_config,
+                group=group,
+                ragged=ragged,
+                sink=sink,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                swizzle_mode=swizzle_mode,
+            ](
+                scheduler,
+                q_tma_op,
+                k_tma_op,
+                v_tma_op,
+                output,
+                k,
+                scale,
+                batch_size,
+                max_prompt_len_arg,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                rebind[
+                    OptionalReg[
+                        ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]
+                    ]
+                ](sink_weights),
+                partition,
+                mask_functor,
+                ctx,
+            )
+        elif persistent == 2:
+            comptime SchedulerType = TileScheduler[
+                UInt32(scheduler_tile_shape), UInt32(num_scheduler_heads)
+            ]
+            var scheduler: SchedulerType = SchedulerType()
+            _mha_sm90_sink_dispatch[
+                q_tma_op.tile_shape,
+                q_tma_op.desc_shape,
+                SchedulerType=SchedulerType,
+                KVLUTType=KVType,
+                output_type=output_type,
+                MaxSeqLenType=MaxPromptLenType,
+                PartitionType=PartitionType,
+                MaskType=MaskType,
+                KVRowOffsetsEngine=KVRowOffsetsEngine,
+                SinkEngine=SinkEngine,
+                config=new_config,
+                group=group,
+                ragged=ragged,
+                sink=sink,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                swizzle_mode=swizzle_mode,
+            ](
+                scheduler,
+                q_tma_op,
+                k_tma_op,
+                v_tma_op,
+                output,
+                k,
+                scale,
+                batch_size,
+                max_prompt_len_arg,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                rebind[
+                    OptionalReg[
+                        ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]
+                    ]
+                ](sink_weights),
+                partition,
+                mask_functor,
+                ctx,
+            )
+        else:
+            comptime SchedulerType = QueuedTileScheduler[
+                UInt32(scheduler_tile_shape),
+                UInt32(num_scheduler_heads),
+                decoding=decoding,
+            ]
+            var schedule = ctx.enqueue_create_buffer[.uint32](1)
+            schedule.enqueue_fill(UInt32(H100.sm_count))
+            ctx.synchronize()
+            var scheduler: SchedulerType = SchedulerType(
+                schedule.unsafe_ptr().as_unsafe_any_origin()
+            )
+            _mha_sm90_sink_dispatch[
+                q_tma_op.tile_shape,
+                q_tma_op.desc_shape,
+                SchedulerType=SchedulerType,
+                KVLUTType=KVType,
+                output_type=output_type,
+                MaxSeqLenType=MaxPromptLenType,
+                PartitionType=PartitionType,
+                MaskType=MaskType,
+                KVRowOffsetsEngine=KVRowOffsetsEngine,
+                SinkEngine=SinkEngine,
+                config=new_config,
+                group=group,
+                ragged=ragged,
+                sink=sink,
+                _is_cache_length_accurate=_is_cache_length_accurate,
+                swizzle_mode=swizzle_mode,
+            ](
+                scheduler,
+                q_tma_op,
+                k_tma_op,
+                v_tma_op,
+                output,
+                k,
+                scale,
+                batch_size,
+                max_prompt_len_arg,
+                max_cache_valid_length,
+                valid_length,
+                kv_input_row_offsets,
+                rebind[
+                    OptionalReg[
+                        ImmutTileTensor1D[KVType.dtype, Engine=SinkEngine]
+                    ]
+                ](sink_weights),
+                partition,
+                mask_functor,
+                ctx,
+            )
+            _ = schedule
 
 
 # materializes max prompt len, call partition
 @inline(.always)
 def _mha_sm90_sink_dispatch[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     SchedulerType: MHATileScheduler,
     KVLUTType: MHAOperand,
     output_type: DType,
@@ -426,14 +590,7 @@ def _mha_sm90_sink_dispatch[
     swizzle_mode: TensorMapSwizzle,
 ](
     scheduler: SchedulerType,
-    q_tma_op: QTMATile[
-        KVLUTType.dtype,
-        swizzle_mode,
-        BM=config.block_m(),
-        depth=config.depth,
-        group=group,
-        decoding=_is_decoding[MaxSeqLenType](),
-    ],
+    q_tma_op: TMATensorTile[KVLUTType.dtype, q_tile_shape, q_desc_shape],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
@@ -467,6 +624,8 @@ def _mha_sm90_sink_dispatch[
         comptime SinkType = NonNullPointer[KVLUTType.dtype]
         var sink_ptr: SinkType = {sink_weights.value().ptr}
         _mha_sm90_kv_input_row_offset_dispatch[
+            q_tile_shape,
+            q_desc_shape,
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
             output_type=output_type,
@@ -502,6 +661,8 @@ def _mha_sm90_sink_dispatch[
         comptime SinkType = NullPointer[KVLUTType.dtype]
         comptime sink_ptr: SinkType = {}
         _mha_sm90_kv_input_row_offset_dispatch[
+            q_tile_shape,
+            q_desc_shape,
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
             output_type=output_type,
@@ -543,6 +704,8 @@ def _mha_sm90_sink_dispatch[
 
 @inline(.always)
 def _mha_sm90_kv_input_row_offset_dispatch[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -558,14 +721,7 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     swizzle_mode: TensorMapSwizzle,
 ](
     scheduler: SchedulerType,
-    q_tma_op: QTMATile[
-        KVLUTType.dtype,
-        swizzle_mode,
-        BM=config.block_m(),
-        depth=config.depth,
-        group=group,
-        decoding=_is_decoding[MaxSeqLenType](),
-    ],
+    q_tma_op: TMATensorTile[KVLUTType.dtype, q_tile_shape, q_desc_shape],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
@@ -600,6 +756,8 @@ def _mha_sm90_kv_input_row_offset_dispatch[
             kv_input_row_offsets.value().ptr
         }
         _mha_sm90_valid_length_dispatch[
+            q_tile_shape,
+            q_desc_shape,
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
             output_type=output_type,
@@ -634,6 +792,8 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     else:
         var kv_row_offsets: KVRowOffsetsNull = {}
         _mha_sm90_valid_length_dispatch[
+            q_tile_shape,
+            q_desc_shape,
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
             output_type=output_type,
@@ -669,6 +829,8 @@ def _mha_sm90_kv_input_row_offset_dispatch[
 
 @inline(.always)
 def _mha_sm90_valid_length_dispatch[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -684,14 +846,7 @@ def _mha_sm90_valid_length_dispatch[
     swizzle_mode: TensorMapSwizzle,
 ](
     scheduler: SchedulerType,
-    q_tma_op: QTMATile[
-        KVLUTType.dtype,
-        swizzle_mode,
-        BM=config.block_m(),
-        depth=config.depth,
-        group=group,
-        decoding=_is_decoding[MaxSeqLenType](),
-    ],
+    q_tma_op: TMATensorTile[KVLUTType.dtype, q_tile_shape, q_desc_shape],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
@@ -721,6 +876,8 @@ def _mha_sm90_valid_length_dispatch[
         comptime ValidLengthType = NonNullPointer[.uint32]
         var valid_len: ValidLengthType = {valid_length}
         _mha_sm90_enqueue[
+            q_tile_shape,
+            q_desc_shape,
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
             output_type=output_type,
@@ -756,6 +913,8 @@ def _mha_sm90_valid_length_dispatch[
         comptime ValidLengthType = NullPointer[.uint32]
         var valid_len: ValidLengthType = {}
         _mha_sm90_enqueue[
+            q_tile_shape,
+            q_desc_shape,
             SchedulerType=SchedulerType,
             KVLUTType=KVLUTType,
             output_type=output_type,
@@ -791,6 +950,8 @@ def _mha_sm90_valid_length_dispatch[
 
 @inline(.always)
 def _mha_sm90_enqueue[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -806,14 +967,7 @@ def _mha_sm90_enqueue[
     swizzle_mode: TensorMapSwizzle,
 ](
     scheduler: SchedulerType,
-    q_tma_op: QTMATile[
-        KVLUTType.dtype,
-        swizzle_mode,
-        BM=config.block_m(),
-        depth=config.depth,
-        group=group,
-        decoding=_is_decoding[MaxSeqLenType](),
-    ],
+    q_tma_op: TMATensorTile[KVLUTType.dtype, q_tile_shape, q_desc_shape],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
@@ -841,6 +995,8 @@ def _mha_sm90_enqueue[
 ) raises:
     # the pack contains all possibly 0-sized objects
     comptime kernel_sm90 = _mha_sm90[
+        q_tile_shape,
+        q_desc_shape,
         KVLUTType,
         output_type,
         MaskType,
@@ -912,6 +1068,8 @@ def _mha_sm90_enqueue[
     t"sm90_mha_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
 )
 def _mha_sm90[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -926,14 +1084,7 @@ def _mha_sm90[
     PartitionType: MHAPartitionScheme,
     swizzle_mode: TensorMapSwizzle,
 ](
-    q_tma_op: QTMATile[
-        KVLUTType.dtype,
-        swizzle_mode,
-        BM=config.block_m(),
-        depth=config.depth,
-        group=group,
-        decoding=_is_decoding[MaxSeqLenType](),
-    ],
+    q_tma_op: TMATensorTile[KVLUTType.dtype, q_tile_shape, q_desc_shape],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
@@ -1216,12 +1367,11 @@ def _mha_sm90[
     )
 
     # returns `true` if we are done
-    @__parameter
     @inline(.always)
     def advance[
         producer: Bool,
         sync: MHASchedulerSynchronization = MHASchedulerSynchronization.DEFAULT,
-    ](pipeline_idx: UInt32) -> OptionalReg[SeqInfo]:
+    ](pipeline_idx: UInt32) {mut state, imm} -> OptionalReg[SeqInfo]:
         return scheduler.advance[producer=producer, sync=sync](
             tile_summary, state, pipeline_idx
         )
@@ -1262,7 +1412,6 @@ def _mha_sm90[
         decoding,
     ]
 
-    @__parameter
     @inline(.always)
     def k_tile(
         idx: UInt32,
@@ -1275,11 +1424,10 @@ def _mha_sm90[
             linear_idx_type=.int32,
             alignment=128,
         ],
-    ):
+    ) {imm}:
         comptime sz = BN * config.padded_depth
         k_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
-    @__parameter
     @inline(.always)
     def v_tile(
         idx: UInt32,
@@ -1292,13 +1440,12 @@ def _mha_sm90[
             linear_idx_type=.int32,
             alignment=128,
         ],
-    ):
+    ) {imm}:
         comptime sz = BN * config.padded_depth
         v_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
 
-    @__parameter
     @inline(.always)
-    def get_position(seq_info: SeqInfo) -> PositionType:
+    def get_position(seq_info: SeqInfo) {imm} -> PositionType:
         return _get_position[
             BM,
             BN,
@@ -1369,11 +1516,10 @@ def _mha_sm90[
             _ = consumed_mbar_q[0].arrive()
         var local_warp_group_idx: UInt32 = warp_group_idx - 1
 
-        @__parameter
         @inline(.nodebug)
         def q_consumer(
             q_idx: UInt32,
-        ) -> LayoutTensor[
+        ) {imm} -> LayoutTensor[
             kv_type,
             q_smem_layout_consumer,
             MutAnyOrigin,
@@ -1417,7 +1563,6 @@ def _mha_sm90[
             address_space=.LOCAL,
         ].stack_allocation()
 
-        @__parameter
         @inline(.always)
         def vectorize_p_reg_tile(
             out result: LayoutTensor[
@@ -1427,10 +1572,9 @@ def _mha_sm90[
                 address_space=.LOCAL,
                 element_layout=element_layout,
             ],
-        ):
+        ) {imm}:
             result = {p_reg_tile.ptr}
 
-        @__parameter
         @inline(.always)
         def vectorize_o_reg_tile(
             out result: LayoutTensor[
@@ -1440,7 +1584,7 @@ def _mha_sm90[
                 address_space=.LOCAL,
                 element_layout=element_layout,
             ],
-        ):
+        ) {imm}:
             result = {output_reg_tile.ptr}
 
         var rowmax = LayoutTensor[
@@ -1465,9 +1609,8 @@ def _mha_sm90[
             * log2e
         )
 
-        @__parameter
         @inline(.always)
-        def q_mul_k(read_idx: UInt32, read_phase: UInt32, q_idx: UInt32):
+        def q_mul_k(read_idx: UInt32, read_phase: UInt32, q_idx: UInt32) {imm}:
             var k_smem_sub = k_tile(read_idx)
             var q_smem_sub = q_consumer(q_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
@@ -1489,9 +1632,8 @@ def _mha_sm90[
             wgmma_0.commit_group()
             warpgroup_fence(p_reg_tile)
 
-        @__parameter
         @inline(.always)
-        def p_mul_v(read_idx: UInt32, read_phase: UInt32):
+        def p_mul_v(read_idx: UInt32, read_phase: UInt32) {imm}:
             var v_smem_sub = v_tile(read_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
             warpgroup_fence(output_reg_tile)
@@ -1504,25 +1646,22 @@ def _mha_sm90[
             wgmma_1.commit_group()
             warpgroup_fence(output_reg_tile)
 
-        @__parameter
         @inline(.always)
-        def wait_for_q_mul_k[wgmma_left_in_flight: Int](read_idx: UInt32):
+        def wait_for_q_mul_k[wgmma_left_in_flight: Int](read_idx: UInt32) {imm}:
             wgmma_0.wait_group[wgmma_left_in_flight]()  # P is available
             _ = consumed_mbar_kv[read_idx].arrive()
 
-        @__parameter
         @inline(.always)
-        def wait_for_p_mul_v(read_idx: UInt32):
+        def wait_for_p_mul_v(read_idx: UInt32) {imm}:
             wgmma_1.wait_group[0]()  # output is available
             _ = consumed_mbar_kv[read_idx].arrive()
 
-        @__parameter
         @inline(.always)
         def apply_mask(
             position: PositionType,
             mask_status: TileMaskStatus,
             kv_tile_start_row: UInt32,
-        ):
+        ) {imm}:
             var max_len: UInt32 = (
                 num_keys_arg if decoding else max_seq_len.as_uint32()
             )
@@ -1538,9 +1677,8 @@ def _mha_sm90[
                 vectorize_p_reg_tile(),
             )
 
-        @__parameter
         @inline(.always)
-        def scale_output(correction: type_of(rowmax)):
+        def scale_output(correction: type_of(rowmax)) {imm}:
             # we are now able to read/modify `output_reg_tile` and modify `p_frag`
             var vout = vectorize_o_reg_tile()
 
@@ -1556,7 +1694,6 @@ def _mha_sm90[
                 comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * c
 
-        @__parameter
         @inline(.always)
         def elementwise_reciprocal(
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)
@@ -1568,13 +1705,12 @@ def _mha_sm90[
                 new_rowsum[row] = recip(old)[0]
                 old_rowsum[row] = new
 
-        @__parameter
         @inline(.always)
         def write_output(
             position: PositionType,
             q_idx: UInt32,
             rowsum_inv: type_of(rowsum),
-        ):
+        ) {imm}:
             var vout = vectorize_o_reg_tile()
 
             # Apply softmax denumerator.

@@ -153,6 +153,7 @@ def _declare_tools(platform):
             "@clang-{}//:bin/clang++".format(platform),  # symlink to clang
             "@clang-{}//:bin/dsymutil".format(platform),
             "@clang-{}//:ld".format(platform),
+            "@clang-{}//:runtime_libs".format(platform),  # ICU that lld links; see clang.BUILD
         ],
         tags = [
             "manual",

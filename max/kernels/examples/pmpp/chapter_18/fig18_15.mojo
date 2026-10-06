@@ -23,6 +23,7 @@ from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
 from std.atomic import Atomic
 from std.collections import List
+from std.math import ceildiv
 
 from graph_utils import (
     UNVISITED,
@@ -172,7 +173,7 @@ def main() raises:
         ctx.enqueue_copy(d_num_curr_frontier, h_zero)
         h_zero.free()
 
-        var grid_size = (num_prev_frontier + BLOCK_SIZE - 1) // BLOCK_SIZE
+        var grid_size = ceildiv(num_prev_frontier, BLOCK_SIZE)
         if grid_size == 0:
             grid_size = 1
 

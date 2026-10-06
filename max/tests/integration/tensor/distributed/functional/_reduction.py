@@ -37,9 +37,9 @@ from max.experimental.functional import (
     transfer_to,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -60,7 +60,7 @@ class _Sum:
         """MESH_1D: Sharded(0) + sum along axis=1 preserves placement."""
         t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         result = sum(t, axis=1)
         assert isinstance(result, Tensor)
@@ -73,7 +73,7 @@ class _Sum:
         """MESH_1D with 4 shards: sum along non-sharded axis is correct."""
         t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         result = sum(t, axis=1)
         assert isinstance(result, Tensor)
@@ -100,7 +100,7 @@ class _Sum:
         """MESH_2: sum(Replicated, axis=None) works — all shards identical."""
         t_np = np.arange(8, dtype=np.float32).reshape(2, 4)
         t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Replicated(),))
+            Tensor(t_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         result = sum(t, axis=None)
         # axis=None flattens then reduces → scalar-like (1,) shape
@@ -124,9 +124,7 @@ class _Mean:
     def test_non_sharded_axis(self) -> None:
         """MESH_2: Sharded(0) + mean along axis=-1 preserves placement."""
         t_np = np.arange(24, dtype=np.float32).reshape(4, 6)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = mean(t, axis=-1)
         assert isinstance(result, Tensor)
         assert result.placements == (Sharded(0),)
@@ -149,7 +147,7 @@ class _Softmax:
         """MESH_1D: softmax along non-sharded axis preserves placement."""
         a_np = np.arange(32, dtype=np.float32).reshape(8, 4)
         t = transfer_to(
-            Tensor(a_np), PlacementMapping(self.MESH_1D, (Sharded(0),))
+            Tensor(a_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
         )
         result = softmax(t, axis=1)
         assert isinstance(result, Tensor)
@@ -174,9 +172,7 @@ class _Cumsum:
     def test_non_sharded_axis(self) -> None:
         """MESH_2: cumsum along non-sharded axis preserves placement."""
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
-        t = transfer_to(
-            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(0),))
-        )
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         result = cumsum(t, axis=1)
         assert isinstance(result, Tensor)
         assert result.placements == (Sharded(0),)

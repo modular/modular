@@ -192,11 +192,23 @@ def handle(status_code: Int) -> String:
 
 ## Copy and move initializers
 
-Copy and move initializers use another value of the same type:
+Copy and move initializers use another value of the same type. The copy
+initializer is called when a value is copied explicitly or implicitly:
 
 ```mojo
 var the_copy = value.copy()  # AKA ValueType(copy=value)
-var the_move = value^        # AKA ValueType(move=value^)
+```
+
+A standard transfer initializer may invoke a move initializer:
+
+```mojo
+var the_move = value^
+```
+
+You rarely need to call a move initializer directly:
+
+```mojo
+ValueType(move=value^)
 ```
 
 ### Copy initializer {#copy-constructor}
@@ -285,3 +297,24 @@ address. For example:
   interior pointer referring to the old, invalid address.
 - An external system tracks the value by address while an operation is in
   progress. Moving it would invalidate that association.
+
+### Transferring without move
+
+When working with immovable types, you may want to deinitialize a value
+without moving it. Transferring ownership directly to a `var` argument
+doesn't require `Movable`.
+
+Here's how you can safely bring the value into a deinitialization context:
+
+```mojo
+@fieldwise_init
+struct Immovable(Movable where False):
+    pass
+
+def consume_non_movable(var arg: Immovable):
+    pass
+
+def main():
+    var foo = Immovable()
+    consume_non_movable(foo^)   # this works fine
+```

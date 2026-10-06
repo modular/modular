@@ -17,7 +17,6 @@ from std.sys import (
     get_defined_int,
     simd_width_of,
 )
-from std.sys.info import has_amd_gpu_accelerator
 
 from layout import Coord, TileTensor, row_major, CoordLike, Idx
 import linalg.matmul.vendor.blas as vendor_blas
@@ -88,7 +87,6 @@ comptime epilogue_func_type = def[
 
 
 @inline(.always)
-@__parameter
 def elementwise_epilogue_fn[
     dtype: DType,
     width: SIMDLength,
@@ -136,22 +134,20 @@ def bench_bmm[
 
     var a_device = TileTensor(
         a_device_buffer,
-        row_major(Coord(b, m, k)),
+        row_major(b, m, k),
     ).as_unsafe_any_origin()
 
     var b_device = TileTensor(
         b_device_buffer,
         row_major(
-            Coord(
-                b,
-                Idx[NType.static_value if transpose_b else KType.static_value],
-                Idx[KType.static_value if transpose_b else NType.static_value],
-            )
+            b,
+            Idx[NType.static_value if transpose_b else KType.static_value],
+            Idx[KType.static_value if transpose_b else NType.static_value],
         ),
     ).as_unsafe_any_origin()
     var c_device = TileTensor(
         c_device_buffer,
-        row_major(Coord(b, m, n)),
+        row_major(b, m, n),
     ).as_unsafe_any_origin()
 
     # Initialize data on the device
@@ -192,24 +188,18 @@ def bench_bmm[
         @inline(.always)
         def kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
             comptime if use_vendor_blas:
-                comptime if has_amd_gpu_accelerator():
-                    var c_buffer = TileTensor(
-                        c_device.ptr, row_major(Coord(m, n))
-                    )
-                    var a_buffer = TileTensor(
-                        a_device.ptr, row_major(Coord(m, k))
-                    )
+                comptime if ctx.target.is_amd_gpu():
+                    var c_buffer = TileTensor(c_device.ptr, row_major(m, n))
+                    var a_buffer = TileTensor(a_device.ptr, row_major(m, k))
                     var b_buffer = TileTensor(
                         b_device.ptr,
                         row_major(
-                            Coord(
-                                Idx[
-                                    NType.static_value if transpose_b else KType.static_value
-                                ],
-                                Idx[
-                                    KType.static_value if transpose_b else NType.static_value
-                                ],
-                            )
+                            Idx[
+                                NType.static_value if transpose_b else KType.static_value
+                            ],
+                            Idx[
+                                KType.static_value if transpose_b else NType.static_value
+                            ],
                         ),
                     )
 
@@ -235,19 +225,17 @@ def bench_bmm[
                             i * Int(k.value()) * Int(n.value())
                         )
 
-                        var c_buffer = TileTensor(c_ptr, row_major(Coord(m, n)))
-                        var a_buffer = TileTensor(a_ptr, row_major(Coord(m, k)))
+                        var c_buffer = TileTensor(c_ptr, row_major(m, n))
+                        var a_buffer = TileTensor(a_ptr, row_major(m, k))
                         var b_buffer = TileTensor(
                             b_ptr,
                             row_major(
-                                Coord(
-                                    Idx[
-                                        NType.static_value if transpose_b else KType.static_value
-                                    ],
-                                    Idx[
-                                        KType.static_value if transpose_b else NType.static_value
-                                    ],
-                                )
+                                Idx[
+                                    NType.static_value if transpose_b else KType.static_value
+                                ],
+                                Idx[
+                                    KType.static_value if transpose_b else NType.static_value
+                                ],
                             ),
                         )
 

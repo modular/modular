@@ -57,6 +57,7 @@ Model interface
    :template: autosummary/class.rst
 
    AlwaysSignalBuffersMixin
+   ModuleV3PipelineModelWithKVCache
    PipelineModelWithKVCache
    UnifiedEagleOutputs
 

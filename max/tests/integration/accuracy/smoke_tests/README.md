@@ -66,16 +66,6 @@ confirmed work end-to-end and give a meaningful accuracy signal.
 
 These bite when running smoke tests outside CI. None are model bugs.
 
-### `HF_TOKEN` must be set, even for a public model
-
-`validate_hf_token()` (`eval_runner.py`) hard-exits before the server starts if
-`HF_TOKEN` is unset. The token is not used to authenticate a public
-(non-gated) model, but the environment variable must be present:
-
-```bash
-export HF_TOKEN=hf_...   # any value works for a public model
-```
-
 ### `--serve-extra-args` for local serve tuning
 
 Pass extra flags through to MAX Serve when startup fails or dies during warmup.

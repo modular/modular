@@ -107,13 +107,13 @@ def _test_w4a8_grouped[
 
     # ---- Host allocations ----------------------------------------------
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
-    var a_host = TileTensor(a_host_ptr, row_major(Coord(M, Idx[K])))
+    var a_host = TileTensor(a_host_ptr, row_major(M, Idx[K]))
     var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_elems)
     var b_host = TileTensor(
-        b_host_ptr, row_major(Coord(Idx[num_experts], Idx[N], Idx[K_PACKED]))
+        b_host_ptr, row_major(Idx[num_experts], Idx[N], Idx[K_PACKED])
     )
     var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
-    var c_host = TileTensor(c_host_ptr, row_major(Coord(M, Idx[N])))
+    var c_host = TileTensor(c_host_ptr, row_major(M, Idx[N]))
 
     var a_offsets_host = ctx.enqueue_create_host_buffer[.uint32](
         num_active_experts + 1
@@ -145,13 +145,11 @@ def _test_w4a8_grouped[
         expert_ids_host[i] = Int32(expert_ids[i])
 
     var a_scales_shape = row_major(
-        Coord(
-            Int(max(a_scale_rows, 1)),
-            Idx[k_groups],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        max(a_scale_rows, 1),
+        Idx[k_groups],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var a_scales_host_ptr = ctx.enqueue_create_host_buffer[MXFP8_SF_DTYPE](
         a_scales_shape.product()
@@ -163,14 +161,12 @@ def _test_w4a8_grouped[
     var b_scales_host = TileTensor(
         b_scales_host_ptr,
         row_major(
-            Coord(
-                Idx[num_experts],
-                Idx[n_groups],
-                Idx[k_groups],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            Idx[num_experts],
+            Idx[n_groups],
+            Idx[k_groups],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
 
@@ -213,13 +209,11 @@ def _test_w4a8_grouped[
                 e * b_scales_expert_stride
             ),
             row_major(
-                Coord(
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         for n in range(N):
@@ -262,36 +256,34 @@ def _test_w4a8_grouped[
     ctx.enqueue_memset(c_dev, Scalar[c_type](0))
 
     grouped_matmul_block_scaled_sm100_dispatch[transpose_b=True, target="gpu"](
-        TileTensor(c_dev, row_major(Coord(M, Idx[N]))).as_unsafe_any_origin(),
-        TileTensor(a_dev, row_major(Coord(M, Idx[K]))).as_unsafe_any_origin(),
+        TileTensor(c_dev, row_major(M, Idx[N])).as_unsafe_any_origin(),
+        TileTensor(a_dev, row_major(M, Idx[K])).as_unsafe_any_origin(),
         TileTensor(
-            b_dev, row_major(Coord(Idx[num_experts], Idx[N], Idx[K_PACKED]))
+            b_dev, row_major(Idx[num_experts], Idx[N], Idx[K_PACKED])
         ).as_unsafe_any_origin(),
         TileTensor(a_scales_dev, a_scales_shape).as_unsafe_any_origin(),
         TileTensor(
             b_scales_dev,
             row_major(
-                Coord(
-                    Idx[num_experts],
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[num_experts],
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         ).as_unsafe_any_origin(),
         TileTensor(
-            a_offsets_dev, row_major(Coord(Int(num_active_experts + 1)))
+            a_offsets_dev, row_major(num_active_experts + 1)
         ).as_unsafe_any_origin(),
         TileTensor(
-            a_scale_offsets_dev, row_major(Coord(Int(num_active_experts)))
+            a_scale_offsets_dev, row_major(num_active_experts)
         ).as_unsafe_any_origin(),
         TileTensor(
-            expert_ids_dev, row_major(Coord(Int(num_active_experts)))
+            expert_ids_dev, row_major(num_active_experts)
         ).as_unsafe_any_origin(),
         TileTensor(
-            expert_scales_dev, row_major(Coord(Idx[num_experts]))
+            expert_scales_dev, row_major(Idx[num_experts])
         ).as_unsafe_any_origin(),
         num_active_experts,
         M,
@@ -317,13 +309,11 @@ def _test_w4a8_grouped[
                 expert_id * b_scales_expert_stride
             ),
             row_major(
-                Coord(
-                    Idx[n_groups],
-                    Idx[k_groups],
-                    Idx[SF_ATOM_M[0]],
-                    Idx[SF_ATOM_M[1]],
-                    Idx[SF_ATOM_K],
-                )
+                Idx[n_groups],
+                Idx[k_groups],
+                Idx[SF_ATOM_M[0]],
+                Idx[SF_ATOM_M[1]],
+                Idx[SF_ATOM_K],
             ),
         )
         var scale_row_base = (

@@ -1,6 +1,4 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "requirement")
-load("//max/tests/integration/test_common:mef_precompile.bzl", "precompiled_mefs")
-load(":rowwise_reduction_specs.bzl", "ROWWISE_REDUCTION_SPECS")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -99,10 +97,9 @@ _GRAPH_COMMON_DEPS = [
     requirement("torchvision"),
 ]
 
-# The legacy bulk `graph` target: every graph test under the default (legacy)
-# pipeline, one per-file target each. Kept as a plain glob (identical to the
-# pre-adv-fusion form) so `modular_py_test` fans each file out into its own
-# target running only that file. A filegroup can't be used here -- its members
+# The bulk `graph` target: every graph test, one per-file target each. Kept as
+# a plain glob so `modular_py_test` fans each file out into its own target
+# running only that file. A filegroup can't be used here -- its members
 # are opaque to the fan-out, so it would be attached as a shared src to every
 # target, making each one collect and run the whole directory.
 modular_py_test(
@@ -114,7 +111,6 @@ modular_py_test(
             "_rowwise_reduction_specs.py",
             "buffer_create_init_shared.py",
             "fusion_utils.py",
-            "precompile_rowwise_reductions.py",
             "test_nan_check.py",
         ],
     ),
@@ -161,7 +157,6 @@ modular_py_library(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
-        requirement("pytest"),
     ],
 )
 
@@ -393,36 +388,10 @@ modular_py_library(
     ],
 )
 
-modular_py_binary(
-    name = "precompile_rowwise_reductions_bin",
-    testonly = True,
-    srcs = ["precompile_rowwise_reductions.py"],
-    imports = ["."],
-    main = "precompile_rowwise_reductions.py",
-    tags = ["manual"],
-    deps = [
-        ":rowwise_reduction_specs",
-        "//max/python/max/graph",
-        "//max/tests/integration/test_common:mef_precompile",
-    ],
-)
-
-# One CPU build action per spec. The graphs are plain reduce/softmax/norm ops
-# that build on every lane, so the only gate is the consumer's own.
-precompiled_mefs(
-    name = "rowwise_reduction_mefs",
-    producer = ":precompile_rowwise_reductions_bin",
-    specs = ROWWISE_REDUCTION_SPECS,
-    target_compatible_with = ["//:has_gpu"] + select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
-)
-
-# Row-wise reduction correctness tests. Each parametrization initializes one
-# precompiled symbolic-dimension MEF and feeds several concrete shapes as data;
-# the compiles moved to the CPU build actions above, so no graph is compiled on
-# the GPU worker.
+# Row-wise reduction correctness tests. Each parametrization compiles one
+# symbolic-dimension graph and feeds several concrete shapes as data. The
+# compiles happen in CPU build actions (`precompile_mefs`, eight of them), so
+# the GPU worker only initializes and executes.
 #
 # Needs a GPU lane: every case is parametrized over CPU and GPU, and the GPU half
 # is the priority -- the cooperative tiers, the cross-thread combine and the
@@ -438,10 +407,6 @@ modular_py_test(
         "conftest.py",
         "test_rowwise_reductions.py",
     ],
-    data = [":rowwise_reduction_mefs"],
-    env = {
-        "ROWWISE_MEF_RLOCATIONS": "$(rlocationpaths :rowwise_reduction_mefs)",
-    },
     exec_properties = {
         "test.resources:gpu-memory": "2",
     },
@@ -450,13 +415,14 @@ modular_py_test(
         "//conditions:default": [],
     }),
     imports = ["."],
+    precompile_mefs = True,
+    precompile_shards = 8,
     tags = ["gpu"],
     deps = [
         ":rowwise_reduction_specs",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
-        "//max/tests/integration/test_common:mef_precompile",
         "//max/tests/integration/test_common:reduction_graphs",
         requirement("hypothesis"),
         requirement("numpy"),
@@ -580,6 +546,9 @@ modular_py_test(
     # structural, so their graph would otherwise be a cache hit off the
     # compiles-and-runs test's identical graph and skip the pipeline (no dump).
     env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    # Every case compiles its own graphs, so unsharded the file runs close to
+    # the CI timeout. One case per shard runs the compiles in parallel.
+    shard_count = 5,
     # B200-only: the fused MegaFFN NVFP4 kernel the fusion lowers to is SM100a
     # (Blackwell) specific. Off SM100 the pattern does not fire and the legs
     # run as standalone kernels, so there is nothing to exercise.

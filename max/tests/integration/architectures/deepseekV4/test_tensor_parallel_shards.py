@@ -19,19 +19,22 @@ the fp8 linears keep their class) so a change to it fails without a GPU.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterator
 from unittest.mock import Mock
 
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Weight
-from max.nn import Linear
+from max.nn import LayerList, Linear
 from max.pipelines.architectures.deepseekV4.deepseekV4 import (
     DeepseekV4,
     DeepseekV4Block,
     DSparkBlock,
 )
 from max.pipelines.architectures.deepseekV4.layers.moe import (
+    DeepseekV4Expert,
+    DeepseekV4MoE,
     DeepseekV4RoutedExperts,
 )
 from max.pipelines.architectures.deepseekV4.layers.quantization import (
@@ -212,6 +215,31 @@ def test_fp8_linears_keep_their_class(
                 )
             # ``wo_a`` is bf16 in the reference and host-dequantized.
             assert type(rep.attn.wo_a) is Linear
+
+
+@pytest.mark.parametrize("quantized", [True, False])
+def test_expert_projection_formats(quantized: bool) -> None:
+    """The shared expert is the checkpoint's fp8; the dense routed are wide."""
+    config = _config()
+    config = dataclasses.replace(
+        config,
+        quant_config=config.quant_config if quantized else None,
+        native_routed_experts=False,
+    )
+    moe = DeepseekV4MoE(config, 0, DeviceRef.CPU())
+    shared = (
+        moe.shared_experts.w1,
+        moe.shared_experts.w2,
+        moe.shared_experts.w3,
+    )
+    for linear in shared:
+        assert type(linear) is (DeepseekV4Fp8Linear if quantized else Linear)
+    assert isinstance(moe.experts, LayerList)
+    for expert in moe.experts:
+        assert isinstance(expert, DeepseekV4Expert)
+        for linear in (expert.w1, expert.w2, expert.w3):
+            assert type(linear) is Linear
+            assert linear.weight.dtype == DType.bfloat16
 
 
 def test_dspark_ends_are_replicated(

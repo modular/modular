@@ -126,7 +126,8 @@ class ShortConvolution(Module, Shardable):
         self,
         x: TensorValue,
         conv_ring: BufferValue,
-        conv_row: TensorValue,
+        conv_rows: TensorValue,
+        layer_row: TensorValue,
         input_row_offsets: TensorValue,
         positions: TensorValue,
     ) -> TensorValue:
@@ -136,11 +137,22 @@ class ShortConvolution(Module, Shardable):
         writes the chunk's last inputs to the ring.
         """
         out = short_conv_ring_fwd(
-            x, self.taps, conv_ring, input_row_offsets, positions, conv_row
+            x,
+            self.taps,
+            conv_ring,
+            input_row_offsets,
+            positions,
+            conv_rows,
+            layer_row,
         )
         if self.commit_conv_state:
             short_conv_ring_commit(
-                x, conv_ring, input_row_offsets, positions, conv_row
+                x,
+                conv_ring,
+                input_row_offsets,
+                positions,
+                conv_rows,
+                layer_row,
             )
         return out
 
@@ -151,8 +163,10 @@ def short_conv_ring_commit_kv(
     v_ring: BufferValue,
     input_row_offsets: TensorValue,
     positions: TensorValue,
-    k_conv_row: TensorValue,
-    v_conv_row: TensorValue,
+    k_conv_rows: TensorValue,
+    v_conv_rows: TensorValue,
+    k_layer_row: TensorValue,
+    v_layer_row: TensorValue,
     *,
     k_col: int,
 ) -> None:
@@ -165,8 +179,10 @@ def short_conv_ring_commit_kv(
         v_ring: The V site's, same shape.
         input_row_offsets: ``[batch + 1]`` uint32.
         positions: ``[total_seq_len]`` uint32 position per token.
-        k_conv_row: ``[batch]`` uint32 K ring slot per sequence.
-        v_conv_row: ``[batch]`` uint32 V ring slot per sequence.
+        k_conv_rows: ``[num_layers, batch]`` uint32 K ring slot per sequence.
+        v_conv_rows: The V site's slot table, same shape.
+        k_layer_row: Scalar uint32 CPU row of ``k_conv_rows`` this layer reads.
+        v_layer_row: The same for ``v_conv_rows``.
         k_col: First K column of ``qkvr``; V follows K.
     """
     ops.inplace_custom(
@@ -178,8 +194,10 @@ def short_conv_ring_commit_kv(
             qkvr,
             input_row_offsets,
             positions,
-            k_conv_row,
-            v_conv_row,
+            k_conv_rows,
+            v_conv_rows,
+            k_layer_row,
+            v_layer_row,
         ],
         out_types=[],
         parameters={"k_col": k_col},
@@ -198,8 +216,10 @@ def fused_qk_rms_norm_short_conv_ragged(
     v_weight: TensorValue,
     k_conv_ring: BufferValue,
     v_conv_ring: BufferValue,
-    k_conv_row: TensorValue,
-    v_conv_row: TensorValue,
+    k_conv_rows: TensorValue,
+    v_conv_rows: TensorValue,
+    k_layer_row: TensorValue,
+    v_layer_row: TensorValue,
     log_scaling: TensorValue,
     epsilon: float,
     layer_idx: TensorValue,
@@ -229,8 +249,10 @@ def fused_qk_rms_norm_short_conv_ragged(
         v_weight: V conv taps, same shape.
         k_conv_ring: ``[slots, ring_len, kv_num_heads * head_dim]`` K ring.
         v_conv_ring: V ring, same shape.
-        k_conv_row: ``[batch]`` uint32 slot into ``k_conv_ring``.
-        v_conv_row: ``[batch]`` uint32 slot into ``v_conv_ring``.
+        k_conv_rows: ``[num_layers, batch]`` uint32 slot into ``k_conv_ring``.
+        v_conv_rows: ``[num_layers, batch]`` uint32 slot into ``v_conv_ring``.
+        k_layer_row: Scalar uint32 CPU row of ``k_conv_rows`` this layer reads.
+        v_layer_row: The same for ``v_conv_rows``.
         log_scaling: ``[total_tokens]`` float32 factor each token's
             normalized query is multiplied by, after rounding to its dtype.
             Read only with ``apply_log_scaling``.
@@ -258,8 +280,10 @@ def fused_qk_rms_norm_short_conv_ragged(
             v_weight,
             k_conv_ring,
             v_conv_ring,
-            k_conv_row,
-            v_conv_row,
+            k_conv_rows,
+            v_conv_rows,
+            k_layer_row,
+            v_layer_row,
             log_scaling,
             ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
             layer_idx,

@@ -64,6 +64,11 @@ class KernelTraceLevel(Enum):
     includes everything at the levels below it. All levels above ``off`` add
     overhead to the model worker process. Use the minimum level that
     satisfies your observability needs.
+
+    Each level describes the whole session. At every level below ``kernel``,
+    ``kernel_trace_headers`` also lets a request's ``x-max-trace-level``
+    header capture the passes it runs in, with ``max.batch`` spans and GPU
+    kernels.
     """
 
     OFF = "off"
@@ -71,9 +76,9 @@ class KernelTraceLevel(Enum):
     phase spans are governed by the tracing exporter config, not this flag."""
 
     BATCH = "batch"
-    """Emit a ``max.batch`` OTel span per forward pass (requires tracing to
-    be configured, see ``disable_telemetry``). No per-kernel GPU detail.
-    Minimal overhead."""
+    """Emit a ``max.batch`` OTel span per forward pass (requires
+    ``OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`` to be set and telemetry enabled).
+    No per-kernel GPU detail. Minimal overhead."""
 
     OP = "op"
     """Op-level NVTX annotation. Enables Nsight / libkineto user-annotation
@@ -335,13 +340,30 @@ class Settings(BaseSettings):
     kernel_trace_level: KernelTraceLevel = Field(
         default=KernelTraceLevel.OFF,
         description=(
-            "GPU kernel-trace capture depth. 'off' (default) adds zero "
-            "overhead. 'batch' enables per-forward-pass max.batch OTel "
-            "spans (when tracing is enabled) with no GPU capture. 'op' "
-            "adds NVTX op-level ranges. 'kernel' enables full libkineto "
-            "GPU kernel timeline capture (highest overhead)."
+            "GPU kernel-trace capture depth for the whole session. 'off' "
+            "(default) adds zero overhead. 'batch' enables per-forward-pass "
+            "max.batch OTel spans (when tracing is enabled) with no GPU "
+            "capture. 'op' adds NVTX op-level ranges. 'kernel' enables "
+            "full libkineto GPU kernel timeline capture (highest "
+            "overhead). Below 'kernel', kernel_trace_headers also lets a "
+            "request capture the GPU kernels of the passes it runs in."
         ),
         alias="MAX_SERVE_KERNEL_TRACE_LEVEL",
+    )
+    kernel_trace_headers: bool = Field(
+        default=False,
+        description=(
+            "Honor the per-request x-max-trace-level header: the model "
+            "worker captures GPU kernels for the passes a request with the "
+            "header runs in, saving the capture to kernel-capture.json in "
+            "a private per-worker directory, "
+            "$TMPDIR/max-kernel-capture-<random>. Needs the profiler "
+            "plugin, and is refused when kernel_trace_level is 'kernel'. "
+            "Passes run while another capture, such as a Dynolog trace, "
+            "holds the profiler are not captured. Ignored while tracing is "
+            "off. Off by default: the header is then never read."
+        ),
+        alias="MAX_SERVE_KERNEL_TRACE_HEADERS",
     )
 
     # Model worker configuration
@@ -567,6 +589,7 @@ class Settings(BaseSettings):
         logger.info(
             f"    kernel_trace_level     : {self.kernel_trace_level.value}"
         )
+        logger.info(f"    kernel_trace_headers   : {self.kernel_trace_headers}")
 
         # Transaction recording (part of telemetry)
         if self.transaction_recording_file:

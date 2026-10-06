@@ -52,6 +52,20 @@ memory that was never written to:
 MODULAR_DEBUG=uninitialized-read-check max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
 ```
 
+By default, the check stops at the first poisoned read. When a run is too
+expensive to repeat once per offending read, set
+`uninitialized-read-mode=report` to print every match and keep running:
+
+```bash
+MODULAR_DEBUG=uninitialized-read-check,uninitialized-read-mode=report \
+  max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+Report mode doesn't limit how much it prints, and the model keeps computing
+with the uninitialized values, so treat its output as a list of read sites,
+not as model results. On Apple GPUs, report mode currently aborts at the first
+poisoned read without printing, because GPU printing isn't supported there yet.
+
 This check adds runtime overhead, so disable it after debugging sessions.
 
 ## Next steps

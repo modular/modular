@@ -95,8 +95,8 @@ def bench_unary[
     def bench(mut b: Bencher, size: Int) raises {imm}:
         def iter_fn() {imm}:
             apply[func](
-                TileTensor(input_ptr, row_major(Coord(_ri(size)))),
-                TileTensor(output_ptr, row_major(Coord(_ri(size)))),
+                TileTensor(input_ptr, row_major(_ri(size))),
+                TileTensor(output_ptr, row_major(_ri(size))),
             )
             keep(output_ptr)
 

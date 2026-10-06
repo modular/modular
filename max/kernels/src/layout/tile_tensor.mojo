@@ -248,12 +248,12 @@ def _count_slice_dims[
     var count = 0
     comptime for i in range(slices.size):
         __match slices[i]:
-        case .slice:
-            count += 1
-        case .index:
-            pass
-        case .static:
-            pass
+            case .slice:
+                count += 1
+            case .index:
+                pass
+            case .static:
+                pass
     return count
 
 
@@ -269,14 +269,14 @@ def _kept_slice_axis_for_output[
     var kept_axes_seen = 0
     comptime for axis in range(slices.size):
         __match slices[axis]:
-        case .slice:
-            if kept_axes_seen == out_axis:
-                return axis
-            kept_axes_seen += 1
-        case .index:
-            pass
-        case .static:
-            pass
+            case .slice:
+                if kept_axes_seen == out_axis:
+                    return axis
+                kept_axes_seen += 1
+            case .index:
+                pass
+            case .static:
+                pass
     abort("invalid sliced-axis mapping")
 
 
@@ -308,12 +308,12 @@ def _slice_start[
     """Returns the first element of `axis` that the view selects: a slice's
     start, or the index a rank-reducing (`Int`) argument fixes the axis to."""
     __match slices[axis]:
-    case .slice:
-        return slices[axis].unsafe_get_slice().start.or_else(0)
-    case .index:
-        return slices[axis].unsafe_get_index()
-    case .static:
-        return slices[axis].unsafe_get_index()
+        case .slice:
+            return slices[axis].unsafe_get_slice().start.or_else(0)
+        case .index:
+            return slices[axis].unsafe_get_index()
+        case .static:
+            return slices[axis].unsafe_get_index()
 
 
 @inline(.nodebug)
@@ -755,18 +755,19 @@ struct TileTensor[
         ref[Self.origin] device_buffer: DeviceBuffer[Self.dtype],
         var layout: Self.LayoutType,
     ):
-        """Create a `LayoutTensor` from a `DeviceBuffer`. The layout must have
-        statically known dimensions.
+        """Creates a `TileTensor` view of a `DeviceBuffer`.
+
+        The layout supports both static and runtime dimensions.
 
         Note that the device buffer memory is on the accelerator device (GPU
         global memory). Code running on the CPU can use the
         [`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/) to
-        allocate a `DeviceBuffer` and use that to construct a `LayoutTensor`
+        allocate a `DeviceBuffer` and use that to construct a `TileTensor`
         that can be accessed on the GPU. You cannot directly access data in the
-        `DeviceBuffer` or `LayoutTensor` from the CPU.
+        `DeviceBuffer` or `TileTensor` from the CPU.
 
         The following example shows a typical pattern for using `DeviceBuffer`
-        to construct a `LayoutTensor` that you can use on the GPU.
+        to construct a `TileTensor` that you can use on the GPU.
 
         ```mojo
         from max.gpu.host import DeviceContext, DeviceBuffer
@@ -841,8 +842,9 @@ struct TileTensor[
         ref[Self.origin] host_buffer: HostBuffer[Self.dtype],
         var layout: Self.LayoutType,
     ):
-        """Create a `LayoutTensor` from a `HostBuffer`. The layout must have
-        statically known dimensions.
+        """Creates a `TileTensor` view of a `HostBuffer`.
+
+        The layout supports both static and runtime dimensions.
 
         The resulting tensor's data can only be accessed on the CPU.
 
@@ -855,7 +857,7 @@ struct TileTensor[
         comptime dtype = DType.float32
 
         var ctx = DeviceContext()
-        var host_buf = ctx.enqueue_create_host_buffer[dtype](8)
+        var host_buf = ctx.enqueue_create_host_buffer[dtype](16)
 
         var tensor = TileTensor(
             host_buf,
@@ -918,10 +920,26 @@ struct TileTensor[
         comptime assert (
             name == "ptr"
         ), "TileTensor.__getattr_param__ only support 'ptr'"
-        try:
-            result = Self.Engine.unsafe_ptr(self._storage)
-        except e:
-            abort(t"TileTensor.ptr access not possible: {e}")
+        result = self.unsafe_ptr()
+
+    @inline(.always)
+    def unsafe_ptr(
+        self,
+    ) -> Pointer[
+        Scalar[Self.dtype], Self.origin, address_space=Self.address_space
+    ]:
+        """Returns a raw scalar pointer to the base of the tensor's storage.
+
+        Delegates to the engine's `unsafe_ptr`, so the pointer refers to the
+        first scalar element the engine exposes; a vectorized engine
+        (`element_size > 1`) still yields the scalar base. The pointer borrows
+        the tensor's storage and does not extend its lifetime. Element loads
+        and stores on the tensor go through this pointer.
+
+        Returns:
+            A `Pointer` to `Scalar[dtype]` at the base of the storage.
+        """
+        return Self.Engine.unsafe_ptr(self._storage)
 
     @inline(.nodebug)
     def _unsafe_storage_cast[
@@ -955,29 +973,27 @@ struct TileTensor[
         invariant: Bool = False,
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
-        """Loads `width` elements from `self`'s storage handle at `offset` via
-        the engine."""
-        return Self.Engine.load[
+        """Loads `width` elements at `offset` through the engine's raw
+        pointer."""
+        return self.ptr.load[
             width=width,
             alignment=alignment,
             invariant=invariant,
             non_temporal=non_temporal,
-        ](
-            self._unsafe_storage_cast[to_mut=False](),
-            offset,
-        )
+        ](offset)
 
     @inline(.nodebug)
     def _store_storage[
         alignment: Int,
         non_temporal: Bool = False,
     ](self, offset: Some[Indexer], value: SIMD[Self.dtype, _]) where Self.mut:
-        """Stores `value` into `self`'s storage handle at `offset` via the
-        engine."""
-        Self.Engine.store[
-            alignment=alignment,
-            non_temporal=non_temporal,
-        ](self._unsafe_storage_cast[to_mut=True](), offset, value)
+        """Stores `value` at `offset` through the engine's raw pointer."""
+        # `where Self.mut` does not narrow `Self.origin`'s mutability
+        # parameter to `True`, so cast to the mutable pointer type `store`
+        # requires.
+        self.ptr.unsafe_mut_cast[True]().store[
+            alignment=alignment, non_temporal=non_temporal
+        ](offset, value)
 
     @inline(.nodebug)
     def __getitem__(self, i0: Some[CoordLike]) -> Self.ElementType:
@@ -1715,8 +1731,11 @@ struct TileTensor[
         the copy widens to SIMD load + cast + SIMD store,
         using the narrower of the two dtypes' native SIMD widths.
 
-        The copy loop lives in the engine (`Self.Engine.copy_from`);
-        this forwards `self` and `other` as `(storage, layout)` pairs.
+        The copy loop lives in the engines. This forwards `self` and
+        `other` as `(storage, layout)` pairs to the source engine's
+        `copy_to`, which by default hands them to `Self.Engine.copy_from`;
+        an engine whose storage has no pointer, such as `TMemEngine`,
+        overrides `copy_to` to run its own load loop.
 
         Constraints:
 
@@ -1731,9 +1750,9 @@ struct TileTensor[
         """
         # `other` may carry a different (e.g. offset-derived) engine;
         # the storage-level copy takes it as a distinct `OtherEngine` operand.
-        Self.Engine.copy_from(
-            (self._unsafe_storage_cast[to_mut=True](), self.layout),
+        type_of(other).Engine.copy_to(
             (other._storage, other.layout),
+            (self._unsafe_storage_cast[to_mut=True](), self.layout),
         )
 
     @inline(.always)
@@ -3894,10 +3913,7 @@ struct NullableTileTensor[
         if not self._storage:
             result = None
             return
-        try:
-            result = Self.Engine.unsafe_ptr(self._storage.unsafe_value())
-        except e:
-            abort(t"NullableTileTensor.ptr access not possible: {e}")
+        result = Self.Engine.unsafe_ptr(self._storage.unsafe_value())
 
     @inline(.nodebug)
     def _unsafe_storage_cast[
@@ -5083,7 +5099,7 @@ def flatten_leading[
         *Coord[Int64, layout._shape_types[layout.rank - 1]].element_types
     ]
     return rebind[tensor.ViewType[ResultLayout]](
-        tensor.reshape(row_major(Coord(merged, tensor.layout.shape[2]())))
+        tensor.reshape(row_major(merged, tensor.layout.shape[2]()))
     )
 
 

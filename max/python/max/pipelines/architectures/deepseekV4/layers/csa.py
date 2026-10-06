@@ -27,9 +27,9 @@ shared by the two streams of a layer), it
    of their request;
 4. hands back the candidates and where the closed entries live, so a reader
    can address the zone leaf by entry (:meth:`CompressedStream.entries`, the
-   fused kernel) or gather a per-token candidate table
-   (:attr:`CompressedStream.table`, the indexer's scoring and the cache-less
-   reference path).
+   fused attention and indexer kernels) or, without a cache, build a
+   per-token candidate table (:attr:`CompressedStream.table`, the reference
+   path).
 
 Why storing every candidate is exact: the windows that actually close inside
 a chunk of ``s`` tokens number ``ceil(s / ratio)`` or one fewer. When one
@@ -93,39 +93,21 @@ class CompressedStream:
     def table(self) -> TensorValue:
         """``[T, n_cand, head_dim]`` per-token candidate table, candidate order.
 
-        Zone rows are gathered per token out of the leaf (a copy of the leaf
-        per call, ``CacheLeaf.gather``); only the indexer's scoring and the
-        cache-less reference path pay for it, and it scales with
-        ``max_seq_len``: a bringup path, not a serving one.
+        Only the cache-less reference path builds it, where no zone slot is
+        live: the cached half is zeros and the fresh half the request's
+        windows. With a cache the indexer reads the zone leaf by entry
+        (:meth:`~.indexer.DeepseekV4Indexer.score_cached`).
         """
+        assert self.zone_leaf is None
         rows = self.rows
         t = rows.total
         cap = self.cap
         device = rows.device
         head_dim = self.fresh.shape[1]
-        zero = scalar(0, device)
         one = scalar(1, device)
-        if self.zone_leaf is None:
-            cached = ops.broadcast_to(
-                ops.constant(0.0, self.fresh.dtype, device), [t, cap, head_dim]
-            )
-        else:
-            # Slots at or past ``base`` are dead; clamp them onto the last
-            # live one (or slot 0 when nothing has closed), ``valid`` hides
-            # them.
-            last = ops.reshape(ops.max(self.token_base - one, zero), [t, 1])
-            slots = ops.min(
-                ops.broadcast_to(
-                    ops.reshape(arange(cap, device), [1, cap]), [t, cap]
-                ),
-                last,
-            )
-            cached = ops.cast(
-                self.zone_leaf.gather(
-                    self.layer, KEY, slots, lut_rows=rows.bid
-                ),
-                self.fresh.dtype,
-            )
+        cached = ops.broadcast_to(
+            ops.constant(0.0, self.fresh.dtype, device), [t, cap, head_dim]
+        )
         woff = self.windows.woff
         first = ops.reshape(ops.gather(woff, rows.bid, axis=0), [t, 1])
         last_w = (

@@ -18,14 +18,17 @@
 # true, this file stops compiling. A handful of behaviors are also asserted at
 # runtime.
 #
-# Not tested (need a GPU, or no portable runtime API to assert):
-#   - DevicePassable / DeviceTypeEncoder (accelerator-only)
+# Not tested (no portable runtime API to assert):
 #   - Hasher internals; Strategy (property-based, needs an Rng)
+#   - the rendered text of an else message (it appears only in a compile
+#     error)
+#   - var b = a^, return local^, and append() rejecting a non-Movable value
+#     (compile errors)
 #   - Identifiable __is__ (no portable value-type identity to assert)
 #   - PathLike / ConvertibleToPython / ConvertibleFromPython (need os / Python)
 #   - exact signature text of each requirement (the compile-floor covers that a
 #     conforming type satisfies the trait, not the literal spelling)
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_false, assert_true
 from std.math import ceil, floor, trunc
 
 
@@ -64,11 +67,28 @@ def test_value_compare_format_floor() raises:
     assert_equal(String(Meters(5)), "5m")
 
 
+@fieldwise_init
+struct Seven(Floatable, Intable):  # conforms by implementing the methods
+    var v: Int
+
+    def __int__(self) -> Int:
+        return self.v
+
+    def __float__(self) -> Float64:
+        return Float64(self.v)
+
+
 def test_conversions() raises:
     # Boolable / Intable / Floatable on builtins
     assert_true(Bool(1))
     assert_equal(Int(Float64(3.9)), 3)  # Float64->Int truncates toward zero
     assert_equal(Float64(5), 5.0)  # Int -> Float64
+    # Intable converts to any integer type; Floatable only to Float64
+    var s = Seven(7)
+    assert_equal(Int8(s), 7)
+    assert_equal(UInt64(s), 7)
+    assert_equal(Int128(s), 7)
+    assert_equal(Float64(s), 7.0)
 
 
 def test_sized() raises:
@@ -124,6 +144,105 @@ def test_conformance_claims() raises:
     assert_true(conforms_to(Int, Equatable))
 
 
+# Movable is needed to put a value into a container, not to name one.
+struct Pinned(not Movable):
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+    def unpin(deinit self) -> Int:
+        return self.x
+
+
+def take_pinned(var p: Pinned) -> Int:
+    return p.x
+
+
+struct Linear(not Deinitable):
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+    def done(deinit self) -> Int:  # the only way to end a Linear value
+        return self.x
+
+
+def make_pinned() -> Pinned:
+    return Pinned(7)  # a fresh value returns without a move
+
+
+struct Undeclared:  # no conformance list at all
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+
+def test_movable_opt_outs() raises:
+    # Movable (and Deinitable) are implicit; Copyable is not
+    assert_true(conforms_to(Undeclared, AnyType))
+    assert_true(conforms_to(Undeclared, Movable))
+    assert_true(conforms_to(Undeclared, Deinitable))
+    assert_false(conforms_to(Undeclared, Copyable))
+    var moved = Undeclared(1)
+    var target = moved^  # relocates to a new binding
+    assert_equal(target.x, 1)
+    var pins = List[Pinned]()  # a non-movable type can name a List
+    assert_equal(len(pins), 0)
+    var maybe = Optional[Pinned]()  # ...or an empty Optional
+    assert_true(not maybe)
+    var p = make_pinned()
+    assert_equal(p.x, 7)
+    # ^ transfers without Movable when the value is consumed where it is
+    var into_arg = Pinned(8)
+    assert_equal(take_pinned(into_arg^), 8)  # into a var argument
+    var into_deinit = Pinned(9)
+    assert_equal(into_deinit^.unpin(), 9)  # into a deinit method
+    var l = Linear(3)
+    assert_equal(l^.done(), 3)
+
+
+# Conformance syntax: a conditional conformance exists only when proven.
+@fieldwise_init
+struct Box[T: Copyable & Deinitable](Hashable where conforms_to(T, Hashable)):
+    var value: Self.T
+
+
+struct NoHash(Copyable):
+    var x: Int
+
+    def __init__(out self, x: Int):
+        self.x = x
+
+
+def test_conformance_syntax() raises:
+    assert_true(conforms_to(Box[Int], Hashable))  # T is Hashable, so Box is
+    assert_false(conforms_to(Box[NoHash], Hashable))  # T isn't, so Box isn't
+    assert_equal(hash(Box[Int](5)), hash(Box[Int](5)))
+    var plain = Box[NoHash](NoHash(1))  # still a Box, just not Hashable
+    assert_equal(plain.value.x, 1)
+
+
+def test_string_not_sized() raises:
+    var s = String("café")
+    assert_equal(s.byte_length(), 5)
+    assert_equal(s.count_codepoints(), 4)
+    assert_equal(s.count_graphemes(), 4)
+
+
+# Diagnostics: messages after else compile as literals.
+def chunk[
+    w: Int
+]() -> Int where w.is_power_of_two() else ("'w' must be a power of two"):
+    return w
+
+
+def test_else_messages() raises:
+    assert_equal(chunk[8](), 8)  # a passing condition shows no message
+
+
 def main() raises:
     test_value_compare_format_floor()
     test_conversions()
@@ -134,3 +253,7 @@ def main() raises:
     test_hashable()
     test_iterable()
     test_conformance_claims()
+    test_movable_opt_outs()
+    test_conformance_syntax()
+    test_else_messages()
+    test_string_not_sized()

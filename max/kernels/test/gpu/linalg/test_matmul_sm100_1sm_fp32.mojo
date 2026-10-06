@@ -17,10 +17,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
-from linalg.utils import (
-    elementwise_compute_lambda_type,
-    elementwise_epilogue_type,
-)
+from linalg.utils import elementwise_epilogue_type
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
@@ -87,14 +84,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             t" swapAB={swapAB} k_group_size={k_group_size}"
         )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = Int(m.value()) * Int(k.value())
     var b_size = (
@@ -168,49 +163,46 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         k_group_size=k_group_size,
     )
 
-    var c_tensor_lt = c_tensor.to_layout_tensor()
-
     # Normal epilogue: store the matmul result unchanged (exercises the lambda
     # store path; reference is plain vendor BLAS).
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
+    @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType, width: SIMDLength, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_tensor_lt.store[store_alignment=alignment * size_of[c_type]()](
-            idx, rebind[SIMD[c_type, width]](val)
-        )
+        c_tensor.store_linear[
+            width=width, alignment=alignment * size_of[c_type]()
+        ](idx, rebind[SIMD[c_type, width]](val))
 
     # Compute epilogue: out = matmul * C_initial (also checks the coordinate).
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor_lt)
     def compute_fn[
-        _dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
-        return val * c_tensor_lt.load[width=width](idx).cast[_dtype]()
-
-    comptime epi = Optional[elementwise_epilogue_type](
-        epilogue_fn
-    ) if normal_epilogue else None
-    comptime compute_epi = Optional[elementwise_compute_lambda_type](
-        compute_fn
-    ) if compute_epilogue else None
-
-    blackwell_matmul_tma_umma_warp_specialized[
-        transpose_b=transpose_b,
-        config=matmul_config,
-        elementwise_lambda_fn=epi,
-        elementwise_compute_lambda_fn=compute_epi,
+        _dtype: DType, width: SIMDLength, *, alignment: Int
     ](
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        ctx,
-    )
+        idx: IndexList[2], val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]
+    ) -> SIMD[_dtype, width]:
+        return val * c_val
+
+    comptime if compute_epilogue:
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+        ](c_tensor, a_tensor, b_tensor, compute_fn, ctx)
+    else:
+        comptime epi = Optional[elementwise_epilogue_type](
+            epilogue_fn
+        ) if normal_epilogue else None
+
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b=transpose_b,
+            config=matmul_config,
+            elementwise_lambda_fn=epi,
+        ](
+            c_tensor,
+            a_tensor,
+            b_tensor,
+            ctx,
+        )
 
     comptime assert a_type != .float8_e4m3fn or transpose_b, (
         "Testing is only supported for transposed_b==True when"
@@ -248,12 +240,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         rtol=rtol,
     )
     print("\n=== TEST PASSED ===\n")
-
-    # Cleanup
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 def main() raises:

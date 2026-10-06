@@ -115,7 +115,7 @@ def bulk_memcpy_kernel[
     var src_g = src.address_space_cast[.GLOBAL]()
     var dst_g = dst.address_space_cast[.GLOBAL]()
 
-    var first = Int(block_idx.x) * NUM_WARPS + w
+    var first = block_idx.x * NUM_WARPS + w
     var stride = Int(gpu_grid_dim.x) * NUM_WARPS
     var my_total = max(0, (Int(total_chunks) - first + stride - 1) // stride)
 

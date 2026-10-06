@@ -20,6 +20,14 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from max.serve._error_envelope import openai_error_body
+from max.serve.telemetry import common as telemetry
+from max.serve.telemetry._trace_context import (
+    end_span_after,
+    read_trace_level_header,
+    record_server_span_status,
+    start_server_span,
+)
+from max.serve.telemetry.common import _request_id_ctx, _tracing_enabled
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
 
@@ -36,7 +44,13 @@ def _should_count_request(path: str) -> bool:
     return _UNCOUNTED_PATH_RE.fullmatch(path) is None
 
 
-def register_request(app: FastAPI) -> None:
+def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
+    # Read once: the server configures tracing before it builds the app.
+    # Structured logs read the request ID. Only spans, directly or through
+    # the worker's trace carrier, and dd.trace_id read the trace context.
+    tracing = _tracing_enabled()
+    read_trace_levels = telemetry._trace_level_header_enabled
+
     @app.middleware("http")
     async def request_session(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -44,6 +58,19 @@ def register_request(app: FastAPI) -> None:
         request_id = uuid.uuid4().hex
         request.state.request_id = request_id
         request.state.request_timer = StopWatch()
+        server_span = None
+        if tracing:
+            server_span = start_server_span(
+                request_id,
+                method=request.method,
+                path=request.url.path,
+                scheme=request.url.scheme,
+                headers=request.headers,
+            )
+            if read_trace_levels:
+                read_trace_level_header(request.headers)
+        elif structured_logging:
+            _request_id_ctx.set(request_id)
         # Record the request against the final HTTP status code. This is the
         # authoritative place to label ``maxserve.request_count`` with the
         # return code: it sees the status of every request, including failures
@@ -51,10 +78,18 @@ def register_request(app: FastAPI) -> None:
         # generator, and it reflects the code actually sent to the client
         # rather than a value guessed mid-stream.
         status_code = 500
+        span_ends_with_body = False
         try:
             response: Response = await call_next(request)
             status_code = response.status_code
             response.headers["X-Request-ID"] = request_id
+            # Ending with the headers would make a stream's span cover only
+            # the time to its first byte.
+            if server_span is not None and hasattr(response, "body_iterator"):
+                response.body_iterator = end_span_after(
+                    response.body_iterator, server_span
+                )
+                span_ends_with_body = True
             return response
         except HTTPException as e:
             status_code = e.status_code
@@ -75,3 +110,12 @@ def register_request(app: FastAPI) -> None:
         finally:
             if _should_count_request(request.url.path):
                 METRICS.request_count(status_code, request.url.path)
+            if server_span is not None:
+                record_server_span_status(
+                    server_span,
+                    request.method,
+                    request.scope.get("route"),
+                    status_code,
+                )
+                if not span_ends_with_body:
+                    server_span.end()

@@ -12,11 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import randint, randn, seed
-from std.sys import (
-    has_nvidia_gpu_accelerator,
-    has_amd_gpu_accelerator,
-    size_of,
-)
+from std.sys import default_accelerator, size_of
 
 from max.algorithm import sync_parallelize
 from max.benchmark import bencher_iter_custom
@@ -43,6 +39,7 @@ from shmem.ep_comm import (
     dispatch_async_kernel,
 )
 from std.testing import assert_equal
+from std.math import ceildiv
 
 
 def legalize_topk_ids[
@@ -208,7 +205,7 @@ def test_combine[
             # each further lap shifts to the next triple of local experts, so
             # its experts stay distinct however top_k compares to n_ranks.
             comptime n_local = n_experts // n_ranks
-            comptime n_laps = (top_k + n_ranks - 1) // n_ranks
+            comptime n_laps = ceildiv(top_k, n_ranks)
             comptime assert 3 * n_laps <= n_local
             for t in range(n_slots * n_tokens_per_rank):
                 var phase = t % 8
@@ -425,7 +422,6 @@ def test_combine[
         )
 
     @inline(.always)
-    @__parameter
     def run_full_dispatch(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
@@ -461,7 +457,6 @@ def test_combine[
         )
 
     @inline(.always)
-    @__parameter
     def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_combine_async(dev_idx, slot_idx)
         run_combine_async_wait(dev_idx, slot_idx)
@@ -660,11 +655,12 @@ def main() raises:
         raise Error("Cannot enable P2P Mem Access!")
 
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        default_accelerator().is_nvidia_gpu()
+        or default_accelerator().is_amd_gpu()
     ), "Only NVIDIA and AMD GPUs are supported"
 
     comptime for gpu_idx in range(len(test_gpu_counts)):
-        comptime num_gpus = rebind[Int](test_gpu_counts[gpu_idx])
+        comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
 

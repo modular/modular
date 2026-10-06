@@ -15,7 +15,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 _logger = logging.getLogger("max.pipelines")
 
@@ -35,6 +35,7 @@ from max.pipelines.lib import (
     EmbeddingsPipelineType,
     MemoryPlan,
     PipelineConfig,
+    ProfilingConfig,
     TextGenerationPipeline,
 )
 from max.pipelines.modeling.types import (
@@ -51,6 +52,7 @@ from max.serve.config import Settings
 from max.serve.queue import MAXPullQueue, MAXPushQueue
 from max.serve.scheduler.interface import Scheduler
 from max.serve.scheduler_result import SchedulerResult
+from max.serve.telemetry import common as telemetry
 from max.serve.worker_interface import WorkerQueues
 
 from .base import CancelRequest, PrefillRequest, PrefillResponse
@@ -60,6 +62,10 @@ from .embeddings_scheduler import EmbeddingsScheduler, EmbeddingsSchedulerConfig
 from .one_shot_scheduler import OneShotScheduler
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
+
+# Annotation only: _kernel_capture() imports the module lazily.
+if TYPE_CHECKING:
+    from max.serve.telemetry._kernel_capture import KernelCapture
 
 __all__ = [
     "CancelRequest",
@@ -71,6 +77,20 @@ __all__ = [
     "TokenGenerationSchedulerConfig",
     "load_scheduler",
 ]
+
+
+def _kernel_capture(profiling: ProfilingConfig) -> KernelCapture | None:
+    """Returns the scheduler's kernel capture, bounded by ``profiling``'s
+    limits, if requests may arm one in this worker."""
+    if not telemetry._trace_level_header_enabled:
+        return None
+    # Lazy so default startup skips the capture module.
+    from max.serve.telemetry._kernel_capture import (
+        KernelCapture,
+        kernel_capture_permitted,
+    )
+
+    return KernelCapture(profiling) if kernel_capture_permitted() else None
 
 
 def load_scheduler(
@@ -172,6 +192,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             memory_plan=memory_plan,
             max_pending_requests=settings.max_pending_requests,
+            kernel_capture=_kernel_capture(pipeline_config.profiling),
         )
     elif pipeline_config.runtime.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)

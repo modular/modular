@@ -33,9 +33,10 @@ from max.experimental.sharding import (
     DeviceMesh,
     Partial,
     Placement,
-    PlacementMapping,
     Replicated,
     Sharded,
+    ShardingError,
+    Unknown,
 )
 from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
@@ -178,7 +179,7 @@ def _apply_per_group(
         # reads back the same dim on every rank and collapses the wrapper.
         return Tensor.from_shard_values(
             result,
-            PlacementMapping(mesh, new_placements),
+            DeviceMapping(mesh, new_placements),
         )
 
 
@@ -345,7 +346,7 @@ def _local_split(t: Tensor, mesh_axis: int, target: Sharded) -> Tensor:
                 result[idx] = split_chunks[rank_in_group]
         return Tensor.from_shard_values(
             result,
-            PlacementMapping(mesh, new_placements),
+            DeviceMapping(mesh, new_placements),
         )
 
 
@@ -353,7 +354,7 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
     """Distributes a non-distributed tensor across a mesh."""
     assert not t.is_distributed, "_scatter expects a non-distributed tensor"
     mesh = target.mesh
-    placements = target.to_placements()
+    placements = target.placements
 
     # Size-1 axes cannot host a shard.
     src_shape = t.shape
@@ -363,8 +364,6 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
             continue
         dim = src_shape[ax]
         if isinstance(dim, StaticDim) and dim.dim == 1:
-            from max.experimental.sharding.mode import ShardingError
-
             raise ShardingError(
                 f"_scatter: placement {p!r} on mesh axis "
                 f"{mesh.axis_names[mesh_axis]!r} targets tensor axis {ax} "
@@ -399,7 +398,7 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
         ]
         return Tensor.from_shard_values(
             shard_tvs,
-            PlacementMapping(mesh, placements),
+            DeviceMapping(mesh, placements),
         )
 
 
@@ -424,7 +423,7 @@ def distributed_broadcast(t: Tensor, mesh: DeviceMesh) -> Tensor:
         shards = ops.distributed_broadcast(TensorValue(t), signal_buffers)
         return Tensor.from_shard_values(
             shards,
-            PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+            DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
         )
 
 
@@ -450,7 +449,16 @@ def transfer_to(
     if isinstance(target, DeviceRef):
         target = target.to_device()
     if isinstance(target, Device):
-        target = PlacementMapping(DeviceMesh.single(target), (Replicated(),))
+        target = DeviceMapping(DeviceMesh.single(target), (Replicated(),))
+    if t.mapping != target and any(
+        isinstance(p, Unknown) for p in (*t.placements, *target.placements)
+    ):
+        raise ShardingError(
+            f"transfer_to cannot move {t.mapping} to {target}: Unknown shards "
+            "have no global value to preserve. Use Tensor.rebind_mapping to "
+            "claim a placement, or a collective such as allreduce_sum to "
+            "combine them."
+        )
 
     if t.real and not t.is_distributed and target.mesh.num_devices == 1:
         mesh_device = target.mesh.devices[0]
@@ -459,7 +467,7 @@ def transfer_to(
         _validation_hooks.device_transfer("Tensor.to()", t, mesh_device)
         return Tensor(storage=t.driver_tensor.to(mesh_device))
 
-    target_p = target.to_placements()
+    target_p = target.placements
 
     if not t.is_distributed:
         return _scatter(t, target)
@@ -471,7 +479,7 @@ def transfer_to(
 
         replicated_p = tuple(Replicated() for _ in range(source_mesh.ndim))
         if t.placements != replicated_p:
-            t = transfer_to(t, PlacementMapping(source_mesh, replicated_p))
+            t = transfer_to(t, DeviceMapping(source_mesh, replicated_p))
 
         single = t.local_shards[0]
         with ensure_context():

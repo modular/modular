@@ -402,15 +402,23 @@ def main() raises:
         test_moe_create_indices[test_scales_offset=True](20660, ctx)
         test_moe_create_indices[test_scales_offset=True](100_000, ctx)
 
-        # The kernel walks the experts in chunks of one block width (512),
-        # carrying the running offsets across chunks: one exact chunk, a
-        # partial second chunk, and a third chunk holding a single expert.
+        # The kernel walks the experts in chunks of one block width (512,
+        # 1024 on Apple), carrying the running offsets across chunks. These
+        # cover exact and partial chunks at both widths; 1025 ends in a
+        # single-expert chunk, and 2049 gives Apple a third chunk.
         test_moe_create_indices[num_experts=512](100, ctx)
         test_moe_create_indices[num_experts=513](2500, ctx)
-        test_moe_create_indices[num_experts=1025](2500, ctx)
+        test_moe_create_indices[num_experts=896](2500, ctx)
+        test_moe_create_indices[num_experts=896, test_scales_offset=True](
+            2500, ctx
+        )
+        test_moe_create_indices[num_experts=896, skewed=True](16, ctx)
+        test_moe_create_indices[num_experts=1024](100_000, ctx)
         test_moe_create_indices[num_experts=513, test_scales_offset=True](
             2500, ctx
         )
+        test_moe_create_indices[num_experts=1025](2500, ctx)
+        test_moe_create_indices[num_experts=2049](20660, ctx)
 
         # Skewed distribution: every token on expert 0, so one group holds
         # them all and the rest are empty.

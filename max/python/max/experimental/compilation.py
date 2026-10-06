@@ -81,12 +81,12 @@ from max.experimental.realization_context import (
 )
 from max.experimental.sharding import (
     BufferLayout,
+    DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     TensorLayout,
-    as_layout,
 )
 from max.experimental.sharding.per_shard_dim import make_per_shard_dim
+from max.experimental.sharding.types import as_layout
 from max.experimental.support import _session
 from max.experimental.tensor import (
     Tensor,
@@ -476,8 +476,7 @@ class CompiledCallable(Generic[_P, _R]):
             [
                 Tensor._from_shards(
                     tuple(itertools.islice(rest, layout.mesh.num_devices)),
-                    layout.mesh,
-                    layout.placements,
+                    layout.mapping,
                 )
                 for layout in self.out_layouts
             ],
@@ -740,11 +739,11 @@ def _boundary_layout(tensor: Tensor) -> TensorLayout:
     if tuple(mapping.mesh.devices) != devices:
         # A tensor that was moved to the host keeps its original mesh. The
         # graph values are on the devices it is actually on.
-        mapping = PlacementMapping(
+        mapping = DeviceMapping(
             DeviceMesh(
                 devices, mapping.mesh.mesh_shape, mapping.mesh.axis_names
             ),
-            mapping.to_placements(),
+            mapping.placements,
         )
     shape = Shape(
         make_per_shard_dim(cells, force_wrap=True)

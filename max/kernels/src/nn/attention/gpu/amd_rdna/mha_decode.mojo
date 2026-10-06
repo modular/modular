@@ -46,10 +46,11 @@ __extension AttentionRDNA:
         ), "RDNA decode requires output_depth == depth (no MLA)"
 
         @inline(.always)
-        @__parameter
         def loop_over_kvcache[
             tile_size: Int
-        ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool):
+        ](kv_tile_start_row: Int, end: Int, not_last_iter: Bool) {
+            mut self, imm
+        }:
             if self.mask_skip_and_advance(UInt32(kv_tile_start_row)):
                 return
 

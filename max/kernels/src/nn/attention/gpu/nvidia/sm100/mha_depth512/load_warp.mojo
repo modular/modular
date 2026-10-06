@@ -38,9 +38,9 @@ decisions. If one CTA skips a tile and the other doesn't, barriers desync.
 
 from std.math import ceildiv
 from std.sys import size_of
-from layout import TileTensor
+from layout import Coord, TileTensor
 from layout.tile_layout import row_major as tt_row_major
-from layout.tma_async import SharedMemBarrier
+from layout.tma_async import SharedMemBarrier, TMATensorTile
 from .config import Depth512SM100Config
 from .smem import Depth512AttentionSMem
 from .barriers import Depth512MBars
@@ -58,7 +58,6 @@ from nn.attention.gpu.nvidia.common import (
     KVTMATile,
     MHAPosition,
     OptionalPointer,
-    QTMATile,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -69,11 +68,15 @@ from std.utils.index import Index
 
 @inline(.always)
 def depth512_load[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     MaskType: MHAMask,
     qkv_dtype: DType,
     config: Depth512SM100Config[qkv_dtype],
+    //,
     ValidLengthType: OptionalPointer,
+    *,
     _is_cache_length_accurate: Bool,
     MaxSeqLenType: OptionallyStaticInt,
     is_leader: Bool,
@@ -84,16 +87,7 @@ def depth512_load[
     seq_info: SeqInfo,
     max_seq_len: MaxSeqLenType,
     mask: MaskType,
-    q_tma_op: QTMATile[
-        KVLUTType.dtype,
-        config.swizzle_mode,
-        BM=config.BM,
-        depth=config.qk_depth,
-        group=config.group,
-        decoding=False,
-        fuse_gqa=config.fuse_gqa,
-        num_qk_stages=config.num_qk_stages,
-    ],
+    q_tma_op: TMATensorTile[KVLUTType.dtype, q_tile_shape, q_desc_shape],
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         config.swizzle_mode,
@@ -216,9 +210,15 @@ def depth512_load[
     # ---- TileTensor types for TMA destinations ------------------------------
     # TMA only uses .ptr — flat row_major TileTensor is sufficient.
 
-    comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+    comptime q_elems = type_of(q_tma_op).tile_shape.element_types[
+        0
+    ].static_value * type_of(q_tma_op).tile_shape.element_types[
+        1
+    ].static_value * type_of(
         q_tma_op
-    ).tile_shape[1] * type_of(q_tma_op).tile_shape[2]
+    ).tile_shape.element_types[
+        2
+    ].static_value
     comptime QType = TileTensor[
         KVLUTType.dtype,
         type_of(tt_row_major[q_elems]()),
@@ -329,9 +329,8 @@ def depth512_load[
 
     var e = elect()
 
-    @__parameter
     @inline(.always)
-    def _kv_num_valid_pages(current_kv_row: UInt32) -> UInt32:
+    def _kv_num_valid_pages(current_kv_row: UInt32) {imm} -> UInt32:
         """Valid paged entries in a BK1-row range starting at `current_kv_row`.
 
         Used for both K's per-CTA half and V's per-pv_stage half (both
@@ -405,11 +404,16 @@ def depth512_load[
 
     # ---- V load helper (peeled + loop share this) ----------------------------
 
-    @__parameter
     @inline(.always)
     def _load_v_stage[
         pv_stage: Int
-    ](depth_col_offset: Int, v_nvp: UInt32,):
+    ](
+        kv_paged_rows: KVPagedRows,
+        depth_col_offset: Int,
+        v_nvp: UInt32,
+    ) {
+        mut kv_pipeline, imm
+    }:
         """Load one V pv_stage using the shared kv_paged_rows.
 
         With `oob_fill_pages=True` on the partial path, OOB-coord TMAs
@@ -448,13 +452,18 @@ def depth512_load[
 
     # ---- K load helper (peeled-first, main, peeled-last share this) ---------
 
-    @__parameter
     @inline(.always)
     def _produce_k[
         partial: Bool,
         qk_stage: Int = 0,
         with_q: Bool = False,
-    ](paged_rows: KVPagedRows, kv_nvp_0: UInt32 = 0, kv_nvp_1: UInt32 = 0,):
+    ](
+        paged_rows: KVPagedRows,
+        kv_nvp_0: UInt32 = 0,
+        kv_nvp_1: UInt32 = 0,
+    ) {
+        mut kv_pipeline, imm
+    }:
         """Produce one K depth stage.
 
         `partial`: forward to `tma_copy_k`; partial-page TMA when True.
@@ -571,16 +580,16 @@ def depth512_load[
     comptime for pv_stage in range(num_pv_stages):
         var v_nvp = kv_nvp_0 if pv_stage == 0 else kv_nvp_1
         comptime if config.split_o:
-            _load_v_stage[pv_stage](v_lo_col_offset, v_nvp)
+            _load_v_stage[pv_stage](kv_paged_rows, v_lo_col_offset, v_nvp)
         else:
-            _load_v_stage[pv_stage](v_col_offset, v_nvp)
+            _load_v_stage[pv_stage](kv_paged_rows, v_col_offset, v_nvp)
 
     # ---- Peeled first iteration: V_hi BN stages (split_o only) ---------------
 
     comptime if config.split_o:
         comptime for pv_stage in range(num_pv_stages):
             var v_nvp = kv_nvp_0 if pv_stage == 0 else kv_nvp_1
-            _load_v_stage[pv_stage](v_hi_col_offset, v_nvp)
+            _load_v_stage[pv_stage](kv_paged_rows, v_hi_col_offset, v_nvp)
 
     # ---- Main KV producer loop ----------------------------------------------
 
@@ -623,6 +632,7 @@ def depth512_load[
         comptime for pv_stage in range(num_pv_stages):
             comptime if config.split_o:
                 _load_v_stage[pv_stage](
+                    kv_paged_rows,
                     v_lo_col_offset,
                     UInt32(
                         KVPagedRows.num_pages // num_pv_stages
@@ -631,6 +641,7 @@ def depth512_load[
                 )
             else:
                 _load_v_stage[pv_stage](
+                    kv_paged_rows,
                     v_col_offset,
                     UInt32(
                         KVPagedRows.num_pages // num_pv_stages
@@ -642,6 +653,7 @@ def depth512_load[
         comptime if config.split_o:
             comptime for pv_stage in range(num_pv_stages):
                 _load_v_stage[pv_stage](
+                    kv_paged_rows,
                     v_hi_col_offset,
                     UInt32(
                         KVPagedRows.num_pages // num_pv_stages
@@ -685,11 +697,17 @@ def depth512_load[
                 comptime for pv_stage in range(num_pv_stages):
                     var v_nvp = kv_nvp_0 if pv_stage == 0 else kv_nvp_1
                     comptime if config.split_o:
-                        _load_v_stage[pv_stage](v_lo_col_offset, v_nvp)
+                        _load_v_stage[pv_stage](
+                            kv_paged_rows, v_lo_col_offset, v_nvp
+                        )
                     else:
-                        _load_v_stage[pv_stage](v_col_offset, v_nvp)
+                        _load_v_stage[pv_stage](
+                            kv_paged_rows, v_col_offset, v_nvp
+                        )
 
                 comptime if config.split_o:
                     comptime for pv_stage in range(num_pv_stages):
                         var v_nvp = kv_nvp_0 if pv_stage == 0 else kv_nvp_1
-                        _load_v_stage[pv_stage](v_hi_col_offset, v_nvp)
+                        _load_v_stage[pv_stage](
+                            kv_paged_rows, v_hi_col_offset, v_nvp
+                        )

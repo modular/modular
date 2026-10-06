@@ -16,6 +16,7 @@ from std.sys import (
     get_defined_dtype,
     get_defined_int,
     align_of,
+    default_accelerator,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -577,7 +578,10 @@ def main() raises:
     var init_type = InitializationType.from_str(
         arg_parse("init_type", "uniform_distribution")
     )
-    var verify = arg_parse("verify", True) if not c_type.is_float8() else False
+    # The reference is vendor BLAS, which Apple GPUs don't have.
+    var verify = arg_parse(
+        "verify", not default_accelerator().is_apple_gpu()
+    ) if not c_type.is_float8() else False
     comptime cache_busting = get_defined_bool["cache_busting", True]()
     comptime transpose_b = True
     comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()

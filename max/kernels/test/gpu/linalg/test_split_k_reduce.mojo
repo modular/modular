@@ -75,15 +75,15 @@ def test_split_k_reduce_rank3[
     # Create TileTensors
     var c = TileTensor(
         c_device,
-        row_major(Coord(Int(M), Int(N))),
+        row_major(M, N),
     )
     var work_space = TileTensor(
         work_space_device,
-        row_major(Coord(Int(num_partitions), Int(M), Int(N))),
+        row_major(num_partitions, M, N),
     )
     var epilogue_buffer = TileTensor(
         epilogue_data_device,
-        row_major(Coord(Int(M), Int(N))),
+        row_major(M, N),
     )
 
     @__parameter

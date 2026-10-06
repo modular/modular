@@ -78,7 +78,6 @@ class UnifiedMTPGlm5_2Inputs(UnifiedSpecDecodeInputs, DeepseekV3Inputs):
     def buffers(self) -> tuple[Buffer, ...]:
         return super().buffers + self._spec_decode_tail_buffers(
             include_in_thinking_phase=True,
-            include_draft_probs_full=self.sampled_draft_proposal,
         )
 
 

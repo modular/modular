@@ -19,9 +19,10 @@ import asyncio
 import io
 import json
 import logging
+from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -34,11 +35,13 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.context.exceptions import InputError, PromptTooLongError
+from max.pipelines.lib._chat_encoder import ChatEncoder, load_chat_encoder
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     TextGenerationRequest,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
+    TokenIds,
 )
 from max.support.image import find_contiguous_ranges, hash_image
 from PIL import Image, UnidentifiedImageError
@@ -179,6 +182,49 @@ def resolve_single_special_token(delegate: Any, token: str) -> int:
     return int(token_id)
 
 
+class ReasoningDelimitersMixin:
+    """Resolves and exposes a tokenizer's reasoning-delimiter token ids.
+
+    Mixing this into a tokenizer satisfies
+    :class:`~max.pipelines.modeling.types.ReasoningPipelineTokenizer`.
+    Subclasses override :attr:`reasoning_delimiters` when their model does not
+    use ``<think>``/``</think>``, and call
+    :meth:`_resolve_reasoning_delimiters` from ``__init__`` once the delegate
+    is loaded. :class:`ReasoningTextTokenizer` does the call itself.
+    """
+
+    reasoning_delimiters: ClassVar[tuple[str, str]] = ("<think>", "</think>")
+    """The special tokens that open and close a reasoning span."""
+
+    _reasoning_start_token_id: int
+    _reasoning_end_token_id: int
+
+    def _resolve_reasoning_delimiters(self, delegate: Any) -> None:
+        """Resolves :attr:`reasoning_delimiters` to ids via ``delegate``.
+
+        Raises:
+            ValueError: If either delimiter is not a single special token in
+                the vocab.
+        """
+        start, end = self.reasoning_delimiters
+        self._reasoning_start_token_id = resolve_single_special_token(
+            delegate, start
+        )
+        self._reasoning_end_token_id = resolve_single_special_token(
+            delegate, end
+        )
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """The token id that opens a reasoning span."""
+        return self._reasoning_start_token_id
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """The token id that closes a reasoning span."""
+        return self._reasoning_end_token_id
+
+
 logger = logging.getLogger("max.pipelines")
 
 
@@ -289,7 +335,7 @@ class IdentityPipelineTokenizer(
 
     async def decode(
         self,
-        encoded: str,
+        encoded: TokenIds | str,
         **kwargs,
     ) -> str:
         """Returns the encoded string unchanged (identity decoding)."""
@@ -356,6 +402,59 @@ def replace_unpaired_surrogates(prompt: str) -> str:
     return prompt
 
 
+def _encode_with(encoder: ChatEncoder, prompt: str) -> npt.NDArray[np.int64]:
+    """Encodes ``prompt`` with ``encoder``, as :meth:`TextTokenizer.encode` would."""
+    ids = encoder.encode(replace_unpaired_surrogates(prompt))
+    return np.frombuffer(ids, dtype="<u4").astype(np.int64)
+
+
+def _as_token_id_set(eos_token_id: object) -> set[int]:
+    if isinstance(eos_token_id, int):
+        return {eos_token_id}
+    if isinstance(eos_token_id, list):
+        return {
+            token_id for token_id in eos_token_id if isinstance(token_id, int)
+        }
+    return set()
+
+
+def resolve_eos_token_ids(
+    tokenizer_eos_token_id: int | None,
+    pipeline_config: PipelineConfig | None,
+) -> set[int]:
+    """Returns every token id that ends generation for the model.
+
+    Unions the tokenizer's EOS token with the ``eos_token_id`` of the target
+    model's ``config.json``, the draft model's ``config.json`` and the target
+    model's ``generation_config.json``. Each ``eos_token_id`` may be one id, a
+    list of ids or unset. Hugging Face ``generate`` stops on the
+    ``generation_config.json`` list, which often names more tokens than
+    ``config.json`` (for example a chat turn terminator).
+
+    Args:
+        tokenizer_eos_token_id: The tokenizer's ``eos_token_id``, if any.
+        pipeline_config: The pipeline configuration to read model configs
+            from, or ``None`` to use only the tokenizer's EOS token.
+
+    Returns:
+        The set of EOS token ids.
+    """
+    eos_token_ids = _as_token_id_set(tokenizer_eos_token_id)
+    if pipeline_config is None:
+        return eos_token_ids
+    model = pipeline_config.model
+    draft_hf_config = getattr(
+        pipeline_config.draft_model, "huggingface_config", None
+    )
+    for eos in (
+        getattr(model.huggingface_config, "eos_token_id", None),
+        getattr(draft_hf_config, "eos_token_id", None),
+        model.generation_config.eos_token_id,
+    ):
+        eos_token_ids.update(_as_token_id_set(eos))
+    return eos_token_ids
+
+
 async def build_eos_tracker_for_request(
     eos_token_ids: set[int],
     request: TextGenerationRequest,
@@ -410,6 +509,8 @@ class TextTokenizer(
                         customizing the prompt formatting for different use cases.
     """
 
+    _chat_encoder: ChatEncoder | None = None
+
     def __init__(
         self,
         model_path: str,
@@ -455,6 +556,17 @@ class TextTokenizer(
 
         self.max_length = max_length or self.delegate.model_max_length
 
+        self._chat_encoder = load_chat_encoder(
+            pipeline_config.tokenizer_impl
+            if pipeline_config is not None
+            else None,
+            self.delegate,
+            model_path,
+            revision,
+        )
+        self._chat_encoder_outcomes: Counter[str] = Counter()
+        self._chat_encoder_failed = False
+
         # configure Llama whitespace fix if needed
         self._enable_llama_whitespace_fix = (
             enable_llama_whitespace_fix and self._strips_leading_whitespace
@@ -464,25 +576,20 @@ class TextTokenizer(
             self._llama_whitespace_fix_dummy_token_len,
         ) = self._llama_whitespace_fix_dummy_token
 
-        # cache tokenizer eos token ids
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
 
-        if pipeline_config:
-            target_eos = getattr(
-                pipeline_config.model.huggingface_config, "eos_token_id", None
-            )
-            draft_hf = getattr(
-                pipeline_config.draft_model, "huggingface_config", None
-            )
-            draft_eos = getattr(draft_hf, "eos_token_id", None)
-            for eos in (target_eos, draft_eos):
-                if isinstance(eos, int):
-                    self._eos_token_ids.add(eos)
-                elif isinstance(eos, list):
-                    self._eos_token_ids.update(eos)
+    def __getstate__(self) -> dict[str, Any]:
+        """Pickles without the chat encoder, which may not be picklable.
+
+        The pipeline factory carries this tokenizer into the spawned model
+        worker (see ``PIPELINE_REGISTRY.retrieve_factory``), which builds no
+        contexts from chats; should it encode one, HuggingFace serves it.
+        """
+        state = self.__dict__.copy()
+        state["_chat_encoder"] = None
+        return state
 
     @property
     def eos_token_ids(self) -> set[int]:
@@ -589,14 +696,9 @@ class TextTokenizer(
 
         return encoded_prompt
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Transforms a provided encoded token array back into readable text."""
-        # Callers pass plain ints (log-probability responses) and token lists
-        # (CLI streaming) as well as arrays; normalize them all.
-        if not isinstance(encoded, np.ndarray):
-            encoded = np.asarray(encoded)
+        encoded = np.asarray(encoded)
 
         # There is an issue where Llama tokenizer strips leading spaces
         # if a single token is decoded at a time. This is a temporary
@@ -626,11 +728,55 @@ class TextTokenizer(
             prompt = self.apply_chat_template(
                 messages, tools, **chat_template_options
             )
-            return prompt, await self.encode(prompt, add_special_tokens=False)
+            return prompt, await self._encode_chat_prompt(prompt)
         else:
             raise ValueError(
                 "either prompt must be provided as a list[int] or str, or messages must be provided as a list[TextGenerationRequestMessage]"
             )
+
+    async def _encode_chat_prompt(
+        self, prompt: str
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Encodes a rendered chat prompt, with the chat encoder if one is set.
+
+        An encoder error sends the prompt to HuggingFace instead.
+        """
+        encoder = self._chat_encoder
+        if encoder is None:
+            return await self.encode(prompt, add_special_tokens=False)
+        try:
+            ids = await run_with_default_executor(_encode_with, encoder, prompt)
+        except Exception:
+            self._chat_encoder_outcomes["fallback"] += 1
+            # Every request may hit the same error, so only the first warns.
+            first = not self._chat_encoder_failed
+            self._chat_encoder_failed = True
+            logger.log(
+                logging.WARNING if first else logging.DEBUG,
+                "%s failed to encode a chat prompt, so HuggingFace encodes "
+                "it%s",
+                type(encoder).__name__,
+                "; later failures log at DEBUG." if first else ".",
+                exc_info=True,
+            )
+            return await self.encode(prompt, add_special_tokens=False)
+        self._chat_encoder_outcomes["custom"] += 1
+        if self.max_length and len(ids) > self.max_length:
+            raise PromptTooLongError(len(ids), self.max_length)
+        return ids
+
+    def take_chat_encoder_outcomes(self) -> dict[str, int]:
+        """Returns the chats encoded since the last call, and forgets them.
+
+        ``custom`` counts the chats the ``--tokenizer-impl`` encoder served,
+        and ``fallback`` the ones it failed on, which HuggingFace encoded.
+        Chats are not counted when no encoder is in use.
+        """
+        if self._chat_encoder is None:
+            return {}
+        outcomes = dict(self._chat_encoder_outcomes)
+        self._chat_encoder_outcomes.clear()
+        return outcomes
 
     async def _encode_stop_criteria(self, stop: list[str]) -> list[list[int]]:
         """Encodes ``stop`` to be used as stop criteria during generation."""
@@ -771,6 +917,21 @@ class TextTokenizer(
         return decoded[self._llama_whitespace_fix_dummy_token_len :]
 
 
+class ReasoningTextTokenizer(ReasoningDelimitersMixin, TextTokenizer):
+    """A :class:`TextTokenizer` that resolves its reasoning-delimiter ids.
+
+    Resolves :attr:`~ReasoningDelimitersMixin.reasoning_delimiters` at
+    construction, so an architecture whose reasoning parser needs them can
+    use this class directly or subclass it.
+    """
+
+    def __init__(
+        self, model_path: str, pipeline_config: PipelineConfig, **kwargs: Any
+    ) -> None:
+        super().__init__(model_path, pipeline_config, **kwargs)
+        self._resolve_reasoning_delimiters(self.delegate)
+
+
 class TextAndVisionTokenizer(
     PipelineTokenizer[
         TextAndVisionContext,
@@ -808,17 +969,9 @@ class TextAndVisionTokenizer(
         self.processor = AutoProcessor.from_pretrained(
             model_path, revision=revision, trust_remote_code=trust_remote_code
         )
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
-
-        huggingface_config = pipeline_config.model.huggingface_config
-        if eos_token_id := getattr(huggingface_config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._eos_token_ids.update(eos_token_id)
 
         self.enable_prefix_caching = (
             pipeline_config.model.kv_cache.enable_prefix_caching
@@ -921,14 +1074,9 @@ class TextAndVisionTokenizer(
 
         return encoded_prompt
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]] | int, **kwargs
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
         """Transforms a provided encoded token array back into readable text."""
-        # Log-probability responses decode one token id (a plain int) at a
-        # time; match the text tokenizer's handling.
-        if isinstance(encoded, int):
-            encoded = np.array(encoded)
+        encoded = np.asarray(encoded)
         try:
             return self.delegate.decode(encoded.tolist(), **kwargs)
         except OverflowError as e:

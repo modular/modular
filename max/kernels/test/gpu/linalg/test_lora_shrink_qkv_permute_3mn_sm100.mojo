@@ -96,7 +96,7 @@ def test[
 
     var a_host = TileTensor(
         a_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var b_host = TileTensor(
         b_host_ptr,
@@ -104,11 +104,11 @@ def test[
     )
     var c_host = TileTensor(
         c_host_ptr,
-        row_major(Coord(Idx[3], total_num_tokens, Idx[N])),
+        row_major(Idx[3], total_num_tokens, Idx[N]),
     )
     var c_ref_host = TileTensor(
         c_ref_host_ptr,
-        row_major(Coord(total_num_tokens, Idx[actual_N])),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
 
     # Setup offsets and expert ids
@@ -135,7 +135,7 @@ def test[
 
     var a_dev = TileTensor(
         a_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[K])),
+        row_major(total_num_tokens, Idx[K]),
     )
     var b_dev = TileTensor(
         b_dev_buffer,
@@ -143,27 +143,19 @@ def test[
     )
     var c_dev = TileTensor(
         c_dev_buffer,
-        row_major(Coord(Idx[3], total_num_tokens, Idx[N])),
+        row_major(Idx[3], total_num_tokens, Idx[N]),
     )
     var c_ref_dev = TileTensor(
         c_ref_dev_buffer,
-        row_major(Coord(total_num_tokens, Idx[actual_N])),
+        row_major(total_num_tokens, Idx[actual_N]),
     )
     var a_offsets_dev = TileTensor(
         a_offsets_dev_buffer,
-        row_major(
-            Coord(
-                num_experts + 1,
-            )
-        ),
+        row_major(num_experts + 1),
     )
     var expert_ids_dev = TileTensor(
         expert_ids_dev_buffer,
-        row_major(
-            Coord(
-                num_experts,
-            )
-        ),
+        row_major(num_experts),
     )
 
     # Move inputs to device

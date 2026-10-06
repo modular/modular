@@ -10,13 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for structured-output sampling across grammar backends.
+"""Tests for structured-output sampling with the xgrammar backend.
 
-Parametrized over the pluggable grammar backends (``llguidance`` and
-``xgrammar``): each compiles a JSON schema, fills a packed int32 bitmask, and
-feeds it through the GPU ``token_sampler``, then asserts the sampled tokens are
-grammar-legal. This exercises the ``GrammarBackend`` abstraction symmetrically
-and confirms each backend's bitmask layout is compatible with the GPU
+Compiles a JSON schema, fills a packed int32 bitmask, and feeds it through the
+GPU ``token_sampler``, then asserts the sampled tokens are grammar-legal. This
+confirms the xgrammar backend's bitmask layout is compatible with the GPU
 ``apply_packed_bitmask`` path.
 """
 
@@ -58,12 +56,10 @@ def structured_output_sampler(session: InferenceSession) -> Model:
     return session.load(graph)
 
 
-@pytest.mark.parametrize("backend_name", ["llguidance", "xgrammar"])
 def test_structured_output_sampling(
     session: InferenceSession,
     structured_output_sampler: Model,
     modular_ai_llama_3_1_local_path: str,
-    backend_name: str,
 ) -> None:
     config = AutoConfig.from_pretrained(modular_ai_llama_3_1_local_path)
     hf_tokenizer = AutoTokenizer.from_pretrained(
@@ -72,7 +68,7 @@ def test_structured_output_sampling(
     vocab_size = config.vocab_size
 
     backend = make_grammar_backend(
-        backend_name,
+        "xgrammar",
         hf_tokenizer,
         vocab_size,
     )

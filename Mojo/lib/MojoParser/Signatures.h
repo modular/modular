@@ -44,10 +44,6 @@ class ParserBase;
 // Argument and Parameter List Parsing
 //===----------------------------------------------------------------------===//
 
-/// TODO(MOCO-4625): remove once the parametric closure trait is the only
-/// implementation.
-bool useParametricClosureTrait();
-
 /// This specifies the handling of keyword arguments in a list.
 enum class KWArgHandling {
   kInferred,            //< before a standalone '//'

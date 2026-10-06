@@ -31,11 +31,10 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Placement,
-    PlacementMapping,
     Replicated,
     TensorLayout,
-    as_device_mapping,
 )
+from max.experimental.sharding.mappings import as_device_mapping
 from max.experimental.sharding.placements import local_shard_shape_from_global
 from max.experimental.tensor import Tensor, defaults
 from max.graph import (
@@ -78,7 +77,7 @@ def _device_from_like(like: Tensor) -> DeviceMapping:
 
 def _reject_sharded_creation(mapping: DeviceMapping, op_name: str) -> None:
     """Raises if ``mapping`` localizes any tensor axis (sharded creation is unsupported)."""
-    for p in mapping.to_placements():
+    for p in mapping.placements:
         if p.localized_axis() is not None:
             raise ValueError(
                 f"{op_name}: cannot create with sharded placement {p!r}. "
@@ -116,7 +115,7 @@ def full(
     mapping = _normalized_device(device)
     resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
     mesh = mapping.mesh
-    placements = mapping.to_placements()
+    placements = mapping.placements
     shard_shapes = local_shard_shape_from_global(Shape(shape), mesh, placements)
     with ensure_context():
         tvs = [
@@ -183,7 +182,7 @@ def zeros(
 
 def _full_like_distributed(like: Tensor, value: Number) -> Tensor:
     """Build a ``full`` tensor from *like*'s per-shard TV shapes directly."""
-    mapping = PlacementMapping(like.mesh, like.placements)
+    mapping = DeviceMapping(like.mesh, like.placements)
     mesh = mapping.mesh
     resolved_dtype, _ = defaults(like.dtype, mesh.devices[0])
     with ensure_context():
@@ -304,7 +303,7 @@ def _distributed_random_op(
             )
             return Tensor.from_graph_value(op_fn(tt, **op_kwargs))
         mesh = device.mesh
-        placements = device.to_placements()
+        placements = device.placements
         shard_shapes = local_shard_shape_from_global(
             Shape(shape), mesh, placements
         )
@@ -430,10 +429,10 @@ def _random_like_distributed(
     std: float = 1.0,
 ) -> Tensor:
     """Per-shard random sampling that preserves *like*'s per-rank symbol names."""
-    mapping = PlacementMapping(like.mesh, like.placements)
+    mapping = DeviceMapping(like.mesh, like.placements)
     mesh = mapping.mesh
     resolved_dtype, _ = defaults(like.dtype, mesh.devices[0])
-    placements = mapping.to_placements()
+    placements = mapping.placements
     assert all(
         isinstance(p, Replicated) or p.localized_axis() is not None
         for p in placements
@@ -658,6 +657,30 @@ def range(
 
 # Backward-compat alias: callers use both F.arange and F.range.
 arange = range
+
+
+def shape_to_tensor(shape: ShapeLike) -> Tensor:
+    """Converts a shape into a rank-1 ``int64`` tensor on the CPU.
+
+    .. code-block:: python
+
+        from max.experimental import functional as F
+        from max.experimental.tensor import Tensor
+
+        x = Tensor.ones((3, 4))
+        num_tokens = F.shape_to_tensor(x.shape)[0]
+        # num_tokens holds 3
+
+    Args:
+        shape: The shape to convert. Each dimension may be static or
+            symbolic.
+
+    Returns:
+        A ``Tensor`` of shape ``[len(shape)]`` and dtype ``int64`` on the CPU
+        whose elements are the dimension values of ``shape``.
+    """
+    with ensure_context():
+        return Tensor.from_graph_value(ops.shape_to_tensor(shape))
 
 
 def constant(

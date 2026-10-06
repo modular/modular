@@ -277,18 +277,15 @@ def gemm(
 
     # Utilities for accessing flattened matrices.
     @inline(.always)
-    @__parameter
-    def get_a(row: Int, col: Int) -> Float32:
+    def get_a(row: Int, col: Int) {imm} -> Float32:
         return a.load(row + m * col)
 
     @inline(.always)
-    @__parameter
-    def get_b(row: Int, col: Int) -> Float32:
+    def get_b(row: Int, col: Int) {imm} -> Float32:
         return b.load(row * n + col)
 
     @inline(.always)
-    @__parameter
-    def set_c(row: Int, col: Int, val: Float32):
+    def set_c(row: Int, col: Int, val: Float32) {imm}:
         c[row + col * m] = val
 
     # Allocate B array into shared memory for tiling.

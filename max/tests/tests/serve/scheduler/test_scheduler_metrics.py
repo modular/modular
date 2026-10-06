@@ -19,6 +19,8 @@ from contextlib import contextmanager
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+from max.nn.kv_cache.metrics import KVCacheMetrics
+from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
 from max.pipelines.lib.vision_encoder_cache import (
     VideoEncoderMetrics,
     VisionEncoderMetrics,
@@ -1882,10 +1884,10 @@ def test_dkv_read_blocks_publishes_outside_the_cache_hit_clause() -> None:
     It is a per-window delta that ``take_metrics`` clears after every batch,
     so a window published under any other batch type would lose its count for
     good. That matters because a load posted on a CE iteration can have its
-    blocks accounted on a later ``wait_for_loads``, which also runs on TG
-    iterations: under the old placement those blocks were dropped, letting the
-    counter read *below* ``cache.hits{tier=external}`` despite being
-    documented as an upper bound on it.
+    blocks accounted on a later drain, which also runs on TG iterations: under
+    the old placement those blocks were dropped, letting the counter read
+    *below* ``cache.hits{tier=external}`` despite being documented as an upper
+    bound on it.
     """
     metrics = _make_metrics(
         batch_type=BatchType.TG,
@@ -1948,3 +1950,86 @@ def test_create_sums_the_external_share_across_admissions() -> None:
     assert metrics.cache_hit_external_tokens == 30
     # The device share is the complement, and the two partition the hit total.
     assert metrics.cache_hit_tokens - metrics.cache_hit_external_tokens == 50
+
+
+def test_batch_metrics_create_reports_shared_tiers_once_under_dp() -> None:
+    """Host and disk tiers are one pool shared by every DP replica, so their
+    capacity is reported once, not ``data_parallel_degree`` times over.
+
+    Regression: summing the per-replica accessor over the shared pool reported
+    a 250 GiB host tier as 500 GiB at ``data_parallel_degree=2``.
+    """
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=750, total=1000)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=4000, total=5000)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics()
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(dp=2),
+        inputs=_mock_inputs(batch_size=2, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    # Device blocks really are partitioned, so they still sum per replica.
+    assert metrics.total_kv_blocks == 200
+    assert metrics.total_host_kv_bytes == 1000
+    assert metrics.used_host_kv_pct == 0.25
+    assert metrics.total_disk_kv_bytes == 5000
+    assert metrics.used_disk_kv_pct == 0.2
+
+
+def test_create_carries_connector_load_failures_through() -> None:
+    """The managers' failed-load count reaches the batch, with no host tier.
+
+    dKV reports no host tier, so a count read only alongside the host tier's
+    would never leave a dKV deployment.
+    """
+    kv_cache = MagicMock()
+    kv_cache.block_count.return_value = BlockCount(free=60, total=100)
+    kv_cache.pressure_pct.return_value = 40.0
+    kv_cache.host_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.disk_byte_count.return_value = ByteCount(free=0, total=0)
+    kv_cache.take_metrics_aggregated.return_value = KVCacheMetrics(
+        connector_load_failures=2
+    )
+
+    metrics = BatchMetrics.create(
+        sch_config=_mock_sch_config(),
+        inputs=_mock_inputs(batch_size=1, batch_type=BatchType.TG),
+        kv_cache=kv_cache,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.1,
+        num_pending_reqs=0,
+        num_terminated_reqs=0,
+        total_preemption_count=0,
+    )
+
+    assert metrics.connector_load_failures == 2
+
+
+def test_connector_load_failures_reach_the_log_and_the_counter() -> None:
+    """Published on its own guard, not the host tier's, which dKV never sets."""
+    metrics = _make_metrics(connector_load_failures=3, total_host_kv_bytes=0)
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_connector_load_failures.assert_called_once_with(3)
+    assert metrics.to_log_extra()["connector_load_failures"] == 3
+
+
+def test_connector_load_failures_are_silent_while_none_fail() -> None:
+    metrics = _make_metrics()
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.cache_connector_load_failures.assert_not_called()
+    assert "connector_load_failures" not in metrics.to_log_extra()

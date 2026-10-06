@@ -92,8 +92,9 @@ def test_constructors() raises:
 def test_string_slice_from_string_static_repr() raises:
     """Tests special case of StringSlice from String pointing to static data."""
 
-    def is_static_string(s: String) -> Bool:
-        return not s._is_inline() and not s._is_ref_counted()
+    var is_static_string = lambda (s: String) -> Bool: (
+        not s._is_inline() and not s._is_ref_counted()
+    )
 
     var s1 = String("foo")
     assert_true(is_static_string(s1))
@@ -1010,6 +1011,18 @@ def test_startswith_endswith_explicit_end() raises:
     assert_true(s.startswith("", start=2, end=2))
 
 
+def test_mul() raises:
+    assert_equal(StringSlice("ab") * 3, "ababab")
+    assert_equal(StringSlice("ab") * 1, "ab")
+    assert_equal(StringSlice("ab") * 0, "")
+    assert_equal(StringSlice("ab") * -1, "")
+    assert_equal(StringSlice("") * 5, "")
+    # Multi-byte codepoints must not be split across the repetitions.
+    assert_equal(StringSlice("🔥é") * 2, "🔥é🔥é")
+    # A result past the inline capacity exercises the heap-allocated path.
+    assert_equal(StringSlice("abcde") * 5, "abcdeabcdeabcdeabcdeabcde")
+
+
 def test_isupper() raises:
     assert_true(StringSlice("ASDG").isupper())
     assert_false(StringSlice("AsDG").isupper())
@@ -1098,18 +1111,33 @@ def test_ascii_rjust() raises:
     assert_equal(StringSlice("hello").ascii_rjust(4), "hello")
     assert_equal(StringSlice("hello").ascii_rjust(8), "   hello")
     assert_equal(StringSlice("hello").ascii_rjust(8, "*"), "***hello")
+    # Must not reach the uninitialized allocation with a non-positive size.
+    assert_equal(StringSlice("hello").ascii_rjust(5), "hello")
+    assert_equal(StringSlice("hello").ascii_rjust(-3), "hello")
+    assert_equal(StringSlice("").ascii_rjust(3, "*"), "***")
+    # Width is in bytes, so a multi-byte subject pads by byte count.
+    assert_equal(StringSlice("🔥").ascii_rjust(6, "*"), "**🔥")
+    # A result past the inline capacity exercises the heap-allocated path.
+    assert_equal(
+        StringSlice("y").ascii_rjust(24, "-"), "-----------------------y"
+    )
 
 
 def test_ascii_ljust() raises:
     assert_equal(StringSlice("hello").ascii_ljust(4), "hello")
     assert_equal(StringSlice("hello").ascii_ljust(8), "hello   ")
     assert_equal(StringSlice("hello").ascii_ljust(8, "*"), "hello***")
+    assert_equal(StringSlice("hello").ascii_ljust(5), "hello")
+    assert_equal(StringSlice("").ascii_ljust(3, "*"), "***")
 
 
 def test_ascii_center() raises:
     assert_equal(StringSlice("hello").ascii_center(4), "hello")
     assert_equal(StringSlice("hello").ascii_center(8), " hello  ")
     assert_equal(StringSlice("hello").ascii_center(8, "*"), "*hello**")
+    assert_equal(StringSlice("hello").ascii_center(5), "hello")
+    assert_equal(StringSlice("hello").ascii_center(0), "hello")
+    assert_equal(StringSlice("").ascii_center(3, "*"), "***")
 
 
 def test_count() raises:
@@ -1296,8 +1324,7 @@ def test_immutable_string_span_compatibility_aliases() raises:
             total += Int(b)
         return total
 
-    def byte_sum_compat(s: ImmStringSlice[_]) -> Int:
-        return byte_sum(s)
+    var byte_sum_compat = lambda (s: ImmStringSlice[_]) -> Int: byte_sum(s)
 
     var mutable_data = String("abc")
     var immutable_data = StaticString("abc")

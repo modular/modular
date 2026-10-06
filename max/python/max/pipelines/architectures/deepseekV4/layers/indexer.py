@@ -59,12 +59,13 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn.kernels import top_k_per_row
+from max.nn.kernels import indexer_score_ragged, top_k_per_row
 from max.nn.layer import Module
 from max.nn.linear import Linear
 
 from ..model_config import DeepseekV4Config
 from .compressor import DeepseekV4Compressor
+from .csa import CompressedStream
 from .hadamard import hadamard_rotate
 from .quantization import fp4_qat_quantize, linear_for
 from .rope import apply_rope_tail
@@ -187,6 +188,57 @@ class DeepseekV4Indexer(Module):
 
         The arguments are :meth:`__call__`'s. Nothing is masked yet.
         """
+        q, weights = self._query(x, qr, freqs_cis)
+        q32 = ops.cast(q, DType.float32)
+        # "thd,tnd->thn": one rank-3 batched matmul with the tokens as the
+        # batch. Rank 3 also keeps this off the batched-matmul path whose
+        # fused epilogue (the relu) cannot instantiate for rank-4 outputs once
+        # n is a multiple of 128 (ISSUES.md Issue 32).
+        kv_t = ops.transpose(ops.cast(candidates, DType.float32), -1, -2)
+        scores = ops.relu(ops.matmul(q32, kv_t))
+        return ops.squeeze(
+            ops.sum(scores * ops.unsqueeze(weights, -1), axis=1), axis=1
+        )
+
+    def score_cached(
+        self,
+        x: TensorValue,
+        qr: TensorValue,
+        freqs_cis: TensorValue,
+        stream: CompressedStream,
+        cutoff: TensorValue,
+    ) -> TensorValue:
+        """:meth:`score` over ``stream``'s zone leaf, in candidate order.
+
+        The fused kernel reads each live entry out of the leaf, so the
+        ``[T, n, head_dim]`` candidate table :meth:`score` takes is never
+        built. Columns ``valid`` rules out are 0 rather than a score.
+
+        Args:
+            x: As in :meth:`__call__`.
+            qr: As in :meth:`__call__`.
+            freqs_cis: As in :meth:`__call__`.
+            stream: The indexer's compressed stream; its fresh entries are
+                already stored in its zone leaf.
+            cutoff: ``[T]`` int32, ``(position + 1) // ratio`` per query.
+        """
+        assert stream.zone_leaf is not None
+        q, weights = self._query(x, qr, freqs_cis)
+        return indexer_score_ragged(
+            q,
+            weights,
+            stream.rows.offsets,
+            stream.windows.base,
+            cutoff,
+            stream.zone_leaf.values,
+            ops.constant(stream.layer, DType.uint32, DeviceRef.CPU()),
+            num_candidates=stream.n_cand,
+        )
+
+    def _query(
+        self, x: TensorValue, qr: TensorValue, freqs_cis: TensorValue
+    ) -> tuple[TensorValue, TensorValue]:
+        """``[T, heads, head_dim]`` queries and ``[T, heads]`` float32 weights."""
         t = x.shape[0]
 
         # ``apply_rope_tail`` wants the sequence on axis 1.
@@ -195,25 +247,14 @@ class DeepseekV4Indexer(Module):
         # Rotate first, then quantize: the rotation is there to make the FP4
         # grid tolerable, so the order is not interchangeable.
         q = fp4_qat_quantize(hadamard_rotate(q))
-
-        q32 = ops.reshape(
-            ops.cast(q, DType.float32), [t, self.n_heads, self.head_dim]
-        )
-        # "thd,tnd->thn": one rank-3 batched matmul with the tokens as the
-        # batch. Rank 3 also keeps this off the batched-matmul path whose
-        # fused epilogue (the relu) cannot instantiate for rank-4 outputs once
-        # n is a multiple of 128 (ISSUES.md Issue 32).
-        kv_t = ops.transpose(ops.cast(candidates, DType.float32), -1, -2)
-        scores = ops.relu(ops.matmul(q32, kv_t))
+        q = ops.reshape(q, [t, self.n_heads, self.head_dim])
 
         # One learned weight per head per query, folded with both softmax
         # scales the reference applies here rather than to the scores.
         weights = (
             ops.cast(self.weights_proj(x), DType.float32) * self.weights_scale
         )
-        return ops.squeeze(
-            ops.sum(scores * ops.unsqueeze(weights, -1), axis=1), axis=1
-        )
+        return q, weights
 
     def select(
         self, index_score: TensorValue, valid: TensorValue
@@ -222,14 +263,13 @@ class DeepseekV4Indexer(Module):
 
         Returns what :meth:`__call__` returns.
         """
-        device = index_score.device
         n = int(index_score.shape[1])
 
         # Rule 1: an entry that had not closed by the query cannot be selected.
         index_score = ops.where(
             valid,
             index_score,
-            ops.constant(float("-inf"), DType.float32, device),
+            float("-inf"),
         )
 
         k = min(self.index_topk, n)
@@ -239,13 +279,13 @@ class DeepseekV4Indexer(Module):
         live = ops.squeeze(
             ops.sum(ops.cast(valid, DType.int64), axis=-1), axis=-1
         )
-        picks = ops.min(live, ops.constant(k, DType.int64, device))
+        picks = ops.min(live, k)
         topk_scores, topk_idxs = top_k_per_row(index_score, picks, k)
         topk_idxs = ops.cast(topk_idxs, DType.int32)
 
         # Rule 2: drop any pick whose score was not finite.
         return ops.where(
-            topk_scores > ops.constant(float("-inf"), DType.float32, device),
+            topk_scores > float("-inf"),
             topk_idxs,
-            ops.constant(-1, DType.int32, device),
+            -1,
         )

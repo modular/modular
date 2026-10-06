@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from std.sys import has_amd_gpu_accelerator
+
 import max.gpu.primitives.warp as warp
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
@@ -32,11 +32,13 @@ def kernel_wrapper[
         dtype, simd_width
     ],
 ](device_ptr: MutPointer[Scalar[dtype], MutAnyOrigin]):
-    var val = device_ptr.load[width=simd_width](thread_idx.x * simd_width)
+    var val = device_ptr.unsafe_load[width=simd_width](
+        thread_idx.x * simd_width
+    )
     var result = kernel_fn(val)
     barrier()
 
-    device_ptr.store(thread_idx.x * simd_width, result)
+    device_ptr.unsafe_store(thread_idx.x * simd_width, result)
 
 
 def _kernel_launch_helper[
@@ -73,7 +75,6 @@ def _shuffle_idx_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         comptime src_lane = 0
         return shuffle_idx(val, src_lane)
@@ -134,7 +135,6 @@ def _shuffle_up_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_up(val, UInt32(offset))
 
@@ -204,7 +204,6 @@ def _shuffle_down_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_down(val, UInt32(offset))
 
@@ -274,7 +273,6 @@ def _shuffle_xor_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i) + constant_add
 
-    @__parameter
     def do_shuffle(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return shuffle_xor(val, UInt32(offset))
 
@@ -337,16 +335,14 @@ def _warp_reduce_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = 1
 
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @__parameter
     def do_warp_reduce(val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-        return warp.reduce[shuffle_down, reduce_add](val)
+        return warp.reduce[shuffle_down](val, reduce_add)
 
     _kernel_launch_helper[dtype, simd_width, do_warp_reduce](
         host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
@@ -384,7 +380,6 @@ def _warp_sum_launch_helper[
     for i in range(block_size):
         host_ptr[i] = Scalar[dtype](i)
 
-    @__parameter
     def do_warp_sum(val: SIMD[dtype, 1]) -> SIMD[dtype, 1]:
         return warp.sum(val)
 
@@ -404,7 +399,7 @@ def test_warp_sum(ctx: DeviceContext) raises:
     _warp_sum_launch_helper[.float32](ctx)
     _warp_sum_launch_helper[.bfloat16](ctx)
     _warp_sum_launch_helper[.float16](ctx)
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         _warp_sum_launch_helper[.float64](ctx)
 
 
@@ -420,7 +415,6 @@ def _lane_group_sum_broadcast_stride1_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -446,13 +440,10 @@ def test_lane_group_sum_stride1(ctx: DeviceContext) raises:
     # Full warp
     _lane_group_sum_broadcast_stride1_helper[.float32, 1, WARP_SIZE](ctx)
     # Sub-warp sizes
-    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 2](ctx)
-    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 4](ctx)
-    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 8](ctx)
-    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 16](ctx)
-    _lane_group_sum_broadcast_stride1_helper[.float32, 1, 32](ctx)
+    comptime for num_lanes in [2, 4, 8, 16, 32]:
+        _lane_group_sum_broadcast_stride1_helper[.float32, 1, num_lanes](ctx)
     # 64-bit (NVIDIA shuffle doesn't support float64)
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         _lane_group_sum_broadcast_stride1_helper[.float64, 1, 4](ctx)
         _lane_group_sum_broadcast_stride1_helper[.float64, 1, WARP_SIZE](ctx)
 
@@ -478,7 +469,6 @@ def _lane_group_max_broadcast_stride1_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -500,16 +490,13 @@ def test_lane_group_max(ctx: DeviceContext) raises:
     # Full warp
     _lane_group_max_broadcast_stride1_helper[.float32, 1, WARP_SIZE](ctx)
     # Sub-warp sizes
-    _lane_group_max_broadcast_stride1_helper[.float32, 1, 2](ctx)
-    _lane_group_max_broadcast_stride1_helper[.float32, 1, 4](ctx)
-    _lane_group_max_broadcast_stride1_helper[.float32, 1, 8](ctx)
-    _lane_group_max_broadcast_stride1_helper[.float32, 1, 16](ctx)
-    _lane_group_max_broadcast_stride1_helper[.float32, 1, 32](ctx)
+    comptime for num_lanes in [2, 4, 8, 16, 32]:
+        _lane_group_max_broadcast_stride1_helper[.float32, 1, num_lanes](ctx)
     # Half precision
     _lane_group_max_broadcast_stride1_helper[.bfloat16, 1, 4](ctx)
     _lane_group_max_broadcast_stride1_helper[.float16, 1, 4](ctx)
     # 64-bit (NVIDIA shuffle doesn't support float64)
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         _lane_group_max_broadcast_stride1_helper[.float64, 1, 4](ctx)
         _lane_group_max_broadcast_stride1_helper[.float64, 1, WARP_SIZE](ctx)
 
@@ -528,14 +515,12 @@ def _lane_group_reduce_launch_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @__parameter
     def reduce_add[
         dtype: DType,
         width: SIMDLength,
     ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return x + y
 
-    @__parameter
     def do_lane_group_reduce(
         val: SIMD[dtype, simd_width]
     ) -> SIMD[dtype, simd_width]:
@@ -543,8 +528,8 @@ def _lane_group_reduce_launch_helper[
             return warp.lane_group_sum[num_lanes=num_lanes, stride=stride](val)
         else:
             return warp.lane_group_reduce[
-                shuffle_down, reduce_add, num_lanes=num_lanes, stride=stride
-            ](val)
+                shuffle_down, num_lanes=num_lanes, stride=stride
+            ](val, reduce_add)
 
     _kernel_launch_helper[dtype, simd_width, do_lane_group_reduce](
         host_ptr.unsafe_ptr(), buffer_size, block_size, ctx
@@ -565,14 +550,14 @@ def test_lane_group_reduce_fp32(ctx: DeviceContext) raises:
     _lane_group_reduce_launch_helper[.float32, 1, 4, 8](ctx)
     _lane_group_reduce_launch_helper[.float32, 1, 4, 8, broadcast=True](ctx)
 
-    comptime if has_amd_gpu_accelerator():
-        # these two use permlane_shuffle on CDNA4+
-        _lane_group_reduce_launch_helper[
-            DType.float32, 1, 2, 32, broadcast=True
-        ](ctx)
-        _lane_group_reduce_launch_helper[
-            DType.float32, 1, 4, 16, broadcast=True
-        ](ctx)
+    # CDNA4+ permlane path
+    comptime if ctx.target.is_amd_gpu():
+        comptime for stride in [16, 32]:
+            comptime num_lanes = WARP_SIZE // stride
+            comptime if num_lanes >= 2:
+                _lane_group_reduce_launch_helper[
+                    DType.float32, 1, num_lanes, stride, broadcast=True
+                ](ctx)
 
 
 def test_lane_group_reduce_bf16(ctx: DeviceContext) raises:
@@ -604,7 +589,6 @@ def _lane_group_min_broadcast_helper[
     for i in range(buffer_size):
         host_ptr[i] = Scalar[dtype](i // simd_width)
 
-    @__parameter
     def do_reduce(
         val: SIMD[dtype, simd_width],
     ) -> SIMD[dtype, simd_width]:
@@ -637,24 +621,26 @@ def test_lane_group_min(ctx: DeviceContext) raises:
     # Full warp
     _lane_group_min_broadcast_helper[.float32, 1, WARP_SIZE](ctx)
     # Sub-warp sizes
-    _lane_group_min_broadcast_helper[.float32, 1, 2](ctx)
-    _lane_group_min_broadcast_helper[.float32, 1, 4](ctx)
-    _lane_group_min_broadcast_helper[.float32, 1, 8](ctx)
-    _lane_group_min_broadcast_helper[.float32, 1, 16](ctx)
-    _lane_group_min_broadcast_helper[.float32, 1, 32](ctx)
+    comptime for num_lanes in [2, 4, 8, 16, 32]:
+        _lane_group_min_broadcast_helper[.float32, 1, num_lanes](ctx)
     # Half precision
     _lane_group_min_broadcast_helper[.bfloat16, 1, 4](ctx)
     _lane_group_min_broadcast_helper[.float16, 1, 4](ctx)
     # 64-bit (NVIDIA shuffle doesn't support float64)
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         _lane_group_min_broadcast_helper[.float64, 1, 4](ctx)
         _lane_group_min_broadcast_helper[.float64, 1, WARP_SIZE](ctx)
     # Stride > 1 (exercises shuffle_xor fallback path)
     _lane_group_min_broadcast_helper[.float32, 1, 4, stride=8](ctx)
-    # CDNA4 permlane path (stride=16 and stride=32)
-    comptime if has_amd_gpu_accelerator():
-        _lane_group_min_broadcast_helper[.float32, 1, 2, stride=32](ctx)
-        _lane_group_min_broadcast_helper[.float32, 1, 4, stride=16](ctx)
+
+    # CDNA4+ permlane path
+    comptime if ctx.target.is_amd_gpu():
+        comptime for stride in [16, 32]:
+            comptime num_lanes = WARP_SIZE // stride
+            comptime if num_lanes >= 2:
+                _lane_group_min_broadcast_helper[
+                    .float32, 1, num_lanes, stride
+                ](ctx)
 
 
 def main() raises:

@@ -117,10 +117,10 @@ def _run_matmul[
     picks the dispatch mode."""
     var a_dev_buf = ctx.enqueue_create_buffer[f32](m * K)
     ctx.enqueue_copy(a_dev_buf, a_host._storage)
-    var a_dev = TileTensor(a_dev_buf, row_major(Coord(Int(m), Idx[K])))
+    var a_dev = TileTensor(a_dev_buf, row_major(m, Idx[K]))
 
     var c_dev_buf = ctx.enqueue_create_buffer[f32](m * N)
-    var c_dev = TileTensor(c_dev_buf, row_major(Coord(Int(m), Idx[N])))
+    var c_dev = TileTensor(c_dev_buf, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True, use_tf32=use_tf32](
         c_dev, a_dev, b_dev, ctx
@@ -136,27 +136,23 @@ def main() raises:
     with DeviceContext() as ctx:
         seed(0xC0FFEE)
         var a_host_buf = ctx.enqueue_create_host_buffer[f32](MAX_M * K)
-        var a_host = TileTensor(
-            a_host_buf, row_major(Coord(Idx[MAX_M], Idx[K]))
-        )
+        var a_host = TileTensor(a_host_buf, row_major(Idx[MAX_M], Idx[K]))
         var b_host_buf = ctx.enqueue_create_host_buffer[f32](N * K)
-        var b_host = TileTensor(b_host_buf, row_major(Coord(Idx[N], Idx[K])))
+        var b_host = TileTensor(b_host_buf, row_major(Idx[N], Idx[K]))
         for i in range(a_host.num_elements()):
             a_host.raw_store(i, Float32(random_float64(-1.0, 1.0)))
         for i in range(b_host.num_elements()):
             b_host.raw_store(i, Float32(random_float64(-1.0, 1.0)))
 
         var b_dev_buf = ctx.enqueue_create_buffer[f32](N * K)
-        var b_dev = TileTensor(b_dev_buf, row_major(Coord(Idx[N], Idx[K])))
+        var b_dev = TileTensor(b_dev_buf, row_major(Idx[N], Idx[K]))
         ctx.enqueue_copy(b_dev_buf, b_host._storage)
         ctx.synchronize()
 
         # fp64 reference for the first REF_ROWS rows, from the same fp32
         # inputs. transpose_b: C[mm, nn] = sum_k A[mm, k] * B[nn, k].
         var ref_buf = ctx.enqueue_create_host_buffer[f64](REF_ROWS * N)
-        var ref_host = TileTensor(
-            ref_buf, row_major(Coord(Idx[REF_ROWS], Idx[N]))
-        )
+        var ref_host = TileTensor(ref_buf, row_major(Idx[REF_ROWS], Idx[N]))
         for mm in range(REF_ROWS):
             for nn in range(N):
                 var acc = Float64(0.0)
@@ -168,10 +164,10 @@ def main() raises:
 
         # Kept for the cross-m comparisons below.
         var c64_buf = ctx.enqueue_create_host_buffer[f32](REF_ROWS * N)
-        var c64 = TileTensor(c64_buf, row_major(Coord(Idx[REF_ROWS], Idx[N])))
+        var c64 = TileTensor(c64_buf, row_major(Idx[REF_ROWS], Idx[N]))
         var c128_tf32_buf = ctx.enqueue_create_host_buffer[f32](REF_ROWS * N)
         var c128_tf32 = TileTensor(
-            c128_tf32_buf, row_major(Coord(Idx[REF_ROWS], Idx[N]))
+            c128_tf32_buf, row_major(Idx[REF_ROWS], Idx[N])
         )
 
         print("[phase 1] use_tf32=True, m <= 64: split-K GEMV, IEEE fp32")
@@ -179,7 +175,7 @@ def main() raises:
         for idx in range(len(ms_small)):
             var m = ms_small[idx]
             var c_buf = ctx.enqueue_create_host_buffer[f32](m * N)
-            var c = TileTensor(c_buf, row_major(Coord(Int(m), Idx[N])))
+            var c = TileTensor(c_buf, row_major(m, Idx[N]))
             _run_matmul(a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, min(m, REF_ROWS))
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
@@ -200,7 +196,7 @@ def main() raises:
         for idx in range(len(ms_large)):
             var m = ms_large[idx]
             var c_buf = ctx.enqueue_create_host_buffer[f32](m * N)
-            var c = TileTensor(c_buf, row_major(Coord(Int(m), Idx[N])))
+            var c = TileTensor(c_buf, row_major(m, Idx[N]))
             _run_matmul(a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, REF_ROWS)
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")
@@ -247,7 +243,7 @@ def main() raises:
         for idx in range(len(ms_precise)):
             var m = ms_precise[idx]
             var c_buf = ctx.enqueue_create_host_buffer[f32](m * N)
-            var c = TileTensor(c_buf, row_major(Coord(Int(m), Idx[N])))
+            var c = TileTensor(c_buf, row_major(m, Idx[N]))
             _run_matmul[use_tf32=False](a_host, b_dev, c, m, ctx)
             var st = _stats_vs_ref(c, ref_host, min(m, REF_ROWS))
             print(t"  m={m}: mean_rel={st.mean_rel} max_abs={st.max_abs}")

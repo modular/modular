@@ -38,7 +38,7 @@
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!AnyType_Copyable_Movable>],
 # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!lit.struct<#List <:!AnyType_Copyable_Movable *(0,1)>>, imm *[0,1]>>],
 # CHECK-SAME:     :type #kgen.quote<!NoneType>,
-# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[imm_mem, imm_mem], "none", #lit.fn_meta_origin_data<2>>
+# CHECK-SAME:     :non_struct_type #kgen.fn_metadata<[imm_mem, imm_mem], "capturing", #lit.fn_meta_origin_data<2>>
 comptime ClosureTraitP = def[T: Copyable](List[T]) -> NoneType
 
 
@@ -46,7 +46,7 @@ comptime ClosureTraitP = def[T: Copyable](List[T]) -> NoneType
 # CHECK-LABEL: lit.struct.decl @Foo
 struct Foo[T: AnyType](def(T)):
     # CHECK:      kgen.conformance @"##__mojo_closure__##"
-    # CHECK-NEXT:   kgen.witness "__call__" : {{.*}} @unified_closures_parametric_trait::@Foo::@"__call__(unified_closures_parametric_trait::Foo[$0],$0)"<:!AnyType T>)
+    # CHECK-NEXT:   kgen.witness "__call__" : {{.*}} @unified_closures_parametric_trait::@Foo::@"__call__(unified_closures_parametric_trait::Foo[$0],$0)"<:!AnyType T>
     def __call__(self, arg: Self.T):
         pass
 
@@ -94,7 +94,7 @@ def main():
     # `Int` in registers, so the two instances bridge through a thunk: `T`
     # binds to an extension anchored at `Foo[Int]`, whose only parameter is
     # that anchor.
-    # CHECK:      lit.call {{.*}}@"call_int[##__mojo_closure__## & ::AnyType & ::Deinitable & ::Movable]($0)"
+    # CHECK:      lit.call {{.*}}@"call_int[{{.*}}]($0)"
     # CHECK-SAME:   <:trait<@"##__mojo_closure__##"<
     # CHECK-SAME:     :param_list<type> [#kgen.quote<!Int>],
     # CHECK-SAME:   #kgen.extension<{{.*}}@Foo<:!AnyType !Int>, [
@@ -104,7 +104,7 @@ def main():
     var fm = Foo[MemOnly]()
     # A memory-only argument is passed by reference either way, so this one
     # needs no extension.
-    # CHECK:      lit.call {{.*}}@"call_mem_only[##__mojo_closure__## & ::AnyType & ::Deinitable & ::Movable]($0)"
+    # CHECK:      lit.call {{.*}}@"call_mem_only[{{.*}}]($0)"
     # CHECK-SAME:   <:trait<@"##__mojo_closure__##"<
     # CHECK-SAME:     :param_list<type> [#kgen.quote<!lit.ref<!MemOnly, imm *[0,1]>>],
     # CHECK-SAME:     @Foo<:!AnyType !MemOnly>>
@@ -127,11 +127,7 @@ struct IntStrategy(MyStrategy):
 struct Runner(Movable):
     def test[
         StrategyType: MyStrategy, //
-    ](
-        self,
-        var strategy: StrategyType,
-        f: Some[def(var StrategyType.Value)],
-    ):
+    ](self, var strategy: StrategyType, f: Some[def(var StrategyType.Value)],):
         pass
 
 
@@ -195,7 +191,7 @@ def sink[T: AnyType, C: def(T)](c: C, arg: T):
     pass
 
 
-def forward[T: TrivialRegisterPassable, C: def(t : T)](c: C, arg: T):
+def forward[T: TrivialRegisterPassable, C: def(t: T)](c: C, arg: T):
     # The extension leaves `c`'s physical type alone: `sink`'s `C` is bound to
     # a `#kgen.extension` anchored at `C`, with the struct above -- its
     # parameters bound to this scope's `T` and `C` -- supplying the conformance.

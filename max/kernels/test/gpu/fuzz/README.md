@@ -55,6 +55,8 @@ python3 max/kernels/test/gpu/fuzz/fuzz.py --replay-corpus --timeout 30
 
 Confirmed failures and their shrunk specs are recorded under `corpus/<target>/`
 with their expected verdict, and the replay gate re-runs them deterministically.
+Entries whose target can't build on the local GPU (for example a B200-only
+target on MI355) are reported as `SKIP` rather than failing the replay.
 
 The orchestrator only writes an entry for a non-PASS verdict, so a `_pass_`
 entry is always hand-written: an anchor asserting a representative boundary
@@ -183,7 +185,9 @@ design's non-gating → gating rollout:
 - **Presubmit (gating, fast, deterministic):** build the fuzz targets, then run
   the corpus-replay gate. Same seed/spec → same verdict, so it never flakes; it
   fails only when a verdict drifts (a regression, a fixed bug whose corpus entry
-  needs updating, or a broken oracle).
+  needs updating, or a broken oracle). Entries for closed-source kernels, whose
+  targets live in `//Kernels/test/fuzz`, are skipped where that package is
+  absent; in the internal repo, add `//Kernels/test/fuzz:all` to the build.
 
   ```bash
   ./bazelw build //max/kernels/test/gpu/fuzz:all

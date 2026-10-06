@@ -38,21 +38,24 @@ from std.collections import OptionalReg
 from max.gpu.host import DeviceContext
 from std.math import exp
 from std.random import seed
-from std.sys import has_apple_gpu_accelerator
+from std.sys import default_accelerator
 
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from layout._utils import ManagedLayoutTensor
+from layout import Idx, row_major
+from layout._host_device_tile_tensor import HostDeviceTileTensor
 
 from nn.attention.gpu.apple.naive_fa_decode import naive_fa_decode_apple
+from nn.attention.gpu.nvidia.common import (
+    ImmutTileTensor1D,
+    immut_tile_tensor_1d,
+)
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 
 from std.testing import assert_almost_equal
-from std.utils import Index, IndexList
 
 
 def _run_sink_closed_form[
@@ -91,59 +94,46 @@ def _run_sink_closed_form[
     )
 
     # ---- q [batch, 1, num_q_heads, depth]; value irrelevant (scale=0). ---- #
-    comptime q_layout = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, num_q_heads, depth
+    var q_layout = row_major(
+        batch_size, max_prompt_len, Idx[num_q_heads], Idx[depth]
     )
-    var q = ManagedLayoutTensor[dtype, q_layout](
-        RuntimeLayout[q_layout].row_major(
-            IndexList[4](batch_size, max_prompt_len, num_q_heads, depth)
-        ),
-        ctx,
-    )
-    var q_host = q.tensor[update=False]()
+    var q = HostDeviceTileTensor[dtype](q_layout, ctx)
+    var q_host = q.host_tensor()
     for h in range(num_q_heads):
         for d in range(depth):
             q_host[0, 0, h, d] = Scalar[dtype](0.123)
 
     # ---- valid_length (per-sequence query length = 1) -------------------- #
-    comptime vl_layout = Layout.row_major(UNKNOWN_VALUE)
-    var valid_lengths = ManagedLayoutTensor[.uint32, vl_layout](
-        RuntimeLayout[vl_layout].row_major(IndexList[1](batch_size)), ctx
+    var valid_lengths = HostDeviceTileTensor[.uint32](
+        row_major(batch_size), ctx
     )
-    var vl_host = valid_lengths.tensor[update=False]()
+    var vl_host = valid_lengths.host_tensor()
     vl_host[0] = UInt32(max_prompt_len)
 
     # ---- output [batch, 1, num_q_heads, depth] --------------------------- #
-    var test_output = ManagedLayoutTensor[dtype, q_layout](
-        RuntimeLayout[q_layout].row_major(
-            IndexList[4](batch_size, max_prompt_len, num_q_heads, depth)
-        ),
-        ctx,
-    )
+    var test_output = HostDeviceTileTensor[dtype](q_layout, ctx)
 
     # ---- per-sequence cache lengths -------------------------------------- #
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_managed = ManagedLayoutTensor[.uint32, cl_layout](
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)), ctx
+    var cache_lengths_managed = HostDeviceTileTensor[.uint32](
+        row_major(batch_size), ctx
     )
-    var cl_host = cache_lengths_managed.tensor[update=False]()
+    var cl_host = cache_lengths_managed.host_tensor()
     cl_host[0] = UInt32(cache_len)
 
     # ---- continuous KV blocks; V = 1 everywhere so the output is the
     #      probability mass on the real keys. K irrelevant (scale=0). ------ #
-    comptime kv_layout = Layout.row_major[6]()
-    var kv_shape = IndexList[6](
-        num_blocks,
-        2,
-        num_layers,
-        max_context_len,
-        kv_params.num_heads,
-        depth,
+    var kv_block = HostDeviceTileTensor[dtype](
+        row_major(
+            num_blocks,
+            2,
+            num_layers,
+            max_context_len,
+            kv_params.num_heads,
+            depth,
+        ),
+        ctx,
     )
-    var kv_block = ManagedLayoutTensor[dtype, kv_layout](
-        RuntimeLayout[kv_layout].row_major(kv_shape), ctx
-    )
-    var kv_host = kv_block.tensor[update=False]()
+    var kv_host = kv_block.host_tensor()
     # kv_idx 0 = K (0.0), kv_idx 1 = V (1.0).
     for blk in range(num_blocks):
         for tok in range(max_context_len):
@@ -153,22 +143,23 @@ def _run_sink_closed_form[
                     kv_host[blk, 1, layer_idx, tok, kvh, d] = Scalar[dtype](1.0)
 
     # ---- lookup table: sequence 0 uses block 0 --------------------------- #
-    var lookup_table = ManagedLayoutTensor[.uint32, cl_layout](
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)), ctx
-    )
-    var lut_host = lookup_table.tensor[update=False]()
+    var lookup_table = HostDeviceTileTensor[.uint32](row_major(batch_size), ctx)
+    var lut_host = lookup_table.host_tensor()
     lut_host[0] = UInt32(0)
 
     # ---- sink weights [num_heads] ---------------------------------------- #
-    comptime sink_layout = Layout.row_major(UNKNOWN_VALUE)
-    var sink_managed = ManagedLayoutTensor[dtype, sink_layout](
-        RuntimeLayout[sink_layout].row_major(IndexList[1](num_q_heads)), ctx
-    )
-    var sink_host = sink_managed.tensor[update=False]()
+    var sink_managed = HostDeviceTileTensor[dtype](row_major(num_q_heads), ctx)
+    var sink_host = sink_managed.host_tensor()
     for h in range(num_q_heads):
         sink_host[h] = Scalar[dtype](sink_weights[h])
 
     # ---- build the collection + operands --------------------------------- #
+    q.to_device()
+    valid_lengths.to_device()
+    cache_lengths_managed.to_device()
+    kv_block.to_device()
+    lookup_table.to_device()
+    sink_managed.to_device()
     var kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
         kv_block.device_tensor().as_unsafe_any_origin(),
         cache_lengths_managed.device_tensor(),
@@ -180,9 +171,10 @@ def _run_sink_closed_form[
     var v_op = KVCacheMHAOperand(kv_collection.get_value_cache(layer_idx))
 
     var sink_dev = sink_managed.device_tensor()
-    var sink_opt = OptionalReg[
-        LayoutTensor[dtype, sink_layout, ImmutAnyOrigin]
-    ](sink_dev.as_imm().as_unsafe_any_origin())
+    var sink_opt = OptionalReg[ImmutTileTensor1D[dtype]](
+        immut_tile_tensor_1d(sink_dev.ptr, num_q_heads)
+    )
+    var valid_lengths_dev = valid_lengths.device_tensor()
 
     naive_fa_decode_apple[
         sink=True,
@@ -194,7 +186,9 @@ def _run_sink_closed_form[
         v_op,
         NullMask(),
         test_output.device_tensor(),
-        valid_lengths.device_tensor(),
+        immut_tile_tensor_1d(
+            valid_lengths_dev.ptr, valid_lengths_dev.num_elements()
+        ),
         Float32(0.0),  # scale = 0 -> all QK logits exactly 0
         batch_size,
         max_prompt_len,
@@ -208,7 +202,8 @@ def _run_sink_closed_form[
     ctx.synchronize()
 
     # ---- assert closed-form mass per head -------------------------------- #
-    var out = test_output.tensor()
+    test_output.to_host()
+    var out = test_output.host_tensor()
     for h in range(num_q_heads):
         var want = Float32(num_keys) / (
             Float32(num_keys) + exp(sink_weights[h])
@@ -266,7 +261,7 @@ def run_all(ctx: DeviceContext) raises:
 
 
 def main() raises:
-    comptime if not has_apple_gpu_accelerator():
+    comptime if not default_accelerator().is_apple_gpu():
         print("SKIP: naive_fa_decode_apple targets Apple silicon GPUs only")
         return
     seed(42)

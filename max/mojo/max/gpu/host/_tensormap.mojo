@@ -161,16 +161,16 @@ struct SwizzleMode(
             writer: The writer to output the string representation to.
         """
         __match self._value:
-        case 1:
-            writer.write("32B swizzle")
-        case 2:
-            writer.write("64B swizzle")
-        case 3:
-            writer.write("128B swizzle")
-        case 0:
-            writer.write("no swizzle")
-        case _:
-            writer.write("invalid swizzle")
+            case 1:
+                writer.write("32B swizzle")
+            case 2:
+                writer.write("64B swizzle")
+            case 3:
+                writer.write("128B swizzle")
+            case 0:
+                writer.write("no swizzle")
+            case _:
+                writer.write("invalid swizzle")
 
 
 @fieldwise_init("implicit")

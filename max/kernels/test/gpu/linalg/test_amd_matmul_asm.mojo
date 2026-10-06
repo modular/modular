@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import has_amd_gpu_accelerator
+from std.sys import default_accelerator
 
 from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
@@ -268,7 +268,7 @@ def test_amd_matmul_bf16_max_config() raises:
     """Test AMD AMDMatmul assembly for BF16 with max config (256x256x64)."""
     print("== test_amd_matmul_bf16_max_config (256x256x64)")
 
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -285,7 +285,7 @@ def test_amd_matmul_fp8_max_config() raises:
     """Test AMD AMDMatmul assembly for FP8 with max config (256x256x128)."""
     print("== test_amd_matmul_fp8_max_config (256x256x128)")
 
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -302,7 +302,7 @@ def test_amd_pingpong_fp8_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for FP8 (256x256x128)."""
     print("== test_amd_pingpong_fp8_max_config (256x256x128)")
 
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -333,7 +333,7 @@ def test_amd_pingpong_bf16_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for BF16 (256x256x64)."""
     print("== test_amd_pingpong_bf16_max_config (256x256x64)")
 
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("Skipping test - AMD GPU not available")
         return
 

@@ -677,5 +677,25 @@ def test_encode_replacement_at_end() raises:
 #             _ = _encode_format_string(invalid)
 
 
+def test_captures_by_reference() raises:
+    # Register-passable types are the regression: the ABI may pass them by
+    # value, so a t-string that captures inside `__make_tstring` sees a copy.
+    var small = 42
+    var large = String("before")
+    var template = t"{small} {large}"
+    small = 99
+    large = String("after")
+    assert_equal(String(template), "99 after")
+
+
+def test_interpolated_temporaries_outlive_the_expression() raises:
+    var base = 40
+    var template = t"{base + 2} {String('temp') + String('orary')}"
+    # Give any dead stack slot a chance to be reused before reading `template`.
+    var scribble = String("0123456789012345678901234567890123456789")
+    assert_equal(String(template), "42 temporary")
+    assert_equal(scribble, "0123456789012345678901234567890123456789")
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -21,6 +21,7 @@ modular_py_library(
         requirement("pillow"),
         requirement("transformers"),
         requirement("typing-extensions"),
+        "//max/python/max/experimental/cascade/pipelines",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",

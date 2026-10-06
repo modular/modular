@@ -29,12 +29,12 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
     tensor_parallel_latent_attention_with_rope,
 )
 from max.experimental.sharding import (
+    DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
-from max.experimental.tensor import Tensor
+from max.experimental.tensor import Tensor, default_device
 from max.graph import (
     BufferType,
     BufferValue,
@@ -129,7 +129,7 @@ def _build_kv_collection(
                 graph_values.append(TensorValue(t))
 
     kv_concrete = kv_params.unflatten_kv_inputs(iter(graph_values))
-    mapping = PlacementMapping(
+    mapping = DeviceMapping(
         DeviceMesh(tuple(devices), (len(devices),), ("axis",)), (Replicated(),)
     )
     return PagedCacheValues.from_upstream(kv_concrete, mapping)
@@ -198,11 +198,12 @@ def test_tensor_parallel_layer(
         kv_params = _make_kv_params(devices)
 
         mesh = DeviceMesh(tuple(devices), (len(devices),), (TP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
 
-        layer = tensor_parallel_latent_attention_with_rope(
-            _make_layer(kv_params, q_lora_rank=q_lora_rank)
-        ).to(mesh)
+        with default_device(mesh):
+            layer = tensor_parallel_latent_attention_with_rope(
+                _make_layer(kv_params, q_lora_rank=q_lora_rank)
+            )
 
         x = Tensor.zeros(
             [total_seq_len, _HIDDEN_SIZE], device=replicated_mapping
@@ -238,10 +239,11 @@ def test_data_parallel_layer(
         kv_params = _make_kv_params(devices)
 
         mesh = DeviceMesh(tuple(devices), (len(devices),), (DP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
-        data_parallel_mapping = PlacementMapping(mesh, (Sharded(0),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
+        data_parallel_mapping = DeviceMapping(mesh, (Sharded(0),))
 
-        layer = _make_layer(kv_params, q_lora_rank=q_lora_rank).to(mesh)
+        with default_device(mesh):
+            layer = _make_layer(kv_params, q_lora_rank=q_lora_rank)
 
         x = Tensor.zeros(
             [total_seq_len, _HIDDEN_SIZE], device=data_parallel_mapping
@@ -275,8 +277,8 @@ def test_data_parallel_layer_symbolic(
         kv_params = _make_kv_params(devices)
 
         mesh = DeviceMesh(tuple(devices), (len(devices),), (DP,))
-        replicated_mapping = PlacementMapping(mesh, (Replicated(),))
-        data_parallel_mapping = PlacementMapping(mesh, (Sharded(0),))
+        replicated_mapping = DeviceMapping(mesh, (Replicated(),))
+        data_parallel_mapping = DeviceMapping(mesh, (Sharded(0),))
 
         layer = _make_layer(kv_params, q_lora_rank=q_lora_rank)
 

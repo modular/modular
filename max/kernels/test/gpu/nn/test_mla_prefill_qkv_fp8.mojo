@@ -15,13 +15,9 @@ from max.gpu import *
 from max.gpu.host import DeviceContext
 from std.random import randn
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    lt_to_tt,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -220,18 +216,19 @@ def test_prefill[
         row_major(batch_size + 1),
     )
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(
-        q_device,
-        k_device,
-        v_device,
-        cache_device,
-        input_row_offsets_device,
-        cache_row_offsets_device,
-        output_device,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    def kernel_launch(
+        ctx: DeviceContext,
+    ) raises {
+        var q_device,
+        var k_device,
+        var v_device,
+        var cache_device,
+        var input_row_offsets_device,
+        var cache_row_offsets_device,
+        var output_device,
+        imm,
+    }:
         flare_mla_prefill[rank=3](
             output_device,
             q_device,
@@ -264,23 +261,14 @@ def test_prefill[
     )
 
     # create reference K and V
-    var k_ref = LayoutTensor[.bfloat16, Layout.row_major[4]()](
-        k_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var k_ref = TileTensor(
+        k_ref_ptr, row_major(batch_size, num_keys, num_heads, depth)
     )
-    var v_ref = LayoutTensor[.bfloat16, Layout.row_major[4]()](
-        v_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var v_ref = TileTensor(
+        v_ref_ptr, row_major(batch_size, num_keys, num_heads, depth)
     )
-    var output_ref = LayoutTensor[output_type, Layout.row_major[4]()](
-        output_ref_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref = TileTensor(
+        output_ref_ptr, row_major(batch_size, seq_len, num_heads, depth)
     )
 
     # the first kv_depth elements of each head in K_ref and V_ref are the same as K and V
@@ -308,14 +296,9 @@ def test_prefill[
     var q_ref_device_ptr = ctx.enqueue_create_buffer[.bfloat16](q_size)
     ctx.enqueue_copy(q_ref_device_ptr, q_bf16_ptr)
 
-    comptime q_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_device_rank4 = LayoutTensor[.bfloat16, q_layout_4d](
-        q_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var q_device_rank4 = TileTensor(
+        q_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # create device pointers for K_ref and V_ref
@@ -329,47 +312,30 @@ def test_prefill[
         batch_size * seq_len * num_heads * depth
     )
     # create device buffers for K_ref and V_ref
-    comptime k_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
+    var k_ref_device = TileTensor(
+        k_ref_device_ptr,
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
-    var k_ref_device = LayoutTensor[.bfloat16, k_layout_4d](
-        k_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout_4d].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
+    var v_ref_device = TileTensor(
+        v_ref_device_ptr,
+        row_major((batch_size, num_keys, Idx[num_heads], Idx[depth])),
     )
-    comptime v_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var v_ref_device = LayoutTensor[.bfloat16, v_layout_4d](
-        v_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[v_layout_4d].row_major(
-            Index(batch_size, num_keys, num_heads, depth)
-        ),
-    )
-    comptime output_layout_4d = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var output_ref_device = LayoutTensor[output_type, output_layout_4d](
-        output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout_4d].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref_device = TileTensor(
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # copy from host to device
     ctx.enqueue_copy(k_ref_device_ptr, k_ref_ptr)
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
-    var null_valid_length = LayoutTensor[
-        .uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var null_valid_length = TileTensor(
+        MutPointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+        row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(lt_to_tt(k_ref_device))
-    var v_ref_operand = LayoutTensorMHAOperand(lt_to_tt(v_ref_device))
+    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device)
+    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device)
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](
@@ -393,11 +359,8 @@ def test_prefill[
     ctx.synchronize()
 
     # view output as a rank 4 buffer
-    var output_rank4 = LayoutTensor[output_type, Layout.row_major[4]()](
-        output_ptr,
-        RuntimeLayout[Layout.row_major[4]()].row_major(
-            Index(batch_size, seq_len, num_heads, kv_depth)
-        ),
+    var output_rank4 = TileTensor(
+        output_ptr, row_major(batch_size, seq_len, num_heads, kv_depth)
     )
 
     # compare output with reference

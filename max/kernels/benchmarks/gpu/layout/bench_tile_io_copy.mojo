@@ -84,7 +84,7 @@ def _manual_copy[
     comptime rows_per_thread = M // thread_rows
     comptime row_stride = thread_rows * N
     comptime alignment = align_of[SIMD[dtype, simd_size]]()
-    var base = _thread_offset[N, thread_cols, simd_size](Int(thread_idx.x))
+    var base = _thread_offset[N, thread_cols, simd_size](thread_idx.x)
 
     comptime for i in range(rows_per_thread):
         var offset = base + i * row_stride
@@ -274,8 +274,8 @@ def layout_tensor_copy_roundtrip_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
-    dst: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Copies a LayoutTensor from global to shared memory and back."""
     _layout_tensor_copy[
@@ -288,7 +288,7 @@ def layout_tensor_copy_roundtrip_kernel[
         simd_size,
         True,
         True,
-    ](src.ptr, dst.ptr)
+    ](src_ptr, dst_ptr)
 
 
 def layout_tensor_dram_to_sram_kernel[
@@ -300,7 +300,7 @@ def layout_tensor_dram_to_sram_kernel[
     thread_cols: Int,
     simd_size: Int,
 ](
-    src: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks LayoutTensor DRAM-to-SRAM copy with a common drain."""
@@ -314,7 +314,7 @@ def layout_tensor_dram_to_sram_kernel[
         simd_size,
         True,
         False,
-    ](src.ptr, dst_ptr)
+    ](src_ptr, dst_ptr)
 
 
 def layout_tensor_sram_to_dram_kernel[
@@ -327,7 +327,7 @@ def layout_tensor_sram_to_dram_kernel[
     simd_size: Int,
 ](
     src_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: LayoutTensor[dtype, tensor_layout, MutAnyOrigin],
+    dst_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
     """Benchmarks LayoutTensor SRAM-to-DRAM copy with a common fill."""
     _layout_tensor_copy[
@@ -340,15 +340,15 @@ def layout_tensor_sram_to_dram_kernel[
         simd_size,
         False,
         True,
-    ](src_ptr, dst.ptr)
+    ](src_ptr, dst_ptr)
 
 
 @inline(.always)
 def _assert_buffers_equal[
     dtype: DType, simd_size: Int
 ](
-    actual_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
-    expected_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    actual_ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    expected_ptr: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     num_elements: Int,
     label: String,
 ) raises:
@@ -424,11 +424,6 @@ def bench_copy_roundtrip[
     var layout_tensor_dst_dev = ctx.enqueue_create_buffer[dtype](num_elements)
     ctx.enqueue_copy(src_dev, src_host)
 
-    var src_tensor = LayoutTensor[dtype, tensor_layout](src_dev)
-    var layout_tensor_dst = LayoutTensor[dtype, tensor_layout](
-        layout_tensor_dst_dev
-    )
-
     comptime tile_io_kernel = tile_io_copy_roundtrip_kernel[
         dtype, M, N, thread_rows, thread_cols, simd_size
     ]
@@ -459,8 +454,8 @@ def bench_copy_roundtrip[
         block_dim=(num_threads,),
     )
     ctx.enqueue_function[layout_tensor_kernel](
-        src_tensor,
-        layout_tensor_dst,
+        src_dev,
+        layout_tensor_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
     )
@@ -491,7 +486,7 @@ def bench_copy_roundtrip[
         block_dim=(num_threads,),
     )
     ctx.enqueue_function[layout_tensor_dram_to_sram_kernel_type](
-        src_tensor,
+        src_dev,
         layout_tensor_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
@@ -520,7 +515,7 @@ def bench_copy_roundtrip[
     )
     ctx.enqueue_function[layout_tensor_sram_to_dram_kernel_type](
         src_dev,
-        layout_tensor_dst,
+        layout_tensor_dst_dev,
         grid_dim=(1,),
         block_dim=(num_threads,),
     )
@@ -557,15 +552,9 @@ def bench_copy_roundtrip[
     def bench_layout_tensor_roundtrip(mut b: Bencher) {var}:
         @inline(.always)
         def layout_tensor_roundtrip_launch(ctx: DeviceContext) raises {var}:
-            var src = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                src_dev.unsafe_ptr()
-            )
-            var dst = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                layout_tensor_dst_dev.unsafe_ptr()
-            )
             ctx.enqueue_function[layout_tensor_kernel](
-                src,
-                dst,
+                src_dev,
+                layout_tensor_dst_dev,
                 grid_dim=(1,),
                 block_dim=(num_threads,),
             )
@@ -589,11 +578,8 @@ def bench_copy_roundtrip[
     def bench_layout_tensor_dram_to_sram(mut b: Bencher) {var}:
         @inline(.always)
         def layout_tensor_dram_to_sram_launch(ctx: DeviceContext) raises {var}:
-            var src = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                src_dev.unsafe_ptr()
-            )
             ctx.enqueue_function[layout_tensor_dram_to_sram_kernel_type](
-                src,
+                src_dev,
                 layout_tensor_dst_dev,
                 grid_dim=(1,),
                 block_dim=(num_threads,),
@@ -618,12 +604,9 @@ def bench_copy_roundtrip[
     def bench_layout_tensor_sram_to_dram(mut b: Bencher) {var}:
         @inline(.always)
         def layout_tensor_sram_to_dram_launch(ctx: DeviceContext) raises {var}:
-            var dst = LayoutTensor[dtype, tensor_layout, MutAnyOrigin](
-                layout_tensor_dst_dev.unsafe_ptr()
-            )
             ctx.enqueue_function[layout_tensor_sram_to_dram_kernel_type](
                 src_dev,
-                dst,
+                layout_tensor_dst_dev,
                 grid_dim=(1,),
                 block_dim=(num_threads,),
             )

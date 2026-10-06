@@ -37,7 +37,7 @@ def copy_uninitialized(
     src: ImmPointer[Float32, ImmutAnyOrigin],
     dst: MutPointer[Float32, MutAnyOrigin],
 ):
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     # `src` was never written by the host -> reading it is an uninitialized
     # global read. With poison, this yields NaN.
     dst[tid] = src[tid]

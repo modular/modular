@@ -11,6 +11,7 @@ bazel_dep(name = "fmt", version = "11.2.0")
 bazel_dep(name = "gazelle", version = "0.50.0")
 bazel_dep(name = "google_benchmark", version = "1.9.4")
 bazel_dep(name = "grpc", version = "1.76.0.bcr.1", repo_name = "com_github_grpc_grpc")
+bazel_dep(name = "jemalloc", version = "5.3.0-bcr.4")
 bazel_dep(name = "opentelemetry-cpp", version = "1.19.0")
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "protobuf", version = "33.5", repo_name = "com_google_protobuf")
@@ -29,6 +30,8 @@ bazel_dep(name = "with_cfg.bzl", version = "0.10.3")
 bazel_dep(name = "xxhash", version = "0.8.3.bcr.1")
 
 # Necessary for LLVM
+bazel_dep(name = "libxml2", version = "2.15.3")
+bazel_dep(name = "xz", version = "5.4.5.bcr.9", repo_name = "llvm_xz")
 bazel_dep(name = "zlib-ng", version = "2.3.3", repo_name = "llvm_zlib")
 bazel_dep(name = "zstd", version = "1.5.7.bcr.1", repo_name = "llvm_zstd")
 
@@ -226,10 +229,17 @@ http_archive(
     name = "nixl_upstream",
     build_file = "//bazel/public-patches:nixl_upstream.BUILD",
     patch_args = ["-p1"],
-    patches = [],
-    sha256 = "74ab77453bd117e80e4bda14aa5fe4050b7767cedb04357b65b485e7c7101612",
-    strip_prefix = "nixl-1.3.0",
-    url = "https://github.com/ai-dynamo/nixl/archive/refs/tags/v1.3.0.tar.gz",
+    patches = [
+        # TODO(GEX-4323): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-rail-ep-lock.patch",
+        # TODO(GEX-4324): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-release-inflight.patch",
+        # TODO(GEX-4312): drop once the fix ships in a tagged NIXL release.
+        "//bazel/public-patches:nixl-libfabric-vmm-cuda-ctx.patch",
+    ],
+    sha256 = "1dc9d1c070491ed8ed89942f14124c5d914b85be279cf694678203fd7a94c927",
+    strip_prefix = "nixl-1.5.0",
+    url = "https://github.com/ai-dynamo/nixl/archive/refs/tags/v1.5.0.tar.gz",
 )
 # END_NIXL_GENERATED
 
@@ -246,8 +256,8 @@ http_archive(
 http_archive(
     name = "uccl_prebuilt",
     build_file = "//bazel/public-patches:uccl_prebuilt.BUILD",
-    sha256 = "d27db64e4d88db03f2c0c61ffa1a9681c93a6aa023298c110b659749101ac985",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/uccl_prebuilt/66170bc299205228f0170bc1638594a39af9ffd5/d27db64e4d88db03f2c0c61ffa1a9681c93a6aa023298c110b659749101ac985/uccl-prebuilt-rocm-linux-x86-64.tar.gz",
+    sha256 = "7e0075c406319230c94326a29cbd741d516cc783d61e48480c5c4ac27bb46a3a",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/uccl_prebuilt/341835eb5894a437e785ef56ae0afc4d96e856f4/7e0075c406319230c94326a29cbd741d516cc783d61e48480c5c4ac27bb46a3a/uccl-prebuilt-rocm-linux-x86-64.tar.gz",
 )
 
 http_archive(
@@ -522,8 +532,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/22.1.4/2b3ce493f43c2206275ac34cdfd9d42450bccd79ce725df570bfdc4b7674e29b/llvm-linux-x86_64.tar.xz",
+    sha256 = "4a8c1bd46ac42ee8ff73a27d86b2ec7d922304e0e9ded8b8b7e50c29cc38408f",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-x86_64/23.1.1/4a8c1bd46ac42ee8ff73a27d86b2ec7d922304e0e9ded8b8b7e50c29cc38408f/llvm-linux-x86_64.tar.xz",
 )
 
 http_archive(
@@ -531,8 +541,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/22.1.4/474ff5052ccff6c676ad43f48da1385822bc8ec0120caaacd891c21d813475ab/llvm-linux-aarch64.tar.xz",
+    sha256 = "29cc18da13b7a730bc7a9a67c8cfa3048d62cb2133f171a276d41924303f90db",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-linux-aarch64/23.1.1/29cc18da13b7a730bc7a9a67c8cfa3048d62cb2133f171a276d41924303f90db/llvm-linux-aarch64.tar.xz",
 )
 
 http_archive(
@@ -540,8 +550,8 @@ http_archive(
     # Override adds: include_dir (directory rule), resource_directory_filegroup,
     # and exports_files for direct file refs (bin/llvm-strip, libclang_rt.*).
     build_file = "//bazel/public-patches:clang.BUILD",
-    sha256 = "ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c",
-    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/22.1.4/ea118e41dfffd5027b378ec932fff70a06be1ab054ffbdaf8209f64579aeee1c/llvm-macos.tar.xz",
+    sha256 = "84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/llvm-macos/23.1.1/84003683b6574d9be56e92f6397a56c1c49ff14739277cb2f7ef3c3d1fb11ac3/llvm-macos.tar.xz",
 )
 
 SHELLCHECK_VERSION = "v0.11.0"

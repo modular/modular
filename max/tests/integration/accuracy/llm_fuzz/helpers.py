@@ -96,6 +96,7 @@ def make_tool(
     name: str,
     params_schema: dict[str, Any] | None = None,
     description: str | None = None,
+    strict: bool | None = None,
 ) -> dict[str, Any]:
     """Create an OpenAI-format tool definition."""
     if params_schema is None:
@@ -105,14 +106,14 @@ def make_tool(
             "required": ["input"],
             "additionalProperties": False,
         }
-    return {
-        "type": "function",
-        "function": {
-            "name": name,
-            "description": description or f"Tool: {name}",
-            "parameters": params_schema,
-        },
+    function: dict[str, Any] = {
+        "name": name,
+        "description": description or f"Tool: {name}",
+        "parameters": params_schema,
     }
+    if strict is not None:
+        function["strict"] = strict
+    return {"type": "function", "function": function}
 
 
 def budget_exhausted(resp: Any) -> bool:

@@ -47,7 +47,7 @@ import numpy as np
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, DimLike, StaticDim, TensorValue, ops
 
-from .cache import arange, idiv, row_offsets, scalar
+from .cache import arange, row_offsets, scalar
 
 
 def host_scalar(value: DimLike) -> TensorValue:
@@ -261,9 +261,9 @@ class WindowRows:
     @classmethod
     def build(cls, rows: RaggedRows, ratio: int, coff: int) -> WindowRows:
         device = rows.device
-        base = idiv(rows.starts, ratio)
+        base = rows.starts // ratio
         aligned = base * ratio
-        n_new = idiv(rows.lengths + scalar(ratio - 1, device), ratio)
+        n_new = (rows.lengths + scalar(ratio - 1, device)) // ratio
         woff = count_offsets(n_new)
         if ratio not in rows.windows:
             raise ValueError(f"the batch carries no window count for {ratio=}")

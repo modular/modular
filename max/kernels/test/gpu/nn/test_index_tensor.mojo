@@ -113,25 +113,25 @@ def test_advanced_indexing_getitem_gpu(ctx: DeviceContext) raises:
     ]()
 
     # Copy-capture the DEVICE views (`{var ...}`) so the GPU kernel dereferences
-    # device memory; the index is rebuilt in-kernel from the `IndexList` arg.
+    # device memory.
     @inline(.always)
     def input_tensor_fn[
         dtype: DType, width: Int
-    ](idx: IndexList[input_rank]) {var input_dyn} -> SIMD[dtype, width]:
+    ](idx: Coord) {var input_dyn} -> SIMD[dtype, width]:
+        comptime assert idx.rank == input_rank
         return rebind[SIMD[dtype, width]](
-            input_dyn.load[width=width, alignment=1](Coord(idx))
+            input_dyn.load[width=width, alignment=1](idx)
         )
 
     @inline(.always)
     def indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) {
-        var index_a_dyn, var index_b_dyn
-    } -> Int:
+    ](coordinates: Coord) {var index_a_dyn, var index_b_dyn} -> Int:
+        comptime assert coordinates.rank == index_rank
         comptime if indices_index == 0:
-            return Int(index_a_dyn.load[width=1](Coord(coordinates)))
+            return Int(index_a_dyn.load[width=1](coordinates))
         else:
-            return Int(index_b_dyn.load[width=1](Coord(coordinates)))
+            return Int(index_b_dyn.load[width=1](coordinates))
 
     var in_strides = IndexList[input_rank](
         Int(input_dyn.dynamic_stride(0)),
@@ -142,6 +142,7 @@ def test_advanced_indexing_getitem_gpu(ctx: DeviceContext) raises:
 
     advanced_indexing_getitem[
         input_rank=input_rank,
+        index_rank=index_rank,
         start_axis=start_axis,
         num_index_tensors=num_index_tensors,
         target="gpu",
@@ -298,21 +299,21 @@ def test_advanced_indexing_setitem_inplace_gpu(ctx: DeviceContext) raises:
     @inline(.always)
     def updates_tensor_fn[
         dtype: DType, width: Int
-    ](idx: IndexList[updates_rank]) {var updates_dyn} -> SIMD[dtype, width]:
+    ](idx: Coord) {var updates_dyn} -> SIMD[dtype, width]:
+        comptime assert idx.rank == updates_rank
         return rebind[SIMD[dtype, width]](
-            updates_dyn.load[width=width, alignment=1](Coord(idx))
+            updates_dyn.load[width=width, alignment=1](idx)
         )
 
     @inline(.always)
     def indices_fn[
         indices_index: Int,
-    ](coordinates: IndexList[index_rank]) {
-        var index_a_dyn, var index_b_dyn
-    } -> Int:
+    ](coordinates: Coord) {var index_a_dyn, var index_b_dyn} -> Int:
+        comptime assert coordinates.rank == index_rank
         comptime if indices_index == 0:
-            return Int(index_a_dyn.load[width=1](Coord(coordinates)))
+            return Int(index_a_dyn.load[width=1](coordinates))
         else:
-            return Int(index_b_dyn.load[width=1](Coord(coordinates)))
+            return Int(index_b_dyn.load[width=1](coordinates))
 
     var idx_shape = IndexList[index_rank](
         Int(index_a_dyn.dim(0)), Int(index_a_dyn.dim(1))

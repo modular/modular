@@ -1,0 +1,58 @@
+# GLM-5.3-Flash (glm5_next) k-pooled DSA indexer layer tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "torch_reference",
+    testonly = True,
+    srcs = ["torch_reference/glm5_next_indexer.py"],
+    imports = ["."],
+    tags = ["no-mypy"],
+    deps = [requirement("torch")],
+)
+
+modular_py_test(
+    name = "indexer",
+    size = "large",
+    srcs = [
+        "graph_op_reference.py",
+        "test_pooled_indexer.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        # The topk2048 cases ask for 180 MB contiguous against a cache whose
+        # free space is fragmented across blocks. On NVIDIA the VMM allocator
+        # reassembles that from scattered granules; `vmmSupported()` is false
+        # on HIP, so it auto-disables and the request cannot be served. The
+        # model this exercises is 8xB200 anyway.
+        "//:amd_gpu": ["@platforms//:incompatible"],
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    precompile_mefs = True,
+    precompile_shards = 4,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        ":torch_reference",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

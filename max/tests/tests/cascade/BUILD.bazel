@@ -199,6 +199,13 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_fd_limits",
+    size = "small",
+    srcs = ["test_fd_limits.py"],
+    deps = ["//max/python/max/experimental/cascade/core"],
+)
+
+modular_py_test(
     name = "test_routing",
     size = "small",
     srcs = ["test_routing.py"],
@@ -234,6 +241,7 @@ modular_py_test(
     size = "small",
     srcs = ["test_max_tokenizer_decode_stream.py"],
     deps = [
+        "//max/python/max/experimental/cascade/interfaces",
         "//max/python/max/experimental/cascade/workers",
         requirement("numpy"),
         requirement("pytest-asyncio"),

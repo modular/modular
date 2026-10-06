@@ -36,7 +36,6 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
-from linalg.utils import elementwise_compute_lambda_type
 import linalg.matmul.vendor.blas as vendor_blas
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
@@ -72,14 +71,12 @@ def test_partial_n_tile_compute_epilogue[
         " a multiple of 88"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
@@ -107,18 +104,13 @@ def test_partial_n_tile_compute_epilogue[
     var c_tensor = TileTensor(c_device, c_shape)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_tensor)
     def in_bounds_compute_lambda[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
-        _dtype, width
-    ]:
-        return val + c_tensor.load[width=width](Coord(idx)).cast[_dtype]()
+        _dtype: DType, width: SIMDLength, *, alignment: Int
+    ](
+        idx: IndexList[2], val: SIMD[_dtype, width], c_val: SIMD[_dtype, width]
+    ) -> SIMD[_dtype, width]:
+        return val + c_val
 
     seed(1234)
     rand(a_host.as_span())
@@ -142,15 +134,10 @@ def test_partial_n_tile_compute_epilogue[
         AB_swapped=swapAB,
     )
 
-    comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
-        in_bounds_compute_lambda
-    )
-
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
-        elementwise_compute_lambda_fn=optional_lambda_fn,
-    ](c_tensor, a_tensor, b_tensor, ctx)
+    ](c_tensor, a_tensor, b_tensor, in_bounds_compute_lambda, ctx)
 
     vendor_blas.matmul(
         ctx,
@@ -166,15 +153,10 @@ def test_partial_n_tile_compute_epilogue[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    @__parameter
     @inline(.always)
-    @__copy_capture(c_host_copy)
     def in_bounds_compute_lambda_local[
-        _dtype: DType,
-        width: SIMDLength,
-        *,
-        alignment: Int = align_of[SIMD[_dtype, width]](),
-    ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
+        _dtype: DType, width: SIMDLength
+    ](idx: IndexList[2], val: SIMD[_dtype, width]) {var c_host_copy} -> SIMD[
         _dtype, width
     ]:
         return val + c_host_copy.load[width=width](Coord(idx)).cast[_dtype]()
@@ -183,7 +165,7 @@ def test_partial_n_tile_compute_epilogue[
         for j in range(N):
             comptime assert c_host_ref.flat_rank == 2
             c_host_ref[i, j] = in_bounds_compute_lambda_local(
-                IndexList[2](i, j), c_host_ref[i, j]
+                (i, j), c_host_ref[i, j]
             )
 
     comptime rtol = 1e-2
@@ -202,10 +184,6 @@ def test_partial_n_tile_compute_epilogue[
     c_host_ptr.free()
     c_host_ref_ptr.free()
     c_host_copy_ptr.free()
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = c_device_ref^
 
 
 def main() raises:

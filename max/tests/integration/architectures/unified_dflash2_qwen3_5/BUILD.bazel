@@ -50,6 +50,7 @@ modular_py_test(
     }),  # FIXME: MOCO-2411
     tags = ["gpu"],
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn",
@@ -57,12 +58,15 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/architectures/unified_dflash2_qwen3_5",
         "//max/python/max/pipelines/architectures/unified_mtp_qwen3_5",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
     ],
 )
 
 modular_py_test(
     name = "test_state_rollback_block",
+    # Each acceptance length compiles its own graph.
+    size = "large",
     srcs = ["test_state_rollback_block.py"],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],
@@ -94,7 +98,11 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-2411
-    # Six tiny Qwen3.5 compiles; sharding runs them on separate workers.
+    # Eleven tiny Qwen3.5 compiles across six cases, recorded by CPU build
+    # actions, one per shard. Raise `precompile_shards` before `shard_count` if
+    # this file grows: a record action carries its shard's whole compile set
+    # and the longest already runs about 380s of the 900s an action gets.
+    precompile_mefs = True,
     shard_count = 3,
     tags = ["gpu"],
     deps = [

@@ -44,6 +44,7 @@ from max.pipelines.lib import (
     VisionPreprocessCache,
     float32_to_bfloat16_as_uint16,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from max.pipelines.lib.config import PipelineConfig
 from max.pipelines.lib.tokenizer import encode_dkv_cache_hint
@@ -309,17 +310,9 @@ class Qwen2_5VLTokenizer(TextAndVisionTokenizer):
             VisionPreprocessCache.for_images(pipeline_config.runtime)
         )
 
-        # Initialize EOS token IDs
-        eos_token_id = self.delegate.eos_token_id
-        self._eos_token_ids = (
-            {eos_token_id} if eos_token_id is not None else set()
+        self._eos_token_ids = resolve_eos_token_ids(
+            self.delegate.eos_token_id, pipeline_config
         )
-
-        if eos_token_id := getattr(config, "eos_token_id", None):
-            if isinstance(eos_token_id, int):
-                self._eos_token_ids.add(eos_token_id)
-            elif isinstance(eos_token_id, list):
-                self._eos_token_ids.update(eos_token_id)
 
         self.image_token_id = config.image_token_id
         self.video_token_id = config.video_token_id

@@ -39,20 +39,10 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/Support/Process.h"
 
 using namespace M;
 using namespace KGEN;
 using namespace LIT;
-
-bool LIT::useParametricClosureTrait() {
-  static const bool enabled = [] {
-    std::optional<std::string> value =
-        llvm::sys::Process::GetEnv("MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT");
-    return value && *value != "0" && !value->empty();
-  }();
-  return enabled;
-}
 
 TypedAttr ASTType::extractStructField(TypedAttr value, StringRef fieldName,
                                       SMLoc loc, SharedState &shared) {
@@ -161,7 +151,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
     TypedAttr thisOrigin;
     bool isError = false;
     emitter.emitExpressionWithoutEvaluatingIt(
-        expr, EC_Origin, [&](CValue result, IREmitter &emitter) {
+        expr, EC_Origin,
+        [&](CValue result, IREmitter &emitter, Block &exprBlock) {
           // Check to see if it is an address space first.
           if (auto pv = result.getIfPValue()) {
             if (auto as = digOutAddressSpace(pv.get(), expr->getLoc())) {
@@ -177,7 +168,8 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
           }
           // Otherwise it must be a !lit.origin and Origin struct.
           thisOrigin = emitter.extractOriginOf(expr, result);
-          isError = !thisOrigin;
+          isError = !thisOrigin || failed(emitter.checkRootOriginsOutliveBlock(
+                                       thisOrigin, exprBlock, expr));
         });
 
     if (isError)
@@ -888,8 +880,10 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     for (ConstraintAttr bodyConstraint : srcParamList.getBodyConstraints()) {
       TypedAttr remappedProp =
           evaluator.getReboundAttribute(bodyConstraint.getProposition());
-      paramList.emittedBodyConstraints.push_back(ConstraintAttr::get(
-          remappedProp, bodyConstraint.getLoc(), bodyConstraint.getMessage()));
+      auto remapped = ConstraintAttr::get(remappedProp, bodyConstraint.getLoc(),
+                                          bodyConstraint.getMessage());
+      paramList.emittedBodyConstraints.push_back(remapped);
+      paramList.declScope.insertKnownAssumptions({remapped});
     }
   };
 
@@ -1103,15 +1097,9 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
                UnboundAttr::get(UnresolvedType::get(emitter.getContext())),
                StringAttr::get(emitter.getContext(), "values"));
 
-  TypeSignatureType sig = structDeclOp.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, listDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-
-  if (!verifiedBindings)
+  ASTType result = specializeStruct(bindings, structDeclOp, listDecl);
+  if (!result)
     return emitter.shared.getTypeCheckErrorType();
-  ASTType result = verifiedBindings.specializeStructType(structDeclOp);
 
   // Add the !kgen.param_list parameter to the parameter list.  It is possible
   // the element type is a non-inferred parameter, so "append" this.
@@ -1139,17 +1127,6 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     ASTType type;
     if (arg.typeExpr) {
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
-
-      auto fnType = dyn_cast<FnTypeGeneratorType>(type);
-      auto *fnTypeExpr = dyn_cast<FunctionTypeNode>(arg.typeExpr);
-      if (fnType && fnTypeExpr && !fnTypeExpr->isThin &&
-          !fnTypeExpr->effects.isCapturing()) {
-        ASTDecl *closureTrait = result.shared.getOrCreateClosureTrait(
-            declScope.getLoc(), *declScope.getNearestDeclOfType<FileModuleOp>(),
-            fnType);
-        type = TraitType::get(getFullyResolvedSymbolRef(
-            cast<mlir::SymbolOpInterface>(closureTrait->getIfOperation())));
-      }
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -1881,14 +1858,7 @@ static ASTType typeCheckVariadicPack(ParsedArgument &arg, size_t argIdx,
   bindings.add(arg.typeExpr,
                UnpackedAttr::get(param, /*kwOnly=*/false, elementType));
 
-  TypeSignatureType sig = packStruct.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, packDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-  if (!verifiedBindings)
-    return {};
-  return verifiedBindings.specializeStructType(packStruct);
+  return specializeStruct(bindings, packStruct, packDecl);
 }
 
 // If this argument is a homogenous vararg like "*args: SomeType" then the
@@ -1948,15 +1918,7 @@ static ASTType typeCheckVariadicList(ParsedArgument &arg, IREmitter &emitter,
   bindings.add(arg.typeExpr,
                SIMDAttr::getScalarBool(emitter.getContext(), isVar));
 
-  TypeSignatureType sig = structDeclOp.getSignature();
-  ParamInf inference(bindings, sig.getParamTypes(), sig.getParamListAttrs(),
-                     /*allowImplicitConversions=*/true, listDecl,
-                     /*discardError=*/false);
-  VerifiedParamBindings verifiedBindings = inference.inferForStruct();
-
-  if (!verifiedBindings)
-    return {};
-  return verifiedBindings.specializeStructType(structDeclOp);
+  return specializeStruct(bindings, structDeclOp, listDecl);
 }
 
 /// Type check each argument in turn, resolving their type and default

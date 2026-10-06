@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from max.experimental.sharding import Partial, ReduceOp, Sharded
+from max.experimental.sharding.placements import Partial, ReduceOp, Sharded
 from max.experimental.sharding.types import TensorLayout
 
 from ..action import ActionSet, AxisAssignment

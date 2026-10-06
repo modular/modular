@@ -225,8 +225,8 @@ class StructuredOutputAttacks(BaseScenario):
                 },
                 "accept",
             ),
-            # Recursive $ref — valid JSON Schema; grammar backends
-            # (xgrammar, llguidance) support it with depth limits.
+            # Recursive $ref — valid JSON Schema; the grammar backend
+            # supports it with depth limits.
             "schema_recursive": (
                 {
                     "type": "json_schema",
@@ -364,15 +364,11 @@ class StructuredOutputAttacks(BaseScenario):
                 )
             )
 
-        # ----- 7b. Backend-uncompilable schemas (backend-conditional) -----
-        # These schemas only a fail-closed backend (xgrammar) rejects at
-        # compile time; llguidance fails open and compiles them. So we probe
-        # all three, detect the backend's disposition at runtime (did it 4xx
-        # any of them?), and assert the 400 rejection ONLY when it fails
-        # closed -- any model that migrates to xgrammar gets this check for
-        # free, and llguidance models aren't false-failed. A crash/hang is a
-        # FAIL on every backend: that is the invariant admission validation
-        # protects.
+        # ----- 7b. Backend-uncompilable schemas -----
+        # xgrammar rejects these at compile time. We probe all three and require
+        # each to be rejected with a 4xx at admission; accepting one (200) or
+        # crashing/hanging is a FAIL -- that is the invariant admission
+        # validation protects.
         uncompilable_schemas = {
             # `false` -> router lowers to {"anyOf": [false]}, unsatisfiable
             "boolean_false": {"name": "bf", "schema": False},
@@ -403,11 +399,6 @@ class StructuredOutputAttacks(BaseScenario):
                 ),
                 timeout=config.timeout * 0.5,
             )
-        # Fail-closed iff the backend rejected (4xx) at least one without
-        # crashing. xgrammar rejects all three; llguidance accepts all three.
-        backend_fails_closed = any(
-            400 <= r.status < 500 for r in uncompilable_responses.values()
-        )
         for uname, resp in uncompilable_responses.items():
             if resp.error == "TIMEOUT":
                 verdict, detail = (
@@ -424,29 +415,20 @@ class StructuredOutputAttacks(BaseScenario):
                     Verdict.FAIL,
                     f"Server crash {resp.status} on uncompilable schema",
                 )
-            elif backend_fails_closed:
-                # xgrammar-class backend: admission validation must 400 these
-                # rather than let them crash the worker.
-                if 400 <= resp.status < 500:
-                    verdict, detail = (
-                        Verdict.PASS,
-                        "Fail-closed backend rejected",
-                    )
-                elif resp.status == 200:
-                    verdict, detail = (
-                        Verdict.FAIL,
-                        "Fail-closed backend accepted an uncompilable schema",
-                    )
-                else:
-                    verdict, detail = (
-                        Verdict.INTERESTING,
-                        f"Status {resp.status}",
-                    )
-            else:
-                # Fail-open backend (e.g. llguidance): compiling these is fine.
+            elif 400 <= resp.status < 500:
                 verdict, detail = (
                     Verdict.PASS,
-                    "Fail-open backend compiled schema (no crash)",
+                    "Backend rejected uncompilable schema",
+                )
+            elif resp.status == 200:
+                verdict, detail = (
+                    Verdict.FAIL,
+                    "Backend accepted an uncompilable schema",
+                )
+            else:
+                verdict, detail = (
+                    Verdict.INTERESTING,
+                    f"Status {resp.status}",
                 )
             results.append(
                 self.make_result(

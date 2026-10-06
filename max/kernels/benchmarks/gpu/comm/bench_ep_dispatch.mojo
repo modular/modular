@@ -43,11 +43,7 @@ Correctness is not checked here; `test_p2p_ep_dispatch.mojo` owns that.
 
 from std.os import getenv
 from std.random import random_float64, seed
-from std.sys import (
-    get_defined_int,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import get_defined_int, default_accelerator
 
 
 # Routing mode is read at run time, not baked in: measuring an optimization
@@ -513,7 +509,7 @@ struct MXDispatchTest[
     # than a row-major scale row, and the two have different store patterns.
     # The slot layout is a CDNA4 MFMA layout, so NVIDIA keeps the row-major
     # path it actually dispatches with.
-    comptime fuse_a_scale_preshuffle = has_amd_gpu_accelerator()
+    comptime fuse_a_scale_preshuffle = default_accelerator().is_amd_gpu()
     comptime max_padded_m = align_up(
         Self.n_tokens_per_rank * Self.n_ranks, 32
     ) if Self.fuse_a_scale_preshuffle else 0
@@ -817,7 +813,6 @@ def bench_dispatch_common[
         )
 
     @inline(.always)
-    @__parameter
     def run_e2e(dev_idx: Int, slot_idx: Int) raises:
         run_dispatch_async(dev_idx, slot_idx)
         run_dispatch_async_wait(dev_idx, slot_idx)
@@ -1188,7 +1183,7 @@ def bench_all_formats[
         n_tokens_per_rank=n_tokens_per_rank,
     ](list_of_ctx)
 
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         bench_dispatch_mxfp4[
             hidden_size=HIDDEN,
             top_k=TOP_K,
@@ -1219,7 +1214,8 @@ def main() raises:
         raise Error("Cannot enable P2P Mem Access!")
 
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        default_accelerator().is_nvidia_gpu()
+        or default_accelerator().is_amd_gpu()
     ), "Only NVIDIA and AMD GPUs are supported"
 
     if DeviceContext.number_of_devices() != n_ranks:

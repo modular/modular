@@ -55,6 +55,13 @@ class DummyKVCache(PagedKVCacheManager):
     def step(self, *args: Any, **kwargs: Any) -> None:
         """No-op."""
 
+    def poll_transfers(self) -> None:
+        """No-op; ``alloc`` posts nothing, so nothing is ever in flight."""
+
+    def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
+        """Returns False, for the same reason."""
+        return False
+
     def contains(self, ctx: TextContext) -> bool:
         """Returns True for any request."""
         return True
@@ -66,11 +73,11 @@ class DummyKVCache(PagedKVCacheManager):
         """Returns a single block; this cache never allocates, so it stays free."""
         return BlockCount(free=1, total=1)
 
-    def host_byte_count(self, replica_idx: int = 0) -> ByteCount:
+    def host_byte_count(self) -> ByteCount:
         """Returns one permanently used byte."""
         return ByteCount(free=0, total=1)
 
-    def disk_byte_count(self, replica_idx: int = 0) -> ByteCount:
+    def disk_byte_count(self) -> ByteCount:
         """Returns one permanently used byte."""
         return ByteCount(free=0, total=1)
 

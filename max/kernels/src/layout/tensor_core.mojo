@@ -49,7 +49,9 @@ from std.math import align_down
 from std.math.uutils import umod, ufloordiv
 from std.collections import OptionalReg
 from std.sys import (
-    has_nvidia_gpu_accelerator,
+    align_of,
+    default_accelerator,
+    is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
     size_of,
@@ -70,17 +72,19 @@ from max.gpu import (
     lane_id,
     thread_idx,
 )
-from max.gpu.intrinsics import lop, ds_read_tr16_b64
+from max.gpu.intrinsics import lop
 from max.gpu.compute.mma import (
     get_amd_bf8_dtype,
     get_amd_fp8_dtype,
     ld_matrix,
     mma,
 )
-from layout._utils import load_to_simd, idx2crd
+from layout._utils import load_to_simd
 from layout.int_tuple import product, IntTuple
 from layout.layout import Layout
 from layout.layout_tensor import LayoutTensor
+from layout.tile_tensor import TileTensor, stack_allocation
+from layout.tile_layout import row_major
 from layout.swizzle import (
     ComposedLayout,
     Swizzle,
@@ -259,6 +263,17 @@ struct TensorCore[
     ]
     """LayoutTensor type for the C register tile."""
 
+    comptime c_fragment_layout = row_major[1, Self.c_reg_type.length]()
+    """Native scalar layout for the C register fragment."""
+
+    comptime c_fragment_type = TileTensor[
+        Self.out_type,
+        type_of(Self.c_fragment_layout),
+        MutUntrackedOrigin,
+        address_space=.LOCAL,
+    ]
+    """Native local-memory type for the C register fragment."""
+
     def __init__(out self):
         """
         Initialize a new TensorCore instance.
@@ -298,6 +313,145 @@ struct TensorCore[
             return [shape_8x8x4, shape_16x8x4, shape_16x8x8, shape_16x8x16]
         else:
             comptime assert False, "No valid shape of mma"
+
+    @staticmethod
+    @inline(.always)
+    def _check_cdna_input_fragment[extent: Int, registers: Int]():
+        comptime assert _is_amd_cdna(), "native A/B loads require AMD CDNA"
+        comptime assert extent in (16, 32)
+        comptime fp8_dtype = get_amd_fp8_dtype()
+        comptime bf8_dtype = get_amd_bf8_dtype()
+        comptime assert (
+            (Self.in_type == .float32 and registers in (1, 2))
+            or (Self.in_type.is_half_float() and registers in (4, 8))
+            or (
+                Optional[DType](Self.in_type) in (fp8_dtype, bf8_dtype)
+                and registers == 8
+            )
+        ), "unsupported CDNA input fragment"
+
+    @inline(.always)
+    def load_a[
+        swizzle: Optional[Swizzle] = None
+    ](
+        self,
+        a: TileTensor[Self.in_type, ...],
+        out res: TileTensor[
+            Self.in_type,
+            type_of(
+                row_major[
+                    1, num_matrix_reg[Self.shape[0], a.static_shape[1]]()
+                ]()
+            ),
+            MutUntrackedOrigin,
+            address_space=.LOCAL,
+        ],
+    ):
+        """Loads a native matrix tile into CDNA A registers.
+
+        Parameters:
+            swizzle: Must be `None`; the tile layout supplies the addressing.
+
+        Args:
+            a: An M-by-K scalar tile with arbitrary strides and static K.
+
+        Returns:
+            The native register fragment accepted by `mma_op`.
+
+        Constraints:
+            The target must be AMD CDNA and M must be 16 or 32. K must be a
+            positive multiple of the MMA K dimension. Consecutive MMA register
+            groups are packed per lane. NVIDIA, RDNA, and swizzled loads are not
+            supported by this overload.
+        """
+        comptime assert a.rank == a.flat_rank == 2 and a.element_size == 1
+        comptime assert swizzle is None, "native A loads do not support swizzle"
+        comptime K = a.static_shape[1]
+        comptime assert K > 0 and K % Self.shape[2] == 0
+        Self._check_cdna_input_fragment[
+            Self.shape[0], num_matrix_reg[Self.shape[0], Self.shape[2]]()
+        ]()
+        debug_assert(
+            Int(a.dim[0]()) == Self.shape[0], "source must have MMA M rows"
+        )
+        comptime registers = num_matrix_reg[Self.shape[0], K]()
+        var fragment = stack_allocation[Self.in_type, address_space=.LOCAL](
+            type_of(res).LayoutType()
+        )
+        comptime assert fragment.flat_rank == 2
+        var row = lane_id() % Self.shape[0]
+        var k_base = (lane_id() // Self.shape[0]) * registers
+        comptime for register in range(registers):
+            fragment[0, register] = a.load[width=1]((row, k_base + register))
+        return fragment
+
+    @inline(.always)
+    def load_b[
+        swizzle: Optional[Swizzle] = None
+    ](
+        self,
+        b: TileTensor[Self.in_type, ...],
+        out res: TileTensor[
+            Self.in_type,
+            type_of(
+                row_major[
+                    num_matrix_reg[
+                        b.static_shape[1 if Self.transpose_b else 0],
+                        Self.shape[1],
+                    ](),
+                    1,
+                ]()
+            ),
+            MutUntrackedOrigin,
+            address_space=.LOCAL,
+        ],
+    ):
+        """Loads a native matrix tile into CDNA B registers.
+
+        Parameters:
+            swizzle: Must be `None`; the tile layout supplies the addressing.
+
+        Args:
+            b: A K-by-N scalar tile, or N-by-K when `transpose_b` is enabled.
+                Strides are arbitrary; K must be static.
+
+        Returns:
+            The native register fragment accepted by `mma_op`.
+
+        Constraints:
+            The target must be AMD CDNA and N must be 16 or 32. K must be a
+            positive multiple of the MMA K dimension. Consecutive MMA register
+            groups are packed per lane. NVIDIA, RDNA, and swizzled loads are not
+            supported by this overload.
+        """
+        comptime assert b.rank == b.flat_rank == 2 and b.element_size == 1
+        comptime assert swizzle is None, "native B loads do not support swizzle"
+        comptime K = b.static_shape[1 if Self.transpose_b else 0]
+        comptime assert K > 0 and K % Self.shape[2] == 0
+        Self._check_cdna_input_fragment[
+            Self.shape[1], num_matrix_reg[Self.shape[2], Self.shape[1]]()
+        ]()
+        debug_assert(
+            Int(b.dim[0 if Self.transpose_b else 1]()) == Self.shape[1],
+            "source must have MMA N columns",
+        )
+        comptime registers = num_matrix_reg[K, Self.shape[1]]()
+        var fragment = stack_allocation[Self.in_type, address_space=.LOCAL](
+            type_of(res).LayoutType()
+        )
+        comptime assert fragment.flat_rank == 2
+        var col = lane_id() % Self.shape[1]
+        var k_base = (lane_id() // Self.shape[1]) * registers
+        comptime for register in range(registers):
+            comptime if Self.transpose_b:
+                fragment[register, 0] = b.load[width=1](
+                    (col, k_base + register)
+                )
+            else:
+                fragment[register, 0] = b.load[width=1](
+                    (k_base + register, col)
+                )
+        return fragment
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
 
@@ -669,6 +823,68 @@ struct TensorCore[
         else:
             return self._load_c_amd(c)
 
+    @staticmethod
+    @inline(.always)
+    def _c_fragment_coord[
+        register: Int, rows: Int = 4
+    ](lane: Int) -> Tuple[Int, Int]:
+        comptime if is_nvidia_gpu():
+            comptime assert Self.shape[1] == 8
+            # NVIDIA MMA accumulators pair adjacent columns, then advance 8 rows.
+            return (
+                lane // 4 + (register // 2) * 8,
+                (lane % 4) * 2 + register % 2,
+            )
+        else:
+            comptime assert is_amd_gpu(), "unsupported accumulator architecture"
+            comptime assert WARP_SIZE % Self.shape[1] == 0
+            comptime assert Self.c_reg_type.length % rows == 0
+            comptime groups = WARP_SIZE // Self.shape[1]
+            return (
+                (lane // Self.shape[1]) * rows
+                + (register // rows) * groups * rows
+                + register % rows,
+                lane % Self.shape[1],
+            )
+
+    @inline(.always)
+    def load_c(
+        self, c: TileTensor[Self.out_type, ...], out res: Self.c_fragment_type
+    ):
+        """Loads a scalar matrix tile into the MMA accumulator registers.
+
+        Args:
+            c: The complete M-by-N accumulator tile, with arbitrary strides.
+
+        Returns:
+            The register fragment accepted by `mma_op`.
+
+        Constraints:
+            The tile must have scalar elements and exactly the MMA M-by-N shape.
+            NVIDIA supports float32 and float64; AMD supports float32.
+        """
+        comptime assert c.rank == c.flat_rank == 2 and c.element_size == 1
+        comptime registers = num_matrix_reg[Self.shape[0], Self.shape[1]]()
+        comptime if is_nvidia_gpu():
+            comptime assert (Self.out_type == .float32 and registers == 4) or (
+                Self.out_type == .float64 and registers in (2, 4)
+            )
+        else:
+            comptime assert Self.out_type == .float32 and registers in (4, 16)
+        debug_assert(
+            Int(c.dim[0]()) == Self.shape[0]
+            and Int(c.dim[1]()) == Self.shape[1],
+            "source must have the MMA accumulator shape",
+        )
+        var fragment = stack_allocation[Self.out_type, address_space=.LOCAL](
+            Self.c_fragment_layout
+        )
+        comptime assert fragment.flat_rank == 2
+        comptime for register in range(registers):
+            var row, col = Self._c_fragment_coord[register](lane_id())
+            fragment[0, register] = c.load[width=1]((row, col))
+        return fragment
+
     @inline(.always)
     def _load_c_amd(self, c: LayoutTensor, out res: Self.c_reg_tile_type):
         comptime mma_m = Self.shape[0]
@@ -736,6 +952,86 @@ struct TensorCore[
             self._store_d_nvidia(d_dst, d_src)
         else:
             self._store_d_amd(d_dst, d_src)
+
+    @inline(.always)
+    def store_d(
+        self,
+        d_dst: TileTensor[mut=True, Self.out_type, ...],
+        d_src: LayoutTensor[Self.out_type, ...],
+    ):
+        """Stores a legacy accumulator fragment into a scalar matrix tile.
+
+        Args:
+            d_dst: The complete M-by-N output tile, with arbitrary strides.
+            d_src: A scalar legacy register fragment of shape (1, registers).
+        """
+        comptime registers = Self.c_reg_type.length
+        comptime assert d_src.shape[0]() == 1 and d_src.shape[1]() == registers
+        comptime assert d_src.element_size == 1
+        self._store_d_fragment(
+            d_dst,
+            rebind[Self.c_reg_type](d_src.vectorize[1, registers]()[0, 0]),
+        )
+
+    @inline(.always)
+    def store_d(
+        self,
+        d_dst: TileTensor[mut=True, Self.out_type, ...],
+        d_src: TileTensor[Self.out_type, ...],
+    ):
+        """Stores native MMA accumulator registers into a scalar matrix tile.
+
+        Args:
+            d_dst: The complete M-by-N output tile, with arbitrary strides.
+            d_src: The native register fragment produced by `mma_op` or `load_c`.
+
+        Constraints:
+            The source must have contiguous scalar registers and shape
+            (1, registers).
+            The destination must have scalar elements and the MMA M-by-N shape.
+            NVIDIA supports float32 and float64; AMD supports float32.
+        """
+        comptime registers = Self.c_reg_type.length
+        comptime assert d_src.rank == d_src.flat_rank == 2
+        comptime assert d_src.static_shape[0] == 1
+        comptime assert d_src.static_shape[1] == registers
+        comptime assert d_src.element_size == 1
+        comptime assert d_src.static_stride[1] == 1
+        var packed = d_src.vectorize[1, registers]()
+        comptime assert packed.flat_rank == 2
+        self._store_d_fragment(
+            d_dst, packed.load[alignment=align_of[Self.out_type]()]((0, 0))
+        )
+
+    @inline(.always)
+    def _store_d_fragment(
+        self,
+        d_dst: TileTensor[mut=True, Self.out_type, ...],
+        registers_src: Self.c_reg_type,
+    ):
+        comptime assert d_dst.rank == d_dst.flat_rank == 2
+        comptime assert d_dst.element_size == 1
+        comptime registers = num_matrix_reg[Self.shape[0], Self.shape[1]]()
+        comptime if is_nvidia_gpu():
+            comptime assert (Self.out_type == .float32 and registers == 4) or (
+                Self.out_type == .float64 and registers in (2, 4)
+            )
+        else:
+            comptime assert Self.out_type == .float32 and registers in (
+                4,
+                8,
+                16,
+            )
+        debug_assert(
+            Int(d_dst.dim[0]()) == Self.shape[0]
+            and Int(d_dst.dim[1]()) == Self.shape[1],
+            "destination must have the MMA accumulator shape",
+        )
+        # RDNA stores eight strided rows per group; CDNA stores four.
+        comptime rows = 8 if _is_amd_rdna() else 4
+        comptime for register in range(registers):
+            var row, col = Self._c_fragment_coord[register, rows](lane_id())
+            d_dst.store((row, col), registers_src[register])
 
     @inline(.always)
     def _store_d_amd(
@@ -834,6 +1130,61 @@ struct TensorCore[
         d.vectorize[1, Self.c_reg_type.length]()[0, 0] = rebind[
             type_of(d.vectorize[1, Self.c_reg_type.length]()[0, 0])
         ](d_reg)
+        return d
+
+    @inline(.always)
+    def mma_op(
+        self,
+        a: TileTensor[Self.in_type, ...],
+        b: TileTensor[Self.in_type, ...],
+        c: TileTensor[Self.out_type, ...],
+        out res: Self.c_fragment_type,
+    ):
+        """Multiplies native register fragments and adds the accumulator.
+
+        Args:
+            a: A scalar fragment of shape (1, A registers).
+            b: A scalar fragment of shape (B registers, 1).
+            c: A scalar fragment of shape (1, C registers).
+
+        Returns:
+            A native local accumulator fragment in hardware register order.
+
+        Constraints:
+            Each fragment must contain exactly one contiguous MMA register
+            group.
+        """
+        comptime assert a.rank == a.flat_rank == 2 and a.element_size == 1
+        comptime assert b.rank == b.flat_rank == 2 and b.element_size == 1
+        comptime assert c.rank == c.flat_rank == 2 and c.element_size == 1
+        comptime assert a.static_shape[0] == 1
+        comptime assert a.static_shape[1] == Self.a_reg_type.length
+        comptime assert b.static_shape[0] == Self.b_reg_type.length
+        comptime assert b.static_shape[1] == 1
+        comptime assert c.static_shape[0] == 1
+        comptime assert c.static_shape[1] == Self.c_reg_type.length
+        comptime assert a.static_stride[1] == 1
+        comptime assert b.static_stride[0] == 1
+        comptime assert c.static_stride[1] == 1
+        var a_packed = a.vectorize[1, Self.a_reg_type.length]()
+        var b_packed = b.vectorize[Self.b_reg_type.length, 1]()
+        var c_packed = c.vectorize[1, Self.c_reg_type.length]()
+        comptime assert a_packed.flat_rank == 2
+        comptime assert b_packed.flat_rank == 2
+        comptime assert c_packed.flat_rank == 2
+        var d_reg = c_packed.load[alignment=align_of[Self.out_type]()]((0, 0))
+        mma(
+            d_reg,
+            a_packed.load[alignment=align_of[Self.in_type]()]((0, 0)),
+            b_packed.load[alignment=align_of[Self.in_type]()]((0, 0)),
+            d_reg,
+        )
+        var d = stack_allocation[Self.out_type, address_space=.LOCAL](
+            Self.c_fragment_layout
+        )
+        var d_packed = d.vectorize[1, Self.c_reg_type.length]()
+        comptime assert d_packed.flat_rank == 2
+        d_packed.store[alignment=align_of[Self.out_type]()]((0, 0), d_reg)
         return d
 
     @inline(.always)
@@ -1379,7 +1730,7 @@ def get_mma_shape[
         where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         comptime if accum_type == .float32 and input_type == .float32:
             comptime if shape_id == 0:
                 return shape_16x8x8
@@ -1540,7 +1891,6 @@ struct TiledTensorCore[
             num_n_mmas, num_m_mmas
         ) if swap_a_b else Layout.col_major(num_m_mmas, num_n_mmas)
 
-        @__parameter
         def _inner_loop(
             a_frag: LayoutTensor,
             b_frag: LayoutTensor,
@@ -1576,229 +1926,3 @@ struct TiledTensorCore[
                 a_reg_k.vectorize[1, a_frag_size](),
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
-
-
-@inline(.always)
-def _load_tr16_b64_row[
-    swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](tile: LayoutTensor[_, _, address_space=.SHARED, ...]) -> SIMD[tile.dtype, 4]:
-    """Load a 4x16 tile using ds_read_tr16_b64 with optional swizzle.
-
-    ds_read_tr16_b64 uses a set of 4x4 lanes (AMD calls 16 lanes a "row")
-    to load a 4x16 tile. Each lane loads 4 contiguous elements from the tile.
-    Then they are exchanged such that at the end of this operation you get a
-    SIMD[tile.dtype, 4], with each lane containing a column of the 4x16 tile.
-
-    Parameters:
-        swizzle: Optional swizzle pattern applied to LDS offsets. When provided,
-                 the offset is swizzled before the read. The swizzle must preserve
-                 8-byte contiguity (satisfied by Swizzle(1, 5, 4) for aligned tiles).
-    """
-    comptime assert size_of[tile.dtype]() == 2, String(
-        "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
-    )
-    comptime assert tile.shape[0]() == 4, String(
-        "Expected tile.shape[0]() to be 4, but got ", tile.shape[0]()
-    )
-    comptime assert tile.shape[1]() == 16, String(
-        "Expected tile.shape[1]() to be 16, but got ", tile.shape[1]()
-    )
-
-    comptime thread_layout = Layout.row_major(4, 4)
-    var lane_in_row = umod(lane_id(), 16)
-    var dist_result = tile.vectorize[1, 4]().distribute_with_offset[
-        thread_layout
-    ](lane_in_row)
-    var offset = dist_result[2]
-
-    # Apply swizzle to the base offset if provided
-    # The 8-byte read remains contiguous because:
-    # - Swizzle(1, 5, 4) XORs bit 9 into bits 5-8
-    # - Within a 512-byte block (same bit 9), swizzle preserves contiguity
-    comptime if swizzle:
-        # Convert element offset to byte offset, swizzle, convert back
-        var byte_offset = Int(offset) * size_of[tile.dtype]()
-        var swizzled_bytes = swizzle.value()(byte_offset)
-        offset = Scalar[tile.linear_idx_type](
-            swizzled_bytes // size_of[tile.dtype]()
-        )
-
-    var ptr = tile.ptr + offset
-    return ds_read_tr16_b64(ptr)
-
-
-@inline(.always)
-def _load_tr16_b64_warp[
-    mma_shape: IndexList[3],
-    swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](tile: LayoutTensor[_, _, address_space=.SHARED, ...]) -> SIMD[tile.dtype, 4]:
-    # for 8x32 we need 2x2 distribution of rows (16 lanes), 2x2 x 4x16 = 8x32
-    # for 16x16 we need 4x1 distribution of rows (16 lanes), 4x1 x 4x16 = 16x16
-    comptime row_layout = Layout.row_major(2, 2) if mma_shape[
-        0
-    ] == 32 else Layout.row_major(4, 1)
-    comptime assert tile.dtype == .bfloat16, String(
-        "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
-    )
-    comptime assert tile.shape[0]() == row_layout.shape[0].value() * 4, String(
-        "Expected tile.shape[0]() to be ",
-        row_layout.shape[0].value() * 4,
-        ", but got ",
-        tile.shape[0](),
-    )
-    comptime assert tile.shape[1]() == row_layout.shape[1].value() * 16, String(
-        "Expected tile.shape[1]() to be ",
-        row_layout.shape[1].value() * 16,
-        ", but got ",
-        tile.shape[1](),
-    )
-
-    var coords = idx2crd[row_layout](lane_id() // 16)
-    var shared_b_tile = tile.tile[4, 16](coords[0], coords[1])
-    return _load_tr16_b64_row[swizzle](shared_b_tile)
-
-
-@inline(.always)
-def load_b_tr[
-    mma_shape: IndexList[3],
-    swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](tile: LayoutTensor[_, _, address_space=.SHARED, ...]) -> SIMD[tile.dtype, 8]:
-    """Loads the b operand tile for AMD tensor core MFMA instructions using transposed memory access.
-
-    This function supports double-rate MFMA shapes (32x32x16, 16x16x32) with bfloat16 input.
-    The input tile (shape = (mma_shape[2], mma_shape[1])) is split along the K dimension into
-    two halves of shape (MMA_K//2, MMA_N). Each half is loaded using `_load_tr16_b64_warp`, which
-    performs a transposed (column-major) load from shared memory. The resulting two 4-element SIMD
-    vectors are concatenated into a single `SIMD[tile.dtype, 8]` vector.
-
-    Parameters:
-        mma_shape: The MMA instruction tile shape (only 32x32x16 or 16x16x32 supported).
-        swizzle: Optional swizzle pattern for bank-conflict-free LDS access.
-
-    Args:
-        tile:      A `LayoutTensor`, residing in shared memory, with shape (mma_shape[2], mma_shape[1])
-                   and dtype `DType.bfloat16`.
-
-    Returns:
-        SIMD[tile.dtype, 8]: Concatenated transposed SIMD loads from both halves of the tile.
-    """
-    # only support double-rate mfma shapes for now
-    comptime assert mma_shape in (
-        IndexList[3](32, 32, 16),
-        IndexList[3](16, 16, 32),
-    ), String(
-        "Unsupported mma_shape: ",
-        mma_shape[0],
-        "x",
-        mma_shape[1],
-        "x",
-        mma_shape[2],
-        ". Supported shapes: 32x32x16, 16x16x32",
-    )
-    comptime assert tile.dtype == .bfloat16, String(
-        "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
-    )
-    comptime assert tile.shape[0]() == mma_shape[2], String(
-        "Expected tile.shape[0]() to be mma_shape[2]=",
-        mma_shape[2],
-        ", but got ",
-        tile.shape[0](),
-    )
-    comptime assert tile.shape[1]() == mma_shape[1], String(
-        "Expected tile.shape[1]() to be mma_shape[1]=",
-        mma_shape[1],
-        ", but got ",
-        tile.shape[1](),
-    )
-    # Loads the input tile as two halves along the K dimension, each of shape
-    # (MMA_K//2, MMA_N), and concatenates the resulting 4-element vectors.
-    # This is designed for use in multi-head attention (MHA) kernels where
-    # the output fragment of a previous MFMA serves as the input to the next.
-    #
-    # For example, with MMA shape (32, 32, 16), this function splits a tile of
-    # shape (16, 32) into two (8, 32) tiles, loads 4 values from each, and
-    # joins them. This follows the MFMA output pattern on AMD GPUs where output
-    # fragments are organized in 4-element vectors.
-    #
-    # Typical usage: when fusing two MMAs, you can efficiently pass the
-    # accumulator of the first (after downcasting to 2 bytes) as part of the input to the next.
-    var tiles = tile.split[2]()
-    var part_1 = _load_tr16_b64_warp[mma_shape, swizzle](tiles[0])
-    var part_2 = _load_tr16_b64_warp[mma_shape, swizzle](tiles[1])
-    return part_1.join(part_2)
-
-
-@inline(.always)
-def load_b_nt[
-    mma_shape: IndexList[3],
-    swizzle: Optional[Swizzle] = Optional[Swizzle](),
-](tile: LayoutTensor[_, _, address_space=.SHARED, ...]) -> SIMD[tile.dtype, 8]:
-    """Loads the b operand tile for AMD tensor core MFMA from (N, K) storage.
-
-    This function supports double-rate MFMA shapes (32x32x16, 16x16x32) with bfloat16 input.
-    Unlike load_b_tr which expects (K, N) storage, this function works with (N, K) storage
-    which is common when transpose_b=True and B is stored row-major.
-
-    The input tile (shape = (mma_shape[1], mma_shape[2])) is split along the K dimension into
-    two halves of shape (MMA_N, MMA_K//2). Each half is loaded using `_load_tr16_b64_warp`,
-    which performs a transposed (column-major) load from shared memory. The hardware transpose
-    effectively converts the (N, K) storage to (K, N) format needed by MMA.
-
-    Parameters:
-        mma_shape: The MMA instruction tile shape (only 32x32x16 or 16x16x32 supported).
-        swizzle: Optional swizzle pattern for bank-conflict-free LDS access.
-
-    Args:
-        tile:      A `LayoutTensor`, residing in shared memory, with shape (mma_shape[1], mma_shape[2])
-                   and dtype `DType.bfloat16`. This is (N, K) storage order.
-
-    Returns:
-        SIMD[tile.dtype, 8]: Concatenated transposed SIMD loads from both halves of the tile.
-
-    Example:
-        For 16x16x32 MMA with B stored as (N, K) = (16, 32) in LDS:
-        ```mojo
-        # B tile in LDS: shape (16, 32) = (MMA_N, MMA_K)
-        var b_tile = smem_b.tile[16, 32](n_idx, k_idx)
-        var b_reg = load_b_nt[IndexList[3](16, 16, 32)](b_tile)
-        # b_reg now contains 8 bf16 values ready for MFMA
-        ```
-    """
-    # only support double-rate mfma shapes for now
-    comptime assert mma_shape in (
-        IndexList[3](32, 32, 16),
-        IndexList[3](16, 16, 32),
-    ), String(
-        "Unsupported mma_shape: ",
-        mma_shape[0],
-        "x",
-        mma_shape[1],
-        "x",
-        mma_shape[2],
-        ". Supported shapes: 32x32x16, 16x16x32",
-    )
-    comptime assert tile.dtype == .bfloat16, String(
-        "Expected tile.dtype to be DType.bfloat16, but got ", tile.dtype
-    )
-    # Note: shape is (N, K) = (mma_shape[1], mma_shape[2]) - opposite of load_b_tr
-    comptime assert tile.shape[0]() == mma_shape[1], String(
-        "Expected tile.shape[0]() to be mma_shape[1]=",
-        mma_shape[1],
-        ", but got ",
-        tile.shape[0](),
-    )
-    comptime assert tile.shape[1]() == mma_shape[2], String(
-        "Expected tile.shape[1]() to be mma_shape[2]=",
-        mma_shape[2],
-        ", but got ",
-        tile.shape[1](),
-    )
-
-    # Split along K dimension (dim 1) into two (N, K/2) tiles
-    # For 16x16x32: split (16, 32) into two (16, 16) tiles
-    # For 32x32x16: split (32, 16) into two (32, 8) tiles
-    # The transpose read converts (N, K/2) to (K/2, N) format for MMA
-    var tiles = tile.split[2, axis=1]()
-    var part_1 = _load_tr16_b64_warp[mma_shape, swizzle](tiles[0])
-    var part_2 = _load_tr16_b64_warp[mma_shape, swizzle](tiles[1])
-    return part_1.join(part_2)

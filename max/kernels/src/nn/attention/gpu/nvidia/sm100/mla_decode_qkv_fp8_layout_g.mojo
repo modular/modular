@@ -810,7 +810,7 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
         var elect_mask = elect()
         var is_leader: Bool = elect_mask != 0
         var row: Int = offset_position.out_row_offset
-        var rows_to_store = rows_owned[Self.config](Int(block_idx.x))
+        var rows_to_store = rows_owned[Self.config](block_idx.x)
 
         # col = n * BN_PV + m * (BN_PV // 2) + k * BK_PV
         comptime slot_col_stride_LG: Int = Self.BN_PV // 2
@@ -1486,9 +1486,10 @@ struct MLA_SM100_Decode_QKV_FP8_Layout_G[
                     Self.BM * Self.config.q_depth * Self.fp8_bytes_per_element
                 )
             )
-            comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
-                q_tma
-            ).tile_shape[1]
+            comptime q_elems = (
+                type_of(q_tma).tile_shape.element_types[0].static_value
+                * type_of(q_tma).tile_shape.element_types[1].static_value
+            )
             comptime q_tt_layout = tt_row_major[q_elems]()
             var q_smem_tensor = TileTensor[
                 Self.kv_type,

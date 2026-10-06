@@ -47,7 +47,6 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
-    PlacementMapping,
     Replicated,
     Sharded,
 )
@@ -112,7 +111,7 @@ class AutoTPMLP(Module[[Tensor], Tensor]):
         hidden = mul(gate, up)
         out = matmul(hidden, self.W_down)
         replicated = tuple(Replicated() for _ in range(out.mesh.ndim))
-        return transfer_to(out, PlacementMapping(out.mesh, replicated))
+        return transfer_to(out, DeviceMapping(out.mesh, replicated))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -152,20 +151,20 @@ class E2ETests:
         return AutoTPMLP(
             W_gate=transfer_to(
                 Tensor(W_gate_np),
-                PlacementMapping(mesh, tuple(placements_col)),
+                DeviceMapping(mesh, tuple(placements_col)),
             ),
             W_up=transfer_to(
-                Tensor(W_up_np), PlacementMapping(mesh, tuple(placements_col))
+                Tensor(W_up_np), DeviceMapping(mesh, tuple(placements_col))
             ),
             W_down=transfer_to(
                 Tensor(W_down_np),
-                PlacementMapping(mesh, tuple(placements_row)),
+                DeviceMapping(mesh, tuple(placements_row)),
             ),
         )
 
     def _distribute_input(self, data: np.ndarray, mesh: DeviceMesh) -> Tensor:
         placements = (Replicated(),) * mesh.ndim
-        return transfer_to(Tensor(data), PlacementMapping(mesh, placements))
+        return transfer_to(Tensor(data), DeviceMapping(mesh, placements))
 
     # ── TestTPMLP ────────────────────────────────────────────────────────
 
@@ -211,15 +210,15 @@ class E2ETests:
         mesh = self.MESH_2
         x = transfer_to(
             Tensor(np.ones((3, 8), dtype=np.float32)),
-            PlacementMapping(mesh, (Sharded(1),)),
+            DeviceMapping(mesh, (Sharded(1),)),
         )
         W = transfer_to(
             Tensor(np.ones((8, 4), dtype=np.float32)),
-            PlacementMapping(mesh, (Sharded(0),)),
+            DeviceMapping(mesh, (Sharded(0),)),
         )
         out = matmul(x, W)
         assert any(isinstance(p, Partial) for p in out.placements)
-        reduced = transfer_to(out, PlacementMapping(mesh, (Replicated(),)))
+        reduced = transfer_to(out, DeviceMapping(mesh, (Replicated(),)))
         assert reduced.placements == (Replicated(),)
         result_np = reduced.to_numpy()
         assert result_np.shape == (3, 4)
@@ -256,8 +255,8 @@ class E2ETests:
         x_np = rng.standard_normal((4, 8)).astype(np.float32)
         w_np = np.ones(8, dtype=np.float32)
 
-        x = transfer_to(Tensor(x_np), PlacementMapping(mesh, (Sharded(0),)))
-        w = transfer_to(Tensor(w_np), PlacementMapping(mesh, (Replicated(),)))
+        x = transfer_to(Tensor(x_np), DeviceMapping(mesh, (Sharded(0),)))
+        w = transfer_to(Tensor(w_np), DeviceMapping(mesh, (Replicated(),)))
 
         result = self._decomposed_rms_norm(x, w, 1e-6, mesh)
         assert result.placements == (Sharded(0),)
@@ -271,11 +270,11 @@ class E2ETests:
         mesh = self.MESH_2
         x = transfer_to(
             Tensor(np.ones((3, 8), dtype=np.float32)),
-            PlacementMapping(mesh, (Sharded(1),)),
+            DeviceMapping(mesh, (Sharded(1),)),
         )
         w = transfer_to(
             Tensor(np.ones(4, dtype=np.float32)),
-            PlacementMapping(mesh, (Replicated(),)),
+            DeviceMapping(mesh, (Replicated(),)),
         )
         with pytest.raises((ValueError, Exception)):
             self._decomposed_rms_norm(x, w, 1e-6, mesh)
@@ -286,8 +285,8 @@ class E2ETests:
         x_np = rng.standard_normal((4, 8)).astype(np.float32)
         w_np = np.ones(8, dtype=np.float32)
 
-        x = transfer_to(Tensor(x_np), PlacementMapping(mesh, (Sharded(0),)))
-        w = transfer_to(Tensor(w_np), PlacementMapping(mesh, (Replicated(),)))
+        x = transfer_to(Tensor(x_np), DeviceMapping(mesh, (Sharded(0),)))
+        w = transfer_to(Tensor(w_np), DeviceMapping(mesh, (Replicated(),)))
 
         decomposed = self._decomposed_rms_norm(x, w, 1e-6, mesh)
         assert decomposed.placements == (Sharded(0),)
@@ -311,25 +310,25 @@ class E2ETests:
 
         w_norm = transfer_to(
             Tensor(w_norm_np),
-            PlacementMapping(mesh, (Replicated(),)),
+            DeviceMapping(mesh, (Replicated(),)),
         )
         W1 = transfer_to(
             Tensor(W1_np),
-            PlacementMapping(mesh, (Sharded(1),)),
+            DeviceMapping(mesh, (Sharded(1),)),
         )
         W2 = transfer_to(
             Tensor(W2_np),
-            PlacementMapping(mesh, (Sharded(0),)),
+            DeviceMapping(mesh, (Sharded(0),)),
         )
         x = transfer_to(
             Tensor(x_np),
-            PlacementMapping(mesh, (Replicated(),)),
+            DeviceMapping(mesh, (Replicated(),)),
         )
 
         normed = self._decomposed_rms_norm(x, w_norm, 1e-6, mesh)
         hidden = relu(matmul(normed, W1))
         out = matmul(hidden, W2)
-        reduced = transfer_to(out, PlacementMapping(mesh, (Replicated(),)))
+        reduced = transfer_to(out, DeviceMapping(mesh, (Replicated(),)))
         result = add(x, reduced)
         assert result.placements == (Replicated(),)
         result_np = result.to_numpy()
@@ -350,11 +349,11 @@ class E2ETests:
 
         W1 = transfer_to(
             Tensor(W1_np),
-            PlacementMapping(mesh, (Replicated(), Sharded(1))),
+            DeviceMapping(mesh, (Replicated(), Sharded(1))),
         )
         x = transfer_to(
             Tensor(x_np),
-            PlacementMapping(mesh, (Replicated(), Replicated())),
+            DeviceMapping(mesh, (Replicated(), Replicated())),
         )
         out = matmul(x, W1)
         assert out.placements == (Replicated(), Sharded(1)), (
@@ -370,7 +369,7 @@ class E2ETests:
 
     def test_creation_into_ops(self) -> None:
         mesh = self.MESH_1D
-        mapping = PlacementMapping(mesh, (Sharded(0),))
+        mapping = DeviceMapping(mesh, (Sharded(0),))
         t = full([8, 4], 2.0, dtype=F32, device=mapping)
         out = relu(t)
         assert out.placements == (Sharded(0),)
@@ -380,7 +379,7 @@ class E2ETests:
 
     def test_elementwise_chain_2d(self) -> None:
         mesh = self.MESH_2D
-        mapping = PlacementMapping(mesh, (Sharded(0), Replicated()))
+        mapping = DeviceMapping(mesh, (Sharded(0), Replicated()))
         a = full([4, 4], 2.0, dtype=F32, device=mapping)
         b = full([4, 4], 3.0, dtype=F32, device=mapping)
         out = add(mul(a, b), a)
@@ -423,13 +422,11 @@ class IRTests:
 
         model = AutoTPMLP(
             W_gate=transfer_to(
-                Tensor(W_gate), PlacementMapping(mesh, (Sharded(1),))
+                Tensor(W_gate), DeviceMapping(mesh, (Sharded(1),))
             ),
-            W_up=transfer_to(
-                Tensor(W_up), PlacementMapping(mesh, (Sharded(1),))
-            ),
+            W_up=transfer_to(Tensor(W_up), DeviceMapping(mesh, (Sharded(1),))),
             W_down=transfer_to(
-                Tensor(W_down), PlacementMapping(mesh, (Sharded(0),))
+                Tensor(W_down), DeviceMapping(mesh, (Sharded(0),))
             ),
         )
 
@@ -446,7 +443,7 @@ class IRTests:
         model = AutoTPMLP(
             W_gate=transfer_to(
                 Tensor(W_gate),
-                PlacementMapping(
+                DeviceMapping(
                     mesh,
                     (
                         Replicated(),
@@ -456,7 +453,7 @@ class IRTests:
             ),
             W_up=transfer_to(
                 Tensor(W_up),
-                PlacementMapping(
+                DeviceMapping(
                     mesh,
                     (
                         Replicated(),
@@ -466,7 +463,7 @@ class IRTests:
             ),
             W_down=transfer_to(
                 Tensor(W_down),
-                PlacementMapping(
+                DeviceMapping(
                     mesh,
                     (
                         Replicated(),

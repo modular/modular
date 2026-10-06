@@ -35,9 +35,13 @@ from collections.abc import (
     Sequence,
 )
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import aiohttp
+from max.serve._tool_call_validation import (
+    check_response_format_conformance,
+    response_format_schema_is_checkable,
+)
 from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import BaseModel
@@ -165,6 +169,15 @@ def _attach_images_to_first_user_message(
     target["content"].extend(images)
 
 
+def _messages_carry_image(messages: Sequence[SerializedChatMessage]) -> bool:
+    return any(
+        isinstance(part, Mapping) and part.get("type") == "image_url"
+        for message in messages
+        if isinstance(content := message.get("content"), list)
+        for part in content
+    )
+
+
 def _build_final_payload(
     base_payload: Mapping[str, Any], extra_body: Mapping[str, Any] | None
 ) -> dict[str, Any]:
@@ -203,6 +216,9 @@ class RequestFuncInput(BaseRequestFuncInput):
     # so datasets can pass through OpenAI-shaped or server-specific schemas
     # without translation; ignored by non-chat drivers.
     tools: list[dict[str, Any]] | None = None
+    # The adapter the request is routed to. ``model`` already names it for the
+    # server; this keeps it apart from a base-model request for the metrics.
+    lora_id: str | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         return RequestFuncOutput
@@ -238,6 +254,61 @@ class BaseRequestFuncOutput:
         if self.request_submit_time is None:
             return None
         return self.request_submit_time + self.latency
+
+
+def tag_lora_route(
+    output: BaseRequestFuncOutput, request_func_input: BaseRequestFuncInput
+) -> None:
+    """Records the adapter *output*'s request was routed to, if any."""
+    if isinstance(output, RequestFuncOutput) and isinstance(
+        request_func_input, RequestFuncInput
+    ):
+        output.lora_id = request_func_input.lora_id
+
+
+def tag_response_format_outcome(
+    output: BaseRequestFuncOutput, request_func_input: BaseRequestFuncInput
+) -> None:
+    """Record whether *output* was constrained, and whether it conformed.
+
+    Conformance is judged client-side, from the response text alone, so it
+    reports on any backend rather than only on one that exposes a metrics
+    endpoint.
+
+    The check is the same one the server runs for its own conformance log, so
+    the two numbers mean the same thing and can be compared. Failures here are
+    a property of the response, never of the benchmark: the checker is
+    documented as never raising.
+
+    A schema that does not compile leaves the request unjudged rather than
+    scoring it. The checker itself fails open, which is right for the server's
+    log but would be backwards here -- an unusable schema would report a
+    perfect conformance rate, and the metric reads healthiest exactly where it
+    measured nothing.
+    """
+    if not isinstance(output, RequestFuncOutput) or not isinstance(
+        request_func_input, RequestFuncInput
+    ):
+        return
+    response_format = request_func_input.response_format
+    output.response_format_constrained = response_format is not None
+    if response_format is None:
+        return
+    schema = cast(dict[str, Any], response_format).get("json_schema")
+    # json_object asks for any well-formed JSON object, which the permissive
+    # schema below expresses; a bare "text" format constrains nothing at all.
+    if isinstance(schema, dict):
+        schema = schema.get("schema")
+    elif cast(dict[str, Any], response_format).get("type") == "json_object":
+        schema = {"type": "object"}
+    else:
+        return
+    if not isinstance(schema, dict):
+        return
+    if not response_format_schema_is_checkable(schema):
+        return
+    result = check_response_format_conformance(output.generated_text, schema)
+    output.response_format_conformed = result.outcome == "valid"
 
 
 def mark_cancelled_if_past_deadline(
@@ -333,6 +404,20 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     # is the last place holding both the input and the output -- metrics see
     # only the outputs.
     response_format_constrained: bool = False
+    # Whether the generated text satisfied that response_format. ``None`` when
+    # the request was unconstrained or produced nothing to judge.
+    response_format_conformed: bool | None = None
+    # Whether the request offered ``tools``, and whether the response contained
+    # a tool call. Offered but never called means the prompts gave the model no
+    # reason to use its tools: MAX Serve builds the tool grammar but never
+    # enforces it, so the run measures the definitions in the prompt and little
+    # of tool-call decoding.
+    tools_offered: bool = False
+    tool_call_returned: bool = False
+    # Whether the payload carried an image part, counting images resent with
+    # earlier turns of the session: the share production counts per request.
+    carries_image: bool = False
+    lora_id: str | None = None
 
 
 @dataclass
@@ -677,6 +762,11 @@ async def _run_openai_stream_request(
                         # Skip content processing for chunks with no choices.
                         if not data.choices:
                             continue
+                        if (
+                            isinstance(data, _ChatCompletionChunk)
+                            and data.choices[0].delta.tool_calls
+                        ):
+                            output.tool_call_returned = True
 
                         # Only track timing for chunks with actual text
                         text_content = content_extractor(data)
@@ -821,10 +911,20 @@ async def _run_atom_nonstream_chat_request(
         return output
 
     # Merge reasoning/reasoning_content/content (ATOM puts <mm:think> in content).
+    # Tool-call name and argument text counts too, as in the streaming path: a
+    # pure tool-call response has no content by design.
+    tool_calls = message.get("tool_calls") or []
+    output.tool_call_returned = bool(tool_calls)
     generated_text = (
         (message.get("reasoning") or "")
         + (message.get("reasoning_content") or "")
         + (message.get("content") or "")
+        + "".join(
+            (fn.get("name") or "") + (fn.get("arguments") or "")
+            for tc in tool_calls
+            if isinstance(tc, dict)
+            and isinstance(fn := tc.get("function"), dict)
+        )
     )
     usage = body.get("usage") or {}
     ttft_s = usage.get("ttft_s")
@@ -937,22 +1037,25 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             nonstream_payload = dict(payload)
             nonstream_payload["stream"] = False
             nonstream_payload.pop("stream_options", None)
-            return await _run_atom_nonstream_chat_request(
+            output = await _run_atom_nonstream_chat_request(
                 api_url=api_url,
                 payload=nonstream_payload,
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
             )
-
-        return await _run_openai_stream_request(
-            api_url=api_url,
-            payload=payload,
-            headers=headers,
-            prompt_len=request_func_input.prompt_len,
-            chunk_type=_ChatCompletionChunk,
-            content_extractor=_extract_chat_delta_text,
-            tokenizer=self.tokenizer,
-        )
+        else:
+            output = await _run_openai_stream_request(
+                api_url=api_url,
+                payload=payload,
+                headers=headers,
+                prompt_len=request_func_input.prompt_len,
+                chunk_type=_ChatCompletionChunk,
+                content_extractor=_extract_chat_delta_text,
+                tokenizer=self.tokenizer,
+            )
+        output.tools_offered = "tools" in payload
+        output.carries_image = _messages_carry_image(messages_data)
+        return output
 
 
 _GENERATED_MEDIA_TYPES = frozenset({"output_image", "output_video"})

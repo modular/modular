@@ -6,6 +6,7 @@ load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_b
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load("//max/python/max:all_deps.bzl", "ALL_MAX_PYTHON_DEPS")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
+load(":jemalloc.bzl", "jemalloc_with_lg_page")
 load(":mojo_toolchain.bzl", "mojo_toolchain")
 
 package(default_visibility = ["//visibility:public"])
@@ -216,6 +217,51 @@ modular_py_library(
     deps = [requirement("pytest")],
 )
 
+# Loaded with `-p precompile_mefs_plugin` by `modular_py_test`, in the record
+# build action and in the test, so `imports` lets it load by bare module name.
+modular_py_library(
+    name = "precompile_mefs_plugin",
+    testonly = True,
+    srcs = ["precompile_mefs_plugin.py"],
+    imports = ["."],
+    deps = [
+        requirement("pytest"),
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "@rules_python//python/runfiles",
+    ],
+)
+
+# Records a miniature GPU suite and replays it, each run in its own process:
+# virtual-device mode latches process-wide at the first device creation.
+modular_py_test(
+    name = "test_precompile_mefs_plugin",
+    size = "large",
+    srcs = ["test_precompile_mefs_plugin.py"],
+    # Every dep below is for the recorded suite, which this test writes out as
+    # a file and runs in subprocesses -- so nothing here imports any of them,
+    # and they have to be in the runfiles all the same.
+    ignore_extra_deps = [
+        ":precompile_mefs_plugin",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+    deps = [
+        ":precompile_mefs_plugin",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
 # Avoid default dependencies on mojo
 # gazelle:ignore
 py_binary(
@@ -224,6 +270,17 @@ py_binary(
 )
 
 cc_library(name = "empty_lib")
+
+# jemalloc as a process-wide malloc replacement, built for 64 KiB pages on
+# aarch64 so one binary covers every page size those hosts come with.
+jemalloc_with_lg_page(
+    name = "jemalloc_global",
+    src = "@jemalloc",
+    lg_page = select({
+        "@platforms//cpu:aarch64": "16",
+        "//conditions:default": "__auto__",
+    }),
+)
 
 # TCMalloc compiled with NUMA partition support (kNumaPartitions=2).
 alias(

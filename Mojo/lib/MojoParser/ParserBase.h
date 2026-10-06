@@ -57,6 +57,10 @@ public:
     return emitError(getToken().getLoc(), message);
   }
 
+  /// Warn if `tok` is the unprefixed `async` or `await` spelling of the
+  /// unstable `__async` or `__await` keyword.
+  void warnIfUnprefixedAsyncSpelling(const Token &tok);
+
   //===--------------------------------------------------------------------===//
   // Location Handling
   //===--------------------------------------------------------------------===//

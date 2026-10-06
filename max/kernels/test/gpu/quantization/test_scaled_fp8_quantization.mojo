@@ -20,7 +20,6 @@ from linalg.fp8_quantization import (
     quantize_static_scaled_fp8,
     quantize_tensor_dynamic_scaled_fp8,
 )
-from std.sys import has_nvidia_gpu_accelerator
 from std.testing import assert_equal, assert_true, assert_almost_equal
 
 from std.utils.numerics import (
@@ -36,7 +35,7 @@ def test_static_scaled_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
 ](ctx: DeviceContext, scale: Float32, m: Int, n: Int) raises:
-    var shape = row_major(Coord(Int64(m), Int64(n)))
+    var shape = row_major(Int64(m), Int64(n))
     var total_size = m * n
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
@@ -95,10 +94,8 @@ def test_dynamic_scaled_fp8_quant[
     comptime group_size: Int = NType.static_value
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
@@ -200,10 +197,8 @@ def test_dynamic_fp8_quant[
     comptime group_size: Int = NType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
@@ -301,6 +296,167 @@ def test_dynamic_fp8_quant[
     scales_host_ptr.free()
 
 
+def test_dynamic_fp8_quant_amax_floor[
+    out_dtype: DType,
+    in_dtype: DType,
+    group_size: Int,
+    MType: CoordLike,
+    NType: CoordLike,
+](ctx: DeviceContext, m: MType, n: NType, amax_floor: Float32) raises:
+    """Checks the `amax_floor` lower bound on the `float8_e8m0fnu` scale path.
+
+    QAT recipes that floor the activation max-abs before deriving the scale
+    (DeepSeek-V4's `act_quant` floors at 1e-4) only match MAX bit for bit when
+    the kernel applies the same floor. Even-numbered groups here are filled
+    below the floor and odd-numbered ones above it, so the same run covers both
+    "floor applies" and "floor is inert", and each is also compared against an
+    unfloored run of the same input.
+    """
+    comptime scales_dtype = DType.float8_e8m0fnu
+    comptime accum_dtype = get_accum_type[in_dtype]()
+    comptime below_floor = Scalar[in_dtype](1e-6)
+    comptime above_floor = Scalar[in_dtype](0.5)
+
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
+    var total_size = Int(m.value()) * Int(n.value())
+    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
+    var num_groups = Int(n.value()) // group_size
+
+    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
+    var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
+    var base_out_host_ptr = alloc[Scalar[out_dtype]](total_size)
+    var scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var base_scales_host_ptr = alloc[Scalar[scales_dtype]](scales_size)
+
+    for i in range(Int(m.value())):
+        for g in range(num_groups):
+            var magnitude = below_floor if g % 2 == 0 else above_floor
+            for j in range(group_size):
+                var col = g * group_size + j
+                in_host_ptr[i * Int(n.value()) + col] = (
+                    -magnitude if j % 3 == 0 else magnitude
+                )
+
+    var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
+    var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
+    var base_out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
+    var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_size)
+    var base_scales_device = ctx.enqueue_create_buffer[scales_dtype](
+        scales_size
+    )
+    ctx.enqueue_copy(in_device, in_host_ptr)
+
+    var in_tensor = TileTensor(in_device, shape)
+    var out_tensor = TileTensor(out_device, shape)
+    var base_out_tensor = TileTensor(base_out_device, shape)
+    var scales_tensor = TileTensor(scales_device, scales_shape)
+    var base_scales_tensor = TileTensor(base_scales_device, scales_shape)
+
+    @inline(.always)
+    def input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
+        return in_tensor.load[width=width, alignment=alignment]((row, col))
+
+    quantize_dynamic_scaled_fp8[
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size,
+        num_cols=in_tensor.static_shape[1],
+    ](
+        input_fn,
+        out_tensor,
+        scales_tensor,
+        1200.0,
+        ctx,
+        Int(in_tensor.dim[0]()),
+        amax_floor,
+    )
+
+    quantize_dynamic_scaled_fp8[
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size,
+        num_cols=in_tensor.static_shape[1],
+    ](
+        input_fn,
+        base_out_tensor,
+        base_scales_tensor,
+        1200.0,
+        ctx,
+        Int(in_tensor.dim[0]()),
+    )
+
+    ctx.enqueue_copy(out_host_ptr, out_device)
+    ctx.enqueue_copy(base_out_host_ptr, base_out_device)
+    ctx.enqueue_copy(scales_host_ptr, scales_device)
+    ctx.enqueue_copy(base_scales_host_ptr, base_scales_device)
+    ctx.synchronize()
+
+    var in_host = TileTensor(in_host_ptr, shape)
+    var out_host = TileTensor(out_host_ptr, shape)
+    var base_out_host = TileTensor(base_out_host_ptr, shape)
+    var scales_host = TileTensor(scales_host_ptr, scales_shape)
+    var base_scales_host = TileTensor(base_scales_host_ptr, scales_shape)
+
+    for i in range(Int(m.value())):
+        for group_idx in range(num_groups):
+            var group_max = Scalar[accum_dtype](0)
+            for j in range(group_size):
+                group_max = max(
+                    group_max,
+                    abs(in_host[i, j + group_idx * group_size]).cast[
+                        accum_dtype
+                    ](),
+                )
+
+            var floored_max = max(group_max, amax_floor.cast[accum_dtype]())
+            var scale_factor = max(
+                floored_max / Scalar[out_dtype].MAX_FINITE.cast[accum_dtype](),
+                Scalar[accum_dtype](1e-10),
+            ).cast[scales_dtype]()
+            var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
+
+            assert_equal(
+                scales_host[group_idx, i].cast[.float32](),
+                scale_factor.cast[.float32](),
+            )
+
+            var floor_applies = group_max < amax_floor.cast[accum_dtype]()
+            if floor_applies:
+                assert_true(
+                    scales_host[group_idx, i].cast[.float32]()
+                    != base_scales_host[group_idx, i].cast[.float32](),
+                    msg="floor left the scale unchanged on a near-zero group",
+                )
+            else:
+                assert_equal(
+                    scales_host[group_idx, i].cast[.float32](),
+                    base_scales_host[group_idx, i].cast[.float32](),
+                )
+
+            for j in range(group_size):
+                var col = j + group_idx * group_size
+                var expected = (
+                    in_host[i, col].cast[accum_dtype]() * scale_factor_recip
+                ).cast[out_dtype]()
+                assert_equal(
+                    out_host[i, col].cast[.float32](),
+                    expected.cast[.float32](),
+                    msg="At [" + String(i) + ", " + String(col) + "]",
+                )
+                if not floor_applies:
+                    assert_equal(
+                        out_host[i, col].cast[.float32](),
+                        base_out_host[i, col].cast[.float32](),
+                    )
+
+    in_host_ptr.free()
+    out_host_ptr.free()
+    base_out_host_ptr.free()
+    scales_host_ptr.free()
+    base_scales_host_ptr.free()
+
+
 def test_batched_dynamic_fp8_quant[
     out_dtype: DType,
     in_dtype: DType,
@@ -313,10 +469,8 @@ def test_batched_dynamic_fp8_quant[
     comptime group_size: Int = KType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
     comptime accum_dtype = get_accum_type[in_dtype]()
 
-    var shape = row_major(Coord(bs, m, k))
-    var scales_shape = row_major(
-        Coord(bs, Idx[KType.static_value // group_size], m)
-    )
+    var shape = row_major(bs, m, k)
+    var scales_shape = row_major(bs, Idx[KType.static_value // group_size], m)
     var total_size = Int(bs.value()) * Int(m.value()) * Int(k.value())
     var scales_size = (
         Int(bs.value()) * (Int(k.value()) // group_size) * Int(m.value())
@@ -416,6 +570,171 @@ def test_batched_dynamic_fp8_quant[
     scales_host_ptr.free()
 
 
+def test_dynamic_fp8_quant_row_bounded[
+    out_dtype: DType,
+    in_dtype: DType,
+    scales_dtype: DType,
+    group_size_or_per_token: Int,
+    MType: CoordLike,
+    NType: CoordLike,
+](ctx: DeviceContext, m: MType, n: NType, live_rows: Int) raises:
+    """Checks a row-bounded quantize against the unbounded one.
+
+    The bounded launch must reproduce the unbounded result bit-for-bit on every
+    row below `live_rows`, for both the quantized values and the transposed
+    scales, and must leave every row at or past it exactly as it found it. That
+    second half is what lets the EP down projection skip its padding: the rows
+    it stops writing are rows the grouped matmul never reads.
+    """
+    comptime group_size: Int = NType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
+
+    var rows = Int(m.value())
+    var cols = Int(n.value())
+    var num_groups = cols // group_size
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
+    var total_size = rows * cols
+    var scales_size = num_groups * rows
+
+    var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
+    var ref_out_ptr = alloc[Scalar[out_dtype]](total_size)
+    var ref_scales_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var got_out_ptr = alloc[Scalar[out_dtype]](total_size)
+    var got_scales_ptr = alloc[Scalar[scales_dtype]](scales_size)
+    var zero_out_ptr = alloc[Scalar[out_dtype]](total_size)
+    var zero_scales_ptr = alloc[Scalar[scales_dtype]](scales_size)
+
+    var in_host = TileTensor(in_host_ptr, shape)
+    var ref_out = TileTensor(ref_out_ptr, shape)
+    var ref_scales = TileTensor(ref_scales_ptr, scales_shape)
+    var got_out = TileTensor(got_out_ptr, shape)
+    var got_scales = TileTensor(got_scales_ptr, scales_shape)
+
+    # `random` never returns exactly zero across a whole group, so a zeroed
+    # buffer is a poison the unbounded launch would visibly overwrite. The
+    # negative control below asserts that before trusting the skip.
+    _ = TileTensor(zero_out_ptr, shape).fill(0)
+    _ = TileTensor(zero_scales_ptr, scales_shape).fill(0)
+
+    var in_device = ctx.enqueue_create_buffer[in_dtype](total_size)
+    var out_device = ctx.enqueue_create_buffer[out_dtype](total_size)
+    var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_size)
+    var offsets_device = ctx.enqueue_create_buffer[.uint32](4)
+
+    random(in_host, -1.0, 1.0)
+    ctx.enqueue_copy(in_device, in_host_ptr)
+
+    var offsets_host_ptr = alloc[UInt32](4)
+    offsets_host_ptr.unsafe_store(UInt32(0))
+    offsets_host_ptr.unsafe_offset(1).unsafe_store(UInt32(live_rows // 3))
+    offsets_host_ptr.unsafe_offset(2).unsafe_store(UInt32(live_rows // 2))
+    offsets_host_ptr.unsafe_offset(3).unsafe_store(UInt32(live_rows))
+    ctx.enqueue_copy(offsets_device, offsets_host_ptr)
+
+    var in_tensor = TileTensor(in_device, shape)
+    var out_tensor = TileTensor(out_device, shape)
+    var scales_tensor = TileTensor(scales_device, scales_shape)
+
+    @inline(.always)
+    def input_fn[
+        width: Int, alignment: Int
+    ](row: Int, col: Int) {var in_tensor} -> SIMD[in_dtype, width]:
+        return in_tensor.load[width=width, alignment=alignment]((row, col))
+
+    quantize_dynamic_scaled_fp8[
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size_or_per_token,
+        num_cols=in_tensor.static_shape[1],
+    ](
+        input_fn,
+        out_tensor,
+        scales_tensor,
+        1200.0,
+        ctx,
+        rows,
+    )
+    ctx.enqueue_copy(ref_out_ptr, out_device)
+    ctx.enqueue_copy(ref_scales_ptr, scales_device)
+
+    ctx.enqueue_copy(out_device, zero_out_ptr)
+    ctx.enqueue_copy(scales_device, zero_scales_ptr)
+
+    quantize_dynamic_scaled_fp8[
+        in_dtype=in_dtype,
+        group_size_or_per_token=group_size_or_per_token,
+        num_cols=in_tensor.static_shape[1],
+        row_bounded=True,
+    ](
+        input_fn,
+        out_tensor,
+        scales_tensor,
+        1200.0,
+        ctx,
+        rows,
+        row_limit=OptionalPointer[UInt32, ImmUntrackedOrigin](
+            offsets_device.unsafe_ptr()
+            .unsafe_offset(3)
+            .unsafe_origin_cast[MutUntrackedOrigin]()
+            .unsafe_mut_cast[False]()
+        ),
+    )
+    ctx.enqueue_copy(got_out_ptr, out_device)
+    ctx.enqueue_copy(got_scales_ptr, scales_device)
+    ctx.synchronize()
+
+    var skipped_ref_is_nonzero = False
+    for i in range(rows):
+        for group_idx in range(num_groups):
+            var reference = ref_scales[group_idx, i].cast[.float64]()
+            var bounded = got_scales[group_idx, i].cast[.float64]()
+            if i < live_rows:
+                assert_equal(
+                    bounded,
+                    reference,
+                    msg=String("scale at [", group_idx, ", ", i, "]"),
+                )
+            else:
+                assert_equal(
+                    bounded,
+                    Float64(0),
+                    msg=String("scale written past live rows at ", i),
+                )
+                if reference != 0:
+                    skipped_ref_is_nonzero = True
+
+        for j in range(cols):
+            var reference = ref_out[i, j].cast[.float64]()
+            var bounded = got_out[i, j].cast[.float64]()
+            if i < live_rows:
+                assert_equal(
+                    bounded,
+                    reference,
+                    msg=String("value at [", i, ", ", j, "]"),
+                )
+            else:
+                assert_equal(
+                    bounded,
+                    Float64(0),
+                    msg=String("value written past live rows at ", i),
+                )
+
+    # Without this the "untouched" assertions above pass vacuously whenever the
+    # unbounded launch would also have left zeros there.
+    assert_true(
+        live_rows >= rows or skipped_ref_is_nonzero,
+        msg="unbounded run left the skipped rows zero, so the skip is untested",
+    )
+
+    in_host_ptr.free()
+    ref_out_ptr.free()
+    ref_scales_ptr.free()
+    got_out_ptr.free()
+    got_scales_ptr.free()
+    zero_out_ptr.free()
+    zero_scales_ptr.free()
+    offsets_host_ptr.free()
+
+
 def test_dynamic_fp8_quant_near_zero[
     out_dtype: DType,
     in_dtype: DType,
@@ -434,10 +753,8 @@ def test_dynamic_fp8_quant_near_zero[
     NaN/Inf flows into the output. A correct quant emits finite fp8 (the group
     is effectively zero → ~0). Asserts FINITENESS of every output element.
     """
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
@@ -528,10 +845,8 @@ def test_dynamic_tensor_fp8_quant_near_zero[
     so the denormal-max overflow could still NaN here (the per-group near-zero
     test above does not reach it). Asserts FINITENESS of every output element.
     """
-    var shape = row_major(Coord(m, n))
-    var scales_shape = row_major(
-        Coord(Idx[NType.static_value // group_size], m)
-    )
+    var shape = row_major(m, n)
+    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
     var total_size = Int(m.value()) * Int(n.value())
     var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
@@ -606,6 +921,101 @@ def test_dynamic_tensor_fp8_quant_near_zero[
 
 def main() raises:
     with DeviceContext() as ctx:
+        # Row-bounded quantize: same bits below the live count, nothing
+        # written above it. `live_rows` deliberately straddles the grid-row
+        # cap so the second case makes each block grid-stride more than once.
+        test_dynamic_fp8_quant_row_bounded[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+        ](ctx, Int(64), Idx[1024], live_rows=7)
+        test_dynamic_fp8_quant_row_bounded[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+        ](ctx, Int(4096), Idx[1024], live_rows=2000)
+        test_dynamic_fp8_quant_row_bounded[
+            DType.float8_e4m3fn,
+            DType.float32,
+            DType.float32,
+            128,
+        ](ctx, Int(129), Idx[512], live_rows=33)
+
+        test_dynamic_fp8_quant_row_bounded[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.float32,
+            128,
+        ](ctx, Int(1000), Idx[2048], live_rows=333)
+
+        # A group of 3 lanes does not divide the warp, so this stays on the
+        # block-per-group fallback (and its larger bounded-grid cap).
+        test_dynamic_fp8_quant_row_bounded[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            48,
+        ](ctx, Int(300), Idx[192], live_rows=111)
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            48,
+        ](ctx, Int(37), Idx[192])
+
+        # Warp-per-several-groups path: row counts that leave a partial tile,
+        # several group sizes, 16-bit inputs, and e8m0 scales.
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            128,
+        ](ctx, Int(37), Idx[2048])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float32,
+            DType.float32,
+            128,
+        ](ctx, Int(129), Idx[7168])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.float16,
+            DType.float16,
+            128,
+        ](ctx, Int(21), Idx[512])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.float8_e8m0fnu,
+            128,
+        ](ctx, Int(33), Idx[1024])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            32,
+        ](ctx, Int(35), Idx[512])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            64,
+        ](ctx, Int(35), Idx[512])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            256,
+        ](ctx, Int(35), Idx[1024])
+        test_dynamic_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            512,
+        ](ctx, Int(5), Idx[1024])
+
         # Regression: FP8 dynamic-quant must not emit NaN on a near-zero group
         # (the 0*Inf / denormal-scale-reciprocal bug). Run first.
         #
@@ -804,8 +1214,30 @@ def main() raises:
             128,
         ](ctx, Int(7), Int(1000), Idx[576])
 
+        # AMD serves FP8 weights as float8_e4m3fnuz (max finite 240, no -0), so
+        # the activation quantize must produce that encoding too.
+        comptime if ctx.target.is_amd_gpu():
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fnuz,
+                DType.bfloat16,
+                DType.float32,
+                128,
+            ](ctx, Int(37), Idx[2048])
+            test_dynamic_fp8_quant[
+                DType.float8_e4m3fnuz,
+                DType.float32,
+                DType.float32,
+                64,
+            ](ctx, Int(35), Idx[512])
+            test_dynamic_fp8_quant_row_bounded[
+                DType.float8_e4m3fnuz,
+                DType.bfloat16,
+                DType.bfloat16,
+                128,
+            ](ctx, Int(1000), Idx[1024], live_rows=333)
+
         # DType.float8_e8m0fnu is only supported on NVIDIA GPUs
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if ctx.target.is_nvidia_gpu():
             test_dynamic_fp8_quant[
                 DType.float8_e4m3fn,
                 DType.bfloat16,
@@ -824,3 +1256,15 @@ def main() raises:
                 DType.float8_e8m0fnu,
                 128,
             ](ctx, Int(1), Idx[576])
+
+            # 1e-4 is the activation amax floor of DeepSeek-V4's `act_quant`.
+            test_dynamic_fp8_quant_amax_floor[
+                DType.float8_e4m3fn,
+                DType.bfloat16,
+                128,
+            ](ctx, Int(3), Idx[512], 1e-4)
+            test_dynamic_fp8_quant_amax_floor[
+                DType.float8_e4m3fn,
+                DType.float32,
+                128,
+            ](ctx, Int(1), Idx[256], 1e-4)

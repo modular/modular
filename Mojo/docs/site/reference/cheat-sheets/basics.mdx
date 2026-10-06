@@ -4,9 +4,9 @@ sidebar_label: Basics
 description: "Syntax essentials: the core you reach for first."
 hide_title: true
 hide_table_of_contents: true
-compiler_verified: "2026-08-17, Mojo 1.0.0 (ed45d567)"
-last_updated: "2026-08-17 (1.0.0 audit)"
-build_version: "1.1.0dev"
+compiler_verified: "2026-10-02, Mojo 1.2.0.dev2026100205 (7791487a)"
+last_updated: "2026-10-02 (removes __match)"
+build_version: "1.2.0.dev"
 ---
 
 import {
@@ -18,110 +18,142 @@ import {
 
 <Sheet slug="basics">
 
-<Panel title="Hello, Mojo">
+<Panel title="Hello, Mojo (application)" summary="Basic structure of a Mojo application.">
 
 ```mojo
 def main():
     print("Hello, Mojo!")
 ```
 
-Run it: **mojo hello.mojo**. Every program starts at **main()**.
+Run it: `mojo hello.mojo`. Every program starts at `main()`.
+
+Build it: `mojo build hello.mojo`. Creates a `hello` executable.
 
 </Panel>
 
-<Panel title="Comments & docstrings">
+<Panel title="Comments & docstrings" summary="How to write comments and docstrings in Mojo.">
 
 ```mojo
-# Line comment
+"""Docstring: what this module (file) does.
+
+Further information goes here.
+"""
+
+# Single-line comment
 
 def greet():
     """Docstring: what greet does."""
     print("hi")
 ```
 
+Triple quotes make multi-line strings.
+
 </Panel>
 
-<Panel title="var owns, ref refers">
+<Panel title="Declare variables: var owns, ref refers" summary="How to declare and use variables in Mojo.">
 
 ```mojo
-var count = 0 # owned, inferred Int
-var name: String = "Mojo"
+var count = 0 # owned value, `Int` inferred
+var name: String = "Mojo" # explicit `String`
 count = count + 1 # var is mutable
 
-var data: List[Int] = [1, 2, 3]
+var data: List = [1, 2, 3]
 ref view = data[0] # ref to an element, no copy
-view = 99 # writes through to data
+view = 99 # writes through to `data`'s value
 
 comptime PI = 3.14159 # compile-time const
 ```
 
-**var** declares an owned value, mutable by default. **ref** is a
-reference to a value it doesn't own. Mutable changes update the original value.
+`var` declares an owned value, mutable by default.
+
+`ref` is a reference to a value it doesn't own. When mutable,
+changes update the value.
 
 </Panel>
 
-<Panel title="Built-in types" table="types">
+<Panel title="Built-in number types" table="numbertypes" summary="Overview of Mojo's numeric types.">
 
 ```mojo
 Float32 == Scalar[DType.float32]
         == SIMD[DType.float32, 1]
 ```
 
-| Type         | Meaning                                                                                            |
-|--------------|----------------------------------------------------------------------------------------------------|
-| Int          | machine-word integer; default index type                                                           |
-| UInt         | machine-word                                                                                       |
-| Int8 … Int64 | sized integers                                                                                     |
-| Float64      | default floating point (also Float32, Float16, and special-purpose 8-bit FP8 and 4-bit FP4 floats) |
-| Bool         | True / False                                                                                       |
-| String       | UTF-8, supports Unicode graphemes                                                                  |
-| List[T]      | growable, homogeneous sequence                                                                     |
-| SIMD[dt, n]  | n-wide numeric vector                                                                              |
+| Type             | Meaning                                                        |
+|------------------|----------------------------------------------------------------|
+| Int              | machine-word integer; default index type                       |
+| UInt             | machine-word unsigned integer                                  |
+| Int8 … Int64     | sized and signed integers                                      |
+| Float64          | default floating point                                         |
+| Float16, Float32 | half and single precision; FP8 and FP4 formats also available. |
+| Bool             | `True` / `False` (uppercase)                                   |
+| SIMD[dt, n]      | n-wide numeric vector; for n = 1: `Scalar[dt]`                 |
 
-Numeric types are **SIMD** vectors under the hood: scaling to vector
+Numeric types are `SIMD` vectors under the hood: scaling to vector
 math is built in.
 
-No implicit numeric conversion: cast explicitly with **Float64(n)**, **Int(x)**, **String(v)**. Use **.cast** for SIMD vectors.
+For types that are known, you can drop the type name before the dot. For
+example, `SIMD[.float32, 8]` is equivalent to `SIMD[DType.float32, 8]`.
 
-Types are **PascalCase** (**Int**); names are **lower_snake_case**.
+`SIMD` vectors always use a power-of-two width.
+
+No implicit numeric conversion: cast with `Float64(n)`, `Int(x)`,
+`String(v)`. Use `.cast()` for SIMD vectors.
 
 </Panel>
 
-<Panel title="Operators" table="ops">
+<Panel title="Operators" table="ops" summary="Common operators in Mojo.">
 
-| Op                    | Meaning                          |
-|-----------------------|----------------------------------|
-| + - * /               | add, subtract, multiply, divide  |
-| //   %                | floor divide, modulo             |
-| **                    | power (2 ** 10), also pow(2, 10) |
-| == !=                 | equal, not equal                 |
-| &lt; &lt;= &gt; &gt;= | comparisons (chainable)          |
-| and or not            | logical, short-circuit           |
-| += -=                 | compound assign (\*=, /=, …)     |
+| Op                    | Meaning                                           |
+|-----------------------|---------------------------------------------------|
+| + - * /               | add, subtract, multiply, divide                   |
+| //   %                | floor divide, modulo                              |
+| **                    | power (`2 ** 10`), also `pow(2, 10)`, but not `^` |
+| == !=                 | equality and inequality                           |
+| &lt; &lt;= &gt; &gt;= | comparisons (chainable)                           |
+| and or not            | logical, short-circuit                            |
+| += -=                 | compound assign (\*=, /=, …)                      |
 
 ```mojo
-a < b < c # chains to (a < b) and (b < c)
+a < b <= c # chains to (a < b) and (b <= c)
 ```
 
 </Panel>
 
-<Panel title="Strings & printing">
+<Panel title="Other standard types" table="othertypes" summary="Overview of other standard types in Mojo.">
+
+| Type        | Meaning                             |
+|-------------|-------------------------------------|
+| String      | UTF-8 with Unicode grapheme support |
+| Array[T, n] | fixed-size, homogeneous sequence    |
+| Dict[K, V]  | key-value mapping, homogeneous      |
+| List[T]     | growable, homogeneous sequence      |
+
+Use arrays for accelerator work and crossing foreign function boundaries.
+Arrays are fixed-size. You can't append to them.
+
+Types are *PascalCase* (`Array[Int, 1024]`);
+names are *lower_snake_case* (`count`, `max_value`).
+
+</Panel>
+
+<Panel title="Strings & printing" summary="How to work with strings and printing in Mojo.">
 
 ```mojo
 var who = "Mojo"
 print("Hi, " + who) # concatenation
-print(t"Hi, {who}!") # interpolation
-print(1, 2, 3, end=": ") # keyword args
+print(t"Hi, {who}!") # interpolation, `t` prefix
+print(1, 2, 3, sep=": ") # keyword args, '1: 2: 3'
 
 var s = String(t"x = {1 + 1}") # to String
-var raw = r"C:\path" # raw string
+var raw = r"C:\path" # raw string, keeps backslash
 ```
 
-**print** takes a t-string directly; cast with **String(...)** to use one elsewhere. Triple quotes make multi-line strings.
+`print()` takes t-strings directly.
+Cast with `String(...)` to use one elsewhere.
 
 </Panel>
 
-<Panel title="Control flow">
+<Panel title="Control flow" summary="Conditional statements in Mojo.">
 
 ```mojo
 if x > 0:
@@ -137,75 +169,102 @@ var kind = "even" if x % 2 == 0 else "odd"
 
 </Panel>
 
-<Panel title="Loops">
+<Panel title="Loops" summary="Looping constructs in Mojo.">
 
 ```mojo
 for i in range(5): # 0 1 2 3 4
     print(i)
 
-for item in [10, 20, 30]: # iterate an array
+for item in [10, 20, 30]: # iterate a collection
     if item == 20:
         continue # skip to next
     if item == 30:
         break # stop the loop
     print(item)
 
+var n = 4
 while n > 0: # loop while true
-    print(n)
+    print(n) # 4, then 3, 2, 1
     n -= 1
 ```
 
-Repeat n times with **for \_ in range(n)** (**\_** discards the value).
+Repeat n times with `for _ in range(n):`.
+Using the discard pattern `_` ignores the value.
 
 </Panel>
 
-<Panel title="Functions">
+<Panel title="Functions, closures, and lambda expressions" summary="Defining and using functions, closures, and lambda expressions in Mojo.">
 
 ```mojo
-def add(a: Int, b: Int) -> Int:
+def add_two(a: Int, b: Int) -> Int: # basic
     return a + b
+print(add_two(2, 3)) # 5
+
+var c = 10
+def add_c(a: Int) {imm c} -> Int: # closure
+    return a + c
+print(add_c(5)) # 15
+
+var anon = lambda (a: Int) {imm c} -> Int: a + c
+print(anon(10)) # 20, the same as add_c
 
 def greet(name: String = "world"): # default
     print(t"Hi, {name}")
 
-def risky() raises: # may raise
+def risky() raises: # raising
     raise Error("boom")
 
 def nothing():
     pass # do-nothing body
 ```
 
-No `->` means the function returns **None**. `def` can raise only if marked **raises**, so callers can see it coming.
+No return arrow means a function returns `None`.
+
+`def` can raise only if marked `raises`, so callers can see it coming.
 
 </Panel>
 
-<Panel title="Imports">
+<Panel title="Imports" summary="How to import modules and names in Mojo.">
 
 ```mojo
 from std.math import sqrt # one name
 from std.math import sqrt as root # aliased
 ```
 
-Built-ins like **Int**, **String**, **List**, and **print** are in
-the Mojo prelude, no import needed.
+Built-ins like `Int`, `String`, `List`, and `print()` are in
+the Mojo *prelude*; no import needed.
 
 </Panel>
 
-<Panel title="Lists">
+<Panel title="Lists" summary="Working with lists in Mojo.">
 
 ```mojo
-var xs: List[Int] = [1, 2, 3]
+var xs: List = [1, 2, 3]
 xs.append(4)
 print(xs[0]) # 1
 print(len(xs)) # 4
 ```
 
-Always annotate **List[T]**: a bare bracket literal infers a fixed-size
-**Array**, which has no **append**.
+Always type annotate `List`.
+The default type for a bracket list is the fixed-size `Array`.
 
 </Panel>
 
-<Panel title="Structs">
+<Panel title="Dictionaries" summary="Working with dictionaries in Mojo.">
+
+```mojo
+var xs: Dict = {"a": 1, "b": 2}
+xs["c"] = 3
+print(xs.get("a", 0)) # 1
+print(len(xs)) # 3
+```
+
+When reading, `get()` with a default fallback won't raise.
+Direct reads, like `xs["d"]`, raise an error when the key is missing.
+
+</Panel>
+
+<Panel title="Structs" summary="Defining and using structs in Mojo.">
 
 ```mojo
 @fieldwise_init # synthesizes __init__
@@ -225,11 +284,14 @@ def main():
     print(p.x, p.y) # 3 4
 ```
 
-Every instance method takes **self** as its first argument. The **out** convention returns the initialized **self** without a return arrow. Structs also support **comptime** constants and static methods (**@staticmethod**).
+Every instance *method* takes `self` as its first argument. The `out`
+convention returns the initialized `self` without needing a return arrow.
+
+Structs support `comptime` members and static methods (`@staticmethod`).
 
 </Panel>
 
-<Panel title="Errors">
+<Panel title="Errors" summary="Error handling in Mojo.">
 
 ```mojo
 def risky() raises:
@@ -242,31 +304,29 @@ def main():
         print("caught:", e)
 ```
 
-Mark a raising function **raises**; **raise** signals, **try**/**except** catches. **except e** binds the error.
+Mark a raising function `raises`; `raise` signals, `try`/`except` catches.
+`except e` binds the error.
 
 </Panel>
 
-<Panel title="Coming from Python">
+<Panel title="Coming from dynamic languages" summary="Key differences when transitioning from dynamic languages to Mojo.">
 
 - Every value has a fixed type. No implicit numeric conversion: write
   `Float64(n)`, `Int(x)`.
-- Assignment copies the value; it is not a shared reference.
-- String interpolation is `t"…"`, not `f"…"`.
-- Declare with **var** (and **ref**) rather than a bare `x = 5`.
-- No **match** yet: use `if/elif/else`.
-- A `def` with no `->` returns **None**, same as Python.
+- Assignment copies the value implicitly or explicitly (adding `.copy()`);
+  it is not a shared reference.
+- Declare with `var` (and `ref`) rather than a bare `x = 5`.
+- Template strings use `t"..."`, not `f"..."`.
 
 </Panel>
 
-<Panel title="Coming from C++ / Rust">
+<Panel title="Coming from systems languages" summary="Key differences when transitioning from systems languages to Mojo.">
 
-- Python-style syntax: indentation and `def`, no braces, semicolons, or headers.
-- Value semantics with moves: `^` transfers ownership (like
-  `std::move` or a Rust move); `__deinit__` gives RAII cleanup.
-- Behavior comes from **traits**, not class inheritance or templates (like Rust
-  traits or C++20 concepts).
-- No `?:` ternary or Elvis operator: write `a if cond else b`.
-- No **switch** yet: use `if/elif/else`.
+- Python-style syntax: indentation and `def`, no braces around blocks, no headers,
+  parentheses for line continuation.
+- Value semantics with transfer: `^` transfers ownership of a value;
+  `__deinit__()` gives RAII cleanup.
+- Reusable behavior comes from `trait`s, not class inheritance or templates.
 
 </Panel>
 

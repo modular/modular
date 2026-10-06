@@ -69,11 +69,11 @@ def cumsum[
 
     var output_data = TileTensor(
         output.ptr,
-        row_major(Coord(output.num_elements())),
+        row_major(output.num_elements()),
     )
     var input_data = TileTensor(
         input.ptr,
-        row_major(Coord(input.num_elements())),
+        row_major(input.num_elements()),
     )
 
     for outer_index in range(outer):

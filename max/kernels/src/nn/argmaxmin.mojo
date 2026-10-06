@@ -104,7 +104,6 @@ def _argn[
         var parallel_size,
         imm,
     }:
-        @__parameter
         @inline(.always)
         def cmpeq[
             dtype: DType, simd_width: SIMDLength
@@ -116,7 +115,6 @@ def _argn[
             else:
                 return a.ge(b)
 
-        @__parameter
         @inline(.always)
         def cmp[
             dtype: DType, simd_width: SIMDLength

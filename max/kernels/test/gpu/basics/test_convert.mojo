@@ -17,7 +17,6 @@ from std.testing import *
 
 
 def test_convert_asm() raises:
-    @__parameter
     def my_cast[
         frm: DType, to: DType
     ](output: MutPointer[Scalar[to], MutAnyOrigin], x: Scalar[frm]):

@@ -61,8 +61,7 @@ class Qwen3EmbeddingTransformerBlock(
         # Only allocate the scalar constant when actually needed, since
         # dtype/device are not available at __init__ time.
         if self.residual_multiplier != 1.0:
-            rm = F.constant(self.residual_multiplier, x.dtype, device=x.device)
-            attn_out = attn_out * rm
+            attn_out = attn_out * float(self.residual_multiplier)
 
         h = x + attn_out
 
@@ -70,8 +69,7 @@ class Qwen3EmbeddingTransformerBlock(
         mlp_out = self.mlp(self.post_attention_layernorm(h))
 
         if self.residual_multiplier != 1.0:
-            rm = F.constant(self.residual_multiplier, x.dtype, device=x.device)
-            mlp_out = mlp_out * rm
+            mlp_out = mlp_out * float(self.residual_multiplier)
 
         return h + mlp_out
 
@@ -108,9 +106,7 @@ class Qwen3EmbeddingTransformer(
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
-            h = h * F.constant(
-                self.embedding_multiplier, h.dtype, device=h.device
-            )
+            h = h * float(self.embedding_multiplier)
 
         # Process through transformer layers
         input_row_offsets_device = input_row_offsets.to(h.device)

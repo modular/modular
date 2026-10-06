@@ -18,7 +18,9 @@ from std.algorithm import vectorize
 from max.algorithm import sync_parallelize
 from layout import *
 from layout._fillers import arange
-from layout._utils import ManagedLayoutTensor
+from layout.tile_tensor import stack_allocation
+from layout.tensor_engine import DefaultEngine
+from std.sys import align_of
 
 
 @fieldwise_init
@@ -44,9 +46,9 @@ struct Dim(ImplicitlyCopyable, RegisterPassable, Writable):
 trait TiledOp:
     @staticmethod
     def op(
-        dst: LayoutTensor[mut=True, ...],
-        lhs: LayoutTensor,
-        rhs: LayoutTensor,
+        dst: TileTensor[mut=True, Engine=DefaultEngine[element_width=1], ...],
+        lhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
+        rhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
     ):
         pass
 
@@ -55,35 +57,59 @@ trait TiledOp:
 struct MMA(TiledOp):
     @staticmethod
     def op(
-        dst: LayoutTensor[mut=True, ...],
-        lhs: LayoutTensor,
-        rhs: LayoutTensor,
+        dst: TileTensor[mut=True, Engine=DefaultEngine[element_width=1], ...],
+        lhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
+        rhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
     ):
         comptime dtype = dst.dtype
 
-        comptime M = dst.shape[0]()
-        comptime N = dst.shape[1]()
-        comptime K = lhs.shape[1]()
+        comptime assert (
+            dst.rank
+            == dst.flat_rank
+            == lhs.rank
+            == lhs.flat_rank
+            == rhs.rank
+            == rhs.flat_rank
+            == 2
+        )
+        comptime assert (
+            dst.all_dims_known and lhs.all_dims_known and rhs.all_dims_known
+        )
+        comptime M = Int(type_of(dst).static_shape[0])
+        comptime N = Int(type_of(dst).static_shape[1])
+        comptime K = Int(type_of(lhs).static_shape[1])
 
         for m in range(M):
             for n in range(N):
                 for k in range(K):
-                    dst[m, n] += rebind[dst.element_type](
+                    dst[m, n] += rebind[dst.ElementType](
                         lhs[m, k].cast[dtype]()
-                    ) * rebind[dst.element_type](rhs[n, k].cast[dtype]())
+                    ) * rebind[dst.ElementType](rhs[n, k].cast[dtype]())
 
 
 # matrix multiply and accumulate, vectorized and parallelized
 struct MMA_Vec(TiledOp):
     @staticmethod
     def op(
-        dst: LayoutTensor[mut=True, ...],
-        lhs: LayoutTensor,
-        rhs: LayoutTensor,
+        dst: TileTensor[mut=True, Engine=DefaultEngine[element_width=1], ...],
+        lhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
+        rhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
     ):
-        comptime M = dst.shape[0]()
-        comptime N = dst.shape[1]()
-        comptime K = lhs.shape[1]()
+        comptime assert (
+            dst.rank
+            == dst.flat_rank
+            == lhs.rank
+            == lhs.flat_rank
+            == rhs.rank
+            == rhs.flat_rank
+            == 2
+        )
+        comptime assert (
+            dst.all_dims_known and lhs.all_dims_known and rhs.all_dims_known
+        )
+        comptime M = Int(type_of(dst).static_shape[0])
+        comptime N = Int(type_of(dst).static_shape[1])
+        comptime K = Int(type_of(lhs).static_shape[1])
 
         comptime width = simd_width_of[dst.dtype]() * 2
 
@@ -91,14 +117,19 @@ struct MMA_Vec(TiledOp):
             for var n in range(N):
 
                 def dot[width: Int](k: Int) {imm}:
-                    dst.store[width](
-                        m,
-                        n,
-                        rebind[SIMD[dst.dtype, width]](dst.load[width](m, n))
+                    dst.store[width=width, alignment=align_of[dst.dtype]()](
+                        Coord(m, n),
+                        rebind[SIMD[dst.dtype, width]](
+                            dst.load[
+                                width=width, alignment=align_of[dst.dtype]()
+                            ](Coord(m, n))
+                        )
                         + rebind[SIMD[dst.dtype, width]](
                             lhs[m, k].cast[dst.dtype]()
                         )
-                        * rhs.load[width](n, k).cast[dst.dtype](),
+                        * rhs.load[
+                            width=width, alignment=align_of[rhs.dtype]()
+                        ](Coord(n, k)).cast[dst.dtype](),
                     )
 
                 vectorize[width, size=K](dot)
@@ -107,23 +138,36 @@ struct MMA_Vec(TiledOp):
 def gemm_l2_cache[
     mma: TiledOp, L1: Dim, L2: Dim
 ](
-    dst: LayoutTensor[mut=True, ...], lhs: LayoutTensor, rhs: LayoutTensor
+    dst: TileTensor[mut=True, Engine=DefaultEngine[element_width=1], ...],
+    lhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
+    rhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
 ) raises:
-    comptime M = dst.shape[0]()
-    comptime N = dst.shape[1]()
-    comptime K = lhs.shape[1]()
+    comptime assert (
+        dst.rank
+        == dst.flat_rank
+        == lhs.rank
+        == lhs.flat_rank
+        == rhs.rank
+        == rhs.flat_rank
+        == 2
+    )
+    comptime assert (
+        dst.all_dims_known and lhs.all_dims_known and rhs.all_dims_known
+    )
+    comptime M = Int(type_of(dst).static_shape[0])
+    comptime N = Int(type_of(dst).static_shape[1])
+    comptime K = Int(type_of(lhs).static_shape[1])
 
     # Dimensions of the Operation
     comptime op_dim = Dim(M, N, K)
 
-    # L1 and L2 Tiile ranges
+    # L1 and L2 tile ranges
     comptime l1_size = op_dim.subrange(L1)
     comptime l2_size = L1.subrange(L2)
 
     # Cache matrix to materialize L2 transposed tiles
-    var l2_rhs_cache = ManagedLayoutTensor[
-        dst.dtype, Layout(IntTuple(L2.n, L2.k))
-    ]()
+    var l2_rhs_storage = List[Scalar[dst.dtype]](length=L2.n * L2.k, fill=0)
+    var l2_rhs_cache = TileTensor(Span(l2_rhs_storage), col_major[L2.n, L2.k]())
 
     # First level of tiling (grid_blocks, L1 cache ..etc).
     for m_1 in range(l1_size.m):
@@ -148,52 +192,51 @@ def gemm_l2_cache[
                             )
 
                             # Materialize L2 rhs transposed tile
-                            l2_rhs_cache.tensor().copy_from(
-                                rhs_l2_tile.transpose()
-                            )
+                            l2_rhs_cache.copy_from(rhs_l2_tile.transpose())
 
-                            # Execute mma.op - rhs_l2_tile is already transposed
-                            mma.op(
-                                dst_l2_tile, lhs_l2_tile, l2_rhs_cache.tensor()
-                            )
-    _ = l2_rhs_cache^
+                            # Execute mma.op with the transposed RHS tile
+                            mma.op(dst_l2_tile, lhs_l2_tile, l2_rhs_cache)
+    _ = l2_rhs_storage^
 
 
 def gemm_l1_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor[mut=True, ...], lhs: LayoutTensor, rhs: LayoutTensor):
-    comptime M = dst.shape[0]()
-    comptime N = dst.shape[1]()
-    comptime K = lhs.shape[1]()
+](
+    dst: TileTensor[mut=True, Engine=DefaultEngine[element_width=1], ...],
+    lhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
+    rhs: TileTensor[Engine=DefaultEngine[element_width=1], ...],
+):
+    comptime assert (
+        dst.rank
+        == dst.flat_rank
+        == lhs.rank
+        == lhs.flat_rank
+        == rhs.rank
+        == rhs.flat_rank
+        == 2
+    )
+    comptime assert (
+        dst.all_dims_known and lhs.all_dims_known and rhs.all_dims_known
+    )
+    comptime M = Int(type_of(dst).static_shape[0])
+    comptime N = Int(type_of(dst).static_shape[1])
+    comptime K = Int(type_of(lhs).static_shape[1])
 
     # Dimensions of the Operation
     comptime op_dim = Dim(M, N, K)
 
-    # L1 and L2 Tiile ranges
+    # L1 and L2 tile ranges
     comptime l1_size = op_dim.subrange(L1)
     comptime l2_size = L1.subrange(L2)
 
-    # Cache the L1 RHS and LHS tiles to reuse across the k_1 loop
-    # The RHS tile is also cached to minimize the transpose operatipons.
-
-    # var l1_lhs_cache = List[LayoutTensor[dtype, L1.m, L1.k]](
-    #     capacity=l1_size.m
-    # )
-    # var l1_rhs_cache = List[LayoutTensor[dtype, L1.n, L1.k]](
-    #     capacity=l1_size.m
-    # )
-    # for m in range(l1_size.m):
-    #     l1_lhs_cache.append(LayoutTensor[dtype, L1.m, L1.k]())
-    #     l1_rhs_cache.append(LayoutTensor[dtype, L1.n, L1.k]())
-
     def process_raw(m_1: Int) {imm}:
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
-        var l1_lhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutAnyOrigin
-        ].stack_allocation()
-        var l1_rhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.n, L1.k)), MutAnyOrigin
-        ].stack_allocation()
+        var l1_lhs_cache = stack_allocation[dtype=dst.dtype](
+            col_major[L1.m, L1.k]()
+        )
+        var l1_rhs_cache = stack_allocation[dtype=dst.dtype](
+            col_major[L1.n, L1.k]()
+        )
 
         for k_1 in range(l1_size.k):
             l1_lhs_cache.copy_from(lhs.tile[L1.m, L1.k](m_1, k_1))
@@ -220,14 +263,10 @@ def gemm_l1_cache[
                                 n_2, k_2
                             )
 
-                            # Execute mma.op - rhs_l2_tile is already transposed
+                            # Execute mma.op with the transposed RHS tile
                             mma.op(dst_l2_tile, lhs_l2_tile, rhs_l2_tile)
 
     sync_parallelize(process_raw, l1_size.m)
-
-    # Make sure Mojo won't throw away our caches
-    # _ = len(l1_lhs_cache)
-    # _ = len(l1_rhs_cache)
 
 
 def test_tiled_matmul[use_l1_cache: Bool]() raises:
@@ -236,31 +275,37 @@ def test_tiled_matmul[use_l1_cache: Bool]() raises:
     else:
         print("=== test_tiled_matmul_l2_cache")
 
-    var dst = ManagedLayoutTensor[.float32, Layout(IntTuple(8, 8))]()
-    var rhs = ManagedLayoutTensor[.float32, Layout(IntTuple(8, 8))]()
-    var lhs = ManagedLayoutTensor[.float32, Layout(IntTuple(8, 8))]()
+    var dst_storage = List[Float32](length=64, fill=0)
+    var dst = TileTensor(Span(dst_storage), col_major[8, 8]())
+    var rhs_storage = List[Float32](length=64, fill=0)
+    var rhs = TileTensor(Span(rhs_storage), col_major[8, 8]())
+    var lhs_storage = List[Float32](length=64, fill=0)
+    var lhs = TileTensor(Span(lhs_storage), col_major[8, 8]())
 
-    _ = dst.tensor().fill(0)
-    arange(rhs.tensor())
-    arange(lhs.tensor())
+    _ = dst.fill(0)
+    arange(rhs)
+    arange(lhs)
 
     if use_l1_cache:
         gemm_l1_cache[
             MMA_Vec,
             Dim(4, 4, 2),
             Dim(2, 2, 1),
-        ](dst.tensor(), lhs.tensor(), rhs.tensor())
+        ](dst, lhs, rhs)
     else:
         gemm_l2_cache[
             MMA_Vec,
             Dim(4, 4, 2),
             Dim(2, 2, 1),
-        ](dst.tensor(), lhs.tensor(), rhs.tensor())
-    print(dst.tensor())
+        ](dst, lhs, rhs)
+    # Preserve the numerical FileCheck rows independently of tensor formatting.
+    for m in range(8):
+        for n in range(8):
+            print(dst[m, n], end="   " if n != 7 else "\n")
 
-    _ = rhs^
-    _ = lhs^
-    _ = dst^
+    _ = rhs_storage^
+    _ = lhs_storage^
+    _ = dst_storage^
 
 
 def main() raises:

@@ -28,17 +28,7 @@ from std.benchmark import (
     BenchMetric,
 )
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-    row_major,
-)
+from layout import Coord, Idx, TileTensor, row_major
 from layout._fillers import random
 from max.gpu.host.info import _is_sm10x_gpu
 
@@ -67,35 +57,16 @@ def bench_1d1d_quantization[
     comptime scales_dtype = NVFP4_SF_DTYPE if is_fp4 else MXFP8_SF_DTYPE
     comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE if is_fp4 else MXFP8_SF_VECTOR_SIZE
 
-    comptime input_static_shape = Layout.row_major(UNKNOWN_VALUE, cols)
-    var input_dynamic_shape = IndexList[2](rows, cols)
-    var input_runtime_layout = RuntimeLayout[input_static_shape].row_major(
-        input_dynamic_shape
-    )
-    var in_device = ctx.enqueue_create_buffer[in_dtype](
-        input_dynamic_shape.flattened_length()
-    )
-    var input_tensor = LayoutTensor[in_dtype, input_static_shape](
-        in_device, input_runtime_layout
-    )
+    var in_device = ctx.enqueue_create_buffer[in_dtype](rows * cols)
+    var input_tensor = TileTensor(in_device, row_major(rows, Idx[cols]))
 
-    # Output tensor layout and buffer
-    comptime output_static_shape = Layout.row_major(
-        UNKNOWN_VALUE,
-        ceildiv(cols, 2),
-    )
-    var output_dynamic_shape = IndexList[2](rows, ceildiv(cols, 2))
-    var output_runtime_layout = RuntimeLayout[output_static_shape].row_major(
-        output_dynamic_shape
-    )
     var out_device = ctx.enqueue_create_buffer[out_dtype](
-        output_dynamic_shape.flattened_length()
+        rows * ceildiv(cols, 2)
     )
-    var output_tensor = LayoutTensor[out_dtype, output_static_shape](
-        out_device, output_runtime_layout
+    var output_tensor = TileTensor(
+        out_device, row_major(rows, Idx[ceildiv(cols, 2)])
     )
 
-    # Scales tensor layout and buffer
     var scales_shape = IndexList[5](
         ceildiv(rows, SF_MN_GROUP_SIZE),
         ceildiv(cols, SF_VECTOR_SIZE * SF_ATOM_K),
@@ -103,28 +74,23 @@ def bench_1d1d_quantization[
         SF_ATOM_M[1],
         SF_ATOM_K,
     )
-    comptime scales_static_layout = Layout.row_major(
-        UNKNOWN_VALUE,
-        ceildiv(cols, SF_VECTOR_SIZE * SF_ATOM_K),
-        SF_ATOM_M[0],
-        SF_ATOM_M[1],
-        SF_ATOM_K,
-    )
-    var scales_runtime_layout = RuntimeLayout[scales_static_layout].row_major(
-        scales_shape
-    )
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](
         scales_shape.flattened_length()
     )
-    var scales_tensor = LayoutTensor[scales_dtype, scales_static_layout](
-        scales_device, scales_runtime_layout
+    var scales_tensor = TileTensor(
+        scales_device,
+        row_major(
+            ceildiv(rows, SF_MN_GROUP_SIZE),
+            Idx[ceildiv(cols, SF_VECTOR_SIZE * SF_ATOM_K)],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
+        ),
     )
 
     # Initialize input with random data and output with zeros on host
     with in_device.map_to_host() as in_host:
-        var in_host_tensor = LayoutTensor[in_dtype, input_static_shape](
-            in_host, input_runtime_layout
-        )
+        var in_host_tensor = TileTensor(in_host, row_major(rows, Idx[cols]))
         random(in_host_tensor)
 
     @inline(.always)
@@ -139,16 +105,16 @@ def bench_1d1d_quantization[
                     SF_VECTOR_SIZE=SF_VECTOR_SIZE
                 ](
                     ctx,
-                    lt_to_tt(output_tensor).as_unsafe_any_origin(),
-                    lt_to_tt(scales_tensor).as_unsafe_any_origin(),
-                    lt_to_tt(input_tensor).as_unsafe_any_origin(),
+                    output_tensor.as_unsafe_any_origin(),
+                    scales_tensor.as_unsafe_any_origin(),
+                    input_tensor.as_unsafe_any_origin(),
                 )
             else:
                 quantize_dynamic_scaled_fp4fp8[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     ctx,
-                    lt_to_tt(output_tensor).as_unsafe_any_origin(),
-                    lt_to_tt(scales_tensor).as_unsafe_any_origin(),
-                    lt_to_tt(input_tensor).as_unsafe_any_origin(),
+                    output_tensor.as_unsafe_any_origin(),
+                    scales_tensor.as_unsafe_any_origin(),
+                    input_tensor.as_unsafe_any_origin(),
                     num_cols=cols,
                     num_cols_padded=cols,
                 )
@@ -253,9 +219,7 @@ def bench_grouped_quantization[
     # defined: an all-zero buffer skips the reciprocal path that real
     # activations always take.
     var host_input = alloc[Scalar[in_dtype]](rows * cols)
-    var host_input_tensor = TileTensor(
-        host_input, row_major(Coord(rows, Idx[cols]))
-    )
+    var host_input_tensor = TileTensor(host_input, row_major(rows, Idx[cols]))
     random(host_input_tensor, min=-1.0, max=1.0)
     ctx.enqueue_copy(dev_in, host_input)
 
@@ -264,32 +228,26 @@ def bench_grouped_quantization[
     ctx.enqueue_copy(dev_expert_ids, host_expert_ids)
     ctx.enqueue_copy(dev_sf, host_sf)
 
-    var in_tensor = TileTensor(dev_in, row_major(Coord(rows, Idx[cols])))
-    var out_tensor = TileTensor(
-        dev_out, row_major(Coord(rows, Idx[ceildiv(cols, 2)]))
-    )
+    var in_tensor = TileTensor(dev_in, row_major(rows, Idx[cols]))
+    var out_tensor = TileTensor(dev_out, row_major(rows, Idx[ceildiv(cols, 2)]))
     var scales_tensor = TileTensor(
         dev_scales,
         row_major(
-            Coord(
-                total_m_tiles,
-                Idx[K_tiles],
-                Idx[SF_ATOM_M[0]],
-                Idx[SF_ATOM_M[1]],
-                Idx[SF_ATOM_K],
-            )
+            total_m_tiles,
+            Idx[K_tiles],
+            Idx[SF_ATOM_M[0]],
+            Idx[SF_ATOM_M[1]],
+            Idx[SF_ATOM_K],
         ),
     )
     var row_offsets_t = TileTensor(
-        dev_row_offsets, row_major(Coord(Idx[num_experts + 1]))
+        dev_row_offsets, row_major(Idx[num_experts + 1])
     )
     var scales_offsets_t = TileTensor(
-        dev_scales_offsets, row_major(Coord(Idx[num_experts]))
+        dev_scales_offsets, row_major(Idx[num_experts])
     )
-    var expert_ids_t = TileTensor(
-        dev_expert_ids, row_major(Coord(Idx[num_experts]))
-    )
-    var sf_t = TileTensor(dev_sf, row_major(Coord(Idx[num_experts])))
+    var expert_ids_t = TileTensor(dev_expert_ids, row_major(Idx[num_experts]))
+    var sf_t = TileTensor(dev_sf, row_major(Idx[num_experts]))
 
     @inline(.always)
     def bench_fn(

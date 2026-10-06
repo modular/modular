@@ -144,7 +144,7 @@ class _TierStubConnector:
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
     ) -> None:
         raise NotImplementedError("must not be called by count paths")
 
@@ -204,7 +204,7 @@ class _ReusableTierStubConnector:
     def offload(
         self,
         block_ids: Mapping[str, Sequence[int]],
-        block_hashes: Sequence[bytes],
+        block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
     ) -> None:
         raise NotImplementedError("this stub does not exercise offload")
@@ -494,4 +494,4 @@ def test_null_connector_holds_nothing() -> None:
 
 # The host/disk tier's own host-then-disk walk lives in Rust now; it is covered
 # by the kv-tier-connector crate's unit tests and
-# ``internal/dkv/test_rust_tiered_connector_gpu.py``.
+# ``internal/dkv/test_tiered_connector_gpu.py``.

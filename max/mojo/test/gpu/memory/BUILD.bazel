@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "mojo_filecheck_test")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -15,6 +15,18 @@ mojo_filecheck_test(
         "//:apple_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    deps = [
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# CPU-runnable: exercises `ReduceOp`'s `EnumLike` conformance (runtime
+# `__match`, discriminants) and its unchanged custom `write_to` mnemonics
+# without launching any GPU work.
+mojo_test(
+    name = "test_reduce_op.mojo.test",
+    srcs = ["test_reduce_op.mojo"],
     deps = [
         "//max:max_mojo",
         "@mojo//:std",

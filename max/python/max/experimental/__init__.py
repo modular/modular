@@ -21,7 +21,7 @@ each consume the one below:
 - :mod:`~max.experimental.functional` -- a one-function-per-op distributed
   dispatcher (``F.matmul``, ``F.add``, ...).
 - :mod:`~max.experimental.sharding` -- placements, the device mesh, the
-  action data model, a cost model, and pluggable per-op solvers.
+  action data model, a cost model, and the ``auto_reshard`` policy.
 
 The distributed :class:`~max.experimental.tensor.Tensor` ties them together.
 

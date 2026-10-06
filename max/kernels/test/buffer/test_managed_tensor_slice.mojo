@@ -37,7 +37,7 @@ def test_basic_construction() raises:
     # Shape-only constructor computes row-major strides automatically
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
-        storage.unsafe_ptr(), IndexList[2](3, 4)
+        storage.unsafe_ptr(), (3, 4)
     )
 
     assert_equal(tensor.rank, 2)
@@ -51,7 +51,7 @@ def test_shape_and_strides() raises:
         DType.float32, 3, 2, 3, 4
     ]()
     var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
-        storage.unsafe_ptr(), IndexList[3](2, 3, 4)
+        storage.unsafe_ptr(), (2, 3, 4)
     )
 
     var shape = tensor.shape()
@@ -70,7 +70,7 @@ def test_dim_size() raises:
     var storage = Array[Float32, 5 * 7](fill={})
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 5, 7]()
     var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
-        storage.unsafe_ptr(), IndexList[2](5, 7)
+        storage.unsafe_ptr(), (5, 7)
     )
 
     # Test compile-time dim_size
@@ -88,7 +88,7 @@ def test_getitem_setitem() raises:
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 2, 3]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](storage.unsafe_ptr(), IndexList[2](2, 3))
+    ](storage.unsafe_ptr(), (2, 3))
 
     # Set values
     tensor[0, 0] = 1.0
@@ -107,8 +107,8 @@ def test_getitem_setitem() raises:
     assert_equal(tensor[1, 2], 6.0)
 
     # Get values using IndexList
-    assert_equal(tensor[IndexList[2](0, 2)], 3.0)
-    assert_equal(tensor[IndexList[2](1, 0)], 4.0)
+    assert_equal(tensor[(0, 2)], 3.0)
+    assert_equal(tensor[(1, 0)], 4.0)
 
 
 def test_simd_load_store() raises:
@@ -117,20 +117,20 @@ def test_simd_load_store() raises:
     comptime spec = get_row_major_tensor_spec_static[.float32, 1, 8]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](storage.unsafe_ptr(), IndexList[1](8))
+    ](storage.unsafe_ptr(), (8,))
 
     # Store a SIMD vector
     var vec = SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0)
-    tensor.store(IndexList[1](0), vec)
+    tensor.store((0,), vec)
 
     var vec2 = SIMD[.float32, 4](5.0, 6.0, 7.0, 8.0)
-    tensor.store(IndexList[1](4), vec2)
+    tensor.store((4,), vec2)
 
     # Load and verify
-    var loaded = tensor.load[4](IndexList[1](0))
+    var loaded = tensor.load[4]((0,))
     assert_equal(loaded, SIMD[.float32, 4](1.0, 2.0, 3.0, 4.0))
 
-    var loaded2 = tensor.load[4](IndexList[1](4))
+    var loaded2 = tensor.load[4]((4,))
     assert_equal(loaded2, SIMD[.float32, 4](5.0, 6.0, 7.0, 8.0))
 
 
@@ -142,7 +142,7 @@ def test_to_layout_tensor() raises:
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](storage.unsafe_ptr(), IndexList[2](3, 4))
+    ](storage.unsafe_ptr(), (3, 4))
 
     # Convert to LayoutTensor
     var layout_tensor = tensor.to_layout_tensor()
@@ -167,7 +167,7 @@ def test_stride_length() raises:
     var storage = Array[Float32, 3 * 5](fill={})
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 5]()
     var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
-        storage.unsafe_ptr(), IndexList[2](3, 5)
+        storage.unsafe_ptr(), (3, 5)
     )
 
     # Test compile-time stride_length
@@ -185,7 +185,7 @@ def test_simd_load_store_2d() raises:
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 4, 8]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](storage.unsafe_ptr(), IndexList[2](4, 8))
+    ](storage.unsafe_ptr(), (4, 8))
 
     # Store vectors in each row
     for i in range(4):
@@ -195,7 +195,7 @@ def test_simd_load_store_2d() raises:
             Float32(i * 10 + 2),
             Float32(i * 10 + 3),
         )
-        tensor.store(IndexList[2](i, 0), vec)
+        tensor.store((i, 0), vec)
 
         var vec2 = SIMD[.float32, 4](
             Float32(i * 10 + 4),
@@ -203,16 +203,16 @@ def test_simd_load_store_2d() raises:
             Float32(i * 10 + 6),
             Float32(i * 10 + 7),
         )
-        tensor.store(IndexList[2](i, 4), vec2)
+        tensor.store((i, 4), vec2)
 
     # Load and verify
-    var loaded_row0 = tensor.load[4](IndexList[2](0, 0))
+    var loaded_row0 = tensor.load[4]((0, 0))
     assert_equal(loaded_row0, SIMD[.float32, 4](0.0, 1.0, 2.0, 3.0))
 
-    var loaded_row2 = tensor.load[4](IndexList[2](2, 4))
+    var loaded_row2 = tensor.load[4]((2, 4))
     assert_equal(loaded_row2, SIMD[.float32, 4](24.0, 25.0, 26.0, 27.0))
 
-    var loaded_row3 = tensor.load[4](IndexList[2](3, 0))
+    var loaded_row3 = tensor.load[4]((3, 0))
     assert_equal(loaded_row3, SIMD[.float32, 4](30.0, 31.0, 32.0, 33.0))
 
 
@@ -224,7 +224,7 @@ def test_to_tile_tensor() raises:
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](storage.unsafe_ptr(), IndexList[2](3, 4))
+    ](storage.unsafe_ptr(), (3, 4))
 
     # Convert to TileTensor
     var tile_tensor = tensor.to_tile_tensor[.int64]()
@@ -250,7 +250,7 @@ def test_shape_coord_static() raises:
     var storage = Array[Float32, 3 * 4](fill={})
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
-        storage.unsafe_ptr(), IndexList[2](3, 4)
+        storage.unsafe_ptr(), (3, 4)
     )
 
     var shape = tensor.shape_coord()
@@ -278,7 +278,7 @@ def test_shape_coord_mixed() raises:
     ](align_of[DType.float32](), AddressSpace.GENERIC)
     var tensor = ManagedTensorSlice[
         io_spec=IOSpec.Unknown, static_spec=mixed_spec
-    ](storage.unsafe_ptr(), IndexList[2](2, 4))
+    ](storage.unsafe_ptr(), (2, 4))
 
     var shape = tensor.shape_coord()
 
@@ -299,7 +299,7 @@ def test_strides_coord_static() raises:
     var storage = Array[Float32, 3 * 4](fill={})
     comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
     var tensor = ManagedTensorSlice[io_spec=IOSpec.Unknown, static_spec=spec](
-        storage.unsafe_ptr(), IndexList[2](3, 4)
+        storage.unsafe_ptr(), (3, 4)
     )
 
     var strides = tensor.strides_coord()
@@ -328,7 +328,7 @@ def test_strides_coord_mixed() raises:
     ](align_of[DType.float32](), AddressSpace.GENERIC)
     var tensor = ManagedTensorSlice[
         io_spec=IOSpec.Unknown, static_spec=mixed_spec
-    ](storage.unsafe_ptr(), IndexList[2](2, 4), IndexList[2](4, 1))
+    ](storage.unsafe_ptr(), (2, 4), (4, 1))
 
     var strides = tensor.strides_coord()
 
@@ -378,7 +378,7 @@ def _flat_view[
 ):
     """A readable/writable rank-1 view, for setting up inputs and checking
     results without going back through the raw pointer."""
-    return {ptr, IndexList[1](n)}
+    return {ptr, (n,)}
 
 
 def _flat_output[
@@ -390,7 +390,7 @@ def _flat_output[
         static_spec=get_row_major_tensor_spec_static[dtype, 1, n](),
     ],
 ):
-    return {ptr, IndexList[1](n)}
+    return {ptr, (n,)}
 
 
 def _flat_input[
@@ -402,14 +402,14 @@ def _flat_input[
         static_spec=get_row_major_tensor_spec_static[dtype, 1, n](),
     ],
 ):
-    return {ptr, IndexList[1](n)}
+    return {ptr, (n,)}
 
 
 def _fill_ramp[
     dtype: DType, n: Int
 ](tensor: ManagedTensorSlice[mut=True, dtype=dtype, rank=1, ...]):
     for i in range(n):
-        tensor.store(IndexList[1](i), SIMD[dtype, 1](Scalar[dtype](i)))
+        tensor.store((i,), SIMD[dtype, 1](Scalar[dtype](i)))
 
 
 def _check_value_form_rank1[dtype: DType]() raises:
@@ -429,7 +429,7 @@ def _check_value_form_rank1[dtype: DType]() raises:
     foreach(body, out, ctx)
 
     for i in range(N):
-        assert_equal(view.load[1](IndexList[1](i)), Scalar[dtype](3))
+        assert_equal(view.load[1]((i,)), Scalar[dtype](3))
     _ = storage^
 
 
@@ -445,11 +445,11 @@ def _check_value_form_rank2[dtype: DType]() raises:
     var base = storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
     comptime spec = get_row_major_tensor_spec_static[dtype, 2, ROWS, COLS]()
     var out = ManagedTensorSlice[io_spec=IOSpec.Output, static_spec=spec](
-        base, IndexList[2](ROWS, COLS)
+        base, (ROWS, COLS)
     )
     var view = ManagedTensorSlice[
         mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](base, IndexList[2](ROWS, COLS))
+    ](base, (ROWS, COLS))
 
     var scale = Scalar[dtype](10)
 
@@ -470,9 +470,7 @@ def _check_value_form_rank2[dtype: DType]() raises:
 
     for r in range(ROWS):
         for c in range(COLS):
-            assert_equal(
-                view.load[1](IndexList[2](r, c)), Scalar[dtype](r * 10 + c)
-            )
+            assert_equal(view.load[1]((r, c)), Scalar[dtype](r * 10 + c))
     _ = storage^
 
 
@@ -514,12 +512,10 @@ def _check_value_matches_parametric[dtype: DType]() raises:
 
     for i in range(N):
         assert_equal(
-            value_view.load[1](IndexList[1](i)),
-            param_view.load[1](IndexList[1](i)),
+            value_view.load[1]((i,)),
+            param_view.load[1]((i,)),
         )
-        assert_equal(
-            value_view.load[1](IndexList[1](i)), Scalar[dtype](i * 2 + 1)
-        )
+        assert_equal(value_view.load[1]((i,)), Scalar[dtype](i * 2 + 1))
     _ = storage^
 
 
@@ -557,7 +553,7 @@ def _check_capture_outer_tensor[dtype: DType]() raises:
     foreach(body, out, ctx)
 
     for i in range(N):
-        assert_equal(view.load[1](IndexList[1](i)), Scalar[dtype](i + 1))
+        assert_equal(view.load[1]((i,)), Scalar[dtype](i + 1))
     _ = storage^
 
 
@@ -589,7 +585,7 @@ def _check_capture_tensor_and_scalar[dtype: DType]() raises:
     foreach(body, out, ctx)
 
     for i in range(N):
-        assert_equal(view.load[1](IndexList[1](i)), Scalar[dtype](i + 7))
+        assert_equal(view.load[1]((i,)), Scalar[dtype](i + 7))
     _ = storage^
 
 
@@ -598,28 +594,24 @@ def test_foreach_captures_tensor_and_scalar() raises:
     _check_capture_tensor_and_scalar[DType.float32]()
 
 
-def _check_capture_input_tensor[dtype: DType]() raises:
-    comptime N = 32
-    comptime FILL = 7
-    # The one test that captures a real `IOSpec.Input` tensor, so the shape the
-    # migrated examples use is covered with its invariant loads intact. It can
-    # do that only because the input is filled once, at construction, and never
-    # written again: with nothing stale in the buffer there is nothing for the
-    # optimizer to forward, which is the hazard `_check_capture_outer_tensor`
-    # documents. The ramp lives in the body instead of the buffer, so the
-    # expected value still varies per index.
-    var in_storage = Array[Scalar[dtype], N](fill=Scalar[dtype](FILL))
-    var out_storage = Array[Scalar[dtype], N](fill={})
-    var in_ptr = in_storage.unsafe_ptr().unsafe_origin_cast[
-        MutUntrackedOrigin
-    ]()
-    var out_ptr = out_storage.unsafe_ptr().unsafe_origin_cast[
-        MutUntrackedOrigin
-    ]()
+@inline(.never)
+def _foreach_over_input[
+    dtype: DType, N: Int
+](
+    in_ptr: Pointer[Scalar[dtype], MutUntrackedOrigin],
+    out_ptr: Pointer[Scalar[dtype], MutUntrackedOrigin],
+) raises:
+    """Runs a `foreach` whose body captures an `IOSpec.Input` tensor.
 
+    Never inlined, on purpose. `IOSpec.Input` loads are LLVM invariant loads,
+    and GVN resolves an invariant load by walking past every store to the
+    allocation, so a load in the same function as the `Array` that backs it
+    reads the allocation's undefined initial value, not what the fill wrote
+    (observed on Linux x86 as NaN for the first vector). Behind a call
+    boundary the walk stops at the pointer argument.
+    """
     var x = _flat_input[dtype, N](in_ptr)
     var out = _flat_output[dtype, N](out_ptr)
-    var view = _flat_view[dtype, N](out_ptr)
 
     @inline(.always)
     def body[width: Int](idx: Coord) {var x} -> SIMD[dtype, width]:
@@ -630,8 +622,28 @@ def _check_capture_input_tensor[dtype: DType]() raises:
     var ctx = DeviceContext(api="cpu")
     foreach(body, out, ctx)
 
+
+def _check_capture_input_tensor[dtype: DType]() raises:
+    comptime N = 32
+    comptime FILL = 7
+    # The one test that captures a real `IOSpec.Input` tensor, so the shape the
+    # migrated examples use is covered with its invariant loads intact. The
+    # ramp lives in the body instead of the buffer, so the expected value still
+    # varies per index.
+    var in_storage = Array[Scalar[dtype], N](fill=Scalar[dtype](FILL))
+    var out_storage = Array[Scalar[dtype], N](fill={})
+    var in_ptr = in_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
+    ]()
+    var out_ptr = out_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
+    ]()
+
+    _foreach_over_input[dtype, N](in_ptr, out_ptr)
+
+    var view = _flat_view[dtype, N](out_ptr)
     for i in range(N):
-        assert_equal(view.load[1](IndexList[1](i)), Scalar[dtype](FILL + i))
+        assert_equal(view.load[1]((i,)), Scalar[dtype](FILL + i))
     _ = in_storage^
     _ = out_storage^
 
@@ -662,7 +674,7 @@ def _check_simd_width_one[dtype: DType]() raises:
     foreach[simd_width=1](body, out, ctx)
 
     for i in range(N):
-        assert_equal(view.load[1](IndexList[1](i)), Scalar[dtype](i))
+        assert_equal(view.load[1]((i,)), Scalar[dtype](i))
     _ = storage^
 
 
@@ -704,8 +716,8 @@ def _check_fused_store[dtype: DType]() raises:
     var direct_view = _flat_view[dtype, N](direct_ptr)
     var fused_view = _flat_view[dtype, N](fused_ptr)
     for i in range(N):
-        direct_view.store(IndexList[1](i), SIMD[dtype, 1](Scalar[dtype](-1)))
-        fused_view.store(IndexList[1](i), SIMD[dtype, 1](Scalar[dtype](-1)))
+        direct_view.store((i,), SIMD[dtype, 1](Scalar[dtype](-1)))
+        fused_view.store((i,), SIMD[dtype, 1](Scalar[dtype](-1)))
 
     var out = _flat_output[dtype, N](direct_ptr)
     var fused_out = out._bind_to_fused_output(_MarkingOutFusion(fused_ptr))
@@ -721,10 +733,8 @@ def _check_fused_store[dtype: DType]() raises:
     foreach[simd_width=1](body, fused_out, ctx)
 
     for i in range(N):
-        assert_equal(
-            fused_view.load[1](IndexList[1](i)), Scalar[dtype](i + 100)
-        )
-        assert_equal(direct_view.load[1](IndexList[1](i)), Scalar[dtype](-1))
+        assert_equal(fused_view.load[1]((i,)), Scalar[dtype](i + 100))
+        assert_equal(direct_view.load[1]((i,)), Scalar[dtype](-1))
     _ = storage^
 
 
@@ -754,7 +764,7 @@ def _check_parametric_form_still_resolves[dtype: DType]() raises:
     foreach[body](out, ctx)
 
     for i in range(N):
-        assert_equal(view.load[1](IndexList[1](i)), Scalar[dtype](i + 5))
+        assert_equal(view.load[1]((i,)), Scalar[dtype](i + 5))
     _ = storage^
 
 

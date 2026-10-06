@@ -17,7 +17,7 @@ from __future__ import annotations
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.comm.ep.ep_kernels import fused_silu
-from max.nn.kernels import moe_create_indices
+from max.nn.kernels import moe_create_indices, moe_finalize
 from max.nn.moe import MoEQuantized, NvMxf4f8Strategy
 
 
@@ -36,9 +36,6 @@ class DeepseekV3_2MoE(MoEQuantized):
 
     def __init__(self, *args, **kwargs):
         # minimize code paths, KISS principle
-        assert not kwargs.get("apply_router_weight_first", True), (
-            "apply_router_weight_first argument not supported"
-        )
         assert kwargs.get("has_shared_experts", False), (
             "has_shared_experts argument not supported"
         )
@@ -101,10 +98,6 @@ class DeepseekV3_2MoE(MoEQuantized):
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
-        assert not self.apply_router_weight_first, (
-            "apply_router_weight_first must be False for quantized MoE"
-        )
-
         router_idx, router_weight = self.gate(x)
         if self._ep_batch_manager:
             return self._ep_call(
@@ -112,7 +105,6 @@ class DeepseekV3_2MoE(MoEQuantized):
             )
 
         router_idx = ops.reshape(router_idx, [-1])
-        seq_len = x.shape[0]
 
         create_indices_result = moe_create_indices(
             ops.cast(router_idx, DType.int32),
@@ -213,12 +205,9 @@ class DeepseekV3_2MoE(MoEQuantized):
             estimated_total_m=total_m,
         )
 
-        down_projs = ops.gather(down_projs, restore_order, axis=0).reshape(
-            [seq_len, self.num_experts_per_token, down_projs.shape[-1]]
+        routed_expert_out = moe_finalize(
+            down_projs, restore_order, router_weight, DType.float32
         )
-
-        routed_expert_out = ops.unsqueeze(router_weight, axis=1) @ down_projs
-        routed_expert_out = ops.squeeze(routed_expert_out, axis=1)
 
         if self.has_shared_experts:
             routed_expert_out += self.shared_experts(x).cast(DType.float32)

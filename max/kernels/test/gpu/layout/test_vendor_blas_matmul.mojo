@@ -13,7 +13,7 @@
 
 from std.math import ceildiv
 from std.os import abort
-from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.sys import default_accelerator
 
 from max.gpu.host import DeviceContext
 from internal_utils import assert_almost_equal
@@ -46,15 +46,15 @@ def test_matmul[
 
     var a_tt = TileTensor(
         a_device,
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_tt = TileTensor(
         b_device,
-        row_major(Coord(N, K)),
+        row_major(N, K),
     )
     var c_tt = TileTensor(
         c_device,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
 
     matmul(
@@ -71,19 +71,19 @@ def test_matmul[
     # Create immutable TileTensors for the naive kernel reference.
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
     var a_immut_tt = TileTensor(
         ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(a_device.unsafe_ptr())
         ),
-        row_major(Coord(M, K)),
+        row_major(M, K),
     )
     var b_immut_tt = TileTensor(
         ImmPointer[Scalar[input_type], ImmutAnyOrigin](
             unsafe_from_address=Int(b_device.unsafe_ptr())
         ),
-        row_major(Coord(N, K)),
+        row_major(N, K),
     )
 
     # Run naive matmul.
@@ -135,9 +135,9 @@ def test_matmul[input_types: List[DType]]() raises:
 
 
 def main() raises:
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         test_matmul[[DType.float8_e4m3fnuz, DType.bfloat16]]()
-    elif has_nvidia_gpu_accelerator():
+    elif default_accelerator().is_nvidia_gpu():
         test_matmul[[DType.float8_e4m3fn, DType.bfloat16]]()
     else:
         abort("Unknown GPU Accelerator.")

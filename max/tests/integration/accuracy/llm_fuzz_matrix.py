@@ -49,6 +49,14 @@ PIPELINES: Final[list[PipelineEntry]] = [
         timeout=60,
     ),
     PipelineEntry(
+        pipeline="meta-models/Muse-Glimmer-30B",
+        model_path="meta-models/Muse-Glimmer-30B",
+        runner="modrunner-b200",
+        gpu_flag="--devices gpu:0",
+        instance_type="bm.gpu.b200.1",
+        timeout=60,
+    ),
+    PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",
         model_path="MiniMaxAI/MiniMax-M3-MXFP8",
         runner="modrunner-b200-8x",

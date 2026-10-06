@@ -21,8 +21,8 @@ from block_idx.x >> 1.
 from std.collections import OptionalReg
 from std.math import ceildiv
 from max.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
-from layout import TensorEngine
-from layout.tma_async import RaggedTMA3DTile
+from layout import Coord, TensorEngine
+from layout.tma_async import RaggedTMA3DTile, TMATensorTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.logger import Logger
 from nn.attention.gpu.nvidia.common import (
@@ -31,7 +31,8 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     OptionalPointer,
     Pack,
-    q_tma,
+    q_tma_fused,
+    q_tma_prefill,
 )
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
@@ -63,11 +64,13 @@ def mha_sm100_depth512_dispatch[
     MaxPromptLenType: OptionallyStaticInt,
     PartitionType: MHAPartitionScheme,
     KVRowOffsetsEngine: TensorEngine,
+    SinkEngine: TensorEngine,
     //,
     config: MHAConfig,
     group: Int,
     ragged: Bool,
     _is_cache_length_accurate: Bool,
+    sink: Bool = False,
 ](
     output: DeviceBuffer[output_type],
     q_arg: UnsafePointer[Scalar[q_type], _],
@@ -85,6 +88,9 @@ def mha_sm100_depth512_dispatch[
     batch_size_arg: Int,
     partition: PartitionType,
     ctx: DeviceContext,
+    sink_weights: OptionalReg[
+        ImmutTileTensor1D[q_type, Engine=SinkEngine]
+    ] = None,
 ) raises:
     """Dispatches the pair-CTA SM100 depth=256/512 MHA prefill kernel.
 
@@ -106,6 +112,7 @@ def mha_sm100_depth512_dispatch[
         PartitionType: The KV cache partition scheme (inferred).
         KVRowOffsetsEngine: `TensorEngine` policy of `kv_input_row_offsets`
             (inferred).
+        SinkEngine: `TensorEngine` policy of `sink_weights` (inferred).
         config: The MHA configuration with head count, depth, and swizzle
             mode used to build the `Depth512SM100Config`.
         group: Number of query heads per KV head for grouped-query attention.
@@ -113,6 +120,7 @@ def mha_sm100_depth512_dispatch[
             non-null `valid_length` pointer.
         _is_cache_length_accurate: Whether the per-batch cache length values
             are exact.
+        sink: Whether to apply per-head attention-sink weights.
 
     Args:
         output: Device buffer that receives the attention output.
@@ -133,6 +141,8 @@ def mha_sm100_depth512_dispatch[
         partition: Partition scheme for the KV cache.
         ctx: Device context used to create TMA descriptors and enqueue the
             kernel.
+        sink_weights: Optional per-head attention-sink weights, used when
+            `sink` is set.
     """
     comptime assert (
         config.dtype == KVType.dtype and config.dtype == q_type
@@ -150,9 +160,9 @@ def mha_sm100_depth512_dispatch[
     )
     comptime assert d512_config.supported(), d512_config.description()
     comptime swizzle_mode = d512_config.swizzle_mode
-    # O output store is row-major SWIZZLE_NONE (decoupled from the swizzled
-    # Q/K/V/S/P buffers governed by `swizzle_mode`).
-    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE
+    # O is staged in 64-column SWIZZLE_128B blocks, one TMA copy per block
+    # (`o_store_tma_blocks_per_op` returns 0 for a swizzled store).
+    comptime output_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     comptime fuse_gqa = d512_config.fuse_gqa
     comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
@@ -166,8 +176,7 @@ def mha_sm100_depth512_dispatch[
 
     # ---- TMA tile descriptors ------------------------------------------------
 
-    # Output store: BM per CTA, full ov_depth. Single issuer, no combine
-    # (depth_splits=1) -> one batched rank-5 TMA over the full depth (group==1).
+    # Output store: BM per CTA, full ov_depth, single issuer.
     comptime store_blocks_per_op = o_store_tma_blocks_per_op[
         output_type,
         output_swizzle_mode,
@@ -190,17 +199,18 @@ def mha_sm100_depth512_dispatch[
         rows=num_rows_q,
     )
 
-    # Q: BM per CTA (not halved like 2Q).
-    var q_tma_op = q_tma[
-        swizzle_mode,
-        BM=d512_config.BM,
-        depth=d512_config.qk_depth,
-        q_num_heads=d512_config.num_q_heads,
-        group=d512_config.group,
-        decoding=False,
-        fuse_gqa=fuse_gqa,
-        num_qk_stages=d512_config.num_qk_stages,
-    ](ctx, q, num_rows_q)
+    # ---- Scheduler (defined here so the per-branch inlined launch body
+    # below can reference `SchedulerType` / `scheduler`) ----------------
+
+    comptime SchedulerType = TransientScheduler[
+        UInt32(PairBM_eff),
+        UInt32(
+            d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads
+        ),
+        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+        pair_cta=True,
+    ]
+    var scheduler: SchedulerType = SchedulerType()
 
     # K: each CTA loads BN//2 rows, BK0 depth per stage.
     comptime k_sub_BN = kv_sub_tile_rows(d512_config.BN // 2, KVType.page_size)
@@ -251,117 +261,273 @@ def mha_sm100_depth512_dispatch[
         fold_chunks=v_fold_chunks,
     ](ctx)
 
-    # ---- Scheduler -----------------------------------------------------------
+    # Q: BM per CTA (not halved like 2Q).
+    # KGEN cannot fold a Coord-valued conditional, so the rank-3 (prefill)
+    # vs rank-4 (fused-GQA) Q tile choice must be made by spelling one
+    # alias per `comptime if` branch. The Q descriptor shape threads into
+    # the downstream dispatch chain via `q_tma_op.tile_shape` /
+    # `q_tma_op.desc_shape` so the rank choice is invisible to the
+    # rank-agnostic dispatch signatures. The launch body is inlined here
+    # (rather than wrapped in a local `launch_q` closure) so that all the
+    # captured locals keep direct, unambiguous capture conventions.
+    comptime if fuse_gqa:
+        var q_tma_op = q_tma_fused[
+            swizzle_mode,
+            BM=d512_config.BM,
+            depth=d512_config.qk_depth,
+            q_num_heads=d512_config.num_q_heads,
+            group=d512_config.group,
+            decoding=False,
+            fuse_gqa=True,
+            num_qk_stages=d512_config.num_qk_stages,
+        ](ctx, q, num_rows_q)
 
-    comptime SchedulerType = TransientScheduler[
-        UInt32(PairBM_eff),
-        UInt32(
-            d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads
-        ),
-        flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
-        pair_cta=True,
-    ]
-    var scheduler: SchedulerType = SchedulerType()
-
-    # ---- Nested closure dispatch (no sink) -----------------------------------
-
-    @__parameter
-    @inline(.always)
-    def with_kv_offsets[
-        KVRowOffsetsType: OptionalPointer
-    ](kv_row_offsets: KVRowOffsetsType) raises:
         @__parameter
         @inline(.always)
-        def with_valid_length[
-            ValidLengthType: OptionalPointer
-        ](valid_len: ValidLengthType) raises:
-            comptime PackType = Pack[
-                MaskType,
-                SchedulerType,
-                ValidLengthType,
-                NullPointer[.float32],  # no sink
-                KVRowOffsetsType,
-                MaxPromptLenType,
-                PartitionType,
-            ]
-            var pack: PackType = {
-                mask,
-                scheduler,
-                valid_len,
-                NullPointer[.float32](),
-                kv_row_offsets,
-                max_prompt_len_arg,
-                partition,
-            }
+        def with_sink[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
+            @__parameter
+            @inline(.always)
+            def with_kv_offsets[
+                KVRowOffsetsType: OptionalPointer
+            ](kv_row_offsets: KVRowOffsetsType) raises:
+                @__parameter
+                @inline(.always)
+                def with_valid_length[
+                    ValidLengthType: OptionalPointer
+                ](valid_len: ValidLengthType) raises:
+                    comptime PackType = Pack[
+                        MaskType,
+                        SchedulerType,
+                        ValidLengthType,
+                        SinkType,
+                        KVRowOffsetsType,
+                        MaxPromptLenType,
+                        PartitionType,
+                    ]
+                    var pack: PackType = {
+                        mask,
+                        scheduler,
+                        valid_len,
+                        sink_ptr,
+                        kv_row_offsets,
+                        max_prompt_len_arg,
+                        partition,
+                    }
 
-            var max_num_prompt_tiles: UInt32 = ceildiv(
-                max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
-            )
-            var block_x: UInt32 = max_num_prompt_tiles
-            # SchedulerType.grid_dim doubles block_x (pair_cta=True).
+                    var max_num_prompt_tiles: UInt32 = ceildiv(
+                        max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
+                    )
+                    var block_x: UInt32 = max_num_prompt_tiles
+                    # SchedulerType.grid_dim doubles block_x (pair_cta=True).
 
-            logger.info("------ Dispatching to SM100 Depth512 Pair-CTA ------")
-            logger.info(
-                "QKV Type:",
-                KVType.dtype,
-                "Depth:",
-                d512_config.qk_depth,
-                "Number of Q // KV Heads:",
-                d512_config.num_q_heads,
-                "//",
-                d512_config.num_kv_heads,
-                "Batch Size:",
-                batch_size,
-                "Max Num Prompt Tiles:",
-                max_num_prompt_tiles,
-            )
+                    logger.info(
+                        "------ Dispatching to SM100 Depth512 Pair-CTA ------"
+                    )
+                    logger.info(
+                        "QKV Type:",
+                        KVType.dtype,
+                        "Depth:",
+                        d512_config.qk_depth,
+                        "Number of Q // KV Heads:",
+                        d512_config.num_q_heads,
+                        "//",
+                        d512_config.num_kv_heads,
+                        "Batch Size:",
+                        batch_size,
+                        "Max Num Prompt Tiles:",
+                        max_num_prompt_tiles,
+                    )
 
-            comptime smem_use = d512_config.smem_used
+                    comptime smem_use = d512_config.smem_used
 
-            comptime kernel = SM100MHADepth512[
-                KVType,
-                output_type,
-                MaskType,
-                SchedulerType,
-                d512_config,
-                ValidLengthType,
-                KVRowOffsetsType,
-                _is_cache_length_accurate,
-                MaxPromptLenType,
-                PartitionType,
-            ].kernel
+                    comptime kernel = SM100MHADepth512[
+                        q_tma_op.tile_shape,
+                        q_tma_op.desc_shape,
+                        KVType,
+                        output_type,
+                        MaskType,
+                        SchedulerType,
+                        d512_config,
+                        ValidLengthType,
+                        SinkType,
+                        KVRowOffsetsType,
+                        _is_cache_length_accurate,
+                        MaxPromptLenType,
+                        PartitionType,
+                    ].kernel
 
-            ctx.enqueue_function[kernel](
-                q_tma_op,
-                k_tma_op,
-                v_tma_op,
-                ragged_tma_store,
-                k,
-                scale,
-                batch_size,
-                max_cache_valid_length,
-                pack,
-                grid_dim=SchedulerType.grid_dim(batch_size, block_x),
-                block_dim=(num_threads, 1, 1),
-                cluster_dim=Dim(2, 1, 1),
-                shared_mem_bytes=smem_use,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(smem_use)
-                ),
-            )
+                    ctx.enqueue_function[kernel](
+                        q_tma_op,
+                        k_tma_op,
+                        v_tma_op,
+                        ragged_tma_store,
+                        k,
+                        scale,
+                        batch_size,
+                        max_cache_valid_length,
+                        pack,
+                        grid_dim=SchedulerType.grid_dim(batch_size, block_x),
+                        block_dim=(num_threads, 1, 1),
+                        cluster_dim=Dim(2, 1, 1),
+                        shared_mem_bytes=smem_use,
+                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                            UInt32(smem_use)
+                        ),
+                    )
 
-        # --- ragged dispatch ---
-        comptime if ragged:
-            with_valid_length[NonNullPointer[.uint32]](
-                {valid_length.as_imm().as_unsafe_any_origin()}
+                # --- ragged dispatch ---
+                comptime if ragged:
+                    with_valid_length[NonNullPointer[.uint32]](
+                        {valid_length.as_imm().as_unsafe_any_origin()}
+                    )
+                else:
+                    with_valid_length[NullPointer[.uint32]]({})
+
+            # --- kv_input_row_offsets dispatch ---
+            if kv_input_row_offsets:
+                with_kv_offsets[NonNullPointer[.uint32]](
+                    {kv_input_row_offsets.value().ptr}
+                )
+            else:
+                with_kv_offsets[NullPointer[.uint32]]({})
+
+        # --- sink dispatch ---
+        comptime if sink:
+            with_sink[NonNullPointer[KVType.dtype]](
+                {
+                    rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
+                        sink_weights.value().ptr
+                    )
+                }
             )
         else:
-            with_valid_length[NullPointer[.uint32]]({})
-
-    # --- kv_input_row_offsets dispatch ---
-    if kv_input_row_offsets:
-        with_kv_offsets[NonNullPointer[.uint32]](
-            {kv_input_row_offsets.value().ptr}
-        )
+            with_sink[NullPointer[KVType.dtype]]({})
     else:
-        with_kv_offsets[NullPointer[.uint32]]({})
+        var q_tma_op = q_tma_prefill[
+            swizzle_mode,
+            BM=d512_config.BM,
+            depth=d512_config.qk_depth,
+            q_num_heads=d512_config.num_q_heads,
+            num_qk_stages=d512_config.num_qk_stages,
+        ](ctx, q, num_rows_q)
+
+        @__parameter
+        @inline(.always)
+        def with_sink_q[SinkType: OptionalPointer](sink_ptr: SinkType) raises:
+            @__parameter
+            @inline(.always)
+            def with_kv_offsets_q[
+                KVRowOffsetsType: OptionalPointer
+            ](kv_row_offsets: KVRowOffsetsType) raises:
+                @__parameter
+                @inline(.always)
+                def with_valid_length_q[
+                    ValidLengthType: OptionalPointer
+                ](valid_len: ValidLengthType) raises:
+                    comptime PackType = Pack[
+                        MaskType,
+                        SchedulerType,
+                        ValidLengthType,
+                        SinkType,
+                        KVRowOffsetsType,
+                        MaxPromptLenType,
+                        PartitionType,
+                    ]
+                    var pack: PackType = {
+                        mask,
+                        scheduler,
+                        valid_len,
+                        sink_ptr,
+                        kv_row_offsets,
+                        max_prompt_len_arg,
+                        partition,
+                    }
+
+                    var max_num_prompt_tiles: UInt32 = ceildiv(
+                        max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
+                    )
+                    var block_x: UInt32 = max_num_prompt_tiles
+                    # SchedulerType.grid_dim doubles block_x (pair_cta=True).
+
+                    logger.info(
+                        "------ Dispatching to SM100 Depth512 Pair-CTA ------"
+                    )
+                    logger.info(
+                        "QKV Type:",
+                        KVType.dtype,
+                        "Depth:",
+                        d512_config.qk_depth,
+                        "Number of Q // KV Heads:",
+                        d512_config.num_q_heads,
+                        "//",
+                        d512_config.num_kv_heads,
+                        "Batch Size:",
+                        batch_size,
+                        "Max Num Prompt Tiles:",
+                        max_num_prompt_tiles,
+                    )
+
+                    comptime smem_use = d512_config.smem_used
+
+                    comptime kernel = SM100MHADepth512[
+                        q_tma_op.tile_shape,
+                        q_tma_op.desc_shape,
+                        KVType,
+                        output_type,
+                        MaskType,
+                        SchedulerType,
+                        d512_config,
+                        ValidLengthType,
+                        SinkType,
+                        KVRowOffsetsType,
+                        _is_cache_length_accurate,
+                        MaxPromptLenType,
+                        PartitionType,
+                    ].kernel
+
+                    ctx.enqueue_function[kernel](
+                        q_tma_op,
+                        k_tma_op,
+                        v_tma_op,
+                        ragged_tma_store,
+                        k,
+                        scale,
+                        batch_size,
+                        max_cache_valid_length,
+                        pack,
+                        grid_dim=SchedulerType.grid_dim(batch_size, block_x),
+                        block_dim=(num_threads, 1, 1),
+                        cluster_dim=Dim(2, 1, 1),
+                        shared_mem_bytes=smem_use,
+                        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                            UInt32(smem_use)
+                        ),
+                    )
+
+                # --- ragged dispatch ---
+                comptime if ragged:
+                    with_valid_length_q[NonNullPointer[.uint32]](
+                        {valid_length.as_imm().as_unsafe_any_origin()}
+                    )
+                else:
+                    with_valid_length_q[NullPointer[.uint32]]({})
+
+            # --- kv_input_row_offsets dispatch ---
+            if kv_input_row_offsets:
+                with_kv_offsets_q[NonNullPointer[.uint32]](
+                    {kv_input_row_offsets.value().ptr}
+                )
+            else:
+                with_kv_offsets_q[NullPointer[.uint32]]({})
+
+        # --- sink dispatch ---
+        comptime if sink:
+            with_sink_q[NonNullPointer[KVType.dtype]](
+                {
+                    rebind[UnsafePointer[Scalar[KVType.dtype], ImmutAnyOrigin]](
+                        sink_weights.value().ptr
+                    )
+                }
+            )
+        else:
+            with_sink_q[NullPointer[KVType.dtype]]({})

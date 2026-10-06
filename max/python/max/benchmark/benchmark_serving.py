@@ -35,7 +35,7 @@ from collections.abc import (
 )
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import urlparse
 from uuid import uuid4
 
@@ -69,6 +69,9 @@ from max.benchmark.benchmark_shared.datasets.image_augmentation import (
 )
 from max.benchmark.benchmark_shared.datasets.response_format_augmentation import (
     augment_samples_with_response_format,
+)
+from max.benchmark.benchmark_shared.datasets.tool_augmentation import (
+    augment_samples_with_tools,
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
@@ -143,6 +146,7 @@ from max.profiler.cpu import (
     collect_pids_for_port,
 )
 from max.profiler.gpu import GPUDiagContext, GpuStatsRecorder
+from openai.types.chat import ChatCompletionToolParam
 from openai.types.chat.completion_create_params import ResponseFormat
 from pydantic import TypeAdapter, ValidationError
 
@@ -243,6 +247,37 @@ def parse_response_format(arg: str) -> ResponseFormat:
         return TypeAdapter(ResponseFormat).validate_json(arg)
     except (json.JSONDecodeError, ValidationError) as e:
         raise ValueError(f"Invalid response format: {e}") from e
+
+
+def parse_tools(arg: str) -> list[Mapping[str, Any]]:
+    """Parses tool definitions from a CLI arg (inline JSON or @filepath).
+
+    Args:
+        arg: Either a JSON list or '@path/to/tools.json' to load from file.
+
+    Returns:
+        The tool definitions, validated against the OpenAI tool shape.
+
+    Raises:
+        ValueError: If the JSON is invalid, the file cannot be read, or the
+            value is not a non-empty list of OpenAI tool definitions.
+    """
+    source = "tools"
+    raw = arg
+    if arg.startswith("@"):
+        file_path = Path(arg[1:])
+        source = f"tools file {file_path}"
+        try:
+            raw = file_path.read_text()
+        except FileNotFoundError as e:
+            raise ValueError(f"Tools file not found: {file_path}") from e
+    try:
+        tools = TypeAdapter(list[ChatCompletionToolParam]).validate_json(raw)
+    except (json.JSONDecodeError, ValidationError) as e:
+        raise ValueError(f"Invalid {source}: {e}") from e
+    if not tools:
+        raise ValueError(f"Invalid {source}: the list is empty")
+    return [dict(tool) for tool in tools]
 
 
 def get_default_trace_path() -> str:
@@ -666,6 +701,7 @@ async def benchmark(
                 lora_manager=session.lora_manager,
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
+                disable_ignore_eos=args.disable_ignore_eos,
             )
         elif args.max_concurrent_conversations is not None:
             # KV-cache stress benchmark: two independent concurrency knobs.
@@ -706,6 +742,7 @@ async def benchmark(
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
+                disable_ignore_eos=args.disable_ignore_eos,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -756,6 +793,7 @@ async def benchmark(
                 est_ttft_ms=args.warmup_delay_estimated_ttft_ms,
                 est_tpot_ms=args.warmup_delay_estimated_tpot_ms,
                 use_session_id_as_cache_salt=args.use_session_id_as_cache_salt,
+                disable_ignore_eos=args.disable_ignore_eos,
             )
             all_outputs = [
                 out for outs in outputs_by_session.values() for out in outs
@@ -1262,18 +1300,30 @@ def _sample_for_seed(
             seed=seed,
         )
 
+    if args.tools is not None:
+        augment_samples_with_tools(
+            samples,
+            tools=parse_tools(args.tools),
+            fraction=args.tools_fraction,
+            tokenizer=tokenizer,
+            seed=seed,
+        )
+
     if args.image_fraction > 0:
         augment_samples_with_images(
             samples,
-            image_fraction=args.image_fraction,
+            fraction=args.image_fraction,
             image_count=args.image_count,
             image_long_side=args.image_long_side,
             image_aspect_ratio=args.image_aspect_ratio,
-            image_turn=args.image_turn,
+            turn=args.image_turn,
             max_chat_len=(
                 tokenizer.model_max_length if tokenizer is not None else None
             ),
             run_prefix_len=_run_prefix_len(args, benchmark_task, tokenizer),
+            # Offset from the response-format mixer's stream so the two pick
+            # independently rather than in lockstep.
+            seed=None if seed is None else seed + 1,
         )
 
     return samples

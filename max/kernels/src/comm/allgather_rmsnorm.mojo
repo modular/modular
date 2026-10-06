@@ -120,10 +120,10 @@ def _allgather_rmsnorm_kernel[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
     var col_idx = tid * simd_width
     var is_valid = col_idx < cols
-    var num_blocks = Int(grid_dim.x)
+    var num_blocks = grid_dim.x
 
     # Preload gamma in f32 before the barrier (local data, latency-hidden).
     var gamma_vec = SIMD[accum_type, simd_width](0)
@@ -147,7 +147,7 @@ def _allgather_rmsnorm_kernel[
         rank_sigs, rank_sigs[my_rank], my_rank
     )
 
-    for grow in range(Int(block_idx.x), rows, num_blocks):
+    for grow in range(block_idx.x, rows, num_blocks):
         # Owning peer = last shard with start <= grow; grow < rows always lands
         # in a non-empty shard (trailing empties skipped).
         var g = 0

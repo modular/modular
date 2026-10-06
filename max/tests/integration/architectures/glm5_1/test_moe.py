@@ -138,7 +138,6 @@ def generate_max_outputs(
         mlp_cls=DeepseekV3_2MLP,
         has_shared_experts=True,
         shared_experts_dim=shared_dim,
-        apply_router_weight_first=False,
     )
     moe.load_state_dict(state_dict)
 

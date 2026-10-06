@@ -15,6 +15,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "ClosureEmitter.h"
 #include "IREmitter.h"
 #include "Mojo/lib/MojoParser/Traits.h"
 #include "ParserEvaluationContext.h"
@@ -22,11 +23,11 @@
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
-#include "Mojo/MojoParser/DeclResolver.h"
 
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/LITDialect/LITOps.h"
+#include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/POPDialect/POPAttrs.h"
 
 using namespace M;
@@ -1542,10 +1543,10 @@ static void printRef(RefType refType, raw_ostream &os,
 
 static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
                                  raw_ostream &os, ASTTypePrinterContext ctx) {
-  bool suppressThin = ctx.suppressThin;
-  ctx.suppressThin = false;
+  bool isClosureSignature = ctx.isClosureSignature;
+  ctx.isClosureSignature = false;
   if (type.isAsync())
-    os << "async ";
+    os << "__async ";
   os << "def";
   if (auto fnLiteralGen = type.getIfFnLiteralTypeGenerator()) {
     os << " "
@@ -1648,7 +1649,8 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   os << ')';
   for (auto [enabled, effect] :
        {std::make_pair(fnType.isThrows(), "raises"),
-        std::make_pair(fnType.isCapturing(), "capturing"),
+        std::make_pair(fnType.isCapturing() && !isClosureSignature,
+                       "capturing"),
         std::make_pair(fnType.isCABI(), "abi(\"C\")")})
 
     if (enabled)
@@ -1666,7 +1668,7 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
     }
   }
 
-  os << (suppressThin ? " -> " : " thin -> ");
+  os << (isClosureSignature ? " -> " : " thin -> ");
   Type resultType = fnType.getUserResultType();
 
   if (fnType.isRefResult()) {
@@ -1682,26 +1684,37 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
 }
 
-/// If `decl` is a closure (struct or trait), print its readable source name and
-/// return true. A closure may have no source name (it is only set when the
-/// signature is available), in which case this returns false and the caller
-/// prints the mangled form.
-static bool tryPrintClosureSourceName(raw_ostream &os, ASTDecl *decl) {
-  if (!decl)
-    return false;
-  Operation *op = decl->getIfOperation();
-  if (auto structOp = dyn_cast_or_null<StructDeclOp>(op)) {
-    if (structOp.getDefinesClosure())
-      if (auto sourceName = structOp.getSourceName()) {
-        os << sourceName->getName().getValue();
-        return true;
-      }
-  } else if (auto traitOp = dyn_cast_or_null<TraitDeclOp>(op)) {
-    if (traitOp.getDefinesClosure())
-      if (auto sourceName = traitOp.getSourceName()) {
-        os << sourceName->getName().getValue();
-        return true;
-      }
+static bool tryPrintParamClosureSourceName(ASTTypePrinterContext ctx,
+                                           raw_ostream &os,
+                                           LIT::StructType closureStruct) {
+  StringRef structName = closureStruct.getSymbol().getLeafReference().strref();
+  if (ctx.shared && structName.starts_with(kClosurePrefix)) {
+    // We have a deterministic naming scheme for closures.
+    auto closureTrait = extractClosureSymbol(
+        *ctx.shared, ASTType(closureStruct).getProvidedTrait(*ctx.shared));
+    assert(closureTrait);
+
+    FnTypeGeneratorType sig =
+        ctx.shared->getClosureFnSigWithoutSelf(closureTrait);
+
+    // Not a thin function.
+    ctx.isClosureSignature = true;
+    printFnGeneratorType(sig, os, ctx);
+    return true;
+  }
+  return false;
+}
+
+static bool tryPrintParamClosureSourceName(ASTTypePrinterContext ctx,
+                                           raw_ostream &os,
+                                           TraitSymbolAttr trait) {
+  if (ctx.shared && ctx.shared->isUniversalParametricClosureTrait(trait)) {
+    // We have a deterministic naming scheme for closures.
+    FnTypeGeneratorType sig = ctx.shared->getClosureFnSigWithoutSelf(trait);
+    // Not a thin function.
+    ctx.isClosureSignature = true;
+    printFnGeneratorType(sig, os, ctx);
+    return true;
   }
   return false;
 }
@@ -1822,14 +1835,14 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(type).getDecl(*diagShared);
-    if (tryPrintClosureSourceName(os, decl))
+    if (tryPrintParamClosureSourceName(ctx, os, structTy))
       return;
     printUserType(structTy.getSymbol(), structTy.getParamValues(), decl);
   } else if (auto anyStruct = dyn_cast<StructMetaType>(type)) {
     ASTDecl *decl = nullptr;
     if (diagShared)
       decl = ASTType(anyStruct.getType()).getDecl(*diagShared);
-    if (tryPrintClosureSourceName(os, decl))
+    if (tryPrintParamClosureSourceName(ctx, os, anyStruct.getType()))
       return;
     os << "AnyStruct[";
     printUserType(anyStruct.getSymbol(), anyStruct.getParamValues(), decl);
@@ -1844,14 +1857,19 @@ void ASTType::print(raw_ostream &os, ASTTypePrinterContext ctx) const {
         reduced, os,
         [&](TraitSymbolAttr traitSymbol) {
           SymbolRefAttr symbol = traitSymbol.getSymbol();
-          ASTDecl *decl =
-              diagShared
-                  ? diagShared->declResolver->getDeclForTypeSymbolIfExists(
-                        symbol)
-                  : nullptr;
-          if (tryPrintClosureSourceName(os, decl))
+          if (tryPrintParamClosureSourceName(ctx, os, traitSymbol))
             return;
           printSymbol(os, symbol, diagShared);
+          if (traitSymbol.getParamValues().empty())
+            return;
+
+          os << '[';
+          llvm::interleaveComma(
+              traitSymbol.getParamValues(), os, [&](TypedAttr param) {
+                ASTType::printParam(os, param, ctx,
+                                    /*hasContextualType=*/false);
+              });
+          os << ']';
         },
         " & ");
   } else if (auto anyTrait = dyn_cast<AnyTraitType>(type)) {

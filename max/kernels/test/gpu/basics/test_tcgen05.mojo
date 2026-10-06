@@ -24,7 +24,8 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_st,
     tcgen05_store_wait,
 )
-from layout import IntTuple, Layout, LayoutTensor
+from layout import TileTensor, row_major
+from std.memory import unsafe_stack_allocation
 from std.testing import assert_true
 
 
@@ -145,15 +146,14 @@ def cp_test_fn():
     tcgen05_alloc[1](ptr_tmem_addr, num_cols)
     var tmem_addr = ptr_tmem_addr[0]
 
-    var smem_tile = LayoutTensor[
-        .float32,
-        Layout(IntTuple(32, 32)),
-        MutAnyOrigin,
-        address_space=.SHARED,
-        alignment=128,
-    ].stack_allocation()
+    var smem_tile = TileTensor(
+        unsafe_stack_allocation[
+            32 * 32, Float32, address_space=.SHARED, alignment=128
+        ](),
+        row_major[32, 32](),
+    )
 
-    var s_desc = MMASmemDescriptor.create[0, 0](smem_tile.ptr)
+    var s_desc = MMASmemDescriptor.create[0, 0](smem_tile.unsafe_ptr())
 
     tcgen05_cp[
         cta_group=1,

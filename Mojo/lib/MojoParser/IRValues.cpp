@@ -497,8 +497,8 @@ InitializerUValue InitializerUValue::create(Syntax syntax,
 
 const CallOperands &InitializerUValue::get() const { return storage->operands; }
 
-static void addNoneLiteralMarker(CallOperands &operands, StringRef kwargName,
-                                 IREmitter &emitter) {
+void LIT::addNoneLiteralMarker(CallOperands &operands, StringRef kwargName,
+                               IREmitter &emitter) {
   // Emit the None in a parameter context so we don't eagerly generated IR into
   // the body of any current function.
   auto paramEmitter = emitter.getParamEmitter(EC_CollectionLiteral);

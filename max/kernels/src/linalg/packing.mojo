@@ -462,8 +462,7 @@ struct PackMatrixCols[
         comptime unroll_factor = get_packB_unroll_factor()
 
         @inline(.always)
-        @__parameter
-        def pack_vector(row_idx: Int, col_idx: Int):
+        def pack_vector(row_idx: Int, col_idx: Int) {imm}:
             var global_idx = Index(
                 Int(self.global_offset[0].value()) + row_idx,
                 Int(self.global_offset[1].value()) + col_idx,
@@ -501,13 +500,11 @@ struct PackMatrixCols[
             )
 
         @inline(.always)
-        @__parameter
-        def pack_body[idx: Int]():
+        def pack_body[idx: Int]() {imm}:
             pack_vector(row_start + idx, col_start)
 
         @inline(.always)
-        @__parameter
-        def prefetch_body[idx: Int]():
+        def prefetch_body[idx: Int]() {imm}:
             var global_row_idx = (
                 Int(self.global_offset[0].value())
                 + row_start
@@ -743,8 +740,8 @@ def pack_b[
         tile_k: Tile size along the K dimension of the matmul.
     """
     # Strip extra type params from existential `...` pattern.
-    var src_tt = TileTensor(src.ptr, src.layout)
-    var dst_tt = TileTensor(dst.ptr, dst.layout)
+    var src_tt = src.reshape(src.layout)
+    var dst_tt = dst.reshape(dst.layout)
     unsafe_memset_zero(
         dst_tt.ptr, dst_tt.num_elements()
     )  # zero the padding to be safe
@@ -773,11 +770,9 @@ def pack_b[
                 var packed_dst_view = TileTensor(
                     dst_flat_ptr + dst_offset,
                     row_major(
-                        Coord(
-                            tile_n // inner_size2,
-                            tile_k2 // factor,
-                            inner_size2 * factor,
-                        )
+                        tile_n // inner_size2,
+                        tile_k2 // factor,
+                        inner_size2 * factor,
                     ),
                 )
                 var valid_k = min(tile_k2, k_in - idx_k)
@@ -816,13 +811,7 @@ def pack_b[
             for idx_n_t in range(0, n_out_t, tile_n):
                 var packed_dst_view_t = TileTensor(
                     dst_flat_ptr + dst_offset,
-                    row_major(
-                        Coord(
-                            tile_n // inner_size,
-                            tile_k,
-                            inner_size,
-                        )
-                    ),
+                    row_major(tile_n // inner_size, tile_k, inner_size),
                 )
                 var valid_k_t = min(tile_k, k_in_t - idx_k_t)
                 var valid_n_t = min(tile_n, n_in_t - idx_n_t)
@@ -1154,11 +1143,7 @@ struct BTileGenerator[
         var packed_b = TileTensor(
             self.b_tile_stack_ptr,
             row_major(
-                Coord(
-                    Int(tile_shape_nopack[0]),
-                    Int(tile_shape_nopack[1]),
-                    Int(tile_shape_nopack[2]),
-                )
+                tile_shape_nopack[0], tile_shape_nopack[1], tile_shape_nopack[2]
             ),
         )
 
@@ -1227,11 +1212,7 @@ struct BTileGenerator[
                 self.b.ptr
                 + (tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2),
                 row_major(
-                    Coord(
-                        Int(tile_shape_pack[0]),
-                        Int(tile_shape_pack[1]),
-                        Int(tile_shape_pack[2]),
-                    )
+                    tile_shape_pack[0], tile_shape_pack[1], tile_shape_pack[2]
                 ),
             )
             return b_tile_view.as_unsafe_any_origin()

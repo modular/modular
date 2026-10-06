@@ -70,9 +70,9 @@ struct MockOffloadBackend final : TargetBackend {
   ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
   lowerAndEmitOffload(mlir::Operation *module,
                       const OffloadEmitContext &ctx) const override {
-    return std::unique_ptr<llvm::MemoryBuffer>(
-        llvm::MemoryBuffer::getMemBufferCopy("mock-artifact:" +
-                                             ctx.options.targetCpu));
+    return llvm::MemoryBuffer::getMemBufferCopy(
+        ("mock-" + stringifyEmitAs(ctx.kind) + ":" + ctx.options.targetCpu)
+            .str());
   }
   SplitStrategy splitStrategy(const CompilationOptions &) const override {
     return SplitStrategy::None;
@@ -151,11 +151,39 @@ TEST(TargetBackendTest, BackendRegistryDispatchAndOwnership) {
   CompilationOptions options;
   // The arch reaches the backend through the context, not a separate argument.
   options.targetCpu = "mockarch";
-  OffloadEmitContext emitCtx{options, module->getLoc()};
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> artifactOr =
-      backend->lowerAndEmitOffload(*module, emitCtx);
+  OffloadEmitContext emitCtx{options, module->getLoc(), EmitAs::OBJECT};
+  auto artifactOr = backend->lowerAndEmitOffload(*module, emitCtx);
   ASSERT_FALSE(artifactOr.isError());
-  EXPECT_EQ((*artifactOr)->getBuffer(), "mock-artifact:mockarch");
+  EXPECT_EQ((*artifactOr)->getBuffer(), "mock-object:mockarch");
+}
+
+TEST(TargetBackendTest, OffloadArtifactVariesByEmissionKind) {
+  llvm::Triple mockTriple("kgenmock-none-unknown");
+  ErrorOr<const TargetBackend *> backendOr =
+      TargetBackendRegistry::get().lookup(mockTriple);
+  ASSERT_FALSE(backendOr.isError());
+
+  mlir::MLIRContext ctx;
+  mlir::OwningOpRef<mlir::ModuleOp> module =
+      mlir::ModuleOp::create(mlir::UnknownLoc::get(&ctx));
+  CompilationOptions options;
+  options.targetCpu = "mockarch";
+
+  // Each kind is compiled separately because an owning backend's artifact
+  // need not be the same for two of them.
+  OffloadEmitContext objectCtx{options, module->getLoc(), EmitAs::OBJECT};
+  OffloadEmitContext asmCtx{options, module->getLoc(), EmitAs::ASM};
+  auto objectOr = (*backendOr)->lowerAndEmitOffload(*module, objectCtx);
+  auto asmOr = (*backendOr)->lowerAndEmitOffload(*module, asmCtx);
+  ASSERT_FALSE(objectOr.isError());
+  ASSERT_FALSE(asmOr.isError());
+  EXPECT_NE((*objectOr)->getBuffer(), (*asmOr)->getBuffer());
+
+  // And each kind's artifact is named for what it holds.
+  const TargetTraits &traits = *(*backendOr)->traits();
+  EXPECT_EQ(traits.extensionFor(EmitAs::OBJECT), ".mockbin");
+  EXPECT_EQ(traits.extensionFor(EmitAs::ASM), ".mock.mlir");
+  EXPECT_EQ(traits.extensionFor(EmitAs::LLVM_BITCODE), ".mock.bc");
 }
 
 TEST(TargetBackendTest, LowerAndEmitOffloadDefaultErrors) {
@@ -186,9 +214,8 @@ TEST(TargetBackendTest, LowerAndEmitOffloadDefaultErrors) {
   mlir::OwningOpRef<mlir::ModuleOp> module =
       mlir::ModuleOp::create(mlir::UnknownLoc::get(&ctx));
   CompilationOptions options;
-  OffloadEmitContext emitCtx{options, module->getLoc()};
-  ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> artifactOr =
-      plain.lowerAndEmitOffload(*module, emitCtx);
+  OffloadEmitContext emitCtx{options, module->getLoc(), EmitAs::OBJECT};
+  auto artifactOr = plain.lowerAndEmitOffload(*module, emitCtx);
   EXPECT_TRUE(artifactOr.isError());
 }
 

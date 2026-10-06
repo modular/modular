@@ -690,7 +690,7 @@ class TestImageFlags:
             )
 
     def test_rejects_unknown_image_turn(self) -> None:
-        """Rejected by the ImageTurn literal itself, so there is no hand-rolled
+        """Rejected by the TurnSelector literal itself, so there is no hand-rolled
         check to keep in sync with the type.
 
         Goes through ``model_validate`` rather than the constructor: mypy now

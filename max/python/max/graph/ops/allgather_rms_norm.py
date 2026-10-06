@@ -116,22 +116,20 @@ def _validate_ag_rms_norm(
             "allgather_rms_norm requires group_size to evenly divide the "
             f"number of input tensors. Got: {group_size=} and {num_devices=}"
         )
-    # Only axis 0 (gathered) may differ across shards; other dims must match
-    # within a group. Axis 0 MUST stay exempt: the shards are a reduce-scatter
-    # residual, whose ragged binning gives each group-local rank a structurally
-    # different symbolic dim (`(S + (g-1-lr)) // g`), so they never compare
-    # equal. Groups are independent collectives (DP replicas) and may differ
-    # from each other in any dim.
-    for group_start in range(0, num_devices, group_size):
-        group_inputs = inputs[group_start : group_start + group_size]
-        for t in group_inputs[1:]:
-            for i in range(1, group_inputs[0].shape.rank):
-                if t.shape[i] != group_inputs[0].shape[i]:
-                    raise ValueError(
-                        "allgather_rms_norm requires the same shape in all "
-                        "dimensions except axis 0 (rows) across the input "
-                        f"shards of each group. Got: {inputs=}"
-                    )
+    # Only axis 0 (gathered) may differ across shards. Axis 0 MUST stay
+    # exempt: the shards are a reduce-scatter residual, whose ragged binning
+    # gives each group-local rank a structurally different symbolic dim
+    # (`(S + (g-1-lr)) // g`), so they never compare equal. The other dims
+    # must match across the whole world, not just within a group: the kernel
+    # sizes every group's windows and fuse gate from device 0's columns.
+    for t in inputs[1:]:
+        for i in range(1, inputs[0].shape.rank):
+            if t.shape[i] != inputs[0].shape[i]:
+                raise ValueError(
+                    "allgather_rms_norm requires the same shape in all "
+                    "dimensions except axis 0 (rows) across every input "
+                    f"shard, including across groups. Got: {inputs=}"
+                )
     devices = [t.device for t in inputs]
     if len(set(devices)) < num_devices:
         raise ValueError(
@@ -167,9 +165,10 @@ def allgather_rms_norm(
     differ, so the paths agree only to RMSNorm ULP tolerance.
 
     Args:
-        inputs: The input row shards to gather, one per device. Within a group
-            (see ``group_size``) only axis 0 may differ; different groups are
-            independent collectives and may differ in any dim.
+        inputs: The input row shards to gather, one per device. Only axis 0
+            may differ between shards, within a group (see ``group_size``) or
+            across groups; the fused kernel sizes every group from device 0's
+            column count.
         signal_buffers: Device buffer values used for synchronization.
         gammas: RMSNorm gamma weights, one per device (input dtype, length
             ``cols``).
@@ -267,7 +266,8 @@ def allgather_rms_norm_quant_mxfp8(
     and element count, permuted bytes, so it dequants wrongly without erroring.
 
     Args:
-        inputs: The input row shards to gather, one per device.
+        inputs: The input row shards to gather, one per device. Only axis 0
+            may differ between shards, within or across groups.
         signal_buffers: Device buffer values used for synchronization.
         gammas: RMSNorm gamma weights, one per device.
         epsilon: Numerical stability epsilon for RMSNorm.
@@ -389,7 +389,8 @@ def allgather_rms_norm_quant_mxfp6(
     and element count, permuted bytes, so it dequants wrongly without erroring.
 
     Args:
-        inputs: The input row shards to gather, one per device.
+        inputs: The input row shards to gather, one per device. Only axis 0
+            may differ between shards, within or across groups.
         signal_buffers: Device buffer values used for synchronization.
         gammas: RMSNorm gamma weights, one per device.
         epsilon: Numerical stability epsilon for RMSNorm.

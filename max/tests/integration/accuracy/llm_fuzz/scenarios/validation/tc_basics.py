@@ -69,6 +69,7 @@ class TCBasics(BaseScenario):
                 "required": ["city"],
                 "additionalProperties": False,
             },
+            strict=True,
         )
         stock_tool = make_tool(
             "get_stock_price",
@@ -724,6 +725,7 @@ class TCBasics(BaseScenario):
                     "required": [],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             resp = await loop.run_in_executor(
                 None,
@@ -802,6 +804,7 @@ class TCBasics(BaseScenario):
                     "required": ["config"],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             resp = await loop.run_in_executor(
                 None,

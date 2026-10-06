@@ -274,7 +274,7 @@ def test_cross_replica_gpu_prefix_cache_hit() -> None:
 # host/disk tier: that tier is now the Rust ``rust_tiered`` connector, whose pyo3
 # extension may only be depended on from an internal-only package. Its tier
 # metrics and host/disk residency coverage lives in
-# ``internal/dkv/test_rust_tiered_connector_gpu.py``; the shared-connector DP
+# ``internal/dkv/test_tiered_connector_gpu.py``; the shared-connector DP
 # wiring stays covered by ``test_cross_replica_gpu_prefix_cache_hit`` above.
 
 

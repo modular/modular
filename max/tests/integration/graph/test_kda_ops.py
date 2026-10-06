@@ -18,8 +18,7 @@ state pool at slot ``state_indices[batch_item]``, mirroring the
 slot-indexed Gated DeltaNet ops (`test_gated_delta_ops.py`). These tests
 exercise the graph-compiler registration end to end — dispatch across both
 compiled head dimensions, tensor binding, and the mutable-buffer binding —
-which the direct-launch Mojo tests under
-``max/kernels/test/gpu/state_space`` cannot catch. They verify:
+which the direct-launch Mojo KDA tests cannot catch. They verify:
 
 * per-token output against an fp64 NumPy oracle of the recurrence;
 * in-place mutation of the pool slots named in ``state_indices``, also

@@ -572,7 +572,7 @@ ParseResult KGEN::parseI1Flag(AsmParser &p, TypedAttr &value,
     value = p.getBuilder().getBoolAttr(false);
     return success();
   }
-  if (failed(p.parseLess())) {
+  if (failed(p.parseOptionalLess())) {
     value = p.getBuilder().getBoolAttr(true);
     return success();
   }
@@ -1721,6 +1721,12 @@ bool KGEN::isTypeExprType(Type type) {
 }
 
 bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
+
+std::optional<ArrayRef<TypedAttr>> KGEN::getIdentityClass(TypedAttr prop) {
+  if (auto identical = sugarDynCast<ParamIdenticalAttr>(prop))
+    return identical.getOperands();
+  return std::nullopt;
+}
 
 std::optional<std::pair<TypedAttr, TypedAttr>>
 KGEN::getIdentityProposition(TypedAttr prop) {

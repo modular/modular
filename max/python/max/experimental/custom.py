@@ -547,9 +547,8 @@ class CustomOp:
             "parameters can appear in a dim"
         )
 
-    def _check_unbound_outputs(self) -> None:
+    def _check_unbound_outputs(self, library: KernelLibrary) -> None:
         """Requires a shape function for any output dim no input binds."""
-        has_shape_function: bool | None = None
         first_seen: dict[str, tuple[int, int]] = {}
         for i, j, dim, symbol in self._unbound_output_symbols():
             if not isinstance(dim, Symbol):
@@ -560,9 +559,7 @@ class CustomOp:
                 )
             # GEX-2198: lift once the compiler shares one shape call.
             self._check_symbol_used_once(first_seen, i, j, dim)
-            if has_shape_function is None:
-                has_shape_function = self._has_shape_function()
-            if not has_shape_function:
+            if not library.has_shape_function(self.name):
                 raise ValueError(
                     f"kernel {self.name!r} declares data-dependent "
                     f"output {i} dim {symbol.name!r} but registers "
@@ -653,11 +650,31 @@ class CustomOp:
         return sorted(names)
 
     @in_default_mlir_context
-    def _has_shape_function(self) -> bool:
-        """Whether the kernel (overlay included) registers a shape function."""
+    def _resolve_kernel(self) -> KernelLibrary:
+        """Loads the declaration's own packages and requires the kernel in them.
+
+        Checking here rather than at the first call keeps a neighbor's
+        extensions, already imported into the shared staging graph, from
+        masking a declaration that omitted its own.
+
+        Returns:
+            The loaded library (``extensions`` plus the process-global
+            overlay).
+
+        Raises:
+            ValueError: If no loaded package defines the kernel.
+        """
         library = KernelLibrary()
         library.load_paths(_resolved_custom_extensions(self.extensions))
-        return library.has_shape_function(self.name)
+        if self.name in library:
+            return library
+        searched = ", ".join(str(p) for p in library.library_paths()) or "none"
+        raise ValueError(
+            f"custom op {self.name!r}: no kernel named {self.name!r} in the "
+            f"declared custom_extensions (searched: {searched}); pass the "
+            "Mojo package that registers it, since one op's extensions are "
+            "not visible to another's declaration"
+        )
 
     def __getitem__(
         self, params: Mapping[str, bool | int | str | DType | None]
@@ -925,8 +942,9 @@ def declare(
 ) -> CustomOp:
     """Declares a custom op from its signature.
 
-    Validates the signature and compiles any Mojo source package once, here,
-    rather than on every call.
+    Validates the signature, compiles any Mojo source package, and resolves
+    the kernel against ``custom_extensions`` once, here, rather than on
+    every call.
 
     Args:
         name: The registered kernel symbol.
@@ -950,7 +968,9 @@ def declare(
         An immutable :class:`CustomOp`.
 
     Raises:
-        ValueError: If ``inputs`` or ``outputs`` is empty.
+        ValueError: If ``inputs`` or ``outputs`` is empty, or if neither
+            ``custom_extensions`` nor the process-global overlay registers
+            ``name``.
         TypeError: If a dim names a symbol that is neither a :class:`Symbol`
             nor a :class:`Param`.
         MojoCompilationError: If a source package fails to compile.
@@ -980,7 +1000,7 @@ def declare(
         pinned,
     )
     op._check_signature()
-    op._check_unbound_outputs()
+    op._check_unbound_outputs(op._resolve_kernel())
     # Anything sharing a content token declares the same kernel, parameters
     # and signature, so it is interchangeable with this op for every purpose
     # a resolved op is read for.

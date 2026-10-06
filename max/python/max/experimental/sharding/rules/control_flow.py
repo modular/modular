@@ -21,7 +21,6 @@ from typing import Any
 
 from max.experimental.sharding import (
     DeviceMapping,
-    PlacementMapping,
 )
 from max.experimental.sharding.types import TensorLayout
 from max.graph.type import Type
@@ -73,7 +72,7 @@ def _while_loop_finalize(
         for v in items:
             if isinstance(v, TensorLayout):
                 m = mappings[m_idx]
-                assert isinstance(m, PlacementMapping)
+                assert isinstance(m, DeviceMapping)
                 suggested.append(m)
                 out_mappings.append(m)
                 m_idx += 1

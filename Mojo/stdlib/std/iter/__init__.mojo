@@ -628,13 +628,12 @@ def zip[
     """
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
-    @__parameter
-    def init_elt[idx: Int](var elt: iterables.Ts[idx]):
+    def init_elt[idx: Int](var elt: iterables.Ts[idx]) {mut res}:
         Pointer(to=res._values[idx]).unsafe_write(
             rebind_var[type_of(res._values[idx])](iter(elt^))
         )
 
-    iterables^.consume_elements[init_elt]()
+    iterables^.consume_elements(init_elt)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -981,13 +980,12 @@ def chain[
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
     res._idx = 0
 
-    @__parameter
-    def init_elt[idx: Int](var elt: iterables.Ts[idx]):
+    def init_elt[idx: Int](var elt: iterables.Ts[idx]) {mut res}:
         Pointer(to=res._iterators[idx]).unsafe_write(
             rebind_var[type_of(res._iterators[idx])](iter(elt^))
         )
 
-    iterables^.consume_elements[init_elt]()
+    iterables^.consume_elements(init_elt)
 
 
 # ===-----------------------------------------------------------------------===#

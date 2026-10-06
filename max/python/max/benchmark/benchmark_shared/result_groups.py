@@ -63,7 +63,25 @@ class SummaryGroup(BaseModel):
     mean_tpot_ms: float | None = None
     mean_itl_ms: float | None = None
     total_generated_outputs: int | None = None
+
+
+class RequestMixGroup(BaseModel):
+    """Realized share of requests carrying each optional payload feature.
+
+    Checks a run's traffic against the production mix it is calibrated to,
+    rather than describing its performance. Each rate is over the measured
+    requests; a response-side rate is over the requests that offered the
+    feature.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
     constrained_request_rate: float | None = None
+    constrained_conformance_rate: float | None = None
+    tool_request_rate: float | None = None
+    tool_call_response_rate: float | None = None
+    image_request_rate: float | None = None
+    lora_request_rate: float | None = None
 
 
 class GpuStatsGroup(BaseModel):
@@ -143,6 +161,7 @@ class BenchmarkResultGroups(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     summary: SummaryGroup
+    request_mix: RequestMixGroup | None = None
     gpu_stats: GpuStatsGroup | None = None
     latency_stats: LatencyStatsGroup | None = None
     throughput_stats: ThroughputStatsGroup | None = None

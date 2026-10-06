@@ -175,7 +175,7 @@ struct TargetAccelerator[
     def __init__(out self):
         pass
 
-    comptime current_accelerator = Self.from_arch[_accelerator_arch()]
+    comptime default_accelerator = Self.from_arch[_accelerator_arch()]
 
     # Note:
     #   These parametric aliases can't instead be a static methods like:
@@ -390,7 +390,7 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
         return Self.from_name[target._arch()]()
 
     @staticmethod
-    def current_accelerator() -> Self:
+    def default_accelerator() -> Self:
         """Gets `GPUInfo` for the default target accelerator.
 
         Returns:
@@ -555,7 +555,7 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
         " (Radeon 6900), gfx1033 (Van Gogh), gfx1100 (Radeon 7900), gfx1101"
         " (Radeon 7800), gfx1102 (Radeon 7600), gfx1103 (Radeon 780M),"
         " gfx1150/gfx1151/gfx1152 (Radeon 8xx), gfx1200 (Radeon 9060), gfx1201"
-        " (Radeon 9070)"
+        " (Radeon 9070), gfx1250 (MI455X)"
     )
     comptime apple_archs = (
         "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"

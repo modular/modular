@@ -417,12 +417,16 @@ class SequentialDriver(
         enable_structured_output: bool = False,
         use_greedy_acceptance: bool = False,
         num_draft_steps: int | None = None,
-        draft_proposal: Literal["argmax", "sampled"] = "argmax",
         vocab_size: int | None = None,
     ) -> None:
         super().__init__()
         self._target = target
         self._proposer = proposer
+        draft_proposal: Literal["argmax", "sampled"] = (
+            speculative_config.draft_proposal
+            if speculative_config is not None
+            else "argmax"
+        )
         self._draft_proposal = draft_proposal
         self._vocab_size = vocab_size
         self._input_spec = replace(
@@ -484,8 +488,10 @@ class SequentialDriver(
         if draft_proposal == "sampled":
             if vocab_size is None:
                 raise ValueError(
-                    "vocab_size is required when draft_proposal='sampled':"
-                    " draft_probs_full's trailing dim has to be static"
+                    f"{type(self).__name__} does not support"
+                    " draft_proposal='sampled': it does not pass SequentialDriver"
+                    " the target vocab_size, which draft_probs_full's trailing"
+                    " dim needs statically"
                 )
             if use_greedy_acceptance:
                 raise ValueError(
@@ -778,9 +784,8 @@ class SequentialDriver(
         """
         device = batch.device0
         num_steps = batch.num_draft_tokens
-        zero_u32 = ops.constant(0, DType.uint32, device=device)
         is_prefill = (
-            _shape_to_scalar(num_steps, device, dtype=DType.uint32) == zero_u32
+            _shape_to_scalar(num_steps, device, dtype=DType.uint32) == 0
         ).broadcast_to(["batch_size"])
 
         # The extra MAGIC column makes the reduction well-defined at K == 0.
@@ -795,9 +800,9 @@ class SequentialDriver(
             ops.sum((padded_drafts == magic_token).cast(DType.int32), axis=-1),
             axis=-1,
         )
-        num_steps_plus_one = _shape_to_scalar(
-            num_steps, device, dtype=DType.int32
-        ) + ops.constant(1, DType.int32, device=device)
+        num_steps_plus_one = (
+            _shape_to_scalar(num_steps, device, dtype=DType.int32) + 1
+        )
         is_dummy_draft = num_magic_tokens == num_steps_plus_one.broadcast_to(
             ["batch_size"]
         )

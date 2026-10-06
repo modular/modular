@@ -524,6 +524,13 @@ def KGEN_QuoteAttr : KGEN_ExprAttr<"Quote", "quote",
 
     // A quote is a "deferred scope"
     ArrayRef<Type> getInputParamTypes() { return {};}
+
+    /// Returns the quoted parameter if `value` is a quote, otherwise `value`.
+    static TypedAttr unquote(TypedAttr value) {
+      if (auto quoted = ::llvm::dyn_cast_or_null<QuoteAttr>(value))
+        return quoted.getQuotedParam();
+      return value;
+    }
   }];
 }
 
@@ -597,20 +604,17 @@ def KGEN_TypeConformToTraitAttr : KGENAttr<"TypeConformsToTrait", "type_conforms
   let summary = "check whether the checked types conform to specific traits";
   let description = [{
     This represents a flag to indicate that every type in `typeValue` conforms
-    to the specified traits. The stored checked operand is normalized to a
-    `param_list<!kgen.type>` value.
+    to the specified traits. `get` normalizes the checked operand: it strips an
+    outer upcast, folds an empty pack to `True`, unwraps a one-element pack,
+    and splits a wider pack into an AND of single conformances.
 
     Example:
 
     ```mlir
     #kgen.type_conforms_to_trait<
-        #kgen.param_list<#kgen.param.decl.ref<"T"> : !kgen.type>,
+        #kgen.param.decl.ref<"T"> : !kgen.type,
         #kgen.type<typevalue<#kgen.trait_ref<[@Movable, @Copyable]>>, type> : !kgen.type>
     ```
-
-    For the common case of a single checked type value, the operand is printed
-    in sugared form: the 1-element `param_list` literal (and any outer upcast
-    that simply retypes its element to `!kgen.type`) is stripped.
   }];
 
   let assemblyFormat =

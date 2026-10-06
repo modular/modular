@@ -85,8 +85,8 @@ bool Token::isStatementKeyword() const {
   case kw_match:
   case kw_case:
   case kw___match:
-  case kw_async:
-  case kw_await:
+  case kw___async:
+  case kw___await:
   case kw_global:
   case kw_nonlocal:
     return true;
@@ -434,6 +434,9 @@ void Lexer::lexIdentifierOrKeyword(const char *tokStart, ssize_t indentation) {
   Token::Kind kind = llvm::StringSwitch<Token::Kind>(spelling)
 #define TOK_KEYWORD(SPELLING) .Case(#SPELLING, Token::kw_##SPELLING)
 #include "Mojo/MojoParser/TokenKinds.def"
+                         // Unprefixed spellings; the parser warns on them.
+                         .Case("async", Token::kw___async)
+                         .Case("await", Token::kw___await)
                          .Default(Token::identifier);
 
   formToken(kind, tokStart, indentation);

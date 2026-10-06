@@ -171,6 +171,15 @@ private:
       return &shared.getTopLevelDecl();
 
     StringAttr rootAttr = symbol.getRootReference();
+    for (auto st : shared.getTopLevelDecl().lookupInCurrentScope(rootAttr)) {
+      // This must be a recognizable struct emitted for closures.
+      assert(rootAttr.getValue().starts_with(kClosurePrefix) ||
+             rootAttr.getValue().starts_with(kClosureExtensionPrefix) ||
+             rootAttr.getValue().starts_with(kClosureInflatedPrefix));
+      assert(isa<StructDeclOp>(st->getIfOperation()));
+      return st;
+    }
+
     auto nestedRefs = symbol.getNestedReferences().drop_back();
     auto it = resolvedSymbolParents.find({rootAttr, nestedRefs});
     if (it != resolvedSymbolParents.end())
@@ -332,24 +341,14 @@ struct SharedState::Impl {
   /// The parser configuration used when loading bytecode.
   mlir::ParserConfig bytecodeParserContext;
 
-  /// Closure traits have a unique generator type and are global to the module.
-  /// Cache previously built traits.
-  DenseMap<GeneratorType, ASTDecl *> closureTraits;
-
   /// The decl corresponding to the universal parametric closure trait.
   ASTDecl *parametricClosureTrait = nullptr;
-
-  /// Stateless closure extension structs, keyed by the (source trait,
-  /// target trait) operation pair and the owning file module.
-  DenseMap<std::pair<std::pair<Operation *, Operation *>, ASTDecl *>, ASTDecl *>
-      closureExtensions;
 
   /// The capture values and decls associated with their enclosing nested
   /// function. This data structure is populated during the parsing of the FnOp
   /// the key ASTDecl wraps.
   DenseMap<ASTDecl *, llvm::MapVector<StringRef, Capture>> capturesInScope;
   DenseMap<ASTDecl *, CaptureConvention> captureConventionForScope;
-  DenseMap<Operation *, ClosureParamCaptures> closureParamCaptures;
 
   /// Function type conversion thunks in each module.
   // The key is an ArrayAttr containing two elements:
@@ -362,11 +361,17 @@ struct SharedState::Impl {
   //   "clarifying parameters", see TAPCPTTT).
   DenseMap<Attribute, FnOp> conversionThunks;
 
-  /// Parametric-closure extension structs, keyed on the (source, target)
-  /// closure instances the extension bridges between.
-  DenseMap<std::pair<TraitSymbolAttr, TraitSymbolAttr>, StructDeclOp>
-      paramClosureExtensions;
-  DenseMap<FnTypeGeneratorType, StructDeclOp> inflatedClosureStructs;
+  /// Parametric-closure extension structs, keyed on their `closureThunkKey`:
+  /// the pair of signatures the extension bridges between.
+  DenseMap<Attribute, StructDeclOp> paramClosureExtensions;
+
+  /// Inflated closure wrapper structs, keyed on their `closureThunkKey`: the
+  /// signature the wrapper inflates.
+  DenseMap<Attribute, StructDeclOp> inflatedClosureStructs;
+
+  /// Closure `__device_type` companion structs, keyed on their
+  /// `closureThunkKey`: the name of the storage struct they mirror.
+  DenseMap<Attribute, StructDeclOp> closureDeviceTypeStructs;
 
   /// This caches non-trivial implicit convertibility checks from one type to
   /// another.
@@ -1334,10 +1339,8 @@ SharedState::lookupAndResolveMangledDecl(StringAttr leafRef, SMLoc loc,
   // "extension:MyStruct, so look up using that kind of name.
   StringAttr name;
   if (auto *extOp = dyn_cast_or_null<ExtensionDeclOp>(&declOp)) {
-    StringAttr baseName = extOp->getTargetStruct().value().getLeafReference();
-    std::string extensionName =
-        extensionsScopeMarker.getValue().str() + baseName.getValue().str();
-    name = StringAttr::get(extOp->getContext(), extensionName);
+    name = getExtensionName(
+        extOp->getTargetStruct().value().getLeafReference().getValue());
   } else {
     name = declOp.getDeclName();
   }
@@ -1403,6 +1406,18 @@ ASTDecl *SharedState::resolveAndGetFuncDecl(SymbolRefAttr symbol, SMLoc loc) {
               symbol, loc)))
     return nullptr;
   return declResolver->getDeclForFuncSymbol(symbol);
+}
+
+ASTDecl *SharedState::resolveAndGetTypeDecl(SymbolRefAttr symbol, SMLoc loc) {
+  if (!symbol)
+    return nullptr;
+  if (ASTDecl *decl = declResolver->getDeclForTypeSymbolIfExists(symbol))
+    return decl;
+  if (failed(
+          getImpl().bytecodeRefResolutionWalker.resolveBytecodeSymbolSignature(
+              symbol, loc)))
+    return nullptr;
+  return declResolver->getDeclForTypeSymbolIfExists(symbol);
 }
 
 LogicalResult
@@ -1623,22 +1638,10 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
           })
           .Case([&](ExtensionDeclOp op) {
             SymbolRefAttr targetStruct = op.getTargetStruct().value();
-            StringAttr baseName = targetStruct.getLeafReference();
-            // Extensions are registered under two names:
-            // - "extension:MyStruct", for looking for all extensions for a
-            //   given MyStruct
-            // - "extension:", for looking for all extensions for any struct
-            //   in a given scope (useful for importing).
-            // Register this extension under both names now. The "extension:"
-            // prefix and marker are single-sourced from extensionsScopeMarker.
-            // TODO(MOCO-522): Arcana docs on this!
-            std::string extensionName = extensionsScopeMarker.getValue().str() +
-                                        baseName.getValue().str();
-            StringAttr extensionNameAttr =
-                StringAttr::get(op.getContext(), extensionName);
-            ASTDecl &extensionDecl = addDeclForOp(op, extensionNameAttr);
-            declResolver->aliasDeclInParent(&extensionDecl,
-                                            extensionsScopeMarker);
+            ASTDecl &extensionDecl = addDeclForOp(
+                op,
+                getExtensionName(targetStruct.getLeafReference().getValue()));
+            declResolver->registerExtensionDecl(extensionDecl);
           })
           .Case([&](AliasDeclOp op) {
             addDeclForOp(op, StringAttr::get(op.getContext(),
@@ -1783,19 +1786,6 @@ static void adjustTokenEndPoint(SharedState &shared, SMLoc &loc) {
   loc = SMLoc::getFromPointer(loc.getPointer() + tokenSize);
 }
 
-ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
-                                              FnTypeGeneratorType sig) {
-  auto [key, numPrependedCaptures] = closureEmitter->getClosureTraitKey(sig);
-  auto ptr = impl->closureTraits.find(key);
-  if (ptr == impl->closureTraits.end()) {
-    auto result = closureEmitter->createClosureTrait(moduleDecl, sig, key,
-                                                     numPrependedCaptures, loc);
-    impl->closureTraits.insert({key, result});
-    return result;
-  }
-  return ptr->second;
-}
-
 ASTDecl *SharedState::getUniversalParametricClosureTrait() {
   if (!impl->parametricClosureTrait) {
     auto *closureTrait = IREmitter::createParametricClosureTrait(*this);
@@ -1826,20 +1816,6 @@ bool SharedState::isUniversalParametricClosureTrait(TraitSymbolAttr symbol) {
          symbol.getSymbol();
 }
 
-ASTDecl *SharedState::getOrCreateExtension(SMLoc loc, TraitDeclOp sourceTrait,
-                                           TraitDeclOp targetTrait,
-                                           ASTType sourceMetaType,
-                                           ASTDecl *moduleDecl) {
-  auto key = std::make_pair(
-      std::make_pair(sourceTrait.getOperation(), targetTrait.getOperation()),
-      moduleDecl);
-  auto &extension = impl->closureExtensions[key];
-  if (!extension)
-    extension = closureEmitter->createExtensionStruct(
-        *moduleDecl, sourceTrait, targetTrait, sourceMetaType, loc);
-  return extension;
-}
-
 FnOp SharedState::getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
                                            SMLoc useLoc) {
   FnOp &thunk = impl->conversionThunks[key];
@@ -1848,22 +1824,31 @@ FnOp SharedState::getOrCreateFunctionThunk(Attribute key, CreateThunkFn create,
   return thunk;
 }
 
-StructDeclOp SharedState::getOrCreateParamClosureExtension(
-    TraitSymbolAttr srcClosureInst, TraitSymbolAttr tgtClosureInst,
-    CreateParamClosureExtensionFn create) {
-  StructDeclOp &extension =
-      impl->paramClosureExtensions[{srcClosureInst, tgtClosureInst}];
+StructDeclOp
+SharedState::getOrCreateParamClosureExtension(Attribute key,
+                                              CreateClosureStructFn create) {
+  StructDeclOp &extension = impl->paramClosureExtensions[key];
   if (!extension)
     extension = create();
   return extension;
 }
 
-StructDeclOp SharedState::getOrCreateInflatedClosureForSig(
-    FnTypeGeneratorType fnSig, CreateParamClosureExtensionFn create) {
-  StructDeclOp &inflated = impl->inflatedClosureStructs[fnSig];
+StructDeclOp
+SharedState::getOrCreateInflatedClosure(Attribute key,
+                                        CreateClosureStructFn create) {
+  StructDeclOp &inflated = impl->inflatedClosureStructs[key];
   if (!inflated)
     inflated = create();
   return inflated;
+}
+
+StructDeclOp
+SharedState::getOrCreateClosureDeviceType(Attribute key,
+                                          CreateClosureStructFn create) {
+  StructDeclOp &deviceType = impl->closureDeviceTypeStructs[key];
+  if (!deviceType)
+    deviceType = create();
+  return deviceType;
 }
 
 const llvm::MapVector<StringRef, Capture> &
@@ -1899,53 +1884,6 @@ bool SharedState::captureInstanceExistsInScope(ASTDecl &scope,
     return false;
   auto capturePtr = ptr->second.find(spelling);
   return capturePtr != ptr->second.end();
-}
-
-ClosureParamCaptures *SharedState::getClosureParamCapturesForOp(Operation *op) {
-  auto ptr = getImpl().closureParamCaptures.find(op);
-  if (ptr == getImpl().closureParamCaptures.end())
-    return nullptr;
-  return &ptr->second;
-}
-
-ArrayRef<ClosureParamCapture>
-SharedState::lookupClosureCaptureFromOp(Operation *startOp,
-                                        StringAttr closureName) {
-  auto lookup = [&](Operation *op) -> ArrayRef<ClosureParamCapture> {
-    if (ClosureParamCaptures *captures = getClosureParamCapturesForOp(op)) {
-      auto ptr = captures->find(closureName);
-      if (ptr != captures->end())
-        return ptr->second;
-    }
-    return {};
-  };
-
-  StructDeclOp structScope;
-  for (Operation *op = startOp; op; op = op->getParentOp()) {
-    if (isa<FnOp>(op)) {
-      if (ArrayRef<ClosureParamCapture> captures = lookup(op);
-          !captures.empty())
-        return captures;
-    } else if (auto structOp = dyn_cast<StructDeclOp>(op)) {
-      structScope = structScope ? structScope : structOp;
-    }
-  }
-  if (structScope)
-    return lookup(structScope);
-  return {};
-}
-
-void SharedState::setClosureParamCaptures(
-    ASTDecl &functionDecl, ClosureParamCaptures closureParamCaptures) {
-  getImpl().closureParamCaptures[functionDecl.getIfOperation()] =
-      std::move(closureParamCaptures);
-}
-
-void SharedState::addClosureParamCaptures(
-    ASTDecl &functionDecl, StringAttr closureName,
-    SmallVector<ClosureParamCapture> captures) {
-  getImpl().closureParamCaptures[functionDecl.getIfOperation()][closureName] =
-      std::move(captures);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2210,13 +2148,12 @@ void SharedState::notifyListenerOnParameterBinding(ArrayRef<ASTDecl *> decls,
 
 /// These two methods are used to memoize whether a type is implicitly
 /// convertible to another type, which includes overload resolution etc.
-std::optional<bool> SharedState::getCachedImplicitConvertibility(ASTType from,
-                                                                 ASTType to) {
+TriBool SharedState::getCachedImplicitConvertibility(ASTType from, ASTType to) {
   DenseMap<std::pair<Type, Type>, bool> &cache =
       getImpl().cachedImplicitConvertibility;
   auto it = cache.find({from, to});
   if (it == cache.end())
-    return {};
+    return TriBool::unknown();
 
 #ifndef NDEBUG
   // If this is the 64th convertibility hit, allow it to fail so we can detect
@@ -2224,9 +2161,9 @@ std::optional<bool> SharedState::getCachedImplicitConvertibility(ASTType from,
   // a small bit a paranoia to make it possible to track down subtle bugs that
   // may happen in the future.
   if ((cache.size() & 63) == 0)
-    return {};
+    return TriBool::unknown();
 #endif
-  return it->second;
+  return TriBool::fromBool(it->second);
 }
 void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
                                               bool isConvertible) {
@@ -2242,14 +2179,14 @@ void SharedState::cacheImplicitConvertibility(ASTType from, ASTType to,
 }
 
 /// These two methods memoize assumption-free nominal trait-conformance results.
-std::optional<bool>
-SharedState::getCachedNominalConformance(const ASTDecl *decl, TraitType trait,
-                                         ASTType concreteType) {
+TriBool SharedState::getCachedNominalConformance(const ASTDecl *decl,
+                                                 TraitType trait,
+                                                 ASTType concreteType) {
   DenseMap<std::tuple<const ASTDecl *, Type, Type>, bool> &cache =
       getImpl().nominalConformanceCache;
   auto it = cache.find({decl, Type(trait), Type(concreteType)});
   if (it == cache.end())
-    return {};
+    return TriBool::unknown();
 
 #ifndef NDEBUG
   // Paranoia (mirrors the convertibility cache above): whenever the cache size
@@ -2257,9 +2194,9 @@ SharedState::getCachedNominalConformance(const ASTDecl *decl, TraitType trait,
   // store-side assert can catch the cache drifting from ground truth if the
   // result ever starts depending on state not in the key.
   if ((cache.size() & 63) == 0)
-    return {};
+    return TriBool::unknown();
 #endif
-  return it->second;
+  return TriBool::fromBool(it->second);
 }
 void SharedState::cacheNominalConformance(const ASTDecl *decl, TraitType trait,
                                           ASTType concreteType, bool conforms) {

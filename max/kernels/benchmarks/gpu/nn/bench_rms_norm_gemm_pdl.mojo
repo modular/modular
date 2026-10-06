@@ -178,13 +178,11 @@ def bench_rms_norm_gemm_pdl[
     ctx.enqueue_copy(a_raw_dev, a_host)
     ctx.enqueue_copy(gamma_dev, gamma_host)
 
-    var a_raw = TileTensor(a_raw_dev, row_major(Coord(num_rows, Idx[num_cols])))
-    var a_normed = TileTensor(
-        a_normed_dev, row_major(Coord(num_rows, Idx[num_cols]))
-    )
-    var gamma = TileTensor(gamma_dev, row_major(Coord(Idx[num_cols])))
-    var c_out = TileTensor(c_dev, row_major(Coord(num_rows, Idx[gemm_n])))
-    var c_ref = TileTensor(c_ref_dev, row_major(Coord(num_rows, Idx[gemm_n])))
+    var a_raw = TileTensor(a_raw_dev, row_major(num_rows, Idx[num_cols]))
+    var a_normed = TileTensor(a_normed_dev, row_major(num_rows, Idx[num_cols]))
+    var gamma = TileTensor(gamma_dev, row_major(Idx[num_cols]))
+    var c_out = TileTensor(c_dev, row_major(num_rows, Idx[gemm_n]))
+    var c_ref = TileTensor(c_ref_dev, row_major(num_rows, Idx[gemm_n]))
     var norm_shape = Index(num_rows, num_cols)
 
     # `[N, K]` (transpose_b) with BOTH dims static, as the SM100 kernel needs.
@@ -192,7 +190,7 @@ def bench_rms_norm_gemm_pdl[
     # each iteration streams cold weights -- the cost the prefetch must hide.
     comptime WeightType = TileTensor[
         dtype,
-        type_of(row_major(Coord(Idx[gemm_n], Idx[num_cols]))),
+        type_of(row_major(Idx[gemm_n], Idx[num_cols])),
         ImmutAnyOrigin,
     ]
 
@@ -259,7 +257,7 @@ def bench_rms_norm_gemm_pdl[
                     rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
                         cb_weights.offset_ptr(cache_iter)
                     ),
-                    row_major(Coord(Idx[gemm_n], Idx[num_cols])),
+                    row_major(Idx[gemm_n], Idx[num_cols]),
                 ),
                 ctx_inner,
             )

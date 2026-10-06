@@ -18,8 +18,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 
-from max.pipelines.lib import TextTokenizer
-from max.pipelines.lib.tokenizer import resolve_single_special_token
+from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import (
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
@@ -29,9 +28,6 @@ from .encoding_dsv4 import encode_messages
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
-
-_THINK_START_TOKEN = "<think>"
-_THINK_END_TOKEN = "</think>"
 
 
 def render_prompt(
@@ -106,7 +102,7 @@ def render_prompt(
         raise ValueError(f"DeepSeek-V4 prompt encoding failed: {e}") from e
 
 
-class DeepseekV4Tokenizer(TextTokenizer):
+class DeepseekV4Tokenizer(ReasoningTextTokenizer):
     """:class:`TextTokenizer` for DeepSeek-V4, whose checkpoint ships no chat template.
 
     Chat prompts are rendered by the checkpoint's reference encoder
@@ -121,22 +117,6 @@ class DeepseekV4Tokenizer(TextTokenizer):
         **kwargs,
     ) -> None:
         super().__init__(model_path, pipeline_config, **kwargs)
-        self._reasoning_start_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_START_TOKEN
-        )
-        self._reasoning_end_token_id: int = resolve_single_special_token(
-            self.delegate, _THINK_END_TOKEN
-        )
-
-    @property
-    def reasoning_start_token_id(self) -> int:
-        """Token id of ``<think>``."""
-        return self._reasoning_start_token_id
-
-    @property
-    def reasoning_end_token_id(self) -> int:
-        """Token id of ``</think>``."""
-        return self._reasoning_end_token_id
 
     def apply_chat_template(
         self,

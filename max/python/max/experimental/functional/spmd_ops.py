@@ -23,32 +23,39 @@ Each op is an explicit function that:
 from __future__ import annotations
 
 import builtins
+import inspect
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from typing import Any
 
+from max import tree
 from max.driver import CPU, Buffer
 from max.experimental import tensor
 from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     TensorLayout,
+    Unknown,
 )
 from max.experimental.sharding.per_shard_dim import global_dim
 from max.experimental.tensor import Tensor
-from max.graph import ShapeLike, TensorValue, TensorValueLike, Type, ops
+from max.graph import (
+    BufferValue,
+    ShapeLike,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+    Type,
+    ops,
+)
 from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 from max.graph.quantization import QuantizationEncoding
 
-from ..sharding import (
-    ActionSet,
-    PerShard,
-    mode,
-)
-from ..sharding.mode import ShardingError
+from ..sharding import ActionSet, ShardingError
+from ..sharding._auto_reshard import pick_reshard_action
+from ..sharding.action import PerShard
 from ..sharding.rules import (
     argsort_rule,
     as_interleaved_complex_rule,
@@ -112,12 +119,10 @@ from ..sharding.rules import (
 from ._signatures import install_tensor_signature
 from .creation_ops import full_like
 
-# Re-exported; user-facing factory lives in ``max.experimental.sharding``.
 __all__ = [
     "ShardingError",
     "any_distributed",
     "map_tensors",
-    "mode",
     "to_tensors",
 ]
 
@@ -183,12 +188,12 @@ def tensor_to_layout(t: Tensor) -> TensorLayout:
         return TensorLayout(
             t.dtype,
             t.shape,
-            PlacementMapping(t.mesh, t.placements),
+            DeviceMapping(t.mesh, t.placements),
         )
     return TensorLayout(
         t.dtype,
         t.shape,
-        PlacementMapping(DeviceMesh.single(t.device), (Replicated(),)),
+        DeviceMapping(DeviceMesh.single(t.device), (Replicated(),)),
     )
 
 
@@ -242,31 +247,78 @@ def per_shard_dispatch(
         return type(first)(outputs) if multi else outputs[0]
 
 
+def _graph_value(t: Tensor) -> TensorValue | BufferValue:
+    """Returns ``t``'s value in the current graph.
+
+    A buffer, such as a KV cache's blocks, stays a buffer so that ops can
+    write to it.
+    """
+    if isinstance(t._backing_value, BufferValue):
+        return BufferValue(t)
+    return TensorValue(t)
+
+
+def _map_tree_nodes(value: Any, fn: Callable[[Tensor], Any]) -> Any:
+    """Applies ``fn`` to the tensors inside tree nodes such as a KV cache.
+
+    Covers the tree nodes other than lists, tuples and dicts, for example a
+    dataclass. Ops read such a node's tensors by attribute, so they cannot
+    convert them the way they convert a tensor passed to them directly, also
+    inside a list, tuple or dict; those are left for the op.
+    """
+    if isinstance(value, list):
+        return [_map_tree_nodes(v, fn) for v in value]
+    if type(value) is tuple:
+        return tuple(_map_tree_nodes(v, fn) for v in value)
+    if type(value) is dict:
+        return {k: _map_tree_nodes(v, fn) for k, v in value.items()}
+    if hasattr(value, "to_graph_values"):
+        return value.to_graph_values()
+    if not isinstance(value, Tensor) and tree.is_node(value):
+        return tree.map(fn, value, leaf=Tensor)
+    return value
+
+
 def _run_per_shard(
     graph_op: Callable[..., Any],
     args: tuple[Any, ...],
     num_devices: int,
     filtered_kwargs: Mapping[str, Any] | None = None,
 ) -> list[Any]:
-    """Calls ``graph_op`` once per shard with per-rank arg unwrapping."""
+    """Calls ``graph_op`` once per shard with each argument's own shard.
+
+    Tensors are found anywhere in the arguments, keyword arguments and tree
+    nodes such as a KV cache included.
+    """
     per_shard: list[Any] = []
     if filtered_kwargs is None:
         filtered_kwargs = {}
 
     for i in builtins.range(num_devices):
 
-        def _per_rank(t: Tensor, _i: int = i) -> TensorValue:
-            return (
-                TensorValue(t.local_shards[_i])
-                if t.is_distributed
-                else TensorValue(t)
-            )
+        def _shard(value: Any, _i: int = i) -> Any:
+            if isinstance(value, Tensor) and value.is_distributed:
+                return value.local_shards[_i]
+            return value
 
-        shard_args = map_tensors(_per_rank, args)
-        shard_args = tuple(
-            a[i] if isinstance(a, PerShard) else a for a in shard_args
+        def _per_rank(value: Any, _i: int = i) -> Any:
+            if isinstance(value, PerShard):
+                return value[_i]
+            if hasattr(value, "to_graph_values"):
+                return tree.map(_shard, value, leaf=Tensor).to_graph_values()
+            if not isinstance(value, Tensor):
+                return value
+            return _graph_value(_shard(value))
+
+        shard_args, shard_kwargs = tree.map(
+            _per_rank,
+            (args, dict(filtered_kwargs)),
+            leaf=lambda v: (
+                isinstance(v, (Tensor, PerShard))
+                or hasattr(v, "to_graph_values")
+            ),
         )
-        per_shard.append(graph_op(*shard_args, **filtered_kwargs))
+        per_shard.append(graph_op(*shard_args, **shard_kwargs))
     return per_shard
 
 
@@ -299,7 +351,26 @@ def functional(
         active_rule = getattr(wrapper, "rule", None)
         if any_distributed(args) and active_rule is not None:
             return _local_dispatch(graph_op, active_rule, args, kwargs)
+        meshes = [
+            t.mesh
+            for t in tree.leaves((args, kwargs), leaf=Tensor)
+            if isinstance(t, Tensor) and t.is_distributed
+        ]
+        # Device i of every input pairs with device i of the others, e.g. a
+        # CPU mesh's scalars with the accelerator mesh's shards.
+        if len({m.mesh_shape for m in meshes}) > 1:
+            raise ShardingError(
+                "An op without a sharding rule needs all its distributed "
+                f"inputs on meshes of one shape, got {meshes}."
+            )
+        if meshes:
+            mesh = meshes[0]
+            # Without a rule nothing relates the per-device results, so the op
+            # runs on each device's own shards and its result is Unknown.
+            unknown = DeviceMapping(mesh, (Unknown(),) * mesh.ndim)
+            return per_shard_dispatch(graph_op, args, (unknown,), kwargs)
         with ensure_context():
+            args, kwargs = _map_tree_nodes((args, kwargs), _graph_value)
             return to_tensors(graph_op(*args, **kwargs))
 
     # ``Any``-typed alias so attribute writes are dynamic;
@@ -327,20 +398,17 @@ def _local_dispatch(
     kwargs: Mapping[str, Any],
 ) -> Any:
     """Picks one :class:`Action` for this call and applies it."""
-    from max.experimental.sharding._diagnostics import report_reshard
-    from max.experimental.sharding.mode import current_solver
-
     # TODO: keyword-only distributed tensor arguments are not supported.
-    flat_args, filtered_kwargs = _canonicalize_call(graph_op, args, kwargs)
+    flat_args, filtered_kwargs, arg_names = _canonicalize_call(
+        graph_op, args, kwargs
+    )
     layout_args = map_tensors(tensor_to_layout, flat_args)
-    in_layouts = _walk_tensor_layouts(layout_args)
 
-    menu = rule(*layout_args)
-    solver = current_solver()
-    action = solver(menu, in_layouts)
-
-    op_name = getattr(graph_op, "__name__", "<op>")
-    report_reshard(solver, op_name, layout_args, menu, action)
+    action = pick_reshard_action(
+        rule(*layout_args),
+        op_name=getattr(graph_op, "__name__", "<op>"),
+        operand_names=_input_names(arg_names, layout_args),
+    )
     redistributed = _transfer_args(flat_args, action.inputs)
 
     if action.outputs:
@@ -363,21 +431,41 @@ def _canonicalize_call(
     graph_op: Callable[..., Any],
     args: tuple[Any, ...],
     kwargs: Mapping[str, Any],
-) -> tuple[tuple[Any, ...], Mapping[str, Any]]:
-    """Normalizes ``args`` + ``kwargs`` into a positional tuple.
+) -> tuple[tuple[Any, ...], Mapping[str, Any], tuple[str, ...]]:
+    """Binds ``args`` and ``kwargs`` to ``graph_op``'s signature as positionals.
 
-    Binds against ``graph_op``'s signature so kwargs become positional.
-    Falls back to ``args`` when the signature is uninspectable.
+    Returns the positionals, the keyword-only arguments and one name per
+    positional; an uninspectable signature yields ``args`` unnamed.
     """
-    import inspect
-
     sig_source = getattr(graph_op, "graph_op", graph_op)
     try:
-        bound = inspect.signature(sig_source).bind(*args, **kwargs)
+        sig = inspect.signature(sig_source)
+        bound = sig.bind(*args, **kwargs)
         bound.apply_defaults()
-        return tuple(bound.args), bound.kwargs
     except (TypeError, NotImplementedError, ValueError):
-        return args + tuple(kwargs.values()), {}
+        return args + tuple(kwargs.values()), {}, ()
+    names: list[str] = []
+    for name, value in bound.arguments.items():
+        kind = sig.parameters[name].kind
+        if kind is inspect.Parameter.VAR_POSITIONAL:
+            names.extend(f"{name}[{i}]" for i in range(len(value)))
+        elif kind is not inspect.Parameter.KEYWORD_ONLY:
+            names.append(name)
+    return tuple(bound.args), bound.kwargs, tuple(names)
+
+
+def _input_names(
+    arg_names: Sequence[str], layout_args: Sequence[Any]
+) -> tuple[str, ...]:
+    """Names each ``TensorLayout`` leaf, in ``_walk_tensor_layouts`` order."""
+    names: list[str] = []
+    for name, value in zip(arg_names, layout_args, strict=False):
+        leaves = len(_walk_tensor_layouts(value))
+        if leaves == 1:
+            names.append(name)
+        else:
+            names.extend(f"{name}[{i}]" for i in range(leaves))
+    return tuple(names)
 
 
 def _walk_tensors(value: Any) -> Iterable[Tensor]:
@@ -3649,6 +3737,75 @@ Args:
 
 Returns:
     The output values from the final loop iteration.
+"""
+
+
+def _side_stream_graph(
+    inputs: Sequence[TensorValueLike],
+    body_fn: Callable[..., Tensor | Iterable[Tensor]],
+    *,
+    result_types: Sequence[TensorType],
+    stream_id: int = 1,
+) -> list[TensorValue]:
+    """Wrap ``body_fn`` so it sees and returns :class:`Tensor`.
+
+    Mirrors :func:`_while_loop_graph`: ``ops.side_stream`` hands its body
+    :class:`TensorValue` block arguments and expects :class:`TensorValue`
+    results back.
+    """
+
+    def _body(*args: TensorValue) -> list[TensorValue]:
+        result = body_fn(*(Tensor.from_graph_value(a) for a in args))
+        if isinstance(result, Tensor):
+            return [TensorValue(result)]
+        return [TensorValue(t) for t in result]
+
+    return ops.side_stream(
+        [TensorValue(v) for v in inputs],
+        _body,
+        result_types=result_types,
+        stream_id=stream_id,
+    )
+
+
+side_stream = functional(_side_stream_graph)
+side_stream.__doc__ = """Runs a block of ops on a side device stream.
+
+The body executes on the device stream selected by ``stream_id``,
+overlapping independent work on the default stream. The graph compiler
+inserts the cross-stream synchronization at the region boundary, so
+callers never manage streams or events directly.
+
+``body_fn`` receives one :class:`Tensor` per input and returns one
+:class:`Tensor` per ``result_types`` entry. The inputs aren't sharded
+per device: one region may take shards from several devices, and it covers
+exactly the devices those shards live on.
+
+.. Skipped: Metal device contexts expose only the default stream, so
+   ``stream_id=1`` fails with "invalid stream id".
+.. skip: next if(__import__("sys").platform == "darwin", "no side streams on Metal")
+
+.. code-block:: python
+
+    from max.experimental import functional as F
+
+    (y,) = F.side_stream([x], lambda x: x * 2, result_types=[x.type])
+
+Args:
+    inputs: Non-distributed tensors passed to ``body_fn``, one argument
+        each.
+    body_fn: A callable that takes one :class:`Tensor` per input and
+        returns a :class:`Tensor` or a sequence of them.
+    result_types: The body's output types, one per result.
+    stream_id: The device stream to run the body on. ``0`` is the default
+        stream. Defaults to ``1``.
+
+Returns:
+    One :class:`Tensor` per ``result_types`` entry.
+
+Raises:
+    ValueError: If ``body_fn`` returns a different number of tensors than
+        ``result_types`` has entries.
 """
 
 

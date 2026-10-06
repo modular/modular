@@ -41,7 +41,13 @@ _EXTRA_CONSTRAINTS = {
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
-    "test_mha_gemma4_sink_repro.mojo": ["//:amd_gpu"],  # gfx950 AGPR-Copy-MFMA regression check
+    # AMD: gfx950 AGPR-Copy-MFMA regression. B200: the ragged entry point
+    # compiles sink=True kernels for this sink-less d512 caller.
+    "test_mha_gemma4_sink_repro.mojo": select({
+        "//:b200_gpu": [],
+        "//:amd_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mha_prefill_v2_ragged_gate.mojo": ["//:mi355_gpu"],  # the kernel is tuned for gfx950 (MI355X)
     "test_pv_mnmajor_mma_spike.mojo": select({
         # SM100 P@V mn-major chunk-inner MMA recovery spike; B200-only

@@ -282,11 +282,13 @@ class TextGenerationPipeline(
                     pipeline_config.sampling,
                     device=sampler_device_ref,
                     needs_bitmask_input=True,
+                    unpadded_vocab_size=self.vocab_size,
                 )
             without_bitmask_graph = token_sampler(
                 pipeline_config.sampling,
                 device=sampler_device_ref,
                 needs_bitmask_input=False,
+                unpadded_vocab_size=self.vocab_size,
             )
             sampler_timer.mark_build_complete()
             if with_bitmask_graph is not None:

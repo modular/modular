@@ -488,6 +488,11 @@ MojoExpressionParser::parse(MojoPersistentExpressionState &state,
                           ExportKind::Exported});
   OwningOpRef<ModuleOp> sliceModule =
       produceStandaloneModule(symbolTable, exportedSymbols);
+  if (!sliceModule) {
+    impl->expressionLogger->errorLog(
+        "Failed to produce standalone module for '{0}'", exprFnName);
+    return returnErrorCleanup();
+  }
   auto bufferOr = impl->objCompiler->emitArchive(std::move(sliceModule));
   if (bufferOr.isError()) {
     impl->expressionLogger->errorLog(

@@ -26,7 +26,7 @@ from max.experimental.nn.common_layers.multi_latent_attention import (
     MLAPrefillMetadata,
 )
 from max.experimental.nn.norm import RMSNorm
-from max.experimental.sharding import Partial, PlacementMapping
+from max.experimental.sharding import DeviceMapping, Partial
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue
 from max.nn.comm.ep import EPBatchManager, EPCommBuffers
@@ -82,7 +82,6 @@ def _get_mlp(
             has_shared_experts=True,
             shared_experts_dim=config.n_shared_experts
             * config.moe_intermediate_size,
-            apply_router_weight_first=False,
             quant_config=config.quant_config,
         )
         if ep_batch_manager is not None:
@@ -242,7 +241,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
                         *attn_shards[1:],
                     ]
                     partial = Tensor.from_shard_values(
-                        folded, PlacementMapping(mesh, (Partial(),))
+                        folded, DeviceMapping(mesh, (Partial(),))
                     )
 
                     # Partial -> Sharded(0): real reduce-scatter collective.

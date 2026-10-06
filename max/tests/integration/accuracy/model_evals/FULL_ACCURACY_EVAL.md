@@ -96,6 +96,8 @@ it; its artifacts land in the same run when it finishes.
 - Per-dataset artifacts keep the full `results.jsonl` + `score.json`
   detail, prefixed by the job that produced them (`aime25-`, `scicode-`,
   `mmmu-video-`, ...).
+- Every run also mirrors its downloaded GitHub artifacts to
+  `s3://modular-ci-prod-artifact-bucket/full-accuracy-eval/run_id=<run-id>/attempt=<run-attempt>/`.
 
 ## Re-run a failed piece
 

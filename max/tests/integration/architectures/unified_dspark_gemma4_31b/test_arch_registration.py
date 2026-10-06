@@ -34,8 +34,10 @@ from max.pipelines.architectures.unified_dspark_gemma4_31b.model import (
 from max.pipelines.architectures.unified_dspark_gemma4_31b.model_config import (
     UnifiedDSparkGemma4_31BConfig,
 )
+from max.pipelines.lib import SamplingConfig
 from max.pipelines.lib.config.config import (
     _apply_speculative_target_architecture,
+    _resolve_default_structured_output_backend,
 )
 
 
@@ -64,13 +66,16 @@ def test_unified_dspark_31b_arch_registered() -> None:
         == arch.supported_encodings
     )
     # Thinking-phase tracking needs the reasoning parser plus a tokenizer
-    # exposing the delimiter ids; tool-call grammars need the tool parser and
-    # a backend pinned on THIS arch (resolution runs after the registry
-    # rewrites the arch name, so the base gemma4 declaration never applies).
+    # exposing the delimiter ids; tool-call grammars need the tool parser.
     assert arch.tokenizer is Gemma4Tokenizer
     assert arch.tool_parser == "gemma4"
     assert arch.reasoning_parser == "gemma4"
-    assert arch.default_structured_output_backend == "xgrammar"
+    # No per-arch backend pin: structured output resolves to the global
+    # xgrammar default even after the registry rewrites the arch name.
+    assert (
+        _resolve_default_structured_output_backend(SamplingConfig(), arch)
+        == "xgrammar"
+    )
 
 
 def test_dspark_speculators_draft_arch_registered() -> None:

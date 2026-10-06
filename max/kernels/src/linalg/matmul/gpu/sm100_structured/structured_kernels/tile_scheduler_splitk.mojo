@@ -664,7 +664,6 @@ struct TileScheduler[
         MutAnyOrigin,
         Engine=tile_engine.OffsetResultType[TypeList.of[Int]()],
     ]:
-        @__parameter
         def _get_current_width(widths: Array[Int, 4], curr_stage: Int) -> Int:
             var width = 0
             for i in range(curr_stage):

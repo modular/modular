@@ -773,6 +773,7 @@ class KimiBattle(BaseScenario):
                     "required": ["query"],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             messages = [
                 {"role": "user", "content": "Search for 'python'."},
@@ -1122,6 +1123,7 @@ class KimiBattle(BaseScenario):
                     "required": ["text"],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             # Ask for text with special characters
             resp = await loop.run_in_executor(

@@ -52,15 +52,9 @@ def bench_argmax[
     ctx.enqueue_copy(in_dev, in_host)
     ctx.synchronize()
 
-    var in_tensor = TileTensor(
-        in_dev, row_major(Coord(IndexList[2](batch, num_elements)))
-    )
-    var out_tensor = TileTensor(
-        out_dev, row_major(Coord(IndexList[2](batch, 1)))
-    )
-    var vals_tensor = TileTensor(
-        vals_dev, row_major(Coord(IndexList[2](batch, 1)))
-    )
+    var in_tensor = TileTensor(in_dev, row_major(batch, num_elements))
+    var out_tensor = TileTensor(out_dev, row_major(batch, 1))
+    var vals_tensor = TileTensor(vals_dev, row_major(batch, 1))
 
     var num_bytes = batch * num_elements * size_of[Scalar[dtype]]()
     var suffix = String("/N=", num_elements, "/batch=", batch, "/", dtype)
@@ -95,7 +89,7 @@ def bench_argmax[
         [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
-    var in_shape = Coord(IndexList[2](batch, num_elements))
+    var in_shape = Coord(batch, num_elements)
 
     @inline(.always)
     def launch_rowwise(

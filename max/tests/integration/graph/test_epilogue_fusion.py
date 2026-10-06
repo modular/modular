@@ -13,7 +13,7 @@
 
 """End-to-end tests for the new MAP-dialect fusion system's `EpilogueFuser`.
 
-Every graph here is compiled with ``MAX_GC_USE_ADV_FUSION`` set, exercising
+Every graph here exercises
 ``MOToMAP`` + ``EpilogueFuser`` end to end. These mirror
 `GraphCompiler/test/mo-opt/MAPDialect/Transforms/EpilogueFusion/epilogue_fusion.mlir`'s
 cases with real ops rather than the MLIR suite's signature-only test kernels,
@@ -40,9 +40,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def test_reduce_max_epilogue_fuses_cast(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_reduce_max_epilogue_fuses_cast(session: InferenceSession) -> None:
     """`cast(reduce.max(x, axis))` fuses the cast into the reduction's
     epilogue, retyping the store path. Mirrors `cast_fused`.
     """
@@ -62,9 +60,7 @@ def test_reduce_max_epilogue_fuses_cast(
     np.testing.assert_allclose(out, ref)
 
 
-def test_matmul_epilogue_fuses_cast(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_matmul_epilogue_fuses_cast(session: InferenceSession) -> None:
     """`cast(matmul(a, b))` fuses the cast into the matmul's epilogue. A
     dtype-changing (mixed-precision) accumulating kernel: the matmul must
     accumulate in f32, so `AllocateAccumulatingBuffers` gives the epilogue a
@@ -91,9 +87,7 @@ def test_matmul_epilogue_fuses_cast(
     np.testing.assert_array_equal(out, (a_np @ b_np).astype(np.int32))
 
 
-def test_matmul_add_epilogue_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_matmul_add_epilogue_fuses(session: InferenceSession) -> None:
     """`add(matmul(x, y), z)` fuses the bias-add into the matmul's epilogue.
 
     A same-dtype (f32 -> f32) matmul epilogue: the add binds through the
@@ -120,7 +114,7 @@ def test_matmul_add_epilogue_fuses(
 
 
 def test_matmul_add_relu_chain_epilogue_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """`relu(add(matmul(x, y), z))` fuses the whole add+relu chain into the
     matmul's epilogue as a single unit. Mirrors `chain`.
@@ -146,9 +140,7 @@ def test_matmul_add_relu_chain_epilogue_fuses(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_no_fuse_multi_use(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_no_fuse_multi_use(session: InferenceSession) -> None:
     """A producer consumed by two separate downstream ops can only fuse into
     one of them at most -- and today fuses into neither, per `EpilogueFuser`'s
     single-claim-per-round `hasOneUse` gate. Mirrors `no_fuse_multi_use`:
@@ -173,9 +165,7 @@ def test_no_fuse_multi_use(
     np.testing.assert_allclose(r1, reduced_np * b_np, rtol=1e-5, atol=1e-5)
 
 
-def test_no_fuse_same_result_twice(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_no_fuse_same_result_twice(session: InferenceSession) -> None:
     """`add(reduce.max(x, axis), reduce.max(x, axis))` -- the SAME producer
     feeding both operands of its own consumer -- has no single fusible
     operand to redirect, so it stays unfused. Mirrors `no_fuse_same_result_twice`.
@@ -196,9 +186,7 @@ def test_no_fuse_same_result_twice(
     )
 
 
-def test_two_producers_one_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_two_producers_one_fuses(session: InferenceSession) -> None:
     """`add(reduce.max(a, axis), reduce.max(b, axis))` -- two independent
     producers competing for the same consumer -- fuses exactly one of them;
     the other stays its own kernel. Mirrors `two_producers_one_fuses`.
@@ -225,7 +213,7 @@ def test_two_producers_one_fuses(
 
 
 def test_fuses_independently_per_conditional_branch(
-    session: InferenceSession, adv_fusion_enabled: None
+    session: InferenceSession,
 ) -> None:
     """Each `mo.if` branch gets its own, independently-fused epilogue.
 
@@ -278,9 +266,7 @@ def test_fuses_independently_per_conditional_branch(
         np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_no_fuse_across_conditional_blocks(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_no_fuse_across_conditional_blocks(session: InferenceSession) -> None:
     """A producer defined *outside* an `mo.if` cannot fuse into a consumer
     inside one of its branches -- `EpilogueFuser` never crosses block
     boundaries. Mirrors `no_fuse_across_blocks`.

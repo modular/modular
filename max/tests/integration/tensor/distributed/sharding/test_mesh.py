@@ -152,29 +152,9 @@ class TestDeviceMesh:
             mesh.mesh_shape = (2,)  # type: ignore[misc]
 
     def test_single(self) -> None:
-        from max.driver import CPU
-
         mesh = DeviceMesh.single(CPU())
         assert mesh.num_devices == 1
-        assert mesh.is_single
         assert mesh.ndim == 1
-
-    def test_is_single_false_for_multi(self) -> None:
-        mesh = mesh_1d(4)
-        assert not mesh.is_single
-
-    def test_simulated_mesh_same_devices(self) -> None:
-        cpu = CPU()
-        mesh = DeviceMesh(
-            devices=(cpu, cpu, cpu, cpu),
-            mesh_shape=(4,),
-            axis_names=("tp",),
-        )
-        assert mesh.is_simulated
-
-    def test_is_simulated_false_for_single(self) -> None:
-        mesh = DeviceMesh.single(CPU())
-        assert not mesh.is_simulated
 
 
 # ═════════════════════════════════════════════════════════════════════════

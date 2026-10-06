@@ -32,7 +32,8 @@ def short_conv_ring_fwd(
     ring: BufferValue,
     input_row_offsets: TensorValue,
     positions: TensorValue,
-    conv_row: TensorValue,
+    conv_rows: TensorValue,
+    layer_row: TensorValue,
 ) -> TensorValue:
     """Returns ``x + conv(x)`` over a ragged batch; reads ``ring``, writes
     nothing.
@@ -44,7 +45,8 @@ def short_conv_ring_fwd(
         ring: ``[slots, ring_len, channels]`` conv state.
         input_row_offsets: ``[batch + 1]`` uint32.
         positions: ``[total_seq_len]`` uint32 position per token.
-        conv_row: ``[batch]`` uint32 ring slot per sequence.
+        conv_rows: ``[num_layers, batch]`` uint32 ring slot per sequence.
+        layer_row: Scalar uint32 CPU row of ``conv_rows`` this layer reads.
 
     Returns:
         Same shape and dtype as ``x``.
@@ -52,7 +54,15 @@ def short_conv_ring_fwd(
     return ops.inplace_custom(
         "mo.short_conv_ring_fwd",
         device=x.device,
-        values=[x, weight, ring, input_row_offsets, positions, conv_row],
+        values=[
+            x,
+            weight,
+            ring,
+            input_row_offsets,
+            positions,
+            conv_rows,
+            layer_row,
+        ],
         out_types=[TensorType(x.dtype, x.shape, device=x.device)],
     )[0].tensor
 
@@ -62,7 +72,8 @@ def short_conv_ring_commit(
     ring: BufferValue,
     input_row_offsets: TensorValue,
     positions: TensorValue,
-    conv_row: TensorValue,
+    conv_rows: TensorValue,
+    layer_row: TensorValue,
 ) -> None:
     """Writes each sequence's last ``ring_len`` rows of ``x`` into its slot
     of ``ring``. Issue after every reader of ``ring`` in the same forward.
@@ -72,11 +83,12 @@ def short_conv_ring_commit(
         ring: ``[slots, ring_len, channels]`` conv state, written in place.
         input_row_offsets: ``[batch + 1]`` uint32.
         positions: ``[total_seq_len]`` uint32 position per token.
-        conv_row: ``[batch]`` uint32 ring slot per sequence.
+        conv_rows: ``[num_layers, batch]`` uint32 ring slot per sequence.
+        layer_row: Scalar uint32 CPU row of ``conv_rows`` this layer reads.
     """
     ops.inplace_custom(
         "mo.short_conv_ring_commit",
         device=x.device,
-        values=[ring, x, input_row_offsets, positions, conv_row],
+        values=[ring, x, input_row_offsets, positions, conv_rows, layer_row],
         out_types=[],
     )
