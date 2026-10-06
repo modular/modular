@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Checks the W4A4 routed-expert matmul against a dequantized reference."""
+"""Checks the routed-expert matmuls: W4A4 against a dequantized reference,
+and each device's share of the experts against all of them."""
 
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kernels import moe_create_indices
 from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
+    _local_routed,
     _nvfp4_expert_matmul,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
@@ -147,3 +149,108 @@ def test_w4a4_matches_dequantized_reference(
             got[..., tail] - want[..., tail]
         ) / np.linalg.norm(want[..., tail])
         assert tail_err < 0.15, f"padded-granule error {tail_err:.3f}"
+
+
+@pytest.mark.parametrize("w4a4", [True, False])
+def test_device_shares_of_the_routed_experts_sum_to_the_whole(
+    w4a4: bool,
+) -> None:
+    """Each half of the experts runs every token and keeps its own rows.
+
+    In the second routing no token picks the second half's experts, so that
+    device routes every row to the extra expert no matmul reads.
+    """
+    experts, top_k, hidden, inner, tokens = 8, 2, 256, 128, 37
+    rng = np.random.default_rng(0)
+    x = torch.from_numpy(rng.standard_normal((tokens, hidden))).to(
+        torch.bfloat16
+    )
+
+    device = Accelerator()
+    dev = DeviceRef.GPU()
+    projections: list[list[Buffer]] = []
+    types: list[list[TensorType]] = []
+    for n, k in ((inner, hidden), (hidden, inner)):
+        if w4a4:
+            codes = rng.integers(0, 256, (experts, n, k // 2), dtype=np.uint8)
+            scales = np.stack(
+                [
+                    interleave_nvfp4_scales(
+                        rng.integers(0x28, 0x48, (n, k // 16), dtype=np.uint8)
+                    )
+                    for _ in range(experts)
+                ]
+            )
+            global_scales = rng.uniform(0.005, 0.02, experts).astype(np.float32)
+            projections.append(
+                [
+                    Buffer.from_numpy(codes),
+                    Buffer.from_numpy(scales).view(
+                        DType.float8_e4m3fn, scales.shape
+                    ),
+                    Buffer.from_numpy(global_scales),
+                ]
+            )
+        else:
+            weight = torch.from_numpy(
+                rng.standard_normal((experts, n, k)) * 0.05
+            ).to(torch.bfloat16)
+            projections.append([Buffer.from_dlpack(weight)])
+        types.append(
+            [TensorType(b.dtype, b.shape, dev) for b in projections[-1]]
+        )
+
+    with Graph(
+        "local_routed",
+        input_types=[
+            TensorType(DType.bfloat16, [tokens, hidden], dev),
+            TensorType(DType.int32, [tokens, top_k], dev),
+            TensorType(DType.float32, [tokens, top_k], dev),
+            *types[0],
+            *types[1],
+        ],
+    ) as graph:
+        gx, gids, gweights, *params = (v.tensor for v in graph.inputs)
+        up, down = params[: len(types[0])], params[len(types[0]) :]
+        whole = _local_routed(
+            gx, gids, gweights, up, down, first_expert=0, num_devices=1
+        )
+        halves = [
+            _local_routed(
+                gx,
+                gids,
+                gweights,
+                [p[first : first + experts // 2] for p in up],
+                [p[first : first + experts // 2] for p in down],
+                first_expert=first,
+                num_devices=2,
+            )
+            for first in (0, experts // 2)
+        ]
+        graph.output(whole, *halves)
+    model = InferenceSession(devices=[device]).load(graph)
+
+    for second_half_idle in (False, True):
+        pickable = experts // 2 if second_half_idle else experts
+        ids = np.stack(
+            [rng.choice(pickable, top_k, replace=False) for _ in range(tokens)]
+        ).astype(np.int32)
+        topk_weights = rng.uniform(0.1, 1.0, (tokens, top_k)).astype(np.float32)
+        results = model.execute(
+            Buffer.from_dlpack(x).to(device),
+            Buffer.from_numpy(ids).to(device),
+            Buffer.from_numpy(topk_weights).to(device),
+            *(b.to(device) for b in projections[0] + projections[1]),
+        )
+        whole_out, first_out, second_out = (
+            torch.from_dlpack(r).float().cpu().numpy() for r in results
+        )
+
+        assert np.isfinite(first_out).all() and np.isfinite(second_out).all()
+        if second_half_idle:
+            assert not second_out.any()
+        # The halves round to BF16 before they are summed.
+        err = np.linalg.norm(
+            first_out + second_out - whole_out, axis=-1
+        ) / np.linalg.norm(whole_out, axis=-1)
+        assert err.max() < 0.01, f"worst token relative error {err.max():.4f}"

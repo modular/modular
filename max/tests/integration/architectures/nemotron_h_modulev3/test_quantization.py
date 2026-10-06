@@ -17,10 +17,14 @@ from __future__ import annotations
 import numpy as np
 import numpy.typing as npt
 import pytest
+from _tiny_config import TINY, TINY_LAYERS, WIDE, model_config
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
+from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
+    LayerKind,
+)
 from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
     ModuleFormat,
     parse_quant_scheme,
@@ -28,6 +32,9 @@ from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
 from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
     dequantize_to_bf16,
     interleave_nvfp4_scales,
+    permute_mamba_for_tp,
+    repeat_kv_heads_for_tp,
+    stack_bf16_experts,
     stack_nvfp4_experts,
 )
 
@@ -200,3 +207,112 @@ def test_stacking_keeps_the_routed_experts_in_nvfp4() -> None:
     np.testing.assert_array_equal(
         np.from_dlpack(scale.to_buffer()), [0.25, 0.25]
     )
+
+
+def test_bf16_stacking_dequantizes_each_expert_into_its_slice() -> None:
+    """NVFP4 experts on GPUs without the W4A4 matmul, and BF16 experts."""
+    rng = np.random.default_rng(0)
+    nvfp4_mixer, bf16_mixer = (
+        "backbone.layers.1.mixer",
+        "backbone.layers.3.mixer",
+    )
+    modules = {
+        f"{nvfp4_mixer}.experts.{e}.{proj}": ModuleFormat.NVFP4_WEIGHT_ONLY
+        for e in range(2)
+        for proj in ("up_proj", "down_proj")
+    }
+    modules["lm_head"] = ModuleFormat.NVFP4_WEIGHT_ONLY
+    state_dict = {}
+    for module in modules:
+        state_dict[f"{module}.weight"] = _weight(
+            rng.integers(0, 256, (4, 16), dtype=np.uint8), DType.uint8
+        )
+        state_dict[f"{module}.weight_scale"] = _weight(
+            np.full((4, 2), _E4M3[2.0], dtype=np.uint8), DType.float8_e4m3fn
+        )
+        state_dict[f"{module}.weight_scale_2"] = _weight(
+            np.array(0.25, dtype=np.float32), DType.float32
+        )
+    for e in range(2):
+        for proj in ("up_proj", "down_proj"):
+            bits = rng.integers(0, 2**15, (4, 32), dtype=np.uint16)
+            state_dict[f"{bf16_mixer}.experts.{e}.{proj}.weight"] = _weight(
+                bits, DType.bfloat16
+            )
+
+    out, remaining = stack_bf16_experts(
+        state_dict, modules, {nvfp4_mixer, bf16_mixer}
+    )
+
+    assert remaining == {"lm_head": ModuleFormat.NVFP4_WEIGHT_ONLY}
+    assert not any(".experts." in name for name in out)
+    expected = dequantize_to_bf16(
+        state_dict, {m: f for m, f in modules.items() if m != "lm_head"}
+    )
+    for mixer, source in ((nvfp4_mixer, expected), (bf16_mixer, state_dict)):
+        for proj in ("up", "down"):
+            stack = out[f"{mixer}.{proj}_weight"]
+            assert tuple(stack.shape) == (2, 4, 32)
+            for e in range(2):
+                np.testing.assert_array_equal(
+                    _values(stack)[e],
+                    _values(source[f"{mixer}.experts.{e}.{proj}_proj.weight"]),
+                )
+
+
+def _bits(weight: WeightData) -> npt.NDArray[np.generic]:
+    return np.from_dlpack(weight.to_buffer().view(DType.uint16))
+
+
+def test_mamba_rows_are_regrouped_by_device() -> None:
+    """Device 0's rows are the first half of each fused part."""
+    config = model_config(TINY_LAYERS, TINY, n_devices=2)
+    rng = np.random.default_rng(0)
+    # The tiny mixer's in_proj stacks gate 32, x 32, B 16, C 16 and dt 4
+    # rows, and its conv stacks x, B and C.
+    in_proj = rng.integers(0, 2**15, (100, 32), dtype=np.uint16)
+    conv_bias = rng.integers(0, 2**15, (64,), dtype=np.uint16)
+    state_dict: dict[str, WeightData] = {}
+    for mixer in config.mixers(LayerKind.MAMBA):
+        for name, array in (
+            ("in_proj.weight", in_proj),
+            ("conv1d.weight", np.zeros((64, 4), dtype=np.uint16)),
+            ("conv1d.bias", conv_bias),
+        ):
+            state_dict[f"{mixer}.{name}"] = _weight(array, DType.bfloat16)
+
+    out = permute_mamba_for_tp(state_dict, config, 2)
+
+    mixer = "backbone.layers.4.mixer"
+    halves = [(0, 16), (32, 48), (64, 72), (80, 88), (96, 98)]
+    np.testing.assert_array_equal(
+        _bits(out[f"{mixer}.in_proj.weight"])[:50],
+        np.concatenate([in_proj[a:b] for a, b in halves]),
+    )
+    np.testing.assert_array_equal(
+        _bits(out[f"{mixer}.conv1d.bias"])[32:],
+        np.concatenate([conv_bias[16:32], conv_bias[40:48], conv_bias[56:64]]),
+    )
+
+
+def test_each_device_gets_a_copy_of_its_kv_head() -> None:
+    """With four devices and two KV heads, devices 0 and 1 get head 0."""
+    config = model_config(TINY_LAYERS, WIDE, n_devices=4)
+    rng = np.random.default_rng(0)
+    # Two heads of eight rows each.
+    k_proj = rng.integers(0, 2**15, (16, 32), dtype=np.uint16)
+    mixer = "backbone.layers.3.mixer"
+    state_dict = {
+        f"{mixer}.{proj}.weight": _weight(k_proj, DType.bfloat16)
+        for proj in ("k_proj", "v_proj")
+    }
+
+    out = repeat_kv_heads_for_tp(state_dict, config, 4)
+
+    for proj in ("k_proj", "v_proj"):
+        np.testing.assert_array_equal(
+            _bits(out[f"{mixer}.{proj}.weight"]),
+            np.concatenate([k_proj[:8], k_proj[:8], k_proj[8:], k_proj[8:]]),
+        )
+    # Two devices split the heads without repeating them.
+    assert repeat_kv_heads_for_tp(state_dict, config, 2) == state_dict

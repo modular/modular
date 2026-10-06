@@ -17,7 +17,13 @@ from __future__ import annotations
 from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module
+from max.experimental.nn import Module
+from max.experimental.nn.common_layers.linear import (
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
+from max.experimental.nn.common_layers.mesh_axis import TP
+from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
 from max.nn.state_space import (
@@ -27,6 +33,7 @@ from max.nn.state_space import (
 )
 
 from ..model_config import NemotronHConfig
+from .sharding import shard_dim0
 
 
 def _layer_rows(rows: Tensor, layer: Tensor) -> TensorValue:
@@ -183,21 +190,27 @@ class NemotronHMamba2Mixer(
         self.intermediate = config.mamba_intermediate_size
         self.conv_dim = config.conv_dim
 
-        self.in_proj = Linear(
+        # Each device runs its own heads and their groups.
+        # permute_mamba_for_tp lays out the fused in_proj and conv rows so
+        # that each device's share is one contiguous block.
+        self.in_proj = ColumnParallelLinear(
             config.hidden_size,
             self.intermediate + self.conv_dim + self.num_heads,
             bias=False,
         )
         self.conv1d = CausalConv1d(self.conv_dim, config.conv_kernel)
-        self.A_log = Tensor.zeros([self.num_heads])
-        self.D = Tensor.zeros([self.num_heads])
-        self.dt_bias = Tensor.zeros([self.num_heads])
+        self.conv1d.weight = shard_dim0(self.conv1d.weight)
+        self.conv1d.bias = shard_dim0(self.conv1d.bias)
+        self.A_log = shard_dim0(Tensor.zeros([self.num_heads]))
+        self.D = shard_dim0(Tensor.zeros([self.num_heads]))
+        self.dt_bias = shard_dim0(Tensor.zeros([self.num_heads]))
         self.norm = GatedGroupRMSNorm(
             self.intermediate,
             self.intermediate // self.n_groups,
             config.layer_norm_epsilon,
         )
-        self.out_proj = Linear(
+        self.norm.weight = shard_dim0(self.norm.weight)
+        self.out_proj = RowParallelLinear(
             self.intermediate, config.hidden_size, bias=False
         )
 
@@ -221,6 +234,10 @@ class NemotronHMamba2Mixer(
             query_start_loc,
             has_initial_state,
         )
+        # The conv, scan and norm kernels have no sharding rules. Each
+        # device runs them on its own heads, so their outputs stay split on
+        # the channel axis like their inputs.
+        xbc = xbc.rebind_mapping(NamedMapping(xbc.mesh, (None, TP)))
         group_dim = self.n_groups * self.state_size
         hidden, B, C = F.split(
             xbc, [self.intermediate, group_dim, group_dim], axis=1
@@ -241,8 +258,7 @@ class NemotronHMamba2Mixer(
             query_start_loc,
             has_initial_state,
         )
+        y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP, None)))
         y = self.norm(y.reshape([-1, self.intermediate]), gate)
-        out = self.out_proj(y)
-        # The kernels have no sharding rules, so their outputs are Unknown.
-        # Every device runs the whole mixer on replicated input and state.
-        return out.rebind_mapping(x.mapping) if out.is_distributed else out
+        y = y.rebind_mapping(NamedMapping(y.mesh, (None, TP)))
+        return self.out_proj(y)

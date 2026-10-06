@@ -1,10 +1,24 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
     "//max/tests:__subpackages__",
     "//oss/modular/max/tests:__subpackages__",
 ])
+
+modular_py_library(
+    name = "tiny_config",
+    testonly = True,
+    srcs = ["_tiny_config.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/nemotron_h_modulev3",
+        "//max/python/max/pipelines/lib",
+        requirement("transformers"),
+    ],
+)
 
 modular_py_test(
     name = "tests",
@@ -16,6 +30,7 @@ modular_py_test(
         ],
     ),
     deps = [
+        ":tiny_config",
         "//max/python/max:tensor",
         "//max/python/max/driver",
         "//max/python/max/dtype",
@@ -24,7 +39,6 @@ modular_py_test(
         "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
-        requirement("transformers"),
     ],
 )
 

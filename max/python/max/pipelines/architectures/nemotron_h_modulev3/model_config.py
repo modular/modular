@@ -203,12 +203,28 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             return frozenset()
         return frozenset(
             mixer
-            for i, kind in enumerate(self.layer_kinds)
-            if kind == LayerKind.MOE
-            and self.quant_scheme.has_nvfp4_routed_experts(
-                mixer := f"backbone.layers.{i}.mixer", self.num_experts
+            for mixer in self.mixers(LayerKind.MOE)
+            if self.quant_scheme.has_nvfp4_routed_experts(
+                mixer, self.num_experts
             )
         )
+
+    def mixers(self, kind: LayerKind) -> frozenset[str]:
+        """Returns the checkpoint names of the mixers of one kind."""
+        return frozenset(
+            f"backbone.layers.{i}.mixer"
+            for i, layer_kind in enumerate(self.layer_kinds)
+            if layer_kind is kind
+        )
+
+    @property
+    def sharded_kv_heads(self) -> int:
+        """Returns the KV heads the k and v projections hold.
+
+        With more devices than KV heads, each head repeats once per device
+        in its group, so that every device holds one whole head.
+        """
+        return max(self.num_key_value_heads, len(self.devices))
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -242,7 +258,9 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             raise ValueError("Nemotron-H does not support data parallelism")
         kinds = parse_layer_kinds(huggingface_config.layers_block_type)
         attn = kv_cache_config.to_params(
-            allow_kv_head_replication=allow_kv_head_replication,
+            # With more devices than KV heads, the k and v projections repeat
+            # each head across a group of devices.
+            allow_kv_head_replication=True,
             dtype=cache_dtype,
             n_kv_heads=huggingface_config.num_key_value_heads,
             head_dim=huggingface_config.head_dim,
@@ -252,6 +270,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         )
         hf = huggingface_config
         num_mamba_layers = kinds.count(LayerKind.MAMBA)
+        # Each device holds the state of its own share of the Mamba heads.
+        n = len(devices)
         state = RecurrentStateParams(
             # Separate leaves because the conv and SSM kernels each index
             # their own uniformly strided pool, at different dtypes.
@@ -261,8 +281,11 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     leaf_id="mamba/conv",
                     num_layers=num_mamba_layers,
                     row_shape=(
-                        hf.mamba_num_heads * hf.mamba_head_dim
-                        + 2 * hf.n_groups * hf.ssm_state_size,
+                        (
+                            hf.mamba_num_heads * hf.mamba_head_dim
+                            + 2 * hf.n_groups * hf.ssm_state_size
+                        )
+                        // n,
                         hf.conv_kernel - 1,
                     ),
                     dtype=DType.bfloat16,
@@ -271,7 +294,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     leaf_id="mamba/ssm",
                     num_layers=num_mamba_layers,
                     row_shape=(
-                        hf.mamba_num_heads,
+                        hf.mamba_num_heads // n,
                         hf.mamba_head_dim,
                         hf.ssm_state_size,
                     ),
@@ -362,12 +385,28 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                 f"Nemotron-H does not clamp dt, but the checkpoint sets "
                 f"time_step_limit={limit}"
             )
-        if hf.num_attention_heads % len(devices):
+        n = len(devices)
+        kv_heads = hf.num_key_value_heads
+        if kv_heads % n and n % kv_heads:
             raise ValueError(
-                f"Nemotron-H shards its {hf.num_attention_heads} attention "
-                f"heads across devices, which {len(devices)} devices do not "
-                "divide"
+                f"Nemotron-H gives each device whole KV heads, so {n} devices "
+                f"must divide its {kv_heads} KV heads or be a multiple of them"
             )
+        for count, what in (
+            (hf.num_attention_heads, "attention heads"),
+            (hf.n_routed_experts, "routed experts"),
+            (
+                hf.moe_shared_expert_intermediate_size,
+                "shared expert channels",
+            ),
+            (hf.mamba_num_heads, "Mamba heads"),
+            (hf.n_groups, "Mamba groups"),
+        ):
+            if count % n:
+                raise ValueError(
+                    f"Nemotron-H shards its {count} {what} across devices, "
+                    f"which {n} devices do not divide"
+                )
         return cls(
             hidden_size=hf.hidden_size,
             vocab_size=hf.vocab_size,

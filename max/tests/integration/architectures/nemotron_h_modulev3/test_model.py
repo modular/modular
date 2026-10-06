@@ -14,17 +14,36 @@
 
 from __future__ import annotations
 
+import math
+import warnings
 from collections.abc import Callable
 from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
+from _tiny_config import TINY, TINY_LAYERS, WIDE, hf_config, model_config
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.sharding import DeviceMesh
+from max.experimental.functional import collective_ops
+from max.experimental.sharding import (
+    DeviceMesh,
+    Partial,
+    Replicated,
+    Sharded,
+    auto_reshard,
+)
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef
+from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
+    NemotronHAttention,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.layers.mamba2 import (
+    NemotronHMamba2Mixer,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
+    NemotronHMoE,
+)
 from max.pipelines.architectures.nemotron_h_modulev3.memory_planner import (
     NemotronHMemoryPlanner,
 )
@@ -41,62 +60,11 @@ from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_pool import (
     plan_jenga_geometry,
 )
-from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     modulev3_ragged_kv_symbolic_inputs,
 )
-from transformers import NemotronHConfig as HFNemotronHConfig
 
 MIB = 1024**2
-
-_TINY_LAYERS = ["mamba", "moe", "mamba", "attention", "mamba", "mlp"]
-_TINY = dict(
-    hidden_size=32,
-    num_attention_heads=4,
-    num_key_value_heads=2,
-    head_dim=8,
-    mamba_num_heads=4,
-    mamba_head_dim=8,
-    n_groups=2,
-    ssm_state_size=8,
-    conv_kernel=4,
-)
-
-
-def _hf_config(layers: list[str], dims: dict[str, int]) -> HFNemotronHConfig:
-    return HFNemotronHConfig(
-        layers_block_type=layers,
-        vocab_size=64,
-        intermediate_size=16,
-        n_routed_experts=4,
-        num_experts_per_tok=2,
-        moe_intermediate_size=16,
-        moe_shared_expert_intermediate_size=24,
-        routed_scaling_factor=2.5,
-        **dims,
-    )
-
-
-def _config(
-    layers: list[str], dims: dict[str, int], n_devices: int = 1
-) -> NemotronHConfig:
-    hf = _hf_config(layers, dims)
-    pipeline = Mock()
-    pipeline.model.data_parallel_degree = 1
-    devices = [DeviceRef.CPU()] * n_devices
-    kv_params = NemotronHConfig.construct_kv_params(
-        huggingface_config=hf,
-        pipeline_config=pipeline,
-        devices=devices,
-        kv_cache_config=KVCacheConfig(),
-        cache_dtype=DType.bfloat16,
-    )
-    return NemotronHConfig.from_huggingface(
-        hf,
-        kv_params=kv_params,
-        devices=devices,
-        max_seq_len=256,
-    )
 
 
 def _model(config: NemotronHConfig) -> NemotronH:
@@ -106,18 +74,20 @@ def _model(config: NemotronHConfig) -> NemotronH:
     return model
 
 
-def test_lightning_state_tiles_one_huge_page_exactly() -> None:
+@pytest.mark.parametrize("n_devices", [1, 2])
+def test_lightning_state_tiles_one_huge_page_exactly(n_devices: int) -> None:
     """23 Mamba layers is prime, so the huge page is 414 MiB and unpadded.
 
     Jenga addresses a state's layers as consecutive rows of its page, which
-    holds only while no page is padded.
+    holds only while no page is padded. Each of two devices holds half of
+    every page, so its huge page is half as large.
     """
     # Nemotron-3.5-Lightning's layer schedule and mixer shapes.
     layers = [
         {"M": "mamba", "E": "moe", "*": "attention"}[c]
         for c in "MEMEM*EMEMEM*EMEMEM*EMEMEM*EMEMEM*EMEMEMEM*EMEMEMEME"
     ]
-    config = _config(
+    config = model_config(
         layers,
         dict(
             hidden_size=2688,
@@ -130,13 +100,14 @@ def test_lightning_state_tiles_one_huge_page_exactly() -> None:
             ssm_state_size=128,
             conv_kernel=4,
         ),
+        n_devices=n_devices,
     )
     leaves = config.kv_params.leaves()
     page_bytes = {key: leaf.bytes_per_page for key, leaf in leaves.items()}
     assert page_bytes == {
-        "attn.full_group": 768 * 1024,
-        "mamba/conv": 23 * 6144 * 3 * 2,
-        "mamba/ssm": 23 * 64 * 64 * 128 * 4,
+        "attn.full_group": 768 * 1024 // n_devices,
+        "mamba/conv": 23 * 6144 * 3 * 2 // n_devices,
+        "mamba/ssm": 23 * 64 * 64 * 128 * 4 // n_devices,
     }
 
     geometry = plan_jenga_geometry(
@@ -145,7 +116,7 @@ def test_lightning_state_tiles_one_huge_page_exactly() -> None:
         {key: leaf.row_bytes for key, leaf in leaves.items()},
     )
 
-    assert geometry.huge_page_bytes == 414 * MIB
+    assert geometry.huge_page_bytes == 414 * MIB // n_devices
     assert geometry.ratios == {
         "attn.full_group": 552,
         "mamba/conv": 512,
@@ -162,7 +133,7 @@ def test_each_mamba_layer_reads_its_own_state_row(
     The Mamba layers share one subgraph and slice their pool rows inside it,
     so each call must pass its own layer index.
     """
-    config = _config(_TINY_LAYERS, _TINY)
+    config = model_config(TINY_LAYERS, TINY)
     model = _model(config)
     layers: list[int] = []
     original: Callable[..., Tensor] = F.constant
@@ -185,44 +156,151 @@ def test_each_mamba_layer_reads_its_own_state_row(
     assert layers == [0, 1, 2]
 
 
+def _model_on_devices(config: NemotronHConfig) -> NemotronH:
+    n = len(config.devices)
+    mesh = DeviceMesh((CPU(),) * n, (n,), ("tp",))
+    with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
+        return NemotronH(config)
+
+
+def _trace_on_devices(
+    monkeypatch: pytest.MonkeyPatch, n: int, dims: dict[str, int] = TINY
+) -> tuple[list[DType], int, list[str]]:
+    """Traces the tiny model at TP=``n`` on a CPU mesh.
+
+    Only the allreduce of partial sums may reshard, so any other collective
+    fails the trace.
+
+    Returns:
+        The dtypes broadcast to the other devices, the allreduce count, and
+        the reports of each peer copy onto the mesh.
+    """
+    config = model_config(TINY_LAYERS, dims, n_devices=n)
+    broadcast: list[DType] = []
+    allreduces: list[Tensor] = []
+    allreduce_sum: Callable[..., Tensor] = collective_ops.allreduce_sum
+
+    def record_broadcast(t: Tensor, mesh: DeviceMesh) -> Tensor:
+        broadcast.append(t.dtype)
+        # A CPU mesh has no signal buffers to run the collective with.
+        return t.to(mesh)
+
+    def record_allreduce(t: Tensor, *args: object, **kwargs: object) -> Tensor:
+        allreduces.append(t)
+        return allreduce_sum(t, *args, **kwargs)
+
+    model = _model_on_devices(config)
+    monkeypatch.setattr(F, "distributed_broadcast", record_broadcast)
+    monkeypatch.setattr(collective_ops, "allreduce_sum", record_allreduce)
+    # "raise" would refuse the allreduce too, and "silent" hides a peer
+    # copy, which is a move but not a placement transition.
+    with (
+        warnings.catch_warnings(record=True) as moves,
+        auto_reshard({(Partial, Replicated)}, mode="warn"),
+    ):
+        warnings.simplefilter("always")
+        model.trace(
+            *modulev3_ragged_kv_symbolic_inputs(
+                kv_params=config.kv_params, device_refs=config.devices
+            )
+        )
+    peer_copies = [
+        str(m.message) for m in moves if "cross_mesh_transfer" in str(m.message)
+    ]
+    return broadcast, len(allreduces), peer_copies
+
+
+@pytest.mark.parametrize("n", [2, 4, 8])
 def test_inputs_reach_the_other_devices_by_collective(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, n: int
 ) -> None:
     """Device graph capture records each device's stream on its own.
 
     A peer copy of the inputs makes one device's stream wait on another's,
     which invalidates the capture, so the tokens and row offsets reach the
-    other devices through the broadcast collective.
+    other devices through the broadcast collective. Past two devices, so do
+    the MoE layer's expert ids and weights, which device 0 picks.
     """
-    config = _config(_TINY_LAYERS, _TINY, n_devices=2)
-    broadcast: list[DType] = []
+    broadcast, _, _ = _trace_on_devices(monkeypatch, n, WIDE)
+    routing = [DType.int32, DType.float32] if n > 2 else []
+    assert broadcast == [DType.int64, DType.uint32, *routing]
 
-    def record(t: Tensor, mesh: DeviceMesh) -> Tensor:
-        broadcast.append(t.dtype)
-        # A CPU mesh has no signal buffers to run the collective with.
-        return t.to(mesh)
 
-    monkeypatch.setattr(F, "distributed_broadcast", record)
-    mesh = DeviceMesh((CPU(), CPU()), (2,), ("tp",))
-    with F.lazy(), default_dtype(DType.bfloat16), default_device(mesh):
-        model = NemotronH(config)
-    model.trace(
-        *modulev3_ragged_kv_symbolic_inputs(
-            kv_params=config.kv_params, device_refs=config.devices
-        )
-    )
+@pytest.mark.parametrize("n", [2, 4, 8])
+def test_each_sharded_mixer_reduces_once(
+    monkeypatch: pytest.MonkeyPatch, n: int
+) -> None:
+    """Attention, the MoE and the Mamba mixer each end in one allreduce,
+    and nothing else moves activations between devices.
 
-    assert broadcast == [DType.int64, DType.uint32]
+    The routed experts and the shared expert both return partial sums, which
+    the residual add reduces together. The three Mamba layers share one
+    subgraph, so it is traced once.
+    """
+    _, allreduces, peer_copies = _trace_on_devices(monkeypatch, n, WIDE)
+    assert allreduces == 3
+    assert peer_copies == []
+
+
+def test_each_device_holds_a_whole_kv_head() -> None:
+    """With more devices than KV heads, each head repeats per device."""
+    config = model_config(TINY_LAYERS, WIDE, n_devices=4)
+    attention = _model_on_devices(config).backbone.layers[3].mixer
+    assert isinstance(attention, NemotronHAttention)
+    for proj in (attention.qkv_proj.k_proj, attention.qkv_proj.v_proj):
+        # Four heads of eight channels: one per device.
+        assert tuple(int(d) for d in proj.weight.shape) == (32, 32)
+        assert proj.weight.mapping.placements == (Sharded(0),)
+
+
+def test_moe_shards_by_expert() -> None:
+    """Each device holds half the routed experts and half the shared expert.
+
+    Splitting each expert's channels instead would leave the W4A4 down
+    projection 58 block scales wide, which its interleaved layout cannot
+    hold.
+    """
+    model = _model_on_devices(model_config(TINY_LAYERS, TINY, n_devices=2))
+    moe = model.backbone.layers[1].mixer
+    assert isinstance(moe, NemotronHMoE)
+
+    def placements(t: Tensor) -> tuple[object, ...]:
+        return t.mapping.placements
+
+    assert placements(moe.up_weight) == (Sharded(0),)
+    assert placements(moe.down_weight) == (Sharded(0),)
+    assert placements(moe.shared_experts.up_proj.weight) == (Sharded(0),)
+    assert placements(moe.shared_experts.down_proj.weight) == (Sharded(1),)
+    # Every device routes every token.
+    assert placements(moe.gate.weight) == (Replicated(),)
+
+
+def test_mamba_shards_by_head() -> None:
+    """Each device runs half the heads and the groups they read."""
+    model = _model_on_devices(model_config(TINY_LAYERS, TINY, n_devices=2))
+    mamba = model.backbone.layers[0].mixer
+    assert isinstance(mamba, NemotronHMamba2Mixer)
+    for param in (
+        mamba.in_proj.weight,
+        mamba.conv1d.weight,
+        mamba.conv1d.bias,
+        mamba.A_log,
+        mamba.D,
+        mamba.dt_bias,
+        mamba.norm.weight,
+    ):
+        assert param.mapping.placements == (Sharded(0),)
+    assert mamba.out_proj.weight.mapping.placements == (Sharded(1),)
 
 
 def test_loading_is_strict() -> None:
     """A missing weight or a stray scale fails the load by name."""
-    config = _config(_TINY_LAYERS, _TINY)
+    config = model_config(TINY_LAYERS, TINY)
     model = _model(config)
     weights = dict(model.parameters)
     names = set(weights)
 
-    missing = "backbone.layers.1.mixer.experts.3.down_proj.weight"
+    missing = "backbone.layers.1.mixer.down_weight"
     del weights[missing]
     with pytest.raises(KeyError, match=missing):
         model.compile(weights=weights)
@@ -233,7 +311,7 @@ def test_loading_is_strict() -> None:
 
 
 def test_w4a4_selects_the_moe_mixers_with_nvfp4_experts() -> None:
-    config = _config(_TINY_LAYERS, _TINY)
+    config = model_config(TINY_LAYERS, TINY)
     nvfp4 = {
         f"backbone.layers.1.mixer.experts.{e}.{proj}": (
             ModuleFormat.NVFP4_WEIGHT_ONLY
@@ -247,26 +325,58 @@ def test_w4a4_selects_the_moe_mixers_with_nvfp4_experts() -> None:
     assert config.w4a4_mixers() == {"backbone.layers.1.mixer"}
 
 
-def test_attention_heads_must_divide_across_devices() -> None:
-    """Each device runs an equal share of the attention heads."""
-    config = _config(_TINY_LAYERS, _TINY)
-    hf = _hf_config(_TINY_LAYERS, {**_TINY, "num_attention_heads": 3})
-    with pytest.raises(ValueError, match="3 attention heads"):
+@pytest.mark.parametrize(
+    "field, value, n_devices, sharded",
+    [
+        ("num_attention_heads", 3, 2, "3 attention heads"),
+        ("n_routed_experts", 5, 2, "5 routed experts"),
+        ("moe_shared_expert_intermediate_size", 25, 2, "25 shared expert"),
+        ("mamba_num_heads", 3, 2, "3 Mamba heads"),
+        ("n_groups", 3, 2, "3 Mamba groups"),
+        # Three devices neither divide two KV heads nor are a multiple.
+        ("num_key_value_heads", 2, 3, "2 KV heads"),
+        ("num_key_value_heads", 3, 2, "3 KV heads"),
+    ],
+)
+def test_sharded_dims_must_divide_across_devices(
+    field: str, value: int, n_devices: int, sharded: str
+) -> None:
+    """Each device runs an equal share of every sharded dimension, and a
+    whole number of KV heads."""
+    config = model_config(TINY_LAYERS, TINY)
+    hf = hf_config(TINY_LAYERS, TINY)
+    setattr(hf, field, value)
+    with pytest.raises(ValueError, match=sharded):
         NemotronHConfig.from_huggingface(
             hf,
             kv_params=config.kv_params,
-            devices=[DeviceRef.GPU(0), DeviceRef.GPU(1)],
+            devices=[DeviceRef.GPU(i) for i in range(n_devices)],
             max_seq_len=256,
         )
 
 
-def test_weights_are_planned_on_every_device() -> None:
-    """Only attention is sharded, so each device holds about every weight."""
-    config = _config(_TINY_LAYERS, _TINY)
+def _bytes_on_devices(model: NemotronH, n: int) -> int:
+    """Sums the parameter bytes across devices, from their placements."""
+    return sum(
+        math.prod(int(d) for d in param.shape)
+        * param.dtype.size_in_bytes
+        * (n if all(isinstance(p, Replicated) for p in param.placements) else 1)
+        for _, param in model.parameters
+    )
+
+
+@pytest.mark.parametrize("n", [2, 4, 8])
+def test_weights_are_planned_as_the_modules_place_them(n: int) -> None:
+    """Sharded weights are counted once, replicated ones per device, and a
+    repeated KV head once per device that holds it."""
     pipeline = Mock()
     pipeline.model.weights_size.return_value = 1000
-    two_devices = replace(config, devices=[DeviceRef.GPU(0), DeviceRef.GPU(1)])
+    one_config = model_config(TINY_LAYERS, WIDE)
+    config = model_config(TINY_LAYERS, WIDE, n_devices=n)
 
-    one = NemotronHMemoryPlanner(config).estimate_weights_size(pipeline)
-    two = NemotronHMemoryPlanner(two_devices).estimate_weights_size(pipeline)
-    assert (one, two) == (1000, 2000)
+    one = NemotronHMemoryPlanner(one_config).estimate_weights_size(pipeline)
+    planned = NemotronHMemoryPlanner(config).estimate_weights_size(pipeline)
+
+    placed = _bytes_on_devices(_model_on_devices(config), n)
+    assert planned - one == placed - _bytes_on_devices(_model(one_config), 1)
+    assert planned > one

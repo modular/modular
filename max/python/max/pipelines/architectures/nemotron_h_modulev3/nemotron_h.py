@@ -26,10 +26,11 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module, as_subgraph
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.embedding import Embedding
 from max.experimental.nn.norm import RMSNorm
 from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import DeviceMapping
+from max.experimental.sharding import DeviceMapping, NamedMapping
 from max.experimental.tensor import Tensor
 from max.graph import BufferValue, TensorValue
 from max.nn.kv_cache import (
@@ -58,16 +59,18 @@ def _distributed_state(
 ) -> RecurrentStateInputsPerDevice[Tensor, Tensor]:
     """Builds one state tensor per leaf from each device's pool.
 
-    Mamba state is full-width on every device, so the pools take the same
-    placement as the replicated token tensor.
+    Each device's pool holds the state of its own Mamba heads, so the pools
+    are sharded on their channel axis. The pool rows of each request are the
+    same on every device, so they take the replicated token placement.
     """
     leaves: list[RecurrentLeafInputs[Tensor, Tensor]] = []
     for index in range(len(per_device[0].leaves)):
+        pools = [device.leaves[index].pool for device in per_device]
+        spec = (None, TP) + (None,) * (pools[0].rank - 2)
         leaves.append(
             RecurrentLeafInputs(
                 pool=Tensor.from_shard_values(
-                    [device.leaves[index].pool for device in per_device],
-                    mapping,
+                    pools, NamedMapping(mapping.mesh, spec)
                 ),
                 live_row_ids=Tensor.from_shard_values(
                     [

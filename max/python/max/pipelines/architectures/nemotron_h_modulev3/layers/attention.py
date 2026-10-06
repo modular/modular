@@ -65,7 +65,9 @@ class NemotronHAttention(Module[[Tensor, PagedCacheValues, Tensor], Tensor]):
         self.n_heads = config.num_attention_heads
         self.head_dim = config.head_dim
         self.q_dim = self.n_heads * self.head_dim
-        kv_dim = config.num_key_value_heads * self.head_dim
+        # repeat_kv_heads_for_tp repeats each KV head once per device in its
+        # group, so that column parallelism gives every device a whole head.
+        kv_dim = config.sharded_kv_heads * self.head_dim
         self.qkv_proj = QKVLinear(
             config.hidden_size, q_dim=self.q_dim, kv_dim=kv_dim
         )

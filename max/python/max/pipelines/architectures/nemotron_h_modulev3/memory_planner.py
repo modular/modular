@@ -18,7 +18,7 @@ from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
 from max.support.math import ceildiv
 
-from .model_config import NemotronHConfig
+from .model_config import LayerKind, NemotronHConfig
 from .quantization import NVFP4_GROUP_SIZE, ModuleFormat
 
 
@@ -30,7 +30,9 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
 
         Modules dequantized at load are larger on the device than in the
         checkpoint files the default estimate measures. Routed experts kept in
-        NVFP4 grow only by their block-scale padding.
+        NVFP4 grow only by their block-scale padding. Sharded weights are
+        counted once and replicated ones once per device. With more devices
+        than KV heads, each device holds a copy of its KV head.
         """
         size = super().estimate_weights_size(pipeline_config)
         config = self._config
@@ -65,9 +67,41 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
             }[fmt]
             # Dequantized to two-byte BF16.
             size += int(inner * config.hidden_size * (2 - stored_bytes))
-        # Only attention is sharded, so every device holds about the whole
-        # model, and the caller subtracts this from all devices' free memory.
-        return size * len(config.devices)
+        return (
+            size
+            + _replicated_bytes(config) * (len(config.devices) - 1)
+            + _repeated_kv_bytes(config)
+        )
+
+
+def _replicated_bytes(config: NemotronHConfig) -> int:
+    """Returns the bytes of the weights every device holds whole.
+
+    Those are the embedding, the LM head, the block norms and the final norm,
+    the MoE routers and the MLP mixers. Everything but the float32 routers
+    loads as BF16.
+    """
+    hidden = config.hidden_size
+    # The embedding, the LM head, every block's norm and the final norm.
+    elements = (2 * config.vocab_size + len(config.layer_kinds) + 1) * hidden
+    router_bytes = 0
+    for kind in config.layer_kinds:
+        if kind is LayerKind.MOE:
+            # The router weight and its score bias.
+            router_bytes += 4 * config.num_experts * (hidden + 1)
+        elif kind is LayerKind.MLP:
+            elements += 2 * config.intermediate_size * hidden
+    return 2 * elements + router_bytes
+
+
+def _repeated_kv_bytes(config: NemotronHConfig) -> int:
+    """Returns the BF16 bytes the repeated KV heads add to the checkpoint."""
+    extra_heads = config.sharded_kv_heads - config.num_key_value_heads
+    num_attention = config.layer_kinds.count(LayerKind.ATTENTION)
+    # Two bytes per element, in both the k and v projections.
+    return (
+        4 * extra_heads * config.head_dim * config.hidden_size * num_attention
+    )
 
 
 def _block_scale_padding_bytes(config: NemotronHConfig, module: str) -> int:
