@@ -167,6 +167,14 @@ This version is still a work in progress.
   `to_tensors()`, `map_tensors()`, `tensor_to_layout()` and `any_distributed()`
   are no longer exported from `max.experimental.functional`; use
   `Tensor.layout` for a tensor's layout.
+- `max.experimental.functional.allreduce_sum()`, `allgather()` and
+  `reduce_scatter()` accept several mesh axes, by index or name, and run one
+  collective over all the devices those axes span. A tensor axis sharded over
+  several mesh axes is now split once over all those devices, the way a
+  reduce-scatter over them splits it: 10 rows on a 2x2 mesh become 3, 3, 2
+  and 2 rows instead of 3, 2, 3 and 2.
+- `max.experimental.functional.stack()` takes a `device` mapping that places
+  the stack of host tensors directly, so each device receives only its part.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
 - `max.experimental.nn.Module` is now a pytree: its attributes are its
   children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk

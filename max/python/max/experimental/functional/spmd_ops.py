@@ -111,6 +111,7 @@ from ..sharding.rules import (
     while_loop_rule,
 )
 from ._signatures import install_tensor_signature
+from .collective_ops import _place_stack, transfer_to
 from .creation_ops import full_like
 from .dispatch import _graph_value, call_on_mesh
 
@@ -379,7 +380,6 @@ def _transfer_args(
     """Moves each tensor argument to the mapping ``action`` picks for it."""
     if action_set.finalize is not None:
         return _transfer_finalized_args(args, action.inputs)
-    from .collective_ops import transfer_to
 
     slots = {id(layout): i for i, layout in enumerate(action_set.layouts)}
     # The entries after the rule's layouts replace, in order, the arguments
@@ -408,8 +408,6 @@ def _transfer_finalized_args(
     args: tuple[Any, ...], suggested: tuple[Any, ...]
 ) -> tuple[Any, ...]:
     """Reshards Tensor args to the per-argument entries of ``suggested``."""
-    from .collective_ops import transfer_to
-
     result: list[object] = []
     for orig, sugg in zip(args, suggested, strict=False):
         if isinstance(sugg, PerShard):
@@ -2064,37 +2062,60 @@ Raises:
     IndexError: If ``axis`` is out of range.
 """
 
-stack = functional(ops.stack, rule=stack_rule)
-stack.__doc__ = """Stacks tensors along a new axis.
+_stack = functional(ops.stack, rule=stack_rule)
 
-.. code-block:: python
 
-    from max.experimental import Tensor
-    from max.experimental import functional as F
+def stack(
+    values: Iterable[Any],
+    axis: int = 0,
+    device: DeviceMapping | None = None,
+) -> Any:
+    """Stacks tensors along a new axis.
 
-    a = Tensor([[1, 2], [3, 4]])
-    b = Tensor([[5, 6], [7, 8]])
+    .. code-block:: python
 
-    # Stack the two (2, 2) tensors into one (2, 2, 2) tensor
-    result = F.stack([a, b], axis=0)
-    # result has shape (2, 2, 2)
+        from max.experimental import Tensor
+        from max.experimental import functional as F
 
-Args:
-    values: The tensors to stack. Each must have the same dtype, rank,
-        shape, and device.
-    axis: The position of the new axis. Negative values count from the
-        end, where ``-1`` inserts the new axis as the last dimension.
-        Defaults to ``0``.
+        a = Tensor([[1, 2], [3, 4]])
+        b = Tensor([[5, 6], [7, 8]])
 
-Returns:
-    A ``Tensor`` containing the stacked inputs. It has one more dimension
-    than the inputs, and the new dimension has size ``len(values)``.
+        # Stack the two (2, 2) tensors into one (2, 2, 2) tensor
+        result = F.stack([a, b], axis=0)
+        # result has shape (2, 2, 2)
 
-Raises:
-    ValueError: If ``values`` is empty, or if the tensors don't all have
-        the same dtype, rank, shape, and device.
-    IndexError: If ``axis`` is out of range.
-"""
+    Args:
+        values: The tensors to stack. Each must have the same dtype, rank,
+            shape, and device.
+        axis: The position of the new axis. Negative values count from the
+            end, where ``-1`` inserts the new axis as the last dimension.
+            Defaults to ``0``.
+        device: The :class:`~max.experimental.sharding.DeviceMapping` to
+            place the stack onto. Use it to assemble a weight from many host
+            tensors, for example a layer's experts: each device receives
+            only its part of the stack, and the host never builds the whole
+            stack. Requires ``axis`` to be ``0``. Defaults to ``None``,
+            which stacks the tensors on their own device.
+
+    Returns:
+        A ``Tensor`` containing the stacked inputs. It has one more
+        dimension than the inputs, and the new dimension has size
+        ``len(values)``.
+
+    Raises:
+        ValueError: If ``values`` is empty, if the tensors don't all have
+            the same dtype, rank, shape, and device, or if ``device`` is set
+            and ``axis`` is not ``0``.
+        IndexError: If ``axis`` is out of range.
+    """
+    values = list(values)
+    if device is None:
+        return _stack(values, axis)
+    if axis != 0:
+        raise ValueError("stack with a device mapping requires axis=0.")
+    if any(value.is_distributed for value in values):
+        return _stack(values).to(device)
+    return _place_stack(values, device)
 
 
 argsort = functional(ops.argsort, rule=argsort_rule)

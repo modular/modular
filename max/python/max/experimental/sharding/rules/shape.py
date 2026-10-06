@@ -34,7 +34,6 @@ from max.experimental.sharding.per_shard_dim import (
     local_dim_at,
     make_per_shard_dim,
 )
-from max.experimental.sharding.placements import _shard_sizes_along_axis
 from max.experimental.sharding.types import TensorLayout
 from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndex, SliceIndices
@@ -56,45 +55,48 @@ def _localize_sizes(
     """Adaptive per-rank size kwarg for :func:`split`.
 
     When the split axis is sharded, divisible static sizes return one list
-    of plain Dims; non-divisible static sizes are split unevenly via
-    :func:`_shard_sizes_along_axis` and returned as :class:`PerShard`.
+    of plain Dims; non-divisible static sizes are split unevenly, as
+    ``Sharded.local_dim`` splits them, and returned as ``PerShard``.
     """
-    norm = axis % ndim
+    split_axis = axis % ndim
     sharded = [
-        (ax, mesh.mesh_shape[ax])
-        for ax, p in enumerate(placements)
-        if p.localized_axis() == norm
+        (mesh_axis, mesh.mesh_shape[mesh_axis])
+        for mesh_axis, p in enumerate(placements)
+        if p.localized_axis() == split_axis
     ]
     if not sharded:
         return [Dim(s) for s in sizes]
 
     diverges = any(
         not isinstance(Dim(s), StaticDim)
-        or any(int(Dim(s)) % msz != 0 for _, msz in sharded)
+        or any(
+            int(Dim(s)) % mesh_axis_size != 0 for _, mesh_axis_size in sharded
+        )
         for s in sizes
     )
     if not diverges:
         local = [Dim(s) for s in sizes]
-        for _, msz in sharded:
-            local = [d // msz for d in local]
+        for _, mesh_axis_size in sharded:
+            local = [d // mesh_axis_size for d in local]
         return local
 
     n_devices = mesh.num_devices
-    msh_ax, msz = sharded[0]
-    stride = 1
-    for k in builtins.range(msh_ax + 1, mesh.ndim):
-        stride *= mesh.mesh_shape[k]
+    mesh_axes = [mesh_axis for mesh_axis, _ in sharded]
     per_rank: list[list[Dim]] = [[] for _ in builtins.range(n_devices)]
-    for s in sizes:
-        sd = Dim(s)
-        if isinstance(sd, StaticDim):
-            chunks = _shard_sizes_along_axis(int(sd), msz)
-            for d in builtins.range(n_devices):
-                per_rank[d].append(StaticDim(chunks[(d // stride) % msz]))
+    for size in sizes:
+        size_dim = Dim(size)
+        if isinstance(size_dim, StaticDim):
+            cells = placements[mesh_axes[0]].local_dim(
+                size_dim, mesh, mesh_axes
+            )
+            for device in builtins.range(n_devices):
+                per_rank[device].append(local_dim_at(cells, device))
         else:
-            divided = sd // msz
-            for d in builtins.range(n_devices):
-                per_rank[d].append(divided)
+            divided = size_dim
+            for _, mesh_axis_size in sharded:
+                divided = divided // mesh_axis_size
+            for device in builtins.range(n_devices):
+                per_rank[device].append(divided)
     return PerShard(per_rank)
 
 
@@ -174,15 +176,22 @@ def _per_rank_target(
     target_dims = [Dim(d) for d in target]
 
     lifted: list[Dim] = []
-    for ti, td in enumerate(target_dims):
-        if is_per_shard_dim(td) or _is_minus_one(td):
-            lifted.append(td)
+    for tensor_axis, target_dim in enumerate(target_dims):
+        if is_per_shard_dim(target_dim) or _is_minus_one(target_dim):
+            lifted.append(target_dim)
             continue
-        d: Dim = td
-        for mesh_axis, p in enumerate(out_placements):
-            if p.localized_axis() == ti:
-                d = p.local_dim(d, mesh, mesh_axis, allow_symbolic_mint=False)
-        lifted.append(d)
+        mesh_axes = [
+            mesh_axis
+            for mesh_axis, p in enumerate(out_placements)
+            if p.localized_axis() == tensor_axis
+        ]
+        lifted.append(
+            out_placements[mesh_axes[0]].local_dim(
+                target_dim, mesh, mesh_axes, allow_symbolic_mint=False
+            )
+            if mesh_axes
+            else target_dim
+        )
 
     per_rank_shapes: list[Shape] = []
     for r in range(n):
@@ -557,11 +566,11 @@ def _rebind_finalize(
 
     - the cell from a :class:`PerShardDim` wrapper if the caller passed one;
     - a :class:`PerShardDim` carrying load-balanced cells
-      ``((r + 1) * target[i]) // n - (r * target[i]) // n`` when the
-      input is :class:`Sharded` on axis ``i`` via a mesh axis of group
-      ``n``, so the per-shard form matches what
-      :func:`_even_split_along_axis` produces on the other side of a
-      residual add;
+      ``(target[i] + n - 1 - r) // n``, larger first, when the
+      input is :class:`Sharded` on axis ``i`` over mesh axes that span
+      ``n`` devices, where ``r`` is the device's index among them, so the
+      per-shard form matches what :func:`_even_split_along_axis` produces
+      on the other side of a residual add;
     - the target dim unchanged otherwise.
 
     Static dims on a sharded axis use :meth:`Sharded.local_dim`'s
@@ -576,25 +585,36 @@ def _rebind_finalize(
         assert isinstance(in_mapping, DeviceMapping)
         mesh = in_mapping.mesh
 
-        def _local(ti: int, td: DimLike) -> Dim:
-            d = Dim(td)
-            if is_per_shard_dim(d):
-                return d
-            for mesh_axis, p in enumerate(in_mapping.placements):
-                if not isinstance(p, Sharded) or p.localized_axis() != ti:
-                    continue
-                group = mesh.mesh_shape[mesh_axis]
-                if isinstance(d, StaticDim):
-                    d = p.local_dim(
-                        d, mesh, mesh_axis, allow_symbolic_mint=False
+        def _local(tensor_axis: int, target_dim: DimLike) -> Dim:
+            dim = Dim(target_dim)
+            if is_per_shard_dim(dim):
+                return dim
+            mesh_axes = [
+                mesh_axis
+                for mesh_axis, p in enumerate(in_mapping.placements)
+                if isinstance(p, Sharded) and p.localized_axis() == tensor_axis
+            ]
+            if not mesh_axes:
+                return dim
+            if isinstance(dim, StaticDim):
+                return in_mapping.placements[mesh_axes[0]].local_dim(
+                    dim, mesh, mesh_axes, allow_symbolic_mint=False
+                )
+            # The larger pieces come first, as the reduce-scatter kernel
+            # orders them.
+            group_size = mesh.axis_size(mesh_axes)
+            return make_per_shard_dim(
+                tuple(
+                    (
+                        dim
+                        + group_size
+                        - 1
+                        - mesh.device_coord(device, mesh_axes)
                     )
-                else:
-                    cells = tuple(
-                        ((r + 1) * d) // group - (r * d) // group
-                        for r in range(group)
-                    )
-                    d = make_per_shard_dim(cells)
-            return d
+                    // group_size
+                    for device in range(mesh.num_devices)
+                )
+            )
 
         lifted = [_local(i, td) for i, td in enumerate(shape)]
         per_rank = PerShard(

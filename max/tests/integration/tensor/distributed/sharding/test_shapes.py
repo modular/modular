@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Tests for shard shape helpers: ``shard_shape``,
-``local_shard_shape_from_global``, ``_shard_sizes_along_axis``."""
+``local_shard_shape_from_global``, ``even_shard_sizes``."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from max.experimental.sharding import (
     Sharded,
 )
 from max.experimental.sharding.placements import (
-    _shard_sizes_along_axis,
+    even_shard_sizes,
     local_shard_shape_from_global,
     shard_shape,
 )
@@ -82,21 +82,21 @@ class TestShardShape:
         assert [int(d) for d in result] == [4, 4, 3, 3]
 
 
-class TestShardSizesAlongAxis:
+class TestEvenShardSizes:
     def test_even_split(self) -> None:
-        assert _shard_sizes_along_axis(8, 4) == [2, 2, 2, 2]
+        assert even_shard_sizes(8, 4) == [2, 2, 2, 2]
 
     def test_uneven_split(self) -> None:
-        assert _shard_sizes_along_axis(10, 4) == [3, 3, 2, 2]
+        assert even_shard_sizes(10, 4) == [3, 3, 2, 2]
 
     def test_minus_one_preserved(self) -> None:
         """``-1`` (reshape wildcard) propagates verbatim per shard so each
         rank's local reshape can infer its own extent from the actual
         local input."""
-        assert _shard_sizes_along_axis(-1, 4) == [-1, -1, -1, -1]
+        assert even_shard_sizes(-1, 4) == [-1, -1, -1, -1]
 
     def test_single_shard(self) -> None:
-        assert _shard_sizes_along_axis(8, 1) == [8]
+        assert even_shard_sizes(8, 1) == [8]
 
 
 # ═════════════════════════════════════════════════════════════════════════

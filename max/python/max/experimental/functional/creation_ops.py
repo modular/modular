@@ -122,12 +122,12 @@ def full(
         )(PerShard(local_shapes))
     device_ref = DeviceRef.from_device(mapping.mesh.devices[0])
     with ensure_context():
+        constant = ops.constant(value, resolved_dtype, device_ref)
+        shape = Shape(shape)
+        # A rank-0 constant already has the requested shape, so it needs no
+        # broadcast op.
         return Tensor.from_shard_values(
-            [
-                ops.broadcast_to(
-                    ops.constant(value, resolved_dtype, device_ref), shape
-                )
-            ],
+            [ops.broadcast_to(constant, shape) if shape else constant],
             mapping,
         )
 

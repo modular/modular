@@ -171,55 +171,52 @@ def external_shard_names(name: str, num_shards: int) -> list[str]:
 def _fold_sharded_shape(
     shape: graph.Shape, mapping: DeviceMapping
 ) -> graph.Shape:
-    """Folds per-rank wrappers on ``shape`` into the global shape per mapping."""
+    """Returns the global shape for the per-device dims in ``shape``.
+
+    A dim that a mesh axis splits is the sum of its pieces, and copies along
+    a mesh axis must have the same size. Devices that hold different data,
+    along a mesh axis that splits another tensor axis or is ``Unknown``, may
+    have different sizes for this dim: for example, each data-parallel
+    replica's block table has its own page count. Such a dim has no global
+    size and stays per device.
+    """
     mesh = mapping.mesh
     placements = mapping.placements
     mesh_shape = mesh.mesh_shape
-    n_devices = mesh.num_devices
     folded: list[graph.Dim] = []
-    for ti, d in enumerate(shape):
+    for tensor_axis, d in enumerate(shape):
         if not is_per_shard_dim(d):
             g = graph.Dim(d)
             for mesh_axis, p in enumerate(placements):
-                if p.localized_axis() == ti and isinstance(p, Sharded):
+                if p == Sharded(tensor_axis):
                     g = g * mesh_shape[mesh_axis]
             folded.append(g)
             continue
         cells = list(d.per_shard)
-        if len(cells) != n_devices:
+        if len(cells) != mesh.num_devices:
             raise ValueError(
                 f"sharded dim {d!r} has {len(cells)} entries, expected "
-                f"{n_devices} for mesh {mesh!r}."
+                f"{mesh.num_devices} for mesh {mesh!r}."
             )
         for mesh_axis in range(mesh.ndim - 1, -1, -1):
-            n = mesh_shape[mesh_axis]
-            p = placements[mesh_axis]
-            # A tensor with Unknown placements has no set way of getting the
-            # global shape; all shapes are device-local.
-            localizes_ti = p.localized_axis() == ti or isinstance(p, Unknown)
-            new_cells: list[graph.Dim] = []
-            for start in range(0, len(cells), n):
-                block = cells[start : start + n]
-                if localizes_ti:
-                    new_cells.append(
-                        p.global_dim(
-                            make_per_shard_dim(tuple(block), force_wrap=True)
-                        )
-                    )
-                else:
-                    first = block[0]
-                    for x in block[1:]:
-                        if x != first:
-                            raise ValueError(
-                                f"global_shape: tensor axis {ti} has "
-                                f"per-rank cells {block!r} that disagree "
-                                f"along mesh axis {mesh_axis} (placement "
-                                f"{p!r}); non-localizing mesh axes must "
-                                "hold shape-identical shards."
-                            )
-                    new_cells.append(first)
-            cells = new_cells
-        assert len(cells) == 1
+            axis_size, p = mesh_shape[mesh_axis], placements[mesh_axis]
+            blocks = [
+                cells[i : i + axis_size]
+                for i in range(0, len(cells), axis_size)
+            ]
+            if p == Sharded(tensor_axis):
+                cells = [sum(block[1:], block[0]) for block in blocks]
+            elif all(len(set(block)) == 1 for block in blocks):
+                cells = [block[0] for block in blocks]
+            elif isinstance(p, (Sharded, Unknown)):
+                cells = [make_per_shard_dim(d.per_shard, force_wrap=True)]
+                break
+            else:
+                raise ValueError(
+                    f"global_shape: tensor axis {tensor_axis} has per-device "
+                    f"sizes {d.per_shard!r} that disagree across copies "
+                    f"along mesh axis {mesh_axis} ({p!r})."
+                )
         folded.append(cells[0])
     return graph.Shape(folded)
 
@@ -904,9 +901,18 @@ class Tensor(DLPackArray, HasTensorValue):
             runtime value.
 
         Raises:
-            ValueError: In eager mode (no active graph) for a symbolic or
-                algebraic dimension, which has no value outside a graph.
+            ValueError: If the dimension has no value. This includes when
+                the dimension is symbolic or algebraic in eager mode (no
+                active graph), since it has no value outside a graph, or
+                when it holds per-device sizes and no global size.
         """
+        if is_per_shard_dim(dim):
+            if dim._global is None:
+                raise ValueError(
+                    f"Tensor.from_dim({dim}): the shards' sizes have no "
+                    "global value."
+                )
+            dim = dim._global
         d = Dim(dim)
         if isinstance(d, StaticDim):
             # The value is known now, so emit a scalar constant. This needs no
@@ -1658,7 +1664,7 @@ class Tensor(DLPackArray, HasTensorValue):
         return graph.Shape(
             [
                 make_per_shard_dim(cells[i], global_dim=globals_[i])
-                if i in sharded_axes
+                if i in sharded_axes and not is_per_shard_dim(globals_[i])
                 else globals_[i]
                 for i in range(ndim)
             ]
@@ -1927,7 +1933,8 @@ class Tensor(DLPackArray, HasTensorValue):
         This method supports three target types:
 
         1. **Device**: Transfers a single-device tensor to the target device.
-           For realized tensors, performs a direct driver-level transfer via
+           A distributed tensor is gathered onto the device. For realized
+           tensors, performs a direct driver-level transfer via
            :meth:`~max.driver.Buffer.to`. For unrealized tensors, inserts a
            :func:`~max.graph.ops.transfer_to` op into the computation graph.
 
@@ -1973,10 +1980,12 @@ class Tensor(DLPackArray, HasTensorValue):
         """
         mapping: DeviceMapping
         if isinstance(target, Device):
-            mapping = DeviceMapping(DeviceMesh.single(target), self.placements)
-        elif isinstance(target, DeviceMesh):
+            return F.transfer_to(self, target)
+        if isinstance(target, DeviceMesh):
             if isinstance(self._mapping, NamedMapping):
                 mapping = self._mapping._resolve(target)
+            elif self.mapping.is_fully_replicated:
+                mapping = DeviceMapping.replicated(target)
             else:
                 mapping = DeviceMapping(target, self.placements)
         elif isinstance(target, DeviceMapping):

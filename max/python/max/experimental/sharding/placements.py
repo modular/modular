@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import math
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -63,10 +62,21 @@ reduce-scatter. Moving an input from another mesh is not a transition.
 """
 
 
-def _shard_sizes_along_axis(global_size: int, num_shards: int) -> list[int]:
-    """Splits ``global_size`` across ``num_shards``; sizes differ by at most 1.
+def even_shard_sizes(global_size: int, num_shards: int) -> list[int]:
+    """Returns the sizes of ``num_shards`` balanced pieces of ``global_size``.
 
-    The ``-1`` wildcard is preserved on every rank.
+    The sizes differ by at most 1, and the larger ones come first, as the
+    reduce-scatter kernel orders them, so slicing a copy gives the same
+    pieces as a reduce-scatter. For example, ``even_shard_sizes(10, 4)`` is
+    ``[3, 3, 2, 2]``.
+
+    Args:
+        global_size: The size to split. A ``-1`` reshape wildcard stays
+            ``-1`` in every piece.
+        num_shards: The number of pieces.
+
+    Returns:
+        The size of each piece, in order.
     """
     if global_size == -1:
         return [-1] * num_shards
@@ -98,11 +108,11 @@ class Placement(ABC):
         self,
         parent: DimLike,
         mesh: DeviceMesh,
-        mesh_axis: int,
+        mesh_axis: int | Sequence[int],
         *,
         allow_symbolic_mint: bool = True,
     ) -> Dim:
-        """Returns the per-shard local cells of ``parent`` along this mesh axis.
+        """Returns the per-shard local cells of ``parent`` along mesh axes.
 
         The default returns ``parent`` unchanged; ``Sharded`` overrides to
         split. A wrapper ``parent`` is passed through verbatim.
@@ -110,31 +120,13 @@ class Placement(ABC):
         Args:
             parent: The global dim to localize.
             mesh: The device mesh.
-            mesh_axis: The mesh axis index being localized.
+            mesh_axis: The mesh axis that splits ``parent``, or every mesh
+                axis that splits it.
             allow_symbolic_mint: When ``False``, refuse to mint fresh
                 per-shard symbols from a bare :class:`SymbolicDim`. Reshape
                 propagation passes ``False``.
         """
         return Dim(parent)
-
-    def global_dim(self, cells: Dim) -> Dim:
-        """Combines per-shard cells along this mesh axis into one global :class:`~max.graph.Dim`.
-
-        The default returns ``cells`` unchanged (every shard holds the
-        same dim). ``Sharded`` overrides to sum the cells.
-        """
-        if is_per_shard_dim(cells):
-            first = cells.per_shard[0]
-            for d in cells.per_shard[1:]:
-                if d != first:
-                    raise ValueError(
-                        f"{type(self).__name__}.global_dim: per-shard cells "
-                        f"{cells.per_shard!r} disagree along this mesh axis; "
-                        "this placement requires shape-identical shards. "
-                        "Override global_dim() to allow heterogeneous cells."
-                    )
-            return first
-        return cells
 
 
 @dataclass(frozen=True)
@@ -164,12 +156,6 @@ class Unknown(Placement):
 
     def __repr__(self) -> str:
         return "Unknown()"
-
-    def global_dim(self, cells: Dim) -> Dim:
-        """Returns each shard's own cell; no global extent relates them."""
-        if is_per_shard_dim(cells):
-            return make_per_shard_dim(cells.per_shard)
-        return cells
 
 
 @dataclass(frozen=True)
@@ -203,11 +189,16 @@ class Sharded(Placement):
         self,
         parent: DimLike,
         mesh: DeviceMesh,
-        mesh_axis: int,
+        mesh_axis: int | Sequence[int],
         *,
         allow_symbolic_mint: bool = True,
     ) -> Dim:
         """Splits ``parent`` along ``mesh_axis`` into per-shard cells.
+
+        With several mesh axes, ``parent`` is split once into one piece per
+        device they span, in row-major device order. For example, 10 rows
+        split over both axes of a 2x2 mesh give devices 0 to 3 sizes 3, 3,
+        2, and 2.
 
         ``StaticDim`` parents use uneven divmod; ``SymbolicDim`` parents
         mint fresh per-shard cells; ``AlgebraicDim`` parents raise.
@@ -219,13 +210,13 @@ class Sharded(Placement):
             assert isinstance(parent, Dim)
             return parent
         parent_dim = Dim(parent)
-        mesh_axis_size = mesh.mesh_shape[mesh_axis]
-        axis_name = mesh.axis_names[mesh_axis]
-        stride = math.prod(mesh.mesh_shape[mesh_axis + 1 :])
+        axes = sorted(
+            {mesh_axis} if isinstance(mesh_axis, int) else set(mesh_axis)
+        )
         if isinstance(parent_dim, StaticDim):
-            chunks = _shard_sizes_along_axis(int(parent_dim), mesh_axis_size)
+            sizes = even_shard_sizes(int(parent_dim), mesh.axis_size(axes))
             cells: tuple[Dim, ...] = tuple(
-                StaticDim(chunks[(device_idx // stride) % mesh_axis_size])
+                StaticDim(sizes[mesh.device_coord(device_idx, axes)])
                 for device_idx in range(mesh.num_devices)
             )
         elif isinstance(parent_dim, SymbolicDim):
@@ -239,8 +230,12 @@ class Sharded(Placement):
                 )
             cells = tuple(
                 SymbolicDim(
-                    f"{parent_dim.name}_{axis_name}_"
-                    f"{(device_idx // stride) % mesh_axis_size}"
+                    parent_dim.name
+                    + "".join(
+                        f"_{mesh.axis_names[axis]}_"
+                        f"{mesh.device_coord(device_idx, axis)}"
+                        for axis in axes
+                    )
                 )
                 for device_idx in range(mesh.num_devices)
             )
@@ -252,17 +247,8 @@ class Sharded(Placement):
                 "input) into the target shape."
             )
         else:
-            cells = (parent_dim // mesh_axis_size,) * mesh.num_devices
+            cells = (parent_dim // mesh.axis_size(axes),) * mesh.num_devices
         return make_per_shard_dim(cells)
-
-    def global_dim(self, cells: Dim) -> Dim:
-        """Sums per-shard cells along this mesh axis."""
-        if not is_per_shard_dim(cells):
-            return cells
-        total: Dim = cells.per_shard[0]
-        for d in cells.per_shard[1:]:
-            total = total + d
-        return total
 
 
 class ReduceOp(str, Enum):
@@ -329,8 +315,8 @@ def local_shard_shape_from_global(
 ) -> list[Shape]:
     """One :class:`Shape` per device, in row-major mesh order.
 
-    Composes every placement's :meth:`Placement.local_dim` for the tensor
-    axis it localizes, then projects per rank.
+    Calls :meth:`Placement.local_dim` once per tensor axis, with every mesh
+    axis that splits it, then takes each device's size.
 
     Raises:
         ValueError: If ``placements`` length differs from ``mesh.ndim`` or
@@ -358,12 +344,13 @@ def local_shard_shape_from_global(
             )
         norm_axes.append(ax)
     wrapped: list[Dim] = []
-    for ti, d in enumerate(global_list):
-        x: Dim = d
-        for mesh_axis, p in enumerate(placements):
-            if norm_axes[mesh_axis] == ti:
-                x = p.local_dim(x, mesh, mesh_axis)
-        wrapped.append(x)
+    for tensor_axis, dim in enumerate(global_list):
+        mesh_axes = [a for a in range(mesh.ndim) if norm_axes[a] == tensor_axis]
+        wrapped.append(
+            placements[mesh_axes[0]].local_dim(dim, mesh, mesh_axes)
+            if mesh_axes
+            else dim
+        )
     return [local_shape_at(wrapped, r) for r in range(mesh.num_devices)]
 
 

@@ -50,10 +50,16 @@ def _layout(
     """Builds a :class:`TensorLayout` whose ``shape`` carries wrappers on every
     sharded axis — same form ``Tensor.shape`` returns at runtime."""
     wrapped = [Dim(d) for d in Shape(shape)]
-    for mesh_axis, p in enumerate(mapping.placements):
-        ax = p.localized_axis()
-        if ax is not None:
-            wrapped[ax] = p.local_dim(wrapped[ax], mapping.mesh, mesh_axis)
+    for tensor_axis in range(len(wrapped)):
+        mesh_axes = [
+            mesh_axis
+            for mesh_axis, p in enumerate(mapping.placements)
+            if p.localized_axis() == tensor_axis
+        ]
+        if mesh_axes:
+            wrapped[tensor_axis] = mapping.placements[mesh_axes[0]].local_dim(
+                wrapped[tensor_axis], mapping.mesh, mesh_axes
+            )
     return TensorLayout(dtype, Shape(wrapped), mapping)
 
 
