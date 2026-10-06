@@ -560,7 +560,7 @@ struct AMDMatmul[
             ].stack_allocation()
             warp_split_k_reduction[
                 BM, BN, num_threads // Self.num_warps_k, Self.num_warps_k
-            ](warp_k, c_reg.to_layout_tensor(), reduction_smem.ptr)
+            ](warp_k, c_reg, reduction_smem.ptr)
 
             if warp_k != 0:
                 return

@@ -335,7 +335,7 @@ def b2b_gemm[
                 transpose_b_next=transpose_c,
                 k_group_size=2,
             ](
-                ab_reg_tile.to_layout_tensor(),
+                ab_reg_tile,
                 a_gmem_iter,
                 b_gmem_iter,
                 a_smem_iter,
@@ -361,7 +361,7 @@ def b2b_gemm[
                 transpose_b_next=transpose_c,
                 k_group_size=2,
             ](
-                ab_reg_tile.to_layout_tensor(),
+                ab_reg_tile,
                 a_smem_iter,  # don't prefetch a
                 b_gmem_iter,
                 a_smem_iter,
@@ -398,7 +398,7 @@ def b2b_gemm[
             prefetch_init=False,
             static_num_iters=BN // BK,
         ](
-            d_reg_tile.to_layout_tensor(),
+            d_reg_tile,
             ab_iter,
             c_gmem_iter,
             a_smem_iter,  # ignored

@@ -1088,7 +1088,7 @@ def multistage_qgemm_kernel[
             num_warp_k_partitions,
         ](
             warp_k_part_id,
-            c_reg_tile,
+            c_reg_tile_native,
         )
         if warp_k_part_id > 0:
             return

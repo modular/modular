@@ -2344,7 +2344,9 @@ def mla_decoding_single_batch[
             prefetch_init=True,
             static_num_iters=ufloordiv(nope_dim, BK),
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             q_smem_iter,
             k_gmem_iter,
             q_smem_iter,
@@ -2366,7 +2368,9 @@ def mla_decoding_single_batch[
             prefetch_init=False,
             static_num_iters=ufloordiv(rope_dim, BK),
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             q_smem_iter.next_unsafe(
                 q_smem_iter.linear_uint_type(ufloordiv(nope_dim, BK))
             ),
@@ -2521,7 +2525,9 @@ def mla_decoding_single_batch[
             prefetch_init=False,
             static_num_iters=ufloordiv(BN, BK),
         ](
-            output_reg_tile,
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile
+            ),
             p_smem_iter,
             v_smem_iter,
             p_smem_iter,
@@ -4176,7 +4182,9 @@ def mla_prefill_single_batch[
             static_num_iters=q_depth // BK,
             k_group_size=config.k_group_size,
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             q_smem_iter,
             k_smem_iter,
             q_smem_iter,
@@ -4367,7 +4375,9 @@ def mla_prefill_single_batch[
                 static_num_iters=ufloordiv(BN, BK),
                 k_group_size=config.k_group_size,
             ](
-                output_reg_tile,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile
+                ),
                 p_smem_iter,
                 v_smem_iter,
                 p_smem_iter,
@@ -4399,7 +4409,9 @@ def mla_prefill_single_batch[
                 static_num_iters=ufloordiv(BN, BK),
                 k_group_size=config.k_group_size,
             ](
-                output_reg_tile,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile
+                ),
                 p_reg_iter,
                 v_smem_iter,
                 p_smem_iter,

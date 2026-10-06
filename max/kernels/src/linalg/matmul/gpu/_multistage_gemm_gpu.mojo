@@ -41,6 +41,7 @@ from max.gpu.compute.mma import mma
 from layout.layout import *
 from layout import (
     Coord,
+    DefaultEngine,
     Idx,
     LayoutTensor,
     RuntimeLayout,
@@ -95,7 +96,7 @@ comptime WarpSplitKReductionSMem[
 @inline(.always)
 def warp_split_k_reduction[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: TensorLayout,
     //,
     BM: Int,
     BN: Int,
@@ -103,15 +104,23 @@ def warp_split_k_reduction[
     num_warp_k_partitions: Int,
 ](
     warp_k_part_id: Int,
-    c_reg_tile: LayoutTensor[
+    c_reg_tile: TileTensor[
         mut=True, c_type, c_layout, address_space=.LOCAL, ...
     ],
     smem: UnsafePointer[mut=True, Scalar[c_type], _, address_space=.SHARED],
-):
+) where (c_reg_tile.rank == 2) & (c_reg_tile.flat_rank == 2):
+    comptime assert c_reg_tile.rank == c_reg_tile.flat_rank == 2
+    comptime assert c_reg_tile.element_size == 1
+    comptime assert c_reg_tile.Engine == DefaultEngine[element_width=1]
+    comptime assert c_reg_tile.static_shape[0] > 0
+    comptime assert c_reg_tile.static_shape[1] > 0
+    comptime assert c_reg_tile.static_stride[1] == 1
+    comptime assert c_reg_tile.static_stride[0] == c_reg_tile.static_shape[1]
     comptime red_layout = Layout.row_major(1, num_threads_per_warp_k_part)
+    comptime red_layout_native = row_major[1, num_threads_per_warp_k_part]()
 
-    comptime num_mmas = c_layout.shape[0].value()
-    comptime c_frag_size = c_layout.shape[1].value()
+    comptime num_mmas = c_layout.static_shape[0]
+    comptime c_frag_size = c_layout.static_shape[1]
 
     var i_red = num_warp_k_partitions // 2
     var tid = thread_idx.x
@@ -128,30 +137,30 @@ def warp_split_k_reduction[
         if i_red <= warp_k_part_id < 2 * i_red:
             copy_local_to_shared[thread_layout=red_layout](
                 red_tb_smem.to_layout_tensor().vectorize[1, c_frag_size](),
-                c_reg_tile.vectorize[1, c_frag_size](),
+                c_reg_tile.to_layout_tensor().vectorize[1, c_frag_size](),
             )
         barrier()
         if warp_k_part_id < i_red:
-            var red_tb_thread_tile = (
-                red_tb_smem.to_layout_tensor()
-                .vectorize[1, c_frag_size]()
-                .distribute[red_layout](tid)
-            )
-            var c_reg_tile_vectorized = c_reg_tile.vectorize[
+            var red_tb_thread_tile = red_tb_smem.vectorize[
                 1, c_frag_size
-            ]().transpose()
-
+            ]().distribute[red_layout_native](tid)
             comptime for i in range(num_mmas):
-                c_reg_tile_vectorized[0, i] += rebind[
-                    type_of(c_reg_tile_vectorized[0, i])
-                ](red_tb_thread_tile[0, i])
+                var current = c_reg_tile.load[
+                    width=c_frag_size, alignment=align_of[c_type]()
+                ](Coord(i, 0))
+                var incoming = red_tb_thread_tile.load[
+                    width=c_frag_size, alignment=align_of[c_type]()
+                ](Coord(0, i))
+                c_reg_tile.store[
+                    width=c_frag_size, alignment=align_of[c_type]()
+                ](Coord(i, 0), current + incoming)
         i_red //= 2
 
 
 @inline(.always)
 def warp_split_k_reduction[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: TensorLayout,
     //,
     BM: Int,
     BN: Int,
@@ -159,11 +168,11 @@ def warp_split_k_reduction[
     num_warp_k_partitions: Int,
 ](
     warp_k_part_id: Int,
-    c_reg_tile: LayoutTensor[
+    c_reg_tile: TileTensor[
         mut=True, c_type, c_layout, address_space=.LOCAL, ...
     ],
-):
-    comptime c_frag_size = c_layout.shape[1].value()
+) where (c_reg_tile.rank == 2) & (c_reg_tile.flat_rank == 2):
+    comptime c_frag_size = c_layout.static_shape[1]
 
     var smem = external_memory[
         Scalar[c_type],
@@ -179,7 +188,7 @@ def warp_split_k_reduction[
 @inline(.always)
 def multistage_mma[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: TensorLayout,
     a_type: DType,
     a_layout: Layout,
     a_smem_layout: Layout,
@@ -211,7 +220,7 @@ def multistage_mma[
     next_op_b_linear_idx_type: DType = .int64,
     k_group_size: Int = 1,
 ](
-    c: LayoutTensor[mut=True, c_type, c_layout, address_space=.LOCAL, ...],
+    c: TileTensor[mut=True, c_type, c_layout, address_space=.LOCAL, ...],
     a_iter_arg: LayoutTensorIter[_, a_layout, ...],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
     a_smem_iter_arg: LayoutTensorIter[
@@ -262,6 +271,12 @@ def multistage_mma[
     comptime num_warps_n = BN // WN
     var warp_y, warp_x = divmod(warp_id, UInt32(num_warps_n))
 
+    comptime assert c.rank == c.flat_rank == 2
+    comptime assert c.element_size == 1
+    comptime assert c.Engine == DefaultEngine[element_width=1]
+    comptime assert c.static_shape[0] > 0 and c.static_shape[1] > 0
+    comptime assert c.static_stride[1] == 1
+    comptime assert c.static_stride[0] == c.static_shape[1]
     var a_iter = a_iter_arg
     var b_iter = b_iter_arg
     var a_smem_iter = a_smem_iter_arg
@@ -533,7 +548,7 @@ def multistage_mma[
                             lt_to_tt(b_reg_tiles[Int(current)])
                             .vectorize[1, b_frag_size]()
                             .bitcast[a_type](),
-                            lt_to_tt(c).vectorize[1, c_frag_size](),
+                            c.vectorize[1, c_frag_size](),
                         )
                     else:
                         mma_op.mma(
@@ -543,7 +558,7 @@ def multistage_mma[
                             b_reg_tiles[Int(current)].vectorize[
                                 1, b_frag_size
                             ](),
-                            c.vectorize[1, c_frag_size](),
+                            c.to_layout_tensor().vectorize[1, c_frag_size](),
                         )
 
         return
@@ -688,13 +703,13 @@ def multistage_mma[
                         lt_to_tt(b_reg_tiles[Int(current)])
                         .vectorize[1, b_frag_size]()
                         .bitcast[a_type](),
-                        lt_to_tt(c).vectorize[1, c_frag_size](),
+                        c.vectorize[1, c_frag_size](),
                     )
                 else:
                     mma_op.mma(
                         a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
                         b_reg_tiles[Int(current)].vectorize[1, b_frag_size](),
-                        c.vectorize[1, c_frag_size](),
+                        c.to_layout_tensor().vectorize[1, c_frag_size](),
                     )
 
 
@@ -858,7 +873,7 @@ def multistage_gemm_kernel[
     var c_reg_tile_native = stack_allocation[
         dtype=accum_type, address_space=.LOCAL
     ](row_major[num_m_mmas * num_n_mmas, c_frag_size]()).fill(0)
-    # Reduction and epilogue helpers still consume the legacy scalar view.
+    # Epilogue helpers still consume the legacy scalar view.
     var c_reg_tile = c_reg_tile_native.to_layout_tensor()
 
     multistage_mma[
@@ -873,7 +888,7 @@ def multistage_gemm_kernel[
         k_group_size=config.k_group_size,
         swizzle_a=is_nvidia_gpu(),
     ](
-        c_reg_tile,
+        c_reg_tile_native,
         a_gmem_iter,
         b_gmem_iter,
         a_smem_iter,
@@ -890,7 +905,7 @@ def multistage_gemm_kernel[
             num_warp_k_partitions,
         ](
             warp_k_part_id,
-            c_reg_tile,
+            c_reg_tile_native,
         )
         if warp_k_part_id > 0:
             return
