@@ -234,6 +234,37 @@ struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
         )
 
 
+@fieldwise_init
+struct StableAddr(TrivialRegisterPassable):
+    """Identifies a stable address slot.
+
+    A slot is a graph-lifetime location in device memory holding one device
+    data pointer. The slot's own address never changes, so a recorded graph
+    may bake it in; its contents are rewritten by
+    [`DeviceGraphBuilder.place_stable()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#place_stable)
+    before each replay. A view over a slot must therefore read the data
+    pointer when it is used rather than when it is constructed; see
+    `StableTensor` in the `extensibility` package.
+
+    Both pointer layers are device addresses. The slot lives in device memory
+    so that graphs on other devices can read it, and it holds a device data
+    pointer. Neither layer may be dereferenced on the host.
+    """
+
+    var ptr: Pointer[Pointer[NoneType, MutUntrackedOrigin], MutUntrackedOrigin]
+    """Device address of the slot; the slot holds the device data pointer."""
+
+
+@doc_hidden
+@fieldwise_init
+struct _StablePlacement(TrivialRegisterPassable):
+    """A `place_stable` call recorded on a builder: the slot published into and
+    the device data pointer to store there at replay."""
+
+    var index: Int
+    var source: Pointer[NoneType, MutUntrackedOrigin]
+
+
 struct DeviceGraphCache(Movable):
     """Holds the device graphs a model has already built, keyed for reuse.
 
@@ -255,6 +286,11 @@ struct DeviceGraphCache(Movable):
     by the context's pointer identity. Each pool retains its C++ context, so a
     key's referent stays alive for as long as its entry does."""
 
+    var _stable: Dict[String, List[DeviceBuffer[DType.uint64]]]
+    """Stable address slots, one list per collective keyed by the collective's
+    identity. Each slot is a one-pointer device buffer; the cache owns them so
+    they outlive every graph variant that bakes in their addresses."""
+
     var _lock: BlockingSpinLock
     """Lock used to allow safe mutation of this structure in a concurrent
     context. The general assumption this type makes is that locks are held for
@@ -264,6 +300,7 @@ struct DeviceGraphCache(Movable):
         """Creates an empty cache."""
         self._cache = {}
         self._pools = {}
+        self._stable = {}
         self._lock = BlockingSpinLock()
 
     @staticmethod
@@ -422,6 +459,81 @@ struct DeviceGraphCache(Movable):
             var pool = DeviceGraphMemoryPool(ctx)
             self._pools[key] = pool
             return pool^
+
+    @doc_hidden
+    def get_or_create_stable_slots[
+        N: Int
+    ](
+        mut self,
+        key: String,
+        ctxs: Array[DeviceContext, N],
+        devices: List[Int],
+    ) raises -> List[StableAddr]:
+        """Returns the stable address slots of a collective, allocating them on
+        first use.
+
+        Every graph variant of one collective must agree on its slots: a graph
+        on one device bakes in the addresses of slots that graphs on other
+        devices publish into, whichever variant of those graphs happens to
+        run. The table is therefore keyed by the collective's identity rather
+        than by its inputs, and lives as long as the cache.
+
+        Parameters:
+            N: Number of device contexts in the collective.
+
+        Args:
+            key: Identity of the collective.
+            ctxs: The collective's device contexts.
+            devices: For each slot, the index into `ctxs` of the device whose
+                memory holds it.
+
+        Returns:
+            One slot per entry of `devices`.
+
+        Raises:
+            If a device index is out of range or allocating a slot fails.
+        """
+        with BlockingScopedLock(self._lock):
+            var found = self._stable.find(key)
+            if found:
+                return Self._slots_of(found.take())
+
+        # Allocate outside the lock. A caller that missed at the same time may
+        # insert first, in which case its slots win, matching `cache()`.
+        var buffers = List[DeviceBuffer[DType.uint64]]()
+        for device in devices:
+            if device < 0 or device >= N:
+                raise Error(
+                    String(
+                        t"stable slot device index {device} is out of range"
+                        t" for a collective of {N} device(s)"
+                    )
+                )
+            buffers.append(ctxs[device].enqueue_create_buffer[DType.uint64](1))
+
+        with BlockingScopedLock(self._lock):
+            var existing = self._stable.find(key)
+            if existing:
+                return Self._slots_of(existing.take())
+            var slots = Self._slots_of(buffers)
+            self._stable[key] = buffers^
+            return slots^
+
+    @staticmethod
+    def _slots_of(
+        buffers: List[DeviceBuffer[DType.uint64]],
+    ) -> List[StableAddr]:
+        var slots = List[StableAddr](capacity=len(buffers))
+        for i in range(len(buffers)):
+            var buffer = buffers[i]
+            slots.append(
+                StableAddr(
+                    buffer.unsafe_ptr()
+                    .unsafe_bitcast[Pointer[NoneType, MutUntrackedOrigin]]()
+                    .unsafe_origin_cast[MutUntrackedOrigin]()
+                )
+            )
+        return slots^
 
 
 trait DeviceGraphInput(ImplicitlyCopyable):
@@ -608,6 +720,8 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         build_for: Some[def[n: Int](mut DeviceGraphBuilder[_]) raises],
         key_for: Some[def[n: Int]() raises -> String],
         cache: Pointer[mut=True, DeviceGraphCache, _],
+        *,
+        stable_devices: List[Int] = [],
     ) raises -> Array[DeviceGraph, N]:
         """Builds a `DeviceGraph` for every device in `ctxs` against a shared
         cache.
@@ -616,6 +730,15 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         `build_for[i]` on `ctxs[i]` and consults `cache` for a matching entry.
         On a hit the cached graph is returned and `build_for[i]` is never
         called.
+
+        The graphs exchange values through stable address slots, which the
+        cache owns and every variant of the collective shares (see
+        [`DeviceGraphCache.get_or_create_stable_slots()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphCache/#get_or_create_stable_slots)).
+        The slots are installed on each builder before `build_for[i]` runs, so
+        the callback may reach them with
+        [`DeviceGraphBuilder.get_stable()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#get_stable)
+        and
+        [`DeviceGraphBuilder.place_stable()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#place_stable).
 
         Parameters:
             N: Number of device contexts, and the resulting graph count.
@@ -629,6 +752,9 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
                 cache key. This function is generated by the graph compiler
                 based on the computed interface of the device graph.
             cache: The cache to consult and store newly built graphs in.
+            stable_devices: For each stable address slot the graphs may
+                reference by index, the index into `ctxs` of the device whose
+                memory holds it. Empty when the collective uses no slots.
 
         Returns:
             One instantiated `DeviceGraph` per entry of `ctxs`, in the same
@@ -682,6 +808,14 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         """
         var result = Array[Optional[DeviceGraph], N]()
 
+        # Slots are keyed by the collective alone: every device's graph, in
+        # every variant, must see the same addresses.
+        var slots = List[StableAddr]()
+        if len(stable_devices) > 0:
+            slots = cache[].get_or_create_stable_slots(
+                DeviceGraphCache._closure_key(build_for), ctxs, stable_devices
+            )
+
         comptime for i in range(N):
             var ctx = ctxs[i]
             var key = DeviceGraphCache._closure_key(build_for)
@@ -689,6 +823,7 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
             key.write(key_for[i]())
 
             def build(mut b: DeviceGraphBuilder[_]) raises {imm}:
+                b._set_stable_slots(slots.copy())
                 build_for[i](b)
 
             # Caching of command buffers can easily exceed the maximum number of
@@ -998,6 +1133,13 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     `AsyncRT_DeviceGraphBuilder_lastNodeIdOrNone` returns for an empty graph.
     """
 
+    var _stable: List[StableAddr]
+    """The stable address slots this graph may reference by index; installed
+    by `DeviceGraph.create_collective()` before the build callback runs."""
+
+    var _placements: List[_StablePlacement]
+    """The `place_stable` calls recorded on this builder, in order."""
+
     @doc_hidden
     def __init__(
         out self,
@@ -1008,6 +1150,12 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         self._ctx = ctx
         self._implicit_deps = []
         self._region_floor = None
+        self._stable = []
+        self._placements = []
+
+    @doc_hidden
+    def _set_stable_slots(mut self, var slots: List[StableAddr]):
+        self._stable = slots^
 
     @inline(.always)
     def context(self) -> DeviceContext:
@@ -2259,6 +2407,67 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             "AsyncRT_DeviceGraphBuilder_addInput",
             NoneType,
         ](self._handle, result._handle)
+
+    def get_stable(mut self, index: Int) raises -> StableAddr:
+        """Returns stable address slot `index` of this graph's collective.
+
+        Args:
+            index: Position of the slot in the collective's slot table.
+
+        Returns:
+            The slot, for the graph body to build views over.
+
+        Raises:
+            If `index` is out of range of the installed slot table.
+        """
+        self._check_stable_index(index)
+        return self._stable[index]
+
+    def place_stable(
+        mut self,
+        index: Int,
+        source: Pointer[mut=True, NoneType, _],
+    ) raises -> StableAddr:
+        """Records that this graph publishes `source` into stable address slot
+        `index`.
+
+        The slot lives in device memory, so the publish is a device write
+        recorded as a node of this graph: each replay stores `source` into the
+        slot before the nodes that read it run, on this device or another.
+        Inside a device graph `source` is graph-stable (an `add_input` twin or
+        a pool allocation), so the stored value is fixed once recorded.
+
+        Args:
+            index: Position of the slot in the collective's slot table.
+            source: The device data pointer to publish.
+
+        Returns:
+            The slot, sequenced after the publish.
+
+        Raises:
+            If `index` is out of range of the installed slot table.
+        """
+        self._check_stable_index(index)
+        # TODO(spenser): the Driver has no slot API yet, so the placement is
+        # only recorded here and replay does not write the slot. Once
+        # `DeviceGraphBuilder` grows one beside `addInput`, this becomes an
+        # `add_*`-style call that records the store node from `_placements`
+        # and joins the dependency chain.
+        self._placements.append(
+            _StablePlacement(
+                index, source.unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+        )
+        return self._stable[index]
+
+    def _check_stable_index(self, index: Int) raises:
+        if index < 0 or index >= len(self._stable):
+            raise Error(
+                String(
+                    t"stable slot index {index} is out of range; the graph"
+                    t" has {len(self._stable)} slot(s)"
+                )
+            )
 
 
 @doc_hidden

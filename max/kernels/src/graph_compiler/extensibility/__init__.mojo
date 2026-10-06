@@ -24,6 +24,7 @@ decorator instead.
 from .decorators import *
 from .managed_tensor_slice import *
 from .operation_traits import *
+from .stable_tensor import *
 from .tensor_arg_traits import *
 from .tile_tensor_adapters import *
 

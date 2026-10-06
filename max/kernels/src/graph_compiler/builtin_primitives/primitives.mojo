@@ -38,6 +38,7 @@ from max.gpu.host import (
     DeviceGraphBuilder,
     DeviceGraphCache,
     DeviceGraphInput,
+    StableAddr,
 )
 from max.gpu.host.device_context import _DeviceBufferPtr, _DeviceContextPtr
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
@@ -72,6 +73,7 @@ from extensibility import register_internal
 from extensibility import (
     IOSpec,
     ManagedTensorSlice,
+    StableTensor,
 )
 from extensibility import IO
 from extensibility import (
@@ -586,6 +588,45 @@ def mgp_tensor_create[
             rebind[IndexList[buffer_rank]](spec),
         )
         return {view, storage^}
+
+
+@register_internal("mgp.device_graph.stable.tensor")
+@inline(.never)
+def mgp_device_graph_stable_tensor[
+    spec_rank: Int,
+    buffer_rank: Int,
+    dtype: DType,
+    mut: Bool = False,
+    host: Bool = False,
+](
+    addr: StableAddr,
+    spec: IndexList[spec_rank],
+) -> OwnedTensor[
+    dtype, buffer_rank, mut, host
+]:
+    """Views a stable address slot as the tensor it stands for.
+
+    The view's data pointer is the slot's address, not the pointer the slot
+    holds, so a kernel recorded against the tensor dereferences the slot at
+    replay. The slot belongs to the `DeviceGraphCache` for the model's
+    lifetime, so the tensor carries no storage handle.
+    """
+    var ptr = addr.ptr.unsafe_bitcast[Scalar[dtype]]().unsafe_origin_cast[
+        MutAnyOrigin
+    ]()
+    comptime if spec_rank == 0:
+        # We promote scalar tensor to tensor<[1]>
+        comptime assert buffer_rank == 1
+        var view = DynamicTensor[dtype, buffer_rank](
+            ptr, rebind[IndexList[buffer_rank]](IndexList[1](1))
+        )
+        return {view, AnyAsyncValueRef()}
+    else:
+        comptime assert spec_rank == buffer_rank
+        var view = DynamicTensor[dtype, buffer_rank](
+            ptr, rebind[IndexList[buffer_rank]](spec)
+        )
+        return {view, AnyAsyncValueRef()}
 
 
 @register_internal("mgp.tensor.extract.tensor_spec")
@@ -1750,6 +1791,46 @@ def mogg_tensor_init[
         ptr.unsafe_bitcast[Scalar[dtype]](),
         layout.shape_coord(),
         layout.stride_coord(),
+    }
+
+
+@register_internal("mogg.tensor.__init__.stable")
+@inline(.always)
+def mogg_stable_tensor_init[
+    LayoutType: TensorLayout,
+    //,
+    dtype: DType,
+    rank: Int,
+    mut: Bool,
+    input: IO,
+    alignment: Int,
+](
+    ptr: Pointer[mut=True, NoneType, _],
+    layout: LayoutType,
+    out result: StableTensor[
+        io_spec=IOSpec[mut, input](),
+        static_spec=StaticTensorSpec[
+            dtype,
+            rank,
+            static_layout=LayoutType,
+        ](alignment, .GENERIC),
+    ],
+):
+    """
+    Helper for constructing a StableTensor from a layout and the data pointer
+    of a stable `mgp.tensor`, which is the address of its slot. Selected by
+    `mogg.tensor.__init__` when its result `!mo.tensor` is marked `stable`.
+    """
+    var addr = StableAddr(
+        ptr.unsafe_bitcast[
+            Pointer[NoneType, MutUntrackedOrigin]
+        ]().unsafe_origin_cast[MutUntrackedOrigin]()
+    )
+    result = {
+        addr,
+        type_of(result).RuntimeLayout(
+            layout.shape_coord(), layout.stride_coord()
+        ),
     }
 
 
