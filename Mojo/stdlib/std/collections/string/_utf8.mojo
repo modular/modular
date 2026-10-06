@@ -331,7 +331,6 @@ def _is_newline_char_utf8[
     # highly performance sensitive code, benchmark before touching
     comptime `\r` = UInt8(ord("\r"))
     comptime `\n` = UInt8(ord("\n"))
-    comptime `\t` = UInt8(ord("\t"))
     comptime `\x1c` = UInt8(ord("\x1c"))
     comptime `\x1e` = UInt8(ord("\x1e"))
 
@@ -342,7 +341,7 @@ def _is_newline_char_utf8[
     # machine instructions optimally. Also memory reads are expensive and the
     # "happy path" of char_len == 1 is cheaper because it has none.
     if likely(char_len == 1):
-        return `\t` <= b0 <= `\x1e` and not (`\r` < b0 < `\x1c`)
+        return `\n` <= b0 <= `\x1e` and not (`\r` < b0 < `\x1c`)
     elif char_len == 4:
         return False
 
