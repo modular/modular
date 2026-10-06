@@ -23,6 +23,7 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S8 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S9 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S10 < %t.mlir
+# RUN: FileCheck %s --enable-var-scope --check-prefixes=S11 < %t.mlir
 # COM: Thin Closures With Concrete Captures Are Properly Lifted
 # S0-DAG: lit.fn @"compute_gpu
 
@@ -296,3 +297,25 @@ def capture_nested() -> Int:
         return inner
 
     return outer2(1)(2)
+
+
+# COM: A closure may capture both a mutable and an immutable closure over the
+# COM: same variable; its storage initializer only stores the captures, so it
+# COM: is marked as not requiring nested origin exclusivity.
+# S11: lit.struct.decl @"{{.*}}capture_aliasing_closures()::outer_alias::__storage"
+# S11: lit.fn @"__init__({{.*}})"no_nested_origin_exclusivity[
+
+
+def capture_aliasing_closures():
+    var s = 0
+
+    def load[i: Int]() {imm s} -> Int:
+        return s
+
+    def store[i: Int](v: Int) {mut s}:
+        s = v
+
+    def outer_alias[i: Int]() {imm}:
+        store[i](load[i]())
+
+    outer_alias[0]()

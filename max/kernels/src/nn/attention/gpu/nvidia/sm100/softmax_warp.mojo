@@ -3043,14 +3043,12 @@ def fa4_softmax[
         ]
         comptime assert (score_cols % exp_simd) == 0
 
-        @__parameter
         @inline(.always)
-        def s_load[i: Int]() -> f32x2:
+        def s_load[i: Int]() {imm s} -> f32x2:
             return f32x2(s[2 * i], s[2 * i + 1])
 
-        @__parameter
         @inline(.always)
-        def s_store[i: Int](v: f32x2):
+        def s_store[i: Int](v: f32x2) {mut s}:
             s[2 * i] = v[0]
             s[2 * i + 1] = v[1]
 
@@ -3138,9 +3136,8 @@ def fa4_softmax[
             // (emulation_stride_freq + 1)
         )
 
-        @__parameter
         @inline(.always)
-        def exp_iter[idx: Int]():
+        def exp_iter[idx: Int]() {imm}:
             comptime if idx < vs_len // score_to_logit_ratio:
                 comptime for i in range(score_to_logit_ratio):
                     comptime j = score_to_logit_ratio * idx + i

@@ -1893,13 +1893,16 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
   argNames.push_back(StringAttr::get(ctx, "self"));
   argPassingKinds.push_back(PassingKind::Implicit);
 
+  // The initializer only stores the captures; it never accesses memory through
+  // them. Mark it `@__unsafe_nested_origins_read_only` so that closure can
+  // capture the same origin multiple times.
   builder.setInsertionPointToEnd(&structOp.getFields().front());
   auto [initFnOp, initDecl] = synthesizeFunction(
       structDecl, initName, {}, PogListAttr::get(ctx), initArgumentTypes,
       argConventions, PogListAttr::get(ctx, argNames, argPassingKinds),
       NoneType::get(ctx), SpecialFunctionKind::kInit, smLoc, builder,
       /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
-      InlineLevel::Automatic);
+      InlineLevel::Automatic, /*isNestedOriginsReadOnly=*/true);
 
   // Generate the constructor body.
   if (initFnOp) {
