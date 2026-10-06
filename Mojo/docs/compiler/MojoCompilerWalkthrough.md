@@ -2,6 +2,9 @@
 
 A comprehensive guide for compiler engineers new to the KGEN/Mojo codebase.
 
+**Resources:**
+[Dec 2025 Onsite Walkthrough Live](https://www.youtube.com/watch?v=tWWgCxRKuYo)
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -1405,4 +1408,5 @@ def foo():
 
 - [Region-Based Control Flow in MLIR (starts at 5:24)](https://youtu.be/vvVR3FyU9TE?si=0j2MgCRJXNX-1enj&t=324)
 - [Mojo Compiler Overview (first 18 mins)](https://www.youtube.com/watch?v=Invd_dxC2RU)
+- [Mojo's Attribute-Based Expression System](https://www.youtube.com/watch?v=4DKInnobCjY)
 - [Mojo DebugInfo (starts at 10:47)](https://youtu.be/9jfukpjCPIg?si=lSz9ZN_AbzsnVcm8&t=647)
