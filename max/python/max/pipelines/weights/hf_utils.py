@@ -844,9 +844,10 @@ class HuggingFaceRepo:
             # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
             # do not have safetensors metadata populated.
             if safetensors_info is None:
-                if re.search(r"FP8|fp8", self.repo_id, re.IGNORECASE):
+                repo_name = os.path.basename(self.repo_id.rstrip("/"))
+                if re.search(r"fp8", repo_name, re.IGNORECASE):
                     supported_encodings.add("float8_e4m3fn")
-                elif re.search(r"FP4|fp4", self.repo_id, re.IGNORECASE):
+                elif re.search(r"fp4", repo_name, re.IGNORECASE):
                     supported_encodings.add("float4_e2m1fnx2")
 
             # Check quantization_config for gptq/mxfp8 (both local and online).

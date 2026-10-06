@@ -377,6 +377,18 @@ class TestMixedEncodingInference:
             config = _resolve_encoding(config)
             assert config.quantization_encoding == "float8_e4m3fn"
 
+    def test_fp8_in_parent_dir_does_not_add_fp8(self) -> None:
+        """Regression test for flaky tests whose random tempdir name
+        happened to contain "fp8" or "fp4" and accidentally triggered the
+        repo-name encoding hint, turning a bf16 repo into fp8 or fp4.
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo_dir = os.path.join(tmpdir, "user-fp8", "llama-bf16")
+            os.makedirs(repo_dir)
+            _make_local_repo(repo_dir, {"model.safetensors": {"w": "BF16"}})
+            repo = HuggingFaceRepo(repo_id=repo_dir)
+            assert repo.supported_encodings == ["bfloat16"]
+
     def test_gptq_detected_from_local_config_json(self) -> None:
         """gptq should be detected from config.json for local repos."""
         with tempfile.TemporaryDirectory() as tmpdir:
