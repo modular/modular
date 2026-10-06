@@ -818,6 +818,28 @@
               "items": [
                 {
                   "type": "category",
+                  "label": "adaptive_width",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.adaptive_width"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.adaptive_width__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "block_driver",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.block_driver"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.block_driver__"
+                  ]
+                },
+                {
+                  "type": "category",
                   "label": "depth_schedule",
                   "link": {
                     "type": "doc",

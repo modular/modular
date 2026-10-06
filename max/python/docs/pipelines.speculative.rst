@@ -17,6 +17,8 @@ Submodules
 .. toctree::
    :maxdepth: 1
 
+   pipelines.speculative.adaptive_width
+   pipelines.speculative.block_driver
    pipelines.speculative.depth_schedule
    pipelines.speculative.driver
    pipelines.speculative.spec_target
