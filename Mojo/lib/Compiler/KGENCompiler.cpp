@@ -390,6 +390,8 @@ static ErrorOr<CompiledStandaloneKernel> compileStandaloneKernel(
   IRMapping mapping;
   OwningOpRef<ModuleOp> module = produceStandaloneModule(
       symtab, exportedSymbols, mapping, overrideExported(compilationOptions));
+  if (!module)
+    return Error("failed to slice a standalone module for the target");
   // Override the target.
   eraseTargetInfo(*module);
   setTargetInfo(*module, target);
@@ -709,6 +711,10 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       OwningOpRef<ModuleOp> module =
           produceStandaloneModule(symtab, offloadInfo.exportedSymbols, mapping,
                                   overrideExported(target.getTriple()));
+      if (!module) {
+        return Error("failed to slice a standalone module for offload "
+                     "compilation");
+      }
 
       // Override the target.
       eraseTargetInfo(*module);
