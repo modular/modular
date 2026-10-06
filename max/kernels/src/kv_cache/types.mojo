@@ -295,7 +295,7 @@ def padded_depth[
 
 @inline(.always)
 def _kv_cache_out_slot[
-    drop_list: Tuple, kv_cache_rank: Int, flat_rank: Int, i: Int
+    drop_list: Array[Int, _], kv_cache_rank: Int, flat_rank: Int, i: Int
 ]() -> Int:
     """Returns the output slot that source dimension `i` maps to.
 
@@ -322,7 +322,7 @@ def _kv_cache_out_slot[
 
 @inline(.always)
 def _compute_kv_cache_dynamic_shape_strides[
-    dtype: DType, //, kv_cache_rank: Int, drop_list: Tuple
+    dtype: DType, //, kv_cache_rank: Int, drop_list: Array[Int, _]
 ](blocks: TileTensor[dtype, ...], page_stride: Int = -1) -> Tuple[
     DynamicCoord[.int64, kv_cache_rank],
     DynamicCoord[.int64, kv_cache_rank],
@@ -4124,7 +4124,7 @@ struct ContinuousBatchingKVCacheCollection[
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
+            _compute_kv_cache_dynamic_shape_strides[4, [1, 2]](self.blocks)
         )
 
     def __init__(
@@ -4157,7 +4157,7 @@ struct ContinuousBatchingKVCacheCollection[
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](self.blocks)
+            _compute_kv_cache_dynamic_shape_strides[4, [1, 2]](self.blocks)
         )
 
     @inline(.always)
@@ -4427,7 +4427,7 @@ struct PagedKVCacheCollection[
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](
+            _compute_kv_cache_dynamic_shape_strides[4, [1, 2]](
                 self.blocks, page_stride
             )
         )
@@ -4444,7 +4444,7 @@ struct PagedKVCacheCollection[
                 ](scales.value())
             )
             self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
-                4, (1, 2)
+                4, [1, 2]
             ](
                 self.scales.value(), scales_page_stride
             )
@@ -4499,14 +4499,14 @@ struct PagedKVCacheCollection[
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
         self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, (1, 2)](
+            _compute_kv_cache_dynamic_shape_strides[4, [1, 2]](
                 self.blocks, page_stride
             )
         )
         if scales is not None:
             self.scales = scales.value()
             self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
-                4, (1, 2)
+                4, [1, 2]
             ](
                 self.scales.value(), scales_page_stride
             )
