@@ -59,6 +59,7 @@ from std._gpu.host._builtin_targets import (
     MI300A,
     MI300X,
     MI355X,
+    MI455X,
     MetalM1,
     MetalM1Metal4,
     MetalM2,
