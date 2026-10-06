@@ -417,6 +417,17 @@
             },
             {
               "type": "category",
+              "label": "moe",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.moe"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.moe__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "sampling",
               "link": {
                 "type": "doc",
