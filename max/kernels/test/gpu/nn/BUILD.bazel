@@ -1609,7 +1609,11 @@ mojo_filecheck_test(
     expect_crash = True,
     main = "test_mla_prefill_plan_chunk_overflow.mojo",
     tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2405 — GPU debug_asserts are compiled out on Apple,
+    # so the expected crash never fires and FileCheck sees empty output.
     deps = [
         "//max:internal_utils",
         "//max:kv_cache",

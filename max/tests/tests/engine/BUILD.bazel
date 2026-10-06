@@ -45,6 +45,12 @@ modular_py_test(
     name = "test_grouped_collectives_compile",
     size = "large",
     srcs = ["test_grouped_collectives_compile.py"],
+    # The virtual CUDA (sm_100a) graphs below need the NVPTX compiler to
+    # elaborate kernels, which is Linux-only (CUDACompilationDevice).
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max:_core",
         "//max/python/max/driver",
