@@ -22,7 +22,7 @@ from layout import TileTensor, row_major
 from nn.attention.gpu.mha import mha_single_batch
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from nn.attention.mha_mask import NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand, MHAOperand
 from nn.attention.mha_utils import FlashAttentionAlgorithm, MHAConfig
 
 
@@ -121,12 +121,12 @@ def _check_fa2[
     var q = TileTensor(
         q_buffer.unsafe_ptr(), row_major[1, query_rows, heads, depth]()
     ).as_imm()
-    var k = LayoutTensorMHAOperand(
+    var k = TileTensorMHAOperand(
         TileTensor(
             k_buffer.unsafe_ptr(), row_major[1, key_rows, heads, depth]()
         ).as_imm()
     )
-    var v = LayoutTensorMHAOperand(
+    var v = TileTensorMHAOperand(
         TileTensor(
             v_buffer.unsafe_ptr(), row_major[1, key_rows, heads, depth]()
         ).as_imm()
