@@ -20,6 +20,7 @@ Configuration
    :template: autosummary/class.rst
 
    SamplingConfig
+   ToolCallPolicy
 
 .. autosummary::
    :nosignatures:
