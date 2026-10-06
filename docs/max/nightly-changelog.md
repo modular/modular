@@ -726,6 +726,11 @@ This version is still a work in progress.
   built on 1.3.0, so disaggregated prefill and decode have to be upgraded
   together.
 
+- The deprecated `max.kv_cache` module is removed. It only re-exported
+  `max.pipelines.kv_cache` and emitted a `DeprecationWarning` on import. Import
+  `PagedKVCacheManager`, `DummyKVCache`, `load_kv_manager`, and the other names
+  it re-exported from `max.pipelines.kv_cache` instead.
+
 ## Fixes
 
 - Fixed the paged KV cache overflowing its page budget when memory

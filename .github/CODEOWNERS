@@ -150,7 +150,6 @@
 /max/python/max/experimental/ @modular/max-sdk
 /max/python/max/experimental/cascade/ @modular/max-serve @modular/max-sdk
 /max/python/max/graph/ @modular/max-sdk
-/max/python/max/kv_cache/ @modular/max-serve @modular/max-sdk
 /max/python/max/mlir/ @modular/max-sdk
 /max/python/max/nn/ @modular/max-sdk
 /max/python/max/pipelines/ @modular/max-sdk @modular/max-serve

@@ -28,7 +28,6 @@ ALL_MAX_PYTHON_DEPS = ALL_ARCHITECTURES + [
     "//max/python/max/experimental/testing",
     "//max/python/max/experimental/torch",
     "//max/python/max/graph",
-    "//max/python/max/kv_cache",
     "//max/python/max/mlir",
     "//max/python/max/nn",
     "//max/python/max/nn/hooks",

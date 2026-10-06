@@ -99,10 +99,6 @@ def create_mock_kv_cache() -> Mock:
     """Create a mock paged KV cache manager with minimal interface."""
     cache = Mock()
     cache.chunk_alignment_tokens = 0
-    cache.max_seq_len = 2048
-    cache.page_size = 16
-    cache.get_total_num_pages = Mock(return_value=128)
-    cache.get_free_blocks_pct = Mock(return_value=0.5)
 
     cache.alloc = Mock(return_value=CompletedTransfer())
     cache.claim = Mock()
