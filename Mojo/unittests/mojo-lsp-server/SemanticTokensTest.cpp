@@ -102,6 +102,7 @@ struct StructWithTrait(ATrait):
 
 TEST(SemanticTokensTest, testAddressSpaceModifiers) {
   Document doc("test:///foo.mojo", R"(
+from std.collections import Array
 from std.memory import AddressSpace
 
 comptime SharedPtr = UnsafePointer[
@@ -121,6 +122,7 @@ def kernel[param_ptr: SharedPtr](
     gmem: UnsafePointer[Float32, MutAnyOrigin],
     ref [_, AddressSpace.LOCAL] local_val: Float32,
     plain: Int,
+    nested: Array[SharedPtr, 2],
 ):
     var smem_copy = smem
     _ = smem_copy
@@ -128,6 +130,7 @@ def kernel[param_ptr: SharedPtr](
     _ = local_val
     _ = plain
     _ = param_ptr
+    _ = nested
 )");
 
   // Each token carries at most the one modifier bit for its address space.
@@ -168,6 +171,12 @@ def kernel[param_ptr: SharedPtr](
             auto plain = findToken(*doc.findFirstRange("plain"));
             ASSERT_NE(plain, tokens.end());
             EXPECT_EQ(plain->modifiers, 0u);
+
+            // An address space nested in a type parameter, here the element
+            // type of an array.
+            auto nested = findToken(*doc.findFirstRange("nested"));
+            ASSERT_NE(nested, tokens.end());
+            EXPECT_EQ(nested->modifiers, addressSpaceBit(3));
 
             // The address space of the reference itself (LOCAL).
             auto localVal = findToken(*doc.findFirstRange("local_val"));

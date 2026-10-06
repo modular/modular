@@ -348,6 +348,12 @@ This version is still a work in progress.
   large GPU kernel files is roughly 10 to 13 percent faster, because the
   compiler spends far less system time in glibc's arena management.
 
+- The Mojo language server now reports a value's address space as a semantic
+  token modifier (`addressSpace0` through `addressSpace15`, matching the
+  `AddressSpace` index) so editors can color shared, local, and constant memory
+  differently. The address space is found in the value's type or in a type
+  nested in its parameters, so an `Array` of shared pointers is marked too.
+
 ## Removed
 
 - Removed `sum()` from the `CoordLike` trait and from its implementations

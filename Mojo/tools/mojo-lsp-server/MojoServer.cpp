@@ -1628,31 +1628,64 @@ static std::optional<int64_t> getConstantAddressSpace(TypedAttr value) {
   return std::nullopt;
 }
 
-/// Return the address space bound to the given type, if exactly one of its
-/// parameters is an `AddressSpace` and that parameter is concrete.
-static std::optional<int64_t> getAddressSpaceFromTypeParams(ASTType type) {
-  TypedAttr addressSpace;
-  for (TypedAttr binding : type.getParamBindings()) {
-    if (!binding)
-      continue;
-    auto structType = KGEN::sugarDynCast<StructType>(binding.getType());
+/// Return the address space bound anywhere in the given type: on a `!lit.ref`
+/// or as an `AddressSpace` parameter, whether of the type itself or of a type
+/// nested in its parameters, so that `Array[SharedPtr, 2]` reports the address
+/// space of its element type. Generic references are ignored; nearly every
+/// value lives in one, so reporting them would mark everything. A generic
+/// `AddressSpace` parameter is still reported. With several distinct address
+/// spaces, or one that is not a constant, there is no single one to report.
+static std::optional<int64_t> findAddressSpace(Type type) {
+  // The address space recorded so far, if any.
+  std::optional<int64_t> space;
+  // Record an address space found in the type, interrupting the walk when
+  // there is no single one to report anymore: when `found` is not a constant,
+  // or differs from one recorded before. `recorded` tells the walk how to
+  // proceed otherwise.
+  auto record = [&](std::optional<int64_t> found, WalkResult recorded) {
+    if (!found || (space && *space != *found))
+      return WalkResult::interrupt();
+    space = found;
+    return recorded;
+  };
+  mlir::AttrTypeWalker walker;
+  // An `AddressSpace` value carries its address space; nothing nested in it
+  // can add another.
+  walker.addWalk([&](Attribute attr) -> WalkResult {
+    auto value = dyn_cast<TypedAttr>(attr);
+    if (!value)
+      return WalkResult::advance();
+    auto structType = KGEN::sugarDynCast<StructType>(value.getType());
     if (!structType ||
         structType.getSymbol().getLeafReference().strref() != "AddressSpace")
-      continue;
-    // With several address spaces there's no single one to report.
-    if (addressSpace)
-      return std::nullopt;
-    addressSpace = binding;
-  }
-  return getConstantAddressSpace(addressSpace);
+      return WalkResult::advance();
+    return record(getConstantAddressSpace(value), WalkResult::skip());
+  });
+  walker.addWalk([&](RefType ref) -> WalkResult {
+    std::optional<int64_t> found =
+        getConstantAddressSpace(ref.getAddressSpace());
+    if (found && *found != 0)
+      return record(found, WalkResult::advance());
+    return WalkResult::advance();
+  });
+  // Only the canonical form of sugar carries meaning: the sugared form
+  // records how a value was spelled, and some of its parts are not values
+  // at all, such as the type in `AddressSpace.LOCAL`. Registered last, so
+  // it runs before the callbacks above see the sugar.
+  walker.addWalk([&](KGEN::SugarAttr sugar) -> WalkResult {
+    if (walker.walk<mlir::WalkOrder::PreOrder>(sugar.getCanonical())
+            .wasInterrupted())
+      return WalkResult::interrupt();
+    return WalkResult::skip();
+  });
+  WalkResult result = walker.walk<mlir::WalkOrder::PreOrder>(type);
+  return result.wasInterrupted() ? std::nullopt : space;
 }
 
 /// Return the address space of the given symbol, if it has one. This is the
-/// address space of the reference that holds the value, or, for a value in the
-/// generic address space, the address space parameter of its type (e.g.
-/// `UnsafePointer[..., address_space=AddressSpace.SHARED]`). Generic is only
-/// reported from a type parameter; nearly every value lives in a generic
-/// reference, so reporting that would mark everything.
+/// address space of the reference that holds the value or the address space
+/// parameter of its type (e.g. `UnsafePointer[..., address_space=SHARED]`),
+/// including one nested in a type parameter such as an array's element type.
 static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
   if (!symbol.approximateViewKind)
     return std::nullopt;
@@ -1684,16 +1717,7 @@ static std::optional<int64_t> getAddressSpace(const Symbol &symbol) {
   }
   if (!type)
     return std::nullopt;
-
-  if (auto refType = KGEN::sugarDynCast<RefType>(type.mlirType)) {
-    std::optional<int64_t> addressSpace =
-        getConstantAddressSpace(refType.getAddressSpace());
-    if (addressSpace && *addressSpace != 0)
-      return addressSpace;
-    type = refType.getElementType();
-  }
-
-  return getAddressSpaceFromTypeParams(type);
+  return findAddressSpace(type);
 }
 
 std::optional<std::vector<SemanticToken>>
