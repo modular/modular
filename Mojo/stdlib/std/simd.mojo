@@ -2175,7 +2175,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
         comptime if Self.dtype.is_integral():
             if ndigits >= 0:
                 return self
-            return self - (self % Self(10) ** -(ndigits))
+            var p = Self(10) ** -(ndigits)
+            var r = self % p
+            var down = self - r
+            var up = r.gt(p - r) | (r.eq(p - r) & ((down // p) % 2).ne(0))
+            return up.select(down + p, down)
 
         var exp = Self(10) ** ndigits
         return (self * exp).__round__() / exp
