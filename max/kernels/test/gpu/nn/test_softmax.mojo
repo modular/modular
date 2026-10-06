@@ -744,9 +744,8 @@ def _online_softmax_scratch_kernel[
         rowsum[0, row] = 0
     comptime for col in range(frag_size):
         accum[0, col] = 1
-    # The helper's register-fragment interface has not yet migrated.
-    var scores_fragment = scores.to_layout_tensor().vectorize[1, frag_size]()
-    var accum_fragment = accum.to_layout_tensor().vectorize[1, frag_size]()
+    var scores_fragment = scores.vectorize[1, frag_size]()
+    var accum_fragment = accum.vectorize[1, frag_size]()
     comptime for iteration in range(2):
         comptime for col in range(frag_size):
             scores[0, col] = Float32(warp_id() + 2 * iteration)

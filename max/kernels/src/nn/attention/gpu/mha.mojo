@@ -69,6 +69,7 @@ from max.gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
+    lt_to_tt_idx,
     Coord,
     Idx,
     IntTuple,
@@ -3026,7 +3027,7 @@ def mha_single_batch[
     var output_reg_tile_native = stack_allocation[
         accum_type, address_space=.LOCAL, alignment=p_frag_align
     ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0)
-    # MMA and softmax helpers retain their legacy scalar views.
+    # Copy helpers still require these legacy scalar views.
     var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
         output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
@@ -3368,8 +3369,12 @@ def mha_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
             warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
@@ -4103,12 +4108,12 @@ def mha_single_batch_pipelined[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
-                1, p_frag_simdwidth
-            ](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
-                1, p_frag_simdwidth
-            ](),
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, p_frag_simdwidth](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, p_frag_simdwidth](),
             warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
@@ -5177,8 +5182,16 @@ def mha_decoding_single_batch[
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
-                output_reg_vecs,
-                p_reg_vecs,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile.tile[
+                        num_output_rows_full, p_frag_size // 2
+                    ](0, 0)
+                ).vectorize[1, p_frag_simdwidth](),
+                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                    p_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
+                        0, 0
+                    )
+                ).vectorize[1, p_frag_simdwidth](),
                 warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
                 rowmax,
                 rowsum,
@@ -5199,8 +5212,20 @@ def mha_decoding_single_batch[
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
-                output_reg_vecs,
-                p_reg_vecs,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile.reshape[
+                        Layout.row_major(
+                            2 * num_output_rows_full, p_frag_simdwidth
+                        )
+                    ]()
+                ).vectorize[1, p_frag_simdwidth](),
+                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                    p_reg_tile.reshape[
+                        Layout.row_major(
+                            2 * num_m_mmas * num_n_mmas, p_frag_simdwidth
+                        )
+                    ]()
+                ).vectorize[1, p_frag_simdwidth](),
                 warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
                 rowmax,
                 rowsum,
@@ -5845,8 +5870,14 @@ def mha_decoding_single_batch_pipelined[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_vecs,
-            p_reg_vecs,
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
+                    0, 0
+                )
+            ).vectorize[1, p_frag_size // 2](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](0, 0)
+            ).vectorize[1, p_frag_size // 2](),
             warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
             rowmax,
             rowsum,

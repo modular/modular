@@ -4,6 +4,7 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    "test_online_softmax_register_fragments.mojo": ["//:nvidia_gpu"],
     "test_mha_fa2_register_owners.mojo": ["//:nvidia_gpu"],
     # KERN-3212
     "test_mla_decode_qkv_fp8.mojo": ["@platforms//:incompatible"],

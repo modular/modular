@@ -1850,12 +1850,20 @@ def _online_softmax_iter_for_mma_output[
         1, 2
     ) if is_nvidia_gpu() else Layout.row_major(4, 1),
 ](
-    output_reg_tile: LayoutTensor[mut=True, dtype, ...],
-    score_reg_tile: LayoutTensor[mut=True, dtype, ...],
+    output_reg_tile: TileTensor[mut=True, dtype, ...],
+    score_reg_tile: TileTensor[mut=True, dtype, ...],
     warp_scratch: TileTensor[mut=True, dtype, ...],
     rowmax: UnsafePointer[mut=True, Scalar[dtype], _],
     rowsum: UnsafePointer[mut=True, Scalar[dtype], _],
 ) where (warp_scratch.flat_rank == 2):
+    comptime assert output_reg_tile.rank == output_reg_tile.flat_rank == 2
+    comptime assert score_reg_tile.rank == score_reg_tile.flat_rank == 2
+    comptime assert output_reg_tile.static_shape[0] > 0
+    comptime assert score_reg_tile.static_shape[0] > 0
+    comptime assert output_reg_tile.static_shape[1] == 1
+    comptime assert score_reg_tile.static_shape[1] == 1
+    comptime assert output_reg_tile.element_size == score_reg_tile.element_size
+    comptime assert score_reg_tile.element_size == fragment_layout.size()
     comptime num_colwise_warps = block_layout_by_warp.shape[0].value()
     comptime num_rowwise_warps = block_layout_by_warp.shape[1].value()
 
@@ -1867,7 +1875,7 @@ def _online_softmax_iter_for_mma_output[
     # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
 
     # TODO: fragment_layout should ideally be inferred from the shape of output_reg_tile or score_reg_tile
-    comptime frag_type = score_reg_tile.element_type
+    comptime frag_type = score_reg_tile.ElementType
     comptime frag_num_rows = fragment_layout.shape[0].value()
     comptime frag_num_cols = fragment_layout.shape[1].value()
 
@@ -2096,9 +2104,9 @@ def _online_softmax_iter_for_mma_output[
                     Int(num_rowwise_lanes), stride=Int(rowwise_lanes_stride)
                 ](score_frag_rowsum[col_tile, row])
 
-    comptime num_output_replications = output_reg_tile.layout.shape[
-        0
-    ].value() // (num_colwise_tiles * num_rowwise_tiles)
+    comptime num_output_replications = output_reg_tile.static_shape[0] // (
+        num_colwise_tiles * num_rowwise_tiles
+    )
     # if num_output_replications != 1, then `warp_split_k` and it must equal `num_warps_n`.
     # FIXME: require `warp_split_k` when delaying inter-warp communication.
     comptime assert (
@@ -2113,9 +2121,7 @@ def _online_softmax_iter_for_mma_output[
             comptime for row_tile in range(num_rowwise_tiles):
                 comptime tile_id = col_tile + row_tile * num_colwise_tiles + k * num_colwise_tiles * num_rowwise_tiles
 
-                comptime output_frag_type = type_of(
-                    output_reg_tile
-                ).element_type
+                comptime output_frag_type = type_of(output_reg_tile).ElementType
 
                 comptime if frag_is_row_vector:
                     output_reg_tile[tile_id, 0] = output_reg_tile[

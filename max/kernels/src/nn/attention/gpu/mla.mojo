@@ -78,6 +78,7 @@ from max.gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
+    lt_to_tt_idx,
     Coord,
     Idx,
     IntTuple,
@@ -2483,10 +2484,12 @@ def mla_decoding_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[output_layout_by_mma_unit]().vectorize[
-                1, 2
-            ](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.reshape[output_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
             warp_scratch.tile[2 * num_warps_n, WM](Coord(0, warp_y)),
             rowmax,
             rowsum,
@@ -4288,10 +4291,12 @@ def mla_prefill_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[reg_output_layout_by_mma_unit]().vectorize[
-                1, 2
-            ](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.reshape[reg_output_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
             warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
