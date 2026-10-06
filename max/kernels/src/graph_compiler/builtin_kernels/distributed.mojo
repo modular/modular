@@ -704,7 +704,7 @@ struct DistributedScatter:
         target: StaticString,
         _trace_name: StaticString,
     ](
-        outputs: FusedOutputVariadicTensors[dtype=dtype, rank=rank, ...],
+        outputs: OutputVariadicTensors[dtype=dtype, rank=rank, ...],
         inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...],
         signal_buffers: MutableInputVariadicTensors[
             dtype=DType.uint8, rank=1, ...
