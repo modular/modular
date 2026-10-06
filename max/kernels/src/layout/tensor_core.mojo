@@ -1570,6 +1570,80 @@ struct TensorCore[
     @inline(.always)
     def load_b(
         self,
+        warp_tile: TileTensor,
+        fragments: TileTensor[mut=True, .bfloat16, ...],
+        scales: TileTensor[.bfloat16, ...],
+        mma_tile_coord_k: Int = 0,
+    ):
+        """Dequantizes repacked INT4 B operands into native bfloat16 registers.
+
+        Args:
+            warp_tile: Shared-memory tile of packed int32 or uint32 words.
+            fragments: Local scalar tile with four bfloat16 registers per row.
+            scales: Local scalar tile with one bfloat16 scale per fragment row.
+            mma_tile_coord_k: Coordinate selecting a contiguous 128-word tile.
+
+        Constraints:
+            Supports NVIDIA bfloat16 16-by-8-by-16 MMA only. The destination
+            has an even number of fragment rows between two and eight. Packed
+            words need only scalar alignment. This loader consumes the existing
+            INT4 repack format, not FP4 or FP8.
+        """
+        comptime assert is_nvidia_gpu() and Self.in_type == .bfloat16
+        comptime assert Self.supported_half
+        comptime assert warp_tile.dtype in (DType.int32, DType.uint32)
+        comptime assert warp_tile.address_space == .SHARED
+        comptime assert warp_tile.rank == warp_tile.flat_rank == 2
+        comptime assert warp_tile.element_size == 1
+        comptime assert type_of(warp_tile).LayoutType.all_dims_known
+        comptime assert warp_tile.static_stride[1] == 1
+        comptime assert warp_tile.static_shape[0] > 0
+        comptime assert fragments.address_space == .LOCAL
+        comptime assert fragments.rank == fragments.flat_rank == 2
+        comptime assert fragments.element_size == 1
+        comptime assert type_of(fragments).LayoutType.all_dims_known
+        comptime assert fragments.static_shape[1] == 4
+        comptime assert fragments.static_stride[1] == 1
+        comptime num_frags = fragments.static_shape[0]
+        comptime assert num_frags in (2, 4, 6, 8)
+        comptime assert scales.address_space == .LOCAL
+        comptime assert scales.rank == scales.flat_rank == 2
+        comptime assert scales.element_size == 1
+        comptime assert type_of(scales).LayoutType.all_dims_known
+        comptime assert scales.static_shape[0] == num_frags
+        comptime assert scales.static_shape[1] == 1
+        debug_assert(
+            mma_tile_coord_k >= 0
+            and (mma_tile_coord_k + 1) * 128 <= warp_tile.static_shape[1],
+            "K coordinate must select a complete 128-word repacked tile",
+        )
+        var offset = 128 * mma_tile_coord_k + 4 * umod(thread_idx.x, WARP_SIZE)
+        var vec = bitcast[.int32, 4](
+            warp_tile.load[width=4, alignment=align_of[warp_tile.dtype]()](
+                (0, offset)
+            )
+        )
+        comptime for i in range(0, num_frags, 2):
+            var q_int = vec[i // 2]
+            var scale = scales.load[width=1]((i, 0))
+            var v1 = _int4_to_bf16(q_int, scale)
+            q_int >>= 4
+            var v2 = _int4_to_bf16(q_int, scale)
+            fragments.store[width=4, alignment=align_of[BFloat16]()](
+                (i, 0), v1.join(v2)
+            )
+            q_int >>= 4
+            scale = scales.load[width=1]((i + 1, 0))
+            v1 = _int4_to_bf16(q_int, scale)
+            q_int >>= 4
+            v2 = _int4_to_bf16(q_int, scale)
+            fragments.store[width=4, alignment=align_of[BFloat16]()](
+                (i + 1, 0), v1.join(v2)
+            )
+
+    @inline(.always)
+    def load_b(
+        self,
         warp_tile: LayoutTensor,
         fragments: LayoutTensor[mut=True, ...],
         scales: LayoutTensor,
@@ -1590,7 +1664,7 @@ struct TensorCore[
 
             - The `warp_tile` must be in shared memory.
             - The `fragments` and `scales` must be in local memory.
-            - This function only supports half-precision data types (bfloat16, float16).
+            - The unpacker produces bfloat16 pairs from repacked INT4 words.
             - The quantized data is stored as int4 values packed into int32 elements.
             - Each thread processes multiple fragments by unpacking and dequantizing the int4 values.
         """
@@ -1611,27 +1685,7 @@ struct TensorCore[
         comptime pack_factor = 8
         comptime repack_tile = Index(64, 16)
 
-        @inline(.always)
-        def int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[.bfloat16, 2]:
-            comptime MASK: Int32 = 0x000F000F
-            comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
-
-            comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
-            var BF16_BIAS = SIMD[.bfloat16, 2](-136, -136)
-            var BF16_SCALE = SIMD[.bfloat16, 2](scale, scale)
-            var BF16_ZERO = SIMD[.bfloat16, 2](0, 0)
-            var BF16_ONE = SIMD[.bfloat16, 2](1, 1)
-
-            var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
-
-            var v = (
-                bitcast[.bfloat16, 2](t)
-                .fma(BF16_ONE, BF16_BIAS)
-                .fma(BF16_SCALE, BF16_ZERO)
-            )
-            return v
-
-        # The wrap_tile is of shape [WK // 64, 128 * n_mma]
+        # The warp tile contains contiguous 128-word repacked blocks.
         # Every contiguous 128 ints stores a 64x16 repacked tile
         var mma_tile = warp_tile.tile[
             1, (repack_tile[0] * repack_tile[1]) // pack_factor
@@ -1643,14 +1697,14 @@ struct TensorCore[
 
         comptime for i in range(0, num_frags, 2):
             var q_int = vec[i // 2]
-            var v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales[i, 0]))
+            var v1 = _int4_to_bf16(q_int, bitcast[.bfloat16, 1](scales[i, 0]))
             q_int >>= 4
-            var v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales[i, 0]))
+            var v2 = _int4_to_bf16(q_int, bitcast[.bfloat16, 1](scales[i, 0]))
             fragments[i, 0] = rebind[frag_type](v1.join(v2))
             q_int >>= 4
-            v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales[i + 1, 0]))
+            v1 = _int4_to_bf16(q_int, bitcast[.bfloat16, 1](scales[i + 1, 0]))
             q_int >>= 4
-            v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales[i + 1, 0]))
+            v2 = _int4_to_bf16(q_int, bitcast[.bfloat16, 1](scales[i + 1, 0]))
             fragments[i + 1, 0] = rebind[frag_type](v1.join(v2))
 
     @inline(.always)
@@ -1753,6 +1807,27 @@ struct TensorCore[
                 c_frag.store[alignment=align_of[Self.out_type]()](
                     (c_index, 0), accum
                 )
+
+
+@inline(.always)
+def _int4_to_bf16(i4: Int32, scale: BFloat16) -> SIMD[.bfloat16, 2]:
+    comptime MASK: Int32 = 0x000F000F
+    comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
+
+    comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
+    var BF16_BIAS = SIMD[.bfloat16, 2](-136, -136)
+    var BF16_SCALE = SIMD[.bfloat16, 2](scale, scale)
+    var BF16_ZERO = SIMD[.bfloat16, 2](0, 0)
+    var BF16_ONE = SIMD[.bfloat16, 2](1, 1)
+
+    var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
+
+    var v = (
+        bitcast[.bfloat16, 2](t)
+        .fma(BF16_ONE, BF16_BIAS)
+        .fma(BF16_SCALE, BF16_ZERO)
+    )
+    return v
 
 
 @inline(.always)

@@ -418,8 +418,8 @@ def multistage_mma_q[
     comptime b_frag_size = frag_size[1]
     comptime c_frag_size = frag_size[2]
 
-    # The shared-memory loader still consumes legacy views of these native
-    # double-buffered register tiles.
+    # A, scale copies, and unsupported B formats retain legacy views of these
+    # native double-buffered register tiles.
     var a_reg_buffer = stack_allocation[a_type, address_space=.LOCAL](
         row_major[2 * num_m_mmas, a_frag_size]()
     )
@@ -469,14 +469,34 @@ def multistage_mma_q[
         ](Int(lane_id))
     )
 
-    mma_op.load_b(
-        b_warp_tile,
-        b_reg_buffer.tile[num_n_mmas, b_frag_size]((0, 0))
-        .to_layout_tensor()
-        .vectorize[1, b_frag_size](),
-        scales_reg_tiles.to_layout_tensor(),
-        0,
+    comptime native_quantized_b = (
+        is_nvidia_gpu()
+        and a_type == .bfloat16
+        and b_type in (DType.int32, DType.uint32)
+        and scales_type == .bfloat16
+        and b_warp_tile.stride[1]() == 1
+        and num_n_mmas in (2, 4, 6, 8)
+        and b_wtile_dim0 > 0
+        and b_wtile_dim1 >= 128 * num_k_mmas
     )
+    comptime if native_quantized_b:
+        mma_op.load_b(
+            lt_to_tt(b_warp_tile),
+            b_reg_buffer.tile[num_n_mmas, b_frag_size]((0, 0)).bitcast[
+                DType.bfloat16
+            ](),
+            scales_reg_tiles.bitcast[DType.bfloat16](),
+            0,
+        )
+    else:
+        mma_op.load_b(
+            b_warp_tile,
+            b_reg_buffer.tile[num_n_mmas, b_frag_size]((0, 0))
+            .to_layout_tensor()
+            .vectorize[1, b_frag_size](),
+            scales_reg_tiles.to_layout_tensor(),
+            0,
+        )
 
     for k_tile_id in range(num_iters):
         var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -521,14 +541,24 @@ def multistage_mma_q[
                 .vectorize[1, a_frag_size](),
                 (k_mma + 1) % num_k_mmas,
             )
-            mma_op.load_b(
-                b_warp_tile,
-                b_reg_buffer.tile[num_n_mmas, b_frag_size]((next, 0))
-                .to_layout_tensor()
-                .vectorize[1, b_frag_size](),
-                scales_reg_tiles.to_layout_tensor(),
-                (k_mma + 1) % num_k_mmas,
-            )
+            comptime if native_quantized_b:
+                mma_op.load_b(
+                    lt_to_tt(b_warp_tile),
+                    b_reg_buffer.tile[num_n_mmas, b_frag_size](
+                        (next, 0)
+                    ).bitcast[DType.bfloat16](),
+                    scales_reg_tiles.bitcast[DType.bfloat16](),
+                    (k_mma + 1) % num_k_mmas,
+                )
+            else:
+                mma_op.load_b(
+                    b_warp_tile,
+                    b_reg_buffer.tile[num_n_mmas, b_frag_size]((next, 0))
+                    .to_layout_tensor()
+                    .vectorize[1, b_frag_size](),
+                    scales_reg_tiles.to_layout_tensor(),
+                    (k_mma + 1) % num_k_mmas,
+                )
 
             mma_op.mma(
                 a_reg_buffer.tile[num_m_mmas, a_frag_size](
