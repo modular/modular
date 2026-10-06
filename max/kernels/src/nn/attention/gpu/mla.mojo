@@ -109,7 +109,7 @@ from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    LayoutTensorMHAOperand,
+    TileTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.attention.mha_utils import (
@@ -569,7 +569,7 @@ def flare_mla_decoding[
     var num_keys = Int(k.dim[1]())
 
     # Preserve static/runtime dimension types for the operand's buffer layout.
-    var k_operand = LayoutTensorMHAOperand(
+    var k_operand = TileTensorMHAOperand(
         TileTensor(k.ptr, row_major(k.layout.shape_coord()))
     )
 
@@ -676,7 +676,7 @@ def flare_mla_decoding_dispatch[
     Parameters:
         k_t: KV cache operand type backing `k` (inferred). Either
             `KVCacheMHAOperand` (paged cache) or
-            `LayoutTensorMHAOperand` (TileTensor input).
+            `TileTensorMHAOperand` (TileTensor input).
         mask_t: Mask functor type applied to attention scores (inferred).
         dtype: Element type of `q` (inferred). Must be a half-float or
             `float8_e4m3fn`.
@@ -2924,7 +2924,7 @@ def flare_mla_prefill[
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
+        var k_rope_operand = TileTensorMHAOperand(
             TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
         )
 
@@ -3037,7 +3037,7 @@ def flare_mla_prefill[
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
+        var k_rope_operand = TileTensorMHAOperand(
             TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord())),
             TileTensor(
                 k_rope_scales.ptr,
@@ -3162,7 +3162,7 @@ def flare_mla_prefill[
         )
 
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
+        var k_rope_operand = TileTensorMHAOperand(
             TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
         )
 
@@ -3379,11 +3379,11 @@ def flare_mla_prefill_dispatch[
 
     Parameters:
         k_t: Key operand type backing `k` (inferred). Either
-            `RaggedMHAOperand` or `LayoutTensorMHAOperand`.
+            `RaggedMHAOperand` or `TileTensorMHAOperand`.
         v_t: Value operand type backing `v` (inferred). Either
-            `RaggedMHAOperand` or `LayoutTensorMHAOperand`.
+            `RaggedMHAOperand` or `TileTensorMHAOperand`.
         k_rope_t: KV cache operand type backing `k_rope` (inferred).
-            Either `KVCacheMHAOperand` or `LayoutTensorMHAOperand`.
+            Either `KVCacheMHAOperand` or `TileTensorMHAOperand`.
         mask_t: Mask functor type applied to attention scores (inferred).
         dtype: Element type of `q` (inferred). Must be `bfloat16` or
             `float8_e4m3fn`.

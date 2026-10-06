@@ -24,7 +24,7 @@ This test exercises the complete production dispatch path:
             -> launch_mla_sm100_decode_fp8_per_token_scale_rope_aware
           + combine kernel for split-K reduction
 
-Using a PagedKVCache (not LayoutTensorMHAOperand) because the production
+Using a PagedKVCache (not TileTensorMHAOperand) because the production
 path's create_rope_tma_tile is only implemented for PagedKVCache.
 
 Layout:

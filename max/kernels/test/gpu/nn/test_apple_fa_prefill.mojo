@@ -14,7 +14,7 @@
 
 Mirrors `test/gpu/nn/test_flash_attention.mojo` (the e2e host-reference pattern)
 for the Apple prefill path: build dense BSHD Q/K/V, run a prefill kernel directly
-against a `LayoutTensorMHAOperand`, and compare against an fp32 host attention
+against a `TileTensorMHAOperand`, and compare against an fp32 host attention
 reference. Covers `NullMask` + `CausalMask` + `SlidingWindowCausalMask`, fp16/bf16
 in, head dims that are multiples of 16 up to 256, and ragged M/N (seq_len /
 num_keys not multiples of the tile size, to exercise the bounded edges). PASS on
@@ -51,7 +51,7 @@ from nn.attention.mha_mask import (
     NullMask,
     SlidingWindowCausalMask,
 )
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 from std.utils.index import Index
 
@@ -277,8 +277,8 @@ def _run[
     )
     var o_t = TileTensor(o_d, row_major(batch, seq, Idx[num_heads], Idx[depth]))
 
-    var k_op = LayoutTensorMHAOperand(k_t)
-    var v_op = LayoutTensorMHAOperand(v_t)
+    var k_op = TileTensorMHAOperand(k_t)
+    var v_op = TileTensorMHAOperand(v_t)
 
     # Dummy valid_length (dense path doesn't read it).
     var vl_d = ctx.enqueue_create_buffer[.uint32](batch + 1)

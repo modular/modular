@@ -55,7 +55,7 @@ from nn.attention.mha_mask import (
     NullMask,
     SlidingWindowCausalMask,
 )
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
@@ -342,7 +342,7 @@ def test[
     )
 
     # Create BF16 K operand for reference
-    var k_bf16_operand = LayoutTensorMHAOperand(
+    var k_bf16_operand = TileTensorMHAOperand(
         TileTensor(
             k_bf16_device.ptr.as_unsafe_any_origin(),
             row_major(
@@ -844,7 +844,7 @@ def test_sw[
         ),
     )
 
-    var k_bf16_operand = LayoutTensorMHAOperand(
+    var k_bf16_operand = TileTensorMHAOperand(
         TileTensor(
             k_bf16_device.ptr.as_unsafe_any_origin(),
             row_major(

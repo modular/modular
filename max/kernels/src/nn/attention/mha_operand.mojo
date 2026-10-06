@@ -1193,7 +1193,7 @@ def _null_scale_tile_tensor[
     )
 
 
-struct LayoutTensorMHAOperand[
+struct TileTensorMHAOperand[
     origin: ImmOrigin,
     scale_origin: ImmOrigin,
     //,
@@ -1264,7 +1264,7 @@ struct LayoutTensorMHAOperand[
 
     @staticmethod
     def get_type_name() -> String:
-        return "LayoutTensorMHAOperand"
+        return "TileTensorMHAOperand"
 
     def __init__(
         out self,
@@ -1495,7 +1495,7 @@ struct LayoutTensorMHAOperand[
             swizzle_mode,
         ],
     ) raises:
-        """Not supported for LayoutTensorMHAOperand.
+        """Not supported for TileTensorMHAOperand.
 
         Parameters:
             swizzle_mode: TMA swizzle mode for shared memory access
@@ -1511,7 +1511,7 @@ struct LayoutTensorMHAOperand[
         """
         comptime assert (
             False
-        ), "create_rope_tma_tile is not supported for LayoutTensorMHAOperand"
+        ), "create_rope_tma_tile is not supported for TileTensorMHAOperand"
 
     @inline(.always)
     def create_gather4_tma_tile[
@@ -1588,7 +1588,7 @@ struct LayoutTensorMHAOperand[
             ],
         ],
     ) raises:
-        """Not supported for LayoutTensorMHAOperand.
+        """Not supported for TileTensorMHAOperand.
 
         Parameters:
             tile_width: Number of BF16 elements per row in global
@@ -1608,7 +1608,7 @@ struct LayoutTensorMHAOperand[
         """
         comptime assert False, (
             "create_rope_gather4_tma_tile is not supported for"
-            " LayoutTensorMHAOperand"
+            " TileTensorMHAOperand"
         )
 
     @inline(.always)

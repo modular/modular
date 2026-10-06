@@ -28,7 +28,7 @@ Why this test exists
 ====================
 
 The existing ``test_mla_prefill_blockwise_fp8.mojo`` covers only the
-contiguous K_rope path (``LayoutTensorMHAOperand``) and so does not
+contiguous K_rope path (``TileTensorMHAOperand``) and so does not
 exercise the kernel's paged sub-tile TMA loops at lines
 643/731/850/955. The kernel-side ``debug_assert`` placed in those
 loops fires whenever a partial-tile config tries to issue a TMA past
@@ -60,7 +60,7 @@ from layout import (
 from std.memory import alloc
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
@@ -418,10 +418,10 @@ def run_test_paged_prefill_blockscale[
         row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
+    var k_ref_operand = TileTensorMHAOperand(
         k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
+    var v_ref_operand = TileTensorMHAOperand(
         v_ref_device.as_imm().as_unsafe_any_origin()
     )
 

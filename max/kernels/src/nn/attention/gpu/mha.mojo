@@ -133,7 +133,7 @@ from nn.attention.mha_mask import (
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    LayoutTensorMHAOperand,
+    TileTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
@@ -2224,7 +2224,7 @@ def _flash_attention_dense[
 ) raises:
     """Shared implementation behind the dense `flash_attention` overloads.
 
-    Wraps K and V in `LayoutTensorMHAOperand` adapters and delegates to
+    Wraps K and V in `TileTensorMHAOperand` adapters and delegates to
     `flash_attention_dispatch`. All tensor operands are `TileTensor`s.
     """
     # See the kV cache overloads for comments.
@@ -2288,7 +2288,7 @@ def _flash_attention_dense[
     # round-trip). BSHD layout: batch/seq are runtime, head/depth static, so
     # mirror `k`'s static pattern with `Idx` for the known dims. The operand
     # infers `buffer_layout` from the passed TileTensor.
-    var k_operand = LayoutTensorMHAOperand(
+    var k_operand = TileTensorMHAOperand(
         TileTensor(
             k.unsafe_ptr(),
             row_major(
@@ -2299,7 +2299,7 @@ def _flash_attention_dense[
             ),
         )
     )
-    var v_operand = LayoutTensorMHAOperand(
+    var v_operand = TileTensorMHAOperand(
         TileTensor(
             v.unsafe_ptr(),
             row_major(
@@ -6755,10 +6755,10 @@ def mha_gpu_naive[
         ctx: GPU device context for kernel dispatch.
         sink_weights: Optional sink-token weight tensor for attention sinks.
     """
-    var k_operand = LayoutTensorMHAOperand(
+    var k_operand = TileTensorMHAOperand(
         TileTensor(k.unsafe_ptr(), row_major(k.layout.shape_coord()))
     )
-    var v_operand = LayoutTensorMHAOperand(
+    var v_operand = TileTensorMHAOperand(
         TileTensor(v.unsafe_ptr(), row_major(v.layout.shape_coord()))
     )
     mha_gpu_naive[_is_cache_length_accurate=True, sink=sink](

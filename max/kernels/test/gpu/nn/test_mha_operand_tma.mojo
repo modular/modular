@@ -40,7 +40,7 @@ from std.memory import unsafe_stack_allocation
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    LayoutTensorMHAOperand,
+    TileTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.attention.gpu.nvidia.sm90.attention import kv_coord
@@ -702,7 +702,7 @@ def test_tile_tensor[
             ).shape_coord()
         ),
     )
-    var src_operand = LayoutTensorMHAOperand(
+    var src_operand = TileTensorMHAOperand(
         src_tt.as_imm().as_unsafe_any_origin()
     )
 
@@ -728,7 +728,7 @@ def test_tile_tensor[
                 ).shape_coord()
             ),
         )
-        var dst_operand = LayoutTensorMHAOperand(
+        var dst_operand = TileTensorMHAOperand(
             dst_tt.as_imm().as_unsafe_any_origin()
         )
 
@@ -770,10 +770,10 @@ def test_tile_tensor[
                     ),
                 )
 
-                var src_host_operand = LayoutTensorMHAOperand(
+                var src_host_operand = TileTensorMHAOperand(
                     src_host_tt.as_unsafe_any_origin()
                 )
-                var dst_host_operand = LayoutTensorMHAOperand(
+                var dst_host_operand = TileTensorMHAOperand(
                     dst_host_tt.as_unsafe_any_origin()
                 )
 

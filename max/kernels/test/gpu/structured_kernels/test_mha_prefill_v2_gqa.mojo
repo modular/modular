@@ -46,7 +46,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     mha_prefill_v2,
 )
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 
 comptime Q_BLOCK_SIZE = 32
@@ -135,8 +135,8 @@ def test_gqa[
         dev_out,
         row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[num_heads], Idx[depth]),
     )
-    var k_op = LayoutTensorMHAOperand(k_tt)
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var k_op = TileTensorMHAOperand(k_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     mha_prefill_v2[CONFIG](
         q_tt,

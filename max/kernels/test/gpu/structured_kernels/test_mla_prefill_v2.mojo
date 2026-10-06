@@ -57,7 +57,7 @@ from nn.attention.gpu.amd_structured.mha_mma_op import MlaConfigV2
 from nn.attention.gpu.amd_structured.mla_prefill_v2 import MlaPrefillV2
 from nn.attention.gpu.amd_structured.ps_metadata import build_uniform
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand, MHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand, MHAOperand
 
 
 # ---- Shape constants. DeepSeek-V3 MLA at TP=4 production shard. -----
@@ -466,15 +466,15 @@ def test_mla_vs_fp32_ref[
             Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[CACHE_DEPTH]
         ),
     )
-    var k_nope_op = LayoutTensorMHAOperand(k_tt)
-    var k_rope_op = LayoutTensorMHAOperand(k_tt)
+    var k_nope_op = TileTensorMHAOperand(k_tt)
+    var k_rope_op = TileTensorMHAOperand(k_tt)
     var v_tt = TileTensor(
         dev_k_latent,
         row_major(
             Int32(BATCH), Int32(NUM_KEYS), Idx[NUM_KV_HEADS], Idx[CACHE_DEPTH]
         ),
     )
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     _mla_prefill_v2_launch[config=CONFIG](
         q_tt,
