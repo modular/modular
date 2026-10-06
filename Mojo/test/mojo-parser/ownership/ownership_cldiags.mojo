@@ -818,3 +818,12 @@ def test_control_flow_invalidation(var d : MiniDict) raises:
   var str = ""
   ref entry = d[str]
   use_two_strings(d[entry], entry)
+
+
+# MOCO-4908: a use on a path ending in a no-return call is a real use, so no
+# "never used" warning fires.
+def use_only_before_noreturn(n: Int, flag: Bool):
+    var v = n
+    if flag:
+        use(v)
+        abort()

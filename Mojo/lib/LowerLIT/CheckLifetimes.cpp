@@ -3160,8 +3160,15 @@ void UninitializedValueScan::checkTerminatorOp(Operation &op) {
       SmallVector<int32_t> liveValueIds;
       for (unsigned i = 0, e = valueSet.getValueInfos().size(); i != e; ++i) {
         const auto &valueInfo = valueSet.getValueInfo(i);
-        if (valueInfo.getFullValueRef(i).isAllPresent(liveness.tracked))
-          liveValueIds.push_back(i);
+        if (!valueInfo.value ||
+            !valueInfo.getFullValueRef(i).isAllPresent(liveness.tracked))
+          continue;
+        // A value can be fully live here without being in scope. Demanding it
+        // would make the backward pass destroy it where its definition doesn't
+        // dominate.
+        if (!valueSet.domInfo.properlyDominates(valueInfo.value, &op))
+          continue;
+        liveValueIds.push_back(i);
       }
       if (!liveValueIds.empty())
         op.setAttr(liveValueIdsAfterNoReturnCallAttrName,
@@ -4607,6 +4614,9 @@ void DestructorInsertion::checkTerminatorOp(Operation &op) {
     // mark the block or anything else as live.
     if (!unreachable.getIsAfterUnreachableCall())
       return;
+
+    // Code up to a no-return call executes, so this path is reachable.
+    consumedValues.set(0);
 
     // If this is after a no-return call, then we do mark all the live-out
     // values (e.g. like "read" arguments) as consumed so they don't get
