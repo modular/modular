@@ -44,9 +44,11 @@ from layout.tensor_core import num_matrix_reg
 from std.bit import log2_floor
 
 from ....utils import (
+    ElementwiseComputeFn,
     ElementwiseEpilogueFn,
     apply_elementwise_epilogue,
     elementwise_epilogue_type,
+    no_compute_fn,
     no_epilogue_fn,
 )
 
@@ -334,7 +336,9 @@ struct AMDPingPongMatmul[
             b: RHS input matrix tile of shape `N` x `K` in `b_type`.
             c: Output matrix tile of shape `M` x `N` in `c_type`.
         """
-        Self._run_impl[has_epilogue_fn=False](a, b, c, no_epilogue_fn)
+        Self._run_impl[has_epilogue_fn=False, has_compute_fn=False](
+            a, b, c, no_epilogue_fn, no_compute_fn
+        )
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -384,7 +388,61 @@ struct AMDPingPongMatmul[
             "run_with_epilogue_fn takes the epilogue as a value; leave"
             " elementwise_lambda_fn unset"
         )
-        Self._run_impl[has_epilogue_fn=True](a, b, c, epilogue_fn)
+        Self._run_impl[has_epilogue_fn=True, has_compute_fn=False](
+            a, b, c, epilogue_fn, no_compute_fn
+        )
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.config.num_threads())
+        )
+    )
+    @__name(
+        t"amd_ping_pong_matmul_compute_fn_{Self.a_type}_{Self.b_type}_{Self.c_type}_BM{Self.BM}_BN{Self.BN}_BK{Self.BK}_WM{Self.WM}_WN{Self.WN}"
+    )
+    @staticmethod
+    def run_with_compute_fn[
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        c_layout: TensorLayout,
+        a_engine: TensorEngine,
+        b_engine: TensorEngine,
+        c_engine: TensorEngine,
+        ComputeFnType: ElementwiseComputeFn,
+    ](
+        a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+        b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+        c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+        compute_fn: ComputeFnType,
+    ):
+        """Same as `run`, storing `compute_fn(idx, value)` into `c`.
+
+        Launch with `host_arg=compute_fn`. Requires
+        `elementwise_lambda_fn` to be unset.
+
+        Parameters:
+            a_layout: Memory layout of the `a` input tile (inferred).
+            b_layout: Memory layout of the `b` input tile (inferred).
+            c_layout: Memory layout of the `c` output tile (inferred).
+            a_engine: Engine of the `a` input tile (inferred).
+            b_engine: Engine of the `b` input tile (inferred).
+            c_engine: Engine of the `c` output tile (inferred).
+            ComputeFnType: Type of `compute_fn`.
+
+        Args:
+            a: LHS input matrix tile of shape `M` x `K` in `a_type`.
+            b: RHS input matrix tile of shape `N` x `K` in `b_type`.
+            c: Output matrix tile of shape `M` x `N` in `c_type`.
+            compute_fn: Maps each output index and value to the value to
+                store.
+        """
+        comptime assert not Self.elementwise_lambda_fn, (
+            "run_with_compute_fn takes the epilogue as a value; leave"
+            " elementwise_lambda_fn unset"
+        )
+        Self._run_impl[has_epilogue_fn=False, has_compute_fn=True](
+            a, b, c, no_epilogue_fn, compute_fn
+        )
 
     @staticmethod
     @inline(.always)
@@ -396,14 +454,17 @@ struct AMDPingPongMatmul[
         b_engine: TensorEngine,
         c_engine: TensorEngine,
         EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
         //,
         *,
         has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
     ](
         a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
         c: TileTensor[Self.c_type, c_layout, MutAnyOrigin, Engine=c_engine],
         epilogue_fn: EpilogueFnType,
+        compute_fn: ComputeFnType,
     ):
         Self.validate_config()
 
@@ -684,7 +745,14 @@ struct AMDPingPongMatmul[
         if warp_tile_m < M and warp_tile_n < N:
             var c_reg = mma_op.accum_tile()
 
-            comptime if Bool(Self.elementwise_lambda_fn) or has_epilogue_fn:
+            comptime if (
+                Bool(Self.elementwise_lambda_fn)
+                or has_epilogue_fn
+                or has_compute_fn
+            ):
+                # Rows are only scalar-aligned when N % BN != 0, so
+                # compute-mode stores use scalar alignment.
+                comptime scalar_align = align_of[Scalar[Self.c_type]]()
                 var lane_group, thread_m = divmod(Int(lane_id()), MMA_M)
 
                 comptime for m_mma in range(num_m_mmas):
@@ -710,16 +778,27 @@ struct AMDPingPongMatmul[
                                         + (e % 4)
                                     )
                                     if col < N:
-                                        apply_elementwise_epilogue[
-                                            Self.elementwise_lambda_fn,
-                                            alignment=align_of[
-                                                Scalar[Self.c_type]
-                                            ](),
-                                        ](
-                                            epilogue_fn,
-                                            IndexList[2](m, col),
-                                            SIMD[Self.c_type, 1](v[e]),
-                                        )
+                                        comptime if has_compute_fn:
+                                            c.store_linear[
+                                                alignment=scalar_align
+                                            ](
+                                                IndexList[2](m, col),
+                                                compute_fn[
+                                                    Self.c_type, 1, alignment=1
+                                                ](
+                                                    IndexList[2](m, col),
+                                                    SIMD[Self.c_type, 1](v[e]),
+                                                ),
+                                            )
+                                        else:
+                                            apply_elementwise_epilogue[
+                                                Self.elementwise_lambda_fn,
+                                                alignment=scalar_align,
+                                            ](
+                                                epilogue_fn,
+                                                IndexList[2](m, col),
+                                                SIMD[Self.c_type, 1](v[e]),
+                                            )
                             else:
                                 var n = (
                                     warp_tile_n
@@ -727,12 +806,22 @@ struct AMDPingPongMatmul[
                                     + lane_group * c_frag_size
                                 )
                                 if n < N:
-                                    apply_elementwise_epilogue[
-                                        Self.elementwise_lambda_fn,
-                                        alignment=align_of[
-                                            SIMD[Self.c_type, c_frag_size]
-                                        ](),
-                                    ](epilogue_fn, IndexList[2](m, n), v)
+                                    comptime if has_compute_fn:
+                                        c.store_linear[alignment=scalar_align](
+                                            IndexList[2](m, n),
+                                            compute_fn[
+                                                Self.c_type,
+                                                c_frag_size,
+                                                alignment=1,
+                                            ](IndexList[2](m, n), v),
+                                        )
+                                    else:
+                                        apply_elementwise_epilogue[
+                                            Self.elementwise_lambda_fn,
+                                            alignment=align_of[
+                                                SIMD[Self.c_type, c_frag_size]
+                                            ](),
+                                        ](epilogue_fn, IndexList[2](m, n), v)
             else:
                 var c_block = c.tile[BM, BN](block_idx.y, block_idx.x)
                 var c_warp = c_block.tile[WM, WN](warp_id_m, warp_id_n)

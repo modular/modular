@@ -27,7 +27,11 @@ from layout import (
 
 from std.utils import Index, IndexList
 
-from ...utils import ElementwiseEpilogueFn, elementwise_epilogue_type
+from ...utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    elementwise_epilogue_type,
+)
 from .blas import matmul as vendor_matmul
 
 
@@ -194,3 +198,70 @@ def matmul[
         transpose_b=transpose_b,
     )
     elementwise[simd_size, target="gpu"](epilogue_wrapper, (m, n), ctx)
+
+
+def matmul[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    transpose_b: Bool = False,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Vendor matmul into `c`, followed by a pass that replaces each output
+    chunk with `compute_fn` of it.
+
+    Parameters:
+        ComputeFnType: Type of `compute_fn` (inferred).
+        transpose_b: Whether to treat `b` as transposed, computing
+            `a @ b.T` instead of `a @ b` (defaults to `False`).
+
+    Args:
+        c: Output matrix of shape `(m, n)` and rank 2. Caller-allocated
+            and mutable.
+        a: Left-hand input matrix of rank 2.
+        b: Right-hand input matrix of rank 2, transposed when
+            `transpose_b` is `True`.
+        compute_fn: Maps each output index and chunk to the value to store.
+        ctx: Device context used to select the vendor dispatch path and
+            query device capabilities.
+    """
+    comptime assert c.flat_rank == 2, "c must be of rank 2"
+    comptime assert a.flat_rank == 2, "a must be of rank 2"
+    comptime assert b.flat_rank == 2, "b must be of rank 2"
+
+    comptime c_type = c.dtype
+    comptime simd_size = _epilogue_simd_size[c_type]()
+
+    var c_tt = TileTensor(
+        c.ptr, row_major(Coord(Int(c.dim[0]()), Int(c.dim[1]())))
+    )
+
+    def compute_wrapper[
+        simd_width: Int, alignment: Int = 1
+    ](idx: Coord) {var c_tt, var compute_fn}:
+        # Load and store take alignment in bytes, compute_fn takes elements.
+        comptime byte_alignment = alignment * size_of[c_type]()
+        var c_val = c_tt.load[width=simd_width, alignment=byte_alignment](idx)
+        c_tt.store[width=simd_width, alignment=byte_alignment](
+            idx,
+            compute_fn[c_type, simd_width, alignment=alignment](
+                Index(idx[0].value(), idx[1].value()), c_val
+            ),
+        )
+
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
+
+    vendor_matmul[use_tf32=True](
+        ctx,
+        c,
+        a,
+        b,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
+    elementwise[simd_size, target="gpu"](compute_wrapper, (m, n), ctx)

@@ -119,6 +119,16 @@ comptime ElementwiseEpilogueFn = (
 """Local re-declaration of `linalg.utils.ElementwiseEpilogueFn`, for the
 same cyclic-dependency reason as `elementwise_epilogue_type`."""
 
+comptime _elementwise_compute_fn_signature = def[
+    dtype: DType, width: SIMDLength, *, alignment: Int
+](IndexList[2], SIMD[dtype, width]) -> SIMD[dtype, width]
+
+comptime ElementwiseComputeFn = (
+    ImplicitlyCopyable & RegisterPassable & _elementwise_compute_fn_signature
+)
+"""Local re-declaration of `linalg.utils.ElementwiseComputeFn`, for the
+same cyclic-dependency reason as `elementwise_epilogue_type`."""
+
 
 comptime _alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
 comptime _no_alias_scope_attr = __mlir_attr.`[#llvm.alias_scope<id= "amdgpu.LocalLoads", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`
@@ -2742,6 +2752,56 @@ struct RegTileEpilogue[
                         1,
                         alignment=align_of[Scalar[Self.c_type]](),
                     ](IndexList[2](m, col), SIMD[Self.c_type, 1](v[e]))
+
+    @inline(.always)
+    def store_with_compute_fn[
+        ComputeFnType: ElementwiseComputeFn
+    ](
+        self,
+        compute_fn: ComputeFnType,
+        v: SIMD[Self.c_type, Self.chunk_width],
+        *,
+        m: Int,
+        n: Int,
+    ):
+        """Write `compute_fn((m, n), v)` at `(m, n)` of dst.
+
+        Same bound handling as `store`. `m` must be the logical output
+        row, and `elementwise_lambda_fn` must be unset.
+
+        Parameters:
+            ComputeFnType: Type of `compute_fn`.
+
+        Args:
+            compute_fn: Maps each output index and chunk to the value to
+                store.
+            v: SIMD value to transform (already cast to `Self.c_type`).
+            m: Logical output row.
+            n: Starting output column.
+        """
+        comptime assert not Self.elementwise_lambda_fn, (
+            "store_with_compute_fn takes the epilogue as a value; leave"
+            " elementwise_lambda_fn unset"
+        )
+        if n + Self.chunk_width <= self.n_total:
+            comptime chunk_alignment = align_of[
+                SIMD[Self.c_type, Self.chunk_width]
+            ]()
+            self._ptr().store[alignment=chunk_alignment](
+                m * self.row_stride + n,
+                compute_fn[
+                    Self.c_type,
+                    Self.chunk_width,
+                    alignment=Self.chunk_width,
+                ](IndexList[2](m, n), v),
+            )
+        elif n < self.n_total:
+            for e in range(Self.chunk_width):
+                var col = n + e
+                if col < self.n_total:
+                    self._ptr()[m * self.row_stride + col] = compute_fn[
+                        Self.c_type, 1, alignment=1
+                    ](IndexList[2](m, col), SIMD[Self.c_type, 1](v[e]))[0]
 
 
 @inline(.always)
