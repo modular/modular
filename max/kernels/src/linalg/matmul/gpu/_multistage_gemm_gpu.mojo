@@ -118,27 +118,25 @@ def warp_split_k_reduction[
 
     while i_red > 0:
         barrier()
-        var red_tb_smem = LayoutTensor[
-            c_type,
-            Layout.row_major(1, BM * BN),
-            MutAnyOrigin,
-            address_space=.SHARED,
-        ](
+        var red_tb_smem = TileTensor(
             (
                 smem.bitcast[Scalar[c_type]]()
                 + ((warp_k_part_id % i_red) * BM * BN)
-            ).as_unsafe_any_origin()
-        ).vectorize[
-            1, c_frag_size
-        ]()
+            ).as_unsafe_any_origin(),
+            row_major[1, BM * BN](),
+        )
         if i_red <= warp_k_part_id < 2 * i_red:
             copy_local_to_shared[thread_layout=red_layout](
-                red_tb_smem,
+                red_tb_smem.to_layout_tensor().vectorize[1, c_frag_size](),
                 c_reg_tile.vectorize[1, c_frag_size](),
             )
         barrier()
         if warp_k_part_id < i_red:
-            var red_tb_thread_tile = red_tb_smem.distribute[red_layout](tid)
+            var red_tb_thread_tile = (
+                red_tb_smem.to_layout_tensor()
+                .vectorize[1, c_frag_size]()
+                .distribute[red_layout](tid)
+            )
             var c_reg_tile_vectorized = c_reg_tile.vectorize[
                 1, c_frag_size
             ]().transpose()
@@ -1027,31 +1025,26 @@ def multistage_gemm_kernel[
             num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = LayoutTensor[
-            c_type,
-            Layout.row_major(WM, WN),
-            MutAnyOrigin,
-            address_space=.SHARED,
-        ](
+        var accum_smem_warp_tile = TileTensor(
             (
                 a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN
-            ).as_unsafe_any_origin()
+            ).as_unsafe_any_origin(),
+            row_major[WM, WN](),
         )
 
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4),
             swizzle=swizzle,
         ](
-            accum_smem_warp_tile.vectorize[1, 2](),
+            accum_smem_warp_tile.to_layout_tensor().vectorize[1, 2](),
             c_reg_tile.vectorize[1, 2]().transpose(),
         )
 
         # Guard writing to shared memory.
         barrier()
 
-        # Vectorized copy from shared to global memory, during which every 2 FP32
-        # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
-        # vector and stored using 16B store instruction.
+        # The local-to-shared copy has already cast the accumulators to half
+        # precision. Read the staged values in vectors for 16-byte global stores.
         comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             comptime warp_layout = Layout.row_major(
@@ -1060,14 +1053,16 @@ def multistage_gemm_kernel[
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
             ]().distribute[warp_layout](thread_idx.x)
-            var c_smem_frag = accum_smem_warp_tile.vectorize[
-                1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            var c_smem_frag = (
+                accum_smem_warp_tile.to_layout_tensor()
+                .vectorize[1, simd_size]()
+                .distribute[warp_layout](thread_idx.x)
+            )
             var thread_offset = c_gmem_frag.distance(c.ptr)
             comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
             var c_smem_frag_offset = c_smem_frag.distance(
-                accum_smem_warp_tile.ptr
+                accum_smem_warp_tile.unsafe_ptr()
             )
 
             comptime for i in range(num_stores_per_thread):
@@ -1092,9 +1087,11 @@ def multistage_gemm_kernel[
                 if m < M and n < N:
                     epilogue[alignment=alignment](
                         (m, n),
-                        accum_smem_warp_tile.ptr.load[
-                            width=simd_size, alignment=alignment
-                        ](swizzled_idx).cast[c_type](),
+                        accum_smem_warp_tile.unsafe_ptr()
+                        .load[width=simd_size, alignment=alignment](
+                            swizzled_idx
+                        )
+                        .cast[c_type](),
                     )
         else:
             copy_sram_to_dram[
@@ -1104,7 +1101,9 @@ def multistage_gemm_kernel[
                 swizzle=swizzle,
             ](
                 c_gmem_warp_tile.vectorize[1, simd_size](),
-                accum_smem_warp_tile.vectorize[1, simd_size](),
+                accum_smem_warp_tile.to_layout_tensor().vectorize[
+                    1, simd_size
+                ](),
             )
 
     elif c_type.is_half_float() and not is_nvidia_gpu():
@@ -1113,19 +1112,22 @@ def multistage_gemm_kernel[
                 apply_epilogue()
 
             else:
-                var c_reg_tile_out = LayoutTensor[
-                    c_type,
-                    c_reg_tile.layout,
-                    MutAnyOrigin,
-                    address_space=.LOCAL,
-                ].stack_allocation()
+                var c_reg_tile_out = stack_allocation[
+                    c_type, address_space=.LOCAL
+                ](row_major[num_m_mmas * num_n_mmas, c_frag_size]())
 
                 comptime for i in range(c_reg_tile.shape[0]()):
                     comptime for j in range(c_reg_tile.shape[1]()):
-                        c_reg_tile_out[i, j] = c_reg_tile[i, j].cast[c_type]()
+                        var value = c_reg_tile.load[
+                            width=1,
+                            load_alignment=align_of[Scalar[accum_type]](),
+                        ](i, j).cast[c_type]()
+                        c_reg_tile_out.store[
+                            width=1, alignment=align_of[Scalar[c_type]]()
+                        ](Coord(i, j), value)
                 copy_local_to_dram[dst_thread_layout=Layout.row_major(4, 16)](
                     c_gmem_warp_tile.vectorize[4, 1](),
-                    c_reg_tile_out.vectorize[1, 4](),
+                    c_reg_tile_out.to_layout_tensor().vectorize[1, 4](),
                 )
         else:
             store_c_scalar()

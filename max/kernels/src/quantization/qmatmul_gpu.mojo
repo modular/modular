@@ -1134,26 +1134,24 @@ def multistage_qgemm_kernel[
             num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
         ]()
 
-        var accum_smem_warp_tile = LayoutTensor[
-            c_type,
-            Layout.row_major(WM, WN),
-            address_space=.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
+        var accum_smem_warp_tile = TileTensor(
+            a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN,
+            row_major[WM, WN](),
+        )
 
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4),
             swizzle=swizzle,
         ](
-            accum_smem_warp_tile.vectorize[1, 2](),
+            accum_smem_warp_tile.to_layout_tensor().vectorize[1, 2](),
             c_reg_tile.vectorize[1, 2]().transpose(),
         )
 
         # Guard writing to shared memory.
         barrier()
 
-        # Vectorized copy from shared to global memory, during which every 2 FP32
-        # are cast to 2 BF16 so that 2 4xFP32 vectors are merged into 1 8xBF16
-        # vector and stored using 16B store instruction.
+        # The local-to-shared copy has already cast the accumulators to half
+        # precision. Read the staged values in vectors for 16-byte global stores.
         comptime if elementwise_lambda_fn:
             comptime epilogue = elementwise_lambda_fn.value()
             comptime warp_layout = Layout.row_major(
@@ -1162,14 +1160,16 @@ def multistage_qgemm_kernel[
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
             ]().distribute[warp_layout](thread_idx.x)
-            var c_smem_frag = accum_smem_warp_tile.vectorize[
-                1, simd_size
-            ]().distribute[warp_layout](thread_idx.x)
+            var c_smem_frag = (
+                accum_smem_warp_tile.to_layout_tensor()
+                .vectorize[1, simd_size]()
+                .distribute[warp_layout](thread_idx.x)
+            )
             var thread_offset = c_gmem_frag.distance(c.ptr)
             comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
             var c_smem_frag_offset = c_smem_frag.distance(
-                accum_smem_warp_tile.ptr
+                accum_smem_warp_tile.unsafe_ptr()
             )
 
             comptime for i in range(num_stores_per_thread):
@@ -1194,9 +1194,11 @@ def multistage_qgemm_kernel[
                 if m < M and n < N:
                     epilogue[alignment=alignment](
                         (m, n),
-                        accum_smem_warp_tile.ptr.load[
-                            width=simd_size, alignment=alignment
-                        ](swizzled_idx).cast[c_type](),
+                        accum_smem_warp_tile.unsafe_ptr()
+                        .load[width=simd_size, alignment=alignment](
+                            swizzled_idx
+                        )
+                        .cast[c_type](),
                     )
         else:
             copy_sram_to_dram[
@@ -1206,7 +1208,9 @@ def multistage_qgemm_kernel[
                 swizzle=swizzle,
             ](
                 c_gmem_warp_tile.vectorize[1, simd_size](),
-                accum_smem_warp_tile.vectorize[1, simd_size](),
+                accum_smem_warp_tile.to_layout_tensor().vectorize[
+                    1, simd_size
+                ](),
             )
 
     elif c_type.is_half_float() and not is_nvidia_gpu():
