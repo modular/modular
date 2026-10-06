@@ -5197,9 +5197,7 @@ def lt_to_tt[
                 Int64(lt.runtime_layout.stride.value[i])
             )
 
-    var ptr = Pointer[Scalar[dtype], lt.origin, address_space=lt.address_space](
-        unsafe_from_address=Int(lt.ptr)
-    )
+    var ptr = lt.ptr
     return TileTensor[
         dtype, ConcLayout, lt.origin, address_space=lt.address_space
     ](
@@ -5271,9 +5269,7 @@ def lt_to_tt_idx[
                 Int64(lt.runtime_layout.stride.value[i])
             )
 
-    var ptr = Pointer[Scalar[dtype], lt.origin, address_space=lt.address_space](
-        unsafe_from_address=Int(lt.ptr)
-    )
+    var ptr = lt.ptr
     return TileTensor[
         dtype,
         ConcLayout,

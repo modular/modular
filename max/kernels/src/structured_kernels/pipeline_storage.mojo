@@ -16,9 +16,8 @@ This module provides a single-source-of-truth framework for pipeline storage,
 where stage count determines barrier count, and tile storage type determines
 the SMEM layout for input tiles.
 
-All tile storage uses TileTensor natively. Conversion to LayoutTensor only
-happens at external API boundaries (TMA, MMA) using the {ptr} syntax or
-explicit LayoutTensor construction.
+All tile storage uses TileTensor natively, including the tiles passed to
+TMA, MMA, and epilogue operations.
 
 Design Principles
 -----------------
@@ -121,10 +120,7 @@ from std.utils.index import IndexList
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
 from .smem_types import SMemArray, SMemPtr
 
-# LayoutTensor-based SMemTileArray for C output tiles (used by epilogue)
-
-
-# TileTensor-based tile arrays for input tiles (A, B, scales)
+# TileTensor-based tile arrays for input and output tiles
 from .tile_types import (
     SMemTileArray2D,
     SMemTileArray2DRowMajor,
@@ -158,8 +154,7 @@ struct StandardTileStorage[
     This is the single source of truth for tile array types and storage.
     SMEM structs embed this rather than defining tile arrays separately.
 
-    All tiles use TileTensor natively. Convert to LayoutTensor at TMA/MMA
-    boundaries using {ptr} syntax or explicit construction.
+    All tiles use TileTensor natively, including at TMA/MMA boundaries.
 
     Parameters:
         a_type: Data type for A matrix tiles.
@@ -220,8 +215,7 @@ struct BlockScaledTileStorage[
 
     Single source of truth for block-scaled tile arrays and storage.
 
-    All tiles use TileTensor natively. LayoutTensor conversion
-    is kept for SMemEpilogueWriter compatibility.
+    All tiles use TileTensor natively, including in SMemEpilogueWriter.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, sfa, sfb.
 
@@ -337,8 +331,7 @@ struct BlockwiseFP8TileStorage[
     Single source of truth for blockwise FP8 tile arrays and storage.
     B-scales are read directly from global memory during epilogue.
 
-    All tiles use TileTensor natively. LayoutTensor conversion
-    is kept for SMemEpilogueWriter compatibility.
+    All tiles use TileTensor natively, including in SMemEpilogueWriter.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, a_scales.
 
@@ -425,8 +418,7 @@ struct OutputTileStorage[
     Single source of truth for output tile array and storage.
     Separate from input tiles since output has different stage count.
 
-    All tiles use TileTensor natively. LayoutTensor conversion
-    is kept for SMemEpilogueWriter compatibility.
+    All tiles use TileTensor natively, including in SMemEpilogueWriter.
 
     Parameters:
         c_type: Data type for C matrix tiles.
