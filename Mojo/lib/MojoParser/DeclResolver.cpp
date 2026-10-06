@@ -1748,21 +1748,32 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
 
   // Erase unresolved operations from source.
   if (eraseUnparsedDecls) {
+    // Several decls can share one operation, so collect before erasing:
+    // erasing inside the walk leaves the aliases dangling.
+    llvm::SmallPtrSet<Operation *, 8> opsToErase;
     for (ASTDecl *decl : parsedDeclList) {
-      // During trait body resolution we create decls that point to parent
-      // trait decl's FnOps. In order to avoid double frees later on in this
-      // loop bail early if we come across such a decl.
+      // Trait-body decls alias their parent trait's FnOps. Such a decl must not
+      // drive the erase, but is still nulled below.
       if (decl->getCursor().isInvalid())
         continue;
       if (decl->resolvedness == DeclResolvedness::unparsed &&
-          !decl->loadedFromBytecode)
+          !decl->loadedFromBytecode) {
         if (Operation *op = decl->getIfOperation()) {
-          if (!isa<UnresolvedImportOp>(op)) {
-            op->erase();
-            decl->setIRValue(nullptr);
-          }
+          if (!isa<UnresolvedImportOp>(op))
+            opsToErase.insert(op);
         }
+      }
     }
+
+    // Compares pointers without dereferencing: a decl may already hold a stale
+    // operation by this point.
+    for (ASTDecl *decl : parsedDeclList) {
+      if (opsToErase.contains(decl->getIfOperation()))
+        decl->setIRValue(nullptr);
+    }
+
+    for (Operation *op : opsToErase)
+      op->erase();
 
     // Erase from-import placeholders that resolved to a submodule and were
     // superseded by an ImportOp (see importDeclFromModule). This runs
