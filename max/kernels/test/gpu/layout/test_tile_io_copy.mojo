@@ -32,6 +32,8 @@ Coverage:
   `copy_sram_to_dram`.
 - SHARED (swizzled) -> GENERIC via `copy_sram_to_dram` on vectorized tiles,
   where each thread owns a single vector.
+- LOCAL -> SHARED (swizzled) via `copy_local_to_shared` on vectorized tiles,
+  where each thread owns a single vector.
 """
 
 from max.gpu import thread_idx
@@ -197,6 +199,47 @@ def swizzled_vectorized_sram_to_dram_kernel(
     )
 
 
+def swizzled_vectorized_local_to_shared_kernel(
+    src_ptr: MutPointer[Float32, MutAnyOrigin],
+    dst_ptr: MutPointer[Float32, MutAnyOrigin],
+):
+    """LOCAL -> SHARED (swizzled) with vectorized tiles.
+
+    Each thread fills its one-vector local tile, copies it into shared memory
+    through `copy_local_to_shared`, and thread 0 then reads shared memory back
+    in swizzled order. Shared memory is sentinel-filled first, since it is not
+    cleared between launches.
+    """
+    comptime thread_layout = row_major(Idx[_V_ROWS], Idx[_V_COLS // _V_WIDTH])
+    comptime swizzle = Swizzle(1, 2, 3)
+    comptime threads_per_row = _V_COLS // _V_WIDTH
+
+    var smem = stack_allocation[dtype=DType.float32, address_space=.SHARED](
+        row_major[_V_ROWS, _V_COLS]()
+    )
+    var local = stack_allocation[dtype=DType.float32, address_space=.LOCAL](
+        row_major[1, _V_WIDTH]()
+    )
+
+    if thread_idx.x == 0:
+        for i in range(_V_ROWS * _V_COLS):
+            smem.ptr[i] = -1.0
+    barrier()
+
+    var row = Int(thread_idx.x) // threads_per_row
+    var col = (Int(thread_idx.x) % threads_per_row) * _V_WIDTH
+    for j in range(_V_WIDTH):
+        local.ptr[j] = src_ptr[row * _V_COLS + col + j]
+    copy_local_to_shared[thread_layout, swizzle=swizzle](
+        smem.vectorize[1, _V_WIDTH](), local.vectorize[1, _V_WIDTH]()
+    )
+    barrier()
+
+    if thread_idx.x == 0:
+        for i in range(_V_ROWS * _V_COLS):
+            dst_ptr[i] = smem.ptr[swizzle(i)]
+
+
 def async_dram_to_sram_to_dram_kernel(
     src_ptr: MutPointer[Float32, MutAnyOrigin],
     dst_ptr: MutPointer[Float32, MutAnyOrigin],
@@ -234,18 +277,22 @@ def _run_roundtrip[
     print("==", name)
 
     var src_host = ctx.enqueue_create_host_buffer[.float32](num_elements)
+    var dst_host = ctx.enqueue_create_host_buffer[.float32](num_elements)
     for i in range(num_elements):
         src_host[i] = Float32(i + 1)
+        dst_host[i] = -1.0
 
+    # Device memory is not cleared between tests, so start dst from a
+    # sentinel rather than whatever the last test left there.
     var src_dev = ctx.enqueue_create_buffer[.float32](num_elements)
     var dst_dev = ctx.enqueue_create_buffer[.float32](num_elements)
     ctx.enqueue_copy(src_dev, src_host)
+    ctx.enqueue_copy(dst_dev, dst_host)
 
     ctx.enqueue_function[kernel_fn](
         src_dev, dst_dev, grid_dim=(1), block_dim=(block_dim)
     )
 
-    var dst_host = ctx.enqueue_create_host_buffer[.float32](num_elements)
     ctx.enqueue_copy(dst_host, dst_dev)
     ctx.synchronize()
 
@@ -285,6 +332,14 @@ def test_swizzled_vectorized_sram_to_dram(ctx: DeviceContext) raises:
     ]("test_swizzled_vectorized_sram_to_dram", ctx)
 
 
+def test_swizzled_vectorized_local_to_shared(ctx: DeviceContext) raises:
+    _run_roundtrip[
+        swizzled_vectorized_local_to_shared_kernel,
+        num_elements=_V_ROWS * _V_COLS,
+        block_dim=_V_ROWS * _V_COLS // _V_WIDTH,
+    ]("test_swizzled_vectorized_local_to_shared", ctx)
+
+
 def test_async_dram_to_sram_to_dram(ctx: DeviceContext) raises:
     _run_roundtrip[async_dram_to_sram_to_dram_kernel](
         "test_async_dram_to_sram_to_dram", ctx
@@ -298,4 +353,5 @@ def main() raises:
         test_sram_local_sram_roundtrip(ctx)
         test_swizzled_local_to_shared(ctx)
         test_swizzled_vectorized_sram_to_dram(ctx)
+        test_swizzled_vectorized_local_to_shared(ctx)
         test_async_dram_to_sram_to_dram(ctx)
