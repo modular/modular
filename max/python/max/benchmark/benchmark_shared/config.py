@@ -894,6 +894,16 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         ),
         json_schema_extra={"group": "Multimodal"},
     )
+    image_num_turns: DistributionParameter | None = Field(
+        default=None,
+        description=(
+            "Distribution for the number of user turns in a chat session "
+            "selected for images (used with --image-fraction). A longer "
+            "session is cut to the drawn length; a shorter one is kept. "
+            "Unset leaves image sessions as sampled."
+        ),
+        json_schema_extra={"group": "Multimodal"},
+    )
     random_input_len: DistributionParameter = Field(
         default=1024,
         description="Number of input tokens per request, used by the random and artificial-analysis datasets. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",

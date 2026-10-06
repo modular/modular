@@ -261,6 +261,35 @@ def test_response_format_injection_marks_every_user_turn() -> None:
     assert all(rf is None for rf in by_source["assistant"])
 
 
+def test_response_format_lands_on_the_last_turn_left_after_a_cut() -> None:
+    session, samples = _one_chat_sample()
+    args = parse_args(
+        [
+            "--model",
+            "myorg/model",
+            "--response-format",
+            '{"type": "json_object"}',
+            "--response-format-turn",
+            "last",
+            "--image-fraction",
+            "1",
+            "--image-num-turns",
+            "1",
+            "--image-long-side",
+            "16",
+        ]
+    )
+
+    with patch(
+        "max.benchmark.benchmark_serving.sample_requests", return_value=samples
+    ):
+        _sample_for_seed(args, "text-generation", None, True, 0)
+
+    user_turns = [m for m in session.messages if m.source == "user"]
+    assert len(user_turns) == 1
+    assert user_turns[0].response_format is not None
+
+
 def test_chat_turns_unmarked_without_a_response_format() -> None:
     """Control: no flag, no constrained turns."""
     session, samples = _one_chat_sample()

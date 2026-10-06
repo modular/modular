@@ -1291,15 +1291,6 @@ def _sample_for_seed(
         chat=chat,
     )
 
-    if args.response_format is not None:
-        augment_samples_with_response_format(
-            samples,
-            response_format=parse_response_format(args.response_format),
-            fraction=args.response_format_fraction,
-            turn=args.response_format_turn,
-            seed=seed,
-        )
-
     if args.tools is not None:
         augment_samples_with_tools(
             samples,
@@ -1317,6 +1308,7 @@ def _sample_for_seed(
             image_long_side=args.image_long_side,
             image_aspect_ratio=args.image_aspect_ratio,
             turn=args.image_turn,
+            num_turns=args.image_num_turns,
             max_chat_len=(
                 tokenizer.model_max_length if tokenizer is not None else None
             ),
@@ -1324,6 +1316,17 @@ def _sample_for_seed(
             # Offset from the response-format mixer's stream so the two pick
             # independently rather than in lockstep.
             seed=None if seed is None else seed + 1,
+        )
+
+    # After images, which can cut sessions: a constraint on a cut turn
+    # would never be sent.
+    if args.response_format is not None:
+        augment_samples_with_response_format(
+            samples,
+            response_format=parse_response_format(args.response_format),
+            fraction=args.response_format_fraction,
+            turn=args.response_format_turn,
+            seed=seed,
         )
 
     return samples

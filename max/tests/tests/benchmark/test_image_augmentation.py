@@ -244,6 +244,64 @@ def test_a_session_that_cannot_carry_images_is_replaced() -> None:
     assert _sessions_with_images(samples) == 3
 
 
+def _user_turns(session: ChatSession) -> int:
+    return sum(1 for m in session.messages if m.source == "user")
+
+
+def test_image_sessions_are_cut_to_the_drawn_turn_count() -> None:
+    samples = ChatSamples(
+        chat_sessions=[_make_session(i, num_user_turns=6) for i in range(4)]
+        + [_make_session(4, num_user_turns=2)]
+    )
+    augment_samples_with_images(
+        samples,
+        fraction=1.0,
+        image_count=1,
+        image_long_side=64,
+        image_aspect_ratio=1.0,
+        turn="every",
+        num_turns=3,
+    )
+    assert [_user_turns(s) for s in samples.chat_sessions] == [3, 3, 3, 3, 2]
+    for session in samples.chat_sessions:
+        # The cut keeps each kept turn's reply.
+        assert session.messages[-1].source == "assistant"
+        assert all(m.images for m in session.messages if m.source == "user")
+
+
+def test_sessions_without_images_keep_their_length() -> None:
+    samples = ChatSamples(
+        chat_sessions=[_make_session(i, num_user_turns=6) for i in range(4)]
+    )
+    augment_samples_with_images(
+        samples,
+        fraction=0.5,
+        image_count=1,
+        image_long_side=64,
+        image_aspect_ratio=1.0,
+        turn="every",
+        num_turns=2,
+        seed=0,
+    )
+    turns = sorted(_user_turns(s) for s in samples.chat_sessions)
+    assert turns == [2, 2, 6, 6]
+
+
+def test_a_rejected_session_is_not_cut() -> None:
+    samples = ChatSamples(chat_sessions=[_make_session(0, num_user_turns=6)])
+    augment_samples_with_images(
+        samples,
+        fraction=1.0,
+        image_count=1,
+        image_long_side=512,
+        image_aspect_ratio=1.0,
+        turn="every",
+        num_turns=2,
+        max_chat_len=1,
+    )
+    assert _user_turns(samples.chat_sessions[0]) == 6
+
+
 def test_augment_chat_samples_first_turn_only() -> None:
     samples = ChatSamples(chat_sessions=[_make_session(i) for i in range(10)])
     augment_samples_with_images(
@@ -624,3 +682,5 @@ def test_logs_the_sampled_per_request_shares(
         )
     assert "1.000 per request" in caplog.text
     assert "100.0% of turns carrying at least one image part" in caplog.text
+    # Three-turn sessions resend 1, 2 and 3 parts: two on average.
+    assert "2.00 image parts on each" in caplog.text

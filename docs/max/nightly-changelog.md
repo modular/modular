@@ -251,6 +251,10 @@ This version is still a work in progress.
   requests or chat sessions, rounding up or down at random when the share
   isn't whole, instead of drawing each one independently. A run picks no images
   only when that share is under one item or too few items can carry them.
+- Added `--image-num-turns` to `max benchmark`, which cuts chat sessions that
+  get images to a drawn number of turns, so image-bearing requests can carry
+  as many resent image parts as production's. The image-mixing log now also
+  reports image parts per image-bearing request.
 - `max benchmark` now reports its realized request mix in its own "Request
   Mix" section and `result_groups.request_mix`, rather than among the headline
   metrics in `result_groups.summary`. The group holds the structured-output and
