@@ -200,7 +200,10 @@ def get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
     var index = 2 * (q - SMALLEST_POWER_OF_5)
     var first_product = full_multiplication(w, get_power_of_5(Int(index)))
 
-    var precision_mask = (UInt64(1) << bit_precision) - 1
+    # The product keeps `bit_precision` bits of `high`; when every bit below
+    # them is set, the truncated tail could carry, so refine with the next
+    # 64 bits of the power of five.
+    var precision_mask = ~UInt64(0) >> UInt64(bit_precision)
     if (first_product.high & precision_mask) == precision_mask:
         var second_product = full_multiplication(
             w, get_power_of_5(Int(index + 1))
@@ -282,10 +285,13 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
         return create_subnormal_float64(m)
 
     # Step 16-18
-    # Round ties to even
+    # Round ties to even: when the product is exact (the bits shifted out of
+    # `high` to form `m` were all zero) and `m` sits exactly on a halfway
+    # point with an even neighbour below, clear the rounding bit so the
+    # round-up in step 19 does not fire.
     if product.low <= 1 and (m & 3 == 1) and (Int64(-4) <= q <= Int64(23)):
-        if std.bit.pop_count(product.high // m) == 1:
-            m -= 2
+        if (m << (upper_bit + 9)) == product.high:
+            m &= ~UInt64(1)
 
     # step 19
     if m % 2 == 1:

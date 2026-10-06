@@ -359,6 +359,11 @@ This version is still a work in progress.
 
 ## Fixed
 
+- `atof()` now rounds large mantissas correctly. Values whose significant
+  digits exceed 53 bits, such as `atof("123456789012345678")`, could round
+  to the wrong neighbouring double, and exact ties such as
+  `atof("4503599627370497.5")` did not round to even.
+
 - Splitting on an empty separator no longer puts the trailing empty slice out
   of bounds.
 
