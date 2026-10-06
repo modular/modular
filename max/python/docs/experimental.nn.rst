@@ -46,6 +46,16 @@ Linear layers
    Embedding
    Linear
 
+Hyper-connection
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   HyperConnection
+
 Functions
 ---------
 

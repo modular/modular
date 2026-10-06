@@ -96,6 +96,7 @@ Transformer
 
    DistributedTransformer
    DistributedTransformerBlock
+   HyperConnection
    ReturnHiddenStates
    ReturnLogits
    Transformer
