@@ -1701,6 +1701,59 @@ struct TensorCore[
                     c_frag[n_mma * num_m_mmas + m_mma, 0],
                 )
 
+    @inline(.always)
+    def mma(
+        self,
+        a_frag: TileTensor[Self.in_type, ...],
+        b_frag: TileTensor[Self.in_type, ...],
+        c_frag: TileTensor[mut=True, ...],
+    ):
+        """Accumulates packed native register groups in hardware order.
+
+        Args:
+            a_frag: A register groups of shape (M, 1).
+            b_frag: B register groups of shape (N, 1).
+            c_frag: Mutable accumulator groups of shape (M * N, 1), with
+                group (m, n) stored at n * M + m.
+
+        Constraints:
+            Each element must hold exactly one hardware register group.
+            All fragments must reside in local memory. Outer strides may
+            include padding between register groups.
+        """
+        comptime assert c_frag.dtype == Self.out_type
+        comptime assert a_frag.rank == a_frag.flat_rank == 2
+        comptime assert b_frag.rank == b_frag.flat_rank == 2
+        comptime assert c_frag.rank == c_frag.flat_rank == 2
+        comptime assert a_frag.address_space == .LOCAL
+        comptime assert b_frag.address_space == .LOCAL
+        comptime assert c_frag.address_space == .LOCAL
+        comptime assert a_frag.element_size == Self.a_reg_type.length
+        comptime assert b_frag.element_size == Self.b_reg_type.length
+        comptime assert c_frag.element_size == Self.c_reg_type.length
+        comptime assert a_frag.static_shape[1] == 1
+        comptime assert b_frag.static_shape[1] == 1
+        comptime assert c_frag.static_shape[1] == 1
+        comptime num_m_mmas = a_frag.static_shape[0]
+        comptime num_n_mmas = b_frag.static_shape[0]
+        comptime assert num_m_mmas > 0 and num_n_mmas > 0
+        comptime assert c_frag.static_shape[0] == num_m_mmas * num_n_mmas
+        comptime for m_mma in range(num_m_mmas):
+            comptime for n_mma in range(num_n_mmas):
+                comptime c_index = n_mma * num_m_mmas + m_mma
+                var accum = c_frag.load[alignment=align_of[Self.out_type]()](
+                    (c_index, 0)
+                )
+                mma(
+                    accum,
+                    a_frag.load[alignment=align_of[Self.in_type]()]((m_mma, 0)),
+                    b_frag.load[alignment=align_of[Self.in_type]()]((n_mma, 0)),
+                    accum,
+                )
+                c_frag.store[alignment=align_of[Self.out_type]()](
+                    (c_index, 0), accum
+                )
+
 
 @inline(.always)
 def _load_matrix_frag[

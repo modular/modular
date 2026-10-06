@@ -56,9 +56,11 @@ from layout import (
     RuntimeLayout,
     TileTensor,
     TensorLayout,
+    lt_to_tt,
     lt_to_tt_idx,
     row_major,
 )
+from layout.tile_tensor import stack_allocation
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensorIter,
@@ -416,43 +418,16 @@ def multistage_mma_q[
     comptime b_frag_size = frag_size[1]
     comptime c_frag_size = frag_size[2]
 
-    comptime a_reg_layout = Layout.row_major(2 * num_m_mmas, a_frag_size)
-    # Register tiles.
-    var a_reg_tiles = (
-        LayoutTensor[
-            mut=True,
-            a_type,
-            a_reg_layout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .split[2]()
+    # The shared-memory loader still consumes legacy views of these native
+    # double-buffered register tiles.
+    var a_reg_buffer = stack_allocation[a_type, address_space=.LOCAL](
+        row_major[2 * num_m_mmas, a_frag_size]()
     )
-    comptime b_reg_layout = Layout.row_major(2 * num_n_mmas, b_frag_size)
-    var b_reg_tiles = (
-        LayoutTensor[
-            mut=True,
-            a_type,
-            b_reg_layout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .vectorize[1, b_frag_size]()
-        .split[2]()
+    var b_reg_buffer = stack_allocation[a_type, address_space=.LOCAL](
+        row_major[2 * num_n_mmas, b_frag_size]()
     )
-
-    var scales_reg_tiles = (
-        LayoutTensor[
-            mut=True,
-            scales_type,
-            Layout.row_major(num_n_mmas, 1),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .vectorize[1, 1]()
+    var scales_reg_tiles = stack_allocation[scales_type, address_space=.LOCAL](
+        row_major[num_n_mmas, 1]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -479,19 +454,29 @@ def multistage_mma_q[
     ]() if swizzle_a else Optional[Swizzle]()
 
     mma_op.load_a[swizzle_a_pattern](
-        a_warp_tile, a_reg_tiles[0].vectorize[1, a_frag_size]()
+        a_warp_tile,
+        a_reg_buffer.tile[num_m_mmas, a_frag_size]((0, 0))
+        .to_layout_tensor()
+        .vectorize[1, a_frag_size](),
     )
 
     # load scales into regs
     # for thread 0-3, scales for col 0, 8, 16, ..., 56 are stored locally
     # thread 4-7 stores scales for col 1, 9, 17, ..., 57
-    scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
+    scales_reg_tiles.to_layout_tensor().vectorize[simd_size, 1]().copy_from(
         scales_warp_tile.vectorize[1, simd_size]().distribute[
             smem_reg_scales_layout, axis=0
         ](Int(lane_id))
     )
 
-    mma_op.load_b(b_warp_tile, b_reg_tiles[0], scales_reg_tiles, 0)
+    mma_op.load_b(
+        b_warp_tile,
+        b_reg_buffer.tile[num_n_mmas, b_frag_size]((0, 0))
+        .to_layout_tensor()
+        .vectorize[1, b_frag_size](),
+        scales_reg_tiles.to_layout_tensor(),
+        0,
+    )
 
     for k_tile_id in range(num_iters):
         var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -521,7 +506,9 @@ def multistage_mma_q[
                     scales_warp_tile = scales_smem_iter[].tile[
                         ceildiv(BK, group_size), WN
                     ](0, Int(warp_x))
-                    scales_reg_tiles.vectorize[simd_size, 1]().copy_from(
+                    scales_reg_tiles.to_layout_tensor().vectorize[
+                        simd_size, 1
+                    ]().copy_from(
                         scales_warp_tile.vectorize[1, simd_size]().distribute[
                             smem_reg_scales_layout, axis=0
                         ](Int(lane_id))
@@ -529,20 +516,28 @@ def multistage_mma_q[
 
             mma_op.load_a[swizzle_a_pattern](
                 a_warp_tile,
-                a_reg_tiles[next].vectorize[1, a_frag_size](),
+                a_reg_buffer.tile[num_m_mmas, a_frag_size]((next, 0))
+                .to_layout_tensor()
+                .vectorize[1, a_frag_size](),
                 (k_mma + 1) % num_k_mmas,
             )
             mma_op.load_b(
                 b_warp_tile,
-                b_reg_tiles[next],
-                scales_reg_tiles,
+                b_reg_buffer.tile[num_n_mmas, b_frag_size]((next, 0))
+                .to_layout_tensor()
+                .vectorize[1, b_frag_size](),
+                scales_reg_tiles.to_layout_tensor(),
                 (k_mma + 1) % num_k_mmas,
             )
 
             mma_op.mma(
-                a_reg_tiles[current].vectorize[1, a_frag_size](),
-                b_reg_tiles[current],
-                c.vectorize[1, c_frag_size](),
+                a_reg_buffer.tile[num_m_mmas, a_frag_size](
+                    (current, 0)
+                ).vectorize[1, a_frag_size](),
+                b_reg_buffer.tile[num_n_mmas, b_frag_size](
+                    (current, 0)
+                ).vectorize[1, b_frag_size](),
+                lt_to_tt(c).vectorize[1, c_frag_size](),
             )
 
             if k_mma + 2 == num_k_mmas:
