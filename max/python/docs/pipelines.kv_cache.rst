@@ -78,6 +78,7 @@ Factory functions
    :template: autosummary/function.rst
 
    available_port
+   kv_cache_memory_size
    load_kv_manager
    max_seq_len_fitting_in_cache
 
