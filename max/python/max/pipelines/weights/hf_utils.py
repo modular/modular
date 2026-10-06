@@ -859,9 +859,13 @@ class HuggingFaceRepo:
                     # tensor-header scan above misidentifies as float4_e2m1fnx2.
                     # Discard that false-positive and keep float8_e4m3fn --
                     # unless the quantizer overrode the routed experts to packed
-                    # NVFP4, where the uint8 really is FP4 and the architecture
-                    # decides which half of the checkpoint each encoding covers.
-                    if quant_config.get("moe_quant_algo") != "NVFP4":
+                    # NVFP4 or MXFP4, where the uint8 really is FP4 and the
+                    # architecture decides which half of the checkpoint each
+                    # encoding covers.
+                    if quant_config.get("moe_quant_algo") not in (
+                        "NVFP4",
+                        "MXFP4",
+                    ):
                         supported_encodings.discard("float4_e2m1fnx2")
                     supported_encodings.add("float8_e4m3fn")
                 elif quant_config.get("quant_method") == "mxfp6":
