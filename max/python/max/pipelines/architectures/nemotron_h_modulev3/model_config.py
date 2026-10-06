@@ -43,7 +43,11 @@ from max.pipelines.weights import resolve_hf_quant_config
 from transformers import AutoConfig
 from typing_extensions import Self
 
-from .quantization import NemotronHQuantScheme, parse_quant_scheme
+from .quantization import (
+    ModuleFormat,
+    NemotronHQuantScheme,
+    parse_quant_scheme,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -193,6 +197,31 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     fused_router: bool = False
     """Whether the MoE router runs its gate GEMV, sigmoid and top-k as one
     fused op instead of a separate float32 matmul."""
+    fp8_mamba_projections: bool = False
+    """Whether FP8 Mamba projections run the FP8 matmul instead of being
+    dequantized to BF16."""
+
+    def fp8_mamba_mixers(self) -> frozenset[str]:
+        """Returns the Mamba mixers whose projections run in FP8.
+
+        A mixer qualifies when both its ``in_proj`` and ``out_proj`` are FP8.
+        """
+        if not self.fp8_mamba_projections:
+            return frozenset()
+        mixers = (
+            f"backbone.layers.{i}.mixer"
+            for i, kind in enumerate(self.layer_kinds)
+            if kind == LayerKind.MAMBA
+        )
+        return frozenset(
+            mixer
+            for mixer in mixers
+            if all(
+                self.quant_scheme.format_of(f"{mixer}.{proj}")
+                is ModuleFormat.FP8_STATIC_TENSOR
+                for proj in ("in_proj", "out_proj")
+            )
+        )
 
     def w4a4_mixers(self) -> frozenset[str]:
         """Returns the MoE mixers whose routed experts run W4A4.
@@ -348,6 +377,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             num_experts_per_tok=config.num_experts_per_tok,
             hidden_size=config.hidden_size,
         )
+        # Validated on the same devices as the W4A4 experts only.
+        config.fp8_mamba_projections = config.w4a4_experts
         hf_quant_config = resolve_hf_quant_config(hf, {}) or {}
         if hf_quant_config.get("kv_cache_scheme") and kv_cache_format is None:
             logger.info(

@@ -48,6 +48,7 @@ from max.pipelines.architectures.nemotron_h_modulev3.memory_planner import (
     NemotronHMemoryPlanner,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
+    LayerKind,
     NemotronHConfig,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.nemotron_h import (
@@ -164,7 +165,10 @@ def _model_on_devices(config: NemotronHConfig) -> NemotronH:
 
 
 def _trace_on_devices(
-    monkeypatch: pytest.MonkeyPatch, n: int, dims: dict[str, int] = TINY
+    monkeypatch: pytest.MonkeyPatch,
+    n: int,
+    dims: dict[str, int] = TINY,
+    fp8_mamba: bool = False,
 ) -> tuple[list[DType], int, list[str]]:
     """Traces the tiny model at TP=``n`` on a CPU mesh.
 
@@ -176,6 +180,15 @@ def _trace_on_devices(
         the reports of each peer copy onto the mesh.
     """
     config = model_config(TINY_LAYERS, dims, n_devices=n)
+    if fp8_mamba:
+        config.quant_scheme = NemotronHQuantScheme(
+            quantized={
+                f"{mixer}.{proj}": ModuleFormat.FP8_STATIC_TENSOR
+                for mixer in config.mixers(LayerKind.MAMBA)
+                for proj in ("in_proj", "out_proj")
+            }
+        )
+        config.fp8_mamba_projections = True
     broadcast: list[DType] = []
     allreduces: list[Tensor] = []
     allreduce_sum: Callable[..., Tensor] = collective_ops.allreduce_sum
@@ -226,18 +239,22 @@ def test_inputs_reach_the_other_devices_by_collective(
     assert broadcast == [DType.int64, DType.uint32, *routing]
 
 
+@pytest.mark.parametrize("fp8_mamba", [False, True])
 @pytest.mark.parametrize("n", [2, 4, 8])
 def test_each_sharded_mixer_reduces_once(
-    monkeypatch: pytest.MonkeyPatch, n: int
+    monkeypatch: pytest.MonkeyPatch, n: int, fp8_mamba: bool
 ) -> None:
     """Attention, the MoE and the Mamba mixer each end in one allreduce,
     and nothing else moves activations between devices.
 
     The routed experts and the shared expert both return partial sums, which
     the residual add reduces together. The three Mamba layers share one
-    subgraph, so it is traced once.
+    subgraph, so it is traced once. The FP8 Mamba projections keep the
+    placements of the BF16 ones.
     """
-    _, allreduces, peer_copies = _trace_on_devices(monkeypatch, n, WIDE)
+    _, allreduces, peer_copies = _trace_on_devices(
+        monkeypatch, n, WIDE, fp8_mamba
+    )
     assert allreduces == 3
     assert peer_copies == []
 
@@ -291,6 +308,33 @@ def test_mamba_shards_by_head() -> None:
     ):
         assert param.mapping.placements == (Sharded(0),)
     assert mamba.out_proj.weight.mapping.placements == (Sharded(1),)
+
+
+def test_fp8_mamba_projections_keep_their_checkpoint_tensors() -> None:
+    """Only a mixer with both projections in FP8 runs them in FP8."""
+    config = model_config(TINY_LAYERS, TINY)
+    fp8 = ModuleFormat.FP8_STATIC_TENSOR
+    config.quant_scheme = NemotronHQuantScheme(
+        quantized={
+            "backbone.layers.0.mixer.in_proj": fp8,
+            "backbone.layers.0.mixer.out_proj": fp8,
+            "backbone.layers.2.mixer.in_proj": fp8,
+        }
+    )
+    config.fp8_mamba_projections = True
+    assert config.fp8_mamba_mixers() == {"backbone.layers.0.mixer"}
+
+    weights = dict(_model(config).parameters)
+    for proj in ("in_proj", "out_proj"):
+        prefix = f"backbone.layers.0.mixer.{proj}"
+        assert weights[f"{prefix}.weight"].dtype == DType.float8_e4m3fn
+        for scale in ("weight_scale", "input_scale"):
+            assert weights[f"{prefix}.{scale}"].device == CPU()
+    assert (
+        weights["backbone.layers.2.mixer.in_proj.weight"].dtype
+        == DType.bfloat16
+    )
+    assert "backbone.layers.2.mixer.in_proj.input_scale" not in weights
 
 
 def test_loading_is_strict() -> None:

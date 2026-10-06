@@ -23,6 +23,16 @@ import enum
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 
+from max.dtype import DType
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+
 NVFP4_GROUP_SIZE = 16
 """Inputs covered by one NVFP4 block scale."""
 
@@ -40,6 +50,21 @@ class ModuleFormat(enum.Enum):
     """Packed E2M1 weight, an E4M3 scale per 16 inputs and a float32 global
     scale. There is no input scale: activations stay BF16."""
 
+
+FP8_STATIC_TENSOR_QUANT = QuantConfig(
+    input_scale=InputScaleSpec(
+        granularity=ScaleGranularity.TENSOR,
+        origin=ScaleOrigin.STATIC,
+        dtype=DType.float32,
+    ),
+    weight_scale=WeightScaleSpec(
+        granularity=ScaleGranularity.TENSOR, dtype=DType.float32
+    ),
+    mlp_quantized_layers=set(),
+    attn_quantized_layers=set(),
+    format=QuantFormat.COMPRESSED_TENSORS_FP8,
+)
+"""The quant config of a :attr:`ModuleFormat.FP8_STATIC_TENSOR` linear."""
 
 _ALGO_FORMATS: dict[str, ModuleFormat] = {
     "FP8": ModuleFormat.FP8_STATIC_TENSOR,

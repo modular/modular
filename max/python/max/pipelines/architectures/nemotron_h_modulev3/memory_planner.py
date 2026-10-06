@@ -30,17 +30,21 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
 
         Modules dequantized at load are larger on the device than in the
         checkpoint files the default estimate measures. Routed experts kept in
-        NVFP4 grow only by their block-scale padding. Sharded weights are
-        counted once and replicated ones once per device. With more devices
-        than KV heads, each device holds a copy of its KV head.
+        NVFP4 grow only by their block-scale padding, and FP8 Mamba
+        projections not at all. Sharded weights are counted once and
+        replicated ones once per device. With more devices than KV heads,
+        each device holds a copy of its KV head.
         """
         size = super().estimate_weights_size(pipeline_config)
         config = self._config
         assert isinstance(config, NemotronHConfig)
         w4a4_mixers = config.w4a4_mixers()
+        fp8_mixers = config.fp8_mamba_mixers()
         for module, fmt in config.quant_scheme.quantized.items():
             if module.partition(".experts.")[0] in w4a4_mixers:
                 size += _block_scale_padding_bytes(config, module)
+                continue
+            if module.rpartition(".")[0] in fp8_mixers:
                 continue
             if module == "lm_head":
                 inner = config.vocab_size

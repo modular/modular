@@ -33,6 +33,7 @@ from max.nn.state_space import (
 )
 
 from ..model_config import NemotronHConfig
+from ..quantization import FP8_STATIC_TENSOR_QUANT
 from .sharding import shard_dim0
 
 
@@ -182,7 +183,7 @@ class NemotronHMamba2Mixer(
     graph.
     """
 
-    def __init__(self, config: NemotronHConfig) -> None:
+    def __init__(self, config: NemotronHConfig, fp8: bool = False) -> None:
         self.num_heads = config.mamba_num_heads
         self.head_dim = config.mamba_head_dim
         self.n_groups = config.n_groups
@@ -193,10 +194,12 @@ class NemotronHMamba2Mixer(
         # Each device runs its own heads and their groups.
         # permute_mamba_for_tp lays out the fused in_proj and conv rows so
         # that each device's share is one contiguous block.
+        quant_config = FP8_STATIC_TENSOR_QUANT if fp8 else None
         self.in_proj = ColumnParallelLinear(
             config.hidden_size,
             self.intermediate + self.conv_dim + self.num_heads,
             bias=False,
+            quant_config=quant_config,
         )
         self.conv1d = CausalConv1d(self.conv_dim, config.conv_kernel)
         self.conv1d.weight = shard_dim0(self.conv1d.weight)
@@ -211,7 +214,10 @@ class NemotronHMamba2Mixer(
         )
         self.norm.weight = shard_dim0(self.norm.weight)
         self.out_proj = RowParallelLinear(
-            self.intermediate, config.hidden_size, bias=False
+            self.intermediate,
+            config.hidden_size,
+            bias=False,
+            quant_config=quant_config,
         )
 
     def forward(

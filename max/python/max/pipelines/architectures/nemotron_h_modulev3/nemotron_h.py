@@ -103,11 +103,15 @@ class NemotronHBackbone(Module[..., Tensor]):
         self.layer_kinds = tuple(config.layer_kinds)
         layers: list[NemotronHBlock] = []
         w4a4_mixers = config.w4a4_mixers()
+        fp8_mixers = config.fp8_mamba_mixers()
         for i, kind in enumerate(self.layer_kinds):
             mixer: Module[..., Tensor]
             match kind:
                 case LayerKind.MAMBA:
-                    mixer = NemotronHMamba2Mixer(config)
+                    mixer = NemotronHMamba2Mixer(
+                        config,
+                        fp8=f"backbone.layers.{i}.mixer" in fp8_mixers,
+                    )
                 case LayerKind.ATTENTION:
                     attn_idx = self.layer_kinds[:i].count(LayerKind.ATTENTION)
                     mixer = NemotronHAttention(config, attn_params, attn_idx)

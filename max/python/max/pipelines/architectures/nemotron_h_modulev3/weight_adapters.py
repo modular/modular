@@ -15,10 +15,11 @@
 The module tree uses the checkpoint's names, so tensors pass through as
 stored; :func:`dequantize_to_bf16` expands the quantized ones to BF16, except
 the NVFP4 routed experts that :func:`stack_nvfp4_experts` keeps 4-bit for the
-W4A4 grouped matmul. :func:`stack_bf16_experts` stacks every other mixer's
-routed experts in BF16. Under tensor parallelism,
-:func:`permute_mamba_for_tp` regroups the Mamba mixers' fused rows by device
-and :func:`repeat_kv_heads_for_tp` gives each device a whole KV head.
+W4A4 grouped matmul and the Mamba projections that run in FP8.
+:func:`stack_bf16_experts` stacks every other mixer's routed experts in BF16.
+Under tensor parallelism, :func:`permute_mamba_for_tp` regroups the Mamba
+mixers' fused rows by device and :func:`repeat_kv_heads_for_tp` gives each
+device a whole KV head.
 """
 
 from __future__ import annotations
@@ -448,7 +449,7 @@ def permute_mamba_for_tp(
     of its own heads and groups in every part.
 
     Args:
-        state_dict: The checkpoint's tensors, with ``in_proj`` in BF16.
+        state_dict: The checkpoint's tensors.
         config: The model config.
         n: The number of devices.
 

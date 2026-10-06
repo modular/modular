@@ -534,6 +534,10 @@ This version is still a work in progress.
 - Added `max.nn.moe.SigmoidTopKRouter`, the sigmoid top-k router with an
   expert score correction bias (`noaux_tc` with one expert group) that
   MiniMax-M2, HY-V3, and MiMo-V2 share.
+- `max.experimental.nn.Linear` takes a `quant_config`, like `max.nn.Linear`.
+  It supports static per-tensor FP8: an `float8_e4m3fn` weight with a
+  `weight_scale` and an `input_scale`, the layout modelopt FP8 checkpoints
+  use.
 
 ### C API
 

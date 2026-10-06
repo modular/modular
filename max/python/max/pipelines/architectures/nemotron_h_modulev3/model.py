@@ -71,13 +71,20 @@ class NemotronHModel(
             model_config.mixers(LayerKind.MOE) - w4a4_mixers,
         )
         if modules:
+            fp8_mixers = model_config.fp8_mamba_mixers()
+            modules = {
+                module: fmt
+                for module, fmt in modules.items()
+                if module.rpartition(".")[0] not in fp8_mixers
+            }
             start = time.perf_counter()
             state_dict = dequantize_to_bf16(state_dict, modules)
             logger.info(
                 f"Nemotron-H: dequantized {len(modules)} modules to BF16 in"
                 f" {time.perf_counter() - start:.1f}s"
             )
-        # In BF16, after the FP8 in_proj scale is applied.
+        # An FP8 in_proj has one scale for the whole tensor, so its rows move
+        # as stored.
         n = len(self.devices)
         state_dict = permute_mamba_for_tp(state_dict, model_config, n)
         return repeat_kv_heads_for_tp(state_dict, model_config, n)
