@@ -60,6 +60,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
 from layout.tile_layout import Layout as TileLayout
+from layout.tile_tensor import lt_to_tt, stack_allocation
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 
 from std.utils import StaticTuple
@@ -386,34 +387,15 @@ def multistage_mma[
 
     comptime num_reg_tiles = 2 * k_group_size
     # Register tiles.
-    comptime a_reg_layout = Layout.row_major(
-        2 * k_group_size * num_m_mmas, a_frag_size
+    var a_reg_native = stack_allocation[dtype=a_type, address_space=.LOCAL](
+        row_major[2 * k_group_size * num_m_mmas, a_frag_size]()
     )
-    var a_reg_tiles = (
-        LayoutTensor[
-            a_type,
-            a_reg_layout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .split[2 * k_group_size]()
-    )
+    var a_reg_tiles = a_reg_native.to_layout_tensor().split[2 * k_group_size]()
 
-    comptime b_reg_layout = Layout.row_major(
-        2 * k_group_size * num_n_mmas, b_frag_size
+    var b_reg_native = stack_allocation[dtype=b_type, address_space=.LOCAL](
+        row_major[2 * k_group_size * num_n_mmas, b_frag_size]()
     )
-    var b_reg_tiles = (
-        LayoutTensor[
-            b_type,
-            b_reg_layout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .vectorize[1, b_frag_size]()
-        .split[2 * k_group_size]()
-    )
+    var b_reg_tiles = b_reg_native.to_layout_tensor().split[2 * k_group_size]()
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
 
@@ -442,7 +424,12 @@ def multistage_mma[
                 a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
             )
 
-        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, Int(warp_x))
+        mma_op.load_b(
+            b_warp_tile,
+            b_reg_tiles[i].vectorize[1, b_frag_size](),
+            i,
+            Int(warp_x),
+        )
 
     comptime if static_num_iters >= 0:
         comptime assert (
@@ -532,7 +519,7 @@ def multistage_mma[
 
                     mma_op.load_b(
                         b_warp_tile,
-                        b_reg_tiles[next],
+                        b_reg_tiles[next].vectorize[1, b_frag_size](),
                         kidx,
                         Int(warp_x),
                     )
@@ -540,11 +527,26 @@ def multistage_mma[
                 comptime for k_mma1 in range(k_group_size):
                     comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                     comptime current = k_mma % UInt32(num_reg_tiles)
-                    mma_op.mma(
-                        a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
-                        b_reg_tiles[Int(current)],
-                        c.vectorize[1, c_frag_size](),
-                    )
+                    comptime if a_type == b_type:
+                        mma_op.mma(
+                            lt_to_tt(a_reg_tiles[Int(current)]).vectorize[
+                                1, a_frag_size
+                            ](),
+                            lt_to_tt(b_reg_tiles[Int(current)])
+                            .vectorize[1, b_frag_size]()
+                            .bitcast[a_type](),
+                            lt_to_tt(c).vectorize[1, c_frag_size](),
+                        )
+                    else:
+                        mma_op.mma(
+                            a_reg_tiles[Int(current)].vectorize[
+                                1, a_frag_size
+                            ](),
+                            b_reg_tiles[Int(current)].vectorize[
+                                1, b_frag_size
+                            ](),
+                            c.vectorize[1, c_frag_size](),
+                        )
 
         return
 
@@ -672,7 +674,7 @@ def multistage_mma[
                 )
                 mma_op.load_b(
                     b_warp_tile,
-                    b_reg_tiles[next],
+                    b_reg_tiles[next].vectorize[1, b_frag_size](),
                     kidx,
                     Int(warp_x),
                 )
@@ -680,11 +682,22 @@ def multistage_mma[
             comptime for k_mma1 in range(k_group_size):
                 comptime k_mma = UInt32(k_mma0 * k_group_size + k_mma1)
                 comptime current = k_mma % UInt32(num_reg_tiles)
-                mma_op.mma(
-                    a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
-                    b_reg_tiles[Int(current)],
-                    c.vectorize[1, c_frag_size](),
-                )
+                comptime if a_type == b_type:
+                    mma_op.mma(
+                        lt_to_tt(a_reg_tiles[Int(current)]).vectorize[
+                            1, a_frag_size
+                        ](),
+                        lt_to_tt(b_reg_tiles[Int(current)])
+                        .vectorize[1, b_frag_size]()
+                        .bitcast[a_type](),
+                        lt_to_tt(c).vectorize[1, c_frag_size](),
+                    )
+                else:
+                    mma_op.mma(
+                        a_reg_tiles[Int(current)].vectorize[1, a_frag_size](),
+                        b_reg_tiles[Int(current)].vectorize[1, b_frag_size](),
+                        c.vectorize[1, c_frag_size](),
+                    )
 
 
 @__name(
@@ -844,19 +857,11 @@ def multistage_gemm_kernel[
     comptime accum_type = get_accum_type[a_type]()
     comptime frag_size = get_fragment_size[mma_shape]()
     comptime c_frag_size = frag_size[2]
-    comptime c_reg_layout = Layout.row_major(
-        num_m_mmas * num_n_mmas, c_frag_size
-    )
-    var c_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            c_reg_layout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()  # ALIGN-TODO: pass alignment here?
-        .fill(0)
-    )
+    var c_reg_tile_native = stack_allocation[
+        dtype=accum_type, address_space=.LOCAL
+    ](row_major[num_m_mmas * num_n_mmas, c_frag_size]()).fill(0)
+    # Reduction and epilogue helpers still consume the legacy scalar view.
+    var c_reg_tile = c_reg_tile_native.to_layout_tensor()
 
     multistage_mma[
         BM,
