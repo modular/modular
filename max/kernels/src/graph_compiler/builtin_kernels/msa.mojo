@@ -93,8 +93,11 @@ from layout.tile_tensor import row_major as tt_row_major
 from extensibility import InputTensor, OutputTensor
 from extensibility import _MutableInputTensor as MutableInputTensor
 
-from nn.kv_cache import generic_get_paged_cache
-from nn.attention.mha_operand import KVCacheMHAOperand
+from nn.kv_cache import (
+    generic_get_paged_cache,
+    generic_get_paged_cache_with_scales,
+)
+from nn.attention.mha_operand import KVCacheMHAOperand, MHAOperand
 from nn.attention.mha_mask import NullMask
 from nn.attention.mha_utils import MHAConfig, StaticInt
 
@@ -558,6 +561,358 @@ struct Struct_msa_indexer_ragged_paged:
 # ===-----------------------------------------------------------------------===#
 
 
+@inline(.always)
+def msa_attention_dispatch[
+    q_type: DType,
+    KVType: MHAOperand,
+    //,
+    group: Int,
+    topk: Int,
+    sparse_block_size: Int,
+    k_num_heads: Int,
+    head_dim: Int,
+    page_size: Int,
+](
+    output: OutputTensor[dtype=.bfloat16, rank=3, ...],
+    q: InputTensor[dtype=q_type, rank=3, ...],
+    input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+    cache_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+    total_context_length: InputTensor[dtype=.uint32, rank=1, ...],
+    k_op: KVType,
+    v_op: KVType,
+    max_q_len: Int,
+    max_cache_length: Int,
+    d_indices: InputTensor[dtype=.int32, rank=3, ...],
+    scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    """Routes one MSA attention call to the decode, speculative decode or
+    prefill kernels by the runtime query length.
+
+    Shared by the attention ops; the K/V operands carry the cache format and
+    `q_type` the MMA operand type (see `mo.msa.attention.ragged.paged`).
+
+    Parameters:
+        q_type: Query and MMA operand dtype.
+        KVType: Key and value operand type.
+        group: Query heads per kv head.
+        topk: Gathered KV blocks per token.
+        sparse_block_size: KV block size in tokens; must equal `page_size`.
+        k_num_heads: KV heads.
+        head_dim: Logical head dimension.
+        page_size: KV cache page size.
+
+    Args:
+        output: Output `[num_rows, n_heads, head_dim]` BF16.
+        q: Query `[num_rows, n_heads, head_dim]`.
+        input_row_offsets: Ragged query offsets `[batch + 1]`.
+        cache_row_offsets: Ragged valid cache offsets `[batch + 1]`.
+        total_context_length: Total context length of the batch.
+        k_op: Key operand.
+        v_op: Value operand.
+        max_q_len: Max new query tokens per request.
+        max_cache_length: Max cache length in the batch.
+        d_indices: Selected block ids `[n_kv_heads, num_rows, topk]`.
+        scale: QK scale.
+        ctx: Device context.
+    """
+    comptime num_heads = group * k_num_heads
+    # The selection granularity must equal the KV cache page size:
+    # one KV tile == one page == one sparse block.  Asserted here
+    # because a mismatch has no fault to catch downstream:
+    # `k2q_csr_sizes`' bounds stop holding and the block gather
+    # silently drops selections the indexer made.
+    comptime assert (
+        sparse_block_size == page_size
+    ), "sparse_block_size must equal the KV cache page_size"
+    comptime msa = MSAConfig(block_size=sparse_block_size, topk=topk)
+    comptime config = MHAConfig[q_type](num_heads, head_dim)
+
+    # `num_rows` == total query tokens (== batch on decode, 1 token/seq).
+    var num_rows = Int(q.dim_size[0]())
+
+    # A data-parallel replica with no assigned requests gets empty per-rank
+    # inputs. There is nothing to attend, and the routes below build a Q TMA
+    # descriptor, which rejects a zero global dim.
+    if num_rows == 0:
+        return
+
+    # Non-owning DeviceBuffer views over the graph tensors.
+    var out_lt = output.to_layout_tensor()
+    var q_lt = q.to_layout_tensor()
+    var output_buf = DeviceBuffer[output.dtype](
+        ctx, out_lt.ptr, num_rows * num_heads * head_dim, owning=False
+    )
+    var q_buf = DeviceBuffer[q_type](
+        ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
+    )
+
+    # Route purely on the runtime query length.  Both architectures share
+    # the module-level `MAX_SPEC_DRAFT`; larger query lengths use prefill.
+
+    # Decode == one query token per sequence (`max_q_len == 1`).
+    if max_q_len == 1:
+        var topk_tokens = topk * page_size
+
+        var iro_lt = input_row_offsets.to_layout_tensor()
+        var valid_length = DeviceBuffer[.uint32](
+            ctx,
+            iro_lt.ptr,
+            Int(input_row_offsets.dim_size[0]()),
+            owning=False,
+        )
+        var d_indices_tt = TileTensor(
+            d_indices.to_layout_tensor().ptr,
+            row_major(d_indices.to_layout_tensor().size()),
+        ).as_imm()
+
+        # `np` is owned by the decode entry (computed from batch_size,
+        # topk_tokens, topk via the dense-MHA heuristic).
+        #
+        # `mask_unselected=True`: the indexer `-1`-pads `d_indices` when
+        # the sequence has fewer than `topk` selectable blocks (e.g. a
+        # short first decode step). Without this the `-1` blocks attend
+        # phantom rows, and -- with np == topk -- each `-1` lands in its
+        # own fully-masked partition whose NaN exp-sum poisons the combine.
+        #
+        # AMD and SM100 take the same call signature; the two arms differ
+        # only in kernel name.  No `valid_key` (the indexer's trailing
+        # block is whole; a sub-BN partial would need per-batch clamp).
+        comptime if ctx.target.is_amd_gpu():
+            msa_amd_decode_dispatch[
+                config=config,
+                group=group,
+                ragged=True,
+                _is_cache_length_accurate=False,
+                mask_unselected=True,
+            ](
+                output_buf,
+                q_buf,
+                k_op,
+                v_op,
+                d_indices_tt,
+                topk,  # indices_stride (topk in BLOCKS)
+                num_rows,  # num_rows_q (1 token/seq)
+                NullMask(),
+                valid_length,
+                StaticInt[1](),  # max_prompt_len (decode)
+                topk_tokens,  # max_cache_valid_length
+                scale,
+                None,  # kv_input_row_offsets
+                num_rows,  # batch_size
+                ctx,
+            )
+        else:
+            msa_sm100_decode[
+                config=config,
+                group=group,
+                ragged=True,
+                _is_cache_length_accurate=False,
+                mask_unselected=True,
+            ](
+                output_buf,
+                q_buf,
+                k_op,
+                v_op,
+                d_indices_tt,
+                Int32(topk),  # indices_stride (topk in BLOCKS)
+                Int32(num_rows),  # num_rows_q (1 token/seq)
+                NullMask(),
+                valid_length,
+                StaticInt[1](),  # max_prompt_len (decode)
+                Int32(topk_tokens),  # max_cache_valid_length
+                scale,
+                None,  # kv_input_row_offsets
+                Int32(num_rows),  # batch_size
+                ctx,
+            )
+    elif 1 < max_q_len <= MAX_SPEC_DRAFT:
+        # ---- Sparse SPECULATIVE decode ------------------------------
+        # Each draft token runs on its OWN CTA via the per-token decode
+        # kernel (`spec_max_seq_len > 1` derives the spec mode in-entry =>
+        # per_token_index + causal + the over-launched
+        # `batch * spec_max_seq_len` grid).  Selection reuses the PREFILL
+        # indexer (per-token `[head_kv, total_q, topk]`), so the block ids
+        # here are per draft token.  `input_row_offsets` is the ragged Q
+        # offset array the kernel reads for the over-launch token tail and
+        # the global-query-row remap (`iro[b] + tok_in_seq`).  Causal is
+        # REAL here (a draft token can precede some selected KV): the kernel
+        # poisons slots whose logical position exceeds the token's logical
+        # query position, deriving the slot's logical start in-kernel from
+        # `d_idx_base[blk]*BN` (no `kv_logical_pos` array) and the token's
+        # logical query position in-kernel from
+        # `cache_lengths[batch_of_token] + tok_in_seq` (no `q_positions`
+        # array -- mirrors the prefill `use_causal` path, which derives the
+        # diagonal from cu_seqlens + cache_lengths).  REAL split-K:
+        # Both architecture entries feed `batch * spec_max_seq_len` to the
+        # decode partition heuristic and key partials on the packed query
+        # row, so the shared combine writes ragged output directly.
+        var iro_lt = input_row_offsets.to_layout_tensor()
+        var valid_length = DeviceBuffer[.uint32](
+            ctx,
+            iro_lt.ptr,
+            Int(input_row_offsets.dim_size[0]()),
+            owning=False,
+        )
+        var d_indices_tt = TileTensor(
+            d_indices.to_layout_tensor().ptr,
+            row_major(d_indices.to_layout_tensor().size()),
+        ).as_imm()
+        var topk_tokens = topk * page_size
+        var batch = Int(input_row_offsets.dim_size[0]()) - 1
+
+        # The over-launch span is a graph constant, so bind it to the
+        # matched runtime length per branch.
+        comptime for n in range(2, MAX_SPEC_DRAFT + 1):
+            if max_q_len == n:
+                comptime if ctx.target.is_amd_gpu():
+                    msa_amd_decode_dispatch[
+                        config=config,
+                        group=group,
+                        ragged=True,
+                        _is_cache_length_accurate=False,
+                        mask_unselected=True,
+                        spec_max_seq_len=n,
+                    ](
+                        output_buf,
+                        q_buf,
+                        k_op,
+                        v_op,
+                        d_indices_tt,
+                        topk,
+                        num_rows,
+                        NullMask(),
+                        valid_length,
+                        StaticInt[1](),
+                        topk_tokens,
+                        scale,
+                        None,
+                        batch,
+                        ctx,
+                    )
+                else:
+                    msa_sm100_decode[
+                        config=config,
+                        group=group,
+                        ragged=True,
+                        _is_cache_length_accurate=False,
+                        mask_unselected=True,
+                        spec_max_seq_len=n,  # over-launch span (graph const)
+                    ](
+                        output_buf,
+                        q_buf,
+                        k_op,
+                        v_op,
+                        d_indices_tt,
+                        Int32(topk),  # indices_stride (topk in BLOCKS)
+                        Int32(num_rows),  # num_rows_q (total draft tokens)
+                        NullMask(),
+                        valid_length,  # ragged Q offsets (tail + row remap)
+                        StaticInt[1](),  # max_prompt_len: tile is decode-shaped
+                        Int32(topk_tokens),  # max_cache_valid_length
+                        scale,
+                        None,  # kv_input_row_offsets
+                        Int32(
+                            batch
+                        ),  # batch_size (grid.x = batch*spec_max_seq_len)
+                        ctx,
+                        # Spec decode derives BOTH the per-block logical
+                        # start and the per-token logical query position
+                        # in-kernel (the latter from `cache_lengths +
+                        # tok_in_seq`), so it carries neither a
+                        # `kv_logical_pos` nor a `q_positions` array.  The
+                        # kernel keys causal off the derived spec mode (=>
+                        # `causal`), not off the presence of a `q_positions`
+                        # pointer.
+                    )
+                return
+    else:
+        var batch = Int(input_row_offsets.dim_size[0]()) - 1
+
+        var lse_buf = ctx.enqueue_create_buffer[.float32](num_rows * num_heads)
+
+        var d_lt = d_indices.to_layout_tensor()
+        var d_indices_buf = DeviceBuffer[.int32](
+            ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
+        )
+
+        var plan = msa_sm100_prefill_plan[
+            output_type=DType.bfloat16,
+            config=config,
+            group=group,
+            topk=topk,
+            msa=msa,
+        ](
+            num_rows,
+            Int(total_context_length[0]),
+            batch,
+            max_q_len,
+            max_cache_length,
+            ctx,
+        )
+
+        # bitcast input_row_offsets and cache_row_offsets to int32, then
+        # wrap then in DeviceBuffer.
+        var cuq_d = DeviceBuffer[.int32](
+            ctx,
+            input_row_offsets._ptr.bitcast[Int32](),
+            batch + 1,
+            owning=False,
+        )
+        var cuk_d = DeviceBuffer[.int32](
+            ctx,
+            cache_row_offsets._ptr.bitcast[Int32](),
+            batch + 1,
+            owning=False,
+        )
+
+        # The plan (host sizing + buffer alloc) is arch-neutral (no SM100
+        # device kernel), so it codegens on gfx950.  Only the device run
+        # differs: AMD chains CSR-build -> block-major fwd -> combine;
+        # SM100 runs its tcgen05 path.  Both take the identical signature;
+        # the comptime branch keeps the dead arch's kernels from codegen'ing.
+        comptime if ctx.target.is_amd_gpu():
+            msa_amd_prefill_run[
+                config=config,
+                group=group,
+                topk=topk,
+                use_causal=True,
+            ](
+                plan,
+                output_buf,
+                lse_buf,
+                q_buf,
+                k_op,
+                v_op,
+                d_indices_buf,
+                cuq_d,
+                cuk_d,
+                scale,
+                ctx,
+            )
+        else:
+            msa_sm100_prefill_run[
+                config=config,
+                group=group,
+                topk=topk,
+                use_causal=True,
+            ](
+                plan,
+                output_buf,
+                lse_buf,
+                q_buf,
+                k_op,
+                v_op,
+                d_indices_buf,
+                cuq_d,
+                cuk_d,
+                scale,
+                ctx,
+            )
+
+        _ = lse_buf^
+
+
 @extensibility.register("mo.msa.attention.ragged.paged")
 struct Struct_msa_attention_ragged_paged:
     """Registers the `mo.msa.attention.ragged.paged` graph op with the graph compiler.
@@ -667,309 +1022,134 @@ struct Struct_msa_attention_ragged_paged:
         var k_op = KVCacheMHAOperand(k_cache)
         var v_op = KVCacheMHAOperand(v_cache)
 
-        comptime k_num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
-        comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
-        comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
-        comptime num_heads = group * k_num_heads
-        # The selection granularity must equal the KV cache page size:
-        # one KV tile == one page == one sparse block.  Asserted here
-        # because a mismatch has no fault to catch downstream:
-        # `k2q_csr_sizes`' bounds stop holding and the block gather
-        # silently drops selections the indexer made.
+        msa_attention_dispatch[
+            group=group,
+            topk=topk,
+            sparse_block_size=sparse_block_size,
+            k_num_heads=Int(kv_blocks.static_spec.shape_tuple[4]),
+            head_dim=Int(kv_blocks.static_spec.shape_tuple[5]),
+            page_size=Int(kv_blocks.static_spec.shape_tuple[3]),
+        ](
+            output,
+            q,
+            input_row_offsets,
+            cache_row_offsets,
+            total_context_length,
+            k_op,
+            v_op,
+            Int(kv_collection.max_seq_length),
+            Int(kv_collection.max_cache_length),
+            d_indices,
+            scale,
+            ctx,
+        )
+
+
+@extensibility.register("mo.msa.attention.ragged.paged.nvfp4")
+struct Struct_msa_attention_ragged_paged_nvfp4:
+    """Registers the `mo.msa.attention.ragged.paged.nvfp4` graph op with the graph compiler.
+
+    `mo.msa.attention.ragged.paged` over an NVFP4 main cache: packed E2M1 K/V
+    (`head_dim / 2` bytes per row, `uint8`) with one E4M3 scale per 16 elements
+    and a per-tensor scale of 1, against an fp8 e4m3 Q without a scale. The
+    kernels dequantize K/V to fp8 in shared memory and run the fp8 MMAs.
+    NVIDIA SM100 only. The scale operands sit right after `max_cache_length`,
+    where `flatten_without_attention_dispatch_metadata` puts them.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        group: Int,
+        topk: Int,
+        sparse_block_size: Int,
+    ](
+        output: OutputTensor[dtype=.bfloat16, rank=3, ...],
+        q: InputTensor[dtype=.float8_e4m3fn, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        cache_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        total_context_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_blocks: MutableInputTensor[dtype=.uint8, rank=6, ...],
+        page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        kv_scales: MutableInputTensor[dtype=.float8_e4m3fn, rank=6, ...],
+        scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        msa_scalar_args: InputTensor[dtype=.int64, rank=1, ...],
+        layer_idx: UInt32,
+        d_indices: InputTensor[dtype=.int32, rank=3, ...],
+        scale: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        """Block-sparse MHA for SM100 over an NVFP4 KV cache.
+
+        Parameters:
+            group: Query heads per kv head.
+            topk: Gathered KV blocks per token.
+            sparse_block_size: KV block size in tokens; must equal the page
+                size.
+
+        Args:
+            output: Output `[num_rows, n_heads, head_dim]` BF16.
+            q: Query `[num_rows, n_heads, head_dim]` fp8 e4m3.
+            input_row_offsets: Ragged query offsets `[batch + 1]`.
+            cache_row_offsets: Ragged valid cache offsets `[batch + 1]`.
+            total_context_length: Total context length of the batch.
+            kv_blocks: Packed K/V `[num_blocks, 2, num_layers, page_size,
+                n_kv_heads, head_dim / 2]`.
+            page_stride: Page-to-page distance of `kv_blocks`.
+            cache_lengths: Cache lengths `[batch]`.
+            kv_lookup_table: Page table `[batch, max_pages]`.
+            max_prompt_length: Max prompt length `[1]`.
+            max_cache_length: Max cache length `[1]`.
+            kv_scales: E4M3 scales, the shape of `kv_blocks` with last
+                dimension `head_dim / 16`.
+            scales_page_stride: Page-to-page distance of `kv_scales`.
+            scales_lookup_table: Page table of the scales.
+            msa_scalar_args: On-device scalar arguments (unused here).
+            layer_idx: Layer index.
+            d_indices: Selected block ids `[n_kv_heads, num_rows, topk]`.
+            scale: QK scale.
+            ctx: Device context.
+        """
         comptime assert (
-            sparse_block_size == page_size
-        ), "sparse_block_size must equal the KV cache page_size"
-        comptime msa = MSAConfig(block_size=sparse_block_size, topk=topk)
-        comptime config = MHAConfig[kv_type](num_heads, head_dim)
-
-        # `num_rows` == total query tokens (== batch on decode, 1 token/seq).
-        var num_rows = Int(q.dim_size[0]())
-
-        # A data-parallel replica with no assigned requests gets empty per-rank
-        # inputs. There is nothing to attend, and the routes below build a Q TMA
-        # descriptor, which rejects a zero global dim.
-        if num_rows == 0:
-            return
-
-        # Non-owning DeviceBuffer views over the graph tensors.
-        var out_lt = output.to_layout_tensor()
-        var q_lt = q.to_layout_tensor()
-        var output_buf = DeviceBuffer[.bfloat16](
-            ctx, out_lt.ptr, num_rows * num_heads * head_dim, owning=False
+            not ctx.target.is_amd_gpu()
+        ), "the NVFP4 KV cache attention runs on NVIDIA SM100 only"
+        var kv_collection = generic_get_paged_cache_with_scales(
+            kv_blocks,
+            page_stride,
+            cache_lengths,
+            kv_lookup_table,
+            max_prompt_length,
+            max_cache_length,
+            kv_scales,
+            scales_page_stride,
+            scales_lookup_table,
         )
-        var q_buf = DeviceBuffer[kv_type](
-            ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
+        msa_attention_dispatch[
+            group=group,
+            topk=topk,
+            sparse_block_size=sparse_block_size,
+            k_num_heads=Int(kv_blocks.static_spec.shape_tuple[4]),
+            head_dim=2 * Int(kv_blocks.static_spec.shape_tuple[5]),
+            page_size=Int(kv_blocks.static_spec.shape_tuple[3]),
+        ](
+            output,
+            q,
+            input_row_offsets,
+            cache_row_offsets,
+            total_context_length,
+            KVCacheMHAOperand(kv_collection.get_key_cache(Int(layer_idx))),
+            KVCacheMHAOperand(kv_collection.get_value_cache(Int(layer_idx))),
+            Int(kv_collection.max_seq_length),
+            Int(kv_collection.max_cache_length),
+            d_indices,
+            scale,
+            ctx,
         )
-
-        # Route purely on the runtime query length.  Both architectures share
-        # the module-level `MAX_SPEC_DRAFT`; larger query lengths use prefill.
-        var max_q_len = Int(kv_collection.max_seq_length)
-
-        # Decode == one query token per sequence (`max_q_len == 1`).
-        if max_q_len == 1:
-            var topk_tokens = topk * page_size
-
-            var iro_lt = input_row_offsets.to_layout_tensor()
-            var valid_length = DeviceBuffer[.uint32](
-                ctx,
-                iro_lt.ptr,
-                Int(input_row_offsets.dim_size[0]()),
-                owning=False,
-            )
-            var d_indices_tt = TileTensor(
-                d_indices.to_layout_tensor().ptr,
-                row_major(d_indices.to_layout_tensor().size()),
-            ).as_imm()
-
-            # `np` is owned by the decode entry (computed from batch_size,
-            # topk_tokens, topk via the dense-MHA heuristic).
-            #
-            # `mask_unselected=True`: the indexer `-1`-pads `d_indices` when
-            # the sequence has fewer than `topk` selectable blocks (e.g. a
-            # short first decode step). Without this the `-1` blocks attend
-            # phantom rows, and -- with np == topk -- each `-1` lands in its
-            # own fully-masked partition whose NaN exp-sum poisons the combine.
-            #
-            # AMD and SM100 take the same call signature; the two arms differ
-            # only in kernel name.  No `valid_key` (the indexer's trailing
-            # block is whole; a sub-BN partial would need per-batch clamp).
-            comptime if ctx.target.is_amd_gpu():
-                msa_amd_decode_dispatch[
-                    config=config,
-                    group=group,
-                    ragged=True,
-                    _is_cache_length_accurate=False,
-                    mask_unselected=True,
-                ](
-                    output_buf,
-                    q_buf,
-                    k_op,
-                    v_op,
-                    d_indices_tt,
-                    topk,  # indices_stride (topk in BLOCKS)
-                    num_rows,  # num_rows_q (1 token/seq)
-                    NullMask(),
-                    valid_length,
-                    StaticInt[1](),  # max_prompt_len (decode)
-                    topk_tokens,  # max_cache_valid_length
-                    scale,
-                    None,  # kv_input_row_offsets
-                    num_rows,  # batch_size
-                    ctx,
-                )
-            else:
-                msa_sm100_decode[
-                    config=config,
-                    group=group,
-                    ragged=True,
-                    _is_cache_length_accurate=False,
-                    mask_unselected=True,
-                ](
-                    output_buf,
-                    q_buf,
-                    k_op,
-                    v_op,
-                    d_indices_tt,
-                    Int32(topk),  # indices_stride (topk in BLOCKS)
-                    Int32(num_rows),  # num_rows_q (1 token/seq)
-                    NullMask(),
-                    valid_length,
-                    StaticInt[1](),  # max_prompt_len (decode)
-                    Int32(topk_tokens),  # max_cache_valid_length
-                    scale,
-                    None,  # kv_input_row_offsets
-                    Int32(num_rows),  # batch_size
-                    ctx,
-                )
-        elif 1 < max_q_len <= MAX_SPEC_DRAFT:
-            # ---- Sparse SPECULATIVE decode ------------------------------
-            # Each draft token runs on its OWN CTA via the per-token decode
-            # kernel (`spec_max_seq_len > 1` derives the spec mode in-entry =>
-            # per_token_index + causal + the over-launched
-            # `batch * spec_max_seq_len` grid).  Selection reuses the PREFILL
-            # indexer (per-token `[head_kv, total_q, topk]`), so the block ids
-            # here are per draft token.  `input_row_offsets` is the ragged Q
-            # offset array the kernel reads for the over-launch token tail and
-            # the global-query-row remap (`iro[b] + tok_in_seq`).  Causal is
-            # REAL here (a draft token can precede some selected KV): the kernel
-            # poisons slots whose logical position exceeds the token's logical
-            # query position, deriving the slot's logical start in-kernel from
-            # `d_idx_base[blk]*BN` (no `kv_logical_pos` array) and the token's
-            # logical query position in-kernel from
-            # `cache_lengths[batch_of_token] + tok_in_seq` (no `q_positions`
-            # array -- mirrors the prefill `use_causal` path, which derives the
-            # diagonal from cu_seqlens + cache_lengths).  REAL split-K:
-            # Both architecture entries feed `batch * spec_max_seq_len` to the
-            # decode partition heuristic and key partials on the packed query
-            # row, so the shared combine writes ragged output directly.
-            var iro_lt = input_row_offsets.to_layout_tensor()
-            var valid_length = DeviceBuffer[.uint32](
-                ctx,
-                iro_lt.ptr,
-                Int(input_row_offsets.dim_size[0]()),
-                owning=False,
-            )
-            var d_indices_tt = TileTensor(
-                d_indices.to_layout_tensor().ptr,
-                row_major(d_indices.to_layout_tensor().size()),
-            ).as_imm()
-            var topk_tokens = topk * page_size
-            var batch = Int(input_row_offsets.dim_size[0]()) - 1
-
-            # The over-launch span is a graph constant, so bind it to the
-            # matched runtime length per branch.
-            comptime for n in range(2, MAX_SPEC_DRAFT + 1):
-                if max_q_len == n:
-                    comptime if ctx.target.is_amd_gpu():
-                        msa_amd_decode_dispatch[
-                            config=config,
-                            group=group,
-                            ragged=True,
-                            _is_cache_length_accurate=False,
-                            mask_unselected=True,
-                            spec_max_seq_len=n,
-                        ](
-                            output_buf,
-                            q_buf,
-                            k_op,
-                            v_op,
-                            d_indices_tt,
-                            topk,
-                            num_rows,
-                            NullMask(),
-                            valid_length,
-                            StaticInt[1](),
-                            topk_tokens,
-                            scale,
-                            None,
-                            batch,
-                            ctx,
-                        )
-                    else:
-                        msa_sm100_decode[
-                            config=config,
-                            group=group,
-                            ragged=True,
-                            _is_cache_length_accurate=False,
-                            mask_unselected=True,
-                            spec_max_seq_len=n,  # over-launch span (graph const)
-                        ](
-                            output_buf,
-                            q_buf,
-                            k_op,
-                            v_op,
-                            d_indices_tt,
-                            Int32(topk),  # indices_stride (topk in BLOCKS)
-                            Int32(num_rows),  # num_rows_q (total draft tokens)
-                            NullMask(),
-                            valid_length,  # ragged Q offsets (tail + row remap)
-                            StaticInt[
-                                1
-                            ](),  # max_prompt_len: tile is decode-shaped
-                            Int32(topk_tokens),  # max_cache_valid_length
-                            scale,
-                            None,  # kv_input_row_offsets
-                            Int32(
-                                batch
-                            ),  # batch_size (grid.x = batch*spec_max_seq_len)
-                            ctx,
-                            # Spec decode derives BOTH the per-block logical
-                            # start and the per-token logical query position
-                            # in-kernel (the latter from `cache_lengths +
-                            # tok_in_seq`), so it carries neither a
-                            # `kv_logical_pos` nor a `q_positions` array.  The
-                            # kernel keys causal off the derived spec mode (=>
-                            # `causal`), not off the presence of a `q_positions`
-                            # pointer.
-                        )
-                    return
-        else:
-            var batch = Int(input_row_offsets.dim_size[0]()) - 1
-
-            var lse_buf = ctx.enqueue_create_buffer[.float32](
-                num_rows * num_heads
-            )
-
-            var d_lt = d_indices.to_layout_tensor()
-            var d_indices_buf = DeviceBuffer[.int32](
-                ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
-            )
-
-            var plan = msa_sm100_prefill_plan[
-                output_type=DType.bfloat16,
-                config=config,
-                group=group,
-                topk=topk,
-                msa=msa,
-            ](
-                num_rows,
-                Int(total_context_length[0]),
-                batch,
-                Int(kv_collection.max_seq_length),
-                Int(kv_collection.max_cache_length),
-                ctx,
-            )
-
-            # bitcast input_row_offsets and cache_row_offsets to int32, then
-            # wrap then in DeviceBuffer.
-            var cuq_d = DeviceBuffer[.int32](
-                ctx,
-                input_row_offsets._ptr.bitcast[Int32](),
-                batch + 1,
-                owning=False,
-            )
-            var cuk_d = DeviceBuffer[.int32](
-                ctx,
-                cache_row_offsets._ptr.bitcast[Int32](),
-                batch + 1,
-                owning=False,
-            )
-
-            # The plan (host sizing + buffer alloc) is arch-neutral (no SM100
-            # device kernel), so it codegens on gfx950.  Only the device run
-            # differs: AMD chains CSR-build -> block-major fwd -> combine;
-            # SM100 runs its tcgen05 path.  Both take the identical signature;
-            # the comptime branch keeps the dead arch's kernels from codegen'ing.
-            comptime if ctx.target.is_amd_gpu():
-                msa_amd_prefill_run[
-                    config=config,
-                    group=group,
-                    topk=topk,
-                    use_causal=True,
-                ](
-                    plan,
-                    output_buf,
-                    lse_buf,
-                    q_buf,
-                    k_op,
-                    v_op,
-                    d_indices_buf,
-                    cuq_d,
-                    cuk_d,
-                    scale,
-                    ctx,
-                )
-            else:
-                msa_sm100_prefill_run[
-                    config=config,
-                    group=group,
-                    topk=topk,
-                    use_causal=True,
-                ](
-                    plan,
-                    output_buf,
-                    lse_buf,
-                    q_buf,
-                    k_op,
-                    v_op,
-                    d_indices_buf,
-                    cuq_d,
-                    cuk_d,
-                    scale,
-                    ctx,
-                )
-
-            _ = lse_buf^
 
 
 @extensibility.register("mo.msa.attention.ragged.paged.mxfp8")

@@ -2314,6 +2314,167 @@ def fused_dual_qk_rms_norm_rope_ragged(
     return (results[0].tensor, results[1].tensor)
 
 
+def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
+    main_kv_params: KVCacheParams,
+    index_kv_params: KVCacheParams,
+    q_main: TensorValue,
+    k_main: TensorValue,
+    v_main: TensorValue,
+    q_index: TensorValue,
+    k_index: TensorValue,
+    input_row_offsets: TensorValue,
+    main_kv_collection: PagedCacheValues,
+    index_kv_collection: PagedCacheValues,
+    q_main_gamma: TensorValue,
+    k_main_gamma: TensorValue,
+    q_index_gamma: TensorValue,
+    k_index_gamma: TensorValue,
+    freqs_cis: TensorValue,
+    main_epsilon: float | np.floating[Any],
+    index_epsilon: float | np.floating[Any],
+    layer_idx: TensorValue,
+    weight_offset: float | np.floating[Any],
+    interleaved: bool = True,
+    multiply_before_cast: bool = True,
+    q_main_out_dtype: DType = DType.float8_e4m3fn,
+) -> tuple[TensorValue, TensorValue]:
+    """Writes MiniMax-M3's K/V and IndexK from staging into an NVFP4 main cache.
+
+    The counterpart of :obj:`fused_dual_qk_rms_norm_rope_ragged` for a main
+    cache with scales, which the projection does not write. All five operands
+    are slices of the projection output: Q, K, IndexQ and IndexK are RMS-normed
+    and roped, V is stored as is. K and V land in the main cache quantized to
+    NVFP4 (one E4M3 scale per 16 elements, per-tensor scale 1); IndexK lands in
+    the index cache at its dtype. Q and IndexQ are returned.
+
+    Args:
+        main_kv_params: Main cache parameters; must be NVFP4.
+        index_kv_params: Index-K cache parameters.
+        q_main: Main Q ``[total_seq_len, n_heads, head_dim]``.
+        k_main: Main K ``[total_seq_len, n_kv_heads, head_dim]``.
+        v_main: Main V, shaped like ``k_main``.
+        q_index: IndexQ ``[total_seq_len, num_index_heads, head_dim]``.
+        k_index: IndexK ``[total_seq_len, 1, head_dim]``.
+        input_row_offsets: Ragged offsets. Dtype ``uint32``.
+        main_kv_collection: The main paged cache, with scales.
+        index_kv_collection: The index-K paged cache.
+        q_main_gamma: Main-Q RMSNorm weight ``[head_dim]``.
+        k_main_gamma: Main-K RMSNorm weight ``[head_dim]``.
+        q_index_gamma: IndexQ RMSNorm weight ``[head_dim]``.
+        k_index_gamma: IndexK RMSNorm weight ``[head_dim]``.
+        freqs_cis: The shared RoPE table; input dtype or ``float32``.
+        main_epsilon: Main RMSNorm epsilon.
+        index_epsilon: Indexer RMSNorm epsilon.
+        layer_idx: The layer index. Dtype ``uint32``.
+        weight_offset: Constant offset added to each RMSNorm weight.
+        interleaved: Whether RoPE rotates adjacent pairs.
+        multiply_before_cast: Whether RMSNorm multiplies by the weight before
+            rounding to the input dtype.
+        q_main_out_dtype: Dtype of the returned main Q.
+
+    Returns:
+        A tuple ``(q_main, q_index)`` of normed and roped queries.
+
+    Raises:
+        ValueError: On a main cache that is not NVFP4, mismatched shapes or
+            dtypes, or gammas that do not span the head dim.
+    """
+    if not main_kv_params.is_nvfp4_kv_cache:
+        raise ValueError(
+            "fused_dual_qk_rms_norm_rope_nvfp4_ragged needs an NVFP4 main"
+            f" cache, got dtype {main_kv_params.dtype}"
+        )
+    _check_dtype(
+        DType.uint32, input_row_offsets=input_row_offsets, layer_idx=layer_idx
+    )
+    _check_rank(
+        3,
+        q_main=q_main,
+        k_main=k_main,
+        v_main=v_main,
+        q_index=q_index,
+        k_index=k_index,
+    )
+    _check_rank(2, freqs_cis=freqs_cis)
+    head_dim = main_kv_params.head_dim
+    if index_kv_params.head_dim != head_dim:
+        raise ValueError(
+            "both bands must share head_dim, got"
+            f" {head_dim} (main) and {index_kv_params.head_dim} (index)"
+        )
+    for name, value in (
+        ("q_main", q_main),
+        ("k_main", k_main),
+        ("v_main", v_main),
+        ("q_index", q_index),
+        ("k_index", k_index),
+    ):
+        if value.dtype != q_main.dtype:
+            raise ValueError(
+                f"expected {name} dtype {q_main.dtype}, got {value.dtype}"
+            )
+        if value.shape[2] != head_dim:
+            raise ValueError(
+                f"expected {name} head_dim {head_dim}, got {value.shape[2]}"
+            )
+    for name, gamma in (
+        ("q_main_gamma", q_main_gamma),
+        ("k_main_gamma", k_main_gamma),
+        ("q_index_gamma", q_index_gamma),
+        ("k_index_gamma", k_index_gamma),
+    ):
+        if gamma.rank != 1 or gamma.shape[0] != head_dim:
+            raise ValueError(
+                f"expected {name} of shape [{head_dim}], got {gamma.shape}"
+            )
+    if freqs_cis.dtype != q_main.dtype and freqs_cis.dtype != DType.float32:
+        raise ValueError(
+            "expected freqs_cis dtype to match input dtype (or be float32),"
+            f" got {freqs_cis.dtype} and {q_main.dtype}"
+        )
+
+    results = ops.inplace_custom(
+        "mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4",
+        device=q_main.device,
+        values=[
+            q_main,
+            k_main,
+            v_main,
+            q_index,
+            k_index,
+            input_row_offsets,
+            *main_kv_collection.flatten_without_attention_dispatch_metadata(),
+            *index_kv_collection.flatten_without_attention_dispatch_metadata(),
+            q_main_gamma,
+            k_main_gamma,
+            q_index_gamma,
+            k_index_gamma,
+            freqs_cis,
+            ops.constant(main_epsilon, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(index_epsilon, DType.float32, device=DeviceRef.CPU()),
+            layer_idx,
+            ops.constant(weight_offset, q_main.dtype, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=q_main_out_dtype,
+                shape=q_main.shape,
+                device=q_main.device,
+            ),
+            TensorType(
+                dtype=q_index.dtype,
+                shape=q_index.shape,
+                device=q_index.device,
+            ),
+        ],
+        parameters={
+            "interleaved": interleaved,
+            "multiply_before_cast": multiply_before_cast,
+        },
+    )
+    return (results[0].tensor, results[1].tensor)
+
+
 def fused_qk_padded_rope(
     kv_params: KVCacheParams,
     input: TensorValue,
@@ -3644,8 +3805,9 @@ def msa_sparse_attention_ragged(
 
     Gathers ``topk`` 128-token KV blocks per (kv head, query token) using the
     block ids produced by :func:`msa_sparse_indexer`, then runs SM100
-    block-sparse MHA. The main KV cache is BF16 or native FP8 e4m3; ``input``
-    (the query) must match its dtype, and the output is always BF16.
+    block-sparse MHA. The main KV cache is BF16, native FP8 e4m3, or NVFP4;
+    ``input`` (the query) must match its dtype, or be FP8 e4m3 for NVFP4, and
+    the output is always BF16.
     ``head_dim`` is 128. The op selects the prefill or decode kernel at runtime
     from the main KV cache's ``max_seq_length``, so the same call serves both
     paths.
@@ -3687,7 +3849,9 @@ def msa_sparse_attention_ragged(
     )
 
     return ops.inplace_custom(
-        "mo.msa.attention.ragged.paged",
+        "mo.msa.attention.ragged.paged.nvfp4"
+        if kv_params.is_nvfp4_kv_cache
+        else "mo.msa.attention.ragged.paged",
         device=input.device,
         values=values,
         out_types=[
@@ -3948,7 +4112,16 @@ def _msa_sparse_attention_ragged_values(
         rank=1,
         device=DeviceRef.CPU(),
     )
-    if kv_collection.kv_blocks.dtype != input.dtype:
+    if kv_collection.kv_blocks.dtype == DType.uint8:
+        # Packed NVFP4 K/V, dequantized to fp8 against an fp8 Q.
+        if input.dtype != DType.float8_e4m3fn:
+            raise ValueError(
+                "an NVFP4 KV cache needs a float8_e4m3fn input, got"
+                f" {input.dtype}"
+            )
+        if kv_collection.kv_scales is None:
+            raise ValueError("an NVFP4 KV cache needs its kv_scales")
+    elif kv_collection.kv_blocks.dtype != input.dtype:
         raise ValueError(
             "kv_collection.kv_blocks must have the same dtype as input"
             f" ({input.dtype}), got {kv_collection.kv_blocks.dtype}"

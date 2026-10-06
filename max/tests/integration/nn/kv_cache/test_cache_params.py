@@ -373,6 +373,80 @@ def test_kv_cache_quantization_config() -> None:
     assert params.quantized_kv_cache
 
 
+# ==================== NVFP4 Tests ====================
+
+
+def _nvfp4_params(
+    granularity: int = 16, n_kv_heads: int = 4, tp: int = 4
+) -> MHAKVCacheParams:
+    return MHAKVCacheParams(
+        dtype=DType.uint8,
+        n_kv_heads=n_kv_heads,
+        head_dim=128,
+        num_layers=3,
+        page_size=128,
+        devices=[DeviceRef.GPU(i) for i in range(tp)],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float8_e4m3fn,
+            quantization_granularity=granularity,
+        ),
+    )
+
+
+def test_nvfp4_kv_cache_packs_two_elements_per_byte() -> None:
+    """head_dim stays logical; the stored row and the scale columns follow
+    from it."""
+    params = _nvfp4_params()
+    assert params.is_nvfp4_kv_cache
+    assert params.quantized_kv_cache
+    assert params.head_dim == 128
+    assert params.storage_head_dim == 64
+    assert params.shape_per_block == [2, 3, 128, 1, 64]
+    assert params.shape_per_scale_block == [2, 3, 128, 1, 8]
+    assert params.row_bytes == 64
+    assert params.scale_row_bytes == 8
+    assert params.dtype_shorthand == "nvfp4"
+
+
+def test_nvfp4_kv_cache_is_0_5625_of_fp8() -> None:
+    """64 packed bytes plus 8 E4M3 scales per 128-element row, against 128."""
+    nvfp4 = _nvfp4_params()
+    fp8 = MHAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        n_kv_heads=4,
+        head_dim=128,
+        num_layers=3,
+        page_size=128,
+        devices=[DeviceRef.GPU(i) for i in range(4)],
+    )
+    assert nvfp4.bytes_per_block * 16 == fp8.bytes_per_block * 9
+    assert nvfp4.bytes_per_scale_block * 8 == nvfp4.bytes_per_value_block
+
+
+def test_nvfp4_kv_cache_leaves_carry_scales() -> None:
+    leaves = _nvfp4_params().leaves()
+    assert any(name.endswith("scales") for name in leaves)
+
+
+def test_nvfp4_kv_cache_rejects_other_granularity() -> None:
+    with pytest.raises(ValueError, match="one scale per 16 elements"):
+        _nvfp4_params(granularity=32)
+
+
+def test_uint8_without_e4m3_scales_is_not_nvfp4() -> None:
+    params = MHAKVCacheParams(
+        dtype=DType.uint8,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=1,
+        page_size=128,
+        devices=[DeviceRef.GPU()],
+    )
+    assert not params.is_nvfp4_kv_cache
+    assert not params.quantized_kv_cache
+    assert params.storage_head_dim == 128
+
+
 # ==================== slots_per_page Tests ====================
 
 

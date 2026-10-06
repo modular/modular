@@ -894,18 +894,24 @@ class RecurrentStateBuffer(KVCacheBufferInterface):
         }
 
 
+FP4_KV_CACHE_QUANTIZATION_GRANULARITY = 16
+
+
 @dataclass
 class KVCacheQuantizationConfig:
     """Configuration for KVCache quantization.
 
-    Currently only FP8 Quantization is supported.
+    Supports FP8 and int8 values with per-block scales, and NVFP4: ``uint8``
+    storage packing two E2M1 values per byte with E4M3 scales.
     """
 
     scale_dtype: DType = DType.float32
     """Data type of quantization scales, if quantization is enabled"""
 
     quantization_granularity: int = 128
-    """Block-size used for KVCache quantization along head-dimension (e.g. 128)."""
+    """Block-size used for KVCache quantization along head-dimension (e.g. 128).
+
+    Counted in logical elements, so a packed NVFP4 cache uses 16."""
 
 
 @dataclass(frozen=True)
@@ -1627,6 +1633,19 @@ class KVCacheParams(KVCacheParamInterface):
                     " caching to be enabled"
                 )
 
+        if self.is_nvfp4_kv_cache:
+            assert self.kvcache_quant_config is not None
+            if (
+                self.kvcache_quant_config.quantization_granularity
+                != FP4_KV_CACHE_QUANTIZATION_GRANULARITY
+            ):
+                raise ValueError(
+                    "An NVFP4 KV cache has one scale per"
+                    f" {FP4_KV_CACHE_QUANTIZATION_GRANULARITY} elements, got a"
+                    " quantization granularity of"
+                    f" {self.kvcache_quant_config.quantization_granularity}."
+                )
+
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             # Validate FP8 KVCache quantization granularity.
             if (
@@ -1675,12 +1694,35 @@ class KVCacheParams(KVCacheParamInterface):
         return self.dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz)
 
     @property
+    def is_nvfp4_kv_cache(self) -> bool:
+        """Whether the cache stores packed NVFP4: ``uint8`` values holding two
+        E2M1 elements each, with E4M3 scales."""
+        return (
+            self.dtype == DType.uint8
+            and self.kvcache_quant_config is not None
+            and self.kvcache_quant_config.scale_dtype == DType.float8_e4m3fn
+        )
+
+    @property
+    def storage_head_dim(self) -> int:
+        """Returns the stored width of one head row in ``dtype`` elements.
+
+        Equals :attr:`head_dim` except for packed NVFP4, which stores two
+        elements per byte.
+        """
+        if self.is_nvfp4_kv_cache:
+            return self.head_dim // 2
+        return self.head_dim
+
+    @property
     def quantized_kv_cache(self) -> bool:
         """Returns whether KV cache quantization is enabled."""
         # Supported quantized-KV storage schemes: FP8_E4M3 (fp32 / e8m0 scales)
         # and int8 (fp16 per-block absmax scales).
         if self.kvcache_quant_config is None:
             return False
+        if self.is_nvfp4_kv_cache:
+            return True
         value_dtypes = (
             DType.float8_e4m3fn,
             DType.float8_e4m3fnuz,
@@ -1746,6 +1788,8 @@ class KVCacheParams(KVCacheParamInterface):
             return "bf16"
         elif self.dtype == DType.float8_e4m3fn:
             return "f8_m4e3fn"
+        elif self.is_nvfp4_kv_cache:
+            return "nvfp4"
         else:
             return "f32"
 
@@ -1779,7 +1823,7 @@ class KVCacheParams(KVCacheParamInterface):
             self.num_layers,
             self.slots_per_page,
             self.n_kv_heads_per_device,
-            self.head_dim,
+            self.storage_head_dim,
         ]
 
     @property
@@ -1805,9 +1849,10 @@ class KVCacheParams(KVCacheParamInterface):
         """
         assert self.kvcache_quant_config is not None
         shape_per_block = self.shape_per_block
-        # The final dimension is ceil(head_dim / quantization_granularity).
+        # The final dimension is ceil(head_dim / quantization_granularity),
+        # both in logical elements.
         granularity = self.kvcache_quant_config.quantization_granularity
-        shape_per_block[4] = math.ceil(shape_per_block[4] / granularity)
+        shape_per_block[4] = math.ceil(self.head_dim / granularity)
         return shape_per_block
 
     @property
@@ -1849,7 +1894,7 @@ class KVCacheParams(KVCacheParamInterface):
         """Returns one value row, ``num_heads * head_size * dtype_size``."""
         return (
             self.n_kv_heads_per_device
-            * self.head_dim
+            * self.storage_head_dim
             * self.dtype.size_in_bytes
         )
 

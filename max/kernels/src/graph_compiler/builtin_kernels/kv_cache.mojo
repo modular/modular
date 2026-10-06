@@ -41,6 +41,7 @@ from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
     copy_kv_pages_d2h,
+    fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged,
     fused_dual_qk_rms_norm_rope_ragged_paged,
     fused_qk_rms_norm_ragged_paged,
     fused_qk_rms_norm_rope_ragged_paged,
@@ -670,6 +671,170 @@ struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual[interleaved: Bool]:
             input_row_offsets.to_tile_tensor[.int64](),
             main_q_input_fn,
             index_q_input_fn,
+            q_main_output.to_tile_tensor[.int64](),
+            q_index_output.to_tile_tensor[.int64](),
+            context,
+        )
+
+
+@extensibility.register("mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4")
+struct Struct_fused_qk_rms_norm_rope_ragged_paged_dual_nvfp4[interleaved: Bool]:
+    """Registers `mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4` with the graph compiler.
+
+    The dual MiniMax-M3 RMSNorm+RoPE op for a main cache with scales, which
+    the projection leaves unwritten. Q, K, V, IndexQ and IndexK all come from
+    staging through `FusedInputTensor` read lambdas. K and V are written to the
+    main cache (NVFP4 when its dtype is `uint8`), IndexK to the index cache.
+    The main cache's operands are in the order
+    `flatten_without_attention_dispatch_metadata` emits for quantized params.
+
+    Parameters:
+        interleaved: When true, RoPE rotates adjacent element pairs; when
+            false, rotates pairs separated by half the head dimension.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        q_main_out_dtype: DType,
+        q_index_out_dtype: DType,
+        freq_dtype: DType,
+        multiply_before_cast: Bool,
+        main_cache_dtype: DType,
+        main_scale_dtype: DType,
+        index_cache_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        q_main_output: OutputTensor[dtype=q_main_out_dtype, rank=3, ...],
+        q_index_output: OutputTensor[dtype=q_index_out_dtype, rank=3, ...],
+        q_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        k_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        v_main_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        q_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        k_index_proj: FusedInputTensor[dtype=dtype, rank=3, ...],
+        input_row_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_blocks: MutableInputTensor[dtype=main_cache_dtype, rank=6, ...],
+        main_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        main_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        main_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        main_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        main_kv_scales: MutableInputTensor[dtype=main_scale_dtype, rank=6, ...],
+        main_scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        main_scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        index_kv_blocks: MutableInputTensor[
+            dtype=index_cache_dtype, rank=6, ...
+        ],
+        index_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+        index_cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+        index_kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+        index_max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+        index_max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+        q_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_main_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        q_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        k_index_gamma: InputTensor[dtype=dtype, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        main_epsilon: Float32,
+        index_epsilon: Float32,
+        layer_idx: UInt32,
+        weight_offset: Scalar[dtype=dtype],
+        context: DeviceContext,
+    ) raises:
+        var main_kv_collection = generic_get_paged_cache_with_scales(
+            main_kv_blocks,
+            main_page_stride,
+            main_cache_lengths,
+            main_kv_lookup_table,
+            main_max_prompt_length,
+            main_max_cache_length,
+            main_kv_scales,
+            main_scales_page_stride,
+            main_scales_lookup_table,
+        )
+        var index_kv_collection = generic_get_paged_cache(
+            index_kv_blocks,
+            index_page_stride,
+            index_cache_lengths,
+            index_kv_lookup_table,
+            index_max_prompt_length,
+            index_max_cache_length,
+        )
+
+        @inline(.always)
+        def q_main_fn[
+            width: Int, alignment: Int
+        ](token: Int, head: Int, col: Int) {var q_main_proj} -> SIMD[
+            dtype, width
+        ]:
+            return q_main_proj._fused_load[
+                width=width, element_alignment=alignment
+            ](IndexList[3](token, head, col))
+
+        @inline(.always)
+        def k_main_fn[
+            width: Int, alignment: Int
+        ](token: Int, head: Int, col: Int) {var k_main_proj} -> SIMD[
+            dtype, width
+        ]:
+            return k_main_proj._fused_load[
+                width=width, element_alignment=alignment
+            ](IndexList[3](token, head, col))
+
+        @inline(.always)
+        def v_main_fn[
+            width: Int, alignment: Int
+        ](token: Int, head: Int, col: Int) {var v_main_proj} -> SIMD[
+            dtype, width
+        ]:
+            return v_main_proj._fused_load[
+                width=width, element_alignment=alignment
+            ](IndexList[3](token, head, col))
+
+        @inline(.always)
+        def q_index_fn[
+            width: Int, alignment: Int
+        ](token: Int, head: Int, col: Int) {var q_index_proj} -> SIMD[
+            dtype, width
+        ]:
+            return q_index_proj._fused_load[
+                width=width, element_alignment=alignment
+            ](IndexList[3](token, head, col))
+
+        @inline(.always)
+        def k_index_fn[
+            width: Int, alignment: Int
+        ](token: Int, head: Int, col: Int) {var k_index_proj} -> SIMD[
+            dtype, width
+        ]:
+            return k_index_proj._fused_load[
+                width=width, element_alignment=alignment
+            ](IndexList[3](token, head, col))
+
+        fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+            interleaved=Self.interleaved,
+        ](
+            main_kv_collection,
+            index_kv_collection,
+            q_main_gamma.to_tile_tensor[.int64](),
+            k_main_gamma.to_tile_tensor[.int64](),
+            q_index_gamma.to_tile_tensor[.int64](),
+            k_index_gamma.to_tile_tensor[.int64](),
+            freqs_cis.to_tile_tensor[.int64](),
+            main_epsilon,
+            index_epsilon,
+            weight_offset,
+            layer_idx,
+            input_row_offsets.to_tile_tensor[.int64](),
+            q_main_fn,
+            k_main_fn,
+            v_main_fn,
+            q_index_fn,
+            k_index_fn,
             q_main_output.to_tile_tensor[.int64](),
             q_index_output.to_tile_tensor[.int64](),
             context,

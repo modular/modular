@@ -104,6 +104,7 @@ modular_py_test(
             "test_msa_fp8_kv_store_gpu.py",
             "test_msa_mxfp8_attention_gpu.py",
             "test_dual_qk_fp8_kv_store_gpu.py",
+            "test_msa_nvfp4_kv_gpu.py",
             "test_chunked_staging_region_gpu.py",
             "test_kv_cache_buffer_pinned_gpu.py",
         ],
@@ -219,6 +220,33 @@ modular_py_test(
     name = "test_dual_qk_fp8_kv_store_gpu",
     srcs = [
         "test_dual_qk_fp8_kv_store_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:graph_utils",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# Graph-op plumbing for MiniMax-M3's NVFP4 KV cache (writer and reader).
+modular_py_test(
+    name = "test_msa_nvfp4_kv_gpu",
+    srcs = [
+        "test_msa_nvfp4_kv_gpu.py",
     ],
     exec_properties = {
         "test.resources:gpu-memory": "2",

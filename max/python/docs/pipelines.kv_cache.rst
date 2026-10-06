@@ -91,3 +91,4 @@ Utilities
    :template: autosummary/function.rst
 
    cache_dtype_for_encoding
+   is_fp4_kv_cache_format

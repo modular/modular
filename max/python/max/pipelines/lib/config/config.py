@@ -25,6 +25,7 @@ from max.driver import accelerator_api
 from max.engine import InferenceSession
 from max.nn.comm import Signals
 from max.pipelines.diffusion.config import resolve_denoising_cache
+from max.pipelines.kv_cache.config import KVCacheConfig, is_fp4_kv_cache_format
 from max.pipelines.lib._model_components import (
     architecture_name_for,
     updated_component,
@@ -305,6 +306,24 @@ def _is_eligible_for_overlap_serve_optimizations(
         and not lora
         and model.default_device_spec.device_type != "cpu"
     )
+
+
+def _validate_kv_cache_format(kv_cache: KVCacheConfig, arch: Any) -> None:
+    """Raises when ``arch`` does not implement the requested KV cache format.
+
+    Args:
+        kv_cache: The main model's KV cache config.
+        arch: The main model's resolved architecture.
+
+    Raises:
+        ValueError: If ``kv_cache_format`` is ``float4_e2m1fn`` and ``arch``
+            has not opted in with ``supports_nvfp4_kv_cache``.
+    """
+    fmt = kv_cache.kv_cache_format
+    if is_fp4_kv_cache_format(fmt) and not arch.supports_nvfp4_kv_cache:
+        raise ValueError(
+            f"kv_cache_format '{fmt}' is not supported by {arch.name}."
+        )
 
 
 def _resolve_overlap_and_device_graph_capture(
@@ -1601,6 +1620,8 @@ class PipelineConfig(ConfigFileModel):
             )
             if arch_name is not None and arch is None:
                 raise ValueError(f"No architecture found for {arch_name}")
+            if arch is not None:
+                _validate_kv_cache_format(models["main"].kv_cache, arch)
             if arch is not None and speculator is not None:
                 arch = speculator.derive()
 

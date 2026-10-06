@@ -22,6 +22,7 @@ from layout import Coord, CoordLike, Idx, TileTensor
 from layout.tile_layout import TensorLayout
 from std.simd import _convert_f32_to_float8_ue8m0
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from internal_utils.fp8_utils import cast_saturating
 
 comptime SF_ATOM_M = (32, 4)
 comptime SF_ATOM_K = 4
@@ -507,6 +508,47 @@ mov.b32 $0, {byte0, byte1, byte2, byte3};
     return inlined_assembly[
         asm_code, UInt32, constraints="=r,f,f,f,f,f,f,f,f", has_side_effect=True
     ](x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7])
+
+
+@inline(.always)
+def nvfp4_kv_group_scale(amax: Float32) -> Float32:
+    """Returns the E4M3 scale of one 16-element NVFP4 KV cache group.
+
+    The scale is `E4M3(max(amax, 1e-12) / 6)` clamped to `[2^-9, 448]`, with
+    the per-tensor scale fixed at 1. It is returned widened to float32.
+
+    Args:
+        amax: The largest magnitude in the group.
+
+    Returns:
+        The group scale, exactly representable in E4M3.
+    """
+    var scale = cast_saturating[NVFP4_SF_DTYPE](max(amax, Float32(1e-12)) / 6.0)
+    return max(scale.cast[.float32](), Float32(1.0 / 512.0))
+
+
+@inline(.always)
+def nvfp4_kv_quantize_x8(x: SIMD[.float32, 8], scale: Float32) -> UInt32:
+    """Quantizes eight values that share one scale to packed FP4 E2M1.
+
+    Each value is divided by `scale` (true division), then rounded by the
+    hardware convert, which rounds half to even and saturates at 6. A
+    magnitude that rounds to zero is stored as +0, never -0.
+
+    Args:
+        x: Eight values, element 0 in the lowest nibble of the result.
+        scale: The group scale from `nvfp4_kv_group_scale`.
+
+    Returns:
+        The eight E2M1 codes packed into one word.
+
+    Constraints:
+        Requires NVIDIA GPU with SM100 or newer.
+    """
+    var packed = cast_fp32_to_fp4e2m1(x / scale)
+    var mag = packed & 0x77777777
+    var nonzero = (mag | (mag >> 1) | (mag >> 2)) & 0x11111111
+    return mag | (packed & (nonzero << 3))
 
 
 def cast_f4e2m1x2_to_fp16x2(x: UInt8) -> SIMD[.float16, 2]:

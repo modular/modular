@@ -369,6 +369,15 @@ class SupportedArchitecture:
     via ``--enable-overlap-scheduler --force``.
     """
 
+    supports_nvfp4_kv_cache: bool = False
+    """Whether this architecture implements ``kv_cache_format="float4_e2m1fn"``.
+
+    An NVFP4 cache stores packed values with scales that only an
+    architecture's own writer and attention ops know how to handle, so the
+    format is rejected at config time for every architecture that does not
+    opt in.
+    """
+
     supports_device_graph_capture: bool = True
     """Whether this architecture supports auto-enabling device graph capture.
 

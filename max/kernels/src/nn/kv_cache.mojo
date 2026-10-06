@@ -13,12 +13,13 @@
 
 from std.algorithm.functional import unswitch
 from std.builtin.device_passable import DevicePassable
-from std.math import ceildiv, min
+from std.math import ceildiv, max, min
 from std.math.uutils import udivmod
-from std.memory import ThinAllocation, dealloc
+from std.memory import ThinAllocation, bitcast, dealloc
 from std.memory.alloc import Layout as AllocLayout
 from std.sys.info import align_of, simd_width_of
 from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
+from max.gpu.primitives.warp import shuffle_xor
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
@@ -41,8 +42,14 @@ from layout import (
     stack_allocation,
 )
 from internal_utils.fp8_utils import cast_saturating
+from linalg.fp4_utils import (
+    NVFP4_SF_DTYPE,
+    NVFP4_SF_VECTOR_SIZE,
+    nvfp4_kv_group_scale,
+    nvfp4_kv_quantize_x8,
+)
 from linalg.matmul import elementwise_epilogue_type, matmul
-from nn._ragged_utils import get_batch_from_row_offsets
+from nn._ragged_utils import get_batch_and_token_idx_from_row_offsets
 from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
@@ -655,11 +662,8 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
     var gamma_val = SIMD[dtype, simd_width](0)
     if idx < _num_cols:
         if is_k:
-            var batch_idx = get_batch_from_row_offsets(
+            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
                 input_row_offsets, global_token_idx
-            )
-            var token_idx = Int(
-                UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
             var cache_token_idx = token_idx + k_cache.cache_length(batch_idx)
             vec_data = k_cache.load[width=simd_width](
@@ -689,11 +693,8 @@ def _fused_qk_rms_norm_ragged_paged_gpu[
 
     if idx < _num_cols:
         if is_k:
-            var batch_idx = get_batch_from_row_offsets(
+            var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
                 input_row_offsets, global_token_idx
-            )
-            var token_idx = Int(
-                UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
             var cache_token_idx = token_idx + k_cache.cache_length(batch_idx)
             k_cache.store(
@@ -884,6 +885,7 @@ def _fused_qk_rms_norm_rope_process_row[
     interleaved: Bool,
     has_nope_prefix: Bool,
     rope_dim: Int,
+    q_only: Bool = False,
 ](
     is_k: Bool,
     global_token_idx: Int,
@@ -917,7 +919,9 @@ def _fused_qk_rms_norm_rope_process_row[
     so a narrower `q_output` is bit-identical to the `mo.cast` it replaces.
 
     Shared by the single-QK launcher and the dual (main + indexer) launcher so
-    both paths run byte-identical arithmetic. Allocates its own per-row shared
+    both paths run byte-identical arithmetic. `q_only` compiles the K cache
+    accesses out, for callers whose K is written elsewhere (`k_cache` then only
+    supplies cache lengths). Allocates its own per-row shared
     scratch, so callers that dispatch it across grid bands must keep the
     branch selecting a band block-uniform (all threads in a block take the same
     band) for the `barrier()` below to be well formed.
@@ -934,20 +938,22 @@ def _fused_qk_rms_norm_rope_process_row[
     var gamma_val = SIMD[dtype, simd_width](0)
     if idx < num_cols:
         if is_k:
-            var batch_idx = get_batch_from_row_offsets(
-                input_row_offsets, global_token_idx
-            )
-            var token_idx = Int(
-                UInt32(global_token_idx) - input_row_offsets[batch_idx]
-            )
-            var cache_token_idx = token_idx + k_cache.cache_length(batch_idx)
-            vec_data = k_cache.load[width=simd_width](
-                bs=batch_idx,
-                tok_idx=cache_token_idx,
-                head_idx=head_idx,
-                head_dim_idx=idx,
-            ).cast[accum_type]()
-            gamma_val = k_gamma.load[width=simd_width](Coord(idx))
+            comptime if not q_only:
+                var batch_idx, token_idx = (
+                    get_batch_and_token_idx_from_row_offsets(
+                        input_row_offsets, global_token_idx
+                    )
+                )
+                var cache_token_idx = token_idx + k_cache.cache_length(
+                    batch_idx
+                )
+                vec_data = k_cache.load[width=simd_width](
+                    bs=batch_idx,
+                    tok_idx=cache_token_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=idx,
+                ).cast[accum_type]()
+                gamma_val = k_gamma.load[width=simd_width](Coord(idx))
         else:
             vec_data = q_input_fn[
                 simd_width, align_of[SIMD[dtype, simd_width]]()
@@ -984,10 +990,9 @@ def _fused_qk_rms_norm_rope_process_row[
     if idx >= num_cols:
         return
 
-    var batch_idx = get_batch_from_row_offsets(
+    var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
         input_row_offsets, global_token_idx
     )
-    var token_idx = Int(UInt32(global_token_idx) - input_row_offsets[batch_idx])
     var post_seq_idx = k_cache.cache_length(batch_idx) + token_idx
 
     comptime width_2 = simd_width // 2
@@ -999,13 +1004,14 @@ def _fused_qk_rms_norm_rope_process_row[
         var val = s_norm.load[width=simd_width](Coord(idx))
         var res = rope_value(val, freq_val.cast[accum_type]()).cast[dtype]()
         if is_k:
-            k_cache.store(
-                bs=batch_idx,
-                tok_idx=post_seq_idx,
-                head_idx=head_idx,
-                head_dim_idx=idx,
-                val=cast_saturating[cache_t.dtype](res),
-            )
+            comptime if not q_only:
+                k_cache.store(
+                    bs=batch_idx,
+                    tok_idx=post_seq_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=idx,
+                    val=cast_saturating[cache_t.dtype](res),
+                )
         else:
             q_output.store[width=simd_width](
                 Coord(Index(global_token_idx, head_idx, idx)),
@@ -1021,13 +1027,14 @@ def _fused_qk_rms_norm_rope_process_row[
                     Coord(idx)
                 ).cast[dtype]()
                 if is_k:
-                    k_cache.store(
-                        bs=batch_idx,
-                        tok_idx=post_seq_idx,
-                        head_idx=head_idx,
-                        head_dim_idx=idx,
-                        val=cast_saturating[cache_t.dtype](passthrough),
-                    )
+                    comptime if not q_only:
+                        k_cache.store(
+                            bs=batch_idx,
+                            tok_idx=post_seq_idx,
+                            head_idx=head_idx,
+                            head_dim_idx=idx,
+                            val=cast_saturating[cache_t.dtype](passthrough),
+                        )
                 else:
                     q_output.store[width=simd_width](
                         Coord(Index(global_token_idx, head_idx, idx)),
@@ -1055,20 +1062,21 @@ def _fused_qk_rms_norm_rope_process_row[
         var output_re, output_im = res.deinterleave()
 
         if is_k:
-            k_cache.store(
-                bs=batch_idx,
-                tok_idx=post_seq_idx,
-                head_idx=head_idx,
-                head_dim_idx=h_re,
-                val=cast_saturating[cache_t.dtype](output_re),
-            )
-            k_cache.store(
-                bs=batch_idx,
-                tok_idx=post_seq_idx,
-                head_idx=head_idx,
-                head_dim_idx=h_im,
-                val=cast_saturating[cache_t.dtype](output_im),
-            )
+            comptime if not q_only:
+                k_cache.store(
+                    bs=batch_idx,
+                    tok_idx=post_seq_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=h_re,
+                    val=cast_saturating[cache_t.dtype](output_re),
+                )
+                k_cache.store(
+                    bs=batch_idx,
+                    tok_idx=post_seq_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=h_im,
+                    val=cast_saturating[cache_t.dtype](output_im),
+                )
         else:
             q_output.store(
                 Coord(Index(global_token_idx, head_idx, h_re)),
@@ -1850,6 +1858,777 @@ def fused_dual_qk_rms_norm_rope_ragged_paged[
         )
 
 
+@inline(.always)
+def nvfp4_kv_write_row[
+    cache_t: KVCacheT,
+    gamma_layout: TensorLayout,
+    gamma_origin: ImmOrigin,
+    gamma_engine: TensorEngine,
+    freqs_layout: TensorLayout,
+    freqs_origin: ImmOrigin,
+    freqs_engine: TensorEngine,
+    offsets_layout: TensorLayout,
+    offsets_origin: ImmOrigin,
+    offsets_engine: TensorEngine,
+    dtype: DType,
+    freq_dtype: DType,
+    InputFnType: ImplicitlyCopyable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    //,
+    head_dim: Int,
+    simd_width: Int,
+    warps_per_block: Int,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+    has_nope_prefix: Bool,
+    rope_dim: Int,
+](
+    norm_rope: Bool,
+    global_token_idx: Int,
+    head_idx: Int,
+    cache: cache_t,
+    gamma: TileTensor[dtype, gamma_layout, gamma_origin, Engine=gamma_engine],
+    freqs_cis: TileTensor[
+        freq_dtype, freqs_layout, freqs_origin, Engine=freqs_engine
+    ],
+    epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    input_fn: InputFnType,
+    input_row_offsets: TileTensor[
+        .uint32, offsets_layout, offsets_origin, Engine=offsets_engine
+    ],
+):
+    """Writes one (token, head) K or V row from staging into a paged cache.
+
+    The row is read through `input_fn`. With `norm_rope` (a K row) it is
+    RMS-normed and roped with the arithmetic of
+    `_fused_qk_rms_norm_rope_process_row`; without it (a V row) it is stored
+    as read. A `uint8` cache stores the row as NVFP4: packed E2M1 at
+    `head_dim / 2` bytes per row plus one E4M3 scale per 16 elements,
+    quantized from the row rounded to `dtype`. Any other cache stores the row
+    cast to its dtype.
+
+    `norm_rope` must be uniform across the block, because the norm and the
+    RoPE staging both synchronize the block.
+    """
+    comptime accum_type = get_accum_type[dtype]()
+    comptime vec_align = align_of[SIMD[dtype, simd_width]]()
+
+    var idx = Int(thread_idx.x) * simd_width
+    var active = idx < head_dim
+    var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
+        input_row_offsets, global_token_idx
+    )
+    var post_seq_idx = cache.cache_length(batch_idx) + token_idx
+
+    var row = SIMD[dtype, simd_width](0)
+    if active:
+        row = input_fn[simd_width, vec_align](global_token_idx, head_idx, idx)
+
+    if norm_rope:
+        var gamma_val = SIMD[dtype, simd_width](0)
+        if active:
+            gamma_val = gamma.load[width=simd_width](Coord(idx))
+        var norm_val = _rms_norm_warp_tiling_subkernel[
+            warps_per_block, multiply_before_cast
+        ](
+            global_token_idx,
+            idx,
+            row.cast[accum_type](),
+            gamma_val,
+            epsilon,
+            weight_offset.cast[accum_type](),
+            head_dim,
+        )
+        var s_norm = stack_allocation[
+            accum_type,
+            address_space=.SHARED,
+            alignment=align_of[SIMD[accum_type, simd_width]](),
+        ](row_major[head_dim]())
+        if active:
+            s_norm.store[width=simd_width](
+                Coord(idx), norm_val.cast[accum_type]()
+            )
+        barrier()
+
+        # Non-interleaved RoPE writes each output pair to its partner columns,
+        # so the roped row is staged again to hand every thread back the
+        # contiguous slice it quantizes.
+        var s_row = stack_allocation[
+            dtype, address_space=.SHARED, alignment=vec_align
+        ](row_major[head_dim]())
+        if active:
+            comptime if interleaved:
+                var freq_val = freqs_cis.load[width=simd_width](
+                    Coord(Index(post_seq_idx, idx))
+                )
+                var val = s_norm.load[width=simd_width](Coord(idx))
+                s_row.store[width=simd_width](
+                    Coord(idx),
+                    rope_value(val, freq_val.cast[accum_type]()).cast[dtype](),
+                )
+            else:
+                var roped = True
+                comptime if has_nope_prefix:
+                    roped = idx < rope_dim
+                if roped:
+                    comptime split_size = (
+                        rope_dim if has_nope_prefix else head_dim
+                    )
+                    comptime width_2 = simd_width // 2
+                    var freq_val = freqs_cis.load[width=simd_width](
+                        Coord(Index(post_seq_idx, idx))
+                    )
+                    var h_re, h_im = get_safetensors_idx(idx, split_size)
+                    var val = rebind[SIMD[accum_type, simd_width]](
+                        s_norm.load[width=width_2](Coord(h_re)).interleave(
+                            s_norm.load[width=width_2](Coord(h_im))
+                        )
+                    )
+                    var res = rope_value(val, freq_val.cast[accum_type]()).cast[
+                        dtype
+                    ]()
+                    var output_re, output_im = res.deinterleave()
+                    s_row.store(Coord(h_re), output_re)
+                    s_row.store(Coord(h_im), output_im)
+                else:
+                    s_row.store[width=simd_width](
+                        Coord(idx),
+                        s_norm.load[width=simd_width](Coord(idx)).cast[dtype](),
+                    )
+        barrier()
+        if active:
+            row = s_row.load[width=simd_width](Coord(idx))
+
+    comptime if cache_t.dtype == DType.uint8:
+        comptime group = NVFP4_SF_VECTOR_SIZE
+        comptime assert (
+            cache_t.quantization_enabled
+            and cache_t.scale_dtype == NVFP4_SF_DTYPE
+        ), "an NVFP4 KV cache needs E4M3 scales"
+        comptime assert (
+            cache_t.quantization_granularity * 2 == group
+        ), "NVFP4 KV scales cover 16 elements (8 packed bytes)"
+        comptime assert (
+            cache_t.kv_params.head_size * 2 == head_dim
+        ), "an NVFP4 KV cache row holds head_dim / 2 packed bytes"
+        comptime assert simd_width % 8 == 0 and (
+            group % simd_width == 0 or simd_width % group == 0
+        ), "simd_width must tile the 16-element scale groups in 8s"
+
+        var x = row.cast[.float32]()
+        var packed = SIMD[DType.uint32, simd_width // 8]()
+        comptime if simd_width >= group:
+            comptime groups = simd_width // group
+            var scales = SIMD[NVFP4_SF_DTYPE, groups]()
+            comptime for g in range(groups):
+                var gx = x.slice[group, offset=g * group]()
+                var scale = nvfp4_kv_group_scale(abs(gx).reduce_max())
+                scales[g] = scale.cast[NVFP4_SF_DTYPE]()
+                comptime for w in range(group // 8):
+                    packed[g * (group // 8) + w] = nvfp4_kv_quantize_x8(
+                        gx.slice[8, offset=w * 8](), scale
+                    )
+            if active:
+                cache.store(
+                    bs=batch_idx,
+                    tok_idx=post_seq_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=idx // 2,
+                    val=rebind[SIMD[cache_t.dtype, simd_width // 2]](
+                        bitcast[DType.uint8, simd_width // 2](packed)
+                    ),
+                )
+                comptime for g in range(groups):
+                    cache.store_scale(
+                        bs=batch_idx,
+                        head_idx=head_idx,
+                        tok_idx=post_seq_idx,
+                        head_dim_idx=idx // 2 + g * (group // 2),
+                        scales=SIMD[NVFP4_SF_DTYPE, 1](scales[g]),
+                    )
+        else:
+            # A group spans `lanes` adjacent threads; inactive threads hold
+            # zeros and only ever pair with each other.
+            comptime lanes = group // simd_width
+            var amax = abs(x).reduce_max()
+            comptime for k in range(4):
+                comptime if (1 << k) < lanes:
+                    amax = max(amax, shuffle_xor(amax, UInt32(1 << k)))
+            var scale = nvfp4_kv_group_scale(amax)
+            comptime for w in range(simd_width // 8):
+                packed[w] = nvfp4_kv_quantize_x8(
+                    x.slice[8, offset=w * 8](), scale
+                )
+            if active:
+                cache.store(
+                    bs=batch_idx,
+                    tok_idx=post_seq_idx,
+                    head_idx=head_idx,
+                    head_dim_idx=idx // 2,
+                    val=rebind[SIMD[cache_t.dtype, simd_width // 2]](
+                        bitcast[DType.uint8, simd_width // 2](packed)
+                    ),
+                )
+                if (idx // simd_width) % lanes == 0:
+                    cache.store_scale(
+                        bs=batch_idx,
+                        head_idx=head_idx,
+                        tok_idx=post_seq_idx,
+                        head_dim_idx=idx // 2,
+                        scales=scale.cast[NVFP4_SF_DTYPE](),
+                    )
+    else:
+        comptime assert (
+            cache_t.kv_params.head_size == head_dim
+        ), "the KV cache head_size must match the row width"
+        if active:
+            cache.store(
+                bs=batch_idx,
+                tok_idx=post_seq_idx,
+                head_idx=head_idx,
+                head_dim_idx=idx,
+                val=cast_saturating[cache_t.dtype](row),
+            )
+
+
+@__name(
+    t"fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu_{dtype}_{q_main_out_dtype}_{multiply_before_cast}_{interleaved}"
+)
+def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
+    main_cache_t: KVCacheT,
+    main_v_cache_t: KVCacheT,
+    index_cache_t: KVCacheT,
+    q_main_out_layout: TensorLayout,
+    q_main_out_origin: Origin[mut=True],
+    q_main_out_engine: TensorEngine,
+    q_index_out_layout: TensorLayout,
+    q_index_out_origin: Origin[mut=True],
+    q_index_out_engine: TensorEngine,
+    q_main_gamma_layout: TensorLayout,
+    q_main_gamma_origin: ImmOrigin,
+    q_main_gamma_engine: TensorEngine,
+    k_main_gamma_layout: TensorLayout,
+    k_main_gamma_origin: ImmOrigin,
+    k_main_gamma_engine: TensorEngine,
+    q_index_gamma_layout: TensorLayout,
+    q_index_gamma_origin: ImmOrigin,
+    q_index_gamma_engine: TensorEngine,
+    k_index_gamma_layout: TensorLayout,
+    k_index_gamma_origin: ImmOrigin,
+    k_index_gamma_engine: TensorEngine,
+    freqs_layout: TensorLayout,
+    freqs_origin: ImmOrigin,
+    freqs_engine: TensorEngine,
+    offsets_layout: TensorLayout,
+    offsets_origin: ImmOrigin,
+    offsets_engine: TensorEngine,
+    dtype: DType,
+    q_main_out_dtype: DType,
+    q_index_out_dtype: DType,
+    freq_dtype: DType,
+    QMainFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    KMainFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    VMainFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    QIndexFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    KIndexFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    //,
+    head_dim: Int,
+    simd_width: Int,
+    warps_per_block: Int,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+    has_nope_prefix: Bool,
+    rope_dim: Int,
+](
+    q_main_output: TileTensor[
+        q_main_out_dtype,
+        q_main_out_layout,
+        q_main_out_origin,
+        Engine=q_main_out_engine,
+    ],
+    q_index_output: TileTensor[
+        q_index_out_dtype,
+        q_index_out_layout,
+        q_index_out_origin,
+        Engine=q_index_out_engine,
+    ],
+    main_k_cache: main_cache_t,
+    main_v_cache: main_v_cache_t,
+    index_k_cache: index_cache_t,
+    q_main_gamma: TileTensor[
+        dtype,
+        q_main_gamma_layout,
+        q_main_gamma_origin,
+        Engine=q_main_gamma_engine,
+    ],
+    k_main_gamma: TileTensor[
+        dtype,
+        k_main_gamma_layout,
+        k_main_gamma_origin,
+        Engine=k_main_gamma_engine,
+    ],
+    q_index_gamma: TileTensor[
+        dtype,
+        q_index_gamma_layout,
+        q_index_gamma_origin,
+        Engine=q_index_gamma_engine,
+    ],
+    k_index_gamma: TileTensor[
+        dtype,
+        k_index_gamma_layout,
+        k_index_gamma_origin,
+        Engine=k_index_gamma_engine,
+    ],
+    freqs_cis: TileTensor[
+        freq_dtype, freqs_layout, freqs_origin, Engine=freqs_engine
+    ],
+    main_epsilon: Float32,
+    index_epsilon: Float32,
+    weight_offset: Float32,
+    total_seq_len: UInt32,
+    input_row_offsets: TileTensor[
+        .uint32, offsets_layout, offsets_origin, Engine=offsets_engine
+    ],
+    q_main_num_heads_dev: Int32,
+    q_index_num_heads_dev: Int32,
+    q_main_input_fn: QMainFnType,
+    k_main_input_fn: KMainFnType,
+    v_main_input_fn: VMainFnType,
+    q_index_input_fn: QIndexFnType,
+    k_index_input_fn: KIndexFnType,
+):
+    """Runs the five-band grid of `fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged`.
+
+    The bands are `[ q_main | k_main | v_main | q_index | k_index ]`, each
+    `total_seq_len * heads` rows of one block each. A band is a function of
+    `block_idx` alone, so every barrier in the row helpers is block-uniform.
+    """
+    var row = Int(block_idx.x)
+    var tsl = Int(total_seq_len)
+    var w_off = Scalar[dtype](weight_offset)
+    comptime k_main_heads = main_cache_t.kv_params.num_heads
+    comptime k_index_heads = index_cache_t.kv_params.num_heads
+    var q_main_heads = Int(q_main_num_heads_dev)
+    var q_index_heads = Int(q_index_num_heads_dev)
+
+    var q_main_rows = tsl * q_main_heads
+    if row < q_main_rows:
+        var token, head = divmod(row, q_main_heads)
+        _fused_qk_rms_norm_rope_process_row[
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+            q_only=True,
+        ](
+            False,
+            token,
+            head,
+            q_main_output,
+            main_k_cache,
+            q_main_gamma,
+            k_main_gamma,
+            freqs_cis,
+            main_epsilon,
+            w_off,
+            q_main_input_fn,
+            input_row_offsets,
+            head_dim,
+        )
+        return
+    row -= q_main_rows
+
+    var kv_main_rows = tsl * k_main_heads
+    if row < kv_main_rows:
+        var token, head = divmod(row, k_main_heads)
+        nvfp4_kv_write_row[
+            head_dim,
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ](
+            True,
+            token,
+            head,
+            main_k_cache,
+            k_main_gamma,
+            freqs_cis,
+            main_epsilon,
+            w_off,
+            k_main_input_fn,
+            input_row_offsets,
+        )
+        return
+    row -= kv_main_rows
+
+    if row < kv_main_rows:
+        var token, head = divmod(row, k_main_heads)
+        nvfp4_kv_write_row[
+            head_dim,
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ](
+            False,
+            token,
+            head,
+            main_v_cache,
+            k_main_gamma,
+            freqs_cis,
+            main_epsilon,
+            w_off,
+            v_main_input_fn,
+            input_row_offsets,
+        )
+        return
+    row -= kv_main_rows
+
+    var q_index_rows = tsl * q_index_heads
+    if row < q_index_rows:
+        var token, head = divmod(row, q_index_heads)
+        _fused_qk_rms_norm_rope_process_row[
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+            q_only=True,
+        ](
+            False,
+            token,
+            head,
+            q_index_output,
+            index_k_cache,
+            q_index_gamma,
+            k_index_gamma,
+            freqs_cis,
+            index_epsilon,
+            w_off,
+            q_index_input_fn,
+            input_row_offsets,
+            head_dim,
+        )
+        return
+    row -= q_index_rows
+
+    var token, head = divmod(row, k_index_heads)
+    nvfp4_kv_write_row[
+        head_dim,
+        simd_width,
+        warps_per_block,
+        multiply_before_cast,
+        interleaved,
+        has_nope_prefix,
+        rope_dim,
+    ](
+        True,
+        token,
+        head,
+        index_k_cache,
+        k_index_gamma,
+        freqs_cis,
+        index_epsilon,
+        w_off,
+        k_index_input_fn,
+        input_row_offsets,
+    )
+
+
+@inline(.always)
+def fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
+    dtype: DType,
+    q_main_out_dtype: DType,
+    q_index_out_dtype: DType,
+    freq_dtype: DType,
+    main_collection_t: KVCollectionT,
+    index_collection_t: KVCollectionT,
+    QMainFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    KMainFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    VMainFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    QIndexFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    KIndexFnType: ImplicitlyCopyable
+    & DevicePassable
+    & RegisterPassable
+    & def[width: Int, alignment: Int](token: Int, head: Int, col: Int) -> SIMD[
+        dtype, width
+    ],
+    //,
+    target: StaticString,
+    multiply_before_cast: Bool,
+    interleaved: Bool,
+](
+    main_kv_collection: main_collection_t,
+    index_kv_collection: index_collection_t,
+    q_main_gamma: TileTensor[mut=False, dtype, ...],
+    k_main_gamma: TileTensor[mut=False, dtype, ...],
+    q_index_gamma: TileTensor[mut=False, dtype, ...],
+    k_index_gamma: TileTensor[mut=False, dtype, ...],
+    freqs_cis: TileTensor[mut=False, freq_dtype, ...],
+    main_epsilon: Float32,
+    index_epsilon: Float32,
+    weight_offset: Scalar[dtype],
+    layer_idx: UInt32,
+    input_row_offsets: TileTensor[mut=False, .uint32, ...],
+    q_main_input_fn: QMainFnType,
+    k_main_input_fn: KMainFnType,
+    v_main_input_fn: VMainFnType,
+    q_index_input_fn: QIndexFnType,
+    k_index_input_fn: KIndexFnType,
+    q_main_output: TileTensor[mut=True, q_main_out_dtype, ...],
+    q_index_output: TileTensor[mut=True, q_index_out_dtype, ...],
+    context: DeviceContext,
+) raises:
+    """Writes MiniMax-M3's main K/V and index K from staging, quantizing
+    a `uint8` cache to NVFP4.
+
+    The variant of `fused_dual_qk_rms_norm_rope_ragged_paged` for caches the
+    projection does not write. All five operands come from staging through
+    their read lambdas: Q, K, IndexQ and IndexK are RMS-normed and roped as
+    the in-place op does, and V is stored as read. Q and IndexQ go to their
+    DPS outputs. A `uint8` main cache (head_size `head_dim / 2`, E4M3 scales
+    per 16 elements) receives K and V as NVFP4 with MiniMax's quantizer and a
+    per-tensor scale of 1; the index cache receives IndexK at its dtype.
+
+    Args:
+        main_kv_collection: Main GQA cache, K and V written.
+        index_kv_collection: Indexer K-only cache.
+        q_main_gamma: Main Q RMSNorm weight, `[head_dim]`.
+        k_main_gamma: Main K RMSNorm weight, `[head_dim]`.
+        q_index_gamma: IndexQ RMSNorm weight, `[head_dim]`.
+        k_index_gamma: IndexK RMSNorm weight, `[head_dim]`.
+        freqs_cis: RoPE table `[max_seq_len, rope_dim]`, shared by both bands.
+        main_epsilon: Main RMSNorm epsilon.
+        index_epsilon: Indexer RMSNorm epsilon.
+        weight_offset: Additive RMSNorm weight offset.
+        layer_idx: Layer whose caches are written.
+        input_row_offsets: Ragged row offsets, `[batch + 1]`.
+        q_main_input_fn: Reads main Q `(token, head, col)`.
+        k_main_input_fn: Reads main K.
+        v_main_input_fn: Reads main V.
+        q_index_input_fn: Reads IndexQ.
+        k_index_input_fn: Reads IndexK.
+        q_main_output: Normed+roped main Q, `[tokens, q_heads, head_dim]`.
+        q_index_output: Normed+roped IndexQ.
+        context: Device context to launch on.
+
+    Raises:
+        If the kernel launch fails.
+    """
+    comptime assert is_gpu[
+        target
+    ](), "fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged is GPU-only"
+    comptime assert q_main_output.flat_rank == 3, "q_main_output must be rank 3"
+    comptime assert (
+        q_index_output.flat_rank == 3
+    ), "q_index_output must be rank 3"
+    comptime assert freqs_cis.flat_rank == 2, "freqs_cis must be rank 2"
+    comptime assert (
+        q_main_out_dtype.is_floating_point()
+        and q_index_out_dtype.is_floating_point()
+    ), "both Q output dtypes must be floating point"
+
+    comptime head_dim = q_main_gamma.static_shape[0]
+    comptime assert head_dim != -1, "Need static shape for gamma"
+    comptime assert (
+        k_main_gamma.static_shape[0] == head_dim
+        and q_index_gamma.static_shape[0] == head_dim
+        and k_index_gamma.static_shape[0] == head_dim
+    ), "all four gammas must span head_dim"
+
+    var main_k_cache = main_kv_collection.get_key_cache(Int(layer_idx))
+    var main_v_cache = main_kv_collection.get_value_cache(Int(layer_idx))
+    var index_k_cache = index_kv_collection.get_key_cache(Int(layer_idx))
+    var q_main_num_heads = Int(q_main_output.dim[1]())
+    var q_index_num_heads = Int(q_index_output.dim[1]())
+    var total_seq_len = UInt32(q_main_output.dim[0]())
+
+    comptime rope_dim = Int(freqs_cis.static_shape[1])
+    comptime assert rope_dim != -1, "Need static shape for freqs_cis"
+    comptime assert rope_dim <= head_dim, "rope_dim must be <= head_dim"
+    comptime has_nope_prefix = rope_dim < head_dim and not interleaved
+
+    if total_seq_len == 0:
+        return
+
+    var tsl = Int(total_seq_len)
+    var rows = (
+        tsl * q_main_num_heads
+        + 2 * tsl * main_collection_t.kv_params.num_heads
+        + tsl * q_index_num_heads
+        + tsl * index_collection_t.kv_params.num_heads
+    )
+
+    @inline(.always)
+    def description_fn() {imm} -> String:
+        return (
+            trace_arg(
+                "q_main_output",
+                coord_to_index_list(q_main_output.layout.shape_coord()),
+            )
+            + ";layer_idx="
+            + String(layer_idx)
+            + ";main_num_heads="
+            + String(main_collection_t.kv_params.num_heads)
+            + ";index_num_heads="
+            + String(index_collection_t.kv_params.num_heads)
+            + ";head_dim="
+            + String(head_dim)
+            + ";rope_dim="
+            + String(rope_dim)
+        )
+
+    with Trace[TraceLevel.OP, target=target](
+        "fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_nhead_"
+        + String(main_collection_t.kv_params.num_heads)
+        + ".hdim_"
+        + String(head_dim)
+        + ".rope_"
+        + String(rope_dim),
+        Trace[TraceLevel.OP]._get_detail_str(description_fn),
+        task_id=get_safe_task_id(context),
+    ):
+        comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+        comptime assert (
+            head_dim % simd_width == 0 and rope_dim % simd_width == 0
+        ), "head_dim and rope_dim must be divisible by simd_width"
+        comptime assert (
+            simd_width % 2 == 0
+        ), "simd_width must be even for the split RoPE layout"
+        comptime warps_per_block = ceildiv(head_dim // simd_width, WARP_SIZE)
+        comptime assert (
+            warps_per_block
+            <= context.default_device_info.max_thread_block_size // WARP_SIZE
+        ), "row exceeds device max warps per block"
+        comptime kernel = fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged_gpu[
+            main_cache_t=type_of(main_k_cache),
+            main_v_cache_t=type_of(main_v_cache),
+            index_cache_t=type_of(index_k_cache),
+            q_main_out_layout=q_main_output.LayoutType,
+            q_main_out_origin=q_main_output.origin,
+            q_main_out_engine=q_main_output.Engine,
+            q_index_out_layout=q_index_output.LayoutType,
+            q_index_out_origin=q_index_output.origin,
+            q_index_out_engine=q_index_output.Engine,
+            q_main_gamma_layout=q_main_gamma.LayoutType,
+            q_main_gamma_origin=q_main_gamma.origin,
+            q_main_gamma_engine=q_main_gamma.Engine,
+            k_main_gamma_layout=k_main_gamma.LayoutType,
+            k_main_gamma_origin=k_main_gamma.origin,
+            k_main_gamma_engine=k_main_gamma.Engine,
+            q_index_gamma_layout=q_index_gamma.LayoutType,
+            q_index_gamma_origin=q_index_gamma.origin,
+            q_index_gamma_engine=q_index_gamma.Engine,
+            k_index_gamma_layout=k_index_gamma.LayoutType,
+            k_index_gamma_origin=k_index_gamma.origin,
+            k_index_gamma_engine=k_index_gamma.Engine,
+            freqs_layout=freqs_cis.LayoutType,
+            freqs_origin=freqs_cis.origin,
+            freqs_engine=freqs_cis.Engine,
+            offsets_layout=input_row_offsets.LayoutType,
+            offsets_origin=input_row_offsets.origin,
+            offsets_engine=input_row_offsets.Engine,
+            dtype=dtype,
+            q_main_out_dtype=q_main_out_dtype,
+            q_index_out_dtype=q_index_out_dtype,
+            freq_dtype=freq_dtype,
+            QMainFnType=type_of(q_main_input_fn),
+            KMainFnType=type_of(k_main_input_fn),
+            VMainFnType=type_of(v_main_input_fn),
+            QIndexFnType=type_of(q_index_input_fn),
+            KIndexFnType=type_of(k_index_input_fn),
+            head_dim,
+            simd_width,
+            warps_per_block,
+            multiply_before_cast,
+            interleaved,
+            has_nope_prefix,
+            rope_dim,
+        ]
+        context.enqueue_function[kernel](
+            q_main_output,
+            q_index_output,
+            main_k_cache,
+            main_v_cache,
+            index_k_cache,
+            q_main_gamma,
+            k_main_gamma,
+            q_index_gamma,
+            k_index_gamma,
+            freqs_cis,
+            main_epsilon,
+            index_epsilon,
+            weight_offset.cast[.float32](),
+            total_seq_len,
+            input_row_offsets,
+            Int32(q_main_num_heads),
+            Int32(q_index_num_heads),
+            host_arg=q_main_input_fn,
+            host_arg2=k_main_input_fn,
+            host_arg3=v_main_input_fn,
+            host_arg4=q_index_input_fn,
+            host_arg5=k_index_input_fn,
+            grid_dim=rows,
+            block_dim=WARP_SIZE * warps_per_block,
+        )
+
+
 def rms_norm_kv_cache_ragged_paged[
     dtype: DType,
     params: KVCacheStaticParams,
@@ -1935,11 +2714,8 @@ def rms_norm_kv_cache_ragged_paged[
         )
 
         var global_token_idx = idx[0]
-        var batch_idx = get_batch_from_row_offsets(
+        var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
             input_row_offsets, global_token_idx
-        )
-        var token_idx = Int(
-            UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
         var cache_length = k_cache.cache_length(batch_idx)
@@ -1969,11 +2745,8 @@ def rms_norm_kv_cache_ragged_paged[
         width: SIMDLength, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
-        var batch_idx = get_batch_from_row_offsets(
+        var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
             input_row_offsets, global_token_idx
-        )
-        var token_idx = Int(
-            UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
         var cache_length = k_cache.cache_length(batch_idx)
@@ -2105,11 +2878,8 @@ def rms_norm_value_cache_ragged_paged[
         )
 
         var global_token_idx = idx[0]
-        var batch_idx = get_batch_from_row_offsets(
+        var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
             input_row_offsets, global_token_idx
-        )
-        var token_idx = Int(
-            UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
         var cache_length = v_cache.cache_length(batch_idx)
@@ -2139,11 +2909,8 @@ def rms_norm_value_cache_ragged_paged[
         width: SIMDLength, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
-        var batch_idx = get_batch_from_row_offsets(
+        var batch_idx, token_idx = get_batch_and_token_idx_from_row_offsets(
             input_row_offsets, global_token_idx
-        )
-        var token_idx = Int(
-            UInt32(global_token_idx) - input_row_offsets[batch_idx]
         )
 
         var cache_length = v_cache.cache_length(batch_idx)
@@ -2465,6 +3232,10 @@ def generic_get_paged_cache[
         MutUntrackedOrigin,
     ],
 ):
+    comptime assert dtype != DType.uint8, (
+        "a uint8 KV cache is packed NVFP4 and needs its scales: build it with"
+        " generic_get_paged_cache_with_scales, from an op that reads NVFP4"
+    )
     comptime page_size = Int(blocks.static_spec.shape_tuple[3])
     comptime head_dim = Int(blocks.static_spec.shape_tuple[5])
     comptime num_heads = Int(blocks.static_spec.shape_tuple[4])
@@ -2480,6 +3251,85 @@ def generic_get_paged_cache[
         lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
         max_prompt_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
         max_cache_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+    )
+
+
+def generic_get_paged_cache_with_scales[
+    dtype: DType,
+    scale_dtype: DType,
+](
+    blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+    page_stride: InputTensor[dtype=.int64, rank=1, ...],
+    cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
+    lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
+    max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
+    scales: MutableInputTensor[dtype=scale_dtype, rank=6, ...],
+    scales_page_stride: InputTensor[dtype=.int64, rank=1, ...],
+    scales_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
+    out result: PagedKVCacheCollection[
+        dtype,
+        KVCacheStaticParams(
+            Int(blocks.static_spec.shape_tuple[4]),
+            Int(blocks.static_spec.shape_tuple[5]),
+            Int(blocks.static_spec.shape_tuple[1]) == 1,
+        ),
+        Int(blocks.static_spec.shape_tuple[3]),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+        scale_dtype_=scale_dtype,
+        quantization_granularity_=Int(blocks.static_spec.shape_tuple[5])
+        // Int(scales.static_spec.shape_tuple[5]),
+    ],
+):
+    """Builds a scaled paged KV cache collection from graph operands.
+
+    The operands come in the order `flatten_without_attention_dispatch_metadata`
+    emits for quantized cache params. The quantization granularity is the
+    values' row width over the scales' row width, in value elements.
+
+    Args:
+        blocks: KV values `[num_blocks, kv_dim, num_layers, page_size,
+            num_heads, head_size]`.
+        page_stride: Page-to-page distance for `blocks`, in elements.
+        cache_lengths: Cache lengths per request.
+        lookup_table: Page lookup table `[batch_size, max_pages]`.
+        max_prompt_length: Max prompt length, `[1]`.
+        max_cache_length: Max cache length, `[1]`.
+        scales: Scales, the shape of `blocks` with the last dimension
+            `head_size / granularity`.
+        scales_page_stride: Page-to-page distance for `scales`.
+        scales_lookup_table: Page lookup table of the scales.
+
+    Returns:
+        The collection over the values and their scales.
+    """
+    comptime kv_params = KVCacheStaticParams(
+        Int(blocks.static_spec.shape_tuple[4]),
+        Int(blocks.static_spec.shape_tuple[5]),
+        Int(blocks.static_spec.shape_tuple[1]) == 1,
+    )
+    comptime page_size = Int(blocks.static_spec.shape_tuple[3])
+    comptime granularity = Int(blocks.static_spec.shape_tuple[5]) // Int(
+        scales.static_spec.shape_tuple[5]
+    )
+    comptime assert granularity * Int(scales.static_spec.shape_tuple[5]) == Int(
+        blocks.static_spec.shape_tuple[5]
+    ), "the scales row must evenly divide the values row"
+    return generic_get_paged_cache_with_scales[
+        dtype, scale_dtype, kv_params, page_size, granularity
+    ](
+        blocks.to_tile_tensor().as_unsafe_any_origin(),
+        page_stride.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        cache_lengths.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        max_prompt_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        max_cache_length.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        scales.to_tile_tensor().as_unsafe_any_origin(),
+        scales_page_stride.to_tile_tensor().as_imm().as_unsafe_any_origin(),
+        scales_lookup_table.to_tile_tensor().as_imm().as_unsafe_any_origin(),
     )
 
 

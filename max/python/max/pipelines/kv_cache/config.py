@@ -39,12 +39,34 @@ from pydantic import ConfigDict, Field, PrivateAttr
 if TYPE_CHECKING:
     from max.pipelines.modeling.config_enums import SupportedEncoding
 
-# KV-cache dtype by explicit `kv_cache_format` override.
+# KV-cache dtype by explicit `kv_cache_format` override. FP4 (NVFP4) is
+# stored as packed uint8; an architecture opts in by also giving its cache
+# params NVFP4 scales. Kernels reject a uint8 cache that arrives without them.
 _KV_CACHE_FORMAT_TO_DTYPE: dict[str, DType] = {
     "float32": DType.float32,
     "bfloat16": DType.bfloat16,
     "float8_e4m3fn": DType.float8_e4m3fn,
+    "float4_e2m1fn": DType.uint8,
+    "float4_e2m1": DType.uint8,
 }
+
+
+def is_fp4_kv_cache_format(kv_cache_format: str | None) -> bool:
+    """Returns whether ``kv_cache_format`` names the NVFP4 KV cache format.
+
+    Args:
+        kv_cache_format: A ``kv_cache_format`` or ``indexer_kv_cache_format``
+            value, or ``None``.
+
+    Returns:
+        ``True`` for ``float4_e2m1fn`` and its alias ``float4_e2m1``.
+    """
+    return (
+        kv_cache_format is not None
+        and _KV_CACHE_FORMAT_TO_DTYPE.get(kv_cache_format.lower())
+        == DType.uint8
+    )
+
 
 # Default KV-cache dtype for each quantization encoding. Quantized weight
 # formats keep the cache in a compute dtype (bf16/f32) rather than the weight
@@ -87,7 +109,8 @@ def cache_dtype_for_encoding(
         if dtype is None:
             raise ValueError(
                 f"Unrecognized kv_cache_format override: '{kv_cache_format}'. "
-                "Supported values are 'float32', 'bfloat16', and 'float8_e4m3fn'."
+                "Supported values are 'float32', 'bfloat16', 'float8_e4m3fn',"
+                " and 'float4_e2m1fn'."
             )
         return dtype
     if not quantization_encoding:
@@ -251,7 +274,11 @@ class KVCacheConfig(ConfigFileModel):
         default=None,
         description=(
             "Override the default data type for the KV cache. "
-            "Supported values: ``float32``, ``bfloat16``, ``float8_e4m3fn``."
+            "Supported values: ``float32``, ``bfloat16``, ``float8_e4m3fn``, "
+            "``float4_e2m1fn`` (alias ``float4_e2m1``). ``float4_e2m1fn`` "
+            "is NVFP4: two E2M1 values per byte with an E4M3 scale per 16 "
+            "values. It is supported only by architectures that implement "
+            "it (MiniMax-M3 sparse attention on NVIDIA SM100)."
         ),
     )
     """An override for the default data type of the KV cache."""
