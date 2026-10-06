@@ -92,6 +92,7 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from layout.swizzle import make_swizzle
+from layout.tile_tensor import stack_allocation
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils_gpu import _apple_m5_allow_lossy_f32_attention
@@ -3019,22 +3020,16 @@ def mha_single_batch[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation[stack_alignment=p_frag_align]()
-
+    var p_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
+    var output_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0)
+    # MMA and softmax helpers retain their legacy scalar views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation[stack_alignment=p_frag_align]()
-        .fill(0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Rowwise max and sum for online softmax
