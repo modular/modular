@@ -712,8 +712,12 @@ struct Deque[ElementType: Movable](
             )
             self._tail = self._physical_index(self._tail + 1)
 
-        # free the list backing buffer
-        dealloc(values_alloc^)
+        # free the list backing buffer; a list that never allocated hands
+        # over a dangling placeholder that must not reach `dealloc`
+        if len(values_alloc) > 0:
+            dealloc(values_alloc^)
+        else:
+            _ = values_alloc^.unsafe_leak()
 
     def extendleft(
         mut self, var values: List[Self.ElementType]
@@ -754,7 +758,10 @@ struct Deque[ElementType: Movable](
                 src.unsafe_offset(i)
             )
 
-        dealloc(values_alloc^)
+        if len(values_alloc) > 0:
+            dealloc(values_alloc^)
+        else:
+            _ = values_alloc^.unsafe_leak()
 
     def index(
         self,
