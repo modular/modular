@@ -11,7 +11,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "AsyncFrame.h"
+#include "FrameData.h"
+#include "LegacyFrameEvaluation.h"
 #include "Mojo/CODialect/CODialect.h"
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
@@ -833,13 +834,11 @@ COTypes LowerAsyncBuildContext::calculateFrame(FuncOp original,
   auto [errorValue, memoryResultValue] = getErrorAndMemoryValues(original);
   // The transform function clones ops whose values should not be stored in
   // the frame. This includes constants and pointer offsets.
-  auto transform = [&](FuncOp originalFunction,
-                       DenseMap<Operation *, int> &opToState) {
-    cloneFrameArgs(original, builder, dominanceInfo, originalFunction,
-                   opToState);
+  auto transform = [&](FuncOp, DenseMap<Operation *, int> &opToState) {
+    cloneFrameArgs(original, builder, dominanceInfo, opToState);
   };
   FrameData frameData(original, dominanceInfo, errorValue, memoryResultValue,
-                      transform, /*isHot=*/!includeArgs);
+                      transform, /*isHot=*/!includeArgs, evaluateOldFrame);
   COTypes coTypes(
       builder.getContext(), std::move(frameData),
       StructType::get(original.getContext(), original.getResultTypes()));

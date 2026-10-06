@@ -11,8 +11,8 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TRANSFORMS_ASYNCFRAME_H
-#define KGEN_TRANSFORMS_ASYNCFRAME_H
+#ifndef KGEN_TRANSFORMS_FRAMEDATA_H
+#define KGEN_TRANSFORMS_FRAMEDATA_H
 
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -26,6 +26,19 @@
 
 namespace M::KGEN {
 
+struct FrameData;
+
+using FrameStateTransform =
+    function_ref<void(FuncOp, DenseMap<Operation *, int> &)>;
+
+/// Populates `frameData` for `originalFunction`. Implementations assign a
+/// state to every op, invoke `transform` once states are known, and then lay
+/// out the frame.
+using FrameEvaluator = void (*)(FrameData &frameData, FuncOp originalFunction,
+                                mlir::DominanceInfo &domInfo, Value errorValue,
+                                Value resultValue,
+                                FrameStateTransform transform, bool isHot);
+
 /// Frame Data stores any metadata necessary to transform the async function
 /// into a suspendable procedure. This includes indexing information into the
 /// frame type so that we can generate loads and stores and state information so
@@ -33,18 +46,13 @@ namespace M::KGEN {
 struct FrameData {
   /// Error value and result value are excluded from the frame
   FrameData(FuncOp originalFunction, mlir::DominanceInfo &domInfo,
-            Value errorValue, Value resultValue,
-            function_ref<void(FuncOp, DenseMap<Operation *, int> &)> transform,
-            bool isHot);
+            Value errorValue, Value resultValue, FrameStateTransform transform,
+            bool isHot, FrameEvaluator evaluateFrame) {
+    evaluateFrame(*this, originalFunction, domInfo, errorValue, resultValue,
+                  transform, isHot);
+  }
   FrameData(const FrameData &) = delete;
-  FrameData(const FrameData &&other)
-      : frameTypes(std::move(other.frameTypes)),
-        valueToIndexInFrame(std::move(other.valueToIndexInFrame)),
-        operationToIndexInFrame(std::move(other.operationToIndexInFrame)),
-        opToState(std::move(other.opToState)),
-        virtualBlocksFirstState(std::move(other.virtualBlocksFirstState)),
-        argsInFrame(std::move(other.argsInFrame)),
-        firstSuspends(std::move(other.firstSuspends)) {}
+  FrameData(FrameData &&) = default;
 
   FrameData() {}
   /// pairs index of argument from original function with its index in the
@@ -56,12 +64,6 @@ struct FrameData {
     int argIndex = -1;
     int frameIndex = -1;
   };
-
-  /// Given a value, determine the state of its defining op or block argument.
-  int getDefinitionStateForValue(Value operand, bool isHot) const;
-
-  /// Update the ops in this virtual block.
-  void updateVirtualBlock(Operation *virtualBlock, int newState);
 
   SmallVector<Type> frameTypes;
   DenseMap<Value, unsigned> valueToIndexInFrame;
@@ -78,7 +80,7 @@ struct FrameData {
 /// Clone constant-like ops (and struct GEPs / offsets) into every state that
 /// uses them so they never need to be stored in the frame.
 void cloneFrameArgs(FuncOp funcOp, ImplicitLocOpBuilder &b,
-                    mlir::DominanceInfo &domInfo, FuncOp originalFunction,
+                    mlir::DominanceInfo &domInfo,
                     DenseMap<Operation *, int> &opToState);
 
 struct COTypes {
@@ -101,7 +103,7 @@ struct COTypes {
     llvm_unreachable("invalid AsyncContinuationField value");
   }
   COTypes(MLIRContext *cxt, FrameData &&frameData, StructType promiseType);
-  COTypes(const COTypes &&other)
+  COTypes(COTypes &&other)
       : continuationType(other.continuationType),
         resumeSignatureType(other.resumeSignatureType),
         opaquePointerType(other.opaquePointerType),
@@ -163,4 +165,4 @@ private:
 
 } // namespace M::KGEN
 
-#endif // KGEN_TRANSFORMS_ASYNCFRAME_H
+#endif // KGEN_TRANSFORMS_FRAMEDATA_H

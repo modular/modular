@@ -11,7 +11,7 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "AsyncFrame.h"
+#include "LegacyFrameEvaluation.h"
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/HLCFDialect/HLCFUtils.h"
@@ -26,194 +26,10 @@ using M::HLCF::UnreachableOp;
 using namespace POP;
 using namespace CO;
 
-//===----------------------------------------------------------------------===//
-// Frame argument cloning
-//===----------------------------------------------------------------------===//
-
-static bool needsStateClone(Operation *operation) {
-  return operation->hasTrait<OpTrait::ConstantLike>() ||
-         isa<KGEN::StructGEPOp, POP::OffsetOp>(operation);
-}
-
-namespace {
-struct CloneFrameArgs {
-  CloneFrameArgs(ImplicitLocOpBuilder &b, DenseMap<Operation *, int> &opToState,
-                 mlir::DominanceInfo &dominanceInfo)
-      : builder(b), opToState(opToState), dominanceInfo(dominanceInfo) {}
-  void cloneFrameArgsOf(Operation *user) {
-    int useState = opToState[user];
-    for (auto [index, operand] : llvm::enumerate(user->getOperands())) {
-      Operation *definingOp = operand.getDefiningOp();
-      if (!definingOp)
-        continue;
-      if (!needsStateClone(definingOp))
-        continue;
-      int defState = opToState[definingOp];
-      if (defState == useState)
-        continue;
-
-      auto existing = constantToStateSpecific.find(definingOp);
-      if (existing == constantToStateSpecific.end())
-        existing = constantToStateSpecific.try_emplace(definingOp).first;
-      auto existingClone = existing->second.find(useState);
-      Operation *clonedDefOp;
-      if (existingClone == existing->second.end()) {
-        builder.setInsertionPoint(user);
-        clonedDefOp = builder.clone(*definingOp);
-        opToState[clonedDefOp] = useState;
-        existing->second.insert({useState, clonedDefOp});
-        if (clonedDefOp->getNumOperands() > 0)
-          cloneFrameArgsOf(clonedDefOp);
-      } else {
-        clonedDefOp = existingClone->second;
-        if (!dominanceInfo.dominates(clonedDefOp, user)) {
-          // We have two uses in the same state where one does not dominate the
-          // other. This implies that the first instance of the usage is in a
-          // nested region.
-          Operation *parent = clonedDefOp->getParentOp();
-          while (!dominanceInfo.dominates(parent, user))
-            parent = parent->getParentOp();
-          clonedDefOp->moveBefore(parent);
-        }
-      }
-      user->setOperand(index, clonedDefOp->getResult(0));
-    }
-  }
-  ImplicitLocOpBuilder &builder;
-  DenseMap<Operation *, int> &opToState;
-  DenseMap<Operation *, DenseMap<int, Operation *>> constantToStateSpecific;
-  mlir::DominanceInfo &dominanceInfo;
-};
-} // namespace
-
-void M::KGEN::cloneFrameArgs(FuncOp funcOp, ImplicitLocOpBuilder &b,
-                             mlir::DominanceInfo &domInfo,
-                             FuncOp originalFunction,
-                             DenseMap<Operation *, int> &opToState) {
-  auto insertPoint = b.saveInsertionPoint();
-  CloneFrameArgs cloner(b, opToState, domInfo);
-  funcOp.walk([&](Operation *user) {
-    if (user->getNumOperands() > 0)
-      cloner.cloneFrameArgsOf(user);
-  });
-  b.restoreInsertionPoint(insertPoint);
-}
-
-//===----------------------------------------------------------------------===//
-// CoTypes
-//===----------------------------------------------------------------------===//
-
-COTypes::COTypes(MLIRContext *cxt, FrameData &&frameData,
-                 StructType promiseType)
-    : cxt(cxt), frameData(std::move(frameData)), promiseType(promiseType) {
-  opaquePointerType = PointerType::get(KGEN::NoneType::get(cxt));
-  SmallVector<Type> inputs;
-  SmallVector<Type> results;
-  inputs.push_back(opaquePointerType);
-  FunctionType resumeFunctionType = FunctionType::get(cxt, inputs, results);
-  resumeSignatureType =
-      FuncTypeGeneratorType::get(/*inputParamTypes=*/{}, resumeFunctionType);
-  FunctionType callbackFunctionType =
-      FunctionType::get(cxt, opaquePointerType, results);
-  callbackSignature =
-      FuncTypeGeneratorType::get(/*inputParamTypes=*/{}, callbackFunctionType);
-
-  // Build Continuation Type.
-  size_t size = Promise;
-  SmallVector<Type> types(size);
-  types[State] = typeForField(State);
-  types[ResumeFunction] = typeForField(ResumeFunction);
-  types[CallbackFn] = typeForField(CallbackFn);
-  types[ClosureState] = typeForField(ClosureState);
-  types[ErrorSlot] = typeForField(ErrorSlot);
-  types[ResultSlot] = typeForField(ResultSlot);
-
-  // Header type omits the variable sized frame and promise.
-  headerType = StructType::get(cxt, types);
-
-  // Only create continuationType if promiseType is valid. Some callers
-  // pass a null promiseType when they only need the headerType.
-  if (promiseType) {
-    types.push_back(typeForField(Promise));
-    for (auto [index, frameVariableType] :
-         llvm::enumerate(frameData.frameTypes))
-      types.push_back(frameVariableType);
-    continuationType = StructType::get(cxt, types);
-  }
-}
-
-//===----------------------------------------------------------------------===//
-// FrameVariables
-//===----------------------------------------------------------------------===//
-
-Value FrameVariables::getFrameValueForOperand(Value continuation, Value operand,
-                                              Operation *opWithUse,
-                                              int useState) {
-  auto entry = frameData->valueToIndexInFrame.find(operand);
-  if (entry == frameData->valueToIndexInFrame.end() && operand != errorValue &&
-      operand != resultValue)
-    return {};
-  DenseMap<int, Value> &frameVariablesForValue =
-      frameVariables.try_emplace(operand).first->getSecond();
-
-  // Reuse existing extracted value if possible.
-  Value image;
-  auto existingImage = frameVariablesForValue.find(useState);
-  bool wasExtractedInThisState = existingImage != frameVariablesForValue.end();
-  // TODO: can this be parent region also?
-  bool wasExtractedInThisRegion =
-      wasExtractedInThisState && existingImage->getSecond().getParentRegion() ==
-                                     opWithUse->getParentRegion();
-  if (wasExtractedInThisRegion) {
-    image = existingImage->getSecond();
-  } else {
-    builder.setInsertionPoint(opWithUse);
-    if (operand == errorValue) {
-      Value dataSlot = StructGEPOp::create(builder, continuation, ErrorSlot);
-      Value ptr = LoadOp::create(builder, dataSlot);
-      image = PointerBitcastOp::create(builder, errorValue.getType(), ptr);
-    } else if (operand == resultValue) {
-      Value dataSlot = StructGEPOp::create(builder, continuation, ResultSlot);
-      Value ptr = LoadOp::create(builder, dataSlot);
-      image = PointerBitcastOp::create(builder, resultValue.getType(), ptr);
-    } else {
-      unsigned frameIndex = entry->getSecond();
-      Value dataSlot =
-          StructGEPOp::create(builder, continuation, Frame + frameIndex);
-      if (operand.getDefiningOp() &&
-          isa<StackAllocationOp>(operand.getDefiningOp())) {
-        auto stackAlloc = dyn_cast<StackAllocationOp>(operand.getDefiningOp());
-        if (cast<IntegerAttr>(stackAlloc.getCount()).getInt() == 1) {
-          image = dataSlot;
-        } else {
-          image =
-              PointerBitcastOp::create(builder, stackAlloc.getType(), dataSlot);
-        }
-      } else {
-        image = LoadOp::create(builder, dataSlot);
-      }
-    }
-    if (wasExtractedInThisState)
-      frameVariablesForValue.erase(existingImage);
-    frameVariablesForValue.insert({useState, image});
-  }
-  return image;
-}
-
-void FrameVariables::overwriteValue(int state, Value value) {
-  DenseMap<int, Value> &frameVariablesForValue =
-      frameVariables.try_emplace(value).first->getSecond();
-  auto existing = frameVariablesForValue.find(state);
-  if (existing != frameVariablesForValue.end())
-    frameVariablesForValue.erase(existing);
-  frameVariablesForValue.insert({state, value});
-}
-
-//===----------------------------------------------------------------------===//
-// FrameData
-//===----------------------------------------------------------------------===//
-
-int FrameData::getDefinitionStateForValue(Value operand, bool isHot) const {
+/// Given a value, determine the state of its defining op or block argument.
+static int
+getDefinitionStateForValue(const DenseMap<Operation *, int> &opToState,
+                           Value operand, bool isHot) {
   Operation *definingOp = operand.getDefiningOp();
   // Initialize state to the entry state.
   int defState = isHot ? 0 : -1;
@@ -236,7 +52,9 @@ int FrameData::getDefinitionStateForValue(Value operand, bool isHot) const {
   return opToState.at(definingOp);
 }
 
-void FrameData::updateVirtualBlock(VirtualBlock virtualBlock, int newState) {
+/// Update the ops in this virtual block.
+static void updateVirtualBlock(DenseMap<Operation *, int> &opToState,
+                               VirtualBlock virtualBlock, int newState) {
   Operation *op = virtualBlock;
   int state = newState;
   while (op) {
@@ -278,11 +96,18 @@ int PathInfo::existsAt(VirtualBlock virtualBlock) const {
   return -1;
 }
 
-FrameData::FrameData(
-    FuncOp originalFunction, mlir::DominanceInfo &domInfo, Value errorValue,
-    Value resultValue,
-    function_ref<void(FuncOp, DenseMap<Operation *, int> &)> transform,
-    bool isHot) {
+void M::KGEN::evaluateOldFrame(FrameData &frameData, FuncOp originalFunction,
+                               mlir::DominanceInfo &domInfo, Value errorValue,
+                               Value resultValue, FrameStateTransform transform,
+                               bool isHot) {
+  auto &frameTypes = frameData.frameTypes;
+  auto &valueToIndexInFrame = frameData.valueToIndexInFrame;
+  auto &operationToIndexInFrame = frameData.operationToIndexInFrame;
+  auto &opToState = frameData.opToState;
+  auto &virtualBlocksFirstState = frameData.virtualBlocksFirstState;
+  auto &argsInFrame = frameData.argsInFrame;
+  auto &firstSuspends = frameData.firstSuspends;
+
   // Calculate Control Flow Graph.
   // We need to know the predecessors of each region so that
   // we don't process a region until all its predecessors have
@@ -504,7 +329,7 @@ FrameData::FrameData(
       }
       wasChange = wasChange || (initialState != postState);
       if (initialState != postState)
-        updateVirtualBlock(virtualBlock, postState);
+        updateVirtualBlock(opToState, virtualBlock, postState);
 
       // Insert a new state at the parent because a child with a suspension
       // point branches to it.
@@ -515,7 +340,7 @@ FrameData::FrameData(
             ++state;
         }
         wasChange = true;
-        updateVirtualBlock(virtualBlock, newState);
+        updateVirtualBlock(opToState, virtualBlock, newState);
       }
     }
     return wasChange;
@@ -579,7 +404,7 @@ FrameData::FrameData(
         continue;
 
       // Add to frame if the value was defined in a previous state.
-      int defState = getDefinitionStateForValue(operand, isHot);
+      int defState = getDefinitionStateForValue(opToState, operand, isHot);
       if (defState != useState) {
         bool isArgument = false;
         if (auto blockArg = dyn_cast<BlockArgument>(operand))
@@ -624,7 +449,7 @@ FrameData::FrameData(
     auto frameSlotMaybe = valueToIndexInFrame.find(functionArg);
     if (frameSlotMaybe == valueToIndexInFrame.end())
       continue;
-    argsInFrame.push_back(ArgInFrame(index, frameSlotMaybe->second));
+    argsInFrame.push_back(FrameData::ArgInFrame(index, frameSlotMaybe->second));
   }
 
   // Remember the virtual ops in the first state for hot start resume
