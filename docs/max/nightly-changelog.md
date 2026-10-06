@@ -955,4 +955,11 @@ This version is still a work in progress.
   construction, since their kernels size every group from device 0's column
   count; that case never compiled before.
 
+- Fixed weight discovery treating the nested `checkpoint-<step>/` directories
+  that training repos ship beside their exported weights as extra shards of
+  those weights. Each snapshot repeats every tensor name of the checkpoint
+  above it rather than sharding it, and no index file tells them apart, so a
+  repo laid out this way loaded an arbitrary training step. They are now
+  excluded unless requested explicitly through `subfolder`.
+
 ## Mojo language

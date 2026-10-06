@@ -624,6 +624,9 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
     )
 
 
+_TRAINING_CHECKPOINT_DIR = re.compile(r"(?:^|/)checkpoint-\d+/")
+
+
 @dataclass(frozen=True)
 class HuggingFaceRepo:
     """Handle for interacting with a Hugging Face repository (remote or local)."""
@@ -729,7 +732,8 @@ class HuggingFaceRepo:
         returned. The returned paths are relative to the repo root (i.e. they
         include the subfolder prefix) so that they can be passed directly to
         ``hf_hub_download`` and local file resolution without further
-        adjustment.
+        adjustment. Files under a nested ``checkpoint-<step>/`` directory are
+        excluded unless that directory is the requested ``subfolder``.
         """
         safetensor_search_pattern = "**/*.safetensors"
         gguf_search_pattern = "**/*.gguf"
@@ -771,6 +775,10 @@ class HuggingFaceRepo:
         else:
             raise ValueError(f"Unsupported repo type: {self.repo_type}")
 
+        # An explicitly requested subfolder is part of the search base, so
+        # nesting is judged below it and the request itself is never filtered.
+        base_prefix = f"{self.subfolder}/" if self.subfolder is not None else ""
+
         if safetensor_paths:
             if len(safetensor_paths) == 1:
                 # If there is only one weight allow any name.
@@ -778,12 +786,23 @@ class HuggingFaceRepo:
                     safetensor_paths[0].removeprefix(strip_prefix)
                 ]
             else:
-                # If there is more than one weight, ignore consolidated tensors.
-                weight_files[WeightsFormat.safetensors] = [
-                    f.removeprefix(strip_prefix)
-                    for f in safetensor_paths
-                    if "consolidated" not in f
-                ]
+                safetensor_files: list[str] = []
+                for f in safetensor_paths:
+                    # If there is more than one weight, ignore consolidated
+                    # tensors.
+                    if "consolidated" in f:
+                        continue
+                    relative_path = f.removeprefix(strip_prefix)
+                    # Likewise ignore the per-step snapshots training repos ship
+                    # in `checkpoint-<step>/` directories: those repeat every
+                    # tensor name of the weights above them instead of sharding
+                    # them, and there is no index file to tell them apart.
+                    if _TRAINING_CHECKPOINT_DIR.search(
+                        relative_path.removeprefix(base_prefix)
+                    ):
+                        continue
+                    safetensor_files.append(relative_path)
+                weight_files[WeightsFormat.safetensors] = safetensor_files
 
         if gguf_paths:
             weight_files[WeightsFormat.gguf] = [
