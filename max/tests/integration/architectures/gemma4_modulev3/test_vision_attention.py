@@ -208,8 +208,9 @@ def test_vision_attention_matches_reference() -> None:
         VISION_RMS_NORM_EPS,
     )
     ref.load_state_dict(weights)
-    ref_out = _run_ref_attention(ref, hidden_states, position_embeddings)
-
+    # MAX first: its compile is recorded on CPU, where the CUDA reference
+    # cannot run.
     max_out = _build_and_run_max_attention(weights, hidden_states, freqs_cis)
+    ref_out = _run_ref_attention(ref, hidden_states, position_embeddings)
 
     torch.testing.assert_close(ref_out, max_out, rtol=RTOL, atol=ATOL)
