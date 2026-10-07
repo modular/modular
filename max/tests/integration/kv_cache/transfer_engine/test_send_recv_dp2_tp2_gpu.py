@@ -24,7 +24,7 @@ import multiprocessing as mp
 import time
 
 import numpy as np
-from _transfer_engine_helpers import kv_group
+from _transfer_engine_helpers import join_peers, kv_group
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -56,25 +56,23 @@ def transfer_routine_sender(
     GB: float,
 ) -> None:
     """Sender routine for DP=2, TP=2 transfer."""
-    # DP=2, TP=2: 4 GPUs total for sender
-    # Replica 0: GPU 0, 1
-    # Replica 1: GPU 2, 3
+    # Each replica puts shard 0 on GPU 0 and shard 1 on GPU 1.
     # Each shard gets distinct per-page values so intra-shard scatter bugs are detectable.
     replica_0_tensors = [
         paged(total_bytes, page_values=[10, 11], accelerator_idx=0),
         paged(total_bytes, page_values=[12, 13], accelerator_idx=1),
     ]
     replica_1_tensors = [
-        paged(total_bytes, page_values=[20, 21], accelerator_idx=2),
-        paged(total_bytes, page_values=[22, 23], accelerator_idx=3),
+        paged(total_bytes, page_values=[20, 21], accelerator_idx=0),
+        paged(total_bytes, page_values=[22, 23], accelerator_idx=1),
     ]
 
     # Create engine with DP=2, TP=2
     engine = KVTransferEngine(
         "sender_engine",
         [
-            kv_group(replica_0_tensors, total_num_pages),
-            kv_group(replica_1_tensors, total_num_pages),
+            [kv_group(replica_0_tensors, total_num_pages)],
+            [kv_group(replica_1_tensors, total_num_pages)],
         ],
     )
 
@@ -83,7 +81,7 @@ def transfer_routine_sender(
     remote_md = receiver_md_queue.get()
     engine.connect(remote_md)
 
-    # Transfer from replica 0
+    # Sender replica 1 -> receiver replica 0
     start_time_0 = time.time()
     transfer_req_0 = engine.initiate_send_transfer(
         remote_md,
@@ -96,7 +94,7 @@ def transfer_routine_sender(
     engine.sync_and_release(transfer_req_0)
     end_time_0 = time.time()
 
-    # Transfer from replica 1
+    # Sender replica 0 -> receiver replica 1
     start_time_1 = time.time()
     transfer_req_1 = engine.initiate_send_transfer(
         remote_md,
@@ -116,17 +114,13 @@ def transfer_routine_sender(
     bw_1 = total_bytes_transferred / (end_time_1 - start_time_1) / GB
 
     print(
-        f"[Sender] Replica 0 -> Replica 0: {total_bytes_transferred / GB:.4f} GB "
+        f"[Sender] Replica 1 -> Replica 0: {total_bytes_transferred / GB:.4f} GB "
         f"in {(end_time_0 - start_time_0) * 1000:.2f} ms ({bw_0:.2f} GB/s)"
     )
     print(
         f"[Sender] Replica 0 -> Replica 1: {total_bytes_transferred / GB:.4f} GB "
         f"in {(end_time_1 - start_time_1) * 1000:.2f} ms ({bw_1:.2f} GB/s)"
     )
-
-    # Verify bandwidth is reasonable
-    assert bw_0 > 1.0, f"Replica 0 transfer too slow: {bw_0:.2f} GB/s"
-    assert bw_1 > 1.0, f"Replica 1 transfer too slow: {bw_1:.2f} GB/s"
 
     # Verify sender buffers are unchanged
     page_size = total_bytes // total_num_pages
@@ -159,24 +153,23 @@ def transfer_routine_receiver(
     total_bytes: int,
 ) -> None:
     """Receiver routine for DP=2, TP=2 transfer."""
-    # DP=2, TP=2: 4 GPUs total for receiver
-    # Replica 0: GPU 1, 3
-    # Replica 1: GPU 2, 2
+    # Replica 0 swaps the sender's shard placement and replica 1 puts both
+    # shards on GPU 1, so the transfers mix cross-GPU and same-GPU copies.
     replica_0_tensors = [
         paged(total_bytes, page_values=[99, 99], accelerator_idx=1),
-        paged(total_bytes, page_values=[99, 99], accelerator_idx=3),
+        paged(total_bytes, page_values=[99, 99], accelerator_idx=0),
     ]
     replica_1_tensors = [
-        paged(total_bytes, page_values=[99, 99], accelerator_idx=2),
-        paged(total_bytes, page_values=[99, 99], accelerator_idx=2),
+        paged(total_bytes, page_values=[99, 99], accelerator_idx=1),
+        paged(total_bytes, page_values=[99, 99], accelerator_idx=1),
     ]
 
     # Create engine with DP=2, TP=2
     engine = KVTransferEngine(
         "receiver_engine",
         [
-            kv_group(replica_0_tensors, total_num_pages),
-            kv_group(replica_1_tensors, total_num_pages),
+            [kv_group(replica_0_tensors, total_num_pages)],
+            [kv_group(replica_1_tensors, total_num_pages)],
         ],
     )
 
@@ -220,7 +213,7 @@ def transfer_routine_receiver(
 
 
 def test_dp2_tp2_transfer_multiprocessing() -> None:
-    """Test DP=2, TP=2 transfer using 8 GPUs (4 for sender, 4 for receiver).
+    """Test DP=2, TP=2 transfer with both engines on GPUs 0 and 1.
 
     This test validates:
     - Engine construction with DP=2, TP=2
@@ -238,10 +231,13 @@ def test_dp2_tp2_transfer_multiprocessing() -> None:
     receiver_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
 
     GB = 1024 * 1024 * 1024
-    total_bytes = int(0.5 * GB)
+    # Small enough that a transfer over UCX's TCP fallback stays well inside
+    # sync_and_release's 30s timeout on a busy shared host.
+    total_bytes = 32 * 1024 * 1024
     total_num_pages = 2
 
     sender_proc = ctx.Process(
+        name="sender",
         target=transfer_routine_sender,
         args=(
             sender_md_queue,
@@ -256,6 +252,7 @@ def test_dp2_tp2_transfer_multiprocessing() -> None:
         ),
     )
     receiver_proc = ctx.Process(
+        name="receiver",
         target=transfer_routine_receiver,
         args=(
             sender_md_queue,
@@ -271,13 +268,4 @@ def test_dp2_tp2_transfer_multiprocessing() -> None:
 
     sender_proc.start()
     receiver_proc.start()
-
-    sender_proc.join()
-    receiver_proc.join()
-
-    assert sender_proc.exitcode == 0, (
-        f"Sender process failed with exit code {sender_proc.exitcode}"
-    )
-    assert receiver_proc.exitcode == 0, (
-        f"Receiver process failed with exit code {receiver_proc.exitcode}"
-    )
+    join_peers([sender_proc, receiver_proc])

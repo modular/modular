@@ -23,7 +23,7 @@ import multiprocessing as mp
 import time
 
 import numpy as np
-from _transfer_engine_helpers import kv_memory
+from _transfer_engine_helpers import join_peers, kv_memory
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine, TransferReqData
@@ -156,6 +156,7 @@ def test_send_recv_basic() -> None:
     total_num_pages = 32
 
     sender_proc = ctx.Process(
+        name="sender",
         target=transfer_routine_sender,
         args=(
             sender_md_queue,
@@ -169,6 +170,7 @@ def test_send_recv_basic() -> None:
         ),
     )
     receiver_proc = ctx.Process(
+        name="receiver",
         target=transfer_routine_receiver,
         args=(
             sender_md_queue,
@@ -183,13 +185,4 @@ def test_send_recv_basic() -> None:
 
     sender_proc.start()
     receiver_proc.start()
-
-    sender_proc.join()
-    receiver_proc.join()
-
-    assert sender_proc.exitcode == 0, (
-        f"Sender process failed with exit code {sender_proc.exitcode}"
-    )
-    assert receiver_proc.exitcode == 0, (
-        f"Receiver process failed with exit code {receiver_proc.exitcode}"
-    )
+    join_peers([sender_proc, receiver_proc])

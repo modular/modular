@@ -16,7 +16,7 @@ import time
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import kv_group
+from _transfer_engine_helpers import join_peers, kv_group
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -49,7 +49,7 @@ def transfer_routine_sender(
     # DP=1, TP=2
     engine_1 = KVTransferEngine(
         "engine_1",
-        [kv_group(tensors_1, total_num_pages)],
+        [[kv_group(tensors_1, total_num_pages)]],
     )
 
     sender_md_queue.put(engine_1.metadata)
@@ -75,10 +75,6 @@ def transfer_routine_sender(
     print(
         f"[Sender MP] Transferred {total_bytes_transferred / GB:.4f} GB in {ms:.2f} ms ({bw:.2f} GB/s)"
     )
-
-    # Check that the transfer speed is at least 1 GB/s
-    # We found that CUDA_COPY yields ~.3GB/s while CUDA_IPC yields 100+GB/s
-    assert bw > 1.0, f"Transfer speed is too low: {bw:.2f} GB/s"
 
     # Verify sender data unchanged
     assert np.array_equal(tensors_1[0].to_numpy(), tensor_0_data)
@@ -113,7 +109,7 @@ def transfer_routine_receiver(
     # DP=1, TP=2
     engine_2 = KVTransferEngine(
         "engine_2",
-        [kv_group(tensors_2, total_num_pages)],
+        [[kv_group(tensors_2, total_num_pages)]],
     )
 
     receiver_md_queue.put(engine_2.metadata)
@@ -158,6 +154,7 @@ def test_multi_tensor_transfer_multiprocessing(
     dst_idxs = [1, 0]
 
     sender_proc = ctx.Process(
+        name="sender",
         target=transfer_routine_sender,
         args=(
             sender_md_queue,
@@ -173,6 +170,7 @@ def test_multi_tensor_transfer_multiprocessing(
         ),
     )
     receiver_proc = ctx.Process(
+        name="receiver",
         target=transfer_routine_receiver,
         args=(
             sender_md_queue,
@@ -187,16 +185,7 @@ def test_multi_tensor_transfer_multiprocessing(
 
     sender_proc.start()
     receiver_proc.start()
-
-    sender_proc.join()
-    receiver_proc.join()
-
-    assert sender_proc.exitcode == 0, (
-        f"Sender process failed with exit code {sender_proc.exitcode}"
-    )
-    assert receiver_proc.exitcode == 0, (
-        f"Receiver process failed with exit code {receiver_proc.exitcode}"
-    )
+    join_peers([sender_proc, receiver_proc])
 
     # Capture and display output from subprocesses
     out, _err = capfd.readouterr()

@@ -199,7 +199,6 @@ modular_py_test(
 _4X_GPU_TESTS = [
     "test_send_recv_multi_tensor_threaded_gpu.py",
     "test_send_recv_multi_tensor_multi_process_gpu.py",
-    "test_send_recv_dp2_tp2_gpu.py",
     "test_send_recv_heterogeneous_mla_gpu.py",
 ]
 
@@ -223,9 +222,6 @@ modular_py_test(
         "//:has_multi_gpu",
     ],
     imports = ["."],
-    per_test_tags = {
-        "test_send_recv_multi_process_gpu.py": ["manual"],  # FIXME: Times out intermittently (SERVOPT-1326)
-    },
     tags = ["gpu"],
     # NVIDIA or AMD, never Apple: Apple GPUs only exist on the macOS
     # platform, and NIXL/UCX is Linux-only.

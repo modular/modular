@@ -13,11 +13,18 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Sequence
+from multiprocessing.connection import wait
+from multiprocessing.process import BaseProcess
 
 from max.driver import Buffer
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import KVCacheMemory
+
+# Under bazel's default 300s medium-test timeout, so a stuck peer fails the
+# test with its captured output rather than being killed as a TIMEOUT.
+_JOIN_TIMEOUT_S = 240.0
 
 
 def view_2d_uint8(buf: Buffer, total_num_pages: int) -> Buffer:
@@ -47,4 +54,31 @@ def kv_group(
     return KVCacheMemory(
         replicated=replicated,
         buffers=[view_2d_uint8(b, total_num_pages) for b in bufs],
+    )
+
+
+def join_peers(
+    procs: Sequence[BaseProcess], timeout_s: float = _JOIN_TIMEOUT_S
+) -> None:
+    """Joins ``procs``, killing the rest once one fails or ``timeout_s`` passes.
+
+    The peers block on each other through queues, so one failed process would
+    otherwise leave the others waiting forever.
+    """
+    deadline = time.monotonic() + timeout_s
+    while not any(p.exitcode for p in procs):
+        running = [p for p in procs if p.exitcode is None]
+        remaining = deadline - time.monotonic()
+        if not running or remaining <= 0:
+            break
+        wait([p.sentinel for p in running], timeout=remaining)
+    killed = [p for p in procs if p.exitcode is None]
+    for p in killed:
+        p.kill()
+        p.join()
+    exit_codes = {p.name: p.exitcode for p in procs}
+    assert all(code == 0 for code in exit_codes.values()), (
+        f"Transfer processes exited with {exit_codes}; killed "
+        f"{[p.name for p in killed]} after a peer failed or "
+        f"{timeout_s:.0f}s elapsed"
     )

@@ -31,7 +31,7 @@ Uses 4 GPUs total (2 for sender, 2 for receiver).
 import multiprocessing as mp
 
 import numpy as np
-from _transfer_engine_helpers import kv_group, kv_memory
+from _transfer_engine_helpers import join_peers, kv_group, kv_memory
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -184,6 +184,7 @@ def test_heterogeneous_mla_dp1tp2_to_dp2tp1() -> None:
     total_num_pages = 2
 
     sender_proc = ctx.Process(
+        name="sender",
         target=sender_routine,
         args=(
             sender_md_queue,
@@ -196,6 +197,7 @@ def test_heterogeneous_mla_dp1tp2_to_dp2tp1() -> None:
         ),
     )
     receiver_proc = ctx.Process(
+        name="receiver",
         target=receiver_routine,
         args=(
             sender_md_queue,
@@ -210,13 +212,4 @@ def test_heterogeneous_mla_dp1tp2_to_dp2tp1() -> None:
 
     sender_proc.start()
     receiver_proc.start()
-
-    sender_proc.join()
-    receiver_proc.join()
-
-    assert sender_proc.exitcode == 0, (
-        f"Sender process failed with exit code {sender_proc.exitcode}"
-    )
-    assert receiver_proc.exitcode == 0, (
-        f"Receiver process failed with exit code {receiver_proc.exitcode}"
-    )
+    join_peers([sender_proc, receiver_proc])

@@ -49,7 +49,7 @@ def transfer_routine_sender(
     # DP=1, TP=2 (2 GPUs in one replica)
     engine_1 = KVTransferEngine(
         "engine_1",
-        [kv_group(tensors_1, total_num_pages)],
+        [[kv_group(tensors_1, total_num_pages)]],
     )
 
     sender_md_queue.put(engine_1.metadata)
@@ -111,7 +111,7 @@ def transfer_routine_receiver(
     # DP=1, TP=2 (2 GPUs in one replica)
     engine_2 = KVTransferEngine(
         "engine_2",
-        [kv_group(tensors_2, total_num_pages)],
+        [[kv_group(tensors_2, total_num_pages)]],
     )
 
     receiver_md_queue.put(engine_2.metadata)
