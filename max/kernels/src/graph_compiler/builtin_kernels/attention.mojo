@@ -111,6 +111,7 @@ from std.utils import IndexList
 from .kernels import *
 from nn.attention.gpu.mla_index_kpool import (
     kpool_compress_kernel,
+    KPOOL_EXPAND_BLOCK_SIZE,
     kpool_expand_topk_kernel,
     kpool_ring_close_kernel,
     kpool_seed_tail_kernel,
@@ -147,9 +148,10 @@ struct MLAKPoolExpandTopK:
 
         The indexer selects pools; attention reads tokens. Pool `p` covers
         positions `[p * kpool, (p + 1) * kpool)`, so the selection widens from
-        `pool_topk` to `pool_topk * kpool`. An unselected slot expands to `-1`
-        in every one of its positions rather than to a clamped valid one, which
-        would point attention at a token the indexer did not choose.
+        `pool_topk` to `pool_topk * kpool`. Each row is packed: the selected
+        pools in selection order, then the tail, then `-1`, never a clamped
+        valid position, which would point attention at a token the indexer did
+        not choose.
 
         Parameters:
             kpool: Tokens per pool.
@@ -201,7 +203,7 @@ struct MLAKPoolExpandTopK:
             clen_tt.as_imm(),
             Int32(total_seq_len),
             grid_dim=(total_seq_len, 1, 1),
-            block_dim=(128, 1, 1),
+            block_dim=(KPOOL_EXPAND_BLOCK_SIZE, 1, 1),
         )
 
 

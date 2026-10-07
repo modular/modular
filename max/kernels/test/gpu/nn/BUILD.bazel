@@ -197,6 +197,10 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    "test_mla_decode_sparse_kpool_tail.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_mla_decode_qkv_fp8_tail_stress.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],

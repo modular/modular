@@ -3379,14 +3379,18 @@ def mla_kpool_expand_topk(
 
     The indexer selects pools; attention reads tokens. Pool ``p`` covers
     positions ``[p * kpool, (p + 1) * kpool)``, so the selection widens from
-    ``pool_topk`` to ``pool_topk * kpool``. An unselected slot expands to
-    ``-1`` in every one of its positions rather than to a clamped valid one,
-    which would point attention at a token the indexer did not choose.
+    ``pool_topk`` to ``pool_topk * kpool``.
 
-    With ``always_select_tail`` the result carries ``kpool - 1`` further
-    columns holding the positions after the last complete pool -- the query's
-    most recent tokens, which no complete pool covers yet. The tail is located
-    from the query's visible count, so it tracks the pool currently filling.
+    With ``always_select_tail`` the row also carries up to ``kpool - 1`` of
+    the query's most recent positions, the ones no complete pool covers yet,
+    so the result is ``kpool - 1`` columns wider. The tail is located from
+    the query's visible count, so it tracks the pool currently filling.
+
+    Each row is packed: the selected pools in selection order, then the tail,
+    then ``-1`` in every remaining column, never a clamped valid position,
+    which would point attention at a token the indexer did not choose. Packing
+    keeps every valid entry ahead of the padding, which the sparse decode
+    relies on when it bounds its scan by the context length.
 
     Args:
         pool_ids: Selected pool ids, ``[total_seq_len, pool_topk]`` int32.

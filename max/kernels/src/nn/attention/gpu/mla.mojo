@@ -378,7 +378,9 @@ def flare_mla_decoding[
             1.0.
         d_indices: Optional sparse indices: `d_indices[batch *
             indices_stride + token]` gives the physical KV row index.
-            `None` for non-sparse.
+            Valid entries must form a prefix of each row, followed by
+            `-1`: the scan covers only `min(topk_length, cache_len +
+            q_len)` entries. `None` for non-sparse.
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
         topk_lengths: Optional per-batch array of actual valid sparse
@@ -750,7 +752,9 @@ def flare_mla_decoding_dispatch[
             1.0.
         d_indices: Optional sparse indices: `d_indices[batch *
             indices_stride + token]` gives the physical KV row index.
-            `None` for non-sparse.
+            Valid entries must form a prefix of each row, followed by
+            `-1`: the scan covers only `min(topk_length, cache_len +
+            q_len)` entries. `None` for non-sparse.
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
         topk_lengths: Optional per-batch array of actual valid sparse
