@@ -388,6 +388,11 @@ This version is still a work in progress.
 - Splitting on an empty separator no longer puts the trailing empty slice out
   of bounds.
 
+- `atof()` accepts numbers with more than 19 significant digits, which
+  previously raised "The number is too long". Malformed inputs such as
+  `"1..2"`, `"1e5.0"`, or `"1e--5"`, which the old parser silently misread
+  by skipping the offending characters, now raise.
+
 - Struct layouts that recurse only through a parametric indirection now
   compile. A field such as `Optional[List[Pointer[Node, origin]]]` or
   `Tuple[Pointer[Node, origin], Int]` inside `struct Node` was spuriously

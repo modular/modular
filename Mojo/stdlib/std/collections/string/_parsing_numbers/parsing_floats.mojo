@@ -26,17 +26,17 @@ from std.collections import Array
 
 import std.bit
 import std.memory
+from std.sys import Endian
+
 
 from std.builtin.globals import global_constant
 
 from .constants import (
-    CONTAINER_SIZE,
     MANTISSA_EXPLICIT_BITS,
     POWERS_OF_10,
     SMALLEST_POWER_OF_5,
     get_power_of_5,
 )
-from .parsing_integers import to_integer
 
 
 @fieldwise_init
@@ -50,118 +50,6 @@ struct UInt128Decomposed(ImplicitlyCopyable, RegisterPassable):
 
     def most_significant_bit(self) -> UInt64:
         return self.high >> 63
-
-
-def _get_w_and_q_from_float_string(
-    input_string: StringSlice,
-) raises -> Tuple[UInt64, Int64]:
-    """We suppose the number is in the form '123.2481' or '123' or '123e-2' or '12.3e2'.
-
-    Returns a tuple (w, q) where w is the significand and q is the exponent.
-    w is an unsigned integer and q is a signed integer. (64 bits each)
-
-    "123.2481e-5" -> (1232481, -9)
-    """
-    # We read the number from right to left.
-    comptime ord_0 = Byte(ord("0"))
-    comptime ord_9 = Byte(ord("9"))
-    comptime ord_dot = Byte(ord("."))
-    comptime ord_minus = Byte(ord("-"))
-    comptime ord_plus = Byte(ord("+"))
-    comptime ord_e = Byte(ord("e"))
-    comptime ord_E = Byte(ord("E"))
-
-    var additional_exponent = 0
-    var exponent_multiplier = 1
-
-    # We'll assume that we'll never go over 24 digit for each number.
-    var exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
-    var significand = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
-
-    comptime array_ptr = Pointer[
-        type_of(exponent), origin_of(exponent, significand)
-    ]
-    var prt_to_array = array_ptr(to=exponent)
-    var array_index = CONTAINER_SIZE
-    var buffer = input_string.as_bytes().unsafe_ptr()
-
-    if (
-        not (ord_0 <= buffer[unsafe_offset=0] <= ord_9)
-        and buffer[unsafe_offset=0] != ord_dot
-    ):
-        raise Error(
-            "The first character of '",
-            input_string,
-            "' should be a digit or dot to convert it to a float.",
-        )
-
-    if (
-        not (
-            ord_0
-            <= buffer[unsafe_offset=input_string.byte_length() - 1]
-            <= ord_9
-        )
-        and buffer[unsafe_offset=input_string.byte_length() - 1] != ord_dot
-    ):
-        raise Error(
-            "The last character of '",
-            input_string,
-            "' should be a digit or dot to convert it to a float.",
-        )
-
-    var dot_or_e_found = False
-
-    for i in range(input_string.byte_length() - 1, -1, -1):
-        array_index -= 1
-        if array_index < 0:
-            raise Error(
-                "The number is too long, it's not supported yet. '",
-                input_string,
-                "'",
-            )
-        if buffer[unsafe_offset=i] == ord_dot:
-            dot_or_e_found = True
-            if prt_to_array == array_ptr(to=exponent):
-                # We thought we were writing the exponent, but we were writing the significand.
-                significand = exponent.copy()
-                exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
-                prt_to_array = array_ptr(to=significand)
-
-            additional_exponent = CONTAINER_SIZE - array_index - 1
-            # We don't want to progress in the significand array.
-            array_index += 1
-        elif buffer[unsafe_offset=i] == ord_minus:
-            # Next should be the E letter (or e), so we'll just continue.
-            exponent_multiplier = -1
-        elif buffer[unsafe_offset=i] == ord_plus:
-            # Next should be the E letter (or e), so we'll just continue.
-            pass
-        elif (
-            buffer[unsafe_offset=i] == ord_e or buffer[unsafe_offset=i] == ord_E
-        ):
-            dot_or_e_found = True
-            # We finished writing the exponent.
-            prt_to_array = array_ptr(to=significand)
-            array_index = CONTAINER_SIZE
-        elif (ord_0 <= buffer[unsafe_offset=i]) and (
-            buffer[unsafe_offset=i] <= ord_9
-        ):
-            prt_to_array[][array_index] = buffer[unsafe_offset=i]
-        else:
-            raise Error(
-                "Invalid character(s) in the number: '", input_string, "'"
-            )
-
-    if not dot_or_e_found:
-        # We were reading the significand
-        significand = exponent.copy()
-        exponent = Array[Byte, CONTAINER_SIZE](fill=Byte(ord("0")))
-
-    var exponent_as_integer = UInt64(exponent_multiplier) * to_integer(
-        exponent
-    ) - UInt64(additional_exponent)
-    var significand_as_integer = to_integer(significand)
-    return (significand_as_integer, Int64(exponent_as_integer))
 
 
 def strip_unused_characters(x: StringSlice[_]) -> type_of(x):
@@ -311,6 +199,363 @@ def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     return create_float64(m, p)
 
 
+# ===----------------------------------------------------------------------=== #
+# Decimal text to Float64
+# ===----------------------------------------------------------------------=== #
+#
+# Used by `atof` and by callers with their own number grammar. A caller scans
+# the digits itself and feeds them through `DecimalParts`, which keeps the
+# first 19 significant digits as a `UInt64` and tracks what it dropped;
+# `decimal_to_float64` then converts with Clinger's fast path, Eisel-Lemire,
+# or an exact big-integer comparison, in that order of cost.
+# ===----------------------------------------------------------------------=== #
+
+comptime _MAX_SIGNIFICANT_DIGITS = 19
+comptime _MAX_EXACT_DIGITS = 768
+
+
+# Eight-digit SWAR helpers (Lemire, "Number Parsing at a Gigabyte per
+# Second", section 5): a run of digits is consumed eight bytes at a time as
+# one little-endian word.
+@inline(.always)
+def _load_eight(bytes: ImmSpan[Byte, _], pos: Int) -> UInt64:
+    comptime assert Endian.native() == .little
+    return std.memory.bitcast[.uint64, 1](
+        bytes.unsafe_ptr().unsafe_load[width=8](pos)
+    )
+
+
+@inline(.always)
+def _is_digit(byte: Byte) -> Bool:
+    return byte >= Byte(ord("0")) and byte <= Byte(ord("9"))
+
+
+# Number of leading bytes of the word (lowest addresses first) that are ASCII
+# digits, 0 to 8. A byte is a digit when `byte - '0'` is at most 9; the mask
+# sets bit 7 of every byte that is not. The subtraction can borrow into the
+# byte after a non-digit, but that byte is above the first non-digit and
+# never affects the count.
+@inline(.always)
+def _digit_prefix_length(chunk: UInt64) -> Int:
+    var t = chunk - 0x3030303030303030
+    var nondigit = (
+        ((t & 0x7F7F7F7F7F7F7F7F) + 0x7676767676767676) | t
+    ) & 0x8080808080808080
+    if nondigit == 0:
+        return 8
+    return Int(std.bit.count_trailing_zeros(nondigit)) >> 3
+
+
+# Number of leading bytes of the word that a signed decimal is made of: the
+# minus sign, digits and the point, that is bytes in [0x2D, 0x39] (`/` is
+# admitted by the range and rejected by the digit tests that follow). Same
+# construction as `_digit_prefix_length`.
+@inline(.always)
+def _digit_prefix_value(chunk: UInt64, count: Int) -> UInt64:
+    if count == 8:
+        return _eight_digits_value(chunk)
+    var shift = UInt64(64 - 8 * count)
+    return _eight_digits_value(
+        (chunk << shift) | (0x3030303030303030 >> (UInt64(64) - shift))
+    )
+
+
+@inline(.always)
+def _eight_digits_value(var chunk: UInt64) -> UInt64:
+    chunk -= 0x3030303030303030
+    chunk = chunk * 10 + (chunk >> 8)
+    var mask = UInt64(0x000000FF000000FF)
+    return (
+        ((chunk & mask) * 0x000F424000000064)
+        + (((chunk >> 16) & mask) * 0x0000271000000001)
+    ) >> 32
+
+
+struct DecimalParts(TrivialRegisterPassable):
+    """The digits of a decimal number, reduced to a 19-digit mantissa.
+
+    `mantissa * 10**exponent` approximates the digits seen so far; the
+    explicit exponent of the text is added by the caller. `truncated` records
+    that more than 19 significant digits were present and `truncated_nonzero`
+    that at least one dropped digit was not zero, in which case the true
+    value lies strictly between `mantissa` and `mantissa + 1` at this
+    exponent.
+    """
+
+    var mantissa: UInt64
+    var exponent: Int
+    var digit_count: Int
+    var truncated: Bool
+    var truncated_nonzero: Bool
+
+    def __init__(out self):
+        self.mantissa = 0
+        self.exponent = 0
+        self.digit_count = 0
+        self.truncated = False
+        self.truncated_nonzero = False
+
+    @inline(.always)
+    def push_digit(mut self, digit: Byte, in_fraction: Bool):
+        """Appends one decimal digit (0 to 9).
+
+        Args:
+            digit: The digit value.
+            in_fraction: Whether the digit follows the decimal point.
+        """
+        if self.digit_count < _MAX_SIGNIFICANT_DIGITS:
+            self.mantissa = self.mantissa * 10 + UInt64(digit)
+            self.digit_count += Int(self.mantissa != 0)
+            self.exponent -= Int(in_fraction)
+        else:
+            self.truncated = True
+            self.truncated_nonzero = self.truncated_nonzero or digit != 0
+            if not in_fraction:
+                self.exponent += 1
+
+    @inline(.always)
+    def push_digits(
+        mut self, value: UInt64, count: Int, in_fraction: Bool
+    ) -> Bool:
+        """Appends up to eight decimal digits at once when they fit the budget.
+
+        Args:
+            value: The value of the digits (below `10**count`).
+            count: How many digits `value` stands for, 1 to 8.
+            in_fraction: Whether the digits follow the decimal point.
+
+        Returns:
+            `False`, leaving `self` unchanged, when accepting the digits would
+            exceed the 19 significant digits kept; the caller then continues
+            digit by digit.
+        """
+        var significant = count
+        if self.mantissa == 0:
+            significant = 0
+            var rest = value
+            while rest > 0:
+                rest //= 10
+                significant += 1
+        if self.digit_count + significant > _MAX_SIGNIFICANT_DIGITS:
+            return False
+        comptime pow10: Array[UInt64, 9] = [
+            1,
+            10,
+            100,
+            1000,
+            10000,
+            100000,
+            1000000,
+            10000000,
+            100000000,
+        ]
+        self.mantissa = self.mantissa * materialize[pow10]()[count] + value
+        self.digit_count += significant
+        if in_fraction:
+            self.exponent -= count
+        return True
+
+    @inline(.always)
+    def scan_digits(
+        mut self, bytes: ImmSpan[Byte, _], mut pos: Int, in_fraction: Bool
+    ) -> Int:
+        """Consumes the run of ASCII digits starting at `pos`.
+
+        Args:
+            bytes: The text.
+            pos: The position to start at; advanced past the digits.
+            in_fraction: Whether the digits follow the decimal point.
+
+        Returns:
+            The number of digits consumed.
+        """
+        comptime ord_0 = Byte(ord("0"))
+        comptime ord_9 = Byte(ord("9"))
+        var start = pos
+        var end = len(bytes)
+        # Up to eight digits per step: the word's digit prefix is folded in
+        # one go, so runs of any length up to eight cost one step and long
+        # runs cost one step per eight digits. The byte loop handles the
+        # last bytes of the buffer and digits past the 19-digit budget.
+        while pos + 8 <= end:
+            var chunk = _load_eight(bytes, pos)
+            var count = _digit_prefix_length(chunk)
+            if count == 0:
+                return pos - start
+            if not self.push_digits(
+                _digit_prefix_value(chunk, count), count, in_fraction
+            ):
+                break
+            pos += count
+            if count < 8:
+                return pos - start
+        var ptr = bytes.unsafe_ptr()
+        while pos < end:
+            var byte = ptr[unsafe_offset=pos]
+            if byte < ord_0 or byte > ord_9:
+                break
+            self.push_digit(byte - ord_0, in_fraction)
+            pos += 1
+        return pos - start
+
+
+@inline(.always)
+def decimal_to_float64(
+    parts: DecimalParts, explicit_exponent: Int, digits: ImmSpan[Byte, _]
+) -> Float64:
+    """Converts scanned decimal digits to the nearest `Float64`.
+
+    Args:
+        parts: The accumulated digits.
+        explicit_exponent: The value of the text's `e` exponent, or 0.
+        digits: The mantissa text (digits and at most one `.`), only read
+            when more than 19 significant digits must be resolved exactly.
+
+    Returns:
+        The correctly rounded magnitude; the caller applies the sign.
+    """
+    var q = Int64(parts.exponent + explicit_exponent)
+    if not parts.truncated and can_use_clinger_fast_path(parts.mantissa, q):
+        return clinger_fast_path(parts.mantissa, q)
+    var low = lemire_algorithm(parts.mantissa, q)
+    if not parts.truncated_nonzero:
+        return low
+    var high = lemire_algorithm(parts.mantissa + 1, q)
+    if low == high:
+        return low
+    return _round_exactly(digits, explicit_exponent, low)
+
+
+# Fixed-capacity unsigned big integer for the exact slow path. 4096 bits
+# covers the worst case: 768 significant digits scaled by 10^340 or 2^1075.
+struct _BigUInt(Movable):
+    comptime LIMBS = 128
+
+    var _limbs: Array[UInt32, Self.LIMBS]
+    var _length: Int
+
+    def __init__(out self, value: UInt64):
+        self._limbs = {fill = 0}
+        self._limbs[0] = UInt32(value & 0xFFFFFFFF)
+        self._limbs[1] = UInt32(value >> 32)
+        self._length = 2 if self._limbs[1] != 0 else (1 if value != 0 else 0)
+
+    def is_zero(self) -> Bool:
+        return self._length == 0
+
+    def multiply_add(mut self, factor: UInt32, addend: UInt32):
+        var carry = UInt64(addend)
+        debug_assert(
+            carry == 0 or self._length < Self.LIMBS, "_BigUInt overflow"
+        )
+        for i in range(self._length):
+            var product = UInt64(self._limbs[i]) * UInt64(factor) + carry
+            self._limbs[i] = UInt32(product & 0xFFFFFFFF)
+            carry = product >> 32
+        if carry != 0 and self._length < Self.LIMBS:
+            self._limbs[self._length] = UInt32(carry)
+            self._length += 1
+
+    def multiply_pow10(mut self, exponent: Int):
+        var remaining = exponent
+        while remaining >= 9:
+            self.multiply_add(1000000000, 0)
+            remaining -= 9
+        var factor: UInt32 = 1
+        for _ in range(remaining):
+            factor *= 10
+        if factor != 1:
+            self.multiply_add(factor, 0)
+
+    def shift_left(mut self, bits: Int):
+        var limb_shift = bits // 32
+        var bit_shift = bits % 32
+        if self._length == 0:
+            return
+        var new_length = min(self._length + limb_shift + 1, Self.LIMBS)
+        for i in range(new_length - 1, -1, -1):
+            var source = i - limb_shift
+            var value: UInt32 = 0
+            if source >= 0 and source < self._length:
+                value = self._limbs[source] << UInt32(bit_shift)
+            if bit_shift != 0 and source - 1 >= 0 and source - 1 < self._length:
+                value |= self._limbs[source - 1] >> UInt32(32 - bit_shift)
+            self._limbs[i] = value
+        self._length = new_length
+        while self._length > 0 and self._limbs[self._length - 1] == 0:
+            self._length -= 1
+
+    # Returns -1, 0 or 1.
+    def compare(self, other: Self) -> Int:
+        if self._length != other._length:
+            return 1 if self._length > other._length else -1
+        for i in range(self._length - 1, -1, -1):
+            if self._limbs[i] != other._limbs[i]:
+                return 1 if self._limbs[i] > other._limbs[i] else -1
+        return 0
+
+
+# Slow path for more than 19 significant digits whose truncations `w` and
+# `w + 1` land on adjacent doubles. The exact decimal value is compared with
+# big integers against the midpoint of `low` and its upper neighbour; ties go
+# to the even mantissa. Only the first 768 significant digits are kept: any
+# later non-zero digit can only push the value above the midpoint, which is
+# all the comparison needs.
+def _round_exactly(
+    digits: ImmSpan[Byte, _], explicit_exponent: Int, low: Float64
+) -> Float64:
+    comptime ord_0 = Byte(ord("0"))
+    comptime ord_dot = Byte(ord("."))
+    var low_bits = std.memory.bitcast[.uint64](low)
+    var exponent_field = Int((low_bits >> 52) & 0x7FF)
+    var m = low_bits & ((UInt64(1) << 52) - 1)
+    var e: Int
+    if exponent_field == 0:
+        e = -1074
+    else:
+        m |= UInt64(1) << 52
+        e = exponent_field - 1075
+    var high = std.memory.bitcast[.float64](low_bits + 1)
+    # midpoint = (2m + 1) * 2^(e - 1)
+    var midpoint = _BigUInt(2 * m + 1)
+    var value = _BigUInt(0)
+    var digit_count = 0
+    var fraction_digits = 0
+    var after_dot = False
+    var sticky = False
+    for byte in digits:
+        if byte == ord_dot:
+            after_dot = True
+            continue
+        if digit_count < _MAX_EXACT_DIGITS:
+            value.multiply_add(10, UInt32(byte - ord_0))
+            if not value.is_zero():
+                digit_count += 1
+            if after_dot:
+                fraction_digits += 1
+        else:
+            sticky = sticky or byte != ord_0
+            if not after_dot:
+                fraction_digits -= 1
+    var scale = explicit_exponent - fraction_digits
+    if scale >= 0:
+        value.multiply_pow10(scale)
+    else:
+        midpoint.multiply_pow10(-scale)
+    if e - 1 >= 0:
+        midpoint.shift_left(e - 1)
+    else:
+        value.shift_left(1 - e)
+    var order = value.compare(midpoint)
+    if order == 0 and sticky:
+        order = 1
+    if order > 0:
+        return high
+    if order < 0:
+        return low
+    return low if (m & 1) == 0 else high
+
+
 comptime _ascii_lower: Byte = Byte(ord("A") ^ ord("a"))
 
 
@@ -353,6 +598,84 @@ def _is_inf(stripped: StringSlice) -> Bool:
     )
 
 
+# Parses `[eE][+-]digits` at `pos`, which must be at the `e`. `pos` ends
+# after the digits.
+@inline(.always)
+def _parse_exponent(
+    text: StringSpan, bytes: ImmSpan[Byte, _], mut pos: Int
+) raises -> Int:
+    comptime ord_0 = Byte(ord("0"))
+    comptime ord_9 = Byte(ord("9"))
+    comptime ord_minus = Byte(ord("-"))
+    comptime ord_plus = Byte(ord("+"))
+    var ptr = bytes.unsafe_ptr()
+    var end = len(bytes)
+    pos += 1
+    var negative = False
+    if pos < end and (
+        ptr[unsafe_offset=pos] == ord_plus
+        or ptr[unsafe_offset=pos] == ord_minus
+    ):
+        negative = ptr[unsafe_offset=pos] == ord_minus
+        pos += 1
+    if pos >= end:
+        raise Error(t"Invalid character(s) in the number: '{text}'")
+    var value = 0
+    while pos < end:
+        var byte = ptr[unsafe_offset=pos]
+        if byte < ord_0 or byte > ord_9:
+            raise Error(t"Invalid character(s) in the number: '{text}'")
+        if value < 100000:
+            value = value * 10 + Int(byte - ord_0)
+        pos += 1
+    return -value if negative else value
+
+
+def _parse_decimal_text(text: StringSpan) raises -> Float64:
+    comptime ord_0 = Byte(ord("0"))
+    comptime ord_9 = Byte(ord("9"))
+    comptime ord_dot = Byte(ord("."))
+    comptime ord_e = Byte(ord("e"))
+    comptime ord_E = Byte(ord("E"))
+
+    var bytes = text.as_bytes()
+    var end = len(bytes)
+    var ptr = bytes.unsafe_ptr()
+    if end == 0 or not (
+        _is_digit(ptr[unsafe_offset=0]) or ptr[unsafe_offset=0] == ord_dot
+    ):
+        raise Error(
+            (
+                t"The first character of '{text}' should be a digit or dot to"
+                t" convert it to a float."
+            ),
+        )
+    var last = ptr[unsafe_offset=end - 1]
+    if not (_is_digit(last) or last == ord_dot):
+        raise Error(
+            "The last character of '",
+            text,
+            "' should be a digit or dot to convert it to a float.",
+        )
+    var parts = DecimalParts()
+    var pos = 0
+    var digits = parts.scan_digits(bytes, pos, False)
+    if pos < end and ptr[unsafe_offset=pos] == ord_dot:
+        pos += 1
+        digits += parts.scan_digits(bytes, pos, True)
+    if digits == 0:
+        raise Error(t"Invalid character(s) in the number: '{text}'")
+    var mantissa_end = pos
+    var explicit_exponent = 0
+    if pos < end:
+        if not (
+            ptr[unsafe_offset=pos] == ord_e or ptr[unsafe_offset=pos] == ord_E
+        ):
+            raise Error(t"Invalid character(s) in the number: '{text}'")
+        explicit_exponent = _parse_exponent(text, bytes, pos)
+    return decimal_to_float64(parts, explicit_exponent, bytes[0:mantissa_end])
+
+
 def _atof(x: StringSlice) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
@@ -378,15 +701,7 @@ def _atof(x: StringSlice) raises -> Float64:
         return FloatLiteral.nan
     elif _is_inf(stripped):
         return FloatLiteral.infinity * sign
-    var w_and_q: Tuple[UInt64, Int64]
     try:
-        w_and_q = _get_w_and_q_from_float_string(stripped)
+        return _parse_decimal_text(stripped) * sign
     except e:
         raise Error("String is not convertible to float: ", repr(x), ". ", e)
-    var w = w_and_q[0]
-    var q = w_and_q[1]
-
-    if can_use_clinger_fast_path(w, q):
-        return clinger_fast_path(w, q) * sign
-    else:
-        return lemire_algorithm(w, q) * sign
