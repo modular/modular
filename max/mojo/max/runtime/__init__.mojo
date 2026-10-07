@@ -10,8 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(MSTDL-2788): Placeholder package docstring. Without a package index here,
-# the API reference publishes no page for this package and lists its subpackages
-# as though they were top-level. Replace this docstring with the one from
-# `std/runtime/__init__.mojo` once the rest of that package moves.
-"""Provides runtime services for async execution and program tracing."""
+"""Provides Mojo access to the runtime that schedules and instruments kernels.
+
+MAX kernels execute under the C++ AsyncRT runtime, and these modules are the
+thin Mojo surface onto it: tracing spans and profiling levels that compile away
+when profiling is disabled, queries for the parallelism and task assignment of
+the device context a kernel was scheduled on, and an owning handle that keeps a
+device allocation alive for as long as the runtime still refers to it.
+
+Reach for `tracing` when instrumenting a kernel, and `asyncrt` when work
+partitioning depends on the worker count of the context it runs on. Despite the
+`asyncrt` name, nothing here is an async programming interface: there is no
+coroutine, task-spawning, or future API.
+"""
