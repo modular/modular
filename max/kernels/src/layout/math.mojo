@@ -33,54 +33,6 @@ from layout import (
 
 @inline(.always)
 def outer_product_acc(
-    res: LayoutTensor[mut=True, ...],
-    lhs: LayoutTensor,
-    rhs: LayoutTensor,
-):
-    """Updates result tensor with the outer product of two vectors.
-
-    Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
-    `res` is a matrix.
-
-    Args:
-        res: The result matrix to accumulate into, shape (M, N).
-        lhs: The left-hand side vector, shape (M,).
-        rhs: The right-hand side vector, shape (N,).
-
-    Constraints:
-
-        All tensors must have statically known shapes.
-        `res` must be rank 2.
-        `lhs` and `rhs` must be rank 1.
-        `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
-    """
-
-    comptime assert (
-        res.layout.known_shape()
-        and lhs.layout.known_shape()
-        and rhs.layout.known_shape()
-    ), "outer_product_acc expects inputs with statically known shapes"
-    comptime assert res.rank == 2, "Only rank 2 res is allowed."
-    comptime assert lhs.rank == 1, "Only rank 1 lhs is allowed."
-    comptime assert rhs.rank == 1, "Only rank 1 rhs is allowed."
-
-    comptime dtype = res.dtype
-
-    comptime M = res.shape[0]()
-    comptime N = res.shape[1]()
-
-    comptime assert lhs.shape[0]() == M, "lhs shape mismatch"
-    comptime assert rhs.shape[0]() == N, "rhs shape mismatch"
-
-    comptime for i in range(M):
-        comptime for j in range(N):
-            res[i, j] += rebind[res.element_type](
-                lhs[i].cast[dtype]()
-            ) * rebind[res.element_type](rhs[j].cast[dtype]())
-
-
-@inline(.always)
-def outer_product_acc(
     res: TileTensor[mut=True, ...],
     lhs: TileTensor,
     rhs: TileTensor,

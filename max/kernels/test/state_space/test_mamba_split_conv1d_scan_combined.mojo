@@ -15,8 +15,6 @@ from std.math import ceildiv, exp, exp2, log, rsqrt
 
 from layout import (
     Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,

@@ -39,10 +39,7 @@ from max.gpu.host import DeviceContext
 from std.math import sqrt
 
 from layout import (
-    UNKNOWN_VALUE,
     Idx,
-    Layout,
-    LayoutTensor,
     TileTensor,
     row_major,
 )

@@ -744,6 +744,9 @@ def _copy_frag_to_smem[
         ]()
 
 
+# Legacy LayoutTensor-overload retained: its callers (mha.mojo, mla.mojo,
+# p-fragment scatter tests) still pass LayoutTensor register views, and the
+# shared-memory operand has no TileTensor iterator equivalent yet.
 @inline(.always)
 def _copy_frag_to_smem[
     BM: Int,
@@ -760,6 +763,8 @@ def _copy_frag_to_smem[
     type1: DType,
     layout1: Layout,
 ](
+    # Shared-memory iterator params stay legacy: there is no TileTensor
+    # iterator equivalent yet (repo-wide migration tracking).
     p_smem_iter: LayoutTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],

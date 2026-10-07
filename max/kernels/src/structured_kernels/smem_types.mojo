@@ -10,29 +10,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared memory type aliases for LayoutTensor-based GPU kernels.
+"""Shared memory type aliases for GPU kernels.
 
 This module defines the core SMEM type aliases used across SM90, SM100, and
 other GPU kernel implementations. They depend only on `layout` and stdlib,
 making them safe to import without pulling in higher-level kernel packages.
 
 Types:
-- SMemTile: Shared memory tile (LayoutTensor alias)
-- RegTile: Register tile (LayoutTensor alias)
+- SMemTile: Shared memory tile
+- RegTile: Register tile
 - SMemBarrier: Pointer to shared memory barrier
 - PipelineBarrier: Array of pipeline barriers
-- SMemTileIter: Iterator over shared memory tiles
 - SMemTileArray: Array of shared memory tiles
 - SMemArray: Generic shared memory array
 - SMemPtr: Typed pointer into shared memory
 - eval: Compile-time expression evaluator
+
+Retained legacy: SMemTile and RegTile are still backed by the legacy tile
+type. Their consumers across linalg/, nn/attention/, and test/ construct
+them from raw pointers and pass them to legacy-only APIs, and many of those
+files are owned by other migration waves, so the aliases cannot be flipped
+to TileTensor until those consumers migrate. New code should prefer the
+native TileTensor-based SMemTile in structured_kernels.tile_types.
 """
 
 from std.sys import align_of, size_of
 
 from layout import Layout, LayoutTensor, lt_to_tt
 from layout.int_tuple import _get_index_type, _get_layout_type
-from layout.layout_tensor import LayoutTensorIter
 from layout.tma_async import SharedMemBarrier
 from std.memory import unsafe_stack_allocation
 
@@ -92,7 +97,7 @@ def reg_tile_to_tile_tensor[
     """Return a TileTensor view of a register tile.
 
     Kept here so kernels that have moved to TileTensor do not need to
-    reference the legacy LayoutTensor conversion helper directly.
+    reference the legacy conversion helper directly.
     """
     return lt_to_tt(tile)
 
@@ -106,17 +111,6 @@ comptime PipelineBarrier[num_pipeline_stages: Int] = SMemArray[
     SharedMemBarrier, num_pipeline_stages
 ]
 """Type alias for shared memory pipeline barrier array."""
-
-comptime SMemTileIter[
-    dtype: DType,
-    layout: Layout,
-] = LayoutTensorIter[
-    dtype,
-    layout,
-    MutAnyOrigin,
-    address_space=.SHARED,
-    alignment=128,
-]
 
 
 # TODO: This type should correctly propagate mutability.

@@ -827,13 +827,11 @@ def msa_attention_dispatch[
         return
 
     # Non-owning DeviceBuffer views over the graph tensors.
-    var out_lt = output.to_layout_tensor()
-    var q_lt = q.to_layout_tensor()
     var output_buf = DeviceBuffer[output.dtype](
-        ctx, out_lt.ptr, num_rows * num_heads * head_dim, owning=False
+        ctx, output.unsafe_ptr(), num_rows * num_heads * head_dim, owning=False
     )
     var q_buf = DeviceBuffer[q_type](
-        ctx, q_lt.ptr, num_rows * num_heads * head_dim, owning=False
+        ctx, q.unsafe_ptr(), num_rows * num_heads * head_dim, owning=False
     )
 
     # Route purely on the runtime query length.  Both architectures share
@@ -843,16 +841,15 @@ def msa_attention_dispatch[
     if max_q_len == 1:
         var topk_tokens = topk * page_size
 
-        var iro_lt = input_row_offsets.to_layout_tensor()
         var valid_length = DeviceBuffer[.uint32](
             ctx,
-            iro_lt.ptr,
+            input_row_offsets.unsafe_ptr(),
             Int(input_row_offsets.dim_size[0]()),
             owning=False,
         )
         var d_indices_tt = TileTensor(
-            d_indices.to_layout_tensor().ptr,
-            row_major(d_indices.to_layout_tensor().size()),
+            d_indices.unsafe_ptr(),
+            row_major(d_indices.size()),
         ).as_imm()
 
         # `np` is owned by the decode entry (computed from batch_size,
@@ -936,16 +933,15 @@ def msa_attention_dispatch[
         # Both architecture entries feed `batch * spec_max_seq_len` to the
         # decode partition heuristic and key partials on the packed query
         # row, so the shared combine writes ragged output directly.
-        var iro_lt = input_row_offsets.to_layout_tensor()
         var valid_length = DeviceBuffer[.uint32](
             ctx,
-            iro_lt.ptr,
+            input_row_offsets.unsafe_ptr(),
             Int(input_row_offsets.dim_size[0]()),
             owning=False,
         )
         var d_indices_tt = TileTensor(
-            d_indices.to_layout_tensor().ptr,
-            row_major(d_indices.to_layout_tensor().size()),
+            d_indices.unsafe_ptr(),
+            row_major(d_indices.size()),
         ).as_imm()
         var topk_tokens = topk * page_size
         var batch = Int(input_row_offsets.dim_size[0]()) - 1
@@ -1020,9 +1016,11 @@ def msa_attention_dispatch[
 
         var lse_buf = ctx.enqueue_create_buffer[.float32](num_rows * num_heads)
 
-        var d_lt = d_indices.to_layout_tensor()
         var d_indices_buf = DeviceBuffer[.int32](
-            ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
+            ctx,
+            d_indices.unsafe_ptr(),
+            k_num_heads * num_rows * topk,
+            owning=False,
         )
 
         var plan = msa_sm100_prefill_plan[
@@ -1468,33 +1466,35 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
             if num_rows == 0:
                 return
 
-            var out_lt = output.to_layout_tensor()
-            var scales_lt = output_scales.to_layout_tensor()
-            var q_lt = q.to_layout_tensor()
             var mx_output_buf = DeviceBuffer[.float8_e4m3fn](
-                ctx, out_lt.ptr, num_rows * row_width, owning=False
+                ctx,
+                output.unsafe_ptr(),
+                num_rows * row_width,
+                owning=False,
             )
             var mx_scales_buf = DeviceBuffer[.float8_e8m0fnu](
-                ctx, scales_lt.ptr, num_rows * scale_cols, owning=False
+                ctx,
+                output_scales.unsafe_ptr(),
+                num_rows * scale_cols,
+                owning=False,
             )
             var q_buf = DeviceBuffer[kv_type](
-                ctx, q_lt.ptr, num_rows * row_width, owning=False
+                ctx, q.unsafe_ptr(), num_rows * row_width, owning=False
             )
 
             var max_q_len = Int(kv_collection.max_seq_length)
 
             if max_q_len == 1:
                 var topk_tokens = topk * page_size
-                var iro_lt = input_row_offsets.to_layout_tensor()
                 var valid_length = DeviceBuffer[.uint32](
                     ctx,
-                    iro_lt.ptr,
+                    input_row_offsets.unsafe_ptr(),
                     Int(input_row_offsets.dim_size[0]()),
                     owning=False,
                 )
                 var d_indices_tt = TileTensor(
-                    d_indices.to_layout_tensor().ptr,
-                    row_major(d_indices.to_layout_tensor().size()),
+                    d_indices.unsafe_ptr(),
+                    row_major(d_indices.size()),
                 ).as_imm()
 
                 msa_amd_decode_dispatch[
@@ -1529,16 +1529,15 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                     mx_scales=mx_scales_buf,
                 )
             elif 1 < max_q_len <= MAX_SPEC_DRAFT:
-                var iro_lt = input_row_offsets.to_layout_tensor()
                 var valid_length = DeviceBuffer[.uint32](
                     ctx,
-                    iro_lt.ptr,
+                    input_row_offsets.unsafe_ptr(),
                     Int(input_row_offsets.dim_size[0]()),
                     owning=False,
                 )
                 var d_indices_tt = TileTensor(
-                    d_indices.to_layout_tensor().ptr,
-                    row_major(d_indices.to_layout_tensor().size()),
+                    d_indices.unsafe_ptr(),
+                    row_major(d_indices.size()),
                 ).as_imm()
                 var topk_tokens = topk * page_size
                 var batch = Int(input_row_offsets.dim_size[0]()) - 1
@@ -1580,9 +1579,11 @@ struct Struct_msa_attention_ragged_paged_mxfp8:
                     num_rows * num_heads
                 )
 
-                var d_lt = d_indices.to_layout_tensor()
                 var d_indices_buf = DeviceBuffer[.int32](
-                    ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
+                    ctx,
+                    d_indices.unsafe_ptr(),
+                    k_num_heads * num_rows * topk,
+                    owning=False,
                 )
 
                 # Prefill reduces into BF16 first; only this route pays for
@@ -1776,9 +1777,6 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
             if num_rows == 0:
                 return
 
-            var out_lt = output.to_layout_tensor()
-            var scales_lt = output_scales.to_layout_tensor()
-            var q_lt = q.to_layout_tensor()
             comptime assert FP6_FORMAT in (
                 0,
                 1,
@@ -1791,29 +1789,34 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
                 row_width % 4 == 0
             ), "a packed FP6 row must be a whole number of four-code groups"
             var mx_output_buf = DeviceBuffer[.uint8](
-                ctx, out_lt.ptr, num_rows * packed_row_width, owning=False
+                ctx,
+                output.unsafe_ptr(),
+                num_rows * packed_row_width,
+                owning=False,
             )
             var mx_scales_buf = DeviceBuffer[.float8_e8m0fnu](
-                ctx, scales_lt.ptr, num_rows * scale_cols, owning=False
+                ctx,
+                output_scales.unsafe_ptr(),
+                num_rows * scale_cols,
+                owning=False,
             )
             var q_buf = DeviceBuffer[kv_type](
-                ctx, q_lt.ptr, num_rows * row_width, owning=False
+                ctx, q.unsafe_ptr(), num_rows * row_width, owning=False
             )
 
             var max_q_len = Int(kv_collection.max_seq_length)
 
             if max_q_len == 1:
                 var topk_tokens = topk * page_size
-                var iro_lt = input_row_offsets.to_layout_tensor()
                 var valid_length = DeviceBuffer[.uint32](
                     ctx,
-                    iro_lt.ptr,
+                    input_row_offsets.unsafe_ptr(),
                     Int(input_row_offsets.dim_size[0]()),
                     owning=False,
                 )
                 var d_indices_tt = TileTensor(
-                    d_indices.to_layout_tensor().ptr,
-                    row_major(d_indices.to_layout_tensor().size()),
+                    d_indices.unsafe_ptr(),
+                    row_major(d_indices.size()),
                 ).as_imm()
 
                 msa_amd_decode_dispatch[
@@ -1845,16 +1848,15 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
                     mx_scales=mx_scales_buf,
                 )
             elif 1 < max_q_len <= MAX_SPEC_DRAFT:
-                var iro_lt = input_row_offsets.to_layout_tensor()
                 var valid_length = DeviceBuffer[.uint32](
                     ctx,
-                    iro_lt.ptr,
+                    input_row_offsets.unsafe_ptr(),
                     Int(input_row_offsets.dim_size[0]()),
                     owning=False,
                 )
                 var d_indices_tt = TileTensor(
-                    d_indices.to_layout_tensor().ptr,
-                    row_major(d_indices.to_layout_tensor().size()),
+                    d_indices.unsafe_ptr(),
+                    row_major(d_indices.size()),
                 ).as_imm()
                 var topk_tokens = topk * page_size
                 var batch = Int(input_row_offsets.dim_size[0]()) - 1
@@ -1898,9 +1900,11 @@ struct Struct_msa_attention_ragged_paged_mxfp6:
                     num_rows * num_heads
                 )
 
-                var d_lt = d_indices.to_layout_tensor()
                 var d_indices_buf = DeviceBuffer[.int32](
-                    ctx, d_lt.ptr, k_num_heads * num_rows * topk, owning=False
+                    ctx,
+                    d_indices.unsafe_ptr(),
+                    k_num_heads * num_rows * topk,
+                    owning=False,
                 )
 
                 var bf16_scratch = ctx.enqueue_create_buffer[.bfloat16](

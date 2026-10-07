@@ -307,6 +307,12 @@ def multistage_mma[
         transpose_b or b_type.is_half_float()
     ) and is_nvidia_gpu()
 
+    # Retained legacy: the multistage pipeline is iterator-driven and no
+    # native TileTensor iterator exists, so the copy helpers below consume
+    # iterator-produced legacy tiles and the legacy masked-copy bound (which
+    # falls back to runtime row strides). The tile_io masked copier derives
+    # its bound from `static_stride[0]` alone, which cannot express the
+    # runtime-stride operands these tiles carry.
     @inline(.always)
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)

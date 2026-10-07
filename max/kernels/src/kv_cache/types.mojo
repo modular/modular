@@ -37,12 +37,10 @@ from layout import (
     CoordLike,
     IntTuple,
     Layout,
-    LayoutTensor,
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
     coord,
-    lt_to_tt,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -4101,35 +4099,6 @@ struct ContinuousBatchingKVCacheCollection[
 
     def __init__(
         out self,
-        blocks: LayoutTensor[
-            Self.dtype, Layout.row_major[6](), Self.blocks_origin
-        ],
-        cache_lengths: LayoutTensor[
-            .uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
-        ],
-        lookup_table: LayoutTensor[
-            .uint32, Layout(UNKNOWN_VALUE), Self.lookup_table_origin
-        ],
-        max_seq_length: UInt32,
-        max_cache_length: UInt32,
-    ):
-        """Construct from LayoutTensor params (MOGG boundary)."""
-        comptime assert blocks.rank == 6
-        self.blocks = lt_to_tt[ResultLayout=Self.blocks_tt_layout](blocks)
-        self.cache_lengths = lt_to_tt[
-            ResultLayout=Self.CacheType.cache_lengths_tt_layout
-        ](cache_lengths)
-        self.lookup_table = lt_to_tt[
-            ResultLayout=Self.CacheType.lookup_table_tt_layout
-        ](lookup_table)
-        self.max_seq_length = max_seq_length
-        self.max_cache_length = max_cache_length
-        self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, [1, 2]](self.blocks)
-        )
-
-    def __init__(
-        out self,
         blocks: TileTensor[
             Self.dtype, _, Self.blocks_origin, linear_idx_type=_
         ],
@@ -4361,101 +4330,6 @@ struct PagedKVCacheCollection[
     var max_cache_length: UInt32
     var kv_cache_dynamic_shape: DynamicCoord[.int64, 4]
     var kv_cache_dynamic_strides: DynamicCoord[.int64, 4]
-
-    def __init__[
-        scales_dtype: DType = Self.scale_dtype
-    ](
-        out self,
-        blocks: LayoutTensor[
-            Self.dtype, Layout.row_major[6](), Self.blocks_origin
-        ],
-        cache_lengths: LayoutTensor[
-            .uint32, Layout(UNKNOWN_VALUE), Self.cache_lengths_origin
-        ],
-        lookup_table: LayoutTensor[
-            .uint32, Layout.row_major[2](), Self.lookup_table_origin
-        ],
-        max_seq_length: UInt32,
-        max_cache_length: UInt32,
-        # `scales_dtype` is inferred from the `scales` argument's element type;
-        # it is definitionally equal to `Self.scale_dtype` but the compiler
-        # cannot fold the derived alias through the arg->param conversion, so
-        # the free parameter lets any caller pass a real scales tensor and the
-        # body rebinds to the (equal) field type. Remove once MOCO-4337 is
-        # fixed.
-        scales: OptionalReg[
-            LayoutTensor[
-                scales_dtype, Layout.row_major[6](), Self.scales_origin
-            ]
-        ] = OptionalReg[
-            LayoutTensor[
-                scales_dtype, Layout.row_major[6](), MutUntrackedOrigin
-            ]
-        ](),
-        # Distinct LUT for scales pages. When absent, scales reuse
-        # `lookup_table` (values/scales share one block-id space today).
-        scales_lookup_table: OptionalReg[
-            LayoutTensor[
-                .uint32, Layout.row_major[2](), Self.lookup_table_origin
-            ]
-        ] = None,
-        # Distance in elements from one page to the next, or -1 for the packed
-        # distance implied by `blocks`. See the field of the same name.
-        page_stride: Int = -1,
-        # The same distance for `scales`, which is its own pool leaf and so
-        # pads independently of the values.
-        scales_page_stride: Int = -1,
-    ):
-        """Construct from LayoutTensor params (MOGG boundary)."""
-        comptime assert blocks.rank == 6
-        comptime assert (
-            scales_dtype == Self.scale_dtype
-        ), "scales element dtype must match the collection's scale_dtype"
-        self.blocks = lt_to_tt[ResultLayout=Self.blocks_tt_layout](blocks)
-        self.cache_lengths = lt_to_tt[
-            ResultLayout=Self.CacheType.cache_lengths_tt_layout
-        ](cache_lengths)
-        self.lookup_table = lt_to_tt[
-            ResultLayout=Self.CacheType.lookup_table_tt_layout
-        ](lookup_table)
-        # Scales resolve their page through their own LUT when one is provided;
-        # otherwise they reuse the values LUT (shared block-id space).
-        if scales_lookup_table:
-            self.scales_lookup_table = lt_to_tt[
-                ResultLayout=Self.CacheType.lookup_table_tt_layout
-            ](scales_lookup_table.value())
-        else:
-            self.scales_lookup_table = self.lookup_table
-        self.max_seq_length = max_seq_length
-        self.max_cache_length = max_cache_length
-        self.kv_cache_dynamic_shape, self.kv_cache_dynamic_strides = (
-            _compute_kv_cache_dynamic_shape_strides[4, [1, 2]](
-                self.blocks, page_stride
-            )
-        )
-        if scales is not None:
-            # `scales_dtype == Self.scale_dtype` (asserted above); rebind the
-            # syntactically-distinct-but-equal element type for the field store.
-            self.scales = lt_to_tt[ResultLayout=Self.scales_tt_layout](
-                rebind[
-                    LayoutTensor[
-                        Self.scale_dtype,
-                        Layout.row_major[6](),
-                        Self.scales_origin,
-                    ]
-                ](scales.value())
-            )
-            self.kv_cache_scales_dynamic_shape, self.kv_cache_scales_dynamic_strides = _compute_kv_cache_dynamic_shape_strides[
-                4, [1, 2]
-            ](
-                self.scales.value(), scales_page_stride
-            )
-        else:
-            self.scales = None
-            self.kv_cache_scales_dynamic_shape = DynamicCoord[.int64, 4]()
-            self.kv_cache_scales_dynamic_strides = DynamicCoord[
-                DType.int64, 4
-            ]()
 
     def __init__(
         out self,

@@ -36,7 +36,7 @@ the wrong kv value (or 0 from uninitialized output) and the test fails.
 from max.gpu.host import DeviceContext
 from std.testing import assert_almost_equal
 
-from layout import LayoutTensor, TileTensor
+from layout import TileTensor
 from layout.coord import Coord, Idx
 from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major

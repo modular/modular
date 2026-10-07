@@ -80,7 +80,6 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
     coord_to_index_list,
 )
@@ -3203,6 +3202,9 @@ def mha_single_batch[
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
 
+        # Retained legacy: both the input (a legacy iterator deref) and the
+        # consumer (`copy_dram_to_sram_async`) are legacy-only, so a native
+        # slice view would just round-trip.
         @inline(.always)
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
@@ -3766,22 +3768,16 @@ def mha_single_batch_pipelined[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation[stack_alignment=p_frag_align]()
-
+    var p_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
+    var output_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0)
+    # MMA and softmax helpers retain their legacy scalar views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation[stack_alignment=p_frag_align]()
-        .fill(0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Rowwise max and sum for online softmax
@@ -5023,6 +5019,8 @@ def mha_decoding_single_batch[
         BK // simd_size,
     )
 
+    # Retained legacy: both the input (a legacy iterator deref) and the
+    # consumer (`copy_dram_to_sram_async`) are legacy-only.
     @inline(.always)
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int
@@ -5631,22 +5629,16 @@ def mha_decoding_single_batch_pipelined[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation[stack_alignment=p_frag_align]()
-
+    var p_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
+    var output_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0.0)
+    # MMA and softmax helpers retain their legacy scalar views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation[stack_alignment=p_frag_align]()
-        .fill(0.0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Account for group query.
@@ -5840,12 +5832,6 @@ def mha_decoding_single_batch_pipelined[
 
         # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
         # G <= 8 typically holds
-        var output_reg_vecs = output_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
-        var p_reg_vecs = p_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
 
         _online_softmax_iter_for_mma_output[
             accum_type,
@@ -6173,58 +6159,6 @@ comptime _NAIVE_BMM_BLOCK_TUPLE = StaticTuple[Int32, 1](
         * _NAIVE_BMM_BLOCK_DIM.z()
     )
 )
-
-
-def mha_gpu_naive[
-    output_type: DType,
-    k_t: MHAOperand,
-    v_t: MHAOperand,
-    mask_t: MHAMask,
-    //,
-    ragged: Bool = False,
-    sink: Bool = False,
-    _use_valid_length: Bool = False,
-    _is_cache_length_accurate: Bool = False,
-](
-    q: LayoutTensor[mut=False, address_space=.GENERIC, ...],
-    k: k_t,
-    v: v_t,
-    mask_functor: mask_t,
-    output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: OptionalReg[ImmutTileTensor1D[.uint32]],
-    scale: Float32,
-    batch_size: Int,
-    max_prompt_len: Int,
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
-    ctx: DeviceContext,
-    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
-) raises:
-    """Adapts legacy query and output views to native tensor dispatch."""
-    mha_gpu_naive[
-        ragged=ragged,
-        sink=sink,
-        _use_valid_length=_use_valid_length,
-        _is_cache_length_accurate=_is_cache_length_accurate,
-    ](
-        lt_to_tt(q),
-        k,
-        v,
-        mask_functor,
-        lt_to_tt(output),
-        valid_length,
-        scale,
-        batch_size,
-        max_prompt_len,
-        max_cache_size,
-        num_heads,
-        depth,
-        group,
-        ctx,
-        sink_weights,
-    )
 
 
 def mha_gpu_naive[

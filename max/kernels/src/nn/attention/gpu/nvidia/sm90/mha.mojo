@@ -1437,6 +1437,8 @@ def _mha_sm90[
             (kv_smem + UInt32(sz) * idx).as_unsafe_any_origin(), k_smem_layout
         )
 
+    # Legacy B view for the register-A WGMMA overload (no TileTensor variant
+    # of that overload exists yet).
     @inline(.always)
     def v_tile(
         idx: UInt32,
@@ -1560,6 +1562,9 @@ def _mha_sm90[
             address_space=.LOCAL,
             alignment=align_of[accum_type](),
         ](o_reg_tile_layout)
+        # Legacy register view: C operand of the register-A WGMMA overload,
+        # input to `output_reg_to_smem`, and `warpgroup_fence`; its storage
+        # is native (`output_reg_buffer` above).
         var output_reg_tile = LayoutTensor[
             accum_type,
             Layout.row_major(num_m_mmas * num_n_mmas, o_frag_size),
@@ -1579,6 +1584,8 @@ def _mha_sm90[
             p_frag_buffer.layout,
         ).to_layout_tensor()
 
+        # Legacy element-layout view: `_apply_mask` and the frozen softmax
+        # reductions require LayoutTensor params.
         @inline(.always)
         def vectorize_p_reg_tile(
             out result: LayoutTensor[
@@ -1591,6 +1598,8 @@ def _mha_sm90[
         ) {imm}:
             result = {p_reg_legacy.ptr.unsafe_origin_cast[MutAnyOrigin]()}
 
+        # Legacy element-layout view: `scale_output`/`write_output` scalar
+        # math and `output_reg_to_smem` require LayoutTensor params.
         @inline(.always)
         def vectorize_o_reg_tile(
             out result: LayoutTensor[

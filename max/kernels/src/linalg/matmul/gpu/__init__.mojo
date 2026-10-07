@@ -38,9 +38,7 @@ from max.gpu.host.info import A100, B200, H100, MI355X, GPUInfo
 from layout import (
     Coord,
     Idx,
-    LayoutTensor,
     DefaultEngine,
-    RuntimeLayout,
     TensorLayout,
     TensorEngine,
     TileTensor,
@@ -155,17 +153,17 @@ def matmul_kernel[
     var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
-    comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    comptime b_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    comptime c_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
-    var a = LayoutTensor[a_type, a_layout, ImmutAnyOrigin](
-        a_ptr, RuntimeLayout[a_layout].row_major(Index(m, k))
+    var a = TileTensor(
+        a_ptr,
+        row_major(m, k),
     )
-    var b = LayoutTensor[b_type, b_layout, ImmutAnyOrigin](
-        b_ptr, RuntimeLayout[b_layout].row_major(Index(k, n))
+    var b = TileTensor(
+        b_ptr,
+        row_major(k, n),
     )
-    var c = LayoutTensor[c_type, c_layout, MutAnyOrigin](
-        c_ptr, RuntimeLayout[c_layout].row_major(Index(m, n))
+    var c = TileTensor(
+        c_ptr,
+        row_major(m, n),
     )
 
     # Allocate A, B tile in shared memory.
@@ -2287,8 +2285,10 @@ def multistage_gemm[
     b: TileTensor[mut=False, b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    """TileTensor overload of `multistage_gemm`. Converts to LayoutTensor and
-    dispatches to a GEMM kernel.
+    """TileTensor overload of `multistage_gemm`. Dispatches to a GEMM kernel
+    over the native TileTensor operands; the device-side pipeline bridges to
+    legacy `LayoutTensorIter` views internally (the multistage pipeline is
+    iterator-driven and has no TileTensor equivalent yet).
 
     Parameters:
         c_type: DType of the output tile `c` elements (inferred).
@@ -2309,16 +2309,8 @@ def multistage_gemm[
             is set.
         ctx: Device context used to enqueue the kernel.
     """
-    var tensor_c = c.to_layout_tensor()
-    var tensor_a = a.to_layout_tensor()
-    var tensor_b = b.to_layout_tensor()
-    comptime a_layout = tensor_a.layout
-    comptime b_layout = tensor_b.layout
-    _ = tensor_a
-    _ = tensor_b
-
-    var M = tensor_c.dim[0]()
-    var N = tensor_c.dim[1]()
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
 
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)

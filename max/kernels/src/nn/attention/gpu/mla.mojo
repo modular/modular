@@ -2161,24 +2161,19 @@ def mla_decoding_single_batch[
     comptime p_frag_size = frag_size[2]
     comptime p_frag_simdwidth = p_frag_size // 2
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
+    var p_reg_tile_native = tt_stack_allocation[
+        accum_type, address_space=.LOCAL
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
 
     comptime num_output_rows = num_m_mmas * (WN_O // MMA_N)  # num_n_mmas
     comptime num_output_rows_full = num_output_rows
+    var output_reg_tile_native = tt_stack_allocation[
+        accum_type, address_space=.LOCAL
+    ](row_major[num_output_rows_full, p_frag_size]()).fill(0)
+    # MMA, softmax and copy helpers retain their legacy LayoutTensor views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_output_rows_full, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0.0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Rowwise max and sum for online softmax
@@ -3897,22 +3892,17 @@ def mla_prefill_single_batch[
     comptime p_frag_size = frag_size[2]
     comptime p_frag_simdwidth = p_frag_size // 2
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
+    var p_reg_tile_native = tt_stack_allocation[
+        accum_type, address_space=.LOCAL
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
 
+    var output_reg_tile_native = tt_stack_allocation[
+        accum_type, address_space=.LOCAL
+    ](row_major[num_m_mmas * num_n_mmas_output, p_frag_size]()).fill(0)
+    # MMA, softmax and copy helpers retain their legacy LayoutTensor views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Rowwise max and sum for online softmax
@@ -4111,6 +4101,9 @@ def mla_prefill_single_batch[
         _ = p_reg_tile.fill(0)
 
         @inline(.always)
+        # Retained on LayoutTensor: it rewraps an iterator view's raw pointer
+        # with a runtime row bound, and its result feeds
+        # copy_dram_to_sram_async, which only accepts LayoutTensor operands.
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ) {imm}:

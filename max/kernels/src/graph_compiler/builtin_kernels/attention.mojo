@@ -2789,7 +2789,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
         )
 
         # Get the q_scales raw pointer for per-token Q scaling.
-        var q_scale_ptr = q_scales.to_layout_tensor().ptr
+        var q_scale_ptr = q_scales.unsafe_ptr()
 
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -3291,16 +3291,16 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         var num_indices_sparse = sparse_indices.size()
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.to_layout_tensor().ptr
+            topk_lengths.unsafe_ptr()
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
         # `sparse_indices` still holds the logical key positions here; the
         # remap below produces the physical gather buffer and drops them.
         # Capture them for position-based causal masking (see
         # mla_decode_utils.mojo).
-        var logical_indices_ptr = sparse_indices.to_layout_tensor().ptr
+        var logical_indices_ptr = sparse_indices.unsafe_ptr()
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8.sparse",
@@ -3593,10 +3593,10 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         var num_indices_sparse = sparse_indices.size()
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.to_layout_tensor().ptr
+            topk_lengths.unsafe_ptr()
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         with Trace[TraceLevel.OP, target=target](
@@ -3842,10 +3842,10 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         var num_indices_sparse = sparse_indices.size()
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.to_layout_tensor().ptr
+            topk_lengths.unsafe_ptr()
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         with Trace[TraceLevel.OP, target=target](
@@ -3963,7 +3963,7 @@ struct Struct_mla_prefill_sparse_paged:
         var num_indices_sparse = sparse_indices.size()
 
         var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
@@ -4002,7 +4002,7 @@ struct Struct_mla_prefill_sparse_paged:
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.to_layout_tensor().ptr.bitcast[UInt32](),
+                topk_lengths.unsafe_ptr().bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 
@@ -4075,11 +4075,11 @@ struct Struct_mla_prefill_sparse_paged_fp8:
         var num_indices_sparse = sparse_indices.size()
 
         var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         var scales_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
-            kv_scales.to_layout_tensor().ptr
+            kv_scales.unsafe_ptr()
         )
 
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
@@ -4107,7 +4107,7 @@ struct Struct_mla_prefill_sparse_paged_fp8:
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.to_layout_tensor().ptr.bitcast[UInt32](),
+                topk_lengths.unsafe_ptr().bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 
@@ -4294,10 +4294,10 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         var num_indices_sparse = sparse_indices.size()
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.to_layout_tensor().ptr
+            topk_lengths.unsafe_ptr()
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         with Trace[TraceLevel.OP, target=target](

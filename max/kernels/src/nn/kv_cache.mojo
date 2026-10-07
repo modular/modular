@@ -3138,10 +3138,11 @@ def print_kv_cache_paged_generic_gpu[
     )
 
     # The host copies are `TileTensor`s (from `OriginCastType`), so this picks
-    # the `TileTensor` constructor, whose `scales` default is a bare `None` that
-    # cannot pin `scales_origin`. Thread the copies' origins explicitly and pin
-    # `scales_origin` to the no-scales default. (Binding only the leading params
-    # would infer everything for `LayoutTensor` inputs, but not here.)
+    # the `TileTensor` constructor, whose `scales` default is a bare `None`
+    # that cannot pin `scales_origin`. Thread the copies' origins explicitly
+    # and pin `scales_origin` to the no-scales default; binding only the
+    # leading params leaves the trailing ones to inference, which cannot
+    # recover the origin of an absent `scales` argument.
     var host_kv_collection = PagedKVCacheCollection[
         dtype,
         kv_params,

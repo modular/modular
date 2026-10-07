@@ -41,11 +41,7 @@ from max.gpu import *
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
@@ -239,38 +235,22 @@ def test[
     )
 
     # BF16 tensors for the naive reference.
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-
     # BF16 K reference device tensor (for mha_gpu_naive)
-    var k_bf16_device = LayoutTensor[output_type, k_layout](
-        k_bf16_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
+    var k_bf16_device = TileTensor(
+        k_bf16_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
 
     # BF16 dequantized Q device tensor for reference (for mha_gpu_naive)
-    comptime q_fp8_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_bf16_dequant_device = LayoutTensor[output_type, q_fp8_layout](
-        q_bf16_dequant_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_fp8_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var q_bf16_dequant_device = TileTensor(
+        q_bf16_dequant_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    # Output ref layout (for mha_gpu_naive)
-    comptime output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, v_depth)
-    )
-    var output_ref_device = LayoutTensor[output_type, output_layout](
-        output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, v_depth)
-        ),
+    # Output ref device tensor (for mha_gpu_naive)
+    var output_ref_device = TileTensor(
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     # ---- Launch the native FP8 kernel via mla_decode_sm100_dispatch ----
@@ -326,33 +306,17 @@ def test[
     # v_depth (512) elements per head since MLA only outputs V's portion.
     print("  Computing GPU naive reference...")
 
-    # Reference output needs full-depth layout for the naive kernel
-    comptime ref_output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
     var ref_full_o_size = batch_size * num_heads * seq_len * depth
     var output_ref_full_device_ptr = ctx.enqueue_create_buffer[output_type](
         ref_full_o_size
     )
-    var output_ref_full_device = LayoutTensor[output_type, ref_output_layout](
-        output_ref_full_device_ptr.unsafe_ptr(),
-        RuntimeLayout[ref_output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref_full_device = TileTensor(
+        output_ref_full_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # Create BF16 K operand for reference
-    var k_bf16_operand = TileTensorMHAOperand(
-        TileTensor(
-            k_bf16_device.ptr.as_unsafe_any_origin(),
-            row_major(
-                Int(batch_size),
-                Int(num_keys),
-                Idx[kv_num_heads],
-                Idx[depth],
-            ),
-        )
-    )
+    var k_bf16_operand = TileTensorMHAOperand(k_bf16_device)
 
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
         mha_gpu_naive[_is_cache_length_accurate=True](
@@ -763,34 +727,19 @@ def test_sw[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-    var k_bf16_device = LayoutTensor[output_type, k_layout](
-        k_bf16_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
+    var k_bf16_device = TileTensor(
+        k_bf16_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
 
-    comptime q_fp8_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_bf16_dequant_device = LayoutTensor[output_type, q_fp8_layout](
-        q_bf16_dequant_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_fp8_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var q_bf16_dequant_device = TileTensor(
+        q_bf16_dequant_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, v_depth)
-    )
-    var output_ref_device = LayoutTensor[output_type, output_layout](
-        output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, v_depth)
-        ),
+    var output_ref_device = TileTensor(
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     print("  Launching native FP8 kernel (SlidingWindow)...")
@@ -830,31 +779,16 @@ def test_sw[
 
     print("  Computing GPU naive reference (SlidingWindow)...")
 
-    comptime ref_output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
     var ref_full_o_size = batch_size * num_heads * seq_len * depth
     var output_ref_full_device_ptr = ctx.enqueue_create_buffer[output_type](
         ref_full_o_size
     )
-    var output_ref_full_device = LayoutTensor[output_type, ref_output_layout](
-        output_ref_full_device_ptr.unsafe_ptr(),
-        RuntimeLayout[ref_output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref_full_device = TileTensor(
+        output_ref_full_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    var k_bf16_operand = TileTensorMHAOperand(
-        TileTensor(
-            k_bf16_device.ptr.as_unsafe_any_origin(),
-            row_major(
-                Int(batch_size),
-                Int(num_keys),
-                Idx[kv_num_heads],
-                Idx[depth],
-            ),
-        )
-    )
+    var k_bf16_operand = TileTensorMHAOperand(k_bf16_device)
 
     mha_gpu_naive[_is_cache_length_accurate=True](
         q_bf16_dequant_device,

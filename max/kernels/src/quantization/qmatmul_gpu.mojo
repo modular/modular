@@ -51,9 +51,6 @@ from max.gpu.memory import (
 )
 from layout import (
     Coord,
-    IntTuple,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     TensorLayout,
     lt_to_tt,
@@ -65,7 +62,6 @@ from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensorIter,
     ThreadScope,
-    copy_dram_to_sram,
     copy_local_to_dram,
     copy_local_to_shared,
     copy_sram_to_dram,
@@ -199,6 +195,8 @@ def multistage_mma_q[
     next_op_b_iter_alignment: Int = align_of[b_type](),
     native_scale_stream: Bool = False,
 ](
+    # The prefetch pipeline still runs on legacy `LayoutTensorIter`s: no
+    # native TileTensor iterator exists yet.
     c: TileTensor[mut=True, c_type, c_layout, address_space=.LOCAL, ...],
     a_iter_arg: LayoutTensorIter[_, a_layout, ...],
     b_iter_arg: LayoutTensorIter[b_type, b_layout, ...],
@@ -344,10 +342,11 @@ def multistage_mma_q[
     ]()
 
     # Swizzle the async A-tile copy if requested. `make_ldmatrix_swizzle`
-    # mirrors what `LayoutTensor.copy_dram_to_sram_async[swizzle=True]`
-    # constructs internally (see layout_tensor.mojo:6751); reproducing it
-    # here keeps the destination addressing identical across the
-    # migration. The destination's leading-dim stride is `BK`.
+    # mirrors the ldmatrix-friendly swizzle the legacy
+    # `copy_dram_to_sram_async[swizzle=True]` free function constructs
+    # internally (see layout_tensor.mojo); reproducing it here keeps the
+    # destination addressing identical across the migration. The
+    # destination's leading-dim stride is `BK`.
     comptime async_swizzle_a = Optional[Swizzle](
         make_ldmatrix_swizzle[a_type, BK, log2_floor(simd_size)]()
     ) if swizzle_a else Optional[Swizzle]()
@@ -829,20 +828,20 @@ def multistage_mma_q[
 @doc_hidden
 def multistage_qgemm_kernel[
     c_type: DType,
-    c_layout: Layout,
+    c_layout: TensorLayout,
     a_type: DType,
-    a_layout: Layout,
+    a_layout: TensorLayout,
     b_packed_type: DType,
-    b_layout: Layout,
+    b_layout: TensorLayout,
     group_size: Int,
     pack_factor: Int,
     transpose_b: Bool,
     config: MatmulConfig[a_type, b_packed_type, c_type, transpose_b],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[mut=True, c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
-    b_packed: LayoutTensor[mut=False, b_packed_type, b_layout, ImmutAnyOrigin],
+    c_tt: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
+    a_tt: TileTensor[mut=False, a_type, a_layout, ImmutAnyOrigin],
+    b_packed: TileTensor[mut=False, b_packed_type, b_layout, ImmutAnyOrigin],
 ):
     """Implements the GPU kernel for a multi-stage quantized GEMM with per-group scales.
 
@@ -865,8 +864,8 @@ def multistage_qgemm_kernel[
         elementwise_lambda_fn: An optional elementwise epilogue applied per output element.
 
     Args:
-        c: The output accumulator matrix in global memory.
-        a: The left-hand (activation) matrix in global memory.
+        c_tt: The output accumulator matrix in global memory.
+        a_tt: The left-hand (activation) matrix in global memory.
         b_packed: The packed quantized weight buffer in global memory.
     """
     comptime assert (
@@ -874,12 +873,17 @@ def multistage_qgemm_kernel[
     ), "Quantized gemm only supports NVIDIA hardwares for now."
     comptime simd_size = simd_width_of[c_type]()
 
+    # The prefetch pipeline and the epilogue's fragment arithmetic still
+    # consume legacy views; no native TileTensor iterator exists yet.
+    var c = c_tt.to_layout_tensor()
+    var a = a_tt.to_layout_tensor()
+
     comptime repack_tile = Index(64, 16)
     comptime group_bytes = group_size // 2 + 2
 
-    var M = c.dim[0]()
-    comptime N = Int(b_layout.shape[0])
-    comptime K = Int(b_layout.shape[1]) // group_bytes * group_size
+    var M = Int(c.dim[0]())
+    comptime N = b_layout.static_shape[0]
+    comptime K = b_layout.static_shape[1] // group_bytes * group_size
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -1241,13 +1245,11 @@ def multistage_qgemm_kernel[
             apply_epilogue()
 
         else:
-            var c_reg_tile_out = LayoutTensor[
-                mut=True,
-                c_type,
-                c_reg_tile.layout,
-                MutAnyOrigin,
-                address_space=.LOCAL,
-            ].stack_allocation()
+            var c_reg_tile_out_native = stack_allocation[
+                c_type, address_space=.LOCAL
+            ](row_major[num_m_mmas * num_n_mmas, c_frag_size]())
+            # The legacy register-to-DRAM copier still consumes a legacy view.
+            var c_reg_tile_out = c_reg_tile_out_native.to_layout_tensor()
 
             comptime for i in range(c_reg_tile.shape[0]()):
                 comptime for j in range(c_reg_tile.shape[1]()):
@@ -1779,11 +1781,6 @@ def multistage_gemm_q[
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
 
-    # The device GEMM still consumes the legacy tensor-core iterators.
-    var c_legacy = c.to_layout_tensor()
-    var a_legacy = a.to_layout_tensor()
-    var b_legacy = b.to_layout_tensor()
-
     comptime smem_usage = q_smem_usage[config, group_size]()
     comptime max_smem = ctx.default_device_info.shared_memory_per_multiprocessor
 
@@ -1816,11 +1813,11 @@ def multistage_gemm_q[
                 comptime if adjusted_smem < max_smem:
                     comptime gemm_kernel_type = multistage_qgemm_kernel[
                         c_type,  # c_type
-                        c_legacy.layout,
+                        c.LayoutType,
                         a_type,  # a_type
-                        a_legacy.layout,
+                        a.LayoutType,
                         b_type,  # b_type
-                        b_legacy.layout,
+                        b.LayoutType,
                         group_size,
                         pack_factor,
                         True,
@@ -1829,9 +1826,9 @@ def multistage_gemm_q[
                     ]
 
                     ctx.enqueue_function[gemm_kernel_type](
-                        c_legacy,
-                        a_legacy,
-                        b_legacy,
+                        c,
+                        a,
+                        b,
                         grid_dim=adjusted_config.grid_dim(M, N),
                         block_dim=adjusted_config.block_dim(),
                         shared_mem_bytes=adjusted_smem,
@@ -1844,11 +1841,11 @@ def multistage_gemm_q[
 
     comptime gemm_kernel_type = multistage_qgemm_kernel[
         c_type,  # c_type
-        c_legacy.layout,
+        c.LayoutType,
         a_type,  # a_type
-        a_legacy.layout,
+        a.LayoutType,
         b_type,  # b_type
-        b_legacy.layout,
+        b.LayoutType,
         group_size,
         pack_factor,
         True,
@@ -1857,9 +1854,9 @@ def multistage_gemm_q[
     ]
 
     ctx.enqueue_function[gemm_kernel_type](
-        c_legacy,
-        a_legacy,
-        b_legacy,
+        c,
+        a,
+        b,
         grid_dim=runtime_config.grid_dim(M, N),
         block_dim=runtime_config.block_dim(),
         shared_mem_bytes=smem_usage,

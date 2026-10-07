@@ -47,7 +47,6 @@ from layout import (
     CoordLike,
     IntTuple,
     Layout,
-    LayoutTensor,
     TileTensor,
     coord_to_index_list,
 )
@@ -2266,22 +2265,6 @@ struct ManagedTensorSlice[
             rebind[type_of(result).ComputeFusionTile](_NoComputeFusionTile()),
             fusion,
         }
-
-    @inline(.always)
-    def to_layout_tensor(
-        self,
-        out result: LayoutTensor[
-            Self.dtype, Self.static_spec.to_layout(), MutAnyOrigin
-        ],
-    ):
-        comptime layout = Self.static_spec.to_layout()
-        return type_of(result)(
-            self.unsafe_ptr(),
-            type_of(result.runtime_layout)(
-                self.shape().cast[result.layout_int_type](),
-                self.strides().cast[result.linear_idx_type](),
-            ),
-        )
 
     @inline(.always)
     def to_tile_tensor[

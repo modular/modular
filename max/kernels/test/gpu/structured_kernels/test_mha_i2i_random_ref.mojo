@@ -35,7 +35,7 @@ from max.gpu.host import DeviceContext
 from std.math import exp2 as math_exp2
 from std.testing import assert_true
 
-from layout import LayoutTensor, TileTensor
+from layout import TileTensor
 from layout.coord import Coord, Idx
 from layout.runtime_layout import RuntimeLayout
 from layout.tile_layout import row_major

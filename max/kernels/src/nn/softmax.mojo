@@ -2272,15 +2272,21 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
 
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
-    comptime layout = Layout.row_major(num_m_mmas, frag_num_rows)
-    comptime TensorType = LayoutTensor[
-        dtype, layout, MutAnyOrigin, address_space=.LOCAL
-    ]
-    var interwarp_frag_rowmax = TensorType.stack_allocation()
-    var interwarp_frag_rowsum = TensorType.stack_allocation()
-    var correction = TensorType.stack_allocation()
-    var rowmax_tensor = TensorType.stack_allocation()
-    var rowsum_tensor = TensorType.stack_allocation()
+    var interwarp_frag_rowmax = tt_stack_allocation[
+        dtype=dtype, address_space=.LOCAL
+    ](row_major[num_m_mmas, frag_num_rows]())
+    var interwarp_frag_rowsum = tt_stack_allocation[
+        dtype=dtype, address_space=.LOCAL
+    ](row_major[num_m_mmas, frag_num_rows]())
+    var correction = tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
+        row_major[num_m_mmas, frag_num_rows]()
+    )
+    var rowmax_tensor = tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
+        row_major[num_m_mmas, frag_num_rows]()
+    )
+    var rowsum_tensor = tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
+        row_major[num_m_mmas, frag_num_rows]()
+    )
     # corrections across warps
     # Write per warp rowmax to shared memory.
     if lane % num_lanes_n == 0:

@@ -16,11 +16,10 @@ SM90 (Hopper) multi-head attention producer-side helpers.
 
 Re-exports shared NVIDIA attention primitives from `common` and provides the
 SM90-specific implementations of `produce` (TMA-based Q/K/V tile staging),
-`_apply_mask`, `_get_position`, `get_q_head_idx`, `output_reg_to_smem`, and
-`_optional_lt_to_tt` consumed by the `sm90/mha.mojo` kernel.
+`_apply_mask`, `_get_position`, `get_q_head_idx`, and `output_reg_to_smem`
+consumed by the `sm90/mha.mojo` kernel.
 """
 
-from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 from std.math.constants import log2e
@@ -38,9 +37,6 @@ from layout import (
     Layout,
     LayoutTensor,
     TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
-    coord_to_index_list,
     row_major,
 )
 from layout.layout_tensor import copy_local_to_shared
@@ -80,7 +76,7 @@ from std.utils import StaticTuple
 
 # Re-export shared NVIDIA attention primitives that now live in `common`, so
 # the helpers kept in this file (`produce`, `_apply_mask`, `_get_position`,
-# `get_q_head_idx`, `output_reg_to_smem`, `_optional_lt_to_tt`) and external
+# `get_q_head_idx`, `output_reg_to_smem`) and external
 # sm90 consumers (e.g. `sm90/mha.mojo`) keep resolving them via this module.
 from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
@@ -101,28 +97,6 @@ from nn.attention.gpu.nvidia.common import (
     q_tma_fused,
     q_tma_prefill,
 )
-
-
-@inline(.always)
-def _optional_lt_to_tt[
-    dtype: DType,
-](
-    opt: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
-) -> OptionalReg[ImmutTileTensor1D[dtype]]:
-    """Convert an OptionalReg[LayoutTensor] to OptionalReg[TileTensor]."""
-    if opt:
-        # NOTE: a plain `return lt_to_tt(opt.value())` compiles for the host
-        # target but FAILS the sm90 GPU-target compile: there `lt_to_tt`'s
-        # inferred result layout and `ImmutTileTensor1D`'s declared layout are
-        # structurally identical but not type-identical (the 1-D contiguous
-        # stride is `ComptimeInt[1]` on one side and a runtime `Int64` on the
-        # other). The stride of a contiguous 1-D tensor is always 1, so rebind
-        # to bridge the type-identity gap. Verify changes here with a remote
-        # GPU build (`--config=remote-b200`), not just a host build.
-        return rebind[ImmutTileTensor1D[dtype]](lt_to_tt(opt.value()))
-    return None
 
 
 @inline(.always)
@@ -288,6 +262,8 @@ def _apply_mask[
     kv_tile_start_row: UInt32,
     mask: mask_t,
     mask_status: TileMaskStatus,
+    # Legacy scalar view: TileTensor has no `element_layout` equivalent for
+    # the per-fragment indexing below.
     p_reg_tile: LayoutTensor[
         accum_type,
         reg_tile_layout,
@@ -1069,12 +1045,18 @@ def output_reg_to_smem[
     q_smem: UnsafePointer[
         Scalar[output_type], MutAnyOrigin, address_space=.SHARED
     ],
+    # Legacy register view: consumed by the register-A WGMMA/stmatrix path
+    # (`output_reg_to_smem_st_matrix` bridges via `_LocalTT`/`_SharedMemTT`)
+    # and by `copy_local_to_shared`'s fp32->half downcast, which has no
+    # TileTensor-native equivalent yet.
     output_reg_tile: LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas, o_frag_size),
         MutAnyOrigin,
         address_space=.LOCAL,
     ],
+    # Returned legacy smem view feeds the masked-dst `copy_sram_to_dram`,
+    # whose TileTensor counterpart does not support masking or downcast.
 ) -> LayoutTensor[
     output_type,
     Layout.row_major(BM, padded_depth),
@@ -1112,6 +1094,9 @@ def output_reg_to_smem[
         output_reg_tile: Local register tile holding the accumulator output
             fragments.
     """
+    # Legacy smem view: bridges to `_LocalTT`/`_SharedMemTT` stmatrix call and
+    # is returned to the caller's masked `copy_sram_to_dram` (no TileTensor
+    # equivalents for those paths yet).
     var accum_smem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, padded_depth),

@@ -349,6 +349,9 @@ struct MHAPosition[
     def __ne__(self, other: Self) -> Bool:
         return self.q_out_offset != other.q_out_offset
 
+    # Legacy masked view: runtime row-count + masked semantics feed the
+    # caller's legacy `copy_sram_to_dram`, whose TileTensor counterpart
+    # supports neither masking nor the fp32->half downcast yet.
     @inline(.always)
     def q_out_gmem_tensor[
         dtype: DType
