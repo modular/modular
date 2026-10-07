@@ -620,16 +620,9 @@ def naive_tensor[
             var B_warp_tile = B_block_tile.tile[MMA_K, MMA_N](0, warp_x)
 
             # Load fragments directly from global memory
-            var a_reg = mma_op.load_a(A_warp_tile.to_layout_tensor())
-            var b_reg = mma_op.load_b(B_warp_tile.to_layout_tensor())
-
-            # `TensorCore`'s legacy overload takes `LayoutTensor`, so bridge the
-            # register tile to a `LayoutTensor` view; `c_reg_lt` aliases the same
-            # register storage, so accumulating into it updates `c_reg`.
-            var c_reg_lt = c_reg.to_layout_tensor()
-            var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_lt)
-
-            c_reg_lt.copy_from(d_reg)
+            var a_reg = mma_op.load_a(A_warp_tile)
+            var b_reg = mma_op.load_b(B_warp_tile)
+            c_reg.copy_from(mma_op.mma_op(a_reg, b_reg, c_reg))
     comptime if current_accelerator().is_nvidia_gpu():
         mma_op.store_d(C_warp_tile, c_reg)
     else:
@@ -759,13 +752,9 @@ def basic_shared_mem[
             var B_warp_tile = B_sram_tile.tile[MMA_K, MMA_N](0, warp_x)
 
             # Load fragments
-            var a_reg = mma_op.load_a(A_warp_tile.to_layout_tensor())
-            var b_reg = mma_op.load_b(B_warp_tile.to_layout_tensor())
-
-            var c_reg_lt = c_reg.to_layout_tensor()
-            var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_lt)
-
-            c_reg_lt.copy_from(d_reg)
+            var a_reg = mma_op.load_a(A_warp_tile)
+            var b_reg = mma_op.load_b(B_warp_tile)
+            c_reg.copy_from(mma_op.mma_op(a_reg, b_reg, c_reg))
         comptime if current_accelerator().is_nvidia_gpu():
             # All warps must finish reading before the next shared tile is loaded.
             barrier()
@@ -921,18 +910,14 @@ def multi_block_tiled[
                             mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
                         )
                     else:
-                        var c_reg_m_n_lt = c_reg_m_n.to_layout_tensor()
-
                         # Load fragments
-                        var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                        var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
+                        var a_reg = mma_op.load_a(A_mma_tile)
+                        var b_reg = mma_op.load_b(B_mma_tile)
 
                         # Perform MMA operation using f32 accumulator
-                        var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
-
-                        # Manual accumulation: bypass TensorCore store_d
-                        # Copy result directly to register tile
-                        c_reg_m_n_lt.copy_from(d_reg)
+                        c_reg_m_n.copy_from(
+                            mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
+                        )
         comptime if current_accelerator().is_nvidia_gpu():
             # All warps must finish reading before the next shared tile is loaded.
             barrier()
@@ -1097,15 +1082,14 @@ def scheduler_hints[
                             mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
                         )
                     else:
-                        var c_reg_m_n_lt = c_reg_m_n.to_layout_tensor()
-
                         # Load fragments and perform MMA
-                        var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                        var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
-                        var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
+                        var a_reg = mma_op.load_a(A_mma_tile)
+                        var b_reg = mma_op.load_b(B_mma_tile)
 
                         # Manual accumulation for 32x32x8
-                        c_reg_m_n_lt.copy_from(d_reg)
+                        c_reg_m_n.copy_from(
+                            mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
+                        )
 
         comptime if current_accelerator().is_nvidia_gpu():
             # All warps must finish reading before the next shared tile is loaded.
@@ -1346,16 +1330,15 @@ def double_buffer[
                             mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
                         )
                     else:
-                        var c_reg_m_n_lt = c_reg_m_n.to_layout_tensor()
-
                         # Load fragments and perform MMA
-                        var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                        var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
-                        var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_m_n_lt)
+                        var a_reg = mma_op.load_a(A_mma_tile)
+                        var b_reg = mma_op.load_b(B_mma_tile)
 
                         # Manual accumulation: bypass TensorCore store_d
                         # Copy result directly to register tile
-                        c_reg_m_n_lt.copy_from(d_reg)
+                        c_reg_m_n.copy_from(
+                            mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
+                        )
 
         # === SYNC: Ensure next iteration's data is ready ===
         if next_k < k_iterations:
