@@ -1223,21 +1223,31 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             root fails.
         """
         # Dependency tracking lives on the Mojo builder (`_implicit_deps` and
-        # `region` scopes); the C++ builder does not model it. Materialize the
-        # current implicit predecessor as a single empty "seed" node — its
-        # dependencies come from `_merge_implicit` inside `add_empty` — and hand
-        # that node across the boundary. Operations recorded through the
-        # returned context chain after the seed, so they respect whatever
-        # `region` scope is active when `recording_context` is called. Those
-        # recorded nodes land in the same id space, so the last of them becomes
-        # the chain predecessor a later `add_*` in the same scope picks up,
-        # which keeps the scope serial across the boundary.
+        # `region` scopes); the C++ builder does not model it. Hand the current
+        # implicit predecessor across the boundary as a single "seed" node.
+        # Operations recorded through the returned context chain after the
+        # seed, so they respect whatever `region` scope is active when
+        # `recording_context` is called. Those recorded nodes land in the same
+        # id space, so the last of them becomes the chain predecessor a later
+        # `add_*` in the same scope picks up, which keeps the scope serial
+        # across the boundary.
+        #
+        # A single predecessor is the seed directly; only a predecessor set
+        # that is empty or fans in from several nodes needs an empty node to
+        # collapse it. The common case — the next kernel wrapper inside a
+        # region — chains straight after the previous node, so a build is not
+        # littered with one empty node per wrapper.
         #
         # The context itself is memoized on the builder: every call reseats the
         # chain root of the one stored recording context rather than
         # constructing a fresh one, so two hand-outs never chain after each
         # other's nodes by accident.
-        var seed = self.add_empty()
+        var deps = self._merge_implicit([])
+        var seed: Self.Node
+        if len(deps) == 1:
+            seed = deps[0]
+        else:
+            seed = self.add_empty()
         # const char *AsyncRT_DeviceContext_reseedRecording(
         #     DeviceContext *ctx, int32_t seedNodeId)
         _checked(
