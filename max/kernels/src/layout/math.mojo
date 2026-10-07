@@ -206,28 +206,6 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         `outp.rank` must equal `inp.rank - 1`.
         Non-reduction dimensions must match between inp and outp.
         Currently only supports rank-2 inputs.
-
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    from layout.math import sum
-
-    data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
-    tensor = LayoutTensor[.int32, Layout.row_major(2, 3)](data)
-    print(tensor)
-    print("-----")
-    print(sum[0](tensor))
-    ```
-
-    Output:
-
-    ```plaintext
-    0 1 2
-    3 4 5
-    -----
-    3 5 7
-    ```
     """
 
     def sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
@@ -574,6 +552,19 @@ def sum[
     Returns:
         A rank-1 tensor with the input dtype and SIMD element width. Adjacent
         elements have disjoint storage.
+
+    Examples:
+
+    ```mojo
+    from std.collections import Array
+    from layout import TileTensor, row_major
+    from layout.math import sum
+
+    var data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
+    var tensor = TileTensor(data, row_major[2, 3]())
+    var result = sum[0](tensor)
+    print(result[0], result[1], result[2])  # 3 5 7
+    ```
     """
     comptime size = Coord[inp.LayoutType._shape_types[1 - axis]].static_product
     var result = stack_allocation[

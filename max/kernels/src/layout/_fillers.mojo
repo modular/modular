@@ -158,11 +158,12 @@ def arange[
     Example:
 
         ```mojo
-        from layout import Layout, LayoutTensor
+        from std.collections import Array
+        from layout import TileTensor, row_major
         from layout._fillers import arange
 
         var storage = Array[Float32, 16](uninitialized=True)
-        var tensor = LayoutTensor[.float32, Layout(4, 4)](storage)
+        var tensor = TileTensor(storage, row_major[4, 4]())
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
     """
@@ -221,11 +222,12 @@ def random[
     Example:
 
         ```mojo
-        from layout import Layout, LayoutTensor
+        from std.collections import Array
+        from layout import TileTensor, row_major
         from layout._fillers import random
 
         var storage = Array[Float32, 16](uninitialized=True)
-        var tensor = LayoutTensor[.float32, Layout(4, 4)](storage)
+        var tensor = TileTensor(storage, row_major[4, 4]())
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
@@ -330,6 +332,7 @@ def arange[
     Example:
 
         ```mojo
+        from std.collections import Array
         from layout import TileTensor, row_major
         from layout._fillers import arange
 
@@ -396,6 +399,7 @@ def random[
     Example:
 
         ```mojo
+        from std.collections import Array
         from layout import TileTensor, row_major
         from layout._fillers import random
 
