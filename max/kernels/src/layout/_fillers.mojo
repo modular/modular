@@ -31,7 +31,7 @@ from layout.coord import Coord
 
 from .layout import Layout
 from .layout_tensor import LayoutTensor
-from .tile_layout import TensorLayout
+from .tile_layout import TensorLayout, row_major
 from .tile_tensor import TileTensor
 
 from std.utils.numerics import max_finite
@@ -108,17 +108,25 @@ def _filler_impl[
         - Type casting is performed to ensure type compatibility.
     """
 
+    # Legacy fillers write the physical scalar prefix, independent of strides.
     comptime if not use_runtime_layout:
         comptime num_elements = tensor.layout.size() * tensor.element_size
-
-        comptime for i in range(num_elements):
-            var val = filler(i)
-            tensor.ptr[i] = val.cast[tensor.dtype]()
+        var static_tensor = TileTensor[
+            address_space=tensor.address_space,
+            linear_idx_type=tensor.linear_idx_type,
+        ](tensor.ptr, row_major[num_elements]())
+        _filler_impl[use_runtime_layout=use_runtime_layout](
+            static_tensor, filler
+        )
     else:
         var num_elements = tensor.runtime_layout.size() * tensor.element_size
-        for i in range(num_elements):
-            var val = filler(i)
-            tensor.ptr[i] = val.cast[tensor.dtype]()
+        var runtime_tensor = TileTensor[
+            address_space=tensor.address_space,
+            linear_idx_type=tensor.linear_idx_type,
+        ](tensor.ptr, row_major(num_elements))
+        _filler_impl[use_runtime_layout=use_runtime_layout](
+            runtime_tensor, filler
+        )
 
 
 def arange[
