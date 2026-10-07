@@ -21,6 +21,9 @@ from std.ffi import c_int
 comptime in_port_t = UInt16
 """C `in_port_t`: a TCP/UDP port in network byte order."""
 
+comptime in_addr_t = UInt32
+"""C `in_addr_t`: an IPv4 address as a 32-bit integer."""
+
 comptime IPPROTO_IP: c_int = 0
 """Dummy protocol for IP-level options."""
 comptime IPPROTO_TCP: c_int = 6
@@ -30,9 +33,9 @@ comptime IPPROTO_UDP: c_int = 17
 comptime IPPROTO_IPV6: c_int = 41
 """IPv6-level options."""
 
-comptime INADDR_ANY: UInt32 = 0
+comptime INADDR_ANY: in_addr_t = 0
 """Bind to all local interfaces (0.0.0.0), in host byte order."""
-comptime INADDR_LOOPBACK: UInt32 = 0x7F000001
+comptime INADDR_LOOPBACK: in_addr_t = 0x7F000001
 """The loopback address (127.0.0.1), in host byte order."""
 
 
@@ -40,7 +43,7 @@ comptime INADDR_LOOPBACK: UInt32 = 0x7F000001
 struct in_addr(TrivialRegisterPassable):
     """C `struct in_addr`: an IPv4 address."""
 
-    var s_addr: UInt32
+    var s_addr: in_addr_t
     """The address in network byte order."""
 
 

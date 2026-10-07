@@ -30,6 +30,7 @@ from std.net._sys.inet import (
     IPPROTO_UDP,
     in6_addr,
     in_addr,
+    in_addr_t,
     in_port_t,
 )
 from std.net._sys.unix import (
@@ -64,6 +65,7 @@ from std.net._sys.unix import (
     SO_SNDTIMEO,
     SO_TYPE,
     TCP_NODELAY,
+    socklen_t,
 )
 
 comptime CABI_INCLUDES: List[StaticString] = [
@@ -80,6 +82,8 @@ comptime CABI_STRUCTS = TypeList.of[Trait=AnyType, in_addr, in6_addr]()
 comptime CABI_TYPEDEFS = TypeList.of[
     Trait=AbiTypedefLike,
     AbiTypedef["in_port_t", in_port_t],
+    AbiTypedef["in_addr_t", in_addr_t],
+    AbiTypedef["socklen_t", socklen_t],
 ]()
 """The type aliases to check."""
 

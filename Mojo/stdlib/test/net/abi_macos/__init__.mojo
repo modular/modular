@@ -12,10 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 """C ABI manifest: the macOS-specific `std.net._sys` mirrors."""
 
-from test_utils.cabi_check import AbiConstant, AbiTypedefLike
+from test_utils.cabi_check import AbiConstant, AbiTypedef, AbiTypedefLike
 
 from std.net._sys.macos import (
     SO_NOSIGPIPE,
+    sa_family_t,
     sockaddr,
     sockaddr_in,
     sockaddr_in6,
@@ -40,7 +41,10 @@ comptime CABI_STRUCTS = TypeList.of[
 ]()
 """The struct mirrors to check."""
 
-comptime CABI_TYPEDEFS = TypeList.of[Trait=AbiTypedefLike]()
+comptime CABI_TYPEDEFS = TypeList.of[
+    Trait=AbiTypedefLike,
+    AbiTypedef["sa_family_t", sa_family_t],
+]()
 """The type aliases to check."""
 
 comptime CABI_CONSTANTS = [

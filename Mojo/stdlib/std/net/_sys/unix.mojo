@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Socket constants shared by the Unix platforms, Linux and macOS.
+"""Socket constants and types shared by the Unix platforms, Linux and macOS.
 
 The values are transcribed from `<sys/socket.h>`, `<netinet/tcp.h>`, and
 `<fcntl.h>`. Every name here is defined on both platforms. A value they
@@ -19,8 +19,11 @@ target, so using it on any other target is a compile error. Names that only
 one platform defines live in `linux` or `macos`.
 """
 
-from std.ffi import c_int
+from std.ffi import c_int, c_uint
 from std.sys.info import platform_map
+
+comptime socklen_t = c_uint
+"""C `socklen_t`: the size of a socket address or option value, in bytes."""
 
 
 def constant[name: StaticString, *, linux: c_int, macos: c_int]() -> c_int:

@@ -21,6 +21,9 @@ from std.sys import size_of
 
 from .inet import in6_addr, in_addr, in_port_t
 
+comptime sa_family_t = c_ushort
+"""C `sa_family_t`: the address family (`AF_*`) of a socket address."""
+
 comptime SOCK_NONBLOCK: c_int = 0o4000
 """Create the socket non-blocking (or-ed into the socket type)."""
 comptime SOCK_CLOEXEC: c_int = 0o2000000
@@ -35,7 +38,7 @@ comptime SO_DOMAIN: c_int = 39
 struct sockaddr(Copyable, Writable):
     """C `struct sockaddr`: the generic socket address header."""
 
-    var sa_family: UInt16
+    var sa_family: sa_family_t
     """The address family (`AF_*`)."""
     var sa_data: Array[c_char, 14]
     """Padding to the historical 16-byte `sockaddr` size."""
@@ -45,7 +48,7 @@ struct sockaddr(Copyable, Writable):
 struct sockaddr_in(Copyable, Writable):
     """C `struct sockaddr_in`: an IPv4 socket address."""
 
-    var sin_family: UInt16
+    var sin_family: sa_family_t
     """The address family (`AF_INET`)."""
     var sin_port: in_port_t
     """The port in network byte order."""
@@ -59,7 +62,7 @@ struct sockaddr_in(Copyable, Writable):
 struct sockaddr_in6(Copyable, Writable):
     """C `struct sockaddr_in6`: an IPv6 socket address."""
 
-    var sin6_family: UInt16
+    var sin6_family: sa_family_t
     """The address family (`AF_INET6`)."""
     var sin6_port: in_port_t
     """The port in network byte order."""
@@ -78,7 +81,7 @@ comptime _SUN_PATH_LEN = 108
 struct sockaddr_un(Copyable, Writable):
     """C `struct sockaddr_un`: a Unix domain socket address."""
 
-    var sun_family: UInt16
+    var sun_family: sa_family_t
     """The address family (`AF_UNIX`)."""
     var sun_path: Array[c_char, _SUN_PATH_LEN]
     """The filesystem path, NUL-terminated unless it fills the array."""
@@ -102,7 +105,7 @@ struct sockaddr_storage(Copyable, Writable):
     as the matching concrete type.
     """
 
-    var ss_family: UInt16
+    var ss_family: sa_family_t
     """The address family of the stored address (`AF_*`)."""
     var __ss_padding: Array[c_char, _SS_PADSIZE]
     var __ss_align: __ss_aligntype
