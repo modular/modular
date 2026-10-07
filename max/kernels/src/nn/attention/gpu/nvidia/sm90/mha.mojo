@@ -48,12 +48,13 @@ from layout import (
     TensorEngine,
     TileTensor,
     row_major,
+    stack_allocation,
 )
 from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     TensorCoreAsync,
-    tile_layout_k_major,
+    tile_layout_k_major_typed,
     tile_layout_mn_major,
     warpgroup_fence,
 )
@@ -1170,18 +1171,18 @@ def _mha_sm90[
     # Coordinates of the current warp.
     var warp_y: UInt32 = warp_id  # // num_warps_n
 
-    comptime q_smem_layout_consumer = tile_layout_k_major[
+    comptime q_smem_layout_consumer = tile_layout_k_major_typed[
         DType.bfloat16,
         BM,
         config.padded_depth,
         swizzle_mode=swizzle_mode,
-    ]()
-    comptime k_smem_layout = tile_layout_k_major[
+    ]
+    comptime k_smem_layout = tile_layout_k_major_typed[
         DType.bfloat16,
         BN,
         config.padded_depth,
         swizzle_mode=swizzle_mode,
-    ]()
+    ]
     comptime v_smem_layout = tile_layout_mn_major[
         DType.bfloat16,
         config.padded_depth,
@@ -1423,18 +1424,18 @@ def _mha_sm90[
     @inline(.always)
     def k_tile(
         idx: UInt32,
-        out k_smem: LayoutTensor[
+        out k_smem: TileTensor[
             kv_type,
-            k_smem_layout,
-            MutAnyOrigin,
+            type_of(k_smem_layout),
+            MutUnsafeAnyOrigin,
             address_space=.SHARED,
-            layout_int_type=.int32,
             linear_idx_type=.int32,
-            alignment=128,
         ],
     ) {imm}:
         comptime sz = BN * config.padded_depth
-        k_smem = {(kv_smem + UInt32(sz) * idx).as_unsafe_any_origin()}
+        k_smem = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
+            (kv_smem + UInt32(sz) * idx).as_unsafe_any_origin(), k_smem_layout
+        )
 
     @inline(.always)
     def v_tile(
@@ -1527,30 +1528,33 @@ def _mha_sm90[
         @inline(.nodebug)
         def q_consumer(
             q_idx: UInt32,
-        ) {imm} -> LayoutTensor[
+        ) {imm} -> TileTensor[
             kv_type,
-            q_smem_layout_consumer,
-            MutAnyOrigin,
+            type_of(q_smem_layout_consumer),
+            MutUnsafeAnyOrigin,
             address_space=.SHARED,
-            alignment=128,
+            linear_idx_type=.int32,
         ]:
-            return {(q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin()}
+            # Preserve the full parent Q layout and its pitch across warp groups.
+            return TileTensor[address_space=.SHARED, linear_idx_type=.int32](
+                (q_smem + UInt32(q_size) * q_idx).as_unsafe_any_origin(),
+                q_smem_layout_consumer,
+            )
 
         # layout is
         # shape  = (2, num_m_mmas) x (2, num_n_mmas)
         # stride = (2, 4*num_n_mmas) x (1, 4)
-        comptime s_reg_tile_layout = Layout.row_major(
+        comptime s_reg_tile_layout = row_major[
             num_m_mmas * num_n_mmas, p_frag_size
-        )
+        ]()
         comptime o_reg_tile_layout = Layout.row_major(
             num_m_mmas * num_n_mmas, o_frag_size
         )
-        var p_reg_tile = LayoutTensor[
-            accum_type,
-            s_reg_tile_layout,
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ].stack_allocation()
+        var p_reg_tile = stack_allocation[
+            dtype=accum_type, address_space=.LOCAL, alignment=4
+        ](s_reg_tile_layout)
+        # Softmax and register/shared fragments still use legacy views.
+        var p_reg_legacy = p_reg_tile.to_layout_tensor()
         var output_reg_tile = (
             LayoutTensor[
                 accum_type,
@@ -1581,7 +1585,7 @@ def _mha_sm90[
                 element_layout=element_layout,
             ],
         ) {imm}:
-            result = {p_reg_tile.ptr}
+            result = {p_reg_legacy.ptr.unsafe_origin_cast[MutAnyOrigin]()}
 
         @inline(.always)
         def vectorize_o_reg_tile(
@@ -1912,7 +1916,7 @@ def _mha_sm90[
                 p_frag.vectorize[
                     1, a_frag_size
                 ]().copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
-                    p_reg_tile.reshape[
+                    p_reg_legacy.reshape[
                         Layout.row_major(
                             num_m_mmas * num_n_mmas * frag_ratio,
                             a_frag_size,
@@ -2057,7 +2061,7 @@ def _mha_sm90[
                 break
 
         p_frag.vectorize[1, a_frag_size]().copy_from(
-            p_reg_tile.reshape[
+            p_reg_legacy.reshape[
                 Layout.row_major(
                     num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
                 )
