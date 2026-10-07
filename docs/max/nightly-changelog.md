@@ -485,7 +485,8 @@ This version is still a work in progress.
   step, which is fused with the verify pass and maintains the draft state for
   the tokens the target just accepted, and skip the rest. Every other
   architecture is unchanged and still drafts at its configured depth. Behavior
-  without a schedule is unchanged.
+  without a schedule is unchanged. A draft built with
+  `--draft-proposal sampled` skips as well.
 
 ### Server metrics
 

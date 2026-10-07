@@ -31,6 +31,7 @@ from max.graph import (
     BufferValue,
     DeviceRef,
     Dim,
+    DimLike,
     TensorType,
     TensorValue,
     Value,
@@ -461,12 +462,16 @@ class SampledDraftSampler(DraftSampler):
         top_k: TensorValue,
         top_p: TensorValue,
         vocab_size: int,
+        rows: DimLike = "batch_size",
     ) -> None:
         self._seed = seed
         self._temperature = temperature
         self._top_k = top_k
         self._top_p = top_p
         self._vocab_size = vocab_size
+        # ``batch_size``, or the drafting sequences of a step that can skip.
+        # The per-row parameters carry the same count.
+        self._rows = rows
         self._all_dists: TensorValue | None = None
         self._next_dists: list[TensorValue] = []
 
@@ -478,21 +483,21 @@ class SampledDraftSampler(DraftSampler):
 
         def per_position(param: TensorValue) -> TensorValue:
             return ops.broadcast_to(
-                ops.unsqueeze(param, axis=1), ["batch_size", n]
+                ops.unsqueeze(param, axis=1), [self._rows, n]
             ).reshape((-1,))
 
         seeds = ops.stack(
             [_draft_step_seed(self._seed, i) for i in range(n)], axis=1
         ).reshape((-1,))
         tokens, dist = topk_fused_sampling_with_dist(
-            logits.rebind(["batch_size", n, vocab]).reshape((-1, vocab)),
+            logits.rebind([self._rows, n, vocab]).reshape((-1, vocab)),
             top_k=per_position(self._top_k),
             temperature=per_position(self._temperature),
             top_p=per_position(self._top_p),
             seed=seeds,
         )
-        self._all_dists = dist.reshape(("batch_size", n, vocab))
-        return tokens.reshape(("batch_size", n))
+        self._all_dists = dist.reshape((self._rows, n, vocab))
+        return tokens.reshape((self._rows, n))
 
     @override
     def sample_next(
@@ -506,7 +511,7 @@ class SampledDraftSampler(DraftSampler):
             "positions must be drawn in order"
         )
         index, dist = topk_fused_sampling_with_dist(
-            logits.rebind(["batch_size", logits.shape[1]]),
+            logits.rebind([self._rows, logits.shape[1]]),
             top_k=self._top_k,
             temperature=self._temperature,
             top_p=self._top_p,
@@ -518,7 +523,7 @@ class SampledDraftSampler(DraftSampler):
         return index
 
     def distributions(self) -> TensorValue:
-        """The ``[batch_size, n, vocab_size]`` distributions drawn from."""
+        """The ``[rows, n, vocab_size]`` distributions drawn from."""
         if self._all_dists is not None:
             return self._all_dists
         return ops.stack(self._next_dists, axis=1)
@@ -594,13 +599,11 @@ class BlockDriver(
         # TODO(SERVOPT-1610): The runtime offsets arrive on one device with no
         # host mirror, and data parallelism would have to re-split them per
         # replica, so a multi-device block draft drafts every row until the
-        # block driver handles both. A sampled step would also have to pad the
-        # skipped rows' distributions.
+        # block driver handles both.
         self._skips_draft_rows = (
             proposer.supports_zero_draft_rows
             and len(self.devices) == 1
             and self.data_parallel_degree == 1
-            and speculative_config.draft_proposal == "argmax"
         )
         # Where the draft materializes the target's context KV; the two caches
         # normally advance together.
@@ -643,9 +646,6 @@ class BlockDriver(
                     "draft_proposal='sampled' requires stochastic acceptance:"
                     " greedy acceptance ignores the draft's distributions"
                 )
-            # A skipped step would also have to pad its distributions, so a
-            # sampled graph drafts every step. A zero verify width still
-            # narrows what the target checks.
             self._input_spec = replace(
                 self._input_spec,
                 enable_sampled_draft_proposal=True,
@@ -877,12 +877,25 @@ class BlockDriver(
             )
 
         assert self._vocab_size is not None
+        rows = batch.num_draft_seqs
+        if not batch.drafts_all_rows:
+            # A skippable step drafts for all of its sequences or none, so
+            # the drafting rows are a prefix and each row's sampling
+            # parameters shrink to it.
+            seq_ids = ops.range(
+                0, rows, 1, rows, dtype=DType.int64, device=batch.device0
+            )
+            seed, temperature, top_k, top_p = (
+                ops.gather(param, seq_ids, axis=0)
+                for param in (seed, temperature, top_k, top_p)
+            )
         sampler = SampledDraftSampler(
             seed=seed,
             temperature=temperature,
             top_k=top_k,
             top_p=top_p,
             vocab_size=self._vocab_size,
+            rows=rows,
         )
         next_draft_tokens = self._proposer.head(
             batch, block_hs, accepted, sampler
@@ -891,8 +904,15 @@ class BlockDriver(
         return (
             accepted.num_accepted,
             accepted.next_tokens,
-            next_draft_tokens.rebind(["batch_size", n]),
-            sampler.distributions().rebind(["batch_size", n, self._vocab_size]),
+            self._pad_skipped_rows(batch, next_draft_tokens.rebind([rows, n])),
+            # A skipped row proposes the invalid-draft sentinel, so it carries
+            # no distribution: the verdict reads ``q == 0`` as none and never
+            # divides by it.
+            self._pad_skipped_rows(
+                batch,
+                sampler.distributions().rebind([rows, n, self._vocab_size]),
+                fill=0,
+            ),
         )
 
     def _accept(
@@ -1132,30 +1152,31 @@ class BlockDriver(
         return block_ids_flat, offsets
 
     def _pad_skipped_rows(
-        self, batch: BlockBatch, next_draft_tokens: TensorValue
+        self,
+        batch: BlockBatch,
+        draft_values: TensorValue,
+        fill: int = MAGIC_DRAFT_TOKEN_ID,
     ) -> TensorValue:
-        """Restores the proposals' ``batch_size`` leading dim after a skip.
+        """Restores a draft output's ``batch_size`` leading dim after a skip.
 
         The head returns one row per *drafting* sequence, which is zero of
-        them on a skipping step, but the graph's third output is fixed at
+        them on a skipping step, but the graph's draft outputs are fixed at
         ``batch_size`` rows, because device-graph capture records the output
-        shapes and replays into them. The tail is filled with
+        shapes and replays into them. Proposals are filled with
         :data:`MAGIC_DRAFT_TOKEN_ID`, which the next step's accept already
         recognizes as "this row carried no proposal" and scores zero.
         ``broadcast_to`` of a constant hoists out of the step, so the fill
         costs nothing per iteration.
         """
         if batch.drafts_all_rows:
-            return next_draft_tokens
+            return draft_values
         # The head may return fewer than ``K - 1`` columns when the driver
         # verifies fewer proposals than the block holds.
-        trailing = list(next_draft_tokens.shape[1:])
+        trailing = list(draft_values.shape[1:])
         skipped = ops.constant(
-            MAGIC_DRAFT_TOKEN_ID,
-            next_draft_tokens.dtype,
-            device=batch.device0,
+            fill, draft_values.dtype, device=batch.device0
         ).broadcast_to([Dim("batch_size") - batch.num_draft_seqs, *trailing])
-        return ops.concat([next_draft_tokens, skipped], axis=0).rebind(
+        return ops.concat([draft_values, skipped], axis=0).rebind(
             ["batch_size", *trailing]
         )
 

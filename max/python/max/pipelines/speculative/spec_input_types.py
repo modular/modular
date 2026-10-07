@@ -78,9 +78,8 @@ class SpecDecodeInputTypeSpec:
     says the schedule can skip, and the pipeline binds them by the same rule.
     Only a draft that declares ``supports_zero_draft_rows`` reads them. The
     sequential driver skips on one device, tensor-parallel or data-parallel,
-    and the block driver on one device, for argmax proposals only:
-    ``enable_sampled_draft_proposal`` would need the skipped rows'
-    distributions padded as well, so a sampled step drafts every row."""
+    and the block driver on one device, for argmax and sampled proposals
+    alike. A sampled step pads the skipped rows' distributions with zeros."""
     enable_sampled_draft_proposal: bool = False
     """Declare the ``draft_probs_full`` input: the distribution the draft
     sampled its token from, which the acceptance test's residual subtracts and

@@ -643,6 +643,9 @@ def test_graph_stages_end_to_end(
             device_bitmask_scratch=graph_inputs.device_bitmask_scratch,
             draft_probs_full=graph_inputs.draft_probs_full,
         )
+        # One device skips its drafter, and a sampled step pads the skipped
+        # rows' distributions back out to ``batch_size`` too.
+        assert graph_inputs.draft_slot_ids is not None
         next_draft_tokens = outputs[2]
         assert int(next_draft_tokens.shape[1]) == config.block_size - 1
         assert next_draft_tokens.dtype == DType.int64

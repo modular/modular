@@ -514,11 +514,7 @@ class SequentialDriver(
                 speculative_config
             ),
         )
-        # A sampled step would also have to pad the skipped rows'
-        # distributions, so it drafts every row.
-        self._skips_draft_rows = (
-            proposer.supports_zero_draft_rows and draft_proposal == "argmax"
-        )
+        self._skips_draft_rows = proposer.supports_zero_draft_rows
         if draft_proposal == "sampled":
             # Declares the draft_probs_full input, which only this mode reads.
             self._input_spec = replace(
@@ -1182,6 +1178,12 @@ class SequentialDriver(
             next_draft_tokens = ops.gather(
                 next_draft_tokens, slot_ids, axis=0
             ).rebind([rows])
+            # A sampled step draws each drafting row at that row's own
+            # parameters, so they shrink with the rows.
+            top_k, temperature, top_p, seed = (
+                ops.gather(param, slot_ids, axis=0).rebind([rows])
+                for param in (top_k, temperature, top_p, seed)
+            )
             reuse_spec = self._proposer.reuse
             if self.data_parallel_degree > 1:
                 # Each device carries only its replica's rows, and the step
@@ -1259,20 +1261,25 @@ class SequentialDriver(
                     assert self._vocab_size is not None
                     assert all_draft_dists is not None
                     # A step's logits carry a different symbolic row identity
-                    # than "batch_size"; rebind to line up with the per-row
-                    # sampling params.
+                    # than the loop's row count. Rebind to line up with the
+                    # per-row sampling params.
                     step_tokens, step_dist = topk_fused_sampling_with_dist(
-                        proposed.logits.rebind(
-                            ["batch_size", self._vocab_size]
-                        ),
+                        proposed.logits.rebind([rows, self._vocab_size]),
                         top_k=top_k,
                         temperature=temperature,
                         top_p=top_p,
                         seed=_draft_step_seed(seed, index),
                     )
                     step_token_ids = step_tokens.reshape([-1])
+                    # A skipped row proposes the invalid-draft sentinel, so it
+                    # carries no distribution: the verdict reads ``q == 0`` as
+                    # none and never divides by it.
                     all_draft_dists.append(
-                        ops.rebind(step_dist, ["batch_size", self._vocab_size])
+                        self._pad_skipped_rows(
+                            batch,
+                            ops.rebind(step_dist, [rows, self._vocab_size]),
+                            fill=0,
+                        )
                     )
                 else:
                     step_token_ids = ops.argmax(
@@ -1345,15 +1352,21 @@ class SequentialDriver(
         return [swapped(kv) for kv in draft_kv_collections]
 
     def _pad_skipped_rows(
-        self, batch: SequentialBatch, step_tokens: TensorValue
+        self,
+        batch: SequentialBatch,
+        step_values: TensorValue,
+        fill: int = MAGIC_DRAFT_TOKEN_ID,
     ) -> TensorValue:
-        """Restores the ``[batch_size]`` per-step shape after a skip."""
+        """Restores the ``batch_size`` leading dim of a step's result."""
         if batch.drafts_all_rows:
-            return step_tokens
+            return step_values
+        trailing = list(step_values.shape[1:])
         skipped = ops.constant(
-            MAGIC_DRAFT_TOKEN_ID, step_tokens.dtype, device=batch.device0
-        ).broadcast_to([Dim("batch_size") - batch.num_draft_seqs])
-        return ops.concat([step_tokens, skipped], axis=0).rebind(["batch_size"])
+            fill, step_values.dtype, device=batch.device0
+        ).broadcast_to([Dim("batch_size") - batch.num_draft_seqs, *trailing])
+        return ops.concat([step_values, skipped], axis=0).rebind(
+            ["batch_size", *trailing]
+        )
 
     def _rebind_draft_input(
         self, draft_input: DraftStepInput, index: int, rows: Dim
