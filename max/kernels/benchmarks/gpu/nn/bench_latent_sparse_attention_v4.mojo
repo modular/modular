@@ -31,7 +31,6 @@ runs one shape only (for per-kernel nsys); -1 runs all.
 
 from std.math import ceildiv
 from std.random import randn_float64, seed
-from std.utils.index import IndexList
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
@@ -41,11 +40,7 @@ from internal_utils import arg_parse
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.latent_sparse_attention import (
@@ -82,30 +77,34 @@ def _collection[
     ImmutAnyOrigin,
     MutUntrackedOrigin,
 ]:
-    comptime blocks_layout = Layout.row_major[6]()
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lut_layout = Layout.row_major[2]()
     return PagedKVCacheCollection[
         bf16,
         KVCacheStaticParams(num_heads=1, head_size=HEAD_DIM, is_mla=True),
         page,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutUntrackedOrigin,
     ](
-        LayoutTensor[bf16, blocks_layout, MutAnyOrigin](
+        TileTensor(
             rebind[Pointer[Scalar[bf16], MutAnyOrigin]](blocks.unsafe_ptr()),
-            RuntimeLayout[blocks_layout].row_major(
-                IndexList[6](num_pages, 1, 1, page, 1, HEAD_DIM)
+            row_major(
+                Int64(num_pages),
+                Idx[1],
+                Idx[1],
+                Idx[page],
+                Idx[1],
+                Idx[HEAD_DIM],
             ),
         ),
-        LayoutTensor[DType.uint32, cl_layout, ImmutAnyOrigin](
+        TileTensor(
             cache_lengths.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[cl_layout].row_major(IndexList[1](batch)),
-        ),
-        LayoutTensor[DType.uint32, lut_layout, ImmutAnyOrigin](
+            row_major(Int64(batch)),
+        ).as_imm(),
+        TileTensor(
             lut.unsafe_ptr().as_unsafe_any_origin(),
-            RuntimeLayout[lut_layout].row_major(
-                IndexList[2](batch, pages_per_seq)
-            ),
-        ),
+            row_major(Int64(batch), Int64(pages_per_seq)),
+        ).as_imm(),
         UInt32(1),
         UInt32(max_cache_len + 1),
     )
