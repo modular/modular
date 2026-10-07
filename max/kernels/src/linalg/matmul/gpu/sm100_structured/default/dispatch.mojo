@@ -94,46 +94,6 @@ comptime logger = Logger()
 
 
 @inline(.always)
-def small_MN_gemms[
-    config: TuningConfigSmallMNGemms,
-    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
-](
-    c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
-    ctx: DeviceContext,
-) raises:
-    """Launches a small-MN GEMM via the configured split-K GEMV or MMA-CPasync kernel.
-
-    Selects between `gemm_mma_cpasync` (for `GEMM_MMA_CPASYNC` kernel kind) and
-    `gemv_split_k` (otherwise) based on `config.kernel_kind`, then enqueues the
-    chosen kernel with the runtime M, N, K derived from the input tiles.
-
-    Parameters:
-        config: Tuning config selecting the kernel kind
-            (`GEMM_MMA_CPASYNC` or split-K GEMV) and the tile shapes, thread
-            count, and unroll factor for the launched kernel.
-        elementwise_lambda_fn: Optional epilogue applied to each output
-            element (defaults to `None`).
-        pdl_level: Programmatic dependent launch level for the
-            dispatched kernel (defaults to `PDLLevel()`).
-    Args:
-        c: Output matrix as a rank-2 mutable `TileTensor` of shape
-            `[M, N]`.
-        a: LHS input matrix as a rank-2 `TileTensor` of shape `[M, K]`.
-        b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`.
-        ctx: Device context used to enqueue the selected kernel.
-    """
-    _small_MN_gemms_impl[
-        config=config,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-        has_compute_fn=False,
-        pdl_level=pdl_level,
-    ](c, a, b, identity_compute_fn, ctx)
-
-
-@inline(.always)
 def _small_MN_gemms_impl[
     ComputeFnType: ElementwiseComputeFn,
     //,
