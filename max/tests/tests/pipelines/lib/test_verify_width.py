@@ -37,10 +37,6 @@ from max.pipelines.lib import PipelineArgs
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     OverlapTextGenerationPipeline,
     _host_mirror_realized_drafts,
-    _mixed_verify_width,
-    _reachable_verify_widths,
-    _verify_width_candidates,
-    _verify_widths_by_batch_size,
 )
 from max.pipelines.modeling.types.pipeline_variants.text_generation import (
     BatchType,
@@ -51,6 +47,7 @@ from max.pipelines.speculative.config import (
     SpeculativeConfig,
     VerifyWidthRange,
 )
+from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
 from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 
 
@@ -111,13 +108,11 @@ def _pipeline(
     adaptive: AdaptiveVerifyWidth | None = None,
 ) -> OverlapTextGenerationPipeline[Any]:
     pipeline = object.__new__(OverlapTextGenerationPipeline)
-    spec_state = type("_S", (), {"num_speculative_tokens": configured})()
-    pipeline._spec_decode_state = cast(Any, spec_state)
-    pipeline._widths_by_batch_size = (
-        [[configured]] if lookup is None else [[width] for width in lookup]
+    pipeline._spec_width_policy = SpecWidthPolicy(
+        num_speculative_tokens=configured,
+        by_batch_size=lookup,
+        mixed=mixed_width if allow_mixed else 0,
     )
-    pipeline._mixed_verify_width = mixed_width
-    pipeline._allow_mixed_verify = allow_mixed
     pipeline._adaptive_width = adaptive
     return pipeline
 
@@ -278,8 +273,8 @@ def test_mixed_width_does_not_resurrect_a_batch_that_cannot_verify() -> None:
 def test_mixed_width_is_capped_at_the_configured_depth() -> None:
     """``dflash`` resolves its depth from the checkpoint after config
     validation, so the ceiling is applied here rather than by the config."""
-    assert _mixed_verify_width(_config(None, mixed_width=9), 3) == 3
-    assert _mixed_verify_width(_config(None, mixed_width=1), 3) == 1
+    assert _policy(_config(None, mixed_width=9), 3).mixed == 3
+    assert _policy(_config(None, mixed_width=1), 3).mixed == 1
 
 
 def test_reachable_widths_include_the_mixed_width() -> None:
@@ -289,23 +284,31 @@ def test_reachable_widths_include_the_mixed_width() -> None:
     batch, rather than degrading, so the set has to cover it.
     """
     # No schedule: the only batch-size width is the full depth.
-    assert _reachable_verify_widths(_config(None, mixed_width=1), 3, 8) == [
+    assert _policy(_config(None, mixed_width=1), 3).reachable_widths() == [
         1,
         3,
     ]
     # With a schedule, the mixed width joins the scheduled widths.
     scheduled = _config([(1, 2, 3), (3, 8, 2)], mixed_width=1)
-    assert _reachable_verify_widths(scheduled, 3, 8) == [1, 2, 3]
+    assert _policy(scheduled, 3).reachable_widths() == [1, 2, 3]
     # A mixed width that clamps to the full depth adds nothing new.
-    assert _reachable_verify_widths(_config(None, mixed_width=9), 3, 8) == [3]
+    assert _policy(_config(None, mixed_width=9), 3).reachable_widths() == [3]
     # Unset leaves the reachable set exactly as it was.
-    assert _reachable_verify_widths(_config(None), 3, 8) == [3]
+    assert _policy(_config(None), 3).reachable_widths() == [3]
 
 
 def test_no_mixed_width_configured_is_none() -> None:
-    assert _mixed_verify_width(_config(None), 3) is None
+    assert _policy(_config(None), 3).mixed is None
     # Set, but on a pipeline that does not speculate at all.
-    assert _mixed_verify_width(_config(None, mixed_width=3), 0) is None
+    assert _policy(_config(None, mixed_width=3), 0).mixed is None
+
+
+def test_mixed_steps_that_do_not_verify_resolve_to_width_zero() -> None:
+    """Whether mixed steps verify and how much they verify are one setting
+    once resolved, so a configured width cannot leak past the switch."""
+    policy = _policy(_config(None, mixed_width=2), 3, mixed_steps_verify=False)
+    assert policy.mixed == 0
+    assert not policy.verifies_mixed_steps
 
 
 # ---------------------------------------------------------------------------
@@ -341,21 +344,30 @@ def _config(
     )
 
 
+def _policy(
+    config: SpeculativeConfig,
+    num_speculative_tokens: int,
+    *,
+    mixed_steps_verify: bool = True,
+    max_batch_size: int = 8,
+) -> SpecWidthPolicy:
+    return SpecWidthPolicy.from_config(
+        config,
+        num_speculative_tokens,
+        max_batch_size=max_batch_size,
+        mixed_steps_verify=mixed_steps_verify,
+    )
+
+
 def test_no_schedule_leaves_the_width_at_the_configured_depth() -> None:
-    assert _verify_widths_by_batch_size(_config(None), 3, 2) == [[3]] * 3
+    assert _policy(_config(None), 3).by_batch_size is None
     # A schedule set on a pipeline that does not speculate at all.
-    assert _verify_widths_by_batch_size(_config([(1, 8, 1)]), 0, 2) == [[0]] * 3
+    assert _policy(_config([(1, 8, 1)]), 0).by_batch_size is None
 
 
 def test_schedule_builds_a_dense_lookup() -> None:
     config = _config([(1, 2, 3), (3, 8, 1)])
-    assert _verify_widths_by_batch_size(config, 3, 4) == [
-        [0],
-        [3],
-        [3],
-        [1],
-        [1],
-    ]
+    assert _policy(config, 3).by_batch_size == [0, 3, 3, 1, 1, 1, 1, 1, 1]
 
 
 def test_block_drafters_apply_the_schedule_too() -> None:
@@ -365,13 +377,19 @@ def test_block_drafters_apply_the_schedule_too() -> None:
     """
     config = _config([(1, 2, 3), (3, 8, 1)], method="dflash")
     assert config.num_speculative_tokens_per_batch_size is not None
-    assert _verify_widths_by_batch_size(config, 3, 4) == [
-        [0],
+    assert _policy(config, 3).by_batch_size == [0, 3, 3, 1, 1, 1, 1, 1, 1]
+
+
+def test_capture_table_holds_each_batch_sizes_width() -> None:
+    config = _config([(1, 2, 3), (3, 8, 1)])
+    assert _policy(config, 3).widths_by_batch_size(4) == [
+        [3],
         [3],
         [3],
         [1],
         [1],
     ]
+    assert _policy(_config(None), 3).widths_by_batch_size(2) == [[3]] * 3
 
 
 def test_config_rejects_a_schedule_with_a_gap_at_the_front() -> None:
@@ -439,8 +457,8 @@ def _prepare_synthesis(
         Any, type("_P", (), {"speculative": config})()
     )
     pipeline._max_batch_size = max_batch
-    pipeline._verify_widths = _verify_width_candidates(
-        config, configured, max_batch
+    pipeline._spec_width_policy = SpecWidthPolicy.from_config(
+        config, configured, max_batch, mixed_steps_verify=True
     )
     pipeline._kv_manager = cast(
         Any,
@@ -502,11 +520,11 @@ def _candidates(
     configured: int = 7,
     max_batch: int = 32,
 ) -> list[int]:
-    return _verify_width_candidates(
+    return _policy(
         _config(schedule, widths=widths, configured=configured),
         configured,
-        max_batch,
-    )
+        max_batch_size=max_batch,
+    ).decode_widths(max_batch)
 
 
 @pytest.mark.parametrize(
@@ -531,10 +549,10 @@ def test_bitmask_widths_match_the_candidates(
     widths: str | None, schedule: list[tuple[int, int, int]] | None
 ) -> None:
     """A width the bitmask lacks fails the step with "no allocated buffer"."""
-    config = _config(schedule, widths=widths, configured=7)
-    assert _reachable_verify_widths(config, 7, 32) == _verify_width_candidates(
-        config, 7, 32
+    policy = _policy(
+        _config(schedule, widths=widths, configured=7), 7, max_batch_size=32
     )
+    assert policy.reachable_widths() == policy.decode_widths(32)
 
 
 def test_adaptive_widths_do_not_depend_on_the_batch_ceiling() -> None:
@@ -545,12 +563,12 @@ def test_adaptive_widths_do_not_depend_on_the_batch_ceiling() -> None:
 def test_adaptive_table_offers_every_candidate_at_every_batch_size() -> None:
     """The default floor of 1 captures what it did before the floor existed."""
     config = _config(None, widths="1,3,7", configured=7)
-    assert _verify_widths_by_batch_size(config, 7, 3)[1:] == [[1, 3, 7]] * 3
+    assert _policy(config, 7).widths_by_batch_size(3)[1:] == [[1, 3, 7]] * 3
 
 
 def test_adaptive_table_keeps_only_the_widest_below_the_floor() -> None:
     config = _config(None, widths="1,3,7", min_batch_size=3, configured=7)
-    assert _verify_widths_by_batch_size(config, 7, 4) == [
+    assert _policy(config, 7).widths_by_batch_size(4) == [
         [7],
         [7],
         [7],
@@ -562,7 +580,8 @@ def test_adaptive_table_keeps_only_the_widest_below_the_floor() -> None:
 def test_the_floor_does_not_shrink_the_bitmask_widths() -> None:
     """A narrow width stays reachable at batch sizes above the floor."""
     config = _config(None, widths="1,3,7", min_batch_size=64, configured=7)
-    assert _reachable_verify_widths(config, 7, 32) == [1, 3, 7]
+    policy = _policy(config, 7, max_batch_size=32)
+    assert policy.reachable_widths() == [1, 3, 7]
 
 
 def test_a_floor_without_adaptive_widths_is_refused() -> None:
@@ -585,7 +604,7 @@ def test_dflash_checks_the_ceiling_at_pipeline_build() -> None:
     """dflash reads its ceiling from the checkpoint, after config read."""
     config = _config(None, method="dflash", widths="1,9", configured=None)
     with pytest.raises(ValueError, match=r"outside 1\.\.3"):
-        _verify_width_candidates(config, 3, 32)
+        _policy(config, 3)
 
 
 @pytest.mark.parametrize("method", ["eagle", "dflash"])
@@ -605,25 +624,25 @@ def _adaptive_pipeline(
     min_batch_size: int = 1,
 ) -> OverlapTextGenerationPipeline[Any]:
     """A pipeline wired from the flag the way ``__init__`` wires one."""
-    config = _config(
-        None,
-        widths=widths,
-        mixed_width=mixed_width,
-        min_batch_size=min_batch_size,
-        configured=configured,
-    )
-    pipeline = _pipeline(
-        configured=configured,
-        lookup=None,
-        mixed_width=_mixed_verify_width(config, configured),
-        allow_mixed=True,
-        adaptive=AdaptiveVerifyWidth(
-            _verify_width_candidates(config, configured, 32),
+    policy = _policy(
+        _config(
+            None,
+            widths=widths,
+            mixed_width=mixed_width,
             min_batch_size=min_batch_size,
+            configured=configured,
         ),
+        configured,
+        max_batch_size=32,
     )
-    pipeline._widths_by_batch_size = _verify_widths_by_batch_size(
-        config, configured, 32
+    assert policy.adaptive is not None
+    pipeline = object.__new__(OverlapTextGenerationPipeline)
+    pipeline._spec_decode_state = cast(
+        Any, type("_S", (), {"num_speculative_tokens": configured})()
+    )
+    pipeline._spec_width_policy = policy
+    pipeline._adaptive_width = AdaptiveVerifyWidth(
+        policy.adaptive, min_batch_size=policy.adaptive_min_batch_size
     )
     return pipeline
 
@@ -793,7 +812,12 @@ def test_every_width_is_captured_at_its_batch_size() -> None:
                 rng.random(),
                 lambda width: _steep(width) * rng.uniform(0.9, 1.1),
             )
-            assert width in pipeline._widths_by_batch_size[batch_size]
+            assert (
+                width
+                in pipeline._spec_width_policy.widths_by_batch_size(32)[
+                    batch_size
+                ]
+            )
 
 
 @pytest.mark.parametrize(
