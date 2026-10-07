@@ -21,6 +21,8 @@ Model inference
 
    CompilationStopped
    CompiledModel
+   CompileOnlyExecutionError
+   CompileOnlyModel
    InferenceSession
    Model
 
