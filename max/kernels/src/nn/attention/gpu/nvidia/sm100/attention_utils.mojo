@@ -3901,7 +3901,7 @@ def apply_mask[
 ):
     """Applies bitmask, computed, and out-of-bounds masking strategies to a row of `BN` attention scores.
 
-    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.mask`, and both paths apply the out-of-bounds clip via `apply_oob_mask`.
+    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.visibility_mask` (after `mask.add_row_bias` on the whole row for a mask with `has_row_bias`), and both paths apply the out-of-bounds clip via `apply_oob_mask`.
 
     Parameters:
         BN: Number of scores in the row; must be a multiple of 32 for
@@ -4011,22 +4011,39 @@ def apply_mask[
 
     else:
         comptime block_size = BN // simd_size
+        # A mask with a row-wise bias takes the whole scaled row at once;
+        # each pair then only needs the visibility select.
+        comptime row_bias = (
+            MaskType.has_row_bias and MaskStrategy.COMPUTED in mask_strategy
+        )
+        comptime if row_bias:
+            comptime if not skip_scale:
+                comptime for n in range(block_size):
+                    comptime frag_col = simd_size * n
+                    var scaled = mul_ftz(
+                        F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
+                    )
+                    srow[frag_col] = scaled[0]
+                    srow[frag_col + 1] = scaled[1]
+            mask.add_row_bias(
+                srow,
+                prompt_idx,
+                q_head_idx,
+                UInt32(score_row),
+                kv_tile_start_row,
+            )
 
         comptime for n in range(block_size):
             # score_col = mask_frag_col + j * 8
             comptime frag_col = simd_size * n
-            var s: F32x2
-
-            comptime if skip_scale:
-                s = F32x2(srow[frag_col], srow[frag_col + 1])
-            else:
-                s = mul_ftz(
-                    F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
-                )
+            var s = F32x2(srow[frag_col], srow[frag_col + 1])
+            comptime if not (skip_scale or row_bias):
+                s = mul_ftz(s, scale_log2e)
             var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
 
+            # `visibility_mask` is `mask` for every mask without a row bias.
             comptime if MaskStrategy.COMPUTED in mask_strategy:
-                s = mask.mask(
+                s = mask.visibility_mask(
                     IndexList[4, element_type=.uint32](
                         Int(prompt_idx),
                         Int(q_head_idx),
