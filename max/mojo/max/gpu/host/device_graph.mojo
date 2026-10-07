@@ -1140,18 +1140,48 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     var _placements: List[_StablePlacement]
     """The `place_stable` calls recorded on this builder, in order."""
 
+    var _recording_ctx: DeviceContext
+    """The one recording context this builder hands out. The emitted kernel
+    wrappers request a context per kernel, but builds are sequential and only
+    one is ever live, so `recording_context()` reseats this context's chain
+    root instead of constructing a fresh one each call."""
+
     @doc_hidden
     def __init__(
         out self,
         handle: _DeviceGraphBuilderPtr[mut=True],
         ctx: DeviceContext,
-    ):
+    ) raises:
         self._handle = handle
         self._ctx = ctx
         self._implicit_deps = []
         self._region_floor = None
         self._stable = []
         self._placements = []
+
+        # The sentinel seed is never read: `recording_context()` reseats the
+        # chain root before every hand-out.
+        var result: _DeviceContextPtr[mut=True] = {}
+        # const char *AsyncRT_DeviceGraphBuilder_recordingContext(
+        #     DeviceContext **result, DeviceGraphBuilder *builder,
+        #     int32_t seedNodeId)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraphBuilder_recordingContext",
+                _CString[],
+                Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
+                _DeviceGraphBuilderPtr[mut=True],
+                Int32,
+            ](
+                Pointer(to=result),
+                handle,
+                Int32(-1),
+            )
+        )
+        # `checkRef` transferred ownership of the fresh reference to us, so the
+        # stored context must release it on destruction.
+        self._recording_ctx = DeviceContext(ctx_ptr=result)
+        self._recording_ctx._owning = True
 
     @doc_hidden
     def _set_stable_slots(mut self, var slots: List[StableAddr]):
@@ -1189,7 +1219,8 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
             A `DeviceContext` that records into this builder.
 
         Raises:
-            If the backing driver fails to create the recording context.
+            If adding the seed node or reseating the recording context's chain
+            root fails.
         """
         # Dependency tracking lives on the Mojo builder (`_implicit_deps` and
         # `region` scopes); the C++ builder does not model it. Materialize the
@@ -1201,29 +1232,26 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         # recorded nodes land in the same id space, so the last of them becomes
         # the chain predecessor a later `add_*` in the same scope picks up,
         # which keeps the scope serial across the boundary.
+        #
+        # The context itself is memoized on the builder: every call reseats the
+        # chain root of the one stored recording context rather than
+        # constructing a fresh one, so two hand-outs never chain after each
+        # other's nodes by accident.
         var seed = self.add_empty()
-        var result: _DeviceContextPtr[mut=True] = {}
-        # const char *AsyncRT_DeviceGraphBuilder_recordingContext(
-        #     DeviceContext **result, DeviceGraphBuilder *builder,
-        #     int32_t seedNodeId)
+        # const char *AsyncRT_DeviceContext_reseedRecording(
+        #     DeviceContext *ctx, int32_t seedNodeId)
         _checked(
             external_call[
-                "AsyncRT_DeviceGraphBuilder_recordingContext",
+                "AsyncRT_DeviceContext_reseedRecording",
                 _CString[],
-                Pointer[_DeviceContextPtr[mut=True], origin_of(result)],
-                _DeviceGraphBuilderPtr[mut=True],
+                _DeviceContextPtr[mut=True],
                 Int32,
             ](
-                Pointer(to=result),
-                self._handle,
+                self._recording_ctx._handle,
                 seed.id,
             )
         )
-        # `checkRef` transferred ownership of the fresh reference to us, so the
-        # returned context must release it on destruction.
-        var ctx = DeviceContext(ctx_ptr=result)
-        ctx._owning = True
-        return ctx^
+        return self._recording_ctx
 
     @doc_hidden
     @inline(.always)
