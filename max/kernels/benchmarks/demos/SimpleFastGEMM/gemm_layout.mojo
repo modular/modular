@@ -14,11 +14,12 @@
 # Meant to be run on an AVX512 system
 
 from std.math import align_up
-from std.memory import Layout as AllocLayout, dealloc
+from std.memory import Layout as AllocLayout, alloc, dealloc
 from std.sys import align_of, simd_width_of
 
 import std.benchmark
-from layout import *
+from layout import Coord, Idx, TileTensor, row_major, stack_allocation
+from layout.tensor_engine import DefaultEngine
 
 comptime MR = 6
 comptime NR = 64
@@ -28,71 +29,91 @@ comptime simd_size = simd_width_of[dtype]()
 comptime alignment = align_of[SIMD[dtype, simd_size]]()
 
 
-def gemm_naive[
-    layout_b: Layout, origin: Origin
-](
-    c: TileTensor[mut=True, dtype, ...],  # M x N
-    a: TileTensor[dtype, ...],  # M x K
-    b: LayoutTensor[dtype, layout_b, MutAnyOrigin],  # N x K
+def gemm_naive(
+    c: TileTensor[
+        mut=True, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # M x N
+    a: TileTensor[
+        mut=False, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # M x K
+    b: TileTensor[
+        mut=False, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # K x N
 ):
+    comptime assert c.rank == c.flat_rank == 2
+    comptime assert a.rank == a.flat_rank == 2
+    comptime assert b.rank == b.flat_rank == 2
     var M = Int(c.dim[0]())
-    var N = b.dim(1)
-    var K = b.dim(0)
+    var N = Int(b.dim[1]())
+    var K = Int(b.dim[0]())
 
     for mm in range(M):
         for kk in range(K):
             for nn in range(N):
-                c.ptr[mm * N + nn] += a.ptr[mm * K + kk] * b[kk, nn]
+                c[mm, nn] += a[mm, kk] * b[kk, nn]
 
 
-def kernel[
-    layout_c: Layout,
-    layout_a: Layout,
-    layout_b: Layout,
-](
-    c: LayoutTensor[dtype, layout_c],  # MR, NR
-    a: LayoutTensor[dtype, layout_a],  # MR, K
-    b_packed: LayoutTensor[dtype, layout_b],  # 1, K * NR
+def kernel(
+    c: TileTensor[
+        mut=True, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # MR, NR
+    a: TileTensor[
+        mut=False, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # MR, K
+    b_packed: TileTensor[
+        mut=False, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # 1, K * NR
 ):
-    var K = a.dim(1)
+    comptime assert c.rank == c.flat_rank == 2
+    comptime assert a.rank == a.flat_rank == 2
+    comptime assert b_packed.rank == b_packed.flat_rank == 2
+    var K = Int(a.dim[1]())
 
-    var c_cache = TensorBuilder[MR, NR, dtype].OnStackAligned[alignment]()
+    var c_cache = stack_allocation[dtype, alignment=alignment](
+        row_major[MR, NR]()
+    )
 
     comptime for m in range(MR):
-        c_cache.store[NR](m, 0, c.load[NR](m, 0))
+        c_cache.store[alignment=alignment]((m, 0), c.load[width=NR]((m, 0)))
 
     for pr in range(K // NR):
         var a_tile = a.tile[MR, NR](0, pr)
         var b_row = b_packed.tile[1, NR * NR](0, pr)
 
         for k in range(NR):
-            var b_next_tile = b_row.tile[1, NR](0, k + 4)
-
-            comptime for n in range(0, NR, simd_size):
-                b_next_tile.prefetch(0, n)
+            if pr * NR + k + 4 < K:
+                var b_next_tile = b_packed.tile[1, NR](0, pr * NR + k + 4)
+                comptime for n in range(0, NR, simd_size):
+                    b_next_tile.prefetch(Coord(0, n))
 
             var b_tile = b_row.tile[1, NR](0, k)
 
             comptime for m in range(MR):
                 var av = a_tile[m, k]
 
-                c_cache.store[NR](
-                    m, 0, av * b_tile.load[NR](0, 0) + c_cache.load[NR](m, 0)
+                c_cache.store[alignment=alignment](
+                    (m, 0),
+                    av * b_tile.load[width=NR]((0, 0))
+                    + c_cache.load[width=NR, alignment=alignment]((m, 0)),
                 )
 
     comptime for m in range(MR):
-        c.store[NR](m, 0, c_cache.load[NR](m, 0))
+        c.store((m, 0), c_cache.load[width=NR, alignment=alignment]((m, 0)))
 
 
-def pack_b[
-    layout_b: Layout,
-    layout_packed: Layout,
-](
-    b: LayoutTensor[layout_b, dtype],  # K x N
-    packed: LayoutTensor[layout_packed, dtype],  # N // NR x K * NR
+def pack_b(
+    b: TileTensor[
+        mut=False, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # K x N
+    packed: TileTensor[
+        mut=True, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # N // NR x K * NR
 ):
-    comptime K = b.dim[0]()
-    comptime N = b.dim[1]()
+    comptime assert b.rank == b.flat_rank == 2
+    comptime assert packed.rank == packed.flat_rank == 2
+    comptime K = b.static_shape[0]
+    comptime N = b.static_shape[1]
+    comptime assert K >= 0 and N >= 0, "packing requires static dimensions"
 
     for jc in range(N // NR):
         for pr in range(K // NR):
@@ -106,27 +127,29 @@ def pack_b[
 
 
 def gemm[
-    N: Int,
-    K: Int,
-    layout_b: Layout,
+    N: Int, K: Int
 ](
-    c: TileTensor[mut=True, dtype, ...],  # M x N
-    a: TileTensor[dtype, ...],  # M x K
-    b_packed: LayoutTensor[layout_b, dtype],  # (N // NR) x (K * NR)
+    c: TileTensor[
+        mut=True, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # M x N
+    a: TileTensor[
+        mut=False, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # M x K
+    b_packed: TileTensor[
+        mut=False, dtype, Engine=DefaultEngine[element_width=1], ...
+    ],  # (N // NR) x (K * NR)
 ):
+    comptime assert c.rank == c.flat_rank == 2
+    comptime assert a.rank == a.flat_rank == 2
+    comptime assert b_packed.rank == b_packed.flat_rank == 2
     var M = Int(c.dim[0]())
 
     for jc in range(N // NR):
         var b_tile = b_packed.tile[1, K * NR](jc, 0)
 
         for ir in range(M // MR):
-            var a_tile = TensorBuilder[MR, K, dtype].Wrap(a.ptr + K * MR * ir)
-
-            # Possibly a slightly more efficient way of building c_tile
-            comptime c_tile_layout = Layout([MR, NR], [N, 1])
-            var c_tile = LayoutTensor[c_tile_layout, dtype](
-                c.ptr + N * MR * ir + NR * jc
-            )
+            var a_tile = a.tile[MR, K](ir, 0)
+            var c_tile = c.tile[MR, NR](ir, jc)
 
             kernel(c_tile, a_tile, b_tile)
 
@@ -141,15 +164,13 @@ def gemm_export_dynamic(
 ) abi("C"):
     comptime N = 1024
     comptime K = 1024
-    var a = TileTensor(a_ptr, row_major(M, Idx[N]))
-    var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(b_packed_ptr)
-    var c = TileTensor(
-        c_ptr.bitcast[Scalar[dtype], mut=True](), row_major(M, Idx[N])
-    )
+    var a = TileTensor(a_ptr, row_major(M, Idx[K]))
+    var b_packed = TileTensor(b_packed_ptr, row_major[N // NR, K * NR]())
+    var c = TileTensor(c_ptr, row_major(M, Idx[N]))
     gemm[N, K](c, a, b_packed)
 
 
-def main():
+def main() raises:
     comptime M = align_up(1024, MR)
     comptime N = align_up(1024, NR)
     comptime K: Int = 1024
@@ -167,7 +188,6 @@ def main():
     print("x", end="")
     print(K)
 
-    # FIXME: Something causes sporadic crashes on intel with TensorBuilder.Build()
     var a_alloc = alloc(
         AllocLayout[Float32, alignment=.of_bytes[alignment]()](count=M * K)
     ).into_managed()
@@ -186,9 +206,9 @@ def main():
 
     var a = TileTensor(a_alloc.unsafe_ptr(), row_major[M, K]())
 
-    var b = TensorBuilder[K, N, dtype].Wrap(b_alloc.unsafe_ptr())
-    var b_packed = TensorBuilder[N // NR, K * NR, dtype].Wrap(
-        b_packed_alloc.unsafe_ptr()
+    var b = TileTensor(b_alloc.unsafe_ptr(), row_major[K, N]())
+    var b_packed = TileTensor(
+        b_packed_alloc.unsafe_ptr(), row_major[N // NR, K * NR]()
     )
 
     var c = TileTensor(c_alloc.unsafe_ptr(), row_major[M, N]())
@@ -196,25 +216,25 @@ def main():
 
     for j in range(M):
         for i in range(K):
-            a.ptr[j * K + i] = K * j + i
+            a[j, i] = Scalar[dtype](K * j + i)
 
     for j in range(K):
         for i in range(N):
-            b[j, i] = N * j + i
+            b[j, i] = Scalar[dtype](N * j + i)
 
     for j in range(M):
         for i in range(N):
-            c.ptr[j * N + i] = 0
-            c2.ptr[j * N + i] = 0
+            c[j, i] = 0
+            c2[j, i] = 0
 
-    pack_b(b, b_packed)
+    pack_b(b.as_imm(), b_packed)
 
-    gemm_naive(c, a, b)
-    gemm[N, K](c2, a, b_packed)
+    gemm_naive(c, a.as_imm(), b.as_imm())
+    gemm[N, K](c2, a.as_imm(), b_packed.as_imm())
     var errors: Int = 0
     for j in range(M):
         for i in range(N):
-            if c.ptr[j * N + i] != c2.ptr[j * N + i]:
+            if c[j, i] != c2[j, i]:
                 errors += 1
 
     print(errors)
@@ -223,7 +243,7 @@ def main():
     print(" errors")
 
     def bench_gemm() {var}:
-        gemm[N, K](c2, a, b_packed)
+        gemm[N, K](c2, a.as_imm(), b_packed.as_imm())
 
     var num_warmup: Int = 1
     var time = std.benchmark.run(bench_gemm, num_warmup).mean()
