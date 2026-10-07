@@ -288,9 +288,6 @@ class ZmqConfig(Generic[T]):
             high_water_mark=self._high_water_mark,
         )
 
-    def async_pair(self) -> tuple[ZmqAsyncPushSocket[T], ZmqAsyncPullSocket[T]]:
-        return self.async_push(), self.async_pull()
-
 
 class ZmqSocket:
     def __init__(
@@ -397,13 +394,6 @@ class ZmqRouterSocket(Generic[Request, Reply], ZmqSocket):
         self._deserialize = msgpack_numpy_decoder(request_type)
         super().__init__(endpoint=endpoint, mode=zmq.ROUTER)
 
-    def send_reply(self, msg: Reply, identity: ClientIdentity) -> None:
-        """Send a reply, blocking until the peer is ready."""
-        if self._is_closed:
-            raise RuntimeError("Socket is closed")
-        serialized_msg = self._serialize(msg)
-        self._socket.send_multipart([identity, serialized_msg])
-
     def send_reply_nowait(self, msg: Reply, identity: ClientIdentity) -> None:
         """Send a reply without blocking; raises zmq.Again if peer isn't connected."""
         if self._is_closed:
@@ -432,13 +422,6 @@ class ZmqDealerSocket(Generic[Request, Reply], ZmqSocket):
         self._serialize = NON_SHARED_MSGPACK_NUMPY_ENCODER
         self._deserialize = msgpack_numpy_decoder(reply_type)
         super().__init__(endpoint=endpoint, mode=zmq.DEALER)
-
-    def send_request(self, msg: Request) -> None:
-        """Send a request, blocking until the peer is ready."""
-        if self._is_closed:
-            raise RuntimeError("Socket is closed")
-        serialized_msg = self._serialize(msg)
-        self._socket.send(serialized_msg)
 
     def send_request_nowait(self, msg: Request) -> None:
         """Send a request without blocking; raises zmq.Again if peer isn't connected."""
