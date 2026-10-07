@@ -737,6 +737,10 @@ def _block_reduce_value_count[
             count = count_sram[0],
         }
 
+    # Without this, a warp that starts the caller's next reduction can
+    # overwrite the slots while a lagging warp still reads this one's.
+    barrier()
+
     return result
 
 

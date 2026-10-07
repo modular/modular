@@ -39,7 +39,6 @@ from std.utils.static_tuple import StaticTuple
 
 from std._gpu import WARP_SIZE, lane_id, thread_idx, warp_id
 from std._gpu.primitives import warp
-from std.sys.info import is_apple_gpu
 
 from max.gpu import barrier
 
@@ -133,17 +132,9 @@ def _block_reduce_with_padding[
         comptime for i in range(num_reductions):
             warp_results[i] = shared_mem[unsafe_offset=i]
 
-    # The trailing shared-memory reads above (warp 0's per-warp loads, and
-    # every thread's broadcast load) have no barrier after them, so a warp
-    # that finishes this combine can begin the caller's next one and
-    # overwrite the strip while a lagging warp still reads it. On
-    # NVIDIA/AMD warps never
-    # drift that far in practice; Metal's threadgroup scheduling loses this
-    # race readily (measured: rms_norm block tier, run-to-run divergent
-    # bytes on M5). Close the reuse window on Apple only, keeping other
-    # targets' codegen byte-identical.
-    comptime if is_apple_gpu():
-        barrier()
+    # Without this, a warp that starts the caller's next combine can overwrite
+    # the strip while a lagging warp still reads this one's results.
+    barrier()
 
     return warp_results
 
@@ -689,8 +680,10 @@ def broadcast[
         shared_mem.unsafe_store(val)
 
     barrier()
+    var ret = shared_mem.unsafe_load[width=width]()
+    barrier()
 
-    return shared_mem.unsafe_load[width=width]()
+    return ret
 
 
 # ===-----------------------------------------------------------------------===#
@@ -747,6 +740,10 @@ def _prefix_sum[
     # Step 4: Add the prefix from previous warps
     if wid > 0:
         thread_result += warp_mem[unsafe_offset=wid - 1]
+
+    # Without this, a warp that starts the caller's next scan can overwrite
+    # `warp_mem` while a lagging warp still reads this one's prefixes.
+    barrier()
 
     return thread_result
 
