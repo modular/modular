@@ -1553,3 +1553,100 @@ class _ChunkedStagingRegion:
 
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""
+
+class SymmetricPool:
+    """
+    A driver-owned symmetric multicast pool shared by a set of devices.
+
+    The pool is a single fixed-capacity allocation, created once per device
+    set and registered in the driver. It outlives this handle: dropping the
+    Python object does not free device memory, and two handles for the same
+    devices refer to the same allocation.
+
+    Not constructible directly. Use :meth:`allocate()` once during session
+    setup, and :meth:`lookup()` afterwards.
+    """
+
+    @staticmethod
+    def allocate(devices: Sequence[Device], byte_size: int) -> SymmetricPool:
+        """
+        Allocates the pool over ``devices`` and registers it in the driver.
+
+        Args:
+            devices (Sequence[Device]): The devices to span, at least two,
+                in any order.
+            byte_size (int): Usable bytes per device. The driver rounds
+                the real allocation up to the multicast granularity.
+
+        Returns:
+            SymmetricPool: The newly registered pool.
+
+        Raises:
+            RuntimeError: If a pool is already registered for these
+                devices, fewer than two devices are given, a device lacks
+                multicast support, or the allocation fails.
+        """
+
+    @staticmethod
+    def lookup(devices: Sequence[Device]) -> SymmetricPool | None:
+        """
+        Returns the pool registered for ``devices``, or ``None``.
+
+        A registry read, never an allocation.
+
+        Args:
+            devices (Sequence[Device]): The devices the pool spans.
+
+        Returns:
+            SymmetricPool | None: The registered pool, if any.
+        """
+
+    @staticmethod
+    def is_supported(devices: Sequence[Device]) -> bool:
+        """
+        Returns whether ``devices`` can back a multicast pool.
+
+        Answers before any memory is committed. A device that cannot
+        report its capability counts as unsupported.
+
+        Args:
+            devices (Sequence[Device]): The devices a pool would span.
+
+        Returns:
+            bool: True when every device supports multicast.
+        """
+
+    @property
+    def byte_size(self) -> int:
+        """Usable bytes per device; the views are exactly this long."""
+
+    def unicast_view(self, device: Device) -> Buffer:
+        """
+        Returns the device's own view of the pool as a flat ``uint8`` buffer.
+
+        The buffer is non-owning; the driver owns the memory. Retype a
+        sub-region with :meth:`Buffer.view()`.
+
+        Args:
+            device (Device): One of the devices the pool spans.
+
+        Returns:
+            Buffer: A flat ``uint8`` view, ``byte_size`` bytes long.
+
+        Raises:
+            RuntimeError: If ``device`` is not one the pool spans.
+        """
+
+    def multicast_view(self, device: Device) -> Buffer:
+        """
+        Returns the multicast alias the switch reduces through.
+
+        Only meaningful to a kernel issuing multimem instructions; host
+        loads and stores through it are undefined.
+
+        Args:
+            device (Device): One of the devices the pool spans.
+
+        Returns:
+            Buffer: A flat ``uint8`` view, ``byte_size`` bytes long.
+        """
