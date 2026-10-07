@@ -2683,36 +2683,32 @@ def _rowsum[
 @inline(.always)
 def _online_softmax_correction[
     dtype: DType,
-    row_accum_layout: Layout,
-    accum_frag_layout: Layout,
+    row_accum_layout: TensorLayout,
     //,
     use_exp2: Bool,
 ](
-    rowmax_tensor: LayoutTensor[
-        dtype,
-        row_accum_layout,
-        MutAnyOrigin,
-        address_space=.LOCAL,
-        element_layout=accum_frag_layout,
+    rowmax_tensor: TileTensor[
+        mut=True, dtype, row_accum_layout, address_space=.LOCAL, ...
     ],
-    score_frag_rowmax: LayoutTensor[
-        dtype,
-        row_accum_layout,
-        MutAnyOrigin,
-        address_space=.LOCAL,
-        element_layout=accum_frag_layout,
+    score_frag_rowmax: TileTensor[
+        mut=True, dtype, row_accum_layout, address_space=.LOCAL, ...
     ],
-):
-    comptime num_colwise_tiles = row_accum_layout.size()
+) where (rowmax_tensor.rank == 1) & (score_frag_rowmax.rank == 1):
+    # The NVIDIA caller carries one scalar maximum per register row.
+    comptime assert rowmax_tensor.flat_rank == score_frag_rowmax.flat_rank == 1
+    comptime assert rowmax_tensor.Engine == DefaultEngine[element_width=1]
+    comptime assert score_frag_rowmax.Engine == DefaultEngine[element_width=1]
+    comptime assert rowmax_tensor.static_shape[0] > 0
+    comptime num_colwise_tiles = rowmax_tensor.static_shape[0]
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
     comptime for col_tile in range(num_colwise_tiles):
-        # Corrention since previous max may be updated.
-        var sfr = score_frag_rowmax[col_tile]
-        score_frag_rowmax[col_tile] = exp_function(
-            rowmax_tensor[col_tile] - sfr
+        var sfr = score_frag_rowmax.load[width=1](Coord(col_tile))
+        var previous = rowmax_tensor.load[width=1](Coord(col_tile))
+        score_frag_rowmax.store[width=1](
+            Coord(col_tile), exp_function(previous - sfr)
         )
-        rowmax_tensor[col_tile] = sfr
+        rowmax_tensor.store[width=1](Coord(col_tile), sfr)
 
 
 # ===----------------------------------------------------------------------=== #

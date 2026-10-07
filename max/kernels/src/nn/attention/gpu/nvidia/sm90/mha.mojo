@@ -40,7 +40,15 @@ from max.gpu.host.info import H100
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.sync import named_barrier
-from layout import Coord, IntTuple, Layout, LayoutTensor, TensorEngine
+from layout import (
+    Coord,
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    TensorEngine,
+    TileTensor,
+    row_major,
+)
 from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
@@ -2008,7 +2016,13 @@ def _mha_sm90[
                     )
 
                     _online_softmax_correction[use_exp2=True](
-                        rowmax, score_frag_rowmax
+                        TileTensor[address_space=.LOCAL](
+                            rowmax.ptr, row_major[num_rows_per_warp]()
+                        ),
+                        TileTensor[address_space=.LOCAL](
+                            score_frag_rowmax.ptr,
+                            row_major[num_rows_per_warp](),
+                        ),
                     )
                     # rowmax now holds score_frag_rowmax
                     # score_frag_rowmax now holds the correction
