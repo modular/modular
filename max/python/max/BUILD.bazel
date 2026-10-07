@@ -1,5 +1,5 @@
 load("@aspect_bazel_lib//lib:write_source_files.bzl", "write_source_files")
-load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "requirement")
+load("//bazel:api.bzl", "modular_generate_stubfiles", "modular_nanobind_extension", "modular_py_library", "modular_pyo3_extension", "requirement")
 load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 
 package(default_visibility = ["//max:consumers"])
@@ -84,7 +84,10 @@ When you modify a .cpp file in the _core/src directory, you can run
 """,
     include_private = True,
     pattern_file = ":_core/patterns.nb",
-    pyi_srcs = glob(["**/*.pyi"]),
+    pyi_srcs = glob(
+        ["**/*.pyi"],
+        exclude = ["_kv_core.pyi"],
+    ),
     deps = [
         "//max/python/max/_core_types",
         "//max/python/max/_mlir",
@@ -115,6 +118,23 @@ write_source_files(
             "@platforms//cpu:x86_64",
         ],
     }),
+)
+
+# kv-core, the KV cache bookkeeping shared with Mach, built from closed Rust
+# sources like _core is from closed C++. Its stub is written by hand.
+modular_pyo3_extension(
+    name = "_kv_core.bindings",
+    srcs = ["//rust_kv/kv-core-pyo3:srcs"],
+    crate_name = "kv_core_pyo3",
+    module_name = "_kv_core",
+    deps = ["//rust_kv/kv-core"],
+)
+
+modular_py_library(
+    name = "_kv_core",
+    data = [":_kv_core.bindings"],
+    pyi_srcs = ["_kv_core.pyi"],
+    deps = [requirement("numpy")],
 )
 
 modular_py_library(

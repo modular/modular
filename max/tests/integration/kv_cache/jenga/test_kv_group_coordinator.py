@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 import pytest
+from max._kv_core import longest_joint_prefix_hit
 from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.kv_cache.paged_kv_cache.block_utils import LittleKVCacheBlock
 from max.pipelines.kv_cache.paged_kv_cache.jenga_block_manager import (
@@ -30,7 +31,6 @@ from max.pipelines.kv_cache.paged_kv_cache.kv_group_coordinator import (
     KVGroupCoordinatorInterface,
     SlidingWindowKVGroupCoordinator,
 )
-from max.pipelines.kv_cache.prefix_hit import longest_joint_prefix_hit
 from max.pipelines.request.base import RequestID
 
 BLOCK_SIZE = 4
@@ -113,7 +113,10 @@ def sliding_group(
 def joint(keys: Sequence[bytes], *groups: KVGroupCoordinatorInterface) -> int:
     """What the given leaves agree they can serve, the way the manager asks."""
     return longest_joint_prefix_hit(
-        [(g.group_id, g.residency(keys, 0)) for g in groups], BLOCK_SIZE
+        [
+            (g.group_id.prefix_hit_shape(BLOCK_SIZE), g.residency(keys, 0))
+            for g in groups
+        ]
     )
 
 

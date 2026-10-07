@@ -237,6 +237,12 @@ def modular_nanobind_extension(name, **_kwargs):
         actual = "@modular_wheel//:wheel",
     )
 
+def modular_pyo3_extension(name, **_kwargs):
+    native.alias(
+        name = name,
+        actual = "@modular_wheel//:wheel",
+    )
+
 def modular_generate_stubfiles(**kwargs):
     _modular_generate_stubfiles(is_external = True, **kwargs)
 

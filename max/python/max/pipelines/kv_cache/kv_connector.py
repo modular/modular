@@ -279,7 +279,7 @@ class KVConnector(Protocol):
 
         What that presence is worth is the manager's to decide, since it
         depends on how far each leaf's attention reads back. The manager
-        reconciles the masks with :mod:`~max.pipelines.kv_cache.prefix_hit`,
+        reconciles the masks with :mod:`max._kv_core`'s prefix-hit rules,
         the same rules it runs over the device pools, so a connector needs no
         notion of attention shape, window widths or null blocks.
 

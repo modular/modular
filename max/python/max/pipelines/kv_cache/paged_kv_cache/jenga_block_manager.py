@@ -28,6 +28,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from itertools import chain
 
+from max._kv_core import longest_joint_prefix_hit
 from max.driver import Buffer, batch_inplace_copy
 from max.nn.kv_cache import KVCacheGroupId, KVLeafRegion
 from max.nn.kv_cache.cache_params import KVCacheMemory
@@ -38,7 +39,6 @@ from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
-from ..prefix_hit import longest_joint_prefix_hit
 from .block_manager import (
     CompletedTransfer,
     KVLoadFailed,
@@ -655,10 +655,12 @@ class JengaBlockManager:
         # reconcile would otherwise decide part of the hit.
         return longest_joint_prefix_hit(
             [
-                (group.group_id, resident[leaf_id])
+                (
+                    group.group_id.prefix_hit_shape(self._block_size),
+                    resident[leaf_id],
+                )
                 for leaf_id, group in self._cacheable_groups.items()
-            ],
-            self._block_size,
+            ]
         )
 
     @traced
@@ -1057,14 +1059,13 @@ class JengaBlockManager:
         return longest_joint_prefix_hit(
             [
                 (
-                    group.group_id,
+                    group.group_id.prefix_hit_shape(self._block_size),
                     group.residency(
                         desired_hashes, replica_idx, allow_cross_replica
                     ),
                 )
                 for group in self._cacheable_groups.values()
-            ],
-            self._block_size,
+            ]
         )
 
     def _lookup_device_prefix_cache_hit(

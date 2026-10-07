@@ -36,6 +36,7 @@ from max._kv_cache_ops import (
     mha_decode_num_partitions,
     mla_dispatch_args_scalar,
 )
+from max._kv_core import LeafShape
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.experimental.sharding import TensorLayout
@@ -150,14 +151,32 @@ class KVCacheGroupId:
             return -1
         return ceildiv(self.window_size - 1, page_size)
 
+    def prefix_hit_shape(self, page_size: int) -> LeafShape:
+        """Returns the prefix-hit rule a leaf of this shape answers with.
+
+        Args:
+            page_size: Tokens per block, which turns ``window_size`` into a
+                block count.
+
+        Returns:
+            The shape :mod:`max._kv_core`'s prefix-hit functions take.
+        """
+        if self.is_scratch():
+            return LeafShape.scratch()
+        if self.is_recurrent():
+            return LeafShape.recurrent()
+        if self.is_full():
+            return LeafShape.full()
+        return LeafShape.sliding_window(self.blocks_in_window(page_size))
+
     def longest_hit(self, page_size: int, resident: Sequence[bool]) -> int:
         """How much of ``resident`` a leaf of this shape can reuse.
 
         Residency in, prefix length out. The answer is counted from the start
         even for a shape that only reads the tail of it, so the caller can
-        compare shapes against one another -- which
-        :func:`~max.pipelines.kv_cache.prefix_hit.longest_joint_prefix_hit`
-        does to settle what a whole tree serves at once.
+        compare shapes against one another, which
+        :func:`max._kv_core.longest_joint_prefix_hit` does to settle what a
+        whole tree serves at once.
 
         ``len(resident)`` bounds the candidate, so narrowing means passing a
         shorter view, not recomputing residency.
@@ -196,56 +215,16 @@ class KVCacheGroupId:
         rejects it, since a query token attending to no historical tokens
         would make every block a hit attention never reads back.
 
+        The rule itself is
+        :meth:`max._kv_core.LeafShape.longest_hit`, applied to
+        :meth:`prefix_hit_shape`, so MAX and Mach share one copy.
+
         Args:
             page_size: Tokens per block, which turns ``window_size`` into a
                 block count.
             resident: Whether each block of the chain is held, positionally.
         """
-        num_hashes = len(resident)
-        if self.is_scratch():
-            # Never published, so it has no opinion and must not shorten what
-            # the leaves that do cache agree on.
-            return num_hashes
-        if self.is_recurrent():
-            # A state is a single published boundary rather than a run, so
-            # the deepest one that stands is the answer.
-            for idx in range(num_hashes - 1, -1, -1):
-                if resident[idx]:
-                    return idx + 1
-            return 0
-        if self.is_full():
-            # Reads its whole history, so the hit is the run from the root.
-            for idx in range(num_hashes):
-                if not resident[idx]:
-                    return idx
-            return num_hashes
-
-        # Sliding window: the hit is a SUFFIX run, so walk back counting a
-        # consecutive run and take the first place it fills the window. A
-        # shallower stopping point covers different blocks, so this cannot be
-        # found by shortening a full-attention answer.
-        blocks_in_window = self.blocks_in_window(page_size)
-        if blocks_in_window < 1:
-            # window_size == 1, a query attending to no history, which would
-            # make every block a hit attention never reads back. __post_init__
-            # rejects that window and so does Mach's KVCacheConfig::validate,
-            # so one arriving here is a caller bug (SERVOPT-1627).
-            raise ValueError(
-                "A sliding-window group spans at least one block; got"
-                f" blocks_in_window={blocks_in_window}. window_size must be"
-                " greater than 1."
-            )
-        run = 0
-        for idx in range(num_hashes - 1, -1, -1):
-            if not resident[idx]:
-                run = 0
-                continue
-            run += 1
-            if run >= blocks_in_window:
-                return idx + run
-        # A run reaching the root is a hit of just that run: nothing sits
-        # below it to be missing.
-        return run
+        return self.prefix_hit_shape(page_size).longest_hit(resident)
 
     def is_recurrent(self) -> bool:
         return self.type == "recurrent"

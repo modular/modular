@@ -1360,8 +1360,8 @@ class DKVConnector(KVConnector):
         # off. That is what the leased path needs -- a leaf spanning none
         # would take a lease and hand it straight back on every request
         # without ever posting a block, because
-        # :func:`longest_sliding_window_hit` would return the whole candidate
-        # unread and :func:`blocks_held_of_hit` would then make its share 0.
+        # the sliding-window rule would return the whole candidate unread and
+        # :func:`max._kv_core.blocks_held_of_hit` would then make its share 0.
         # Recency is a property of the leaf's attention group, so it is fixed
         # here rather than rebuilt inside the per-replica admission loop.
         self._group_recencies = [

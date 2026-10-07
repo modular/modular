@@ -30,8 +30,8 @@ from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
+from max._kv_core import LeafShape, longest_joint_prefix_hit
 from max.driver import Buffer, batch_inplace_copy
-from max.nn.kv_cache import KVCacheGroupId
 from max.nn.kv_cache.cache_params import KVCacheMemory
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.context import (
@@ -50,7 +50,6 @@ from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
-from ..prefix_hit import longest_joint_prefix_hit
 from .block_pool import BlockPool
 from .block_utils import (
     InsufficientBlocksError,
@@ -795,8 +794,7 @@ class BlockManager:
             desired_hashes, replica_idx=replica_idx, hint=hint
         )
         num_loaded = longest_joint_prefix_hit(
-            [(KVCacheGroupId.full(), mask) for mask in resident.values()],
-            self.block_size,
+            [(LeafShape.full(), mask) for mask in resident.values()]
         )
         # Truncating is safe: a full-attention hit is downward-closed, so a
         # shorter prefix of an agreed one is also agreed.
@@ -922,8 +920,7 @@ class BlockManager:
         if remaining:
             resident = self.connector.lookup(remaining, replica_idx=replica_idx)
             num_external_hits = longest_joint_prefix_hit(
-                [(KVCacheGroupId.full(), mask) for mask in resident.values()],
-                self.block_size,
+                [(LeafShape.full(), mask) for mask in resident.values()]
             )
 
         return PrefixCacheHits(

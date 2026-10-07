@@ -4,6 +4,7 @@ load("//max/python/max/pipelines/architectures:all_arches.bzl", "ALL_ARCHITECTUR
 
 ALL_MAX_PYTHON_DEPS = ALL_ARCHITECTURES + [
     "//max/python/max:_core",
+    "//max/python/max:_kv_core",
     "//max/python/max:tensor",
     "//max/python/max/_core_mojo",
     "//max/python/max/_entrypoints",
