@@ -1622,15 +1622,16 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
     return success();
   }
 
-  // Because we don't know whether a case is allowed to consume an RValue, we
-  // convert the subject to a BValue before building patterns, so none of the
-  // later pattern emission can consume the RValue.  For example, any "var"
-  // bindings will have to do a copy. Comptime subjects stay as PValues.
-  if (!isComptime && subject.getIfRValue()) {
+  // Resolve lazy subjects once before branching into cases. Also borrow
+  // RValues because no individual pattern may consume the shared subject.
+  // Existing LValues already provide stable storage and retain mutability.
+  if (!isComptime && (subject.getIfRValue() || subject.getIfDLValue())) {
     // TODO: maintain RValueness for as long as we can.
-    subject = getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
-    if (!subject)
+    BValue subjectBVal =
+        getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
+    if (!subjectBVal)
       return failure();
+    subject = subjectBVal;
   }
 
   // Shared path uniquing across all cases. Command lists are built while

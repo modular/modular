@@ -1572,17 +1572,21 @@ struct Tuple[*element_types: Movable](ImplicitlyCopyable):
     var _mlir_value: Self._mlir_type
 
     def __init__(out self: Tuple[]):
-        pass
+        while True:
+            pass
 
     @implicit
     def __init__(out self, *args: *Self.element_types):
-        pass
+        while True:
+            pass
 
     def __init__(out self, *, copy: Self):
-        pass
+        while True:
+            pass
 
     def __init__(out self, *, deinit move: Self):
-        pass
+        while True:
+            pass
 
     def __getitem_param__[i: Int](ref self) -> ref[self] Self.element_types[i]:
         while True:
