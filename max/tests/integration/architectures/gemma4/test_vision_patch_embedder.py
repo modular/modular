@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 import torch
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     VISION_EMBED_HIDDEN_SIZE,
     VISION_PATCH_SIZE,
     VISION_POSITION_EMBEDDING_SIZE,
