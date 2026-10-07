@@ -68,10 +68,7 @@ from std._gpu._utils import (
     to_llvm_shared_cluster_mem_ptr,
 )
 
-from std._gpu.intrinsics import Scope
-
-# Re-exports from the standard library
-from std._gpu.intrinsics import CacheOperation
+from max.gpu.intrinsics import Scope, CacheOperation
 
 # ===-----------------------------------------------------------------------===#
 # CacheEviction
