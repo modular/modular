@@ -171,9 +171,7 @@ class UnifiedMTPInklingModel(_UnifiedSpecDecodeModelMixin, InklingModel):
 
     @override
     def _wire_batch_processor(
-        self,
-        model: Model | None = None,
-        model_config: InklingConfig | None = None,
+        self, model: Model | None, model_config: InklingConfig
     ) -> None:
         super()._wire_batch_processor(model, model_config)
         if is_virtual_device_mode():

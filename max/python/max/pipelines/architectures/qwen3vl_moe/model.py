@@ -128,7 +128,9 @@ class Qwen3VLInputs(ModelInputs):
 
 class Qwen3VLModel(
     AlwaysSignalBuffersMixin,
-    MultiGraphPipelineModelWithKVCache[Qwen3VLTextAndVisionContext],
+    MultiGraphPipelineModelWithKVCache[
+        Qwen3VLTextAndVisionContext, Qwen3VLConfig
+    ],
 ):
     """A Qwen3VL pipeline model for multimodal text generation."""
 
@@ -242,7 +244,6 @@ class Qwen3VLModel(
     ) -> tuple[Graph, dict[str, WeightData]]:
         """Build the vision model graph for processing images."""
         del state_dict
-        assert isinstance(config, Qwen3VLConfig)
         assert isinstance(self.model, Qwen3VL)
         vision_encoder = self.model.vision_encoder
 
@@ -504,7 +505,6 @@ class Qwen3VLModel(
     ) -> tuple[Graph, dict[str, WeightData]]:
         """Build the language model graph for text generation with image embeddings."""
         del state_dict
-        assert isinstance(config, Qwen3VLConfig)
         assert isinstance(self.model, Qwen3VL)
         language_model = self.model.language_model
         assert language_model is not None, "Language model must be initialized"

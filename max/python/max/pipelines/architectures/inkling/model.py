@@ -43,7 +43,7 @@ from .weight_adapters import VISION_PREFIX
 
 class InklingModel(
     LogProbabilitiesMixin,
-    MultiGraphPipelineModelWithKVCache[TextAndVisionContext],
+    MultiGraphPipelineModelWithKVCache[TextAndVisionContext, InklingConfig],
     SupportsSSMStateWarmup,
 ):
     """Pipeline model for Inkling's decoder and its vision tower."""
@@ -88,9 +88,7 @@ class InklingModel(
 
     @override
     def _wire_batch_processor(
-        self,
-        model: Model | None = None,
-        model_config: InklingConfig | None = None,
+        self, model: Model | None, model_config: InklingConfig
     ) -> None:
         super()._wire_batch_processor(model, model_config)
         assert model is not None

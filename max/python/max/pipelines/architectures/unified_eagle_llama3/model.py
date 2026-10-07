@@ -86,7 +86,7 @@ class UnifiedEagleLlama3Inputs(UnifiedSpecDecodeInputs):
 
 class UnifiedEagleLlama3Model(
     _UnifiedSpecDecodeModelMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedEagleLlama3Config],
 ):
     """Unified EAGLE Llama3: target + draft in one compiled graph."""
 
@@ -226,10 +226,9 @@ class UnifiedEagleLlama3Model(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedEagleLlama3Config,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedEagleLlama3Config)
 
         nn_model = UnifiedEagleLlama3Module(model_config)
 

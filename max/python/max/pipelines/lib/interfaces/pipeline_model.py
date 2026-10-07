@@ -21,13 +21,14 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, cast
 
 from max import tree
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental import functional as F
+from max.experimental.nn.module import Module as _ModuleV3
 from max.experimental.tensor import default_dtype
 from max.graph import DeviceRef, Graph, Module, Value
 from max.graph.weights import Weights, WeightsAdapter
@@ -60,6 +61,7 @@ from max.pipelines.modeling.config_enums import (
 )
 from max.profiler import traced
 from transformers import AutoConfig
+from typing_extensions import TypeVar
 
 if TYPE_CHECKING:
     from max.pipelines.lib.config import PipelineConfig
@@ -72,6 +74,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger("max.pipelines")
 
 ArchConfigT = TypeVar("ArchConfigT")
+_ModelConfigT = TypeVar("_ModelConfigT", default=Any)
+_CompiledModelT = TypeVar("_CompiledModelT", default=Any)
 
 
 class AlwaysSignalBuffersMixin:
@@ -341,8 +345,15 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         return tail
 
 
-class PipelineModel(ABC, Generic[BaseContextType]):
-    """A pipeline model with setup, input preparation and execution methods."""
+class PipelineModel(
+    ABC, Generic[BaseContextType, _ModelConfigT, _CompiledModelT]
+):
+    """A pipeline model with setup, input preparation and execution methods.
+
+    Parameterized by the context type, the model config that
+    ``_create_model_config()`` builds, and the model that ``load_model()``
+    hands :meth:`_wire_batch_processor`.
+    """
 
     #: Optional batch processor class for input/output handling.
     batch_processor_cls: ClassVar[type[BatchProcessor[Any, Any]] | None] = None
@@ -657,6 +668,19 @@ class PipelineModel(ABC, Generic[BaseContextType]):
             "or set batch_processor_cls."
         )
 
+    def _wire_batch_processor(
+        self, model: _CompiledModelT, model_config: _ModelConfigT
+    ) -> None:
+        """Hands the batch processor what only exists once the model is built.
+
+        Args:
+            model: What ``load_model()`` built: the loaded graph for a graph
+                model, the vision tower for a vision-language model, or the
+                module before it compiles for a ModuleV3 model.
+            model_config: The config ``_create_model_config()`` returned.
+        """
+        del model, model_config
+
     def compute_log_probabilities(
         self,
         session: InferenceSession,
@@ -688,7 +712,7 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         )
 
 
-class GraphPipelineModel(PipelineModel[BaseContextType]):
+class GraphPipelineModel(PipelineModel[BaseContextType, _ModelConfigT, Model]):
     """Graph-API pipeline model without KV cache.
 
     Subclasses implement :meth:`_build_graph_for_compile` and optionally
@@ -729,12 +753,6 @@ class GraphPipelineModel(PipelineModel[BaseContextType]):
         """Optional hook; returns ``None`` when no arch config object is needed."""
         del state_dict
         return None
-
-    def _wire_batch_processor(
-        self, model: Model | None = None, model_config: Any = None
-    ) -> None:
-        """Optional hook to construct ``self.batch_processor`` after compile."""
-        del model, model_config
 
     def _build_graph_for_compile(
         self,
@@ -822,7 +840,9 @@ class ModuleV3PipelineModel(PipelineModel[BaseContextType]):
         )
 
 
-class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
+class PipelineModelWithKVCache(
+    PipelineModel[BaseContextType, _ModelConfigT, _CompiledModelT]
+):
     """A pipeline model that supports KV cache."""
 
     kv_params: KVCacheParamInterface
@@ -913,15 +933,8 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
         """HuggingFace config passed to the weight adapter, if any."""
         return None
 
-    # `model` is deliberately untyped here, unlike the hook on
-    # `GraphPipelineModel`: a graph subclass passes what a session load
-    # returned, while a ModuleV3 subclass passes the compiled callable, and
-    # naming the union of the two would stop either from declaring what it
-    # actually receives. Each override below says which it is.
     def _wire_batch_processor(
-        self,
-        model: Any = None,
-        model_config: Any = None,
+        self, model: _CompiledModelT, model_config: _ModelConfigT
     ) -> None:
         """Post-compile wiring into the batch processor (EP bind, vision, etc.)."""
         del model, model_config
@@ -933,7 +946,9 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             bind_ep(getattr(self, "ep_comm_initializer", None))
 
 
-class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
+class GraphPipelineModelWithKVCache(
+    PipelineModelWithKVCache[BaseContextType, _ModelConfigT, Model]
+):
     """Graph-API pipeline model with shared compile-and-load template.
 
     Subclasses override :meth:`_build_graph_for_compile` (and optionally
@@ -965,7 +980,7 @@ class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
         self._wire_batch_processor(model, model_config)
         return model
 
-    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+    def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``.
 
         Subclasses implement ``initialize`` / ``finalize`` (or heavier setup)
@@ -978,7 +993,7 @@ class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
     def _init_distributed_runtime(
         self,
         session: InferenceSession,
-        model_config: Any,
+        model_config: _ModelConfigT,
     ) -> None:
         """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
         del session, model_config
@@ -987,7 +1002,7 @@ class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: _ModelConfigT,
     ) -> tuple[Graph, dict[str, Any]]:
         """Instantiates the nn module, captures the graph, returns the registry."""
         raise NotImplementedError(
@@ -996,7 +1011,7 @@ class GraphPipelineModelWithKVCache(PipelineModelWithKVCache[BaseContextType]):
 
 
 class MultiGraphPipelineModelWithKVCache(
-    PipelineModelWithKVCache[BaseContextType]
+    PipelineModelWithKVCache[BaseContextType, _ModelConfigT, Model | None]
 ):
     """Graph-API VLM with unified :meth:`load_model` and per-tower hooks.
 
@@ -1053,12 +1068,12 @@ class MultiGraphPipelineModelWithKVCache(
         self._wire_batch_processor(vision_model, model_config)
         return vision_model, language_model
 
-    def _include_vision_graph(self, model_config: Any) -> bool:
+    def _include_vision_graph(self, model_config: _ModelConfigT) -> bool:
         """Whether to capture and load a vision graph (override for text-only VLMs)."""
         del model_config
         return True
 
-    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+    def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds the full VLM config from ``state_dict``.
 
         Should assign :attr:`model_config` and return the same object.
@@ -1070,14 +1085,14 @@ class MultiGraphPipelineModelWithKVCache(
     def _init_distributed_runtime(
         self,
         session: InferenceSession,
-        model_config: Any,
+        model_config: _ModelConfigT,
     ) -> None:
         """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
         del session, model_config
 
     def _build_vision_graph(
         self,
-        model_config: Any,
+        model_config: _ModelConfigT,
         state_dict: dict[str, Any],
         module: Module,
     ) -> tuple[Graph, dict[str, Any]]:
@@ -1088,7 +1103,7 @@ class MultiGraphPipelineModelWithKVCache(
 
     def _build_language_graph(
         self,
-        model_config: Any,
+        model_config: _ModelConfigT,
         state_dict: dict[str, Any],
         module: Module,
     ) -> tuple[Graph, dict[str, Any]]:
@@ -1099,7 +1114,9 @@ class MultiGraphPipelineModelWithKVCache(
 
 
 class ModuleV3PipelineModelWithKVCache(
-    PipelineModelWithKVCache[BaseContextType]
+    PipelineModelWithKVCache[
+        BaseContextType, _ModelConfigT, _ModuleV3[..., Any]
+    ]
 ):
     """The base class for a ModuleV3 model architecture that uses a KV cache.
 
@@ -1240,20 +1257,20 @@ class ModuleV3PipelineModelWithKVCache(
         self._wire_batch_processor(nn_model, model_config)
         return nn_model.compile(*compile_input_types, weights=state_dict)
 
-    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+    def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``."""
         raise NotImplementedError(
             f"{type(self).__qualname__} must implement `_create_model_config`."
         )
 
     def _prepare_state_dict(
-        self, state_dict: dict[str, Any], model_config: Any
+        self, state_dict: dict[str, Any], model_config: _ModelConfigT
     ) -> dict[str, Any]:
         """Optional hook to cast or rewrite weights before ``nn.compile``."""
         del model_config
         return state_dict
 
-    def _init_distributed_runtime(self, model_config: Any) -> None:
+    def _init_distributed_runtime(self, model_config: _ModelConfigT) -> None:
         """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
         del model_config
         self._modulev3_extra_input_types = []
@@ -1265,13 +1282,15 @@ class ModuleV3PipelineModelWithKVCache(
         del state_dict
         return model_config.dtype
 
-    def _instantiate_module(self, model_config: Any) -> Any:
+    def _instantiate_module(self, model_config: _ModelConfigT) -> Any:
         """Constructs and places the nn module under ``F.lazy()``."""
         raise NotImplementedError(
             f"{type(self).__qualname__} must implement `_instantiate_module`."
         )
 
-    def _get_compile_input_types(self, model_config: Any) -> tuple[Any, ...]:
+    def _get_compile_input_types(
+        self, model_config: _ModelConfigT
+    ) -> tuple[Any, ...]:
         """Symbolic inputs passed to ``nn_model.compile``."""
         del model_config
         batch_processor = self.batch_processor
@@ -1287,7 +1306,7 @@ class ModuleV3PipelineModelWithKVCache(
 
 
 class ModuleV3MultiGraphPipelineModelWithKVCache(
-    PipelineModelWithKVCache[BaseContextType]
+    PipelineModelWithKVCache[BaseContextType, _ModelConfigT, Callable[..., Any]]
 ):
     """ModuleV3 VLM with separate vision and language compiled callables.
 
@@ -1324,18 +1343,18 @@ class ModuleV3MultiGraphPipelineModelWithKVCache(
         self._wire_batch_processor(vision_model, model_config)
         return vision_model, language_model
 
-    def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
+    def _create_model_config(self, state_dict: dict[str, Any]) -> _ModelConfigT:
         """Builds model config from ``state_dict``."""
         raise NotImplementedError(
             f"{type(self).__qualname__} must implement `_create_model_config`."
         )
 
-    def _init_distributed_runtime(self, model_config: Any) -> None:
+    def _init_distributed_runtime(self, model_config: _ModelConfigT) -> None:
         """Initializes EP/NVSHMEM or other distributed runtime (no-op by default)."""
         del model_config
 
     def _compile_vision_model(
-        self, model_config: Any, state_dict: dict[str, Any]
+        self, model_config: _ModelConfigT, state_dict: dict[str, Any]
     ) -> Callable[..., Any]:
         """Builds and compiles the vision tower."""
         raise NotImplementedError(
@@ -1343,7 +1362,7 @@ class ModuleV3MultiGraphPipelineModelWithKVCache(
         )
 
     def _compile_language_model(
-        self, model_config: Any, state_dict: dict[str, Any]
+        self, model_config: _ModelConfigT, state_dict: dict[str, Any]
     ) -> Callable[..., Any]:
         """Builds and compiles the language tower."""
         raise NotImplementedError(

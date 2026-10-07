@@ -81,7 +81,7 @@ class UnifiedMTPQwen3_5Model(_UnifiedSpecDecodeModelMixin, Qwen3_5Model):
 
     @override
     def _wire_batch_processor(
-        self, model: Any = None, model_config: Any = None
+        self, model: Model, model_config: Qwen3_5Config
     ) -> None:
         """Tells the batch processor whether the graph declares positions."""
         super()._wire_batch_processor(model, model_config)

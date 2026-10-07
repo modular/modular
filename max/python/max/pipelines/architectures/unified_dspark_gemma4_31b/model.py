@@ -107,7 +107,7 @@ class UnifiedDSparkGemma4_31BInputs(UnifiedSpecDecodeInputs):
 class UnifiedDSparkGemma4_31BModel(
     _UnifiedSpecDecodeModelMixin,
     AlwaysSignalBuffersMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedDSparkGemma4_31BConfig],
 ):
     """Unified speculators-DSpark Gemma4: target + draft in one compiled
     graph."""
@@ -253,10 +253,9 @@ class UnifiedDSparkGemma4_31BModel(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedDSparkGemma4_31BConfig,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDSparkGemma4_31BConfig)
 
         nn_model = UnifiedDSparkGemma4_31BModule(
             model_config,
