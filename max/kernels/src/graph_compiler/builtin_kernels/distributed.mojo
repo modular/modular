@@ -284,7 +284,7 @@ struct DistributedAllReduceSum:
                     output_lambda=output_lambda[output_index=index, ...],
                 ](
                     in_tensors,
-                    outputs[index].to_tile_tensor[.int64](),
+                    outputs[index].runtime_layout(),
                     rank_sigs,
                     dev_ctxs_input[index],
                 )
