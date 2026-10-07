@@ -80,6 +80,7 @@ from ..vendor.matmul import apply_compute_fn_in_place, matmul as matmul_vendor
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
     multistage_gemm_kernel_compute_fn,
+    multistage_gemm_kernel_epilogue_fn,
     multistage_gemm_split_k_kernel,
 )
 from .apple import enqueue_apple_matmul
@@ -2371,33 +2372,64 @@ def multistage_gemm[
     """Runs `multistage_gemm`, storing the output through an epilogue
     closure value.
 
-    Only the AMD CDNA `transpose_b` kernels support this overload.
-
     Parameters:
         c_type: DType of the output tile `c` elements (inferred).
         a_type: DType of the input tile `a` elements (inferred).
         b_type: DType of the input tile `b` elements (inferred).
         EpilogueFnType: Type of `epilogue_fn` (inferred).
-        transpose_b: Whether `b` is stored as `(N, K)`. Must be `True`.
+        transpose_b: Whether `b` is accessed transposed, so its row `y`
+            is read as `b[y, i]` instead of `b[i, y]`.
         config: Compile-time `MatmulConfig` selecting the block tile,
             warp tile, MMA shape, and pipeline stages for the kernel.
 
     Args:
         c: Output tile of shape `(M, N)`. Only its shape is read.
         a: Input tile of shape `(M, K)`.
-        b: Input tile of shape `(N, K)`.
+        b: Input tile of shape `(K, N)`, or `(N, K)` when `transpose_b`
+            is set.
         epilogue_fn: Stores each output element.
         ctx: Device context used to enqueue the kernel.
     """
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
-    _multistage_gemm_amd[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=None,
-        has_epilogue_fn=True,
-        has_compute_fn=False,
-    ](c, a, b, epilogue_fn, no_compute_fn, ctx)
+    comptime if (
+        ctx.target.is_amd_gpu()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+    ):
+        _multistage_gemm_amd[
+            transpose_b=transpose_b,
+            config=config,
+            elementwise_lambda_fn=None,
+            has_epilogue_fn=True,
+            has_compute_fn=False,
+        ](c, a, b, epilogue_fn, no_compute_fn, ctx)
+    else:
+        logger.info("Executing: standard GEMM (no split-K)")
+        comptime gemm_kernel_type = multistage_gemm_kernel_epilogue_fn[
+            CLT=c.LayoutType,
+            ALT=a.LayoutType,
+            BLT=b.LayoutType,
+            c_linear_idx_type=c.linear_idx_type,
+            a_linear_idx_type=a.linear_idx_type,
+            b_linear_idx_type=b.linear_idx_type,
+            config=config,
+            EpilogueFnType=EpilogueFnType,
+        ]
+        var M = Int(c.dim[0]())
+        var N = Int(c.dim[1]())
+        ctx.enqueue_function[gemm_kernel_type](
+            c,
+            a,
+            b,
+            host_arg=epilogue_fn,
+            grid_dim=config.grid_dim(M, N),
+            block_dim=config.block_dim(),
+            shared_mem_bytes=config.shared_mem_usage(),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(config.shared_mem_usage())
+            ),
+        )
 
 
 def multistage_gemm[

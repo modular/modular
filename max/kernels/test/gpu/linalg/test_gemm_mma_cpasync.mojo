@@ -22,6 +22,7 @@ from linalg.gemv import gemm_mma_cpasync
 import linalg.matmul.vendor.blas as vendor_blas
 
 from internal_utils import assert_almost_equal
+from std.testing import assert_equal
 
 from layout import TileTensor, Coord, Idx, row_major
 from std.utils import IndexList
@@ -267,6 +268,87 @@ def run_gemm_mma_cpasync_residual[
     print("PASSED\n")
 
 
+def run_gemm_mma_cpasync_epilogue_fn[
+    tile_k: Int = 128,
+    swapAB: Bool = False,
+](gemm_m: Int, gemm_k: Int, gemm_n: Int, *, ctx: DeviceContext) raises:
+    """Checks that a store closure receives each output at its row-major
+    `[M, N]` index and that the kernel itself leaves `c` untouched.
+
+    The closure writes the row-scaled result into a separate buffer; the power
+    of two scale keeps the comparison against the plain kernel exact.
+    """
+    print(
+        "== gemm_tc+epilogue_fn  M=",
+        gemm_m,
+        " K=",
+        gemm_k,
+        " N=",
+        gemm_n,
+        " tile_k=",
+        tile_k,
+        " swapAB=",
+        swapAB,
+    )
+    comptime dtype = DType.bfloat16
+    var act_size = gemm_m * gemm_k
+    var weight_size = gemm_n * gemm_k
+    var out_size = gemm_m * gemm_n
+
+    var act_dev = ctx.enqueue_create_buffer[dtype](act_size)
+    var weight_dev = ctx.enqueue_create_buffer[dtype](weight_size)
+    var ref_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var unused_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_dev = ctx.enqueue_create_buffer[dtype](out_size)
+
+    with act_dev.map_to_host() as h_act, weight_dev.map_to_host() as h_w:
+        for i in range(act_size):
+            h_act[i] = random_float64(min=-0.5, max=0.5).cast[dtype]()
+        for i in range(weight_size):
+            h_w[i] = random_float64(min=-0.5, max=0.5).cast[dtype]()
+    ctx.enqueue_memset(ref_dev, 0)
+    ctx.enqueue_memset(unused_dev, 0)
+    ctx.enqueue_memset(out_dev, 0)
+
+    var a_tensor = TileTensor(act_dev, row_major((gemm_m, gemm_k)))
+    var w_tensor = TileTensor(weight_dev, row_major((gemm_n, gemm_k)))
+    var c_shape = row_major((gemm_m, gemm_n))
+    var ref_tensor = TileTensor(ref_dev, c_shape)
+    var unused_tensor = TileTensor(unused_dev, c_shape)
+    var out_tensor = TileTensor(out_dev, c_shape)
+
+    def store_odd_rows_negated[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: IndexList[2], val: SIMD[dtype, width]) {var out_tensor}:
+        var row_scale = -2 if idx[0] % 2 == 1 else 2
+        out_tensor.store[width=width](
+            Coord(idx),
+            (val * SIMD[dtype, width](row_scale)).cast[out_tensor.dtype](),
+        )
+
+    gemm_mma_cpasync[tile_k=tile_k, swapAB=swapAB](
+        ref_tensor, a_tensor, w_tensor, gemm_m, gemm_k, gemm_n, 1, ctx
+    )
+    gemm_mma_cpasync[tile_k=tile_k, swapAB=swapAB](
+        unused_tensor,
+        a_tensor,
+        w_tensor,
+        gemm_m,
+        gemm_k,
+        gemm_n,
+        1,
+        store_odd_rows_negated,
+        ctx,
+    )
+
+    with ref_dev.map_to_host() as h_ref, out_dev.map_to_host() as h_out, unused_dev.map_to_host() as h_unused:
+        for i in range(out_size):
+            var row_scale = -2 if (i // gemm_n) % 2 == 1 else 2
+            assert_equal(h_out[i], h_ref[i] * Scalar[dtype](row_scale))
+            assert_equal(h_unused[i], Scalar[dtype](0))
+    print("PASSED\n")
+
+
 def main() raises:
     with DeviceContext() as ctx:
         run_gemm_mma_cpasync[.bfloat16, .bfloat16, .bfloat16, tile_k=64](
@@ -390,3 +472,8 @@ def main() raises:
             tile_k=128,
             swapAB=True,
         ](16, 7168, 2112, ctx=ctx)
+
+        run_gemm_mma_cpasync_epilogue_fn[tile_k=128](28, 7168, 384, ctx=ctx)
+        run_gemm_mma_cpasync_epilogue_fn[tile_k=256, swapAB=True](
+            7, 7168, 2112, ctx=ctx
+        )

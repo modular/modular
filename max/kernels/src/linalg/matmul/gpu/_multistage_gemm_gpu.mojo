@@ -70,8 +70,11 @@ from std.utils.numerics import get_accum_type
 
 from ...utils import (
     ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    apply_elementwise_epilogue,
     elementwise_epilogue_type,
     no_compute_fn,
+    no_epilogue_fn,
 )
 from ...utils_gpu import MatmulConfig, block_swizzle
 from .amd import AMDMatmul
@@ -763,8 +766,81 @@ def multistage_gemm_kernel[
         b_linear_idx_type,
         config=config,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=False,
         has_compute_fn=False,
-    ](c_tt, a_tt, b_tt, no_compute_fn)
+    ](c_tt, a_tt, b_tt, no_epilogue_fn, no_compute_fn)
+
+
+@__name(
+    t"multistage_gemm_kernel_epilogue_fn_{c_type}_{a_type}_{b_type}_{transpose_b}",
+)
+def multistage_gemm_kernel_epilogue_fn[
+    c_type: DType,
+    CLT: TensorLayout,
+    a_type: DType,
+    ALT: TensorLayout,
+    b_type: DType,
+    BLT: TensorLayout,
+    transpose_b: Bool,
+    c_linear_idx_type: DType,
+    a_linear_idx_type: DType,
+    b_linear_idx_type: DType,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b, ...],
+    EpilogueFnType: ElementwiseEpilogueFn,
+](
+    c_tt: TileTensor[
+        c_type, CLT, MutAnyOrigin, linear_idx_type=c_linear_idx_type
+    ],
+    a_tt: TileTensor[
+        a_type, ALT, ImmutAnyOrigin, linear_idx_type=a_linear_idx_type
+    ],
+    b_tt: TileTensor[
+        b_type, BLT, ImmutAnyOrigin, linear_idx_type=b_linear_idx_type
+    ],
+    epilogue_fn: EpilogueFnType,
+):
+    """`multistage_gemm_kernel` that writes its output through
+    `epilogue_fn`.
+
+    Parameters:
+        c_type: Element type of `c`.
+        CLT: Layout of `c`.
+        a_type: Element type of `a`.
+        ALT: Layout of `a`.
+        b_type: Element type of `b`.
+        BLT: Layout of `b`.
+        transpose_b: Whether `b` is stored as `(N, K)`.
+        c_linear_idx_type: Linear index type of `c`.
+        a_linear_idx_type: Linear index type of `a`.
+        b_linear_idx_type: Linear index type of `b`.
+        config: Tile, warp, MMA, and pipeline configuration.
+        EpilogueFnType: Type of `epilogue_fn`.
+
+    Args:
+        c_tt: Output matrix of shape `(M, N)`. Only its shape is read;
+            `epilogue_fn` stores the result.
+        a_tt: Input matrix of shape `(M, K)`.
+        b_tt: Input matrix of shape `(K, N)`, or `(N, K)` when
+            `transpose_b` is set.
+        epilogue_fn: Stores each output vector. Its `alignment` is in
+            bytes, as for `elementwise_lambda_fn`.
+    """
+    _multistage_gemm_kernel_impl[
+        c_type,
+        CLT,
+        a_type,
+        ALT,
+        b_type,
+        BLT,
+        transpose_b,
+        c_linear_idx_type,
+        a_linear_idx_type,
+        b_linear_idx_type,
+        config=config,
+        elementwise_lambda_fn=None,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+    ](c_tt, a_tt, b_tt, epilogue_fn, no_compute_fn)
 
 
 @__name(
@@ -832,12 +908,14 @@ def multistage_gemm_kernel_compute_fn[
         b_linear_idx_type,
         config=config,
         elementwise_lambda_fn=None,
+        has_epilogue_fn=False,
         has_compute_fn=True,
-    ](c_tt, a_tt, b_tt, compute_fn)
+    ](c_tt, a_tt, b_tt, no_epilogue_fn, compute_fn)
 
 
 @inline(.always)
 def _multistage_gemm_kernel_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
     //,
     c_type: DType,
@@ -852,6 +930,7 @@ def _multistage_gemm_kernel_impl[
     b_linear_idx_type: DType,
     config: MatmulConfig[a_type, b_type, c_type, transpose_b, ...],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
     has_compute_fn: Bool,
 ](
     c_tt: TileTensor[
@@ -863,8 +942,12 @@ def _multistage_gemm_kernel_impl[
     b_tt: TileTensor[
         b_type, BLT, ImmutAnyOrigin, linear_idx_type=b_linear_idx_type
     ],
+    epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
 ):
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either epilogue_fn or compute_fn, not both"
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
@@ -1054,7 +1137,9 @@ def _multistage_gemm_kernel_impl[
         warp_row + WM <= M and warp_col + WN <= N and M % store_vec_rows == 0
     )
 
-    comptime has_output_fn = has_compute_fn or Bool(elementwise_lambda_fn)
+    comptime has_output_fn = (
+        has_epilogue_fn or has_compute_fn or Bool(elementwise_lambda_fn)
+    )
 
     # Stores `vec` at `(m, n)` through the output closure. `alignment` is in
     # bytes.
@@ -1068,8 +1153,9 @@ def _multistage_gemm_kernel_impl[
             ](Index(m, n), vec.cast[c_type]())
             c_tt.store_linear[alignment=alignment](Index(m, n), out)
         else:
-            comptime epilogue = elementwise_lambda_fn.value()
-            epilogue[alignment=alignment]((m, n), vec)
+            apply_elementwise_epilogue[
+                elementwise_lambda_fn, alignment=alignment
+            ](epilogue_fn, Index(m, n), vec)
 
     @inline(.always)
     def apply_epilogue() {imm}:

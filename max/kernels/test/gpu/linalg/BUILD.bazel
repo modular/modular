@@ -109,7 +109,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_multistage_gemm_epilogue_fn.mojo": ["//:amd_gpu"],
-    "test_multistage_gemm_compute_fn_nvidia.mojo": ["//:nvidia_gpu"],
+    "test_multistage_gemm_closures_nvidia.mojo": ["//:nvidia_gpu"],
     "test_matmul_selection_heuristic.mojo": ["//:a100_gpu"],
     "test_matmul_sm90_epilogue.mojo": ["//:h100_gpu"],
     "test_stream_k.mojo": ["//:nvidia_gpu"],

@@ -3524,8 +3524,12 @@ struct _MmaCpAsyncMmaComputer[
             self.stage = 0 if raw_next == Self.stage_cnt else raw_next
 
     def epi[
-        ComputeFnType: ElementwiseComputeFn, //, has_compute_fn: Bool
-    ](mut self, compute_fn: ComputeFnType):
+        EpilogueFnType: ElementwiseEpilogueFn,
+        ComputeFnType: ElementwiseComputeFn,
+        //,
+        has_epilogue_fn: Bool,
+        has_compute_fn: Bool,
+    ](mut self, epilogue_fn: EpilogueFnType, compute_fn: ComputeFnType):
         """Epilogue: reduce acc across 4 compute-warp partials, write the C tile.
 
         The output buffer is always row-major `[M, N]`. When `swapAB`, the
@@ -3535,11 +3539,16 @@ struct _MmaCpAsyncMmaComputer[
         row-major `[M, N]` buffer (row stride = N = `gemm_m`).
 
         Parameters:
+            EpilogueFnType: Type of `epilogue_fn` (inferred).
             ComputeFnType: Type of `compute_fn` (inferred).
+            has_epilogue_fn: Whether `epilogue_fn` stores each output
+                element instead of the kernel.
             has_compute_fn: Whether to store `compute_fn` applied to each
                 output element instead of the element itself.
 
         Args:
+            epilogue_fn: Stores each output element. Ignored unless
+                `has_epilogue_fn`.
             compute_fn: Maps each output index and value to the value to
                 store. Ignored unless `has_compute_fn`.
         """
@@ -3588,9 +3597,11 @@ struct _MmaCpAsyncMmaComputer[
                     var out_stride = self.gemm_m if Self.swapAB else self.gemm_n
                     var out_off = out_row * out_stride + out_col
 
-                    comptime if Self.elementwise_lambda_fn:
-                        comptime elementwise_lambda = Self.elementwise_lambda_fn.value()
-                        elementwise_lambda[Self.c_type, 1](
+                    comptime if (
+                        Bool(Self.elementwise_lambda_fn) or has_epilogue_fn
+                    ):
+                        apply_elementwise_epilogue[Self.elementwise_lambda_fn](
+                            epilogue_fn,
                             Index(out_row, out_col),
                             total.cast[Self.c_type](),
                         )
@@ -3676,10 +3687,113 @@ def gemm_mma_cpasync_kernel[
         stage_cnt=stage_cnt,
         accum_type=accum_type,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=False,
         has_compute_fn=False,
         pdl_level=pdl_level,
         swapAB=swapAB,
-    ](output, act, weight, gemm_m, gemm_k, gemm_n, batch_size, no_compute_fn)
+    ](
+        output,
+        act,
+        weight,
+        gemm_m,
+        gemm_k,
+        gemm_n,
+        batch_size,
+        no_epilogue_fn,
+        no_compute_fn,
+    )
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
+)
+@__name(
+    t"gemm_mma_cpasync_epilogue_fn_{c_type}_{a_type}_{b_type}_{tile_k}_{stage_cnt}",
+)
+def gemm_mma_cpasync_kernel_epilogue_fn[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
+    *,
+    tile_m: Int = 16,
+    tile_n: Int = 8,
+    tile_k: Int = 128,
+    stage_cnt: Int = 2,
+    accum_type: DType = .float32,
+    pdl_level: PDLLevel = PDLLevel(),
+    swapAB: Bool = False,
+](
+    output: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    gemm_m: Int32,
+    gemm_k: Int32,
+    gemm_n: Int32,
+    batch_size: Int32,
+    epilogue_fn: EpilogueFnType,
+):
+    """`gemm_mma_cpasync_kernel` that writes its output through
+    `epilogue_fn`.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Activation element type.
+        b_type: Weight element type.
+        c_layout: Layout of the output tensor.
+        a_layout: Layout of the activation tensor.
+        b_layout: Layout of the weight tensor.
+        c_engine: Engine of the output tensor.
+        a_engine: Engine of the activation tensor.
+        b_engine: Engine of the weight tensor.
+        EpilogueFnType: Type of `epilogue_fn`.
+        tile_m: CTA tile rows; must be 16 for the m16n8k16 MMA.
+        tile_n: CTA tile columns; must be 8 for the m16n8k16 MMA.
+        tile_k: K-dimension tile size.
+        stage_cnt: Number of shared-memory pipeline stages.
+        accum_type: Accumulation precision type.
+        pdl_level: Programmatic dependent launch level.
+        swapAB: Whether the launcher fed the weight to the A operand slot.
+
+    Args:
+        output: Row-major `[batch, M, N]` output tensor. Only its shape is
+            read; `epilogue_fn` stores the result.
+        act: Activation tensor, the A operand.
+        weight: Weight tensor, the B operand.
+        gemm_m: Rows of the A operand.
+        gemm_k: Reduction dimension.
+        gemm_n: Rows of the B operand.
+        batch_size: Batch size.
+        epilogue_fn: Stores each output element.
+    """
+    _gemm_mma_cpasync_kernel_impl[
+        tile_m=tile_m,
+        tile_n=tile_n,
+        tile_k=tile_k,
+        stage_cnt=stage_cnt,
+        accum_type=accum_type,
+        elementwise_lambda_fn=None,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+        pdl_level=pdl_level,
+        swapAB=swapAB,
+    ](
+        output,
+        act,
+        weight,
+        gemm_m,
+        gemm_k,
+        gemm_n,
+        batch_size,
+        epilogue_fn,
+        no_compute_fn,
+    )
 
 
 @__llvm_metadata(
@@ -3756,10 +3870,21 @@ def gemm_mma_cpasync_kernel_compute_fn[
         stage_cnt=stage_cnt,
         accum_type=accum_type,
         elementwise_lambda_fn=None,
+        has_epilogue_fn=False,
         has_compute_fn=True,
         pdl_level=pdl_level,
         swapAB=swapAB,
-    ](output, act, weight, gemm_m, gemm_k, gemm_n, batch_size, compute_fn)
+    ](
+        output,
+        act,
+        weight,
+        gemm_m,
+        gemm_k,
+        gemm_n,
+        batch_size,
+        no_epilogue_fn,
+        compute_fn,
+    )
 
 
 @inline(.always)
@@ -3773,6 +3898,7 @@ def _gemm_mma_cpasync_kernel_impl[
     c_engine: TensorEngine,
     a_engine: TensorEngine,
     b_engine: TensorEngine,
+    EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
     //,
     *,
@@ -3782,6 +3908,7 @@ def _gemm_mma_cpasync_kernel_impl[
     stage_cnt: Int,
     accum_type: DType,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
     has_compute_fn: Bool,
     pdl_level: PDLLevel,
     swapAB: Bool,
@@ -3793,6 +3920,7 @@ def _gemm_mma_cpasync_kernel_impl[
     gemm_k: Int32,
     gemm_n: Int32,
     batch_size: Int32,
+    epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
 ):
     var _gemm_m = Int(gemm_m)
@@ -3927,7 +4055,9 @@ def _gemm_mma_cpasync_kernel_impl[
             _gemm_n,
         )
         computer.issue_mainloop(k_iters)
-        computer.epi[has_compute_fn=has_compute_fn](compute_fn)
+        computer.epi[
+            has_epilogue_fn=has_epilogue_fn, has_compute_fn=has_compute_fn
+        ](epilogue_fn, compute_fn)
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -3984,9 +4114,82 @@ def gemm_mma_cpasync[
         pdl_level=pdl_level,
         tile_k=tile_k,
         elementwise_lambda_fn=elementwise_lambda_fn,
+        has_epilogue_fn=False,
         has_compute_fn=False,
         swapAB=swapAB,
-    ](c, act, weight, gemm_m, gemm_k, gemm_n, batch_size, no_compute_fn, ctx)
+    ](
+        c,
+        act,
+        weight,
+        gemm_m,
+        gemm_k,
+        gemm_n,
+        batch_size,
+        no_epilogue_fn,
+        no_compute_fn,
+        ctx,
+    )
+
+
+def gemm_mma_cpasync[
+    EpilogueFnType: ElementwiseEpilogueFn,
+    //,
+    pdl_level: PDLLevel = PDLLevel(),
+    tile_k: Int = 128,
+    swapAB: Bool = False,
+](
+    c: TileTensor[mut=True, ...],
+    act: TileTensor[mut=False, ...],
+    weight: TileTensor[mut=False, ...],
+    gemm_m: Int,
+    gemm_k: Int,
+    gemm_n: Int,
+    batch_size: Int,
+    epilogue_fn: EpilogueFnType,
+    ctx: DeviceContext,
+) raises:
+    """Launches the batched GEMM tensor-core kernel, writing
+    `act @ weight^T` through `epilogue_fn`.
+
+    Parameters:
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        pdl_level: Programmatic dependent launch level for PDL barriers.
+        tile_k: K-dimension tile size for the MMA kernel (defaults to 128).
+        swapAB: When True, feeds the weight to the A operand slot and the
+            activation to the B slot for PDL overlap at small M.
+
+    Args:
+        c: Output, shape (gemm_m, gemm_n) or (batch, gemm_m, gemm_n),
+            always row-major. Only its shape is read; `epilogue_fn` stores
+            the result.
+        act: Activation, shape (gemm_m, gemm_k) or (batch, gemm_m, gemm_k).
+        weight: Weight, shape (gemm_n, gemm_k) or (batch, gemm_n, gemm_k).
+        gemm_m: Activation rows (output rows, M).
+        gemm_k: Reduction dimension.
+        gemm_n: Weight rows (output cols, N).
+        batch_size: Batch size; ignored for 2D inputs (treated as 1).
+        epilogue_fn: Stores each output element.
+        ctx: GPU device context.
+    """
+    _gemm_mma_cpasync_impl[
+        pdl_level=pdl_level,
+        tile_k=tile_k,
+        elementwise_lambda_fn=None,
+        has_epilogue_fn=True,
+        has_compute_fn=False,
+        swapAB=swapAB,
+    ](
+        c,
+        act,
+        weight,
+        gemm_m,
+        gemm_k,
+        gemm_n,
+        batch_size,
+        epilogue_fn,
+        no_compute_fn,
+        ctx,
+    )
 
 
 def gemm_mma_cpasync[
@@ -4032,19 +4235,33 @@ def gemm_mma_cpasync[
         pdl_level=pdl_level,
         tile_k=tile_k,
         elementwise_lambda_fn=None,
+        has_epilogue_fn=False,
         has_compute_fn=True,
         swapAB=swapAB,
-    ](c, act, weight, gemm_m, gemm_k, gemm_n, batch_size, compute_fn, ctx)
+    ](
+        c,
+        act,
+        weight,
+        gemm_m,
+        gemm_k,
+        gemm_n,
+        batch_size,
+        no_epilogue_fn,
+        compute_fn,
+        ctx,
+    )
 
 
 @inline(.always)
 def _gemm_mma_cpasync_impl[
+    EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
     //,
     *,
     pdl_level: PDLLevel,
     tile_k: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
     has_compute_fn: Bool,
     swapAB: Bool,
 ](
@@ -4055,6 +4272,7 @@ def _gemm_mma_cpasync_impl[
     gemm_k: Int,
     gemm_n: Int,
     batch_size: Int,
+    epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
     ctx: DeviceContext,
 ) raises:
@@ -4118,6 +4336,7 @@ def _gemm_mma_cpasync_impl[
                 tile_k=tile_k,
                 stage_cnt=stage_cnt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
                 swapAB=swapAB,
@@ -4129,6 +4348,7 @@ def _gemm_mma_cpasync_impl[
                 gemm_k,
                 k_gemm_n,
                 batch_size,
+                epilogue_fn,
                 compute_fn,
                 ctx,
             )
@@ -4139,6 +4359,7 @@ def _gemm_mma_cpasync_impl[
                 tile_k=tile_k,
                 stage_cnt=stage_cnt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
                 swapAB=swapAB,
@@ -4150,6 +4371,7 @@ def _gemm_mma_cpasync_impl[
                 gemm_k,
                 k_gemm_n,
                 batch_size,
+                epilogue_fn,
                 compute_fn,
                 ctx,
             )
@@ -4164,6 +4386,7 @@ def _gemm_mma_cpasync_impl[
                 tile_k=tile_k,
                 stage_cnt=stage_cnt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
                 swapAB=swapAB,
@@ -4175,6 +4398,7 @@ def _gemm_mma_cpasync_impl[
                 gemm_k,
                 k_gemm_n,
                 1,
+                epilogue_fn,
                 compute_fn,
                 ctx,
             )
@@ -4185,6 +4409,7 @@ def _gemm_mma_cpasync_impl[
                 tile_k=tile_k,
                 stage_cnt=stage_cnt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                has_epilogue_fn=has_epilogue_fn,
                 has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
                 swapAB=swapAB,
@@ -4196,6 +4421,7 @@ def _gemm_mma_cpasync_impl[
                 gemm_k,
                 k_gemm_n,
                 1,
+                epilogue_fn,
                 compute_fn,
                 ctx,
             )
@@ -4206,6 +4432,7 @@ comptime _MMA_CPASYNC_SMEM_BYTES = B200.shared_memory_per_multiprocessor - 1024
 
 @inline(.always)
 def _enqueue_gemm_mma_cpasync[
+    EpilogueFnType: ElementwiseEpilogueFn,
     ComputeFnType: ElementwiseComputeFn,
     //,
     *,
@@ -4214,6 +4441,7 @@ def _enqueue_gemm_mma_cpasync[
     tile_k: Int,
     stage_cnt: Int,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_epilogue_fn: Bool,
     has_compute_fn: Bool,
     pdl_level: PDLLevel,
     swapAB: Bool,
@@ -4225,11 +4453,16 @@ def _enqueue_gemm_mma_cpasync[
     gemm_k: Int,
     k_gemm_n: Int,
     batch_size: Int,
+    epilogue_fn: EpilogueFnType,
     compute_fn: ComputeFnType,
     ctx: DeviceContext,
 ) raises:
     """Enqueues `gemm_mma_cpasync` on its kernel-facing A and B operands,
-    selecting the compute-closure kernel when `has_compute_fn` is set."""
+    selecting the store-closure or compute-closure kernel when
+    `has_epilogue_fn` or `has_compute_fn` is set."""
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "pass either epilogue_fn or compute_fn, not both"
     comptime TOTAL_THREADS = 256
     comptime smem_size = size_of[
         _MmaCpAsyncSmem[a_operand.dtype, tile_m, tile_n, tile_k, stage_cnt]
@@ -4237,7 +4470,43 @@ def _enqueue_gemm_mma_cpasync[
     var grid_x = ceildiv(k_gemm_m, tile_m)
     var grid_y = ceildiv(k_gemm_n, tile_n)
 
-    comptime if has_compute_fn:
+    comptime if has_epilogue_fn:
+        comptime kernel = gemm_mma_cpasync_kernel_epilogue_fn[
+            c.dtype,
+            a_operand.dtype,
+            b_operand.dtype,
+            type_of(c).LayoutType,
+            type_of(a_operand).LayoutType,
+            type_of(b_operand).LayoutType,
+            type_of(c).Engine,
+            type_of(a_operand).Engine,
+            type_of(b_operand).Engine,
+            EpilogueFnType,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            tile_k=tile_k,
+            stage_cnt=stage_cnt,
+            pdl_level=pdl_level,
+            swapAB=swapAB,
+        ]
+        ctx.enqueue_function[kernel, dump_asm=False](
+            c,
+            a_operand,
+            b_operand,
+            Int32(k_gemm_m),
+            Int32(gemm_k),
+            Int32(k_gemm_n),
+            Int32(batch_size),
+            host_arg=epilogue_fn,
+            grid_dim=(grid_x, grid_y, batch_size),
+            block_dim=TOTAL_THREADS,
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(_MMA_CPASYNC_SMEM_BYTES)
+            ),
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+    elif has_compute_fn:
         comptime kernel = gemm_mma_cpasync_kernel_compute_fn[
             c.dtype,
             a_operand.dtype,

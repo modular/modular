@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests the compute-closure `multistage_gemm` on the NVIDIA kernel.
+"""Tests the compute- and store-closure `multistage_gemm` on the NVIDIA kernel.
 
 The shapes cover each store path of `multistage_gemm_kernel`: the bf16 output
 staged through shared memory, the aligned fp32 output, and the scalar store
@@ -21,7 +21,7 @@ blocks is partial.
 from std.random import rand
 
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import multistage_gemm
 from linalg.utils_gpu import MatmulKernels
 from std.testing import assert_equal
@@ -76,8 +76,61 @@ def test_compute_fn[
             assert_equal(h_c[i], h_ref[i] * Scalar[c_type](row_scale))
 
 
+def test_epilogue_fn[
+    a_type: DType, c_type: DType, N: Int, K: Int
+](ctx: DeviceContext, m: Int) raises:
+    """Checks that a store closure receives each output at its index and that
+    the kernel itself leaves `c` untouched."""
+    print("epilogue:", a_type, "->", c_type, m, "x", N, "x", K)
+    comptime config = MatmulKernels[
+        a_type, a_type, c_type, True
+    ]().ampere_256x64_4
+
+    var a_dev = ctx.enqueue_create_buffer[a_type](m * K)
+    var b_dev = ctx.enqueue_create_buffer[a_type](N * K)
+    var c_ref_dev = ctx.enqueue_create_buffer[c_type](m * N)
+    var c_dev = ctx.enqueue_create_buffer[c_type](m * N)
+    var d_dev = ctx.enqueue_create_buffer[c_type](m * N)
+
+    with a_dev.map_to_host() as ha, b_dev.map_to_host() as hb:
+        rand(ha.unsafe_ptr(), m * K, min=-1.0, max=1.0)
+        rand(hb.unsafe_ptr(), N * K, min=-1.0, max=1.0)
+    ctx.enqueue_memset(c_ref_dev, 0)
+    ctx.enqueue_memset(c_dev, 0)
+    ctx.enqueue_memset(d_dev, 0)
+
+    var a = TileTensor(a_dev, row_major(m, Idx[K])).as_imm()
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K])).as_imm()
+    var c_ref = TileTensor(c_ref_dev, row_major(m, Idx[N]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
+    var d = TileTensor(d_dev, row_major(m, Idx[N]))
+
+    def store_odd_rows_negated[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: IndexList[2], val: SIMD[dtype, width]) {var d}:
+        var row_scale = -2 if idx[0] % 2 == 1 else 2
+        d.store[width=width](
+            Coord(idx),
+            (val * SIMD[dtype, width](row_scale)).cast[c_type](),
+        )
+
+    multistage_gemm[transpose_b=True, config=config](c_ref, a, b, ctx)
+    multistage_gemm[transpose_b=True, config=config](
+        c, a, b, store_odd_rows_negated, ctx
+    )
+
+    with c_ref_dev.map_to_host() as h_ref, c_dev.map_to_host() as h_c, d_dev.map_to_host() as h_d:
+        for i in range(m * N):
+            var row_scale = -2 if (i // N) % 2 == 1 else 2
+            assert_equal(h_d[i], h_ref[i] * Scalar[c_type](row_scale))
+            assert_equal(h_c[i], Scalar[c_type](0))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_compute_fn[.bfloat16, .bfloat16, 512, 512](ctx, 130)
         test_compute_fn[.float32, .float32, 512, 512](ctx, 130)
         test_compute_fn[.float32, .float32, 257, 512](ctx, 130)
+        test_epilogue_fn[.bfloat16, .bfloat16, 512, 512](ctx, 130)
+        test_epilogue_fn[.float32, .float32, 512, 512](ctx, 130)
+        test_epilogue_fn[.float32, .float32, 257, 512](ctx, 130)
