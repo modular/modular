@@ -32,6 +32,7 @@ from layout import (
     DefaultEngine,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
     stack_allocation,
 )
@@ -278,16 +279,13 @@ def mma[
 
     This function is used to perform the MMA operation for the AMD_MMA struct.
     """
-    # `get_reg_tile` returns `LayoutTensor` k-tile views (the register fragments
-    # are written/read by the `LayoutTensor`-only `TiledTensorCore` loaders, so
-    # they stay `LayoutTensor`). `c_reg_tile` is a `TileTensor`; bridge it (the
-    # view aliases the same storage) for the MMA fragment compute.
+    # The legacy MMA boundary consumes views of the native register storage.
     var a_reg_tile = a_tiles.get_reg_tile[k_tile_idx]()
     var b_reg_tile = b_tiles.get_reg_tile[k_tile_idx]()
 
     a_tiles.mma_type.tensor_core_mma.mma[swap_a_b=swap_a_b](
-        a_reg_tile,
-        b_reg_tile,
+        a_reg_tile.to_layout_tensor(),
+        b_reg_tile.to_layout_tensor(),
         c_reg_tile.to_layout_tensor(),
     )
 
@@ -364,26 +362,13 @@ struct MMATileBuffers[
     comptime MMARegTileLayout = Self.mma_type.MMARegTileLayout[Self.num_mmas]
     var load_reg_tile: Self.MMARegTileType
 
-    # Register-level storage for matrix data during computation. Flat layout ->
-    # stored as a `TileTensor`. The mutable `LayoutTensor` `.split` k-tile views
-    # (written by `load_a` / `load_b`) are derived on demand by bridging this
-    # tile -- `TileTensor.split` would yield immutable views.
+    # Mutable K-tile views alias the native register allocation; adapters are
+    # only needed when passing those views to legacy loaders or MMA.
     var mma_reg_tile: Self.MMARegTileType
 
-    # `LayoutTensor` bridge of the flat register tile. The MMA fragments are
-    # written/read by the `LayoutTensor`-only `TiledTensorCore` loaders, so the
-    # k-tile views (`get_reg_tile` / `load_tile_from_shared`) stay
-    # `LayoutTensor`. Mirrors exactly what `mma_reg_tile.to_layout_tensor()`
-    # returns (the `coord_to_int_tuple` layout must match bit-for-bit, a literal
-    # `Layout.row_major(...)` is a distinct unfolded parser-time type).
-    comptime BridgedRegTileType = LayoutTensor[
-        Self.mma_type.in_type,
-        Layout(
-            coord_to_int_tuple[*Self.MMARegTileType.LayoutType._shape_types](),
-            coord_to_int_tuple[*Self.MMARegTileType.LayoutType._stride_types](),
-        ),
-        Self.MMARegTileType.origin,
-        address_space=Self.MMARegTileType.address_space,
+    comptime MMARegKTileType = Self.MMARegTileType.TileResultType[
+        type_of(coord[Self.num_mmas, Self.mma_type.simd_width]).element_types,
+        linear_idx_type=Self.MMARegTileType.linear_idx_type,
     ]
 
     # Global memory iterator for input tensor (bridged `LayoutTensor`).
@@ -477,32 +462,24 @@ struct MMATileBuffers[
         self.gmem_iter._incr()
 
     @inline(.always)
-    def get_reg_tile[
-        k_tile_idx: Int
-    ](self) -> Self.BridgedRegTileType.SplitElementType[
-        Self.mma_type.num_k_tiles
-    ]:
+    def get_reg_tile[k_tile_idx: Int](self) -> Self.MMARegKTileType:
         """Get a specific K-dimension tile from the register buffer.
 
         Parameters:
             k_tile_idx: The K-dimension tile index.
 
         Returns:
-            A `LayoutTensor` tile view (the MMA fragments stay `LayoutTensor`)
-            for the specified location in the register buffer.
+            A mutable `TileTensor` view of the specified K tile.
         """
-        # `TileTensor.split` yields immutable views; bridge to a `LayoutTensor`
-        # (aliasing the same storage) and split that for the mutable k-tile.
-        return self.mma_reg_tile.to_layout_tensor().split[
-            Self.mma_type.num_k_tiles
-        ]()[k_tile_idx]
+        return self.mma_reg_tile.tile[Self.num_mmas, Self.mma_type.simd_width](
+            k_tile_idx, 0
+        )
 
     @inline(.always)
     def load_tile_from_shared[k_tile_idx: Int, is_a: Bool](self):
-        # The MMA fragment register tile stays `LayoutTensor`; bridge + split.
-        var reg_k_tile = self.mma_reg_tile.to_layout_tensor().split[
-            Self.mma_type.num_k_tiles
-        ]()[k_tile_idx]
+        # Preserve the loader's additional K-tile offset after selecting the
+        # register view; the shared-memory loader still requires a legacy view.
+        var reg_k_tile = self.get_reg_tile[k_tile_idx]().to_layout_tensor()
         comptime if is_a:
             Self.mma_type.tensor_core_mma.mma_op.load_a[
                 swizzle=Self.mma_type.swizzle
