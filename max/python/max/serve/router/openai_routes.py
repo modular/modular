@@ -1247,16 +1247,15 @@ class OpenAIChatResponseGenerator(
                 for chunk in completed_outputs
                 if chunk.stop_sequence is not None
             ]
-            finish_reason: Literal["stop", "length"]
+            finish_status = completed_outputs[-1].status
             if len(stop_sequence) > 0:
                 idx = response_message.find(stop_sequence[0])
                 if idx >= 0:
                     response_message = response_message[:idx]
-                finish_reason = "stop"
-            else:
-                finish_reason = get_finish_reason_from_status(
-                    completed_outputs[-1].status, allow_none=False
-                )
+                finish_status = GenerationStatus.END_OF_SEQUENCE
+            finish_reason = get_finish_reason_from_status(
+                finish_status, allow_none=False
+            )
 
             # Kimi K2.5 (thinking enabled) can answer inside the prefilled
             # ``<think>`` block and stop without emitting ``</think>``, so the
@@ -1314,7 +1313,13 @@ class OpenAIChatResponseGenerator(
                                 is_streaming=False,
                             )
                         response_choices = self._tool_response_to_choices(
-                            parsed, logprobs=logprobs
+                            parsed,
+                            get_finish_reason_from_status(
+                                finish_status,
+                                allow_none=False,
+                                has_tool_calls=True,
+                            ),
+                            logprobs=logprobs,
                         )
                 except Exception as e:
                     # If parser fails, handle as traditional text. Structural
@@ -1480,6 +1485,7 @@ class OpenAIChatResponseGenerator(
     def _tool_response_to_choices(
         self,
         parsed: ParsedToolResponse,
+        finish_reason: Literal["stop", "length", "tool_calls"],
         logprobs: ChatCompletionLogprobs | None = None,
     ) -> list[ChatCompletionResponseChoice]:
         """Translates a ParsedToolResponse to a list of chat completion choices."""
@@ -1503,7 +1509,7 @@ class OpenAIChatResponseGenerator(
                     function_call=None,
                     refusal="",
                 ),
-                finish_reason="tool_calls",
+                finish_reason=finish_reason,
                 logprobs=logprobs
                 or ChatCompletionLogprobs(content=[], refusal=[]),
             )

@@ -1957,6 +1957,68 @@ async def test_tool_parse_failure_does_not_leak_structural_marker(
     assert choice.message.content == "I'll get the weather for Paris first."
 
 
+_QWEN_WEATHER_CALL = (
+    "<tool_call>\n<function=get_weather>\n"
+    "<parameter=city>\nParis\n</parameter>\n"
+    "</function>\n</tool_call>\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("status", "decoded", "expected_finish_reason"),
+    [
+        pytest.param(
+            GenerationStatus.MAXIMUM_LENGTH,
+            _QWEN_WEATHER_CALL * 2
+            + "<tool_call>\n<function=get_weather>\n<parameter=city>\nPa",
+            "length",
+            id="truncated_after_complete_calls",
+        ),
+        pytest.param(
+            GenerationStatus.END_OF_SEQUENCE,
+            _QWEN_WEATHER_CALL * 2,
+            "tool_calls",
+            id="natural_stop",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_call_finish_reason_reports_length_truncation(
+    patch_openai_metrics: None,
+    status: GenerationStatus,
+    decoded: str,
+    expected_finish_reason: str,
+) -> None:
+    """Regression (fuzz-found): a forced tool call that loops until
+    ``max_tokens`` used to come back with ``finish_reason="tool_calls"``,
+    so a client could not tell the output was truncated. The complete calls
+    are still returned, but the finish reason must say ``length``."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=status,
+                decoded_tokens=decoded,
+                token_count=64,
+                prompt_token_count=5,
+            )
+        ]
+    )
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=Qwen3_5ToolParser(),
+        parse_tool_calls=True,
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.finish_reason == expected_finish_reason
+    assert choice.message.tool_calls is not None
+    assert len(choice.message.tool_calls) == 2
+
+
 async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,
