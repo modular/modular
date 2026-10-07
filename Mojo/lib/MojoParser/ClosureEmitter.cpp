@@ -2048,14 +2048,29 @@ static TypeConvention meetCaptureConvention(TypeConvention lhs,
 }
 
 static TypeConvention typeConventionOf(SharedState &shared,
-                                       LIT::StructType structType) {
+                                       LIT::StructType structType,
+                                       ASTDecl &nestedFnDecl) {
   ASTDecl &structDecl =
       shared.declResolver->getDeclForTypeSymbol(structType.getSymbol());
   StructDeclOp structDeclOp = cast<StructDeclOp>(structDecl.getIfOperation());
-  return structDeclOp.isRegisterPassableTrivial()
-             ? TypeConvention::RegisterPassableTrivial
-         : structDeclOp.isRegisterPassable() ? TypeConvention::RegisterPassable
-                                             : TypeConvention::MemoryOnly;
+  if (structDeclOp.isRegisterPassableTrivial())
+    return TypeConvention::RegisterPassableTrivial;
+  if (structDeclOp.isRegisterPassable())
+    return TypeConvention::RegisterPassable;
+
+  // A conditional `RegisterPassable` conformance (e.g. `Tuple`'s) leaves the
+  // declaration MemoryOnly, but this capture is a particular instantiation:
+  // prove the conformance against its parameter bindings and the capturing
+  // scope's `conforms_to` assumptions, as `isMovable`/`isCopyable` do.
+  if (structDeclOp.getRegisterPassableConstraintAttr()) {
+    SmallVector<ConstraintAttr> assumptions =
+        ASTDecl::getAssumptionsFromScope(&nestedFnDecl);
+    if (ASTType(structType)
+            .provenConformsToBuiltinTrait(
+                "RegisterPassable", nestedFnDecl.getLoc(), shared, assumptions))
+      return TypeConvention::RegisterPassable;
+  }
+  return TypeConvention::MemoryOnly;
 }
 
 static TypeConvention typeConventionOf(SharedState &shared, ParamType paramType,
@@ -2177,7 +2192,8 @@ Value ClosureEmitter::emitClosure(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
         captureTypeAttr = TypeParamAttr::get(mlirType, anyType);
 
       if (auto structType = sugarDynCast<StructType>(mlirType)) {
-        updateCaptureConvention(typeConventionOf(shared, structType));
+        updateCaptureConvention(
+            typeConventionOf(shared, structType, nestedFnDecl));
       } else if (sugarIsa<TraitType>(mlirType)) {
         shared.emitError(nestedFnDecl.getLoc(),
                          "cannot capture a value of trait type yet because "
