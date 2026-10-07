@@ -32,7 +32,7 @@ Note:
 """
 
 from max.gpu.compute.mma import mma
-from std._gpu.primitives.warp import shuffle_down
+from max.gpu.primitives.warp import shuffle_down
 
 
 @inline(.always)

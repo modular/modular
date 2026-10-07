@@ -26,8 +26,6 @@ from .primitives import (
     global_idx,
     grid_dim,
     lane_id,
-    sm_id,
     thread_idx,
-    warp_id,
 )
 from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE

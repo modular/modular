@@ -16,6 +16,15 @@ It defines aliases and functions for accessing GPU grid, block, and thread
 indices and dimensions.
 """
 
+from std.math.uutils import ufloordiv
+from std.sys import llvm_intrinsic
+from std.sys.info import CompilationTarget, is_amd_gpu, is_nvidia_gpu
+from std.sys.intrinsics import readfirstlane
+
+from max.gpu.globals import WARP_SIZE
+
+from . import warp
+
 
 @__doc_inline
 from std._gpu.primitives.id import (
@@ -27,7 +36,79 @@ from std._gpu.primitives.id import (
     global_idx,
     grid_dim,
     lane_id,
-    sm_id,
     thread_idx,
-    warp_id,
 )
+
+
+# ===-----------------------------------------------------------------------===#
+# warp_id
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.nodebug)
+def warp_id[*, broadcast: Bool = False]() -> Int:
+    """Returns the warp ID of the current thread within its block.
+    The warp ID is a unique identifier for each warp within a block, ranging
+    from 0 to BLOCK_SIZE/WARP_SIZE-1. This ID is commonly used for warp-level
+    programming and synchronization within a block.
+
+    Parameters:
+        broadcast: If true, broadcasts the warp ID to all threads in the warp,
+                   ensuring that all threads in the same warp have the same
+                   value. This can be useful for certain warp-level algorithms.
+
+    Returns:
+        The warp ID (0 to BLOCK_SIZE/WARP_SIZE-1) of the current thread.
+    """
+    return _warp_id[broadcast=broadcast]()
+
+
+@inline(.nodebug)
+def _warp_id[
+    *,
+    broadcast: Bool = False,
+]() -> Int:
+    var res = ufloordiv(thread_idx.x, WARP_SIZE)
+    comptime if broadcast:
+        comptime if is_amd_gpu():
+            res = readfirstlane(res)
+        else:
+            res = warp.broadcast(res)
+    return Int(res)
+
+
+# ===-----------------------------------------------------------------------===#
+# sm_id
+# ===-----------------------------------------------------------------------===#
+
+
+@inline(.nodebug)
+def sm_id() -> Int:
+    """Returns the Streaming Multiprocessor (SM) ID of the current thread.
+
+    The SM ID uniquely identifies which physical streaming multiprocessor the thread is
+    executing on. This is useful for SM-level optimizations and understanding hardware
+    utilization.
+
+    If called on non-NVIDIA GPUs, this function aborts as this functionality
+    is only supported on NVIDIA hardware.
+
+    Returns:
+        The SM ID of the current thread.
+    """
+
+    comptime if is_nvidia_gpu():
+        return warp.broadcast(
+            Int(
+                llvm_intrinsic[
+                    "llvm.nvvm.read.ptx.sreg.smid",
+                    Int32,
+                    has_side_effect=False,
+                ]()
+            )
+        )
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
+            note="sm_id() is only supported when targeting NVIDIA GPUs.",
+        ]()
