@@ -29,7 +29,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.experimental import functional as F
 from max.experimental.nn.module import Module as _ModuleV3
-from max.experimental.tensor import default_dtype
+from max.experimental.tensor import Tensor, default_dtype
 from max.graph import DeviceRef, Graph, Module, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import (
@@ -160,6 +160,32 @@ class ModelOutputs:
 
     For data parallel models, the hs will be on the first gpu since it is replicated.
     """
+
+
+@tree.dataclass
+class ModuleV3Outputs:
+    """The outputs a ModuleV3 text model's ``forward`` returns.
+
+    :class:`ModuleV3PipelineModelWithKVCache` maps each field to the
+    :class:`ModelOutputs` field of the same name. A field left ``None`` is not
+    a graph output.
+    """
+
+    next_token_logits: Tensor
+    """Last-token logits, shape ``[B, V]``."""
+
+    logits: Tensor | None = None
+    """All or variable logits, shape ``[T, V]``, when the model returns them.
+
+    When ``None``, :attr:`next_token_logits` also serves as
+    :attr:`ModelOutputs.logits`.
+    """
+
+    logit_offsets: Tensor | None = None
+    """Row offsets into :attr:`logits`, shape ``[B + 1]``; set with it."""
+
+    hidden_states: Tensor | None = None
+    """Hidden states, when the model returns them."""
 
 
 @dataclass(kw_only=True)
@@ -1126,6 +1152,10 @@ class MultiGraphPipelineModelWithKVCache(
         )
 
 
+def _driver_buffer(tensor: Tensor | None) -> Buffer | None:
+    return None if tensor is None else tensor.driver_tensor
+
+
 class ModuleV3PipelineModelWithKVCache(
     PipelineModelWithKVCache[
         BaseContextType, _ModelConfigT, _ModuleV3[..., Any]
@@ -1175,7 +1205,7 @@ class ModuleV3PipelineModelWithKVCache(
             that doesn't set ``lora_modulev3``.
     """
 
-    model: Callable[..., Any]
+    model: Callable[..., ModuleV3Outputs]
     _modulev3_extra_input_types: list[Any]
 
     def __init__(
@@ -1218,39 +1248,27 @@ class ModuleV3PipelineModelWithKVCache(
         """
         return self._to_model_outputs(self.model(*model_inputs.buffers))
 
-    def _to_model_outputs(self, model_outputs: Sequence[Any]) -> ModelOutputs:
-        """Maps the compiled model's outputs to :class:`ModelOutputs`.
-
-        The graph returns ``next_token_logits``, then ``logits`` and
-        ``logit_offsets`` when it returns all or variable logits, then
-        ``hidden_states`` when it returns hidden states. With a single logits
-        output, it serves as both ``logits`` and ``next_token_logits``.
+    def _to_model_outputs(self, outputs: ModuleV3Outputs) -> ModelOutputs:
+        """Maps the compiled model's outputs to :class:`ModelOutputs` by name.
 
         Args:
-            model_outputs: The tensors returned by :attr:`model`.
+            outputs: The outputs returned by :attr:`model`.
 
         Returns:
             The outputs as driver buffers.
         """
-        outputs = [
-            cast(Buffer, output.driver_tensor) for output in model_outputs
-        ]
-        hidden_states = outputs[-1] if len(outputs) in (2, 4) else None
-        if len(outputs) >= 3:
-            return ModelOutputs(
-                logits=outputs[1],
-                next_token_logits=outputs[0],
-                logit_offsets=outputs[2],
-                hidden_states=hidden_states,
-            )
+        logits = outputs.logits
+        if logits is None:
+            logits = outputs.next_token_logits
         return ModelOutputs(
-            logits=outputs[0],
-            next_token_logits=outputs[0],
-            hidden_states=hidden_states,
+            logits=logits.driver_tensor,
+            next_token_logits=outputs.next_token_logits.driver_tensor,
+            logit_offsets=_driver_buffer(outputs.logit_offsets),
+            hidden_states=_driver_buffer(outputs.hidden_states),
         )
 
     @traced
-    def load_model(self) -> Callable[..., Any]:
+    def load_model(self) -> Callable[..., ModuleV3Outputs]:
         """Build and compile the ModuleV3 callable."""
         state_dict = self._load_state_dict()
         model_config = self._create_model_config(state_dict)

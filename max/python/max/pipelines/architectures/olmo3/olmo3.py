@@ -43,6 +43,7 @@ from max.pipelines.architectures.olmo2_modulev3.layers.rms_norm import (
 from max.pipelines.architectures.olmo3.layers.transformer import (
     Olmo3TransformerBlock,
 )
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import Olmo3Attention
 from .model_config import Olmo3Config
@@ -51,7 +52,7 @@ from .model_config import Olmo3Config
 class Olmo3TextModel(
     Module[
         [Tensor, PagedCacheValues, PagedCacheValues, Tensor, Tensor],
-        tuple[Tensor],
+        ModuleV3Outputs,
     ]
 ):
     """The Olmo3 language model.
@@ -199,7 +200,7 @@ class Olmo3TextModel(
         global_kv: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor]:
+    ) -> ModuleV3Outputs:
         h = self.embed_tokens(tokens)
         kv_by_type = {
             "sliding_attention": sliding_kv,
@@ -230,10 +231,10 @@ class Olmo3TextModel(
                 DType.float32,
             )
 
-        return (last_logits,)
+        return ModuleV3Outputs(next_token_logits=last_logits)
 
 
-class Olmo3(Module[[Tensor, Tensor, Tensor], tuple[Tensor]]):
+class Olmo3(Module[[Tensor, Tensor, Tensor], ModuleV3Outputs]):
     """The Olmo3 model."""
 
     def __init__(
@@ -252,7 +253,7 @@ class Olmo3(Module[[Tensor, Tensor, Tensor], tuple[Tensor]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
-    ) -> tuple[Tensor]:
+    ) -> ModuleV3Outputs:
         kv_inputs = iter(x._graph_value for x in variadic_args)
         assert isinstance(self.kv_params, MultiKVCacheParams)
         sliding_inputs, global_inputs = self.kv_params.unflatten_basic_kv_tree(

@@ -34,6 +34,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.rotary_embedding import Llama3RopeScalingParams
 from max.nn.transformer import ReturnLogits
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import Gemma3Attention
 from .layers.rms_norm import Gemma3RMSNorm
@@ -46,7 +47,7 @@ from .model_config import Gemma3Config
 class Gemma3TextModel(
     Module[
         [Tensor, PagedCacheValues, PagedCacheValues, Tensor, Tensor],
-        tuple[Tensor, ...],
+        ModuleV3Outputs,
     ]
 ):
     """The Gemma3 language model."""
@@ -192,7 +193,7 @@ class Gemma3TextModel(
         global_kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         tokens = tokens.to(self.mesh)
         input_row_offsets = input_row_offsets.to(self.mesh)
         h = self.embed_tokens(tokens)
@@ -245,15 +246,12 @@ class Gemma3TextModel(
             logits = self._compute_logits(self.norm(h))
             offsets = input_row_offsets
 
-        ret_val: tuple[Tensor, ...] = (last_logits,)
-        if offsets is not None:
-            assert logits is not None
-            ret_val += (logits, offsets)
-
-        return ret_val
+        return ModuleV3Outputs(
+            next_token_logits=last_logits, logits=logits, logit_offsets=offsets
+        )
 
 
-class Gemma3(Module[..., tuple[Tensor, ...]]):
+class Gemma3(Module[..., ModuleV3Outputs]):
     """The Gemma3 model (ModuleV3 wrapper).
 
     Top-level wrapper that unflattens the variadic KV cache arguments
@@ -276,7 +274,7 @@ class Gemma3(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         kv_inputs = iter(x._graph_value for x in variadic_args)
         kv_cache_local, kv_cache_global = (
             self.kv_params.unflatten_basic_kv_tree(kv_inputs)

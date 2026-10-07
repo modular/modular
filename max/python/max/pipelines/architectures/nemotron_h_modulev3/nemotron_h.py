@@ -41,6 +41,7 @@ from max.nn.kv_cache import (
     RecurrentStateInputsPerDevice,
 )
 from max.nn.transformer import ReturnLogits
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import NemotronHAttention
 from .layers.mamba2 import MambaStateAccess, NemotronHMamba2Mixer
@@ -173,7 +174,7 @@ class NemotronHBackbone(Module[..., Tensor]):
         return h
 
 
-class NemotronH(Module[..., tuple[Tensor, ...]]):
+class NemotronH(Module[..., ModuleV3Outputs]):
     """Nemotron-H for causal language modeling."""
 
     def __init__(self, config: NemotronHConfig) -> None:
@@ -197,7 +198,7 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         del return_n_logits
         mesh = self.lm_head.weight.mesh
         row_offsets = input_row_offsets
@@ -229,9 +230,9 @@ class NemotronH(Module[..., tuple[Tensor, ...]]):
         # The head is replicated, so device 0 holds the full vocabulary.
         # The sampler reads that one buffer.
         if self.return_logits == ReturnLogits.ALL:
-            return (
-                last.local_shards[0],
-                self._logits(h).local_shards[0],
-                row_offsets,
+            return ModuleV3Outputs(
+                next_token_logits=last.local_shards[0],
+                logits=self._logits(h).local_shards[0],
+                logit_offsets=row_offsets,
             )
-        return (last.local_shards[0],)
+        return ModuleV3Outputs(next_token_logits=last.local_shards[0])

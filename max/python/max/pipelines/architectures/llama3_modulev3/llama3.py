@@ -36,6 +36,7 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.mlp import LlamaStackedMLP
 from .layers.rotary_embedding import (
@@ -47,7 +48,7 @@ from .model_config import Llama3Config
 
 
 class Llama3TextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[[Tensor, PagedCacheValues, Tensor, Tensor], ModuleV3Outputs]
 ):
     """The Llama3 language model.
 
@@ -176,7 +177,7 @@ class Llama3TextModel(
         kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
@@ -230,20 +231,21 @@ class Llama3TextModel(
             if logits is not None:
                 logits = logits / self.logits_scaling
 
-        ret_val: tuple[Tensor, ...] = (last_logits,)
-        if offsets is not None:
-            assert logits is not None
-            ret_val += (logits, offsets)
-
+        hidden_states = None
         if self.return_hidden_states == ReturnHiddenStates.LAST:
-            ret_val += (last_h,)
+            hidden_states = last_h
         elif self.return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
-            ret_val += (self.norm(h),)
+            hidden_states = self.norm(h)
 
-        return ret_val
+        return ModuleV3Outputs(
+            next_token_logits=last_logits,
+            logits=logits,
+            logit_offsets=offsets,
+            hidden_states=hidden_states,
+        )
 
 
-class Llama3(Module[..., tuple[Tensor, ...]]):
+class Llama3(Module[..., ModuleV3Outputs]):
     """The Llama3 model.
 
     Top-level wrapper that unflattens the variadic KV cache arguments
@@ -266,7 +268,7 @@ class Llama3(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
         kv_collections = tree.leaves(
