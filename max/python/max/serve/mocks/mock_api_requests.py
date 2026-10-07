@@ -29,19 +29,6 @@ def simple_openai_request(
     }
 
 
-def simple_openai_stream_request() -> dict[str, Any]:
-    """
-    A simple streaming request.
-    Verify via:
-    curl https://api.openai.com/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer $OPENAI_API_KEY" -d '{ "model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "Say this is a test!"}], "stream": true}'
-    """
-    return {
-        "model": "gpt-3.5-turbo",
-        "messages": [{"role": "user", "content": "Say This is a test!"}],
-        "stream": "true",
-    }
-
-
 def simple_kserve_request() -> dict[str, Any]:
     return {
         "inputs": [

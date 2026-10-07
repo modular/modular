@@ -319,11 +319,6 @@ def _is_torch_tensor(obj: Any) -> bool:
     return t.__module__ == "torch" and t.__name__ == "Tensor"
 
 
-def _is_torch_metadata_module(obj: Any) -> bool:
-    """Checks if an object is an `TorchMetadata`."""
-    return type(obj).__name__ == "TorchMetadata"
-
-
 def _process_custom_extensions_object(
     custom_extension: CustomExtensionType,
 ) -> CustomExtensionType:

@@ -17,7 +17,6 @@ import atexit
 import dataclasses
 import json
 import logging
-import logging.handlers
 import math
 import os
 import platform
@@ -385,33 +384,6 @@ def get_log_level(settings: Settings) -> int | str | None:
         otlp_level = None
 
     return otlp_level
-
-
-# Create a logger that buffers logs in memory and prints them to the console in batches.
-# The returned logger is a no op if logging has not yet been configured.
-def get_batch_logger(
-    parent_logger: logging.Logger, capacity: int = 10
-) -> logging.Logger:
-    batch_logger = logging.getLogger(parent_logger.name)
-    console_handlers = [
-        h
-        for h in logging.getLogger().handlers
-        if type(h) is logging.StreamHandler
-    ]
-    memory_handler = logging.handlers.MemoryHandler(
-        capacity=capacity,
-        target=console_handlers[0] if len(console_handlers) > 0 else None,
-    )
-    batch_logger.addHandler(memory_handler)
-    batch_logger.propagate = False
-    return batch_logger
-
-
-# Force a flush of the batch given logger.
-def flush_batch_logger(logger: logging.Logger) -> None:
-    for handler in logger.handlers:
-        if type(handler) is logging.handlers.MemoryHandler:
-            handler.flush()
 
 
 COLOR_MAP = {

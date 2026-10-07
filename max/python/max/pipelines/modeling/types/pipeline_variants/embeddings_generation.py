@@ -22,7 +22,7 @@ import numpy as np
 import numpy.typing as npt
 from max.pipelines.context import BaseContext
 from max.pipelines.context.tokens import TokenBuffer
-from max.pipelines.modeling.types.pipeline import PipelineInputs, PipelineOutput
+from max.pipelines.modeling.types.pipeline import PipelineInputs
 from max.pipelines.request import RequestID
 
 
@@ -99,9 +99,3 @@ class EmbeddingsGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
             Always ``True``, as embedding generation is a single-step operation.
         """
         return True
-
-
-def _check_embeddings_output_implements_pipeline_output(
-    x: EmbeddingsGenerationOutput,
-) -> PipelineOutput:
-    return x
