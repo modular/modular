@@ -78,9 +78,10 @@ from ...utils_gpu import (
     select_config,
     _vendor_blas_fallback_disabled,
 )
-from ..vendor.matmul import matmul as matmul_vendor
+from ..vendor.matmul import apply_compute_fn_in_place, matmul as matmul_vendor
 from ._multistage_gemm_gpu import (
     multistage_gemm_kernel,
+    multistage_gemm_kernel_compute_fn,
     multistage_gemm_split_k_kernel,
 )
 from .apple import enqueue_apple_matmul
@@ -767,9 +768,9 @@ def _matmul_gpu[
 ) raises:
     """GPU matmul dispatch that stores `compute_fn(idx, a @ b)` into `c`.
 
-    On AMD CDNA with `transpose_b`, the kernels apply `compute_fn` in their
-    epilogue. Other targets run the matmul into `c` and then apply
-    `compute_fn` in place in a separate elementwise pass.
+    On AMD CDNA with `transpose_b` and on SM100, the kernels apply
+    `compute_fn` in their epilogue. Other targets run the matmul into `c` and
+    then apply `compute_fn` in place in a separate elementwise pass.
 
     Parameters:
         ComputeFnType: Type of `compute_fn` (inferred).
@@ -786,8 +787,6 @@ def _matmul_gpu[
         compute_fn: Maps each output index and value to the value to store.
         ctx: Device context used to launch the kernels.
     """
-    comptime c_type = c.dtype
-
     comptime if (
         ctx.target.is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
@@ -803,30 +802,26 @@ def _matmul_gpu[
             has_epilogue_fn=False,
             has_compute_fn=True,
         ](c, a, b, no_epilogue_fn, compute_fn, ctx)
+    elif get_defined_bool["MODULE_USE_VENDOR_BLAS", False]():
+        logger.info("Executing: Vendor BLAS")
+        matmul_vendor[transpose_b=transpose_b](c, a, b, compute_fn, ctx)
+    elif ctx.target.is_nvidia_gpu() and _has_blackwell_tcgen05():
+        matmul_dispatch_sm100[
+            transpose_b=transpose_b,
+            use_tf32=use_tf32,
+            pdl_level=PDLLevel.ON,
+        ](c, a, b, compute_fn, ctx)
     else:
         # TODO(MOCO-4720): the extra pass re-reads and re-writes `c`. Pass
-        # `compute_fn` to `matmul_dispatch_sm100` directly once its GEMV,
-        # small-MN, and vendor paths take value epilogues.
+        # `compute_fn` to the remaining dispatchers once they take value
+        # epilogues.
         _matmul_gpu[
             use_tensor_core=use_tensor_core,
             transpose_b=transpose_b,
             use_tf32=use_tf32,
             pdl_level=pdl_level,
         ](c, a, b, ctx)
-
-        def apply_compute_fn[
-            simd_width: Int, alignment: Int = 1
-        ](idx: Coord) {var c, var compute_fn}:
-            comptime byte_alignment = alignment * size_of[c_type]()
-            var val = c.load[width=simd_width, alignment=byte_alignment](idx)
-            var output = compute_fn[c_type, simd_width, alignment=alignment](
-                Index(idx[0].value(), idx[1].value()), val
-            )
-            c.store[width=simd_width, alignment=byte_alignment](idx, output)
-
-        elementwise[
-            simd_width_of[c_type, target=get_gpu_target()](), target="gpu"
-        ](apply_compute_fn, (Int(c.dim[0]()), Int(c.dim[1]())), ctx)
+        apply_compute_fn_in_place(c, compute_fn, ctx)
 
 
 def _matmul_gpu_impl[
@@ -1114,7 +1109,6 @@ def _matmul_gpu_impl[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
                 pdl_level=PDLLevel.ON,
             ](c, a, b, compute_fn, ctx)
         else:
@@ -1122,7 +1116,6 @@ def _matmul_gpu_impl[
                 transpose_b=transpose_b,
                 use_tf32=use_tf32,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
                 pdl_level=PDLLevel.ON,
             ](c, a, b, ctx)
 
@@ -2433,33 +2426,64 @@ def multistage_gemm[
 ) raises:
     """Runs `multistage_gemm`, storing `compute_fn(idx, a @ b)` into `c`.
 
-    Only the AMD CDNA `transpose_b` kernels support this overload.
-
     Parameters:
         c_type: DType of the output tile `c` elements (inferred).
         a_type: DType of the input tile `a` elements (inferred).
         b_type: DType of the input tile `b` elements (inferred).
         ComputeFnType: Type of `compute_fn` (inferred).
-        transpose_b: Whether `b` is stored as `(N, K)`. Must be `True`.
+        transpose_b: Whether `b` is accessed transposed, so its row `y`
+            is read as `b[y, i]` instead of `b[i, y]`.
         config: Compile-time `MatmulConfig` selecting the block tile,
             warp tile, MMA shape, and pipeline stages for the kernel.
 
     Args:
         c: Output tile of shape `(M, N)` receiving the result.
         a: Input tile of shape `(M, K)`.
-        b: Input tile of shape `(N, K)`.
+        b: Input tile of shape `(K, N)`, or `(N, K)` when `transpose_b`
+            is set.
         compute_fn: Maps each output index and value to the value to store.
         ctx: Device context used to enqueue the kernel.
     """
     logger.info("------ Dispatching to Multistage GEMM ------")
     logger.info(config)
-    _multistage_gemm_amd[
-        transpose_b=transpose_b,
-        config=config,
-        elementwise_lambda_fn=None,
-        has_epilogue_fn=False,
-        has_compute_fn=True,
-    ](c, a, b, no_epilogue_fn, compute_fn, ctx)
+    comptime if (
+        ctx.target.is_amd_gpu()
+        and not has_amd_rdna_gpu_accelerator()
+        and transpose_b
+    ):
+        _multistage_gemm_amd[
+            transpose_b=transpose_b,
+            config=config,
+            elementwise_lambda_fn=None,
+            has_epilogue_fn=False,
+            has_compute_fn=True,
+        ](c, a, b, no_epilogue_fn, compute_fn, ctx)
+    else:
+        logger.info("Executing: standard GEMM (no split-K)")
+        comptime gemm_kernel_type = multistage_gemm_kernel_compute_fn[
+            CLT=c.LayoutType,
+            ALT=a.LayoutType,
+            BLT=b.LayoutType,
+            c_linear_idx_type=c.linear_idx_type,
+            a_linear_idx_type=a.linear_idx_type,
+            b_linear_idx_type=b.linear_idx_type,
+            config=config,
+            ComputeFnType=ComputeFnType,
+        ]
+        var M = Int(c.dim[0]())
+        var N = Int(c.dim[1]())
+        ctx.enqueue_function[gemm_kernel_type](
+            c,
+            a,
+            b,
+            host_arg=compute_fn,
+            grid_dim=config.grid_dim(M, N),
+            block_dim=config.block_dim(),
+            shared_mem_bytes=config.shared_mem_usage(),
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(config.shared_mem_usage())
+            ),
+        )
 
 
 def multistage_gemm[

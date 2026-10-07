@@ -233,6 +233,38 @@ def matmul[
     comptime assert a.flat_rank == 2, "a must be of rank 2"
     comptime assert b.flat_rank == 2, "b must be of rank 2"
 
+    vendor_matmul[use_tf32=True](
+        ctx,
+        c,
+        a,
+        b,
+        c_row_major=True,
+        transpose_b=transpose_b,
+    )
+    apply_compute_fn_in_place(c, compute_fn, ctx)
+
+
+def apply_compute_fn_in_place[
+    ComputeFnType: ElementwiseComputeFn, //
+](
+    c: TileTensor[mut=True, ...],
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Replaces each chunk of the row-major matrix `c` with `compute_fn` of it.
+
+    Matmul paths that cannot fuse `compute_fn` into their epilogue run this
+    pass after writing the plain product into `c`.
+
+    Parameters:
+        ComputeFnType: Type of `compute_fn` (inferred).
+
+    Args:
+        c: Rank-2 row-major matrix, updated in place.
+        compute_fn: Maps each output index and chunk to the value to store.
+        ctx: Device context used to launch the pass.
+    """
+    comptime assert c.flat_rank == 2, "c must be of rank 2"
     comptime c_type = c.dtype
     comptime simd_size = _epilogue_simd_size[c_type]()
 
@@ -253,15 +285,6 @@ def matmul[
             ),
         )
 
-    var m = Int(c.dim[0]())
-    var n = Int(c.dim[1]())
-
-    vendor_matmul[use_tf32=True](
-        ctx,
-        c,
-        a,
-        b,
-        c_row_major=True,
-        transpose_b=transpose_b,
+    elementwise[simd_size, target="gpu"](
+        compute_wrapper, (Int(c.dim[0]()), Int(c.dim[1]())), ctx
     )
-    elementwise[simd_size, target="gpu"](compute_wrapper, (m, n), ctx)

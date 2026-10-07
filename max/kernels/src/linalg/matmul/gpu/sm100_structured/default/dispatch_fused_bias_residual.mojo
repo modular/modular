@@ -169,12 +169,10 @@ def fused_bias_residual_matmul_dispatch_sm100[
     # fallback to vendor matmul for shapes that Mojo kernel is lagging behind
     comptime if (static_N, static_K) in low_perf_shapes:
         _vendor_blas_matmul_sm100[
-            c_type,
-            a_type,
-            b_type,
-            transpose_b,
-            elementwise_lambda_wrapper=bias_residual_elementwise_lambda,
-        ](c, a, b, ctx)
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=bias_residual_elementwise_lambda,
+            has_compute_fn=False,
+        ](c, a, b, identity_compute_fn, ctx)
         return
 
     comptime has_static_NK = static_N > 0 and static_K > 0
@@ -214,6 +212,5 @@ def fused_bias_residual_matmul_dispatch_sm100[
     matmul_dispatch_sm100[
         transpose_b=transpose_b,
         elementwise_lambda_fn=bias_residual_elementwise_lambda,
-        elementwise_lambda_wrapper=bias_residual_elementwise_lambda,
         pdl_level=pdl_level,
     ](c, a, b, ctx)

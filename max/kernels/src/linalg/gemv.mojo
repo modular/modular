@@ -3523,7 +3523,9 @@ struct _MmaCpAsyncMmaComputer[
             )
             self.stage = 0 if raw_next == Self.stage_cnt else raw_next
 
-    def epi(mut self):
+    def epi[
+        ComputeFnType: ElementwiseComputeFn, //, has_compute_fn: Bool
+    ](mut self, compute_fn: ComputeFnType):
         """Epilogue: reduce acc across 4 compute-warp partials, write the C tile.
 
         The output buffer is always row-major `[M, N]`. When `swapAB`, the
@@ -3531,6 +3533,15 @@ struct _MmaCpAsyncMmaComputer[
         `gemm_m`/`gemm_n` = N/M), so this CTA's tile covers N in the m-direction
         and M in the n-direction; the store transposes index order back into the
         row-major `[M, N]` buffer (row stride = N = `gemm_m`).
+
+        Parameters:
+            ComputeFnType: Type of `compute_fn` (inferred).
+            has_compute_fn: Whether to store `compute_fn` applied to each
+                output element instead of the element itself.
+
+        Args:
+            compute_fn: Maps each output index and value to the value to
+                store. Ignored unless `has_compute_fn`.
         """
         var smem_epi = self.smem_a.ptr.bitcast[Scalar[Self.accum_type]]()
         var base_off = self.compute_warp * Self.tile_m * Self.tile_n
@@ -3584,7 +3595,12 @@ struct _MmaCpAsyncMmaComputer[
                             total.cast[Self.c_type](),
                         )
                     else:
-                        self.out_ptr[out_off] = total.cast[Self.c_type]()
+                        var out = total.cast[Self.c_type]()
+                        comptime if has_compute_fn:
+                            out = compute_fn[Self.c_type, 1, alignment=1](
+                                Index(out_row, out_col), out
+                            )
+                        self.out_ptr[out_off] = out
 
 
 struct _MmaCpAsyncSmem[
@@ -3652,6 +3668,132 @@ def gemm_mma_cpasync_kernel[
     gemm_k: Int32,
     gemm_n: Int32,
     batch_size: Int32,
+):
+    _gemm_mma_cpasync_kernel_impl[
+        tile_m=tile_m,
+        tile_n=tile_n,
+        tile_k=tile_k,
+        stage_cnt=stage_cnt,
+        accum_type=accum_type,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_compute_fn=False,
+        pdl_level=pdl_level,
+        swapAB=swapAB,
+    ](output, act, weight, gemm_m, gemm_k, gemm_n, batch_size, no_compute_fn)
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
+)
+@__name(
+    t"gemm_mma_cpasync_compute_fn_{c_type}_{a_type}_{b_type}_{tile_k}_{stage_cnt}",
+)
+def gemm_mma_cpasync_kernel_compute_fn[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    ComputeFnType: ElementwiseComputeFn,
+    *,
+    tile_m: Int = 16,
+    tile_n: Int = 8,
+    tile_k: Int = 128,
+    stage_cnt: Int = 2,
+    accum_type: DType = .float32,
+    pdl_level: PDLLevel = PDLLevel(),
+    swapAB: Bool = False,
+](
+    output: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    gemm_m: Int32,
+    gemm_k: Int32,
+    gemm_n: Int32,
+    batch_size: Int32,
+    compute_fn: ComputeFnType,
+):
+    """`gemm_mma_cpasync_kernel` that stores `compute_fn` applied to each
+    output element.
+
+    Parameters:
+        c_type: Output element type.
+        a_type: Activation element type.
+        b_type: Weight element type.
+        c_layout: Layout of the output tensor.
+        a_layout: Layout of the activation tensor.
+        b_layout: Layout of the weight tensor.
+        c_engine: Engine of the output tensor.
+        a_engine: Engine of the activation tensor.
+        b_engine: Engine of the weight tensor.
+        ComputeFnType: Type of `compute_fn`.
+        tile_m: CTA tile rows; must be 16 for the m16n8k16 MMA.
+        tile_n: CTA tile columns; must be 8 for the m16n8k16 MMA.
+        tile_k: K-dimension tile size.
+        stage_cnt: Number of shared-memory pipeline stages.
+        accum_type: Accumulation precision type.
+        pdl_level: Programmatic dependent launch level.
+        swapAB: Whether the launcher fed the weight to the A operand slot.
+
+    Args:
+        output: Row-major `[batch, M, N]` output tensor.
+        act: Activation tensor, the A operand.
+        weight: Weight tensor, the B operand.
+        gemm_m: Rows of the A operand.
+        gemm_k: Reduction dimension.
+        gemm_n: Rows of the B operand.
+        batch_size: Batch size.
+        compute_fn: Maps each output index and value to the value to store.
+    """
+    _gemm_mma_cpasync_kernel_impl[
+        tile_m=tile_m,
+        tile_n=tile_n,
+        tile_k=tile_k,
+        stage_cnt=stage_cnt,
+        accum_type=accum_type,
+        elementwise_lambda_fn=None,
+        has_compute_fn=True,
+        pdl_level=pdl_level,
+        swapAB=swapAB,
+    ](output, act, weight, gemm_m, gemm_k, gemm_n, batch_size, compute_fn)
+
+
+@inline(.always)
+def _gemm_mma_cpasync_kernel_impl[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    c_engine: TensorEngine,
+    a_engine: TensorEngine,
+    b_engine: TensorEngine,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    tile_m: Int,
+    tile_n: Int,
+    tile_k: Int,
+    stage_cnt: Int,
+    accum_type: DType,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_compute_fn: Bool,
+    pdl_level: PDLLevel,
+    swapAB: Bool,
+](
+    output: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
+    gemm_m: Int32,
+    gemm_k: Int32,
+    gemm_n: Int32,
+    batch_size: Int32,
+    compute_fn: ComputeFnType,
 ):
     var _gemm_m = Int(gemm_m)
     var _gemm_k = Int(gemm_k)
@@ -3785,7 +3927,7 @@ def gemm_mma_cpasync_kernel[
             _gemm_n,
         )
         computer.issue_mainloop(k_iters)
-        computer.epi()
+        computer.epi[has_compute_fn=has_compute_fn](compute_fn)
 
     comptime if pdl_level > PDLLevel.OFF:
         launch_dependent_grids()
@@ -3838,6 +3980,84 @@ def gemm_mma_cpasync[
         batch_size: Batch size; ignored for 2D inputs (treated as 1).
         ctx:        GPU device context.
     """
+    _gemm_mma_cpasync_impl[
+        pdl_level=pdl_level,
+        tile_k=tile_k,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_compute_fn=False,
+        swapAB=swapAB,
+    ](c, act, weight, gemm_m, gemm_k, gemm_n, batch_size, no_compute_fn, ctx)
+
+
+def gemm_mma_cpasync[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    pdl_level: PDLLevel = PDLLevel(),
+    tile_k: Int = 128,
+    swapAB: Bool = False,
+](
+    c: TileTensor[mut=True, ...],
+    act: TileTensor[mut=False, ...],
+    weight: TileTensor[mut=False, ...],
+    gemm_m: Int,
+    gemm_k: Int,
+    gemm_n: Int,
+    batch_size: Int,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Launches the batched GEMM tensor-core kernel, storing
+    `compute_fn(idx, act @ weight^T)` into `c`.
+
+    Parameters:
+        ComputeFnType: Type of `compute_fn` (inferred).
+        pdl_level: Programmatic dependent launch level for PDL barriers.
+        tile_k: K-dimension tile size for the MMA kernel (defaults to 128).
+        swapAB: When True, feeds the weight to the A operand slot and the
+            activation to the B slot for PDL overlap at small M.
+
+    Args:
+        c: Output, shape (gemm_m, gemm_n) or (batch, gemm_m, gemm_n),
+            always row-major.
+        act: Activation, shape (gemm_m, gemm_k) or (batch, gemm_m, gemm_k).
+        weight: Weight, shape (gemm_n, gemm_k) or (batch, gemm_n, gemm_k).
+        gemm_m: Activation rows (output rows, M).
+        gemm_k: Reduction dimension.
+        gemm_n: Weight rows (output cols, N).
+        batch_size: Batch size; ignored for 2D inputs (treated as 1).
+        compute_fn: Maps each output index and value to the value to store.
+        ctx: GPU device context.
+    """
+    _gemm_mma_cpasync_impl[
+        pdl_level=pdl_level,
+        tile_k=tile_k,
+        elementwise_lambda_fn=None,
+        has_compute_fn=True,
+        swapAB=swapAB,
+    ](c, act, weight, gemm_m, gemm_k, gemm_n, batch_size, compute_fn, ctx)
+
+
+@inline(.always)
+def _gemm_mma_cpasync_impl[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    pdl_level: PDLLevel,
+    tile_k: Int,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_compute_fn: Bool,
+    swapAB: Bool,
+](
+    c: TileTensor[mut=True, ...],
+    act: TileTensor[mut=False, ...],
+    weight: TileTensor[mut=False, ...],
+    gemm_m: Int,
+    gemm_k: Int,
+    gemm_n: Int,
+    batch_size: Int,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
     comptime assert (
         act.rank in (2, 3) and act.rank == weight.rank == c.rank
     ), "act, weight, and c must have the same rank and be 2D or 3D"
@@ -3863,18 +4083,12 @@ def gemm_mma_cpasync[
 
     comptime tile_m = 16
     comptime tile_n = 8
-    comptime TOTAL_THREADS = 256
 
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
     comptime per_stage = (
         (tile_m + tile_n) * tile_k * size_of[a_type]()
         + 2 * size_of[SharedMemBarrier]()
     )
-    comptime stage_cnt = b200_smem // per_stage
-    comptime SmemType = _MmaCpAsyncSmem[
-        a_type, tile_m, tile_n, tile_k, stage_cnt
-    ]
-    comptime smem_size = size_of[SmemType]()
+    comptime stage_cnt = _MMA_CPASYNC_SMEM_BYTES // per_stage
 
     logger.info("------ Dispatching gemm_mma_cpasync ------")
     logger.info(
@@ -3896,151 +4110,201 @@ def gemm_mma_cpasync[
     # transposes the store. Grid tiles the A-operand rows by tile_m, B by tile_n.
     var k_gemm_m = gemm_n if swapAB else gemm_m
     var k_gemm_n = gemm_m if swapAB else gemm_n
-    var grid_x = ceildiv(k_gemm_m, tile_m)
-    var grid_y = ceildiv(k_gemm_n, tile_n)
-
     comptime if is_batched:
         comptime if swapAB:
-            comptime kernel = gemm_mma_cpasync_kernel[
-                c_type,
-                a_type,
-                b_type,
-                type_of(c).LayoutType,
-                type_of(weight).LayoutType,
-                type_of(act).LayoutType,
-                type_of(c).Engine,
-                type_of(weight).Engine,
-                type_of(act).Engine,
+            _enqueue_gemm_mma_cpasync[
                 tile_m=tile_m,
                 tile_n=tile_n,
                 tile_k=tile_k,
                 stage_cnt=stage_cnt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
-                swapAB=True,
-            ]
-            ctx.enqueue_function[kernel, dump_asm=False](
+                swapAB=swapAB,
+            ](
                 c,
                 weight,
                 act,
-                Int32(k_gemm_m),
-                Int32(gemm_k),
-                Int32(k_gemm_n),
-                Int32(batch_size),
-                grid_dim=(grid_x, grid_y, batch_size),
-                block_dim=TOTAL_THREADS,
-                shared_mem_bytes=smem_size,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(b200_smem)
-                ),
-                attributes=pdl_launch_attributes(pdl_level),
+                k_gemm_m,
+                gemm_k,
+                k_gemm_n,
+                batch_size,
+                compute_fn,
+                ctx,
             )
         else:
-            comptime kernel = gemm_mma_cpasync_kernel[
-                c_type,
-                a_type,
-                b_type,
-                type_of(c).LayoutType,
-                type_of(act).LayoutType,
-                type_of(weight).LayoutType,
-                type_of(c).Engine,
-                type_of(act).Engine,
-                type_of(weight).Engine,
+            _enqueue_gemm_mma_cpasync[
                 tile_m=tile_m,
                 tile_n=tile_n,
                 tile_k=tile_k,
                 stage_cnt=stage_cnt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
-                swapAB=False,
-            ]
-            ctx.enqueue_function[kernel, dump_asm=False](
+                swapAB=swapAB,
+            ](
                 c,
                 act,
                 weight,
-                Int32(k_gemm_m),
-                Int32(gemm_k),
-                Int32(k_gemm_n),
-                Int32(batch_size),
-                grid_dim=(grid_x, grid_y, batch_size),
-                block_dim=TOTAL_THREADS,
-                shared_mem_bytes=smem_size,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(b200_smem)
-                ),
-                attributes=pdl_launch_attributes(pdl_level),
+                k_gemm_m,
+                gemm_k,
+                k_gemm_n,
+                batch_size,
+                compute_fn,
+                ctx,
             )
     else:
         var c3d = _to_batched_3d(c)
         var a3d = _to_batched_3d(act)
         var w3d = _to_batched_3d(weight)
         comptime if swapAB:
-            comptime kernel = gemm_mma_cpasync_kernel[
-                c_type,
-                a_type,
-                b_type,
-                type_of(c3d).LayoutType,
-                type_of(w3d).LayoutType,
-                type_of(a3d).LayoutType,
-                type_of(c3d).Engine,
-                type_of(w3d).Engine,
-                type_of(a3d).Engine,
+            _enqueue_gemm_mma_cpasync[
                 tile_m=tile_m,
                 tile_n=tile_n,
                 tile_k=tile_k,
                 stage_cnt=stage_cnt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
-                swapAB=True,
-            ]
-            ctx.enqueue_function[kernel, dump_asm=False](
+                swapAB=swapAB,
+            ](
                 c3d,
                 w3d,
                 a3d,
-                Int32(k_gemm_m),
-                Int32(gemm_k),
-                Int32(k_gemm_n),
-                Int32(1),
-                grid_dim=(grid_x, grid_y, 1),
-                block_dim=TOTAL_THREADS,
-                shared_mem_bytes=smem_size,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(b200_smem)
-                ),
-                attributes=pdl_launch_attributes(pdl_level),
+                k_gemm_m,
+                gemm_k,
+                k_gemm_n,
+                1,
+                compute_fn,
+                ctx,
             )
         else:
-            comptime kernel = gemm_mma_cpasync_kernel[
-                c_type,
-                a_type,
-                b_type,
-                type_of(c3d).LayoutType,
-                type_of(a3d).LayoutType,
-                type_of(w3d).LayoutType,
-                type_of(c3d).Engine,
-                type_of(a3d).Engine,
-                type_of(w3d).Engine,
+            _enqueue_gemm_mma_cpasync[
                 tile_m=tile_m,
                 tile_n=tile_n,
                 tile_k=tile_k,
                 stage_cnt=stage_cnt,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
-                swapAB=False,
-            ]
-            ctx.enqueue_function[kernel, dump_asm=False](
+                swapAB=swapAB,
+            ](
                 c3d,
                 a3d,
                 w3d,
-                Int32(k_gemm_m),
-                Int32(gemm_k),
-                Int32(k_gemm_n),
-                Int32(1),
-                grid_dim=(grid_x, grid_y, 1),
-                block_dim=TOTAL_THREADS,
-                shared_mem_bytes=smem_size,
-                func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-                    UInt32(b200_smem)
-                ),
-                attributes=pdl_launch_attributes(pdl_level),
+                k_gemm_m,
+                gemm_k,
+                k_gemm_n,
+                1,
+                compute_fn,
+                ctx,
             )
+
+
+comptime _MMA_CPASYNC_SMEM_BYTES = B200.shared_memory_per_multiprocessor - 1024
+
+
+@inline(.always)
+def _enqueue_gemm_mma_cpasync[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    tile_m: Int,
+    tile_n: Int,
+    tile_k: Int,
+    stage_cnt: Int,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_compute_fn: Bool,
+    pdl_level: PDLLevel,
+    swapAB: Bool,
+](
+    c: TileTensor[mut=True, ...],
+    a_operand: TileTensor[mut=False, ...],
+    b_operand: TileTensor[mut=False, ...],
+    k_gemm_m: Int,
+    gemm_k: Int,
+    k_gemm_n: Int,
+    batch_size: Int,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    """Enqueues `gemm_mma_cpasync` on its kernel-facing A and B operands,
+    selecting the compute-closure kernel when `has_compute_fn` is set."""
+    comptime TOTAL_THREADS = 256
+    comptime smem_size = size_of[
+        _MmaCpAsyncSmem[a_operand.dtype, tile_m, tile_n, tile_k, stage_cnt]
+    ]()
+    var grid_x = ceildiv(k_gemm_m, tile_m)
+    var grid_y = ceildiv(k_gemm_n, tile_n)
+
+    comptime if has_compute_fn:
+        comptime kernel = gemm_mma_cpasync_kernel_compute_fn[
+            c.dtype,
+            a_operand.dtype,
+            b_operand.dtype,
+            type_of(c).LayoutType,
+            type_of(a_operand).LayoutType,
+            type_of(b_operand).LayoutType,
+            type_of(c).Engine,
+            type_of(a_operand).Engine,
+            type_of(b_operand).Engine,
+            ComputeFnType,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            tile_k=tile_k,
+            stage_cnt=stage_cnt,
+            pdl_level=pdl_level,
+            swapAB=swapAB,
+        ]
+        ctx.enqueue_function[kernel, dump_asm=False](
+            c,
+            a_operand,
+            b_operand,
+            Int32(k_gemm_m),
+            Int32(gemm_k),
+            Int32(k_gemm_n),
+            Int32(batch_size),
+            host_arg=compute_fn,
+            grid_dim=(grid_x, grid_y, batch_size),
+            block_dim=TOTAL_THREADS,
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(_MMA_CPASYNC_SMEM_BYTES)
+            ),
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+    else:
+        comptime kernel = gemm_mma_cpasync_kernel[
+            c.dtype,
+            a_operand.dtype,
+            b_operand.dtype,
+            type_of(c).LayoutType,
+            type_of(a_operand).LayoutType,
+            type_of(b_operand).LayoutType,
+            type_of(c).Engine,
+            type_of(a_operand).Engine,
+            type_of(b_operand).Engine,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            tile_k=tile_k,
+            stage_cnt=stage_cnt,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+            swapAB=swapAB,
+        ]
+        ctx.enqueue_function[kernel, dump_asm=False](
+            c,
+            a_operand,
+            b_operand,
+            Int32(k_gemm_m),
+            Int32(gemm_k),
+            Int32(k_gemm_n),
+            Int32(batch_size),
+            grid_dim=(grid_x, grid_y, batch_size),
+            block_dim=TOTAL_THREADS,
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(_MMA_CPASYNC_SMEM_BYTES)
+            ),
+            attributes=pdl_launch_attributes(pdl_level),
+        )

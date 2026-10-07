@@ -55,10 +55,21 @@ from ..structured_kernels.config import (
     default_matmul_config_bf16_fp8,
     GEMMKind,
 )
-from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm, gemm_mma_cpasync
+from ... import (
+    gemm_mma_cpasync,
+    gemv_gpu,
+    matmul_kernel_naive,
+    matmul_kernel_naive_compute_fn,
+    multistage_gemm,
+)
 from ....vendor.matmul import matmul as matmul_vendor
 from ...tile_scheduler import RasterOrder
-from linalg.gemv import gemv_split_k, gemv_gpu_dispatch, GEMVAlgorithm
+from linalg.gemv import (
+    gemv_split_k,
+    gemv_split_k_compute_fn,
+    gemv_gpu_dispatch,
+    GEMVAlgorithm,
+)
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
     blackwell_batched_matmul_tma_umma_warp_specialized,
@@ -114,6 +125,30 @@ def small_MN_gemms[
         b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`.
         ctx: Device context used to enqueue the selected kernel.
     """
+    _small_MN_gemms_impl[
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_compute_fn=False,
+        pdl_level=pdl_level,
+    ](c, a, b, identity_compute_fn, ctx)
+
+
+@inline(.always)
+def _small_MN_gemms_impl[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    config: TuningConfigSmallMNGemms,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_compute_fn: Bool,
+    pdl_level: PDLLevel,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
     comptime assert c.rank == 2
     comptime assert a.rank == 2
     comptime assert b.rank == 2
@@ -122,21 +157,19 @@ def small_MN_gemms[
         var m = Int(c.dim[0]())
         comptime static_K = a.static_shape[1]
         comptime static_N = c.static_shape[1]
-        gemm_mma_cpasync[
-            pdl_level=pdl_level,
-            tile_k=config.tile_k,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            swapAB=config.swapAB,
-        ](
-            c,
-            a,
-            b,
-            m,
-            static_K,
-            static_N,
-            1,
-            ctx,
-        )
+        comptime if has_compute_fn:
+            gemm_mma_cpasync[
+                pdl_level=pdl_level,
+                tile_k=config.tile_k,
+                swapAB=config.swapAB,
+            ](c, a, b, m, static_K, static_N, 1, compute_fn, ctx)
+        else:
+            gemm_mma_cpasync[
+                pdl_level=pdl_level,
+                tile_k=config.tile_k,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                swapAB=config.swapAB,
+            ](c, a, b, m, static_K, static_N, 1, ctx)
     else:
         comptime c_type = c.dtype
         comptime a_type = a.dtype
@@ -157,37 +190,75 @@ def small_MN_gemms[
         comptime a_layout = type_of(a).LayoutType
         comptime b_layout = type_of(b).LayoutType
 
-        comptime kernel = gemv_split_k[
-            c_type,
-            a_type,
-            b_type,
-            c_layout,
-            a_layout,
-            b_layout,
-            type_of(c).Engine,
-            type_of(a).Engine,
-            type_of(b).Engine,
-            simd_width=simd_width,
-            tile_m=config.tile_m,
-            tile_n=config.tile_n,
-            num_threads=config.num_threads,
-            unroll_factor=config.unroll_factor,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            check_bounds_m=check_bounds_m,
-            check_bounds_n=check_bounds_n,
-        ]
-
-        ctx.enqueue_function[kernel](
-            c,
-            a.as_imm(),
-            b.as_imm(),
-            Int32(m),
-            Int32(n),
-            Int32(k),
-            grid_dim=(ceildiv(m, config.tile_m), ceildiv(n, config.tile_n)),
-            block_dim=config.num_threads,
-            attributes=pdl_launch_attributes(pdl_level),
-        )
+        comptime if has_compute_fn:
+            comptime kernel = gemv_split_k_compute_fn[
+                c_type,
+                a_type,
+                b_type,
+                c_layout,
+                a_layout,
+                b_layout,
+                type_of(c).Engine,
+                type_of(a).Engine,
+                type_of(b).Engine,
+                ComputeFnType,
+                simd_width=simd_width,
+                tile_m=config.tile_m,
+                tile_n=config.tile_n,
+                num_threads=config.num_threads,
+                unroll_factor=config.unroll_factor,
+                check_bounds_m=check_bounds_m,
+                check_bounds_n=check_bounds_n,
+            ]
+            ctx.enqueue_function[kernel](
+                c,
+                a.as_imm(),
+                b.as_imm(),
+                Int32(m),
+                Int32(n),
+                Int32(k),
+                host_arg=compute_fn,
+                grid_dim=(
+                    ceildiv(m, config.tile_m),
+                    ceildiv(n, config.tile_n),
+                ),
+                block_dim=config.num_threads,
+                attributes=pdl_launch_attributes(pdl_level),
+            )
+        else:
+            comptime kernel = gemv_split_k[
+                c_type,
+                a_type,
+                b_type,
+                c_layout,
+                a_layout,
+                b_layout,
+                type_of(c).Engine,
+                type_of(a).Engine,
+                type_of(b).Engine,
+                simd_width=simd_width,
+                tile_m=config.tile_m,
+                tile_n=config.tile_n,
+                num_threads=config.num_threads,
+                unroll_factor=config.unroll_factor,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                check_bounds_m=check_bounds_m,
+                check_bounds_n=check_bounds_n,
+            ]
+            ctx.enqueue_function[kernel](
+                c,
+                a.as_imm(),
+                b.as_imm(),
+                Int32(m),
+                Int32(n),
+                Int32(k),
+                grid_dim=(
+                    ceildiv(m, config.tile_m),
+                    ceildiv(n, config.tile_n),
+                ),
+                block_dim=config.num_threads,
+                attributes=pdl_launch_attributes(pdl_level),
+            )
 
 
 @inline(.always)
@@ -199,7 +270,6 @@ def dispatch_gemv[
     //,
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_compute_fn: Bool = True,
 ](
@@ -225,13 +295,11 @@ def dispatch_gemv[
         transpose_b: Whether `b` is stored transposed (defaults to
             `False`).
         elementwise_lambda_fn: Optional epilogue applied to each output
-            element, passed to the SM100 GEMM path (defaults to `None`).
-        elementwise_lambda_wrapper: Optional epilogue lambda passed to
-            the GEMV path, folding in `compute_fn` (defaults to `None`).
+            element (defaults to `None`). Ignored when `has_compute_fn`.
         pdl_level: Programmatic dependent launch level for the
             dispatched kernel (defaults to `PDLLevel()`).
-        has_compute_fn: Whether the SM100 GEMM path applies `compute_fn`
-            (defaults to `True`).
+        has_compute_fn: Whether to apply `compute_fn` (defaults to
+            `True`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -239,7 +307,8 @@ def dispatch_gemv[
         b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
             or `[N, K]` when `transpose_b` is set.
         compute_fn: Compute epilogue, for example a static scale, applied
-            by the SM100 GEMM path. Ignored unless `has_compute_fn`.
+            to each output value before it is stored. Ignored unless
+            `has_compute_fn`.
         ctx: Device context used to enqueue the selected kernel.
     """
     comptime static_N = c.static_shape[1]
@@ -268,11 +337,16 @@ def dispatch_gemv[
             return
 
     logger.info("------ Executing GEMV Matmul------")
-    gemv_gpu[
-        transpose_b=transpose_b,
-        elementwise_lambda_fn=elementwise_lambda_wrapper,
-        pdl_level=pdl_level,
-    ](c, a, b, ctx)
+    comptime if has_compute_fn:
+        gemv_gpu[transpose_b=transpose_b, pdl_level=pdl_level](
+            c, a, b, compute_fn, ctx
+        )
+    else:
+        gemv_gpu[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
 
 
 @inline(.always)
@@ -283,7 +357,6 @@ def matmul_dispatch_sm100[
     transpose_b: Bool = False,
     use_tf32: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -305,9 +378,7 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         elementwise_lambda_fn: Optional epilogue applied to each output
-            element, passed to the SM100 GEMM path (defaults to `None`).
-        elementwise_lambda_wrapper: Optional epilogue lambda for GEMV and
-            vendor fallback paths (defaults to `None`).
+            element (defaults to `None`).
         pdl_level: Programmatic dependent launch level for the
             dispatched kernel (defaults to `PDLLevel()`).
     Args:
@@ -322,7 +393,6 @@ def matmul_dispatch_sm100[
         transpose_b=transpose_b,
         use_tf32=use_tf32,
         elementwise_lambda_fn=elementwise_lambda_fn,
-        elementwise_lambda_wrapper=elementwise_lambda_wrapper,
         pdl_level=pdl_level,
         has_compute_fn=False,
     ](c, a, b, identity_compute_fn, ctx)
@@ -338,7 +408,6 @@ def matmul_dispatch_sm100[
     transpose_b: Bool = False,
     use_tf32: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_compute_fn: Bool = True,
 ](
@@ -357,11 +426,6 @@ def matmul_dispatch_sm100[
     SM100 config applies. In autotuning mode, launches a single
     compile-time-configured kernel from environment defines.
 
-    Only the SM100 GEMM paths apply `compute_fn`. The GEMV, small-MN, and
-    vendor BLAS paths apply `elementwise_lambda_wrapper` instead, so when
-    `has_compute_fn` is set the wrapper must apply the same epilogue and
-    store the result.
-
     Parameters:
         c_type: Output element type (inferred).
         a_type: Element type of the LHS operand `a` (inferred).
@@ -373,10 +437,7 @@ def matmul_dispatch_sm100[
             for float32 instead of requiring IEEE-fp32 precision
             (defaults to `True`).
         elementwise_lambda_fn: Optional epilogue applied to each output
-            element, passed to the SM100 GEMM path (defaults to `None`).
-        elementwise_lambda_wrapper: Optional epilogue lambda for GEMV and
-            vendor fallback paths, folding in `compute_fn`
-            (defaults to `None`).
+            element (defaults to `None`). Ignored when `has_compute_fn`.
         pdl_level: Programmatic dependent launch level for the
             dispatched kernel (defaults to `PDLLevel()`).
         has_compute_fn: Whether to apply `compute_fn`. When False,
@@ -450,7 +511,6 @@ def matmul_dispatch_sm100[
             dispatch_gemv[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
                 pdl_level=pdl_level,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, compute_fn, ctx)
@@ -473,8 +533,7 @@ def matmul_dispatch_sm100[
     # Gate is conservative so FP32 shapes the tile GEMM serves better are not
     # diverted: static_N<=256 (weight dominates; wider N favors MMA) and
     # static_K>=2048 (enough K to hide the many-CTA launch). A fused epilogue
-    # rides through as elementwise_lambda_wrapper (which already folds in any
-    # compute lambda) and is applied per output element by the GEMV.
+    # is applied per output element by the GEMV.
     comptime has_precise_f32_gemv = (
         a_type == .float32
         and c_type == .float32
@@ -499,12 +558,13 @@ def matmul_dispatch_sm100[
         # tile_m is a comptime kernel param, so each bucket instantiates a
         # distinct gemv_split_k; the runtime `m` selects the bucket.
         def _dispatch_split_k[tile_m: Int]() raises {imm}:
-            gemv_gpu_dispatch[
+            _dispatch_gemv_split_k[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                has_compute_fn=has_compute_fn,
                 pdl_level=pdl_level,
                 tile_m=tile_m,
-            ](GEMVAlgorithm.GemvSplitK, c, a, b, ctx)
+            ](c, a, b, compute_fn, ctx)
 
         if m <= 6:
             _dispatch_split_k[1]()
@@ -554,12 +614,13 @@ def matmul_dispatch_sm100[
                     static_K,
                     "]",
                 )
-                gemv_gpu_dispatch[
+                _dispatch_gemv_split_k[
                     transpose_b=transpose_b,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    has_compute_fn=has_compute_fn,
                     pdl_level=pdl_level,
                     tile_m=tile_m,
-                ](GEMVAlgorithm.GemvSplitK, c, a, b, ctx)
+                ](c, a, b, compute_fn, ctx)
 
             if m <= 6:
                 _dispatch_unaligned_n_split_k[1]()
@@ -647,7 +708,6 @@ def matmul_dispatch_sm100[
             status = matmul_dispatch_sm100_bf16[
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
                 pdl_level=pdl_level,
                 has_compute_fn=has_compute_fn,
             ](c, a, b, compute_fn, ctx)
@@ -675,12 +735,40 @@ def matmul_dispatch_sm100[
     # Fallback to vendor matmul for untuned shapes.
     # We assume this is always a hit because the worst case is a naive matmul.
     return _vendor_blas_matmul_sm100[
-        c_type,
-        a_type,
-        b_type,
-        transpose_b,
-        elementwise_lambda_wrapper=elementwise_lambda_wrapper,
-    ](c, a, b, ctx)
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_compute_fn=has_compute_fn,
+    ](c, a, b, compute_fn, ctx)
+
+
+@inline(.always)
+def _dispatch_gemv_split_k[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    *,
+    transpose_b: Bool,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_compute_fn: Bool,
+    pdl_level: PDLLevel,
+    tile_m: Int,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    compute_fn: ComputeFnType,
+    ctx: DeviceContext,
+) raises:
+    comptime if has_compute_fn:
+        gemv_gpu_dispatch[
+            transpose_b=transpose_b, pdl_level=pdl_level, tile_m=tile_m
+        ](GEMVAlgorithm.GemvSplitK, c, a, b, compute_fn, ctx)
+    else:
+        gemv_gpu_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+            tile_m=tile_m,
+        ](GEMVAlgorithm.GemvSplitK, c, a, b, ctx)
 
 
 @inline(.always)
@@ -1012,7 +1100,6 @@ def matmul_dispatch_sm100_bf16[
     //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
-    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
     has_compute_fn: Bool = True,
 ](
@@ -1037,14 +1124,11 @@ def matmul_dispatch_sm100_bf16[
         transpose_b: Whether `b` is stored transposed (defaults to
             `True`).
         elementwise_lambda_fn: Optional epilogue applied to each output
-            element, passed to the SM100 GEMM path (defaults to `None`).
-        elementwise_lambda_wrapper: Optional epilogue lambda for vendor
-            BLAS and small-MN GEMM paths, folding in `compute_fn`
-            (defaults to `None`).
+            element (defaults to `None`). Ignored when `has_compute_fn`.
         pdl_level: Programmatic dependent launch level for the
             dispatched kernel (defaults to `PDLLevel()`).
-        has_compute_fn: Whether the SM100 GEMM path applies `compute_fn`
-            (defaults to `True`).
+        has_compute_fn: Whether to apply `compute_fn` (defaults to
+            `True`).
     Args:
         c: Output matrix as a rank-2 mutable `TileTensor` of shape
             `[M, N]`.
@@ -1052,7 +1136,8 @@ def matmul_dispatch_sm100_bf16[
         b: RHS input matrix as a rank-2 `TileTensor` of shape `[K, N]`,
             or `[N, K]` when `transpose_b` is set.
         compute_fn: Compute epilogue, for example a static scale, applied
-            by the SM100 GEMM path. Ignored unless `has_compute_fn`.
+            to each output value before it is stored. Ignored unless
+            `has_compute_fn`.
         ctx: Device context used to enqueue the selected kernel.
 
     Returns:
@@ -1077,12 +1162,10 @@ def matmul_dispatch_sm100_bf16[
         DType.bfloat16,
     ):
         _vendor_blas_matmul_sm100[
-            c_type,
-            a_type,
-            b_type,
-            transpose_b,
-            elementwise_lambda_wrapper=elementwise_lambda_wrapper,
-        ](c, a, b, ctx)
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            has_compute_fn=has_compute_fn,
+        ](c, a, b, compute_fn, ctx)
         return DISPATCH_HIT
 
     comptime small_MN_gemms_table = Table(
@@ -1099,11 +1182,12 @@ def matmul_dispatch_sm100_bf16[
         comptime for config in small_MN_gemms_configs:
             if m >= config.M and m < config.M_end:
                 logger.info("Dispatching to small_MN_gemms: ", config)
-                small_MN_gemms[
+                _small_MN_gemms_impl[
                     config=config,
-                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    has_compute_fn=has_compute_fn,
                     pdl_level=pdl_level,
-                ](c, a, b, ctx)
+                ](c, a, b, compute_fn, ctx)
                 return DISPATCH_HIT
 
     var status = sm100_heuristic_and_outliers_dispatch[
@@ -1197,20 +1281,21 @@ def matmul_dispatch_sm100_fp32[
     ](c, a, b, compute_fn, ctx)
 
 
-# NOTE: Vendor BLAS, naive matmul, and multistage GEMM do not support compute
-# lambdas, so we wrap them in a lambda function.
-# If there is no compute lambda, this wrapper is a simple elementwise lambda.
 @inline(.always)
 def _vendor_blas_matmul_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    ComputeFnType: ElementwiseComputeFn,
+    //,
     transpose_b: Bool = False,
-    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    has_compute_fn: Bool = False,
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
     b: TileTensor[b_type, ...],
+    compute_fn: ComputeFnType,
     ctx: DeviceContext,
 ) raises:
     comptime assert c.rank == 2, "c must be of rank 2"
@@ -1225,10 +1310,15 @@ def _vendor_blas_matmul_sm100[
 
     try:
         logger.info("Executing vendor BLAS (cuBLAS/cublasLt)")
-        return matmul_vendor[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_wrapper,
-        ](c, a, b, ctx)
+        comptime if has_compute_fn:
+            return matmul_vendor[transpose_b=transpose_b](
+                c, a, b, compute_fn, ctx
+            )
+        else:
+            return matmul_vendor[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](c, a, b, ctx)
 
     except:
         # Fallback to multistage/naive GEMMs if cuBLAS fails.
@@ -1241,40 +1331,72 @@ def _vendor_blas_matmul_sm100[
                 a_type, b_type, c_type, transpose_b
             ]()
             comptime config = kernels.ampere_256x64_4
-            multistage_gemm[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](c, a, b, config, ctx)
+            comptime if has_compute_fn:
+                multistage_gemm[transpose_b=transpose_b, config=config](
+                    c, a, b, compute_fn, ctx
+                )
+            else:
+                multistage_gemm[
+                    transpose_b=transpose_b,
+                    config=config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](c, a, b, config, ctx)
         else:
             comptime BLOCK_DIM = 16
             logger.info("Executing Naive matmul kernel")
+            var grid_dim = (ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM))
 
-            comptime kernel = matmul_kernel_naive[
-                c_type,
-                a_type,
-                b_type,
-                type_of(c).LayoutType,
-                type_of(a).LayoutType,
-                type_of(b).LayoutType,
-                BLOCK_DIM,
-                transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-                c_engine=type_of(c).Engine,
-                a_engine=type_of(a).Engine,
-                b_engine=type_of(b).Engine,
-            ]
-
-            ctx.enqueue_function[kernel](
-                c,
-                a,
-                b,
-                Int32(m),
-                Int32(n),
-                Int32(k),
-                grid_dim=(ceildiv(m, BLOCK_DIM), ceildiv(n, BLOCK_DIM)),
-                block_dim=(BLOCK_DIM, BLOCK_DIM),
-            )
+            comptime if has_compute_fn:
+                comptime kernel = matmul_kernel_naive_compute_fn[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    ComputeFnType,
+                    BLOCK_DIM,
+                    transpose_b,
+                    c_engine=type_of(c).Engine,
+                    a_engine=type_of(a).Engine,
+                    b_engine=type_of(b).Engine,
+                ]
+                ctx.enqueue_function[kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    host_arg=compute_fn,
+                    grid_dim=grid_dim,
+                    block_dim=(BLOCK_DIM, BLOCK_DIM),
+                )
+            else:
+                comptime kernel = matmul_kernel_naive[
+                    c_type,
+                    a_type,
+                    b_type,
+                    type_of(c).LayoutType,
+                    type_of(a).LayoutType,
+                    type_of(b).LayoutType,
+                    BLOCK_DIM,
+                    transpose_b,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    c_engine=type_of(c).Engine,
+                    a_engine=type_of(a).Engine,
+                    b_engine=type_of(b).Engine,
+                ]
+                ctx.enqueue_function[kernel](
+                    c,
+                    a,
+                    b,
+                    Int32(m),
+                    Int32(n),
+                    Int32(k),
+                    grid_dim=grid_dim,
+                    block_dim=(BLOCK_DIM, BLOCK_DIM),
+                )
         return
 
 

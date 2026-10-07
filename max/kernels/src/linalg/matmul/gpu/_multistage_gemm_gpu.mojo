@@ -68,7 +68,11 @@ from std.utils import StaticTuple
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
-from ...utils import elementwise_epilogue_type
+from ...utils import (
+    ElementwiseComputeFn,
+    elementwise_epilogue_type,
+    no_compute_fn,
+)
 from ...utils_gpu import MatmulConfig, block_swizzle
 from .amd import AMDMatmul
 
@@ -740,6 +744,121 @@ def multistage_gemm_kernel[
         b_type, BLT, ImmutAnyOrigin, linear_idx_type=b_linear_idx_type
     ],
 ):
+    _multistage_gemm_kernel_impl[
+        c_type,
+        CLT,
+        a_type,
+        ALT,
+        b_type,
+        BLT,
+        transpose_b,
+        c_linear_idx_type,
+        a_linear_idx_type,
+        b_linear_idx_type,
+        config=config,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        has_compute_fn=False,
+    ](c_tt, a_tt, b_tt, no_compute_fn)
+
+
+@__name(
+    t"multistage_gemm_kernel_compute_fn_{c_type}_{a_type}_{b_type}_{transpose_b}",
+)
+def multistage_gemm_kernel_compute_fn[
+    c_type: DType,
+    CLT: TensorLayout,
+    a_type: DType,
+    ALT: TensorLayout,
+    b_type: DType,
+    BLT: TensorLayout,
+    transpose_b: Bool,
+    c_linear_idx_type: DType,
+    a_linear_idx_type: DType,
+    b_linear_idx_type: DType,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b, ...],
+    ComputeFnType: ElementwiseComputeFn,
+](
+    c_tt: TileTensor[
+        c_type, CLT, MutAnyOrigin, linear_idx_type=c_linear_idx_type
+    ],
+    a_tt: TileTensor[
+        a_type, ALT, ImmutAnyOrigin, linear_idx_type=a_linear_idx_type
+    ],
+    b_tt: TileTensor[
+        b_type, BLT, ImmutAnyOrigin, linear_idx_type=b_linear_idx_type
+    ],
+    compute_fn: ComputeFnType,
+):
+    """`multistage_gemm_kernel` that stores `compute_fn` applied to each
+    output value into `c`.
+
+    Parameters:
+        c_type: Element type of `c`.
+        CLT: Layout of `c`.
+        a_type: Element type of `a`.
+        ALT: Layout of `a`.
+        b_type: Element type of `b`.
+        BLT: Layout of `b`.
+        transpose_b: Whether `b` is stored as `(N, K)`.
+        c_linear_idx_type: Linear index type of `c`.
+        a_linear_idx_type: Linear index type of `a`.
+        b_linear_idx_type: Linear index type of `b`.
+        config: Tile, warp, MMA, and pipeline configuration.
+        ComputeFnType: Type of `compute_fn`.
+
+    Args:
+        c_tt: Output matrix of shape `(M, N)`.
+        a_tt: Input matrix of shape `(M, K)`.
+        b_tt: Input matrix of shape `(K, N)`, or `(N, K)` when
+            `transpose_b` is set.
+        compute_fn: Maps each output index and value to the value to store.
+    """
+    _multistage_gemm_kernel_impl[
+        c_type,
+        CLT,
+        a_type,
+        ALT,
+        b_type,
+        BLT,
+        transpose_b,
+        c_linear_idx_type,
+        a_linear_idx_type,
+        b_linear_idx_type,
+        config=config,
+        elementwise_lambda_fn=None,
+        has_compute_fn=True,
+    ](c_tt, a_tt, b_tt, compute_fn)
+
+
+@inline(.always)
+def _multistage_gemm_kernel_impl[
+    ComputeFnType: ElementwiseComputeFn,
+    //,
+    c_type: DType,
+    CLT: TensorLayout,
+    a_type: DType,
+    ALT: TensorLayout,
+    b_type: DType,
+    BLT: TensorLayout,
+    transpose_b: Bool,
+    c_linear_idx_type: DType,
+    a_linear_idx_type: DType,
+    b_linear_idx_type: DType,
+    config: MatmulConfig[a_type, b_type, c_type, transpose_b, ...],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    has_compute_fn: Bool,
+](
+    c_tt: TileTensor[
+        c_type, CLT, MutAnyOrigin, linear_idx_type=c_linear_idx_type
+    ],
+    a_tt: TileTensor[
+        a_type, ALT, ImmutAnyOrigin, linear_idx_type=a_linear_idx_type
+    ],
+    b_tt: TileTensor[
+        b_type, BLT, ImmutAnyOrigin, linear_idx_type=b_linear_idx_type
+    ],
+    compute_fn: ComputeFnType,
+):
     var c = c_tt.to_layout_tensor()
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
@@ -929,14 +1048,29 @@ def multistage_gemm_kernel[
         warp_row + WM <= M and warp_col + WN <= N and M % store_vec_rows == 0
     )
 
+    comptime has_output_fn = has_compute_fn or Bool(elementwise_lambda_fn)
+
+    # Stores `vec` at `(m, n)` through the output closure. `alignment` is in
+    # bytes.
+    @inline(.always)
+    def store_output[
+        dtype: DType, width: SIMDLength, //, alignment: Int
+    ](m: Int, n: Int, vec: SIMD[dtype, width]) {imm}:
+        comptime if has_compute_fn:
+            var out = compute_fn[
+                c_type, width, alignment=alignment // size_of[c_type]()
+            ](Index(m, n), vec.cast[c_type]())
+            c_tt.store_linear[alignment=alignment](Index(m, n), out)
+        else:
+            comptime epilogue = elementwise_lambda_fn.value()
+            epilogue[alignment=alignment]((m, n), vec)
+
     @inline(.always)
     def apply_epilogue() {imm}:
         # This block is identical to the one used for f32 case
         # but putting this in a lambda function leads to test failures
         # TODO: Refactor to remove code duplication
-        comptime assert (
-            elementwise_lambda_fn is not None
-        ), "elementwise_lambda_fn is not valid"
+        comptime assert has_output_fn, "no output closure to apply"
         comptime thread_layout = Layout.row_major(
             8, 4
         ) if is_nvidia_gpu() else Layout.row_major(4, 16)
@@ -944,7 +1078,6 @@ def multistage_gemm_kernel[
         comptime dst_simd_width_y = 2 if is_nvidia_gpu() else 1
         comptime src_simd_width_x = 1 if is_nvidia_gpu() else 1
         comptime src_simd_width_y = 2 if is_nvidia_gpu() else 4
-        comptime epilogue = elementwise_lambda_fn.value()
         var c_gmem_frag = c_gmem_warp_tile.vectorize[
             dst_simd_width_x, dst_simd_width_y
         ]().distribute[thread_layout](ln_id)
@@ -971,14 +1104,14 @@ def multistage_gemm_kernel[
                 ]()
 
                 comptime if dst_simd_width_x == 1:
-                    epilogue[alignment=alignment]((m, n), vec)
+                    store_output[alignment](m, n, vec)
                 else:
                     # One element per row, so the vector's alignment does not
                     # carry over to the individual stores.
                     comptime for j in range(dst_simd_width_x):
                         if m + j < M:
-                            epilogue[alignment=align_of[Scalar[c_type]]()](
-                                (m + j, n), vec[j].cast[c_type]()
+                            store_output[align_of[Scalar[c_type]]()](
+                                m + j, n, vec[j].cast[c_type]()
                             )
 
     @inline(.always)
@@ -1023,10 +1156,9 @@ def multistage_gemm_kernel[
                     var col_j = col + (j if is_nvidia_gpu() else 0)
 
                     if row_j < M and col_j < N:
-                        comptime if elementwise_lambda_fn:
-                            comptime epilogue = elementwise_lambda_fn.value()
-                            epilogue[alignment=align_of[Scalar[c_type]]()](
-                                (row_j, col_j), vec[j].cast[c_type]()
+                        comptime if has_output_fn:
+                            store_output[align_of[Scalar[c_type]]()](
+                                row_j, col_j, vec[j].cast[c_type]()
                             )
                         else:
                             c[row_j, col_j] = vec[j].cast[c_type]()
@@ -1060,8 +1192,7 @@ def multistage_gemm_kernel[
 
         # The local-to-shared copy has already cast the accumulators to half
         # precision. Read the staged values in vectors for 16-byte global stores.
-        comptime if elementwise_lambda_fn:
-            comptime epilogue = elementwise_lambda_fn.value()
+        comptime if has_output_fn:
             comptime warp_layout = Layout.row_major(
                 WARP_SIZE * simd_size // WN, WN // simd_size
             )
@@ -1100,8 +1231,9 @@ def multistage_gemm_kernel[
                 var m, n = divmod(Int(thread_offset) + dst_idx, N)
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
                 if m < M and n < N:
-                    epilogue[alignment=alignment](
-                        (m, n),
+                    store_output[alignment](
+                        m,
+                        n,
                         accum_smem_warp_tile.unsafe_ptr()
                         .load[width=simd_size, alignment=alignment](
                             swizzled_idx
@@ -1123,7 +1255,7 @@ def multistage_gemm_kernel[
 
     elif c_type.is_half_float() and not is_nvidia_gpu():
         if c_tile_in_range:
-            comptime if elementwise_lambda_fn:
+            comptime if has_output_fn:
                 apply_epilogue()
 
             else:
@@ -1149,7 +1281,7 @@ def multistage_gemm_kernel[
     # Store FP32 results to FP32 buffer in global memory.
     else:
         if c_rows_aligned and c_tile_in_range:
-            comptime if elementwise_lambda_fn:
+            comptime if has_output_fn:
                 apply_epilogue()
             else:
                 comptime if is_nvidia_gpu():
