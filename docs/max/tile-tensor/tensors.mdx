@@ -30,7 +30,8 @@ A `TileTensor` consists of three main properties:
   laid out in memory.
 - A [`DType`](https://mojolang.org/docs/std/builtin/dtype/DType/), defining the
   data type stored in the tensor.
-- A pointer to memory where the data is stored.
+- A borrowed storage handle referring to memory owned elsewhere. The tensor's
+  `Engine` determines how this handle is represented.
 
 Figure 1 shows the relationship between the layout and the storage.
 
@@ -67,9 +68,15 @@ dimensions. However, some operations that are supported on `LayoutTensor` aren't
 yet supported on `TileTensor`. For these operations, you can easily create a
 `LayoutTensor` from a `TileTensor` using
 [`to_layout_tensor()`](/api/mojo/layout/tile_tensor/TileTensor/#to_layout_tensor).
-This method currently only supports flat (non-nested) layouts.
+This method requires non-vectorized `DefaultEngine` or `DevicePointerEngine`
+storage. The resulting view borrows the same memory; it doesn't allocate or
+extend the lifetime of the backing storage.
 
 :::
+
+Code snippets that show individual operations are context-dependent fragments:
+they assume an existing tensor, coordinates, and the relevant imports. The GPU
+examples define functions to call from a program with an available accelerator.
 
 ## Accessing tensor elements
 
@@ -81,9 +88,9 @@ var element = tensor2d[x, y]
 tensor2d[x, y] = z
 ```
 
-The number of indices passed to the subscript operator must match the number of
-coordinates required by the tensor, also known as the tensor's *flat rank*. For
-simple layouts, this is the same as the layout's *rank*: two for a 2D tensor,
+When passing separate coordinates for every sub-mode, their number must match
+the tensor's *flat rank*. For simple layouts, this is the same as the layout's
+*rank*: two for a 2D tensor,
 three for a 3D tensor, and so on. For simple coordinates, you can pass a set of
 individual coordinates, as shown above. For nested coordinates, you can pass the
 coordinates as a single
@@ -91,17 +98,22 @@ coordinates as a single
 example using nested coordinates, see the section on [Tensor indexing and nested
 layouts](#tensor-indexing-and-nested-layouts).
 
+`TileTensor` also accepts a single logical index, which the layout maps across
+its dimensions.
+
 When you access a tensor element, the parser needs to be able to determine that
 you're using the correct number of coordinates. You can use compile-time
 assertions or constraints to guarantee that you're using the correct number of
 coordinates.
 
 ```mojo
-# Indexing into a 2D tensor requires two indices
+from layout import TileTensor
+
+# Multi-axis indexing into a 2D tensor uses two coordinates.
 def takes_2d(tensor2d: TileTensor):
     comptime assert tensor2d.flat_rank == 2
-    el0 = tensor2d[0, 0]  # Works
-    # el0 = tensor2d[x]  # Compile-time error
+    var el0 = tensor2d[0, 0]
+    var el1 = tensor2d[0]  # A single logical index is also supported.
 
 # OR
 def takes_2d_constrained(tensor2d: TileTensor) where tensor2d.flat_rank == 2:
@@ -132,6 +144,8 @@ its parameter to a non-vectorized tensor using the default storage
 directly to an `Int`.
 
 ```mojo
+from layout import DefaultEngine, TileTensor
+
 def takes_scalar_tensor(
     tensor: TileTensor[.int32, Engine=DefaultEngine[element_width=1], ...]
 ) -> Int:
@@ -146,12 +160,16 @@ and
 methods, which let you specify the vector size explicitly:
 
 ```mojo
-var elements = tensor.load[4]((row, col))
+var elements = tensor.load[width=4]((row, col))
 elements = elements * 2
-tensor.store((row, col), elements)
+tensor.store[width=4]((row, col), elements)
 ```
 
 The `load()` and `store()` methods take the indices as a `Coord` object.
+The tuple in this example converts to `Coord` implicitly. A width-4 access
+touches four consecutive scalar values from the mapped offset. Ensure that all
+four values are in bounds and satisfy the access's alignment; these methods
+don't clip accesses to the tensor's dimensions.
 
 ### Tensor indexing and nested layouts
 
@@ -177,6 +195,8 @@ To access a value in a nested tensor, you can pass the nested coordinates as a
 `Coord` struct:
 
 ```mojo
+from layout import Coord, Idx
+
 var el1 = tensor[Coord(Coord(Idx[1], Idx[0]), Coord(Idx[0], Idx[1]))]
 ```
 
@@ -187,8 +207,8 @@ You can also pass a flattened version of the coordinates, either as a single
 var el2 = tensor[1, 0, 0, 1]
 ```
 
-The number of indices passed to the subscript operator must match the *flat
-rank* of the tensor. The tensor in Figure 2 has flat rank of 4, so it takes
+When passing separate coordinates for every sub-mode, their number must match
+the *flat rank*. The tensor in Figure 2 has flat rank of 4, so this form takes
 four coordinates.
 
 You can use either nested or flat `Coord` values with the `load()` and `store()`
@@ -226,6 +246,9 @@ the tensor data. A common way to allocate memory for a `TileTensor` is to use an
 [`Array`](https://mojolang.org/docs/std/collections/array/Array/) or a `List`:
 
 ```mojo
+from std.collections import Array
+from layout import TileTensor, row_major
+
 comptime rows = 8
 comptime columns = 16
 comptime layout = row_major[rows, columns]()
@@ -244,6 +267,9 @@ Lists are dynamically-sized and heap allocated, so this works better for large
 tensors.
 
 ```mojo
+from std.collections import List
+from layout import TileTensor, row_major
+
 comptime rows = 1024
 comptime columns = 1024
 comptime buf_size = rows * columns
@@ -258,8 +284,10 @@ Both of these examples use a `TileTensor` constructor that accepts a
 [`Span`](https://mojolang.org/docs/std/collections/span/Span/), a type that
 represents a contiguous block of memory that's owned elsewhere. Mojo can
 implicitly convert a `List` or `Array` to a `Span` representing the underlying
-memory. The span tracks the size, data type, and ownership of the memory block,
-providing a safe way to reference the memory.
+memory. The span borrows the memory and tracks its size and data type. The
+`TileTensor` constructor retains the borrowed pointer, not the span's bounds.
+Keep the backing `Array` or `List` alive while any tensor view uses it, and
+don't resize the list while a view refers to its storage.
 
 :::
 
@@ -283,6 +311,12 @@ storage. Although you can create this tensor on the CPU and pass it in to a
 kernel function, you can't directly modify its values on the CPU, since the
 memory is on the GPU.
 
+The `DeviceBuffer` constructor used below produces non-vectorized
+`DefaultEngine` storage in the generic address space. Constructing a tensor
+from `buffer.device_ptr()` instead uses `DevicePointerEngine`; a kernel taking
+that tensor must also declare that engine. Neither form transfers ownership of
+the backing buffer to the tensor.
+
 In both cases, if you want to initialize data for the tensor from the CPU, you
 can call
 [`enqueue_copy()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#enqueue_copy)
@@ -294,7 +328,7 @@ initializing a `TileTensor` from the CPU and passing it to a GPU kernel.
 ```mojo
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
-from layout import TileTensor, stack_allocation
+from layout import TileTensor
 from layout.tile_layout import row_major
 
 def initialize_tensor_from_cpu_example() raises:
@@ -308,8 +342,10 @@ def initialize_tensor_from_cpu_example() raises:
     comptime size: Int = rows * cols
 
     def kernel(tensor: TileTensor[dtype, type_of(input_layout), MutAnyOrigin]):
-        if global_idx.y < Int(tensor.dim[0]()) and global_idx.x < Int (
-            tensor.dim[1]()
+        comptime assert tensor.flat_rank == 2
+        if (
+            global_idx.y < Int(tensor.dim[0]())
+            and global_idx.x < Int(tensor.dim[1]())
         ):
             tensor[global_idx.y, global_idx.x] = (
                 tensor[global_idx.y, global_idx.x] + 1
@@ -326,7 +362,7 @@ def initialize_tensor_from_cpu_example() raises:
         host_buf[i] = Scalar[dtype](i)
         expected_values[i] = Scalar[dtype](i + 1)
     ctx.enqueue_copy(dev_buf, host_buf)
-    var tensor = TileTensor(dev_buf, input_layout)
+    var tensor = TileTensor(dev_buf, input_layout).as_unsafe_any_origin()
 
     ctx.enqueue_function[kernel](
         tensor,
@@ -345,6 +381,11 @@ def initialize_tensor_from_cpu_example() raises:
             )
 ```
 
+The origin cast matches the kernel's `MutAnyOrigin` parameter. It doesn't make
+device memory accessible on the host or change who owns it. The cast disables
+origin and exclusivity checks, so keep the device buffer alive until the queued
+work finishes. The example synchronizes before reading the copied host buffer.
+
 #### Creating a `TileTensor` in shared or local memory
 
 To create a tensor on the GPU in shared memory or local memory, use the
@@ -357,6 +398,8 @@ is to copy a small tile of a larger tensor into shared memory or local memory to
 reduce memory access time.
 
 ```mojo
+from layout import stack_allocation, row_major
+
 comptime tile_layout = row_major[block_size, block_size]()
 var shared_tile = stack_allocation[
     dtype, address_space=.SHARED
@@ -434,6 +477,9 @@ on both flat and nested parent layouts. The flat case is shown first, followed
 by the nested case.
 
 ```mojo
+from std.collections import List
+from layout import TileTensor, row_major
+
 comptime tile_size = 32
 comptime rows = 64
 comptime cols = 128
@@ -478,6 +524,10 @@ coordinate per mode to select the *outer* grid position: the first coordinate
 selects the tile along the row mode, the second along the column mode.
 
 ```mojo
+from std.collections import Array
+from layout import Coord, Idx, TileTensor
+from layout.tile_layout import row_major_nested
+
 # A nested layout whose outer mode is a 2x2 grid of tiles and whose
 # inner mode is a 3x4 fragment: shape ((2, 3), (2, 4)).
 comptime grid_rows = 2
@@ -491,9 +541,10 @@ var layout = row_major_nested(
         Coord(Idx[grid_cols], Idx[frag_cols]),
     )
 )
-var storage = Array[Float32, total](
-    fill_with=lambda (i: Int) -> Float32: Float32(i)
-)
+def fragment_value(i: Int) {imm} -> Float32:
+    return Float32(i)
+
+var storage = Array[Float32, total](fill_with=fragment_value)
 var tensor = TileTensor(storage, layout)
 
 # On a nested parent, tile() slices one outer index per mode: the
@@ -537,7 +588,9 @@ var vectorized_tensor = tensor.vectorize[1, 4]()
 
 The vectorized tensor is a view of the original tensor, pointing to the same
 data. The underlying number of scalar values remains the same, but the tensor
-layout and element layout changes, as shown in Figure 4.
+layout and engine element width change, as shown in Figure 4.
+`unsafe_ptr()` still returns a pointer to scalar values, so its offsets are in
+scalar units, not vector elements.
 
 <figure>
 
@@ -592,8 +645,12 @@ When dividing work across multiple warps, calculate the thread's ID
 based on its position in the block:
 
 ```mojo
-var thread_id = thread_idx.z * block_dim.y * block_dim.x
-            + thread_idx.y * block_dim.x + thread_idx.x
+from max.gpu import block_dim, thread_idx
+
+var thread_id = (
+    thread_idx.z * block_dim.y * block_dim.x
+    + thread_idx.y * block_dim.x + thread_idx.x
+)
 ```
 
 When dividing work across a single warp, you can use
@@ -605,14 +662,18 @@ The following code vectorizes and partitions a tensor over a full
 warp worth of threads:
 
 ```mojo
+from max.gpu import WARP_SIZE, lane_id
+from layout import row_major
+
 comptime simd_size = 4
 comptime thread_layout = row_major[WARP_SIZE // simd_size, simd_size]()
 var fragment = tile.vectorize[1, simd_size]().distribute[thread_layout](lane_id())
 ```
 
 Given a 16x16 tile size, a warp size of 32 and a `simd_size` of 4, this code
-produces a 16x4 tensor of 1x4 vectors. The thread layout is an 8x4 row major
-layout.
+first produces a 16x4 vectorized view. Distributing it with the 8x4 row-major
+thread layout gives each thread a 2x1 fragment of width-4 elements, or eight
+scalar values.
 
 ## Splitting a tensor
 
@@ -629,7 +690,13 @@ partition count and returns a `StaticTuple` of `count` equal-sized views. The
 split axis must be statically divisible by `count`:
 
 ```mojo
-var data = Array[Int32, 16](fill_with=lambda (i: Int) -> Int32: Int32(i))
+from std.collections import Array
+from layout import TileTensor, row_major
+
+def split_value(i: Int) {imm} -> Int32:
+    return Int32(i)
+
+var data = Array[Int32, 16](fill_with=split_value)
 var tensor = TileTensor(data, row_major[4, 4]())
 
 # Split into 2 equal halves along axis 0. Split views are immutable,
@@ -641,7 +708,13 @@ The dynamic form, `split(count, idx)`, takes a run-time partition count and
 returns a single partition with a run-time-sized split axis:
 
 ```mojo
-var data = Array[Int32, 16](fill_with=lambda (i: Int) -> Int32: Int32(i))
+from std.collections import Array
+from layout import TileTensor, row_major
+
+def partition_value(i: Int) {imm} -> Int32:
+    return Int32(i)
+
+var data = Array[Int32, 16](fill_with=partition_value)
 var tensor = TileTensor(data, row_major[8, 2]())
 
 # Return a single runtime-sized partition: split axis 0 into 4 parts
@@ -674,6 +747,9 @@ layout. The source and destination dtypes may also differ, in which case each
 element is cast to the destination dtype:
 
 ```mojo
+from std.collections import Array
+from layout import TileTensor, row_major
+
 var src_data: Array[Int32, 4] = [1, 2, 3, 4]
 var dst_data = Array[Float32, 4](fill=0.0)
 
@@ -753,7 +829,7 @@ from max.gpu.memory import async_copy_commit_group, async_copy_wait_all
 from layout import TileTensor, stack_allocation
 from layout.tile_io import GenericToSharedAsyncTileCopier, SharedToGenericTileCopier
 from layout.tile_layout import row_major
-from std.sys import has_accelerator
+from std.sys import align_of
 
 
 def tile_copier_example() raises:
@@ -769,17 +845,23 @@ def tile_copier_example() raises:
     def kernel(
         tensor: TileTensor[dtype, type_of(input_layout), MutAnyOrigin]
     ):
+        comptime assert tensor.flat_rank == 2
         var global_tile = tensor.tile[block_size, block_size](
             Int(block_idx.y), Int(block_idx.x)
         )
         comptime tile_layout = row_major[block_size, block_size]()
         var shared_tile = stack_allocation[
-            dtype, address_space=.SHARED
+            dtype,
+            address_space=.SHARED,
+            alignment=align_of[SIMD[dtype, simd_width]](),
         ](tile_layout)
+        comptime assert shared_tile.flat_rank == 2
 
         comptime thread_layout = row_major[WARP_SIZE // simd_width, simd_width]()
 
-        GenericToSharedAsyncTileCopier[thread_layout]().copy(
+        GenericToSharedAsyncTileCopier[
+            thread_layout, num_threads=block_size * block_size
+        ]().copy(
             shared_tile.vectorize[1, simd_width](),
             global_tile.vectorize[1, simd_width](),
         )
@@ -793,7 +875,9 @@ def tile_copier_example() raises:
             )
         barrier()
 
-        SharedToGenericTileCopier[thread_layout]().copy(
+        SharedToGenericTileCopier[
+            thread_layout, num_threads=block_size * block_size
+        ]().copy(
             global_tile.vectorize[1, simd_width](),
             shared_tile.vectorize[1, simd_width](),
         )
@@ -803,11 +887,11 @@ def tile_copier_example() raises:
     var dev_buf = ctx.enqueue_create_buffer[dtype](rows * cols)
     for i in range(rows * cols):
         host_buf[i] = Float32(i)
-    var tensor = TileTensor(dev_buf, input_layout)
+    var tensor = TileTensor(dev_buf, input_layout).as_unsafe_any_origin()
     ctx.enqueue_copy(dev_buf, host_buf)
     ctx.enqueue_function[kernel](
         tensor,
-        grid_dim=(num_row_blocks, num_col_blocks),
+        grid_dim=(num_col_blocks, num_row_blocks),
         block_dim=(block_size, block_size),
     )
     ctx.enqueue_copy(host_buf, dev_buf)

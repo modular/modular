@@ -817,8 +817,8 @@ struct TileTensor[
         """Create a `DevicePointerEngine`-backed `TileTensor` from a
         `DevicePointer`.
 
-        Like the `DeviceBuffer` constructor, this produces a
-        `DevicePointerEngine`-backed tile that carries the full `DevicePointer`
+        Unlike the `DeviceBuffer` constructor's raw-pointer view, this produces
+        a `DevicePointerEngine`-backed tile that carries the full `DevicePointer`
         (its non-owning reference to the owning `DeviceBuffer` plus an element
         offset and size) to the kernel boundary, where
         `DevicePointer._to_device_type` encodes it to a bare device pointer.
