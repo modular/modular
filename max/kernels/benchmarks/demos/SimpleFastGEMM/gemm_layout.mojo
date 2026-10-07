@@ -247,7 +247,7 @@ def main() raises:
 
     var num_warmup: Int = 1
     var time = std.benchmark.run(bench_gemm, num_warmup).mean()
-    var flops = 2.0 * M * N * K / time / 1e9
+    var flops = Float64(2 * M * N * K) / time / 1e9
     print(time, end="")
     print(" seconds")
     print(flops, end="")
