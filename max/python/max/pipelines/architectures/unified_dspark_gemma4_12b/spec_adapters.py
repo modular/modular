@@ -37,6 +37,7 @@ class DSparkGemma4_12BProposer:
     """
 
     samples_from_anchor = True
+    supports_zero_draft_rows = False
 
     def __init__(
         self,

@@ -145,6 +145,7 @@ class DSparkDeepseekV4Proposer:
     """
 
     samples_from_anchor = True
+    supports_zero_draft_rows = False
 
     def __init__(self, model: DeepseekV4, config: DeepseekV4Config) -> None:
         self.replicas: Sequence[DeepseekV4] = [model]

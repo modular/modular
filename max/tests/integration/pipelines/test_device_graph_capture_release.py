@@ -133,7 +133,8 @@ def _make_kv_per_device() -> KVCacheInputsPerDevice[Buffer, Buffer]:
 
 @contextmanager
 def _warmup_model_inputs(
-    batch_size: int, batch_characteristics: BatchCharacteristics
+    batch_size: int,
+    batch_characteristics: BatchCharacteristics,
 ) -> Iterator[MockModelInputs]:
     yield MockModelInputs(
         active_batch_size=batch_size,

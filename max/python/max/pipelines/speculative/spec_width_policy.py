@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""How many of its carried drafts a speculative step verifies."""
+"""How many drafts a speculative step produces and verifies."""
 
 from __future__ import annotations
 
@@ -22,17 +22,41 @@ from .adaptive_width import parse_adaptive_widths
 from .config import SpeculativeConfig
 from .depth_schedule import build_depth_lookup
 
-__all__ = ["SpecWidthPolicy"]
+__all__ = ["SpecWidthPolicy", "declares_skippable_draft"]
 
 logger = logging.getLogger("max.pipelines")
 
 
+def declares_skippable_draft(spec_config: SpeculativeConfig | None) -> bool:
+    """Whether a spec-decode graph takes its drafter's row count as an input.
+
+    The drivers call this to decide whether to declare the
+    ``draft_slot_ids`` / ``draft_block_offsets`` inputs, and the pipeline
+    calls it to decide whether to bind them, so the two always agree and no
+    model opts in by hand. A graph declares them only when the schedule can
+    reach width 0, so one that never skips keeps the graph it had without
+    them. Whether a step then runs its draft on fewer rows is the driver's
+    call: its draft has to declare ``supports_zero_draft_rows``, and the
+    driver has to skip on the graph's topology.
+
+    Args:
+        spec_config: The pipeline's speculative config.
+
+    Returns:
+        True when some decode batch size verifies no drafts.
+    """
+    if spec_config is None:
+        return False
+    schedule = spec_config.verify_width_schedule
+    return schedule is not None and any(count == 0 for _, _, count in schedule)
+
+
 @dataclass(frozen=True)
 class SpecWidthPolicy:
-    """How many of its carried drafts a speculative step verifies.
+    """How many drafts a speculative step produces and verifies.
 
     Resolved once from the config, so every setting that bears on a step's
-    width is combined in one place.
+    widths is combined in one place.
     """
 
     num_speculative_tokens: int
@@ -54,6 +78,14 @@ class SpecWidthPolicy:
     """Smallest decode batch size that captures every adaptive width. Smaller
     batches capture only the widest."""
 
+    skippable_draft: bool = False
+    """Whether the graph takes its drafter's row count as an input, which the
+    pipeline then binds on every step. See :func:`declares_skippable_draft`."""
+
+    skips_draft: bool = False
+    """Whether a step whose drafts nothing would verify hands the drafter zero
+    rows."""
+
     @classmethod
     def from_config(
         cls,
@@ -62,6 +94,7 @@ class SpecWidthPolicy:
         max_batch_size: int,
         *,
         mixed_steps_verify: bool,
+        skippable_draft: bool = False,
     ) -> SpecWidthPolicy:
         """Resolves the policy for a pipeline.
 
@@ -75,6 +108,8 @@ class SpecWidthPolicy:
             max_batch_size: Largest decode batch size the schedule must cover.
             mixed_steps_verify: Whether a mixed prefill+decode step verifies
                 drafts at all.
+            skippable_draft: Whether the model's graph takes its drafter's
+                row count as an input, from :func:`declares_skippable_draft`.
 
         Returns:
             The resolved policy.
@@ -128,6 +163,11 @@ class SpecWidthPolicy:
             mixed=mixed,
             adaptive=adaptive,
             adaptive_min_batch_size=adaptive_min_batch_size,
+            skippable_draft=skippable_draft,
+            # A mixed step reads its own width rather than the schedule, so
+            # after a step the schedule skipped it would find nothing to
+            # verify. Then the drafter never skips.
+            skips_draft=skippable_draft and not (mixed or 0) > 0,
         )
 
     @property
@@ -193,6 +233,26 @@ class SpecWidthPolicy:
         """
         if mixed_step and self.mixed is not None:
             return self.mixed
+        return self.scheduled_width(batch_size)
+
+    def draft_width(self, batch_size: int) -> int:
+        """How many drafts a step produces for the next step to verify.
+
+        A step's drafts are consumed by the next step, and this step's batch
+        size is the best estimate available for the next step's. Guessing
+        wrong costs only one step of speculation: drafts that were never
+        produced arrive as ``MAGIC_DRAFT_TOKEN_ID``, which the acceptance test
+        rejects.
+
+        Args:
+            batch_size: The per-replica decode batch size.
+
+        Returns:
+            The full draft depth, or the schedule's width when
+            :attr:`skips_draft` so that a width of 0 skips the drafter.
+        """
+        if not self.skips_draft:
+            return self.num_speculative_tokens
         return self.scheduled_width(batch_size)
 
     def reachable_widths(self) -> list[int]:

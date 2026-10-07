@@ -160,7 +160,10 @@ from max.pipelines.speculative.config import (
     SpeculativeConfig,
 )
 from max.pipelines.speculative.ragged_token_merger import _shape_to_scalar
-from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
+from max.pipelines.speculative.spec_width_policy import (
+    SpecWidthPolicy,
+    declares_skippable_draft,
+)
 from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 from max.profiler import Tracer, traced
 
@@ -260,6 +263,17 @@ def _sampled_draft_vocab_size(
     return vocab_size
 
 
+def _contiguous_prefix_1d(buffer: Buffer, num_elements: int) -> Buffer:
+    """Returns a contiguous 1D prefix view of ``buffer``, aliasing it."""
+    if num_elements > buffer.num_elements:
+        raise ValueError(
+            "Requested contiguous prefix exceeds backing buffer capacity: "
+            f"{num_elements} > {buffer.num_elements}."
+        )
+    flat = buffer.view(buffer.dtype, (buffer.num_elements,))
+    return flat[:num_elements]
+
+
 def _contiguous_prefix_3d(
     buffer: Buffer, rows: int, cols: int, depth: int
 ) -> Buffer:
@@ -291,6 +305,8 @@ class _UnifiedSpecDecodeInputs(Protocol):
     top_p: Buffer | None
     min_top_p: Buffer | None
     in_thinking_phase: Buffer | None
+    draft_slot_ids: Buffer | None
+    draft_block_offsets: Buffer | None
 
 
 @dataclass
@@ -565,6 +581,9 @@ class SpecDecodeState:
             max_batch_size,
             mixed_steps_verify=(
                 pipeline_config.runtime.enable_spec_decode_mixed_batches
+            ),
+            skippable_draft=declares_skippable_draft(
+                pipeline_config.speculative
             ),
         )
 
@@ -1730,6 +1749,12 @@ class OverlapTextGenerationPipeline(
     """Picks the width by measured tokens per second. ``None`` keeps it
     static."""
 
+    _draft_slot_ids_full: Buffer | None = None
+    _draft_block_offsets_full: Buffer | None = None
+    _draft_block_offsets_zero: Buffer | None = None
+    """Backing buffers for a block drafter's runtime row count. Contents never
+    change, so a step is two prefix views and no H2D copy."""
+
     def __init__(
         self,
         pipeline_config: PipelineConfig,
@@ -2261,7 +2286,9 @@ class OverlapTextGenerationPipeline(
     # sizing, so eager warmup and capture both see replay-stable buffer shapes.
     @contextmanager
     def _warmup_model_inputs(
-        self, batch_size: int, batch_characteristics: BatchCharacteristics
+        self,
+        batch_size: int,
+        batch_characteristics: BatchCharacteristics,
     ) -> Iterator[ModelInputs]:
         dp_size = self._pipeline_config.model.data_parallel_degree
         replica_batches: list[list[TextContext]] = []
@@ -2340,6 +2367,14 @@ class OverlapTextGenerationPipeline(
                 )
                 draft_tokens_host.to_numpy().fill(0)
             model_inputs.draft_tokens = persistent_draft_tokens
+            if self._spec_width_policy.skippable_draft:
+                (
+                    model_inputs.draft_slot_ids,
+                    model_inputs.draft_block_offsets,
+                ) = self._skippable_draft_buffers(
+                    batch_size * dp_size,
+                    self._spec_width_policy.draft_width(batch_size),
+                )
 
             if self._spec_decode_state.persistent_draft_probs_full is not None:
                 model_inputs.draft_probs_full = _contiguous_prefix_3d(
@@ -2744,6 +2779,79 @@ class OverlapTextGenerationPipeline(
                 step_time_s,
             )
 
+    def _draft_width(
+        self, inputs: TextGenerationInputs[TextGenerationContextType]
+    ) -> int:
+        """How many drafts this step produces for the next step to verify.
+
+        Unlike :meth:`_verify_width` this does not return 0 on a prefill batch.
+        Prefill is exactly where the first drafts come from.
+        """
+        batch_size = max((len(b) for b in inputs.batches), default=0)
+        return self._spec_width_policy.draft_width(batch_size)
+
+    def _skippable_draft_buffers(
+        self, batch_size: int, width: int
+    ) -> tuple[Buffer, Buffer]:
+        """Returns this step's ``(draft_slot_ids, draft_block_offsets)``.
+
+        A ``width`` of 0 skips the drafter: ``draft_slot_ids`` is empty, and
+        the offsets hand the drafter no rows. A block drafter gets
+        ``batch_size`` sequences of zero rows, which keeps its KV lookup table
+        aligned 1:1 with the batch. A sequential drafter gets zero sequences.
+        """
+        assert self._spec_decode_state is not None
+        speculative = self._pipeline_config.speculative
+        assert speculative is not None
+        # EAGLE and MTP draft autoregressively, one row per sequence per step.
+        # A block drafter (DFlash) consumes its whole block in one forward, so
+        # its stride is the block width.
+        sequential = speculative.is_eagle() or speculative.is_mtp()
+        k = (
+            1
+            if sequential
+            else self._spec_decode_state.num_speculative_tokens + 1
+        )
+        if self._draft_slot_ids_full is None:
+            device0 = self._devices[0]
+            # One buffer spans every replica's rows, and each replica can
+            # hold up to ``_max_batch_size`` sequences, so the flat batch
+            # can be DP times that.
+            cap = (
+                self._max_batch_size
+                * self._pipeline_config.model.data_parallel_degree
+            )
+            self._draft_slot_ids_full = Buffer.from_numpy(
+                np.arange(cap * k, dtype=np.int32)
+            ).to(device0)
+            self._draft_block_offsets_full = Buffer.from_numpy(
+                (np.arange(cap + 1, dtype=np.uint32) * k).astype(np.uint32)
+            ).to(device0)
+            self._draft_block_offsets_zero = Buffer.from_numpy(
+                np.zeros(cap + 1, dtype=np.uint32)
+            ).to(device0)
+        assert self._draft_block_offsets_full is not None
+        assert self._draft_block_offsets_zero is not None
+        slot_ids = _contiguous_prefix_1d(
+            self._draft_slot_ids_full, batch_size * k if width > 0 else 0
+        )
+        if width > 0:
+            offsets = _contiguous_prefix_1d(
+                self._draft_block_offsets_full, batch_size + 1
+            )
+        elif sequential:
+            # A sequential drafter emits one row per sequence, so zero rows per
+            # sequence would still emit a row each. One entry is an empty
+            # sequence list: the drafter is handed no sequences at all, so it
+            # reads neither cache_lengths nor the lookup table and the
+            # alignment they need does not arise.
+            offsets = _contiguous_prefix_1d(self._draft_block_offsets_zero, 1)
+        else:
+            offsets = _contiguous_prefix_1d(
+                self._draft_block_offsets_zero, batch_size + 1
+            )
+        return slot_ids, offsets
+
     def _replay_batch_characteristics(
         self, inputs: TextGenerationInputs[TextGenerationContextType]
     ) -> BatchCharacteristics:
@@ -2816,7 +2924,12 @@ class OverlapTextGenerationPipeline(
             and bool(inputs)
             and inputs.batch_type == BatchType.TG
             and batch_per_rank <= self._max_graph_capture_batch_size
-            and (draft_tokens is None or num_draft_tokens_to_verify > 0)
+            # Warmup records one graph per verify width the schedule can
+            # reach, including width 0, whose recording skips the draft block.
+            and (
+                draft_tokens is None
+                or runner.captures_verify_width(num_draft_tokens_to_verify)
+            )
         )
         # The device graph synthesis version of `use_graph_capture_replay`.
         use_graph_synthesis = (
@@ -2930,6 +3043,16 @@ class OverlapTextGenerationPipeline(
             model_inputs.min_top_p = sampling_buffers.min_top_p
             model_inputs.seed = sampling_buffers.seed
             model_inputs.in_thinking_phase = sampling_buffers.in_thinking_phase
+            if self._spec_width_policy.skippable_draft:
+                # The whole flat batch, not the per-replica maximum
+                # ``_draft_width`` reads: the selection spans every replica's
+                # rows.
+                (
+                    model_inputs.draft_slot_ids,
+                    model_inputs.draft_block_offsets,
+                ) = self._skippable_draft_buffers(
+                    len(inputs.flat_batch), self._draft_width(inputs)
+                )
         realized_draft_tokens_host: npt.NDArray[np.int64] | None = None
         if (
             self._prev_batch is not None

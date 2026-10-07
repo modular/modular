@@ -203,9 +203,11 @@ class SpeculativeConfig(ConfigFileModel):
     it carries. ``None`` verifies every drafted token, which is the behavior
     when the field is unset.
 
-    Applies to every speculative method. Block drafters (``dflash``) still
-    draft their whole checkpoint-fixed block every step; only how much of that
-    block the target verifies narrows.
+    Applies to every speculative method. A block drafter (``dflash``) still
+    drafts its whole checkpoint-fixed block, and narrowing changes only how
+    much of that block the target verifies. The exception is a count of
+    ``0``, where a draft that declares ``supports_zero_draft_rows`` skips the
+    draft forward too.
     """
 
     @property

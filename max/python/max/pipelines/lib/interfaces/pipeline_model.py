@@ -283,6 +283,13 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     top_p: Buffer | None = None
     min_top_p: Buffer | None = None
     in_thinking_phase: Buffer | None = None
+    draft_slot_ids: Buffer | None = None
+    """Which drafter rows this step computes, as the buffer's extent:
+    ``arange(batch_size * rows_per_seq)`` to draft, empty to skip. Set by the
+    pipeline from the verify-width schedule, alongside ``draft_tokens``."""
+    draft_block_offsets: Buffer | None = None
+    """The draft block's ragged row offsets: ``[0, K, 2K, ...]`` to draft, all
+    zeros to skip."""
     pinned_bitmask: Buffer | None = None
     wait_payload: Buffer | None = None
     device_bitmask_scratch: Buffer | None = None
@@ -327,6 +334,12 @@ class UnifiedSpecDecodeInputs(ModelInputs):
         if include_in_thinking_phase:
             assert self.in_thinking_phase is not None
             tail += (self.in_thinking_phase,)
+        # The pipeline sets these exactly when the driver declared them (both
+        # decide by ``declares_skippable_draft``), so their presence is the
+        # compile-time flag.
+        if self.draft_slot_ids is not None:
+            assert self.draft_block_offsets is not None
+            tail += (self.draft_slot_ids, self.draft_block_offsets)
         # Gate the bitmask triple on two compile-time flags, not a runtime
         # pinned_bitmask is not None check: supports_structured_output is False
         # for the dflash Llama3 graph, which still declares no bitmask graph

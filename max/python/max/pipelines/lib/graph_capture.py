@@ -283,6 +283,10 @@ class ServeGraphCaptureRunner:
         table = self._widths_by_batch_size
         return table[min(batch_size, len(table) - 1)]
 
+    def captures_verify_width(self, verify_width: int) -> bool:
+        """Whether warmup recorded any graph at this verify width."""
+        return verify_width in self._verify_widths
+
     def _resolve_graph_key(
         self, batch_size: int, cache_length: int, q_max_seq_len: int
     ) -> AttnKeyInterface:

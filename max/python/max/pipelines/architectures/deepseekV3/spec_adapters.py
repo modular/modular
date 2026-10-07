@@ -133,6 +133,7 @@ class DeepseekV3MLAProposer(Generic[TargetHiddenT]):
     carry_dim_names: CarryDimNames
     step_hidden_mode: ReturnHiddenStates
     uses_thinking_phase: bool = False
+    supports_zero_draft_rows: bool = False
     draft_takes_ep_inputs: bool = False
     """Whether the draft's ``__call__`` accepts the target's EP inputs."""
 

@@ -484,7 +484,8 @@ def test_warmup_dedups_shared_keys() -> None:
 
     @contextmanager
     def _warmup_ctx(
-        batch_size: int, batch_characteristics: BatchCharacteristics
+        batch_size: int,
+        batch_characteristics: BatchCharacteristics,
     ) -> Iterator[MockModelInputs]:
         yield mock_inputs
 

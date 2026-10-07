@@ -99,6 +99,7 @@ class Gemma4MTPProposer:
     carry_dim_names = CarryDimNames(prefix="mtp_step")
     step_hidden_mode = ReturnHiddenStates.LAST_PER_DEVICE
     uses_thinking_phase = True
+    supports_zero_draft_rows = False
 
     def __init__(self, draft: Gemma4Assistant, hidden_dim: DimLike) -> None:
         self.draft = draft

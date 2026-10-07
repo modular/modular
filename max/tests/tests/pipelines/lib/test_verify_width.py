@@ -47,7 +47,10 @@ from max.pipelines.speculative.config import (
     SpeculativeConfig,
     VerifyWidthRange,
 )
-from max.pipelines.speculative.spec_width_policy import SpecWidthPolicy
+from max.pipelines.speculative.spec_width_policy import (
+    SpecWidthPolicy,
+    declares_skippable_draft,
+)
 from max.pipelines.speculative.utils import _SpeculativeDecodingMetrics
 
 
@@ -357,6 +360,49 @@ def _policy(
         max_batch_size=max_batch_size,
         mixed_steps_verify=mixed_steps_verify,
     )
+
+
+def test_a_skippable_drafter_skips_where_the_schedule_reaches_zero() -> None:
+    policy = SpecWidthPolicy.from_config(
+        _config([(1, 2, 3), (3, 8, 0)]),
+        3,
+        max_batch_size=8,
+        mixed_steps_verify=False,
+        skippable_draft=True,
+    )
+    assert policy.skips_draft
+    assert policy.draft_width(2) == 3
+    assert policy.draft_width(5) == 0
+
+
+def test_only_a_schedule_that_reaches_zero_declares_the_draft_rows() -> None:
+    assert not declares_skippable_draft(None)
+    assert not declares_skippable_draft(_config(None))
+    assert not declares_skippable_draft(_config([(1, 2, 3), (3, 8, 1)]))
+    for method in ("eagle", "mtp", "dflash"):
+        assert declares_skippable_draft(
+            _config([(1, 2, 3), (3, 8, 0)], method=method)
+        )
+
+
+def test_a_nonzero_mixed_width_keeps_the_drafter_running() -> None:
+    """A mixed step reads its own width, not the schedule, so it would find
+    nothing to verify after a step the schedule skipped."""
+    policy = SpecWidthPolicy.from_config(
+        _config([(1, 2, 3), (3, 8, 0)], mixed_width=2),
+        3,
+        max_batch_size=8,
+        mixed_steps_verify=True,
+        skippable_draft=True,
+    )
+    assert not policy.skips_draft
+    assert policy.draft_width(5) == 3
+
+
+def test_a_drafter_that_cannot_skip_always_drafts_in_full() -> None:
+    policy = _policy(_config([(1, 2, 3), (3, 8, 0)]), 3)
+    assert not policy.skips_draft
+    assert policy.draft_width(5) == 3
 
 
 def test_no_schedule_leaves_the_width_at_the_configured_depth() -> None:

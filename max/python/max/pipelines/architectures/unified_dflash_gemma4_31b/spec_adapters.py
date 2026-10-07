@@ -33,6 +33,7 @@ class DFlashGemma4_31BProposer:
     """The DFlash block draft on Gemma4, reusing the target's embed and head."""
 
     samples_from_anchor = False
+    supports_zero_draft_rows = False
 
     def __init__(
         self,

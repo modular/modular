@@ -236,6 +236,7 @@ class InklingMTPProposer:
     # forward_depth returns one tensor per rank, never allgathered.
     step_hidden_mode = ReturnHiddenStates.ALL
     uses_thinking_phase = True
+    supports_zero_draft_rows = False
 
     def __init__(
         self, draft: InklingMultiTokenPredictor, target: InklingTarget

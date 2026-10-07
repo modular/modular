@@ -56,6 +56,7 @@ from .spec_input_types import (
     SpecDecodeInputTypeSpec,
 )
 from .spec_target import SpecDecodeTarget
+from .spec_width_policy import declares_skippable_draft
 from .unified_graph_ops import apply_overlap_bitmask, broadcast_per_device
 
 __all__ = [
@@ -216,6 +217,38 @@ class BlockBatch:
     roll that state onto the accepted prefix without the driver knowing what
     the state is."""
 
+    draft_slot_ids: TensorValue | None = None
+    """Which block rows this step drafts, ``None`` on a graph that always
+    drafts. Its extent is the row count: ``batch_size * K`` to draft, zero to
+    skip. See :attr:`SpecDecodeInputTypeSpec.include_skippable_draft`."""
+
+    draft_block_offsets: TensorValue | None = None
+    """Runtime replacement for the block's fixed-``K``-stride row offsets,
+    ``None`` on a graph that always drafts."""
+
+    block_size: int = 0
+    """``K``, so a phase can turn :attr:`draft_slot_ids`' extent into a
+    sequence count. Zero only on a batch built before the driver knew it."""
+
+    @property
+    def drafts_all_rows(self) -> bool:
+        """Whether every row in the batch drafts, as it always did."""
+        return self.draft_slot_ids is None
+
+    @property
+    def num_draft_seqs(self) -> Dim:
+        """How many sequences this step drafts for: ``batch_size``, or zero.
+
+        Symbolic, so the graph carries one row count through the block rather
+        than branching on which of the two it is.
+        """
+        if self.draft_slot_ids is None:
+            return Dim("batch_size")
+        assert self.block_size > 0, (
+            "a skippable-draft batch must carry its block size"
+        )
+        return self.draft_slot_ids.shape[0] // self.block_size
+
     @property
     def devices_per_replica(self) -> int:
         """How many devices share one data-parallel replica's rows."""
@@ -291,6 +324,14 @@ class BlockProposer(Protocol[_TargetHiddenT, _BlockHiddenT]):
     and proposes ``K - 1``; the dense DSpark drafter reads all ``K``. The
     difference is the acceptance sampler's step count as well as the head's
     output width, which is why it is declared rather than inferred."""
+    supports_zero_draft_rows: bool
+    """Whether this draft runs on the runtime row count the driver hands it
+    rather than on ``batch_size``. That count is zero on a step whose drafts
+    nothing would verify. A draft without it drafts every row even where the
+    schedule skips.
+
+    TODO(SERVOPT-1610): Every draft is meant to support this. The field goes
+    away once each one is written against the draft row count."""
 
     def materialize(
         self,
@@ -326,8 +367,11 @@ class BlockProposer(Protocol[_TargetHiddenT, _BlockHiddenT]):
     ) -> TensorValue:
         """Turns the block's hidden states into the next step's proposals.
 
-        ``[batch_size, K - 1]``, or ``[batch_size, num_speculative_tokens]``
-        when the driver verifies fewer proposals than the block holds.
+        ``[batch.num_draft_seqs, K - 1]``, or ``[batch.num_draft_seqs,
+        num_speculative_tokens]`` when the driver verifies fewer proposals than
+        the block holds. ``batch.num_draft_seqs`` is ``batch_size`` for every
+        proposer without :attr:`supports_zero_draft_rows`. The driver pads a
+        skipping step's empty result back out to the fixed output shape.
 
         Owns the head's scoring: which ``lm_head``, whether the anchor slot is
         sliced off before or after the projection, logit softcapping. The
@@ -539,10 +583,25 @@ class BlockDriver(
         self._target = target
         self._proposer = proposer
         self._input_spec = replace(
-            input_spec, enable_structured_output=enable_structured_output
+            input_spec,
+            enable_structured_output=enable_structured_output,
+            include_skippable_draft=declares_skippable_draft(
+                speculative_config
+            ),
         )
         self.devices = self._input_spec.devices
         self.data_parallel_degree = self._input_spec.data_parallel_degree
+        # TODO(SERVOPT-1610): The runtime offsets arrive on one device with no
+        # host mirror, and data parallelism would have to re-split them per
+        # replica, so a multi-device block draft drafts every row until the
+        # block driver handles both. A sampled step would also have to pad the
+        # skipped rows' distributions.
+        self._skips_draft_rows = (
+            proposer.supports_zero_draft_rows
+            and len(self.devices) == 1
+            and self.data_parallel_degree == 1
+            and speculative_config.draft_proposal == "argmax"
+        )
         # Where the draft materializes the target's context KV; the two caches
         # normally advance together.
         self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
@@ -584,6 +643,9 @@ class BlockDriver(
                     "draft_proposal='sampled' requires stochastic acceptance:"
                     " greedy acceptance ignores the draft's distributions"
                 )
+            # A skipped step would also have to pad its distributions, so a
+            # sampled graph drafts every step. A zero verify width still
+            # narrows what the target checks.
             self._input_spec = replace(
                 self._input_spec,
                 enable_sampled_draft_proposal=True,
@@ -655,6 +717,8 @@ class BlockDriver(
         pinned_bitmask: TensorValue | None = None,
         wait_payload: BufferValue | None = None,
         device_bitmask_scratch: BufferValue | None = None,
+        draft_slot_ids: TensorValue | None = None,
+        draft_block_offsets: TensorValue | None = None,
         extra: Mapping[str, Any] | None = None,
         draft_probs_full: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
@@ -689,6 +753,12 @@ class BlockDriver(
             pinned_bitmask: Structured-output bitmask staged on the host.
             wait_payload: Host-side gate for the bitmask transfer.
             device_bitmask_scratch: Device buffer the bitmask lands in.
+            draft_slot_ids: Which block rows to draft, as the tensor's
+                extent. An empty one skips the block entirely. Declared only
+                under ``include_skippable_draft``, and taken from
+                :meth:`decode_inputs` when not passed.
+            draft_block_offsets: Runtime row offsets for the block forward,
+                paired with ``draft_slot_ids``.
             extra: This model's own graph inputs, reaching its adapters
                 through :attr:`BlockBatch.extra` untouched.
             draft_probs_full: ``[batch, num_speculative_tokens, vocab_size]``
@@ -704,6 +774,14 @@ class BlockDriver(
                 "draft_probs_full is required iff the driver was built with"
                 " draft_proposal='sampled'"
             )
+        draft_slot_ids, draft_block_offsets = self._draft_rows(
+            draft_slot_ids, draft_block_offsets
+        )
+        if not self._skips_draft_rows:
+            # The pipeline binds the row inputs whenever the schedule can
+            # skip, whatever the draft. This graph cannot run it on fewer
+            # rows, so it leaves them unread and drafts every row.
+            draft_slot_ids = draft_block_offsets = None
         signals = signal_buffers or []
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
@@ -742,6 +820,9 @@ class BlockDriver(
             vision_scatter_indices=vision_scatter_indices or [],
             extra=extra or {},
             num_accepted=None,
+            draft_slot_ids=draft_slot_ids,
+            draft_block_offsets=draft_block_offsets,
+            block_size=self.block_size,
         )
 
         pre_cache_lengths = self._pre_cache_lengths(batch)
@@ -792,7 +873,7 @@ class BlockDriver(
             return (
                 accepted.num_accepted,
                 accepted.next_tokens,
-                next_draft_tokens,
+                self._pad_skipped_rows(batch, next_draft_tokens),
             )
 
         assert self._vocab_size is not None
@@ -1011,6 +1092,23 @@ class BlockDriver(
             [ops.unsqueeze(accepted.next_tokens, axis=1), mask_tail], axis=1
         )
 
+        block_ids_flat = block_ids.reshape((-1,))
+        if not batch.drafts_all_rows:
+            assert batch.draft_slot_ids is not None
+            assert batch.draft_block_offsets is not None
+            # The selection's extent is the row count: ``arange(batch * K)``
+            # to draft, empty to skip. Taking the rows through a gather
+            # collapses the block, the draft forward and the draft lm_head to
+            # zero rows with no branch in the graph, and therefore none inside
+            # a device-graph capture either. The offsets go all-zero, which
+            # reads as ``batch_size`` sequences of zero query rows and so
+            # leaves cache_lengths and the lookup table aligned 1:1 with the
+            # ragged batch.
+            return (
+                ops.gather(block_ids_flat, batch.draft_slot_ids, axis=0),
+                [batch.draft_block_offsets],
+            )
+
         offsets = [
             ops.range(
                 start=0,
@@ -1031,7 +1129,35 @@ class BlockDriver(
                 )
                 for i, replica in enumerate(batch.replica_of)
             ]
-        return block_ids.reshape((-1,)), offsets
+        return block_ids_flat, offsets
+
+    def _pad_skipped_rows(
+        self, batch: BlockBatch, next_draft_tokens: TensorValue
+    ) -> TensorValue:
+        """Restores the proposals' ``batch_size`` leading dim after a skip.
+
+        The head returns one row per *drafting* sequence, which is zero of
+        them on a skipping step, but the graph's third output is fixed at
+        ``batch_size`` rows, because device-graph capture records the output
+        shapes and replays into them. The tail is filled with
+        :data:`MAGIC_DRAFT_TOKEN_ID`, which the next step's accept already
+        recognizes as "this row carried no proposal" and scores zero.
+        ``broadcast_to`` of a constant hoists out of the step, so the fill
+        costs nothing per iteration.
+        """
+        if batch.drafts_all_rows:
+            return next_draft_tokens
+        # The head may return fewer than ``K - 1`` columns when the driver
+        # verifies fewer proposals than the block holds.
+        trailing = list(next_draft_tokens.shape[1:])
+        skipped = ops.constant(
+            MAGIC_DRAFT_TOKEN_ID,
+            next_draft_tokens.dtype,
+            device=batch.device0,
+        ).broadcast_to([Dim("batch_size") - batch.num_draft_seqs, *trailing])
+        return ops.concat([next_draft_tokens, skipped], axis=0).rebind(
+            ["batch_size", *trailing]
+        )
 
     @override
     @property

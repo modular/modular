@@ -22,6 +22,7 @@ from max.pipelines.architectures.unified_eagle_llama3.unified_eagle_llama3 impor
     UnifiedEagleLlama3,
 )
 from max.pipelines.lib.config import SpeculativeConfig
+from max.pipelines.speculative.config import VerifyWidthRange
 
 
 def create_dummy_llama3_config(layers: int) -> Llama3Config:
@@ -62,19 +63,34 @@ def create_dummy_llama3_config(layers: int) -> Llama3Config:
 def create_dummy_eagle_llama3_config(
     enable_structured_output: bool = False,
     num_speculative_tokens: int = 1,
+    skips_draft: bool = False,
 ) -> UnifiedEagleLlama3Config:
     return UnifiedEagleLlama3Config(
         target=create_dummy_llama3_config(layers=8),
         draft=create_dummy_llama3_config(layers=1),
         speculative_config=SpeculativeConfig(
-            num_speculative_tokens=num_speculative_tokens
+            num_speculative_tokens=num_speculative_tokens,
+            # A schedule that reaches width 0 is what makes the driver declare
+            # its draft row inputs.
+            num_speculative_tokens_per_batch_size=(
+                [
+                    VerifyWidthRange(
+                        batch_start=1,
+                        batch_end=8,
+                        num_tokens=num_speculative_tokens,
+                    ),
+                    VerifyWidthRange(batch_start=9, batch_end=64, num_tokens=0),
+                ]
+                if skips_draft
+                else None
+            ),
         ),
         enable_structured_output=enable_structured_output,
     )
 
 
 def build_dummy_eagle_llama3_graph(
-    num_speculative_tokens: int,
+    num_speculative_tokens: int, skips_draft: bool = False
 ) -> Graph:
     """Traces the unified graph the way ``load_model`` does.
 
@@ -84,7 +100,8 @@ def build_dummy_eagle_llama3_graph(
     """
     model = UnifiedEagleLlama3(
         create_dummy_eagle_llama3_config(
-            num_speculative_tokens=num_speculative_tokens
+            num_speculative_tokens=num_speculative_tokens,
+            skips_draft=skips_draft,
         )
     )
     model.state_dict()
@@ -215,13 +232,27 @@ def test_input_types_with_structured_output() -> None:
     )
 
 
+def test_a_schedule_that_reaches_zero_declares_the_draft_row_inputs() -> None:
+    """The driver, not the architecture, decides to take the drafter's row
+    count as an input, and only when the schedule can skip."""
+    plain = UnifiedEagleLlama3(create_dummy_eagle_llama3_config())
+    skipping = UnifiedEagleLlama3(
+        create_dummy_eagle_llama3_config(skips_draft=True)
+    )
+    assert not plain.input_spec.include_skippable_draft
+    assert skipping.input_spec.include_skippable_draft
+    assert len(skipping.input_types()) == len(plain.input_types()) + 2
+
+
+@pytest.mark.parametrize("skips_draft", [False, True])
 @pytest.mark.parametrize("num_speculative_tokens", [1, 2, 3, 5])
 def test_graph_traces_at_every_speculative_width(
-    num_speculative_tokens: int,
+    num_speculative_tokens: int, skips_draft: bool
 ) -> None:
     """The propose loop runs one iteration per token past the first, so a
     width below 3 never feeds a proposed token back in as the next step's
     input. Widths at and above 3 do, which is where a draft token carrying
     an unnamed row dim shows up as a concat error against the hidden carry.
+    A skippable draft carries the runtime row count instead.
     """
-    build_dummy_eagle_llama3_graph(num_speculative_tokens)
+    build_dummy_eagle_llama3_graph(num_speculative_tokens, skips_draft)

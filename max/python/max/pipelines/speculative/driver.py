@@ -67,6 +67,7 @@ from .spec_input_types import (
     SpecDecodeInputTypeSpec,
 )
 from .spec_target import SpecDecodeTarget
+from .spec_width_policy import declares_skippable_draft
 from .unified_graph_ops import (
     accept_and_pick_next_tokens,
     apply_overlap_bitmask,
@@ -185,6 +186,34 @@ class SequentialBatch:
     Set for the whole propose phase, so a draft can derive per-step state from
     the position it continues from, without the driver knowing what that
     state is."""
+
+    draft_slot_ids: TensorValue | None = None
+    """Which rows the autoregressive draft steps run, ``None`` on a graph
+    that always drafts. Its extent is the row count: ``batch_size`` to draft,
+    zero to skip. See
+    :attr:`SpecDecodeInputTypeSpec.include_skippable_draft`."""
+
+    draft_block_offsets: TensorValue | None = None
+    """Runtime replacement for the draft loop's one-row-per-request offsets,
+    ``None`` on a graph that always drafts. Its sequence count, one less than
+    its extent, is the row count the loop propagates."""
+
+    @property
+    def drafts_all_rows(self) -> bool:
+        """Whether every row in the batch drafts, as it always did."""
+        return self.draft_slot_ids is None
+
+    @property
+    def num_draft_seqs(self) -> Dim:
+        """How many sequences the draft steps run for: ``batch_size``, or 0.
+
+        Read off the offsets rather than :attr:`draft_slot_ids`, because the
+        drafter emits one row per *sequence*: the slot ids only select which
+        step-0 rows seed the loop.
+        """
+        if self.draft_block_offsets is None:
+            return Dim("batch_size")
+        return self.draft_block_offsets.shape[0] - 1
 
     @property
     def dist(self) -> DistributedInputs:
@@ -380,6 +409,14 @@ class SequentialProposer(Protocol[_TargetHiddenT]):
     The driver applies that rule once."""
     uses_thinking_phase: bool
     """Whether the draft's acceptance test reads ``in_thinking_phase``."""
+    supports_zero_draft_rows: bool
+    """Whether this draft runs on the runtime row count the driver hands it
+    rather than on ``batch_size``. That count is zero on a step whose drafts
+    nothing would verify. A draft without it drafts every row even where the
+    schedule skips.
+
+    TODO(SERVOPT-1610): Every draft is meant to support this. The field goes
+    away once each one is written against the draft row count."""
 
     def prefill(
         self,
@@ -434,6 +471,18 @@ class SequentialDriver(
             input_spec,
             include_in_thinking_phase=proposer.uses_thinking_phase,
             enable_structured_output=enable_structured_output,
+            include_skippable_draft=declares_skippable_draft(
+                speculative_config
+            ),
+        )
+        # Only a single-device argmax graph runs its draft on fewer rows: the
+        # runtime offsets carry no CPU mirror, which a sharded draft needs to
+        # size its collectives, and a sampled step would also have to pad the
+        # skipped rows' distributions.
+        self._skips_draft_rows = (
+            proposer.supports_zero_draft_rows
+            and not input_spec.distributed
+            and draft_proposal == "argmax"
         )
         if draft_proposal == "sampled":
             # Declares the draft_probs_full input, which only this mode reads.
@@ -572,6 +621,8 @@ class SequentialDriver(
         extra: Mapping[str, Any] | None = None,
         draft_probs_full: TensorValue | None = None,
         penalties: LogitPenalties | None = None,
+        draft_slot_ids: TensorValue | None = None,
+        draft_block_offsets: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Runs one spec-decode iteration: verify K drafts, propose K more.
 
@@ -615,11 +666,25 @@ class SequentialDriver(
                 which is also the only mode that returns a fourth output.
             penalties: Presence/frequency penalties applied to the verified
                 logits before acceptance, or None.
+            draft_slot_ids: Which step-0 rows seed the draft loop, as the
+                tensor's extent. An empty one skips every step past step 0.
+                Declared only under ``include_skippable_draft``, and taken
+                from :meth:`decode_inputs` when not passed.
+            draft_block_offsets: Runtime row offsets for the draft steps,
+                paired with ``draft_slot_ids``.
 
         Returns:
             ``(num_accepted, next_tokens, next_draft_tokens)``, plus
             ``next_draft_probs_full`` under ``draft_proposal="sampled"``.
         """
+        draft_slot_ids, draft_block_offsets = self._draft_rows(
+            draft_slot_ids, draft_block_offsets
+        )
+        if not self._skips_draft_rows:
+            # The pipeline binds the row inputs whenever the schedule can
+            # skip, whatever the draft. This graph cannot run it on fewer
+            # rows, so it leaves them unread and drafts every row.
+            draft_slot_ids = draft_block_offsets = None
         if (draft_probs_full is None) != (self._draft_proposal == "argmax"):
             raise ValueError(
                 "draft_probs_full is required iff the driver was built with"
@@ -692,6 +757,8 @@ class SequentialDriver(
                 vision_scatter_indices=vision_scatter_indices or [],
                 extra=extra or {},
                 num_accepted=None,
+                draft_slot_ids=draft_slot_ids,
+                draft_block_offsets=draft_block_offsets,
             )
 
             verified = self._target.verify(batch)
@@ -994,12 +1061,18 @@ class SequentialDriver(
             1, DType.int64, DeviceRef.CPU()
         ).broadcast_to([1])
 
-        decode_offsets = ops.range(
-            start=0,
-            stop=batch.input_row_offsets.shape[0],
-            out_dim="input_row_offsets_len",
-            device=batch.device0,
-            dtype=DType.uint32,
+        # A skippable-draft graph takes the loop's offsets as an input. A
+        # skipping step passes ``[0]``, zero sequences.
+        decode_offsets = (
+            batch.draft_block_offsets
+            if batch.draft_block_offsets is not None
+            else ops.range(
+                start=0,
+                stop=batch.input_row_offsets.shape[0],
+                out_dim="input_row_offsets_len",
+                device=batch.device0,
+                dtype=DType.uint32,
+            )
         )
         # Broadcast once so the draft can skip its own broadcast for every
         # step of the multi-step loop.
@@ -1043,6 +1116,37 @@ class SequentialDriver(
         next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
         all_draft_tokens = [next_draft_tokens]
 
+        # Step 0 is fused with the verify pass and writes the draft KV for the
+        # tokens the target just accepted, so it always runs. Steps 1..N-1 only
+        # deepen the proposal. Taking their seed rows through a gather whose
+        # index extent is zero collapses the row count to zero, so every
+        # remaining draft forward and lm_head runs on no rows. There is no
+        # branch in the graph, and therefore none inside a device-graph
+        # capture either.
+        rows = batch.num_draft_seqs
+        if not batch.drafts_all_rows:
+            slot_ids = batch.draft_slot_ids
+            assert slot_ids is not None
+            # The drafter emits one row per sequence, so the count that
+            # propagates through the loop is the offsets' sequence count, not
+            # the selection's own extent. The two are equal at runtime but are
+            # distinct symbols. Rebind onto the one the loop carries.
+            next_draft_tokens = ops.gather(
+                next_draft_tokens, slot_ids, axis=0
+            ).rebind([rows])
+            hidden_dim = self._proposer.hidden_dim
+            carry_hidden = [
+                ops.gather(h, slot_ids, axis=0).rebind([rows, hidden_dim])
+                for h in carry_hidden
+            ]
+            if (reuse_spec := self._proposer.reuse) is not None:
+                carry_reuse = [
+                    ops.gather(r, slot_ids, axis=0).rebind(
+                        [rows, reuse_spec.dim]
+                    )
+                    for r in carry_reuse
+                ]
+
         draft_input = DraftStepInput(
             tokens=next_draft_tokens, hidden=carry_hidden, reuse=carry_reuse
         )
@@ -1058,7 +1162,7 @@ class SequentialDriver(
         batch_context_lengths = batch.batch_context_lengths
         for index in range(1, self.num_draft_steps):
             with Graph.current.profile_scope(f"draft_step_{index}"):
-                draft_input = self._rebind_draft_input(draft_input, index)
+                draft_input = self._rebind_draft_input(draft_input, index, rows)
                 step_kv: list[PagedCacheValues] = (
                     [
                         replace(kv, cache_lengths=cl)
@@ -1108,9 +1212,17 @@ class SequentialDriver(
 
                 # Name the row dim before the tokens are reused: the next step
                 # embeds them and concatenates against the hidden carry, one
-                # row per request.
-                next_draft_tokens = ops.rebind(step_token_ids, ["batch_size"])
-                all_draft_tokens.append(next_draft_tokens)
+                # row per drafting request.
+                next_draft_tokens = ops.rebind(step_token_ids, [rows])
+                # Device graph capture records the output shapes and replays
+                # into them, so the stacked output is fixed at
+                # ``[batch_size, N]``. A skipping step pads its empty result
+                # with the invalid-draft sentinel, which the next step's accept
+                # already scores as zero. ``broadcast_to`` of a constant hoists
+                # out of the loop, so the fill costs nothing per step.
+                all_draft_tokens.append(
+                    self._pad_skipped_rows(batch, next_draft_tokens)
+                )
                 draft_input = DraftStepInput(
                     tokens=next_draft_tokens,
                     hidden=self._slice_step_hidden(
@@ -1163,13 +1275,28 @@ class SequentialDriver(
 
         return [swapped(kv) for kv in draft_kv_collections]
 
+    def _pad_skipped_rows(
+        self, batch: SequentialBatch, step_tokens: TensorValue
+    ) -> TensorValue:
+        """Restores the ``[batch_size]`` per-step shape after a skip."""
+        if batch.drafts_all_rows:
+            return step_tokens
+        skipped = ops.constant(
+            MAGIC_DRAFT_TOKEN_ID, step_tokens.dtype, device=batch.device0
+        ).broadcast_to([Dim("batch_size") - batch.num_draft_seqs])
+        return ops.concat([step_tokens, skipped], axis=0).rebind(["batch_size"])
+
     def _rebind_draft_input(
-        self, draft_input: DraftStepInput, index: int
+        self, draft_input: DraftStepInput, index: int, rows: Dim
     ) -> DraftStepInput:
         """Name each field's per-device batch dim for this step.
 
         Per-device shapes differ across DP replicas, so the dim name has to
         carry the device index; the draft rebinds it once inside ``__call__``.
+
+        ``rows`` is the loop's row count, which is ``batch_size`` except on a
+        skippable-draft graph, where it is the runtime count the offsets
+        carry.
         """
         hidden_dim = self._proposer.hidden_dim
         reuse = self._proposer.reuse
@@ -1177,7 +1304,7 @@ class SequentialDriver(
             tokens=draft_input.tokens,
             hidden=[
                 draft_input.hidden[i].rebind(
-                    [self._carry_dim(index, i), hidden_dim]
+                    [self._carry_dim(index, i, rows), hidden_dim]
                 )
                 for i in range(len(self.devices))
             ],
@@ -1185,7 +1312,7 @@ class SequentialDriver(
             # at the same accepted position.
             reuse=[
                 draft_input.reuse[i].rebind(
-                    [self._carry_dim(index, i), reuse.dim]
+                    [self._carry_dim(index, i, rows), reuse.dim]
                 )
                 for i in range(len(self.devices))
             ]
@@ -1193,9 +1320,19 @@ class SequentialDriver(
             else [],
         )
 
-    def _carry_dim(self, index: int, device: int) -> str:
-        """Name the carry's batch dim for one step on one device."""
+    def _carry_dim(
+        self, index: int, device: int, rows: Dim | None = None
+    ) -> Dim | str:
+        """Name the carry's batch dim for one step on one device.
+
+        A skippable-draft graph has no name for its runtime row count, so it
+        carries the count itself. The per-step names exist to let a proposer
+        assert equal shapes across steps, which a single symbolic count
+        already does. ``rows`` left unset means the usual ``batch_size``.
+        """
         names = self._proposer.carry_dim_names
+        if rows is not None and rows != Dim("batch_size"):
+            return rows
         if not names.prefix:
             return "batch_size"
         if not names.per_device:
