@@ -43,6 +43,7 @@ class MTPDeepseekV3Proposer(DeepseekV3MLAProposer[list[TensorValue]]):
     # tensors, so the driver slices each replica's rows back out under DP.
     step_hidden_mode = ReturnHiddenStates.LAST_PER_DEVICE
     uses_thinking_phase = True
+    supports_zero_draft_rows = True
     draft_takes_ep_inputs = True
 
 

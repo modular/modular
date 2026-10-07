@@ -3046,7 +3046,7 @@ class OverlapTextGenerationPipeline(
             if self._spec_width_policy.skippable_draft:
                 # The whole flat batch, not the per-replica maximum
                 # ``_draft_width`` reads: the selection spans every replica's
-                # rows.
+                # rows, and the drivers split it back out per replica.
                 (
                     model_inputs.draft_slot_ids,
                     model_inputs.draft_block_offsets,

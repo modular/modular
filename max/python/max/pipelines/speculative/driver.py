@@ -435,6 +435,44 @@ class SequentialProposer(Protocol[_TargetHiddenT]):
         ...
 
 
+def _scale_splits_by_draft(
+    splits: TensorValue, num_draft_seqs: Dim
+) -> TensorValue:
+    """Collapses the replica boundaries to zero on a step that drafts nothing.
+
+    A skippable step drafts every row or none, so the boundaries are either
+    unchanged or all zero, read off the draft offsets' extent on the host.
+    """
+    drafts = ops.min(
+        ops.shape_to_tensor([num_draft_seqs]),
+        ops.constant(1, DType.int64, DeviceRef.CPU()),
+    )
+    return splits * drafts.cast(splits.dtype)
+
+
+def _replica_leading_rows(
+    values: Sequence[TensorValue],
+    splits: TensorValue,
+    tp_degree: int,
+    out_dims: Sequence[DimLike],
+) -> list[TensorValue]:
+    """Keeps the leading rows each replica's boundaries say it holds.
+
+    ``values`` holds one entry per device, each carrying its replica's rows,
+    and devices are replica-major, ``tp_degree`` to a replica. Entry ``i`` is
+    cut to ``splits[r + 1] - splits[r]`` rows for its replica ``r`` and named
+    ``out_dims[i]``.
+    """
+    selected = []
+    for i, value in enumerate(values):
+        replica = i // tp_degree
+        count = splits[replica + 1] - splits[replica]
+        selected.append(
+            ops.slice_tensor(value, [(slice(0, count), out_dims[i])])
+        )
+    return selected
+
+
 class SequentialDriver(
     SpecDecodeGraphSignature, Module, Generic[_TargetHiddenT]
 ):
@@ -476,15 +514,10 @@ class SequentialDriver(
                 speculative_config
             ),
         )
-        # Each data-parallel replica drafts its own slice of the batch, and a
-        # skipping step would have to empty every slice, which the replica
-        # splits here do not express. Tensor parallelism is fine, since every
-        # device holds every row. A sampled step would also have to pad the
-        # skipped rows' distributions.
+        # A sampled step would also have to pad the skipped rows'
+        # distributions, so it drafts every row.
         self._skips_draft_rows = (
-            proposer.supports_zero_draft_rows
-            and input_spec.data_parallel_degree == 1
-            and draft_proposal == "argmax"
+            proposer.supports_zero_draft_rows and draft_proposal == "argmax"
         )
         if draft_proposal == "sampled":
             # Declares the draft_probs_full input, which only this mode reads.
@@ -1081,6 +1114,14 @@ class SequentialDriver(
         decode_offsets_per_dev = broadcast_per_device(
             decode_offsets, batch.signal_buffers, len(self.devices)
         )
+        # A skipping step drafts zero rows on every replica, so the replica
+        # boundaries the loop splits by collapse with it. The draft KV still
+        # holds each replica's full batch, so the cache-length advance above
+        # keeps the batch's own splits.
+        draft_splits = splits
+        if not batch.drafts_all_rows and self.data_parallel_degree > 1:
+            assert splits is not None
+            draft_splits = _scale_splits_by_draft(splits, batch.num_draft_seqs)
         # The host mirror has to match ``decode_offsets``, which a skipping
         # step shrinks to ``[0]``. Each sequence in the loop has one query row,
         # so the mirror is just ``0..len(decode_offsets)``, built on the host
@@ -1095,8 +1136,9 @@ class SequentialDriver(
                     device=DeviceRef.CPU(),
                     dtype=DType.uint32,
                 ),
+                data_parallel_splits=draft_splits,
             )
-            if batch.distributed is not None
+            if batch.distributed is not None and draft_splits is not None
             else None
         )
 
@@ -1140,18 +1182,39 @@ class SequentialDriver(
             next_draft_tokens = ops.gather(
                 next_draft_tokens, slot_ids, axis=0
             ).rebind([rows])
-            # The selection arrives on the first device, so it is broadcast
-            # once and every device gathers from its own copy.
-            slot_ids_per_dev = broadcast_per_device(
-                slot_ids, batch.signal_buffers, len(self.devices)
-            )
-            carry_hidden = gather_rows_per_device(
-                carry_hidden, slot_ids_per_dev, rows, self._proposer.hidden_dim
-            )
-            if (reuse_spec := self._proposer.reuse) is not None:
-                carry_reuse = gather_rows_per_device(
-                    carry_reuse, slot_ids_per_dev, rows, reuse_spec.dim
+            reuse_spec = self._proposer.reuse
+            if self.data_parallel_degree > 1:
+                # Each device carries only its replica's rows, and the step
+                # either drafts all of them or none, so the selection is a
+                # prefix of each replica's own count.
+                assert draft_splits is not None
+                tp_degree = len(self.devices) // self.data_parallel_degree
+                carry_dims = [
+                    self._carry_dim(1, i) for i in range(len(self.devices))
+                ]
+                carry_hidden = _replica_leading_rows(
+                    carry_hidden, draft_splits, tp_degree, carry_dims
                 )
+                if reuse_spec is not None:
+                    carry_reuse = _replica_leading_rows(
+                        carry_reuse, draft_splits, tp_degree, carry_dims
+                    )
+            else:
+                # The selection arrives on the first device, so it is
+                # broadcast once and every device gathers from its own copy.
+                slot_ids_per_dev = broadcast_per_device(
+                    slot_ids, batch.signal_buffers, len(self.devices)
+                )
+                carry_hidden = gather_rows_per_device(
+                    carry_hidden,
+                    slot_ids_per_dev,
+                    rows,
+                    self._proposer.hidden_dim,
+                )
+                if reuse_spec is not None:
+                    carry_reuse = gather_rows_per_device(
+                        carry_reuse, slot_ids_per_dev, rows, reuse_spec.dim
+                    )
 
         draft_input = DraftStepInput(
             tokens=next_draft_tokens, hidden=carry_hidden, reuse=carry_reuse
@@ -1232,7 +1295,7 @@ class SequentialDriver(
                 draft_input = DraftStepInput(
                     tokens=next_draft_tokens,
                     hidden=self._slice_step_hidden(
-                        proposed.hidden, index + 1, splits
+                        proposed.hidden, index + 1, draft_splits
                     ),
                     reuse=draft_input.reuse,
                 )
@@ -1334,10 +1397,16 @@ class SequentialDriver(
         A skippable-draft graph has no name for its runtime row count, so it
         carries the count itself. The per-step names exist to let a proposer
         assert equal shapes across steps, which a single symbolic count
-        already does. ``rows`` left unset means the usual ``batch_size``.
+        already does. Under DP each device holds only its replica's rows, so
+        the per-device names stand. ``rows`` left unset means the usual
+        ``batch_size``.
         """
         names = self._proposer.carry_dim_names
-        if rows is not None and rows != Dim("batch_size"):
+        if (
+            rows is not None
+            and rows != Dim("batch_size")
+            and self.data_parallel_degree == 1
+        ):
             return rows
         if not names.prefix:
             return "batch_size"
