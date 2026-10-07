@@ -1863,19 +1863,11 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
                                                      /*isMut=*/false);
       argConvention = ArgConvention::ImmMem;
       break;
-    case CaptureConvention::kConventionMove: {
-      TypeConvention passability = ASTType(fieldType).getRegisterPassability(
-          nestedFnDecl.getLoc(), shared);
-      if (passability == TypeConvention::RegisterPassableTrivial) {
-        argType = fieldType;
-        argConvention = ArgConvention::OwnedReg;
-      } else {
-        argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
-                                                       /*isMut=*/true);
-        argConvention = ArgConvention::OwnedMem;
-      }
+    case CaptureConvention::kConventionMove:
+      argType = ASTType(fieldType).getRefForArgument(initArgName.getValue(),
+                                                     /*isMut=*/true);
+      argConvention = ArgConvention::OwnedMem;
       break;
-    }
     }
 
     initArgumentTypes.push_back(argType);
@@ -1948,9 +1940,6 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
         break;
       case ArgConvention::OwnedMem:
         argValue = MRValue(arg);
-        break;
-      case ArgConvention::OwnedReg:
-        argValue = SRValue(arg);
         break;
       default:
         llvm_unreachable("unexpected argument convention for a value capture");
