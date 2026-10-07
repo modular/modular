@@ -84,17 +84,17 @@ def _align_of[
 
 
 @fieldwise_init
-struct LayoutTensor[
+struct TileTensor[
     dtype: DType, alignment: Int = _align_of[dtype, _current_target()]()
 ](TrivialRegisterPassable):
     pass
 
 
-def outer[dtype: DType, valid: Bool](a: LayoutTensor[dtype, ...]) raises:
+def outer[dtype: DType, valid: Bool](a: TileTensor[dtype, ...]) raises:
     comptime assert valid, "need float"
 
-    def inner(buf: LayoutTensor[dtype, ...]) -> LayoutTensor[dtype]:
-        return LayoutTensor[dtype]()
+    def inner(buf: TileTensor[dtype, ...]) -> TileTensor[dtype]:
+        return TileTensor[dtype]()
 
     var x = inner(a)
 
