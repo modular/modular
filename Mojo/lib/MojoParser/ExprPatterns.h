@@ -17,8 +17,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_MOJOPARSER_PATTERNMATCHIR_H
-#define KGEN_MOJOPARSER_PATTERNMATCHIR_H
+#ifndef KGEN_MOJOPARSER_EXPRPATTERNS_H
+#define KGEN_MOJOPARSER_EXPRPATTERNS_H
 
 #include "Mojo/MojoParser/ExprDest.h"
 #include "Mojo/MojoParser/Lexer.h"
@@ -327,4 +327,4 @@ private:
 
 } // namespace M::KGEN::LIT
 
-#endif // KGEN_MOJOPARSER_PATTERNMATCHIR_H
+#endif // KGEN_MOJOPARSER_EXPRPATTERNS_H

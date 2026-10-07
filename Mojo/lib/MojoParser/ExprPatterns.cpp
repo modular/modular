@@ -16,7 +16,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PatternMatchIR.h"
+#include "ExprPatterns.h"
 
 #include "ExprNodes.h"
 #include "IREmitter.h"
@@ -1236,7 +1236,7 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
 
     ASTDecl &scope = createBindingScope(cmd.expr->getLoc());
     PatternEmitState altState{scope, rootSubject, rootPath, matchLocation,
-                              DenseMap<const PatternPath *, CValue>()};
+                              pathValues};
     SmallVector<PatternBoundName, 4> caseBindings;
     if (failed(altState.emitCommands(builder, alt, caseBindings)))
       return failure();

@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ExprNodes.h"
+#include "ExprPatterns.h"
 #include "IREmitter.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/Constraints.h"
@@ -24,7 +25,6 @@
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParserBase.h"
-#include "PatternMatchIR.h"
 #include "Support/Compiler/OperationUtils.h"
 
 #include "Mojo/HLCFDialect/HLCFOps.h"
