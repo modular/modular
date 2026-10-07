@@ -14,3 +14,8 @@ mojo_cabi_test(
     name = "abi_linux",
     platforms = ["linux"],
 )
+
+mojo_cabi_test(
+    name = "abi_macos",
+    platforms = ["macos"],
+)
