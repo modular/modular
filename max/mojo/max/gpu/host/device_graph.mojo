@@ -238,12 +238,12 @@ struct DeviceGraphMemoryPool(Equatable, ImplicitlyCopyable, Writable):
 struct StableAddr(TrivialRegisterPassable):
     """Identifies a stable address slot.
 
-    A slot is a graph-lifetime location in device memory holding one device
-    data pointer. The slot's own address never changes, so a recorded graph
-    may bake it in; its contents are rewritten by
-    [`DeviceGraphBuilder.place_stable()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#place_stable)
-    before each replay. A view over a slot must therefore read the data
-    pointer when it is used rather than when it is constructed; see
+    A slot is a graph-lifetime location in device memory holding one device data
+    pointer. The slot's own address never changes, so a recorded graph may bake
+    it in; its contents are the value the graph most recently replayed through
+    `DeviceGraph.replay_collective()` published with
+    `DeviceGraphBuilder.place_stable()`. A view over a slot must therefore read
+    the data pointer when it is used rather than when it is constructed; see
     `StableTensor` in the `extensibility` package.
 
     Both pointer layers are device addresses. The slot lives in device memory
@@ -253,16 +253,6 @@ struct StableAddr(TrivialRegisterPassable):
 
     var ptr: Pointer[Pointer[NoneType, MutUntrackedOrigin], MutUntrackedOrigin]
     """Device address of the slot; the slot holds the device data pointer."""
-
-
-@doc_hidden
-@fieldwise_init
-struct _StablePlacement(TrivialRegisterPassable):
-    """A `place_stable` call recorded on a builder: the slot published into and
-    the device data pointer to store there at replay."""
-
-    var index: Int
-    var source: Pointer[NoneType, MutUntrackedOrigin]
 
 
 struct DeviceGraphCache(Movable):
@@ -690,7 +680,19 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
     def replay_collective[
         N: Int
     ](graphs: Array[DeviceGraph, N], ctxs: Array[DeviceContext, N],) raises:
-        """Replays the graphs of a collective.
+        """Replays the graphs of a collective, publishing their stable
+        addresses first.
+
+        Every graph's `DeviceGraphBuilder.place_stable()` values are written
+        into their slots, each device's stream is made to wait on every other
+        device's writes, and then every graph is replayed. The waits are
+        device-side events rather than host synchronization, so the publishes
+        overlap with each other. The call returns only after every context
+        has finished its replay, unlike `replay()`, which is asynchronous.
+
+        This mirrors the MGP `mgp_device_graph_collective_execute` primitive
+        implemented in C++, which host-synchronizes between the publishes and
+        the replays instead.
 
         Parameters:
             N: Number of graphs in the collective.
@@ -706,10 +708,44 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
             synchronizing a context fails.
         """
         for graph in graphs:
+            graph._patch_stable_addresses()
+
+        # Each device must wait for all other devices to complete the
+        # address patching process.
+        for i in range(N):
+            for j in range(N):
+                if i != j:
+                    ctxs[i].enqueue_wait_for(ctxs[j])
+
+        for graph in graphs:
             graph.replay()
 
         for ctx in ctxs:
             ctx.synchronize()
+
+    def _patch_stable_addresses(self) raises:
+        """Enqueues the writes that publish this graph's
+        [`DeviceGraphBuilder.place_stable()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#place_stable)
+        values into their stable address slots.
+
+        The writes are asynchronous on this graph's device context. Because a
+        graph on another device may read a slot as soon as it launches, call
+        this for every graph of a collective and synchronize the contexts that
+        published before replaying any of them. A graph that publishes nothing
+        does nothing here.
+
+        Raises:
+            If a slot write cannot be enqueued.
+        """
+        # const char *AsyncRT_DeviceGraph_patchStableAddresses(
+        #     DeviceGraph *graph)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceGraph_patchStableAddresses",
+                _CString[],
+                _DeviceGraphPtr[mut=True],
+            ](self._handle)
+        )
 
     @staticmethod
     def create_collective[
@@ -731,14 +767,14 @@ struct DeviceGraph(ImplicitlyCopyable, Writable):
         On a hit the cached graph is returned and `build_for[i]` is never
         called.
 
-        The graphs exchange values through stable address slots, which the
-        cache owns and every variant of the collective shares (see
-        [`DeviceGraphCache.get_or_create_stable_slots()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphCache/#get_or_create_stable_slots)).
-        The slots are installed on each builder before `build_for[i]` runs, so
-        the callback may reach them with
-        [`DeviceGraphBuilder.get_stable()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#get_stable)
-        and
-        [`DeviceGraphBuilder.place_stable()`](/api/mojo/max/gpu/host/device_graph/DeviceGraphBuilder/#place_stable).
+        The graphs exchange values through stable address slots, which the cache
+        owns and every variant of the collective shares (see
+        `DeviceGraphCache.get_or_create_stable_slots()`). The slots are
+        installed on each builder before `build_for[i]` runs, so the callback
+        may reach them with `DeviceGraphBuilder.get_stable()` and
+        `DeviceGraphBuilder.place_stable()`. Replay the returned graphs with
+        `DeviceGraph.replay_collective()`, which publishes every slot's value
+        and orders the publishes ahead of every graph's launch.
 
         Parameters:
             N: Number of device contexts, and the resulting graph count.
@@ -1137,9 +1173,6 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
     """The stable address slots this graph may reference by index; installed
     by `DeviceGraph.create_collective()` before the build callback runs."""
 
-    var _placements: List[_StablePlacement]
-    """The `place_stable` calls recorded on this builder, in order."""
-
     var _recording_ctx: DeviceContext
     """The one recording context this builder hands out. The emitted kernel
     wrappers request a context per kernel, but builds are sequential and only
@@ -1157,7 +1190,6 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         self._implicit_deps = []
         self._region_floor = None
         self._stable = []
-        self._placements = []
 
         # The sentinel seed is never read: `recording_context()` reseats the
         # chain root before every hand-out.
@@ -2469,34 +2501,32 @@ struct DeviceGraphBuilder[arena_origin: ImmOrigin](Movable):
         """Records that this graph publishes `source` into stable address slot
         `index`.
 
-        The slot lives in device memory, so the publish is a device write
-        recorded as a node of this graph: each replay stores `source` into the
-        slot before the nodes that read it run, on this device or another.
-        Inside a device graph `source` is graph-stable (an `add_input` twin or
-        a pool allocation), so the stored value is fixed once recorded.
+        The publish is not a node of the graph. It is a device write the
+        instantiated graph issues when the collective is replayed through
+        `DeviceGraph.replay_collective()`, which orders every publish ahead of
+        every graph's launch; a graph on another device may read the slot as
+        soon as it launches. Inside a device graph `source` is graph-stable
+        (an `add_input` twin or a pool allocation), so the published value is
+        fixed once recorded.
 
         Args:
             index: Position of the slot in the collective's slot table.
             source: The device data pointer to publish.
 
         Returns:
-            The slot, sequenced after the publish.
+            The slot.
 
         Raises:
             If `index` is out of range of the installed slot table.
         """
         self._check_stable_index(index)
-        # TODO(spenser): the Driver has no slot API yet, so the placement is
-        # only recorded here and replay does not write the slot. Once
-        # `DeviceGraphBuilder` grows one beside `addInput`, this becomes an
-        # `add_*`-style call that records the store node from `_placements`
-        # and joins the dependency chain.
-        self._placements.append(
-            _StablePlacement(
-                index, source.unsafe_origin_cast[MutUntrackedOrigin]()
-            )
-        )
-        return self._stable[index]
+        var slot = self._stable[index]
+        # void AsyncRT_DeviceGraphBuilder_addStableAssignment(
+        #     DeviceGraphBuilder *builder, void **stableAddress, void *ptr)
+        external_call[
+            "AsyncRT_DeviceGraphBuilder_addStableAssignment", NoneType
+        ](self._handle, slot.ptr, source)
+        return slot
 
     def _check_stable_index(self, index: Int) raises:
         if index < 0 or index >= len(self._stable):

@@ -1621,8 +1621,11 @@ def test_create_collective_stable_slots(ctx: DeviceContext) raises:
         " and across rebuilds with the same identity."
     )
     comptime length = 64
+
+    # The buffers which will be placed into the stable slots.
     var buf0 = ctx.enqueue_create_buffer[.float32](length)
     var buf1 = ctx.enqueue_create_buffer[.float32](length)
+
     var source0 = (
         buf0.unsafe_ptr()
         .unsafe_bitcast[NoneType]()
@@ -1638,13 +1641,12 @@ def test_create_collective_stable_slots(ctx: DeviceContext) raises:
     # Written through an untracked pointer so the build closures can record
     # into it while the test also reads it between collectives.
     var seen: List[Int] = [0, 0, 0, 0]
-    var seen_ptr = Pointer(to=seen).unsafe_origin_cast[MutUntrackedOrigin]()
 
-    def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {imm}:
+    def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {mut}:
         var slot0 = builder.get_stable(0)
         var slot1 = builder.get_stable(1)
-        seen_ptr[][2 * n] = Int(slot0.ptr)
-        seen_ptr[][2 * n + 1] = Int(slot1.ptr)
+        seen[2 * n] = Int(slot0.ptr)
+        seen[2 * n + 1] = Int(slot1.ptr)
 
         comptime if n == 0:
             var placed = builder.place_stable(0, source0)
@@ -1659,16 +1661,10 @@ def test_create_collective_stable_slots(ctx: DeviceContext) raises:
             _ = builder.get_stable(2)
 
     def key_for[n: Int]() {imm} -> String:
-        comptime if n == 0:
-            return "collective_stable_slots_0"
-        else:
-            return "collective_stable_slots_1"
+        return String(t"collective_stable_slots_{n}")
 
     def key_for_variant[n: Int]() {imm} -> String:
-        comptime if n == 0:
-            return "collective_stable_slots_0_variant"
-        else:
-            return "collective_stable_slots_1_variant"
+        return String(t"collective_stable_slots_{n}_variant")
 
     var cache = DeviceGraphCache()
     var ctxs: Array[DeviceContext, 2] = [ctx, ctx]
@@ -1679,9 +1675,26 @@ def test_create_collective_stable_slots(ctx: DeviceContext) raises:
         cache=Pointer(to=cache),
         stable_devices=[0, 0],
     )
-    graphs[0].replay()
-    graphs[1].replay()
-    ctx.synchronize()
+
+    # Publish into the slots and wait for the writes before any replay, as
+    # the collective execute primitive does.
+    DeviceGraph.replay_collective(graphs, ctxs)
+
+    # Each graph published its source pointer into the slot it placed.
+    def slot_contents(address: Int) raises {imm} -> Int:
+        var view = DeviceBuffer[DType.uint64](
+            ctx,
+            Pointer[Scalar[DType.uint64], MutUntrackedOrigin](
+                unsafe_from_address=address
+            ),
+            1,
+            owning=False,
+        )
+        with view.map_to_host() as host:
+            return Int(host[0])
+
+    assert_equal(slot_contents(seen[0]), Int(source0))
+    assert_equal(slot_contents(seen[1]), Int(source1))
 
     # Both regions saw the same two slots, and the slots are distinct.
     assert_not_equal(seen[0], 0)
@@ -1692,14 +1705,14 @@ def test_create_collective_stable_slots(ctx: DeviceContext) raises:
 
     # A different variant of the same collective is keyed to the same slots.
     var first = seen.copy()
-    var variants = DeviceGraph.create_collective(
+    _ = DeviceGraph.create_collective(
         ctxs,
         build_for,
         key_for_variant,
         cache=Pointer(to=cache),
         stable_devices=[0, 0],
     )
-    _ = variants
+
     assert_equal(seen[0], first[0])
     assert_equal(seen[1], first[1])
 
