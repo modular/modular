@@ -603,13 +603,18 @@ class Eagle3MHADraft(Module):
         elif self.use_tp_dp:
             # Mixed TP+DP: ``tokens`` is the full merged batch broadcast to
             # every device by ``embed_tokens``. Split it per DP replica on the
-            # replica leader devices, then broadcast each replica's slice to
-            # its TP group (the "broadcast-full-and-slice-locally" workaround,
-            # since grouped broadcast is unavailable). Mirrors
-            # ``MiniMaxM3.__call__`` (minimax_m3.py). ``fused_hs`` already
-            # arrives per-device TP-replicated from the target, so it is only
-            # rebound (not re-split) to the per-device split dim so the concat
-            # with ``h_embed`` shares a symbolic seq length.
+            # replica leader devices, then redistribute each replica's slice
+            # to its TP group. ``fused_hs`` already arrives per-device
+            # TP-replicated from the target, so it is only rebound (not
+            # re-split) to the per-device split dim so the concat with
+            # ``h_embed`` shares a symbolic seq length.
+            # TODO(MXSERV-594): the redistribution is unnecessary. Every
+            # device already holds the whole batch and the split bounds are
+            # host-side, so each can cut its own replica's range with
+            # ``split_batch_replicated(..., group_size=self.tp_degree)`` and
+            # the gather below can go, as in ``MiniMaxM3.__call__``. Costs two
+            # group barriers per draft step until this path is exercised and
+            # the equivalence can be confirmed on it.
             host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
             replica_leader_indices = [
                 r * self.tp_degree for r in range(self.dp_degree)
