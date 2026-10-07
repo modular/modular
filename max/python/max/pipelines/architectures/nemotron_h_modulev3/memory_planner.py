@@ -14,12 +14,20 @@
 
 from __future__ import annotations
 
+import math
+
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib.config import PipelineConfig
 from max.support.math import ceildiv
 
+from .layers.quantized import nvfp4_block_scale_shape
 from .model_config import LayerKind, NemotronHConfig
-from .quantization import NVFP4_GROUP_SIZE, ModuleFormat
+from .quantization import (
+    NVFP4_GROUP_SIZE,
+    ModuleFormat,
+    Parallelism,
+    linear_parallelism,
+)
 
 
 class NemotronHMemoryPlanner(PagedMemoryPlanner):
@@ -28,78 +36,87 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
     def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
         """Estimates the memory the weights occupy across all devices, in bytes.
 
-        Modules dequantized at load are larger on the device than in the
-        checkpoint files the default estimate measures. Routed experts kept in
-        NVFP4 grow only by their padding, and FP8 Mamba projections not at
-        all. Under tensor parallelism, the routed experts are padded per
-        device. Sharded weights are counted once and replicated ones once per
-        device. With more devices than KV heads, each device holds a copy of
-        its KV head.
+        Every module loads in its stored format. NVFP4 modules grow only by
+        their padding, and a shared expert run as routed experts by a global
+        scale per slice. Under tensor parallelism, the routed experts are
+        padded per device. Sharded weights are counted once and replicated
+        ones once per device. With more devices than KV heads, each device
+        holds a copy of its KV head.
         """
         size = super().estimate_weights_size(pipeline_config)
         config = self._config
         assert isinstance(config, NemotronHConfig)
         w4a4_mixers = config.w4a4_mixers()
-        fp8_mixers = config.fp8_mamba_mixers()
         for module, fmt in config.quant_scheme.quantized.items():
-            if module.partition(".experts.")[0] in w4a4_mixers:
+            if (
+                fmt is not ModuleFormat.NVFP4_WEIGHT_ONLY
+                or ".experts." in module
+                or config.runs_as_routed_experts(module)
+            ):
                 continue
-            if module.rpartition(".")[0] in fp8_mixers:
+            in_dim, out_dim = config.linear_shape(module)
+            size += _linear_bytes(config, module) - (
+                in_dim * out_dim // 2 + in_dim * out_dim // NVFP4_GROUP_SIZE + 4
+            )
+            if linear_parallelism(module) is not Parallelism.REPLICATED:
+                # Every device holds the global scale.
+                size += 4 * (len(config.devices) - 1)
+        for mixer in config.mixers(LayerKind.MOE):
+            if mixer not in w4a4_mixers:
+                size += _bf16_routed_padding_bytes(config)
                 continue
-            if module == "lm_head":
-                inner = config.vocab_size
-            elif ".experts." in module:
-                inner = config.moe_intermediate_size
-            elif ".shared_experts." in module:
-                inner = config.moe_shared_expert_intermediate_size
-            elif module.endswith(".in_proj"):
-                inner = (
-                    config.mamba_intermediate_size
-                    + config.conv_dim
-                    + config.mamba_num_heads
-                )
-            elif module.endswith(".out_proj"):
-                inner = config.mamba_intermediate_size
-            elif module.endswith((".up_proj", ".down_proj")):
-                inner = config.intermediate_size
-            else:
-                raise ValueError(f"no weight shape is known for '{module}'")
-            stored_bytes = {
-                # Packed E2M1 plus one E4M3 block scale per 16 elements.
-                ModuleFormat.NVFP4_WEIGHT_ONLY: 0.5 + 1 / 16,
-                ModuleFormat.FP8_STATIC_TENSOR: 1.0,
-            }[fmt]
-            # Dequantized to two-byte BF16.
-            size += int(inner * config.hidden_size * (2 - stored_bytes))
-        bf16_mixers = config.mixers(LayerKind.MOE) - w4a4_mixers
-        size += len(bf16_mixers) * _bf16_routed_padding_bytes(config)
-        size += len(w4a4_mixers) * _nvfp4_routed_padding_bytes(config)
-        return (
+            slices = config.shared_expert_slices(mixer)
+            experts = config.num_experts + slices
+            size += experts * _nvfp4_expert_padding_bytes(config)
+            if slices:
+                # One global scale per slice instead of one per projection.
+                size += 8 * (slices - 1)
+        return int(
             size
             + _replicated_bytes(config) * (len(config.devices) - 1)
             + _repeated_kv_bytes(config)
         )
 
 
+def _linear_bytes(config: NemotronHConfig, module: str) -> int:
+    """Returns the bytes a dense linear module loads as, on all devices."""
+    in_dim, out_dim = config.linear_shape(module)
+    match config.quant_scheme.format_of(module):
+        case ModuleFormat.BF16:
+            return 2 * in_dim * out_dim
+        case ModuleFormat.FP8_STATIC_TENSOR:
+            # The scales are on the host.
+            return in_dim * out_dim
+    block_scale = nvfp4_block_scale_shape(
+        out_dim, in_dim, linear_parallelism(module), len(config.devices)
+    )
+    return in_dim * out_dim // 2 + math.prod(block_scale) + 4
+
+
 def _replicated_bytes(config: NemotronHConfig) -> int:
     """Returns the bytes of the weights every device holds whole.
 
     Those are the embedding, the LM head, the block norms and the final norm,
-    the MoE routers, the W4A4 experts' global scales and the MLP mixers.
-    Everything but the float32 routers and global scales loads as BF16.
+    the MoE routers, the W4A4 experts' global scales and the MLP mixers. The
+    LM head and MLP mixers load in their stored format, the routers and
+    global scales in float32 and the rest in BF16.
     """
     hidden = config.hidden_size
-    # The embedding, the LM head, every block's norm and the final norm.
-    elements = (2 * config.vocab_size + len(config.layer_kinds) + 1) * hidden
-    # One global scale per expert, in both projections.
-    float32_bytes = 8 * config.num_experts * len(config.w4a4_mixers())
-    for kind in config.layer_kinds:
-        if kind is LayerKind.MOE:
-            # The router weight and its score bias.
-            float32_bytes += 4 * config.num_experts * (hidden + 1)
-        elif kind is LayerKind.MLP:
-            elements += 2 * config.intermediate_size * hidden
-    return 2 * elements + float32_bytes
+    # The embedding, every block's norm and the final norm.
+    size = 2 * (config.vocab_size + len(config.layer_kinds) + 1) * hidden
+    size += _linear_bytes(config, "lm_head")
+    for mixer in config.mixers(LayerKind.MLP):
+        size += _linear_bytes(config, f"{mixer}.up_proj")
+        size += _linear_bytes(config, f"{mixer}.down_proj")
+    w4a4_mixers = config.w4a4_mixers()
+    for mixer in config.mixers(LayerKind.MOE):
+        # The router weight and its score bias.
+        size += 4 * config.num_experts * (hidden + 1)
+        if mixer in w4a4_mixers:
+            # One global scale per stacked expert, in both projections.
+            experts = config.num_experts + config.shared_expert_slices(mixer)
+            size += 8 * experts
+    return int(size)
 
 
 def _repeated_kv_bytes(config: NemotronHConfig) -> int:
@@ -127,8 +144,9 @@ def _bf16_routed_padding_bytes(config: NemotronHConfig) -> int:
     )
 
 
-def _nvfp4_routed_padding_bytes(config: NemotronHConfig) -> int:
-    """Returns the bytes one mixer's NVFP4 routed experts are padded by.
+def _nvfp4_expert_padding_bytes(config: NemotronHConfig) -> int:
+    """Returns the bytes one NVFP4 expert, routed or shared slice, is padded
+    by on the devices.
 
     Each device's share of the channels of both projections is padded, and
     the interleaved scales pad their rows to whole granules of 128.
@@ -145,4 +163,4 @@ def _nvfp4_routed_padding_bytes(config: NemotronHConfig) -> int:
         ceildiv(hidden, 128) * 128 * n * padded // group
     )
     stored = 2 * (inner * hidden // 2 + inner * hidden // group)
-    return config.num_experts * (up + down - stored)
+    return up + down - stored

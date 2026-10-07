@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Checks the routed experts against a dequantized reference: the W4A4
-matmul, and the devices' shares of the experts' channels summed."""
+"""Checks the routed-expert matmuls: W4A4 against a dequantized reference,
+and each device's share of the experts against all of them."""
 
 from __future__ import annotations
 
@@ -19,20 +19,20 @@ import numpy as np
 import numpy.typing as npt
 import pytest
 import torch
-from max.driver import Accelerator, Buffer
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, Graph, Shape, TensorType, ops
+from max.graph import DeviceRef, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
 from max.nn.kernels import moe_create_indices
 from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
-    _nvfp4_expert_matmul,
     _routed_experts,
+    _with_shared_slices_value,
 )
-from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
-    ModuleFormat,
+from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
+    interleave_expert_scales,
+    nvfp4_grouped_matmul,
+    nvfp4_matmul,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
     interleave_nvfp4_scales,
@@ -48,6 +48,9 @@ from max.pipelines.weights.fp4_quantization import (
 NUM_EXPERTS = 128
 TOP_K = 6
 
+# Packed E2M1 codes and their E4M3 block scales.
+_Quantized = tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8]]
+
 
 def _dequantize(
     codes: npt.NDArray[np.uint8],
@@ -59,6 +62,33 @@ def _dequantize(
     values = values.reshape(codes.shape[0], -1, 16)
     values = values * e4m3fn_lut()[scales][..., None] * global_scale
     return values.reshape(codes.shape[0], -1).astype(np.float32)
+
+
+@pytest.mark.parametrize("rows", [128, 1856])
+def test_host_interleave_matches_the_numpy_interleave(rows: int) -> None:
+    """The model interleaves the checkpoint's scales on the host at init and
+    copies them to the device, byte for byte as
+    :func:`interleave_nvfp4_scales` lays out one expert."""
+    experts, cols = 3, 168
+    rng = np.random.default_rng(0)
+    scales = rng.integers(1, 256, (experts, rows, cols), dtype=np.uint8)
+    device = Accelerator()
+    with Graph(
+        "interleave",
+        input_types=[
+            TensorType(DType.float8_e4m3fn, scales.shape, DeviceRef.CPU()),
+        ],
+    ) as graph:
+        (graw,) = (v.tensor for v in graph.inputs)
+        graph.output(interleave_expert_scales(graw).to(DeviceRef.GPU()))
+    model = InferenceSession(devices=[CPU(), device]).load(graph)
+    (out,) = model.execute(
+        Buffer.from_numpy(scales).view(DType.float8_e4m3fn, scales.shape),
+    )
+    assert isinstance(out, Buffer)
+    got = torch.from_dlpack(out.view(DType.uint8)).cpu().numpy()
+    want = np.stack([interleave_nvfp4_scales(s) for s in scales])
+    np.testing.assert_array_equal(got, want)
 
 
 @pytest.mark.parametrize(
@@ -97,22 +127,20 @@ def test_w4a4_matches_dequantized_reference(
             TensorType(DType.bfloat16, ["tokens", k], dev),
             TensorType(DType.int32, ["tokens", TOP_K], dev),
             TensorType(DType.uint8, [NUM_EXPERTS, n, k // 2], dev),
+            # The checkpoint's scales, which the model keeps on the host.
             TensorType(
-                DType.float8_e4m3fn,
-                [NUM_EXPERTS, (n + 127) // 128, k // 64, 32, 4, 4],
-                dev,
+                DType.float8_e4m3fn, [NUM_EXPERTS, n, k // 16], DeviceRef.CPU()
             ),
             TensorType(DType.float32, [NUM_EXPERTS], dev),
         ],
     ) as graph:
-        gx, gexperts, gweight, gblock, gglobal = (
-            v.tensor for v in graph.inputs
-        )
+        gx, gexperts, gweight, graw, gglobal = (v.tensor for v in graph.inputs)
+        gblock = interleave_expert_scales(graw).to(gweight.device)
         order, starts, restore, expert_ids, _, offsets = moe_create_indices(
             ops.reshape(gexperts, [-1]), NUM_EXPERTS, needs_scales_offset=True
         )
         rows = ops.cast(order // TOP_K, DType.int32)
-        out = _nvfp4_expert_matmul(
+        out = nvfp4_grouped_matmul(
             gx if gather_in_kernel else ops.gather(gx, rows, axis=0),
             gweight,
             gblock,
@@ -124,15 +152,12 @@ def test_w4a4_matches_dequantized_reference(
         )
         graph.output(ops.gather(out, restore, axis=0))
 
-    model = InferenceSession(devices=[device]).load(graph)
-    block = np.stack([interleave_nvfp4_scales(s) for s in scales])
+    model = InferenceSession(devices=[CPU(), device]).load(graph)
     (result,) = model.execute(
         Buffer.from_dlpack(x_bf16).to(device),
         Buffer.from_numpy(experts).to(device),
         Buffer.from_numpy(codes).to(device),
-        Buffer.from_numpy(block)
-        .view(DType.float8_e4m3fn, block.shape)
-        .to(device),
+        Buffer.from_numpy(scales).view(DType.float8_e4m3fn, scales.shape),
         Buffer.from_numpy(global_scales).to(device),
     )
     assert isinstance(result, Buffer)
@@ -170,19 +195,106 @@ def _weight(array: npt.NDArray[np.generic], dtype: DType) -> WeightData:
     )
 
 
-def _shares(weight: WeightData, axis: int | None, n: int) -> list[Buffer]:
-    """Splits a stacked weight evenly on ``axis``, as the loader does."""
+def _array(weight: WeightData) -> npt.NDArray[np.generic]:
     host = {DType.bfloat16: DType.uint16, DType.float8_e4m3fn: DType.uint8}
-    array = np.from_dlpack(
-        weight.to_buffer().view(host.get(weight.dtype, weight.dtype))
+    buffer = weight.to_buffer()
+    if weight.dtype in host:
+        buffer = buffer.view(host[weight.dtype])
+    return np.from_dlpack(buffer)
+
+
+def _buffer(array: npt.NDArray[np.generic], dtype: DType) -> Buffer:
+    return Buffer.from_numpy(np.ascontiguousarray(array)).view(
+        dtype, array.shape
     )
-    parts = [array] * n if axis is None else np.split(array, n, axis=axis)
-    return [
-        Buffer.from_numpy(np.ascontiguousarray(part)).view(
-            weight.dtype, part.shape
+
+
+def _device_params(
+    stacked: dict[str, WeightData], prefix: str, w4a4: bool, n: int, d: int
+) -> list[Buffer]:
+    """Returns device ``d``'s share of a stacked routed projection, laid out
+    as the model hands it to the matmul: the weight, then for W4A4 the
+    interleaved block scales and the whole global scales.
+
+    The channels split on axis 1 for ``up`` and axis 2 for ``down``.
+    """
+    axis = 1 if prefix.endswith(".up") else 2
+    weight = stacked[f"{prefix}_weight"]
+    share = np.split(_array(weight), n, axis=axis)[d]
+    params = [_buffer(share, weight.dtype)]
+    if w4a4:
+        scales = np.split(
+            _array(stacked[f"{prefix}_block_scale"]), n, axis=axis
         )
-        for part in parts
+        block = np.stack(
+            [
+                interleave_nvfp4_scales(np.ascontiguousarray(s))
+                for s in scales[d]
+            ]
+        )
+        params.append(_buffer(block, DType.float8_e4m3fn))
+        params.append(
+            _buffer(_array(stacked[f"{prefix}_scale"]), DType.float32)
+        )
+    return params
+
+
+def _nvfp4_checkpoint(
+    rng: np.random.Generator,
+    module: str,
+    rows: int,
+    cols: int,
+    checkpoint: dict[str, WeightData],
+) -> npt.NDArray[np.float32]:
+    """Adds a random NVFP4 module to ``checkpoint`` and returns it dense."""
+    codes = rng.integers(0, 256, (rows, cols // 2), dtype=np.uint8)
+    scales = rng.integers(0x28, 0x48, (rows, cols // 16), dtype=np.uint8)
+    global_scale = np.float32(rng.uniform(0.005, 0.02))
+    checkpoint[f"{module}.weight"] = _weight(codes, DType.uint8)
+    checkpoint[f"{module}.weight_scale"] = _weight(scales, DType.float8_e4m3fn)
+    checkpoint[f"{module}.weight_scale_2"] = _weight(
+        np.array(global_scale), DType.float32
+    )
+    return _dequantize(codes, scales, float(global_scale))
+
+
+def _run_routed(
+    x: torch.Tensor,
+    ids: npt.NDArray[np.int32],
+    weights: npt.NDArray[np.float32],
+    shares: list[tuple[list[Buffer], list[Buffer]]],
+) -> list[npt.NDArray[np.float32]]:
+    """Runs :func:`_routed_experts` once per device share, on one GPU."""
+    device = Accelerator()
+    dev = DeviceRef.GPU()
+    inputs = [
+        Buffer.from_dlpack(x),
+        Buffer.from_numpy(ids),
+        Buffer.from_numpy(weights),
     ]
+    sizes = []
+    for up, down in shares:
+        inputs += up + down
+        sizes.append((len(up), len(down)))
+    with Graph(
+        "routed_shares",
+        input_types=[TensorType(b.dtype, b.shape, dev) for b in inputs],
+    ) as graph:
+        gx, gids, gweights, *params = (v.tensor for v in graph.inputs)
+        outputs: list[TensorValue] = []
+        for n_up, n_down in sizes:
+            gup, params = params[:n_up], params[n_up:]
+            gdown, params = params[:n_down], params[n_down:]
+            outputs.append(
+                ops.cast(
+                    _routed_experts(gx, gids, gweights, gup, gdown),
+                    DType.float32,
+                )
+            )
+        graph.output(*outputs)
+    model = InferenceSession(devices=[device]).load(graph)
+    results = model.execute(*(b.to(device) for b in inputs))
+    return [torch.from_dlpack(r).cpu().numpy() for r in results]
 
 
 @pytest.mark.parametrize("w4a4", [True, False])
@@ -200,26 +312,14 @@ def test_device_shares_of_the_routed_experts_sum_to_the_whole(
     shapes = {"up_proj": (inner, hidden), "down_proj": (hidden, inner)}
     rng = np.random.default_rng(0)
     checkpoint: dict[str, WeightData] = {}
-    modules: dict[str, ModuleFormat] = {}
     dense: dict[tuple[int, str], npt.NDArray[np.float32]] = {}
     for e in range(experts):
         for proj, (rows, cols) in shapes.items():
             module = f"{mixer}.experts.{e}.{proj}"
             if w4a4:
-                codes = rng.integers(0, 256, (rows, cols // 2), dtype=np.uint8)
-                scales = rng.integers(
-                    0x28, 0x48, (rows, cols // 16), dtype=np.uint8
+                dense[e, proj] = _nvfp4_checkpoint(
+                    rng, module, rows, cols, checkpoint
                 )
-                global_scale = np.float32(rng.uniform(0.005, 0.02))
-                checkpoint[f"{module}.weight"] = _weight(codes, DType.uint8)
-                checkpoint[f"{module}.weight_scale"] = _weight(
-                    scales, DType.float8_e4m3fn
-                )
-                checkpoint[f"{module}.weight_scale_2"] = _weight(
-                    np.array(global_scale), DType.float32
-                )
-                modules[module] = ModuleFormat.NVFP4_WEIGHT_ONLY
-                dense[e, proj] = _dequantize(codes, scales, float(global_scale))
             else:
                 values = torch.from_numpy(
                     rng.standard_normal((rows, cols)) * 0.05
@@ -229,33 +329,14 @@ def test_device_shares_of_the_routed_experts_sum_to_the_whole(
                     DType.bfloat16,
                 )
                 dense[e, proj] = values.float().numpy()
-    stack = stack_nvfp4_experts if w4a4 else stack_bf16_experts
-    whole, _ = stack(checkpoint, modules, {mixer})
-    split, _ = stack(checkpoint, modules, {mixer}, num_devices=n)
-
-    # The block scales split with the rows of up and the columns of down;
-    # the global scales are whole on every device.
-    params: dict[str, dict[str, int | None]] = {
-        "up": {"weight": 1},
-        "down": {"weight": 2},
-    }
     if w4a4:
-        params["up"] |= {"block_scale": 1, "scale": None}
-        params["down"] |= {"block_scale": 2, "scale": None}
-    device = Accelerator()
-
-    def on_device(buffer: Buffer) -> Tensor:
-        return Tensor(storage=buffer.to(device))
-
-    def projection(
-        stacked: dict[str, WeightData], proj: str, shares: int, d: int
-    ) -> list[Tensor]:
-        return [
-            on_device(
-                _shares(stacked[f"{mixer}.{proj}_{name}"], axis, shares)[d]
-            )
-            for name, axis in params[proj].items()
-        ]
+        whole = stack_nvfp4_experts(checkpoint, experts, {mixer: 0})
+        split = stack_nvfp4_experts(
+            checkpoint, experts, {mixer: 0}, num_devices=n
+        )
+    else:
+        whole = stack_bf16_experts(checkpoint, experts, {mixer})
+        split = stack_bf16_experts(checkpoint, experts, {mixer}, num_devices=n)
 
     ids = np.stack(
         [
@@ -267,25 +348,15 @@ def test_device_shares_of_the_routed_experts_sum_to_the_whole(
     x = torch.from_numpy(rng.standard_normal((tokens, hidden))).to(
         torch.bfloat16
     )
-    with F.lazy():
-        args = (
-            on_device(Buffer.from_dlpack(x)),
-            on_device(Buffer.from_numpy(ids)),
-            on_device(Buffer.from_numpy(weights)),
+    shares = [
+        (
+            _device_params(stacked, f"{mixer}.up", w4a4, count, d),
+            _device_params(stacked, f"{mixer}.down", w4a4, count, d),
         )
-        outputs = [
-            F.cast(
-                _routed_experts(
-                    *args,
-                    projection(stacked, "up", shares, d),
-                    projection(stacked, "down", shares, d),
-                ),
-                DType.float32,
-            )
-            for stacked, shares in ((whole, 1), (split, n))
-            for d in range(shares)
-        ]
-    got_whole, *got_shares = (o.to_numpy() for o in outputs)
+        for stacked, count in ((whole, 1), (split, n))
+        for d in range(count)
+    ]
+    got_whole, *got_shares = _run_routed(x, ids, weights, shares)
 
     x_ref = x.float().numpy()
     want = np.zeros((tokens, hidden), dtype=np.float32)
@@ -306,3 +377,216 @@ def test_device_shares_of_the_routed_experts_sum_to_the_whole(
         assert err.max() < tolerance, (
             f"{name}: worst token relative error {err.max():.3f}"
         )
+
+
+@pytest.mark.parametrize(
+    "n, k",
+    [
+        # The LM head: a vocabulary's worth of whole granules.
+        (2048, 2688),
+        # One device's share of the shared-expert up projection at TP=2;
+        # N is not a whole 128-row scale granule.
+        (1856, 2688),
+        # One device's share of the shared-expert down projection at TP=2.
+        (2688, 1856),
+    ],
+)
+@pytest.mark.parametrize("tokens", [1, 64, 700])
+def test_dense_w4a4_matches_dequantized_reference(
+    n: int, k: int, tokens: int
+) -> None:
+    rng = np.random.default_rng(0)
+    codes = rng.integers(0, 256, (n, k // 2), dtype=np.uint8)
+    scales = rng.integers(0x28, 0x48, (n, k // 16), dtype=np.uint8)
+    global_scale = np.array([0.01], dtype=np.float32)
+    x = rng.standard_normal((tokens, k)).astype(np.float32)
+    x *= np.logspace(-2, 2, tokens, dtype=np.float32)[:, None]
+    x[:, rng.integers(0, k, 4)] *= 20
+    x_bf16 = torch.from_numpy(x).to(torch.bfloat16)
+
+    device = Accelerator()
+    dev = DeviceRef.GPU()
+    block = interleave_nvfp4_scales(scales)[None]
+    with Graph(
+        "w4a4_dense",
+        input_types=[
+            TensorType(DType.bfloat16, ["tokens", k], dev),
+            TensorType(DType.uint8, [n, k // 2], dev),
+            TensorType(DType.float8_e4m3fn, list(block.shape), dev),
+            TensorType(DType.float32, [1], dev),
+        ],
+    ) as graph:
+        graph.output(nvfp4_matmul(*(v.tensor for v in graph.inputs)))
+
+    model = InferenceSession(devices=[device]).load(graph)
+    (result,) = model.execute(
+        Buffer.from_dlpack(x_bf16).to(device),
+        Buffer.from_numpy(codes).to(device),
+        Buffer.from_numpy(block)
+        .view(DType.float8_e4m3fn, block.shape)
+        .to(device),
+        Buffer.from_numpy(global_scale).to(device),
+    )
+    assert isinstance(result, Buffer)
+    got = torch.from_dlpack(result).float().cpu().numpy()
+
+    want = x_bf16.float().numpy() @ _dequantize(codes, scales, 0.01).T
+    err = np.linalg.norm(got - want, axis=-1) / np.linalg.norm(want, axis=-1)
+    assert err.max() < 0.15, f"worst row relative error {err.max():.3f}"
+    if n % 128:
+        tail = slice(n // 128 * 128, n)
+        tail_err = np.linalg.norm(got[:, tail] - want[:, tail]) / (
+            np.linalg.norm(want[:, tail])
+        )
+        assert tail_err < 0.15, f"padded-granule error {tail_err:.3f}"
+
+
+@pytest.mark.parametrize("num_devices", [1, 2])
+def test_shared_expert_slices_sum_to_the_shared_expert(
+    num_devices: int,
+) -> None:
+    """The shared expert, split into expert-wide slices that every token
+    picks at weight 1, adds the shared MLP's output to the routed sum.
+
+    At two devices each slice splits by channel like a routed expert, 96 of
+    its 192 channels per device padded to 128, and the devices' partial sums
+    add up to the whole.
+    """
+    experts, slices, top_k, hidden, inner, tokens = 8, 2, 2, 256, 192, 37
+    mixer = "backbone.layers.1.mixer"
+    rng = np.random.default_rng(0)
+    checkpoint: dict[str, WeightData] = {}
+    routed: dict[tuple[int, str], npt.NDArray[np.float32]] = {}
+    for e in range(experts):
+        routed[e, "up"] = _nvfp4_checkpoint(
+            rng, f"{mixer}.experts.{e}.up_proj", inner, hidden, checkpoint
+        )
+        routed[e, "down"] = _nvfp4_checkpoint(
+            rng, f"{mixer}.experts.{e}.down_proj", hidden, inner, checkpoint
+        )
+    shared = f"{mixer}.shared_experts"
+    shared_up = _nvfp4_checkpoint(
+        rng, f"{shared}.up_proj", slices * inner, hidden, checkpoint
+    )
+    shared_down = _nvfp4_checkpoint(
+        rng, f"{shared}.down_proj", hidden, slices * inner, checkpoint
+    )
+    fused = stack_nvfp4_experts(
+        checkpoint, experts, {mixer: slices}, num_devices=num_devices
+    )
+    separate = stack_nvfp4_experts(checkpoint, experts, {mixer: 0})
+
+    ids = np.stack(
+        [rng.choice(experts, top_k, replace=False) for _ in range(tokens)]
+    ).astype(np.int32)
+    weights = rng.uniform(0.1, 1.0, (tokens, top_k)).astype(np.float32)
+    x_bf16 = torch.from_numpy(
+        rng.standard_normal((tokens, hidden)).astype(np.float32)
+    ).to(torch.bfloat16)
+
+    def dense_params(module: str) -> list[Buffer]:
+        codes = _array(checkpoint[f"{module}.weight"])
+        scales = _array(checkpoint[f"{module}.weight_scale"])
+        block = interleave_nvfp4_scales(scales.view(np.uint8))[None]
+        return [
+            _buffer(codes, DType.uint8),
+            _buffer(block, DType.float8_e4m3fn),
+            _buffer(
+                _array(checkpoint[f"{module}.weight_scale_2"]).reshape(1),
+                DType.float32,
+            ),
+        ]
+
+    fused_shares = [
+        (
+            _device_params(fused, f"{mixer}.up", True, num_devices, d),
+            _device_params(fused, f"{mixer}.down", True, num_devices, d),
+        )
+        for d in range(num_devices)
+    ]
+    routed_only = (
+        _device_params(separate, f"{mixer}.up", True, 1, 0),
+        _device_params(separate, f"{mixer}.down", True, 1, 0),
+    )
+    shared_params = dense_params(f"{shared}.up_proj") + dense_params(
+        f"{shared}.down_proj"
+    )
+
+    device = Accelerator()
+    dev = DeviceRef.GPU()
+    inputs = [
+        Buffer.from_dlpack(x_bf16),
+        Buffer.from_numpy(ids),
+        Buffer.from_numpy(weights),
+        *routed_only[0],
+        *routed_only[1],
+        *shared_params,
+    ]
+    for up, down in fused_shares:
+        inputs += up + down
+    with Graph(
+        "shared_slices",
+        input_types=[TensorType(b.dtype, b.shape, dev) for b in inputs],
+    ) as graph:
+        gx, gids, gweights, *params = (v.tensor for v in graph.inputs)
+        gup, gdown, gshared = params[:3], params[3:6], params[6:12]
+        params = params[12:]
+        slice_ids, slice_weights = _with_shared_slices_value(
+            gids, gweights, experts, slices
+        )
+        fused_outs = []
+        for _ in range(num_devices):
+            fup, fdown, params = params[:3], params[3:6], params[6:]
+            fused_outs.append(
+                ops.cast(
+                    _routed_experts(gx, slice_ids, slice_weights, fup, fdown),
+                    DType.float32,
+                )
+            )
+        hidden_act = ops.relu(nvfp4_matmul(gx, *gshared[:3]))
+        separate_out = _routed_experts(
+            gx, gids, gweights, gup, gdown
+        ) + nvfp4_matmul(hidden_act * hidden_act, *gshared[3:])
+        graph.output(ops.cast(separate_out, DType.float32), *fused_outs)
+    model = InferenceSession(devices=[device]).load(graph)
+    results = model.execute(*(b.to(device) for b in inputs))
+    separate_out, *fused_parts = (
+        torch.from_dlpack(r).cpu().numpy() for r in results
+    )
+    fused_out = sum(fused_parts)
+
+    def mlp(
+        h: npt.NDArray[np.float32],
+        up: npt.NDArray[np.float32],
+        down: npt.NDArray[np.float32],
+    ) -> npt.NDArray[np.float32]:
+        return (np.maximum(h @ up.T, 0) ** 2) @ down.T
+
+    x_ref = x_bf16.float().numpy()
+    want = mlp(x_ref, shared_up, shared_down)
+    for t in range(tokens):
+        for j in range(top_k):
+            e = ids[t, j]
+            want[t] += (
+                weights[t, j]
+                * mlp(x_ref[t : t + 1], routed[e, "up"], routed[e, "down"])[0]
+            )
+
+    def error(
+        got: npt.NDArray[np.float32], ref: npt.NDArray[np.float32]
+    ) -> npt.NDArray[np.float32]:
+        return np.linalg.norm(got - ref, axis=-1) / np.linalg.norm(ref, axis=-1)
+
+    assert np.isfinite(fused_out).all()
+    # The slices quantize the down projection's input with each slice's row
+    # scale instead of the whole row's, so the two round differently, by
+    # about the FP4 error of either. A wrong slice would be off by all of it.
+    apart = error(fused_out, separate_out)
+    assert np.median(apart) < 0.05, f"median apart {np.median(apart):.3f}"
+    assert apart.max() < 0.15, f"worst token apart {apart.max():.3f}"
+    # Slicing loses no accuracy against the unquantized reference.
+    fused_err = error(fused_out, want).mean()
+    separate_err = error(separate_out, want).mean()
+    assert fused_err < 1.1 * separate_err, (
+        f"fused error {fused_err:.3f} vs separate {separate_err:.3f}"
+    )

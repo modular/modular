@@ -20,7 +20,12 @@ from unittest.mock import Mock
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
+    LayerKind,
     NemotronHConfig,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
+    ModuleFormat,
+    NemotronHQuantScheme,
 )
 from max.pipelines.lib import KVCacheConfig
 from transformers import NemotronHConfig as HFNemotronHConfig
@@ -44,6 +49,44 @@ WIDE: dict[str, int] = TINY | dict(
     n_groups=8,
     n_routed_experts=8,
 )
+
+# Wide enough for NVFP4: every linear's input splits into whole 64-column
+# scale blocks across two devices, and the shared expert is two routed
+# experts wide, so it runs as two more routed experts.
+NVFP4_DIMS: dict[str, int] = WIDE | dict(
+    hidden_size=128,
+    moe_shared_expert_intermediate_size=256,
+    moe_intermediate_size=128,
+    intermediate_size=128,
+)
+
+
+def lightning_scheme(config: NemotronHConfig) -> NemotronHQuantScheme:
+    """Returns the quantization of the Nemotron-3.5-Lightning NVFP4
+    checkpoint: FP8 Mamba projections and NVFP4 experts and LM head."""
+    quantized = dict(dense_nvfp4_scheme(config).quantized)
+    for mixer in config.mixers(LayerKind.MAMBA):
+        for proj in ("in_proj", "out_proj"):
+            quantized[f"{mixer}.{proj}"] = ModuleFormat.FP8_STATIC_TENSOR
+    for mixer in config.mixers(LayerKind.MOE):
+        for proj in ("up_proj", "down_proj"):
+            for e in range(config.num_experts):
+                quantized[f"{mixer}.experts.{e}.{proj}"] = (
+                    ModuleFormat.NVFP4_WEIGHT_ONLY
+                )
+    return NemotronHQuantScheme(quantized)
+
+
+def dense_nvfp4_scheme(config: NemotronHConfig) -> NemotronHQuantScheme:
+    """Returns NVFP4 shared experts and LM head beside BF16 routed experts,
+    so the shared experts run as their own W4A4 linear layers."""
+    quantized = {"lm_head": ModuleFormat.NVFP4_WEIGHT_ONLY}
+    for mixer in config.mixers(LayerKind.MOE):
+        for proj in ("up_proj", "down_proj"):
+            quantized[f"{mixer}.shared_experts.{proj}"] = (
+                ModuleFormat.NVFP4_WEIGHT_ONLY
+            )
+    return NemotronHQuantScheme(quantized)
 
 
 def hf_config(layers: list[str], dims: Mapping[str, int]) -> HFNemotronHConfig:

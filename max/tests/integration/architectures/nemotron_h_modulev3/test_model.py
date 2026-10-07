@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import logging
 import math
 import warnings
 from collections.abc import Callable
@@ -22,7 +21,16 @@ from dataclasses import replace
 from unittest.mock import Mock
 
 import pytest
-from _tiny_config import TINY, TINY_LAYERS, WIDE, hf_config, model_config
+from _tiny_config import (
+    NVFP4_DIMS,
+    TINY,
+    TINY_LAYERS,
+    WIDE,
+    dense_nvfp4_scheme,
+    hf_config,
+    lightning_scheme,
+    model_config,
+)
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
@@ -36,6 +44,7 @@ from max.experimental.sharding import (
 )
 from max.experimental.tensor import Tensor, default_device, default_dtype
 from max.graph import DeviceRef
+from max.nn import kernels
 from max.pipelines.architectures.nemotron_h_modulev3.layers.attention import (
     NemotronHAttention,
 )
@@ -49,7 +58,6 @@ from max.pipelines.architectures.nemotron_h_modulev3.memory_planner import (
     NemotronHMemoryPlanner,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
-    LayerKind,
     NemotronHConfig,
     moe_channels_per_device,
 )
@@ -68,6 +76,9 @@ from max.pipelines.lib.interfaces.batch_processor import (
 )
 
 MIB = 1024**2
+
+
+Scheme = Callable[[NemotronHConfig], NemotronHQuantScheme]
 
 
 def _model(config: NemotronHConfig) -> NemotronH:
@@ -170,27 +181,26 @@ def _trace_on_devices(
     monkeypatch: pytest.MonkeyPatch,
     n: int,
     dims: dict[str, int] = TINY,
-    fp8_mamba: bool = False,
+    scheme: Scheme | None = None,
 ) -> tuple[list[DType], int, list[str]]:
     """Traces the tiny model at TP=``n`` on a CPU mesh.
 
     Only the allreduce of partial sums may reshard, so any other collective
     fails the trace.
 
+    Args:
+        monkeypatch: Replaces the collectives with recorders.
+        n: The number of devices.
+        dims: The tiny model's dimensions.
+        scheme: Makes the model's quantization from its config.
+
     Returns:
         The dtypes broadcast to the other devices, the allreduce count, and
         the reports of each peer copy onto the mesh.
     """
     config = model_config(TINY_LAYERS, dims, n_devices=n)
-    if fp8_mamba:
-        config.quant_scheme = NemotronHQuantScheme(
-            quantized={
-                f"{mixer}.{proj}": ModuleFormat.FP8_STATIC_TENSOR
-                for mixer in config.mixers(LayerKind.MAMBA)
-                for proj in ("in_proj", "out_proj")
-            }
-        )
-        config.fp8_mamba_projections = True
+    if scheme is not None:
+        config.quant_scheme = scheme(config)
     broadcast: list[DType] = []
     allreduces: list[Tensor] = []
     allreduce_sum: Callable[..., Tensor] = collective_ops.allreduce_sum
@@ -241,21 +251,34 @@ def test_inputs_reach_the_other_devices_by_collective(
     assert broadcast == [DType.int64, DType.uint32, *routing]
 
 
-@pytest.mark.parametrize("fp8_mamba", [False, True])
 @pytest.mark.parametrize("n", [2, 4, 8])
 def test_each_sharded_mixer_reduces_once(
-    monkeypatch: pytest.MonkeyPatch, n: int, fp8_mamba: bool
+    monkeypatch: pytest.MonkeyPatch, n: int
 ) -> None:
     """Attention, the MoE and the Mamba mixer each end in one allreduce,
     and nothing else moves activations between devices.
 
     The routed experts and the shared expert both return partial sums, which
     the residual add reduces together. The three Mamba layers share one
-    subgraph, so it is traced once. The FP8 Mamba projections keep the
-    placements of the BF16 ones.
+    subgraph, so it is traced once.
     """
+    _, allreduces, peer_copies = _trace_on_devices(monkeypatch, n, WIDE)
+    assert allreduces == 3
+    assert peer_copies == []
+
+
+@pytest.mark.parametrize("scheme", [lightning_scheme, dense_nvfp4_scheme])
+def test_quantized_mixers_reduce_once(
+    monkeypatch: pytest.MonkeyPatch, scheme: Scheme
+) -> None:
+    """The FP8 Mamba projections and the NVFP4 experts and LM head keep the
+    placements of the BF16 layers, whether the shared expert runs as routed
+    experts or as its own linear layers."""
+    # NVFP4 runs only on SM100, and the quantize op picks its scale layout
+    # from the host's GPU. The trace never runs, so it needs no GPU.
+    monkeypatch.setattr(kernels, "_is_sm10x_gpu", lambda: True)
     _, allreduces, peer_copies = _trace_on_devices(
-        monkeypatch, n, WIDE, fp8_mamba
+        monkeypatch, 2, NVFP4_DIMS, scheme
     )
     assert allreduces == 3
     assert peer_copies == []
@@ -281,9 +304,7 @@ def _with_w4a4_experts(config: NemotronHConfig) -> NemotronHConfig:
         for e in range(config.num_experts)
         for proj in ("up_proj", "down_proj")
     }
-    return replace(
-        config, w4a4_experts=True, quant_scheme=NemotronHQuantScheme(nvfp4)
-    )
+    return replace(config, quant_scheme=NemotronHQuantScheme(nvfp4))
 
 
 @pytest.mark.parametrize("w4a4", [False, True])
@@ -291,8 +312,9 @@ def test_moe_splits_each_experts_channels(w4a4: bool) -> None:
     """Each device holds its share of every routed expert's channels,
     padded to 64, and half the shared expert.
 
-    The up projection splits its rows and the down projection its columns,
-    and the W4A4 block scales split with them.
+    The up projection splits its rows and the down projection its columns.
+    The W4A4 block scales stay on the host in the same padded blocks, for
+    the graph to interleave each device's block at init.
     """
     # Hidden size 64 gives the W4A4 up projection whole scale atoms.
     config = model_config(TINY_LAYERS, TINY | dict(hidden_size=64), n_devices=2)
@@ -307,20 +329,17 @@ def test_moe_splits_each_experts_channels(w4a4: bool) -> None:
     # Four experts of 16 channels: 8 per device, padded to 64.
     if w4a4:
         assert layout(moe.up_weight) == ((4, 128, 32), (Sharded(1),))
-        assert layout(moe.up_block_scale) == (
-            (4, 2, 1, 32, 4, 4),
-            (Sharded(1),),
-        )
         assert layout(moe.down_weight) == ((4, 64, 64), (Sharded(2),))
-        assert layout(moe.down_block_scale) == (
-            (4, 1, 2, 32, 4, 4),
-            (Sharded(2),),
-        )
+        assert tuple(int(d) for d in moe.up_block_scale.shape) == (4, 128, 4)
+        assert tuple(int(d) for d in moe.down_block_scale.shape) == (4, 64, 8)
+        for scales in (moe.up_block_scale, moe.down_block_scale):
+            assert scales.device == CPU()
         for scale in (moe.up_scale, moe.down_scale):
             assert layout(scale) == ((4,), (Replicated(),))
     else:
         assert layout(moe.up_weight) == ((4, 128, 64), (Sharded(1),))
         assert layout(moe.down_weight) == ((4, 64, 128), (Sharded(2),))
+    assert moe.shared_experts is not None
     assert moe.shared_experts.up_proj.weight.placements == (Sharded(0),)
     assert moe.shared_experts.down_proj.weight.placements == (Sharded(1),)
     # Every device routes every token.
@@ -345,31 +364,152 @@ def test_mamba_shards_by_head() -> None:
     assert mamba.out_proj.weight.mapping.placements == (Sharded(1),)
 
 
-def test_fp8_mamba_projections_keep_their_checkpoint_tensors() -> None:
-    """Only a mixer with both projections in FP8 runs them in FP8."""
+def test_quantized_modules_keep_their_checkpoint_tensors() -> None:
+    """Each quantized dense module is built in its stored format, whatever
+    the format of its neighbors."""
     config = model_config(TINY_LAYERS, TINY)
-    fp8 = ModuleFormat.FP8_STATIC_TENSOR
     config.quant_scheme = NemotronHQuantScheme(
         quantized={
-            "backbone.layers.0.mixer.in_proj": fp8,
-            "backbone.layers.0.mixer.out_proj": fp8,
-            "backbone.layers.2.mixer.in_proj": fp8,
+            "backbone.layers.0.mixer.in_proj": ModuleFormat.FP8_STATIC_TENSOR,
+            "backbone.layers.0.mixer.out_proj": ModuleFormat.FP8_STATIC_TENSOR,
+            "backbone.layers.2.mixer.in_proj": ModuleFormat.FP8_STATIC_TENSOR,
         }
     )
-    config.fp8_mamba_projections = True
-    assert config.fp8_mamba_mixers() == {"backbone.layers.0.mixer"}
 
     weights = dict(_model(config).parameters)
-    for proj in ("in_proj", "out_proj"):
-        prefix = f"backbone.layers.0.mixer.{proj}"
-        assert weights[f"{prefix}.weight"].dtype == DType.float8_e4m3fn
+    for module in (
+        "backbone.layers.0.mixer.in_proj",
+        "backbone.layers.0.mixer.out_proj",
+        "backbone.layers.2.mixer.in_proj",
+    ):
+        assert weights[f"{module}.weight"].dtype == DType.float8_e4m3fn
         for scale in ("weight_scale", "input_scale"):
-            assert weights[f"{prefix}.{scale}"].device == CPU()
-    assert (
-        weights["backbone.layers.2.mixer.in_proj.weight"].dtype
-        == DType.bfloat16
-    )
-    assert "backbone.layers.2.mixer.in_proj.input_scale" not in weights
+            assert weights[f"{module}.{scale}"].device == CPU()
+    out_proj = "backbone.layers.2.mixer.out_proj"
+    assert weights[f"{out_proj}.weight"].dtype == DType.bfloat16
+    assert f"{out_proj}.input_scale" not in weights
+
+
+def test_nvfp4_linears_are_placed_like_bf16_ones() -> None:
+    config = model_config(TINY_LAYERS, NVFP4_DIMS, n_devices=2)
+    config.quant_scheme = dense_nvfp4_scheme(config)
+    weights = dict(_model_on_devices(config).parameters)
+    shared = "backbone.layers.1.mixer.shared_experts"
+    for module, placement in (
+        (f"{shared}.up_proj", Sharded(0)),
+        (f"{shared}.down_proj", Sharded(1)),
+        ("lm_head", Replicated()),
+    ):
+        in_dim, out_dim = config.linear_shape(module)
+        weight = weights[f"{module}.weight"]
+        assert weight.dtype == DType.uint8
+        assert [int(d) for d in weight.shape] == [out_dim, in_dim // 2]
+        assert weight.placements == (placement,)
+        block = weights[f"{module}.weight_scale"]
+        assert block.dtype == DType.float8_e4m3fn
+        assert block.placements == (
+            Replicated() if placement == Replicated() else Sharded(0),
+        )
+        assert weights[f"{module}.weight_scale_2"].dtype == DType.float32
+
+
+@pytest.mark.parametrize(
+    "quantized, error",
+    [
+        # An attention projection is built in BF16 only.
+        (
+            {"backbone.layers.3.mixer.q_proj": ModuleFormat.FP8_STATIC_TENSOR},
+            "q_proj",
+        ),
+        # Half of a mixer's routed experts in NVFP4.
+        (
+            {
+                f"backbone.layers.1.mixer.experts.0.{proj}": (
+                    ModuleFormat.NVFP4_WEIGHT_ONLY
+                )
+                for proj in ("up_proj", "down_proj")
+            },
+            "routed experts",
+        ),
+        # FP8 routed experts.
+        (
+            {
+                f"backbone.layers.1.mixer.experts.{e}.{proj}": (
+                    ModuleFormat.FP8_STATIC_TENSOR
+                )
+                for e in range(4)
+                for proj in ("up_proj", "down_proj")
+            },
+            "routed experts",
+        ),
+    ],
+)
+def test_unsupported_quantized_modules_are_refused(
+    quantized: dict[str, ModuleFormat], error: str
+) -> None:
+    config = model_config(TINY_LAYERS, TINY)
+    config.quant_scheme = NemotronHQuantScheme(quantized)
+    with pytest.raises(NotImplementedError, match=error):
+        config.check_quantized_modules()
+
+
+def test_nvfp4_row_parallel_input_splits_into_whole_scale_blocks() -> None:
+    """256 shared-expert channels split into whole 64-column blocks on two
+    devices, but not on eight."""
+    for n, ok in ((2, True), (8, False)):
+        config = model_config(TINY_LAYERS, NVFP4_DIMS, n_devices=n)
+        config.quant_scheme = dense_nvfp4_scheme(config)
+        if ok:
+            config.check_quantized_modules()
+            continue
+        with pytest.raises(
+            ValueError,
+            match=r"shared_experts\.down_proj' of this checkpoint on 1, 2 or 4 "
+            r"devices, not 8",
+        ):
+            config.check_quantized_modules()
+
+
+@pytest.mark.parametrize("n", [1, 2])
+def test_nvfp4_shared_expert_runs_as_routed_experts(n: int) -> None:
+    """The shared expert's two expert-wide slices stack after the routed
+    experts, so their channels split across devices with the routed
+    experts'. The block scales load on the host, where the graph interleaves
+    them at init."""
+    config = model_config(TINY_LAYERS, NVFP4_DIMS, n_devices=n)
+    config.quant_scheme = lightning_scheme(config)
+    mixer = "backbone.layers.1.mixer"
+    assert config.shared_expert_slices(mixer) == 2
+    config.check_quantized_modules()
+
+    model = _model_on_devices(config) if n > 1 else _model(config)
+    moe = model.backbone.layers[1].mixer
+    assert isinstance(moe, NemotronHMoE)
+    assert moe.shared_experts is None
+    weights = dict(model.parameters)
+    assert not any(".shared_experts." in name for name in weights)
+    stacked = config.num_experts + 2
+    for proj, axis in (("up", 1), ("down", 2)):
+        for suffix in ("weight", "block_scale", "scale"):
+            param = weights[f"{mixer}.{proj}_{suffix}"]
+            assert int(param.shape[0]) == stacked
+            if suffix == "block_scale":
+                assert param.device == CPU()
+            elif n > 1 and suffix == "weight":
+                assert param.placements == (Sharded(axis),)
+
+
+def test_a_shared_expert_runs_alone_unless_it_slices_evenly() -> None:
+    mixer = "backbone.layers.1.mixer"
+    # 320 channels are not a whole number of 128-channel routed experts.
+    dims = NVFP4_DIMS | {"moe_shared_expert_intermediate_size": 320}
+    config = model_config(TINY_LAYERS, dims, n_devices=2)
+    config.quant_scheme = lightning_scheme(config)
+    assert config.shared_expert_slices(mixer) == 0
+    # BF16 routed experts run the BF16 grouped matmul.
+    config = model_config(TINY_LAYERS, NVFP4_DIMS)
+    config.quant_scheme = dense_nvfp4_scheme(config)
+    assert config.shared_expert_slices(mixer) == 0
 
 
 def test_loading_is_strict() -> None:
@@ -433,70 +573,103 @@ def test_each_device_pads_its_expert_channels(n: int, channels: int) -> None:
 
 
 @pytest.mark.parametrize(
-    "n, w4a4", [(1, True), (2, True), (4, True), (8, False)]
+    "n, split_by_block", [(1, True), (2, True), (4, True), (8, False)]
 )
-def test_nvfp4_experts_split_between_blocks(n: int, w4a4: bool) -> None:
-    """At eight devices, Lightning's 232 channels per device end mid block."""
-    config = model_config(
-        TINY_LAYERS, WIDE | dict(moe_intermediate_size=1856), n_devices=n
-    )
-    assert config.nvfp4_experts_split_by_block is w4a4
-
-
-@pytest.mark.parametrize("nvfp4", [False, True])
-@pytest.mark.parametrize("n", [4, 8])
-def test_w4a4_fallback_warns_only_for_nvfp4_experts(
-    n: int, nvfp4: bool, caplog: pytest.LogCaptureFixture
+def test_nvfp4_experts_split_between_blocks(
+    n: int, split_by_block: bool
 ) -> None:
-    """A split mid NVFP4 block drops W4A4, and warns only when the
-    checkpoint has NVFP4 routed experts to lose."""
+    """At eight devices, Lightning's 232 channels per device end mid block,
+    so NVFP4 routed experts are refused rather than dequantized."""
     config = model_config(
         TINY_LAYERS, WIDE | dict(moe_intermediate_size=1856), n_devices=n
     )
-    if nvfp4:
-        config = _with_w4a4_experts(config)
-    split_by_block = n == 4
-    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
-        config.select_w4a4_experts(True)
-    assert config.w4a4_experts is split_by_block
-    assert bool(config.w4a4_mixers()) is (nvfp4 and split_by_block)
-    warned = any("mid NVFP4 block" in r.getMessage() for r in caplog.records)
-    assert warned is (nvfp4 and not split_by_block)
+    assert config.nvfp4_experts_split_by_block is split_by_block
+    config.check_quantized_modules()
+    config = _with_w4a4_experts(config)
+    if split_by_block:
+        config.check_quantized_modules()
+        return
+    with pytest.raises(ValueError, match="not whole 16-channel blocks"):
+        config.check_quantized_modules()
+
+
+def _on_every_device(param: Tensor, n: int) -> bool:
+    """Returns whether each of ``n`` devices holds a whole copy of ``param``.
+
+    The FP8 scales are pinned to the host, outside the model's mesh.
+    """
+    return param.mesh.num_devices == n and all(
+        isinstance(p, Replicated) for p in param.placements
+    )
+
+
+def _interleaved_bytes(name: str, param: Tensor, n: int) -> int:
+    """Returns the device bytes of host W4A4 block scales once interleaved.
+
+    Each device interleaves its block, the rows of ``up`` or the columns of
+    ``down``, padding rows to whole granules of 128.
+    """
+    experts, rows, cols = (int(d) for d in param.shape)
+    if name.endswith(".up_block_scale"):
+        rows //= n
+    else:
+        cols //= n
+    return n * experts * math.ceil(rows / 128) * 128 * cols
 
 
 def _bytes_on_devices(model: NemotronH, n: int) -> int:
-    """Sums the parameter bytes across devices, from their placements."""
-    return sum(
-        math.prod(int(d) for d in param.shape)
-        * param.dtype.size_in_bytes
-        * (n if all(isinstance(p, Replicated) for p in param.placements) else 1)
-        for _, param in model.parameters
-    )
+    """Sums the parameter bytes across devices, from their placements.
+
+    The W4A4 block scales count as the devices hold them, interleaved.
+    """
+    total = 0
+    for name, param in model.parameters:
+        if name.endswith("_block_scale"):
+            total += _interleaved_bytes(name, param, n)
+            continue
+        total += (
+            math.prod(int(d) for d in param.shape)
+            * param.dtype.size_in_bytes
+            * (n if _on_every_device(param, n) else 1)
+        )
+    return total
 
 
-@pytest.mark.parametrize("w4a4", [False, True])
-@pytest.mark.parametrize("n", [2, 4, 8])
+W4A4_DIMS = WIDE | dict(hidden_size=64, moe_intermediate_size=128)
+
+
+def _scheme_with_w4a4_experts(config: NemotronHConfig) -> NemotronHQuantScheme:
+    return _with_w4a4_experts(config).quant_scheme
+
+
+@pytest.mark.parametrize(
+    "n, dims, scheme",
+    [
+        (2, WIDE, None),
+        (4, WIDE, None),
+        (8, WIDE, None),
+        (2, NVFP4_DIMS, lightning_scheme),
+        (2, NVFP4_DIMS, dense_nvfp4_scheme),
+        # Whole W4A4 scale atoms in both projections, and whole NVFP4 blocks
+        # on each of eight devices.
+        (2, W4A4_DIMS, _scheme_with_w4a4_experts),
+        (4, W4A4_DIMS, _scheme_with_w4a4_experts),
+        (8, W4A4_DIMS, _scheme_with_w4a4_experts),
+    ],
+)
 def test_weights_are_planned_as_the_modules_place_them(
-    n: int, w4a4: bool
+    n: int, dims: dict[str, int], scheme: Scheme | None
 ) -> None:
     """Sharded weights are counted once, replicated ones per device, and a
-    repeated KV head once per device that holds it.
-
-    The routed experts are padded per device, and their W4A4 scales to
-    whole granules.
-    """
+    repeated KV head once per device that holds it. NVFP4 block scales are
+    counted with each device's padding."""
     pipeline = Mock()
     pipeline.model.weights_size.return_value = 1000
-    # Whole W4A4 scale atoms in both projections, and whole NVFP4 blocks on
-    # each of eight devices.
-    dims = (
-        WIDE | dict(hidden_size=64, moe_intermediate_size=128) if w4a4 else WIDE
-    )
     one_config = model_config(TINY_LAYERS, dims)
     config = model_config(TINY_LAYERS, dims, n_devices=n)
-    if w4a4:
-        one_config = _with_w4a4_experts(one_config)
-        config = _with_w4a4_experts(config)
+    if scheme is not None:
+        one_config.quant_scheme = scheme(one_config)
+        config.quant_scheme = scheme(config)
 
     one = NemotronHMemoryPlanner(one_config).estimate_weights_size(pipeline)
     planned = NemotronHMemoryPlanner(config).estimate_weights_size(pipeline)

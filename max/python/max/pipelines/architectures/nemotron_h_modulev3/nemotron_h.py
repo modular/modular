@@ -24,7 +24,7 @@ from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
-from max.experimental.nn import Linear, Module, as_subgraph
+from max.experimental.nn import Module, as_subgraph
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.embedding import Embedding
@@ -46,6 +46,7 @@ from max.pipelines.lib import ModuleV3Outputs
 from .layers.attention import NemotronHAttention
 from .layers.mamba2 import MambaStateAccess, NemotronHMamba2Mixer
 from .layers.moe import NemotronHMLP, NemotronHMoE
+from .layers.quantized import quantized_linear
 from .model_config import (
     ATTN_CACHE_KEY,
     STATE_CACHE_KEY,
@@ -104,28 +105,21 @@ class NemotronHBackbone(Module[..., Tensor]):
         self.layer_kinds = tuple(config.layer_kinds)
         layers: list[NemotronHBlock] = []
         w4a4_mixers = config.w4a4_mixers()
-        fp8_mixers = config.fp8_mamba_mixers()
         for i, kind in enumerate(self.layer_kinds):
+            name = f"backbone.layers.{i}.mixer"
             mixer: Module[..., Tensor]
             match kind:
                 case LayerKind.MAMBA:
-                    mixer = NemotronHMamba2Mixer(
-                        config,
-                        fp8=f"backbone.layers.{i}.mixer" in fp8_mixers,
-                    )
+                    mixer = NemotronHMamba2Mixer(config, name)
                 case LayerKind.ATTENTION:
                     attn_idx = self.layer_kinds[:i].count(LayerKind.ATTENTION)
                     mixer = NemotronHAttention(config, attn_params, attn_idx)
                 case LayerKind.MOE:
                     mixer = NemotronHMoE(
-                        config,
-                        w4a4_experts=f"backbone.layers.{i}.mixer"
-                        in w4a4_mixers,
+                        config, name, w4a4_experts=name in w4a4_mixers
                     )
                 case LayerKind.MLP:
-                    mixer = NemotronHMLP(
-                        config.hidden_size, config.intermediate_size
-                    )
+                    mixer = NemotronHMLP(config, name)
             layers.append(NemotronHBlock(mixer, config))
         self.layers = ModuleList(layers)
         self.norm_f = RMSNorm(config.hidden_size, eps=config.layer_norm_epsilon)
@@ -187,7 +181,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         self.return_logits = config.return_logits
         attn_params = config.kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
         self.backbone = NemotronHBackbone(config, attn_params)
-        self.lm_head = Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.lm_head = quantized_linear(config, "lm_head")
 
     def _logits(self, h: Tensor) -> Tensor:
         return F.cast(self.lm_head(self.backbone.norm_f(h)), DType.float32)
@@ -200,7 +194,7 @@ class NemotronH(Module[..., ModuleV3Outputs]):
         *kv_inputs: Tensor,
     ) -> ModuleV3Outputs:
         del return_n_logits
-        mesh = self.lm_head.weight.mesh
+        mesh = self.backbone.norm_f.weight.mesh
         row_offsets = input_row_offsets
         if mesh.num_devices > 1:
             # Device graph capture records each device's stream on its own,

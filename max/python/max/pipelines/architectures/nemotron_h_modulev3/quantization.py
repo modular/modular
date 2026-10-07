@@ -37,6 +37,53 @@ NVFP4_GROUP_SIZE = 16
 """Inputs covered by one NVFP4 block scale."""
 
 
+class Parallelism(enum.Enum):
+    """How a linear layer's weight is split across the tensor-parallel axis."""
+
+    REPLICATED = "replicated"
+    """Every device holds the whole weight."""
+
+    COLUMN = "column"
+    """Each device holds a share of the output rows."""
+
+    ROW = "row"
+    """Each device holds a share of the input columns, and the outputs are
+    partial sums."""
+
+
+# The checkpoint's dense linear modules, by name suffix, and how each is
+# split. Routed experts are stacked rather than built as linear layers.
+_LINEAR_PARALLELISM: dict[str, Parallelism] = {
+    ".mixer.in_proj": Parallelism.COLUMN,
+    ".mixer.out_proj": Parallelism.ROW,
+    ".shared_experts.up_proj": Parallelism.COLUMN,
+    ".shared_experts.down_proj": Parallelism.ROW,
+    # The MLP mixers and the LM head are replicated.
+    ".mixer.up_proj": Parallelism.REPLICATED,
+    ".mixer.down_proj": Parallelism.REPLICATED,
+}
+
+
+def linear_parallelism(module: str) -> Parallelism:
+    """Returns how a quantizable dense linear module is split.
+
+    Args:
+        module: The module's checkpoint path.
+
+    Raises:
+        NotImplementedError: If the module is not built as a quantizable
+            linear layer, such as an attention projection.
+    """
+    if module == "lm_head":
+        return Parallelism.REPLICATED
+    for suffix, parallelism in _LINEAR_PARALLELISM.items():
+        if module.endswith(suffix):
+            return parallelism
+    raise NotImplementedError(
+        f"'{module}' is quantized, but Nemotron-H builds it in BF16 only"
+    )
+
+
 class ModuleFormat(enum.Enum):
     """How a module's weight is stored in the checkpoint."""
 
@@ -93,19 +140,43 @@ class NemotronHQuantScheme:
         """Returns the format ``module`` is stored in."""
         return self.quantized.get(module, ModuleFormat.BF16)
 
-    def has_nvfp4_routed_experts(self, mixer: str, num_experts: int) -> bool:
-        """Returns whether every routed expert projection of a mixer is NVFP4.
+    def routed_experts_format(
+        self, mixer: str, num_experts: int
+    ) -> ModuleFormat:
+        """Returns the one format every routed expert of a mixer is stored in.
 
         Args:
             mixer: The mixer's checkpoint path, ``backbone.layers.1.mixer``.
             num_experts: The number of routed experts.
+
+        Raises:
+            NotImplementedError: If the experts are FP8, or stored in more
+                than one format. The grouped matmul reads all of a mixer's
+                experts in one format, BF16 or NVFP4.
         """
-        return all(
+        formats = {
             self.format_of(f"{mixer}.experts.{e}.{proj}")
-            is ModuleFormat.NVFP4_WEIGHT_ONLY
             for e in range(num_experts)
             for proj in ("up_proj", "down_proj")
-        )
+        }
+        if len(formats) != 1 or ModuleFormat.FP8_STATIC_TENSOR in formats:
+            raise NotImplementedError(
+                f"'{mixer}' stores its routed experts as "
+                f"{sorted(f.name for f in formats)}; Nemotron-H reads them "
+                "all BF16 or all NVFP4"
+            )
+        return formats.pop()
+
+    def check_dense_modules(self) -> None:
+        """Checks that every quantized dense module is one built quantized.
+
+        Raises:
+            NotImplementedError: If a quantized module, such as an attention
+                projection, is built in BF16 only.
+        """
+        for module in self.quantized:
+            if ".experts." not in module:
+                linear_parallelism(module)
 
     def check_weights(self, weight_names: Collection[str]) -> None:
         """Checks the checkpoint's tensors against the declared formats.

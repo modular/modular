@@ -59,6 +59,15 @@ This version is still a work in progress.
   request may instead carry a `video_url` part, which the server resolves and
   rewrites into that form.
 
+- The ModuleV3 Nemotron-H architecture (`NemotronHForCausalLM` with
+  `prefer_module_v3`) no longer expands the quantized modules of an NVFP4
+  checkpoint, such as `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4`,
+  to BF16 at load, which saves about 1.2 GB of device memory on one GPU.
+  Quantized Nemotron-H checkpoints now require B200 (SM100) GPUs, and the
+  NVFP4 checkpoint can't run on eight GPUs, where each GPU's share of an
+  expert would split an NVFP4 block. On MI355 GPUs, or on eight GPUs, use
+  the BF16 checkpoint (`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`).
+
 ## MAX framework
 
 - Added `max.profiler.oneshot.cuda_profiler_region()`, a context manager that

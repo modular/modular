@@ -18,10 +18,6 @@ from max import tree
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
-from max.experimental.nn.common_layers.linear import (
-    ColumnParallelLinear,
-    RowParallelLinear,
-)
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
@@ -33,7 +29,7 @@ from max.nn.state_space import (
 )
 
 from ..model_config import NemotronHConfig
-from ..quantization import FP8_STATIC_TENSOR_QUANT
+from .quantized import quantized_linear
 from .sharding import shard_axis
 
 
@@ -183,7 +179,14 @@ class NemotronHMamba2Mixer(
     graph.
     """
 
-    def __init__(self, config: NemotronHConfig, fp8: bool = False) -> None:
+    def __init__(self, config: NemotronHConfig, name: str) -> None:
+        """Initializes the mixer.
+
+        Args:
+            config: The model config.
+            name: The mixer's checkpoint path, which names the format of
+                its projections.
+        """
         self.num_heads = config.mamba_num_heads
         self.head_dim = config.mamba_head_dim
         self.n_groups = config.n_groups
@@ -194,13 +197,7 @@ class NemotronHMamba2Mixer(
         # Each device runs its own heads and their groups.
         # permute_mamba_for_tp lays out the fused in_proj and conv rows so
         # that each device's share is one contiguous block.
-        quant_config = FP8_STATIC_TENSOR_QUANT if fp8 else None
-        self.in_proj = ColumnParallelLinear(
-            config.hidden_size,
-            self.intermediate + self.conv_dim + self.num_heads,
-            bias=False,
-            quant_config=quant_config,
-        )
+        self.in_proj = quantized_linear(config, f"{name}.in_proj")
         self.conv1d = CausalConv1d(self.conv_dim, config.conv_kernel)
         self.conv1d.weight = shard_axis(self.conv1d.weight)
         self.conv1d.bias = shard_axis(self.conv1d.bias)
@@ -213,12 +210,7 @@ class NemotronHMamba2Mixer(
             config.layer_norm_epsilon,
         )
         self.norm.weight = shard_axis(self.norm.weight)
-        self.out_proj = RowParallelLinear(
-            self.intermediate,
-            config.hidden_size,
-            bias=False,
-            quant_config=quant_config,
-        )
+        self.out_proj = quantized_linear(config, f"{name}.out_proj")
 
     def forward(
         self,

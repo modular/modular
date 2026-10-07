@@ -10,30 +10,36 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Nemotron-H's per-module quantization scheme and its BF16 dequantization."""
+"""Nemotron-H's per-module quantization scheme and its weight layouts."""
 
 from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
 import pytest
-from _tiny_config import TINY, TINY_LAYERS, WIDE, model_config
+from _tiny_config import NVFP4_DIMS, TINY, TINY_LAYERS, WIDE, model_config
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import Shape
 from max.graph.weights import WeightData
+from max.pipelines.architectures.nemotron_h_modulev3.layers.quantized import (
+    nvfp4_block_scale_shape,
+)
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
     LayerKind,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
     ModuleFormat,
+    NemotronHQuantScheme,
+    Parallelism,
+    linear_parallelism,
     parse_quant_scheme,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
     _bytes,
-    dequantize_to_bf16,
     interleave_nvfp4_scales,
     permute_mamba_for_tp,
+    prepare_nvfp4_linears,
     repeat_kv_heads_for_tp,
     stack_bf16_experts,
     stack_nvfp4_experts,
@@ -108,50 +114,6 @@ def test_an_unknown_algorithm_is_refused() -> None:
         parse_quant_scheme(config)
 
 
-def test_nvfp4_matches_the_reference_dequantization() -> None:
-    codes = np.random.default_rng(0).integers(0, 16, size=(2, 32))
-    # Two E2M1 codes per byte, the even column in the low nibble.
-    packed = (codes[:, 0::2] | (codes[:, 1::2] << 4)).astype(np.uint8)
-    block_values = np.array([[1.0, 2.0], [0.5, 4.0]], dtype=np.float32)
-    block_scales = np.vectorize(_E4M3.get)(block_values).astype(np.uint8)
-    state_dict = {
-        "m.weight": _weight(packed, DType.uint8),
-        "m.weight_scale": _weight(block_scales, DType.float8_e4m3fn),
-        "m.weight_scale_2": _weight(
-            np.array(0.25, dtype=np.float32), DType.float32
-        ),
-    }
-
-    out = dequantize_to_bf16(state_dict, {"m": ModuleFormat.NVFP4_WEIGHT_ONLY})
-
-    e2m1 = np.array(
-        [0, 0.5, 1, 1.5, 2, 3, 4, 6, -0.0, -0.5, -1, -1.5, -2, -3, -4, -6],
-        dtype=np.float32,
-    )
-    expected = e2m1[codes] * np.repeat(block_values, 16, axis=1) * 0.25
-    assert list(out) == ["m.weight"]
-    np.testing.assert_array_equal(_values(out["m.weight"]), expected)
-
-
-def test_fp8_drops_the_input_scale() -> None:
-    values = np.array([[1.0, 2.0], [0.5, 4.0]], dtype=np.float32)
-    codes = np.vectorize(_E4M3.get)(values).astype(np.uint8)
-    state_dict = {
-        "m.weight": _weight(codes, DType.float8_e4m3fn),
-        "m.weight_scale": _weight(
-            np.array(0.5, dtype=np.float32), DType.float32
-        ),
-        "m.input_scale": _weight(
-            np.array([3.0], dtype=np.float32), DType.float32
-        ),
-    }
-
-    out = dequantize_to_bf16(state_dict, {"m": ModuleFormat.FP8_STATIC_TENSOR})
-
-    assert list(out) == ["m.weight"]
-    np.testing.assert_array_equal(_values(out["m.weight"]), values * 0.5)
-
-
 def test_interleave_puts_each_scale_where_the_kernel_reads_it() -> None:
     rows, cols = 130, 8
     scales = (
@@ -177,7 +139,6 @@ def test_stacking_keeps_the_routed_experts_in_nvfp4() -> None:
         for e in range(2)
         for proj in ("up_proj", "down_proj")
     }
-    modules["lm_head"] = ModuleFormat.NVFP4_WEIGHT_ONLY
     state_dict = {}
     for module in modules:
         state_dict[f"{module}.weight"] = _weight(
@@ -190,10 +151,9 @@ def test_stacking_keeps_the_routed_experts_in_nvfp4() -> None:
             np.array(0.25, dtype=np.float32), DType.float32
         )
 
-    out, remaining = stack_nvfp4_experts(state_dict, modules, {mixer})
+    out = stack_nvfp4_experts(state_dict, 2, {mixer: 0}, num_devices=1)
 
-    assert remaining == {"lm_head": ModuleFormat.NVFP4_WEIGHT_ONLY}
-    assert sorted(n for n in out if n.startswith(mixer)) == [
+    assert sorted(out) == [
         f"{mixer}.{p}_{s}"
         for p in ("down", "up")
         for s in ("block_scale", "scale", "weight")
@@ -208,11 +168,87 @@ def test_stacking_keeps_the_routed_experts_in_nvfp4() -> None:
     )
     block = out[f"{mixer}.up_block_scale"]
     assert block.dtype == DType.float8_e4m3fn
-    assert tuple(block.shape) == (2, 1, 1, 32, 4, 4)
+    assert tuple(block.shape) == (2, 128, 4)
     scale = out[f"{mixer}.up_scale"]
     np.testing.assert_array_equal(
         np.from_dlpack(scale.to_buffer()), [0.25, 0.25]
     )
+
+
+@pytest.mark.parametrize("num_devices", [1, 2])
+def test_shared_expert_slices_stack_with_the_routed_experts(
+    num_devices: int,
+) -> None:
+    """The shared up projection splits by rows and the down projection by
+    columns, each slice shaped as a routed expert, after the routed experts.
+    At two devices each holds 64 of a slice's 128 channels, which needs no
+    padding, so the device blocks lay the slice out as stored."""
+    rng = np.random.default_rng(0)
+    mixer = "backbone.layers.1.mixer"
+    hidden, inner, experts, slices = 128, 128, 2, 2
+
+    def nvfp4(module: str, n: int, k: int, global_scale: float) -> None:
+        state_dict[f"{module}.weight"] = _weight(
+            rng.integers(0, 256, (n, k // 2), dtype=np.uint8), DType.uint8
+        )
+        state_dict[f"{module}.weight_scale"] = _weight(
+            rng.integers(0x28, 0x48, (n, k // 16), dtype=np.uint8),
+            DType.float8_e4m3fn,
+        )
+        state_dict[f"{module}.weight_scale_2"] = _weight(
+            np.array(global_scale, dtype=np.float32), DType.float32
+        )
+
+    state_dict: dict[str, WeightData] = {}
+    for e in range(experts):
+        nvfp4(f"{mixer}.experts.{e}.up_proj", inner, hidden, 0.5)
+        nvfp4(f"{mixer}.experts.{e}.down_proj", hidden, inner, 0.5)
+    shared = f"{mixer}.shared_experts"
+    nvfp4(f"{shared}.up_proj", slices * inner, hidden, 0.25)
+    nvfp4(f"{shared}.down_proj", hidden, slices * inner, 0.25)
+
+    def array(name: str) -> npt.NDArray[np.uint8]:
+        return np.from_dlpack(
+            state_dict[name].to_buffer().view(DType.uint8)
+        ).view(np.uint8)
+
+    up_codes = array(f"{shared}.up_proj.weight")
+    up_scales = array(f"{shared}.up_proj.weight_scale")
+    down_codes = array(f"{shared}.down_proj.weight")
+    down_scales = array(f"{shared}.down_proj.weight_scale")
+
+    out = stack_nvfp4_experts(
+        state_dict, experts, {mixer: slices}, num_devices=num_devices
+    )
+
+    assert not any(name.startswith(shared) for name in out)
+    positions = [experts, experts + 1]
+
+    def stacked(name: str) -> npt.NDArray[np.uint8]:
+        return np.from_dlpack(
+            out[f"{mixer}.{name}"].to_buffer().view(DType.uint8)
+        ).view(np.uint8)
+
+    for i, at in enumerate(positions):
+        rows = slice(i * inner, (i + 1) * inner)
+        np.testing.assert_array_equal(stacked("up_weight")[at], up_codes[rows])
+        np.testing.assert_array_equal(
+            stacked("up_block_scale")[at], up_scales[rows]
+        )
+        cols = slice(i * inner // 2, (i + 1) * inner // 2)
+        np.testing.assert_array_equal(
+            stacked("down_weight")[at], down_codes[:, cols]
+        )
+        scale_cols = slice(i * inner // 16, (i + 1) * inner // 16)
+        np.testing.assert_array_equal(
+            stacked("down_block_scale")[at], down_scales[:, scale_cols]
+        )
+    expected_scales = [0.25 if p in positions else 0.5 for p in range(4)]
+    for proj in ("up", "down"):
+        np.testing.assert_array_equal(
+            np.from_dlpack(out[f"{mixer}.{proj}_scale"].to_buffer()),
+            expected_scales,
+        )
 
 
 def _strip_device_padding(
@@ -228,69 +264,107 @@ def _strip_device_padding(
 
 
 @pytest.mark.parametrize("n", [1, 2])
-def test_bf16_stacking_dequantizes_each_expert_into_its_slice(n: int) -> None:
-    """NVFP4 experts on GPUs without the W4A4 matmul, and BF16 experts.
-
-    Under tensor parallelism each device's share of the channels is padded
-    with zeros to 64.
-    """
+def test_bf16_stacking_copies_each_expert_into_its_slice(n: int) -> None:
+    """Under tensor parallelism each device's share of the channels is
+    padded with zeros to 64."""
     rng = np.random.default_rng(0)
-    nvfp4_mixer, bf16_mixer = (
-        "backbone.layers.1.mixer",
-        "backbone.layers.3.mixer",
-    )
-    modules = {
-        f"{nvfp4_mixer}.experts.{e}.{proj}": ModuleFormat.NVFP4_WEIGHT_ONLY
+    mixer = "backbone.layers.1.mixer"
+    state_dict = {
+        f"{mixer}.experts.{e}.{proj}.weight": _weight(
+            rng.integers(0, 2**15, (4, 32), dtype=np.uint16), DType.bfloat16
+        )
         for e in range(2)
         for proj in ("up_proj", "down_proj")
     }
-    modules["lm_head"] = ModuleFormat.NVFP4_WEIGHT_ONLY
-    state_dict = {}
-    for module in modules:
-        state_dict[f"{module}.weight"] = _weight(
-            rng.integers(0, 256, (4, 16), dtype=np.uint8), DType.uint8
-        )
-        state_dict[f"{module}.weight_scale"] = _weight(
-            np.full((4, 2), _E4M3[2.0], dtype=np.uint8), DType.float8_e4m3fn
-        )
-        state_dict[f"{module}.weight_scale_2"] = _weight(
-            np.array(0.25, dtype=np.float32), DType.float32
-        )
-    for e in range(2):
-        for proj in ("up_proj", "down_proj"):
-            bits = rng.integers(0, 2**15, (4, 32), dtype=np.uint16)
-            state_dict[f"{bf16_mixer}.experts.{e}.{proj}.weight"] = _weight(
-                bits, DType.bfloat16
-            )
 
-    out, remaining = stack_bf16_experts(
-        state_dict, modules, {nvfp4_mixer, bf16_mixer}, num_devices=n
-    )
+    out = stack_bf16_experts(state_dict, 2, {mixer}, num_devices=n)
 
-    assert remaining == {"lm_head": ModuleFormat.NVFP4_WEIGHT_ONLY}
-    assert not any(".experts." in name for name in out)
-    expected = dequantize_to_bf16(
-        state_dict, {m: f for m, f in modules.items() if m != "lm_head"}
-    )
+    assert sorted(out) == [f"{mixer}.down_weight", f"{mixer}.up_weight"]
     padded = {1: {"up": (2, 4, 32), "down": (2, 4, 32)}}.get(
         n, {"up": (2, 128, 32), "down": (2, 4, 128)}
     )
-    for mixer, source in ((nvfp4_mixer, expected), (bf16_mixer, state_dict)):
-        for proj, axis, channels in (("up", 1, 4), ("down", 2, 32)):
-            stack = out[f"{mixer}.{proj}_weight"]
-            assert tuple(stack.shape) == padded[proj]
-            values = _strip_device_padding(_values(stack), axis, n, channels)
-            for e in range(2):
-                np.testing.assert_array_equal(
-                    values[e],
-                    _values(source[f"{mixer}.experts.{e}.{proj}_proj.weight"]),
-                )
+    for proj, axis, channels in (("up", 1, 4), ("down", 2, 32)):
+        stack = out[f"{mixer}.{proj}_weight"]
+        assert tuple(stack.shape) == padded[proj]
+        values = _strip_device_padding(_values(stack), axis, n, channels)
+        for e in range(2):
+            np.testing.assert_array_equal(
+                values[e],
+                _values(state_dict[f"{mixer}.experts.{e}.{proj}_proj.weight"]),
+            )
 
 
-def _deinterleave(block: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
-    """Inverts :func:`interleave_nvfp4_scales`, padding rows included."""
-    granules, atoms = block.shape[:2]
-    return block.transpose(0, 3, 2, 1, 4).reshape(granules * 128, atoms * 4)
+def test_bf16_stacking_refuses_a_quantized_expert() -> None:
+    mixer = "backbone.layers.1.mixer"
+    state_dict = {
+        f"{mixer}.experts.{e}.{proj}.weight": _weight(
+            np.zeros((4, 16), dtype=np.uint8), DType.uint8
+        )
+        for e in range(2)
+        for proj in ("up_proj", "down_proj")
+    }
+    with pytest.raises(ValueError, match=r"experts\.0\.up_proj"):
+        stack_bf16_experts(state_dict, 2, {mixer})
+
+
+@pytest.mark.parametrize(
+    "module, n, shares",
+    [
+        # Column parallel: each device interleaves its own output rows.
+        ("backbone.layers.1.mixer.shared_experts.up_proj", 2, 2),
+        # Row parallel: each device interleaves its own input columns.
+        ("backbone.layers.1.mixer.shared_experts.down_proj", 2, 2),
+        # Replicated: one share that every device holds whole.
+        ("lm_head", 2, 1),
+        ("backbone.layers.1.mixer.shared_experts.up_proj", 1, 1),
+    ],
+)
+def test_nvfp4_linear_scales_are_interleaved_per_device(
+    module: str, n: int, shares: int
+) -> None:
+    config = model_config(TINY_LAYERS, NVFP4_DIMS, n_devices=n)
+    in_dim, out_dim = config.linear_shape(module)
+    config.quant_scheme = NemotronHQuantScheme(
+        {module: ModuleFormat.NVFP4_WEIGHT_ONLY}
+    )
+    scales = (
+        (np.arange(out_dim * in_dim // 16) % 251 + 1)
+        .astype(np.uint8)
+        .reshape(out_dim, in_dim // 16)
+    )
+    weight = _weight(
+        np.zeros((out_dim, in_dim // 2), dtype=np.uint8), DType.uint8
+    )
+    state_dict = {
+        f"{module}.weight": weight,
+        f"{module}.weight_scale": _weight(scales, DType.float8_e4m3fn),
+        f"{module}.weight_scale_2": _weight(
+            np.array(0.25, dtype=np.float32), DType.float32
+        ),
+    }
+
+    out = prepare_nvfp4_linears(state_dict, config, n)
+
+    assert out[f"{module}.weight"] is weight
+    parallelism = linear_parallelism(module)
+    block = out[f"{module}.weight_scale"]
+    assert list(block.shape) == nvfp4_block_scale_shape(
+        out_dim, in_dim, parallelism, n
+    )
+    got = np.from_dlpack(block.to_buffer().view(DType.uint8))
+    if parallelism is Parallelism.COLUMN:
+        parts = np.split(scales, shares, axis=0)
+    elif parallelism is Parallelism.ROW:
+        parts = np.split(scales, shares, axis=1)
+    else:
+        parts = [scales]
+    for share, part in zip(got, parts, strict=True):
+        np.testing.assert_array_equal(share, interleave_nvfp4_scales(part))
+    global_scale = out[f"{module}.weight_scale_2"]
+    assert list(global_scale.shape) == [1]
+    np.testing.assert_array_equal(
+        np.from_dlpack(global_scale.to_buffer()), [0.25]
+    )
 
 
 def _nvfp4_values(
@@ -318,28 +392,24 @@ def test_tp_stacking_pads_each_devices_nvfp4_channels_with_zeros() -> None:
     hidden, inner, n = 64, 96, 2
     share, padded = inner // n, 64
     shapes = {"up_proj": (inner, hidden), "down_proj": (hidden, inner)}
-    modules = {
-        f"{mixer}.experts.{e}.{proj}": ModuleFormat.NVFP4_WEIGHT_ONLY
-        for e in range(2)
-        for proj in shapes
-    }
     state_dict = {}
-    for module in modules:
-        rows, cols = shapes[module.rpartition(".")[2]]
-        state_dict[f"{module}.weight"] = _weight(
-            rng.integers(0, 256, (rows, cols // 2), dtype=np.uint8),
-            DType.uint8,
-        )
-        # Nonzero scales, 2^-2 to 2^2, so zero padding stands out.
-        state_dict[f"{module}.weight_scale"] = _weight(
-            rng.integers(0x28, 0x48, (rows, cols // 16), dtype=np.uint8),
-            DType.float8_e4m3fn,
-        )
-        state_dict[f"{module}.weight_scale_2"] = _weight(
-            np.array(0.25, dtype=np.float32), DType.float32
-        )
+    for e in range(2):
+        for proj, (rows, cols) in shapes.items():
+            module = f"{mixer}.experts.{e}.{proj}"
+            state_dict[f"{module}.weight"] = _weight(
+                rng.integers(0, 256, (rows, cols // 2), dtype=np.uint8),
+                DType.uint8,
+            )
+            # Nonzero scales, 2^-2 to 2^2, so zero padding stands out.
+            state_dict[f"{module}.weight_scale"] = _weight(
+                rng.integers(0x28, 0x48, (rows, cols // 16), dtype=np.uint8),
+                DType.float8_e4m3fn,
+            )
+            state_dict[f"{module}.weight_scale_2"] = _weight(
+                np.array(0.25, dtype=np.float32), DType.float32
+            )
 
-    out, _ = stack_nvfp4_experts(state_dict, modules, {mixer}, num_devices=n)
+    out = stack_nvfp4_experts(state_dict, 2, {mixer: 0}, num_devices=n)
 
     stacked = {
         name: _bytes(out[f"{mixer}.{name}"])
@@ -352,9 +422,9 @@ def test_tp_stacking_pads_each_devices_nvfp4_channels_with_zeros() -> None:
     }
     assert {k: v.shape for k, v in stacked.items()} == {
         "up_weight": (2, n * padded, hidden // 2),
-        "up_block_scale": (2, n, hidden // 64, 32, 4, 4),
+        "up_block_scale": (2, n * padded, hidden // 16),
         "down_weight": (2, hidden, n * padded // 2),
-        "down_block_scale": (2, 1, n * padded // 64, 32, 4, 4),
+        "down_block_scale": (2, hidden, n * padded // 16),
     }
     x = rng.standard_normal((5, hidden))
     for e in range(2):
@@ -368,19 +438,19 @@ def test_tp_stacking_pads_each_devices_nvfp4_channels_with_zeros() -> None:
         )
         got = np.zeros((5, hidden))
         for d in range(n):
-            up_codes = stacked["up_weight"][e, d * padded : (d + 1) * padded]
-            up_scales = _deinterleave(stacked["up_block_scale"][e, d : d + 1])
+            block = slice(d * padded, (d + 1) * padded)
+            up_codes = stacked["up_weight"][e, block]
+            up_scales = stacked["up_block_scale"][e, block]
             assert not up_codes[share:].any() and not up_scales[share:].any()
-            up_d = _nvfp4_values(up_codes, up_scales[:padded], 0.25)
+            up_d = _nvfp4_values(up_codes, up_scales, 0.25)
             np.testing.assert_array_equal(
                 up_d[:share], up[d * share : (d + 1) * share]
             )
 
             packed = slice(d * padded // 2, (d + 1) * padded // 2)
             down_codes = stacked["down_weight"][e, :, packed]
-            down_scales = _deinterleave(
-                stacked["down_block_scale"][e, :, d : d + 1]
-            )[:hidden]
+            groups = slice(d * padded // 16, (d + 1) * padded // 16)
+            down_scales = stacked["down_block_scale"][e, :, groups]
             assert not down_codes[:, share // 2 :].any()
             assert not down_scales[:, share // 16 :].any()
             down_d = _nvfp4_values(down_codes, down_scales, 0.25)
@@ -424,6 +494,58 @@ def test_mamba_rows_are_regrouped_by_device() -> None:
         _bits(out[f"{mixer}.conv1d.bias"])[32:],
         np.concatenate([conv_bias[16:32], conv_bias[40:48], conv_bias[56:64]]),
     )
+
+
+def test_nvfp4_in_proj_scales_move_with_their_rows() -> None:
+    """Each device's share of an NVFP4 in_proj's block scales holds the
+    scales of the rows it holds."""
+    config = model_config(TINY_LAYERS, NVFP4_DIMS, n_devices=2)
+    mixer = "backbone.layers.4.mixer"
+    module = f"{mixer}.in_proj"
+    config.quant_scheme = NemotronHQuantScheme(
+        {module: ModuleFormat.NVFP4_WEIGHT_ONLY}
+    )
+    in_dim, out_dim = config.linear_shape(module)
+    # Each row's first two code bytes hold its checkpoint row index.
+    codes = np.zeros((out_dim, in_dim // 2), dtype=np.uint8)
+    codes[:, 0] = np.arange(out_dim) % 256
+    codes[:, 1] = np.arange(out_dim) // 256
+    scales = np.random.default_rng(0).integers(
+        0, 256, (out_dim, in_dim // 16), dtype=np.uint8
+    )
+    conv_dim = config.conv_dim
+    state_dict = {
+        f"{module}.weight": _weight(codes, DType.uint8),
+        f"{module}.weight_scale": _weight(scales, DType.float8_e4m3fn),
+        f"{module}.weight_scale_2": _weight(
+            np.array(1.0, dtype=np.float32), DType.float32
+        ),
+        f"{mixer}.conv1d.weight": _weight(
+            np.zeros((conv_dim, 4), dtype=np.uint16), DType.bfloat16
+        ),
+        f"{mixer}.conv1d.bias": _weight(
+            np.zeros((conv_dim,), dtype=np.uint16), DType.bfloat16
+        ),
+    }
+    for other in config.mixers(LayerKind.MAMBA) - {mixer}:
+        for name in ("in_proj.weight", "conv1d.weight", "conv1d.bias"):
+            state_dict[f"{other}.{name}"] = state_dict[f"{mixer}.{name}"]
+
+    out = prepare_nvfp4_linears(
+        permute_mamba_for_tp(state_dict, config, 2), config, 2
+    )
+
+    placed = np.from_dlpack(out[f"{module}.weight"].to_buffer())
+    shares = np.from_dlpack(
+        out[f"{module}.weight_scale"].to_buffer().view(DType.uint8)
+    )
+    for share, device_codes in zip(
+        shares, np.split(placed, 2, axis=0), strict=True
+    ):
+        rows = device_codes[:, 0] + 256 * device_codes[:, 1].astype(np.int64)
+        np.testing.assert_array_equal(
+            share, interleave_nvfp4_scales(scales[rows])
+        )
 
 
 def test_each_device_gets_a_copy_of_its_kv_head() -> None:

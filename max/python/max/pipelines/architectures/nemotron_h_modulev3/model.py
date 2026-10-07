@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-import logging
-import time
 from typing import Any, ClassVar
 
 from max.experimental.sharding import DeviceMesh
@@ -28,14 +26,12 @@ from ..llama3_modulev3.batch_processor import Llama3ModuleV3BatchProcessor
 from .model_config import LayerKind, NemotronHConfig
 from .nemotron_h import NemotronH
 from .weight_adapters import (
-    dequantize_to_bf16,
     permute_mamba_for_tp,
+    prepare_nvfp4_linears,
     repeat_kv_heads_for_tp,
     stack_bf16_experts,
     stack_nvfp4_experts,
 )
-
-logger = logging.getLogger("max.pipelines")
 
 
 class NemotronHModel(
@@ -59,35 +55,23 @@ class NemotronHModel(
     def _prepare_state_dict(
         self, state_dict: dict[str, Any], model_config: NemotronHConfig
     ) -> dict[str, Any]:
-        modules = model_config.quant_scheme.quantized
-        n = len(self.devices)
+        num_experts = model_config.num_experts
         w4a4_mixers = model_config.w4a4_mixers()
-        if w4a4_mixers:
-            state_dict, modules = stack_nvfp4_experts(
-                state_dict, modules, w4a4_mixers, num_devices=n
-            )
-        state_dict, modules = stack_bf16_experts(
+        n = len(self.devices)
+        state_dict = stack_nvfp4_experts(
             state_dict,
-            modules,
-            model_config.mixers(LayerKind.MOE) - w4a4_mixers,
-            num_devices=n,
+            num_experts,
+            {m: model_config.shared_expert_slices(m) for m in w4a4_mixers},
+            n,
         )
-        if modules:
-            fp8_mixers = model_config.fp8_mamba_mixers()
-            modules = {
-                module: fmt
-                for module, fmt in modules.items()
-                if module.rpartition(".")[0] not in fp8_mixers
-            }
-            start = time.perf_counter()
-            state_dict = dequantize_to_bf16(state_dict, modules)
-            logger.info(
-                f"Nemotron-H: dequantized {len(modules)} modules to BF16 in"
-                f" {time.perf_counter() - start:.1f}s"
-            )
-        # An FP8 in_proj has one scale for the whole tensor, so its rows move
-        # as stored.
+        state_dict = stack_bf16_experts(
+            state_dict,
+            num_experts,
+            model_config.mixers(LayerKind.MOE) - w4a4_mixers,
+            n,
+        )
         state_dict = permute_mamba_for_tp(state_dict, model_config, n)
+        state_dict = prepare_nvfp4_linears(state_dict, model_config, n)
         return repeat_kv_heads_for_tp(state_dict, model_config, n)
 
     def _instantiate_module(self, model_config: NemotronHConfig) -> NemotronH:
