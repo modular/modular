@@ -3066,7 +3066,9 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     }
     TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
-    hasFinally = consumeIf(Token::kw_finally);
+    hasFinally =
+        isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+        consumeIf(Token::kw_finally);
   } else {
     SMLoc finallyLoc;
     hasFinally = consumeIf(Token::kw_finally, &finallyLoc);
