@@ -40,10 +40,12 @@ from max.pipelines.lib.interfaces import (
 )
 from max.pipelines.modeling.config_enums import SupportedEncoding
 from max.pipelines.weights import resolve_hf_quant_config
+from max.support.math import ceildiv
 from transformers import AutoConfig
 from typing_extensions import Self
 
 from .quantization import (
+    NVFP4_GROUP_SIZE,
     ModuleFormat,
     NemotronHQuantScheme,
     parse_quant_scheme,
@@ -53,6 +55,26 @@ logger = logging.getLogger("max.pipelines")
 
 ATTN_CACHE_KEY = "attn"
 STATE_CACHE_KEY = "state"
+
+MOE_TP_CHANNEL_ALIGNMENT = 64
+"""The multiple each device's share of a routed expert's channels is padded
+to under tensor parallelism. It keeps the W4A4 scales a whole number of
+interleaved atoms, and the K of the down projection a whole number of AMD
+grouped matmul tiles."""
+
+
+def moe_channels_per_device(channels: int, num_devices: int) -> int:
+    """Returns the routed expert channels each device holds, padding included.
+
+    Under tensor parallelism each device holds its ``1 / num_devices`` of
+    every expert's channels, zero-padded to :data:`MOE_TP_CHANNEL_ALIGNMENT`.
+    """
+    if num_devices == 1:
+        return channels
+    return (
+        ceildiv(channels // num_devices, MOE_TP_CHANNEL_ALIGNMENT)
+        * MOE_TP_CHANNEL_ALIGNMENT
+    )
 
 
 class LayerKind(enum.Enum):
@@ -238,6 +260,24 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             )
         )
 
+    def select_w4a4_experts(self, supported: bool) -> None:
+        """Sets :attr:`w4a4_experts` from whether the devices run the W4A4
+        kernel and the device split ends between NVFP4 blocks.
+
+        Warns only when the checkpoint has NVFP4 routed experts to lose.
+        """
+        self.w4a4_experts = supported
+        if self.nvfp4_experts_split_by_block:
+            return
+        if self.w4a4_mixers():
+            logger.warning(
+                f"Nemotron-H: {len(self.devices)} devices split the "
+                f"{self.moe_intermediate_size} routed expert channels "
+                "mid NVFP4 block, so the routed experts run in BF16 instead "
+                "of W4A4."
+            )
+        self.w4a4_experts = False
+
     def mixers(self, kind: LayerKind) -> frozenset[str]:
         """Returns the checkpoint names of the mixers of one kind."""
         return frozenset(
@@ -254,6 +294,24 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         in its group, so that every device holds one whole head.
         """
         return max(self.num_key_value_heads, len(self.devices))
+
+    @property
+    def moe_intermediate_size_per_device(self) -> int:
+        """Returns the routed expert channels each device holds, padding
+        included."""
+        return moe_channels_per_device(
+            self.moe_intermediate_size, len(self.devices)
+        )
+
+    @property
+    def nvfp4_experts_split_by_block(self) -> bool:
+        """Returns whether each device's share of the routed expert channels
+        is a whole number of NVFP4 blocks.
+
+        The down projection's block scales can only be split between blocks.
+        """
+        share = self.moe_intermediate_size // len(self.devices)
+        return share % NVFP4_GROUP_SIZE == 0
 
     @property
     def mamba_intermediate_size(self) -> int:
@@ -370,7 +428,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         config = cls.from_huggingface(
             hf, kv_params=kv_params, devices=devices, max_seq_len=max_seq_len
         )
-        config.w4a4_experts = _runs_w4a4_experts(model_config.device_specs)
+        sm100 = _runs_w4a4_experts(model_config.device_specs)
+        config.select_w4a4_experts(sm100)
         config.fused_router = _runs_fused_router(
             model_config.device_specs,
             num_experts=config.num_experts,
@@ -378,7 +437,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             hidden_size=config.hidden_size,
         )
         # Validated on the same devices as the W4A4 experts only.
-        config.fp8_mamba_projections = config.w4a4_experts
+        config.fp8_mamba_projections = sm100
         hf_quant_config = resolve_hf_quant_config(hf, {}) or {}
         if hf_quant_config.get("kv_cache_scheme") and kv_cache_format is None:
             logger.info(
@@ -425,7 +484,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             )
         for count, what in (
             (hf.num_attention_heads, "attention heads"),
-            (hf.n_routed_experts, "routed experts"),
+            (hf.moe_intermediate_size, "routed expert channels"),
             (
                 hf.moe_shared_expert_intermediate_size,
                 "shared expert channels",

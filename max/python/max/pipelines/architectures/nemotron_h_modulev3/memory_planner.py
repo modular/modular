@@ -30,10 +30,11 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
 
         Modules dequantized at load are larger on the device than in the
         checkpoint files the default estimate measures. Routed experts kept in
-        NVFP4 grow only by their block-scale padding, and FP8 Mamba
-        projections not at all. Sharded weights are counted once and
-        replicated ones once per device. With more devices than KV heads,
-        each device holds a copy of its KV head.
+        NVFP4 grow only by their padding, and FP8 Mamba projections not at
+        all. Under tensor parallelism, the routed experts are padded per
+        device. Sharded weights are counted once and replicated ones once per
+        device. With more devices than KV heads, each device holds a copy of
+        its KV head.
         """
         size = super().estimate_weights_size(pipeline_config)
         config = self._config
@@ -42,7 +43,6 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
         fp8_mixers = config.fp8_mamba_mixers()
         for module, fmt in config.quant_scheme.quantized.items():
             if module.partition(".experts.")[0] in w4a4_mixers:
-                size += _block_scale_padding_bytes(config, module)
                 continue
             if module.rpartition(".")[0] in fp8_mixers:
                 continue
@@ -71,6 +71,9 @@ class NemotronHMemoryPlanner(PagedMemoryPlanner):
             }[fmt]
             # Dequantized to two-byte BF16.
             size += int(inner * config.hidden_size * (2 - stored_bytes))
+        bf16_mixers = config.mixers(LayerKind.MOE) - w4a4_mixers
+        size += len(bf16_mixers) * _bf16_routed_padding_bytes(config)
+        size += len(w4a4_mixers) * _nvfp4_routed_padding_bytes(config)
         return (
             size
             + _replicated_bytes(config) * (len(config.devices) - 1)
@@ -82,20 +85,21 @@ def _replicated_bytes(config: NemotronHConfig) -> int:
     """Returns the bytes of the weights every device holds whole.
 
     Those are the embedding, the LM head, the block norms and the final norm,
-    the MoE routers and the MLP mixers. Everything but the float32 routers
-    loads as BF16.
+    the MoE routers, the W4A4 experts' global scales and the MLP mixers.
+    Everything but the float32 routers and global scales loads as BF16.
     """
     hidden = config.hidden_size
     # The embedding, the LM head, every block's norm and the final norm.
     elements = (2 * config.vocab_size + len(config.layer_kinds) + 1) * hidden
-    router_bytes = 0
+    # One global scale per expert, in both projections.
+    float32_bytes = 8 * config.num_experts * len(config.w4a4_mixers())
     for kind in config.layer_kinds:
         if kind is LayerKind.MOE:
             # The router weight and its score bias.
-            router_bytes += 4 * config.num_experts * (hidden + 1)
+            float32_bytes += 4 * config.num_experts * (hidden + 1)
         elif kind is LayerKind.MLP:
             elements += 2 * config.intermediate_size * hidden
-    return 2 * elements + router_bytes
+    return 2 * elements + float32_bytes
 
 
 def _repeated_kv_bytes(config: NemotronHConfig) -> int:
@@ -108,13 +112,37 @@ def _repeated_kv_bytes(config: NemotronHConfig) -> int:
     )
 
 
-def _block_scale_padding_bytes(config: NemotronHConfig, module: str) -> int:
-    """Returns the bytes one NVFP4 routed projection's scales are padded by.
+def _bf16_routed_padding_bytes(config: NemotronHConfig) -> int:
+    """Returns the bytes one mixer's BF16 routed experts are padded by.
 
-    The interleaved layout pads the output rows to a multiple of 128.
+    Each device's share of the channels of both projections is padded.
     """
-    hidden, inner = config.hidden_size, config.moe_intermediate_size
-    rows, k = (
-        (inner, hidden) if module.endswith(".up_proj") else (hidden, inner)
+    padded = len(config.devices) * config.moe_intermediate_size_per_device
+    return (
+        2
+        * config.num_experts
+        * 2
+        * config.hidden_size
+        * (padded - config.moe_intermediate_size)
     )
-    return (ceildiv(rows, 128) * 128 - rows) * (k // NVFP4_GROUP_SIZE)
+
+
+def _nvfp4_routed_padding_bytes(config: NemotronHConfig) -> int:
+    """Returns the bytes one mixer's NVFP4 routed experts are padded by.
+
+    Each device's share of the channels of both projections is padded, and
+    the interleaved scales pad their rows to whole granules of 128.
+    """
+    n = len(config.devices)
+    hidden, inner = config.hidden_size, config.moe_intermediate_size
+    padded = config.moe_intermediate_size_per_device
+    group = NVFP4_GROUP_SIZE
+    # Half a byte per E2M1 weight and one E4M3 scale per group of them.
+    up = n * padded * hidden // 2 + (
+        n * ceildiv(padded, 128) * 128 * hidden // group
+    )
+    down = n * padded * hidden // 2 + (
+        ceildiv(hidden, 128) * 128 * n * padded // group
+    )
+    stored = 2 * (inner * hidden // 2 + inner * hidden // group)
+    return config.num_experts * (up + down - stored)

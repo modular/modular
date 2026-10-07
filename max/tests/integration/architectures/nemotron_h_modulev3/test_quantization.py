@@ -30,12 +30,18 @@ from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
     parse_quant_scheme,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
+    _bytes,
     dequantize_to_bf16,
     interleave_nvfp4_scales,
     permute_mamba_for_tp,
     repeat_kv_heads_for_tp,
     stack_bf16_experts,
     stack_nvfp4_experts,
+)
+from max.pipelines.weights._fp8 import e4m3fn_lut
+from max.pipelines.weights.fp4_quantization import (
+    FP4Format,
+    e2m1_decode_table,
 )
 
 # E4M3 encodings of 0.5, 1, 2 and 4.
@@ -209,8 +215,25 @@ def test_stacking_keeps_the_routed_experts_in_nvfp4() -> None:
     )
 
 
-def test_bf16_stacking_dequantizes_each_expert_into_its_slice() -> None:
-    """NVFP4 experts on GPUs without the W4A4 matmul, and BF16 experts."""
+def _strip_device_padding(
+    stack: npt.NDArray[np.generic], axis: int, n: int, channels: int
+) -> npt.NDArray[np.generic]:
+    """Returns ``stack`` without its per-device padding, which must be 0."""
+    real = []
+    for block in np.split(stack, n, axis=axis):
+        kept, padding = np.split(block, [channels // n], axis=axis)
+        assert not padding.any()
+        real.append(kept)
+    return np.concatenate(real, axis=axis)
+
+
+@pytest.mark.parametrize("n", [1, 2])
+def test_bf16_stacking_dequantizes_each_expert_into_its_slice(n: int) -> None:
+    """NVFP4 experts on GPUs without the W4A4 matmul, and BF16 experts.
+
+    Under tensor parallelism each device's share of the channels is padded
+    with zeros to 64.
+    """
     rng = np.random.default_rng(0)
     nvfp4_mixer, bf16_mixer = (
         "backbone.layers.1.mixer",
@@ -241,7 +264,7 @@ def test_bf16_stacking_dequantizes_each_expert_into_its_slice() -> None:
             )
 
     out, remaining = stack_bf16_experts(
-        state_dict, modules, {nvfp4_mixer, bf16_mixer}
+        state_dict, modules, {nvfp4_mixer, bf16_mixer}, num_devices=n
     )
 
     assert remaining == {"lm_head": ModuleFormat.NVFP4_WEIGHT_ONLY}
@@ -249,15 +272,123 @@ def test_bf16_stacking_dequantizes_each_expert_into_its_slice() -> None:
     expected = dequantize_to_bf16(
         state_dict, {m: f for m, f in modules.items() if m != "lm_head"}
     )
+    padded = {1: {"up": (2, 4, 32), "down": (2, 4, 32)}}.get(
+        n, {"up": (2, 128, 32), "down": (2, 4, 128)}
+    )
     for mixer, source in ((nvfp4_mixer, expected), (bf16_mixer, state_dict)):
-        for proj in ("up", "down"):
+        for proj, axis, channels in (("up", 1, 4), ("down", 2, 32)):
             stack = out[f"{mixer}.{proj}_weight"]
-            assert tuple(stack.shape) == (2, 4, 32)
+            assert tuple(stack.shape) == padded[proj]
+            values = _strip_device_padding(_values(stack), axis, n, channels)
             for e in range(2):
                 np.testing.assert_array_equal(
-                    _values(stack)[e],
+                    values[e],
                     _values(source[f"{mixer}.experts.{e}.{proj}_proj.weight"]),
                 )
+
+
+def _deinterleave(block: npt.NDArray[np.uint8]) -> npt.NDArray[np.uint8]:
+    """Inverts :func:`interleave_nvfp4_scales`, padding rows included."""
+    granules, atoms = block.shape[:2]
+    return block.transpose(0, 3, 2, 1, 4).reshape(granules * 128, atoms * 4)
+
+
+def _nvfp4_values(
+    codes: npt.NDArray[np.uint8], scales: npt.NDArray[np.uint8], scale: float
+) -> npt.NDArray[np.float64]:
+    e2m1 = e2m1_decode_table(FP4Format.NVFP4).astype(np.float64)
+    values = np.stack([e2m1[codes & 0xF], e2m1[codes >> 4]], axis=-1)
+    values = values.reshape(codes.shape[0], -1, 16)
+    values *= e4m3fn_lut()[scales][..., None]
+    return values.reshape(codes.shape[0], -1) * scale
+
+
+def _relu2(x: npt.NDArray[np.float64]) -> npt.NDArray[np.float64]:
+    return np.maximum(x, 0) ** 2
+
+
+def test_tp_stacking_pads_each_devices_nvfp4_channels_with_zeros() -> None:
+    """Two devices each hold 48 of the 96 channels, padded to 64.
+
+    The padding's codes and block scales are 0x00, which dequantize to zero,
+    so the devices' partial MLPs sum to the whole one.
+    """
+    rng = np.random.default_rng(0)
+    mixer = "backbone.layers.1.mixer"
+    hidden, inner, n = 64, 96, 2
+    share, padded = inner // n, 64
+    shapes = {"up_proj": (inner, hidden), "down_proj": (hidden, inner)}
+    modules = {
+        f"{mixer}.experts.{e}.{proj}": ModuleFormat.NVFP4_WEIGHT_ONLY
+        for e in range(2)
+        for proj in shapes
+    }
+    state_dict = {}
+    for module in modules:
+        rows, cols = shapes[module.rpartition(".")[2]]
+        state_dict[f"{module}.weight"] = _weight(
+            rng.integers(0, 256, (rows, cols // 2), dtype=np.uint8),
+            DType.uint8,
+        )
+        # Nonzero scales, 2^-2 to 2^2, so zero padding stands out.
+        state_dict[f"{module}.weight_scale"] = _weight(
+            rng.integers(0x28, 0x48, (rows, cols // 16), dtype=np.uint8),
+            DType.float8_e4m3fn,
+        )
+        state_dict[f"{module}.weight_scale_2"] = _weight(
+            np.array(0.25, dtype=np.float32), DType.float32
+        )
+
+    out, _ = stack_nvfp4_experts(state_dict, modules, {mixer}, num_devices=n)
+
+    stacked = {
+        name: _bytes(out[f"{mixer}.{name}"])
+        for name in (
+            "up_weight",
+            "up_block_scale",
+            "down_weight",
+            "down_block_scale",
+        )
+    }
+    assert {k: v.shape for k, v in stacked.items()} == {
+        "up_weight": (2, n * padded, hidden // 2),
+        "up_block_scale": (2, n, hidden // 64, 32, 4, 4),
+        "down_weight": (2, hidden, n * padded // 2),
+        "down_block_scale": (2, 1, n * padded // 64, 32, 4, 4),
+    }
+    x = rng.standard_normal((5, hidden))
+    for e in range(2):
+        up, down = (
+            _nvfp4_values(
+                _bytes(state_dict[f"{mixer}.experts.{e}.{proj}.weight"]),
+                _bytes(state_dict[f"{mixer}.experts.{e}.{proj}.weight_scale"]),
+                0.25,
+            )
+            for proj in ("up_proj", "down_proj")
+        )
+        got = np.zeros((5, hidden))
+        for d in range(n):
+            up_codes = stacked["up_weight"][e, d * padded : (d + 1) * padded]
+            up_scales = _deinterleave(stacked["up_block_scale"][e, d : d + 1])
+            assert not up_codes[share:].any() and not up_scales[share:].any()
+            up_d = _nvfp4_values(up_codes, up_scales[:padded], 0.25)
+            np.testing.assert_array_equal(
+                up_d[:share], up[d * share : (d + 1) * share]
+            )
+
+            packed = slice(d * padded // 2, (d + 1) * padded // 2)
+            down_codes = stacked["down_weight"][e, :, packed]
+            down_scales = _deinterleave(
+                stacked["down_block_scale"][e, :, d : d + 1]
+            )[:hidden]
+            assert not down_codes[:, share // 2 :].any()
+            assert not down_scales[:, share // 16 :].any()
+            down_d = _nvfp4_values(down_codes, down_scales, 0.25)
+            np.testing.assert_array_equal(
+                down_d[:, :share], down[:, d * share : (d + 1) * share]
+            )
+            got += _relu2(x @ up_d.T) @ down_d.T
+        np.testing.assert_allclose(got, _relu2(x @ up.T) @ down.T, rtol=1e-10)
 
 
 def _bits(weight: WeightData) -> npt.NDArray[np.generic]:

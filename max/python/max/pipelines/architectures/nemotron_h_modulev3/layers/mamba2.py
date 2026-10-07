@@ -34,7 +34,7 @@ from max.nn.state_space import (
 
 from ..model_config import NemotronHConfig
 from ..quantization import FP8_STATIC_TENSOR_QUANT
-from .sharding import shard_dim0
+from .sharding import shard_axis
 
 
 def _layer_rows(rows: Tensor, layer: Tensor) -> TensorValue:
@@ -202,17 +202,17 @@ class NemotronHMamba2Mixer(
             quant_config=quant_config,
         )
         self.conv1d = CausalConv1d(self.conv_dim, config.conv_kernel)
-        self.conv1d.weight = shard_dim0(self.conv1d.weight)
-        self.conv1d.bias = shard_dim0(self.conv1d.bias)
-        self.A_log = shard_dim0(Tensor.zeros([self.num_heads]))
-        self.D = shard_dim0(Tensor.zeros([self.num_heads]))
-        self.dt_bias = shard_dim0(Tensor.zeros([self.num_heads]))
+        self.conv1d.weight = shard_axis(self.conv1d.weight)
+        self.conv1d.bias = shard_axis(self.conv1d.bias)
+        self.A_log = shard_axis(Tensor.zeros([self.num_heads]))
+        self.D = shard_axis(Tensor.zeros([self.num_heads]))
+        self.dt_bias = shard_axis(Tensor.zeros([self.num_heads]))
         self.norm = GatedGroupRMSNorm(
             self.intermediate,
             self.intermediate // self.n_groups,
             config.layer_norm_epsilon,
         )
-        self.norm.weight = shard_dim0(self.norm.weight)
+        self.norm.weight = shard_axis(self.norm.weight)
         self.out_proj = RowParallelLinear(
             self.intermediate,
             config.hidden_size,

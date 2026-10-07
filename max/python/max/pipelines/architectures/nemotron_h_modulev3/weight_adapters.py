@@ -17,7 +17,8 @@ stored; :func:`dequantize_to_bf16` expands the quantized ones to BF16, except
 the NVFP4 routed experts that :func:`stack_nvfp4_experts` keeps 4-bit for the
 W4A4 grouped matmul and the Mamba projections that run in FP8.
 :func:`stack_bf16_experts` stacks every other mixer's routed experts in BF16.
-Under tensor parallelism, :func:`permute_mamba_for_tp` regroups the Mamba
+Under tensor parallelism, both stack each expert's channels as one zero-padded
+block per device, :func:`permute_mamba_for_tp` regroups the Mamba
 mixers' fused rows by device and :func:`repeat_kv_heads_for_tp` gives each
 device a whole KV head.
 """
@@ -44,7 +45,7 @@ from max.pipelines.weights.fp4_quantization import (
 )
 from max.support.math import ceildiv
 
-from .model_config import LayerKind, NemotronHConfig
+from .model_config import LayerKind, NemotronHConfig, moe_channels_per_device
 from .quantization import NVFP4_GROUP_SIZE, ModuleFormat
 
 
@@ -112,7 +113,7 @@ def _nvfp4_rows(
     values *= global_scale
     out[rows] = float32_to_bfloat16_as_uint16(
         values.reshape(row_bytes.shape[0], -1)
-    )
+    ).reshape(out[rows].shape)
 
 
 def _fp8_rows(
@@ -123,7 +124,7 @@ def _fp8_rows(
 ) -> None:
     out[rows] = float32_to_bfloat16_as_uint16(
         e4m3fn_lut()[weight[rows]] * scale
-    )
+    ).reshape(out[rows].shape)
 
 
 def dequantize_to_bf16(
@@ -171,38 +172,65 @@ def _dequantize_module(
     module: str,
     fmt: ModuleFormat,
     tasks: list[Future[None]],
-    out: npt.NDArray[np.uint16] | None = None,
+    out: Sequence[npt.NDArray[np.uint16]] = (),
 ) -> npt.NDArray[np.uint16]:
-    """Pops a module's tensors and queues its dequantization into ``out``.
+    """Pops a module's tensors and queues their dequantization.
+
+    Args:
+        out: Where the BF16 bits go. The weight's rows split evenly between
+            the arrays, and each row fills one row of its array. Defaults to
+            a new array of the weight's shape.
 
     Returns:
-        The BF16 bits, which are complete once ``tasks`` are.
+        The new array, or the first of ``out``. The bits are complete once
+        ``tasks`` are.
     """
     weight = _bytes(weights.pop(f"{module}.weight"))
     scale = weights.pop(f"{module}.weight_scale")
     if fmt is ModuleFormat.NVFP4_WEIGHT_ONLY:
         global_scale = _scalar(weights.pop(f"{module}.weight_scale_2"))
-        if out is None:
-            out = np.empty(
-                (weight.shape[0], weight.shape[1] * 2), dtype=np.uint16
+        if not out:
+            out = [
+                np.empty(
+                    (weight.shape[0], weight.shape[1] * 2), dtype=np.uint16
+                )
+            ]
+        block_scales = _bytes(scale)
+
+        def dequantize(
+            rows: slice, out: npt.NDArray[np.uint16]
+        ) -> Callable[[slice], None]:
+            return functools.partial(
+                _nvfp4_rows,
+                weight[rows],
+                block_scales[rows],
+                global_scale,
+                out=out,
             )
-        dequantize_rows = functools.partial(
-            _nvfp4_rows, weight, _bytes(scale), global_scale, out=out
-        )
+
     elif fmt is ModuleFormat.FP8_STATIC_TENSOR:
         weights.pop(f"{module}.input_scale")
-        if out is None:
-            out = np.empty(weight.shape, dtype=np.uint16)
-        dequantize_rows = functools.partial(
-            _fp8_rows, weight, _scalar(scale), out=out
-        )
+        if not out:
+            out = [np.empty(weight.shape, dtype=np.uint16)]
+        fp8_scale = _scalar(scale)
+
+        def dequantize(
+            rows: slice, out: npt.NDArray[np.uint16]
+        ) -> Callable[[slice], None]:
+            return functools.partial(
+                _fp8_rows, weight[rows], fp8_scale, out=out
+            )
+
     else:
         raise ValueError(f"'{module}' is not quantized ({fmt.name})")
-    tasks.extend(
-        pool.submit(dequantize_rows, slice(start, start + _DEQUANT_ROWS))
-        for start in range(0, weight.shape[0], _DEQUANT_ROWS)
-    )
-    return out
+    block = weight.shape[0] // len(out)
+    for i, array in enumerate(out):
+        dequantize_rows = dequantize(slice(i * block, (i + 1) * block), array)
+        tasks.extend(
+            pool.submit(dequantize_rows, slice(start, start + _DEQUANT_ROWS))
+            for start in range(0, block, _DEQUANT_ROWS)
+        )
+    return out[0]
 
 
 def _weight(
@@ -266,10 +294,40 @@ def interleave_nvfp4_scales(
     return np.ascontiguousarray(atoms.transpose(0, 3, 2, 1, 4))
 
 
+def _stack_device_blocks(
+    array: npt.NDArray[np.uint8],
+    axis: int,
+    n: int,
+    size: int,
+    each: Callable[[npt.NDArray[np.uint8]], npt.NDArray[np.uint8]] = (
+        lambda block: block
+    ),
+) -> npt.NDArray[np.uint8]:
+    """Splits ``axis`` into ``n`` equal blocks and stacks them back padded.
+
+    Each block is zero-padded to ``size`` along ``axis`` and passed through
+    ``each`` before the blocks concatenate along ``axis``.
+    """
+    if n == 1:
+        return each(array)
+    pad = [(0, 0)] * array.ndim
+    pad[axis] = (0, size - array.shape[axis] // n)
+    return np.concatenate(
+        [each(np.pad(block, pad)) for block in np.split(array, n, axis=axis)],
+        axis=axis,
+    )
+
+
+def _channel_axis(proj: str) -> int:
+    """Returns the weight axis of a routed projection's expert channels."""
+    return 0 if proj == "up_proj" else 1
+
+
 def stack_nvfp4_experts(
     state_dict: Mapping[str, WeightData],
     modules: Mapping[str, ModuleFormat],
     mixers: Collection[str],
+    num_devices: int = 1,
 ) -> tuple[dict[str, WeightData], dict[str, ModuleFormat]]:
     """Stacks the NVFP4 routed experts of ``mixers`` for the W4A4 matmul.
 
@@ -280,11 +338,20 @@ def stack_nvfp4_experts(
     (float32 ``weight_scale_2``, ``[experts]``) and the three ``down_``
     tensors. Nothing is dequantized.
 
+    Under tensor parallelism the expert channels, ``N`` of ``up`` and ``K``
+    of ``down``, stack one block per device. Each block holds the device's
+    share of the channels zero-padded to
+    :func:`~.model_config.moe_channels_per_device`, and its own interleaved
+    scales, so an even split of the stack gives each device its experts.
+    Zero codes and zero scales add nothing to the matmul.
+
     Args:
         state_dict: The checkpoint's tensors.
         modules: The quantized modules and their formats.
         mixers: The MoE mixers to stack (see
             :meth:`NemotronHConfig.w4a4_mixers`).
+        num_devices: The number of devices the expert channels split across.
+            Each device's share must be a whole number of NVFP4 blocks.
 
     Returns:
         A new state dict, and the modules left to dequantize.
@@ -305,19 +372,39 @@ def stack_nvfp4_experts(
         del remaining[module]
 
     def load(
-        module: str,
+        module: str, axis: int
     ) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.uint8], np.float32]:
         codes = _bytes(weights.pop(f"{module}.weight"))
         scales = _bytes(weights.pop(f"{module}.weight_scale"))
         global_scale = _scalar(weights.pop(f"{module}.weight_scale_2"))
-        return codes, interleave_nvfp4_scales(scales), global_scale
+        # The packed codes hold two channels per byte along K.
+        channels = codes.shape[axis] * (2 if axis else 1)
+        size = moe_channels_per_device(channels, num_devices)
+        codes = _stack_device_blocks(
+            codes, axis, num_devices, size // 2 if axis else size
+        )
+        # The interleaved layout's granules of 128 rows and atoms of four
+        # columns stack along the same axes as the rows and columns.
+        scales = _stack_device_blocks(
+            scales,
+            axis,
+            num_devices,
+            size // NVFP4_GROUP_SIZE if axis else size,
+            each=interleave_nvfp4_scales,
+        )
+        return codes, scales, global_scale
 
     with ThreadPoolExecutor(max_workers=min(32, os.cpu_count() or 1)) as pool:
         for (mixer, proj), by_expert in experts.items():
             ids = sorted(by_expert)
             if ids != list(range(len(ids))):
                 raise ValueError(f"'{mixer}' is missing routed experts")
-            loaded = list(pool.map(load, (by_expert[e] for e in ids)))
+            loaded = list(
+                pool.map(
+                    functools.partial(load, axis=_channel_axis(proj)),
+                    (by_expert[e] for e in ids),
+                )
+            )
             prefix = f"{mixer}.{proj.removesuffix('_proj')}"
             for suffix, array, dtype in (
                 ("weight", np.stack([c for c, _, _ in loaded]), DType.uint8),
@@ -337,22 +424,49 @@ def stack_nvfp4_experts(
     return weights, remaining
 
 
+def _device_slots(
+    stack: npt.NDArray[np.uint16], axis: int, n: int, channels: int
+) -> list[npt.NDArray[np.uint16]]:
+    """Returns the views of one expert's padded slot its channels fill.
+
+    The expert's rows split evenly between the views, in order, and each
+    row fills one row of its view.
+
+    Args:
+        stack: The expert's ``[N, K]`` slot, holding ``n`` padded blocks of
+            channels along ``axis``.
+        axis: The axis of the expert channels.
+        n: The number of devices.
+        channels: The expert's channels without padding.
+    """
+    rows, cols = stack.shape
+    if axis == 0:
+        # Each device's rows are one contiguous run of the expert's rows.
+        return list(stack.reshape(n, rows // n, cols)[:, : channels // n])
+    # Every row of the expert fills a run of each device's block.
+    return [stack.reshape(rows, n, cols // n)[:, :, : channels // n]]
+
+
 def stack_bf16_experts(
     state_dict: Mapping[str, WeightData],
     modules: Mapping[str, ModuleFormat],
     mixers: Collection[str],
+    num_devices: int = 1,
 ) -> tuple[dict[str, WeightData], dict[str, ModuleFormat]]:
     """Stacks the routed experts of ``mixers`` in BF16 for the grouped matmul.
 
     Each mixer's per-expert ``up_proj`` and ``down_proj`` weights become
     ``{mixer}.up_weight`` and ``{mixer}.down_weight``, ``[experts, N, K]``.
     Quantized experts dequantize straight into their slice of the stack, so
-    no expert is held on the host twice.
+    no expert is held on the host twice. Under tensor parallelism the expert
+    channels stack one zero-padded block per device, as in
+    :func:`stack_nvfp4_experts`.
 
     Args:
         state_dict: The checkpoint's tensors.
         modules: The quantized modules and their formats.
         mixers: The MoE mixers to stack.
+        num_devices: The number of devices the expert channels split across.
 
     Returns:
         A new state dict, and the modules left to dequantize.
@@ -379,16 +493,24 @@ def stack_bf16_experts(
             if ids != list(range(len(ids))):
                 raise ValueError(f"'{mixer}' is missing routed experts")
             first = by_expert[0]
-            rows, cols = (int(d) for d in weights[f"{first}.weight"].shape)
+            shape = [int(d) for d in weights[f"{first}.weight"].shape]
             if remaining.get(first) is ModuleFormat.NVFP4_WEIGHT_ONLY:
-                cols *= 2
-            stack = np.empty((len(ids), rows, cols), dtype=np.uint16)
+                shape[1] *= 2
+            axis = _channel_axis(proj)
+            channels = shape[axis]
+            padded = list(shape)
+            padded[axis] = num_devices * moe_channels_per_device(
+                channels, num_devices
+            )
+            # Zeros, for the padding.
+            stack = np.zeros((len(ids), *padded), dtype=np.uint16)
             for e in ids:
                 module = by_expert[e]
+                slots = _device_slots(stack[e], axis, num_devices, channels)
                 fmt = remaining.pop(module, ModuleFormat.BF16)
                 if fmt is not ModuleFormat.BF16:
                     _dequantize_module(
-                        pool, weights, module, fmt, tasks, out=stack[e]
+                        pool, weights, module, fmt, tasks, out=slots
                     )
                     continue
                 weight = weights.pop(f"{module}.weight")
@@ -397,8 +519,13 @@ def stack_bf16_experts(
                         f"'{module}' is {weight.dtype}; routed experts are "
                         "read as BF16"
                     )
-                bits = _bytes(weight).view(np.uint16).reshape(rows, cols)
-                tasks.append(pool.submit(np.copyto, stack[e], bits))
+                bits = _bytes(weight).view(np.uint16).reshape(shape)
+                for slot, rows in zip(
+                    slots, np.split(bits, len(slots)), strict=True
+                ):
+                    tasks.append(
+                        pool.submit(np.copyto, slot, rows.reshape(slot.shape))
+                    )
             stacks[f"{mixer}.{proj.removesuffix('_proj')}_weight"] = stack
         for task in tasks:
             task.result()

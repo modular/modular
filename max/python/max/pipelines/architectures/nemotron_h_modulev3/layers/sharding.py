@@ -19,6 +19,8 @@ from max.experimental.sharding import NamedMapping
 from max.experimental.tensor import Tensor
 
 
-def shard_dim0(t: Tensor) -> Tensor:
-    """Shards ``t`` on its first axis across its mesh's tensor-parallel axis."""
-    return t.to(NamedMapping(t.mesh, (TP,) + (None,) * (t.rank - 1)))
+def shard_axis(t: Tensor, axis: int = 0) -> Tensor:
+    """Shards ``t`` on ``axis`` across its mesh's tensor-parallel axis."""
+    spec: list[str | None] = [None] * t.rank
+    spec[axis] = TP
+    return t.to(NamedMapping(t.mesh, tuple(spec)))

@@ -60,15 +60,17 @@ class NemotronHModel(
         self, state_dict: dict[str, Any], model_config: NemotronHConfig
     ) -> dict[str, Any]:
         modules = model_config.quant_scheme.quantized
+        n = len(self.devices)
         w4a4_mixers = model_config.w4a4_mixers()
         if w4a4_mixers:
             state_dict, modules = stack_nvfp4_experts(
-                state_dict, modules, w4a4_mixers
+                state_dict, modules, w4a4_mixers, num_devices=n
             )
         state_dict, modules = stack_bf16_experts(
             state_dict,
             modules,
             model_config.mixers(LayerKind.MOE) - w4a4_mixers,
+            num_devices=n,
         )
         if modules:
             fp8_mixers = model_config.fp8_mamba_mixers()
@@ -85,7 +87,6 @@ class NemotronHModel(
             )
         # An FP8 in_proj has one scale for the whole tensor, so its rows move
         # as stored.
-        n = len(self.devices)
         state_dict = permute_mamba_for_tp(state_dict, model_config, n)
         return repeat_kv_heads_for_tp(state_dict, model_config, n)
 

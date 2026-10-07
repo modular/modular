@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import warnings
 from collections.abc import Callable
@@ -50,6 +51,7 @@ from max.pipelines.architectures.nemotron_h_modulev3.memory_planner import (
 from max.pipelines.architectures.nemotron_h_modulev3.model_config import (
     LayerKind,
     NemotronHConfig,
+    moe_channels_per_device,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.nemotron_h import (
     NemotronH,
@@ -270,26 +272,59 @@ def test_each_device_holds_a_whole_kv_head() -> None:
         assert proj.weight.mapping.placements == (Sharded(0),)
 
 
-def test_moe_shards_by_expert() -> None:
-    """Each device holds half the routed experts and half the shared expert.
+def _with_w4a4_experts(config: NemotronHConfig) -> NemotronHConfig:
+    """Returns ``config`` with the first MoE mixer's experts in W4A4."""
+    nvfp4 = {
+        f"backbone.layers.1.mixer.experts.{e}.{proj}": (
+            ModuleFormat.NVFP4_WEIGHT_ONLY
+        )
+        for e in range(config.num_experts)
+        for proj in ("up_proj", "down_proj")
+    }
+    return replace(
+        config, w4a4_experts=True, quant_scheme=NemotronHQuantScheme(nvfp4)
+    )
 
-    Splitting each expert's channels instead would leave the W4A4 down
-    projection 58 block scales wide, which its interleaved layout cannot
-    hold.
+
+@pytest.mark.parametrize("w4a4", [False, True])
+def test_moe_splits_each_experts_channels(w4a4: bool) -> None:
+    """Each device holds its share of every routed expert's channels,
+    padded to 64, and half the shared expert.
+
+    The up projection splits its rows and the down projection its columns,
+    and the W4A4 block scales split with them.
     """
-    model = _model_on_devices(model_config(TINY_LAYERS, TINY, n_devices=2))
-    moe = model.backbone.layers[1].mixer
+    # Hidden size 64 gives the W4A4 up projection whole scale atoms.
+    config = model_config(TINY_LAYERS, TINY | dict(hidden_size=64), n_devices=2)
+    if w4a4:
+        config = _with_w4a4_experts(config)
+    moe = _model_on_devices(config).backbone.layers[1].mixer
     assert isinstance(moe, NemotronHMoE)
 
-    def placements(t: Tensor) -> tuple[object, ...]:
-        return t.mapping.placements
+    def layout(t: Tensor) -> tuple[tuple[int, ...], tuple[object, ...]]:
+        return tuple(int(d) for d in t.shape), t.mapping.placements
 
-    assert placements(moe.up_weight) == (Sharded(0),)
-    assert placements(moe.down_weight) == (Sharded(0),)
-    assert placements(moe.shared_experts.up_proj.weight) == (Sharded(0),)
-    assert placements(moe.shared_experts.down_proj.weight) == (Sharded(1),)
+    # Four experts of 16 channels: 8 per device, padded to 64.
+    if w4a4:
+        assert layout(moe.up_weight) == ((4, 128, 32), (Sharded(1),))
+        assert layout(moe.up_block_scale) == (
+            (4, 2, 1, 32, 4, 4),
+            (Sharded(1),),
+        )
+        assert layout(moe.down_weight) == ((4, 64, 64), (Sharded(2),))
+        assert layout(moe.down_block_scale) == (
+            (4, 1, 2, 32, 4, 4),
+            (Sharded(2),),
+        )
+        for scale in (moe.up_scale, moe.down_scale):
+            assert layout(scale) == ((4,), (Replicated(),))
+    else:
+        assert layout(moe.up_weight) == ((4, 128, 64), (Sharded(1),))
+        assert layout(moe.down_weight) == ((4, 64, 128), (Sharded(2),))
+    assert moe.shared_experts.up_proj.weight.placements == (Sharded(0),)
+    assert moe.shared_experts.down_proj.weight.placements == (Sharded(1),)
     # Every device routes every token.
-    assert placements(moe.gate.weight) == (Replicated(),)
+    assert moe.gate.weight.placements == (Replicated(),)
 
 
 def test_mamba_shards_by_head() -> None:
@@ -355,17 +390,7 @@ def test_loading_is_strict() -> None:
 
 
 def test_w4a4_selects_the_moe_mixers_with_nvfp4_experts() -> None:
-    config = model_config(TINY_LAYERS, TINY)
-    nvfp4 = {
-        f"backbone.layers.1.mixer.experts.{e}.{proj}": (
-            ModuleFormat.NVFP4_WEIGHT_ONLY
-        )
-        for e in range(config.num_experts)
-        for proj in ("up_proj", "down_proj")
-    }
-    config = replace(
-        config, w4a4_experts=True, quant_scheme=NemotronHQuantScheme(nvfp4)
-    )
+    config = _with_w4a4_experts(model_config(TINY_LAYERS, TINY))
     assert config.w4a4_mixers() == {"backbone.layers.1.mixer"}
 
 
@@ -373,7 +398,7 @@ def test_w4a4_selects_the_moe_mixers_with_nvfp4_experts() -> None:
     "field, value, n_devices, sharded",
     [
         ("num_attention_heads", 3, 2, "3 attention heads"),
-        ("n_routed_experts", 5, 2, "5 routed experts"),
+        ("moe_intermediate_size", 15, 2, "15 routed expert channels"),
         ("moe_shared_expert_intermediate_size", 25, 2, "25 shared expert"),
         ("mamba_num_heads", 3, 2, "3 Mamba heads"),
         ("n_groups", 3, 2, "3 Mamba groups"),
@@ -399,6 +424,46 @@ def test_sharded_dims_must_divide_across_devices(
         )
 
 
+@pytest.mark.parametrize(
+    "n, channels", [(1, 1856), (2, 960), (4, 512), (8, 256)]
+)
+def test_each_device_pads_its_expert_channels(n: int, channels: int) -> None:
+    """Lightning's 1856 channels split into shares padded to 64."""
+    assert moe_channels_per_device(1856, n) == channels
+
+
+@pytest.mark.parametrize(
+    "n, w4a4", [(1, True), (2, True), (4, True), (8, False)]
+)
+def test_nvfp4_experts_split_between_blocks(n: int, w4a4: bool) -> None:
+    """At eight devices, Lightning's 232 channels per device end mid block."""
+    config = model_config(
+        TINY_LAYERS, WIDE | dict(moe_intermediate_size=1856), n_devices=n
+    )
+    assert config.nvfp4_experts_split_by_block is w4a4
+
+
+@pytest.mark.parametrize("nvfp4", [False, True])
+@pytest.mark.parametrize("n", [4, 8])
+def test_w4a4_fallback_warns_only_for_nvfp4_experts(
+    n: int, nvfp4: bool, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A split mid NVFP4 block drops W4A4, and warns only when the
+    checkpoint has NVFP4 routed experts to lose."""
+    config = model_config(
+        TINY_LAYERS, WIDE | dict(moe_intermediate_size=1856), n_devices=n
+    )
+    if nvfp4:
+        config = _with_w4a4_experts(config)
+    split_by_block = n == 4
+    with caplog.at_level(logging.WARNING, logger="max.pipelines"):
+        config.select_w4a4_experts(True)
+    assert config.w4a4_experts is split_by_block
+    assert bool(config.w4a4_mixers()) is (nvfp4 and split_by_block)
+    warned = any("mid NVFP4 block" in r.getMessage() for r in caplog.records)
+    assert warned is (nvfp4 and not split_by_block)
+
+
 def _bytes_on_devices(model: NemotronH, n: int) -> int:
     """Sums the parameter bytes across devices, from their placements."""
     return sum(
@@ -409,14 +474,29 @@ def _bytes_on_devices(model: NemotronH, n: int) -> int:
     )
 
 
+@pytest.mark.parametrize("w4a4", [False, True])
 @pytest.mark.parametrize("n", [2, 4, 8])
-def test_weights_are_planned_as_the_modules_place_them(n: int) -> None:
+def test_weights_are_planned_as_the_modules_place_them(
+    n: int, w4a4: bool
+) -> None:
     """Sharded weights are counted once, replicated ones per device, and a
-    repeated KV head once per device that holds it."""
+    repeated KV head once per device that holds it.
+
+    The routed experts are padded per device, and their W4A4 scales to
+    whole granules.
+    """
     pipeline = Mock()
     pipeline.model.weights_size.return_value = 1000
-    one_config = model_config(TINY_LAYERS, WIDE)
-    config = model_config(TINY_LAYERS, WIDE, n_devices=n)
+    # Whole W4A4 scale atoms in both projections, and whole NVFP4 blocks on
+    # each of eight devices.
+    dims = (
+        WIDE | dict(hidden_size=64, moe_intermediate_size=128) if w4a4 else WIDE
+    )
+    one_config = model_config(TINY_LAYERS, dims)
+    config = model_config(TINY_LAYERS, dims, n_devices=n)
+    if w4a4:
+        one_config = _with_w4a4_experts(one_config)
+        config = _with_w4a4_experts(config)
 
     one = NemotronHMemoryPlanner(one_config).estimate_weights_size(pipeline)
     planned = NemotronHMemoryPlanner(config).estimate_weights_size(pipeline)

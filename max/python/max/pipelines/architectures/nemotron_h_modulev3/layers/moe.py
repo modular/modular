@@ -14,8 +14,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Linear, Module
@@ -30,7 +28,6 @@ from max.experimental.nn.common_layers.linear import (
     col_parallel,
     row_parallel,
 )
-from max.experimental.realization_context import ensure_context
 from max.experimental.sharding import DeviceMapping, Partial
 from max.experimental.sharding.rules import unary_rule
 from max.experimental.tensor import Tensor
@@ -40,7 +37,7 @@ from max.support.math import ceildiv
 
 from ..model_config import NemotronHConfig
 from ..quantization import NVFP4_GROUP_SIZE
-from .sharding import shard_dim0
+from .sharding import shard_axis
 
 # The largest E2M1 value times the largest E4M3 value: a row scaled by
 # amax / _NVFP4_RANGE has its largest block scale at the E4M3 maximum.
@@ -82,7 +79,6 @@ def _nvfp4_expert_matmul(
     scales_offsets: TensorValue,
     expert_ids: TensorValue,
     rows: TensorValue | None = None,
-    num_devices: int = 1,
 ) -> TensorValue:
     """Quantizes ``x`` to NVFP4 per row and runs the W4A4 grouped matmul.
 
@@ -99,9 +95,6 @@ def _nvfp4_expert_matmul(
         expert_ids: The expert of each group.
         rows: The ``x`` row of each routed row, when ``x`` is not already in
             routed order.
-        num_devices: The number of devices the experts are split across
-            evenly. The kernel sizes its tiles for ``1 / num_devices`` of
-            the routed rows.
 
     Returns:
         The BF16 output, ``[routed rows, N]``.
@@ -140,8 +133,7 @@ def _nvfp4_expert_matmul(
     )
     # The kernel picks its tiling from the average rows per expert.
     routed_rows = ops.cast(
-        ops.shape_to_tensor([x_fp4.shape[0] // num_devices])[0],
-        DType.uint32,
+        ops.shape_to_tensor([x_fp4.shape[0]])[0], DType.uint32
     )
     return kernels.grouped_matmul_block_scaled(
         x_fp4,
@@ -163,123 +155,116 @@ def _nvfp4_expert_matmul(
 nvfp4_expert_matmul = F.functional(_nvfp4_expert_matmul)
 
 
-def _local_routed(
-    x: TensorValue,
-    topk_ids: TensorValue,
-    topk_weights: TensorValue,
-    up: Sequence[TensorValue],
-    down: Sequence[TensorValue],
-    first_expert: int,
-    num_devices: int,
-) -> TensorValue:
-    """Runs one device's routed experts on every token.
+def _routed_experts(
+    x: Tensor,
+    experts: Tensor,
+    weights: Tensor,
+    up: list[Tensor],
+    down: list[Tensor],
+) -> Tensor:
+    """Runs the routed experts on one device.
 
     Args:
         x: The tokens, ``[tokens, hidden]``.
-        topk_ids: Each token's global expert ids, ``[tokens, k]``.
-        topk_weights: Each token's expert weights, ``[tokens, k]``.
-        up: The local experts' up projection: the BF16 weight, or the W4A4
-            weight, block scales and global scales.
-        down: The local experts' down projection, in the same form.
-        first_expert: The global id of the first local expert.
-        num_devices: The number of devices the experts are split across
-            evenly.
+        experts: Each token's experts, ``[tokens, k]``.
+        weights: Each token's expert weights, ``[tokens, k]``.
+        up: The device's share of the up projection: the BF16 weight, or the
+            W4A4 weight, block scales and global scales.
+        down: The device's share of the down projection, in the same form.
 
     Returns:
-        This device's share of the routed output, ``[tokens, hidden]``.
-        Summing every device's share gives the routed output.
+        The routed output, ``[tokens, hidden]``. Under tensor parallelism,
+        each device's partial sum of it.
     """
-    num_local = int(up[0].shape[0])
-    top_k = int(topk_ids.shape[1])
     w4a4 = len(up) > 1
-    ids = ops.reshape(ops.cast(topk_ids, DType.int32), [-1]) - first_expert
-    # Rows routed to another device's experts all go to one extra expert
-    # after the local ones, and no matmul reads its rows.
-    ids = ops.where(ops.logical_and(ids >= 0, ids < num_local), ids, num_local)
     (
         token_expert_order,
         expert_start_indices,
         restore_token_order,
         expert_ids,
-        _,
+        expert_usage_stats,
         *scales_offsets,
-    ) = kernels.moe_create_indices(ids, num_local + 1, needs_scales_offset=w4a4)
-    expert_start_indices = expert_start_indices[: num_local + 1]
-    expert_ids = expert_ids[:num_local]
-    token_rows = ops.cast(token_expert_order // top_k, DType.int32)
+    ) = moe_create_indices(
+        F.cast(F.reshape(experts, [-1]), DType.int32),
+        int(up[0].shape[0]),
+        needs_scales_offset=w4a4,
+    )
+    token_rows = F.cast(
+        F.floor_div(token_expert_order, int(experts.shape[1])), DType.int32
+    )
     if w4a4:
-        offsets = scales_offsets[0][:num_local]
         up_weight, up_block_scale, up_scale = up
         down_weight, down_block_scale, down_scale = down
-        up_out = _nvfp4_expert_matmul(
+        up_out = nvfp4_expert_matmul(
             x,
             up_weight,
             up_block_scale,
             up_scale,
             expert_start_indices,
-            offsets,
+            scales_offsets[0],
             expert_ids,
             token_rows,
-            num_devices=num_devices,
         )
-        down_out = _nvfp4_expert_matmul(
-            _relu2_value(up_out),
+        down_out = nvfp4_expert_matmul(
+            _relu2(up_out),
             down_weight,
             down_block_scale,
             down_scale,
             expert_start_indices,
-            offsets,
+            scales_offsets[0],
             expert_ids,
-            num_devices=num_devices,
         )
     else:
-        group_rows = expert_start_indices[1:] - expert_start_indices[:-1]
-        usage_stats = ops.concat(
-            [
-                ops.max(group_rows, axis=0),
-                ops.constant([num_local], DType.uint32, x.device),
-            ]
-        )
-        up_out = kernels.grouped_matmul_ragged(
-            ops.gather(x, token_rows, axis=0),
+        permuted = F.gather(x, token_rows, axis=0)
+        # relu2 becomes the up-projection's epilogue.
+        up_out = grouped_matmul_ragged(
+            permuted,
             up[0],
             expert_start_indices,
             expert_ids,
-            usage_stats,
+            expert_usage_stats,
         )
-        down_out = kernels.grouped_matmul_ragged(
-            _relu2_value(up_out),
+        down_out = grouped_matmul_ragged(
+            _relu2(up_out),
             down[0],
             expert_start_indices,
             expert_ids,
-            usage_stats,
+            expert_usage_stats,
         )
-    # The matmuls leave the rows of other devices' experts unwritten, and an
-    # unwritten row may hold NaN, which a zero weight does not cancel. So
-    # those pairs read row 0 at weight zero instead. Masking the rows
-    # themselves would fuse into the BF16 matmul's epilogue, which skips
-    # them.
-    local_rows = expert_start_indices[num_local]
-    is_local = restore_token_order < local_rows
-    routed = kernels.moe_finalize(
-        down_out,
-        ops.where(is_local, restore_token_order, 0),
-        ops.where(ops.reshape(is_local, topk_weights.shape), topk_weights, 0),
-        x.dtype,
+    return moe_finalize(down_out, restore_token_order, weights, x.dtype)
+
+
+def _expert_zeros(
+    shape: list[int], axis: int, num_devices: int, dtype: DType | None = None
+) -> Tensor:
+    """Zeros of ``shape`` on each device, sharded on ``axis``."""
+    shape = list(shape)
+    shape[axis] *= num_devices
+    return shard_axis(Tensor.zeros(shape, dtype=dtype), axis)
+
+
+def _nvfp4_weight(
+    num_experts: int, n: int, k: int, axis: int, num_devices: int
+) -> Tensor:
+    return _expert_zeros(
+        [num_experts, n, k // 2], axis, num_devices, DType.uint8
     )
-    # Without local rows, row 0 is unwritten too.
-    return ops.where(local_rows > 0, routed, 0)
 
 
-def _nvfp4_weight(num_experts: int, n: int, k: int) -> Tensor:
-    return Tensor.zeros([num_experts, n, k // 2], dtype=DType.uint8)
+def _nvfp4_block_scale(
+    num_experts: int, n: int, k: int, axis: int, num_devices: int
+) -> Tensor:
+    """Zeros in the interleaved layout the block-scaled matmul reads.
 
-
-def _nvfp4_block_scale(num_experts: int, n: int, k: int) -> Tensor:
-    """Zeros in the interleaved layout the block-scaled matmul reads."""
-    return Tensor.zeros(
+    ``n`` and ``k`` are each device's. The granules of 128 rows stack on
+    axis 1 and the atoms of four scale columns on axis 2, as the rows and
+    columns of the weight do.
+    """
+    return _expert_zeros(
         [num_experts, ceildiv(n, 128), k // (4 * NVFP4_GROUP_SIZE), 32, 4, 4],
-        dtype=DType.float8_e4m3fn,
+        axis,
+        num_devices,
+        DType.float8_e4m3fn,
     )
 
 
@@ -355,52 +340,29 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
     def __init__(
         self, config: NemotronHConfig, w4a4_experts: bool = False
     ) -> None:
-        self.num_experts = config.num_experts
-        self.num_experts_per_tok = config.num_experts_per_tok
         self.w4a4_experts = w4a4_experts
         self.gate = NemotronHRouter(config)
+        # Each device holds its share of every expert's channels, padded
+        # with zeros (see stack_nvfp4_experts): rows of the up projection,
+        # on axis 1, and columns of the down projection, on axis 2.
+        n = len(config.devices)
+        e, hidden = config.num_experts, config.hidden_size
+        inner = config.moe_intermediate_size_per_device
         if w4a4_experts:
-            hidden, inner = config.hidden_size, config.moe_intermediate_size
-            self.up_weight = _nvfp4_weight(config.num_experts, inner, hidden)
-            self.up_block_scale = _nvfp4_block_scale(
-                config.num_experts, inner, hidden
-            )
-            self.up_scale = Tensor.zeros(
-                [config.num_experts], dtype=DType.float32
-            )
-            self.down_weight = _nvfp4_weight(config.num_experts, hidden, inner)
-            self.down_block_scale = _nvfp4_block_scale(
-                config.num_experts, hidden, inner
-            )
-            self.down_scale = Tensor.zeros(
-                [config.num_experts], dtype=DType.float32
-            )
+            self.up_weight = _nvfp4_weight(e, inner, hidden, 1, n)
+            self.up_block_scale = _nvfp4_block_scale(e, inner, hidden, 1, n)
+            self.up_scale = Tensor.zeros([e], dtype=DType.float32)
+            self.down_weight = _nvfp4_weight(e, hidden, inner, 2, n)
+            self.down_block_scale = _nvfp4_block_scale(e, hidden, inner, 2, n)
+            self.down_scale = Tensor.zeros([e], dtype=DType.float32)
         else:
-            self.up_weight = Tensor.zeros(
-                [
-                    config.num_experts,
-                    config.moe_intermediate_size,
-                    config.hidden_size,
-                ]
+            self.up_weight = _expert_zeros([e, inner, hidden], 1, n)
+            self.down_weight = _expert_zeros([e, hidden, inner], 2, n)
+        self.shared_experts = _tensor_parallel_mlp(
+            NemotronHMLP(
+                config.hidden_size, config.moe_shared_expert_intermediate_size
             )
-            self.down_weight = Tensor.zeros(
-                [
-                    config.num_experts,
-                    config.hidden_size,
-                    config.moe_intermediate_size,
-                ]
-            )
-        self.shared_experts = NemotronHMLP(
-            config.hidden_size, config.moe_shared_expert_intermediate_size
         )
-        self.up_weight = shard_dim0(self.up_weight)
-        self.down_weight = shard_dim0(self.down_weight)
-        if w4a4_experts:
-            self.up_block_scale = shard_dim0(self.up_block_scale)
-            self.up_scale = shard_dim0(self.up_scale)
-            self.down_block_scale = shard_dim0(self.down_block_scale)
-            self.down_scale = shard_dim0(self.down_scale)
-        self.shared_experts = _tensor_parallel_mlp(self.shared_experts)
 
     def _routed_params(self) -> tuple[list[Tensor], list[Tensor]]:
         """Returns the parameters of the up and down routed projections.
@@ -415,91 +377,18 @@ class NemotronHMoE(Module[[Tensor], Tensor]):
 
     def forward(self, x: Tensor) -> Tensor:
         experts, weights = self.gate(x)
+        up, down = self._routed_params()
         mesh = x.mesh
         if mesh.num_devices > 1:
-            routed = self._sharded_routed(x, experts, weights)
+            # Each device runs every routed row through its share of each
+            # expert's channels, which gives a partial sum of the output.
+            routed = F.call_on_mesh(
+                _routed_experts,
+                mesh,
+                out_specs=DeviceMapping(mesh, (Partial(),)),
+            )(x, experts, weights, up, down)
         else:
-            routed = self._routed(x, experts, weights)
+            routed = _routed_experts(x, experts, weights, up, down)
         # Under tensor parallelism both are partial sums, which the residual
         # add reduces with one allreduce.
         return routed + self.shared_experts(x)
-
-    def _sharded_routed(
-        self, x: Tensor, experts: Tensor, weights: Tensor
-    ) -> Tensor:
-        """Runs each device's routed experts on its replica of the tokens."""
-        mesh = x.mesh
-        num_local = self.num_experts // mesh.num_devices
-        up, down = self._routed_params()
-        with ensure_context():
-            shards = [
-                _local_routed(
-                    TensorValue(x.local_shards[d]),
-                    TensorValue(experts.local_shards[d]),
-                    TensorValue(weights.local_shards[d]),
-                    [TensorValue(p.local_shards[d]) for p in up],
-                    [TensorValue(p.local_shards[d]) for p in down],
-                    first_expert=d * num_local,
-                    num_devices=mesh.num_devices,
-                )
-                for d in range(mesh.num_devices)
-            ]
-        return Tensor.from_shard_values(
-            shards, DeviceMapping(mesh, (Partial(),))
-        )
-
-    def _routed(self, x: Tensor, experts: Tensor, weights: Tensor) -> Tensor:
-        (
-            token_expert_order,
-            expert_start_indices,
-            restore_token_order,
-            expert_ids,
-            expert_usage_stats,
-            *scales_offsets,
-        ) = moe_create_indices(
-            F.cast(F.reshape(experts, [-1]), DType.int32),
-            self.num_experts,
-            needs_scales_offset=self.w4a4_experts,
-        )
-        token_rows = F.cast(
-            F.floor_div(token_expert_order, self.num_experts_per_tok),
-            DType.int32,
-        )
-        if self.w4a4_experts:
-            up = nvfp4_expert_matmul(
-                x,
-                self.up_weight,
-                self.up_block_scale,
-                self.up_scale,
-                expert_start_indices,
-                scales_offsets[0],
-                expert_ids,
-                token_rows,
-            )
-            down = nvfp4_expert_matmul(
-                _relu2(up),
-                self.down_weight,
-                self.down_block_scale,
-                self.down_scale,
-                expert_start_indices,
-                scales_offsets[0],
-                expert_ids,
-            )
-        else:
-            permuted = F.gather(x, token_rows, axis=0)
-            # relu2 becomes the up-projection's epilogue.
-            up = grouped_matmul_ragged(
-                permuted,
-                self.up_weight,
-                expert_start_indices,
-                expert_ids,
-                expert_usage_stats,
-            )
-            down = grouped_matmul_ragged(
-                _relu2(up),
-                self.down_weight,
-                expert_start_indices,
-                expert_ids,
-                expert_usage_stats,
-            )
-        return moe_finalize(down, restore_token_order, weights, x.dtype)

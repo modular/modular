@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Checks the routed-expert matmuls: W4A4 against a dequantized reference,
-and each device's share of the experts against all of them."""
+"""Checks the routed experts against a dequantized reference: the W4A4
+matmul, and the devices' shares of the experts' channels summed."""
 
 from __future__ import annotations
 
@@ -22,14 +22,22 @@ import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, ops
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+from max.graph import DeviceRef, Graph, Shape, TensorType, ops
+from max.graph.weights import WeightData
 from max.nn.kernels import moe_create_indices
 from max.pipelines.architectures.nemotron_h_modulev3.layers.moe import (
-    _local_routed,
     _nvfp4_expert_matmul,
+    _routed_experts,
+)
+from max.pipelines.architectures.nemotron_h_modulev3.quantization import (
+    ModuleFormat,
 )
 from max.pipelines.architectures.nemotron_h_modulev3.weight_adapters import (
     interleave_nvfp4_scales,
+    stack_bf16_experts,
+    stack_nvfp4_experts,
 )
 from max.pipelines.weights._fp8 import e4m3fn_lut
 from max.pipelines.weights.fp4_quantization import (
@@ -151,106 +159,150 @@ def test_w4a4_matches_dequantized_reference(
         assert tail_err < 0.15, f"padded-granule error {tail_err:.3f}"
 
 
+def _weight(array: npt.NDArray[np.generic], dtype: DType) -> WeightData:
+    return WeightData(
+        data=Buffer.from_numpy(np.ascontiguousarray(array)).view(
+            dtype, array.shape
+        ),
+        name="",
+        dtype=dtype,
+        shape=Shape(array.shape),
+    )
+
+
+def _shares(weight: WeightData, axis: int | None, n: int) -> list[Buffer]:
+    """Splits a stacked weight evenly on ``axis``, as the loader does."""
+    host = {DType.bfloat16: DType.uint16, DType.float8_e4m3fn: DType.uint8}
+    array = np.from_dlpack(
+        weight.to_buffer().view(host.get(weight.dtype, weight.dtype))
+    )
+    parts = [array] * n if axis is None else np.split(array, n, axis=axis)
+    return [
+        Buffer.from_numpy(np.ascontiguousarray(part)).view(
+            weight.dtype, part.shape
+        )
+        for part in parts
+    ]
+
+
 @pytest.mark.parametrize("w4a4", [True, False])
 def test_device_shares_of_the_routed_experts_sum_to_the_whole(
     w4a4: bool,
 ) -> None:
-    """Each half of the experts runs every token and keeps its own rows.
+    """Two devices' shares of every expert's channels sum to the whole.
 
-    In the second routing no token picks the second half's experts, so that
-    device routes every row to the extra expert no matmul reads.
+    Each device runs every routed row through its 96 of the 192 channels,
+    padded with zeros to 128. No token picks expert 3, so its group is
+    empty.
     """
-    experts, top_k, hidden, inner, tokens = 8, 2, 256, 128, 37
+    experts, top_k, hidden, inner, tokens, n = 8, 2, 256, 192, 37, 2
+    mixer = "backbone.layers.1.mixer"
+    shapes = {"up_proj": (inner, hidden), "down_proj": (hidden, inner)}
     rng = np.random.default_rng(0)
+    checkpoint: dict[str, WeightData] = {}
+    modules: dict[str, ModuleFormat] = {}
+    dense: dict[tuple[int, str], npt.NDArray[np.float32]] = {}
+    for e in range(experts):
+        for proj, (rows, cols) in shapes.items():
+            module = f"{mixer}.experts.{e}.{proj}"
+            if w4a4:
+                codes = rng.integers(0, 256, (rows, cols // 2), dtype=np.uint8)
+                scales = rng.integers(
+                    0x28, 0x48, (rows, cols // 16), dtype=np.uint8
+                )
+                global_scale = np.float32(rng.uniform(0.005, 0.02))
+                checkpoint[f"{module}.weight"] = _weight(codes, DType.uint8)
+                checkpoint[f"{module}.weight_scale"] = _weight(
+                    scales, DType.float8_e4m3fn
+                )
+                checkpoint[f"{module}.weight_scale_2"] = _weight(
+                    np.array(global_scale), DType.float32
+                )
+                modules[module] = ModuleFormat.NVFP4_WEIGHT_ONLY
+                dense[e, proj] = _dequantize(codes, scales, float(global_scale))
+            else:
+                values = torch.from_numpy(
+                    rng.standard_normal((rows, cols)) * 0.05
+                ).to(torch.bfloat16)
+                checkpoint[f"{module}.weight"] = _weight(
+                    values.view(torch.int16).numpy().view(np.uint16),
+                    DType.bfloat16,
+                )
+                dense[e, proj] = values.float().numpy()
+    stack = stack_nvfp4_experts if w4a4 else stack_bf16_experts
+    whole, _ = stack(checkpoint, modules, {mixer})
+    split, _ = stack(checkpoint, modules, {mixer}, num_devices=n)
+
+    # The block scales split with the rows of up and the columns of down;
+    # the global scales are whole on every device.
+    params: dict[str, dict[str, int | None]] = {
+        "up": {"weight": 1},
+        "down": {"weight": 2},
+    }
+    if w4a4:
+        params["up"] |= {"block_scale": 1, "scale": None}
+        params["down"] |= {"block_scale": 2, "scale": None}
+    device = Accelerator()
+
+    def on_device(buffer: Buffer) -> Tensor:
+        return Tensor(storage=buffer.to(device))
+
+    def projection(
+        stacked: dict[str, WeightData], proj: str, shares: int, d: int
+    ) -> list[Tensor]:
+        return [
+            on_device(
+                _shares(stacked[f"{mixer}.{proj}_{name}"], axis, shares)[d]
+            )
+            for name, axis in params[proj].items()
+        ]
+
+    ids = np.stack(
+        [
+            rng.choice([e for e in range(experts) if e != 3], top_k, False)
+            for _ in range(tokens)
+        ]
+    ).astype(np.int32)
+    weights = rng.uniform(0.1, 1.0, (tokens, top_k)).astype(np.float32)
     x = torch.from_numpy(rng.standard_normal((tokens, hidden))).to(
         torch.bfloat16
     )
-
-    device = Accelerator()
-    dev = DeviceRef.GPU()
-    projections: list[list[Buffer]] = []
-    types: list[list[TensorType]] = []
-    for n, k in ((inner, hidden), (hidden, inner)):
-        if w4a4:
-            codes = rng.integers(0, 256, (experts, n, k // 2), dtype=np.uint8)
-            scales = np.stack(
-                [
-                    interleave_nvfp4_scales(
-                        rng.integers(0x28, 0x48, (n, k // 16), dtype=np.uint8)
-                    )
-                    for _ in range(experts)
-                ]
-            )
-            global_scales = rng.uniform(0.005, 0.02, experts).astype(np.float32)
-            projections.append(
-                [
-                    Buffer.from_numpy(codes),
-                    Buffer.from_numpy(scales).view(
-                        DType.float8_e4m3fn, scales.shape
-                    ),
-                    Buffer.from_numpy(global_scales),
-                ]
-            )
-        else:
-            weight = torch.from_numpy(
-                rng.standard_normal((experts, n, k)) * 0.05
-            ).to(torch.bfloat16)
-            projections.append([Buffer.from_dlpack(weight)])
-        types.append(
-            [TensorType(b.dtype, b.shape, dev) for b in projections[-1]]
+    with F.lazy():
+        args = (
+            on_device(Buffer.from_dlpack(x)),
+            on_device(Buffer.from_numpy(ids)),
+            on_device(Buffer.from_numpy(weights)),
         )
-
-    with Graph(
-        "local_routed",
-        input_types=[
-            TensorType(DType.bfloat16, [tokens, hidden], dev),
-            TensorType(DType.int32, [tokens, top_k], dev),
-            TensorType(DType.float32, [tokens, top_k], dev),
-            *types[0],
-            *types[1],
-        ],
-    ) as graph:
-        gx, gids, gweights, *params = (v.tensor for v in graph.inputs)
-        up, down = params[: len(types[0])], params[len(types[0]) :]
-        whole = _local_routed(
-            gx, gids, gweights, up, down, first_expert=0, num_devices=1
-        )
-        halves = [
-            _local_routed(
-                gx,
-                gids,
-                gweights,
-                [p[first : first + experts // 2] for p in up],
-                [p[first : first + experts // 2] for p in down],
-                first_expert=first,
-                num_devices=2,
+        outputs = [
+            F.cast(
+                _routed_experts(
+                    *args,
+                    projection(stacked, "up", shares, d),
+                    projection(stacked, "down", shares, d),
+                ),
+                DType.float32,
             )
-            for first in (0, experts // 2)
+            for stacked, shares in ((whole, 1), (split, n))
+            for d in range(shares)
         ]
-        graph.output(whole, *halves)
-    model = InferenceSession(devices=[device]).load(graph)
+    got_whole, *got_shares = (o.to_numpy() for o in outputs)
 
-    for second_half_idle in (False, True):
-        pickable = experts // 2 if second_half_idle else experts
-        ids = np.stack(
-            [rng.choice(pickable, top_k, replace=False) for _ in range(tokens)]
-        ).astype(np.int32)
-        topk_weights = rng.uniform(0.1, 1.0, (tokens, top_k)).astype(np.float32)
-        results = model.execute(
-            Buffer.from_dlpack(x).to(device),
-            Buffer.from_numpy(ids).to(device),
-            Buffer.from_numpy(topk_weights).to(device),
-            *(b.to(device) for b in projections[0] + projections[1]),
-        )
-        whole_out, first_out, second_out = (
-            torch.from_dlpack(r).float().cpu().numpy() for r in results
-        )
+    x_ref = x.float().numpy()
+    want = np.zeros((tokens, hidden), dtype=np.float32)
+    for t in range(tokens):
+        for e, w in zip(ids[t], weights[t], strict=True):
+            up = np.maximum(x_ref[t] @ dense[e, "up_proj"].T, 0) ** 2
+            want[t] += w * (up @ dense[e, "down_proj"].T)
 
-        assert np.isfinite(first_out).all() and np.isfinite(second_out).all()
-        if second_half_idle:
-            assert not second_out.any()
-        # The halves round to BF16 before they are summed.
-        err = np.linalg.norm(
-            first_out + second_out - whole_out, axis=-1
-        ) / np.linalg.norm(whole_out, axis=-1)
-        assert err.max() < 0.01, f"worst token relative error {err.max():.4f}"
+    assert all(np.isfinite(o).all() for o in (got_whole, *got_shares))
+    # FP4 activations cost a few percent of the output norm per matmul, and
+    # the second quantizes relu2's wide-ranging outputs: the whole experts
+    # land near 0.2 for the worst token. A wrong share costs all of it.
+    tolerance = 0.3 if w4a4 else 0.02
+    for name, got in (("whole", got_whole), ("shares", sum(got_shares))):
+        err = np.linalg.norm(got - want, axis=-1) / np.linalg.norm(
+            want, axis=-1
+        )
+        assert err.max() < tolerance, (
+            f"{name}: worst token relative error {err.max():.3f}"
+        )
