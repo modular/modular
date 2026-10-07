@@ -19,7 +19,7 @@ Kernel for cuBLAS-like Performance: a
 Worklog](https://siboehm.com/articles/22/CUDA-MMM)," by [Simon
 Boehm](https://siboehm.com/about/).
 
-### Baseline Shared Memory Matmul
+### Baseline shared memory matmul
 
 We begin with a baseline implementation of shared memory `matmul`. The outer
 loop of the multiplication advances the address of the row-major matrix `A` and
@@ -37,26 +37,34 @@ Baseline implementation of shared memory `matmul`. Source
 Each thread block loads tiles from `A` and `B` into shared memory and
 multiplies the sub-matrices.
 
+The following view-construction fragment uses native shared storage. It belongs
+inside a GPU kernel; the global input buffers must remain alive throughout
+the launch.
+
 ```mojo
-var a_smem_tile = LayoutTensor[..., AddressSpace.SHARED].stack_allocation()
-var b_smem_tile = LayoutTensor[..., AddressSpace.SHARED].stack_allocation()
+from layout import TileTensor, row_major, stack_allocation
 
-var accum = Scalar[DType.bfloat16](0.0)
+comptime tile_size = 32
+var a_smem_tile = stack_allocation[
+    DType.bfloat16, address_space=.SHARED
+](row_major[tile_size, tile_size]())
+var b_smem_tile = stack_allocation[
+    DType.bfloat16, address_space=.SHARED
+](row_major[tile_size, tile_size]())
+```
 
-alias tile_size = 32 # as in figure
+The accumulation schedule below is conceptual. Global tile loading must assign
+non-overlapping elements to threads and handle boundary tiles; it is not a
+`TileTensor.copy()` method.
+
+```text
+accum = 0
 for k in range(0, K, tile_size):
-  # Load from global memory to shared memory
-  a_smem_tile.copy(...)
-  b_smem_tile.copy(...)
-
-  # Guard writing to shared memory.
-  barrier()
-
-  comptime for kk in range(tile_size):
-    accum += a_smem_tile[i, kk] * b_smem_tile[kk, j]
-
-  # Guard read of shared memory.
-  barrier()
+    load_global_tiles_into(a_smem_tile, b_smem_tile, k)
+    block_barrier()
+    for kk in range(tile_size):
+        accum += a_smem_tile[i, kk] * b_smem_tile[kk, j]
+    block_barrier()
 ```
 
 ### Why is it slow?
@@ -108,31 +116,58 @@ The key insights are to:
 - Maintain multiple buffers to resolve the RAW, WAR data dependence.
 - Pipeline computation and data transfer.
 
+Allocate shared ring storage with `stack_allocation()`, and create borrowed
+`TileTensor` views of each stage. The allocation and views remain within the
+kernel's lifetime. The caller maintains the stage index explicitly; there is
+no generic `TileTensorIter` replacement for the legacy circular iterator.
+
 ```mojo
-# Use circular buffer to maintain `num_pipeline_stages` buffers in
-# shared memory for A and B.
-var a_smem_iter = LayoutTensorIter[..., AddressSpace.SHARED, circular](...)
-var b_smem_iter = LayoutTensorIter[..., AddressSpace.SHARED, circular](...)
+from layout import TileTensor, row_major, stack_allocation
 
-for i in range(num_pipeline_stages - 1):
-  (a_smem_iter + i).async_copy(...)
-  (b_smem_iter + i).async_copy(...)
+# NUM_STAGES and TILE_SIZE are compile-time kernel configuration values.
+var a_ring = stack_allocation[DType.bfloat16, address_space=.SHARED](
+    row_major[NUM_STAGES, TILE_SIZE, TILE_SIZE]()
+)
+var b_ring = stack_allocation[DType.bfloat16, address_space=.SHARED](
+    row_major[NUM_STAGES, TILE_SIZE, TILE_SIZE]()
+)
+var stage = 0
+var a_stage = TileTensor[address_space=.SHARED](
+    a_ring.unsafe_ptr() + stage * TILE_SIZE * TILE_SIZE,
+    row_major[TILE_SIZE, TILE_SIZE](),
+)
+var b_stage = TileTensor[address_space=.SHARED](
+    b_ring.unsafe_ptr() + stage * TILE_SIZE * TILE_SIZE,
+    row_major[TILE_SIZE, TILE_SIZE](),
+)
+```
 
-wait_for_async_copy()
-barrier()
+The following schedule is conceptual, not a callable iterator API. Its copy,
+commit, and wait operations represent the kernel's cooperative copy protocol.
+For native distributed copy fragments, `destination.copy_from_async(source)`
+is an available operation; there is no `.async_copy()` method on a stage view.
+The kernel must choose thread ownership, copy bounds, committed-group waits,
+and barriers that prevent reuse before all readers finish. Allocation alignment
+must match the selected vectorized asynchronous-copy width: the BF16 default
+alignment does not promise 16-byte alignment. These view-construction fragments
+do not by themselves provide a copy-ready numerical kernel.
 
+```text
+for write_stage in range(num_pipeline_stages - 1):
+    enqueue_global_to_shared_copy(write_stage)
+commit_and_wait_for_first_stage()
+block_barrier()
+
+read_stage = 0
 for k in range(0, K, tile_size):
-
-  # LDSM: load registers from shared memory
-  # MMA: tensor core accumulation using registers
-  LDSM_and_MMA(a_smem_iter, b_smem_iter, ...)
-
-  # Guard read of shared memory.
-  (a_smem_iter + num_pipeline_stages - 1).async_copy(...)
-  (b_smem_iter + num_pipeline_stages - 1).async_copy(...)
-
-  wait_for_async_copy()
-  barrier()
+    load_registers_and_accumulate(stage_view(read_stage))
+    ensure_all_stage_readers_finished()
+    write_stage = (read_stage + num_pipeline_stages - 1) % num_pipeline_stages
+    if another_global_tile_is_available():
+        enqueue_global_to_shared_copy(write_stage)
+    commit_and_wait_for_next_stage()
+    block_barrier()
+    read_stage = (read_stage + 1) % num_pipeline_stages
 ```
 
 Example of 3 pipeline stages:
@@ -194,8 +229,11 @@ We need to partition the K dimension to create more tasks.
 
 E.g. M = 64, N = 3072, K = 3072, split K into 2 partitions
 
-```mojo
-# Given NDBuffer A, B, C.
+This partitioning sketch is conceptual; launch arguments and workspace views
+depend on the selected kernel.
+
+```text
+# Given global A, B, C buffers.
 if ceildiv(M, BM) * ceildiv(N, BN) < 0.8 * num_SMs:
 
   # Each partition updates a separate copy of C.
@@ -217,7 +255,7 @@ if ceildiv(M, BM) * ceildiv(N, BN) < 0.8 * num_SMs:
 With these optimizations in mind, we can now consider the implementation of
 Flash Attention.
 
-### Multi-Head Attention Block
+### Multi-head attention block
 
 We begin with a brief overview of multi-head attention:
 
@@ -230,7 +268,9 @@ We begin with a brief overview of multi-head attention:
 - `H`: number of heads (similar to `B`)
 - `D`: depth (`matmul dim`)
 
-```mojo
+The following sketches show tensor algebra, not callable Mojo fragments.
+
+```text
 # Per matmul, Q, K have shape [S, D]
 batch_matmul(P, Q, K, transpose=True)
 P = P * scale + mask
@@ -264,7 +304,7 @@ The above materializes a S x S intermediate matrix (for context
 encoding), which introduces huge memory usage and traffic for long
 sequences.
 
-### Flash Attention Algorithm
+### Flash Attention algorithm
 
 Flash Attention is an algorithm that optimizes the computation of multi-head
 attention by addressing the memory bottleneck that occurs when computing the
@@ -290,12 +330,30 @@ Flash attention
 One of the primary challenges for implementing flash attention is how to
 compute a numerically stable softmax for a small tile.
 
+For full tiles, native global views can be constructed from borrowed scalar
+pointers and tiled without introducing an owning copy. In this fragment,
+`NUM_KEYS`, `DEPTH`, and `KV_TILE_SIZE` are compile-time sizes; the pointer
+owners must outlive the kernel, and ragged tails require a separate bound or
+masking policy.
+
 ```mojo
+from layout import TileTensor, row_major
+
+var k_global = TileTensor(k_ptr, row_major[NUM_KEYS, DEPTH]()).as_imm()
+var v_global = TileTensor(v_ptr, row_major[NUM_KEYS, DEPTH]()).as_imm()
+var k_tile = k_global.tile[KV_TILE_SIZE, DEPTH](kv_tile_index, 0)
+var v_tile = v_global.tile[KV_TILE_SIZE, DEPTH](kv_tile_index, 0)
+```
+
+The loop below is conceptual: `mma`, reductions, and tensor arithmetic stand
+for the implementation's fragment operations, not `TileTensor` operators.
+
+```text
 # Prepared q_tile, p_tile, output_tile
 
 for kv_offset in range(0, num_keys, kv_tile_size):
     # 1st matmul, skip scaling and masking
-    k_tile = LayoutTensor(...)
+    k_tile = key_stage_view(kv_offset)
     mma(p_tile, q_tile, k_tile, transpose_b = True)
 
     # ????????????? How to apply softmax to a p_tile ?????????????????
@@ -314,11 +372,11 @@ for kv_offset in range(0, num_keys, kv_tile_size):
     # ?????????????????????????????????????????????????????????????????
 
     # 2nd matmul
-    v_tile = LayoutTensor(...)
+    v_tile = value_stage_view(kv_offset)
     mma(output_tile, p_tile, v_tile)
 ```
 
-### Online Softmax: break down softmax and blend it with matmul
+### Online softmax: break down softmax and blend it with matmul
 
 To address this challenge, for each tile of keys/values, Flash Attention
 computes attention scores `Q×K'`, then applies "online softmax" - a technique
@@ -331,14 +389,17 @@ correction factor, ensuring the final result is mathematically equivalent to
 computing softmax over the entire sequence at once. This allows attention to be
 computed with constant memory usage regardless of sequence length.
 
-```mojo
+This conceptual recurrence preserves the running statistics and output
+rescaling; it does not define a new tensor arithmetic API.
+
+```text
 # Prepared q_tile, p_tile, output_tile
 
 var rowmax, rowsum = -inf, 0.0
 
 for kv_offset in range(0, num_keys, kv_tile_size):
     # 1st matmul, skip scaling and masking
-    k_tile = LayoutTensor(...)
+    k_tile = key_stage_view(kv_offset)
     mma(p_tile, q_tile, k_tile, transpose_b = True)
 
     # ===================== Online softmax ======================
@@ -354,11 +415,12 @@ for kv_offset in range(0, num_keys, kv_tile_size):
     output_tile = output_tile * correction
 
     # 2nd matmul
-    v_tile = LayoutTensor(...)
+    v_tile = value_stage_view(kv_offset)
     mma(output_tile, p_tile, v_tile)
 
-  # apply softmax's denominator
-  output_tile /= row_sum
+
+# Apply softmax's denominator after processing all key/value tiles.
+output_tile /= rowsum
 ```
 
 Creating task for thread blocks:
@@ -374,7 +436,7 @@ blocks. We are using < 25% SMs on A100 (108 in total).
 The above is mitigated by `batch_size > 1`. Yet, we’re faced with vector matrix
 multiplication than matmul, which calls out for additional optimizations.
 
-### Flash Decoding for Token generation
+### Flash Decoding for token generation
 
 - Use more optimized vector matrix multiplication and flat matmul
   (out-of-scope).
