@@ -58,44 +58,72 @@ of values. For a vectorized layout, you can specify an *element layout* that
 determines how the vector elements are laid out in memory. For more information,
 see [Vectorizing tensors](#vectorizing-tensors).
 
+:::note Native TileTensor APIs
+
+For new code, prefer
+[`TileTensor`](/api/mojo/layout/tile_tensor/TileTensor/). The element-access and
+CPU-construction examples below use native `TileTensor` APIs. The remaining
+GPU, iterator, and copy examples retain `LayoutTensor` compatibility APIs.
+For native GPU and copy examples, see [Using TileTensor](/tile-tensor/tensors/).
+`LayoutTensorIter` and automatic clipping of masked tiles remain legacy
+features; don't assume that `TileTensor` provides the same APIs.
+
+:::
+
+The code snippets are illustrative fragments, not standalone programs. Indexing
+snippets assume an existing tensor and coordinates; GPU snippets assume the
+corresponding GPU and layout imports and a device context. Comments mark omitted
+application-specific processing, not implementations supplied by this guide.
+
 ## Accessing tensor elements
 
-For tensors with simple row-major or column-major layouts, you can address a
-layout tensor like a multidimensional array to access elements:
+For a `TileTensor` with a simple row-major or column-major layout, you can
+address the tensor like a multidimensional array to access elements:
 
 ```mojo
 var element = tensor2d[x, y]
 tensor2d[x, y] = z
 ```
 
-The number of indices passed to the subscript operator must match the number of
-coordinates required by the tensor. For simple layouts, this is the same as the
-layout's *rank*: two for a 2D tensor, three for a 3D tensor, and so on. If the
-number of indices is incorrect, you may see a cryptic runtime error.
+For multi-axis indexing, pass coordinates matching the tensor's layout. For
+simple layouts, the number of coordinates is the layout's *rank*: two for a 2D
+tensor, three for a 3D tensor, and so on. `TileTensor` also accepts a single
+logical index, which the layout maps across its dimensions.
+When a function takes a generic `TileTensor`, use a compile-time assertion to
+establish the rank before multi-axis indexing. These compile-time checks don't
+verify that the index values are in bounds.
 
 ```mojo
-# Indexing into a 2D tensor requires two indices
-var el1 = tensor2d[x, y]  # Works
-var el2 = tensor2d[x]  # Runtime error
+from layout import TileTensor
+
+def read_element(tensor2d: TileTensor, x: Int, y: Int):
+    comptime assert tensor2d.flat_rank == 2
+    var element = tensor2d[x, y]
+    var linear_element = tensor2d[x]  # A single logical index.
 ```
 
 For more complicated "nested" layouts, such as tiled layouts, the
 number of indices **doesn't** match the rank of the tensor. For details, see
 [Tensor indexing and nested layouts](#tensor-indexing-and-nested-layouts).
 
-The `__getitem__()` method returns a SIMD vector of elements, and the compiler
-can't statically determine the size of the vector (which is the size of the
-tensor's element layout). This can cause type checking errors at compile time,
-because some APIs can only accept scalar values (SIMD vectors of width 1). For
-example, consider the following code:
+The `__getitem__()` method returns a SIMD vector whose width is the tensor's
+`element_size`, determined by its storage engine. In a generic function, the
+compiler needs evidence that this width is 1 before converting the result to a
+scalar type such as `Int`. For example:
 
 ```mojo
-var i: Int = SIMD[.int32, width](15)
+from layout import DefaultEngine, TileTensor
+
+def read_scalar_index(
+    tensor: TileTensor[.int32, Engine=DefaultEngine[element_width=1], ...]
+) -> Int:
+    comptime assert tensor.flat_rank == 2
+    return Int(tensor[0, 0])
 ```
 
-If `width` is 1, the vector can be implicitly converted to an `Int`, but if
-`width` is any other value, the vector can't be implicitly converted. If `width`
-isn't known at compile time, this produces an error.
+If the width is greater than 1, a vector can't be converted directly to an
+`Int`. This parameter type restricts the example to non-vectorized default
+storage, making the requirement explicit for callers.
 
 If your tensor stores scalar values, you can work around this by explicitly
 taking the first item in the vector:
@@ -108,10 +136,15 @@ You can also access elements using the `load()` and `store()` methods, which
 let you specify the vector width explicitly:
 
 ```mojo
-var elements = tensor.load[4](row, col)
+var elements = tensor.load[width=4]((row, col))
 elements = elements * 2
-tensor.store(row, col, elements)
+tensor.store[width=4]((row, col), elements)
 ```
+
+These methods take a `Coord`, which a tuple can supply implicitly. A width-4
+access reads or writes four consecutive scalar values starting at the mapped
+offset. Ensure that those values are in bounds and satisfy the requested
+alignment; the methods don't clip the access to the layout's dimensions.
 
 ### Tensor indexing and nested layouts
 
@@ -133,84 +166,106 @@ Figure 2 shows a tensor with a tile-major nested layout. Instead of being
 addressed with a single coordinate on each axis, it has a pair of coordinates
 per axis. For example, the coordinates `((1, 0), (0, 1))` map to the offset 6.
 
-You can't pass nested coordinates to the subscript operator `[]`, but you can
-pass a flattened version of the coordinates. For example:
+With `TileTensor`, you can pass nested coordinates to the subscript operator
+as a `Coord`, or pass a flattened version of the coordinates. For example:
 
 ```mojo
-# retrieve the value at ((1, 0), (0, 1))
+from layout import Coord
+
+# Retrieve the value at ((1, 0), (0, 1)).
+var nested_element = nested_tensor[Coord(Coord(1, 0), Coord(0, 1))][0]
 var element = nested_tensor[1, 0, 0, 1][0]
 ```
 
-The number of indices passed to the subscript operator must match the *flattened
-rank* of the tensor.
+When passing separate coordinates for every sub-mode, the number of indices
+must match the *flattened rank* of the tensor.
 
-You can't currently use the `load()` and `store()` methods for tensors with
-nested layouts. However, these methods are usually used on tensors that have
-been [*tiled*](#tiling-tensors), which yields a tensor with a simple layout.
+`TileTensor.load()` and `TileTensor.store()` also accept nested `Coord` values.
+The legacy `LayoutTensor` overloads don't support the same nested-coordinate
+form. These methods are often used on tensors that have been
+[*tiled*](#tiling-tensors), which yields a tensor with a simple layout.
 
-## Creating a LayoutTensor
+## Creating tensors {#creating-a-layouttensor}
 
-There are several ways to create a `LayoutTensor`, depending on where the tensor
-data resides:
+There are several ways to create a tensor, depending on where its data resides:
 
 - On the CPU.
 - In GPU global memory.
 - In GPU shared or local memory.
 
-In addition to methods for creating a tensor from scratch, `LayoutTensor`
-provides a number of methods for producing a new view of an existing tensor.
+In addition to constructors for a tensor, both `TileTensor` and `LayoutTensor`
+provide methods for producing a new view of an existing tensor. The CPU examples
+use `TileTensor`; the GPU examples in this section retain `LayoutTensor`.
 
 :::note No bounds checking
 
-The `LayoutTensor` constructors don't do any bounds-checking to verify
+The tensor constructors don't do any bounds-checking to verify
 that the allocated memory is large enough to hold all of the elements specified
 in the layout. It's up to the user to ensure that the proper amount of space is
 allocated.
 
 :::
 
-### Creating a `LayoutTensor` on the CPU
+### Creating a `TileTensor` on the CPU {#creating-a-layouttensor-on-the-cpu}
 
-While `LayoutTensor` is often used on the GPU, you can also use it to create
+While `TileTensor` is often used on the GPU, you can also use it to create
 tensors for use on the CPU.
 
-To create a `LayoutTensor` for use on the CPU, you need a `Layout` and a block
-of memory to store the tensor data. A common way to allocate memory for a
-`LayoutTensor` is to use an
+To create a `TileTensor` for use on the CPU, you need a native
+[`TensorLayout`](/api/mojo/layout/tile_layout/TensorLayout/) and storage for the
+tensor data. Use `row_major()` to build a static native layout and an
 [`Array`](https://mojolang.org/docs/std/collections/array/Array/):
 
 ```mojo
+from std.collections import Array
+from layout import TileTensor, row_major
+
 comptime rows = 8
 comptime columns = 16
-comptime layout = Layout.row_major(rows, columns)
+comptime layout = row_major[rows, columns]()
 var storage = Array[Float32, rows * columns](uninitialized=True)
-var tensor = LayoutTensor[.float32, layout](storage).fill(0)
+var tensor = TileTensor(storage, layout).fill(0)
 ```
 
 `Array` is a statically-sized, stack-allocated array, so it's a fast and
-efficient way to allocate storage for most kinds of `LayoutTensor`. There are
+efficient way to allocate storage for small tensors. There are
 target-dependent limits on how much memory can be allocated this way, however.
+The constructor accepts a `Span`; an `Array` converts to a span implicitly.
+Keep the storage alive for as long as any tensor view uses it.
 
-You can also create a `LayoutTensor` using a
+You can also create a `TileTensor` using a
 [`Pointer`](https://mojolang.org/docs/std/memory/pointer/Pointer/). This may be
 preferable for very large tensors.
 
 ```mojo
+from std.memory import Layout as MemoryLayout, alloc, dealloc, unsafe_memset
+from layout import TileTensor, row_major
+
 comptime rows = 1024
 comptime columns = 1024
 comptime buf_size = rows * columns
-comptime layout = Layout.row_major(rows, columns)
-var ptr = alloc[Float32](buf_size)
+comptime layout = row_major[rows, columns]()
+var allocation = alloc(MemoryLayout[Float32](count=buf_size))
+var ptr = allocation.unsafe_ptr()
 unsafe_memset(ptr, 0, buf_size)
-var tensor = LayoutTensor[.float32, layout](ptr)
+var tensor = TileTensor(ptr, layout)
+tensor[0, 0] = 1
+print(tensor[0, 0])  # 1.0
+dealloc(allocation^)
 ```
 
 Note that this example uses
 [`unsafe_memset()`](https://mojolang.org/docs/std/memory/memory/unsafe_memset/)
-instead of the `LayoutTensor` `fill()` method. The `fill()` method performs
+instead of the tensor's `fill()` method. The `fill()` method performs
 elementwise initialization of the tensor, so it may be slow for large tensors.
+The allocation owns the memory; the tensor only borrows it. Release the
+allocation after the last use of every view, and don't access those views after
+deallocation.
 
 ### Creating a `LayoutTensor` on the GPU
+
+The following GPU examples use legacy `LayoutTensor` APIs for compatibility.
+They aren't native `TileTensor` launch examples.
 
 When creating a `LayoutTensor` for use on the GPU, you need to consider which
 memory space the tensor data will be stored in:
@@ -472,8 +527,8 @@ use a pattern like this:
 
 ```mojo
 for i in range(num_tiles):
-    current_tile = iter.next(i)[]
-    …
+    var current_tile = iter.next(i)[]
+    # Tile processing omitted.
 ```
 
 `LayoutTensorIter` also has an optional boolean `circular` parameter. A
@@ -524,7 +579,7 @@ You can query the SIMD width for a data type on the target GPU with
 from std.sys.info import simd_width_of
 from max.gpu.host.compile import get_gpu_target
 
-comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]
+comptime simd_width = simd_width_of[DType.float32, get_gpu_target()]()
 ```
 
 The
