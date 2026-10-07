@@ -1,7 +1,13 @@
 """Builds C ABI cross-check suites for Mojo mirrors of C declarations."""
 
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
-load("//bazel:api.bzl", "modular_cc_library", "mojo_binary", "mojo_library", "mojo_test")
+load(
+    "//bazel:api.bzl",
+    "modular_cc_library",
+    "mojo_binary",
+    "mojo_library",
+    "mojo_test",
+)
 
 def _only_on(platforms):
     constraints = {"@platforms//os:" + os: [] for os in platforms}
@@ -53,7 +59,7 @@ def mojo_cabi_test(name, platforms):
             "from test_utils.cabi_check import emit_cabi_checks_for",
             "",
             "",
-            "def main():",
+            "def main() raises:",
             "    print(",
             "        emit_cabi_checks_for(",
             "            includes=materialize[CABI_INCLUDES](),",
@@ -91,6 +97,15 @@ def mojo_cabi_test(name, platforms):
         name = name + "_reference",
         testonly = True,
         srcs = [name + "_reference.c"],
+        # A same-width signedness mismatch (`int32_t *` vs `unsigned int *`)
+        # or a const/volatile mismatch is only a warning by default, unlike
+        # most other incompatible-pointer-types cases; promote both to
+        # errors so every MOJO_CHECK_CABI_FIELD_TYPE mismatch fails the
+        # build the same way.
+        copts = [
+            "-Werror=pointer-sign",
+            "-Werror=incompatible-pointer-types-discards-qualifiers",
+        ],
         # Generated source; nothing for clang-tidy to check.
         tags = ["no-clang-tidy"],
         target_compatible_with = compatible_with,

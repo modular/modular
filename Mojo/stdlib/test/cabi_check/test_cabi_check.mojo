@@ -11,11 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import (
+    TestSuite,
+    assert_equal,
+    assert_false,
+    assert_raises,
+    assert_true,
+)
 from test_utils.cabi_check import (
     AbiConstant,
     AbiTypedef,
     AbiTypedefLike,
+    _c_field_decl,
+    _c_scalar_name,
     constant_checks,
     emit_cabi_checks_for,
     preamble,
@@ -27,6 +35,14 @@ from test_utils.cabi_check import (
 struct Probe:
     var alpha: Int32
     var beta: UInt8
+
+
+struct ProbeArray:
+    var octets: Array[UInt8, 4]
+
+
+struct ProbeNested:
+    var inner: Probe
 
 
 def test_preamble() raises:
@@ -50,9 +66,82 @@ def test_struct_checks() raises:
         (
             "MOJO_CHECK_CABI_LAYOUT(Probe, struct Probe)\n"
             "MOJO_CHECK_CABI_FIELD(Probe, struct Probe, alpha)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(Probe, struct Probe, alpha, int32_t"
+            " *ptr)\n"
             "MOJO_CHECK_CABI_FIELD(Probe, struct Probe, beta)"
         ),
     )
+
+
+def test_struct_checks_array_field() raises:
+    assert_equal(
+        struct_checks[ProbeArray](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(ProbeArray, struct ProbeArray)\n"
+            "MOJO_CHECK_CABI_FIELD(ProbeArray, struct ProbeArray, octets)"
+        ),
+    )
+
+
+def test_struct_checks_nested_struct_field() raises:
+    assert_equal(
+        struct_checks[ProbeNested](),
+        (
+            "MOJO_CHECK_CABI_LAYOUT(ProbeNested, struct ProbeNested)\n"
+            "MOJO_CHECK_CABI_FIELD(ProbeNested, struct ProbeNested, inner)\n"
+            "MOJO_CHECK_CABI_FIELD_TYPE(ProbeNested, struct ProbeNested,"
+            " inner, struct Probe *ptr)"
+        ),
+    )
+
+
+def test_c_scalar_name() raises:
+    assert_equal(_c_scalar_name[Int8]().value(), "int8_t")
+    assert_equal(_c_scalar_name[UInt8]().value(), "uint8_t")
+    assert_equal(_c_scalar_name[Int16]().value(), "int16_t")
+    assert_equal(_c_scalar_name[UInt16]().value(), "uint16_t")
+    assert_equal(_c_scalar_name[Int32]().value(), "int32_t")
+    assert_equal(_c_scalar_name[UInt32]().value(), "uint32_t")
+    assert_equal(_c_scalar_name[Int64]().value(), "int64_t")
+    assert_equal(_c_scalar_name[UInt64]().value(), "uint64_t")
+
+
+def test_c_scalar_name_not_a_fixed_width_scalar() raises:
+    assert_false(_c_scalar_name[String]())
+    assert_false(_c_scalar_name[Array[UInt8, 4]]())
+    assert_false(_c_scalar_name[SIMD[DType.uint8, 4]]())
+
+
+def test_c_field_decl_scalar() raises:
+    assert_equal(_c_field_decl[Int32]().value(), "int32_t *ptr")
+    assert_equal(_c_field_decl[UInt16]().value(), "uint16_t *ptr")
+
+
+def test_c_field_decl_array() raises:
+    assert_equal(
+        _c_field_decl[Array[UInt16, 16]]().value(), "uint16_t (*ptr)[16]"
+    )
+
+
+def test_c_field_decl_struct() raises:
+    assert_equal(_c_field_decl[Probe]().value(), "struct Probe *ptr")
+
+
+def test_c_field_decl_skips_bytes() raises:
+    assert_false(_c_field_decl[Int8]())
+    assert_false(_c_field_decl[UInt8]())
+    assert_false(_c_field_decl[Array[Int8, 14]]())
+    assert_false(_c_field_decl[Array[UInt8, 4]]())
+
+
+def test_c_field_decl_array_of_non_scalar() raises:
+    with assert_raises(contains="unsupported array type"):
+        _ = _c_field_decl[Array[Probe, 2]]()
+
+
+def test_c_field_decl_simd_vector() raises:
+    with assert_raises(contains="unexpected SIMD type"):
+        _ = _c_field_decl[SIMD[DType.uint8, 4]]()
 
 
 def test_typedef_checks() raises:

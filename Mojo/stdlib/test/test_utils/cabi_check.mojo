@@ -48,6 +48,17 @@ comptime _MACROS: StaticString = """\
     return (int64_t)sizeof(((type *)0)->field);                               \\
   }
 
+// `decl` declares a pointer named `ptr` at the field's expected C type
+// (for example `uint16_t *ptr` or `unsigned char (*ptr)[16]`). Assigning
+// `&field` to it only compiles if the real field is pointer-compatible
+// with that type, so a mismatched field type fails the build.
+#define MOJO_CHECK_CABI_FIELD_TYPE(name, type, field, decl)                   \\
+  void mojo_check_cabi_fieldtype_##name##_##field(void* input) {              \\
+    decl;                                                                     \\
+    ptr = &(((type *)input)->field);                                          \\
+    (void)ptr;                                                                \\
+  }
+
 // An expression's type is signed exactly when -1 cast to it stays negative.
 #define MOJO_CHECK_CABI_IS_SIGNED(e) ((__typeof__(e))-1 < 0)
 
@@ -79,22 +90,122 @@ def preamble(headers: ImmSpan[StaticString, _]) -> String:
     return out^
 
 
-def struct_checks[T: AnyType]() -> String:
+trait _SIMDMarker:
+    """Marks `SIMD[dtype, length]`."""
+
+    pass
+
+
+__extension SIMD(_SIMDMarker):
+    pass
+
+
+trait _ArrayMarker:
+    """Marks `Array[T, length]`, exposing its generic parameters."""
+
+    comptime _cabi_element_type: AnyType
+    comptime _cabi_length: Int
+
+
+__extension Array(_ArrayMarker):
+    pass
+
+
+def _c_scalar_name[T: AnyType]() -> Optional[StaticString]:
+    """Returns the `<stdint.h>` name for a scalar type, or None if T isn't one.
+    """
+    comptime if T == Int8:
+        return StaticString("int8_t")
+    elif T == UInt8:
+        return StaticString("uint8_t")
+    elif T == Int16:
+        return StaticString("int16_t")
+    elif T == UInt16:
+        return StaticString("uint16_t")
+    elif T == Int32:
+        return StaticString("int32_t")
+    elif T == UInt32:
+        return StaticString("uint32_t")
+    elif T == Int64:
+        return StaticString("int64_t")
+    elif T == UInt64:
+        return StaticString("uint64_t")
+    else:
+        return None
+
+
+def _c_field_decl[T: AnyType]() raises -> Optional[String]:
+    """Returns a declarator for a pointer to a field's expected C type.
+
+    Parameters:
+        T: The Mojo mirror field's type.
+
+    Returns:
+        A declarator such as `uint16_t *ptr` or `struct in_addr *ptr`, or
+        `None` for a 1-byte integer or an array of them, which gets no type
+        check.
+    """
+    comptime TName = reflect[T].name()
+
+    comptime if conforms_to(T, _SIMDMarker):
+        # TODO(https://github.com/modular/modular/issues/7262)
+        # Enable field-type checks for 8-bit types
+        comptime if T == UInt8 or T == Int8:
+            return None
+        __match _c_scalar_name[T]():
+            case .Some(scalar_name):
+                return String(t"{scalar_name} *ptr")
+            case .None:
+                raise Error(t"unexpected SIMD type: {TName}")
+
+    comptime if conforms_to(T, _ArrayMarker):
+        comptime ElementType = T._cabi_element_type
+        # TODO(https://github.com/modular/modular/issues/7262)
+        # Enable field-type checks for 8-bit types
+        comptime if ElementType == UInt8 or ElementType == Int8:
+            return None
+        __match _c_scalar_name[ElementType]():
+            case .Some(scalar_name):
+                return String(t"{scalar_name} (*ptr)[{T._cabi_length}]")
+            case .None:
+                raise Error(t"unsupported array type: {TName}")
+
+    # Falls back to a mirrored struct, named verbatim after its C
+    # counterpart (the same convention `struct_checks` uses).
+    return String(t"struct {_unqualified_type_name[T]()} *ptr")
+
+
+def struct_checks[T: AnyType]() raises -> String:
     """Returns the reporters for a struct and all of its fields.
 
     Parameters:
         T: The Mojo mirror struct.
 
     Returns:
-        One `MOJO_CHECK_CABI_LAYOUT` line and one `MOJO_CHECK_CABI_FIELD`
-        line per field.
+        One `MOJO_CHECK_CABI_LAYOUT` line, one `MOJO_CHECK_CABI_FIELD` line
+        per field, and a `MOJO_CHECK_CABI_FIELD_TYPE` line per field that
+        isn't a 1-byte integer or an array of them. The latter checks the
+        field's C type by assigning its address to a pointer declared at the
+        expected type, so an incompatible field type fails to compile rather
+        than failing an assertion.
     """
     comptime name = _unqualified_type_name[T]()
     var out = String(t"MOJO_CHECK_CABI_LAYOUT({name}, struct {name})")
-    comptime for field in reflect[T].field_names():
+    comptime names = reflect[T].field_names()
+    comptime types = reflect[T].field_types()
+    comptime for i in range(names.length):
+        comptime field = names[i]
         out += String(
             t"\nMOJO_CHECK_CABI_FIELD({name}, struct {name}, {field})"
         )
+        __match _c_field_decl[types[i]]():
+            case .Some(decl):
+                out += String(
+                    t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"
+                    t" {field}, {decl})"
+                )
+            case .None:
+                pass
     return out^
 
 
@@ -154,7 +265,7 @@ def emit_cabi_checks_for(
     structs: TypeList[Trait=AnyType, ...],
     typedefs: TypeList[Trait=AbiTypedefLike, ...],
     constants: ImmSpan[AbiConstant, _],
-) -> String:
+) raises -> String:
     """Returns a complete C ABI reference file for a set of mirrors.
 
     Args:
@@ -181,7 +292,7 @@ def _check[sym: String](mojo_value: Int64) raises:
     assert_equal(mojo_value, external_call[sym, Int64](), sym)
 
 
-struct AbiConstant(ImplicitlyCopyable):
+struct AbiConstant(TrivialRegisterPassable):
     """A constant to check: its C name paired with the mirror's value."""
 
     var name: StaticString
