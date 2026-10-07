@@ -410,6 +410,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 )
             else:
                 extra_topk = extra_indices_stride
+        # Main-segment slot count: the clamped topk, tile-padded when extra KV
+        # follows it (see `OffsetPosition.sparse_topk`).
         topk = offset_position.num_keys - extra_topk
 
         var num_orig_blocks = ceildiv(topk, Self.config.BN_QK)
@@ -599,8 +601,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
             var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
-                var lane_idx = Int(lane_id())
-                var row = lane_idx & 0x3F
+                # The softmax row this thread owns; lane_id() would fold rows
+                # 32-63 onto 0-31 and give them the wrong heads' sinks.
+                var row = Int(thread_idx.x) & 0x3F
                 var head_idx_local = block_idx.x * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
@@ -635,7 +638,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 attn_sink_log2=attn_sink_log2,
                 logical_indices=logical_indices,
                 logical_indices_stride=indices_stride,
-                logical_indices_len=topk,
+                logical_indices_len=offset_position.sparse_topk,
             )
         elif warp_idx >= 4 and warp_idx < 8:
             warpgroup_reg_alloc[num_reg_correction]()
@@ -798,7 +801,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             return
 
         var idx_prod = idx_bars.producer()
-        var orig_topk_u32 = UInt32(topk)
+        var orig_topk_u32 = UInt32(offset_position.sparse_topk)
 
         var num_orig_tiles = num_k_tiles
         comptime if Self.has_extra_kv:

@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """SM100 (B200) sparse MLA decode kernel with BF16 KV cache.
 
-K is loaded by a BF16 + SWIZZLE_128B gather4 TMA covering the full
-576-element row (tile_width=576, box_w=64). `OffsetPosition[sparse=True]`
+K is loaded by a BF16 + SWIZZLE_128B gather4 TMA covering the row as stored
+(576 with rotary, 512 NoPE; box_w=64). A NoPE row leaves the 64-wide SMEM tail
+zero-filled so the 576-wide MMAs are unchanged. `OffsetPosition[sparse=True]`
 overrides `num_keys` with the sparse topk. A dedicated 4-warp gather WG
 (warps 8-11) decodes each tile's row indices cooperatively into the
 double-buffered `idx_smem`, then round-robins the tile's 144 gather4
@@ -42,6 +43,7 @@ from max.gpu.memory import (
     CacheEviction,
     cp_async_bulk_tensor_2d_gather4,
     external_memory,
+    fence_async_view_proxy,
 )
 from max.gpu.sync import named_barrier
 from max.gpu.compute.arch.tcgen05 import (
@@ -193,6 +195,29 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         Self._is_cache_length_accurate,
         Self.ragged,
     ]
+
+    @staticmethod
+    @inline(.always)
+    def zero_input_tail(
+        q_smem: SharedMemPointer[Scalar[Self.q_type]],
+        kv_smem: SharedMemPointer[Scalar[Self.kv_type]],
+    ):
+        """Zero the SMEM columns past the input row, once per CTA.
+
+        P later overwrites the KV tail block, but only with finite values, so
+        the zero Q tail keeps contracting it to zero.
+        """
+        comptime tail_block0 = Self.config.input_q_depth // Self.config.BN_QK
+        comptime tail_elems = (Self.NumQKBlocks - tail_block0) * Self.BlockElems
+        comptime tail_off = tail_block0 * Self.BlockElems
+
+        var tid = Int(thread_idx.x)
+        for i in range(tid, tail_elems, Self.num_threads):
+            q_smem[tail_off + i] = Scalar[Self.q_type](0)
+        comptime for stage in range(Self.config.num_kv_stages):
+            var base = kv_smem + stage * Self.KVStageElems + tail_off
+            for i in range(tid, tail_elems, Self.num_threads):
+                base[i] = Scalar[Self.kv_type](0)
 
     # --------------------------------------------------------------------------
     # Sparse BF16 KV decode kernel entry.
@@ -349,8 +374,8 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 )
             else:
                 extra_topk = _extra_indices_stride
-        # `num_keys` from OffsetPosition is topk+extra_topk; back-derive
-        # the clamped topk.
+        # Main-segment slot count: the clamped topk, tile-padded when extra KV
+        # follows it (see `OffsetPosition.sparse_topk`).
         topk = offset_position.num_keys - extra_topk
 
         # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
@@ -497,7 +522,15 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             tcgen05_alloc[Self.config.cta_group](
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
+        # The fence publishes the generic-proxy zero stores to the async proxy
+        # the MMAs read through.
+        comptime if Self.config.input_q_depth < Self.config.padded_q_depth:
+            Self.zero_input_tail(
+                q_smem.as_unsafe_any_origin(), kv_smem.as_unsafe_any_origin()
+            )
         barrier()
+        comptime if Self.config.input_q_depth < Self.config.padded_q_depth:
+            fence_async_view_proxy()
 
         if warp_idx < 4:  # softmax warpgroup
             warpgroup_reg_alloc[num_reg_softmax]()
@@ -507,8 +540,9 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             # exp2(-inf - mi) = 0, leaving the denominator unchanged.
             var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
-                var lane_idx = Int(lane_id())
-                var row = lane_idx & 0x3F
+                # The softmax row this thread owns; lane_id() would fold rows
+                # 32-63 onto 0-31 and give them the wrong heads' sinks.
+                var row = Int(thread_idx.x) & 0x3F
                 var head_idx_local = block_idx.x * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
@@ -639,10 +673,12 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
         indices_base: Int,
     ):
         # Byte count must match what the gather4 issues write per tile:
-        # BN_QK * box_w * num_col_groups * sizeof(bf16) = 64 * 576 * 2.
-        comptime kv_bytes = Self.config.BN_QK * Self.config.q_depth * size_of[
-            DType.bfloat16
-        ]()
+        # BN_QK * box_w * num_col_groups * sizeof(bf16), the row as stored.
+        comptime kv_bytes = (
+            Self.config.BN_QK
+            * Self.config.input_q_depth
+            * size_of[DType.bfloat16]()
+        )
         var kv_stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]().bitcast[
             BFloat16
         ]()
@@ -787,7 +823,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
                 mbar_q,
                 Int32(
                     Self.config.BM
-                    * Self.config.q_depth
+                    * Self.config.input_q_depth
                     * size_of[Self.q_type]()
                 ),
                 elect_mask,
@@ -805,7 +841,7 @@ struct MLA_SM100_Decode_Sparse_KV_BF16[
             )
             num_orig_tiles = ceildiv(orig_tokens_in_split, Self.config.BN_QK)
 
-        var orig_topk_u32 = UInt32(topk)
+        var orig_topk_u32 = UInt32(offset_position.sparse_topk)
         var orig_indices_base = Int(offset_position.kv_start_row)
 
         # Original-cache tiles.  The very first tile overall skips the

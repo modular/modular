@@ -465,8 +465,8 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 )
             else:
                 extra_topk = extra_indices_stride
-        # actual_tokens from OffsetPosition is now topk+extra_topk;
-        # back-derive the clamped topk.
+        # Main-segment slot count: the clamped topk, tile-padded when extra KV
+        # follows it (see `OffsetPosition.sparse_topk`).
         topk = offset_position.num_keys - extra_topk
 
         # Compute num_orig_blocks and total blocks for the extended loop.
@@ -748,8 +748,9 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             # and exp2(-inf - mi) = 0, so the denominator is unchanged.
             var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
-                var lane_idx = Int(lane_id())
-                var row = lane_idx & 0x3F
+                # The softmax row this thread owns; lane_id() would fold rows
+                # 32-63 onto 0-31 and give them the wrong heads' sinks.
+                var row = Int(thread_idx.x) & 0x3F
                 var head_idx_local = block_idx.x * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
@@ -984,7 +985,7 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             return
 
         var idx_prod = idx_bars.producer()
-        var orig_topk_u32 = UInt32(topk)
+        var orig_topk_u32 = UInt32(offset_position.sparse_topk)
 
         # Compute original vs extra tile counts (mirrors warp 8 logic).
         var num_orig_tiles = num_k_tiles

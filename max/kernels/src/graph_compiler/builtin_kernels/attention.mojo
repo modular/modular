@@ -4531,6 +4531,8 @@ struct Struct_latent_sparse_attention_ragged_paged:
         //,
         window: Int,
         target: StaticString,
+        split_k: Bool = True,
+        portable_p_bf16: Bool = False,
     ](
         output: OutputTensor[dtype=q_type, rank=3, ...],
         q: InputTensor[dtype=q_type, rank=3, ...],
@@ -4570,7 +4572,12 @@ struct Struct_latent_sparse_attention_ragged_paged:
             comp_max_prompt_length,
             comp_max_cache_length,
         )
-        latent_sparse_attention_ragged_paged[target=target, window=window](
+        latent_sparse_attention_ragged_paged[
+            target=target,
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
             output.to_tile_tensor(),
             q.to_tile_tensor(),
             input_row_offsets.to_tile_tensor(),

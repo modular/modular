@@ -12455,6 +12455,8 @@ def latent_sparse_attention_ragged(
     *,
     scale: float,
     window: int,
+    split_k: bool = True,
+    portable_p_bf16: bool = False,
 ) -> TensorValue:
     """Sparse attention over a shared K=V latent held in two paged leaves.
 
@@ -12484,6 +12486,13 @@ def latent_sparse_attention_ragged(
         layer_comp: uint32 scalar, this layer's index in the compressed leaf.
         scale: Softmax scale applied to the scores.
         window: Sliding window length in tokens.
+        split_k: Whether the SM100 decode route may split a row's keys
+            across CTAs. Its split partial outputs are rounded to ``q``'s
+            dtype before they are combined; ``False`` runs one CTA per row
+            and rounds the output once.
+        portable_p_bf16: Diagnostic. Runs the portable kernel even where the
+            SM100 route applies, rounding each attention weight to bfloat16
+            before it multiplies its value row.
 
     Returns:
         ``[total_rows, num_heads, head_dim]`` in ``q``'s dtype.
@@ -12525,7 +12534,11 @@ def latent_sparse_attention_ragged(
             ops.constant(scale, DType.float32, DeviceRef.CPU()),
         ],
         out_types=[TensorType(q.dtype, q.shape, q.device)],
-        parameters={"window": window},
+        parameters={
+            "window": window,
+            "split_k": split_k,
+            "portable_p_bf16": portable_p_bf16,
+        },
     )[0].tensor
 
 

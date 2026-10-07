@@ -946,6 +946,11 @@ struct OffsetPosition[
     # which only equals the logical count when topk >= actual_tokens; sparse
     # causal masking uses `cache_len_logical()` off this field instead.
     var actual_num_keys: Int
+    # Valid main-cache sparse slots (clamped topk). With `has_extra_kv` the
+    # main segment is padded to a whole `BN_QK` tile so every tile belongs to
+    # one cache; the padding slots `[sparse_topk, align_up(sparse_topk,
+    # BN_QK))` are masked and never gathered.
+    var sparse_topk: Int
 
     @inline(.always)
     def __init__(
@@ -978,6 +983,7 @@ struct OffsetPosition[
         self.num_keys_this_split = 0
         self.q_token_idx = 0
         self.actual_num_keys = 0
+        self.sparse_topk = 0
 
         # Decode block_idx.z into split_idx and batch_idx
         # Grid layout: block_z = batch_size * num_partitions
@@ -1108,9 +1114,11 @@ struct OffsetPosition[
 
             # Clamp topk to actual available tokens.
             topk = min(topk, actual_tokens)
+            self.sparse_topk = topk
 
             # Extra KV: always-attend tokens from a separate cache.
             var extra_topk: Int = 0
+            var main_slots = topk
             comptime if Self.has_extra_kv:
                 comptime if Self.has_variable_topk:
                     extra_topk = Int(
@@ -1118,12 +1126,13 @@ struct OffsetPosition[
                     )
                 else:
                     extra_topk = sparse_extra_indices_stride
+                main_slots = align_up(topk, Self.config.BN_QK)
 
-            # Override num_keys with the sparse token count.
-            self.num_keys = topk + extra_topk
+            # Override num_keys with the sparse slot count.
+            self.num_keys = main_slots + extra_topk
 
-            # Recompute split-K boundaries for the sparse token count.
-            var total_topk = topk + extra_topk
+            # Recompute split-K boundaries for the sparse slot count.
+            var total_topk = main_slots + extra_topk
             comptime if Self.decoding_warp_split_k:
                 comptime page_size = Self.config.split_page_size
                 var total_pages_s = ceildiv(total_topk, page_size)
@@ -3611,6 +3620,11 @@ struct MLA_SM100_Decode_Common[
         # so slots >= this bound must be masked without a read or they run off
         # the end of the q_token's row.
         logical_indices_len: Int = 0,
+        # Slots `[gap_lo, gap_hi)` are masked: the padding between the main
+        # sparse segment and the extra-KV segment (see
+        # `OffsetPosition.sparse_topk`).
+        gap_lo: Int = 0,
+        gap_hi: Int = 0,
     ) -> Scalar[Self.AccumType]:
         # Tile / column base this thread covers in num_keys in global KV cache
         # For split-K: kv_start_row + tiles_done * BN_QK gives global position
@@ -3636,7 +3650,20 @@ struct MLA_SM100_Decode_Common[
                 causal_limit = cache_len + Int(score_row) + 1
         else:
             causal_limit = num_keys
-        var keys_remaining = causal_limit - col_base
+        # The causal horizon counts keys, not slots: past the padding gap,
+        # the slot sits `gap_hi - gap_lo` slots after the key it holds, so
+        # extra-KV keys keep the position they had before the main segment
+        # was padded. A half-tile never straddles the 64-aligned `gap_hi`.
+        # A sparse horizon can also pass the last slot, whose index is a
+        # clamped repeat, so the slot count bounds it as well.
+        var key_base = col_base
+        var keys_remaining: Int
+        comptime if CausalMask:
+            if gap_hi > gap_lo and col_base >= gap_hi:
+                key_base = col_base - (gap_hi - gap_lo)
+            keys_remaining = min(causal_limit - key_base, num_keys - col_base)
+        else:
+            keys_remaining = causal_limit - col_base
         var n_valid = max(min(keys_remaining, half_load), 0)
         # Build mask_bits with lowest n_valid bits = 1
         var mask_bits_64: UInt64 = (UInt64(1) << UInt64(n_valid)) - UInt64(1)
@@ -3651,7 +3678,7 @@ struct MLA_SM100_Decode_Common[
         # [0, half_load].
         comptime if SlidingWindowSize > 0:
             var per_row_lo: Int = causal_limit - SlidingWindowSize
-            var n_invalid_low: Int = max(per_row_lo - col_base, 0)
+            var n_invalid_low: Int = max(per_row_lo - key_base, 0)
             n_invalid_low = min(n_invalid_low, half_load)
             var low_mask_64: UInt64 = (
                 UInt64(1) << UInt64(n_invalid_low)
@@ -3726,6 +3753,14 @@ struct MLA_SM100_Decode_Common[
                         logical_bits |= UInt32(1) << UInt32(slot)
                     slot += 1
                 mask_bits = logical_bits
+
+        if gap_hi > gap_lo:
+            var g0 = min(max(gap_lo - col_base, 0), half_load)
+            var g1 = min(max(gap_hi - col_base, 0), half_load)
+            var gap_64: UInt64 = ((UInt64(1) << UInt64(g1)) - UInt64(1)) ^ (
+                (UInt64(1) << UInt64(g0)) - UInt64(1)
+            )
+            mask_bits &= ~UInt32(gap_64 & UInt64(0xFFFF_FFFF))
 
         comptime for i in range(0, half_load):
             # rank1-style mask_r2p: turn bit into predicate and use it to select
@@ -3901,6 +3936,11 @@ struct MLA_SM100_Decode_Common[
         # positions. See cache_len_logical() docstring.
         var cache_len: Int = offset_position.cache_len_logical()
         var start_pos: UInt32 = offset_position.start_pos(cache_start_pos)
+        var gap_lo: Int = 0
+        var gap_hi: Int = 0
+        comptime if _op_sparse and _op_has_extra_kv:
+            gap_lo = offset_position.sparse_topk
+            gap_hi = align_up(gap_lo, Self.config.BN_QK)
 
         # S consumer / P producer (N-stage wrappers, works for any num_sp_stages)
         var s_cons = DecodeSConsumerN[num_sp_stages](s_bars.consumer())
@@ -4102,6 +4142,8 @@ struct MLA_SM100_Decode_Common[
                     logical_indices_stride=logical_indices_stride,
                     q_token_idx=offset_position.q_token_idx,
                     logical_indices_len=logical_indices_len,
+                    gap_lo=gap_lo,
+                    gap_hi=gap_hi,
                 )
             else:
                 current_max = Self.apply_mask[

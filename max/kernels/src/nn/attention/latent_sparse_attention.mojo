@@ -37,23 +37,52 @@ of which must already be stored -- the store ops run before this op in the
 same graph, as they do for every other paged attention. Compressed keys are
 ``comp_indices[t, k] >= 0``; ``-1`` is skipped.
 
-One block per (query row, group of heads); each warp owns ``heads_per_warp``
-heads and reads every key row once as a lane-strided vector, so a key costs
-one vector load per warp plus a warp reduction per head. This is the
-portable form of the kernel; it does not use tensor cores.
+On SM100 with a BF16 512-wide latent, the op runs on the sparse MLA decode
+kernel (tensor cores, split-K): the compressed entries are its main sparse
+list, the window its extra always-attend list, and every query row is its own
+one-token batch so each row carries its own list lengths. A plan kernel turns
+the window range and the compressed list (compacted past its ``-1`` slots)
+into flat row numbers into both leaves, which the kernel reads through
+page-agnostic views of the two leaves.
+
+Elsewhere, one block per (query row, group of heads); each warp owns
+``heads_per_warp`` heads and reads every key row once as a lane-strided
+vector, so a key costs one vector load per warp plus a warp reduction per
+head. This is the portable form of the kernel; it does not use tensor cores.
 """
 
 from std.math import ceildiv, exp
 from std.memory import Layout as AllocLayout, alloc, dealloc
+from std.utils.index import IndexList
 from std.utils.numerics import min_or_neg_inf
 
 from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
 from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_cpu
+from max.gpu.host.info import _is_sm10x_gpu, is_cpu
 import max.gpu.primitives.warp as warp
 
-from kv_cache.types import KVCacheT
-from layout import TileTensor
+from kv_cache.types import (
+    KVCacheStaticParams,
+    KVCacheT,
+    PagedKVCache,
+    PagedKVCacheCollection,
+)
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.mha_mask import NullMask
+from nn.attention.mha_utils import MHAConfig, NonNullPointer
+
+# Page size of the flat row views the SM100 path reads both leaves through. A
+# multiple of 64 keeps split-K boundaries on whole tiles.
+comptime _VIEW_PAGE = 128
 
 
 @inline(.always)
@@ -76,6 +105,7 @@ def _batch_of_row(
 def _attend_key[
     lane_width: Int,
     heads_per_warp: Int,
+    round_p: Bool,
 ](
     k: SIMD[DType.float32, lane_width],
     q: Array[SIMD[DType.float32, lane_width], heads_per_warp],
@@ -88,6 +118,8 @@ def _attend_key[
     Every lane holds a ``lane_width`` slice of ``k`` and of each head's
     scaled query; the warp reduction leaves the full score in all lanes, so
     the running max and denominator stay lane-uniform without a broadcast.
+    `round_p` rounds the weight to bf16 for the value product only, as the
+    SM100 decode feeds P to its tensor-core PV product (diagnostic).
     """
     comptime for i in range(heads_per_warp):
         var s = warp.sum((q[i] * k).reduce_add())
@@ -98,6 +130,8 @@ def _attend_key[
             m[i] = s
         var p = exp(s - m[i])
         l[i] = l[i] + p
+        comptime if round_p:
+            p = p.cast[DType.bfloat16]().cast[DType.float32]()
         acc[i] = acc[i] + p * k
 
 
@@ -111,6 +145,7 @@ def _latent_sparse_attention_gpu_kernel[
     heads_per_warp: Int,
     warps_per_block: Int,
     window: Int,
+    round_p: Bool = False,
 ](
     out_ptr: Pointer[Scalar[out_type], MutAnyOrigin],
     q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
@@ -165,7 +200,7 @@ def _latent_sparse_attention_gpu_kernel[
         var k = swa_cache.load[width=lane_width, output_dtype=DType.float32](
             b, 0, p, d0
         )
-        _attend_key(k, q, m, l, acc)
+        _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
 
     for j in range(Int(num_comp)):
         var e = Int(
@@ -178,7 +213,7 @@ def _latent_sparse_attention_gpu_kernel[
         var k = comp_cache.load[width=lane_width, output_dtype=DType.float32](
             b, 0, e, d0
         )
-        _attend_key(k, q, m, l, acc)
+        _attend_key[lane_width, heads_per_warp, round_p](k, q, m, l, acc)
 
     comptime for i in range(heads_per_warp):
         var h = h0 + i
@@ -293,14 +328,297 @@ def _latent_sparse_attention_cpu[
     dealloc(qh_alloc^)
 
 
-def latent_sparse_attention_ragged_paged[
+def _sm100_decode_plan_kernel[
     swa_t: KVCacheT,
     comp_t: KVCacheT,
+    //,
+    window: Int,
+](
+    comp_rows: Pointer[Int32, MutAnyOrigin],
+    comp_len: Pointer[Int32, MutAnyOrigin],
+    win_rows: Pointer[Int32, MutAnyOrigin],
+    win_len: Pointer[Int32, MutAnyOrigin],
+    row_batches: Pointer[UInt32, MutAnyOrigin],
+    row_lengths: Pointer[UInt32, MutAnyOrigin],
+    scalar_args: Pointer[Int64, MutAnyOrigin],
+    row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    comp_indices: ImmPointer[Int32, ImmutAnyOrigin],
+    swa_cache: swa_t,
+    comp_cache: comp_t,
+    num_rows: Int32,
+    num_batches: Int32,
+    num_comp: Int32,
+    comp_stride: Int32,
+    idx_stride0: Int32,
+    idx_stride1: Int32,
+):
+    """Writes one query row's key lists as flat leaf rows, one warp per row.
+
+    The compressed list is compacted past its `-1` slots so its length alone
+    bounds it. `row_batches` / `row_lengths` make every query row its own
+    batch, and `scalar_args` is the decode dispatch buffer for that batching.
+
+    The decode clamps a row's main list to its batch's cache length plus
+    one, a token-count bound that means nothing for compressed entries, so
+    `row_lengths` holds the list length itself and the clamp never cuts it.
+    """
+    var t = Int(block_idx.x)
+    var lane = Int(lane_id())
+    var b = _batch_of_row(t, row_offsets, Int(num_batches))
+    var pos = swa_cache.cache_length(b) + t - Int(row_offsets[unsafe_offset=b])
+    var nc = Int(num_comp)
+    var out_base = t * Int(comp_stride)
+
+    var count = 0
+    for c0 in range(0, nc, WARP_SIZE):
+        var j = c0 + lane
+        var e = Int32(-1)
+        if j < nc:
+            e = comp_indices[
+                unsafe_offset=t * Int(idx_stride0) + j * Int(idx_stride1)
+            ]
+        var valid = Int32(1) if e >= 0 else Int32(0)
+        var slot = count + Int(warp.prefix_sum[exclusive=True](valid))
+        if e >= 0:
+            comp_rows[unsafe_offset=out_base + slot] = Int32(
+                comp_cache.row_idx(UInt32(b), UInt32(e))
+            )
+        count += Int(warp.sum(valid))
+    for j in range(count + lane, Int(comp_stride), WARP_SIZE):
+        comp_rows[unsafe_offset=out_base + j] = -1
+
+    var start = max(pos - window + 1, 0)
+    for i in range(lane, window, WARP_SIZE):
+        var p = start + i
+        var r = Int32(-1)
+        if p <= pos:
+            r = Int32(swa_cache.row_idx(UInt32(b), UInt32(p)))
+        win_rows[unsafe_offset=t * window + i] = r
+
+    if lane == 0:
+        comp_len[unsafe_offset=t] = Int32(count)
+        win_len[unsafe_offset=t] = Int32(pos - start + 1)
+        row_batches[unsafe_offset=t] = UInt32(t)
+        row_lengths[unsafe_offset=t] = UInt32(count)
+        if t == 0:
+            row_batches[unsafe_offset=Int(num_rows)] = UInt32(num_rows)
+            scalar_args[unsafe_offset=0] = Int64(num_rows)
+            scalar_args[unsafe_offset=1] = 1
+            scalar_args[unsafe_offset=2] = 0
+
+
+def _flat_row_view[
+    dtype: DType,
+    kv_params: KVCacheStaticParams,
+    //,
+](
+    cache: PagedKVCache[dtype, kv_params, ...],
+    row_lengths: Pointer[UInt32, MutAnyOrigin],
+    num_rows: Int,
+) -> PagedKVCacheCollection[
+    dtype,
+    kv_params,
+    _VIEW_PAGE,
+    MutAnyOrigin,
+    ImmutAnyOrigin,
+    ImmutAnyOrigin,
+    MutUntrackedOrigin,
+]:
+    """Views one layer of a leaf as a single-layer cache whose rows are flat.
+
+    The view's block stride equals its page size, so the encoded sparse index
+    `block * page_size + slot` it decodes is the flat row `cache.row_idx`
+    names, whatever the leaf's own page size and layer count. The view's
+    cache lengths are `row_lengths`, one per query row. It keeps the leaf's
+    lookup table only to fill the field: the sparse decode addresses rows by
+    index and never reads it.
+    """
+    comptime blocks_layout = Layout.row_major[6]()
+    comptime lengths_layout = Layout(UNKNOWN_VALUE)
+    comptime lut_layout = Layout.row_major[2]()
+    var num_pages = ceildiv(cache.num_kv_rows(), _VIEW_PAGE)
+    return PagedKVCacheCollection[
+        dtype,
+        kv_params,
+        _VIEW_PAGE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutUntrackedOrigin,
+    ](
+        LayoutTensor[dtype, blocks_layout, MutAnyOrigin](
+            rebind[Pointer[Scalar[dtype], MutAnyOrigin]](cache.blocks.ptr),
+            RuntimeLayout[blocks_layout].row_major(
+                IndexList[6](
+                    num_pages,
+                    1,
+                    1,
+                    _VIEW_PAGE,
+                    kv_params.num_heads,
+                    kv_params.head_size,
+                )
+            ),
+        ),
+        LayoutTensor[DType.uint32, lengths_layout, ImmutAnyOrigin](
+            rebind[Pointer[UInt32, ImmutAnyOrigin]](row_lengths),
+            RuntimeLayout[lengths_layout].row_major(IndexList[1](num_rows)),
+        ),
+        LayoutTensor[DType.uint32, lut_layout, ImmutAnyOrigin](
+            rebind[Pointer[UInt32, ImmutAnyOrigin]](cache.lookup_table.ptr),
+            RuntimeLayout[lut_layout].row_major(
+                IndexList[2](
+                    Int(cache.lookup_table.dim[0]()),
+                    Int(cache.lookup_table.dim[1]()),
+                )
+            ),
+        ),
+        UInt32(1),
+        cache.max_context_length(),
+    )
+
+
+def _latent_sparse_attention_sm100[
+    q_type: DType,
+    out_type: DType,
+    //,
+    num_heads: Int,
+    head_dim: Int,
+    window: Int,
+    split_k: Bool,
+](
+    out_ptr: Pointer[Scalar[out_type], MutAnyOrigin],
+    q_ptr: ImmPointer[Scalar[q_type], ImmutAnyOrigin],
+    row_offsets: ImmPointer[UInt32, ImmutAnyOrigin],
+    comp_indices: ImmPointer[Int32, ImmutAnyOrigin],
+    attn_sink: ImmPointer[Float32, ImmutAnyOrigin],
+    swa_cache: PagedKVCache[...],
+    comp_cache: PagedKVCache[...],
+    num_rows: Int,
+    num_batches: Int,
+    num_comp: Int,
+    idx_stride0: Int,
+    idx_stride1: Int,
+    scale: Float32,
+    ctx: DeviceContext,
+) raises:
+    # Both leaves' views must be one cache type for `extra_k`; equal dtype
+    # and kv_params make the view types equal, which the rebind below relies
+    # on.
+    comptime assert (
+        type_of(swa_cache).dtype == type_of(comp_cache).dtype
+        and type_of(swa_cache).kv_params == type_of(comp_cache).kv_params
+    ), "the window and compressed leaves must share dtype and kv_params"
+    # A zero-width list still needs a real buffer behind its pointer.
+    var comp_stride = max(num_comp, 1)
+    var comp_rows = ctx.enqueue_create_buffer[DType.int32](
+        num_rows * comp_stride
+    )
+    var comp_len = ctx.enqueue_create_buffer[DType.int32](num_rows)
+    var win_rows = ctx.enqueue_create_buffer[DType.int32](num_rows * window)
+    var win_len = ctx.enqueue_create_buffer[DType.int32](num_rows)
+    var row_batches = ctx.enqueue_create_buffer[DType.uint32](num_rows + 1)
+    var row_lengths = ctx.enqueue_create_buffer[DType.uint32](num_rows)
+    var scalar_args = ctx.enqueue_create_buffer[DType.int64](3)
+
+    var comp_rows_ptr = rebind[Pointer[Int32, MutAnyOrigin]](
+        comp_rows.unsafe_ptr()
+    )
+    var comp_len_ptr = rebind[Pointer[Int32, MutAnyOrigin]](
+        comp_len.unsafe_ptr()
+    )
+    var win_rows_ptr = rebind[Pointer[Int32, MutAnyOrigin]](
+        win_rows.unsafe_ptr()
+    )
+    var win_len_ptr = rebind[Pointer[Int32, MutAnyOrigin]](win_len.unsafe_ptr())
+    var row_batches_ptr = rebind[Pointer[UInt32, MutAnyOrigin]](
+        row_batches.unsafe_ptr()
+    )
+    var row_lengths_ptr = rebind[Pointer[UInt32, MutAnyOrigin]](
+        row_lengths.unsafe_ptr()
+    )
+    var scalar_args_ptr = rebind[Pointer[Int64, MutAnyOrigin]](
+        scalar_args.unsafe_ptr()
+    )
+
+    comptime plan = _sm100_decode_plan_kernel[
+        swa_t=type_of(swa_cache),
+        comp_t=type_of(comp_cache),
+        window=window,
+    ]
+    ctx.enqueue_function[plan](
+        comp_rows_ptr,
+        comp_len_ptr,
+        win_rows_ptr,
+        win_len_ptr,
+        row_batches_ptr,
+        row_lengths_ptr,
+        scalar_args_ptr,
+        row_offsets,
+        comp_indices,
+        swa_cache,
+        comp_cache,
+        Int32(num_rows),
+        Int32(num_batches),
+        Int32(num_comp),
+        Int32(comp_stride),
+        Int32(idx_stride0),
+        Int32(idx_stride1),
+        grid_dim=num_rows,
+        block_dim=WARP_SIZE,
+    )
+
+    var comp_view = _flat_row_view(
+        comp_cache, row_lengths_ptr, num_rows
+    ).get_key_cache(0)
+    var swa_view = _flat_row_view(
+        swa_cache, row_lengths_ptr, num_rows
+    ).get_key_cache(0)
+
+    flare_mla_decoding[
+        rank=3,
+        config=MHAConfig[q_type](num_heads, head_dim),
+        ragged=True,
+        sparse=True,
+        has_extra_k=True,
+    ](
+        TileTensor(out_ptr, row_major(num_rows, Idx[num_heads], Idx[head_dim])),
+        TileTensor(q_ptr, row_major(num_rows, Idx[num_heads], Idx[head_dim])),
+        comp_view,
+        NullMask(),
+        TileTensor(row_batches_ptr, row_major(num_rows + 1)),
+        scale,
+        ctx,
+        TileTensor(scalar_args_ptr, row_major((Idx[3],))),
+        q_max_seq_len=1,
+        d_indices=comp_rows_ptr,
+        indices_stride=comp_stride,
+        topk_lengths=NonNullPointer[DType.int32](comp_len),
+        attn_sink_ptr=NonNullPointer[DType.float32](attn_sink),
+        # Equal by the assert above; the compiler compares the two views'
+        # parameters symbolically and can't see it.
+        extra_k=rebind[type_of(comp_view)](swa_view),
+        extra_d_indices=win_rows_ptr,
+        extra_indices_stride=window,
+        extra_topk_lengths=NonNullPointer[DType.int32](win_len),
+        num_partitions_in=Optional[Int](None) if split_k else Optional[Int](1),
+    )
+    _ = comp_rows^
+    _ = comp_len^
+    _ = win_rows^
+    _ = win_len^
+    _ = row_batches^
+    _ = row_lengths^
+    _ = scalar_args^
+
+
+def latent_sparse_attention_ragged_paged[
     q_type: DType,
     out_type: DType,
     //,
     target: StaticString,
     window: Int,
+    split_k: Bool = True,
+    portable_p_bf16: Bool = False,
 ](
     output: TileTensor[mut=True, out_type, address_space=.GENERIC, ...],
     q: TileTensor[mut=False, q_type, address_space=.GENERIC, ...],
@@ -309,23 +627,27 @@ def latent_sparse_attention_ragged_paged[
     ],
     comp_indices: TileTensor[mut=False, .int32, address_space=.GENERIC, ...],
     attn_sink: TileTensor[mut=False, .float32, address_space=.GENERIC, ...],
-    swa_cache: swa_t,
-    comp_cache: comp_t,
+    swa_cache: PagedKVCache[...],
+    comp_cache: PagedKVCache[...],
     scale: Float32,
     ctx: DeviceContext,
 ) raises:
     """Attends every query row to its window keys and its listed compressed entries.
 
     Parameters:
-        swa_t: The sliding-window leaf's cache type (inferred); paged by
-            token position, one latent head.
-        comp_t: The compressed leaf's cache type (inferred); paged by entry,
-            one latent head with the same head size.
         q_type: Query element type (inferred).
         out_type: Output element type (inferred).
         target: Compilation target string, selects the CPU or GPU path.
         window: Sliding window length in tokens; a query at ``pos`` sees
             positions ``max(0, pos - window + 1) .. pos``.
+        split_k: Whether the SM100 route may split a row's keys across
+            CTAs. Split partial outputs are rounded to the output dtype
+            before the combine; `False` runs one CTA per row and rounds the
+            output once, as the portable kernel does.
+        portable_p_bf16: Diagnostic. Runs the portable GPU kernel even on
+            SM100, with each attention weight rounded to bf16 before it
+            multiplies its value row, the one rounding the SM100 decode
+            makes and the portable kernel does not.
 
     Args:
         output: ``[num_rows, num_heads, head_dim]``.
@@ -339,6 +661,8 @@ def latent_sparse_attention_ragged_paged[
         scale: Softmax scale applied to the scores.
         ctx: Device context used to enqueue the GPU kernel.
     """
+    comptime swa_t = type_of(swa_cache)
+    comptime comp_t = type_of(comp_cache)
     comptime head_dim = swa_t.kv_params.head_size
     comptime assert (
         comp_t.kv_params.head_size == head_dim
@@ -378,6 +702,64 @@ def latent_sparse_attention_ragged_paged[
     var idx_ptr = comp_indices.unsafe_ptr().as_unsafe_any_origin()
     var sink_ptr = attn_sink.unsafe_ptr().as_unsafe_any_origin()
 
+    comptime q_heads = q.static_shape[1]
+    comptime use_sm100 = (
+        not is_cpu[target]()
+        and _is_sm10x_gpu(ctx.default_device_info)
+        and q_type == .bfloat16
+        and out_type == .bfloat16
+        and swa_t.dtype == .bfloat16
+        and swa_t.kv_params == comp_t.kv_params
+        and comp_t.dtype == swa_t.dtype
+        and not swa_t.quantization_enabled
+        and not comp_t.quantization_enabled
+        and head_dim == 512
+        and q_heads != UNKNOWN_VALUE
+        and not portable_p_bf16
+    )
+    comptime if use_sm100:
+        # The decode grid is rows * splits along z; bound it by the largest
+        # split count so a long prefill chunk stays on the portable kernel.
+        comptime max_splits = (
+            ctx.default_device_info.sm_count // 2 if split_k else 1
+        )
+        var dense = (
+            q_stride1 == head_dim
+            and q_stride0 == num_heads * head_dim
+            and out_stride1 == head_dim
+            and out_stride0 == num_heads * head_dim
+        )
+        # TMA descriptors need 16-byte-aligned bases.
+        var aligned = (
+            Int(q_ptr) % 16 == 0
+            and Int(out_ptr) % 16 == 0
+            and Int(swa_cache.blocks.ptr) % 16 == 0
+            and Int(comp_cache.blocks.ptr) % 16 == 0
+        )
+        if dense and aligned and num_rows * max_splits <= 65535:
+            _latent_sparse_attention_sm100[
+                num_heads=q_heads,
+                head_dim=head_dim,
+                window=window,
+                split_k=split_k,
+            ](
+                out_ptr,
+                q_ptr,
+                offs_ptr,
+                idx_ptr,
+                sink_ptr,
+                swa_cache,
+                comp_cache,
+                num_rows,
+                num_batches,
+                num_comp,
+                idx_stride0,
+                idx_stride1,
+                scale,
+                ctx,
+            )
+            return
+
     comptime if is_cpu[target]():
         _latent_sparse_attention_cpu[head_dim=head_dim, window=window](
             out_ptr,
@@ -412,6 +794,7 @@ def latent_sparse_attention_ragged_paged[
             heads_per_warp=heads_per_warp,
             warps_per_block=warps_per_block,
             window=window,
+            round_p=portable_p_bf16,
         ]
         ctx.enqueue_function[kernel](
             out_ptr,
