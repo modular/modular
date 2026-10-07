@@ -143,7 +143,7 @@ modular_cc_test(
     copts = ["-Werror"],  # Force any C specific warnings to be errors
     deps = [
         "//max:CAPI.headers",
-        "//max/internal:max",
+        "//max/lib/mcl:max",
     ],
 )
 
@@ -282,7 +282,7 @@ modular_cc_library(
     hdrs = ["Utils.h"],
     deps = [
         "//max:CAPI.headers",
-        "//max/internal:max",
+        "//max/lib/mcl:max",
         "@llvm-project//third-party/unittest:gmock",
         "@llvm-project//third-party/unittest:gtest",
     ],

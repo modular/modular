@@ -136,7 +136,7 @@ struct DeviceRef {
 };
 
 /// Well known device labels. Closed set -- adding a new label requires
-/// updating `M::Engine::Context::create` (max/internal/lib/API/c/
+/// updating `M::Engine::Context::create` (max/lib/mcl/API/c/
 /// EngineContext.cpp) to accept it, otherwise the C API will reject
 /// any device that carries the new value.
 constexpr const char *kCPULabel = "cpu";

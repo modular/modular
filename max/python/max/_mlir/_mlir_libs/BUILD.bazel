@@ -32,7 +32,7 @@ modular_nanobind_extension(
     # Don't lint these files, they're from LLVM.
     tags = ["no-clang-tidy"],
     deps = [
-        "//max/internal:max",
+        "//max/lib/mcl:max",
         "@llvm-project//mlir:MLIRBindingsPythonNanobindHeaders",
     ],
 )

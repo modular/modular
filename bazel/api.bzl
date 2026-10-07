@@ -107,7 +107,7 @@ def _process_cc_deps(data, deps):
     new_deps = []
     needs_wheel = False
     for dep in deps:
-        if dep == "//max/internal:max":
+        if dep == "//max/lib/mcl:max":
             new_deps.append("@modular_wheel//:max_lib")
             needs_wheel = True
         else:

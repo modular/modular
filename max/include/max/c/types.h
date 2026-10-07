@@ -221,7 +221,7 @@ typedef struct M_Safetensors M_Safetensors;
 /// is any non-CPU compute device (GPU or NPU). The closed set of valid
 /// device labels is enforced by `EngineContext::create` -- see
 /// `Support/DeviceSpecs.h` for the label constants and
-/// `max/internal/lib/API/c/EngineContext.cpp` for the validating guard.
+/// `max/lib/mcl/API/c/EngineContext.cpp` for the validating guard.
 #ifdef __cplusplus
 typedef enum M_DeviceType : int {
 #else
