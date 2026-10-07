@@ -4654,7 +4654,7 @@ def mha_decoding[
 @inline(.always)
 def scale_and_mask_helper[
     p_type: DType,
-    p_layout: Layout,
+    p_layout: TensorLayout,
     mask_t: MHAMask,
     group: Int,
     num_n_mmas: Int,
@@ -4662,8 +4662,8 @@ def scale_and_mask_helper[
     MMA_N: Int,
     simd_width: Int,
 ](
-    p_reg_tile: LayoutTensor[
-        mut=True, p_type, p_layout, _, address_space=.LOCAL
+    p_reg_tile: TileTensor[
+        mut=True, p_type, p_layout, address_space=.LOCAL, ...
     ],
     scale_log2e: Float32,
     num_keys: Int,
@@ -4679,27 +4679,9 @@ def scale_and_mask_helper[
     out-of-bounds and masked positions. Only threads with `lane < 4 * group`
     carry meaningful data; other threads return immediately. Designed for the
     decode inner loop where P is a 1-D column-vector across the key dimension.
-
-    Parameters:
-        p_type: Element data type of the P register tile.
-        p_layout: Layout of the P register tile.
-        mask_t: Attention mask type implementing `MHAMask`.
-        group: GQA group size (query heads per KV head).
-        num_n_mmas: Number of MMA operations along the N (key) dimension.
-        WN: Warp tile width along the N dimension.
-        MMA_N: MMA instruction width along N.
-        simd_width: SIMD vector width used in the register tile.
-
-    Args:
-        p_reg_tile: Mutable register tile holding Q·Kᵀ values.
-        scale_log2e: Pre-multiplied softmax scale (scale * log2e).
-        num_keys: Total number of valid keys in the sequence.
-        bound: Inclusive upper bound on the key index for the current tile.
-        lane: Intra-warp lane ID.
-        warp: Warp index within the CTA.
-        mask: Mask instance.
-        kv_tile_start_row: Global key index of the first column in this tile.
     """
+    # The masking body still indexes through the legacy scalar view.
+    var p_reg_tile_legacy = p_reg_tile.to_layout_tensor()
 
     # Apply mask and scale to mma result. Only the first row (lane 0-3) has
     # meaningful data, other fragments are zero. The mask is an 1D vector.
@@ -4736,23 +4718,26 @@ def scale_and_mask_helper[
                     kv_tile_start_row + key_offset + frag_lane_col + i
                 )
 
-                p_reg_tile[n_mma, i + i_group * simd_width] = mask.mask(
+                p_reg_tile_legacy[n_mma, i + i_group * simd_width] = mask.mask(
                     Index(
                         block_idx.z,
                         q_head_idx,
                         score_row,
                         score_col,
                     ),
-                    p_reg_tile[n_mma, i + i_group * simd_width]
+                    p_reg_tile_legacy[n_mma, i + i_group * simd_width]
                     * scale_log2e.cast[p_type](),
                 )
 
                 comptime if mask_t.apply_log2e_after_mask:
-                    p_reg_tile[n_mma, i + i_group * simd_width] = (
-                        p_reg_tile[n_mma, i + i_group * simd_width] * log2e
+                    p_reg_tile_legacy[n_mma, i + i_group * simd_width] = (
+                        p_reg_tile_legacy[n_mma, i + i_group * simd_width]
+                        * log2e
                     )
 
-                p_reg_tile[n_mma, i + i_group * simd_width] = _kernel_mask(
+                p_reg_tile_legacy[
+                    n_mma, i + i_group * simd_width
+                ] = _kernel_mask(
                     Index(score_row, score_col),
                     Index(
                         batch_cache_valid_length + 1,
@@ -4764,7 +4749,7 @@ def scale_and_mask_helper[
                         # led to correct output.
                         kv_tile_start_row + bound,
                     ),
-                    p_reg_tile[n_mma, i + i_group * simd_width],
+                    p_reg_tile_legacy[n_mma, i + i_group * simd_width],
                 )
 
 
@@ -4944,29 +4929,18 @@ def mha_decoding_single_batch[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation[stack_alignment=p_frag_align]()
+    var p_reg_tile = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
 
     # Note that
     # num_warps_n * num_n_mmas == BN // WN * num_n_mmas
     # so we can use multistage_mma
     comptime num_output_rows = num_m_mmas * num_n_mmas
     comptime num_output_rows_full = num_warps_n * num_output_rows if decoding_warp_split_k else num_output_rows
-    # alias num_output_rows = num_warps_n * num_m_mmas * num_n_mmas if decoding_warp_split_k else num_m_mmas * num_n_mmas
-    var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_output_rows_full, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation[stack_alignment=p_frag_align]()
-        .fill(0.0)
-    )
+    var output_reg_tile = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_output_rows_full, p_frag_size]()).fill(0.0)
 
     # Rowwise max and sum for online softmax
     comptime row_align = align_of[
@@ -5153,9 +5127,7 @@ def mha_decoding_single_batch[
             prefetch_init=False,
             static_num_iters=ufloordiv(depth, BK),
         ](
-            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                p_reg_tile
-            ),
+            p_reg_tile,
             q_smem_iter,
             k_smem_iter,
             q_smem_iter,
@@ -5183,13 +5155,6 @@ def mha_decoding_single_batch[
         # For 16x8 mma output, group <= 8 only uses the first 8x8 matrix
         # each thread only has one fragment vector of size 2.
         comptime if group <= 8:
-            var output_reg_vecs = output_reg_tile.tile[
-                num_output_rows_full, p_frag_size // 2
-            ](0, 0).vectorize[1, p_frag_simdwidth]()
-            var p_reg_vecs = p_reg_tile.tile[
-                num_m_mmas * num_n_mmas, p_frag_size // 2
-            ](0, 0).vectorize[1, p_frag_simdwidth]()
-
             _online_softmax_iter_for_mma_output[
                 accum_type,
                 Layout.row_major(num_m_mmas, num_n_mmas),
@@ -5198,28 +5163,23 @@ def mha_decoding_single_batch[
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
-                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                    output_reg_tile.tile[
-                        num_output_rows_full, p_frag_size // 2
-                    ](0, 0)
+                output_reg_tile.tile[num_output_rows_full, p_frag_size // 2](
+                    0, 0
                 ).vectorize[1, p_frag_simdwidth](),
-                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                    p_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
-                        0, 0
-                    )
+                p_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
+                    0, 0
                 ).vectorize[1, p_frag_simdwidth](),
                 warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
                 rowmax,
                 rowsum,
             )
         else:
-            var output_reg_vecs = output_reg_tile.reshape[
-                Layout.row_major(2 * num_output_rows_full, p_frag_simdwidth)
-            ]().vectorize[1, p_frag_simdwidth]()
-            var p_reg_vecs = p_reg_tile.reshape[
-                Layout.row_major(2 * num_m_mmas * num_n_mmas, p_frag_simdwidth)
-            ]().vectorize[1, p_frag_simdwidth]()
-
+            comptime out_view_layout = row_major[
+                2 * num_output_rows_full, p_frag_simdwidth
+            ]()
+            comptime p_view_layout = row_major[
+                2 * num_m_mmas * num_n_mmas, p_frag_simdwidth
+            ]()
             _online_softmax_iter_for_mma_output[
                 accum_type,
                 Layout.row_major(2 * num_m_mmas, num_n_mmas),
@@ -5228,19 +5188,11 @@ def mha_decoding_single_batch[
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
-                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                    output_reg_tile.reshape[
-                        Layout.row_major(
-                            2 * num_output_rows_full, p_frag_simdwidth
-                        )
-                    ]()
+                output_reg_tile.reshape[type_of(out_view_layout)](
+                    out_view_layout
                 ).vectorize[1, p_frag_simdwidth](),
-                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
-                    p_reg_tile.reshape[
-                        Layout.row_major(
-                            2 * num_m_mmas * num_n_mmas, p_frag_simdwidth
-                        )
-                    ]()
+                p_reg_tile.reshape[type_of(p_view_layout)](
+                    p_view_layout
                 ).vectorize[1, p_frag_simdwidth](),
                 warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
                 rowmax,
@@ -5318,7 +5270,10 @@ def mha_decoding_single_batch[
         # else:
         #   S[m, :] @ V[:, (0:WN) + n*WN]
         comptime if decoding_warp_split_k:
-            var p_reg_iter = p_reg_tile.tiled_iterator[
+            # Warp split-k is dead in every current instantiation; keep the
+            # legacy iterator view local to this branch until multistage_mma
+            # grows a native register iterator.
+            var p_reg_iter = p_reg_tile.to_layout_tensor().tiled_iterator[
                 MMA_K // MMA_N * num_m_mmas, p_frag_size
             ](0, 0)
             comptime IteratorTypeVSub = LayoutTensorIter[
@@ -5345,9 +5300,7 @@ def mha_decoding_single_batch[
                 prefetch_init=False,
                 static_num_iters=1,
             ](
-                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                    output_reg_tile
-                ),
+                output_reg_tile,
                 p_reg_iter,
                 v_smem_sub,
                 p_smem_iter,
@@ -5368,9 +5321,7 @@ def mha_decoding_single_batch[
                 prefetch_init=False,
                 static_num_iters=ufloordiv(BN, BK),
             ](
-                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
-                    output_reg_tile
-                ),
+                output_reg_tile,
                 p_smem_iter,
                 v_smem_iter,
                 p_smem_iter,
@@ -5381,9 +5332,13 @@ def mha_decoding_single_batch[
     tile_and_unswitch[[BN]](start, end, loop_over_kvcache)
 
     comptime if decoding_warp_split_k:
-        var output_reg_vecs = output_reg_tile.tile[
-            num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
+        var output_reg_vecs = (
+            output_reg_tile.tile[
+                num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
+            ](0, 0)
+            .to_layout_tensor()
+            .vectorize[1, p_frag_size // 2]()
+        )
         # offset on the pointer is to avoid possible races
         # with `accum_smem_warp_tile`.
         var o_smem_ptr = q_smem.bitcast[Scalar[accum_type]]()
@@ -5459,12 +5414,15 @@ def mha_decoding_single_batch[
         num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
 
+    # The FP32 -> half downcast copy still lives on the legacy path.
+    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
+
     comptime if decoding_warp_split_k:
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.tile[num_output_rows, p_frag_size](0, 0)
+            output_reg_tile_legacy.tile[num_output_rows, p_frag_size](0, 0)
             .vectorize[1, 2]()
             .transpose(),
         )
@@ -5473,7 +5431,7 @@ def mha_decoding_single_batch[
             thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.vectorize[1, 2]().transpose(),
+            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
         )
 
     # Guard writing to shared memory.
@@ -5868,7 +5826,9 @@ def mha_decoding_single_batch_pipelined[
             simd_width=p_frag_simdwidth,
             group=group,
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             scale_log2e,
             num_keys,
             kv_tile_num_rows,
