@@ -1410,14 +1410,26 @@ CValue OverloadSet::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 // Call Emission Implementation
 //===----------------------------------------------------------------------===//
 
-/// Emit an indirect call to a resolved value in a try block, invoking a
-/// callback to generate logic in the 'catch' block that is wrapped around the
-/// call. This ensures that the ExprDest is updated and live after the try
-/// block, which only works if the "catch" logic doesn't fall through.
-///
-/// This emits an error and returns null on failure.
 CValue IREmitter::emitIndirectCallInTryBlock(
     CValue callee, CallOperands &&operands,
+    std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
+  return emitCallInTryBlock(
+      callee, std::move(operands),
+      [&](CallOperands &&operands) {
+        return emitIndirectCall(callee, std::move(operands));
+      },
+      std::move(emitCatchLogic));
+}
+
+/// Emit a call to `callee` in a try block, invoking a callback to generate
+/// logic in the 'catch' block that is wrapped around the call. This ensures
+/// that the ExprDest is updated and live after the try block, which only works
+/// if the "catch" logic doesn't fall through.
+///
+/// This emits an error and returns null on failure.
+CValue IREmitter::emitCallInTryBlock(
+    CValue callee, CallOperands &&operands,
+    function_ref<CValue(CallOperands &&)> emitCall,
     std::function<void(VarDeclOp errDecl)> emitCatchLogic) {
   ExprDest finalDest(operands.dest.getContext());
 
@@ -1466,7 +1478,7 @@ CValue IREmitter::emitIndirectCallInTryBlock(
   // Emit this call into the try region.
   builder->createBlock(&tryOp.getTryRegion());
 
-  CValue result = emitIndirectCall(callee, std::move(operands));
+  CValue result = emitCall(std::move(operands));
   if (!result)
     finalDest.resetForError(*this);
   TryYieldOp::create(*builder, tryOp.getLoc());

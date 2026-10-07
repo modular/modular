@@ -656,6 +656,18 @@ def test_typed_raises_fn7() raises Float32:
     var str: String
     var tmp = callee_7(str)
 
+struct TypedRaisesInit[n: Int]:
+    def __init__(out self) raises Int:
+        pass
+
+# A constructor of a parametric struct whose thrown type needs converting.
+# CHECK-LABEL: lit.fn @"test_typed_raises_init
+def test_typed_raises_init() raises Float32:
+    # CHECK: %__call_error_tmp__ = lit.var.decl{{.*}}!lit.ref<:meta<!Int>
+    # CHECK-NEXT: lit.try %__call_error_tmp__
+    # CHECK-NEXT: lit.call {{.*}}TypedRaisesInit{{.*}}__init__{{.*}}(%__call_error_tmp__,
+    _ = TypedRaisesInit[1]()
+
 # CHECK-LABEL: lit.fn @"call_test_typed_raises_fn
 def call_test_typed_raises_fn() raises Int:
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
