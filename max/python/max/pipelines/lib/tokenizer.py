@@ -21,7 +21,7 @@ import json
 import logging
 from collections import Counter
 from collections.abc import Awaitable, Callable, Sequence
-from functools import cached_property
+from functools import cached_property, partial
 from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 
 import numpy as np
@@ -372,7 +372,7 @@ async def run_with_default_executor(
         The result of ``fn(*args, **kwargs)``.
     """
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, fn, *args, **kwargs)
+    return await loop.run_in_executor(None, partial(fn, *args, **kwargs))
 
 
 def replace_unpaired_surrogates(prompt: str) -> str:
@@ -725,8 +725,14 @@ class TextTokenizer(
         if isinstance(prompt, str | list):
             return prompt, await self.encode(prompt, add_special_tokens=True)
         elif isinstance(messages, list):
-            prompt = self.apply_chat_template(
-                messages, tools, **chat_template_options
+            # Rendering is pure-Python Jinja over the whole conversation;
+            # inline it and a long multi-turn history blocks the API server's
+            # event loop for the full render, serializing request intake.
+            prompt = await run_with_default_executor(
+                self.apply_chat_template,
+                messages,
+                tools,
+                **chat_template_options,
             )
             return prompt, await self._encode_chat_prompt(prompt)
         else:
@@ -1102,7 +1108,11 @@ class TextAndVisionTokenizer(
         if request.prompt is not None:
             prompt = request.prompt
         elif request.messages:
-            prompt = self.apply_chat_template(
+            # Same off-loop treatment as encode(): rendering the chat template
+            # is pure-Python Jinja over the whole conversation and otherwise
+            # blocks the event loop for its full duration.
+            prompt = await run_with_default_executor(
+                self.apply_chat_template,
                 request.messages,
                 request.tools,
                 **(request.chat_template_options or {}),
@@ -1122,8 +1132,11 @@ class TextAndVisionTokenizer(
             else None
         )
 
-        # InternVL returns a python list
-        processed_inputs = self.processor(
+        # InternVL returns a python list. The processor call is CPU-bound
+        # tokenization, kept off the event loop for the same reason as
+        # encode() below and the template render above.
+        processed_inputs = await run_with_default_executor(
+            self.processor,
             text=(
                 replace_unpaired_surrogates(prompt)
                 if isinstance(prompt, str)
