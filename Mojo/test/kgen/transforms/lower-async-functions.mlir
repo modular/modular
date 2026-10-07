@@ -1,4 +1,5 @@
 // RUN: kgen-opt -lower-async-functions -split-input-file %s | FileCheck %s
+// RUN: kgen-opt -lower-async-functions='use-liveness-frame-evaluation=true' -split-input-file %s | FileCheck %s
 
 // COM: Verify Ramp + Resume + Async Calls are transformed correctly.
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {

@@ -96,10 +96,12 @@ int PathInfo::existsAt(VirtualBlock virtualBlock) const {
   return -1;
 }
 
-void M::KGEN::evaluateOldFrame(FrameData &frameData, FuncOp originalFunction,
-                               mlir::DominanceInfo &domInfo, Value errorValue,
-                               Value resultValue, FrameStateTransform transform,
-                               bool isHot) {
+void M::KGEN::evaluateFrameByStateNumbering(FrameData &frameData,
+                                            FuncOp originalFunction,
+                                            mlir::DominanceInfo &domInfo,
+                                            Value errorValue, Value resultValue,
+                                            FrameStateTransform transform,
+                                            bool isHot) {
   auto &frameTypes = frameData.frameTypes;
   auto &valueToIndexInFrame = frameData.valueToIndexInFrame;
   auto &operationToIndexInFrame = frameData.operationToIndexInFrame;

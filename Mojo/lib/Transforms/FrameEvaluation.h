@@ -11,22 +11,23 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#ifndef KGEN_TRANSFORMS_LEGACYFRAMEEVALUATION_H
-#define KGEN_TRANSFORMS_LEGACYFRAMEEVALUATION_H
+#ifndef KGEN_TRANSFORMS_FRAMEEVALUATION_H
+#define KGEN_TRANSFORMS_FRAMEEVALUATION_H
 
 #include "FrameData.h"
 
 namespace M::KGEN {
 
-/// Computes op states by exploring control flow paths, then puts every value
-/// whose definition and use are in different states into the frame. Matches
-/// the `FrameEvaluator` signature.
-void evaluateFrameByStateNumbering(FrameData &frameData,
-                                   FuncOp originalFunction,
-                                   mlir::DominanceInfo &domInfo,
-                                   Value errorValue, Value resultValue,
-                                   FrameStateTransform transform, bool isHot);
+/// Puts every value that is live across a suspension point into the frame.
+/// Forwards to `evaluateFrameByStateNumbering` until the liveness
+/// analysis lands.
+/// Selected with the `use-liveness-frame-evaluation` option of
+/// `lower-async-functions`. Matches the `FrameEvaluator` signature.
+void evaluateFrameByLiveness(FrameData &frameData, FuncOp originalFunction,
+                             mlir::DominanceInfo &domInfo, Value errorValue,
+                             Value resultValue, FrameStateTransform transform,
+                             bool isHot);
 
 } // namespace M::KGEN
 
-#endif // KGEN_TRANSFORMS_LEGACYFRAMEEVALUATION_H
+#endif // KGEN_TRANSFORMS_FRAMEEVALUATION_H

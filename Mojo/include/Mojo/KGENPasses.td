@@ -193,6 +193,13 @@ def LowerAsyncFunctions : Pass<"lower-async-functions", "ModuleOp"> {
      All CO ops except for suspension points are lowered in this pass.
   }];
 
+  let options = [
+    Option<"useLivenessFrameEvaluation", "use-liveness-frame-evaluation",
+           "bool", "false",
+           "If true, compute the coroutine frame from liveness at suspension "
+           "points instead of from state numbering.">,
+  ];
+
   let dependentDialects = [
     "POPDialect",
     "KGENDialect",
