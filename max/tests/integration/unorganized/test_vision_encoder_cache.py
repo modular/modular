@@ -1621,12 +1621,6 @@ def test_vision_encode_result_defaults() -> None:
     assert len(result.embeddings) == 1
 
 
-def _make_layer_buffer(rows: int, cols: int, base: int) -> Buffer:
-    """A [rows, cols] host Buffer whose values start at *base* (distinct layers)."""
-    arr = (base + np.arange(rows * cols, dtype=np.float32)).reshape(rows, cols)
-    return Buffer.from_numpy(arr)
-
-
 def _make_manager(
     budget_bytes_per_device: int = 1024 * 1024, n_devices: int = 1
 ) -> VisionEncoderCache[TextAndVisionContext]:

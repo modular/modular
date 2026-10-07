@@ -140,7 +140,6 @@ modular_py_binary(
         "//max/tests/integration/test_common:numpy_encoder",
         "//max/tests/integration/test_common:process_isolation",
         "//max/tests/integration/test_common:storage",
-        "@rules_python//python/runfiles",
         # transformers v5 requires this for device_map/torch.device loading.
         # verify_pipelines spawns generate_llm_logits as a child process,
         # which inherits this binary's runfiles tree, so accelerate must

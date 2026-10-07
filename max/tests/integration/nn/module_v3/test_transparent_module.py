@@ -128,14 +128,6 @@ class _LocalParamTransparent(TransparentModule[[Tensor], Tensor]):
         return x @ self.weight.T
 
 
-class _LocalParamParent(Module[[Tensor], Tensor]):
-    def __init__(self) -> None:
-        self.inner = _LocalParamTransparent()
-
-    def forward(self, x: Tensor) -> Tensor:
-        return self.inner(x)
-
-
 class _OpaqueTransparent(TransparentModule[[Tensor], Tensor]):
     """A TransparentModule with transparency switched off (opaque)."""
 

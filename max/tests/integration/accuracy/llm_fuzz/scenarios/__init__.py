@@ -91,11 +91,6 @@ def get_all_scenarios() -> dict[str, type[BaseScenario]]:
     return dict(_SCENARIO_REGISTRY)
 
 
-def get_scenario(name: str) -> type[BaseScenario]:
-    _ensure_discovered()
-    return _SCENARIO_REGISTRY[name]
-
-
 # ---------------------------------------------------------------------------
 # Result types
 # ---------------------------------------------------------------------------

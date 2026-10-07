@@ -60,12 +60,6 @@ NVFP4_SF_VECTOR_SIZE = 16
 SF_MN_GROUP_SIZE = 128  # SF_ATOM_M[0](32) * SF_ATOM_M[1](4)
 # MXFP8 scale-tile geometry: E8M0 scales over 32-element blocks.
 MXFP8_SF_VECTOR_SIZE = 32
-_E8M0_SMALL_BYTE = 0x78  # 2**-7, keeps the MXFP8 accumulator in E4M3 range
-
-
-def _e8m0_small_scale(shape: tuple[int, ...]) -> np.ndarray:
-    """Constant 2**-7 E8M0 scale tile as raw uint8 (view-cast to e8m0 later)."""
-    return np.full(shape, _E8M0_SMALL_BYTE, dtype=np.uint8)
 
 
 def _random_uint8(

@@ -1681,11 +1681,6 @@ def _header_json(header: SamplesHeader | None) -> dict[str, object] | None:
     return record
 
 
-def _prefix_text(prefix: Sequence[int]) -> str:
-    """Renders a node's prefix ids, naming the empty prefix explicitly."""
-    return ", ".join(str(token) for token in prefix) if prefix else "(empty)"
-
-
 def _wrap(text: str, *, indent: str = "  ") -> str:
     """Indents a message, leaving it on one line for the terminal to wrap."""
     return indent + text

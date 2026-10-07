@@ -76,9 +76,3 @@ def are_all_tensor_values_iterable(
     it: Iterable[Value],  # type: ignore[type-arg]
 ) -> TypeGuard[Iterable[TensorValue]]:
     return all(isinstance(value, TensorValue) for value in it)
-
-
-def are_all_tensor_values_sequence(
-    it: Sequence[Value],  # type: ignore[type-arg]
-) -> TypeGuard[Sequence[TensorValue]]:
-    return all(isinstance(value, TensorValue) for value in it)

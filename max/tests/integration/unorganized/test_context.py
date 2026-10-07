@@ -1174,25 +1174,6 @@ def test_text_and_vision_context_sad_case() -> None:
         )
 
 
-def does_not_raise_due_to_check_in_property_method() -> None:
-    """This test ensures that `isinstance`, `hasattr`, and other class introspection
-    methods do not execute the body of any methods and throw an
-    exception.
-    """
-
-    ctx = TextContext(
-        max_length=10,
-        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-    )
-
-    # isinstance checks against concrete context classes should not raise.
-    # The original bug report (GENAI-318) indicated that isinstance on VLM
-    # contexts threw a ValueError; validate the concrete-class equivalents.
-    assert isinstance(ctx, TextContext)
-    _ = isinstance(ctx, TextAndVisionContext)
-    _ = isinstance(ctx, PixelContext)
-
-
 def test_context__spec_decoding_state_lazy_init() -> None:
     """Tests that spec_decoding_state is lazily initialized and reset clears it."""
     context = TextContext(

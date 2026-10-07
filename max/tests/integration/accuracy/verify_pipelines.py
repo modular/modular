@@ -108,17 +108,6 @@ class V2V3ComparisonResult:
     v3_verdict: VerificationVerdict
 
 
-def resolve_rlocation(rloc: str) -> Path:
-    from python.runfiles import runfiles
-
-    r = runfiles.Create()
-    assert r
-    resolved = r.Rlocation(rloc)
-    if resolved is None:
-        raise FileNotFoundError(f"Rlocation {rloc!r} could not be resolved")
-    return Path(resolved)
-
-
 def verdict_sorting_key(
     model_name_and_verdict: tuple[str, VerificationVerdict],
 ) -> tuple[int, str]:
