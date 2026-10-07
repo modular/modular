@@ -14,7 +14,6 @@
 """Functional wrappers for MAX kernel operations used in attention layers."""
 
 from collections.abc import Sequence
-from typing import Any
 
 from max.dtype import DType
 from max.experimental import functional as F
@@ -22,14 +21,10 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     Sharded,
+    Unknown,
 )
-from max.experimental.sharding.action import ActionSet, AxisAssignment
-from max.experimental.sharding.cost import (
-    P,
-    R,
-    build_action_set,
-    force_replicated_action_set,
-)
+from max.experimental.sharding.action import AxisAssignment
+from max.experimental.sharding.cost import P, R
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, ops
@@ -92,7 +87,7 @@ def grouped_matmul_ragged_rule(
     expert_start_indices: TensorLayout,
     expert_ids: TensorLayout,
     expert_usage_stats: TensorLayout,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for the MoE grouped matmul ``hidden_states @ weight.T``.
 
     ``weight`` is ``[num_experts, N, K]`` (Linear convention) and
@@ -103,22 +98,14 @@ def grouped_matmul_ragged_rule(
     producing a partial sum). ``expert_start_indices`` / ``expert_ids`` /
     ``expert_usage_stats`` are small per-call metadata, always ``Replicated``.
     """
-    layouts = (
-        hidden_states,
-        weight,
-        expert_start_indices,
-        expert_ids,
-        expert_usage_stats,
-    )
-    rows = [
-        AxisAssignment((R, R, R, R, R), R),
+    return [
+        AxisAssignment((R, R, R, R, R), (R,)),
         # Column-parallel: weight's N (out) axis sharded -> output's N axis.
-        AxisAssignment((R, Sharded(1), R, R, R), Sharded(1)),
+        AxisAssignment((R, Sharded(1), R, R, R), (Sharded(1),)),
         # Row-parallel: weight's K (contraction) axis sharded, matched by
         # hidden_states' K axis -> partial sum.
-        AxisAssignment((Sharded(1), Sharded(2), R, R, R), P),
+        AxisAssignment((Sharded(1), Sharded(2), R, R, R), (P,)),
     ]
-    return build_action_set(rows, layouts=layouts)
 
 
 grouped_matmul_ragged = F.functional(
@@ -126,8 +113,24 @@ grouped_matmul_ragged = F.functional(
 )
 
 
-def _moe_create_indices_rule(lhs: TensorLayout, *args: Any) -> ActionSet:
-    return force_replicated_action_set(lhs)
+def _moe_create_indices_rule(
+    lhs: TensorLayout,
+    num_local_experts: int,
+    *,
+    needs_scales_offset: bool = False,
+) -> list[AxisAssignment]:
+    """Returns the rows for ``moe_create_indices``.
+
+    Replicated ids give whole-batch positions; sharded ids give local ones.
+    """
+    # Over a shard of the batch the outputs mix per-token and per-expert
+    # extents that no one global tensor spans, so the row forgets instead.
+    return [
+        AxisAssignment((R,), (R,) * (6 if needs_scales_offset else 5)),
+        AxisAssignment(
+            (Sharded(0),), (Unknown(),) * (6 if needs_scales_offset else 5)
+        ),
+    ]
 
 
 moe_create_indices = F.functional(
@@ -140,23 +143,18 @@ def moe_finalize_rule(
     restore_token_order: TensorLayout,
     router_weight: TensorLayout,
     out_type: DType,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``moe_finalize``: linear in ``down_projs``.
 
     The weighted row sum keeps ``down_projs``' hidden-axis sharding and
     passes a partial sum through. ``restore_token_order`` and
     ``router_weight`` are per-token routing state, always ``Replicated``.
     """
-    rows = [
-        AxisAssignment((R, R, R), R),
-        AxisAssignment((Sharded(1), R, R), Sharded(1)),
-        AxisAssignment((P, R, R), P),
+    return [
+        AxisAssignment((R, R, R), (R,)),
+        AxisAssignment((Sharded(1), R, R), (Sharded(1),)),
+        AxisAssignment((P, R, R), (P,)),
     ]
-    return build_action_set(
-        rows,
-        layouts=(down_projs, restore_token_order, router_weight),
-        extras=(out_type,),
-    )
 
 
 moe_finalize = F.functional(_moe_finalize, rule=moe_finalize_rule)
@@ -180,15 +178,19 @@ mla_prefill_decode_graph = F.functional(_mla_prefill_decode_graph)
 hyper_connection_gates = F.functional(_hyper_connection_gates)
 
 
-def fused_silu_rule(x: TensorLayout, row_offsets: TensorLayout) -> ActionSet:
+def fused_silu_rule(
+    x: TensorLayout, row_offsets: TensorLayout
+) -> list[AxisAssignment]:
     """Strategies for ``fused_silu``: preserves every input axis (nonlinear).
 
     ``row_offsets`` is the small per-call expert boundary tensor; it is
     always ``Replicated``. No ``Partial`` row: SiLU is nonlinear.
     """
-    rows = [AxisAssignment((R, R), R)]
-    rows += [AxisAssignment((Sharded(d), R), Sharded(d)) for d in range(x.rank)]
-    return build_action_set(rows, layouts=(x, row_offsets))
+    rows = [AxisAssignment((R, R), (R,))]
+    rows += [
+        AxisAssignment((Sharded(d), R), (Sharded(d),)) for d in range(x.rank)
+    ]
+    return rows
 
 
 fused_silu = F.functional(_fused_silu, rule=fused_silu_rule)
@@ -206,11 +208,13 @@ def _moe_sigmoid_gemv_router_rule(
     hidden_states: TensorLayout,
     gate_weight: TensorLayout,
     expert_bias: TensorLayout,
-    *args: Any,
-) -> ActionSet:
+    n_experts_per_tok: int,
+    norm_weights: bool,
+    routed_scaling_factor: float,
+) -> list[AxisAssignment]:
     # Sigmoid and top-k need the full gate dot product on every device, so
     # this op runs on replicated inputs rather than on contraction shards.
-    return force_replicated_action_set(hidden_states, gate_weight, expert_bias)
+    return [AxisAssignment((R, R, R), (R, R))]
 
 
 moe_sigmoid_gemv_router = F.functional(

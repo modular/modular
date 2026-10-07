@@ -1473,8 +1473,8 @@ class Tensor(DLPackArray, HasTensorValue):
             A 1-D ``Tensor`` containing the evenly spaced values.
 
         Raises:
-            ValueError: If inputs aren't scalar, dynamic scalar inputs omit
-                ``out_dim``, or ``device`` requests sharded placement.
+            ValueError: If inputs aren't scalar, or dynamic scalar inputs
+                omit ``out_dim``.
             RuntimeError: If a statically known interval isn't evenly
                 divisible by ``step``, causing the inferred output length to
                 disagree with the number of generated values.

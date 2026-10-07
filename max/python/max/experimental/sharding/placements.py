@@ -41,6 +41,7 @@ class Collective(Enum):
 
     NOOP = "noop"
     LOCAL_SLICE = "local_slice"
+    KEEP_ONE_COPY = "keep_one_copy"
     ALLGATHER = "allgather"
     ALL_TO_ALL = "all_to_all"
     ALLREDUCE = "allreduce"
@@ -137,11 +138,16 @@ class Replicated(Placement):
         return "Replicated()"
 
     def transition_to(self, other: Placement) -> Collective:
-        """Replicated-to-Sharded is a free local split."""
+        """Replicated-to-Sharded is a free local split.
+
+        Replicated-to-Partial keeps one copy and zeros the others.
+        """
         if self == other:
             return Collective.NOOP
         if isinstance(other, Sharded):
             return Collective.LOCAL_SLICE
+        if isinstance(other, Partial):
+            return Collective.KEEP_ONE_COPY
         return super().transition_to(other)
 
 
@@ -251,37 +257,15 @@ class Sharded(Placement):
         return make_per_shard_dim(cells)
 
 
-class ReduceOp(str, Enum):
-    """Reduction operations for partial placements.
-
-    Only ``SUM`` is currently implemented in eager dispatch; the others
-    are reserved for forward compatibility.
-    """
-
-    SUM = "sum"
-    AVG = "avg"
-    MIN = "min"
-    MAX = "max"
-
-
 @dataclass(frozen=True)
 class Partial(Placement):
-    """Every device holds a partial result that must be reduced.
-
-    Args:
-        reduce_op: The reduction operation to apply. Defaults to
-            :attr:`ReduceOp.SUM`.
-    """
-
-    reduce_op: ReduceOp = ReduceOp.SUM
+    """Every device holds a part of the value, and the value is their sum."""
 
     def __repr__(self) -> str:
-        return f"Partial(reduce_op={self.reduce_op.value!r})"
+        return "Partial()"
 
     def transition_to(self, other: Placement) -> Collective:
         """Partial-to-Replicated is allreduce; Partial-to-Sharded is reduce-scatter."""
-        if self.reduce_op in (ReduceOp.MIN, ReduceOp.MAX):
-            return Collective.INFEASIBLE
         if self == other:
             return Collective.NOOP
         if isinstance(other, Replicated):
@@ -289,23 +273,6 @@ class Partial(Placement):
         if isinstance(other, Sharded):
             return Collective.REDUCE_SCATTER
         return super().transition_to(other)
-
-
-def shard_shape(
-    global_shape: Sequence[DimLike],
-    placements: Sequence[Placement],
-    mesh: DeviceMesh,
-) -> list[Dim]:
-    """One representative shard shape via ``parent // mesh_axis_size`` per localized axis.
-
-    For per-shard-precise shapes use :func:`local_shard_shape_from_global`.
-    """
-    result: list[Dim] = [Dim(d) for d in global_shape]
-    for mesh_axis, p in enumerate(placements):
-        axis = p.localized_axis()
-        if axis is not None:
-            result[axis] = result[axis] // mesh.mesh_shape[mesh_axis]
-    return result
 
 
 def local_shard_shape_from_global(

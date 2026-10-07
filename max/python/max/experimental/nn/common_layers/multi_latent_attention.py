@@ -30,7 +30,7 @@ from max.experimental.nn.common_layers.functional_kernels import (
 )
 from max.experimental.nn.common_layers.mesh_axis import TP
 from max.experimental.nn.norm import RMSNorm
-from max.experimental.sharding import DeviceMapping, NamedMapping
+from max.experimental.sharding import DeviceMesh, NamedMapping
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
@@ -156,10 +156,8 @@ class LatentAttentionWithRope(Module[..., Tensor]):
             offsets, cache offsets, and buffer lengths for the prefill step.
         """
         layer_idx = F.constant(0, DType.uint32, device=CPU())
-        replicated = DeviceMapping.replicated(input_row_offsets.mesh)
         buffer_row_offsets, cache_offsets, buffer_lengths = (
-            value.rebind_mapping(replicated)
-            for value in flare_mla_prefill_plan(
+            flare_mla_prefill_plan(
                 self.kv_params,
                 input_row_offsets,
                 kv_collection,
@@ -250,8 +248,18 @@ class LatentAttentionWithRope(Module[..., Tensor]):
                 mla_prefill_metadata.buffer_row_offsets
             )
             attn_kwargs["cache_offsets"] = mla_prefill_metadata.cache_offsets
+            # Each device planned its own buffer length, and the kernel reads
+            # it on the host. One host mesh device per device keeps each
+            # length; ``.to(CPU())`` would give every device the first one's.
+            mesh = mla_prefill_metadata.buffer_lengths.mesh
             attn_kwargs["buffer_length"] = (
-                mla_prefill_metadata.buffer_lengths.to(CPU())
+                mla_prefill_metadata.buffer_lengths.to(
+                    DeviceMesh(
+                        (CPU(),) * mesh.num_devices,
+                        mesh.mesh_shape,
+                        mesh.axis_names,
+                    )
+                )
             )
             attn_kwargs["w_k"] = self.w_k
             attn_kwargs["w_uv"] = self.w_uv

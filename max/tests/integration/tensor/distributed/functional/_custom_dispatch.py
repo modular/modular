@@ -25,17 +25,15 @@ Subclasses must define:
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 import pytest
 from max.experimental import functional as F
 from max.experimental import tensor as _tensor_mod
 from max.experimental.functional import transfer_to
-from max.experimental.functional.spmd_ops import (
-    tensor_to_layout as tl,
-)
 from max.experimental.sharding import (
+    AxisAssignment,
     DeviceMapping,
     DeviceMesh,
     Replicated,
@@ -45,7 +43,7 @@ from max.experimental.sharding import (
     Unknown,
 )
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
+from max.graph import TensorValue, Value, ops
 
 # ═════════════════════════════════════════════════════════════════════════
 #  Shared: placement rule + graph kernel
@@ -90,7 +88,7 @@ def rms_norm(
     eps: float = 1e-6,
 ) -> _tensor_mod.Tensor:
     (x_mapping, weight_mapping, eps), (out_mapping,) = rms_norm_rule(
-        tl(x), tl(weight), eps
+        x.layout, weight.layout, eps
     )
     return F.call_on_mesh(
         _rms_norm_kernel, x_mapping.mesh, out_specs=out_mapping
@@ -204,3 +202,42 @@ class CustomDispatchTests(_CustomDispatchExplicit):
         assert result.placements == (Unknown(),)
         result = result.rebind_mapping(split.mapping)
         np.testing.assert_array_equal(result.to_numpy(), rows[[0, 3]])
+
+    def test_op_takes_each_parameter_as_its_hint_says(self) -> None:
+        seen: dict[str, type] = {}
+
+        def op(
+            x: TensorValue,
+            /,
+            *rest: TensorValue,
+            scale: Tensor,
+            **named: Value[Any],
+        ) -> TensorValue:
+            seen.update(
+                x=type(x),
+                rest=type(rest[0]),
+                scale=type(scale),
+                named=type(named["y"]),
+            )
+            return x + rest[0]
+
+        def rule(
+            x: TensorLayout,
+            /,
+            *rest: TensorLayout,
+            scale: TensorLayout,
+            **named: TensorLayout,
+        ) -> list[AxisAssignment]:
+            return [AxisAssignment((Replicated(),) * 4, (Replicated(),))]
+
+        replicated = DeviceMapping(self.MESH_2, (Replicated(),))
+        ones = transfer_to(Tensor(np.ones(4, dtype=np.float32)), replicated)
+        result = F.functional(op, rule=rule)(ones, ones, scale=ones, y=ones)
+        assert seen == {
+            "x": TensorValue,
+            "rest": TensorValue,
+            "scale": Tensor,
+            "named": TensorValue,
+        }
+        assert result.placements == (Replicated(),)
+        np.testing.assert_array_equal(result.to_numpy(), np.full(4, 2.0))

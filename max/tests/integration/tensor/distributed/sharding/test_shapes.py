@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for shard shape helpers: ``shard_shape``,
+"""Tests for shard shape helpers:
 ``local_shard_shape_from_global``, ``even_shard_sizes``."""
 
 from __future__ import annotations
@@ -26,7 +26,6 @@ from max.experimental.sharding import (
 from max.experimental.sharding.placements import (
     even_shard_sizes,
     local_shard_shape_from_global,
-    shard_shape,
 )
 from max.graph import Dim, Shape, StaticDim, SymbolicDim
 
@@ -41,45 +40,6 @@ def mesh_1d(n: int, name: str = "tp") -> DeviceMesh:
 
 def mesh_2d(rows: int, cols: int) -> DeviceMesh:
     return DeviceMesh(cpu_devices(rows * cols), (rows, cols), ("dp", "tp"))
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  shard_shape (single representative shard)
-# ═════════════════════════════════════════════════════════════════════════
-
-
-class TestShardShape:
-    def test_shard_shape_1d(self) -> None:
-        result = shard_shape([Dim(8), Dim(4)], [Sharded(0)], mesh_1d(4))
-        assert [int(d) for d in result] == [2, 4]
-
-    def test_shard_shape_replicated(self) -> None:
-        result = shard_shape([Dim(8), Dim(4)], [Replicated()], mesh_1d(4))
-        assert [int(d) for d in result] == [8, 4]
-
-    def test_shard_shape_2d_mesh(self) -> None:
-        result = shard_shape(
-            [Dim(8), Dim(12)], [Sharded(0), Sharded(1)], mesh_2d(2, 4)
-        )
-        assert [int(d) for d in result] == [4, 3]
-
-    def test_shard_shape_partial_no_change(self) -> None:
-        result = shard_shape([Dim(8), Dim(4)], [Partial()], mesh_1d(4))
-        assert [int(d) for d in result] == [8, 4]
-
-    def test_shard_shape_3d(self) -> None:
-        result = shard_shape(
-            [Dim(2), Dim(8), Dim(16)], [Sharded(1)], mesh_1d(4)
-        )
-        assert [int(d) for d in result] == [2, 2, 16]
-
-    def test_shard_shape_4d_2d_mesh(self) -> None:
-        result = shard_shape(
-            [Dim(8), Dim(4), Dim(12), Dim(3)],
-            [Sharded(0), Sharded(2)],
-            mesh_2d(2, 4),
-        )
-        assert [int(d) for d in result] == [4, 4, 3, 3]
 
 
 class TestEvenShardSizes:
@@ -196,21 +156,3 @@ class TestLocalShardShapeFromGlobal:
         assert len(shapes) == 2
         for s in shapes:
             assert list(s) == [StaticDim(4), StaticDim(6), StaticDim(4)]
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Symbolic dims pass through shard_shape
-# ═════════════════════════════════════════════════════════════════════════
-
-
-class TestSymbolicShardShape:
-    def test_shard_shape_with_symbolic_dim(self) -> None:
-        sym = Dim("batch")
-        result = shard_shape([sym, Dim(4)], [Sharded(0)], mesh_1d(2))
-        assert isinstance(result[0], Dim)
-        assert int(result[1]) == 4
-
-    def test_shard_shape_replicated_preserves_symbolic(self) -> None:
-        sym = Dim("seq")
-        result = shard_shape([sym, Dim(4)], [Replicated()], mesh_1d(2))
-        assert result[0] == sym

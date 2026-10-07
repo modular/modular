@@ -17,13 +17,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from max.experimental.sharding.placements import Partial, ReduceOp, Sharded
+from max.experimental.sharding import Sharded
 from max.experimental.sharding.types import TensorLayout
 
-from ..action import ActionSet, AxisAssignment
-from ..cost import P, R, build_action_set
-
-_AVG = Partial(ReduceOp.AVG)
+from ..action import AxisAssignment
+from ..cost import P, R
 
 
 def _non_reduction_axis_rows(
@@ -32,52 +30,40 @@ def _non_reduction_axis_rows(
     """``Sharded(d) -> Sharded(d)`` rows over every non-reduction axis."""
     norm = axis % x.rank
     return [
-        AxisAssignment((Sharded(d),), Sharded(d))
+        AxisAssignment((Sharded(d),), (Sharded(d),))
         for d in range(x.rank)
         if d != norm
     ]
 
 
-def reduce_rule(x: TensorLayout, axis: int = -1, *extra: Any) -> ActionSet:
+def reduce_rule(
+    x: TensorLayout, axis: int = -1, *extra: Any, **kwargs: Any
+) -> list[AxisAssignment]:
     """Non-linear reduction: shard any non-reduction axis.
 
     Shared by ``prod``, ``argmax``, ``argmin``, ``max``, ``min``;
     ``*extra`` absorbs op-specific trailing args.
     """
-    rows = [AxisAssignment((R,), R), *_non_reduction_axis_rows(x, axis)]
-    return build_action_set(rows, layouts=(x,), extras=(axis, *extra))
+    return [AxisAssignment((R,), (R,)), *_non_reduction_axis_rows(x, axis)]
 
 
-def softmax_rule(value: TensorLayout, axis: int = -1) -> ActionSet:
+def softmax_rule(value: TensorLayout, axis: int = -1) -> list[AxisAssignment]:
     """Strategies for ``softmax`` / ``logsoftmax``: shard any non-softmax axis."""
-    rows = [AxisAssignment((R,), R), *_non_reduction_axis_rows(value, axis)]
-    return build_action_set(rows, layouts=(value,), extras=(axis,))
+    return [AxisAssignment((R,), (R,)), *_non_reduction_axis_rows(value, axis)]
 
 
 def linear_reduce_rule(
     x: TensorLayout, axis: int = -1, *extra: Any
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Linear reduction: ``S(reduced_axis) -> Partial(SUM)``; ``P -> P``.
 
-    Shared by ``sum`` and ``cumsum``.
+    Used by ``sum``. Not by ``cumsum``: a device's prefix sums along a
+    sharded axis need the totals of the shards before it.
     """
     norm = axis % x.rank
-    rows = [
-        AxisAssignment((R,), R),
+    return [
+        AxisAssignment((R,), (R,)),
         *_non_reduction_axis_rows(x, axis),
-        AxisAssignment((Sharded(norm),), P),
-        AxisAssignment((P,), P),
+        AxisAssignment((Sharded(norm),), (P,)),
+        AxisAssignment((P,), (P,)),
     ]
-    return build_action_set(rows, layouts=(x,), extras=(axis, *extra))
-
-
-def mean_rule(x: TensorLayout, axis: int = -1) -> ActionSet:
-    """Mean is linear with reduction op AVG."""
-    norm = axis % x.rank
-    rows = [
-        AxisAssignment((R,), R),
-        *_non_reduction_axis_rows(x, axis),
-        AxisAssignment((Sharded(norm),), _AVG),
-        AxisAssignment((_AVG,), _AVG),
-    ]
-    return build_action_set(rows, layouts=(x,), extras=(axis,))

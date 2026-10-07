@@ -335,6 +335,36 @@ def _local_split(
     )(t)
 
 
+def _keep_one_copy(t: Tensor, mesh_axes: Sequence[int]) -> Tensor:
+    """Moves ``t`` from Replicated to Partial along ``mesh_axes``.
+
+    The first device along ``mesh_axes`` keeps its copy and the others hold
+    zeros, with no communication, so the copies sum to the value exactly.
+    """
+
+    def keep_first(copies: list[Tensor]) -> list[TensorValue]:
+        first, *others = (TensorValue(copy) for copy in copies)
+        return [
+            first,
+            *(
+                ops.broadcast_to(
+                    ops.constant(0, other.dtype, other.device), other.shape
+                )
+                for other in others
+            ),
+        ]
+
+    placements = list(t.placements)
+    for mesh_axis in mesh_axes:
+        placements[mesh_axis] = Partial()
+    return call_on_mesh(
+        keep_first,
+        t.mesh,
+        mesh_axes,
+        out_specs=DeviceMapping(t.mesh, tuple(placements)),
+    )(t)
+
+
 def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
     """Distributes a non-distributed tensor across a mesh."""
     assert not t.is_distributed, "_scatter expects a non-distributed tensor"
@@ -532,10 +562,6 @@ def transfer_to(
             :class:`~max.experimental.sharding.Unknown` placement, whose
             shards have no global value to preserve.
         NotImplementedError: If no supported collective performs the move.
-            This includes when a :class:`~max.experimental.sharding.Partial`
-            placement reduces with ``min`` or ``max``, a ``Partial``
-            placement changes to another ``Partial``, or a ``Replicated`` or
-            ``Sharded`` placement changes to ``Partial``.
     """
     if isinstance(target, DeviceRef):
         target = target.to_device()
@@ -641,18 +667,6 @@ def transfer_to(
         if t.placements == target_p:
             return t
 
-    for cp, tp in zip(t.placements, target_p, strict=True):
-        if isinstance(cp, Partial) and cp != tp:
-            if cp.reduce_op.value in ("min", "max"):
-                raise NotImplementedError(
-                    f"Partial({cp.reduce_op}) redistribution is not supported."
-                )
-            if isinstance(tp, Partial):
-                raise NotImplementedError(
-                    f"Partial({cp.reduce_op}) -> Partial({tp.reduce_op}) "
-                    "redistribution is not supported."
-                )
-
     # Mesh axes of size 1 are left out, since they split nothing.
     def split_by(
         placements: Sequence[Placement], tensor_axis: int
@@ -718,6 +732,15 @@ def transfer_to(
         ]
         if to_split:
             t = _local_split(t, to_split, Sharded(tensor_axis))
+
+    to_partial = [
+        ax
+        for ax in range(mesh.ndim)
+        if isinstance(t.placements[ax], Replicated)
+        and isinstance(target_p[ax], Partial)
+    ]
+    if to_partial:
+        t = _keep_one_copy(t, to_partial)
 
     if t.placements != target_p:
         raise NotImplementedError(

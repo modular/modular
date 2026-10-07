@@ -15,14 +15,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
-from max.experimental.sharding.action import ActionSet
-from max.experimental.sharding.cost import force_replicated_action_set
+from max.experimental.sharding import AxisAssignment, replicated_rows
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.nn.kernels import tpool_patch_merger as _tpool_patch_merger
@@ -34,15 +31,15 @@ from .patch_merger import PatchMergerMLP
 
 
 def _tpool_patch_merger_rule(
-    input: TensorLayout, grid_thws: TensorLayout, *extras: Any
-) -> ActionSet:
-    """Replicated on the token stream and the grid table.
-
-    Only the leading tensor operands are declared; the ``kH``/``kW`` merge
-    extents and the host ``max_h``/``max_w`` scalars trail them and pass
-    through the dispatcher untouched.
-    """
-    return force_replicated_action_set(input, grid_thws)
+    input: TensorLayout,
+    grid_thws: TensorLayout,
+    kH: int,
+    kW: int,
+    max_h: int | TensorLayout,
+    max_w: int | TensorLayout,
+) -> list[AxisAssignment]:
+    """Replicated on the token stream, the grid table and the host extents."""
+    return replicated_rows(input, grid_thws, max_h, max_w)
 
 
 tpool_patch_merger = F.functional(

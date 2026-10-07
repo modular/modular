@@ -7532,7 +7532,7 @@ def grouped_matmul_block_scaled(
     expert_ids = TensorValue(expert_ids)
     expert_scales = TensorValue(expert_scales)
     expert_usage_stats_host = TensorValue(expert_usage_stats_host)
-    if estimated_total_m:
+    if estimated_total_m is not None:
         estimated_total_m = TensorValue(estimated_total_m)
     if a_row_scales is not None:
         a_row_scales = TensorValue(a_row_scales)
@@ -7659,7 +7659,9 @@ def grouped_matmul_block_scaled(
         expert_scales,
         # Unread placeholder when there are no row scales.
         a_row_scales if a_row_scales is not None else expert_scales,
-        estimated_total_m or expert_usage_stats_host[0],
+        estimated_total_m
+        if estimated_total_m is not None
+        else expert_usage_stats_host[0],
         expert_usage_stats_host[1],
         has_a_row_scales=builtin.BoolAttr(a_row_scales is not None),
     )[0].tensor
@@ -7849,7 +7851,9 @@ def grouped_matmul_blocked_swiglu(
         # Unread placeholder when there are no row scales.
         a_row_scales if a_row_scales is not None else expert_scales,
         c_input_scales,
-        estimated_total_m or expert_usage_stats_host[0],
+        estimated_total_m
+        if estimated_total_m is not None
+        else expert_usage_stats_host[0],
         expert_usage_stats_host[1],
         ops.constant(swiglu_alpha, DType.float32, device=DeviceRef.CPU()),
         ops.constant(swiglu_limit, DType.float32, device=DeviceRef.CPU()),

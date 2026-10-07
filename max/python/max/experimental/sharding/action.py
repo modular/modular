@@ -11,31 +11,70 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Per-op decision data model: :class:`AxisAssignment`, :class:`Action`, :class:`ActionSet`."""
+"""Defines the rows a sharding rule returns and the functions that build them.
+
+A rule returns :class:`AxisAssignment` rows, and the op picks one row per
+mesh axis to form an :class:`Action`. :class:`PerShard` holds one argument
+value per device for :func:`~max.experimental.functional.call_on_mesh`.
+"""
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any, Generic, NamedTuple, TypeVar
 
+from max import tree
 from max.experimental.sharding.mappings import DeviceMapping
-from max.experimental.sharding.mesh import DeviceMesh
-from max.experimental.sharding.placements import Placement
+from max.experimental.sharding.placements import (
+    Placement,
+    Replicated,
+    ShardingError,
+)
 from max.experimental.sharding.types import TensorLayout
-from max.graph.dim import Dim
 
 
 class AxisAssignment(NamedTuple):
-    """One per-mesh-axis row in an :class:`ActionSet`.
+    """One placement choice that a sharding rule offers for its op.
 
-    Reads as: given these per-axis input placements, the output along
-    that axis is :attr:`output`. Picking one :class:`AxisAssignment`
-    per mesh axis builds a multi-axis :class:`Action`.
+    A sharding rule is a function with the same parameters as its op. It
+    receives the op's arguments with each tensor, at any depth, replaced by
+    its :class:`TensorLayout`, and returns a list of rows. Each row gives a
+    placement for every tensor operand, in argument order, and for every
+    result. Some rows of the matmul rule:
+
+    .. code-block:: python
+
+        from max.experimental.sharding import (
+            AxisAssignment,
+            Partial,
+            Replicated,
+            Sharded,
+            TensorLayout,
+        )
+
+        def matmul_rule(
+            lhs: TensorLayout, rhs: TensorLayout
+        ) -> list[AxisAssignment]:
+            return [
+                AxisAssignment((Replicated(), Replicated()), (Replicated(),)),
+                # Column parallel: each device holds some of the columns.
+                AxisAssignment((Replicated(), Sharded(1)), (Sharded(1),)),
+                # Row parallel: each device holds part of the sum.
+                AxisAssignment((Sharded(1), Sharded(0)), (Partial(),)),
+            ]
+
+    On each mesh axis, the op picks the row whose input moves cost least,
+    moves its operands there, and gives its results the row's placements.
+    A rule never changes the op's other arguments.
     """
 
     needed_inputs: tuple[Placement, ...]
-    output: Placement
+    """The placement of each tensor operand, in argument order."""
+
+    outputs: tuple[Placement, ...]
+    """The placement of each result, in result order."""
 
 
 _Value = TypeVar("_Value")
@@ -47,9 +86,7 @@ class PerShard(Generic[_Value]):
     :func:`~max.experimental.functional.call_on_mesh` passes each device its
     own entry, for example a device's local shape, its vocabulary bounds or
     whether it is the first device. It is its own type because a plain
-    tuple argument reaches every device whole. A rule also returns one in
-    :attr:`ActionSet.extras` for an argument that differs per device; any
-    other value there is the same on every device.
+    tuple argument reaches every device whole.
     """
 
     __slots__ = ("values",)
@@ -80,19 +117,17 @@ class PerShard(Generic[_Value]):
 
 @dataclass(frozen=True)
 class Action:
-    """A rule's picked decision for one op call.
+    """The placements picked for one op call, one row per mesh axis.
 
-    :attr:`inputs` has one entry per op argument in positional order:
-    :class:`DeviceMapping` at tensor positions; bare scalar (treated as
-    uniform across ranks) or :class:`PerShard` at non-tensor positions.
-    :attr:`outputs` has one :class:`DeviceMapping` per op output. The
-    dispatcher inserts ``transfer_to`` collectives to match
-    :attr:`inputs` before per-shard dispatch; :attr:`outputs` is the
-    post-op mapping each result wears.
+    The op moves each operand to its mapping in :attr:`inputs` before it
+    runs and gives its results the mappings in :attr:`outputs`.
     """
 
-    inputs: tuple[Any, ...]
+    inputs: tuple[DeviceMapping, ...]
+    """One mapping per tensor operand, in argument order."""
+
     outputs: tuple[DeviceMapping, ...]
+    """One mapping per result."""
 
     def __iter__(self) -> Iterator[Any]:
         """Yields ``(inputs, outputs)``."""
@@ -100,39 +135,135 @@ class Action:
         yield self.outputs
 
 
-@dataclass(frozen=True)
-class ActionSet:
-    """A rule's per-axis sharding options for one op call.
+def input_placements_at_axis(
+    per_input_placements: Sequence[tuple[Placement, ...]], mesh_axis: int
+) -> tuple[Placement, ...]:
+    """Returns each input's placement on ``mesh_axis``, or ``Replicated``."""
+    return tuple(
+        p[mesh_axis] if len(p) > mesh_axis else Replicated()
+        for p in per_input_placements
+    )
 
-    Shape-aware (it depends on operand layouts) but cost-blind: it
-    lists what is possible, not what is cheapest. The dispatcher
-    picks one entry per mesh axis.
+
+def tensor_layouts_in(inputs: tuple[Any, ...]) -> tuple[TensorLayout, ...]:
+    """Returns the tensor layouts in ``inputs``, at any depth, in rule order.
+
+    Args:
+        inputs: The op's arguments, which may nest tensors in containers.
+
+    Returns:
+        One layout per tensor, in the order a walk of ``inputs`` reaches
+        them, which is the order a rule's rows name them.
     """
+    return tuple(tree.leaves(inputs, leaf=TensorLayout))
 
-    axis_assignments: tuple[AxisAssignment, ...]
-    """Per-axis rows, each pickable independently per mesh axis. The
-    last entry is the universal ``(R,…,R) -> R`` fallback."""
 
-    layouts: tuple[TensorLayout, ...]
-    """Per-tensor input layouts this menu was built for."""
+def pass_through_rows(
+    layouts: Sequence[TensorLayout],
+    outputs: Callable[[tuple[Placement, ...]], tuple[Placement, ...] | None],
+) -> list[AxisAssignment]:
+    """Returns the rows of an op that never moves its inputs.
 
-    mesh: DeviceMesh
-    """The mesh both the picker and planner work over."""
+    Each mesh axis gets the row that keeps every input where it is, with
+    the result placements ``outputs`` gives for those input placements.
 
-    extras: tuple[Any, ...] = ()
-    """Non-tensor positional args appended after tensor-input mappings
-    in the picked :class:`Action`'s :attr:`inputs`. A bare value is
-    treated as uniform across ranks; wrap in :class:`PerShard` to vary
-    per rank."""
+    Args:
+        layouts: The op's tensor operands, in call order.
+        outputs: A callable mapping one mesh axis's input placements to
+            each result's placement there, or to :obj:`None` where the op
+            cannot run on them.
 
-    result_shape: Sequence[Dim] | None = None
-    """Output shape constraint, set by reshape-style rules. Lets the
-    feasibility check reject output :class:`Sharded` rows whose result
-    dim is too small."""
+    Returns:
+        One row per distinct mesh-axis placement, in mesh-axis order.
 
-    finalize: Callable[[Action], Action] | None = None
-    """Optional post-pick transform applied as ``finalize(action)``. Used
-    by rules that need the picked placement to compute per-rank metadata
-    or repack inputs into a user-facing container. Rules pre-bind any
-    per-op context by closing over it, so no separate context field is
-    needed."""
+    Raises:
+        ShardingError: If ``outputs`` returns :obj:`None` on some mesh axis.
+    """
+    placements = [layout.placements for layout in layouts]
+    rows: list[AxisAssignment] = []
+    for mesh_axis in range(max(len(p) for p in placements)):
+        actuals = input_placements_at_axis(placements, mesh_axis)
+        if (out := outputs(actuals)) is None:
+            raise ShardingError(
+                f"This op cannot run on inputs placed {actuals} on mesh axis "
+                f"{mesh_axis}, and it never moves its inputs; place them "
+                "with transfer_to first."
+            )
+        row = AxisAssignment(actuals, out)
+        if row not in rows:
+            rows.append(row)
+    return rows
+
+
+def replicated_rows(*args: Any, output_count: int = 1) -> list[AxisAssignment]:
+    """Returns the one row of an op that runs only on whole tensors.
+
+    Args:
+        *args: The op's arguments, as the rule receives them.
+        output_count: The number of results. Defaults to ``1``.
+
+    Returns:
+        A single row placing every operand and result :class:`Replicated`.
+
+    Raises:
+        ValueError: If ``args`` holds no tensor operand.
+    """
+    if not (layouts := tensor_layouts_in(args)):
+        raise ValueError("replicated_rows: at least one layout required.")
+    return [
+        AxisAssignment(
+            (Replicated(),) * len(layouts), (Replicated(),) * output_count
+        )
+    ]
+
+
+def match_operand_placement(
+    graph_op: Callable[..., Any], name: str, *, output_count: int = 1
+) -> Callable[..., list[AxisAssignment]]:
+    """Returns a sharding rule whose results take operand ``name``'s placement.
+
+    The rule never moves an operand. It suits an op whose results are laid
+    out like one of its inputs, such as per-row values computed from a
+    row-sharded tensor.
+
+    Args:
+        graph_op: The op the rule is for, read for its parameter names.
+        name: The parameter whose placement the results take.
+        output_count: The number of results. Defaults to ``1``.
+
+    Returns:
+        A rule that keeps every operand where it is and places each result
+        as ``name`` is placed.
+
+    Raises:
+        ValueError: If ``graph_op`` has no parameter ``name``.
+    """
+    signature = inspect.signature(graph_op)
+    op_name = getattr(graph_op, "__name__", repr(graph_op))
+    if name not in signature.parameters:
+        raise ValueError(
+            f"{op_name!r} has no parameter {name!r} to take a placement "
+            f"from; it has {tuple(signature.parameters)}."
+        )
+
+    def rule(*args: Any, **kwargs: Any) -> list[AxisAssignment]:
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        layouts = tensor_layouts_in(tuple(bound.arguments.values()))
+        claimed = bound.arguments[name]
+        which = next(
+            (i for i, layout in enumerate(layouts) if layout is claimed),
+            None,
+        )
+        if which is None:
+            raise ShardingError(
+                f"{name!r} holds {claimed!r}, so it has no placement for the "
+                f"results of {op_name!r} to take; name a tensor parameter "
+                "instead."
+            )
+        return pass_through_rows(
+            layouts, lambda actuals: (actuals[which],) * output_count
+        )
+
+    rule.__name__ = f"{op_name}_rule"
+    return rule

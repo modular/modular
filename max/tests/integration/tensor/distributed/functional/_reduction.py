@@ -131,6 +131,14 @@ class _Mean:
         expected = t_np.mean(axis=-1, keepdims=True)
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-4)
 
+    def test_uneven_sharded_axis(self) -> None:
+        """A mean over unevenly sharded rows divides by the global count."""
+        t_np = np.arange(10, dtype=np.float32).reshape(5, 2)
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        result = mean(t, axis=0)
+        expected = t_np.mean(axis=0, keepdims=True)
+        np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
+
 
 # ── Softmax ──────────────────────────────────────────────────────────
 
@@ -178,6 +186,15 @@ class _Cumsum:
         assert result.placements == (Sharded(0),)
         expected = np.cumsum(t_np, axis=1)
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
+
+    def test_sharded_axis(self) -> None:
+        """A prefix sum over the sharded axis continues across shards."""
+        t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
+        t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
+        result = cumsum(t, axis=0)
+        np.testing.assert_allclose(
+            result.to_numpy(), np.cumsum(t_np, axis=0), rtol=1e-5
+        )
 
     def test_partial_passthrough(self) -> None:
         """MESH_1D: Partial passes through cumsum (linear op).

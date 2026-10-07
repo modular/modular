@@ -57,16 +57,27 @@ Tensor-to-mesh mappings
    DeviceMapping
    NamedMapping
 
-Per-op decisions
-----------------
+Sharding rules
+--------------
+
+A sharding rule returns the :class:`AxisAssignment` rows its op accepts;
+:class:`AxisAssignment` describes what a rule receives and returns. These
+functions build common rules and rows.
 
 .. autosummary::
    :nosignatures:
    :toctree: generated
    :template: autosummary/class.rst
 
-   ActionSet
    AxisAssignment
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/function.rst
+
+   match_operand_placement
+   replicated_rows
 
 Resharding
 ----------
@@ -97,14 +108,3 @@ Exceptions
 
    ConversionError
    ShardingError
-
-Functions
----------
-
-.. autosummary::
-   :nosignatures:
-   :toctree: generated
-   :template: autosummary/function.rst
-
-   build_action_set
-   force_replicated_action_set

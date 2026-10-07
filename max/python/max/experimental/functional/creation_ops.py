@@ -30,6 +30,7 @@ from max.experimental.sharding import (
     BufferLayout,
     DeviceMapping,
     DeviceMesh,
+    Partial,
     Placement,
     Replicated,
     TensorLayout,
@@ -72,16 +73,6 @@ def _device_from_like(like: Tensor) -> DeviceMapping:
     return like.layout.mapping
 
 
-def _reject_sharded_creation(mapping: DeviceMapping, op_name: str) -> None:
-    """Raises if ``mapping`` localizes any tensor axis (sharded creation is unsupported)."""
-    for p in mapping.placements:
-        if p.localized_axis() is not None:
-            raise ValueError(
-                f"{op_name}: cannot create with sharded placement {p!r}. "
-                f"Use Replicated and shard after creation."
-            )
-
-
 def full(
     shape: ShapeLike,
     value: Number,
@@ -112,14 +103,23 @@ def full(
     mapping = _normalized_device(device)
     resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
     if mapping.mesh.num_devices > 1:
+        # Build copies, then place them: for a partial sum, ``.to`` keeps
+        # one copy and zeros the others.
+        copies = DeviceMapping(
+            mapping.mesh,
+            tuple(
+                Replicated() if isinstance(p, Partial) else p
+                for p in mapping.placements
+            ),
+        )
         local_shapes = local_shard_shape_from_global(
-            Shape(shape), mapping.mesh, mapping.placements
+            Shape(shape), copies.mesh, copies.placements
         )
         return call_on_mesh(
             lambda local_shape: full(local_shape, value, dtype=resolved_dtype),
-            mapping.mesh,
-            out_specs=mapping,
-        )(PerShard(local_shapes))
+            copies.mesh,
+            out_specs=copies,
+        )(PerShard(local_shapes)).to(mapping)
     device_ref = DeviceRef.from_device(mapping.mesh.devices[0])
     with ensure_context():
         constant = ops.constant(value, resolved_dtype, device_ref)
@@ -192,11 +192,17 @@ def full_like(like: Tensor, value: Number) -> Tensor:
     if like.is_distributed:
         # Each device takes its own shard's shape, which the global shape
         # does not give for an Unknown placement.
+        mapping = _device_from_like(like)
+        copies = DeviceMapping(
+            mapping.mesh,
+            tuple(
+                Replicated() if isinstance(p, Partial) else p
+                for p in mapping.placements
+            ),
+        )
         return call_on_mesh(
-            lambda shard: full_like(shard, value),
-            like.mesh,
-            out_specs=_device_from_like(like),
-        )(like)
+            lambda shard: full_like(shard, value), like.mesh, out_specs=copies
+        )(like).to(mapping)
     return full(
         like.shape, value, dtype=like.dtype, device=_device_from_like(like)
     )
@@ -489,20 +495,17 @@ def hann_window(
         dtype: The output tensor's data type. Defaults to ``float32`` on CPU
             or ``bfloat16`` on accelerators.
         device: A single device or a
-            :class:`~max.experimental.sharding.DeviceMapping`. Sharded
-            placement is not supported.
+            :class:`~max.experimental.sharding.DeviceMapping`.
 
     Returns:
         A 1-D ``Tensor`` of shape ``(window_length,)`` containing the
         window.
 
     Raises:
-        ValueError: If ``window_length`` is negative, or if ``device``
-            requests a sharded placement.
+        ValueError: If ``window_length`` is negative.
         TypeError: If ``window_length`` isn't an integer.
     """
     mapping = _normalized_device(device)
-    _reject_sharded_creation(mapping, "hann_window")
     resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
     if mapping.mesh.num_devices > 1:
         return call_on_mesh(
@@ -510,8 +513,8 @@ def hann_window(
                 window_length, periodic=periodic, dtype=resolved_dtype
             ),
             mapping.mesh,
-            out_specs=mapping,
-        )()
+            out_specs=DeviceMapping.replicated(mapping.mesh),
+        )().to(mapping)
     device_ref = DeviceRef.from_device(mapping.mesh.devices[0])
     with ensure_context():
         return Tensor.from_shard_values(
@@ -567,29 +570,26 @@ def range(
         dtype: The element type of the result tensor. Defaults to
             ``float32`` on CPU or ``bfloat16`` on accelerators.
         device: A single device or a
-            :class:`~max.experimental.sharding.DeviceMapping`. Sharded
-            placement is not supported.
+            :class:`~max.experimental.sharding.DeviceMapping`.
 
     Returns:
         A ``Tensor`` containing the generated sequence.
 
     Raises:
         ValueError: If ``out_dim`` is omitted for dynamic scalar inputs, if
-            any input isn't scalar, if any input isn't on the CPU, or if
-            ``device`` requests a sharded placement.
+            any input isn't scalar, or if any input isn't on the CPU.
         RuntimeError: If a statically known interval isn't evenly divisible
             by ``step``, causing the inferred output length to disagree with
             the number of generated values.
     """
     mapping = _normalized_device(device)
-    _reject_sharded_creation(mapping, "range")
     resolved_dtype, _ = defaults(dtype, mapping.mesh.devices[0])
     if mapping.mesh.num_devices > 1:
         return call_on_mesh(
             lambda: range(start, stop, step, out_dim, dtype=resolved_dtype),
             mapping.mesh,
-            out_specs=mapping,
-        )()
+            out_specs=DeviceMapping.replicated(mapping.mesh),
+        )().to(mapping)
     device_ref = DeviceRef.from_device(mapping.mesh.devices[0])
     with ensure_context():
         return Tensor.from_shard_values(
@@ -659,15 +659,6 @@ def constant(
         Loading a constant can lose precision. For example, loading
         ``16777217`` as a ``float32`` produces ``16777216.0``.
 
-    .. caution::
-
-        When ``device`` is a multi-device
-        :class:`~max.experimental.sharding.DeviceMapping`, the full
-        ``value`` is materialized on every device. A mapping that shards a
-        tensor axis therefore duplicates the data and reports a global shape
-        scaled by the number of devices, without raising. Create the tensor
-        Replicated and shard it afterward.
-
     Args:
         value: The value to embed. A Python scalar, a (nested) sequence of
             numbers, or an array-like object that supports DLPack, such as a
@@ -698,11 +689,13 @@ def constant(
     else:
         resolved_dtype, _ = defaults(dtype, mesh.devices[0])
     if mesh.num_devices > 1:
+        # ``value`` is the global tensor: whole on every device, then
+        # placed as ``mapping``.
         return call_on_mesh(
             lambda: constant(value, dtype=resolved_dtype),
             mesh,
-            out_specs=mapping,
-        )()
+            out_specs=DeviceMapping.replicated(mesh),
+        )().to(mapping)
     device_ref = DeviceRef.from_device(mesh.devices[0])
     with ensure_context():
         return Tensor.from_shard_values(

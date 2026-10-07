@@ -22,8 +22,7 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.linear import Linear
-from max.experimental.sharding.action import ActionSet
-from max.experimental.sharding.cost import force_replicated_action_set
+from max.experimental.sharding import AxisAssignment, replicated_rows
 from max.experimental.sharding.types import TensorLayout
 from max.experimental.tensor import Tensor
 from max.nn.attention.mask_config import MHAMaskVariant
@@ -39,9 +38,9 @@ def _flash_attention_ragged_gpu_rule(
     input_row_offsets: TensorLayout,
     max_seq_len: TensorLayout,
     *extras: Any,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Replicated on every operand: the vision tower is not sharded."""
-    return force_replicated_action_set(q, k, v, input_row_offsets, max_seq_len)
+    return replicated_rows(q, k, v, input_row_offsets, max_seq_len)
 
 
 flash_attention_ragged_gpu = F.functional(

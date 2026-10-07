@@ -184,6 +184,23 @@ This version is still a work in progress.
   and 2 rows instead of 3, 2, 3 and 2.
 - `max.experimental.functional.stack()` takes a `device` mapping that places
   the stack of host tensors directly, so each device receives only its part.
+- A sharding rule in `max.experimental.sharding` now receives the op's own
+  arguments with each tensor replaced by its layout, at any depth, and returns
+  a plain list of `AxisAssignment` rows: one placement per tensor operand and,
+  in `AxisAssignment.outputs` (formerly `output`), one per result. `ActionSet`,
+  its `extras` and `finalize` hooks, `build_action_set` and
+  `force_replicated_action_set` are removed, and rules no longer rewrite
+  non-tensor arguments. `replicated_rows` and `match_operand_placement` build
+  the common cases.
+- `max.experimental.sharding.Partial` always means a pending sum, and
+  `ReduceOp` is removed: no other reduction could be resolved.
+- `reshape`, `broadcast_to` and `rebind` in `max.experimental.functional`
+  take global shapes on a distributed tensor, as on one device. A sharded axis
+  stays sharded on the first axis it splits into, or on the axis it merges
+  into when it is the first of the merged axes, and is gathered otherwise.
+  `split` takes global sizes: along a sharded axis, each device splits its
+  own piece by its share of every size when every size divides evenly, and
+  the axis is gathered otherwise.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
 - `max.experimental.nn.Module` is now a pytree: its attributes are its
   children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk

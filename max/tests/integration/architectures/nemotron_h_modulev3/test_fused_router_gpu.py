@@ -20,8 +20,6 @@ import torch
 from max.driver import Accelerator, Buffer, DeviceSpec
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental.functional import transfer_to
-from max.experimental.functional.spmd_ops import tensor_to_layout
 from max.experimental.nn.common_layers.functional_kernels import (
     _moe_sigmoid_gemv_router_rule,
     moe_sigmoid_gemv_router,
@@ -145,18 +143,16 @@ def test_functional_router_replicates_sharded_inputs() -> None:
     gpu = Accelerator(0)
     mesh = DeviceMesh(devices=(gpu, gpu), mesh_shape=(2,), axis_names=("tp",))
     contraction = DeviceMapping(mesh, (Sharded(1),))
-    gx = transfer_to(Tensor(x), contraction)
-    gweight = transfer_to(Tensor(weight), contraction)
-    gbias = transfer_to(Tensor(bias), DeviceMapping(mesh, (Sharded(0),)))
+    gx = Tensor(x).to(contraction)
+    gweight = Tensor(weight).to(contraction)
+    gbias = Tensor(bias).to(DeviceMapping(mesh, (Sharded(0),)))
 
-    action_set = _moe_sigmoid_gemv_router_rule(
-        tensor_to_layout(gx),
-        tensor_to_layout(gweight),
-        tensor_to_layout(gbias),
+    rows = _moe_sigmoid_gemv_router_rule(
+        gx.layout, gweight.layout, gbias.layout, TOP_K, True, SCALE
     )
-    assert action_set.axis_assignments == (
-        AxisAssignment((Replicated(),) * 3, Replicated()),
-    )
+    assert rows == [
+        AxisAssignment((Replicated(),) * 3, (Replicated(), Replicated()))
+    ]
 
     indices, weights = moe_sigmoid_gemv_router(
         gx, gweight, gbias, TOP_K, True, SCALE

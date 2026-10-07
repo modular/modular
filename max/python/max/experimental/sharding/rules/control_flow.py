@@ -15,19 +15,15 @@
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Callable, Iterable
 from typing import Any
 
-from max.experimental.sharding import (
-    DeviceMapping,
-)
+from max.experimental.sharding.placements import ShardingError
 from max.experimental.sharding.types import TensorLayout
 from max.graph.type import Type
 from max.graph.value import TensorValue, Value
 
-from ..action import Action, ActionSet
-from ..cost import force_replicated_action_set
+from ..action import AxisAssignment, replicated_rows
 
 
 def cond_rule(
@@ -35,55 +31,15 @@ def cond_rule(
     out_types: Iterable[Type[Any]] | None,
     then_fn: Callable[..., Any],
     else_fn: Callable[..., Any],
-) -> ActionSet:
-    """Auto-gathers the predicate; every device takes the same branch.
-
-    ``out_types``, ``then_fn`` and ``else_fn`` ride along as extras so the
-    dispatcher forwards them to the underlying op unchanged.
-    """
-    return force_replicated_action_set(
-        pred, extras=(out_types, then_fn, else_fn)
-    )
-
-
-def _while_loop_finalize(
-    items: list[Any],
-    n: int,
-    predicate: Callable[..., TensorValue],
-    body: Callable[..., Value[Any] | Iterable[Value[Any]]],
-    container_type: type,
-) -> Callable[[Action], Action]:
-    """Builds the ``while_loop`` finalize, pre-bound to its context.
-
-    Args:
-        items: User's original ``initial_values`` flattened to a list,
-            preserving non-tensor :class:`Value` entries in position.
-        n: Count of distributed :class:`TensorLayout` entries in ``items``.
-        predicate: User-supplied loop predicate callable.
-        body: User-supplied loop body callable.
-        container_type: Original container type to restore.
-    """
-
-    def finalize(action: Action) -> Action:
-        mappings = action.inputs[:n]
-        suggested: list[DeviceMapping | Value[Any]] = []
-        out_mappings: list[DeviceMapping] = []
-        m_idx = 0
-        for v in items:
-            if isinstance(v, TensorLayout):
-                m = mappings[m_idx]
-                assert isinstance(m, DeviceMapping)
-                suggested.append(m)
-                out_mappings.append(m)
-                m_idx += 1
-            else:
-                suggested.append(v)
-        return Action(
-            inputs=(container_type(suggested), predicate, body),
-            outputs=tuple(out_mappings),
+) -> list[AxisAssignment]:
+    """Auto-gathers the predicate; every device takes the same branch."""
+    if out_types is not None and not isinstance(out_types, (list, tuple)):
+        raise ShardingError(
+            "Distributed cond requires a reusable sequence of output types."
         )
-
-    return finalize
+    return replicated_rows(
+        pred, output_count=len(out_types) if out_types else 0
+    )
 
 
 def while_loop_rule(
@@ -92,18 +48,14 @@ def while_loop_rule(
     ),
     predicate: Callable[..., TensorValue],
     body: Callable[..., Value[Any] | Iterable[Value[Any]]],
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Auto-gathers distributed initial values to Replicated.
 
-    The loop body is not yet distribution-aware. ``finalize`` repackages
-    the picked mappings (and any non-tensor :class:`Value` entries) into
-    the user's original list/tuple container, plus ``predicate`` /
-    ``body`` as extras.
+    The loop body is not yet distribution-aware, so every carried tensor
+    is gathered before the loop and each result takes that placement.
     """
     if isinstance(initial_values, TensorLayout):
-        return force_replicated_action_set(
-            initial_values, extras=(predicate, body)
-        )
+        initial_values = (initial_values,)
 
     if not isinstance(initial_values, (list, tuple)):
         raise TypeError(
@@ -111,22 +63,12 @@ def while_loop_rule(
             f"list, or tuple; got {type(initial_values).__name__}."
         )
 
-    items = list(initial_values)
-    tensor_layouts = tuple(v for v in items if isinstance(v, TensorLayout))
-    n = len(tensor_layouts)
-    if n == 0:
+    tensor_layouts = tuple(
+        v for v in initial_values if isinstance(v, TensorLayout)
+    )
+    if not tensor_layouts:
         raise ValueError(
             "while_loop_rule: no distributed TensorLayouts in initial_values."
         )
 
-    pool = force_replicated_action_set(*tensor_layouts)
-    return dataclasses.replace(
-        pool,
-        finalize=_while_loop_finalize(
-            items=items,
-            n=n,
-            predicate=predicate,
-            body=body,
-            container_type=type(initial_values),
-        ),
-    )
+    return replicated_rows(*tensor_layouts, output_count=len(initial_values))

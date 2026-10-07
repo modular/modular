@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import warnings
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 from max.driver import CPU
@@ -24,7 +24,6 @@ from max.dtype import DType
 from max.experimental.sharding import (
     ALL_TRANSITIONS,
     DEFAULT_TRANSITIONS,
-    ActionSet,
     AxisAssignment,
     DeviceMapping,
     DeviceMesh,
@@ -36,7 +35,6 @@ from max.experimental.sharding import (
     TensorLayout,
     Transition,
     auto_reshard,
-    build_action_set,
 )
 from max.experimental.sharding._auto_reshard import (
     _AUTO_RESHARD_POLICY,
@@ -49,9 +47,19 @@ def policy() -> tuple[frozenset[Transition], str]:
     return _AUTO_RESHARD_POLICY.get()
 
 
-def pick(action_set: ActionSet, operand_names: Sequence[str] = ()) -> Action:
+class RuleCall(NamedTuple):
+    """A rule's rows with the operands they place, as the picker takes them."""
+
+    rows: list[AxisAssignment]
+    layouts: tuple[TensorLayout, ...]
+
+
+def pick(call: RuleCall, operand_names: Sequence[str] = ()) -> Action:
     return pick_reshard_action(
-        action_set, op_name="custom_op", operand_names=operand_names
+        call.rows,
+        call.layouts,
+        op_name="custom_op",
+        operand_names=operand_names,
     )
 
 
@@ -73,30 +81,25 @@ def inputs(action: Action, slot: int = 0) -> tuple[Placement, ...]:
     return action.inputs[slot].placements
 
 
-def action_set(lay: TensorLayout, *rows: AxisAssignment) -> ActionSet:
-    return build_action_set(rows, layouts=(lay,))
-
-
-def action_set_without_fallback(
-    lay: TensorLayout, *rows: AxisAssignment
-) -> ActionSet:
-    """Builds an action set with no ``(R,) -> R`` row: every row moves."""
-    return ActionSet(axis_assignments=rows, layouts=(lay,), mesh=lay.mesh)
+def rule_call(lay: TensorLayout, *rows: AxisAssignment) -> RuleCall:
+    return RuleCall(list(rows), (lay,))
 
 
 R, S0, S1, P = Replicated(), Sharded(0), Sharded(1), Partial()
 
 
 @pytest.fixture
-def partial_input() -> ActionSet:
-    """Builds an action set whose rows allreduce or reduce-scatter a Partial."""
+def partial_input() -> RuleCall:
+    """Builds rows that allreduce or reduce-scatter a Partial."""
     lay = layout(mesh_1d(4), (1024,), P)
-    return action_set(lay, AxisAssignment((R,), R), AxisAssignment((S0,), S0))
+    return rule_call(
+        lay, AxisAssignment((R,), (R,)), AxisAssignment((S0,), (S0,))
+    )
 
 
 class TestRaiseMode:
     def test_a_row_that_moves_an_input_raises(
-        self, partial_input: ActionSet
+        self, partial_input: RuleCall
     ) -> None:
         with (
             auto_reshard(mode="raise"),
@@ -110,41 +113,32 @@ class TestRaiseMode:
             auto_reshard(mode="raise"),
             pytest.raises(ShardingError, match=r"arg0\{R->S0\}.*local_slice"),
         ):
-            pick(action_set_without_fallback(lay, AxisAssignment((S0,), S0)))
+            pick(rule_call(lay, AxisAssignment((S0,), (S0,))))
 
     def test_a_single_device_input_reads_as_its_own_mesh(self) -> None:
         """Its placement is whatever its mapping says, not a special case."""
         lay = layout(mesh_1d(2), (16,), S0)
         single = layout(DeviceMesh.single(CPU()), (16,), R)
-        s = build_action_set(
-            [AxisAssignment((S0, R), S0)], layouts=(lay, single)
-        )
+        s = RuleCall([AxisAssignment((S0, R), (S0,))], (lay, single))
         picked = pick(s)
         assert inputs(picked, 0) == (S0,)
         assert inputs(picked, 1) == (R,)
 
-    def test_an_input_on_another_mesh_counts_as_a_move(self) -> None:
-        """Landing on the op's mesh is a move, whatever its placement there."""
+    def test_an_input_on_another_grid_requires_explicit_transfer(self) -> None:
         lay = layout(mesh_1d(2), (16,), R)
         other = layout(DeviceMesh((CPU(), CPU()), (2,), ("dp",)), (16,), R)
-        s = build_action_set([AxisAssignment((R, R), R)], layouts=(lay, other))
-        with (
-            auto_reshard(mode="raise"),
-            pytest.raises(ShardingError, match="arg1"),
-        ):
-            pick(s)
-        with auto_reshard(mode="silent"):
-            pick(s)
+        with pytest.raises(ShardingError, match="same shape and axis names"):
+            pick(RuleCall([AxisAssignment((R, R), (R,))], (lay, other)))
 
     def test_a_row_that_moves_nothing_runs_silently(self) -> None:
         lay = layout(mesh_1d(4), (16,), S0)
         with auto_reshard(mode="raise"), warnings.catch_warnings():
             warnings.simplefilter("error")
-            picked = pick(action_set(lay, AxisAssignment((S0,), S0)))
+            picked = pick(rule_call(lay, AxisAssignment((S0,), (S0,))))
         assert inputs(picked) == (S0,)
 
     def test_the_message_shows_the_decision_and_both_ways_out(
-        self, partial_input: ActionSet
+        self, partial_input: RuleCall
     ) -> None:
         with (
             auto_reshard(mode="raise"),
@@ -168,26 +162,30 @@ class TestRanking:
     def test_no_movement_beats_a_free_local_slice(self) -> None:
         """Both rows cost 0; the one that leaves the input alone wins."""
         lay = layout(mesh_1d(4), (16, 16), R)
-        s = action_set(lay, AxisAssignment((S0,), S0), AxisAssignment((R,), R))
+        s = rule_call(
+            lay, AxisAssignment((S0,), (S0,)), AxisAssignment((R,), (R,))
+        )
         assert inputs(pick(s)) == (R,)
 
     def test_passthrough_wins_even_when_declared_last(self) -> None:
         lay = layout(mesh_1d(4), (16,), S0)
-        s = action_set(lay, AxisAssignment((R,), R), AxisAssignment((S0,), S0))
+        s = rule_call(
+            lay, AxisAssignment((R,), (R,)), AxisAssignment((S0,), (S0,))
+        )
         assert inputs(pick(s)) == (S0,)
 
     def test_equal_cost_and_moves_fall_back_to_declaration_order(
         self,
     ) -> None:
         lay = layout(mesh_1d(4), (16, 16), R)
-        s0, s1 = AxisAssignment((S0,), S0), AxisAssignment((S1,), S1)
-        assert inputs(pick(action_set_without_fallback(lay, s0, s1))) == (S0,)
-        assert inputs(pick(action_set_without_fallback(lay, s1, s0))) == (S1,)
+        s0, s1 = AxisAssignment((S0,), (S0,)), AxisAssignment((S1,), (S1,))
+        assert inputs(pick(rule_call(lay, s0, s1))) == (S0,)
+        assert inputs(pick(rule_call(lay, s1, s0))) == (S1,)
 
 
 class TestReshardMode:
     def test_silent_applies_the_cheapest_allowed_row(
-        self, partial_input: ActionSet
+        self, partial_input: RuleCall
     ) -> None:
         with auto_reshard(mode="silent"), warnings.catch_warnings():
             warnings.simplefilter("error")
@@ -200,9 +198,7 @@ class TestReshardMode:
                 "reduce_scatter is cheaper"
             )
 
-    def test_warn_applies_it_and_says_so(
-        self, partial_input: ActionSet
-    ) -> None:
+    def test_warn_applies_it_and_says_so(self, partial_input: RuleCall) -> None:
         with (
             auto_reshard(mode="warn"),
             pytest.warns(UserWarning, match=r"arg0\{P->R\}"),
@@ -214,18 +210,18 @@ class TestReshardMode:
         lay = layout(mesh_1d(4), (16,), S0)
         with auto_reshard(mode="warn"), warnings.catch_warnings():
             warnings.simplefilter("error")
-            pick(action_set(lay, AxisAssignment((S0,), S0)))
+            pick(rule_call(lay, AxisAssignment((S0,), (S0,))))
 
 
 class TestAllowedTransitions:
-    def test_narrowing_changes_the_pick(self, partial_input: ActionSet) -> None:
+    def test_narrowing_changes_the_pick(self, partial_input: RuleCall) -> None:
         with auto_reshard({(Partial, Replicated)}, mode="silent"):
             assert inputs(pick(partial_input)) == (R,)
         with auto_reshard({(Partial, Sharded)}, mode="silent"):
             assert inputs(pick(partial_input)) == (S0,)
 
     def test_no_allowed_row_raises_and_names_what_to_allow(
-        self, partial_input: ActionSet
+        self, partial_input: RuleCall
     ) -> None:
         with (
             auto_reshard({(Sharded, Replicated)}, mode="silent"),
@@ -245,7 +241,7 @@ class TestAllowedTransitions:
         ), "the recommendation stays within DEFAULT_TRANSITIONS"
 
     def test_allowing_a_transition_does_not_silence_it(
-        self, partial_input: ActionSet
+        self, partial_input: RuleCall
     ) -> None:
         with (
             auto_reshard({(Partial, Replicated)}, mode="raise"),
@@ -303,35 +299,35 @@ class TestPerMeshAxis:
     def test_an_infeasible_row_is_skipped(self) -> None:
         """Extent 1 cannot be sharded, so the later-declared S1 row wins."""
         lay = layout(mesh_1d(2), (1, 8), R)
-        s = action_set_without_fallback(
-            lay, AxisAssignment((S0,), S0), AxisAssignment((S1,), S1)
+        s = rule_call(
+            lay, AxisAssignment((S0,), (S0,)), AxisAssignment((S1,), (S1,))
         )
         assert inputs(pick(s)) == (S1,)
 
     def test_an_unreachable_row_is_skipped(self) -> None:
         """Nothing turns a Replicated input into a Partial one."""
         lay = layout(mesh_1d(2), (16,), R)
-        s = action_set_without_fallback(
-            lay, AxisAssignment((P,), P), AxisAssignment((R,), R)
+        s = rule_call(
+            lay, AxisAssignment((P,), (P,)), AxisAssignment((R,), (R,))
         )
         assert inputs(pick(s)) == (R,)
 
     def test_a_2d_mesh_gets_one_row_per_axis(self) -> None:
         lay = layout(mesh_2d(), (16, 16), S0, S1)
-        s = action_set(
-            lay, AxisAssignment((S0,), S0), AxisAssignment((S1,), S1)
+        s = rule_call(
+            lay, AxisAssignment((S0,), (S0,)), AxisAssignment((S1,), (S1,))
         )
         assert inputs(pick(s)) == (S0, S1)
 
     def test_a_committed_axis_constrains_the_next(self) -> None:
         """Extent 2 admits one mesh axis of size 2, not both."""
         lay = layout(mesh_2d(), (2, 16), R, R)
-        s = action_set_without_fallback(
-            lay, AxisAssignment((S0,), S0), AxisAssignment((S1,), S1)
+        s = rule_call(
+            lay, AxisAssignment((S0,), (S0,)), AxisAssignment((S1,), (S1,))
         )
         assert inputs(pick(s)) == (S0, S1)
 
     def test_no_reachable_row_raises(self) -> None:
-        lay = layout(mesh_1d(2), (16,), R)
+        lay = layout(mesh_1d(2), (16,), Sharded(0))
         with pytest.raises(ShardingError, match="no feasible plan"):
-            pick(ActionSet(axis_assignments=(), layouts=(lay,), mesh=lay.mesh))
+            pick(rule_call(lay, AxisAssignment((P,), (P,))))

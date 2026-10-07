@@ -190,23 +190,22 @@ class _BinaryNonlinear:
         assert tuple(result.shape) == (2, 4)
         np.testing.assert_allclose(result.to_numpy(), a * b, rtol=1e-5)
 
-    def test_mul_partial_auto_reduces(self) -> None:
+    def test_mul_partials_reduces_one(self) -> None:
         a = np.full((4, 8), 2.0, dtype=np.float32)
         b = np.full((4, 8), 3.0, dtype=np.float32)
         ta = self.partial_fn(a, self.MESH_1D, (Partial(),))
         tb = self.partial_fn(b, self.MESH_1D, (Partial(),))
         result = mul(ta, tb)
-        assert not any(isinstance(p, Partial) for p in result.placements)
+        assert result.placements == (Partial(),)
         expected = (a * 4) * (b * 4)
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
 
-    def test_mul_partial_auto_reduces_same_input(self) -> None:
+    def test_mul_partial_by_scalar_stays_partial(self) -> None:
         a = np.full((4, 8), 2.0, dtype=np.float32)
         ta = self.partial_fn(a, self.MESH_1D, (Partial(),))
-        tb = self.partial_fn(a, self.MESH_1D, (Partial(),))
-        # auto_reduce_partial is now a no-op; transfer_to is deterministic.
-        result = mul(ta, tb)
-        assert not any(isinstance(p, Partial) for p in result.placements)
+        result = mul(ta, 3.0)
+        assert result.placements == (Partial(),)
+        np.testing.assert_allclose(result.to_numpy(), a * 4 * 3, rtol=1e-5)
 
 
 # ── TestBinaryLinear (add) ───────────────────────────────────────────────
@@ -454,13 +453,14 @@ class _Cast:
         result_f32 = cast(result, DType.float32)
         np.testing.assert_allclose(result_f32.to_numpy(), arr, rtol=1e-2)
 
-    def test_cast_partial_auto_reduces(self) -> None:
-        arr = np.ones((2, 4), dtype=np.float32)
+    def test_cast_resolves_partial_before_truncation(self) -> None:
+        """Reduces fractional contributions before a non-linear integer cast."""
+        arr = np.full((2, 4), 0.6, dtype=np.float32)
         t = self.partial_fn(arr, self.MESH_1D, (Partial(),))
-        result = cast(t, DType.bfloat16)
-        assert not any(isinstance(p, Partial) for p in result.placements)
-        result_f32 = cast(result, DType.float32)
-        np.testing.assert_allclose(result_f32.to_numpy(), arr * 4, rtol=1e-2)
+        result = cast(t, DType.int32)
+        assert result.placements == (Replicated(),)
+        expected = (arr * self.MESH_1D.num_devices).astype(np.int32)
+        np.testing.assert_array_equal(result.to_numpy(), expected)
 
 
 # ── TestSmoke ────────────────────────────────────────────────────────────

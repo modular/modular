@@ -17,21 +17,21 @@ from __future__ import annotations
 
 import builtins
 import functools
-import itertools
 import operator
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
     Placement,
     Sharded,
+    ShardingError,
+    Unknown,
 )
 from max.experimental.sharding.per_shard_dim import (
     global_dim,
+    global_shape,
     is_per_shard_dim,
-    local_dim_at,
+    local_shape_at,
     make_per_shard_dim,
 )
 from max.experimental.sharding.types import TensorLayout
@@ -39,71 +39,21 @@ from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndex, SliceIndices
 from max.graph.shape import Shape
 
-from ..action import Action, ActionSet, AxisAssignment, PerShard
-from ..cost import P, R, build_action_set
+from ..action import AxisAssignment, pass_through_rows
+from ..cost import P, R
 
 # ── split / slice helpers (only consumers of these are split_rule / slice_tensor_rule) ──
-
-
-def _localize_sizes(
-    sizes: Sequence[DimLike],
-    axis: int,
-    ndim: int,
-    placements: tuple[Placement, ...],
-    mesh: DeviceMesh,
-) -> list[Dim] | PerShard[list[Dim]]:
-    """Adaptive per-rank size kwarg for :func:`split`.
-
-    When the split axis is sharded, divisible static sizes return one list
-    of plain Dims; non-divisible static sizes are split unevenly, as
-    ``Sharded.local_dim`` splits them, and returned as ``PerShard``.
-    """
-    split_axis = axis % ndim
-    sharded = [
-        (mesh_axis, mesh.mesh_shape[mesh_axis])
-        for mesh_axis, p in enumerate(placements)
-        if p.localized_axis() == split_axis
-    ]
-    if not sharded:
-        return [Dim(s) for s in sizes]
-
-    diverges = any(
-        not isinstance(Dim(s), StaticDim)
-        or any(
-            int(Dim(s)) % mesh_axis_size != 0 for _, mesh_axis_size in sharded
-        )
-        for s in sizes
-    )
-    if not diverges:
-        local = [Dim(s) for s in sizes]
-        for _, mesh_axis_size in sharded:
-            local = [d // mesh_axis_size for d in local]
-        return local
-
-    n_devices = mesh.num_devices
-    mesh_axes = [mesh_axis for mesh_axis, _ in sharded]
-    per_rank: list[list[Dim]] = [[] for _ in builtins.range(n_devices)]
-    for size in sizes:
-        size_dim = Dim(size)
-        if isinstance(size_dim, StaticDim):
-            cells = placements[mesh_axes[0]].local_dim(
-                size_dim, mesh, mesh_axes
-            )
-            for device in builtins.range(n_devices):
-                per_rank[device].append(local_dim_at(cells, device))
-        else:
-            divided = size_dim
-            for _, mesh_axis_size in sharded:
-                divided = divided // mesh_axis_size
-            for device in builtins.range(n_devices):
-                per_rank[device].append(divided)
-    return PerShard(per_rank)
 
 
 def _expand_ellipsis(
     indices: Sequence[SliceIndex], ndim: int
 ) -> list[SliceIndex]:
-    n_explicit = builtins.sum(1 for i in indices if i is not Ellipsis)
+    # ``None`` inserts an output axis without consuming an input one, so it
+    # does not count against the input rank the ellipsis has to fill. Mirrors
+    # ``ops.slice_tensor``'s own ``len - ellipsis - count(None)``.
+    n_explicit = builtins.sum(
+        1 for i in indices if i is not Ellipsis and i is not None
+    )
     out: list[SliceIndex] = []
     for idx in indices:
         if idx is Ellipsis:
@@ -115,16 +65,54 @@ def _expand_ellipsis(
     return out
 
 
-def _slice_modifies_axis(indices: SliceIndices, axis: int, ndim: int) -> bool:
-    """``True`` if the slice expression touches ``axis``."""
+def _untouched_axes(indices: SliceIndices, ndim: int) -> dict[int, int]:
+    """Maps input axis to output axis for the axes a slice leaves whole.
+
+    A slice expression does not preserve rank, so the two numberings differ:
+    ``None`` inserts an output axis without consuming an input one, and an
+    integer index consumes an input axis without producing an output one.
+    """
     if not isinstance(indices, (list, tuple)):
-        return True
-    expanded = _expand_ellipsis(indices, ndim)
-    return bool(axis < len(expanded) and expanded[axis] != slice(None))
+        return {}
+    kept: dict[int, int] = {}
+    in_axis = out_axis = 0
+    for entry in _expand_ellipsis(indices, ndim):
+        if entry is None:
+            out_axis += 1
+            continue
+        if isinstance(entry, int):
+            in_axis += 1
+            continue
+        if entry == slice(None):
+            kept[in_axis] = out_axis
+        in_axis += 1
+        out_axis += 1
+    return kept
 
 
-def _is_minus_one(d: Dim) -> bool:
+def _is_minus_one(d: DimLike) -> bool:
     return isinstance(d, StaticDim) and d.dim == -1
+
+
+def _product(dims: Iterable[DimLike]) -> Dim:
+    return functools.reduce(operator.mul, (Dim(d) for d in dims), Dim(1))
+
+
+def _is_one(d: Dim) -> bool:
+    return isinstance(d, StaticDim) and d.dim == 1
+
+
+def _scaled(size: Dim, num: Dim, den: Dim) -> Dim | None:
+    """``size * num // den`` when it is provably exact, else ``None``."""
+    if num == den:
+        return size
+    if isinstance(num, StaticDim) and isinstance(den, StaticDim):
+        if isinstance(size, StaticDim):
+            total = size.dim * num.dim
+            return None if total % den.dim else Dim(total // den.dim)
+        if num.dim % den.dim == 0:
+            return size * (num.dim // den.dim)
+    return None
 
 
 def _resolve_minus_one(
@@ -160,478 +148,348 @@ def _resolve_minus_one(
     return out
 
 
-def _per_rank_target(
-    target: Sequence[DimLike],
-    src_shape: Sequence[DimLike],
-    out_placements: tuple[Placement, ...],
-    mesh: DeviceMesh,
-) -> PerShard[Shape]:
-    """Returns the per-rank local target shape.
+def tile_rule(
+    x: TensorLayout, repeats: Iterable[DimLike]
+) -> list[AxisAssignment]:
+    """Strategies for ``tile``: sharding preserved on axes it does not repeat.
 
-    Wrappers and ``-1`` pass through; other dims are lifted via the
-    output placements (rejecting bare symbolic targets), then projected
-    per rank and any remaining ``-1`` is resolved.
+    Tiling a sharded axis locally would give ``[a0 a0 | a1 a1]`` rather than
+    ``[a0 a1 a0 a1]``.
     """
-    n = mesh.num_devices
-    target_dims = [Dim(d) for d in target]
-
-    lifted: list[Dim] = []
-    for tensor_axis, target_dim in enumerate(target_dims):
-        if is_per_shard_dim(target_dim) or _is_minus_one(target_dim):
-            lifted.append(target_dim)
-            continue
-        mesh_axes = [
-            mesh_axis
-            for mesh_axis, p in enumerate(out_placements)
-            if p.localized_axis() == tensor_axis
-        ]
-        lifted.append(
-            out_placements[mesh_axes[0]].local_dim(
-                target_dim, mesh, mesh_axes, allow_symbolic_mint=False
-            )
-            if mesh_axes
-            else target_dim
-        )
-
-    per_rank_shapes: list[Shape] = []
-    for r in range(n):
-        src_r = [local_dim_at(Dim(d), r) for d in src_shape]
-        tgt_r: list[Dim] = []
-        for d in lifted:
-            if is_per_shard_dim(d):
-                assert isinstance(d, Dim)
-                tgt_r.append(local_dim_at(d, r))
-            else:
-                tgt_r.append(d)
-        if any(_is_minus_one(d) for d in tgt_r):
-            tgt_r = _resolve_minus_one(src_r, tgt_r)
-        per_rank_shapes.append(Shape(tgt_r))
-    return PerShard(per_rank_shapes)
-
-
-def _repack_finalize(
-    n: int, axis: int, is_tuple: bool
-) -> Callable[[Action], Action]:
-    """Builds the ``concat`` / ``stack`` finalize, pre-bound to its context.
-
-    Args:
-        n: Number of variadic tensor inputs.
-        axis: The concat/stack axis kwarg.
-        is_tuple: ``True`` when the user passed a ``tuple`` (vs. ``list``).
-    """
-
-    def finalize(action: Action) -> Action:
-        mappings = action.inputs[:n]
-        container: list[DeviceMapping] | tuple[DeviceMapping, ...] = (
-            tuple(mappings) if is_tuple else list(mappings)
-        )
-        return Action(inputs=(container, axis), outputs=action.outputs)
-
-    return finalize
-
-
-def passthrough_rule(x: TensorLayout, linear: bool = False) -> ActionSet:
-    """Strategies for ops that preserve every input axis (such as activation, cast)."""
-    rows = [
-        AxisAssignment((R,), R),
-        *(AxisAssignment((Sharded(d),), Sharded(d)) for d in range(x.rank)),
+    return [
+        AxisAssignment((R,), (R,)),
+        *(
+            AxisAssignment((Sharded(d),), (Sharded(d),))
+            for d, r in enumerate(repeats)
+            if isinstance(Dim(r), StaticDim) and Dim(r) == 1
+        ),
+        AxisAssignment((P,), (P,)),
     ]
-    if linear:
-        rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(linear,))
 
 
-def tile_rule(x: TensorLayout, repeats: Iterable[DimLike]) -> ActionSet:
-    """Strategies for ``tile``: any input sharding preserved on output axes."""
-    rows = [
-        AxisAssignment((R,), R),
-        *(AxisAssignment((Sharded(d),), Sharded(d)) for d in range(x.rank)),
-        AxisAssignment((P,), P),
-    ]
-    return build_action_set(rows, layouts=(x,), extras=(repeats,))
-
-
-def permute_rule(x: TensorLayout, dims: Sequence[int]) -> ActionSet:
+def permute_rule(x: TensorLayout, dims: Sequence[int]) -> list[AxisAssignment]:
     """Strategies for ``permute``: sharding follows the axis permutation."""
     dims_list = list(dims)
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
     for in_ax in range(x.rank):
         out_ax = dims_list.index(in_ax)
-        rows.append(AxisAssignment((Sharded(in_ax),), Sharded(out_ax)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(dims,))
+        rows.append(AxisAssignment((Sharded(in_ax),), (Sharded(out_ax),)))
+    rows.append(AxisAssignment((P,), (P,)))
+    return rows
 
 
-def transpose_rule(x: TensorLayout, axis_1: int, axis_2: int) -> ActionSet:
+def transpose_rule(
+    x: TensorLayout, axis_1: int, axis_2: int
+) -> list[AxisAssignment]:
     """Strategies for ``transpose``: sharding swaps along with the two axes."""
     n = x.rank
     a1, a2 = axis_1 % n, axis_2 % n
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
     for in_ax in range(n):
         out_ax = a2 if in_ax == a1 else a1 if in_ax == a2 else in_ax
-        rows.append(AxisAssignment((Sharded(in_ax),), Sharded(out_ax)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(axis_1, axis_2))
+        rows.append(AxisAssignment((Sharded(in_ax),), (Sharded(out_ax),)))
+    rows.append(AxisAssignment((P,), (P,)))
+    return rows
 
 
-def unsqueeze_rule(x: TensorLayout, axis: int) -> ActionSet:
+def unsqueeze_rule(x: TensorLayout, axis: int) -> list[AxisAssignment]:
     """Strategies for ``unsqueeze``: inserts a size-1 axis; sharding shifts."""
     n = x.rank
     norm = axis if axis >= 0 else axis + n + 1
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
     for in_ax in range(n):
         out_ax = in_ax if in_ax < norm else in_ax + 1
-        rows.append(AxisAssignment((Sharded(in_ax),), Sharded(out_ax)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(axis,))
+        rows.append(AxisAssignment((Sharded(in_ax),), (Sharded(out_ax),)))
+    rows.append(AxisAssignment((P,), (P,)))
+    return rows
 
 
-def squeeze_rule(x: TensorLayout, axis: int) -> ActionSet:
+def squeeze_rule(x: TensorLayout, axis: int) -> list[AxisAssignment]:
     """Strategies for ``squeeze``: removes a size-1 axis; sharding shifts."""
     n = x.rank
     norm = axis % n
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
     for in_ax in range(n):
         if in_ax == norm:
             continue
         out_ax = in_ax if in_ax < norm else in_ax - 1
-        rows.append(AxisAssignment((Sharded(in_ax),), Sharded(out_ax)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(axis,))
+        rows.append(AxisAssignment((Sharded(in_ax),), (Sharded(out_ax),)))
+    rows.append(AxisAssignment((P,), (P,)))
+    return rows
 
 
 def flatten_rule(
     x: TensorLayout, start_dim: int = 0, end_dim: int = -1
-) -> ActionSet:
-    """Strategies for ``flatten``: sharding only on axes outside the flattened range."""
-    n = x.rank
-    sd = start_dim if start_dim >= 0 else start_dim + n
-    ed = end_dim if end_dim >= 0 else end_dim + n
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
-    for in_ax in range(n):
-        if sd <= in_ax <= ed:
+) -> list[AxisAssignment]:
+    """Returns the rows for ``flatten``: only axes outside the flattened range stay sharded."""
+    rank = x.rank
+    start = start_dim if start_dim >= 0 else start_dim + rank
+    end = end_dim if end_dim >= 0 else end_dim + rank
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
+    for in_axis in range(rank):
+        if start <= in_axis <= end:
             continue
-        out_ax = in_ax if in_ax < sd else in_ax - (ed - sd)
-        rows.append(AxisAssignment((Sharded(in_ax),), Sharded(out_ax)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(start_dim, end_dim))
+        out_axis = in_axis if in_axis < start else in_axis - (end - start)
+        rows.append(AxisAssignment((Sharded(in_axis),), (Sharded(out_axis),)))
+    rows.append(AxisAssignment((P,), (P,)))
+    return rows
 
 
-def _reshape_finalize(
-    x: TensorLayout, shape: Shape
-) -> Callable[[Action], Action]:
-    """Builds the ``reshape`` finalize (per-rank projection), pre-bound."""
-
-    def finalize(action: Action) -> Action:
-        in_mapping = action.inputs[0]
-        assert isinstance(in_mapping, DeviceMapping)
-        out_placements = action.outputs[0].placements
-        local = _per_rank_target(shape, x.shape, out_placements, x.mapping.mesh)
-        return Action(inputs=(in_mapping, local), outputs=action.outputs)
-
-    return finalize
+def _target_shapes(shape: Any, count: int) -> list[Shape]:
+    return [local_shape_at(Shape(shape), rank) for rank in range(count)]
 
 
-def _cells_match_product(target: Dim, src_dims: Sequence[Dim]) -> bool:
-    """True iff ``target``'s per-rank cells equal the cell-wise product of ``src_dims``."""
-    if not is_per_shard_dim(target):
-        return False
-    target_cells = target.per_shard
-    n = len(target_cells)
-    products: list[Dim] = [Dim(1)] * n
-    for src in src_dims:
-        src_cells: tuple[Dim, ...] | list[Dim]
-        if is_per_shard_dim(src):
-            src_cells = src.per_shard
-            if len(src_cells) != n:
-                return False
-        else:
-            src_cells = [Dim(src)] * n
-        products = [
-            Dim(p) * Dim(c) for p, c in zip(products, src_cells, strict=False)
-        ]
-    return all(
-        Dim(t) == Dim(p) for t, p in zip(target_cells, products, strict=False)
-    )
+def _map_sharded_axes(
+    x: TensorLayout,
+    target: Shape,
+    sources: Sequence[Shape],
+    targets: Sequence[Shape],
+) -> dict[int, int] | None:
+    """Returns the target axis that each sharded axis of ``x`` maps to.
 
-
-def _find_wrapper_landings(
-    sharded_src_axes: Sequence[int],
-    src_shape: Sequence[Dim],
-    target_shape: Sequence[Dim],
-) -> dict[int, int]:
-    """Maps each sharded source axis to the target axis it lands on.
-
-    For each target axis carrying a per-rank wrapper, finds the largest
-    subset of source axes whose cell-wise product matches the wrapper's
-    cells.
+    ``sources`` and ``targets`` hold each device's input and target shape.
+    A sharded axis ``k`` maps to target axis ``j`` when ``target`` gives
+    ``j`` a size per device and, on every device, the axes before ``j``
+    hold as many elements as the axes before ``k``. Each device's block of
+    ``k`` is then a block of ``j``. Every other target axis must have the
+    same size on every device, unless an ``Unknown`` placement already
+    makes sizes differ per device. Returns ``None`` when a sharded axis maps
+    to no target axis, or two sharded axes map to the same one.
     """
-    if not sharded_src_axes:
-        return {}
-    sharded_set = set(sharded_src_axes)
-    landings: dict[int, int] = {}
-    target_wrappers = [
-        (t, Dim(td))
-        for t, td in enumerate(target_shape)
-        if is_per_shard_dim(Dim(td))
-    ]
-    all_src_axes = list(range(len(src_shape)))
-    for t, td in target_wrappers:
-        matched_subset: tuple[int, ...] | None = None
-        for size in range(len(all_src_axes), 0, -1):
-            for subset in itertools.combinations(all_src_axes, size):
-                if not any(k in sharded_set for k in subset):
-                    continue
-                if _cells_match_product(
-                    td, [Dim(src_shape[k]) for k in subset]
-                ):
-                    matched_subset = subset
-                    break
-            if matched_subset is not None:
-                break
-        if matched_subset is None:
-            continue
-        for k in matched_subset:
-            if k in sharded_set and k not in landings:
-                landings[k] = t
-    return landings
-
-
-def _structural_split_route(
-    in_ax: int, x: TensorLayout, new_shape: Sequence[Dim]
-) -> int | None:
-    """Returns the target axis a ``Sharded(in_ax)`` lands on.
-
-    Compares cumulative-product boundaries on source and target axes.
-    Source axis ``in_ax`` covers ``[src_cum[in_ax], src_cum[in_ax+1]]``;
-    a target axis ``j`` is a landing iff its range either lies inside
-    (split) or contains (merge / 1-1) the source axis's range. Symbolic
-    dims on both sides contribute ``1`` (matching :func:`_global_axis_size`
-    for sources); a single ``-1`` in the target is resolved against the
-    source total before alignment. Returns :data:`None` for ambiguous
-    correspondences (boundaries cross).
-    """
-    from ..cost import _global_axis_size
-
-    # Identity passthrough: same rank and same per-axis size on both
-    # sides => axis ``in_ax`` lands at ``in_ax``. Catches reshape-to-self
-    # cases (including uneven static splits) where ``_global_axis_size``
-    # would misreport the global due to its even-split assumption.
-    if x.rank == len(new_shape):
-        match = True
-        for i in range(x.rank):
-            dim = x.shape[i]
-            if is_per_shard_dim(dim) and all(
-                isinstance(c, StaticDim) for c in dim.per_shard
-            ):
-                src_i = sum(
-                    c.dim for c in dim.per_shard if isinstance(c, StaticDim)
-                )
-            else:
-                src_i = _global_axis_size(x, i)
-            # A per-shard target dim contributes its global size here.
-            tgt = global_dim(Dim(new_shape[i]))
-            if not isinstance(tgt, StaticDim) or tgt.dim != src_i:
-                match = False
-                break
-        if match:
-            return in_ax
-
-    in_sizes = [_global_axis_size(x, i) for i in range(x.rank)]
-    if any(s <= 0 for s in in_sizes):
-        return None
-    src_total = 1
-    for s in in_sizes:
-        src_total *= s
-
-    target_sizes: list[int] = []
-    minus_one_idx: int | None = None
-    other_prod = 1
-    for d in new_shape:
-        dd = global_dim(Dim(d))
-        if _is_minus_one(dd):
-            if minus_one_idx is not None:
-                return None
-            minus_one_idx = len(target_sizes)
-            target_sizes.append(1)  # placeholder
-        elif isinstance(dd, StaticDim):
-            target_sizes.append(dd.dim)
-            other_prod *= dd.dim
-        else:
-            target_sizes.append(1)  # symbolic → opaque size 1
-    if minus_one_idx is not None:
-        if other_prod <= 0 or src_total % other_prod != 0:
-            return None
-        target_sizes[minus_one_idx] = src_total // other_prod
-
-    src_cum = [1]
-    for s in in_sizes:
-        src_cum.append(src_cum[-1] * s)
-    tgt_cum = [1]
-    for t in target_sizes:
-        tgt_cum.append(tgt_cum[-1] * t)
-    if src_cum[-1] != tgt_cum[-1]:
-        return None
-
-    src_left, src_right = src_cum[in_ax], src_cum[in_ax + 1]
-    for j in range(len(target_sizes)):
-        tl, tr = tgt_cum[j], tgt_cum[j + 1]
-        if tr <= src_left:
-            continue
-        if tl >= src_right:
-            break
-        if src_left <= tl and tr <= src_right:
-            return j  # split: target axis lies inside source's range
-        if tl <= src_left and src_right <= tr:
-            return j  # merge / 1-1: target range contains source's range
-        return None  # boundaries cross — ambiguous
-    return None
-
-
-def reshape_rule(x: TensorLayout, shape: Any) -> ActionSet:
-    """Strategies for ``reshape``.
-
-    Wrapper landings (:func:`_find_wrapper_landings`) take precedence
-    for per-rank-wrapper target axes; otherwise the structural split
-    (:func:`_structural_split_route`) routes by left-to-right size
-    correspondence. Iteration is per mesh axis so two placements on
-    the same tensor axis can route to two different targets. A target
-    taken from ``Tensor.shape`` already carries per-device cells on its
-    :class:`PerShardDim` axes, so those land directly.
-    """
-    new_shape = Shape(shape)
-    if sum(1 for d in new_shape if _is_minus_one(d)) > 1:
-        raise ValueError(
-            f"reshape: at most one -1 dimension is allowed (target {new_shape})."
-        )
-    sharded_src_axes = sorted(
-        {
-            ax
-            for p in x.mapping.placements
-            if (ax := p.localized_axis()) is not None
-        }
-    )
-    landings = _find_wrapper_landings(sharded_src_axes, x.shape, new_shape)
-    # ``-1`` shorthand: when target has exactly one ``-1`` and exactly one
-    # sharded source axis remains un-landed, land it on the ``-1`` slot.
-    minus_one_axes = [
-        i for i, d in enumerate(new_shape) if _is_minus_one(Dim(d))
-    ]
-
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
     placements = x.mapping.placements
-    seen_placements: set[Sharded] = set()
-    for p in placements:
-        if not isinstance(p, Sharded) or p in seen_placements:
-            continue
-        seen_placements.add(p)
-        k = p.axis
-        # Wrapper landing handles per-rank-wrapper target axes.
-        if k in landings:
-            rows.append(
-                AxisAssignment(
-                    (p,),
-                    Sharded(landings[k]),
-                )
+    mapped: dict[int, int] = {}
+    for k in sorted({p.axis for p in placements if isinstance(p, Sharded)}):
+        candidates = [
+            j
+            for j, d in enumerate(target)
+            if is_per_shard_dim(d)
+            and all(
+                _product(s[:k]) == _product(t[:j])
+                for s, t in zip(sources, targets, strict=True)
             )
-            continue
-        # Structural split: handles un-merger and contiguous splits.
-        # Single landing per sharded source axis; no fan-out fallback
-        # so the picker cannot guess a wrong target axis.
-        route = _structural_split_route(k, x, new_shape)
-        if route is not None:
-            rows.append(AxisAssignment((p,), Sharded(route)))
-            continue
-        # ``-1`` shorthand: unique sharded source + unique ``-1`` in
-        # target ⇒ land on the ``-1`` slot.
-        if len(minus_one_axes) == 1 and len(sharded_src_axes) == 1:
-            rows.append(AxisAssignment((p,), Sharded(minus_one_axes[0])))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(
-        rows,
-        layouts=(x,),
-        extras=(shape,),
-        result_shape=new_shape,
-        finalize=_reshape_finalize(x=x, shape=new_shape),
+        ]
+        if len(candidates) != 1 or candidates[0] in mapped.values():
+            return None
+        mapped[k] = candidates[0]
+    if not any(isinstance(p, Unknown) for p in placements):
+        for axis in range(len(target)):
+            if axis not in mapped.values() and any(
+                t[axis] != targets[0][axis] for t in targets
+            ):
+                return None
+    return mapped
+
+
+def reshape_rule(x: TensorLayout, shape: Any) -> list[AxisAssignment]:
+    """Returns the rows for reshaping each device's shard to its own target.
+
+    ``shape`` gives each device's sizes: a plain dim is every device's
+    size, and a :class:`~max.experimental.sharding.per_shard_dim.PerShardDim`
+    gives each device its own. The public ``reshape`` turns a global shape
+    into this form with :func:`localize_reshape_target`. The rows keep every
+    placement when each device's shard reshapes to its target and every
+    sharded axis maps to a target axis (see :func:`_map_sharded_axes`).
+    Otherwise, when ``shape`` is a shape for the whole tensor, the rows
+    gather the input first.
+    """
+    target = Shape(shape)
+    if sum(1 for d in target if _is_minus_one(d)) > 1:
+        raise ValueError(
+            f"reshape: at most one -1 dimension is allowed (target {target})."
+        )
+    sources = [t.shape for t in x.local_types]
+    targets = [
+        Shape(_resolve_minus_one(source, local))
+        for source, local in zip(
+            sources, _target_shapes(target, x.mesh.num_devices), strict=True
+        )
+    ]
+    if (
+        all(
+            _product(s) == _product(t)
+            for s, t in zip(sources, targets, strict=True)
+        )
+        and (mapped := _map_sharded_axes(x, target, sources, targets))
+        is not None
+    ):
+        return pass_through_rows(
+            (x,),
+            lambda actuals: (
+                (Sharded(mapped[actuals[0].axis]),)
+                if isinstance(actuals[0], Sharded)
+                else actuals
+            ),
+        )
+    whole = list(global_shape(x.shape))
+    if not any(is_per_shard_dim(d) for d in target) and _product(whole) == (
+        _product(_resolve_minus_one(whole, list(target)))
+    ):
+        rows = [AxisAssignment((R,), (R,))]
+        if P in x.mapping.placements:
+            rows.append(AxisAssignment((P,), (P,)))
+        return rows
+    raise ShardingError(
+        f"reshape: no device's shard reshapes to {list(target)} with its "
+        f"placement kept, nor does the whole tensor {whole}."
     )
 
 
-def _rebind_finalize(
-    shape: Shape, message: str, layout: object
-) -> Callable[[Action], Action]:
-    """Builds the ``rebind`` finalize, pre-bound to its context.
+def localize_reshape_target(x: TensorLayout, shape: Any) -> Shape | None:
+    """Translates a global ``reshape`` target into each device's sizes.
 
-    Projects the rebind target shape per-rank under the input's placement.
-    For each target axis, the per-shard size is:
+    Plain dims in ``shape`` are global sizes. A sharded axis ``k`` maps to
+    the first target axis ``j`` that has as many elements before it as
+    ``k`` has. When a ``-1`` comes before ``j``, the elements after each
+    axis are compared instead. Each device's block of ``k`` is then a block
+    of ``j``, and ``j`` takes each device's size. For example, rows
+    ``(7, 8)`` split 4 and 3 over two devices reshape to ``(7, 4, 2)`` as
+    ``(4, 4, 2)`` on the first device and ``(3, 4, 2)`` on the second.
 
-    - the cell from a :class:`PerShardDim` wrapper if the caller passed one;
-    - a :class:`PerShardDim` carrying load-balanced cells
-      ``(target[i] + n - 1 - r) // n``, larger first, when the
-      input is :class:`Sharded` on axis ``i`` over mesh axes that span
-      ``n`` devices, where ``r`` is the device's index among them, so the
-      per-shard form matches what :func:`_even_split_along_axis` produces
-      on the other side of a residual add;
-    - the target dim unchanged otherwise.
+    Args:
+        x: The layout of the tensor being reshaped.
+        shape: The global target shape.
 
-    Static dims on a sharded axis use :meth:`Sharded.local_dim`'s
-    uneven divmod (so e.g. ``Sharded(0)`` of static ``5`` on ``n=3``
-    yields per-shard ``[2, 2, 1]``); symbolic and algebraic dims use
-    the same load-balanced formula so dynamic dims not divisible by
-    the mesh axis size are preserved exactly.
+    Returns:
+        The target with each device's sizes, or ``None`` when a sharded
+        axis maps to no target axis or a device's size does not convert
+        exactly. The caller then gathers the tensor first.
+
+    Raises:
+        ValueError: If the target has a known number of elements that
+            differs from the tensor's.
     """
-
-    def finalize(action: Action) -> Action:
-        in_mapping = action.inputs[0]
-        assert isinstance(in_mapping, DeviceMapping)
-        mesh = in_mapping.mesh
-
-        def _local(tensor_axis: int, target_dim: DimLike) -> Dim:
-            dim = Dim(target_dim)
-            if is_per_shard_dim(dim):
-                return dim
-            mesh_axes = [
-                mesh_axis
-                for mesh_axis, p in enumerate(in_mapping.placements)
-                if isinstance(p, Sharded) and p.localized_axis() == tensor_axis
-            ]
-            if not mesh_axes:
-                return dim
-            if isinstance(dim, StaticDim):
-                return in_mapping.placements[mesh_axes[0]].local_dim(
-                    dim, mesh, mesh_axes, allow_symbolic_mint=False
-                )
-            # The larger pieces come first, as the reduce-scatter kernel
-            # orders them.
-            group_size = mesh.axis_size(mesh_axes)
-            return make_per_shard_dim(
-                tuple(
-                    (
-                        dim
-                        + group_size
-                        - 1
-                        - mesh.device_coord(device, mesh_axes)
-                    )
-                    // group_size
-                    for device in range(mesh.num_devices)
-                )
+    target = Shape(shape)
+    sharded = sorted(
+        {p.axis for p in x.mapping.placements if isinstance(p, Sharded)}
+    )
+    if not sharded:
+        return target
+    minus_ones = [j for j, d in enumerate(target) if _is_minus_one(d)]
+    if len(minus_ones) > 1:
+        # Left for reshape_rule to reject.
+        return target
+    minus = minus_ones[0] if minus_ones else None
+    source, tgt = list(global_shape(x.shape)), list(global_shape(target))
+    if minus is None and all(isinstance(d, StaticDim) for d in (*source, *tgt)):
+        before, after = _product(source), _product(tgt)
+        if before != after:
+            raise ValueError(
+                f"reshape: {source} has {before} elements, the target "
+                f"{tgt} has {after}."
             )
-
-        lifted = [_local(i, td) for i, td in enumerate(shape)]
-        per_rank = PerShard(
-            [
-                Shape(
-                    local_dim_at(d, r) if is_per_shard_dim(d) else d
-                    for d in lifted
+    mapped: dict[int, int] = {}
+    for k in sharded:
+        # Count the elements on the side of ``j`` that has no -1.
+        j = next(
+            (
+                j
+                for j, d in enumerate(tgt)
+                if not _is_one(d)
+                and (
+                    _product(source[:k]) == _product(tgt[:j])
+                    if minus is None or minus >= j
+                    else _product(source[k:]) == _product(tgt[j:])
                 )
-                for r in range(mesh.num_devices)
-            ]
+            ),
+            None,
         )
-        return Action(
-            inputs=(in_mapping, per_rank, message, layout),
-            outputs=action.outputs,
+        if j is None or j in mapped.values():
+            return None
+        mapped[k] = j
+    shapes: list[list[Dim]] = []
+    for local in (t.shape for t in x.local_types):
+        out = list(tgt)
+        for k, j in mapped.items():
+            size = (
+                _scaled(
+                    Dim(local[k]),
+                    _product(source[k + 1 :]),
+                    _product(tgt[j + 1 :]),
+                )
+                if minus is None or minus <= j
+                else _scaled(Dim(local[k]), tgt[j], source[k])
+            )
+            if size is None:
+                return None
+            out[j] = size
+        if minus is not None and minus not in mapped.values():
+            # A device with an empty shard cannot infer the -1 itself.
+            others = _product(d for i, d in enumerate(tgt) if i != minus)
+            size = _scaled(Dim(1), _product(source), others)
+            if size is not None:
+                out[minus] = size
+        shapes.append(out)
+    return Shape(
+        make_per_shard_dim(
+            [s[j] for s in shapes],
+            global_dim=None if _is_minus_one(tgt[j]) else tgt[j],
+            force_wrap=True,
         )
+        if j in mapped.values()
+        # A size given per device, as along an Unknown axis, stays each
+        # device's own.
+        else target[j]
+        if is_per_shard_dim(target[j])
+        else shapes[0][j]
+        for j in range(len(target))
+    )
 
-    return finalize
+
+def localize_same_shape_target(x: TensorLayout, shape: Any) -> Shape:
+    """Translates a global ``broadcast_to`` or ``rebind`` target into each device's sizes.
+
+    Both ops keep each input axis on the target axis it is right-aligned
+    with. Where the input axis is sharded, that target axis takes the
+    input's sizes on each device, and its global size must match the
+    input's. Every other target axis is whole on each device, so a size
+    taken from another tensor's sharded ``shape`` becomes its global size.
+    A size with no global value, as along an
+    :class:`~max.experimental.sharding.Unknown` placement, stays each
+    device's own.
+
+    Args:
+        x: The layout of the input tensor.
+        shape: The global target shape.
+
+    Returns:
+        The target with each device's sizes on the sharded axes.
+
+    Raises:
+        ShardingError: If the target gives a sharded axis a size other than
+            its global size.
+    """
+    target = Shape(shape)
+    offset = len(target) - x.rank
+    out = [
+        d._global if is_per_shard_dim(d) and d._global is not None else d
+        for d in target
+    ]
+    for k in sorted(
+        {p.axis for p in x.mapping.placements if isinstance(p, Sharded)}
+    ):
+        j = k + offset
+        if j < 0:
+            continue
+        size, wanted = global_dim(x.shape[k]), global_dim(target[j])
+        if (
+            isinstance(size, StaticDim)
+            and isinstance(wanted, StaticDim)
+            and size != wanted
+        ):
+            raise ShardingError(
+                f"target axis {j} ({wanted}) differs from the size of "
+                f"sharded input axis {k} ({size})."
+            )
+        out[j] = (
+            target[j]
+            if is_per_shard_dim(target[j])
+            else make_per_shard_dim(
+                [t.shape[k] for t in x.local_types],
+                global_dim=size,
+                force_wrap=True,
+            )
+        )
+    return Shape(out)
 
 
 def rebind_rule(
@@ -639,102 +497,48 @@ def rebind_rule(
     shape: Any,
     message: str = "",
     layout: object = None,
-) -> ActionSet:
-    """Strategies for ``rebind``: strict identity on placement.
-
-    Rebind is a runtime shape assertion. It must never insert a
-    collective. The rule emits exactly one passthrough row per unique
-    placement on the input mesh axes, so the picker's only feasible
-    choice is the input's own placement, whatever the reshard policy. The
-    finalize hook projects the user-supplied target shape per-rank
-    against that placement.
-    """
-    target_shape = Shape(shape)
-    placements = x.mapping.placements
-    rows: list[AxisAssignment] = []
-    seen: set[Placement] = set()
-    for p in placements:
-        if p in seen:
-            continue
-        seen.add(p)
-        rows.append(AxisAssignment((p,), p))
-    return build_action_set(
-        rows,
-        layouts=(x,),
-        extras=(shape, message, layout),
-        finalize=_rebind_finalize(
-            shape=target_shape, message=message, layout=layout
-        ),
-    )
-
-
-def _broadcast_to_finalize(
-    x: TensorLayout, shape: list[Dim], out_dims: Iterable[DimLike] | None
-) -> Callable[[Action], Action]:
-    """Builds the ``broadcast_to`` finalize (per-rank projection), pre-bound."""
-
-    def finalize(action: Action) -> Action:
-        in_mapping = action.inputs[0]
-        assert isinstance(in_mapping, DeviceMapping)
-        out_placements = action.outputs[0].placements
-        local = _per_rank_target(shape, x.shape, out_placements, x.mapping.mesh)
-        return Action(
-            inputs=(in_mapping, local, out_dims),
-            outputs=action.outputs,
-        )
-
-    return finalize
+) -> list[AxisAssignment]:
+    """Keeps placement unchanged while asserting the supplied local shape."""
+    return pass_through_rows((x,), lambda actuals: actuals)
 
 
 def broadcast_to_rule(
     x: TensorLayout,
     shape: Any,
     out_dims: Iterable[DimLike] | None = None,
-) -> ActionSet:
-    """Strategies for ``broadcast_to`` with right-aligned 1:1 axis landing."""
+) -> list[AxisAssignment]:
+    """Returns the rows for ``broadcast_to``: a shard stays on its right-aligned axis."""
     if isinstance(shape, TensorLayout):
         raise NotImplementedError(
             "broadcast_to does not support a tensor-valued shape; pass a "
             "ShapeLike (list of DimLike)."
         )
-    target_shape = list(shape)
-    from max.experimental.tensor import _fold_sharded_shape
+    targets = _target_shapes(shape, x.mesh.num_devices)
+    for source, target in zip(x.local_types, targets, strict=True):
+        if len(target) < x.rank or any(
+            source_dim != 1 and source_dim != target_dim
+            for source_dim, target_dim in zip(
+                reversed(source.shape), reversed(target), strict=False
+            )
+        ):
+            raise ValueError(
+                "broadcast_to: each rank's input dimension must be either 1 or equal to its target; "
+                "use source tensor dimensions or explicitly redistribute first."
+            )
+    offset = len(targets[0]) - x.rank
 
-    src_global = _fold_sharded_shape(x.shape, x.mapping)
-    for i in range(1, min(len(src_global), len(target_shape)) + 1):
-        s_global = Dim(src_global[-i])
-        t_dim = Dim(target_shape[-i])
-        if is_per_shard_dim(t_dim):
-            continue
-        if s_global == t_dim or s_global == 1:
-            continue
-        raise ValueError(
-            f"broadcast_to: input dimension {-i} (size {s_global}) must be "
-            f"either 1 or equal to the target size {t_dim}."
-        )
+    def outputs(actuals: tuple[Placement, ...]) -> tuple[Placement, ...] | None:
+        (placement,) = actuals
+        if not isinstance(placement, Sharded):
+            return actuals
+        if any(
+            local.shape[placement.axis] != target[placement.axis + offset]
+            for local, target in zip(x.local_types, targets, strict=True)
+        ):
+            return None
+        return (Sharded(placement.axis + offset),)
 
-    placements = x.mapping.placements
-    sharded_src_axes = sorted(
-        {ax for p in placements if (ax := p.localized_axis()) is not None}
-    )
-    n_src, n_tgt = x.rank, len(target_shape)
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
-    for k in sharded_src_axes:
-        t = k + (n_tgt - n_src)
-        if t < 0 or t >= n_tgt:
-            continue
-        if Dim(src_global[k]) == Dim(1):
-            continue
-        rows.append(AxisAssignment((Sharded(k),), Sharded(t)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(
-        rows,
-        layouts=(x,),
-        extras=(shape, out_dims),
-        finalize=_broadcast_to_finalize(
-            x=x, shape=target_shape, out_dims=out_dims
-        ),
-    )
+    return pass_through_rows((x,), outputs)
 
 
 def _concat_stack_rows(
@@ -745,90 +549,78 @@ def _concat_stack_rows(
     """Rows shared by ``concat``/``stack``: every input wears the same placement."""
     n = len(layouts)
     rank = layouts[0].rank
-    rows = [AxisAssignment((R,) * n, R)]
+    rows = [AxisAssignment((R,) * n, (R,))]
     for ax in range(rank):
         if norm is None:
             out_ax = ax
         else:
             out_ax = ax if ax < norm else ax + 1
-        rows.append(AxisAssignment((Sharded(ax),) * n, Sharded(out_ax)))
-    rows.append(AxisAssignment((P,) * n, P))
+        rows.append(AxisAssignment((Sharded(ax),) * n, (Sharded(out_ax),)))
+    rows.append(AxisAssignment((P,) * n, (P,)))
     return rows
 
 
 def concat_rule(
     original_vals: Iterable[TensorLayout], axis: int = 0
-) -> ActionSet:
-    """Concat rule — all inputs share placement; finalize repacks list/tuple."""
+) -> list[AxisAssignment]:
+    """Returns the rows for ``concat``: every input shares one placement."""
     layouts = tuple(original_vals)
     if not layouts:
         raise ValueError("concat: no tensor inputs.")
-    rows = _concat_stack_rows(layouts, out_axis_for_in=None, norm=None)
-    return build_action_set(
-        rows,
-        layouts=layouts,
-        extras=(axis,),
-        finalize=_repack_finalize(
-            n=len(layouts), axis=axis, is_tuple=isinstance(original_vals, tuple)
-        ),
-    )
+    return _concat_stack_rows(layouts, out_axis_for_in=None, norm=None)
 
 
-def stack_rule(values: Iterable[TensorLayout], axis: int = 0) -> ActionSet:
-    """Stack rule — inserts a new axis; finalize repacks the input container."""
+def stack_rule(
+    values: Iterable[TensorLayout], axis: int = 0
+) -> list[AxisAssignment]:
+    """Returns the rows for ``stack``: a new axis, and one shared placement."""
     layouts = tuple(values)
     if not layouts:
         raise ValueError("stack: no tensor inputs.")
     rank = layouts[0].rank
     norm = axis if axis >= 0 else axis + rank + 1
-    rows = _concat_stack_rows(layouts, out_axis_for_in=None, norm=norm)
-    return build_action_set(
-        rows,
-        layouts=layouts,
-        extras=(axis,),
-        finalize=_repack_finalize(
-            n=len(layouts), axis=axis, is_tuple=isinstance(values, tuple)
-        ),
-    )
+    return _concat_stack_rows(layouts, out_axis_for_in=None, norm=norm)
 
 
-def chunk_rule(x: TensorLayout, chunks: int, axis: int = 0) -> ActionSet:
+def chunk_rule(
+    x: TensorLayout, chunks: int, axis: int = 0
+) -> list[AxisAssignment]:
     """Strategies for ``chunk``: sharding on any axis except the chunk axis."""
     n = x.rank
     norm = axis % n
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,) * chunks)]
     for ax in range(n):
         if ax == norm:
             continue
-        rows.append(AxisAssignment((Sharded(ax),), Sharded(ax)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(chunks, axis))
+        rows.append(AxisAssignment((Sharded(ax),), (Sharded(ax),) * chunks))
+    rows.append(AxisAssignment((P,), (P,) * chunks))
+    return rows
 
 
-def top_k_rule(input: TensorLayout, k: int, axis: int = -1) -> ActionSet:
+def top_k_rule(
+    input: TensorLayout, k: int, axis: int = -1
+) -> list[AxisAssignment]:
     """Strategies for ``top_k``: sharding on any axis except the reduction axis."""
     n = input.rank
     norm = axis % n
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R, R))]
     for ax in range(n):
         if ax == norm:
             continue
-        rows.append(AxisAssignment((Sharded(ax),), Sharded(ax)))
-    return build_action_set(rows, layouts=(input,), extras=(k, axis))
+        rows.append(AxisAssignment((Sharded(ax),), (Sharded(ax), Sharded(ax))))
+    return rows
 
 
-def argsort_rule(x: TensorLayout, ascending: bool = True) -> ActionSet:
+def argsort_rule(
+    x: TensorLayout, ascending: bool = True
+) -> list[AxisAssignment]:
     """Strategies for ``argsort``: Replicated only (sort needs full view)."""
-    return build_action_set(
-        [AxisAssignment((R,), R)], layouts=(x,), extras=(ascending,)
-    )
+    return [AxisAssignment((R,), (R,))]
 
 
-def nonzero_rule(x: TensorLayout, out_dim: DimLike) -> ActionSet:
+def nonzero_rule(x: TensorLayout, out_dim: DimLike) -> list[AxisAssignment]:
     """Strategies for ``nonzero``: Replicated only (data-dependent output shape)."""
-    return build_action_set(
-        [AxisAssignment((R,), R)], layouts=(x,), extras=(out_dim,)
-    )
+    return [AxisAssignment((R,), (R,))]
 
 
 def repeat_interleave_rule(
@@ -836,18 +628,23 @@ def repeat_interleave_rule(
     repeats: int | TensorLayout,
     axis: int | None = None,
     out_dim: DimLike | None = None,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``repeat_interleave``: sharding on any non-repeat axis."""
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
     if axis is not None:
         n = x.rank
         norm = axis % n
         for ax in range(n):
             if ax == norm:
                 continue
-            rows.append(AxisAssignment((Sharded(ax),), Sharded(ax)))
-        rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(repeats, axis, out_dim))
+            rows.append(AxisAssignment((Sharded(ax),), (Sharded(ax),)))
+        rows.append(AxisAssignment((P,), (P,)))
+    if isinstance(repeats, TensorLayout):
+        rows = [
+            AxisAssignment(row.needed_inputs + (R,), row.outputs)
+            for row in rows
+        ]
+    return rows
 
 
 def pad_rule(
@@ -855,7 +652,7 @@ def pad_rule(
     paddings: Iterable[int],
     mode: str = "constant",
     value: TensorLayout | float = 0,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``pad``: sharding allowed on unpadded axes only."""
     pads = tuple(paddings)
     padded = {
@@ -866,41 +663,36 @@ def pad_rule(
     linear = mode != "constant" or (
         isinstance(value, (int, float)) and value == 0
     )
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
     for ax in range(input.rank):
         if ax in padded:
             continue
-        rows.append(AxisAssignment((Sharded(ax),), Sharded(ax)))
+        rows.append(AxisAssignment((Sharded(ax),), (Sharded(ax),)))
     if linear:
-        rows.append(AxisAssignment((P,), P))
-    return build_action_set(
-        rows, layouts=(input,), extras=(paddings, mode, value)
-    )
+        rows.append(AxisAssignment((P,), (P,)))
+    if isinstance(value, TensorLayout):
+        rows = [
+            AxisAssignment(row.needed_inputs + (R,), row.outputs)
+            for row in rows
+        ]
+    return rows
 
 
-def slice_tensor_rule(x: TensorLayout, indices: SliceIndices) -> ActionSet:
+def slice_tensor_rule(
+    x: TensorLayout, indices: SliceIndices
+) -> list[AxisAssignment]:
     """Strategies for ``slice_tensor``: sharding allowed on non-sliced axes only."""
-    sliced = (
-        {
-            ax
-            for ax in range(x.rank)
-            if _slice_modifies_axis(indices, ax, x.rank)
-        }
-        if indices is not None
-        else set()
-    )
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
-    for ax in range(x.rank):
-        if ax in sliced:
-            continue
-        rows.append(AxisAssignment((Sharded(ax),), Sharded(ax)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(rows, layouts=(x,), extras=(indices,))
+    kept = _untouched_axes(indices, x.rank) if indices is not None else {}
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,))]
+    for in_axis, out_axis in sorted(kept.items()):
+        rows.append(AxisAssignment((Sharded(in_axis),), (Sharded(out_axis),)))
+    rows.append(AxisAssignment((P,), (P,)))
+    return rows
 
 
 def gather_rule(
     input: TensorLayout, indices: TensorLayout, axis: int
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``gather``: sharding follows either input or indices axes.
 
     Deliberately does not emit the expert-parallel
@@ -917,42 +709,29 @@ def gather_rule(
     """
     in_r, idx_r = input.rank, indices.rank
     a_axis = axis % in_r
-    rows: list[AxisAssignment] = [AxisAssignment((R, R), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R, R), (R,))]
     for in_ax in range(in_r):
         if in_ax == a_axis:
             continue
         out_ax = in_ax if in_ax < a_axis else in_ax + idx_r - 1
-        rows.append(AxisAssignment((Sharded(in_ax), R), Sharded(out_ax)))
+        rows.append(AxisAssignment((Sharded(in_ax), R), (Sharded(out_ax),)))
     for idx_ax in range(idx_r):
         rows.append(
-            AxisAssignment((R, Sharded(idx_ax)), Sharded(a_axis + idx_ax))
+            AxisAssignment((R, Sharded(idx_ax)), (Sharded(a_axis + idx_ax),))
         )
-    # Indices' sharding wins on the cross.
-    for in_ax in range(in_r):
-        if in_ax == a_axis:
-            continue
-        for idx_ax in range(idx_r):
-            rows.append(
-                AxisAssignment(
-                    (Sharded(in_ax), Sharded(idx_ax)),
-                    Sharded(a_axis + idx_ax),
-                )
-            )
-    rows.append(AxisAssignment((P, R), P))
-    return build_action_set(rows, layouts=(input, indices), extras=(axis,))
+    rows.append(AxisAssignment((P, R), (P,)))
+    return rows
 
 
 def gather_nd_rule(
     input: TensorLayout, indices: TensorLayout, batch_dims: int = 0
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``gather_nd``: sharding on batch dims only."""
-    rows: list[AxisAssignment] = [AxisAssignment((R, R), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R, R), (R,))]
     for ax in range(batch_dims):
-        rows.append(AxisAssignment((Sharded(ax), Sharded(ax)), Sharded(ax)))
-    rows.append(AxisAssignment((P, R), P))
-    return build_action_set(
-        rows, layouts=(input, indices), extras=(batch_dims,)
-    )
+        rows.append(AxisAssignment((Sharded(ax), Sharded(ax)), (Sharded(ax),)))
+    rows.append(AxisAssignment((P, R), (P,)))
+    return rows
 
 
 def _scatter_rows(input: TensorLayout, axis: int) -> list[AxisAssignment]:
@@ -966,12 +745,14 @@ def _scatter_rows(input: TensorLayout, axis: int) -> list[AxisAssignment]:
     """
     in_r = input.rank
     a_axis = axis % in_r
-    rows: list[AxisAssignment] = [AxisAssignment((R, R, R), R)]
+    rows: list[AxisAssignment] = [AxisAssignment((R, R, R), (R,))]
     for ax in range(in_r):
         if ax == a_axis:
             continue
         rows.append(
-            AxisAssignment((Sharded(ax), Sharded(ax), Sharded(ax)), Sharded(ax))
+            AxisAssignment(
+                (Sharded(ax), Sharded(ax), Sharded(ax)), (Sharded(ax),)
+            )
         )
     return rows
 
@@ -981,13 +762,9 @@ def scatter_rule(
     updates: TensorLayout,
     indices: TensorLayout,
     axis: int = -1,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``scatter``: sharding on any axis except the scatter axis."""
-    return build_action_set(
-        _scatter_rows(input, axis),
-        layouts=(input, updates, indices),
-        extras=(axis,),
-    )
+    return _scatter_rows(input, axis)
 
 
 def scatter_add_rule(
@@ -995,59 +772,22 @@ def scatter_add_rule(
     updates: TensorLayout,
     indices: TensorLayout,
     axis: int = -1,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``scatter_add``: same as ``scatter`` (accumulating variant)."""
-    return build_action_set(
-        _scatter_rows(input, axis),
-        layouts=(input, updates, indices),
-        extras=(axis,),
-    )
-
-
-def _split_finalize(
-    x: TensorLayout, split_sizes: Sequence[DimLike], axis: int
-) -> Callable[[Action], Action]:
-    """Builds the ``split`` finalize, pre-bound to its context."""
-
-    def finalize(action: Action) -> Action:
-        chosen = action.inputs[0]
-        assert isinstance(chosen, DeviceMapping)
-        local_sizes = _localize_sizes(
-            [Dim(sz) for sz in split_sizes],
-            axis,
-            x.rank,
-            chosen.placements,
-            x.mapping.mesh,
-        )
-        return Action(
-            inputs=(chosen, local_sizes, axis), outputs=action.outputs
-        )
-
-    return finalize
+    return _scatter_rows(input, axis)
 
 
 def split_rule(
     x: TensorLayout, split_sizes: Sequence[DimLike], axis: int = 0
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``split``: sharding on any axis except the split axis."""
     n = x.rank
     norm = axis % n
-    mesh = x.mapping.mesh
-    max_group = max(mesh.mesh_shape) if mesh.mesh_shape else 1
-    normalized = [Dim(sz) for sz in split_sizes]
-    split_axis_ok = all(
-        not isinstance(sz, StaticDim) or sz.dim % max_group == 0
-        for sz in normalized
-    )
-    rows: list[AxisAssignment] = [AxisAssignment((R,), R)]
+    count = len(split_sizes)
+    rows: list[AxisAssignment] = [AxisAssignment((R,), (R,) * count)]
     for ax in range(n):
-        if ax == norm and not split_axis_ok:
+        if ax == norm:
             continue
-        rows.append(AxisAssignment((Sharded(ax),), Sharded(ax)))
-    rows.append(AxisAssignment((P,), P))
-    return build_action_set(
-        rows,
-        layouts=(x,),
-        extras=(split_sizes, axis),
-        finalize=_split_finalize(x=x, split_sizes=split_sizes, axis=axis),
-    )
+        rows.append(AxisAssignment((Sharded(ax),), (Sharded(ax),) * count))
+    rows.append(AxisAssignment((P,), (P,) * count))
+    return rows

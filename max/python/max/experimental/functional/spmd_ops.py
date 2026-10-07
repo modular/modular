@@ -20,36 +20,42 @@ which decides how the op distributes its result.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable, Iterable, Mapping, Sequence
+import math
+import typing
+from collections import OrderedDict
+from collections.abc import Callable, Iterable, Sequence
 from typing import Any
 
 from max import tree
 from max.driver import CPU, Buffer
 from max.experimental import tensor
 from max.experimental.realization_context import ensure_context
-from max.experimental.sharding import (
-    DeviceMapping,
-    DeviceMesh,
-    Replicated,
-    TensorLayout,
-)
-from max.experimental.sharding.per_shard_dim import global_dim
+from max.experimental.sharding.per_shard_dim import global_dim, global_shape
 from max.experimental.tensor import Tensor
 from max.graph import (
+    BufferValue,
+    Shape,
     ShapeLike,
     TensorType,
     TensorValue,
     TensorValueLike,
     Type,
+    Value,
     ops,
 )
 from max.graph.dim import Dim, DimLike, StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 from max.graph.quantization import QuantizationEncoding
 
-from ..sharding import ActionSet, ShardingError
+from ..sharding import (
+    AxisAssignment,
+    DeviceMapping,
+    Partial,
+    Replicated,
+    ShardingError,
+)
 from ..sharding._auto_reshard import pick_reshard_action
-from ..sharding.action import Action, PerShard
+from ..sharding.action import PerShard
 from ..sharding.rules import (
     argsort_rule,
     as_interleaved_complex_rule,
@@ -58,12 +64,15 @@ from ..sharding.rules import (
     broadcast_to_rule,
     buffer_store_rule,
     buffer_store_slice_rule,
+    cast_rule,
     chunk_rule,
+    concat_rule,
     cond_rule,
     conv2d_rule,
     conv2d_transpose_rule,
     conv3d_rule,
     dequantize_rule,
+    div_rule,
     flatten_rule,
     fold_rule,
     gather_nd_rule,
@@ -76,7 +85,7 @@ from ..sharding.rules import (
     linear_unary_rule,
     masked_scatter_rule,
     matmul_rule,
-    mean_rule,
+    mul_rule,
     nonzero_rule,
     outer_rule,
     pad_rule,
@@ -87,12 +96,8 @@ from ..sharding.rules import (
     reduce_rule,
     repeat_interleave_rule,
     reshape_rule,
-    resize_bicubic_rule,
-    resize_linear_rule,
-    resize_nearest_rule,
     resize_rule,
     rms_norm_rule,
-    same_placement_multi_input_rule,
     scatter_add_rule,
     scatter_nd_add_rule,
     scatter_nd_rule,
@@ -110,9 +115,13 @@ from ..sharding.rules import (
     unsqueeze_rule,
     while_loop_rule,
 )
+from ..sharding.rules.shape import (
+    localize_reshape_target,
+    localize_same_shape_target,
+)
 from ._signatures import install_tensor_signature
 from .collective_ops import _place_stack, transfer_to
-from .creation_ops import full_like
+from .creation_ops import full, full_like
 from .dispatch import _graph_value, call_on_mesh
 
 __all__ = ["ShardingError"]
@@ -121,11 +130,12 @@ __all__ = ["ShardingError"]
 def to_tensors(values: Any) -> Any:
     """Converts graph op results to :class:`Tensor`, preserving container type.
 
-    Recurses one level into ``list`` and ``tuple`` containers; unknown
-    types pass through unchanged. Returns ``Tensor`` for ``Buffer`` and
-    ``TensorValue`` leaves, and a same-shape container for list/tuple
-    inputs (each leaf converted independently). ``Any`` reflects that
-    leaves change type while the container type is preserved.
+    Recurses into ``list`` and ``tuple`` containers, such as a kernel's
+    list of per-device result tuples; unknown types pass through unchanged.
+    Returns ``Tensor`` for ``Buffer`` and ``TensorValue`` leaves, and a
+    same-shape container for list/tuple inputs (each leaf converted
+    independently). ``Any`` reflects that leaves change type while the
+    container type is preserved.
     """
 
     def _one(value: Any) -> Tensor | Any:
@@ -142,26 +152,8 @@ def to_tensors(values: Any) -> Any:
     if isinstance(values, (Buffer, Tensor, TensorValue)):
         return _one(values)
     if isinstance(values, (list, tuple)):
-        return type(values)(_one(v) for v in values)
+        return type(values)(to_tensors(v) for v in values)
     return values
-
-
-def map_tensors(
-    fn: Callable[[Tensor], Any], args: tuple[Any, ...]
-) -> tuple[Any, ...]:
-    """Applies ``fn`` to every :class:`Tensor` leaf in ``args``.
-
-    Recurses into lists, tuples, dicts and records such as a KV cache;
-    non-tensor leaves pass through unchanged.
-    """
-
-    def apply(leaf: Any) -> Any:
-        return fn(leaf) if isinstance(leaf, Tensor) else leaf
-
-    return tuple(
-        tree.map(apply, arg, leaf=Tensor) if _tensors_in(arg) else arg
-        for arg in args
-    )
 
 
 def _tensors_in(value: Any) -> list[Tensor]:
@@ -173,25 +165,42 @@ def _tensors_in(value: Any) -> list[Tensor]:
     ]
 
 
-def tensor_to_layout(t: Tensor) -> TensorLayout:
-    """Converts a :class:`Tensor` to a :class:`TensorLayout` for sharding-rule evaluation.
-
-    ``t.shape`` already carries per-device cells on :class:`Sharded` axes
-    (via :class:`PerShardDim`), so the rules that fold per-rank cells
-    (notably ``reshape_rule``) can do the correct shape arithmetic
-    directly. Non-distributed tensors fall back to a plain :class:`Shape`.
-    """
-    if t.is_distributed:
-        return TensorLayout(
-            t.dtype,
-            t.shape,
-            DeviceMapping(t.mesh, t.placements),
-        )
-    return TensorLayout(
-        t.dtype,
-        t.shape,
-        DeviceMapping(DeviceMesh.single(t.device), (Replicated(),)),
+def _hint_names(hint: Any, value_type: type) -> bool:
+    """Returns whether the type hint ``hint`` names ``value_type``."""
+    return (
+        hint is value_type
+        or typing.get_origin(hint) is value_type
+        or any(_hint_names(arg, value_type) for arg in typing.get_args(hint))
     )
+
+
+def _graph_value_converters(
+    graph_op: Callable[..., Any],
+) -> dict[str, Callable[[Tensor], Any]]:
+    """Returns how ``graph_op`` takes the tensors of each hinted parameter.
+
+    A parameter whose hint names only ``BufferValue`` takes a buffer, one
+    that names only ``TensorValue`` a tensor, and one that names ``Value``
+    or both each tensor's own value. Any other parameter takes tensors as
+    they are; a tensor converts itself when a graph op reads or writes it.
+    """
+    try:
+        hints = typing.get_type_hints(graph_op)
+    except Exception:
+        return {}
+    converters: dict[str, Callable[[Tensor], Any]] = {}
+    for name, hint in hints.items():
+        buffer, tensor = (
+            _hint_names(hint, BufferValue),
+            _hint_names(hint, TensorValue),
+        )
+        if _hint_names(hint, Tensor):
+            continue
+        if buffer != tensor:
+            converters[name] = BufferValue if buffer else TensorValue
+        elif buffer or _hint_names(hint, Value):
+            converters[name] = _graph_value
+    return converters
 
 
 def any_distributed(args: tuple[object, ...]) -> bool:
@@ -201,40 +210,62 @@ def any_distributed(args: tuple[object, ...]) -> bool:
 
 def functional(
     graph_op: Callable[..., Any],
-    rule: Callable[..., ActionSet] | None = None,
+    rule: Callable[..., list[AxisAssignment]] | None = None,
 ) -> Callable[..., Any]:
-    """Wraps a graph op to work with eager tensors.
+    """Wraps a graph op so that it works with eager tensors.
 
-    For a distributed tensor, the op runs on each device's shard, and
-    ``rule`` decides how the result is distributed.
+    The wrapped op takes :class:`Tensor` arguments where the graph op takes
+    graph values, and returns tensors. A parameter whose type hint names a
+    graph value, as a kernel binding's do, receives each tensor as that
+    value: ``TensorValue`` to read it, ``BufferValue`` to write it, and
+    ``Value`` as whichever the tensor holds. Any other parameter receives
+    the tensors themselves.
+
+    On distributed tensors, the op runs on each device's shards, and
+    ``rule`` says how its inputs and results may be split across devices.
+    See :class:`~max.experimental.sharding.AxisAssignment` for what a rule
+    receives and returns.
 
     Args:
         graph_op: The graph op to wrap.
-        rule: The sharding rule for distributed tensors. Defaults to
-            ``None``, which runs the op on each device's shard as it is.
+        rule: The op's sharding rule. Without one, the op runs on each
+            device's own shards and its result has no known placement.
 
     Returns:
-        The wrapped op, which takes and returns tensors. It carries
-        ``graph_op`` and ``rule`` as attributes; reassign its ``rule`` to swap
-        the sharding rule without re-wrapping.
+        The wrapped op. Its ``graph_op`` and ``rule`` attributes hold the
+        arguments; assign ``rule`` to change the sharding rule.
     """
+    signature = inspect.signature(graph_op)
+    converters = _graph_value_converters(graph_op)
 
-    def lower(value: Any) -> Any:
+    def lower(value: Any, convert: Callable[[Tensor], Any]) -> Any:
         # Records such as a KV cache convert themselves, since graph ops read
         # their tensors by attribute.
         if hasattr(value, "to_graph_values"):
             return value.to_graph_values()
-        return _graph_value(value) if isinstance(value, Tensor) else value
+        if isinstance(value, slice):
+            # A slice bounded by tensors, as a data-dependent slice is.
+            return slice(
+                *(
+                    _graph_value(bound) if isinstance(bound, Tensor) else bound
+                    for bound in (value.start, value.stop, value.step)
+                )
+            )
+        return convert(value) if isinstance(value, Tensor) else value
 
     def on_graph_values(*args: Any, **kwargs: Any) -> Any:
-        args, kwargs = tree.map(
-            lower,
-            (args, kwargs),
-            leaf=lambda value: (
-                isinstance(value, Tensor) or hasattr(value, "to_graph_values")
-            ),
-        )
-        return graph_op(*args, **kwargs)
+        bound = signature.bind(*args, **kwargs)
+        for name, value in bound.arguments.items():
+            convert = converters.get(name, lambda tensor: tensor)
+            bound.arguments[name] = tree.map(
+                lambda leaf, convert=convert: lower(leaf, convert),
+                value,
+                leaf=lambda leaf: (
+                    isinstance(leaf, (Tensor, slice))
+                    or hasattr(leaf, "to_graph_values")
+                ),
+            )
+        return graph_op(*bound.args, **bound.kwargs)
 
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         distributed = [
@@ -243,64 +274,44 @@ def functional(
             if isinstance(t, Tensor) and t.is_distributed
         ]
         if not distributed:
-            # A graph op converts the tensors passed to it but reads a
-            # record's tensors by attribute, so records convert here. On one
-            # device, a PerShard holds that device's value.
+            # A per-device argument is the one device's value.
+            args, kwargs = tree.map(
+                lambda value: value[0],
+                (args, kwargs),
+                leaf=lambda value: isinstance(value, PerShard),
+            )
             with ensure_context():
-                args, kwargs = tree.map(
-                    lambda value: (
-                        value[0]
-                        if isinstance(value, PerShard)
-                        else value.to_graph_values()
-                        if hasattr(value, "to_graph_values")
-                        else value
-                    ),
-                    (args, kwargs),
-                    leaf=lambda value: (
-                        isinstance(value, PerShard)
-                        or hasattr(value, "to_graph_values")
-                    ),
-                )
-                return to_tensors(graph_op(*args, **kwargs))
+                return to_tensors(on_graph_values(*args, **kwargs))
 
+        mesh = distributed[0].mesh
         active_rule = getattr(wrapper, "rule", None)
-        # The rule reads the operands bound to the op's positional
-        # parameters, whether they were passed by position or by keyword.
-        # TODO: keyword-only distributed tensor arguments are not supported.
-        flat_args, keyword_args, arg_names = _canonicalize_call(
-            graph_op, args, kwargs
-        )
-        if active_rule is None or not any_distributed(flat_args):
+        if active_rule is None:
             # Without a rule nothing relates the per-device results, so the op
             # runs on each device's own shards and its result is Unknown.
-            return call_on_mesh(on_graph_values, distributed[0].mesh)(
-                *args, **kwargs
-            )
+            return call_on_mesh(on_graph_values, mesh)(*args, **kwargs)
 
-        layout_args = map_tensors(tensor_to_layout, flat_args)
-        action_set = active_rule(*layout_args)
+        bound = signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        operands, structure = tree.flatten(
+            OrderedDict(bound.arguments), leaf=Tensor
+        )
+        layouts = tuple(value.layout for value in operands)
+        bound.arguments = tree.unflatten(structure, layouts)
         action = pick_reshard_action(
-            action_set,
+            active_rule(*bound.args, **bound.kwargs),
+            layouts,
             op_name=getattr(graph_op, "__name__", "<op>"),
-            operand_names=_input_names(
-                arg_names, layout_args, action_set.layouts
-            ),
+            operand_names=structure.leaf_paths,
         )
-        out_specs = action.outputs or (
-            next(
-                t.mapping
-                for t in tree.leaves(flat_args, leaf=Tensor)
-                if isinstance(t, Tensor) and t.is_distributed
-            ),
-        )
-        # A rule that names one mapping names it for every result.
-        return call_on_mesh(
-            on_graph_values,
-            out_specs[0].mesh,
-            out_specs=out_specs[0] if len(out_specs) == 1 else out_specs,
-        )(
-            *_transfer_args(flat_args, layout_args, action, action_set),
-            **keyword_args,
+        # A tensor off the mesh keeps its own mapping, so it passes to every
+        # device's call as it is.
+        placed = [
+            value if value.mapping == target else transfer_to(value, target)
+            for value, target in zip(operands, action.inputs, strict=True)
+        ]
+        bound.arguments = tree.unflatten(structure, placed)
+        return call_on_mesh(on_graph_values, mesh, out_specs=action.outputs)(
+            *bound.args, **bound.kwargs
         )
 
     # ``Any``-typed alias so attribute writes are dynamic;
@@ -321,120 +332,8 @@ def functional(
     return wrapper
 
 
-def _canonicalize_call(
-    graph_op: Callable[..., Any],
-    args: tuple[Any, ...],
-    kwargs: Mapping[str, Any],
-) -> tuple[tuple[Any, ...], Mapping[str, Any], tuple[str, ...]]:
-    """Binds ``args`` and ``kwargs`` to ``graph_op``'s signature as positionals.
-
-    Returns the positionals, the keyword-only arguments and one name per
-    positional; an uninspectable signature yields ``args`` unnamed.
-    """
-    sig_source = getattr(graph_op, "graph_op", graph_op)
-    try:
-        sig = inspect.signature(sig_source)
-        bound = sig.bind(*args, **kwargs)
-        bound.apply_defaults()
-    except (TypeError, NotImplementedError, ValueError):
-        return args + tuple(kwargs.values()), {}, ()
-    names: list[str] = []
-    for name, value in bound.arguments.items():
-        kind = sig.parameters[name].kind
-        if kind is inspect.Parameter.VAR_POSITIONAL:
-            names.extend(f"{name}[{i}]" for i in range(len(value)))
-        elif kind is not inspect.Parameter.KEYWORD_ONLY:
-            names.append(name)
-    return tuple(bound.args), bound.kwargs, tuple(names)
-
-
-def _input_names(
-    arg_names: Sequence[str],
-    layout_args: Sequence[Any],
-    layouts: Sequence[TensorLayout],
-) -> tuple[str, ...]:
-    """Names each of the rule's ``layouts`` by the argument that holds it."""
-    names: dict[int, str] = {}
-    for name, value in zip(arg_names, layout_args, strict=False):
-        leaves = _walk_tensor_layouts(value)
-        for i, leaf in enumerate(leaves):
-            names[id(leaf)] = name if len(leaves) == 1 else f"{name}[{i}]"
-    return tuple(names.get(id(layout), "?") for layout in layouts)
-
-
-def _walk_tensor_layouts(value: Any) -> list[Any]:
-    """Flattens TensorLayout leaves out of arbitrary nested args."""
-    return [
-        leaf
-        for leaf in tree.leaves(value, leaf=TensorLayout)
-        if isinstance(leaf, TensorLayout)
-    ]
-
-
-def _transfer_args(
-    args: tuple[Any, ...],
-    layout_args: tuple[Any, ...],
-    action: Action,
-    action_set: ActionSet,
-) -> tuple[Any, ...]:
-    """Moves each tensor argument to the mapping ``action`` picks for it."""
-    if action_set.finalize is not None:
-        return _transfer_finalized_args(args, action.inputs)
-
-    slots = {id(layout): i for i, layout in enumerate(action_set.layouts)}
-    # The entries after the rule's layouts replace, in order, the arguments
-    # that hold no tensor.
-    extras = iter(action.inputs[len(action_set.layouts) :])
-
-    def place(value: Any, layout: Any) -> Any:
-        slot = slots.get(id(layout))
-        if not isinstance(value, Tensor) or slot is None:
-            return value
-        return transfer_to(value, action.inputs[slot])
-
-    placed: list[Any] = []
-    for arg, layout_arg in zip(args, layout_args, strict=True):
-        if _tensors_in(arg):
-            placed.append(
-                tree.map(place, arg, layout_arg, leaf=(Tensor, TensorLayout))
-            )
-        else:
-            extra = next(extras, None)
-            placed.append(arg if extra is None else extra)
-    return tuple(placed)
-
-
-def _transfer_finalized_args(
-    args: tuple[Any, ...], suggested: tuple[Any, ...]
-) -> tuple[Any, ...]:
-    """Reshards Tensor args to the per-argument entries of ``suggested``."""
-    result: list[object] = []
-    for orig, sugg in zip(args, suggested, strict=False):
-        if isinstance(sugg, PerShard):
-            result.append(sugg)
-        elif isinstance(orig, Tensor) and isinstance(sugg, DeviceMapping):
-            result.append(transfer_to(orig, sugg))
-        elif isinstance(orig, (list, tuple)) and isinstance(
-            sugg, (list, tuple)
-        ):
-            items = [
-                transfer_to(o, s)
-                if isinstance(o, Tensor) and isinstance(s, DeviceMapping)
-                else s
-                for o, s in zip(orig, sugg, strict=False)
-            ]
-            result.append(type(orig)(items))
-        elif not isinstance(orig, Tensor) and sugg is not None:
-            result.append(sugg)
-        else:
-            result.append(orig)
-    if len(args) > len(suggested):
-        result.extend(args[len(suggested) :])
-    return tuple(result)
-
-
 def _binary_with_scalar_promotion(
-    inner: Callable[..., object],
+    inner: Callable[..., object], *, adds: bool = False
 ) -> Callable[..., Tensor]:
     """Wraps a binary dispatch with scalar promotion.
 
@@ -442,15 +341,28 @@ def _binary_with_scalar_promotion(
     single-device graph-op path handles scalar + tensor natively. Rank
     differences are not equalized here: broadcasting is handled by the
     RMO dialect per shard, and the placement rules express trailing-axis
-    alignment directly.
+    alignment directly. With ``adds``, for ``add`` and ``sub``, a scalar
+    combined with a partial sum is held by one device, so the sum changes
+    by the scalar once.
     """
 
     def wrapper(lhs: Tensor | float, rhs: Tensor | float) -> Tensor:
         if any_distributed((lhs, rhs)):
-            if isinstance(lhs, (int, float)) and isinstance(rhs, Tensor):
-                lhs = full_like(rhs, lhs)
-            elif isinstance(rhs, (int, float)) and isinstance(lhs, Tensor):
-                rhs = full_like(lhs, rhs)
+            # The scalar becomes a rank-0 tensor on every device, placed as
+            # a partial sum where it joins one.
+            like = lhs if isinstance(lhs, Tensor) else rhs
+            assert isinstance(like, Tensor)
+            copies = DeviceMapping(
+                like.mesh,
+                tuple(
+                    p if adds and isinstance(p, Partial) else Replicated()
+                    for p in like.placements
+                ),
+            )
+            if isinstance(lhs, (int, float)):
+                lhs = full((), lhs, dtype=like.dtype, device=copies)
+            elif isinstance(rhs, (int, float)):
+                rhs = full((), rhs, dtype=like.dtype, device=copies)
         result = inner(lhs, rhs)
         assert isinstance(result, Tensor)
         return result
@@ -465,7 +377,7 @@ def _binary_with_scalar_promotion(
 #: Scalars are promoted to tensors automatically.
 #: See :func:`max.graph.ops.add` for details.
 add = _binary_with_scalar_promotion(
-    functional(ops.add, rule=linear_binary_rule)
+    functional(ops.add, rule=linear_binary_rule), adds=True
 )
 add.__doc__ = """Adds two tensors element-wise.
 
@@ -495,7 +407,7 @@ Returns:
 """
 
 sub = _binary_with_scalar_promotion(
-    functional(ops.sub, rule=linear_binary_rule)
+    functional(ops.sub, rule=linear_binary_rule), adds=True
 )
 sub.__doc__ = """Subtracts two tensors element-wise.
 
@@ -520,7 +432,7 @@ Returns:
     A ``Tensor`` containing the result of ``lhs - rhs`` element-wise.
 """
 
-mul = _binary_with_scalar_promotion(functional(ops.mul, rule=binary_rule))
+mul = _binary_with_scalar_promotion(functional(ops.mul, rule=mul_rule))
 mul.__doc__ = """Multiplies two tensors element-wise.
 
 Either operand may be a Python ``int`` or ``float`` scalar, which is
@@ -544,7 +456,7 @@ Returns:
     A ``Tensor`` containing the element-wise products.
 """
 
-div = _binary_with_scalar_promotion(functional(ops.div, rule=binary_rule))
+div = _binary_with_scalar_promotion(functional(ops.div, rule=div_rule))
 div.__doc__ = """Divides two tensors element-wise using true division (Python ``/``).
 
 For integer operands, this performs true division by promoting to float,
@@ -1562,7 +1474,7 @@ Returns:
 
 #: Casts a tensor to a different data type. Distributed via SPMD.
 #: See :func:`max.graph.ops.cast` for details.
-cast = functional(ops.cast, rule=unary_rule)
+cast = functional(ops.cast, rule=cast_rule)
 cast.__doc__ = """Casts a tensor to a different data type.
 
 Values may change when the source and target types can't represent each
@@ -1786,13 +1698,31 @@ Raises:
 
 squeeze = functional(ops.squeeze, rule=squeeze_rule)
 #: SPMD-distributed wrapper around :func:`max.graph.ops.reshape`.
-reshape = functional(ops.reshape, rule=reshape_rule)
+_reshape_impl = functional(ops.reshape, rule=reshape_rule)
+
+
+def reshape(x: Tensor, shape: ShapeLike) -> Tensor:
+    if isinstance(x, Tensor) and x.is_distributed:
+        target = Shape(shape)
+        localized = localize_reshape_target(x.layout, target)
+        # Where the shards cannot keep their placement, the rule gathers the
+        # input first, so it needs the global sizes.
+        shape = global_shape(target) if localized is None else localized
+    return _reshape_impl(x, shape)
+
+
 reshape.__doc__ = """Reshapes a tensor.
 
 If a value of ``-1`` is present in ``shape``, that dimension becomes an
 automatically calculated dimension collecting all unspecified dimensions.
 Its length becomes the number of elements in the original tensor divided by
 the product of the other dimensions of ``shape``.
+
+On a distributed tensor, ``shape`` is the global shape. A sharded axis stays
+sharded on the first axis it splits into, or on the axis it merges into when
+it is the first of the merged axes; otherwise it is gathered first. For
+example, ``(T, H * D)`` sharded on axis 1 reshapes to ``(T, H, D)`` sharded
+on axis 1, and back.
 
 .. code-block:: python
 
@@ -1898,7 +1828,8 @@ def broadcast_to(x: Tensor, shape: ShapeLike) -> Tensor:
     Each input dimension must either equal the corresponding target
     dimension or be ``1`` (which is then stretched to match). This
     follows NumPy broadcasting semantics and is equivalent to PyTorch's
-    :func:`torch.broadcast_to`.
+    :func:`torch.broadcast_to`. On a distributed tensor, ``shape`` is the
+    global shape.
 
     .. code-block:: python
 
@@ -1920,7 +1851,13 @@ def broadcast_to(x: Tensor, shape: ShapeLike) -> Tensor:
     Returns:
         A ``Tensor`` with the same elements as ``x`` but with the target
         shape.
+
+    Raises:
+        ShardingError: If ``shape`` gives a sharded axis of ``x`` a size
+            other than its global size.
     """
+    if isinstance(x, Tensor) and x.is_distributed:
+        shape = localize_same_shape_target(x.layout, shape)
     return _broadcast_to_impl(x, shape)
 
 
@@ -2025,7 +1962,7 @@ Raises:
         Pass a ``(slice, out_dim)`` tuple instead.
 """
 
-concat = functional(ops.concat, rule=same_placement_multi_input_rule)
+concat = functional(ops.concat, rule=concat_rule)
 concat.__doc__ = """Concatenates tensors along an axis.
 
 .. code-block:: python
@@ -2721,7 +2658,10 @@ def split(
     """Splits a tensor into chunks along an axis.
 
     An ``int`` ``split_size_or_sections`` produces equal chunks (the
-    last may be smaller); a sequence specifies per-chunk sizes.
+    last may be smaller); a sequence specifies per-chunk sizes. On a
+    distributed tensor the sizes are global. Along a sharded ``axis``,
+    each device splits its own piece by its share of every size when each
+    size divides evenly; otherwise the axis is gathered first.
 
     .. code-block:: python
 
@@ -2767,7 +2707,33 @@ def split(
         if remainder > 0:
             split_sizes.append(remainder)
     else:
-        split_sizes = list(split_size_or_sections)
+        # Sizes are global; one taken from a sharded tensor's shape reads as
+        # its global size, which is what the rule's gathered input needs.
+        split_sizes = [global_dim(Dim(s)) for s in split_size_or_sections]
+    if x.is_distributed:
+        pieces = math.prod(
+            size
+            for size, p in zip(x.mesh.mesh_shape, x.placements, strict=True)
+            if p.localized_axis() == axis % x.rank
+        )
+        sizes = [Dim(size) for size in split_sizes]
+        static = [size.dim for size in sizes if isinstance(size, StaticDim)]
+        if (
+            pieces > 1
+            and len(static) == len(sizes)
+            and all(size % pieces == 0 for size in static)
+        ):
+            # Each device splits its own piece by its share of every size,
+            # the inverse of ``concat`` joining each device's pieces, so a
+            # fused weight such as gate-up stays sharded.
+            local = [size // pieces for size in static]
+            return list(
+                call_on_mesh(
+                    lambda piece: ops.split(piece, local, axis),
+                    x.mesh,
+                    out_specs=x.mapping,
+                )(x)
+            )
     return _split_impl(x, split_sizes, axis)
 
 
@@ -2861,7 +2827,7 @@ Raises:
 
 def _reduce_op(
     graph_op: Callable[..., object],
-    rule: Callable[..., ActionSet],
+    rule: Callable[..., list[AxisAssignment]],
 ) -> Callable[..., Tensor]:
     """Builds a reduction wrapper.
 
@@ -2885,7 +2851,7 @@ def _reduce_op(
 
 def _reduce_elementwise_op(
     graph_op: Callable[..., object],
-    rule: Callable[..., ActionSet],
+    rule: Callable[..., list[AxisAssignment]],
     elementwise_fn: Callable[[Tensor, Tensor], Tensor],
 ) -> Callable[..., Tensor]:
     """Builds a function that reduces (1 arg) or runs elementwise (2 args)."""
@@ -2909,7 +2875,7 @@ def _reduce_elementwise_op(
 sum = _reduce_op(ops.sum, rule=linear_reduce_rule)
 #: Computes the mean along one or more axes. Distributed via SPMD.
 #: See :func:`max.graph.ops.mean` for details.
-mean = _reduce_op(ops.mean, rule=mean_rule)
+mean = _reduce_op(ops.mean, rule=reduce_rule)
 #: Computes the product along one or more axes. Distributed via SPMD.
 #: See :func:`max.graph.ops.prod` for details.
 prod = _reduce_op(ops.prod, rule=reduce_rule)
@@ -3108,7 +3074,7 @@ softmax = functional(ops.softmax, rule=softmax_rule)
 logsoftmax = functional(ops.logsoftmax, rule=softmax_rule)
 #: Computes the cumulative sum along an axis. Distributed via SPMD.
 #: See :func:`max.graph.ops.cumsum` for details.
-cumsum = functional(ops.cumsum, rule=linear_reduce_rule)
+cumsum = functional(ops.cumsum, rule=reduce_rule)
 cumsum.__doc__ = """Computes the cumulative sum of a tensor along an axis.
 
 Args:
@@ -3512,13 +3478,13 @@ Raises:
         wrong number of elements.
 """
 
-resize_linear = functional(ops.resize_linear, rule=resize_linear_rule)
+resize_linear = functional(ops.resize_linear, rule=resize_rule)
 #: Resizes a tensor using nearest-neighbor interpolation. Distributed via SPMD.
 #: See :func:`max.graph.ops.resize_nearest` for details.
-resize_nearest = functional(ops.resize_nearest, rule=resize_nearest_rule)
+resize_nearest = functional(ops.resize_nearest, rule=resize_rule)
 #: Resizes a tensor using bicubic interpolation. Distributed via SPMD.
 #: See :func:`max.graph.ops.resize_bicubic` for details.
-resize_bicubic = functional(ops.resize_bicubic, rule=resize_bicubic_rule)
+resize_bicubic = functional(ops.resize_bicubic, rule=resize_rule)
 #: Computes the inverse real FFT. Distributed via SPMD.
 #: See :func:`max.graph.ops.irfft` for details.
 irfft = functional(ops.irfft, rule=irfft_rule)
@@ -3704,45 +3670,109 @@ def _side_stream_graph(
     )
 
 
-side_stream = functional(_side_stream_graph)
-side_stream.__doc__ = """Runs a block of ops on a side device stream.
+_side_stream_on_device = functional(_side_stream_graph)
 
-The body executes on the device stream selected by ``stream_id``,
-overlapping independent work on the default stream. The graph compiler
-inserts the cross-stream synchronization at the region boundary, so
-callers never manage streams or events directly.
 
-``body_fn`` receives one :class:`Tensor` per input and returns one
-:class:`Tensor` per ``result_types`` entry. The inputs aren't sharded
-per device: one region may take shards from several devices, and it covers
-exactly the devices those shards live on.
+def side_stream(
+    inputs: Sequence[Tensor],
+    body_fn: Callable[..., Tensor | Iterable[Tensor]],
+    *,
+    result_types: Sequence[TensorType] | None = None,
+    stream_id: int = 1,
+) -> list[Tensor]:
+    """Runs a block of ops on a side device stream.
 
-.. Skipped: Metal device contexts expose only the default stream, so
-   ``stream_id=1`` fails with "invalid stream id".
-.. skip: next if(__import__("sys").platform == "darwin", "no side streams on Metal")
+    The body executes on the device stream selected by ``stream_id``,
+    overlapping independent work on the default stream. The graph compiler
+    inserts the cross-stream synchronization at the region boundary, so
+    callers never manage streams or events directly.
 
-.. code-block:: python
+    For tensors on one device each, ``body_fn`` receives one
+    :class:`Tensor` per input and returns one per ``result_types`` entry;
+    one region may take tensors from several devices. For distributed
+    tensors, ``body_fn`` receives the distributed tensors and runs as
+    Tensor code in one region over their devices; it returns one tensor per
+    input, shaped and placed as that input.
 
-    from max.experimental import functional as F
+    .. Skipped: Metal device contexts expose only the default stream, so
+       ``stream_id=1`` fails with "invalid stream id".
+    .. skip: next if(__import__("sys").platform == "darwin", "no side streams on Metal")
 
-    (y,) = F.side_stream([x], lambda x: x * 2, result_types=[x.type])
+    .. code-block:: python
 
-Args:
-    inputs: Non-distributed tensors passed to ``body_fn``, one argument
-        each.
-    body_fn: A callable that takes one :class:`Tensor` per input and
-        returns a :class:`Tensor` or a sequence of them.
-    result_types: The body's output types, one per result.
-    stream_id: The device stream to run the body on. ``0`` is the default
-        stream. Defaults to ``1``.
+        from max.experimental import functional as F
 
-Returns:
-    One :class:`Tensor` per ``result_types`` entry.
+        (y,) = F.side_stream([x], lambda x: x * 2, result_types=[x.type])
 
-Raises:
-    ValueError: If ``body_fn`` returns a different number of tensors than
-        ``result_types`` has entries.
-"""
+    Args:
+        inputs: The tensors passed to ``body_fn``, one argument each.
+        body_fn: A callable that takes one :class:`Tensor` per input and
+            returns a :class:`Tensor` or a sequence of them.
+        result_types: The body's output types, one per result, for tensors
+            on one device each. Distributed results take their inputs'
+            types.
+        stream_id: The device stream to run the body on. ``0`` is the
+            default stream. Defaults to ``1``.
+
+    Returns:
+        One :class:`Tensor` per result.
+
+    Raises:
+        ValueError: If ``body_fn`` returns a different number of tensors than
+            expected.
+    """
+    inputs = list(inputs)
+    if not any_distributed(tuple(inputs)):
+        if result_types is None:
+            result_types = [value.type for value in inputs]
+        return list(
+            _side_stream_on_device(
+                inputs, body_fn, result_types=result_types, stream_id=stream_id
+            )
+        )
+    mappings = [value.mapping for value in inputs]
+
+    def on_streams(*shards: list[Tensor]) -> list[tuple[TensorValue, ...]]:
+        devices = len(shards[0])
+
+        def body(*values: TensorValue) -> list[TensorValue]:
+            joined = [
+                Tensor.from_shard_values(
+                    values[i * devices : (i + 1) * devices], mapping
+                )
+                for i, mapping in enumerate(mappings)
+            ]
+            out = body_fn(*joined)
+            results = [out] if isinstance(out, Tensor) else list(out)
+            if len(results) != len(inputs):
+                raise ValueError(
+                    f"side_stream body returned {len(results)} tensors for "
+                    f"{len(inputs)} inputs."
+                )
+            return [
+                TensorValue(shard)
+                for result in results
+                for shard in result.local_shards
+            ]
+
+        values = [TensorValue(shard) for group in shards for shard in group]
+        results = ops.side_stream(
+            values,
+            body,
+            result_types=[value.type for value in values],
+            stream_id=stream_id,
+        )
+        return [
+            tuple(results[i * devices + d] for i in range(len(inputs)))
+            for d in range(devices)
+        ]
+
+    mesh = inputs[0].mesh
+    return list(
+        call_on_mesh(on_streams, mesh, mesh.axis_names, out_specs=mappings)(
+            *inputs
+        )
+    )
 
 
 # Mutation ops: hand-rolled because they write in-place via __buffervalue__().
@@ -3757,8 +3787,11 @@ def buffer_store(destination: Tensor, source: Tensor) -> None:
             ``destination``.
     """
     if destination.is_distributed:
-        buffer_store_rule(
-            tensor_to_layout(destination), tensor_to_layout(source)
+        pick_reshard_action(
+            buffer_store_rule(destination.layout, source.layout),
+            (destination.layout, source.layout),
+            op_name="buffer_store",
+            operand_names=(),
         )
 
         call_on_mesh(
@@ -3787,8 +3820,11 @@ def buffer_store_slice(
         indices: The slice specification within ``destination`` to write to.
     """
     if destination.is_distributed:
-        buffer_store_slice_rule(
-            tensor_to_layout(destination), tensor_to_layout(source), indices
+        pick_reshard_action(
+            buffer_store_slice_rule(destination.layout, source.layout, indices),
+            (destination.layout, source.layout),
+            op_name="buffer_store_slice",
+            operand_names=(),
         )
 
         def store_slice(shard: Tensor, source_shard: Tensor) -> None:
@@ -3909,12 +3945,23 @@ def clamp(
 
 
 clip = clamp
-rebind = functional(ops.rebind, rule=rebind_rule)
+_rebind_impl = functional(ops.rebind, rule=rebind_rule)
+
+
+def rebind(
+    x: Tensor, shape: ShapeLike, message: str = "", layout: object = None
+) -> Tensor:
+    if isinstance(x, Tensor) and x.is_distributed:
+        shape = localize_same_shape_target(x.layout, shape)
+    return _rebind_impl(x, shape, message, layout)
+
+
 rebind.__doc__ = """Rebinds the symbolic shape of a tensor.
 
 Asserts at runtime that the tensor's dimensions match the new shape.
 Useful for narrowing dynamic dimensions to specific sizes when you have
-external knowledge of their values.
+external knowledge of their values. On a distributed tensor, ``shape`` is
+the global shape, and each device asserts its own shard's sizes.
 
 Args:
     x: The input tensor.
@@ -3926,6 +3973,10 @@ Args:
 
 Returns:
     A tensor with the same data and the new symbolic shape.
+
+Raises:
+    ShardingError: If ``shape`` gives a sharded axis a size other than its
+        global size.
 """
 
 group_norm.__doc__ = """Computes group normalization over the channel axis of ``input``.

@@ -15,42 +15,26 @@
 
 from __future__ import annotations
 
-from max.experimental.sharding import DeviceMapping, Sharded
 from max.experimental.sharding.types import TensorLayout
 from max.graph.ops.slice_tensor import SliceIndices
 
-from ..action import Action, ActionSet, AxisAssignment
-from ..cost import P, R, build_action_set
+from ..action import AxisAssignment, pass_through_rows
+from ..cost import R
+from ..placements import Placement, Sharded, Unknown
 
 
-def _output_mirrors_first_input(action: Action) -> Action:
-    """Forces the output mapping to mirror ``inputs[0]`` (the destination)."""
-    dest = action.inputs[0]
-    assert isinstance(dest, DeviceMapping)
-    return Action(inputs=action.inputs, outputs=(dest,))
-
-
-def _shared_axis_rows(
-    destination: TensorLayout, source: TensorLayout
-) -> list[AxisAssignment]:
-    return [
-        AxisAssignment((R, R), R),
-        *(
-            AxisAssignment((Sharded(d), Sharded(d)), Sharded(d))
-            for d in range(destination.rank)
-        ),
-        AxisAssignment((P, P), P),
-    ]
+def _placed_alike(actuals: tuple[Placement, ...]) -> bool:
+    """Returns whether both operands share a placement, or either is Unknown."""
+    return actuals[0] == actuals[1] or Unknown() in actuals
 
 
 def buffer_store_rule(
     destination: TensorLayout, source: TensorLayout
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``buffer_store``: destination and source share placement."""
-    return build_action_set(
-        _shared_axis_rows(destination, source),
-        layouts=(destination, source),
-        finalize=_output_mirrors_first_input,
+    return pass_through_rows(
+        (destination, source),
+        lambda actuals: () if _placed_alike(actuals) else None,
     )
 
 
@@ -58,11 +42,14 @@ def buffer_store_slice_rule(
     destination: TensorLayout,
     source: TensorLayout,
     indices: SliceIndices,
-) -> ActionSet:
-    """Strategies for ``buffer_store_slice``: same shape table as ``buffer_store``."""
-    return build_action_set(
-        _shared_axis_rows(destination, source),
-        layouts=(destination, source),
-        extras=(indices,),
-        finalize=_output_mirrors_first_input,
+) -> list[AxisAssignment]:
+    """Returns the rows for ``buffer_store_slice``: each device writes its own shard."""
+    return pass_through_rows(
+        (destination, source),
+        lambda actuals: (
+            ()
+            if _placed_alike(actuals)
+            or (isinstance(actuals[0], Sharded) and actuals[1] == R)
+            else None
+        ),
     )

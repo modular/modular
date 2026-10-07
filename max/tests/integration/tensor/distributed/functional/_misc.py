@@ -42,7 +42,6 @@ from max.experimental.sharding import (
     Replicated,
     Sharded,
 )
-from max.experimental.sharding.placements import ReduceOp
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 
@@ -142,7 +141,7 @@ class _Conv2dInputChannelParallel:
         # C_in is axis 2 in RSCF filter
         f = transfer_to(Tensor(f_np), DeviceMapping(self.MESH_2, (Sharded(2),)))
         result = F.conv2d(x, f)
-        assert result.placements == (Partial(ReduceOp.SUM),)
+        assert result.placements == (Partial(),)
 
     def test_conv2d_cin_sharded_numerics(self) -> None:
         """S(C_in) x S(C_in_f) -> Partial, gathered result correct."""

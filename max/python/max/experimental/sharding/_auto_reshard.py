@@ -34,7 +34,7 @@ from contextlib import contextmanager
 from types import FrameType
 from typing import Literal
 
-from .action import Action, ActionSet, AxisAssignment
+from .action import Action, AxisAssignment
 from .cost import feasible_rows_at_axis, tensor_byte_count, transition_cost
 from .mappings import DeviceMapping
 from .mesh import DeviceMesh
@@ -89,9 +89,8 @@ def auto_reshard(
     :data:`DEFAULT_TRANSITIONS` and moves inputs silently; an argument
     left out keeps the enclosing block's setting. Use ``"warn"`` to find
     the moves an op makes, and ``"raise"`` to require each one to be
-    written as an explicit ``transfer_to``. Moving an input from another
-    mesh onto the op's mesh counts as a move, whatever its placement there.
-    Also works as a decorator. For example:
+    written as an explicit ``transfer_to``. Also works as a decorator. For
+    example:
 
     .. invisible-code-block: python
 
@@ -186,7 +185,8 @@ def row_transitions(
 
 
 def pick_reshard_action(
-    action_set: ActionSet,
+    rows: Sequence[AxisAssignment],
+    layouts: tuple[TensorLayout, ...],
     *,
     op_name: str,
     operand_names: Sequence[str],
@@ -198,34 +198,56 @@ def pick_reshard_action(
     mesh-axis size.
 
     Args:
-        action_set: The rows the op's rule offers.
+        rows: The rows the op's rule offers.
+        layouts: The op's tensor operands, in the order the rows place them.
         op_name: The name of the op, used in the report.
         operand_names: The names of the op's tensor operands, used in the
             report.
 
     Returns:
-        The chosen action: the placement every operand takes, the placement
-        the result takes, and any per-shard argument overrides.
+        The chosen action: the placement every operand takes and the
+        placement each result takes.
 
     Raises:
-        ShardingError: If no row is feasible or allowed on some mesh axis,
-            or if the chosen rows move an operand while ``mode`` is
-            ``"raise"``.
+        ShardingError: If no rows can place this call. This includes when
+            the rule returns no rows, a row does not place every operand or
+            names a different number of results, the operands sit on meshes
+            of different shapes or axis names, no row is feasible or allowed
+            on some mesh axis, or the chosen rows move an operand while
+            ``mode`` is ``"raise"``.
     """
+    if not rows:
+        raise ShardingError("A rule must declare at least one placement row.")
+    for row in rows:
+        if len(row.needed_inputs) != len(layouts):
+            raise ShardingError(
+                "Every rule row must place every tensor operand."
+            )
+        if len(row.outputs) != len(rows[0].outputs):
+            raise ShardingError(
+                "Every rule row must declare the same tensor outputs."
+            )
+    mesh = next(
+        (layout.mesh for layout in layouts if layout.mesh.num_devices > 1),
+        layouts[0].mesh,
+    )
+    if any(
+        layout.mesh.num_devices > 1
+        and (layout.mesh.mesh_shape, layout.mesh.axis_names)
+        != (mesh.mesh_shape, mesh.axis_names)
+        for layout in layouts
+    ):
+        raise ShardingError(
+            "A rule's tensor operands must be on meshes with the same shape "
+            "and axis names."
+        )
     allowed, mode = _AUTO_RESHARD_POLICY.get()
-    mesh = action_set.mesh
     placements = [
         [
             p[axis] if axis < len(p) else Replicated()
             for axis in range(mesh.ndim)
         ]
-        for p in (l.mapping.placements for l in action_set.layouts)
-    ]
-    # An input from another mesh always moves, and not by a placement transition.
-    cross_mesh_slots = [
-        slot
-        for slot, layout in enumerate(action_set.layouts)
-        if layout.mapping.mesh != mesh
+        for p in (l.mapping.placements for l in layouts)
     ]
     per_axis: list[MeshAxisChoice] = []
     for axis in range(mesh.ndim):
@@ -233,7 +255,7 @@ def pick_reshard_action(
         scored: list[tuple[float, int, AxisAssignment]] = []
         for row in dict.fromkeys(
             feasible_rows_at_axis(
-                action_set, axis, [tuple(p) for p in placements]
+                rows, layouts, mesh, axis, [tuple(p) for p in placements]
             )
         ):
             moved = moved_input_slots(current, row)
@@ -241,7 +263,7 @@ def pick_reshard_action(
                 transition_cost(
                     current[slot],
                     row.needed_inputs[slot],
-                    message_bytes=tensor_byte_count(action_set.layouts[slot]),
+                    message_bytes=tensor_byte_count(layouts[slot]),
                     mesh=mesh,
                     axis_index=axis,
                 )
@@ -278,7 +300,7 @@ def pick_reshard_action(
             placements[slot][axis] = needed
 
     undecided = any(chosen is None for _, _, chosen, _ in per_axis)
-    moves = bool(cross_mesh_slots) or any(
+    moves = any(
         moved_input_slots(current, committed)
         for current, _, _, committed in per_axis
     )
@@ -286,29 +308,49 @@ def pick_reshard_action(
         report = format_reshard_report(
             op_name=op_name,
             operand_names=operand_names,
-            operand_layouts=action_set.layouts,
+            operand_layouts=layouts,
             mesh=mesh,
             allowed_transitions=allowed,
             mode=mode,
             per_axis=per_axis,
-            cross_mesh_slots=cross_mesh_slots,
         )
         if undecided or mode == "raise":
             raise ShardingError(report)
         warnings.warn(report, UserWarning, stacklevel=4)
-    action = Action(
-        inputs=(
-            *(DeviceMapping(mesh, tuple(p)) for p in placements),
-            *action_set.extras,
-        ),
-        outputs=(
-            DeviceMapping(
-                mesh, tuple(committed.output for *_, committed in per_axis)
-            ),
-        ),
+    committed_rows = [committed for *_, committed in per_axis]
+    return Action(
+        inputs=_inputs_with_chosen_mappings(layouts, committed_rows),
+        outputs=_outputs_with_chosen_mappings(mesh, committed_rows),
     )
-    # Rows are costed as plain mappings; only the result is finalized.
-    return action_set.finalize(action) if action_set.finalize else action
+
+
+def _inputs_with_chosen_mappings(
+    layouts: tuple[TensorLayout, ...], rows: Sequence[AxisAssignment]
+) -> tuple[DeviceMapping, ...]:
+    """Returns one mapping per tensor operand, as the chosen rows place it."""
+
+    def place(slot: int, layout: TensorLayout) -> DeviceMapping:
+        own = layout.mapping.mesh
+        if own.num_devices == 1:
+            return layout.mapping
+        # A row names placements, not devices, so an operand stays on its
+        # own mesh. Moving it to another mesh is up to the caller's
+        # ``transfer_to``.
+        return DeviceMapping(
+            own, tuple(row.needed_inputs[slot] for row in rows)
+        )
+
+    return tuple(place(i, l) for i, l in enumerate(layouts))
+
+
+def _outputs_with_chosen_mappings(
+    mesh: DeviceMesh, rows: Sequence[AxisAssignment]
+) -> tuple[DeviceMapping, ...]:
+    """Returns one mapping per result, reading each mesh axis's row for it."""
+    return tuple(
+        DeviceMapping(mesh, tuple(row.outputs[i] for row in rows))
+        for i in range(len(rows[0].outputs))
+    )
 
 
 _FRAMEWORK_MODULE_PREFIXES = (
@@ -330,7 +372,6 @@ def format_reshard_report(
     allowed_transitions: frozenset[Transition],
     mode: str,
     per_axis: Sequence[MeshAxisChoice],
-    cross_mesh_slots: Sequence[int],
 ) -> str:
     """Lays out every input, then the picker's choice on each mesh axis.
 
@@ -352,8 +393,6 @@ def format_reshard_report(
             ``"raise"``.
         per_axis: What the picker saw and did on each mesh axis, in
             mesh-axis order.
-        cross_mesh_slots: The operands that sit on another mesh; they count
-            as moved.
 
     Returns:
         The report, ready to print or to carry in a warning or an error.
@@ -368,12 +407,9 @@ def format_reshard_report(
         if chosen is None
     ]
     moved_slots = {
-        *cross_mesh_slots,
-        *(
-            slot
-            for current, _, _, committed in per_axis
-            for slot in moved_input_slots(current, committed)
-        ),
+        slot
+        for current, _, _, committed in per_axis
+        for slot in moved_input_slots(current, committed)
     }
     call = f"{op_name}({', '.join(names)})"
     if undecided_axes:
@@ -405,7 +441,7 @@ def format_reshard_report(
     if per_axis:
         lines += ["", "  decided per mesh axis"]
         lines += _format_candidate_table(
-            names, mesh, allowed_transitions, per_axis, cross_mesh_slots
+            names, mesh, allowed_transitions, per_axis
         )
         lines.append("")
         for slot, name in enumerate(names):
@@ -447,7 +483,6 @@ def _format_candidate_table(
     mesh: DeviceMesh,
     allowed_transitions: frozenset[Transition],
     per_axis: Sequence[MeshAxisChoice],
-    cross_mesh_slots: Sequence[int],
 ) -> list[str]:
     """Formats one aligned line per candidate row, then the result line."""
     table = [["axis", *names, "-> out", "collective", "bytes", "status"]]
@@ -465,22 +500,19 @@ def _format_candidate_table(
                     else f"{_placement_short_code(src)}->{_placement_short_code(dst)}"
                 )
                 line.append(f"{name}{{{change}}}")
-            line.append(f"-> {_placement_short_code(row.output)}")
+            line.append(
+                "-> "
+                + _format_outputs(_placement_short_code(o) for o in row.outputs)
+            )
             collectives = [
                 f"{current[s].transition_to(row.needed_inputs[s]).value}"
                 f"({names[s]})"
                 for s in moved
-                if s not in cross_mesh_slots
-            ]
-            collectives += [
-                f"cross_mesh_transfer({names[s]})" for s in cross_mesh_slots
             ]
             line.append(", ".join(collectives) or "keep")
             line.append(f"{cost:g}".rjust(6))
             if row == chosen:
-                resharded = ", ".join(
-                    names[s] for s in sorted({*moved, *cross_mesh_slots})
-                )
+                resharded = ", ".join(names[s] for s in moved)
                 line.append(
                     f"chosen, reshards {resharded}" if resharded else "chosen"
                 )
@@ -497,7 +529,13 @@ def _format_candidate_table(
                     f"{name}{_format_placements(mesh, (r.needed_inputs[i] for r in committed_rows))}"
                     for i, name in enumerate(names)
                 ),
-                f"-> {_format_placements(mesh, (r.output for r in committed_rows))}",
+                "-> "
+                + _format_outputs(
+                    _format_placements(
+                        mesh, (r.outputs[i] for r in committed_rows)
+                    )
+                    for i in range(len(committed_rows[0].outputs))
+                ),
             ]
         )
     widths = [
@@ -529,6 +567,12 @@ def _format_layout(layout: TensorLayout) -> str:
         f"{dtype}[{shape}]@mesh({grid})"
         f"{_format_placements(mesh, layout.mapping.placements)}"
     )
+
+
+def _format_outputs(codes: Iterable[str]) -> str:
+    """Formats one result bare and several as a parenthesized tuple."""
+    rendered = list(codes)
+    return rendered[0] if len(rendered) == 1 else f"({', '.join(rendered)})"
 
 
 def _format_placements(

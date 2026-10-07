@@ -18,8 +18,8 @@ from __future__ import annotations
 from max.experimental.sharding.placements import Sharded
 from max.experimental.sharding.types import TensorLayout
 
-from ..action import ActionSet, AxisAssignment
-from ..cost import R, build_action_set
+from ..action import AxisAssignment
+from ..cost import R
 
 
 def layer_norm_rule(
@@ -27,16 +27,13 @@ def layer_norm_rule(
     gamma: TensorLayout,
     beta: TensorLayout,
     epsilon: float,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``layer_norm``: shard only on leading (pre-norm) axes."""
     leading = range(input.rank - gamma.rank)
-    rows = [
-        AxisAssignment((R, R, R), R),
-        *(AxisAssignment((Sharded(d), R, R), Sharded(d)) for d in leading),
+    return [
+        AxisAssignment((R, R, R), (R,)),
+        *(AxisAssignment((Sharded(d), R, R), (Sharded(d),)) for d in leading),
     ]
-    return build_action_set(
-        rows, layouts=(input, gamma, beta), extras=(epsilon,)
-    )
 
 
 def rms_norm_rule(
@@ -45,15 +42,10 @@ def rms_norm_rule(
     epsilon: float,
     weight_offset: float = 0.0,
     multiply_before_cast: bool = False,
-) -> ActionSet:
+) -> list[AxisAssignment]:
     """Strategies for ``rms_norm``: shard only on leading (pre-norm) axes."""
     leading = range(input.rank - weight.rank)
-    rows = [
-        AxisAssignment((R, R), R),
-        *(AxisAssignment((Sharded(d), R), Sharded(d)) for d in leading),
+    return [
+        AxisAssignment((R, R), (R,)),
+        *(AxisAssignment((Sharded(d), R), (Sharded(d),)) for d in leading),
     ]
-    return build_action_set(
-        rows,
-        layouts=(input, weight),
-        extras=(epsilon, weight_offset, multiply_before_cast),
-    )
