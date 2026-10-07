@@ -37,6 +37,7 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    TileTensor,
     UNKNOWN_VALUE,
     lt_to_tt,
     coord_to_index_list,
@@ -599,14 +600,25 @@ def produce[
     @inline(.nodebug)
     def q_producer(
         q_idx: UInt32, offset: UInt32 = 0
-    ) -> LayoutTensor[
+    ) -> TileTensor[
         qkv_type,
-        Layout.row_major(coord_to_index_list(q_tile_shape)),
+        type_of(row_major(q_tile_shape)),
         type_of(q_smem).origin,
         address_space=.SHARED,
-        alignment=128,
+        linear_idx_type=.int32,
     ]:
-        return {q_smem + UInt32(q_size) * q_idx + offset}
+        # The allocation and unchanged stage/swizzle offsets preserve TMA's
+        # 128-byte destination alignment, which TileTensor does not encode.
+        return TileTensor[
+            qkv_type,
+            type_of(row_major(q_tile_shape)),
+            type_of(q_smem).origin,
+            address_space=.SHARED,
+            linear_idx_type=.int32,
+        ](
+            q_smem + UInt32(q_size) * q_idx + offset,
+            row_major(q_tile_shape),
+        )
 
     comptime assert pipeline_stages >= 2
 
