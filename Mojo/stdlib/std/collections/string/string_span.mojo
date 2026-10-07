@@ -2161,7 +2161,9 @@ struct StringSpan[origin: ImmOrigin](
                     str_len += is_r_n
                 else:
                     str_len -= splat(likely(is_new_line)) & char_len
-                    var is_r_n = unlikely(prev_b0 == `\r` and b0 == `\n`)
+                    var is_r_n = unlikely(
+                        prev_b0 == `\r` and b0 == `\n` and str_len == 0
+                    )
                     prev_b0 = b0
                     if is_r_n:  # the line was already appended
                         line_start = line_end
