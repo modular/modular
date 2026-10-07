@@ -53,8 +53,9 @@ from std.bit import log2_floor
 from std.math.math import max as _max, min as _min
 from std._gpu import lane_id
 from std._gpu.intrinsics import permlane_shuffle
-from std._gpu.globals import WARP_SIZE
 from std.memory import bitcast
+
+from max.gpu.globals import WARP_SIZE
 
 # TODO (#24457): support shuffles with width != 32
 comptime _WIDTH_MASK = WARP_SIZE - 1

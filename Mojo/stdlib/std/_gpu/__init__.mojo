@@ -28,4 +28,3 @@ from .primitives import (
     lane_id,
     thread_idx,
 )
-from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE

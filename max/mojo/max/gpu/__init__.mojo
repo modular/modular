@@ -40,11 +40,11 @@ For an example of launching a GPU kernel from a MAX custom operation, see the
 in the MAX repo.
 """
 
+from .globals import MAX_THREADS_PER_BLOCK_METADATA, WARP_SIZE
+
 
 @__doc_inline
 from std._gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    WARP_SIZE,
     block_dim,
     block_id_in_cluster,
     block_idx,
