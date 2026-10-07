@@ -585,6 +585,15 @@ This version is still a work in progress.
   It supports static per-tensor FP8: an `float8_e4m3fn` weight with a
   `weight_scale` and an `input_scale`, the layout modelopt FP8 checkpoints
   use.
+- Added the `QuantConfig.blockscaled_fp8()`, `QuantConfig.mxfp4()`, and
+  `QuantConfig.nvfp4()` constructors in `max.nn.quant_config`, which build
+  the scale specs of block-scaled FP8 (N x N weight blocks, dynamic 1 x N
+  activation blocks), MXFP4 (E8M0 per 32, dynamic activations), and modelopt
+  NVFP4 checkpoints.
+- Added `max.pipelines.weights.read_modelopt_quantized_layers()`, which reads
+  the per-module `quantized_layers` map of a modelopt `MIXED_PRECISION`
+  checkpoint and refuses any module, algorithm, or group size the caller did
+  not declare it can load.
 
 ### C API
 

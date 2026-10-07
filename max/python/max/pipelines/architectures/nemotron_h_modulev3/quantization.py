@@ -25,6 +25,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.nn.quant_config import (
+    NVFP4_BLOCK_SIZE,
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -32,8 +33,9 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.pipelines.weights.quant import read_modelopt_quantized_layers
 
-NVFP4_GROUP_SIZE = 16
+NVFP4_GROUP_SIZE = NVFP4_BLOCK_SIZE
 """Inputs covered by one NVFP4 block scale."""
 
 
@@ -226,40 +228,20 @@ def parse_quant_scheme(
         The scheme.
 
     Raises:
-        NotImplementedError: If the config uses an algorithm Nemotron-H does
-            not read.
-        ValueError: If a ``MIXED_PRECISION`` config has no
-            ``quantized_layers`` map.
+        ValueError: If the config is not modelopt ``MIXED_PRECISION``, has
+            no ``quantized_layers`` map, or quantizes a module with an
+            algorithm or group size Nemotron-H does not read.
     """
     if not hf_quant_config:
         return NemotronHQuantScheme(quantized={})
-    quant_algo = hf_quant_config.get("quant_algo")
-    if quant_algo != "MIXED_PRECISION":
-        raise NotImplementedError(
-            f"Nemotron-H cannot read quant_algo {quant_algo!r}; only "
-            "modelopt 'MIXED_PRECISION' checkpoints are supported."
-        )
-    quantized_layers = hf_quant_config.get("quantized_layers")
-    if not isinstance(quantized_layers, Mapping) or not quantized_layers:
-        raise ValueError(
-            "quant_algo 'MIXED_PRECISION' needs a 'quantized_layers' map "
-            "naming each module's algorithm, and the config has none"
-        )
-    quantized: dict[str, ModuleFormat] = {}
-    for module, entry in quantized_layers.items():
-        algo = entry.get("quant_algo") if isinstance(entry, Mapping) else None
-        fmt = _ALGO_FORMATS.get(algo) if isinstance(algo, str) else None
-        if fmt is None:
-            raise NotImplementedError(
-                f"'{module}' is quantized as {algo!r}; Nemotron-H reads "
-                f"{sorted(_ALGO_FORMATS)} only."
-            )
-        if fmt is ModuleFormat.NVFP4_WEIGHT_ONLY:
-            group_size = entry.get("group_size")
-            if group_size != NVFP4_GROUP_SIZE:
-                raise NotImplementedError(
-                    f"'{module}' declares NVFP4 group_size {group_size!r}; "
-                    f"only {NVFP4_GROUP_SIZE} is supported."
-                )
-        quantized[str(module)] = fmt
-    return NemotronHQuantScheme(quantized=quantized)
+    modules = read_modelopt_quantized_layers(
+        hf_quant_config,
+        allowed={("FP8", None), ("W4A16_NVFP4", NVFP4_GROUP_SIZE)},
+        model_name="Nemotron-H",
+    )
+    return NemotronHQuantScheme(
+        quantized={
+            module: _ALGO_FORMATS[quant.quant_algo]
+            for module, quant in modules.items()
+        }
+    )

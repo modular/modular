@@ -15,12 +15,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
 from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, DimLike, Shape, TensorType
+
+NVFP4_BLOCK_SIZE = 16
+"""Inputs covered by one NVFP4 weight block scale."""
+
+MXFP4_BLOCK_SIZE = 32
+"""Inputs covered by one MXFP4 weight block scale."""
 
 
 class ScaleGranularity(Enum):
@@ -308,6 +315,153 @@ class QuantConfig:
     kernel. Must be set in lockstep with the weight loader actually
     applying the preshuffle (e.g. Kimi K2.5's
     ``weight_adapters.py:_shuffle_group``)."""
+
+    @classmethod
+    def blockscaled_fp8(
+        cls,
+        *,
+        mlp_quantized_layers: Iterable[int],
+        attn_quantized_layers: Iterable[int],
+        block_size: int = 128,
+        scale_dtype: DType = DType.float32,
+        embedding_output_dtype: DType | None = None,
+        bias_dtype: DType | None = None,
+    ) -> QuantConfig:
+        """Builds a block-scaled FP8 E4M3 config, as in DeepSeek-V3's ``fp8``.
+
+        Each weight has one scale per ``block_size`` x ``block_size`` block.
+        Activations are quantized at runtime with one scale per token per
+        ``block_size`` inputs.
+
+        Args:
+            mlp_quantized_layers: Layer indices whose MLPs are quantized.
+            attn_quantized_layers: Layer indices whose attention projections
+                are quantized.
+            block_size: The side of a weight scale block, and the width of an
+                activation scale block.
+            scale_dtype: The dtype of the weight and activation scales.
+            embedding_output_dtype: The dtype of the embedding output.
+            bias_dtype: The dtype of the bias weights.
+
+        Returns:
+            The config.
+        """
+        return cls(
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
+                dtype=scale_dtype,
+                block_size=(1, block_size),
+            ),
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                dtype=scale_dtype,
+                block_size=(block_size, block_size),
+            ),
+            mlp_quantized_layers=set(mlp_quantized_layers),
+            attn_quantized_layers=set(attn_quantized_layers),
+            embedding_output_dtype=embedding_output_dtype,
+            bias_dtype=bias_dtype,
+            format=QuantFormat.BLOCKSCALED_FP8,
+        )
+
+    @classmethod
+    def mxfp4(
+        cls,
+        *,
+        mlp_quantized_layers: Iterable[int],
+        attn_quantized_layers: Iterable[int] = (),
+        embedding_output_dtype: DType | None = None,
+        bias_dtype: DType | None = None,
+        can_use_fused_mlp: bool = False,
+    ) -> QuantConfig:
+        """Builds an OCP MXFP4 config with dynamic MXFP8 activations.
+
+        Weights are packed E2M1 codes with one E8M0 scale per 32 inputs.
+        Activations are quantized at runtime over the same 32-input blocks.
+
+        Args:
+            mlp_quantized_layers: Layer indices whose MLPs are quantized.
+            attn_quantized_layers: Layer indices whose attention projections
+                are quantized.
+            embedding_output_dtype: The dtype of the embedding output.
+            bias_dtype: The dtype of the bias weights.
+            can_use_fused_mlp: Whether the fused MLP path may be used.
+
+        Returns:
+            The config.
+        """
+        return cls(
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.DYNAMIC,
+                dtype=DType.float32,
+                block_size=(1, MXFP4_BLOCK_SIZE),
+            ),
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                dtype=DType.float8_e8m0fnu,
+                block_size=(1, MXFP4_BLOCK_SIZE),
+            ),
+            mlp_quantized_layers=set(mlp_quantized_layers),
+            attn_quantized_layers=set(attn_quantized_layers),
+            embedding_output_dtype=embedding_output_dtype,
+            bias_dtype=bias_dtype,
+            format=QuantFormat.MXFP4,
+            can_use_fused_mlp=can_use_fused_mlp,
+        )
+
+    @classmethod
+    def nvfp4(
+        cls,
+        *,
+        mlp_quantized_layers: Iterable[int],
+        attn_quantized_layers: Iterable[int],
+        embedding_output_dtype: DType | None = None,
+        bias_dtype: DType | None = None,
+        shared_experts_weight_dtype: DType | None = None,
+        can_use_fused_mlp: bool = False,
+    ) -> QuantConfig:
+        """Builds a modelopt NVFP4 config.
+
+        Weights are packed E2M1 codes with one E4M3 scale per 16 inputs and a
+        float32 per-tensor scale. The activation's per-tensor scale is static,
+        calibrated into the checkpoint; its 16-input block scales are computed
+        at runtime against it.
+
+        Args:
+            mlp_quantized_layers: Layer indices whose MLPs are quantized.
+            attn_quantized_layers: Layer indices whose attention projections
+                are quantized.
+            embedding_output_dtype: The dtype of the embedding output.
+            bias_dtype: The dtype of the bias weights.
+            shared_experts_weight_dtype: The weight dtype of the MoE shared
+                experts, when it differs from the routed experts'.
+            can_use_fused_mlp: Whether the fused MLP path may be used.
+
+        Returns:
+            The config.
+        """
+        return cls(
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                origin=ScaleOrigin.STATIC,
+                dtype=DType.float32,
+                block_size=(1, NVFP4_BLOCK_SIZE),
+            ),
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
+                dtype=DType.float8_e4m3fn,
+                block_size=(1, NVFP4_BLOCK_SIZE),
+            ),
+            mlp_quantized_layers=set(mlp_quantized_layers),
+            attn_quantized_layers=set(attn_quantized_layers),
+            embedding_output_dtype=embedding_output_dtype,
+            bias_dtype=bias_dtype,
+            shared_experts_weight_dtype=shared_experts_weight_dtype,
+            format=QuantFormat.NVFP4,
+            can_use_fused_mlp=can_use_fused_mlp,
+        )
 
     @property
     def scales_granularity_mnk(self) -> tuple[int, int, int]:

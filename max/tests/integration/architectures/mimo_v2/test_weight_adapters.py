@@ -586,7 +586,7 @@ def test_defect_fails_loudly(
                     }
                 }
             ),
-            r"not routed-expert projections.*layers\.0\.self_attn\.qkv_proj",
+            r"outside the .* expected.*layers\.0\.self_attn\.qkv_proj",
         ),
         (
             lambda q: q["quantized_layers"].pop(_EXPERT),
@@ -603,7 +603,7 @@ def test_defect_fails_loudly(
         (lambda q: q.update(quant_algo="NVFP4"), "quant_algo='NVFP4'"),
         (
             lambda q: q.update(quant_method="fp8", quant_algo=None),
-            "quant_method='fp8'.* only NVFP4 exports",
+            "quant_method='fp8'.* Expected modelopt",
         ),
     ],
 )

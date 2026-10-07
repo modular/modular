@@ -110,8 +110,24 @@ def test_an_unknown_algorithm_is_refused() -> None:
         "quant_algo": "MIXED_PRECISION",
         "quantized_layers": {"lm_head": {"quant_algo": "NVFP4"}},
     }
-    with pytest.raises(NotImplementedError, match="lm_head"):
+    with pytest.raises(ValueError, match="lm_head"):
         parse_quant_scheme(config)
+
+
+def test_a_wrong_nvfp4_group_size_is_refused() -> None:
+    config = {
+        "quant_algo": "MIXED_PRECISION",
+        "quantized_layers": {
+            "lm_head": {"quant_algo": "W4A16_NVFP4", "group_size": 32}
+        },
+    }
+    with pytest.raises(ValueError, match="group_size 32"):
+        parse_quant_scheme(config)
+
+
+def test_a_uniform_algorithm_is_refused() -> None:
+    with pytest.raises(ValueError, match="cannot read quant_algo 'NVFP4'"):
+        parse_quant_scheme({"quant_method": "modelopt", "quant_algo": "NVFP4"})
 
 
 def test_interleave_puts_each_scale_where_the_kernel_reads_it() -> None:

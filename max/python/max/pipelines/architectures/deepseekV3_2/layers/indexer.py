@@ -47,13 +47,7 @@ from max.nn.kernels import (
 )
 from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Shardable
-from max.nn.quant_config import (
-    InputScaleSpec,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-)
+from max.nn.quant_config import QuantFormat
 
 from .transforms import HadamardTransform
 
@@ -122,21 +116,8 @@ def _indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
     """
     if quant_config.format == QuantFormat.BLOCKSCALED_FP8:
         return quant_config
-    return QuantConfig(
-        input_scale=InputScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            origin=ScaleOrigin.DYNAMIC,
-            dtype=DType.float32,
-            block_size=(1, 128),
-        ),
-        weight_scale=WeightScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            dtype=DType.float32,
-            block_size=(128, 128),
-        ),
-        mlp_quantized_layers=set(),
-        attn_quantized_layers=set(),
-        format=QuantFormat.BLOCKSCALED_FP8,
+    return QuantConfig.blockscaled_fp8(
+        mlp_quantized_layers=(), attn_quantized_layers=()
     )
 
 

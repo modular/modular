@@ -46,14 +46,7 @@ from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-)
+from max.nn.quant_config import QuantConfig
 
 __all__ = [
     "UNQUANTIZED_ATTN_PROJECTIONS",
@@ -212,22 +205,11 @@ def parse_quant_scheme(
             scale_dtype = weight.dtype
             break
 
-    config = QuantConfig(
-        input_scale=InputScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            origin=ScaleOrigin.DYNAMIC,
-            dtype=scale_dtype,
-            block_size=(1, 128),
-        ),
-        weight_scale=WeightScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            dtype=scale_dtype,
-            block_size=(128, 128),
-        ),
-        mlp_quantized_layers=set(mlp_layers),
-        attn_quantized_layers=set(attn_layers),
+    config = QuantConfig.blockscaled_fp8(
+        mlp_quantized_layers=mlp_layers,
+        attn_quantized_layers=attn_layers,
+        scale_dtype=scale_dtype,
         embedding_output_dtype=compute_dtype,
-        format=QuantFormat.BLOCKSCALED_FP8,
     )
     return Glm5NextQuantScheme(
         config=config,

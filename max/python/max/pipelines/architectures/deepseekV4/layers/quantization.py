@@ -51,12 +51,7 @@ from max.nn.kernels import (
 )
 from max.nn.linear import Linear
 from max.nn.quant_config import (
-    InputScaleSpec,
     QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
 )
 
 if TYPE_CHECKING:
@@ -279,22 +274,11 @@ def fp8_block_quant_config(
             f"DeepSeek-V4 expects weight_block_size {_WEIGHT_BLOCK_SIZE}, got "
             f"{block_size!r}"
         )
-    layers = set(range(num_layers))
-    return QuantConfig(
-        input_scale=InputScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            origin=ScaleOrigin.DYNAMIC,
-            dtype=DType.float32,
-            block_size=(1, LINEAR_QUANT_BLOCK),
-        ),
-        weight_scale=WeightScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            dtype=DType.float32,
-            block_size=(LINEAR_QUANT_BLOCK, LINEAR_QUANT_BLOCK),
-        ),
+    layers = range(num_layers)
+    return QuantConfig.blockscaled_fp8(
         mlp_quantized_layers=layers,
         attn_quantized_layers=layers,
-        format=QuantFormat.BLOCKSCALED_FP8,
+        block_size=LINEAR_QUANT_BLOCK,
     )
 
 

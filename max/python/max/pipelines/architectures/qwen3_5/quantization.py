@@ -39,6 +39,7 @@ from max.dtype import DType
 from max.graph.weights import WeightData
 from max.nn.float8_scale_stacking import can_use_fused_mlp
 from max.nn.quant_config import (
+    NVFP4_BLOCK_SIZE,
     InputScaleSpec,
     QuantConfig,
     QuantFormat,
@@ -46,10 +47,11 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
+from max.pipelines.weights.quant import read_modelopt_quantized_layers
 
 # NVFP4's block scale covers 16 elements of the logical (unpacked) input dim.
 # Anything else misreads every scale, so it is checked rather than assumed.
-NVFP4_GROUP_SIZE = 16
+NVFP4_GROUP_SIZE = NVFP4_BLOCK_SIZE
 
 # Suffixes that make up one quantizable unit. Quantization is all-or-nothing
 # within a unit: modelopt quantizes a whole MLP or a whole attention block.
@@ -122,26 +124,6 @@ def _canonical(module: str) -> str:
     return module.removeprefix("model.language_model.").removeprefix("model.")
 
 
-def _algo_of(entry: object, module: str) -> tuple[str, int | None]:
-    if not isinstance(entry, Mapping):
-        raise ValueError(
-            f"quantized_layers['{module}'] is {type(entry).__name__}, expected "
-            "a mapping with a 'quant_algo' key"
-        )
-    algo = entry.get("quant_algo")
-    if not isinstance(algo, str):
-        raise ValueError(
-            f"quantized_layers['{module}'] has no 'quant_algo'; got {entry!r}"
-        )
-    group_size = entry.get("group_size")
-    if group_size is not None and not isinstance(group_size, int):
-        raise ValueError(
-            f"quantized_layers['{module}'] has a non-integer group_size "
-            f"{group_size!r}"
-        )
-    return algo, group_size
-
-
 def _check_unit_is_uniform(
     kind: str,
     layer_idx: int,
@@ -182,21 +164,16 @@ def parse_quant_scheme(
     if not hf_quant_config:
         return None
 
-    quant_algo = hf_quant_config.get("quant_algo")
-    if quant_algo not in ("NVFP4", "FP8", "MIXED_PRECISION"):
-        raise ValueError(
-            f"Qwen3.5 cannot read quant_algo {quant_algo!r}. Supported: "
-            "'NVFP4', 'FP8', 'MIXED_PRECISION'."
-        )
-
-    quantized_layers = hf_quant_config.get("quantized_layers")
-    if not quantized_layers:
-        raise ValueError(
-            f"the checkpoint declares quant_algo {quant_algo!r} but carries no "
-            "'quantized_layers' map, so which modules are quantized -- and in "
-            "which format -- is unknowable. Both the top-level "
-            "quantization_config and hf_quant_config.json were checked."
-        )
+    quantized_layers = read_modelopt_quantized_layers(
+        hf_quant_config,
+        allowed={
+            ("NVFP4", None),
+            ("NVFP4", NVFP4_GROUP_SIZE),
+            ("FP8", None),
+        },
+        quant_algos=("NVFP4", "FP8", "MIXED_PRECISION"),
+        model_name="Qwen3.5",
+    )
 
     nvfp4_layers: dict[int, set[str]] = {}
     fp8_full_attn: dict[int, set[str]] = {}
@@ -204,14 +181,8 @@ def parse_quant_scheme(
     quantize_lm_head = False
 
     for raw_module, entry in quantized_layers.items():
-        module = _canonical(str(raw_module))
-        algo, group_size = _algo_of(entry, module)
-
-        if algo == "NVFP4" and group_size not in (None, NVFP4_GROUP_SIZE):
-            raise ValueError(
-                f"'{module}' declares NVFP4 group_size {group_size}; MAX's "
-                f"NVFP4 path is fixed at {NVFP4_GROUP_SIZE}."
-            )
+        module = _canonical(raw_module)
+        algo = entry.quant_algo
 
         if module == "lm_head":
             if algo != "NVFP4":
@@ -317,23 +288,10 @@ def _nvfp4_config(
     per-block activation scales are still computed at runtime, but against
     this fixed global scale rather than a per-token amax.
     """
-    return QuantConfig(
-        input_scale=InputScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            origin=ScaleOrigin.STATIC,
-            dtype=DType.float32,
-            block_size=(1, NVFP4_GROUP_SIZE),
-        ),
-        weight_scale=WeightScaleSpec(
-            granularity=ScaleGranularity.BLOCK,
-            dtype=DType.float8_e4m3fn,
-            block_size=(1, NVFP4_GROUP_SIZE),
-        ),
-        mlp_quantized_layers=set(layers),
-        attn_quantized_layers=set(),
+    return QuantConfig.nvfp4(
+        mlp_quantized_layers=layers,
+        attn_quantized_layers=(),
         embedding_output_dtype=compute_dtype,
-        bias_dtype=None,
-        format=QuantFormat.NVFP4,
         # gate_proj and up_proj share a weight_scale_2 and an input_scale in
         # this export, so the fused gate/up matmul is exact. The helper
         # re-derives that from the checkpoint rather than trusting it.
