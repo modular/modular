@@ -53,7 +53,6 @@ head. This is the portable form of the kernel; it does not use tensor cores.
 
 from std.math import ceildiv, exp
 from std.memory import Layout as AllocLayout, alloc, dealloc
-from std.utils.index import IndexList
 from std.utils.numerics import min_or_neg_inf
 
 from max.gpu import WARP_SIZE, block_idx, lane_id, warp_id
@@ -69,9 +68,6 @@ from kv_cache.types import (
 )
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     UNKNOWN_VALUE,
     row_major,
@@ -433,9 +429,6 @@ def _flat_row_view[
     lookup table only to fill the field: the sparse decode addresses rows by
     index and never reads it.
     """
-    comptime blocks_layout = Layout.row_major[6]()
-    comptime lengths_layout = Layout(UNKNOWN_VALUE)
-    comptime lut_layout = Layout.row_major[2]()
     var num_pages = ceildiv(cache.num_kv_rows(), _VIEW_PAGE)
     return PagedKVCacheCollection[
         dtype,
@@ -446,30 +439,26 @@ def _flat_row_view[
         ImmutAnyOrigin,
         MutUntrackedOrigin,
     ](
-        LayoutTensor[dtype, blocks_layout, MutAnyOrigin](
+        TileTensor(
             rebind[Pointer[Scalar[dtype], MutAnyOrigin]](cache.blocks.ptr),
-            RuntimeLayout[blocks_layout].row_major(
-                IndexList[6](
-                    num_pages,
-                    1,
-                    1,
-                    _VIEW_PAGE,
-                    kv_params.num_heads,
-                    kv_params.head_size,
-                )
+            row_major(
+                Int64(num_pages),
+                Idx[1],
+                Idx[1],
+                Idx[_VIEW_PAGE],
+                Idx[kv_params.num_heads],
+                Idx[kv_params.head_size],
             ),
         ),
-        LayoutTensor[DType.uint32, lengths_layout, ImmutAnyOrigin](
+        TileTensor(
             rebind[Pointer[UInt32, ImmutAnyOrigin]](row_lengths),
-            RuntimeLayout[lengths_layout].row_major(IndexList[1](num_rows)),
+            row_major(Int64(num_rows)),
         ),
-        LayoutTensor[DType.uint32, lut_layout, ImmutAnyOrigin](
+        TileTensor(
             rebind[Pointer[UInt32, ImmutAnyOrigin]](cache.lookup_table.ptr),
-            RuntimeLayout[lut_layout].row_major(
-                IndexList[2](
-                    Int(cache.lookup_table.dim[0]()),
-                    Int(cache.lookup_table.dim[1]()),
-                )
+            row_major(
+                Int64(cache.lookup_table.dim[0]()),
+                Int64(cache.lookup_table.dim[1]()),
             ),
         ),
         UInt32(1),
