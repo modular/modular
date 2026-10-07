@@ -258,21 +258,21 @@ def paged_sparse_kv_index_remap[
             block id sentinel.
         ctx: Device context used to enqueue the GPU kernel.
     """
-    var si_lt = sparse_indices.to_layout_tensor()
+    var si_tt = sparse_indices.to_tile_tensor()
     var num_batches = input_row_offsets.dim_size(0) - 1
     var invalid_block_id = UInt32(kv_blocks.dim_size(0))
-    var log_stride0 = Int(si_lt.runtime_layout.stride.value[0])
-    var log_stride1 = Int(si_lt.runtime_layout.stride.value[1])
+    var log_stride0 = Int(si_tt.layout.stride[0]().value())
+    var log_stride1 = Int(si_tt.layout.stride[1]().value())
     paged_sparse_kv_logical_to_physical_indices_from_row_offsets_dispatch[
         target, page_size
     ](
         physical_out,
-        rebind[UnsafePointer[Int32, MutAnyOrigin]](si_lt.ptr),
+        rebind[UnsafePointer[Int32, MutAnyOrigin]](si_tt.ptr),
         rebind[UnsafePointer[UInt32, MutAnyOrigin]](
-            input_row_offsets.to_layout_tensor().ptr,
+            input_row_offsets.to_tile_tensor().ptr,
         ),
         rebind[UnsafePointer[UInt32, MutAnyOrigin]](
-            kv_lookup_table.to_layout_tensor().ptr,
+            kv_lookup_table.to_tile_tensor().ptr,
         ),
         sparse_indices.size(),
         kv_lookup_table.dim_size(1),
