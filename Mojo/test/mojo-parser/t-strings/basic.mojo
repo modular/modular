@@ -13,10 +13,12 @@
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 
+from std.format.tstring import TString
+
 
 # Helper function for testing t-strings as function arguments
-# CHECK-LABEL: lit.fn @"dummy_function(::String,::String)"
-def dummy_function(arg1: String, arg2: String):
+# CHECK-LABEL: lit.fn @"dummy_function(::TString,::String)"
+def dummy_function(arg1: TString, arg2: String):
     pass
 
 
