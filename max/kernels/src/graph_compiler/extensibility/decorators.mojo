@@ -137,13 +137,3 @@ def register_shape_function(name: StaticString):
         name: The name of the op whose output shapes the function computes.
     """
     pass
-
-
-def view_kernel():
-    """Marks a DPS kernel as a view operation that aliases its input memory.
-
-    Decorated kernels return a tensor that shares storage with one of their
-    inputs rather than allocating new memory, so the Graph Compiler can preserve
-    aliasing relationships across the operation.
-    """
-    return

@@ -2612,7 +2612,7 @@ def mogg_tensor_create_broadcast[
     doesn't have, or an aligned dimension where `input`'s size is 1, gets
     stride 0. Preserves whatever static shape/stride information is known
     at compile time, mirroring
-    `StaticBroadcastTo.update_input_view`/`get_view_strides_list`.
+    `StaticBroadcastTo.input_view`/`get_view_strides_list`.
 
     Parameters:
         dtype: The element type of `input`.
@@ -2663,7 +2663,7 @@ def mogg_tensor_create_reshape[
     shared flat index produces row-major strides for the new shape.
     `output_static_shape` still types the return value's static layout with
     whatever dims ARE known at compile time (mirroring
-    `StaticReshape.update_input_view`), but `output_shape` -- not a cast of
+    `StaticReshape.input_view`), but `output_shape` -- not a cast of
     `output_static_shape` -- is what this op actually reshapes into: unlike
     broadcast/transpose, this op's own stride is a row-major
     de-linearization of the *output* shape's own values, with no input
@@ -2757,7 +2757,7 @@ def mogg_tensor_create_transpose[
     or, where that entry is `UNKNOWN_VALUE`, at runtime (the matching entry
     of the `permutations` operand). Preserves whatever static shape/stride
     information is known at compile time, mirroring
-    `Transpose.update_input_view`/`_TransposeStrideTypes`.
+    `Transpose.input_view`/`_TransposeStrideTypes`.
 
     Parameters:
         dtype: The element type of `input`.
@@ -3022,7 +3022,7 @@ def foreach_out_func[
     ](out_func_shim, tensor.shape_coord(), ctx)
 
 
-# TensorCopy intrinsic used by view kernels.
+# TensorCopy intrinsic used by the view ops (slice, reshape, transpose, ...).
 # z is a kernel output, and x a view of the input.
 @register_internal("mogg.call.materialize")
 @doc_hidden

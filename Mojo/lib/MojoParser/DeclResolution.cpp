@@ -690,7 +690,6 @@ LogicalResult Decorators::validateCompilerDecorator(TypedAttr attr) {
 
       KGEN::kFnRegister,
       "elementwise",
-      "view_kernel",
       "mutable",
   };
 

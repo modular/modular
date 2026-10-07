@@ -997,7 +997,6 @@ def broadcast_shape_fn(
 
 
 @extensibility.register("mo.static.broadcast_to")
-@extensibility.view_kernel
 struct StaticBroadcastTo:
     """Registers the `mo.static.broadcast_to` graph op with the graph compiler.
     """
@@ -1044,7 +1043,7 @@ struct StaticBroadcastTo:
         return new_strides
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         in_rank: Int,
         out_rank: Int,
@@ -1085,9 +1084,7 @@ struct StaticBroadcastTo:
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
-        var x_view = Self.update_input_view[z._static_shape_tuple](
-            x, output_shape
-        )
+        var x_view = Self.input_view[z._static_shape_tuple](x, output_shape)
 
         view_copy_impl[
             _trace_name=_trace_name,
@@ -1096,12 +1093,11 @@ struct StaticBroadcastTo:
 
 
 @extensibility.register("mo.static.reshape")
-@extensibility.view_kernel
 struct StaticReshape:
     """Registers the `mo.static.reshape` graph op with the graph compiler."""
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         output_rank: Int,
         //,
@@ -1142,7 +1138,7 @@ struct StaticReshape:
         shape: IndexList[output_rank],
         ctx: DeviceContext,
     ) raises:
-        var view_tensor = Self.update_input_view[output._static_shape_tuple](
+        var view_tensor = Self.input_view[output._static_shape_tuple](
             input, shape
         )
 
@@ -1179,7 +1175,6 @@ def reshape_shape_fn[
 
 
 @extensibility.register("mo.transpose")
-@extensibility.view_kernel
 struct Transpose:
     """Registers the `mo.transpose` graph op with the graph compiler."""
 
@@ -1201,7 +1196,7 @@ struct Transpose:
         return {new_shape, new_stride}
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -1242,7 +1237,7 @@ struct Transpose:
         permutations: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        var view = Self.update_input_view[
+        var view = Self.input_view[
             output._static_shape_tuple, static_permutations
         ](input, permutations)
 
@@ -1288,7 +1283,6 @@ def transpose_shape_fn(
 
 
 @extensibility.register("mo.slice")
-@extensibility.view_kernel
 struct Slice:
     """Registers the `mo.slice` graph op with the graph compiler."""
 
@@ -1345,7 +1339,7 @@ struct Slice:
         return alignment
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -1414,7 +1408,7 @@ struct Slice:
         steps: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        var view_tensor = Self.update_input_view[
+        var view_tensor = Self.input_view[
             output._static_shape_tuple, static_starts, static_steps
         ](input, starts, stops, steps)
 

@@ -21,8 +21,8 @@ A custom kernel's entry-point signature uses these:
 - Fusion traits (`InputFusion`, `OutputFusion`, ...) and their `_NoFusion*`
   sentinels.
 
-The decorators that register a kernel (`register`, `register_internal`,
-`view_kernel`) live next to this file in `register.mojo`.
+The decorators that register a kernel (`register`, `register_internal`) live
+next to this file in `decorators.mojo`.
 """
 from max.algorithm.functional import elementwise
 
