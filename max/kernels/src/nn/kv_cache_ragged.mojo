@@ -5126,6 +5126,12 @@ def generic_cross_attention_kv_cache[
             )
         )
 
+    # A skipped speculative draft step hands the cross-attention zero query
+    # rows. Without this guard, flash attention would derive a zero grid from
+    # the empty offsets and fail the launch.
+    if q.dim[0]() == 0:
+        return
+
     with Trace[TraceLevel.OP, target=target](
         "mo.cross_attention.ragged."
         + collection_t.name_str

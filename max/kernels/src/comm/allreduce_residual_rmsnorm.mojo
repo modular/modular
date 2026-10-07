@@ -1090,6 +1090,12 @@ def _dispatch_fused_kernel[
     allreduce_residual_rmsnorm. Selects simd width based on column count
     and 1-stage vs 2-stage based on payload size.
     """
+    # A step that skips speculative drafting hands every rank a zero-row
+    # batch, and a zero grid is rejected by `enqueue_function`. Every rank
+    # sees the same `rows`, so skipping the barrier pair strands no peer.
+    if rows == 0:
+        return
+
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE
     comptime threads_per_block = max_warps_per_block * WARP_SIZE
     comptime base_simd_width = simd_width_of[

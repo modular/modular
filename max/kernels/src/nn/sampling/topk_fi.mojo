@@ -2774,6 +2774,11 @@ def topk_topp_sampling_from_prob[
                 raise Error("out_dist shape must match probs shape")
             dist_ptr = out_dist.unsafe_value().ptr
 
+        # A speculative-decoding step that skips its drafter samples zero
+        # draft rows, and a zero grid is rejected by `enqueue_function`.
+        if batch_size == 0:
+            return
+
         comptime coop_capable = from_logits and ctx.target.is_amd_gpu()
         var coop = 1
         comptime if coop_capable:

@@ -1030,6 +1030,103 @@ def test_fused_allreduce_residual_rmsnorm_noquant[
 comptime test_gpu_counts = (2, 4, 8)
 
 
+def test_fused_allreduce_rmsnorm_zero_rows[
+    ngpus: Int, dtype: DType, cols: Int
+](list_of_ctx: List[DeviceContext]) raises:
+    """Verify both entry points return without launching on a zero-row batch.
+
+    A step that skips speculative drafting runs the drafter's collectives on
+    zero rows on every rank. Buffers are sized for one row so the device
+    allocations are real. The views are zero-row, and the output must keep
+    its sentinel since nothing may be written.
+    """
+    print("  test_fused_allreduce_rmsnorm_zero_rows[", ngpus, ",", cols, "]")
+
+    var in_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
+    var signal_buffers = List[DeviceBuffer[.uint8]](capacity=ngpus)
+    for i in range(ngpus):
+        in_dev.append(list_of_ctx[i].enqueue_create_buffer[dtype](cols))
+        signal_buffers.append(
+            list_of_ctx[i].create_buffer_sync[.uint8](size_of[Signal]())
+        )
+        init_signal_buffer(signal_buffers[i], list_of_ctx[i])
+
+    var rank_sigs = Array[_, ngpus](
+        fill_with=lambda (i: Int) {ref} -> MutPointer[
+            Signal, MutAnyOrigin
+        ]: Signal.unsafe_ptr_from(signal_buffers[i])
+    )
+
+    comptime zero_layout = row_major(Coord(Idx[0], Idx[cols]))
+    comptime InputTileType = TileTensor[
+        dtype, type_of(zero_layout), ImmutAnyOrigin
+    ]
+    var in_tiles = Array[_, ngpus](
+        fill_with=lambda (i: Int) -> InputTileType: TileTensor(
+            in_dev[i], zero_layout
+        ).as_imm()
+    )
+
+    var ctx = list_of_ctx[0]
+    var gamma_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var gamma_tensor = TileTensor(gamma_dev, row_major(Coord(Index(cols))))
+    var sentinel = Scalar[dtype](7.0)
+    var out_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var res_out_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var residual_dev = ctx.enqueue_create_buffer[dtype](cols)
+    var scales_dev = ctx.enqueue_create_buffer[.float32](1)
+    out_dev.enqueue_fill(sentinel)
+    res_out_dev.enqueue_fill(sentinel)
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    var out_tile = TileTensor(out_dev, zero_layout)
+    var res_out_tile = TileTensor(res_out_dev, zero_layout)
+    var residual_tile = TileTensor(residual_dev, zero_layout)
+    var scales_tile = TileTensor(scales_dev, row_major(Coord(Idx[0], Idx[1])))
+
+    group_start()
+    comptime for i in range(ngpus):
+        allreduce_rmsnorm(
+            in_tiles,
+            out_tile,
+            gamma_tensor,
+            Float32(1e-5),
+            Scalar[dtype](0.0),
+            Float32(1.0),
+            scales_tile,
+            rank_sigs,
+            list_of_ctx[i],
+        )
+        allreduce_residual_rmsnorm(
+            in_tiles,
+            residual_tile.as_imm(),
+            out_tile,
+            res_out_tile,
+            gamma_tensor,
+            Float32(1e-5),
+            Scalar[dtype](0.0),
+            Float32(1.0),
+            scales_tile,
+            rank_sigs,
+            list_of_ctx[i],
+        )
+    group_end()
+    for i in range(ngpus):
+        list_of_ctx[i].synchronize()
+
+    var out_host = ctx.enqueue_create_host_buffer[dtype](cols)
+    var res_out_host = ctx.enqueue_create_host_buffer[dtype](cols)
+    ctx.enqueue_copy(out_host, out_dev)
+    ctx.enqueue_copy(res_out_host, res_out_dev)
+    ctx.synchronize()
+    for i in range(cols):
+        assert_true(
+            out_host[i] == sentinel and res_out_host[i] == sentinel,
+            "a zero-row call wrote its output",
+        )
+
+
 def main() raises:
     var num_devices = DeviceContext.number_of_devices()
     assert_true(num_devices >= 2, "need at least 2 GPUs")
@@ -1199,5 +1296,9 @@ def main() raises:
         test_fused_allreduce_residual_rmsnorm_noquant[
             num_gpus, DType.bfloat16, 17, 16384
         ](list_of_ctx)
+
+        test_fused_allreduce_rmsnorm_zero_rows[num_gpus, DType.bfloat16, 4096](
+            list_of_ctx
+        )
 
     print("\nAll tests passed!")

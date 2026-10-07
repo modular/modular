@@ -117,7 +117,10 @@ def _run_rms_norm_unfused(
 
 
 def rmsnorm_test[
-    ngpus: Int, *, seed_neg_zero: Bool = False
+    ngpus: Int,
+    *,
+    seed_neg_zero: Bool = False,
+    interleave_zero_rows: Bool = False,
 ](
     list_of_ctx: List[DeviceContext],
     M: Int,
@@ -134,7 +137,12 @@ def rmsnorm_test[
     bit pattern matching Lamport's fp32 sentinel under truncation). Since
     `x + (-0.0) == x`, the sum is unchanged, but the kernel must
     `remove_neg_zero` the input pack before pushing -- if not, real data
-    is mistaken for the sentinel and the kernel deadlocks or misreduces."""
+    is mistaken for the sentinel and the kernel deadlocks or misreduces.
+
+    `interleave_zero_rows=True` issues a zero-row call on every rank before
+    each fused call, as a step that skips speculative drafting does. It must
+    not launch, so the generation rotation stays in step and every real call
+    still matches the reference."""
     print(
         "==== fused Lamport AR+RMSNorm  ngpus=",
         ngpus,
@@ -287,6 +295,25 @@ def rmsnorm_test[
     var got = alloc[Float32](act_size)
 
     for it in range(iters):
+        comptime if interleave_zero_rows:
+            comptime for g in range(ngpus):
+                lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
+                    g,
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                        act_in[g].unsafe_ptr()
+                    ),
+                    rebind[MutPointer[Scalar[dtype], MutAnyOrigin]](
+                        fused_out[g].unsafe_ptr()
+                    ),
+                    rebind[ImmPointer[Scalar[dtype], ImmutAnyOrigin]](
+                        gamma[g].unsafe_ptr()
+                    ),
+                    rank_sigs_fused,
+                    0,
+                    K,
+                    EPS.cast[dtype](),
+                    list_of_ctx[g],
+                )
         group_start()
         comptime for g in range(ngpus):
             lamport_allreduce_rmsnorm[dtype, ngpus, pdl=False](
@@ -576,6 +603,11 @@ def main() raises:
     rmsnorm_test[ngpus, seed_neg_zero=True](ctx, 8, 7168)
     print(_case_str(1, 7168, tag="negzero"))
     rmsnorm_test[ngpus, seed_neg_zero=True](ctx, 1, 7168)
+
+    # Zero-row calls between real ones: skipped launches must leave the
+    # generation rotation in step across ranks.
+    print(_case_str(8, 7168, tag="zero-rows"))
+    rmsnorm_test[ngpus, interleave_zero_rows=True](ctx, 8, 7168)
 
     # Unsynced back-to-back stress: many calls without cross-rank sync,
     # exercising the generation-rotation slack under real inter-rank drift.
