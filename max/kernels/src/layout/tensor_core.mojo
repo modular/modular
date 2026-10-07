@@ -1169,7 +1169,7 @@ struct TensorCore[
         else:
             comptime assert False, "No valid type to store to LayoutTensor d"
 
-    # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+    # Inlining keeps the stack-allocated result in the caller's allocation scope.
     @inline(.always)
     def mma_op(
         self,
@@ -1194,13 +1194,11 @@ struct TensorCore[
         var a_reg = load_to_simd(a)
         var b_reg = load_to_simd(b)
         var c_reg = load_to_simd(c)
-        var d_reg = c_reg
-        mma(d_reg, a_reg, b_reg, d_reg)
-        var d = type_of(res).stack_allocation()
-        d.vectorize[1, Self.c_reg_type.length]()[0, 0] = rebind[
-            type_of(d.vectorize[1, Self.c_reg_type.length]()[0, 0])
-        ](d_reg)
-        return d
+        var d = stack_allocation[Self.out_type, address_space=.LOCAL](
+            Self.c_fragment_layout
+        )
+        self._mma_into(a_reg, b_reg, c_reg, d)
+        return Self.c_reg_tile_type(d.unsafe_ptr().as_unsafe_any_origin())
 
     @inline(.always)
     def mma_op(
@@ -1242,20 +1240,24 @@ struct TensorCore[
         comptime assert a_packed.flat_rank == 2
         comptime assert b_packed.flat_rank == 2
         comptime assert c_packed.flat_rank == 2
-        var d_reg = c_packed.load[alignment=align_of[Self.out_type]()]((0, 0))
-        mma(
-            d_reg,
-            a_packed.load[alignment=align_of[Self.in_type]()]((0, 0)),
-            b_packed.load[alignment=align_of[Self.in_type]()]((0, 0)),
-            d_reg,
-        )
+        var c_reg = c_packed.load[alignment=align_of[Self.out_type]()]((0, 0))
+        var a_reg = a_packed.load[alignment=align_of[Self.in_type]()]((0, 0))
+        var b_reg = b_packed.load[alignment=align_of[Self.in_type]()]((0, 0))
         var d = stack_allocation[Self.out_type, address_space=.LOCAL](
             Self.c_fragment_layout
         )
+        self._mma_into(a_reg, b_reg, c_reg, d)
+        return d
+
+    @inline(.always)
+    def _mma_into(self, a: SIMD, b: SIMD, c: SIMD, d: Self.c_fragment_type):
+        var d_reg = c
+        mma(d_reg, a, b, d_reg)
         var d_packed = d.vectorize[1, Self.c_reg_type.length]()
         comptime assert d_packed.flat_rank == 2
-        d_packed.store[alignment=align_of[Self.out_type]()]((0, 0), d_reg)
-        return d
+        d_packed.store[alignment=align_of[Self.out_type]()](
+            (0, 0), rebind[Self.c_reg_type](d_reg)
+        )
 
     @inline(.always)
     def load_a[
