@@ -278,7 +278,7 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 @fieldwise_init
-struct ManagedLayoutTensor(ConvertibleToZLayoutTensor, Movable where False):
+struct ManagedTileTensor(ConvertibleToZLayoutTensor, Movable where False):
     def to_tensor(self) -> ZLayoutTensor:
         return ZLayoutTensor()
 
@@ -303,12 +303,12 @@ def compile[
 
 def main():
     var thing = compile[kernel]()
-    var mlt = ManagedLayoutTensor()
+    var mtt = ManagedTileTensor()
     var ndb = NDBuffer()
     # This ZBool() is incorrect, not even close to the ZPointer[Int] that's
     # expected.
     # expected-error @below {{invalid call to 'call': value passed to 'args' cannot be converted from 'ZBool' to 'ZPointer[Int]'}}
-    var result1 = thing.call(mlt, ZBool(), ndb)
+    var result1 = thing.call(mtt, ZBool(), ndb)
 
 
 # // -----
