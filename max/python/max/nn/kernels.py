@@ -2337,6 +2337,7 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
     interleaved: bool = True,
     multiply_before_cast: bool = True,
     q_main_out_dtype: DType = DType.float8_e4m3fn,
+    q_index_out_dtype: DType | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Writes MiniMax-M3's K/V and IndexK from staging into an NVFP4 main cache.
 
@@ -2345,7 +2346,8 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
     are slices of the projection output: Q, K, IndexQ and IndexK are RMS-normed
     and roped, V is stored as is. K and V land in the main cache quantized to
     NVFP4 (one E4M3 scale per 16 elements, per-tensor scale 1); IndexK lands in
-    the index cache at its dtype. Q and IndexQ are returned.
+    the index cache at its dtype, NVFP4 too when that cache is. Q and IndexQ
+    are returned.
 
     Args:
         main_kv_params: Main cache parameters; must be NVFP4.
@@ -2371,6 +2373,8 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
         multiply_before_cast: Whether RMSNorm multiplies by the weight before
             rounding to the input dtype.
         q_main_out_dtype: Dtype of the returned main Q.
+        q_index_out_dtype: Dtype of the returned IndexQ (default
+            ``q_index.dtype``).
 
     Returns:
         A tuple ``(q_main, q_index)`` of normed and roped queries.
@@ -2434,7 +2438,9 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
         )
 
     results = ops.inplace_custom(
-        "mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4",
+        "mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4.nvfp4_index"
+        if index_kv_params.is_nvfp4_kv_cache
+        else "mo.fused_qk_rms_norm_rope.ragged.paged.dual.nvfp4",
         device=q_main.device,
         values=[
             q_main,
@@ -2462,7 +2468,7 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
                 device=q_main.device,
             ),
             TensorType(
-                dtype=q_index.dtype,
+                dtype=q_index_out_dtype or q_index.dtype,
                 shape=q_index.shape,
                 device=q_index.device,
             ),
@@ -3647,10 +3653,14 @@ def msa_sparse_indexer(
         Block indices, int32, ``-1``-padded. Prefill: ``[num_index_heads,
         total_q, topk]``; decode: ``[num_index_heads, batch, topk]``.
     """
+    # An NVFP4 index-K cache (packed uint8 with E4M3 scales) is scored
+    # against an fp8 index Q; every other cache against a bf16 one.
+    k_dtype = index_kv_collection.kv_blocks.dtype
+    nvfp4_k = k_dtype == DType.uint8
     _validate_argument_tensor(
         "index_q",
         index_q,
-        dtype=DType.bfloat16,
+        dtype=DType.float8_e4m3fn if nvfp4_k else DType.bfloat16,
         rank=3,
         device_type=DeviceKind.GPU,
     )
@@ -3668,11 +3678,13 @@ def msa_sparse_indexer(
         rank=1,
         device=index_q.device,
     )
-    k_dtype = index_kv_collection.kv_blocks.dtype
-    if k_dtype not in (DType.bfloat16, DType.float8_e4m3fn):
+    if nvfp4_k:
+        if index_kv_collection.kv_scales is None:
+            raise ValueError("an NVFP4 index-K cache needs its kv_scales")
+    elif k_dtype not in (DType.bfloat16, DType.float8_e4m3fn):
         raise ValueError(
-            "index_kv_collection.kv_blocks must be bfloat16 or "
-            f"float8_e4m3fn, got {k_dtype}"
+            "index_kv_collection.kv_blocks must be bfloat16, "
+            f"float8_e4m3fn or NVFP4 uint8, got {k_dtype}"
         )
     _validate_argument_tensor(
         "index_kv_collection.kv_blocks",
@@ -3733,7 +3745,9 @@ def msa_sparse_indexer(
     ]
 
     return ops.inplace_custom(
-        "mo.msa.indexer.ragged.paged",
+        "mo.msa.indexer.ragged.paged.nvfp4"
+        if nvfp4_k
+        else "mo.msa.indexer.ragged.paged",
         device=index_q.device,
         values=values,
         out_types=[

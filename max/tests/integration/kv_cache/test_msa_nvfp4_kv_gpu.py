@@ -24,6 +24,8 @@ operand order, the scale operands and the routes, through the Python wrappers.
 * The reader: attention over the NVFP4 cache must equal, bit for bit, the FP8
   op over the same K/V dequantized on the host, on the decode, speculative
   decode and prefill routes.
+* The indexer: over an NVFP4 index-K cache it must select the blocks the BF16
+  indexer selects over the same dequantized keys.
 """
 
 from __future__ import annotations
@@ -36,10 +38,18 @@ from max import tree
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 from max.nn.kernels import (
     fused_dual_qk_rms_norm_rope_nvfp4_ragged,
     msa_sparse_attention_ragged,
+    msa_sparse_indexer,
 )
 from max.nn.kv_cache import (
     KVCacheQuantizationConfig,
@@ -177,8 +187,10 @@ def _cosine(a: torch.Tensor, b: torch.Tensor) -> float:
     return float(torch.dot(a1, b1) / (a1.norm() * b1.norm()).clamp_min(1e-12))
 
 
-def test_dual_nvfp4_writes_quantized_kv() -> None:
-    """The writer stores MiniMax-quantized V exactly and normed+roped K."""
+@pytest.mark.parametrize("nvfp4_index", [False, True])
+def test_dual_nvfp4_writes_quantized_kv(nvfp4_index: bool) -> None:
+    """The writer stores MiniMax-quantized V exactly and normed+roped K, and
+    with an NVFP4 index-K cache, normed+roped IndexK and an fp8 IndexQ."""
     device = Accelerator()
     session = InferenceSession(devices=[device])
     prompt_lens = [37, 1, 131]
@@ -188,7 +200,7 @@ def test_dual_nvfp4_writes_quantized_kv() -> None:
     eps = 1e-6
 
     main_params = _nvfp4_params(kv_heads)
-    index_params = _bf16_params(1)
+    index_params = _nvfp4_params(1) if nvfp4_index else _bf16_params(1)
     gpu = DeviceRef.GPU()
 
     def staged(heads: int) -> TensorType:
@@ -238,6 +250,7 @@ def test_dual_nvfp4_writes_quantized_kv() -> None:
             layer_idx=ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             weight_offset=0.0,
             interleaved=True,
+            q_index_out_dtype=DType.float8_e4m3fn if nvfp4_index else None,
         )
         graph.output(q_out, iq_out)
     model = session.load(graph)
@@ -262,7 +275,7 @@ def test_dual_nvfp4_writes_quantized_kv() -> None:
     )
     offsets = np.zeros(len(prompt_lens) + 1, dtype=np.uint32)
     offsets[1:] = np.cumsum(prompt_lens)
-    q_res, _ = model.execute(
+    q_res, iq_res = model.execute(
         *(
             Buffer.from_dlpack(t).to(device)
             for t in (q_h, k_h, v_h, iq_h, ik_h)
@@ -306,6 +319,23 @@ def test_dual_nvfp4_writes_quantized_kv() -> None:
     q_ref = _norm_rope(q_h, token_pos, freqs, eps)
     q_got = torch.from_dlpack(q_res).float().cpu()
     assert _cosine(q_got, q_ref) > 0.999
+
+    if not nvfp4_index:
+        return
+    assert isinstance(iq_res, Buffer)
+    assert iq_res.dtype == DType.float8_e4m3fn
+    iq_got = torch.from_dlpack(iq_res.view(DType.uint8)).cpu()
+    iq_got = iq_got.view(torch.float8_e4m3fn).float()
+    assert _cosine(iq_got, _norm_rope(iq_h, token_pos, freqs, eps)) > 0.995
+    assert index_rt.kv_scales is not None
+    idx_blocks = index_rt.kv_blocks.to_numpy()
+    idx_scales = index_rt.kv_scales.view(DType.uint8).to_numpy()
+    ik_got = _nvfp4_dequantize_fp8(
+        np.stack([idx_blocks[b, 0, 0, p] for b, p in positions]),
+        np.stack([idx_scales[b, 0, 0, p] for b, p in positions]),
+    ).float()
+    assert torch.isfinite(ik_got).all()
+    assert _cosine(ik_got, _norm_rope(ik_h, token_pos, freqs, eps)) > 0.99
 
 
 @pytest.fixture(scope="module")
@@ -525,15 +555,17 @@ def test_msa_attention_nvfp4_matches_fp8(
     np.testing.assert_array_equal(got_bits, ref_bits)
 
 
-def test_nvfp4_ops_accept_an_empty_replica() -> None:
-    """A data-parallel replica with no requests runs the writer and the
-    attention op on zero rows and leaves the cache untouched."""
+@pytest.mark.parametrize("nvfp4_index", [False, True])
+def test_nvfp4_ops_accept_an_empty_replica(nvfp4_index: bool) -> None:
+    """A data-parallel replica with no requests runs the writer, the attention
+    op and (over an NVFP4 index-K cache) the indexer on zero rows and leaves
+    the cache untouched."""
     device = Accelerator()
     session = InferenceSession(devices=[device])
     gpu = DeviceRef.GPU()
     cpu = DeviceRef.CPU()
     params = _nvfp4_params(1)
-    index_params = _bf16_params(1)
+    index_params = _nvfp4_params(1) if nvfp4_index else _bf16_params(1)
 
     def staged(heads: int) -> TensorType:
         return TensorType(DType.bfloat16, [0, heads, _HEAD_DIM], gpu)
@@ -554,17 +586,18 @@ def test_nvfp4_ops_accept_an_empty_replica() -> None:
             TensorType(DType.float32, [512, _HEAD_DIM], gpu),
             gamma_type,
             TensorType(DType.int32, [_N_KV_HEADS, 0, _TOPK], gpu),
+            BufferType(DType.float32, [4, 0, 1], gpu),
             *main_inputs,
             *index_params.flattened_kv_inputs(),
         ],
     ) as graph:
-        q, k, v, iq, ik, iro, cro, tcl, fr, g, d, *kv = graph.inputs
+        q, k, v, iq, ik, iro, cro, tcl, fr, g, d, scratch, *kv = graph.inputs
         main_kv = params.unflatten_kv_inputs(iter(kv[: len(main_inputs)]))[0]
         index_kv = index_params.unflatten_kv_inputs(
             iter(kv[len(main_inputs) :])
         )[0]
         layer = ops.constant(0, DType.uint32, device=cpu)
-        q8, _ = fused_dual_qk_rms_norm_rope_nvfp4_ragged(
+        q8, iq_normed = fused_dual_qk_rms_norm_rope_nvfp4_ragged(
             params,
             index_params,
             q.tensor,
@@ -585,6 +618,7 @@ def test_nvfp4_ops_accept_an_empty_replica() -> None:
             layer_idx=layer,
             weight_offset=0.0,
             interleaved=True,
+            q_index_out_dtype=DType.float8_e4m3fn if nvfp4_index else None,
         )
         out = msa_sparse_attention_ragged(
             kv_params=params,
@@ -600,7 +634,27 @@ def test_nvfp4_ops_accept_an_empty_replica() -> None:
             sparse_block_size=_PAGE_SIZE,
             scale=float(_HEAD_DIM**-0.5),
         )
-        graph.output(out)
+        outs = [out]
+        if nvfp4_index:
+            outs.append(
+                msa_sparse_indexer(
+                    index_params,
+                    iq_normed,
+                    iro.tensor,
+                    index_kv.cache_lengths,
+                    index_kv,
+                    layer,
+                    scratch.buffer,
+                    num_index_heads=4,
+                    idx_head_dim=_HEAD_DIM,
+                    block_size=_PAGE_SIZE,
+                    topk=_TOPK,
+                    init_blocks=0,
+                    local_blocks=1,
+                    scale=1.0,
+                )
+            )
+        graph.output(*outs)
     model = session.load(graph)
 
     # One cached page, but zero requests this step: an empty batch.
@@ -624,7 +678,7 @@ def test_nvfp4_ops_accept_an_empty_replica() -> None:
             torch.zeros(0, heads, _HEAD_DIM, dtype=torch.bfloat16)
         ).to(device)
 
-    (out_buf,) = model.execute(
+    results = model.execute(
         *(empty_rows(h) for h in (_NUM_Q_HEADS, 1, 1, 4, 1)),
         Buffer.from_numpy(zero_offsets).to(device),
         Buffer.from_numpy(zero_offsets).to(device),
@@ -636,9 +690,294 @@ def test_nvfp4_ops_accept_an_empty_replica() -> None:
         Buffer.from_numpy(np.zeros((_N_KV_HEADS, 0, _TOPK), dtype=np.int32)).to(
             device
         ),
+        Buffer.from_numpy(np.zeros((4, 0, 1), dtype=np.float32)).to(device),
         *tree.leaves(main_rt),
         *tree.leaves(index_rt),
     )
+    out_buf = results[0]
     assert isinstance(out_buf, Buffer)
     assert tuple(out_buf.shape) == (0, _NUM_Q_HEADS, _HEAD_DIM)
+    if nvfp4_index:
+        idx_buf = results[1]
+        assert isinstance(idx_buf, Buffer)
+        assert tuple(idx_buf.shape) == (4, 0, _TOPK)
     np.testing.assert_array_equal(main_rt.kv_blocks.to_numpy(), blocks_before)
+
+
+_INDEX_HEADS = 4
+_INDEX_LAYERS = 2
+_INDEX_LAYER = 1
+
+
+@pytest.fixture(scope="module")
+def indexer_model() -> tuple[Accelerator, Model]:
+    """The BF16 and NVFP4 indexers in one graph with symbolic batch shapes,
+    over two-layer index-K caches read at layer 1."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    gpu = DeviceRef.GPU()
+    cpu = DeviceRef.CPU()
+
+    def page_type(dtype: DType, width: int) -> BufferType:
+        return BufferType(
+            dtype, ["pages", 1, _INDEX_LAYERS, _PAGE_SIZE, 1, width], gpu
+        )
+
+    q_shape: list[int | str] = ["rows", _INDEX_HEADS, _HEAD_DIM]
+    lut_type = TensorType(DType.uint32, ["batch", "max_pages"], gpu)
+    scratch_type = BufferType(
+        DType.float32, [_INDEX_HEADS, "rows", "blocks"], gpu
+    )
+    with Graph(
+        "msa_indexer_nvfp4_vs_bf16",
+        input_types=[
+            TensorType(DType.bfloat16, q_shape, gpu),
+            TensorType(DType.float8_e4m3fn, q_shape, gpu),
+            TensorType(DType.uint32, ["offsets"], gpu),
+            TensorType(DType.uint32, ["batch"], gpu),
+            page_type(DType.bfloat16, _HEAD_DIM),
+            page_type(DType.uint8, _PACKED),
+            page_type(DType.float8_e4m3fn, _SF_COLS),
+            lut_type,
+            lut_type,
+            TensorType(DType.uint32, [1], cpu),
+            TensorType(DType.uint32, [1], cpu),
+            TensorType(DType.int64, [2], gpu),
+            scratch_type,
+            scratch_type,
+        ],
+    ) as graph:
+        (
+            q16,
+            q8,
+            iro,
+            cl,
+            bf16_blocks,
+            fp4_blocks,
+            sf,
+            lut,
+            sf_lut,
+            mp,
+            mc,
+            sa,
+            s0,
+            s1,
+        ) = graph.inputs
+        bf16_kv = PagedCacheValues(
+            kv_blocks=bf16_blocks.buffer,
+            cache_lengths=cl.tensor,
+            lookup_table=lut.tensor,
+            max_prompt_length=mp.tensor,
+            max_cache_length=mc.tensor,
+            page_stride=packed_page_stride(bf16_blocks.buffer),
+            attention_dispatch_metadata=sa.tensor,
+        )
+        fp4_kv = PagedCacheValues(
+            kv_blocks=fp4_blocks.buffer,
+            cache_lengths=cl.tensor,
+            lookup_table=lut.tensor,
+            max_prompt_length=mp.tensor,
+            max_cache_length=mc.tensor,
+            page_stride=packed_page_stride(fp4_blocks.buffer),
+            kv_scales=sf.buffer,
+            scales_page_stride=packed_page_stride(sf.buffer),
+            scales_lookup_table=sf_lut.tensor,
+            attention_dispatch_metadata=sa.tensor,
+        )
+        outs = []
+        for params, q, kv, scratch in (
+            (_bf16_params(1), q16, bf16_kv, s0),
+            (_nvfp4_params(1), q8, fp4_kv, s1),
+        ):
+            outs.append(
+                msa_sparse_indexer(
+                    params,
+                    q.tensor,
+                    iro.tensor,
+                    cl.tensor,
+                    kv,
+                    ops.constant(_INDEX_LAYER, DType.uint32, device=cpu),
+                    scratch.buffer,
+                    num_index_heads=_INDEX_HEADS,
+                    idx_head_dim=_HEAD_DIM,
+                    block_size=_PAGE_SIZE,
+                    topk=_TOPK,
+                    init_blocks=0,
+                    local_blocks=1,
+                    scale=float(_HEAD_DIM**-0.5),
+                )
+            )
+        graph.output(*outs)
+    return device, session.load(graph)
+
+
+@pytest.mark.parametrize(
+    "q_lens,cache_lens,extra_cache,separate_scales_lut",
+    [
+        # Decode, the M3 shape: four index heads, topk 16.
+        ([1] * 5, [4093] * 5, 0, False),
+        # Short contexts: fewer blocks than topk, so every block is kept.
+        ([1, 1, 1], [5, 130, 400], 0, True),
+        # Graph-capture replay slack on max_cache_length.
+        ([1, 1, 1], [700, 2047, 33], 300, True),
+        # MTP decode at every width that fits the m16 fragment (4 heads).
+        *[([n] * 3, [4091, 900, 61], 0, n % 2 == 0) for n in (2, 3, 4)],
+        # DSpark verify (8 tokens): too wide for the fragment, so prefill.
+        ([8] * 3, [2043, 900, 61], 0, True),
+        # Prefill over a page-aligned and a mid-page cached prefix.
+        ([300, 33], [256, 61], 0, True),
+        # Decode and prefill requests in one batch.
+        ([1, 40, 1, 9], [3000, 0, 127, 500], 0, False),
+    ],
+)
+def test_msa_indexer_nvfp4_matches_bf16(
+    q_lens: list[int],
+    cache_lens: list[int],
+    extra_cache: int,
+    separate_scales_lut: bool,
+    indexer_model: tuple[Accelerator, Model],
+) -> None:
+    """The NVFP4 indexer selects the blocks the BF16 indexer selects over the
+    same dequantized IndexK and an fp8-representable IndexQ.
+
+    The products are identical; only the scorers' accumulation order differs,
+    so a near-tie may flip a block at the edge of the top-k. Layer 0 holds
+    different keys than layer 1, so reading the wrong layer changes the
+    selection.
+    """
+    device, model = indexer_model
+    batch = len(q_lens)
+    rows = sum(q_lens)
+    keys = [c + q for c, q in zip(cache_lens, q_lens, strict=True)]
+    pages = [-(-k // _PAGE_SIZE) for k in keys]
+    max_pages = max(pages)
+    total_pages = sum(pages)
+    pool_pages = total_pages + 1
+
+    torch.manual_seed(rows)
+    k_values = torch.randn(
+        pool_pages, 1, _INDEX_LAYERS, _PAGE_SIZE, 1, _HEAD_DIM
+    ).to(torch.bfloat16)
+    packed, sf_bytes = _nvfp4_quantize(k_values.float().numpy())
+    k_bf16 = _nvfp4_dequantize_fp8(packed, sf_bytes).to(torch.bfloat16)
+    q_fp8 = torch.randn(rows, _INDEX_HEADS, _HEAD_DIM).to(torch.float8_e4m3fn)
+
+    lut_np = np.full((batch, max_pages), total_pages, dtype=np.uint32)
+    first = 0
+    for b, n in enumerate(pages):
+        lut_np[b, :n] = np.arange(first, first + n, dtype=np.uint32)
+        first += n
+    sf_lut_np = lut_np.copy()
+    sf_pages = sf_bytes
+    if separate_scales_lut:
+        sf_lut_np = np.where(
+            lut_np < total_pages, total_pages - 1 - lut_np, lut_np
+        ).astype(np.uint32)
+        sf_pages = sf_bytes.copy()
+        sf_pages[:total_pages] = sf_bytes[:total_pages][::-1]
+
+    iro_np = np.zeros(batch + 1, dtype=np.uint32)
+    iro_np[1:] = np.cumsum(q_lens)
+    # The op sizes its block range from max_cache_length (plus this step's
+    # tokens), so the scratch covers the replay slack too.
+    scratch_blocks = -(-(max(keys) + extra_cache + max(q_lens)) // _PAGE_SIZE)
+    score_init = np.zeros((_INDEX_HEADS, rows, scratch_blocks), np.float32)
+    ref, got = model.execute(
+        Buffer.from_dlpack(q_fp8.to(torch.bfloat16)).to(device),
+        Buffer.from_dlpack(q_fp8.view(torch.uint8))
+        .view(DType.float8_e4m3fn)
+        .to(device),
+        Buffer.from_numpy(iro_np).to(device),
+        Buffer.from_numpy(np.array(cache_lens, dtype=np.uint32)).to(device),
+        Buffer.from_dlpack(k_bf16).to(device),
+        Buffer.from_numpy(packed).to(device),
+        Buffer.from_numpy(np.ascontiguousarray(sf_pages))
+        .view(DType.float8_e4m3fn)
+        .to(device),
+        Buffer.from_numpy(lut_np).to(device),
+        Buffer.from_numpy(sf_lut_np).to(device),
+        Buffer.from_numpy(np.array([max(q_lens)], dtype=np.uint32)),
+        Buffer.from_numpy(np.array([max(keys) + extra_cache], dtype=np.uint32)),
+        Buffer.from_numpy(np.array([batch, max(keys)], dtype=np.int64)).to(
+            device
+        ),
+        Buffer.from_numpy(score_init).to(device),
+        Buffer.from_numpy(score_init).to(device),
+    )
+    assert isinstance(ref, Buffer)
+    assert isinstance(got, Buffer)
+    ref_idx = ref.to_numpy()
+    got_idx = got.to_numpy()
+    assert (ref_idx >= 0).sum() > 0
+    agree = 0
+    total = 0
+    for h in range(_INDEX_HEADS):
+        for r in range(rows):
+            want = set(ref_idx[h, r][ref_idx[h, r] >= 0].tolist())
+            have = set(got_idx[h, r][got_idx[h, r] >= 0].tolist())
+            agree += len(want & have)
+            total += max(len(want), len(have))
+    assert agree / total > 0.99, f"block agreement {agree}/{total}"
+
+
+def test_msa_indexer_nvfp4_validates_its_inputs() -> None:
+    """An NVFP4 index-K cache needs an fp8 IndexQ and its scales."""
+    gpu = DeviceRef.GPU()
+    cpu = DeviceRef.CPU()
+    params = _nvfp4_params(1)
+    with Graph(
+        "msa_indexer_nvfp4_inputs",
+        input_types=[
+            TensorType(DType.bfloat16, [3, _INDEX_HEADS, _HEAD_DIM], gpu),
+            TensorType(DType.float8_e4m3fn, [3, _INDEX_HEADS, _HEAD_DIM], gpu),
+            TensorType(DType.uint32, [4], gpu),
+            TensorType(DType.uint32, [3], gpu),
+            BufferType(DType.uint8, [4, 1, 1, _PAGE_SIZE, 1, _PACKED], gpu),
+            BufferType(
+                DType.float8_e4m3fn, [4, 1, 1, _PAGE_SIZE, 1, _SF_COLS], gpu
+            ),
+            TensorType(DType.uint32, [3, 1], gpu),
+            TensorType(DType.uint32, [1], cpu),
+            TensorType(DType.uint32, [1], cpu),
+            TensorType(DType.int64, [2], gpu),
+            BufferType(DType.float32, [_INDEX_HEADS, 3, 2], gpu),
+        ],
+    ) as graph:
+        q16, q8, iro, cl, blocks, sf, lut, mp, mc, sa, scratch = graph.inputs
+
+        def run(q: TensorValue, with_scales: bool) -> None:
+            kv = PagedCacheValues(
+                kv_blocks=blocks.buffer,
+                cache_lengths=cl.tensor,
+                lookup_table=lut.tensor,
+                max_prompt_length=mp.tensor,
+                max_cache_length=mc.tensor,
+                page_stride=packed_page_stride(blocks.buffer),
+                kv_scales=sf.buffer if with_scales else None,
+                scales_page_stride=(
+                    packed_page_stride(sf.buffer) if with_scales else None
+                ),
+                scales_lookup_table=lut.tensor if with_scales else None,
+                attention_dispatch_metadata=sa.tensor,
+            )
+            msa_sparse_indexer(
+                params,
+                q,
+                iro.tensor,
+                cl.tensor,
+                kv,
+                ops.constant(0, DType.uint32, device=cpu),
+                scratch.buffer,
+                num_index_heads=_INDEX_HEADS,
+                idx_head_dim=_HEAD_DIM,
+                block_size=_PAGE_SIZE,
+                topk=_TOPK,
+                init_blocks=0,
+                local_blocks=1,
+                scale=1.0,
+            )
+
+        with pytest.raises(ValueError, match="float8_e4m3fn"):
+            run(q16.tensor, with_scales=True)
+        with pytest.raises(ValueError, match="kv_scales"):
+            run(q8.tensor, with_scales=False)

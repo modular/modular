@@ -612,6 +612,89 @@ def run_nvfp4_dual[
         ctx,
     )
 
+    # The same launch into an NVFP4 index-K cache (K-only, so one kv slot per
+    # page), padded and paged like the main cache, with an fp8 IndexQ out.
+    # Main K/V get the same bytes again, so the main-cache checks below are
+    # unaffected.
+    var idx_value_page = (num_layers * page_size + value_pad_rows) * (
+        index_k_heads * packed_dim
+    )
+    var idx_scale_page = (num_layers * page_size + scale_pad_rows) * (
+        index_k_heads * sf_cols
+    )
+    var idx4_n = num_blocks * idx_value_page
+    var idx_sf_n = num_blocks * idx_scale_page
+    var idx4_host = ctx.enqueue_create_host_buffer[.uint8](idx4_n)
+    var idx_sf_host = ctx.enqueue_create_host_buffer[NVFP4_SF_DTYPE](idx_sf_n)
+    ctx.synchronize()
+    for i in range(idx4_n):
+        idx4_host[i] = value_poison
+    var idx_sf_host_bytes = idx_sf_host.unsafe_ptr().bitcast[UInt8]()
+    for i in range(idx_sf_n):
+        idx_sf_host_bytes[i] = scale_poison
+    var idx4_dev = ctx.enqueue_create_buffer[.uint8](idx4_n)
+    var idx_sf_dev = ctx.enqueue_create_buffer[NVFP4_SF_DTYPE](idx_sf_n)
+    ctx.enqueue_copy(idx4_dev, idx4_host)
+    ctx.enqueue_copy(idx_sf_dev, idx_sf_host)
+    var idx4_coll = PagedKVCacheCollection[
+        DType.uint8,
+        KVCacheStaticParams(
+            num_heads=index_k_heads, head_size=packed_dim, is_mla=True
+        ),
+        page_size,
+        scale_dtype_=NVFP4_SF_DTYPE,
+        quantization_granularity_=NVFP4_SF_VECTOR_SIZE // 2,
+    ](
+        blocks_tt(idx4_dev, num_blocks, 1, index_k_heads, packed_dim),
+        cache_lengths_tt,
+        lut_tt,
+        UInt32(max_prompt_length),
+        UInt32(max_cache_length),
+        scales=blocks_tt(idx_sf_dev, num_blocks, 1, index_k_heads, sf_cols),
+        scales_lookup_table=sf_lut_tt,
+        page_stride=idx_value_page if value_pad_rows else -1,
+        scales_page_stride=idx_scale_page if scale_pad_rows else -1,
+    )
+    var q_index_out2_dev = ctx.enqueue_create_buffer[q_main_out_dtype](
+        q_index_n
+    )
+    var q_index_out2_tt = TileTensor(
+        q_index_out2_dev,
+        row_major((total_length, Idx[index_q_heads], Idx[head_dim])),
+    )
+    fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
+        target="gpu", multiply_before_cast=True, interleaved=False
+    ](
+        main4_coll,
+        idx4_coll,
+        g_q_main,
+        g_k_main,
+        g_q_index,
+        g_k_index,
+        freqs_tt,
+        main_epsilon,
+        index_epsilon,
+        Scalar[dtype](1.0),
+        UInt32(layer_idx),
+        row_offsets_tt,
+        q_main_fn,
+        k_main_fn,
+        v_main_fn,
+        q_index_fn,
+        k_index_fn,
+        q_main_out_tt,
+        q_index_out2_tt,
+        ctx,
+    )
+    var idx4_out = ctx.enqueue_create_host_buffer[.uint8](idx4_n)
+    var idx_sf_out = ctx.enqueue_create_host_buffer[NVFP4_SF_DTYPE](idx_sf_n)
+    var q_index_out2 = ctx.enqueue_create_host_buffer[q_main_out_dtype](
+        q_index_n
+    )
+    ctx.enqueue_copy(idx4_out, idx4_dev)
+    ctx.enqueue_copy(idx_sf_out, idx_sf_dev)
+    ctx.enqueue_copy(q_index_out2, q_index_out2_dev)
+
     var q_main_ref_out = ctx.enqueue_create_host_buffer[q_main_out_dtype](
         q_main_n
     )
@@ -770,6 +853,63 @@ def run_nvfp4_dual[
         if not owned_scale[i]:
             assert_equal(sf_bytes[i], scale_poison, "stray scale write")
 
+    print("comparing NVFP4 IndexK against the host quantizer")
+    # The fp8 IndexQ is the bf16 IndexQ through a plain cast.
+    var qi2 = q_index_out2.unsafe_ptr().bitcast[UInt8]()
+    for i in range(q_index_n):
+        assert_equal(
+            qi2[i],
+            bitcast[DType.uint8, 1](
+                q_index_ref_out[i].cast[q_main_out_dtype]()
+            ),
+            "fp8 IndexQ byte",
+        )
+    var idx_sf_bytes = idx_sf_out.unsafe_ptr().bitcast[UInt8]()
+    var idx_owned_value = List[Bool](length=idx4_n, fill=False)
+    var idx_owned_scale = List[Bool](length=idx_sf_n, fill=False)
+    for bs in range(batch_size):
+        for t in range(prompt_lens[bs]):
+            var pos = cache_lens[bs] + t
+            var block = Int(lut_host[bs * lut_cols + pos // page_size])
+            var src = cache_offset(
+                block, 0, 1, pos % page_size, 0, index_k_heads, head_dim
+            )
+            for d in range(head_dim):
+                row[d] = index_ref_out[src + d].cast[.float32]()
+            quantize_nvfp4_row(row, packed, scales)
+            var vdst = cache_offset(
+                block,
+                0,
+                1,
+                pos % page_size,
+                0,
+                index_k_heads,
+                packed_dim,
+                idx_value_page,
+            )
+            for b in range(packed_dim):
+                idx_owned_value[vdst + b] = True
+                assert_equal(idx4_out[vdst + b], packed[b], "IndexK byte")
+            var sdst = cache_offset(
+                Int(sf_lut_host[bs * lut_cols + pos // page_size]),
+                0,
+                1,
+                pos % page_size,
+                0,
+                index_k_heads,
+                sf_cols,
+                idx_scale_page,
+            )
+            for g in range(sf_cols):
+                idx_owned_scale[sdst + g] = True
+                assert_equal(idx_sf_bytes[sdst + g], scales[g], "IndexK scale")
+    for i in range(idx4_n):
+        if not idx_owned_value[i]:
+            assert_equal(idx4_out[i], value_poison, "stray IndexK write")
+    for i in range(idx_sf_n):
+        if not idx_owned_scale[i]:
+            assert_equal(idx_sf_bytes[i], scale_poison, "stray IndexK scale")
+
     _ = row_offsets_dev^
     _ = cache_lengths_dev^
     _ = lut_dev^
@@ -786,6 +926,9 @@ def run_nvfp4_dual[
     _ = sf_dev^
     _ = sf_lut_dev^
     _ = index_dev^
+    _ = idx4_dev^
+    _ = idx_sf_dev^
+    _ = q_index_out2_dev^
     _ = q_main_ref_dev^
     _ = q_main_out_dev^
     _ = q_index_ref_dev^
