@@ -31,6 +31,7 @@ from ._device_context_metal import MetalEnqueueFunctionArgs
 
 from .device_context import (
     DeviceContext,
+    DeviceContextBase,
     DeviceBuffer,
     DeviceFunction,
     DeviceExternalFunction,
@@ -125,7 +126,7 @@ __extension DeviceFunction:
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext.Generic[Self.target],
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
     ) raises:
@@ -317,7 +318,7 @@ __extension DeviceExternalFunction:
         )
 
 
-__extension DeviceContext:
+__extension DeviceContextBase:
     def _check_supports_default_compile_function(self):
         pass
 

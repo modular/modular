@@ -153,6 +153,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
     #   that condition is being evaluated by the comptime interpreter.
     var _dummy: Int
 
+    @always_inline("builtin")
     def __init__(out self):
         """Initialize a `CompilationTarget` with the default target."""
         self._dummy = 0
@@ -175,7 +176,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
     """
 
     @staticmethod
-    @inline(.nodebug)
+    @always_inline("builtin")
     def default_accelerator() -> type_of(get_gpu_target()):
         """Get the accelerator target.
 

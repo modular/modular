@@ -81,7 +81,7 @@ from std.utils.static_tuple import StaticTuple
 
 from std._gpu.host import get_gpu_target
 from .info import _device_type_encoder_target
-from std._gpu.host.info import TargetAccelerator
+from std._gpu.host.info import TargetAccelerator, GPUInfo, TargetAcceleratorType
 
 from .compile import (
     _compile_code,
@@ -248,7 +248,7 @@ def _checked_call[
 ](
     err: _CString,
     *,
-    device_context: DeviceContext,
+    device_context: DeviceContext.Generic,
     location: SourceLocation,
 ) raises:
     # Use the source-level function name for the error message. This is purely
@@ -269,7 +269,7 @@ def _raise_call_error(
     err: _CString,
     *,
     func_name: StaticString,
-    device_context: DeviceContext,
+    device_context: DeviceContext.Generic,
     location: SourceLocation,
 ) raises:
     # `_checked_call` is inlined into every kernel launch instantiation and
@@ -401,7 +401,8 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        # FIXME(MSTDL-3258): DeviceContext target type erasure.
+        ctx: DeviceContext.Generic,
         size: Int,
     ) raises:
         """This init takes in a constructed `DeviceContext` and schedules an
@@ -820,6 +821,9 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             _DeviceContextPtr[mut=True],
             _DeviceBufferPtr[mut=True],
         ](self._handle)
+        # FIXME(MSTDL-3258):
+        #   What if the static target parameter doesn't match the dynamic
+        #   target used by this runtime DeviceContext instance?
         return DeviceContext(ctx_ptr)
 
     def write_to(self, mut writer: Some[Writer]):
@@ -1505,7 +1509,8 @@ struct DeviceBuffer[dtype: DType](
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext,
+        # FIXME(MSTDL-3258): DeviceContext target type erasure.
+        ctx: DeviceContext.Generic,
         size: Int,
         mode: _DeviceBufferMode,
     ) raises:
@@ -1559,7 +1564,8 @@ struct DeviceBuffer[dtype: DType](
     @doc_hidden
     def __init__(
         out self,
-        ctx: DeviceContext,
+        # FIXME(MSTDL-3258): DeviceContext target type erasure.
+        ctx: DeviceContext.Generic,
         ptr: Self._DevicePtr,
         size: Int,
         *,
@@ -1597,7 +1603,8 @@ struct DeviceBuffer[dtype: DType](
         _dtype: DType,
     ](
         out self: DeviceBuffer[_dtype],
-        ctx: DeviceContext,
+        # FIXME(MSTDL-3258): DeviceContext target type erasure.
+        ctx: DeviceContext.Generic,
         ptr: Pointer[Scalar[_dtype], ...],
         size: Int,
         *,
@@ -2120,6 +2127,9 @@ struct DeviceBuffer[dtype: DType](
             _DeviceContextPtr[mut=True],
             _DeviceBufferPtr[mut=True],
         ](self._handle)
+        # FIXME(MSTDL-3258):
+        #   What if the static target parameter doesn't match the dynamic
+        #   target used by this runtime DeviceContext instance?
         return DeviceContext(ctx_ptr)
 
     def map_to_host(
@@ -2359,7 +2369,11 @@ struct DeviceStream(ImplicitlyCopyable, _FunctionEnqueuer):
 
     @doc_hidden
     @inline(.always)
-    def __init__(out self, ctx: DeviceContext) raises:
+    def __init__(
+        out self,
+        # FIXME(MSTDL-3258): DeviceContext target type erasure.
+        ctx: DeviceContext.Generic,
+    ) raises:
         """Retrieves the stream associated with the given device context.
 
         Args:
@@ -2995,7 +3009,7 @@ struct DeviceFunction[
     var _capture_sizes: Array[UInt64, Self._max_captures]
     """Byte size of each captured value, copied at construction."""
 
-    var _context: DeviceContext
+    var _context: DeviceContext.Generic[Self.target]
     """The device context backing the function."""
 
     def __init__(out self, *, copy: Self):
@@ -3384,7 +3398,7 @@ struct DeviceFunction[
             ](
                 ctx,
                 func_handle=self._handle,
-                device_context=self._context,
+                device_context=self._context.assert_default_target(),
                 num_captures=num_captures,
                 effective_argc=effective_argc,
                 dense_args_addrs=dense_args_addrs,
@@ -3403,7 +3417,7 @@ struct DeviceFunction[
             _enqueue_packed_checked(
                 ctx,
                 func_handle=self._handle,
-                device_context=self._context,
+                device_context=self._context.assert_default_target(),
                 func_name=func_name,
                 dense_args_addrs=dense_args_addrs,
                 dense_args_sizes=Optional(dense_args_sizes),
@@ -3649,7 +3663,7 @@ struct DeviceFunction[
                 host3_size=host3_size,
                 host4_size=host4_size,
                 func_handle=self._handle,
-                device_context=self._context,
+                device_context=self._context.assert_default_target(),
                 capture_sizes=self._capture_sizes_ptr(),
                 num_captures=num_captures,
                 num_translated_args=num_translated_args,
@@ -3729,7 +3743,7 @@ struct DeviceFunction[
             _enqueue_packed_checked(
                 ctx,
                 func_handle=self._handle,
-                device_context=self._context,
+                device_context=self._context.assert_default_target(),
                 func_name=func_name,
                 dense_args_addrs=dense_args_addrs,
                 dense_args_sizes=None,
@@ -4213,7 +4227,7 @@ struct DeviceExternalFunction[
     var _handle: _DeviceFunctionPtr[mut=True]
     """Internal handle to the native device function object."""
 
-    var _context: DeviceContext
+    var _context: DeviceContext.Generic[Self.target]
     """The device context backing the function."""
 
     def __init__(out self, *, copy: Self):
@@ -4248,7 +4262,7 @@ struct DeviceExternalFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext.Generic[Self.target],
         info: CompiledFunctionInfo,
         *,
         func_attribute: OptionalReg[FuncAttribute] = None,
@@ -4278,7 +4292,7 @@ struct DeviceExternalFunction[
     @inline(.always)
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext.Generic[Self.target],
         *,
         var function_name: String,
         var asm: String,
@@ -4401,7 +4415,17 @@ struct DeviceExternalFunction[
         return Int(result)
 
 
-struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
+comptime DeviceContext = DeviceContextBase[]
+"""Temporary type alias as DeviceContext transitions to being
+parameterized by compilation target.
+
+See `DeviceContextBase` for additional documentation.
+"""
+
+
+struct DeviceContextBase[
+    target: CompilationTarget = CompilationTarget.default_accelerator()
+](ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     """Represents a single stream of execution on a particular accelerator
     (GPU).
 
@@ -4410,6 +4434,9 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     methods for allocating buffers on the device, copying data between host and
     device, and for compiling and running functions (also known as kernels) on
     the device.
+
+    Parameters:
+        target: The accelerator targeted by this device context.
 
     The device context can be used as a
     [context manager](https://mojolang.org/docs/manual/errors/#use-a-context-manager).
@@ -4442,10 +4469,14 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
     ```
     """
 
-    comptime target = TargetAccelerator.default_accelerator.target
-    """`CompilationTarget` for the accelerator targeted by this device context."""
+    comptime Generic = DeviceContextBase[_]
+    """DeviceContext type with unbound compilation target parameter.
 
-    comptime default_device_info = TargetAccelerator.default_accelerator.gpu_info
+    This is a tempoary type alias as DeviceContext transitions to being
+    parameterized by compilation target.
+    """
+
+    comptime default_device_info = GPUInfo.from_target[Self.target]()
     """`GPUInfo` object for the default accelerator."""
 
     var _handle: _DeviceContextPtr[mut=True]
@@ -4630,6 +4661,30 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             NoneType,
             _DeviceContextPtr[mut=True],
         ](self._handle)
+
+    # TODO(MSTDL-3258): Remove once all APIs fully support generic DeviceContext
+    @inline(.always)
+    def assert_default_target(self) -> DeviceContext:
+        """Temporary function to assert and cast this DeviceContext to the
+        default target.
+
+        This method will be removed once all APIs fully support generic target
+        parameters.
+
+        Constraints:
+            This DeviceContext must be using the default target, else a compile
+            time assertion will fail.
+
+        Returns:
+            This device context cast to the default target.
+        """
+        comptime assert Self.target._eq_triple_and_arch[
+            CompilationTarget.default_accelerator()
+        ](), String(
+            t"using DeviceContext with non-default target is not supported fro"
+            t"m: {call_location()}"
+        )
+        return rebind[DeviceContext](self)
 
     def __eq__(self, other: Self) -> Bool:
         """Returns `True` if `self` and `other` refer to the same underlying
@@ -5026,7 +5081,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         var function_name: String,
         var asm: String,
         func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: DeviceExternalFunction[],
+        out result: DeviceExternalFunction[target=Self.target],
     ) raises:
         """Loads a pre-compiled device function from assembly code.
 
@@ -5694,7 +5749,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         )
         return elapsed_nanos
 
-    def push_context(self) raises -> _DeviceContextScope:
+    def push_context(self) raises -> _DeviceContextScope[Self.target]:
         """Returns a context manager that ensures this device's driver context is active.
 
         This method returns a context manager that pushes this device's driver
@@ -5722,7 +5777,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         ```
         """
         comptime assert not is_gpu(), "DeviceContext is not supported on GPUs"
-        return _DeviceContextScope(self)
+        return _DeviceContextScope[Self.target](self)
 
     def set_as_current(self) raises:
         """For use with libraries that require a specific GPU context to be
@@ -6710,7 +6765,9 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
             ](self._handle)
         )
 
-    def select_stream(self, stream_id: Int) raises -> DeviceContext:
+    def select_stream(
+        self, stream_id: Int
+    ) raises -> DeviceContext.Generic[Self.target]:
         """Returns a view of this device context bound to the given stream.
 
         The returned context shares this context's full stream set, driver
@@ -6743,7 +6800,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable, _FunctionEnqueuer):
         )
         # The runtime transferred ownership of the view's reference to us, so
         # the wrapper must own it (and release on destruction).
-        var view = DeviceContext(result)
+        var view = DeviceContext.Generic[Self.target](result)
         view._owning = True
         return view^
 
@@ -7616,11 +7673,11 @@ struct _HostMappedBuffer[dtype: DType]:
         self._ctx.synchronize()
 
 
-struct _DeviceContextScope:
-    var _ctx: DeviceContext
+struct _DeviceContextScope[target: CompilationTarget]:
+    var _ctx: DeviceContext.Generic[Self.target]
     var _handle: _DeviceContextScopePtr[mut=True]
 
-    def __init__(out self, ctx: DeviceContext):
+    def __init__(out self, ctx: DeviceContext.Generic[Self.target]):
         self._ctx = ctx
         self._handle = {}
 
@@ -7629,7 +7686,7 @@ struct _DeviceContextScope:
         if self._handle:
             self._release()
 
-    def __enter__(mut self) raises -> DeviceContext:
+    def __enter__(mut self) raises -> DeviceContext.Generic[Self.target]:
         # Create a C++ DeviceContextScope
         var cpp_handle: _DeviceContextScopePtr[mut=True] = {}
 

@@ -34,13 +34,11 @@ from std._plugin._overlay import ADDITIONAL_TARGETS
 from ._builtin_targets import BuiltinTargets
 
 
-@inline(.always)
+@always_inline("builtin")
 def get_gpu_target[
     # TODO: Ideally this is an Optional[StaticString] but blocked by MOCO-1039
     target_arch: StaticString = _accelerator_arch(),
-]() -> CompilationTarget[
-    _mlir_value=TargetAccelerator.from_arch[target_arch].mlir_target
-]:
+]() -> CompilationTarget[_mlir_value=_gpu_mlir_target[target_arch]()]:
     """Gets the GPU target information for the specified architecture.
 
     Parameters:
@@ -50,6 +48,14 @@ def get_gpu_target[
         Target type information for the specified GPU architecture.
     """
     return {}
+
+
+# Must stay an ordinary (not builtin-inlined) function. The default
+# `accelerator_arch` is only resolved at elaboration time, so the table lookup
+# can't fold while types are parsed; inlining it would embed the whole
+# accelerator table in every type and symbol name that mentions the target.
+def _gpu_mlir_target[target_arch: StaticString]() -> _TargetType:
+    return TargetAccelerator.from_arch[target_arch].mlir_target
 
 
 # ===----------------------------------------------------------------------=== #
