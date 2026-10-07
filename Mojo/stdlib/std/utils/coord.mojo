@@ -644,6 +644,54 @@ struct Coord[*element_types: CoordLike](
 
         return result
 
+    @inline(.always)
+    def replace_dynamic[
+        dtype: DType, //, at: Int
+    ](mut self, value: Scalar[dtype]):
+        """Assign a runtime `value` to an already-dynamic element, in place.
+
+        `value` must already have the element's own dtype, so the assignment
+        cannot truncate or wrap; convert at the call site to narrow.
+
+        Parameters:
+            dtype: The dtype of `value`, which must match the element's.
+            at: The index of the element to assign to.
+
+        Args:
+            value: The runtime value to store.
+
+        Constraints:
+            - `at` must be a valid element index.
+            - The `Coord` must be flat. A nested element reports `DType.int`
+              and is not static, so the other checks would not reject it.
+            - The element at `at` must not be statically known; use `replace`
+              to overwrite a static element, which yields a new `Coord` type.
+            - `dtype` must equal the dtype of the element at `at`.
+
+        Examples:
+            ```mojo
+            from std.utils.coord import Coord, ComptimeInt
+            var c = Coord(ComptimeInt[3](), Int64(0))
+            c.replace_dynamic[1](Int64(7))
+            # c is Coord(ComptimeInt[3](), Int64(7))
+            ```
+        """
+        comptime assert (
+            0 <= at < Self.__len__()
+        ), "`at` must be a valid element index"
+        comptime assert (
+            Self.is_flat
+        ), "`Coord.replace_dynamic` only supports flat `Coord`s"
+        comptime ElemT = Self.element_types[at]
+        comptime assert not ElemT.is_static_value, (
+            "cannot assign a runtime value to a statically known element; use"
+            " `replace` to overwrite it with a value of a different type"
+        )
+        comptime assert (
+            dtype == ElemT.DTYPE
+        ), "`value` must have the dtype of the element at `at`"
+        self[at] = rebind[ElemT](value)
+
     def write_to(self, mut w: Some[Writer]):
         """Write this `Coord` to a `Writer`.
 

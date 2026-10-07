@@ -262,6 +262,15 @@ This version is still a work in progress.
   pay the cost of holding an extra `Int` field. Dynamic (runtime) alignment will
   eventually be supported after some more design considerations.
 
+- `Coord` has a new `replace_dynamic[at](value)` method, the in-place
+  counterpart to `replace`. It keeps the coordinate's type, so the element at
+  `at` must already be dynamic, and `value` takes that element's own dtype.
+
+  ```mojo
+  var c = Coord(ComptimeInt[3](), Int64(0))
+  c.replace_dynamic[1](Int64(7))  # Coord(ComptimeInt[3](), Int64(7))
+  ```
+
 - `Span` has a new `unsafe_deinit_elements()` method, which destroys every
   element in place and leaves the memory uninitialized.
 

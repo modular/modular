@@ -614,7 +614,7 @@ def test_replace_first_and_last() raises:
     assert_equal(Int(last[2].value()), 9)
 
 
-def test_replace_dynamic_element() raises:
+def test_replace_on_dynamic_element() raises:
     var c = Coord(Int64(1), Int64(2))
     var r = c.replace[0](Int64(9))
 
@@ -715,6 +715,99 @@ def test_product_float_dtype() raises:
     var p = c.product[.float32]()
     assert_true(type_of(p) == Float32)
     assert_equal(p, Float32(30))
+
+
+def test_replace_dynamic_preserves_the_coord_type() raises:
+    var c = Coord(ComptimeInt[3](), Int64(0))
+    comptime Before = type_of(c)
+
+    c.replace_dynamic[1](Int64(7))
+
+    # Unlike `replace`, which yields a `Coord` of a different type, this
+    # mutates in place and leaves the type -- and so the static dim -- alone.
+    comptime assert type_of(c) == Before
+    comptime assert type_of(c).element_types[0] == ComptimeInt[3]
+    comptime assert size_of[type_of(c)]() == size_of[Int64]()
+    assert_equal(Int(c[0].value()), 3)
+    assert_equal(Int(c[1].value()), 7)
+
+
+def test_replace_dynamic_takes_the_element_dtype() raises:
+    # Each value is spelled in its element's own dtype; nothing converts.
+    var c = Coord(Int32(0), Int64(0))
+
+    c.replace_dynamic[0](Int32(5))
+    c.replace_dynamic[1](Int64(6))
+
+    comptime assert type_of(c).element_types[0] == Int32
+    comptime assert type_of(c).element_types[1] == Int64
+    assert_equal(Int(c[0].value()), 5)
+    assert_equal(Int(c[1].value()), 6)
+
+
+def test_replace_dynamic_int_element_takes_an_int() raises:
+    # The kernel case: an `Int` element is `Scalar[DType.int]`, so a runtime
+    # `Int` needs no conversion.
+    var c = Coord(Int(0), ComptimeInt[2]())
+    var i = 5
+
+    c.replace_dynamic[0](i)
+
+    assert_equal(Int(c[0].value()), 5)
+
+
+def test_replace_dynamic_repeated_assignment() raises:
+    # The loop shape this exists for: one dim rewritten on every step.
+    var c = Coord(ComptimeInt[4](), Int64(0))
+
+    for i in range(5):
+        c.replace_dynamic[1](Int64(i))
+
+    assert_equal(Int(c[0].value()), 4)
+    assert_equal(Int(c[1].value()), 4)
+
+
+def test_replace_dynamic_first_and_last() raises:
+    var c = Coord(Int64(1), ComptimeInt[3](), Int64(2))
+
+    c.replace_dynamic[0](Int64(9))
+    c.replace_dynamic[2](Int64(8))
+
+    assert_equal(Int(c[0].value()), 9)
+    assert_equal(Int(c[1].value()), 3)
+    assert_equal(Int(c[2].value()), 8)
+
+
+def test_replace_dynamic_across_integral_dtypes() raises:
+    # `CoordLike` is integral-only -- a float element does not compile -- so
+    # the dtypes that matter here are the narrow and unsigned ones. `UInt` is
+    # `Scalar[DType.uint]`, a different dtype from `UInt64` even where the two
+    # are the same width.
+    var c = Coord(Int16(0), UInt32(0), UInt(0), UInt64(0), Int64(0))
+
+    c.replace_dynamic[0](Int16(5))
+    c.replace_dynamic[1](UInt32(6))
+    c.replace_dynamic[2](UInt(7))
+    c.replace_dynamic[3](UInt64(8))
+    c.replace_dynamic[4](Int64(9))
+
+    comptime assert type_of(c).element_types[0] == Int16
+    comptime assert type_of(c).element_types[1] == UInt32
+    comptime assert type_of(c).element_types[2] == UInt
+    comptime assert type_of(c).element_types[3] == UInt64
+    comptime assert type_of(c).element_types[4] == Int64
+    assert_equal(Int(c[0].value()), 5)
+    assert_equal(Int(c[1].value()), 6)
+    assert_equal(Int(c[2].value()), 7)
+    assert_equal(Int(c[3].value()), 8)
+    assert_equal(Int(c[4].value()), 9)
+
+
+def test_replace_dynamic_rank_one() raises:
+    var c = Coord(Int64(0))
+    c.replace_dynamic[0](Int64(11))
+
+    assert_equal(Int(c[0].value()), 11)
 
 
 def main() raises:

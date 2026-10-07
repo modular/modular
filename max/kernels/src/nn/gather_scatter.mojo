@@ -368,7 +368,7 @@ def gather[
             var next_idx_ptr = indices_ptr.unsafe_offset(
                 min(indices_remaining - 1, prefetch_offset)
             )
-            input_coords[axis] = rebind[input_coords.element_types[axis]](
+            input_coords.replace_dynamic[axis](
                 Int64(
                     _unsafe_normalize_neg_index(
                         next_idx_ptr.unsafe_load(),
@@ -554,9 +554,7 @@ def gather_elementwise_fn_wrapper[
     comptime for i in range(indices_shape.size):
         comptime for j in range(coords.rank):
             if j == i + Int(axis):
-                indices_index[i] = rebind[indices_index.element_types[i]](
-                    Int64(coords[j].value())
-                )
+                indices_index.replace_dynamic[i](Int64(coords[j].value()))
 
     # The index we are gathering.
     var data_index = indices_fn[1](indices_index)
@@ -575,9 +573,7 @@ def gather_elementwise_fn_wrapper[
             var normalized_coords = _unsafe_normalize_neg_index(
                 data_index, input_shape[axis]
             )
-            data_indices[i] = rebind[data_indices.element_types[i]](
-                Int64(normalized_coords)
-            )
+            data_indices.replace_dynamic[i](Int64(normalized_coords))
 
             # Do a real bounds check and provide a nice message on CPU.
             # Use debug_assert to validate normalized index is within bounds
@@ -597,14 +593,12 @@ def gather_elementwise_fn_wrapper[
         elif i > Int(axis):
             # Skip over any extra indices dimensions. These are essentially new dimensions.
             comptime if i + skip_factor >= 0:
-                data_indices[i] = rebind[data_indices.element_types[i]](
+                data_indices.replace_dynamic[i](
                     Int64(coords[i + skip_factor].value())
                 )
         else:
             comptime if i < coords.rank:
-                data_indices[i] = rebind[data_indices.element_types[i]](
-                    Int64(coords[i].value())
-                )
+                data_indices.replace_dynamic[i](Int64(coords[i].value()))
 
     # Load the data.
     comptime if prefetch_fn:
