@@ -61,7 +61,6 @@ from __future__ import annotations
 
 import copy
 import logging
-import os
 import time
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
@@ -1766,7 +1765,6 @@ class OverlapTextGenerationPipeline(
             TextGenerationRequest,
         ],
         memory_plan: MemoryPlan,
-        disable_overlap: bool = False,
     ) -> None:
         """Initialize a text generation pipeline instance.
 
@@ -1780,10 +1778,6 @@ class OverlapTextGenerationPipeline(
             tokenizer: Tokenizer implementation used to build contexts and decode.
             memory_plan: Memory plan from the registry containing max_batch_size
                 and other resolved memory parameters.
-            disable_overlap: When this flag is set, the overlap scheduler will
-                immediately synchronize after model execution. This removes any
-                potential cpu / gpu overlap. Setting ``MAX_DISABLE_OVERLAP=1``
-                in the environment has the same effect.
 
         Raises:
             ValueError: If ``quantization_encoding`` is not configured in
@@ -2095,15 +2089,12 @@ class OverlapTextGenerationPipeline(
         # Cache-length bucket aligner for the device-graph-synthesis pathway.
         self._synthesis_aligner: SynthesisBucketAligner | None = None
 
-        # Device graph capture forces the overlap scheduler on, so the env var
-        # is the only way to run capture without overlap.
-        if os.environ.get("MAX_DISABLE_OVERLAP") == "1":
+        self._disable_overlap = pipeline_config.runtime.disable_overlap
+        if self._disable_overlap:
             logger.info(
-                "MAX_DISABLE_OVERLAP=1: synchronizing after every execution."
+                "disable_overlap: synchronizing after every execution."
                 " CPU/GPU overlap is off and throughput will drop."
             )
-            disable_overlap = True
-        self._disable_overlap = disable_overlap
 
     @property
     def max_batch_size(self) -> int:

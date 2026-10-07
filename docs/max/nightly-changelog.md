@@ -200,9 +200,13 @@ This version is still a work in progress.
 - Device graph capture no longer aborts the model worker on AMD GPUs. With
   capture enabled, `max serve` now runs the matmul shapes that fell back to
   hipBLASLt on MAX's own kernels.
-- Setting `MODULAR_DISABLE_VENDOR_FALLBACK=1` in the environment of
-  `max serve` now disables the vendor-BLAS matmul fallback on any GPU.
-  Previously the variable had no effect under `max serve`.
+- `max serve --disable-vendor-blas-fallback` disables the vendor-BLAS matmul
+  fallback on any GPU. Setting `MODULAR_DISABLE_VENDOR_FALLBACK=1` in the
+  environment of `max serve` sets its default. Previously the variable had no
+  effect under `max serve`.
+- `max serve --disable-overlap` keeps the overlap pipeline but synchronizes
+  after every model execution, so device graph capture can run without
+  CPU/GPU overlap. `MAX_DISABLE_OVERLAP=1` sets its default.
 - Hardened decoding of client-supplied images. `Image.open` is now restricted
   to an explicit format allowlist (PNG, JPEG, WEBP, GIF, BMP, PPM, TIFF, TGA,
   and AVIF where the platform provides it), shrinking the native-decoder attack
