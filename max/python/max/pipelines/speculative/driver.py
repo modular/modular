@@ -675,7 +675,8 @@ class SequentialDriver(
             seed: Per-row RNG seed for the acceptance sampler.
             temperature: Per-row sampling temperature.
             top_k: Per-row top-k cutoff.
-            max_k: The batch-wide maximum of ``top_k``, on CPU.
+            max_k: The batch-wide maximum of ``top_k``, or ``-1`` if any
+                row has no top-k limit, on CPU.
             top_p: Per-row nucleus cutoff.
             min_top_p: The batch-wide minimum of ``top_p``, on CPU.
             in_thinking_phase: Per-row flag enabling relaxed acceptance;

@@ -10795,8 +10795,9 @@ def topk_fused_sampling(
             (which will be expanded to batch_size) or a tensor of shape
             [batch_size].
         temperature: Temperature for scaling logits before sampling.
-        max_k: Maximum value of k across the batch. Required when top_k is a
-            tensor.
+        max_k: Maximum value of k across the batch, or ``-1`` if any row's
+            ``top_k`` is ``-1`` or ``0`` (no limit): the kernel resolves a
+            row's ``-1`` to ``max_k``. Required when top_k is a tensor.
         top_p: Top-p (nucleus) sampling threshold. Can be a scalar or tensor.
         min_p: Per-row min_p probability filtering threshold of shape
             [batch_size]. Tokens with probability below

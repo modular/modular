@@ -49,7 +49,11 @@ from max.nn.sampling import (
 from max.pipelines.context import TextContext
 
 from .sampling_config import SamplingConfig
-from .sampling_logits_processor import PenaltyInputs, SamplerInputs
+from .sampling_logits_processor import (
+    PenaltyInputs,
+    SamplerInputs,
+    batch_max_k,
+)
 
 
 def _sampling_input_types(
@@ -850,7 +854,9 @@ class _TypicalAcceptanceRunner(RejectionRunner):
                 target_logits,
                 Buffer.from_numpy(temps_np).to(self._device),
                 Buffer.from_numpy(top_k_np).to(self._device),
-                Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64)),
+                Buffer.from_numpy(
+                    np.array(batch_max_k(top_k_np), dtype=np.int64)
+                ),
                 Buffer.from_numpy(top_p_np).to(self._device),
                 Buffer.from_numpy(np.array(np.min(top_p_np), dtype=np.float32)),
                 self._next_seed(),

@@ -463,7 +463,9 @@ def fused_token_sampling_cpu[
         SeedEngine: Engine policy of the seed buffer.
 
     Args:
-        max_k: Largest number of top elements.
+        max_k: Largest `k` across the batch, or -1 if any row has no top-k
+            limit. Rows whose `k` is -1 then sample from the top 255
+            elements, and explicit rows keep their own `k`.
         input: TileTensor[dtype] (Any shape)- The input tensor.
         out_idxs: TileTensor[out_idx_type] (shape of [input_shape[:-1]] + [1]) - The output indices.
         k: Optional device buffer of top elements to keep for each batch element.
@@ -496,6 +498,19 @@ def fused_token_sampling_cpu[
     ):
         var bound_max_k = 255 if max_k == -1 else max_k
 
+        # A `max_k` of -1 means some row has no top-k limit, not that all do.
+        # `_top_k_sampling` resolves a row's -1 to the output width, which an
+        # explicit k above the cap widens, so resolve those rows to the cap.
+        var resolved_k = List[Int64]()
+        if max_k == -1 and k:
+            var k_in = k.value()
+            var cap = bound_max_k
+            for i in range(k_in.num_elements()):
+                var k_raw = Int(k_in[i])
+                var row_k = cap if k_raw == -1 else k_raw
+                resolved_k.append(Int64(row_k))
+                bound_max_k = max(bound_max_k, row_k)
+
         # materialize the out_vals which is of shape [input[:-1]] + [k]
         var out_vals_shape = coord_to_index_list(input.layout.shape_coord())
         out_vals_shape[input.rank - 1] = bound_max_k
@@ -510,17 +525,34 @@ def fused_token_sampling_cpu[
             row_major(Coord(out_vals_shape)),
         )
 
-        _top_k_sampling(
-            bound_max_k,
-            input,
-            out_vals,
-            out_idxs.bitcast[.int64](),
-            k,
-            temperature,
-            top_p,
-            seed,
-        )
+        if resolved_k:
+            _top_k_sampling(
+                bound_max_k,
+                input,
+                out_vals,
+                out_idxs.bitcast[.int64](),
+                Optional(
+                    TileTensor(resolved_k, row_major(Int64(len(resolved_k))))
+                    .as_unsafe_any_origin()
+                    .as_imm()
+                ),
+                temperature,
+                top_p,
+                seed,
+            )
+        else:
+            _top_k_sampling(
+                bound_max_k,
+                input,
+                out_vals,
+                out_idxs.bitcast[.int64](),
+                k,
+                temperature,
+                top_p,
+                seed,
+            )
 
+        _ = resolved_k^
         dealloc(out_vals_alloc^)
 
 

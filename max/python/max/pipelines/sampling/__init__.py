@@ -36,6 +36,7 @@ from .sampling_logits_processor import (
     FusedSamplingProcessor,
     PenaltyInputs,
     SamplerInputs,
+    batch_max_k,
 )
 from .seeds import request_row_seed
 
@@ -53,6 +54,7 @@ __all__ = [
     "TokenSampler",
     "ToolCallPolicy",
     "apply_logits_processors",
+    "batch_max_k",
     "build_greedy_acceptance_sampler_graph",
     "build_stochastic_acceptance_sampler_graph",
     "build_synthetic_acceptance_sampler_graph",

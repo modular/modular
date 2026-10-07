@@ -186,6 +186,7 @@ from dataclasses import dataclass, field
 from max.pipelines.sampling import (
     FusedSamplingProcessor,
     apply_logits_processors,
+    batch_max_k,
     request_row_seed,
     token_sampler,
 )
@@ -2628,7 +2629,9 @@ class OverlapTextGenerationPipeline(
         )
         in_thinking_phase_view.inplace_copy_from(in_thinking_phase_pinned)
 
-        max_k = Buffer.from_numpy(np.array(int(top_k_np.max()), dtype=np.int64))
+        max_k = Buffer.from_numpy(
+            np.array(batch_max_k(top_k_np), dtype=np.int64)
+        )
         min_top_p = Buffer.from_numpy(
             np.array(float(top_p_np.min()), dtype=np.float32)
         )

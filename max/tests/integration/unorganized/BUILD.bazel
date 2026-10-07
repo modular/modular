@@ -332,6 +332,8 @@ modular_py_test(
     deps = _SAMPLING_BASE_DEPS + [
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/request",
+        "//max/python/max/pipelines/sampling",
     ],
 )
 

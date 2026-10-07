@@ -590,6 +590,26 @@ class PenaltyInputs:
         )
 
 
+def batch_max_k(top_k: npt.NDArray[np.int64]) -> int:
+    """Returns the ``max_k`` scalar the fused sampler takes for ``top_k``.
+
+    The kernel resolves a row's ``top_k`` of ``-1`` (no limit) to ``max_k``,
+    so the plain batch maximum would hand that row a batch-mate's explicit
+    ``top_k``: next to a greedy request it would decode greedily. Returning
+    ``-1`` whenever any row has no limit lets the kernel give those rows its
+    own unrestricted bound while explicit rows keep their ``top_k``.
+
+    Args:
+        top_k: Per-row ``top_k`` values of the batch.
+
+    Returns:
+        ``-1`` if any row has no top-k limit, else the largest ``top_k``.
+    """
+    if (top_k <= 0).any():
+        return -1
+    return int(top_k.max())
+
+
 @dataclass
 class SamplerInputs:
     """Container for sampler inputs."""
@@ -645,7 +665,7 @@ class SamplerInputs:
 
         # max_k is a scalar 0-d tensor. It does not need to be pinned since it
         # is not copied to the device.
-        max_k_np = np.array(np.max(top_k_host.to_numpy()), dtype=np.int64)
+        max_k_np = np.array(batch_max_k(top_k_host.to_numpy()), dtype=np.int64)
         max_k = Buffer.from_numpy(max_k_np)
 
         # top_p is a tensor of shape (batch_size,)
