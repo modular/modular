@@ -97,15 +97,19 @@ def stage_config(
     for kind, cache_class in (("sliding_attention", 0), ("full_attention", 1)):
         params = config.kv_params.children[kind]
         assert isinstance(params, KVCacheParams)
+        # Scale tensors would add stage graph inputs that the PP KV handoff
+        # does not carry, so FP8 is accepted only as plain storage.
         if (
-            params.dtype != DType.bfloat16
+            params.dtype not in (DType.bfloat16, DType.float8_e4m3fn)
+            or params.kvcache_quant_config is not None
             or params.enable_prefix_caching
             or params.data_parallel_degree != 1
             or params.speculative_method is not None
         ):
             raise ValueError(
-                "Pipeline stages require BF16 KV with data parallel degree 1"
-                " and without prefix caching or speculative decoding"
+                "Pipeline stages require unscaled BF16 or FP8 KV with data"
+                " parallel degree 1 and without prefix caching or speculative"
+                " decoding"
             )
         count = sum(row["cache_class"] == cache_class for row in mapping)
         if not count:
