@@ -15,6 +15,10 @@
 from test_utils.cabi_check import AbiConstant, AbiTypedefLike
 
 from std.net._sys.linux import (
+    SOCK_CLOEXEC,
+    SOCK_NONBLOCK,
+    SO_DOMAIN,
+    SO_PROTOCOL,
     sockaddr,
     sockaddr_in,
     sockaddr_in6,
@@ -42,5 +46,10 @@ comptime CABI_STRUCTS = TypeList.of[
 comptime CABI_TYPEDEFS = TypeList.of[Trait=AbiTypedefLike]()
 """The type aliases to check."""
 
-comptime CABI_CONSTANTS: List[AbiConstant] = []
+comptime CABI_CONSTANTS = [
+    AbiConstant("SOCK_NONBLOCK", SOCK_NONBLOCK),
+    AbiConstant("SOCK_CLOEXEC", SOCK_CLOEXEC),
+    AbiConstant("SO_PROTOCOL", SO_PROTOCOL),
+    AbiConstant("SO_DOMAIN", SO_DOMAIN),
+]
 """The constants to check."""

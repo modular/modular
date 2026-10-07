@@ -10,16 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""macOS (Darwin) socket address layouts.
+"""macOS (Darwin) socket address layouts and constants.
 
-The layouts are transcribed from `<sys/socket.h>`, `<netinet/in.h>`, and
-`<sys/un.h>` on macOS.
+The layouts and values are transcribed from `<sys/socket.h>`,
+`<netinet/in.h>`, and `<sys/un.h>` on macOS.
 """
 
-from std.ffi import c_char
+from std.ffi import c_char, c_int
 from std.sys import size_of
 
 from .inet import in6_addr, in_addr, in_port_t
+
+comptime SO_NOSIGPIPE: c_int = 0x1022
+"""Don't raise `SIGPIPE` on write to a closed peer."""
 
 
 @fieldwise_init

@@ -10,17 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Linux (glibc) socket address layouts.
+"""Linux (glibc) socket address layouts and constants.
 
-The layouts are transcribed from `<sys/socket.h>`, `<netinet/in.h>`, and
-`<sys/un.h>` on x86-64 and aarch64 Linux. This module is pure data with
-no target-dependent code, so it compiles on every host.
+The layouts and values are transcribed from `<sys/socket.h>`,
+`<netinet/in.h>`, and `<sys/un.h>` on x86-64 and aarch64 Linux.
 """
 
-from std.ffi import c_char, c_ulong, c_ushort
+from std.ffi import c_char, c_int, c_ulong, c_ushort
 from std.sys import size_of
 
 from .inet import in6_addr, in_addr, in_port_t
+
+comptime SOCK_NONBLOCK: c_int = 0o4000
+"""Create the socket non-blocking (or-ed into the socket type)."""
+comptime SOCK_CLOEXEC: c_int = 0o2000000
+"""Create the socket close-on-exec (or-ed into the socket type)."""
+comptime SO_PROTOCOL: c_int = 38
+"""Get the socket protocol (read-only)."""
+comptime SO_DOMAIN: c_int = 39
+"""Get the socket domain (read-only)."""
 
 
 @fieldwise_init

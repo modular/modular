@@ -15,6 +15,7 @@
 from test_utils.cabi_check import AbiConstant, AbiTypedefLike
 
 from std.net._sys.macos import (
+    SO_NOSIGPIPE,
     sockaddr,
     sockaddr_in,
     sockaddr_in6,
@@ -42,5 +43,7 @@ comptime CABI_STRUCTS = TypeList.of[
 comptime CABI_TYPEDEFS = TypeList.of[Trait=AbiTypedefLike]()
 """The type aliases to check."""
 
-comptime CABI_CONSTANTS: List[AbiConstant] = []
+comptime CABI_CONSTANTS = [
+    AbiConstant("SO_NOSIGPIPE", SO_NOSIGPIPE),
+]
 """The constants to check."""

@@ -419,7 +419,7 @@ def assert_cabi_struct[T: AnyType]() raises:
 def assert_cabi_checks_for[
     structs: TypeList[Trait=AnyType, ...],
     typedefs: TypeList[Trait=AbiTypedefLike, ...],
-    constants: List[AbiConstant],
+    constants: ImmSpan[AbiConstant, _],
 ]() raises:
     """Compares every declaration in a set of mirrors against C.
 

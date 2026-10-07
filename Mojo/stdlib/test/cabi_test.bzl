@@ -24,10 +24,6 @@ def mojo_cabi_test(name, platforms):
     headers, and adds the test `test_<name>.mojo.test`, which compares the
     mirrors against it.
 
-    The generator runs on the build machine, whose OS can differ from the
-    test target, so a manifest lists concrete per-platform mirror types and
-    never selects them with a compile-time platform check.
-
     Args:
         name: The manifest package's directory, which also names the suite.
         platforms: The operating systems the suite runs on, such as
