@@ -149,11 +149,9 @@ def copy_local_to_dram_32_32_8[
 ):
     # TODO: use copy_local_to_dram instead once fixed. This is a workaround for now.
 
-    # `distribute` / `distance` / `runtime_layout` / `element_layout` and
-    # `Element` are `LayoutTensor`-only, and the vectorized fragment views have
-    # nested element layouts (not flat). Bridge the flat tiles to `LayoutTensor`
-    # and vectorize there; the buffer resource uses the native `TileTensor`
-    # `make_amd_buffer_resource` overload on the (flat) base tensor.
+    # `distribute` / `distance` / `Element` are `LayoutTensor`-only, so bridge
+    # and vectorize there; the resource descriptor below is built from the
+    # native pointer-backed base.
     var dst_lt = dst.to_layout_tensor().vectorize[1, 4]()
     var src_lt = src.to_layout_tensor().vectorize[1, 4]()
 

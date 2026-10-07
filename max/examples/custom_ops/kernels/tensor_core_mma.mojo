@@ -623,6 +623,9 @@ def naive_tensor[
             var a_reg = mma_op.load_a(A_warp_tile.to_layout_tensor())
             var b_reg = mma_op.load_b(B_warp_tile.to_layout_tensor())
 
+            # `TensorCore`'s legacy overload takes `LayoutTensor`, so bridge the
+            # register tile to a `LayoutTensor` view; `c_reg_lt` aliases the same
+            # register storage, so accumulating into it updates `c_reg`.
             var c_reg_lt = c_reg.to_layout_tensor()
             var d_reg = mma_op.mma_op(a_reg, b_reg, c_reg_lt)
 
