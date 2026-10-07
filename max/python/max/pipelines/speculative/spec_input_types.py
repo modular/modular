@@ -77,11 +77,13 @@ class SpecDecodeInputTypeSpec:
     :func:`~max.pipelines.speculative.spec_width_policy.declares_skippable_draft`
     says the schedule can skip, and the pipeline binds them by the same rule.
     Only a draft that declares ``supports_zero_draft_rows`` reads them, and
-    only on one device (``data_parallel_degree`` 1) with argmax proposals. The
-    draft-row selection arrives on the first device only, and
+    only with argmax proposals: the sequential driver skips with
+    ``data_parallel_degree`` 1, on one device or tensor-parallel across
+    several, and the block driver on one device. A data-parallel skip would
+    have to empty every replica's slice of the batch, and
     ``enable_sampled_draft_proposal`` would need the skipped rows'
-    distributions padded as well. A ``distributed`` signature on one device is
-    accepted. Elsewhere the draft leaves them unread and drafts every row."""
+    distributions padded as well. Elsewhere the draft leaves them unread and
+    drafts every row."""
     enable_sampled_draft_proposal: bool = False
     """Declare the ``draft_probs_full`` input: the distribution the draft
     sampled its token from, which the acceptance test's residual subtracts and

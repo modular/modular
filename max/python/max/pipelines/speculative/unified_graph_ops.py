@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, Dim, DimLike, TensorValue, ops
 from max.nn.kernels import (
     eagle_prefill_shift_tokens,
     inplace_memcpy,
@@ -37,6 +37,7 @@ __all__ = [
     "apply_overlap_bitmask",
     "broadcast_per_device",
     "gather_accepted_hidden_states",
+    "gather_rows_per_device",
     "merge_tokens_and_host_offsets",
     "shift_corrected_tokens",
 ]
@@ -55,6 +56,24 @@ def broadcast_per_device(
     if n_devs == 1:
         return [value]
     return ops.distributed_broadcast(value, list(signal_buffers))
+
+
+def gather_rows_per_device(
+    values: Sequence[TensorValue],
+    row_ids_per_device: Sequence[TensorValue],
+    rows: Dim,
+    trailing_dim: DimLike,
+) -> list[TensorValue]:
+    """Gathers rows out of each device's copy of a ``[B, D]`` tensor.
+
+    ``row_ids_per_device`` holds each device's own copy of the row indices,
+    from :func:`broadcast_per_device`, so no gather reads its indices from
+    another device. Each result is rebound to ``[rows, trailing_dim]``.
+    """
+    return [
+        ops.gather(value, ids, axis=0).rebind([rows, trailing_dim])
+        for value, ids in zip(values, row_ids_per_device, strict=True)
+    ]
 
 
 def gather_accepted_hidden_states(

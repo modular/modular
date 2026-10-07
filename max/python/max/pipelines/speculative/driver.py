@@ -73,6 +73,7 @@ from .unified_graph_ops import (
     apply_overlap_bitmask,
     broadcast_per_device,
     gather_accepted_hidden_states,
+    gather_rows_per_device,
     merge_tokens_and_host_offsets,
     shift_corrected_tokens,
 )
@@ -475,12 +476,13 @@ class SequentialDriver(
                 speculative_config
             ),
         )
-        # Only an argmax graph on one device runs its draft on fewer rows. The
-        # draft-row selection arrives on the first device only, and a sampled
-        # step would also have to pad the skipped rows' distributions.
+        # Each data-parallel replica drafts its own slice of the batch, and a
+        # skipping step would have to empty every slice, which the replica
+        # splits here do not express. Tensor parallelism is fine, since every
+        # device holds every row. A sampled step would also have to pad the
+        # skipped rows' distributions.
         self._skips_draft_rows = (
             proposer.supports_zero_draft_rows
-            and len(input_spec.devices) == 1
             and input_spec.data_parallel_degree == 1
             and draft_proposal == "argmax"
         )
@@ -1138,18 +1140,18 @@ class SequentialDriver(
             next_draft_tokens = ops.gather(
                 next_draft_tokens, slot_ids, axis=0
             ).rebind([rows])
-            hidden_dim = self._proposer.hidden_dim
-            carry_hidden = [
-                ops.gather(h, slot_ids, axis=0).rebind([rows, hidden_dim])
-                for h in carry_hidden
-            ]
+            # The selection arrives on the first device, so it is broadcast
+            # once and every device gathers from its own copy.
+            slot_ids_per_dev = broadcast_per_device(
+                slot_ids, batch.signal_buffers, len(self.devices)
+            )
+            carry_hidden = gather_rows_per_device(
+                carry_hidden, slot_ids_per_dev, rows, self._proposer.hidden_dim
+            )
             if (reuse_spec := self._proposer.reuse) is not None:
-                carry_reuse = [
-                    ops.gather(r, slot_ids, axis=0).rebind(
-                        [rows, reuse_spec.dim]
-                    )
-                    for r in carry_reuse
-                ]
+                carry_reuse = gather_rows_per_device(
+                    carry_reuse, slot_ids_per_dev, rows, reuse_spec.dim
+                )
 
         draft_input = DraftStepInput(
             tokens=next_draft_tokens, hidden=carry_hidden, reuse=carry_reuse
