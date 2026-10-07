@@ -1547,33 +1547,37 @@ def _mha_sm90[
         comptime s_reg_tile_layout = row_major[
             num_m_mmas * num_n_mmas, p_frag_size
         ]()
-        comptime o_reg_tile_layout = Layout.row_major(
+        comptime o_reg_tile_layout = row_major[
             num_m_mmas * num_n_mmas, o_frag_size
-        )
+        ]()
         var p_reg_tile = stack_allocation[
             dtype=accum_type, address_space=.LOCAL, alignment=4
         ](s_reg_tile_layout)
         # Softmax and register/shared fragments still use legacy views.
         var p_reg_legacy = p_reg_tile.to_layout_tensor()
-        var output_reg_tile = (
-            LayoutTensor[
-                accum_type,
-                o_reg_tile_layout,
-                MutAnyOrigin,
-                address_space=.LOCAL,
-            ]
-            .stack_allocation()
-            .fill(0)
-        )
-        comptime p_reg_tile_layout = Layout.row_major(
-            num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
-        )
-        var p_frag = LayoutTensor[
-            kv_type,
-            p_reg_tile_layout,
+        var output_reg_buffer = stack_allocation[
+            dtype=accum_type,
+            address_space=.LOCAL,
+            alignment=align_of[accum_type](),
+        ](o_reg_tile_layout)
+        var output_reg_tile = LayoutTensor[
+            accum_type,
+            Layout.row_major(num_m_mmas * num_n_mmas, o_frag_size),
             MutAnyOrigin,
             address_space=.LOCAL,
-        ].stack_allocation()
+        ](output_reg_buffer.ptr.unsafe_origin_cast[MutAnyOrigin]()).fill(0)
+        comptime p_reg_tile_layout = row_major[
+            num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+        ]()
+        var p_frag_buffer = stack_allocation[
+            dtype=kv_type,
+            address_space=.LOCAL,
+            alignment=align_of[kv_type](),
+        ](p_reg_tile_layout)
+        var p_frag = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
+            p_frag_buffer.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            p_frag_buffer.layout,
+        ).to_layout_tensor()
 
         @inline(.always)
         def vectorize_p_reg_tile(
@@ -1599,18 +1603,24 @@ def _mha_sm90[
         ) {imm}:
             result = {output_reg_tile.ptr}
 
-        var rowmax = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_rows_per_warp),
-            MutAnyOrigin,
+        var rowmax_buffer = stack_allocation[
+            dtype=accum_type,
             address_space=.LOCAL,
-        ].stack_allocation()
-        var rowsum = LayoutTensor[
-            accum_type,
-            Layout.row_major(num_rows_per_warp),
-            MutAnyOrigin,
+            alignment=align_of[accum_type](),
+        ](row_major[num_rows_per_warp]())
+        var rowmax = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
+            rowmax_buffer.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            rowmax_buffer.layout,
+        ).to_layout_tensor()
+        var rowsum_buffer = stack_allocation[
+            dtype=accum_type,
             address_space=.LOCAL,
-        ].stack_allocation()
+            alignment=align_of[accum_type](),
+        ](row_major[num_rows_per_warp]())
+        var rowsum = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
+            rowsum_buffer.ptr.unsafe_origin_cast[MutAnyOrigin](),
+            rowsum_buffer.layout,
+        ).to_layout_tensor()
 
         # Mask global memory iterator.
         var mask_warp_row = warp_y * UInt32(WM)
