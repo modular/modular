@@ -77,11 +77,11 @@ class SpecDecodeInputTypeSpec:
     :func:`~max.pipelines.speculative.spec_width_policy.declares_skippable_draft`
     says the schedule can skip, and the pipeline binds them by the same rule.
     Only a draft that declares ``supports_zero_draft_rows`` reads them, and
-    only on a single-device graph with argmax proposals: a distributed
-    signature would need a host mirror of the runtime offsets, and
+    only on one device (``data_parallel_degree`` 1) with argmax proposals. The
+    draft-row selection arrives on the first device only, and
     ``enable_sampled_draft_proposal`` would need the skipped rows'
-    distributions padded as well. Elsewhere the draft leaves them unread and
-    drafts every row."""
+    distributions padded as well. A ``distributed`` signature on one device is
+    accepted. Elsewhere the draft leaves them unread and drafts every row."""
     enable_sampled_draft_proposal: bool = False
     """Declare the ``draft_probs_full`` input: the distribution the draft
     sampled its token from, which the acceptance test's residual subtracts and

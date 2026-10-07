@@ -475,13 +475,13 @@ class SequentialDriver(
                 speculative_config
             ),
         )
-        # Only a single-device argmax graph runs its draft on fewer rows: the
-        # runtime offsets carry no CPU mirror, which a sharded draft needs to
-        # size its collectives, and a sampled step would also have to pad the
-        # skipped rows' distributions.
+        # Only an argmax graph on one device runs its draft on fewer rows. The
+        # draft-row selection arrives on the first device only, and a sampled
+        # step would also have to pad the skipped rows' distributions.
         self._skips_draft_rows = (
             proposer.supports_zero_draft_rows
-            and not input_spec.distributed
+            and len(input_spec.devices) == 1
+            and input_spec.data_parallel_degree == 1
             and draft_proposal == "argmax"
         )
         if draft_proposal == "sampled":
@@ -1079,13 +1079,17 @@ class SequentialDriver(
         decode_offsets_per_dev = broadcast_per_device(
             decode_offsets, batch.signal_buffers, len(self.devices)
         )
+        # The host mirror has to match ``decode_offsets``, which a skipping
+        # step shrinks to ``[0]``. Each sequence in the loop has one query row,
+        # so the mirror is just ``0..len(decode_offsets)``, built on the host
+        # without reading the device.
         decode_distributed = (
             replace(
                 batch.distributed,
                 host_query_offsets=ops.range(
                     start=0,
-                    stop=batch.input_row_offsets.shape[0],
-                    out_dim="input_row_offsets_len",
+                    stop=decode_offsets.shape[0],
+                    out_dim=decode_offsets.shape[0],
                     device=DeviceRef.CPU(),
                     dtype=DType.uint32,
                 ),

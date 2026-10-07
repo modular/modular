@@ -473,17 +473,18 @@ This version is still a work in progress.
 
 - A `num_speculative_tokens_per_batch_size` range whose count is `0` now
   skips the drafter as well as the verification, on the DFlash and EAGLE
-  Llama 3 architectures. Such a step used to draft tokens that the next step
-  then threw away unverified. The drafter's row count is a runtime input
-  rather than part of the graph, so a skipping step hands it zero rows and
-  its transformer and `lm_head` do not run. No branch is introduced and no
-  second copy of the weights is loaded. Under `device_graph_capture` the
+  Llama 3 architectures, on DFlash Gemma 4 31B, and on Gemma 4 MTP when
+  served on a single device. Such a step used to draft tokens that the next
+  step then threw away unverified. The drafter's row count is a runtime
+  input rather than part of the graph, so a skipping step hands it zero rows
+  and its transformer and `lm_head` do not run. No branch is introduced and
+  no second copy of the weights is loaded. Under `device_graph_capture` the
   drafting and skipping steps are recorded as separate graphs over that one
-  set of weights. DFlash skips its whole draft block, while EAGLE keeps the
-  first draft step, which is fused with the verify pass and maintains the
-  draft KV cache for the tokens the target just accepted, and skips the
-  rest. Every other architecture is unchanged and still drafts at its
-  configured depth. Behavior without a schedule is unchanged.
+  set of weights. DFlash skips its whole draft block, while EAGLE and MTP
+  keep the first draft step, which is fused with the verify pass and
+  maintains the draft state for the tokens the target just accepted, and
+  skip the rest. Every other architecture is unchanged and still drafts at
+  its configured depth. Behavior without a schedule is unchanged.
 
 ### Server metrics
 

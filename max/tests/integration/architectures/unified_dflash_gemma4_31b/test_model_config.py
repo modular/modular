@@ -80,6 +80,7 @@ from max.pipelines.lib import (
 )
 from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.speculative.config import VerifyWidthRange
 from max.pipelines.weights.quant import parse_quant_config
 from transformers import PretrainedConfig
 
@@ -500,6 +501,7 @@ def _make_real_target(
 def _make_unified_real(
     quant_config: QuantConfig | None = None,
     draft_proposal: Literal["argmax", "sampled"] = "argmax",
+    skips_draft: bool = False,
 ) -> UnifiedDflashGemma4_31BConfig:
     devices = [DeviceRef.GPU()]
     draft = _tiny_draft_config(devices, num_hidden_layers=2)
@@ -511,6 +513,16 @@ def _make_unified_real(
             speculative_method="dflash",
             num_speculative_tokens=15,
             draft_proposal=draft_proposal,
+            # A schedule that reaches width 0 is what makes the driver declare
+            # its draft row inputs.
+            num_speculative_tokens_per_batch_size=(
+                [
+                    VerifyWidthRange(batch_start=1, batch_end=8, num_tokens=15),
+                    VerifyWidthRange(batch_start=9, batch_end=64, num_tokens=0),
+                ]
+                if skips_draft
+                else None
+            ),
         ),
         target_layer_ids=[0, 1],
         layer_types=["sliding_attention", "full_attention"],
@@ -544,16 +556,27 @@ def virtual_gpu() -> Iterator[None]:
 def test_graph_signature_binds_thinking_and_structured_output(
     virtual_gpu: None,
 ) -> None:
-    """Structured output off: the tail ends at ``in_thinking_phase``; on:
-    exactly the packed bitmask triple is appended, prefix unchanged."""
-    base_types = UnifiedDflashGemma4_31B(_make_unified_real()).input_types()
+    """With structured output off, the tail ends at ``in_thinking_phase``,
+    followed by the skippable-draft pair under a schedule that skips. With it
+    on, exactly the packed bitmask triple is appended and the prefix is
+    unchanged."""
+    no_skip_types = UnifiedDflashGemma4_31B(_make_unified_real()).input_types()
+    base_types = UnifiedDflashGemma4_31B(
+        _make_unified_real(skips_draft=True)
+    ).input_types()
     so_types = UnifiedDflashGemma4_31B(
-        _make_unified_real(), enable_structured_output=True
+        _make_unified_real(skips_draft=True), enable_structured_output=True
     ).input_types()
 
-    thinking = base_types[-1]
+    assert _signature(base_types[:-2]) == _signature(no_skip_types)
+
+    thinking, slot_ids, block_offsets = base_types[-3:]
     assert isinstance(thinking, TensorType)
     assert thinking.dtype == DType.bool
+    assert isinstance(slot_ids, TensorType)
+    assert slot_ids.dtype == DType.int32
+    assert isinstance(block_offsets, TensorType)
+    assert block_offsets.dtype == DType.uint32
 
     assert _signature(so_types[: len(base_types)]) == _signature(base_types)
     assert len(so_types) == len(base_types) + 3
@@ -582,7 +605,7 @@ def test_graph_stages_end_to_end(
     collective embedding and tied head being driven from the draft's block
     stream.
     """
-    config = _make_unified_real(draft_proposal=draft_proposal)
+    config = _make_unified_real(draft_proposal=draft_proposal, skips_draft=True)
     nn_model = UnifiedDflashGemma4_31B(
         config, enable_structured_output=structured_output
     )
@@ -669,6 +692,8 @@ def _make_placeholder_inputs(
         top_p=b,
         min_top_p=b,
         in_thinking_phase=b,
+        draft_slot_ids=b,
+        draft_block_offsets=b,
     )
     if structured_output:
         return UnifiedDflashGemma4_31BInputs(
@@ -695,7 +720,7 @@ def test_inputs_buffer_tail_matches_graph_signature(
     """
     for structured_output in (False, True):
         module = UnifiedDflashGemma4_31B(
-            _make_unified_real(),
+            _make_unified_real(skips_draft=True),
             enable_structured_output=structured_output,
         )
         n_kv = len(module.signature_kv_params.flattened_kv_inputs())
