@@ -37,11 +37,6 @@ class APIType(Enum):
     OPENRESPONSES = "responses"
 
 
-class RunnerType(Enum):
-    PYTORCH = "pytorch"
-    TOKEN_GEN = "token_gen"
-
-
 class MetricRecordingMethod(Enum):
     """How should metrics be recorded?"""
 

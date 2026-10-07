@@ -23,12 +23,11 @@ For example, the emoji 😊 (U+1F60A) requires 4 bytes in UTF-8 encoding.
 When tokenized, it may be split across multiple tokens. Decoding each token
 separately produces replacement characters.
 
-Three implementations are provided:
+Two implementations are provided:
 - `DecodeStreamDetokenizer`: Uses the native `tokenizers` library's
   `DecodeStream` for fast tokenizers (most efficient).
 - `Utf8BufferingDetokenizer`: Buffers tokens and re-decodes when replacement
   characters are detected (for non-fast tokenizers).
-- `PassthroughDetokenizer`: Direct decode without buffering (fallback).
 
 Use `create_buffered_detokenizer()` to automatically select the best
 implementation for a given tokenizer.
@@ -293,39 +292,6 @@ class Utf8BufferingDetokenizer(BufferedDetokenizer):
         )
 
 
-class PassthroughDetokenizer(BufferedDetokenizer):
-    """Detokenizer that directly calls the tokenizer without buffering.
-
-    This is the simplest implementation with no UTF-8 buffering. Use only
-    when the tokenizer already handles UTF-8 correctly or when buffering
-    is not needed.
-    """
-
-    def __init__(
-        self,
-        decode_func: AsyncDecodeFunc,
-        skip_special_tokens: bool = True,
-    ) -> None:
-        """Initializes the passthrough detokenizer.
-
-        Args:
-            decode_func: An async function that decodes token IDs to text.
-            skip_special_tokens: Whether to skip special tokens during decoding.
-        """
-        self._decode_func = decode_func
-        self._skip_special_tokens = skip_special_tokens
-
-    async def decode(self, token_ids: TokenIDSequence) -> str:
-        """Decodes token IDs directly without buffering."""
-        tokens = list(token_ids)
-        if not tokens:
-            return ""
-        return await self._decode_func(
-            np.array(tokens, dtype=np.int64),
-            skip_special_tokens=self._skip_special_tokens,
-        )
-
-
 def _is_fast_tokenizer(tokenizer: object) -> bool:
     """Checks if a tokenizer is a HuggingFace fast tokenizer."""
     return hasattr(tokenizer, "_tokenizer") and isinstance(
@@ -351,7 +317,6 @@ def create_buffered_detokenizer(
     detokenizer implementation:
     1. `DecodeStreamDetokenizer` for fast tokenizers (most efficient)
     2. `Utf8BufferingDetokenizer` for non-fast tokenizers (buffers tokens)
-    3. `PassthroughDetokenizer` as fallback (no buffering)
 
     Args:
         tokenizer: A PipelineTokenizer implementation (e.g., TextTokenizer).
@@ -382,7 +347,6 @@ def create_buffered_detokenizer(
             skip_special_tokens=skip_special_tokens,
         )
 
-    # Last resort: PassthroughDetokenizer (shouldn't normally reach here)
     raise ValueError(
         f"Tokenizer {type(tokenizer).__name__} does not have a decode method."
     )
