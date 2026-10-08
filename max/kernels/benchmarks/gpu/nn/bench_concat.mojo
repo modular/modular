@@ -188,7 +188,7 @@ def bench_concat[
     _ = output_device_buffer
 
 
-# A/B arm for the FusedConcatSlice static-divisor fold. Benches
+# A/B arm for the fused concat static-divisor fold. Benches
 # `_concat_inner_most_single_dim` (the inner-most-single-dim concat kernel that
 # carries the per-thread row -> n-D `divmod`) twice on identical work: with a
 # fully static output layout (`row_major[...]()`, all `ComptimeInt` dims, so the
@@ -348,7 +348,7 @@ def main() raises:
             axis=axis,
         )
 
-        # FusedConcatSlice static-divisor fold A/B: rank-5 dims with non-trivial
+        # Fused concat static-divisor fold A/B: rank-5 dims with non-trivial
         # outer dims (rank-2 would hit the no-divide fast path) so dims 1..rank-2
         # actually decompose. Shape is sized to the instruction-bound regime
         # (~65K rows): small enough that the per-thread divide is on the critical

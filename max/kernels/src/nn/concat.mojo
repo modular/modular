@@ -1264,10 +1264,11 @@ def _fused_concat_inner_most_single_dim[
     if idx >= product(input_shapes[0], rank):
         return
 
-    # Static-divisor row -> n-D decomposition: the FusedConcatSlice
-    # hot site. The graph compiler threads a `TileTensor` whose layout
-    # `_shape_types` preserve the statically-known MLIR output dims, so the
-    # per-thread `divmod` over the outer dims folds to magic-multiply + shift
+    # Static-divisor row -> n-D decomposition: the hot site of a fused
+    # concat, and of a concat whose epilogue also stores a slice. The graph
+    # compiler threads a `TileTensor` whose layout `_shape_types` preserve
+    # the statically-known MLIR output dims, so the per-thread `divmod`
+    # over the outer dims folds to magic-multiply + shift
     # (no `IDIV`). Dynamic dims fall back to the runtime divide; behavior is
     # bit-identical to `_get_start_indices_of_nth_subvolume[1]`.
     var index = _get_start_indices_of_nth_subvolume_static(
