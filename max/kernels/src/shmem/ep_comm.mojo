@@ -36,6 +36,7 @@ from std.sys.info import (
     simd_width_of,
     size_of,
 )
+from std.time import global_perf_counter_ns
 from std.ffi import c_size_t
 
 from linalg.block_scaled_utils import compute_mxfp8_block_scale
@@ -146,6 +147,12 @@ comptime MAX_GPUS_PER_NODE = 8
 
 # Largest `sm_count` among the GPUs these kernels target.
 comptime MAX_SMS_PER_DEVICE = 304
+
+comptime EP_LOCAL_SYNC_RESERVED_WORDS = 262144
+"""Int32 words (1 MiB) reserved past the regions of an `EPLocalSyncCounters`
+buffer for one fused EP kernel's own counters: the fused MegaMoE path keeps a
+typed view there. Only a buffer of `allocation_size()` has them, and `ep.init`
+zeroes them with the rest of the buffer."""
 
 
 @inline(.always)
@@ -485,6 +492,8 @@ def ep_signal_completion[
     skip_a2a: Bool = False,
     has_rank_flag: Bool = False,
     ep_ord_r: Bool = False,
+    release_every: Bool = False,
+    direct_pair_release: Bool = False,
 ](
     my_rank: Int32,
     dst_rank: Int32,
@@ -495,7 +504,7 @@ def ep_signal_completion[
     signal: UInt64,
     rank_completion_counter: UnsafePointer[Int32, MutUntrackedOrigin],
     rank_flag_offset: Int32 = 0,
-) -> None:
+) -> Int32:
     """
     Signals the completion of the communication by writing to the receive count
     buffer. Will use direct memory access if the target device is on the same
@@ -506,11 +515,11 @@ def ep_signal_completion[
     number of release stores from n_experts to p2p_world_size, and the
     destination checks each per-expert signal individually.
 
-    With `ep_ord_r` the routine implements rank-level completion instead, which
-    a fused consumer needs when it acquires ONCE per source rank rather than
-    per expert: the per-expert count word becomes a plain progress store issued
-    before an `ACQUIRE_RELEASE` election, and the elected last producer
-    release-stores a dedicated rank-completion flag.
+    With `ep_ord_r` (ORD-R) the routine implements rank-level completion
+    instead, which a fused consumer needs when it acquires ONCE per source
+    rank rather than per expert: the per-expert count word becomes a plain
+    progress store issued before an `ACQUIRE_RELEASE` election, and the
+    elected last producer release-stores a dedicated rank-completion flag.
 
     That election ordering is load-bearing correctness, not an optimization.
     Each producer's RMW releases its own payload and count stores into the
@@ -528,6 +537,18 @@ def ep_signal_completion[
         has_rank_flag: Whether the caller reserved a dedicated rank-completion
             word per source rank in the receive-count buffer tail.
         ep_ord_r: Whether to use rank-level completion (see above).
+        release_every: Whether every same-node count store is a release
+            store. Needed when each expert is published by an independent
+            thread, whose release covers only its own payload.
+        direct_pair_release: Whether to publish each count with a single
+            release store and skip the `rank_completion_counter` election,
+            which only picks the publication that carries the one release
+            while the others are plain stores. Under `release_every` both
+            election outcomes issue the same release store, so the counter
+            selects nothing and no receiver reads it (`combine_wait` acquires
+            each per-pair count word individually). Requires `release_every`
+            and is rejected with `ep_ord_r`, whose election is the protocol
+            itself.
 
     Args:
         my_rank: This rank.
@@ -538,6 +559,13 @@ def ep_signal_completion[
         rank_completion_counter: Per-destination-rank election counter.
         rank_flag_offset: Offset of the dedicated rank-completion flag; read
             only when `ep_ord_r` is set.
+
+    Returns:
+        Under `ep_ord_r`, the election ticket: this rank's completion count
+        for `dst_rank` before this call's increment, so the caller that saw
+        `n_experts_per_device - 1` wrote the rank flag. -1 otherwise: without
+        `ep_ord_r` (the legacy election is not reported) or for a destination
+        on another node.
     """
     # The dedicated rank flag is published only by the ORD-R branch, so a
     # caller that reserved the word but left the protocol legacy would wait
@@ -551,6 +579,17 @@ def ep_signal_completion[
     comptime assert not ep_ord_r or has_rank_flag, (
         "ep_ord_r's per-expert words are plain stores; the dedicated rank flag"
         " is the protocol's only strong signal, so has_rank_flag is mandatory"
+    )
+    # The direct pair release is only sound when every publication is
+    # already a release store; without release_every the counter's election
+    # is what makes the last store carry the others, and under ep_ord_r the
+    # ACQUIRE_RELEASE election is the protocol itself.
+    comptime assert not direct_pair_release or (
+        release_every and not ep_ord_r
+    ), (
+        "direct_pair_release bypasses the last-publisher election, which is"
+        " only redundant when release_every already makes every count store"
+        " a release; enable release_every (and not ep_ord_r) with it"
     )
 
     var my_p2p_world, my_p2p_rank = udivmod(Int(my_rank), p2p_world_size)
@@ -600,7 +639,16 @@ def ep_signal_completion[
                 # win a second election, and resetting first would let a
                 # next-generation increment be lost to this store.
                 rank_completion_counter[dst_p2p_rank] = 0
-            return
+            return old_count
+
+        comptime if direct_pair_release:
+            # The same release store the `release_every` branches below issue
+            # for this publication, without the `rank_completion_counter`
+            # increment, comparison and reset, which nothing reads.
+            Atomic[scope=scope].store[ordering=Ordering.RELEASE](
+                dst_p2p_ptr, signal
+            )
+            return -1
 
         var old_count = _counter_atomic.fetch_add[ordering=Ordering.RELAXED](
             rank_completion_counter + Int(dst_p2p_rank), 1
@@ -608,8 +656,12 @@ def ep_signal_completion[
 
         # If this is the last expert for this destination rank,
         # use a release store to flush all pending stores.
+        # With `release_every` each expert has an independent publisher whose
+        # release covers only its own payload, so every count store must be a
+        # release. The single last-publisher release is sound only when one
+        # thread has acquired every expert's completion first.
         if old_count < Int32(n_experts_per_device - 1):
-            comptime if is_nvidia_gpu():
+            comptime if is_nvidia_gpu() and not release_every:
                 dst_p2p_ptr[] = signal
             else:
                 # TODO(KERN-2792): Investigate why AMD GPUs require this to be
@@ -641,6 +693,7 @@ def ep_signal_completion[
                 SHMEM_SIGNAL_SET,
                 dst_rank,
             )
+    return -1
 
 
 @inline(.always)
@@ -2607,6 +2660,8 @@ struct EPLocalSyncCounters[n_experts: Int](
     - dispatch_async: 2 * n_experts + MAX_GPUS_PER_NODE
     - dispatch_wait/combine_async: 8 * n_experts + 8
     - combine_wait: MAX_SMS_PER_DEVICE
+    - Reserved: `EP_LOCAL_SYNC_RESERVED_WORDS` after all of the above, in
+      buffers sized by `allocation_size()` (`get_reserved_ptr()`).
     """
 
     var ptr: UnsafePointer[Int32, MutUntrackedOrigin]
@@ -2715,6 +2770,19 @@ struct EPLocalSyncCounters[n_experts: Int](
         )
 
     @inline(.always)
+    @staticmethod
+    def allocation_size() -> Int:
+        """Returns the Int32 elements of a counter buffer that also holds the
+        reserved words: `total_size()` plus `EP_LOCAL_SYNC_RESERVED_WORDS`."""
+        return Self.total_size() + EP_LOCAL_SYNC_RESERVED_WORDS
+
+    @inline(.always)
+    def get_reserved_ptr(self) -> UnsafePointer[Int32, MutUntrackedOrigin]:
+        """Returns the first reserved word, past every counter region. Only a
+        buffer of `allocation_size()` elements has the reserved words."""
+        return self.ptr + Self.total_size()
+
+    @inline(.always)
     def get_dispatch_async_ptr(
         self,
     ) -> UnsafePointer[Int32, MutUntrackedOrigin]:
@@ -2744,6 +2812,93 @@ struct EPLocalSyncCounters[n_experts: Int](
     def get_combine_wait_ptr(self) -> UnsafePointer[Int32, MutUntrackedOrigin]:
         """Returns pointer to combine_wait kernel atomic counters."""
         return self.ptr + Self.dispatch_async_size() + Self.dispatch_wait_size()
+
+
+# ===-----------------------------------------------------------------------===#
+# Dispatch-phase trace events
+# ===-----------------------------------------------------------------------===#
+# `EPDispatchKernel.copy_and_send_tokens` reports these events to a
+# caller-supplied `DispatchTraceSink`. This module defines what each event
+# means and when it is reported; the sink decides whether and where to record
+# it. Lane 0 of the named warp reports each event, except `DISPATCH_CTA_INFO`
+# (comm thread 0). Time events carry rank-local nanoseconds at issue, never
+# remote delivery; key and info events carry the packed value documented below.
+
+comptime DISPATCH_COPY_BEGIN = 0
+"""Comm warp `index` starts copying its first owned token."""
+comptime DISPATCH_PACK_DONE = 1
+"""Comm warp `index` finishes packing an owned token; reported once per token."""
+comptime DISPATCH_SEND_JOIN_ARRIVE = 2
+"""Comm warp `index` arrives at the send join."""
+comptime DISPATCH_SEND_JOIN_PASS = 3
+"""Comm warp `index` leaves the send join."""
+comptime DISPATCH_PAIR_RESERVE_ISSUE = 4
+"""Publisher `index` issues its first pair's slot reservation."""
+comptime DISPATCH_PAIR_RESERVED = 5
+"""Publisher `index`'s first slot reservation returns."""
+comptime DISPATCH_PAIR_ROW = 6
+"""Publisher `index` resolves its first pair's final row."""
+comptime DISPATCH_PAIR_KEY = 7
+"""Publisher `index`'s first pair as `final_row | counter_offset << 32`."""
+comptime DISPATCH_PAIR_COPY_ISSUE = 8
+"""Publisher `index` issues its first pair's peer copy."""
+comptime DISPATCH_PAIR_COPY_DONE = 9
+"""Publisher `index` completes its first pair's copy and scale placement."""
+comptime DISPATCH_PAIR_FINISHED = 10
+"""Publisher `index` issues its first pair's finished-count increment."""
+comptime DISPATCH_PAIR_INFO = 11
+"""Publisher `index`'s first pair as `token | dst_rank << 16 | expert << 24 |
+slot << 32`, with its pair count in bits 48 and up."""
+comptime DISPATCH_CTA_INFO = 12
+"""The CTA's send share as `tokens | first_token << 16 | n_signal_sms << 40 |
+n_send_sms << 48` (`index` 0)."""
+
+
+trait DispatchTraceSink(TrivialRegisterPassable):
+    """Receives the dispatch-phase events (`DISPATCH_*`).
+
+    `copy_and_send_tokens` calls `stamp` only when `enabled` is `True`.
+    """
+
+    comptime enabled: Bool
+    """Whether events are reported at all; `False` compiles every site out."""
+
+    def stamp[event: Int](self, index: Int, value: UInt64):
+        """Records one event.
+
+        Parameters:
+            event: The event (`DISPATCH_*`).
+
+        Args:
+            index: The comm warp or publisher the event belongs to (0 for
+                `DISPATCH_CTA_INFO`).
+            value: A timestamp, or the packed key or info the event documents.
+        """
+        ...
+
+
+struct NullDispatchTrace(DispatchTraceSink):
+    """Discards every dispatch-phase event."""
+
+    comptime enabled = False
+
+    @inline(.always)
+    def __init__(out self):
+        """Constructs the no-op sink."""
+        pass
+
+    @inline(.always)
+    def stamp[event: Int](self, index: Int, value: UInt64):
+        """Ignores the event.
+
+        Parameters:
+            event: Unused.
+
+        Args:
+            index: Unused.
+            value: Unused.
+        """
+        pass
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3124,7 +3279,7 @@ struct EPDispatchKernel[
                 var rank_flag_off = Int32(0)
                 comptime if Self.ep_ord_r:
                     rank_flag_off = Self.rank_flag_offset(Int(my_rank))
-                ep_signal_completion[
+                _ = ep_signal_completion[
                     Self.use_shmem,
                     n_experts_per_device=Self.n_local_experts,
                     skip_a2a=Self.skip_a2a,
@@ -3152,6 +3307,7 @@ struct EPDispatchKernel[
         comm_thread_base: Int = 0,
         n_comm_threads: Int = Self.num_threads,
         comm_barrier_id: Int = -1,
+        TraceT: DispatchTraceSink = NullDispatchTrace,
     ](
         input_tokens: TileTensor[
             mut=False, input_type, Engine=DefaultEngine[], ...
@@ -3172,6 +3328,7 @@ struct EPDispatchKernel[
             Int32, MutUntrackedOrigin
         ](unsafe_from_address=16),
         prod_gen: Int32 = 0,
+        trace: TraceT = NullDispatchTrace(),
     ) -> None:
         """Communication SM logic for dispatch_kernel.
 
@@ -3193,6 +3350,8 @@ struct EPDispatchKernel[
             comm_barrier_id: Hardware named-barrier id for the comm class, or
                 negative (default) to use the block-wide barrier. See
                 `_comm_barrier`.
+            TraceT: The sink for this phase's trace events (`DISPATCH_*`);
+                `NullDispatchTrace` (the default) compiles every report out.
 
         Args:
             input_tokens: The input tokens to be dispatched.
@@ -3213,6 +3372,7 @@ struct EPDispatchKernel[
                 tags. Inert when defaulted.
             prod_gen: Generation tag this launch waits for before reading a
                 base from `prod_gen_p`. Inert when defaulted.
+            trace: The trace event sink.
         """
         comptime assert (
             input_tokens.flat_rank == 2
@@ -3239,11 +3399,35 @@ struct EPDispatchKernel[
             input_scale = input_scale_fn[.float32](0)
 
         var n_active_async_comm_sms = n_active_send_sms
+        # Dispatch-phase trace state (comptime-dead unless `TraceT.enabled`).
+        var _tr_first = True
+        var _tr_tokens = 0
+        var _tr_first_tok = 0
+        var _tr_pairs = 0
+        var _tr_info = UInt64(0)
+        # The publisher index this warp reports pair events under, or -1 if none.
+        var _tr_pub = -1
+        comptime if TraceT.enabled:
+            var _tr_pi = Int(warp_id()) - comm_warp_base
+            comptime if Roles.enabled:
+                _tr_pi = Roles.publisher_role_index()
+            if _tr_pi >= 0 and _tr_pi < Roles.n_publisher_warps:
+                _tr_pub = _tr_pi
         for token_idx in range(
             sm_id - Self.n_signal_sms,
             Int(num_tokens),
             n_active_async_comm_sms,
         ):
+            comptime if TraceT.enabled:
+                if _tr_first and lane_id() == 0:
+                    trace.stamp[DISPATCH_COPY_BEGIN](
+                        Int(warp_id()) - comm_warp_base,
+                        UInt64(global_perf_counter_ns()),
+                    )
+                if _tr_first:
+                    _tr_first_tok = token_idx
+                _tr_first = False
+                _tr_tokens += 1
             # First, all threads in the block copy the input token to the send
             # buffer.
             var curr_send_buf_ptr = send_buf_p + Self.send_buf_layout(
@@ -3255,6 +3439,13 @@ struct EPDispatchKernel[
             Self.token_fmt_type.copy_token_to_send_buf[
                 input_type, n_comm_threads, thread_base=comm_thread_base
             ](curr_send_buf_ptr, input_tensor_ptr, input_scale)
+            comptime if TraceT.enabled:
+                # Reported once per owned token.
+                if lane_id() == 0:
+                    trace.stamp[DISPATCH_PACK_DONE](
+                        Int(warp_id()) - comm_warp_base,
+                        UInt64(global_perf_counter_ns()),
+                    )
 
             if tid < Self.top_k:
                 # Store all the top-k expert IDs in current token's message.
@@ -3288,10 +3479,23 @@ struct EPDispatchKernel[
             # rendezvous in the kernel. `named_barrier` is NVIDIA-only, so AMD
             # keeps the generic join; so does every caller that leaves the
             # flag off.
+            comptime if TraceT.enabled:
+                # Send-join arrival per warp, before the barrier.
+                if lane_id() == 0:
+                    trace.stamp[DISPATCH_SEND_JOIN_ARRIVE](
+                        Int(warp_id()) - comm_warp_base,
+                        UInt64(global_perf_counter_ns()),
+                    )
             comptime if Self.ep_send_join_named and is_nvidia_gpu():
                 named_barrier[Int32(Self.num_threads)](Int32(Self.NB_SEND))
             else:
                 Self._comm_barrier[n_comm_threads, comm_barrier_id]()
+            comptime if TraceT.enabled:
+                if lane_id() == 0:
+                    trace.stamp[DISPATCH_SEND_JOIN_PASS](
+                        Int(warp_id()) - comm_warp_base,
+                        UInt64(global_perf_counter_ns()),
+                    )
 
             # Try to copy the message to the target expert's recv_buf if the
             # target device is on the same node.
@@ -3327,12 +3531,23 @@ struct EPDispatchKernel[
                         continue
 
                 if my_p2p_world == dst_p2p_world:
+                    comptime if TraceT.enabled:
+                        # Reservation RMW issue, first pair only.
+                        if _tr_pairs == 0 and _tr_pub >= 0 and lane_id() == 0:
+                            trace.stamp[DISPATCH_PAIR_RESERVE_ISSUE](
+                                _tr_pub, UInt64(global_perf_counter_ns())
+                            )
                     var slot_idx: Int32 = 0
                     if lane_id() == 0:
                         slot_idx = _counter_atomic.fetch_add[
                             ordering=Ordering.RELAXED
                         ](expert_reserved_counter + counter_offset, 1)
                     slot_idx = warp.broadcast(slot_idx)
+                    comptime if TraceT.enabled:
+                        if _tr_pairs == 0 and _tr_pub >= 0 and lane_id() == 0:
+                            trace.stamp[DISPATCH_PAIR_RESERVED](
+                                _tr_pub, UInt64(global_perf_counter_ns())
+                            )
 
                     # Final row inside the destination expert's contiguous
                     # live range. Under the production allocation the base
@@ -3349,6 +3564,16 @@ struct EPDispatchKernel[
                         # what orders the base read below against it.
                         _ = _acquire_wait[scope=DEVICE_SCOPE](_pg, prod_gen)
                         _fl_row = prod_gen_p[Int(target_expert)] + slot_idx
+                    comptime if TraceT.enabled:
+                        if _tr_pairs == 0 and _tr_pub >= 0 and lane_id() == 0:
+                            trace.stamp[DISPATCH_PAIR_ROW](
+                                _tr_pub, UInt64(global_perf_counter_ns())
+                            )
+                            trace.stamp[DISPATCH_PAIR_KEY](
+                                _tr_pub,
+                                UInt64(Int(_fl_row))
+                                | (UInt64(Int(counter_offset)) << 32),
+                            )
 
                     var dst_recv_buf_ptr = recv_buf_ptrs[
                         dst_p2p_rank
@@ -3361,6 +3586,11 @@ struct EPDispatchKernel[
                         )
                     )
 
+                    comptime if TraceT.enabled:
+                        if _tr_pairs == 0 and _tr_pub >= 0 and lane_id() == 0:
+                            trace.stamp[DISPATCH_PAIR_COPY_ISSUE](
+                                _tr_pub, UInt64(global_perf_counter_ns())
+                            )
                     block_memcpy[Self.msg_bytes, WARP_SIZE, bypass_l2=True](
                         dst_recv_buf_ptr,
                         curr_send_buf_ptr,
@@ -3381,12 +3611,30 @@ struct EPDispatchKernel[
                     )
 
                     syncwarp()
+                    comptime if TraceT.enabled:
+                        if _tr_pairs == 0 and _tr_pub >= 0 and lane_id() == 0:
+                            trace.stamp[DISPATCH_PAIR_COPY_DONE](
+                                _tr_pub, UInt64(global_perf_counter_ns())
+                            )
 
                     _publish_peer_stores[scope=DEVICE_SCOPE]()
                     if lane_id() == 0:
                         _ = _counter_atomic.fetch_add[
                             ordering=Ordering.RELAXED
                         ](expert_finished_counter + counter_offset, 1)
+                        comptime if TraceT.enabled:
+                            if _tr_pairs == 0 and _tr_pub >= 0:
+                                trace.stamp[DISPATCH_PAIR_FINISHED](
+                                    _tr_pub, UInt64(global_perf_counter_ns())
+                                )
+                                _tr_info = (
+                                    UInt64(token_idx)
+                                    | (UInt64(Int(dst_rank)) << 16)
+                                    | (UInt64(Int(dst_expert_local_idx)) << 24)
+                                    | (UInt64(Int(slot_idx)) << 32)
+                                )
+                    comptime if TraceT.enabled:
+                        _tr_pairs += 1
 
             # We set up `n_rcs` Reliable Communications (RCs) for each
             # remote device. We would like to use the same RC for each expert.
@@ -3442,6 +3690,21 @@ struct EPDispatchKernel[
                         _ = _counter_atomic.fetch_add[
                             ordering=Ordering.RELEASE
                         ](expert_finished_counter + counter_offset, 1)
+
+        comptime if TraceT.enabled:
+            # CTA info (comm thread 0) and each publisher's first-pair info.
+            if tid == 0:
+                trace.stamp[DISPATCH_CTA_INFO](
+                    0,
+                    UInt64(_tr_tokens)
+                    | (UInt64(_tr_first_tok) << 16)
+                    | (UInt64(Self.n_signal_sms) << 40)
+                    | (UInt64(n_active_send_sms) << 48),
+                )
+            if lane_id() == 0 and _tr_pub >= 0 and _tr_pairs > 0:
+                trace.stamp[DISPATCH_PAIR_INFO](
+                    _tr_pub, _tr_info | (UInt64(_tr_pairs) << 48)
+                )
 
     # ===-------------------------------------------------------------------===#
     # Dispatch Callback Kernel Methods
@@ -4830,7 +5093,7 @@ struct EPCombineKernel[
                                     Self.pair_done_offset + pr, Int32(0)
                                 )
                                 var e_l, d_r = divmod(pr, Self.n_ranks)
-                                ep_signal_completion[
+                                _ = ep_signal_completion[
                                     Self.use_shmem,
                                     n_experts_per_device=Self.n_local_experts,
                                     skip_a2a=Self.skip_a2a,
@@ -5090,7 +5353,7 @@ struct EPCombineKernel[
                             (local_expert_id, my_rank)
                         )
 
-                        ep_signal_completion[
+                        _ = ep_signal_completion[
                             Self.use_shmem,
                             n_experts_per_device=Self.n_local_experts,
                             skip_a2a=Self.skip_a2a,

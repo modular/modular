@@ -122,6 +122,19 @@ class EPConfig:
     tensor being elided); both raise rather than degrade silently.
     """
 
+    moe_dim: int = 0
+    """Intermediate width of the routed experts' FFN, when the model provides
+    it. A config that gives it gets the fused MoE counters' reserve in its EP
+    sync-counter buffers. It does not request the fused MoE, which needs
+    ``MODULAR_EP_FUSED_MOE=1`` and a configuration the backend serves."""
+
+    fused_moe_ready: bool = False
+    """Whether EP init set up the backend's one-launch fused MoE for this
+    configuration. Set by :class:`EPCommInitializer` when
+    ``MODULAR_EP_FUSED_MOE=1`` requests it and the backend serves the
+    configuration; layers whose experts the fused op serves then run
+    dispatch, FFN and combine as one launch."""
+
     use_allreduce: bool = False
     """Whether to use allreduce for the cross-device communication."""
 
@@ -391,3 +404,17 @@ def calculate_ep_max_tokens_per_rank(
     # must be ceil, not floor — otherwise the dispatch kernel rejects the
     # largest shard (see ep.mojo dispatch assertion).
     return ceildiv(max_batch_input_tokens, tp_size)
+
+
+_EP_LOCAL_SYNC_RESERVED_WORDS = 262144
+"""Int32 words (1 MiB) reserved for the fused MegaMoE counters at the end of
+each EP sync-counter buffer of a config that gives ``moe_dim``. Mirrors
+``EP_LOCAL_SYNC_RESERVED_WORDS`` in ``ep_comm.mojo``; the fused path asserts
+that its counters fit."""
+
+
+def _ep_fused_moe_requested() -> bool:
+    """Returns whether ``MODULAR_EP_FUSED_MOE=1`` asks EP init to set up the
+    backend's one-launch fused MoE. Internal and off by default; the backend
+    decides whether it serves the configuration."""
+    return os.environ.get("MODULAR_EP_FUSED_MOE", "0") == "1"

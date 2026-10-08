@@ -15,9 +15,20 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, NonCallableMock
 
+import pytest
 from max.driver import DeviceSpec
+from max.dtype import DType
+from max.nn.comm.ep.ep_config import EPConfig
+from max.nn.comm.ep.ep_manager import (
+    _bound_fused_moe_workspace,
+    _ep_sync_counter_bytes,
+)
 from max.pipelines.architectures.deepseekV3.memory_planner import (
     DeepseekV3MemoryPlanner,
+)
+from max.pipelines.architectures.glm5_1.arch import glm5_1_arch
+from max.pipelines.architectures.glm5_1.memory_planner import (
+    Glm5_1MemoryPlanner,
 )
 from max.pipelines.architectures.unified_mtp_glm5_2.arch import (
     unified_mtp_glm5_2_arch,
@@ -105,3 +116,59 @@ def test_graph_capture_does_not_move_the_glm_estimate() -> None:
     assert planner.estimate_activation_memory(
         with_capture, huggingface_config
     ) == planner.estimate_activation_memory(without_capture, huggingface_config)
+
+
+def test_glm_without_mtp_plans_what_ep_init_adds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without the MTP draft GLM keeps the paged planner, plus what EP init
+    allocates for the fused MoE: its counters' reserve and, when
+    MODULAR_EP_FUSED_MOE=1 asks for it, the backend's bound for its
+    workspace. The EP communication buffers and the rest of the counter
+    buffers stay unplanned, as on main."""
+    assert glm5_1_arch.memory_planner is Glm5_1MemoryPlanner
+    config = MagicMock(spec=ModelConfigWithKVCache)
+    config.get_kv_params.return_value = MagicMock()
+    planner = Glm5_1MemoryPlanner(config)
+    huggingface_config = _mock_huggingface_config()
+    huggingface_config.hidden_size = 6144
+    # NVFP4 GLM-5.3 at EP8 with TP attention: 192 input tokens are 24 per rank.
+    pipeline_config = _mock_pipeline_config("float4_e2m1fnx2")
+    pipeline_config.model.data_parallel_degree = 1
+    pipeline_config.runtime.max_batch_input_tokens = 192
+    reserve = NUM_RANKS * (
+        _ep_sync_counter_bytes(256, NUM_RANKS, False, 2048)
+        - _ep_sync_counter_bytes(256, NUM_RANKS, False, 0)
+    )
+    assert reserve == NUM_RANKS * 2 * (1 << 20)
+    arena, refusal = _bound_fused_moe_workspace(
+        EPConfig(
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            hidden_size=6144,
+            top_k=8,
+            n_experts=256,
+            max_tokens_per_rank=24,
+            n_gpus_per_node=NUM_RANKS,
+            n_nodes=1,
+            moe_dim=2048,
+        ),
+        DType.uint8,
+    )
+    assert refusal == "" and arena > 0
+
+    def plan() -> int:
+        return planner.estimate_activation_memory(
+            pipeline_config, huggingface_config
+        )
+
+    monkeypatch.delenv("MODULAR_EP_FUSED_MOE", raising=False)
+    assert plan() == reserve
+    monkeypatch.setenv("MODULAR_EP_FUSED_MOE", "1")
+    assert plan() == reserve + NUM_RANKS * arena
+    # The default 8192 input tokens are 1024 per rank, which the backend
+    # refuses: no arena.
+    pipeline_config.runtime.max_batch_input_tokens = 8192
+    assert plan() == reserve
+    pipeline_config.runtime.ep_size = 1
+    assert plan() == 0

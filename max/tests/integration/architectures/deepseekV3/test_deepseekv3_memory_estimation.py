@@ -17,8 +17,12 @@ from unittest.mock import MagicMock, NonCallableMock
 
 import pytest
 from max.driver import DeviceSpec
+from max.dtype import DType
+from max.nn.comm.ep.ep_config import NUM_GROUPS, EPConfig
+from max.nn.comm.ep.ep_manager import _bound_fused_moe_workspace
 from max.pipelines.architectures.deepseekV3.memory_planner import (
     DeepseekV3MemoryPlanner,
+    _ep_max_rank_send_tokens_for_pipeline,
     ep_fuse_ffn_combine_send_for_pipeline,
 )
 from max.pipelines.kv_cache.memory_planner import ModelConfigWithKVCache
@@ -119,26 +123,184 @@ def test_deepseekv3_memory_estimation_exact() -> None:
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
 
+    # The fused MoE counters' 1 MiB reserve at the end of every device's two
+    # EP sync-counter buffers: the planner's only new term.
+    reserve = NUM_RANKS * NUM_GROUPS * (1 << 20)
+
     # For DecodeOnly, we only need to consider moe_activation_memory
     pipeline_config = mock_pipeline_config("decode_only")
     mem = planner.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 5225054208
+    assert mem == 5225054208 + reserve
 
     # For PrefillAndDecode, we also need to consider mla_activation_memory
     pipeline_config = mock_pipeline_config("prefill_and_decode")
     mem = planner.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 551759642624
+    assert mem == 551759642624 + reserve
 
     # Also check model with different quantization encoding
     pipeline_config = mock_pipeline_config("decode_only", "float4_e2m1fnx2")
     mem = planner.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 4399759360
+    assert mem == 4399759360 + reserve
+
+
+def _fused_planning_case(
+    max_batch_input_tokens: int,
+    use_allreduce: bool = False,
+    encoding: SupportedEncoding = "float4_e2m1fnx2",
+    data_parallel_degree: int = NUM_RANKS,
+) -> tuple[NonCallableMock, MagicMock]:
+    """GLM-5.3's MoE at EP8 (hidden 6144, MoE width 2048, 256 routed experts,
+    top-k 8). Data-parallel attention (the default here) puts
+    ``max_batch_input_tokens`` on each rank; TP attention
+    (``data_parallel_degree=1``) splits them over the 8 ranks."""
+    pipeline_config = mock_pipeline_config("decode_only", encoding)
+    pipeline_config.runtime.max_batch_input_tokens = max_batch_input_tokens
+    pipeline_config.runtime.ep_use_allreduce = use_allreduce
+    pipeline_config.model.data_parallel_degree = data_parallel_degree
+    huggingface_config = mock_huggingface_config()
+    huggingface_config.hidden_size = 6144
+    return pipeline_config, huggingface_config
+
+
+def _fused_plan_increase(
+    monkeypatch: pytest.MonkeyPatch,
+    pipeline_config: NonCallableMock,
+    huggingface_config: MagicMock,
+) -> int:
+    """What MODULAR_EP_FUSED_MOE=1 adds to the activation memory plan."""
+    monkeypatch.delenv("MODULAR_EP_FUSED_MOE", raising=False)
+    off = _make_planner().estimate_activation_memory(
+        pipeline_config, huggingface_config
+    )
+    monkeypatch.setenv("MODULAR_EP_FUSED_MOE", "1")
+    on = _make_planner().estimate_activation_memory(
+        pipeline_config, huggingface_config
+    )
+    return on - off
+
+
+def _glm_moe_bound(
+    tokens_per_rank: int,
+    dispatch_dtype: DType = DType.uint8,
+    use_allreduce: bool = False,
+) -> tuple[int, str]:
+    """The backend's bound for GLM-5.3's MoE at EP8 with this capacity."""
+    return _bound_fused_moe_workspace(
+        EPConfig(
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            hidden_size=6144,
+            top_k=8,
+            n_experts=256,
+            max_tokens_per_rank=tokens_per_rank,
+            n_gpus_per_node=NUM_RANKS,
+            n_nodes=1,
+            moe_dim=2048,
+            use_allreduce=use_allreduce,
+        ),
+        dispatch_dtype,
+    )
+
+
+@pytest.mark.parametrize(
+    "max_batch_input_tokens, use_allreduce, planned",
+    [(24, False, True), (8192, False, False), (24, True, False)],
+)
+def test_deepseekv3_plans_the_fused_workspace_the_backend_serves(
+    monkeypatch: pytest.MonkeyPatch,
+    max_batch_input_tokens: int,
+    use_allreduce: bool,
+    planned: bool,
+) -> None:
+    """With MODULAR_EP_FUSED_MOE=1 the plan adds exactly the arena the
+    backend reports for the EP configuration, and nothing when the backend
+    refuses it (here a capacity above 32 tokens per rank, or the allreduce
+    backend), so a refused configuration costs the KV cache nothing."""
+    pipeline_config, huggingface_config = _fused_planning_case(
+        max_batch_input_tokens, use_allreduce
+    )
+    arena, refusal = _glm_moe_bound(
+        max_batch_input_tokens, use_allreduce=use_allreduce
+    )
+    assert (refusal == "") == planned, refusal
+    assert _fused_plan_increase(
+        monkeypatch, pipeline_config, huggingface_config
+    ) == (NUM_RANKS * arena if planned else 0)
+    if planned:
+        assert arena > 0
+
+
+@pytest.mark.parametrize(
+    "max_batch_input_tokens, tokens_per_rank, planned",
+    [(192, 24, True), (8192, 1024, False)],
+)
+def test_deepseekv3_fused_plan_uses_the_tp_attention_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+    max_batch_input_tokens: int,
+    tokens_per_rank: int,
+    planned: bool,
+) -> None:
+    """With TP attention at EP8 each rank holds ceildiv(max_batch_input_tokens,
+    8): 192 input tokens give 24 per rank, which the backend serves; the
+    default 8192 give 1024, which it refuses, so a worker at the default
+    keeps the shipping chain and plans no arena."""
+    pipeline_config, huggingface_config = _fused_planning_case(
+        max_batch_input_tokens, data_parallel_degree=1
+    )
+    assert (
+        _ep_max_rank_send_tokens_for_pipeline(pipeline_config)
+        == tokens_per_rank
+    )
+    arena, refusal = _glm_moe_bound(tokens_per_rank)
+    assert (refusal == "") == planned, refusal
+    assert _fused_plan_increase(
+        monkeypatch, pipeline_config, huggingface_config
+    ) == (NUM_RANKS * arena if planned else 0)
+
+
+def test_deepseekv3_fused_plan_bounds_a_float8_encoding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A float8 encoding is MXFP8 (which the backend serves) or 128 x 128
+    block FP8 (which it refuses), and only the parsed checkpoint tells them
+    apart. The plan takes the backend's bound for the FP8 element type, so it
+    can be high but never short."""
+    pipeline_config, huggingface_config = _fused_planning_case(
+        24, encoding="float8_e4m3fn"
+    )
+    fp8_bound, refusal = _glm_moe_bound(24, DType.float8_e4m3fn)
+    assert refusal == "" and fp8_bound > _glm_moe_bound(24)[0]
+    assert (
+        _fused_plan_increase(monkeypatch, pipeline_config, huggingface_config)
+        == NUM_RANKS * fp8_bound
+    )
+
+
+def test_deepseekv3_fused_plan_bounds_the_target_under_mtp(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An MTP draft can make EP init size the shared buffers from a bfloat16
+    copy of the config, which the backend refuses. Whether it does depends on
+    the checkpoint (quantized MTP experts keep the target's config, which the
+    backend can serve), so the plan bounds the target's encoding."""
+    pipeline_config, huggingface_config = _fused_planning_case(
+        192, data_parallel_degree=1
+    )
+    pipeline_config.speculative = MagicMock()
+    pipeline_config.speculative.is_mtp.return_value = True
+    pipeline_config.draft_model = None
+    nvfp4_bound, refusal = _glm_moe_bound(24)
+    assert refusal == "" and nvfp4_bound > 0
+    assert (
+        _fused_plan_increase(monkeypatch, pipeline_config, huggingface_config)
+        == NUM_RANKS * nvfp4_bound
+    )
 
 
 def test_deepseekv3_memory_estimation_ignores_graph_capture() -> None:

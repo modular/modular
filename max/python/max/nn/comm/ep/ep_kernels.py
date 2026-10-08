@@ -326,6 +326,57 @@ def _ep_common_parameters(
     }
 
 
+def _block_scaled_nv_format_parameters(
+    nvfp4: bool,
+) -> dict[str, bool | int | str | DType]:
+    """Returns the ``BLOCK_SCALED_NV`` dispatch format parameters: NVFP4
+    (packed E2M1, E4M3 scales) or MXFP8 (E4M3, E8M0 scales)."""
+    return {
+        "dispatch_dtype": DType.uint8 if nvfp4 else DType.float8_e4m3fn,
+        "dispatch_fmt_str": "BLOCK_SCALED_NV",
+        "dispatch_scale_dtype": (
+            DType.float8_e4m3fn if nvfp4 else DType.float8_e8m0fnu
+        ),
+    }
+
+
+def _ep_dispatch_format_parameters(
+    config: EPConfig,
+) -> dict[str, bool | int | str | DType]:
+    """Returns the dispatch token format parameters ``ep.init`` sizes for."""
+    parameters: dict[str, bool | int | str | DType] = {
+        "dispatch_dtype": config.dispatch_dtype
+    }
+    if config.dispatch_quant_config is not None:
+        if _uses_block_scaled_nv_ep_layout(config):
+            parameters.update(
+                _block_scaled_nv_format_parameters(
+                    config.dispatch_quant_config.is_nvfp4
+                )
+            )
+            # The per-token global scale enlarges every message, so the
+            # buffers allocated here must know about it.
+            if config.nvfp4_dyn_global_scales:
+                parameters["nvfp4_dyn_global_scales"] = True
+        elif uses_mx_ep_token_format(config):
+            parameters["dispatch_fmt_str"] = (
+                "MXFP6" if config.dispatch_quant_config.is_mxfp6 else "MXFP4"
+            )
+            parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
+        elif _is_legacy_float8_dispatch(config):
+            parameters["dispatch_fmt_str"] = "BlockwiseFP8"
+            parameters["dispatch_scale_dtype"] = DType.float32
+        else:
+            raise ValueError(
+                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
+            )
+    else:
+        # fill in dummy values for non-quantized cases
+        parameters["dispatch_fmt_str"] = "BF16"
+        parameters["dispatch_scale_dtype"] = DType.float32
+    return parameters
+
+
 def call_ep_init(
     atomic_counter_group_0: BufferValue,
     atomic_counter_group_1: BufferValue,
@@ -353,37 +404,8 @@ def call_ep_init(
             tensor has shape [1,].
     """
     parameters = _ep_common_parameters(config)
-    parameters["dispatch_dtype"] = config.dispatch_dtype
+    parameters.update(_ep_dispatch_format_parameters(config))
     parameters["combine_dtype"] = config.combine_dtype
-
-    if config.dispatch_quant_config is not None:
-        if _uses_block_scaled_nv_ep_layout(config):
-            parameters["dispatch_fmt_str"] = "BLOCK_SCALED_NV"
-            parameters["dispatch_scale_dtype"] = (
-                DType.float8_e4m3fn
-                if config.dispatch_quant_config.is_nvfp4
-                else DType.float8_e8m0fnu
-            )
-            # The per-token global scale enlarges every message, so the
-            # buffers allocated here must know about it.
-            if config.nvfp4_dyn_global_scales:
-                parameters["nvfp4_dyn_global_scales"] = True
-        elif uses_mx_ep_token_format(config):
-            parameters["dispatch_fmt_str"] = (
-                "MXFP6" if config.dispatch_quant_config.is_mxfp6 else "MXFP4"
-            )
-            parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
-        elif _is_legacy_float8_dispatch(config):
-            parameters["dispatch_fmt_str"] = "BlockwiseFP8"
-            parameters["dispatch_scale_dtype"] = DType.float32
-        else:
-            raise ValueError(
-                f"Unsupported dispatch dtype: {config.dispatch_dtype}"
-            )
-    else:
-        # fill in dummy values for non-quantized cases
-        parameters["dispatch_fmt_str"] = "BF16"
-        parameters["dispatch_scale_dtype"] = DType.float32
 
     results = ops.inplace_custom(
         "ep.init",
@@ -809,6 +831,187 @@ def _call_mega_ffn_ep_combine_send(
         out_types=[],
         parameters=parameters,
     )
+
+
+_FUSED_EP_REFUSAL_BYTES = 256
+"""Bytes of the refusal text the fused MoE init and plan ops return."""
+
+
+def _fused_moe_answer_types() -> list[TensorType]:
+    """The fused MoE init and plan ops' answer: the workspace bytes and token
+    block (CPU ``uint64[2]``, zeros when refused), then why the backend
+    refuses (CPU ``uint8`` text, all zero when it does not)."""
+    return [
+        TensorType(DType.uint64, [2], device=DeviceRef.CPU()),
+        TensorType(
+            DType.uint8, [_FUSED_EP_REFUSAL_BYTES], device=DeviceRef.CPU()
+        ),
+    ]
+
+
+def _fused_moe_parameters(
+    config: EPConfig,
+) -> dict[str, bool | int | str | DType]:
+    """Returns the parameters of the fused MoE init and plan ops: what
+    ``ep.init`` gets, the experts' FFN width, and the EP features the backend
+    checks."""
+    parameters = _ep_common_parameters(config)
+    parameters.update(_ep_dispatch_format_parameters(config))
+    parameters["moe_dim"] = config.moe_dim
+    parameters["fused_shared_expert"] = config.fused_shared_expert
+    parameters["eplb"] = config.eplb_enabled
+    return parameters
+
+
+def _fused_moe_bound_parameters(
+    config: EPConfig, dispatch_dtype: DType
+) -> dict[str, bool | int | str | DType]:
+    """Returns the plan op's parameters for an upper bound: ``config``'s EP
+    geometry and the dispatch element type alone. The backend then ignores
+    the format fields and answers for the one format it serves with that
+    element type, which bounds every variant it refuses."""
+    parameters = _fused_moe_parameters(config)
+    parameters["dispatch_dtype"] = dispatch_dtype
+    parameters["exact"] = False
+    return parameters
+
+
+def _call_mega_ffn_ep_fused_plan(
+    parameters: dict[str, bool | int | str | DType],
+) -> tuple[TensorValue, TensorValue]:
+    """Asks the backend, without allocating, what the fused MoE init does for
+    ``parameters`` (:func:`_fused_moe_parameters`).
+
+    Returns:
+        The workspace bytes and token block (CPU ``uint64[2]``, zeros when
+        refused) and why the backend refuses (CPU ``uint8`` text, all zero
+        when it does not).
+    """
+    results = ops.custom(
+        "mega_ffn.ep_fused_plan",
+        device=DeviceRef.CPU(),
+        values=[],
+        out_types=_fused_moe_answer_types(),
+        parameters=parameters,
+    )
+    return results[0].tensor, results[1].tensor
+
+
+def _call_mega_ffn_ep_fused_init(
+    atomic_counters: BufferValue,
+    ep_dev_ptrs: TensorValue,
+    config: EPConfig,
+) -> tuple[TensorValue, TensorValue]:
+    """Sets up one device's one-launch fused EP MoE workspace, if it can.
+
+    Runs in the EP init graph after :func:`call_ep_init` on the same device,
+    with that device's group-0 counters and the pointers ``ep.init``
+    returned. The backend decides whether it serves ``config``: it either
+    returns why not, or allocates the device's workspace, initializes it and
+    records it for :func:`_call_mega_ffn_ep_fused`.
+
+    Args:
+        atomic_counters: This device's group-0 EP sync counters; their
+            reserved words hold the fused counters.
+        ep_dev_ptrs: This device's ``ep.init`` pointers (CPU ``[2, 3]``).
+        config: EP configuration.
+
+    Returns:
+        The workspace bytes and token block (CPU ``uint64[2]``, zeros when
+        refused) and why the backend refused (CPU ``uint8`` text, all zero
+        when it did not).
+    """
+    results = ops.inplace_custom(
+        "mega_ffn.ep_fused_init",
+        device=atomic_counters.device,
+        values=[atomic_counters, ep_dev_ptrs],
+        out_types=_fused_moe_answer_types(),
+        parameters=_fused_moe_parameters(config),
+    )
+    return results[0].tensor, results[1].tensor
+
+
+def _call_mega_ffn_ep_fused(
+    atomic_counters: BufferValue,
+    input_tokens: TensorValue,
+    topk_ids: TensorValue,
+    router_weights: TensorValue,
+    input_scales: TensorValue,
+    gate_up_weight: TensorValue,
+    gate_up_b_scales: TensorValue,
+    down_weight: TensorValue,
+    down_b_scales: TensorValue,
+    gate_up_expert_scales: TensorValue,
+    down_expert_scales: TensorValue,
+    c_input_scales: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+) -> TensorValue:
+    """Runs dispatch -> MegaFFN (L1 + L2) -> weighted combine in ONE launch.
+
+    Replaces ``ep_dispatch_async``/``ep_dispatch_wait``, the local FFN and
+    ``ep_combine_async``/``ep_combine_wait`` for one MoE layer on one device.
+    Every rank must launch it for every layer (a rank with zero tokens still
+    participates: its peers wait for its early counts and flags).
+
+    Args:
+        atomic_counters: This device's group-0 EP sync counters (in-place);
+            their reserved words hold the fused counters.
+        input_tokens: Pre-dispatch BF16 tokens ``(T, hidden)``.
+        topk_ids: Routed global expert ids ``(T, top_k)`` int32.
+        router_weights: Router weights ``(T, top_k)`` f32, applied once in the
+            fused reduce (normalized and scaled by the router already).
+        input_scales: The dispatch's NVFP4 global input scale, already
+            inverted (``1 / gate_up_input``; 1.0 at MXFP8); element 0 is read.
+        gate_up_weight: Sigma-permuted NVFP4 or MXFP8 gate/up weights.
+        gate_up_b_scales: Gate/up weight scales (6D tcgen05 layout).
+        down_weight: NVFP4 or MXFP8 down weights.
+        down_b_scales: Down weight scales (6D).
+        gate_up_expert_scales: Per-local-expert L1 alpha.
+        down_expert_scales: Per-local-expert L2 alpha.
+        c_input_scales: Per-local-expert L1->L2 requant scale
+            (``1 / down_input``).
+        recv_count_ptrs: The EP group-0 receive-count table (CPU ``uint64``,
+            one address per device), which names every rank's workspace.
+        config: EP configuration.
+
+    Returns:
+        The token-indexed MoE output ``(T, hidden)`` BF16 (routed experts
+        only; the caller adds the shared expert).
+    """
+    if not config.fused_moe_ready:
+        raise ValueError(
+            "EP init did not set up the one-launch fused MoE for this"
+            " configuration"
+        )
+    results = ops.inplace_custom(
+        "mega_ffn.ep_fused",
+        device=input_tokens.device,
+        values=[
+            atomic_counters,
+            input_tokens,
+            topk_ids,
+            router_weights,
+            input_scales,
+            gate_up_weight,
+            gate_up_b_scales,
+            down_weight,
+            down_b_scales,
+            gate_up_expert_scales,
+            down_expert_scales,
+            c_input_scales,
+            recv_count_ptrs,
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.bfloat16,
+                shape=[input_tokens.shape[0], config.hidden_size],
+                device=input_tokens.device,
+            )
+        ],
+        parameters=_ep_common_parameters(config),
+    )
+    return results[0].tensor
 
 
 def call_ep_combine_wait(

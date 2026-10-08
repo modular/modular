@@ -19,8 +19,14 @@ import logging
 
 from max.dtype import DType
 from max.nn.comm.ep.ep_config import (
+    EPConfig,
+    _ep_fused_moe_requested,
     calculate_ep_max_tokens_per_rank,
     estimate_ep_memory_usage,
+)
+from max.nn.comm.ep.ep_manager import (
+    _bound_fused_moe_workspace,
+    _ep_sync_counter_bytes,
 )
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
@@ -82,6 +88,99 @@ def _ep_max_rank_send_tokens_for_pipeline(
         data_parallel_degree=pipeline_config.model.data_parallel_degree,
         use_allreduce=pipeline_config.runtime.ep_use_allreduce,
     )
+
+
+def fused_moe_counter_reserve_memory(
+    pipeline_config: PipelineConfig, huggingface_config: AutoConfig
+) -> int:
+    """Bytes of the fused MoE counters' reserve on all of this node's devices.
+
+    An EP config that gives the experts' FFN width, as the DeepSeek-V3.2 model
+    code does, ends each of a device's EP sync-counter buffers in a fixed
+    reserve for the fused MoE's counters, whether or not the fused MoE runs.
+    The rest of those buffers is main's and stays unplanned. This planner also
+    serves models that give no width and so allocate no reserve; it cannot
+    tell them apart, so it plans the reserve for them too.
+
+    Args:
+        pipeline_config: Pipeline configuration.
+        huggingface_config: HuggingFace model configuration.
+
+    Returns:
+        The reserve bytes over all devices of the node.
+    """
+    n_gpus_per_node = len(pipeline_config.model.device_specs)
+    n_experts = huggingface_config.n_routed_experts
+    use_allreduce = pipeline_config.runtime.ep_use_allreduce
+    with_reserve = _ep_sync_counter_bytes(
+        n_experts,
+        n_gpus_per_node,
+        use_allreduce,
+        huggingface_config.moe_intermediate_size,
+    )
+    without_reserve = _ep_sync_counter_bytes(
+        n_experts, n_gpus_per_node, use_allreduce, 0
+    )
+    return n_gpus_per_node * (with_reserve - without_reserve)
+
+
+def fused_ep_moe_memory(
+    pipeline_config: PipelineConfig,
+    huggingface_config: AutoConfig,
+    dispatch_dtype: DType,
+    max_tokens_per_rank: int,
+) -> int:
+    """Bytes the one-launch fused EP MoE can allocate on all of this node's
+    devices: nothing unless ``MODULAR_EP_FUSED_MOE=1`` asks EP init for it,
+    then the backend's bound for the EP geometry and dispatch element type.
+
+    The plan is made before the checkpoint is parsed, so the dispatch format,
+    its global scales and the shared-expert rows are not known yet. The
+    backend answers the most EP init can allocate for any of them, and a
+    model it refuses gets nothing, so the plan can be high but never short.
+
+    Args:
+        pipeline_config: Pipeline configuration.
+        huggingface_config: HuggingFace model configuration.
+        dispatch_dtype: The target's EP dispatch element type. EP init sets the
+            fused MoE up only on the target's EP config: when an MTP draft
+            makes it allocate the shared buffers from a bfloat16 copy, the
+            backend refuses that copy, so a bound for the target covers both.
+        max_tokens_per_rank: The EP per-rank token capacity.
+
+    Returns:
+        The workspace bytes over all devices of the node.
+    """
+    if not _ep_fused_moe_requested():
+        return 0
+    n_gpus_per_node = len(pipeline_config.model.device_specs)
+    arena, refusal = _bound_fused_moe_workspace(
+        EPConfig(
+            dispatch_dtype=DType.bfloat16,
+            combine_dtype=DType.bfloat16,
+            hidden_size=huggingface_config.hidden_size,
+            top_k=huggingface_config.num_experts_per_tok,
+            n_experts=huggingface_config.n_routed_experts,
+            max_tokens_per_rank=max_tokens_per_rank,
+            n_gpus_per_node=n_gpus_per_node,
+            n_nodes=pipeline_config.runtime.ep_size // n_gpus_per_node,
+            moe_dim=huggingface_config.moe_intermediate_size,
+            use_allreduce=pipeline_config.runtime.ep_use_allreduce,
+        ),
+        dispatch_dtype,
+    )
+    if refusal:
+        logger.info(
+            "Not planning a fused EP MoE workspace: the backend does not"
+            " serve this configuration (%s)",
+            refusal,
+        )
+        return 0
+    logger.info(
+        "Planning the fused EP MoE workspace: "
+        f"{to_human_readable_bytes(arena)} per device"
+    )
+    return n_gpus_per_node * arena
 
 
 def ep_fuse_ffn_combine_send_for_pipeline(
@@ -373,6 +472,21 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
                 use_allreduce=pipeline_config.runtime.ep_use_allreduce,
             )
             ep_buffer_memory = per_device_ep_memory * n_gpus_per_node
+
+            reserve_memory = fused_moe_counter_reserve_memory(
+                pipeline_config, huggingface_config
+            )
+            logger.info(
+                "Estimated fused MoE counter reserve: "
+                f"{to_human_readable_bytes(reserve_memory)}"
+            )
+            ep_buffer_memory += reserve_memory
+            ep_buffer_memory += fused_ep_moe_memory(
+                pipeline_config,
+                huggingface_config,
+                supported_encoding_dtype(encoding),
+                ep_max_rank_send_tokens,
+            )
 
             logger.info(
                 "Estimated EP SHMEM buffer memory: "

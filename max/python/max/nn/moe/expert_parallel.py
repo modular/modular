@@ -261,6 +261,30 @@ def _ep_forward(
     for shard in moe_shards:
         shard.configure_ep_scale_fusion(dispatch_supports_fold=True)
 
+    # One-launch fused EP MoE, once EP init set it up (``fused_moe_ready``).
+    # Replaces dispatch, the local FFN and the combine with ONE launch per
+    # device that returns the token-indexed routed output. All-or-nothing per
+    # layer (every rank must run the same protocol); any shard it cannot serve
+    # keeps the shipping chain below.
+    #
+    # Exclusive-launch contract: the fused grid is one persistent CTA per SM
+    # and was qualified with nothing co-resident, so the shared expert runs
+    # INLINE on the default stream (never ``ops.side_stream``) and serializes
+    # with the fused launch. The shipping path below keeps its side stream.
+    if batch_mgr.config.fused_moe_ready and all(
+        shard._can_fuse_megaffn_ep() for shard in moe_shards
+    ):
+        fused_outputs: list[TensorValue] = []
+        for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+            shared = shard.shared_experts(x) if has_unfused_shared else None
+            out = shard._ep_fused_forward(
+                x, all_topk_ids[i], all_router_weights[i]
+            )
+            if shared is not None:
+                out += shared
+            fused_outputs.append(out.cast(x.dtype))
+        return fused_outputs
+
     shared_outs: list[TensorValue | None] | None = None
 
     if batch_mgr.config.use_allreduce:

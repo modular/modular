@@ -752,6 +752,33 @@ class MoE(Module, Shardable):
         """
         return None
 
+    def _can_fuse_megaffn_ep(self) -> bool:
+        """Whether this layer runs the one-launch fused EP MoE.
+
+        ``False`` on the base class: unquantized experts (for example the
+        bf16 MTP draft layer of an NVFP4 checkpoint) keep the shipping
+        dispatch / FFN / combine chain. :class:`MoEQuantized` overrides it.
+        Unlike the fused combine send this never raises: the fused workspace
+        is planned in addition to the shipping buffers, so falling back
+        cannot under-reserve.
+        """
+        return False
+
+    def _ep_fused_forward(
+        self,
+        x: TensorValue,
+        topk_ids: TensorValue,
+        router_weights: TensorValue,
+    ) -> TensorValue:
+        """Routed-expert output of the one-launch fused EP MoE.
+
+        Only reached when :meth:`_can_fuse_megaffn_ep` is ``True``.
+        """
+        raise NotImplementedError(
+            "the one-launch fused EP MoE needs quantized (NVFP4 or MXFP8)"
+            " experts"
+        )
+
     def _swigluoai_activation(self, gate_up: TensorValue) -> TensorValue:
         """Applies the configured OAI-style clamped SwiGLU activation."""
         return _swigluoai_activation(

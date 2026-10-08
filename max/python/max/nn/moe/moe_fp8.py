@@ -374,6 +374,84 @@ class MoEQuantized(MoE):
             )
         return True
 
+    def _can_fuse_megaffn_ep(self) -> bool:
+        """Whether this layer runs the one-launch fused EP MoE.
+
+        Only once EP init set the fused path up (``EPConfig.fused_moe_ready``;
+        the backend decides which configurations it serves), and only for
+        experts the fused op takes: the NVIDIA block-scaled layout, plain
+        SiLU and the geometry the workspace was set up for. Anything else
+        returns ``False`` and keeps the shipping chain.
+        """
+        if not self._ep_batch_manager:
+            return False
+        cfg = self.ep_batch_manager.config
+        return (
+            cfg.fused_moe_ready
+            and self._uses_nvidia_block_scaled_ep_layout
+            # The fused kernel consumes the sigma-permuted gate/up layout.
+            and self._can_fuse_swiglu_nvfp4()
+            # Plain SiLU only: the fused binding compiles no clamp constants.
+            and not self.use_swigluoai
+            and self.gated_activation_fn is None
+            and self.num_experts_per_token == cfg.top_k
+            and self.hidden_dim == cfg.hidden_size
+            and self.moe_dim == cfg.moe_dim
+        )
+
+    def _ep_fused_forward(
+        self,
+        x: TensorValue,
+        topk_ids: TensorValue,
+        router_weights: TensorValue,
+    ) -> TensorValue:
+        """Routed-expert output of the one-launch fused EP MoE.
+
+        NVFP4 takes every operand from the same normalizers the shipping chain
+        uses: the dispatch's inverted global input scale
+        (``call_ep_dispatch_async``), the L1/L2 alphas (``_nvfp4_scales``) and
+        the inverted L1->L2 requant scale (``prepare_swiglu_operands``). MXFP8
+        has none of those scales (E8M0 block scales carry everything, as in
+        the shipping MXFP8 chain's unit ``expert_scales``), so it passes 1.0.
+        """
+        strategy = self._strategy()
+        assert isinstance(strategy, NvMxf4f8Strategy)
+        gate_up_scales, down_scales = strategy.prepare_weight_scales(
+            self.gate_up_proj_scales, self.down_proj_scales, x.device
+        )
+        dev = x.device
+        if self._is_nvfp4:
+            nvfp4 = self._nvfp4_scales()
+            input_scales = 1.0 / nvfp4.gate_up_input.to(dev)
+            gate_up_expert_scales = nvfp4.gate_up_expert.to(dev)
+            down_expert_scales = nvfp4.down_expert.to(dev)
+            c_input_scales = (1.0 / nvfp4.down_input).to(dev)
+        else:
+            n_local = len(self.experts)
+            ones = ops.broadcast_to(
+                ops.constant(1.0, DType.float32, device=dev), [n_local]
+            )
+            input_scales = ops.broadcast_to(
+                ops.constant(1.0, DType.float32, device=dev), [1]
+            )
+            gate_up_expert_scales = ones
+            down_expert_scales = ones
+            c_input_scales = ones
+        return self.ep_batch_manager.mega_ffn_ep_fused(
+            self.devices[0].id,
+            input_tokens=x,
+            topk_ids=topk_ids,
+            router_weights=router_weights.cast(DType.float32),
+            input_scales=input_scales,
+            gate_up_weight=self.gate_up_proj,
+            gate_up_b_scales=gate_up_scales,
+            down_weight=self.down_proj,
+            down_b_scales=down_scales,
+            gate_up_expert_scales=gate_up_expert_scales,
+            down_expert_scales=down_expert_scales,
+            c_input_scales=c_input_scales,
+        )
+
     def _local_ep_compute(
         self,
         expert_inputs: tuple[TensorValue, ...],
