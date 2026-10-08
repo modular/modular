@@ -56,7 +56,7 @@ def _get(obj: Any, name: str, default: Any = None) -> Any:
 class DSparkGemma4DraftConfig:
     """DSpark drafter hyperparameters from the draft HF checkpoint config.
 
-    The checkpoint config (e.g. ``deepseek-ai/dspark_gemma4_12b_block7``) is
+    The checkpoint config (such as ``deepseek-ai/dspark_gemma4_12b_block7``) is
     a gemma4_text-style config extended with the DSpark fields
     (``block_size``, ``mask_token_id``, ``target_layer_ids``,
     ``markov_rank``, ...). Only full-attention (k_eq_v) draft layers are

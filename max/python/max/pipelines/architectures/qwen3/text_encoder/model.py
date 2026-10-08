@@ -227,7 +227,7 @@ class Qwen3TextEncoderModel(ComponentModel):
     ) -> Buffer:
         """Execute the compiled encoder with an already-built attention bias.
 
-        Use this when the caller has pre-computed the additive bias (e.g.,
+        Use this when the caller has pre-computed the additive bias (such as
         to share bias construction across positive and negative CFG
         streams). ``tokens`` may be 1D ``(S,)`` or 2D ``(1, S)``; 2D
         tokens are squeezed. ``attention_bias`` must be shape

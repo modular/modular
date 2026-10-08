@@ -75,8 +75,8 @@ GPU profiling modes control the level of instrumentation when profiling
 MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
 levels provide more detail but may introduce additional overhead.
 
-- ``off``: Disable GPU profiling instrumentation. This is the default
-  mode and incurs no profiling overhead.
+- ``off`` (default): Disable GPU profiling instrumentation. Incurs no
+  profiling overhead.
 - ``on``: Enable basic GPU profiling. Adds CUDA driver calls and NVTX
   markers for correlating kernel executions with host-side code.
 - ``detailed``: Enable detailed GPU profiling with additional NVTX
@@ -360,7 +360,10 @@ class SplitKReductionPrecision(IntEnum):
 
 
 class AssertLevel(str, Enum):
-    """The AssertLevel specifies the assert level used by the Mojo Ops."""
+    """Which Mojo asserts are kept in the compiled model.
+
+    Set with :meth:`InferenceSession.set_mojo_assert_level`.
+    """
 
     NONE = "none"
     WARN = "warn"
@@ -369,15 +372,25 @@ class AssertLevel(str, Enum):
 
 
 class LogLevel(str, Enum):
-    """The LogLevel specifies the log level used by the Mojo Ops."""
+    """Verbosity of Mojo logging in the compiled model.
+
+    Set with :meth:`InferenceSession.set_mojo_log_level`.
+    """
 
     NOTSET = "notset"
+    """No Mojo logging at all."""
     TRACE = "trace"
+    """Finest-grained logging; more detail than ``DEBUG``."""
     DEBUG = "debug"
+    """Detailed diagnostic information."""
     INFO = "info"
+    """Confirmation that things are working as expected."""
     WARNING = "warning"
+    """A sign that something unexpected happened; execution continues."""
     ERROR = "error"
+    """A failure in part of the run."""
     CRITICAL = "critical"
+    """A failure so serious the run cannot continue."""
 
 
 class CompilationStopped(RuntimeError):
@@ -964,7 +977,7 @@ class InferenceSession:
 
         Compiles are serialized process-wide: if another compile is in
         flight (from any session), this call blocks until it resolves
-        before scheduling this one. See ``_COMPILATION_LOCK``.
+        before scheduling this one.
 
         Args:
             model: A :class:`Graph` instance, a :class:`max.graph.Module`

@@ -352,7 +352,7 @@ class AttentionBlock(Module):
 
     The fused SM100 MHA kernel only supports head_dim in
     ``_FUSED_MHA_DEPTHS``. When ``dim`` falls outside that set
-    (e.g. dim=384 for the default Wan config), Q/K/V are zero-padded
+    (such as dim=384 for the default Wan config), Q/K/V are zero-padded
     along head_dim up to the next supported depth so the call routes
     to the fused path; the output is sliced back to ``dim``. Math is
     identical because zero-padded dims contribute zero to QKᵀ and PV;

@@ -149,7 +149,7 @@ def _attn_proj_bf16(
     E4M3 -> f32 via the shared host LUT (:func:`fp8_e4m3fn_to_float32`; the
     engine can't lower FP8 -> f32 on the host), apply the scalar scale, and cast
     to bf16 (the attention ``Linear``s are bf16). For checkpoints whose
-    attention is already bf16 (e.g. the 4B) the weight passes through
+    attention is already bf16 (such as the 4B) the weight passes through
     byte-identical and this is a no-op; the mamba/MLP FP8 ``Linear``s keep their
     native FP8 path untouched.
     """

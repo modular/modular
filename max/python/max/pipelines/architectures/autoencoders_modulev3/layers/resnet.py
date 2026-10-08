@@ -50,7 +50,7 @@ class ResnetBlock2D(Module[[Tensor, Tensor | None], Tensor]):
             groups: Number of groups for first GroupNorm.
             groups_out: Number of groups for second GroupNorm.
             eps: Epsilon value for GroupNorm layers.
-            non_linearity: Activation function name (e.g., "silu").
+            non_linearity: Activation function name (such as "silu").
             use_conv_shortcut: Whether to use convolutional shortcut.
             conv_shortcut_bias: Whether to use bias in shortcut convolution.
             device: Device reference for module placement.

@@ -507,7 +507,7 @@ def forward_moe_sharded_layers(
     :func:`forward_sharded_layers`.
 
     Args:
-        shards: Per-device shard callables (MoE, MLP, etc.).
+        shards: Per-device shard callables (MoE, MLP and so on).
         xs: Input tensors, one per shard.
 
     Returns:

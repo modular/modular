@@ -21,7 +21,7 @@ encode/decode/session-build tasks for the lifetime of the `TokenizerPool`.
 
 Use as a context manager so the pool is closed and joined deterministically
 on exit. Worker processes are created lazily on the first encode/decode/map
-call, so constructing a `TokenizerPool` you never use (e.g. when a dry-run
+call, so constructing a `TokenizerPool` you never use (such as when a dry-run
 test mocks out the dataset method) is free.
 """
 
@@ -138,7 +138,7 @@ def _decode_text(ids: list[int]) -> str:
 def worker_tokenizer() -> PreTrainedTokenizerBase:
     """Return the tokenizer loaded inside the current worker process.
 
-    Worker callables that need direct tokenizer access (e.g. the multiturn
+    Worker callables that need direct tokenizer access (such as the multiturn
     session builder) call this to read the worker-local tokenizer instance.
     """
     assert _WORKER_TOK is not None
@@ -279,7 +279,7 @@ class TokenizerPool:
     def map(self, fn: Callable[[_T], _R], items: Iterable[_T]) -> list[_R]:
         """Run `fn` across the pool for every element of `items`.
 
-        Used by coarser per-task workers (e.g. session builders) that
+        Used by coarser per-task workers (such as session builders) that
         access their tokenizer via `worker_tokenizer()`.
         """
         items_list = list(items)

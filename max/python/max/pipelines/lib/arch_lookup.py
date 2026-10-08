@@ -70,6 +70,10 @@ __all__ = [
 PipelineModelType: TypeAlias = type[
     PipelineModel[Any] | PipelineExecutor[Any, Any, Any] | Module[Any, Any]
 ]
+"""The class of a model implementation that an architecture registers. A
+:class:`PipelineModel`, a :class:`PipelineExecutor`, or a
+:class:`~max.experimental.nn.Module`.
+"""
 
 
 @dataclass(frozen=False)
@@ -193,7 +197,7 @@ class SupportedArchitecture:
     """The set of input modalities this architecture accepts.
 
     Defaults to text-only. Multimodal architectures should declare all
-    supported input types explicitly, e.g.
+    supported input types explicitly, such as
     ``{InputModality.TEXT, InputModality.IMAGE}`` for vision-language models.
     """
 
@@ -318,7 +322,7 @@ class SupportedArchitecture:
     :func:`max.pipelines.lib.reasoning.register`. When set, the pipeline
     config will fall back to this value for ``runtime.reasoning_parser`` if
     the user did not explicitly configure one. Different model architectures
-    emit reasoning content in different formats (e.g., Kimi K2.5 wraps
+    emit reasoning content in different formats (for example, Kimi K2.5 wraps
     reasoning in ``<think>...</think>``), so the appropriate default is
     architecture-specific.
 
@@ -329,7 +333,7 @@ class SupportedArchitecture:
     default_structured_output_backend: str | None = None
     """Optional default structured output backend for this architecture.
 
-    When set (e.g., ``"xgrammar"``), the pipeline config
+    When set to ``"xgrammar"``, the pipeline config
     will use this value for ``sampling.structured_output_backend`` if the
     user did not explicitly configure one. This allows architectures that
     work better with a specific backend to override the global default.
@@ -906,7 +910,7 @@ def find_architecture(
 
     Args:
         name: The architecture class name to look up
-            (e.g. ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
+            (such as ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
         prefer_module_v3: Whether to use the ModuleV3 architecture variant.
             When ``False`` (default), uses the standard graph API architecture name.
             When ``True``, appends the ``_ModuleV3`` suffix to look up the

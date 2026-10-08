@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Qwen3.5 architecture: a hybrid model interleaving Gated DeltaNet linear
+attention with full attention, plus a vision encoder.
+"""
+
 from .arch import qwen3_5_arch, qwen3_5_text_arch
 from .model import Qwen3_5Inputs, Qwen3_5Model
 from .model_config import Qwen3_5Config

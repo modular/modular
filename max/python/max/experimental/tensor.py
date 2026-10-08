@@ -584,8 +584,8 @@ class Tensor(DLPackArray, HasTensorValue):
     Args:
         data: The value for the tensor. Can be a scalar number, a nested
             Python list, or any DLPack-compatible array (NumPy, PyTorch,
-            etc.). If not provided, exactly one of ``storage`` or ``state``
-            must be supplied.
+            and so on). If not provided, exactly one of ``storage`` or
+            ``state`` must be supplied.
         dtype: The data type for the tensor elements. For DLPack arrays this
             defaults to the array's own dtype; passing a conflicting value
             raises :exc:`ValueError`. For Python scalars and lists, defaults
@@ -1102,7 +1102,7 @@ class Tensor(DLPackArray, HasTensorValue):
         ``constant_external`` per shard and assembles them into a sharded
         Tensor preserving ``self``'s mesh, placements, and global shape.
 
-        Shard constants are named ``name._shard.0``, ``name._shard.1``, etc.
+        Shard constants are named ``name._shard.0``, ``name._shard.1``, and so on.
 
         Args:
             name: The name of the constant.
@@ -1892,7 +1892,7 @@ class Tensor(DLPackArray, HasTensorValue):
 
         Returns:
             The scalar value from the tensor. The return type matches the tensor's
-            dtype (e.g., float for float32, int for int32).
+            dtype (such as float for float32, int for int32).
 
         Raises:
             TypeError: If the tensor contains more than one element.

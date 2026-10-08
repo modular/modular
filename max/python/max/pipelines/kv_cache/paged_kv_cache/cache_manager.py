@@ -463,7 +463,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 prepare attention dispatch metadata. When provided, the dispatch
                 metadata (and ``max_prompt_length``/``max_cache_length``) is
                 resolved from these
-                (e.g. graph-capture-aligned) values rather than the batch's real
+                (such as graph-capture-aligned) values rather than the batch's real
                 values, so the resolved key matches a captured graph. The batch's
                 real values must not exceed these. When ``None``, the metadata is
                 prepared from the real per-replica values.
@@ -659,7 +659,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 views. If not provided, uses request-derived runtime length.
             batch_characteristics: Optional upper-bound batch shape applied
                 uniformly across every replica when preparing attention dispatch
-                metadata. When provided (e.g. graph-capture replay, where every
+                metadata. When provided (such as graph-capture replay, where every
                 DP replica must run the identical captured graph), the dispatch
                 key is resolved once from these aligned values; the real
                 per-replica values must not exceed them. When ``None``, each

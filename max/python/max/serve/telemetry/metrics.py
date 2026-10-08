@@ -951,7 +951,7 @@ class MetricClient(abc.ABC):
         """Group a burst of measurements into a single flush.
 
         A caller that knows it is about to emit many measurements at once
-        (e.g. the per-iteration scheduler metrics) can wrap them in a
+        (such as the per-iteration scheduler metrics) can wrap them in a
         transaction so a client that crosses a process boundary batches them
         into one packet instead of one send per measurement. Measurements
         emitted outside a transaction are sent immediately.
@@ -1129,7 +1129,7 @@ class _AsyncMetrics:
         call with ``1`` when a request is accepted by the API server (before
         tokenization) and ``-1`` just before it is enqueued to the model
         worker. A persistently high value means requests are backing up in the
-        API server (e.g. tokenization) rather than in the scheduler queue.
+        API server (such as tokenization) rather than in the scheduler queue.
         """
         self.client.send_measurement(
             MaxMeasurement(
@@ -1198,7 +1198,7 @@ class _AsyncMetrics:
 
         Args:
             ms: The duration in milliseconds.
-            component: Optional phase name (e.g. ``"build"``, ``"compile"``,
+            component: Optional phase name (such as ``"build"``, ``"compile"``,
                 ``"init"``, ``"graph_capture"``, ``"pinned_memory"``,
                 ``"spawn"``, ``"total"``). Recorded as the ``component`` tag
                 so a single metric can be split by startup phase. When

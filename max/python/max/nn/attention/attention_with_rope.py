@@ -567,7 +567,7 @@ class AttentionWithRope(Module, Shardable):
         """Project ``hidden`` to K/V and write into the paged KV cache.
 
         Used by speculative-decoding draft models that build their KV cache
-        from external (e.g. target) hidden states.
+        from external (such as target) hidden states.
         """
         qkv = self.qkv_proj(hidden)
 

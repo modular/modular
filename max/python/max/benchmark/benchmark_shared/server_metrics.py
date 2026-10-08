@@ -101,8 +101,8 @@ class ParsedMetrics:
         """Get a histogram by name and optional labels.
 
         Args:
-            metric_name: Base metric name (e.g., "maxserve_batch_execution_time_milliseconds")
-            labels: Optional dictionary of labels (e.g., {"batch_type": "CE"})
+            metric_name: Base metric name (such as "maxserve_batch_execution_time_milliseconds")
+            labels: Optional dictionary of labels (such as {"batch_type": "CE"})
 
         Returns:
             HistogramData if found, None otherwise
@@ -148,7 +148,7 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
 
     Args:
         backend: Backend name (Backend enum)
-        base_url: Base API URL (e.g., 'http://localhost:8000')
+        base_url: Base API URL (such as 'http://localhost:8000')
 
     Returns:
         Metrics endpoint URL for the backend
@@ -224,8 +224,8 @@ def parse_metrics(raw_text: str) -> ParsedMetrics:
         ParsedMetrics object containing all parsed metrics
 
     Note:
-        - Counters: Monotonically increasing values (e.g., total requests)
-        - Gauges: Values that can increase or decrease (e.g., current memory usage)
+        - Counters: Monotonically increasing values (such as total requests)
+        - Gauges: Values that can increase or decrease (such as current memory usage)
         - Histograms: Distribution data with buckets, sum, and count
     """
     counters: dict[str, float] = {}
@@ -284,7 +284,7 @@ def fetch_and_parse_metrics(backend: Backend, base_url: str) -> ParsedMetrics:
 
     Args:
         backend: Backend name (Backend enum)
-        base_url: Base API URL (e.g., 'http://localhost:8000')
+        base_url: Base API URL (such as 'http://localhost:8000')
 
     Returns:
         ParsedMetrics object containing all parsed metrics
@@ -498,8 +498,8 @@ def fetch_spec_decode_metrics(
 
     Args:
         backend: Backend type (``vllm`` / ``vllm-chat``, ``modular`` /
-            ``modular-chat``, etc.).
-        base_url: Server base URL (e.g., ``http://localhost:8000``).
+            ``modular-chat`` and so on).
+        base_url: Server base URL (such as ``http://localhost:8000``).
         metrics_urls: Explicit Prometheus metrics endpoint URLs, keyed by
             label. When empty, a single endpoint is derived from *backend*
             and *base_url*.

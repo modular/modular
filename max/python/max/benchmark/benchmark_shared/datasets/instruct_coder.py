@@ -68,7 +68,7 @@ def load_instruct_coder_pairs(
     parses each entry into a prompt (the instruction, plus any input code)
     and a completion (the expected edited code). Reused by
     :class:`InstructCoderBenchmarkDataset` and by other benchmark tools that
-    only need the raw text pairs (e.g. the engine benchmark's
+    only need the raw text pairs (such as the engine benchmark's
     ``InstructCoderTokenSource``).
 
     Args:

@@ -34,6 +34,14 @@ from .tokens import ImageMetadata, TokenBuffer, TokenHashOverride
 
 _CHUNK_SIZE = 128
 FUTURE_TOKEN = -999
+"""Placeholder written to a generated-token slot whose value is still being
+computed on device under overlap scheduling.
+
+A batch's token array carries this sentinel in positions the current GPU
+step has yet to produce; the pipeline replaces each occurrence with the
+real token once that step's outputs land (see
+``max.pipelines.lib.pipeline_variants.overlap_text_generation``).
+"""
 
 _logger = logging.getLogger("max.pipelines")
 
@@ -298,7 +306,7 @@ class GrammarEnforcementState:
     """Token sequences defining tool call boundaries, if conditional enforcement."""
 
     thinking_region_delimiters: StructuredOutputRegionDelimiters | None = None
-    """Token sequences defining thinking boundaries (e.g., ``</think>``).
+    """Token sequences defining thinking boundaries, such as ``</think>``.
 
     When set, grammar enforcement is suspended inside thinking regions.
     The key insight is that when thinking is enabled, the chat template
@@ -491,7 +499,7 @@ class TextContext:
     ignore_eos: bool = field(default=False)
     json_schema: str | None = field(default=None)
     grammar: str | None = field(default=None)
-    """Grammar for constrained decoding (e.g., regex grammar).
+    """Grammar for constrained decoding, such as a regex grammar.
 
     When set, this takes precedence over ``json_schema``. Used for model-specific
     constrained decoding formats like Kimi's tool call grammar.
@@ -687,7 +695,7 @@ class TextContext:
     def get_min_token_logit_mask(
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
-        """Returns per-step masks for logits that should be masked (e.g. EOS during ``min_tokens``).
+        """Returns per-step masks for logits that should be masked (such as EOS during ``min_tokens``).
 
         This is primarily used for the ``min_tokens`` setting, where we mask
         EOS tokens in the logits to avoid generating them before we reach
@@ -785,7 +793,7 @@ class TextContext:
             start_token_ids: Token IDs marking thinking start (can be None if we
                 start inside thinking, which is the case when chat template
                 already emits ``<think>``).
-            end_token_ids: Token IDs marking thinking end (e.g., ``</think>``).
+            end_token_ids: Token IDs marking thinking end (such as ``</think>``).
         """
         if end_token_ids is not None:
             self.grammar_state.thinking_region_delimiters = (
@@ -960,7 +968,7 @@ class TextContext:
 
         Returns:
             True if the token was handled — either consumed by the FSM,
-            recognized as a state-transition delimiter (e.g. a
+            recognized as a state-transition delimiter (such as a
             thinking-end token), or skipped because enforcement is
             inactive. False only when no matcher is present.
         """
@@ -996,7 +1004,7 @@ class TextContext:
         ``update_enforcement_state`` just turned it True at a tool-call
         ``SECTION_BEGIN``), the matcher is fresh and must consume the
         ENTIRE start marker, not just the token that completed it. For
-        multi-token / namespace-prefixed markers (e.g. MiniMax-M3's
+        multi-token / namespace-prefixed markers (such as MiniMax-M3's
         ``NS<tool_call>``) the grammar's ``start`` rule expects the prefix
         first; feeding only the completing token leaves the matcher
         expecting that prefix, so it rejects and enforcement silently
@@ -1019,7 +1027,7 @@ class TextContext:
         It combines ``advance_token_buffer()`` and ``advance_fsm()`` for the
         common case where both need to be advanced together.
 
-        For multi-step execution where FSM is advanced separately (e.g., to
+        For multi-step execution where FSM is advanced separately (such as to
         compute bitmasks between steps), use the individual methods directly.
 
         Args:
@@ -1245,7 +1253,7 @@ class TextAndVisionContext(TextContext):
         """Positions of image-placeholder tokens in the full token sequence.
 
         Derived from ``images`` metadata.  Subclasses that precompute indices
-        at tokenization time (e.g. KimiK2.5, Qwen2.5VL) may override this
+        at tokenization time (such as KimiK2.5, Qwen2.5VL) may override this
         with a stored field for efficiency.
         """
         if not self.images:
@@ -1411,7 +1419,7 @@ class PixelContext:
     conditioning path use different resize targets.
     """
     output_format: str = field(default="jpeg")
-    """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
+    """Image encoding format for the output, such as 'jpeg', 'png', or 'webp'."""
     seed: int | None = field(default=None)
     """Optional RNG seed from the request. Preserved here so executors that
     sample noise inside the compiled graph can consume the scalar directly,

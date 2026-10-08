@@ -775,7 +775,7 @@ def _activation(x: TensorValueLike, op_type: type[Operation]) -> TensorValue:
     Each elementwise activation function (``relu``, ``gelu`` and its
     approximations, ``sigmoid``, ``silu``) has its own dedicated op, backed by a
     hardware-optimized fused Mojo kernel, rather than a Python-level composition
-    of ``exp``/``erf``/etc.
+    of ``exp``, ``erf``, and so on.
     """
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     return Graph.current._add_op_generated(

@@ -316,8 +316,8 @@ class PatchEmbedding(Module, Shardable):
         ``x = self.pos_emb(x, grid_thws)``.
 
         Args:
-            pixel_values: (n_patches, in_channels, patch_size, patch_size) in NCHW format,
-                i.e. n_patches patches of shape (3, 14, 14).
+            pixel_values: (n_patches, in_channels, patch_size, patch_size) in
+                NCHW format; that is, n_patches patches of shape (3, 14, 14).
             grid_thws: (n_videos, 3) temporal, height, width per video,
                 dtype int64.
 

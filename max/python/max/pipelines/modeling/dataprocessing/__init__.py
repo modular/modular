@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Token-batch preparation helpers: collation, padding, and attention masks."""
+
 from .causal_attention_mask import (
     causal_attention_mask,
     causal_attention_mask_with_token_mask,

@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Weight adapter for Eagle3 draft checkpoints (e.g. ``nvidia/Kimi-K2.5-Thinking-Eagle3``)."""
+"""Weight adapter for Eagle3 draft checkpoints (such as ``nvidia/Kimi-K2.5-Thinking-Eagle3``)."""
 
 from __future__ import annotations
 

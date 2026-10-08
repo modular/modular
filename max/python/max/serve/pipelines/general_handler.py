@@ -51,7 +51,7 @@ class GeneralPipelineHandler(
     """General pipeline handler for OpenResponses API requests.
 
     This is a minimal implementation that can be extended for specific
-    modalities (image, video, etc.).
+    modalities (image, video and so on).
     """
 
     async def next(

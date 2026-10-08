@@ -15,7 +15,7 @@
 Speculators-format DSpark drafts (registered HuggingFace architecture name
 ``DSparkDraftModel``) are never invoked as a standalone pipeline — they are
 always loaded and executed through the target's unified pipeline model
-(e.g. ``UnifiedDSparkGemma4_31BModel``). This placeholder exists solely so
+(such as ``UnifiedDSparkGemma4_31BModel``). This placeholder exists solely so
 MAX's architecture registry can resolve the draft's ``architectures[0]``
 during ``PipelineConfig`` validation.
 """

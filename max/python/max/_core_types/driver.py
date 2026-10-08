@@ -16,6 +16,14 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class DLPackArray(Protocol):
+    """Protocol for objects that exchange data through the DLPack interface.
+
+    Any array-like object implementing ``__dlpack__`` and
+    ``__dlpack_device__`` satisfies this protocol, including NumPy arrays
+    and PyTorch tensors. MAX APIs that consume external array data accept
+    values matching this protocol.
+    """
+
     def __dlpack__(self, *, stream: None = None) -> Any: ...
 
     def __dlpack_device__(self) -> Any: ...

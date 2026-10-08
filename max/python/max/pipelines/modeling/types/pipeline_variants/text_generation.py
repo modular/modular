@@ -157,6 +157,7 @@ class VideoContentPart(_MessageContentPart):
 
 
 MessageContent = TextContentPart | ImageContentPart | VideoContentPart
+"""One part of a chat message: text, an image, or a video."""
 
 # ``root`` is a vendor role; supporting chat templates order it above ``system``.
 _MessageRole = Literal[

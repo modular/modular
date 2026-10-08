@@ -53,7 +53,7 @@ class GCDebugger:
 
     def __call__(self, phase: str, info: dict[str, int]) -> None:
         """
-        Handles a GC event (e.g. GC start or GC finish)
+        Handles a GC event (such as GC start or GC finish)
         """
         generation = info.get("generation")
         if generation is None:

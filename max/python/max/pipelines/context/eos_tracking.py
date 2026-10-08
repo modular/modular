@@ -27,7 +27,7 @@ class EOSTracker(BaseModel):
     """Centralized EOS tracking: single-ID, sequence-ID, and stop-sequence checks.
 
     Used by Context and sampling to decide when generation stops and which
-    token IDs to mask during min_tokens. Built once (e.g. by tokenizer from
+    token IDs to mask during min_tokens. Built once (such as by tokenizer from
     request params) and passed into context, so eos fields are immutable; Server and Context both use
     this type.
 

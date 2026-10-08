@@ -189,7 +189,7 @@ class TaylorSeerCache:
     Args:
         config: Resolved denoising cache configuration (must have
             ``taylorseer=True``).
-        dtype: Model compute dtype (e.g. ``DType.bfloat16``).
+        dtype: Model compute dtype (such as ``DType.bfloat16``).
         device: Target device for graph execution.
         session: The executor's shared inference session.
     """

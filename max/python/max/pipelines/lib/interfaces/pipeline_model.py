@@ -579,7 +579,7 @@ class PipelineModel(
     def huggingface_config(self) -> AutoConfig:
         """Returns the HuggingFace config from pipeline config.
 
-        For multimodal models (e.g., Pixtral, Gemma3 multimodal), this
+        For multimodal models (such as Pixtral, Gemma3 multimodal), this
         returns the top-level config which contains both text_config and
         vision_config. Models should explicitly access .text_config or
         .vision_config as needed.
@@ -989,7 +989,7 @@ class PipelineModelWithKVCache(
     def _wire_batch_processor(
         self, model: _CompiledModelT, model_config: _ModelConfigT
     ) -> None:
-        """Post-compile wiring into the batch processor (EP bind, vision, etc.)."""
+        """Post-compile wiring into the batch processor (EP bind, vision and so on)."""
         del model, model_config
         batch_processor = self.batch_processor
         if batch_processor is None:
@@ -1074,7 +1074,7 @@ class MultiGraphPipelineModelWithKVCache(
     ``model_config``.
 
     Override :meth:`load_model` when graph capture or weight loading does not
-    fit this flow (e.g. Qwen2.5VL, Kimi-K2.5).
+    fit this flow (such as Qwen2.5VL, Kimi-K2.5).
     """
 
     _vision_weights_dict: dict[str, Any]

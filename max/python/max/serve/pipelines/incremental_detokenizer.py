@@ -319,7 +319,7 @@ def create_buffered_detokenizer(
     2. `Utf8BufferingDetokenizer` for non-fast tokenizers (buffers tokens)
 
     Args:
-        tokenizer: A PipelineTokenizer implementation (e.g., TextTokenizer).
+        tokenizer: A PipelineTokenizer implementation (such as TextTokenizer).
         prompt_token_ids: The prompt token IDs to prime the decoder with.
         skip_special_tokens: Whether to skip special tokens during decoding.
 

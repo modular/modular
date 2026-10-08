@@ -46,12 +46,12 @@ class ReasoningPipelineTokenizer(
 
     @property
     def reasoning_start_token_id(self) -> int:
-        """The token id that opens a reasoning span (e.g. ``<|channel>``)."""
+        """The token id that opens a reasoning span (such as ``<|channel>``)."""
         ...
 
     @property
     def reasoning_end_token_id(self) -> int:
-        """The token id that closes a reasoning span (e.g. ``<channel|>``)."""
+        """The token id that closes a reasoning span (such as ``<channel|>``)."""
         ...
 
 
@@ -132,7 +132,7 @@ class ReasoningParser(ABC):
     """Parser for identifying reasoning spans in model output."""
 
     REASONING_START: ClassVar[str | None] = None
-    """Text delimiter that opens a reasoning span (e.g. ``"<think>"``).
+    """Text delimiter that opens a reasoning span, such as ``"<think>"``.
 
     Subclasses declare their delimiters here and resolve token ids from them,
     so each model's delimiters are written down exactly once. Consumers that
@@ -148,7 +148,7 @@ class ReasoningParser(ABC):
     """
 
     REASONING_END: ClassVar[str | None] = None
-    """Text delimiter that closes a reasoning span (e.g. ``"</think>"``).
+    """Text delimiter that closes a reasoning span, such as ``"</think>"``.
 
     See :attr:`REASONING_START` for the declaration contract.
     """
@@ -170,7 +170,7 @@ class ReasoningParser(ABC):
                 finds an end delimiter. When ``False``, the parser only
                 enters reasoning if it actually finds a start delimiter in
                 this chunk — letting callers feed every chunk through and
-                catch mid-stream reasoning sections (e.g. Gemma 4 emitting
+                catch mid-stream reasoning sections (such as Gemma 4 emitting
                 ``<|channel>thought\n...<channel|>`` even when reasoning
                 wasn't pre-seeded).
 
@@ -194,7 +194,7 @@ class ReasoningParser(ABC):
         The default implementation delegates to :meth:`stream`, which
         scans left-to-right and returns ``is_still_reasoning``.
         Architectures should override this when they have a more
-        reliable signal (e.g., a dedicated think-enable token).
+        reliable signal (such as a dedicated think-enable token).
 
         Args:
             prompt_token_ids: The full prompt token id sequence.
@@ -239,9 +239,9 @@ class ReasoningParser(ABC):
         """Returns the single-token ID that closes a reasoning span.
 
         Used by callers that need to detect end-of-reasoning without
-        instantiating the full parser (e.g., grammar-region setup in the
+        instantiating the full parser (such as grammar-region setup in the
         tokenizer). Implementations should resolve their architecture's
-        end-marker string (``</think>``, ``<channel|>``, etc.) via
+        end-marker string (``</think>``, ``<channel|>`` and so on) via
         :func:`max.pipelines.lib.tokenizer.convert_token_to_id`.
 
         Args:

@@ -729,7 +729,7 @@ class HuggingFaceRepo:
         """Returns weight file paths grouped by format (safetensors, gguf).
 
         When ``subfolder`` is set, only files within that subdirectory are
-        returned. The returned paths are relative to the repo root (i.e. they
+        returned. The returned paths are relative to the repo root (that is, they
         include the subfolder prefix) so that they can be passed directly to
         ``hf_hub_download`` and local file resolution without further
         adjustment. Files under a nested ``checkpoint-<step>/`` directory are
@@ -1072,7 +1072,7 @@ class HuggingFaceRepo:
             file: The weight file path.
             preferred_encoding: If set and present in the repo's supported
                 encodings, return it directly. Useful for multi-encoding
-                safetensors repos (e.g. FP4 repos that also contain BF16
+                safetensors repos (such as FP4 repos that also contain BF16
                 norm weights).
         """
         if str(file).endswith(".safetensors"):
@@ -1136,7 +1136,7 @@ def generate_local_model_path(repo_id: str, revision: str = "main") -> str:
 
     Args:
         repo_id: The Hugging Face repository ID in the format "org/model"
-                (e.g. "HuggingFaceTB/SmolLM2-135M")
+                (such as "HuggingFaceTB/SmolLM2-135M")
         revision: The model revision to resolve. Defaults to ``main``, which on
             CI runners resolves through the cache populator's ``refs/main`` to
             the revision pinned in ``hf-repo-lock.tsv``.

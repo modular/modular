@@ -1007,7 +1007,7 @@ def _apply_workload_to_config(
     Keys are converted from kebab-case to snake_case.  Path objects are
     stringified and env vars in string values are expanded.
 
-    Fields already in `config.model_fields_set` (i.e. explicitly provided
+    Fields already in `config.model_fields_set` (that is, explicitly provided
     by the caller, whether via CLI args or direct construction) are left
     unchanged so that CLI values always take precedence over workload YAML.
     """
@@ -1047,7 +1047,7 @@ def flush_prefix_cache(
 ) -> None:
     """Flush the serving engine's prefix cache via HTTP POST.
 
-    When ``base_url`` is set (a remote endpoint, e.g. ``--base-url``), it
+    When ``base_url`` is set (a remote endpoint, for example, ``--base-url``), it
     replaces the ``http://<host>:<port>`` prefix and the request carries an
     ``Authorization: Bearer $OPENAI_API_KEY`` header, matching the auth the
     benchmark requests themselves send.

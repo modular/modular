@@ -156,6 +156,8 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
 
 
 PagedCacheValues = KVCacheInputsPerDevice[TensorValue, BufferValue]
+"""Paged KV cache inputs for one device, with cache blocks and lengths
+as graph values."""
 
 
 # ===--------------------------------------------------------------------=== #
@@ -198,3 +200,7 @@ KVCacheInputs: TypeAlias = Tree[
     KVCacheInputsPerDevice[_Tensor, _Buffer]
     | RecurrentStateInputsPerDevice[_Tensor, _Buffer]
 ]
+"""The KV-cache inputs one model step consumes: a tree with one entry per
+device, holding either that device's paged-cache inputs or its
+recurrent-state leaves.
+"""

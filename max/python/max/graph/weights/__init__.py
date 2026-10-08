@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Weight-loading utilities for MAX graphs.
+
+Defines the weight container interfaces, adapters for common weight formats,
+and loaders that turn checkpoint files into :class:`WeightData` for graph
+construction.
+"""
+
 from .format import WeightsFormat, weights_format
 from .load import load_weights
 from .load_safetensors import SafetensorWeights

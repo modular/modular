@@ -793,7 +793,7 @@ class ImageMetadata:
 
     ``None`` means every token in ``[start_idx, end_idx)`` is a placeholder,
     so the row count equals the span width. Set by tokenizers whose spans
-    interleave placeholder runs with other tokens (e.g. video timestamp
+    interleave placeholder runs with other tokens (such as video timestamp
     text)."""
 
     @property
@@ -849,7 +849,7 @@ class TokenHashOverride:
     """Hash value to use at ``token_idx`` while hashing."""
 
     source: str = "media"
-    """Human-readable label describing where the hash override came from (e.g. "image", "video")."""
+    """Human-readable label describing where the hash override came from, such as "image" or "video"."""
 
     def __post_init__(self) -> None:
         if self.token_idx < 0:

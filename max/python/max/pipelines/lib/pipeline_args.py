@@ -123,7 +123,7 @@ class PipelineArgs(ConfigFileModel):
     ``profiling``) and a small number of cohesive sub-config objects
     (``kv_cache``, ``lora``, ``speculative``, ``draft_model``).
 
-    Multi-component pipelines (e.g. diffusion) that require a pre-built
+    Multi-component pipelines (such as diffusion) that require a pre-built
     :class:`~max.pipelines.lib.model_manifest.ModelManifest` may pass
     ``models=<manifest>`` to the constructor. That manifest is stored as a
     private override and used verbatim by :meth:`PipelineConfig.from_args`
@@ -462,7 +462,7 @@ class PipelineArgs(ConfigFileModel):
 
         Owns the full flat-to-nested routing for CLI and legacy callers:
 
-        - Flat sub-config kwargs (e.g. ``max_batch_size``, ``enable_lora``,
+        - Flat sub-config kwargs (such as ``max_batch_size``, ``enable_lora``,
           ``num_speculative_tokens``) are nested under their sub-config
           section (``runtime``, ``lora``, ``speculative``, ...) before the
           ``--config-file`` merge, so CLI flags and config-file subtrees
@@ -473,12 +473,12 @@ class PipelineArgs(ConfigFileModel):
         - ``draft_``-prefixed kwargs build :attr:`draft_model`, inheriting
           ``trust_remote_code``/``device_specs``/``data_parallel_degree``/
           ``header_only_weights`` from the target model when unset.
-        - Multi-component (e.g. diffusion) model paths are detected via
+        - Multi-component (such as diffusion) model paths are detected via
           :meth:`ModelManifest.from_model_path` and carried as a manifest
           override.
 
         Args:
-            **kwargs: Flat keyword arguments, e.g. ``model_path``,
+            **kwargs: Flat keyword arguments, for example, ``model_path``,
                 ``kv_cache_size``, ``enable_lora``.
 
         Returns:

@@ -655,7 +655,7 @@ def shuffle_block_scaled_b_dense_arrays(
 
     Thin numpy-only counterpart to :func:`preshuffle_block_scaled_b_dense`,
     for callers that hold plain ``[N, K_BYTES]`` / ``[N, K_SCALES]`` arrays
-    rather than checkpoint ``WeightData`` -- e.g. a benchmark harness that
+    rather than checkpoint ``WeightData`` -- for example, a benchmark harness that
     generates synthetic weights directly.
 
     Args:

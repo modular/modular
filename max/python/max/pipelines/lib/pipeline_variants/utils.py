@@ -88,7 +88,7 @@ def build_response(
     """Build response from updated contexts.
 
     Marks a context ``MAXIMUM_LENGTH`` only when it has no room for even one
-    more token. Callers that can append more than one token per step (e.g.
+    more token. Callers that can append more than one token per step (such as
     speculative decoding) are responsible for not overshooting the cap when
     they commit tokens; see
     :func:`update_spec_decode_context_and_prepare_responses`.
@@ -400,11 +400,11 @@ class StructuredOutputHelper:
         enforcement doesn't start immediately).  The end tag, if
         present, tells it when to stop.
 
-        For **section-wrapped** parsers (e.g. Kimi K2.5, DeepSeek V3)
+        For **section-wrapped** parsers (such as Kimi K2.5, DeepSeek V3)
         that define ``SECTION_BEGIN``/``SECTION_END``, the outer
         section pair is returned — enforcement spans all tool calls.
 
-        For **flat** parsers (e.g. Gemma 4) that only define
+        For **flat** parsers (such as Gemma 4) that only define
         ``CALL_BEGIN``/``CALL_END``, only ``CALL_BEGIN`` is returned
         as the start trigger; the end is ``None``.  ``CALL_END`` is a
         per-call delimiter, not a region boundary — using it would
@@ -457,11 +457,11 @@ class StructuredOutputHelper:
         Args:
             tokenizer: A pipeline tokenizer with a HuggingFace delegate attribute.
             enable_structured_output: Whether structured output is enabled
-                (e.g. to constrain to response format json_schema).
+                (such as to constrain to response format json_schema).
             tool_parser_name: Name of the registered tool parser. Used to extract
                 structural tags for tool call start/end markers.
             backend_name: Structured-output backend to use. ``None`` (the
-                default, i.e. an unresolved ``SamplingConfig``) falls back to
+                default; that is, an unresolved ``SamplingConfig``) falls back to
                 ``"xgrammar"``.
             any_whitespace: Whether ``response_format`` grammars accept
                 whitespace between JSON tokens. ``None`` (an unresolved
@@ -703,7 +703,7 @@ class StructuredOutputHelper:
         Mirrors ``TextGenerationContext._tokens_for_consume`` for the async
         spec-decode paths: on the enforcement flip-on (``was_enforced`` was
         False), feed the whole start marker rather than just the token that
-        completed it, so multi-token / namespace-prefixed markers (e.g.
+        completed it, so multi-token / namespace-prefixed markers (such as
         MiniMax-M3's ``NS<tool_call>``) align with the grammar's start rule
         instead of rejecting into fail-open. Single-token markers have
         ``start_token_ids == [token]``, so this is a no-op for them.
@@ -768,7 +768,7 @@ class StructuredOutputHelper:
         """Advance enforcement state through drafts, filling per-slot bitmasks.
 
         A draft that flips enforcement on mid-window causes downstream
-        slots to be constrained: e.g. a ``</think>`` draft exits the
+        slots to be constrained. For example, a ``</think>`` draft exits the
         thinking region, so the slot immediately after it gets a filled
         bitmask instead of staying unconstrained. The matcher is walked
         on a deep copy (never mutated), and enforcement state is restored
@@ -869,7 +869,7 @@ class StructuredOutputHelper:
         * ``matcher_accepting=False`` means the matcher was mid-structure
           (inside a call header / args), not at a stoppable boundary.
         * ``open_sections>0`` means more ``<|tool_calls_section_begin|>`` than
-          ``...section_end|>`` are committed, i.e. an open tool-call section.
+          ``...section_end|>`` are committed; that is, an open tool-call section.
         * ``committed_token_ids`` is this spec-decode step's accepted-drafts +
           bonus token, as raw token IDs, so the exact desyncing batch can be
           reconstructed offline against the tokenizer.

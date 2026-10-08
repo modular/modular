@@ -17,8 +17,8 @@ Graph ops are annotated with ``TensorValueLike`` / ``StrongTensorValueLike``
 must show ``Tensor`` to match the public contract.
 
 Aliases collapse as a unit: ``TensorValueLike`` is a ``UnionType`` over
-``_Value`` / ``Shape`` / ``Dim`` / ``HasTensorValue`` / ``int`` / ``float`` /
-etc., and exposing those internals to callers would mislead them.
+``_Value``, ``Shape``, ``Dim``, ``HasTensorValue``, ``int``, ``float``,
+and so on, and exposing those internals to callers would mislead them.
 
 In the parameter position, only the ``*Like`` aliases are substituted; bare
 ``TensorValue`` is left intact.

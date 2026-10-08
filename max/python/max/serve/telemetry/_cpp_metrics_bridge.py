@@ -40,7 +40,7 @@ class CppMetricsBridge:
 
     Histograms are not bridged. OTel histograms require individual observations
     to compute bucket distributions, but collect() returns a pre-aggregated
-    snapshot. Use Counter pairs (e.g. foo.sum + foo.count) for C++ distribution
+    snapshot. Use Counter pairs (such as foo.sum + foo.count) for C++ distribution
     metrics instead.
     """
 

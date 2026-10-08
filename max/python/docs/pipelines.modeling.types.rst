@@ -14,8 +14,14 @@ max.pipelines.modeling.types
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.modeling.types.pipeline_variants
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    pipelines.modeling.types.pipeline_variants
 

@@ -54,7 +54,7 @@ class TokenizerWorker(Worker, ABC):
     ) -> Result[str]:
         """Decode token ids back into text.
 
-        *skip_special_tokens* drops control tokens (e.g. ``<|eot_id|>``) from
+        *skip_special_tokens* drops control tokens (such as ``<|eot_id|>``) from
         the output; pass ``True`` to match what max-serve returns.
         """
         ...

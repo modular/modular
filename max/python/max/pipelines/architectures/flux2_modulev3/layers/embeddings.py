@@ -87,7 +87,7 @@ def apply_rotary_emb(
         use_real: Must be True; only real-valued RoPE is supported.
         use_real_unbind_dim: Reshape strategy for splitting the head
             dim into pairs. ``-1`` (FLUX/CogVideoX) reshapes to
-            ``[..., D/2, 2]``; ``-2`` (Stable Audio etc.) reshapes to
+            ``[..., D/2, 2]``; ``-2`` (Stable Audio and so on) reshapes to
             ``[..., 2, D/2]``.
         sequence_dim: Index of the sequence dimension in ``x``.
 

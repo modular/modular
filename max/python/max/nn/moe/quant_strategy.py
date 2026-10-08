@@ -566,7 +566,7 @@ class BlockScaledStrategy:
     to the preshuffled-B kernel variant (`block_scaled_grouped_matmul_amd_preb`),
     which expects B in the 5D layout from `Shuffler.preshuffle_b_5d`. The
     caller is responsible for applying that preshuffle at weight load
-    time (e.g. Kimi K2.5's `weight_adapters.py:_batch_preshuffle_experts`).
+    time (such as Kimi K2.5's `weight_adapters.py:_batch_preshuffle_experts`).
     Models without a preshuffle weight adapter must leave
     `preshuffled_b=False` so the dense row-major kernel is used.
     """

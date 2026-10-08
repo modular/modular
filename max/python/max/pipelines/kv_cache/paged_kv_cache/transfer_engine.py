@@ -302,7 +302,7 @@ class TensorAgentMetadata(
 
     base_addrs: list[int]
     """Base memory address per NIXL group for this shard, indexed by group.
-    ``base_addrs[g]`` is the base of group ``g`` (e.g. values, scales, or a
+    ``base_addrs[g]`` is the base of group ``g`` (such as values, scales, or a
     per-child cache). Parallel to the engine's ``bytes_per_group``; there is
     no special "main" group."""
 
@@ -400,7 +400,7 @@ class TensorAgent:
             agent_name: Unique name for this agent.
             listen_port: TCP port for the NIXL listener.
             tensors: This shard's buffers, one per NIXL group, group-major
-                (e.g. ``[main_values, main_scales, draft_values,
+                (such as ``[main_values, main_scales, draft_values,
                 draft_scales]``). All must share the same device. Must be
                 non-empty.
             memory_type: NIXL memory segment type (DRAM or VRAM).
@@ -733,7 +733,7 @@ class KVTransferEngineMetadata(TransferEngineMetadata):
     bytes_per_group: list[int]
     """Bytes per page for each tensor group, one entry per NIXL group. The
     first entry is the main group; subsequent entries correspond to extra
-    groups (e.g., draft KV in speculative decoding). ``bytes_per_page``
+    groups, such as draft KV in speculative decoding. ``bytes_per_page``
     equals ``sum(bytes_per_group)``."""
 
     replicated_per_group: list[bool] = []
@@ -824,7 +824,7 @@ class TransferEngine:
 
     bytes_per_group: list[int]
     """Bytes per page for each group. ``bytes_per_group[0]`` is the main
-    group; subsequent entries are extra groups (e.g., draft KV in
+    group; subsequent entries are extra groups (such as draft KV in
     speculative decoding)."""
 
     replicated_per_group: list[bool]
@@ -2025,9 +2025,9 @@ class KVTransferEngine(TransferEngine):
         declares, and passes them to the constructor, which carries each
         group's ``replicated`` field as ``replicated_per_group``.
 
-        For models with multiple KV caches (e.g., speculative decoding with a
+        For models with multiple KV caches (such as speculative decoding with a
         separate target and draft KV), each child cache contributes its own
-        group(s) so that heterogeneous buffer shapes (e.g., 61-layer MLA target
+        group(s) so that heterogeneous buffer shapes (such as 61-layer MLA target
         vs. 1-layer Eagle draft) are registered as independent NIXL groups.
 
         Quantized caches (values + scales): ``to_memory()`` authors a

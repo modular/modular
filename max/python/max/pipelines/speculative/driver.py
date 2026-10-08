@@ -311,8 +311,14 @@ class DecodeKVSwap(Enum):
     """
 
     MAX_PROMPT_LENGTH_ONE = "max_prompt_length_one"
+    """Set the draft cache values' ``max_prompt_length`` to one for the
+    decode loop's steps, which run a single token at a time."""
     DRAFT_ATTENTION_DISPATCH_METADATA = "draft_attention_dispatch_metadata"
+    """Read attention dispatch metadata from the ``draft_``-prefixed buffer,
+    the one sized for ``q = 1``."""
     DRAFT_MLA_NUM_PARTITIONS = "draft_mla_num_partitions"
+    """Read the MLA partition count from the ``draft_``-prefixed buffer, the
+    one sized for ``q = 1``."""
 
     ZERO_CACHE_LENGTHS = "zero_cache_lengths"
     """Start each step's window at zero: no past to attend over.

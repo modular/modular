@@ -259,7 +259,7 @@ def unary_model(
         The compiled model ready for execution.
 
     Raises:
-        KeyError: If the (op, device, dtype) is outside the supported set (e.g.
+        KeyError: If the (op, device, dtype) is outside the supported set (such as
             a transcendental op on an int dtype).
         EagerLazyCompileDisallowed: If a supported target is not already
             compiled and ``MAX_EAGER_ALLOW_LAZY_COMPILE=0``.

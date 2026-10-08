@@ -639,7 +639,7 @@ def unflatten(
         leaves: One value per leaf slot, left to right; with ``exact``,
             any trailing values are left unconsumed.
         exact: When ``False``, stop after the structure's leaves and leave
-            trailing values (e.g. a shared iterator's later items) in place
+            trailing values (such as a shared iterator's later items) in place
             instead of raising. Too few leaves is always an error.
 
     Returns:

@@ -91,6 +91,7 @@ from .utils import (
 PipelinesFactory = Callable[
     [], Pipeline[PipelineInputsType, PipelineOutputType]
 ]
+"""Callable with no arguments that constructs a configured pipeline."""
 
 __all__ = [
     "DUMMY_REQUEST_ID",

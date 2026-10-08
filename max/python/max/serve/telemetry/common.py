@@ -964,7 +964,7 @@ _kernel_trace_level = KernelTraceLevel.OFF
 
 
 def batch_spans_enabled() -> bool:
-    """Returns whether ``max.batch`` spans should be emitted, i.e. the model
+    """Returns whether ``max.batch`` spans should be emitted; that is, the model
     worker was configured with ``kernel_trace_level`` at ``batch`` or above."""
     return _kernel_trace_level >= KernelTraceLevel.BATCH
 

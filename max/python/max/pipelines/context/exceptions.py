@@ -31,8 +31,8 @@ class PromptTooLongError(InputError):
     """Raised when a prompt exceeds the model's maximum input length.
 
     Exposes ``num_tokens`` and ``max_length`` as attributes so callers can
-    handle the failure programmatically (e.g., truncate and retry) instead
-    of parsing the message.
+    handle the failure programmatically (for example, truncate and retry)
+    without parsing the message.
 
     ``limit_description`` describes what is being limited, since the same
     failure mode means different things in different architectures (an LLM

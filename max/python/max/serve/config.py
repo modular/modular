@@ -55,7 +55,7 @@ class KernelTraceLevel(Enum):
     """Controls GPU kernel-trace capture depth.
 
     Members are declared in increasing capture depth and compare in that
-    order, so gates can be written as e.g. ``level >= BATCH``. Each level
+    order, so gates can be written as, for example, ``level >= BATCH``. Each level
     includes everything at the levels below it. All levels above ``off`` add
     overhead to the model worker process. Use the minimum level that
     satisfies your observability needs.

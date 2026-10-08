@@ -804,7 +804,7 @@ class QwenImageEditPipeline(DiffusionPipeline):
 
         For multi-image editing each condition image needs a distinct T
         coordinate so the transformer can distinguish them via RoPE:
-        noise → T=0, first image → T=1, second image → T=2, etc.
+        noise → T=0, first image → T=1, second image → T=2, and so on.
         """
         t_coords = np.full((height, width), image_index + 1, dtype=np.int64)
         h_c = np.arange(height, dtype=np.int64) - (height - height // 2)

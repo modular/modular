@@ -85,7 +85,7 @@ async def run_subprocess(
     ``daemon`` controls the child's ``daemon`` flag. Passing ``True`` matches
     multiprocessing's safety behaviour of auto-terminating the child with the
     parent, but daemonic processes cannot spawn their own children. Callers that
-    host a subprocess which itself launches further subprocesses (e.g. a cascade
+    host a subprocess which itself launches further subprocesses (such as a cascade
     worker that spins up a ``max.serve`` model worker) must pass ``False``.
     Teardown is explicit in the ``finally`` block below, so a non-daemon child
     is still reliably reaped on context exit.
@@ -103,7 +103,7 @@ async def run_subprocess(
        ``finally:`` block does the full SIGTERM/SIGKILL/close dance.
 
     Cleanup is synchronous on purpose: terminating a subprocess is an
-    OS-level op, and making it async (kill tasks, callbacks, etc.) is
+    OS-level op, and making it async (kill tasks, callbacks and so on) is
     what produced the race that SERVSYS-1270 tracked. Sync cleanup
     blocks the event loop for up to ``_SIGTERM_GRACE + _SIGKILL_GRACE``
     seconds in the worst case, but we're shutting down -- nothing else
@@ -152,8 +152,8 @@ async def run_subprocess(
 class ProcessManager:
     """Handle yielded by :py:func:`subprocess_manager`.
 
-    Owns one subprocess and any associated watcher tasks (heartbeat,
-    etc.). All watchers run inside a shared :py:class:`CancelGroup`, so
+    Owns one subprocess and any associated watcher tasks (for example, a
+    heartbeat). All watchers run inside a shared :py:class:`CancelGroup`, so
     a failure in any of them tears down the body cleanly.
 
     Example::

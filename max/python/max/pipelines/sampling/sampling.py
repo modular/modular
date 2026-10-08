@@ -179,7 +179,7 @@ def token_sampler(
     """Builds a sampling graph that samples tokens from logits.
 
     Args:
-        sampling_config: Sampling configuration (top-k, temperature, etc.).
+        sampling_config: Sampling configuration (top-k, temperature and so on).
         device: Device for the graph inputs and ops.
         return_logits: Whether the graph should expose logits as an output.
         needs_bitmask_input: Whether to wire a ``bitmask`` input into the

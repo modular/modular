@@ -26,7 +26,7 @@ def _prepare_state_dict(
     and drop the alias to avoid strict-mode validation failures.
 
     If ``target_dtype`` is provided, all weights are cast to that dtype
-    (e.g. float32 → bfloat16 for Wan 2.1 checkpoints).
+    (such as float32 → bfloat16 for Wan 2.1 checkpoints).
     """
     state_dict: dict[str, WeightData] = {}
     for key, value in weights.items():

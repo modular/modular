@@ -215,7 +215,7 @@ class Module(Generic[_P, _R]):
         assert isinstance(encoder.device, CPU)
         assert isinstance(decoder.device, CPU)
 
-    For graph-level tensor routing *inside* ``forward()`` (e.g., pulling an
+    For graph-level tensor routing *inside* ``forward()`` (such as pulling an
     activation back to CPU at the end of the graph), use
     :func:`~max.graph.ops.transfer_to` or :meth:`~max.graph.TensorValue.to`
     instead; those insert transfer nodes into the compiled graph and are
@@ -236,7 +236,7 @@ class Module(Generic[_P, _R]):
          - Activation tensors within the compiled graph
        * - ``Tensor.to(device)``
          - Eager runtime (outside a graph)
-         - Concrete eager tensors (e.g., staging inputs)
+         - Concrete eager tensors (such as staging inputs)
     """
 
     #: Whether this module's own name is dropped from its descendants' paths.
@@ -328,7 +328,7 @@ class Module(Generic[_P, _R]):
 
         This property performs a depth-first traversal of the module hierarchy,
         yielding each parameter tensor with its qualified name. The qualified name
-        uses dot-notation to represent the module tree structure (e.g.,
+        uses dot-notation to represent the module tree structure (such as
         ``encoder.layer1.weight``).
 
         Parameters are yielded in depth-first order: first the current module's
@@ -425,7 +425,7 @@ class Module(Generic[_P, _R]):
         ``bfloat16``) are automatically cast to the parameter's dtype when
         shapes match, and a single summary message is logged at ``WARNING``
         level per call describing how many parameters were cast. Narrowing
-        casts (e.g. ``float32`` -> ``bfloat16``) are flagged in the log
+        casts (such as ``float32`` -> ``bfloat16``) are flagged in the log
         message as ``(precision loss)``. Dtype mismatches outside the
         safe-cast set still raise regardless of ``auto_cast``.
 
@@ -438,7 +438,7 @@ class Module(Generic[_P, _R]):
                 set above. Values may be on a different device; in that case the
                 tensor is copied to the existing parameter's device.
             strict: If :obj:`True` (default), verify that all keys in ``state``
-                are used (i.e., match actual parameters). If :obj:`False`, silently
+                are used (that is, match actual parameters). If :obj:`False`, silently
                 ignore extra keys that don't match any parameters.
             auto_cast: If :obj:`True`, permit safe dtype auto-casting between
                 ``float32`` and ``bfloat16`` when shapes match. Defaults to
@@ -797,7 +797,7 @@ def module_dataclass(  # noqa: ANN201
         repr: If :obj:`True`, use dataclass's default ``__repr__`` instead of
             :class:`Module`'s rich representation. Defaults to :obj:`False`.
         **kwargs: Additional keyword arguments forwarded to Python's
-            ``@dataclass`` decorator (e.g., ``frozen``, ``eq``).
+            ``@dataclass`` decorator (such as ``frozen``, ``eq``).
 
     Returns:
         The decorated class as a :class:`Module` subclass with automatic parameter

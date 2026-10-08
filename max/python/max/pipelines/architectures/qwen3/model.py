@@ -111,7 +111,7 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
 
         Args:
             state_dict: Model weight state dict, required for non-bfloat16
-                dispatch dtypes (e.g. FP8) to parse the dispatch quantization
+                dispatch dtypes (such as FP8) to parse the dispatch quantization
                 configuration.
         """
         ep_size = self.pipeline_config.runtime.ep_size

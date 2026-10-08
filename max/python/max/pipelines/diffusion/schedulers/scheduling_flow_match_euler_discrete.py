@@ -40,7 +40,7 @@ class FlowMatchEulerDiscreteScheduler:
 
     This scheduler provides timestep and sigma scheduling for flow-matching
     diffusion models. The actual denoising step computation is handled by
-    the pipeline (e.g., FluxPipeline._scheduler_step).
+    the pipeline (such as FluxPipeline._scheduler_step).
     """
 
     def __init__(

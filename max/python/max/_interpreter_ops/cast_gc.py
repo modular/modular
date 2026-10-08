@@ -134,7 +134,7 @@ def cast_model(device: Device, src: DType, dst: DType) -> engine.Model:
         The compiled model ready for execution.
 
     Raises:
-        KeyError: If (device, src, dst) is outside the swept matrix (e.g. a
+        KeyError: If (device, src, dst) is outside the swept matrix (such as a
             16-bit-float endpoint on CPU); or, with ``MAX_EAGER_OP_PRECOMPILE=1``,
             if a supported target was not swept.
     """

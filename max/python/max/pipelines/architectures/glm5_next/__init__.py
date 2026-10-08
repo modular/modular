@@ -11,6 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""GLM-5.3-Flash architecture: a multimodal MoE decoder with a vision
+tower, built on the DeepSeek V3.2 model.
+"""
+
 from .arch import glm5_next_arch
 from .glm5_next import Glm5Next
 from .memory_planner import Glm5NextMemoryPlanner

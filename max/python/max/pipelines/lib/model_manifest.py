@@ -87,20 +87,20 @@ def _component_subfolder(key: str, value: Any) -> str | None:
 class ModelManifest(dict[str, MAXModelConfig]):
     """Registry mapping semantic role strings to MAXModelConfig instances.
 
-    Each model is identified by a role string (e.g. ``"main"``,
+    Each model is identified by a role string (such as ``"main"``,
     ``"draft"``, ``"vae"``, ``"unet"``).  Single-model pipelines use the
     ``"main"`` key by convention; multi-component pipelines (diffusion,
     speculative decoding) store models under their respective roles.
 
     ``ModelManifest`` is a ``dict[str, MAXModelConfig]`` subclass, so
-    standard read operations (``[]``, ``in``, ``len``, ``items``, etc.)
+    standard read operations (``[]``, ``in``, ``len``, ``items`` and so on)
     work directly. The manifest is immutable: it is complete at
     construction, and mutating operations raise ``TypeError``. Construct
     it with the component configs you need; :meth:`with_override` is for
     replacing one component of a manifest you were handed.
 
     For diffusion pipelines constructed from ``model_index.json``, the
-    ``metadata`` property exposes non-component entries (e.g.
+    ``metadata`` property exposes non-component entries (such as
     ``_class_name``, ``_diffusers_version``, ``is_distilled``) as a
     plain dict.
     """
@@ -235,7 +235,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
 
         For diffusion pipelines built via ``from_model_path``, this
         contains every key/value pair from ``model_index.json`` that is
-        not a component (e.g. ``_class_name``, ``_diffusers_version``,
+        not a component (such as ``_class_name``, ``_diffusers_version``,
         ``is_distilled``).  For non-diffusion manifests, returns an
         empty dict.
         """
@@ -264,7 +264,7 @@ class ModelManifest(dict[str, MAXModelConfig]):
         ``architectures[0]`` from the HuggingFace config.
 
         For diffusion pipelines (no ``"main"`` key), returns
-        ``metadata["_class_name"]`` (e.g. ``"FluxPipeline"``).
+        ``metadata["_class_name"]`` (such as ``"FluxPipeline"``).
 
         Raises:
             ValueError: If the architecture name cannot be determined.

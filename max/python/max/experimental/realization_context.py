@@ -530,7 +530,7 @@ class GraphRealizationContext(RealizationContext):
     """A realization context for ahead-of-time graph compilation.
 
     This context is used when building computation graphs that will be compiled
-    and executed later (e.g., during :meth:`~max.experimental.nn.Module.compile`). Tensors in this
+    and executed later (such as during :meth:`~max.experimental.nn.Module.compile`). Tensors in this
     context remain as symbolic graph values and cannot be realized.
 
     Unlike eager contexts, this context does not support executing operations

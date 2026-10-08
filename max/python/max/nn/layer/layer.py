@@ -80,10 +80,10 @@ class Shardable(Protocol):
 
 
 class Layer:
-    """.. deprecated:: 25.2
+    """Base class for neural network components.
 
-    Base class for neural network components.
-    Use :class:`Module` instead.
+    .. deprecated:: 25.2
+        Use :class:`Module` instead.
 
     Provides functionality for adding hooks to the call function of
     each layer to support testing, debugging or profiling.
@@ -387,7 +387,7 @@ class Module(Layer, ABC):
 
         The keys in ``state_dict`` must match the fully-qualified weight
         names used internally by the `Module`. Those names normally
-        follow the attribute hierarchy (e.g.
+        follow the attribute hierarchy (such as
         ``model.layers.0.self_attn.qkv_proj.weight``), but a sublayer
         whose :attr:`_omit_module_attr_name` is ``True`` is *omitted*
         from its descendants' FQNs. The canonical example is
@@ -488,7 +488,7 @@ class Module(Layer, ABC):
 
         Keys follow the same FQN convention as :meth:`load_state_dict`:
         attribute paths through the module tree, with any sublayer that
-        sets :attr:`_omit_module_attr_name` (e.g.
+        sets :attr:`_omit_module_attr_name` (such as
         :class:`~max.nn.StackedLinear` in unfused mode) skipped in the
         prefix.
 
@@ -552,7 +552,7 @@ class Module(Layer, ABC):
         Raises:
             ValueError: If two distinct attribute paths produce the same
                 fully-qualified weight name. This can happen when a
-                module with ``_omit_module_attr_name`` (e.g.
+                module with ``_omit_module_attr_name`` (such as
                 :class:`~max.nn.StackedLinear`) flattens a child name into
                 the parent's namespace and a sibling already claims that
                 name.

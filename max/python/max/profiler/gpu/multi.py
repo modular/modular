@@ -82,8 +82,8 @@ class GPUDiagContext:
 
         Returns:
             A dictionary mapping GPU identifiers to their current statistics.
-            NVIDIA GPUs are prefixed with ``nv`` (e.g., ``nv0``, ``nv1``) and AMD
-            GPUs are prefixed with ``amd`` (e.g., ``amd0``, ``amd1``).
+            NVIDIA GPUs are prefixed with ``nv`` (such as ``nv0``, ``nv1``) and AMD
+            GPUs are prefixed with ``amd`` (such as ``amd0``, ``amd1``).
         """
         stats: dict[str, GPUStats] = {}
         if self._nvml is not None:

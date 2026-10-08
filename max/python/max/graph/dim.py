@@ -593,3 +593,6 @@ class StaticDim(Dim):
 
 
 DimLike = int | str | Dim | np.integer | builtin.TypedAttr
+"""Anything a dimension accepts: a Python int, a symbolic name, a
+:class:`Dim`, a NumPy integer, or a typed MLIR attribute.
+"""

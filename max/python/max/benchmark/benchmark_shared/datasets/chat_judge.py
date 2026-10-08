@@ -50,7 +50,7 @@ class ChatJudgeChatSamples(ChatSamples):
 class ChatJudgeBenchmarkDataset(LocalBenchmarkDataset):
     """LLM-as-judge multi-turn workload backed by a JSONL session file.
 
-    Models a per-turn judging / classification scenario (e.g. content
+    Models a per-turn judging / classification scenario (such as content
     moderation, safety scoring, RAG grading): each turn supplies a piece
     of content to evaluate with all relevant prior context already
     inlined as text in the user message. Self-contained prompts: each

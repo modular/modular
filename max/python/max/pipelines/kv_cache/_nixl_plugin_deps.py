@@ -123,7 +123,7 @@ def preload_nixl_plugin_deps() -> None:
     constructor; upstream does not, so we restore it here. It runs in every
     process that creates a NIXL agent — including ``spawn``-ed
     multiprocessing children, which do NOT inherit the parent's ``RTLD_GLOBAL``
-    handles. Libraries that are absent on the host (e.g. CUDA on an AMD/CPU
+    handles. Libraries that are absent on the host (such as CUDA on an AMD/CPU
     box) are skipped; the plugin simply cannot load there, which is reported by
     the existing availability checks rather than masked.
     """

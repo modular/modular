@@ -14,8 +14,16 @@ max.pipelines.lib
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.lib.arch_lookup
+   max.pipelines.lib.interfaces
+   max.pipelines.lib.log_probabilities
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    pipelines.lib.arch_lookup
    pipelines.lib.interfaces

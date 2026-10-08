@@ -232,7 +232,7 @@ class DeepseekV3Config(ArchConfigWithKVCache):
 
         This method creates a config instance with all fields that can be determined
         from the pipeline configuration, without needing the state_dict.
-        Fields that depend on the state_dict (like norm_dtype, quant_config, etc.)
+        Fields that depend on the state_dict (like norm_dtype, quant_config and so on)
         should be set via the `finalize()` method.
 
         Args:

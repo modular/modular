@@ -557,7 +557,7 @@ def combine_quant_per_device(
     """Map a per-device leaf transform over a homogeneous bundle.
 
     ``combine`` merges all items' tensors for one leaf into a per-device list
-    (one tensor per mesh device) — e.g. a TP shard-and-stack.  For FP8 input,
+    (one tensor per mesh device) — for example, a TP shard-and-stack.  For FP8 input,
     ``combine`` is applied to the ``data`` and ``weight_scale_inv`` leaves
     independently and the per-device leaves are zipped back into one
     :class:`FP8BlockTensor` per device, so the FP8 invariant (``data`` and
@@ -565,7 +565,7 @@ def combine_quant_per_device(
     is preserved without the caller transposing a struct-of-lists into a
     list-of-structs.  For plain tensors the per-device list is returned as-is.
 
-    ``combine`` must be leaf-agnostic — read any per-leaf difference (e.g. the
+    ``combine`` must be leaf-agnostic — read any per-leaf difference (such as the
     block-scale leaf's smaller trailing dim) off the leaf tensors' own shapes
     rather than branching on which leaf it is.
 

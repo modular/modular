@@ -412,7 +412,7 @@ def _resolve_thinking_token_ids(
     their delimiter ids by implementing
     :class:`~max.pipelines.modeling.types.ReasoningPipelineTokenizer` (Gemma 4's
     ``<|channel>``/``<channel|>``, Kimi K2.5's and MiniMax M2's
-    ``<think>``/``</think>``, etc.) and resolving the ids once at
+    ``<think>``/``</think>`` and so on) and resolving the ids once at
     construction.
     """
     return (
@@ -3961,7 +3961,7 @@ class OverlapTextGenerationPipeline(
         previous batch's FSM via the async callback.
 
         Fires whenever no async callback advanced the previous batch's FSM,
-        i.e. `fsm_advanced_by_callback` is still False after
+        that is, `fsm_advanced_by_callback` is still False after
         `_enqueue_prev_bitmask_callback` ran. With structured output enabled
         and a previous batch present, that is the case when:
 
@@ -4276,7 +4276,7 @@ class OverlapTextGenerationPipeline(
         """Mark the context as complete, releasing the cache slot from the KV manager.
 
         Note: Primary KV cache lifecycle is managed by the scheduler. This method
-        handles extra KV caches managed by the pipeline model (e.g., indexer cache
+        handles extra KV caches managed by the pipeline model (such as indexer cache
         for DeepSeekV3.2).
         """
         # Primary KV cache release is handled by the scheduler via batch_constructor.
@@ -4294,7 +4294,7 @@ class OverlapTextGenerationPipeline(
         """Returns vision encoder metrics for the most recent batch.
 
         Returns ``None`` for text-only models and for batches that did no
-        vision encoding (e.g. decode steps). The metrics come from the
+        vision encoding (such as decode steps). The metrics come from the
         pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
         otherwise, for a model that owns its encoder cache internally, from
         :class:`SupportsPooledVisionMetrics`.

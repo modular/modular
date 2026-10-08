@@ -42,6 +42,9 @@ from .lora_types import LoRAType
 _logger = logging.getLogger("max.serve")
 
 ADAPTER_CONFIG_FILE = "adapter_config.json"
+"""File name of the LoRA adapter's config file inside the adapter's local
+directory, read when the adapter is loaded.
+"""
 
 
 class _LoRALRUCache:
@@ -510,7 +513,7 @@ class LoRAModel:
         """Combines Q, K, V weights for a specific layer.
 
         Args:
-            layer_prefix: The layer prefix (e.g., "layers.0.self_attn")
+            layer_prefix: The layer prefix (such as "layers.0.self_attn")
             default_dtype: Default DType to use if no weights are present.
         """
         self._combine_lora_a_weights(layer_prefix, default_dtype)

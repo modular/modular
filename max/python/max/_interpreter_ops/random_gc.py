@@ -84,7 +84,7 @@ def _spec_for(op_type: type[_core.Operation]) -> _RandomSpec | None:
 def scalars_are_float32(op_type: type[_core.Operation]) -> bool:
     """Returns whether *op_type*'s two scalar operands are always float32.
 
-    Resolves through :func:`_spec_for` (i.e. ``gc_compile.canonical_op_name``),
+    Resolves through :func:`_spec_for` (that is, ``gc_compile.canonical_op_name``),
     so this answers correctly for an op arriving via either the ``mo`` or
     ``rmo`` spelling -- unlike an ``isinstance(op, mo.RandomNormalOp)`` check,
     which only matches the ``mo`` type object and would silently disagree

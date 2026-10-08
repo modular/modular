@@ -11,6 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Built-in model architectures for MAX pipelines.
+
+Importing this package registers each architecture with
+:class:`~max.pipelines.lib.registry.PipelineRegistry`; the registry imports
+an architecture's module lazily, the first time that architecture is
+requested.
+"""
+
 from dataclasses import dataclass
 
 from max.pipelines.lib.registry import PIPELINE_REGISTRY
@@ -51,7 +59,7 @@ def register_all_models() -> None:
 
     Rather than importing every architecture module up front, this records
     *how* to import each supported model architecture (Llama, Mistral, Qwen,
-    Gemma, DeepSeek, etc.) with :obj:`~max.pipelines.PIPELINE_REGISTRY`. The
+    Gemma, DeepSeek and so on) with :obj:`~max.pipelines.PIPELINE_REGISTRY`. The
     module backing a given :class:`~max.pipelines.SupportedArchitecture` is
     imported lazily the first time that architecture is requested, so importing
     :mod:`max.pipelines` no longer pulls in the model code for every

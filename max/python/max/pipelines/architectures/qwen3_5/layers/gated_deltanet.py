@@ -88,7 +88,7 @@ _CHUNK_MIN_COMPUTE_CAPABILITY = 100
 
 
 def _nvidia_compute_capability() -> int:
-    """Returns the current accelerator's compute capability, e.g. 86 for ``sm_86``.
+    """Returns the current accelerator's compute capability, for example, 86 for ``sm_86``.
 
     Returns 0 when the architecture name is not of the form ``sm_<digits>[a-z]``
     (non-NVIDIA or no accelerator), which keeps callers on the portable path.

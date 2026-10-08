@@ -16,7 +16,7 @@ A handle carries a ``result_id`` plus the :py:class:`Runtime` that owns
 the binding. The wire boundary keeps these handles uniform across
 transports by relying on the runtime being picklable -- the local
 in-process runtime pickles by reference (within a process), and remote
-runtime proxies (e.g. :py:class:`HttpRuntimeProxy`) implement
+runtime proxies (such as :py:class:`HttpRuntimeProxy`) implement
 ``__getstate__`` / ``__setstate__`` to carry only their address.
 """
 

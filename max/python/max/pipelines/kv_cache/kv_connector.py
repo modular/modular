@@ -85,7 +85,7 @@ class BlockCount:
     def used_pct(self) -> float:
         """Returns the percentage of blocks currently in use, in ``[0, 100]``.
 
-        ``0`` when ``total`` is ``0`` (e.g. a tier with no configured
+        ``0`` when ``total`` is ``0`` (such as a tier with no configured
         capacity), rather than dividing by zero.
         """
         return 100 * self.used / self.total if self.total else 0.0
@@ -122,7 +122,7 @@ class ByteCount:
     def used_pct(self) -> float:
         """Returns the percentage of bytes currently in use, in ``[0, 100]``.
 
-        ``0`` when ``total`` is ``0`` (e.g. a tier with no configured
+        ``0`` when ``total`` is ``0`` (such as a tier with no configured
         capacity), rather than dividing by zero.
         """
         return 100 * self.used / self.total if self.total else 0.0
@@ -236,14 +236,14 @@ class KVConnector(Protocol):
     """Protocol for KV cache connectors managing external (non-device) tiers.
 
     The manager owns device tensors, block allocation, and device-side prefix
-    cache. Connectors handle external tier operations (e.g., host memory)
+    cache. Connectors handle external tier operations (such as host memory)
     via load/offload methods.
 
     All block hashes crossing this Protocol are in canonical bytes form:
     8 big-endian bytes for ``ahash64``,
     32 bytes for full SHA-256 digests. The block hasher produces this
     canonical form directly, so callers pass the hashes through unchanged;
-    a connector that needs a narrower wire encoding (e.g. dKV's 64-bit key)
+    a connector that needs a narrower wire encoding (such as dKV's 64-bit key)
     validates and converts at its own boundary.
 
     Required call ordering per inference step:

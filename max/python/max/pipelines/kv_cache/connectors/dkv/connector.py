@@ -499,7 +499,7 @@ def _required_operator_env() -> tuple[NixlBackendType, str]:
 def _dtype_tag(dtype: object) -> str:
     """Returns a stable, restart-invariant text tag for a ``DType``.
 
-    Uses the enum member ``name`` (e.g. ``"bfloat16"``) when present, else
+    Uses the enum member ``name`` (such as ``"bfloat16"``) when present, else
     ``str(dtype)``. Never uses Python's per-process-randomized ``hash``, so the
     fingerprint it feeds is identical across process restarts.
     """

@@ -48,7 +48,7 @@ def block_hasher(
         block_size: The number of tokens per block. Must be greater than 0.
         parent_hash: The hash value of the parent block, as 8 big-endian
             signed bytes.
-        seed: 32 bytes mixed into the hasher's keyed state, e.g. a
+        seed: 32 bytes mixed into the hasher's keyed state, for example, a
             per-tenant or per-request salt. All-zero (the default)
             reproduces the unseeded hash exactly.
 

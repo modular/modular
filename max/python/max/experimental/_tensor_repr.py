@@ -18,8 +18,8 @@ The matrix-of-matrices format displays N-dimensional tensors by treating
 higher dimensions as nested grids of 2D matrices. It alternates between
 horizontal and vertical stacking for dimensions beyond 2D:
 
-- **0D (scalar)**: Single value, e.g., ``42.5``
-- **1D (vector)**: Space-separated row, e.g., ``[1 2 3]``
+- **0D (scalar)**: Single value, for example, ``42.5``
+- **1D (vector)**: Space-separated row, for example, ``[1 2 3]``
 - **2D (matrix)**: Rows on separate lines::
 
     [1 2

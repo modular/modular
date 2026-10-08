@@ -57,10 +57,10 @@ def _deep_merge(
 ) -> dict[str, Any]:
     """Recursively merge ``override`` onto ``base``; ``override`` wins at leaves.
 
-    Nested mappings are merged key by key, so a partial override (e.g. a single
+    Nested mappings are merged key by key, so a partial override (such as a single
     CLI flag deep in a subtree) keeps the sibling values from ``base`` instead of
     replacing the whole subtree. A shallow ``base | override`` would drop those
-    siblings — e.g. ``--load.max-concurrency`` would wipe the rest of the config
+    siblings — for example, ``--load.max-concurrency`` would wipe the rest of the config
     file's ``benchmark`` object.
     """
     merged = dict(base)

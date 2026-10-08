@@ -336,12 +336,12 @@ def _model_from_typeddict(name: str, td: type) -> type[BaseModel]:
     """Builds a pydantic ``BaseModel`` mirroring an OpenAI ``TypedDict``.
 
     All fields default to ``None`` because OpenAI marks only a few fields
-    (e.g. ``model``, ``messages``, ``input``) as ``Required[...]``; we
+    (such as ``model``, ``messages``, ``input``) as ``Required[...]``; we
     re-declare the truly required ones in the subclass below with no
     default.
 
     Field annotations are widened to ``Optional[T]`` so that clients which
-    explicitly serialize unset fields as ``null`` (e.g. ``"tool_choice":
+    explicitly serialize unset fields as ``null`` (such as ``"tool_choice":
     null``) are accepted as equivalent to omission. OpenAI expresses this
     via ``NotRequired`` on the TypedDict, but the underlying type aliases
     (``ChatCompletionToolChoiceOptionParam`` and friends) are not

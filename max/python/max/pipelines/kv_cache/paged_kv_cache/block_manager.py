@@ -72,7 +72,7 @@ def compute_block_hashes(
 
     Unlike :meth:`compute_hashes_for_request`, this reads and writes no
     per-request state, so it is safe to call for requests that are not
-    (and may never be) claimed on this replica — e.g. when computing
+    (and may never be) claimed on this replica — for example, when computing
     prefix-cache overlap for data-parallel routing.
 
     Args:
@@ -883,9 +883,9 @@ class BlockManager:
         Unlike the reuse path this is strictly read-only: no blocks are
         allocated or onboarded, no LRU state is touched, and no per-request
         state is created, so it is safe to call for requests that are not
-        (and may never be) claimed on this replica — e.g. for prefix-aware
+        (and may never be) claimed on this replica — for example, for prefix-aware
         data-parallel routing. Counts reflect index presence only and ignore
-        transient staging constraints the reuse path enforces (e.g. free
+        transient staging constraints the reuse path enforces (such as free
         device blocks to load into).
 
         Args:

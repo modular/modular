@@ -11,7 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Types to interface with ML pipelines such as text/token/pixel generation."""
+"""Interfaces for running models end to end: registry, configuration, and
+pipeline classes for text, embeddings, and pixel generation.
+
+A pipeline wires a model family into an executable workflow. A
+:class:`~max.pipelines.lib.registry.SupportedArchitecture` registers the model in the
+pipeline registry, :class:`~max.pipelines.lib.config.PipelineConfig` sets how it runs, and
+pipeline classes such as :class:`TextGenerationPipeline`,
+:class:`EmbeddingsPipeline`, and :class:`PixelGenerationPipeline` drive
+tokenization, weight loading, and generation.
+"""
 
 from max.experimental.validation import EagerUsageValidator
 from max.pipelines.weights.hf_utils import download_weight_files

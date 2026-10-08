@@ -20,10 +20,10 @@ Maps HuggingFace checkpoint keys to the MAX module state_dict keys for:
 Two top-level adapters correspond to the two architectures in ``arch.py``:
 
 - :func:`convert_kimik2_5_safetensor_state_dict` —
-  ``KimiK25ForConditionalGeneration`` (e.g. nvidia/Kimi-K2.5-NVFP4).
+  ``KimiK25ForConditionalGeneration`` (such as nvidia/Kimi-K2.5-NVFP4).
   Uses ``mm_projector.*`` projector naming; drops ``.k_scale``/``.v_scale``.
 - :func:`convert_kimivl_safetensor_state_dict` —
-  ``KimiVLForConditionalGeneration`` (e.g. moonshotai/Kimi-VL-A3B).
+  ``KimiVLForConditionalGeneration`` (such as moonshotai/Kimi-VL-A3B).
   Uses ``multi_modal_projector.*`` projector naming.
 
 Both adapters share :func:`_convert_merged_state_dict`, which processes

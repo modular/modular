@@ -320,7 +320,7 @@ def _infer_weight_path(
     Takes *encoding* (and optionally *cast_from*) explicitly rather than
     reading ``config.quantization_encoding`` so this can be called on a
     config those fields were never written to
-    (e.g. a diffusion component resolved on demand at consumption time,
+    (such as a diffusion component resolved on demand at consumption time,
     without going through architecture-level resolution).
 
     Prefers safetensors format as default.
@@ -374,11 +374,11 @@ def _resolve_component_encoding_and_weights(
 
     Read-only: does not mutate *config*. Intended for callers that consume
     a ``MAXModelConfig`` directly without going through architecture-level
-    resolution -- e.g. a diffusion per-component builder -- so they get the
+    resolution -- for example, a diffusion per-component builder -- so they get the
     same best-effort inference diffuser sub-components rely on, without
     depending on mutation having happened first.
 
-    Safe to call even when *config* is already fully resolved (e.g. an LLM
+    Safe to call even when *config* is already fully resolved (such as an LLM
     component whose ``quantization_encoding``/``weight_path`` were set during
     architecture validation): both steps are no-ops once those are set.
 
@@ -590,7 +590,7 @@ def _device_specs_for_encoding(
 
     An encoding that cannot run on GPU (GGUF q4) overrides all-GPU
     *device_specs* and runs on CPU: returns ``[DeviceSpec.cpu()]``. Any
-    other combination is returned unchanged (an invalid one, e.g. a
+    other combination is returned unchanged (an invalid one, for example, a
     GPU-only encoding on CPU, is rejected by the caller's compatibility
     check). Read-only.
 
@@ -1056,7 +1056,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Skipped when already seeded (an explicit ``_huggingface_config`` passed
         to the constructor, or one preserved across ``with_override``), for
         placeholder configs with no ``model_path``, and for repos that carry no
-        loadable model config -- e.g. diffusion-manifest components such as the
+        loadable model config -- for example, diffusion-manifest components such as the
         feature extractor or scheduler, which ship only a preprocessor/
         scheduler config. Those keep the lazy getter, which stays a no-op
         unless the config is actually accessed.
@@ -1142,7 +1142,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """Builds a :class:`MAXModelConfig` from a :class:`PipelineArgs`'s flat fields.
 
         Returns a new object on every call -- ``args`` holds no live handle
-        back to it, so mutating the returned object (e.g.
+        back to it, so mutating the returned object (such as
         ``MAXModelConfig.from_pipeline_args(args).foo = x``) has no effect on
         a subsequent call with the same ``args``. Set the corresponding field
         on ``args`` itself instead.
@@ -1293,7 +1293,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Built once at construction (see :meth:`_populate_repo_handles`) and
         stored in a PrivateAttr; this getter returns it. Falls back to
-        building a fresh handle only for a never-populated config (e.g. a
+        building a fresh handle only for a never-populated config (such as a
         placeholder with no ``model_path``) and never writes back.
         """
         cached = self._cached_weight_repo
@@ -1332,11 +1332,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Loaded once at construction (see :meth:`_populate_hf_config`) and
         stored in a PrivateAttr; this getter returns it. Falls back to loading
-        on demand -- without caching -- for a never-populated config (e.g. a
+        on demand -- without caching -- for a never-populated config (such as a
         placeholder with no ``model_path``).
 
         For transformers models this is the ``AutoConfig`` subclass; for
-        non-transformers models (e.g. diffusers components) it is the raw
+        non-transformers models (such as diffusers components) it is the raw
         ``config.json`` wrapped in a ``PretrainedConfig``.
 
         Raises:
@@ -1353,7 +1353,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Loaded once at construction (see :meth:`_populate_generation_config`)
         and stored in a PrivateAttr; this getter returns it, falling back to
-        loading on demand for a never-populated config (e.g. a placeholder).
+        loading on demand for a never-populated config (such as a placeholder).
         Loading failures yield a default ``GenerationConfig``.
         """
         if self._generation_config is None:
@@ -1560,7 +1560,7 @@ class MAXModelConfig(MAXModelConfigBase):
             weight_path: Weight files to resolve, relative to the repo.
                 Defaults to ``self.weight_path``. Pass an explicit,
                 already-resolved list for a config whose ``weight_path``
-                was never populated during resolution (e.g. a diffusion
+                was never populated during resolution (such as a diffusion
                 component resolved on demand at consumption time -- see
                 :func:`_resolve_component_encoding_and_weights`).
 
@@ -1637,7 +1637,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """Logs model configuration information for this config.
 
         Args:
-            role: The semantic role of this model (e.g. ``"main"``,
+            role: The semantic role of this model (such as ``"main"``,
                 ``"draft"``, ``"vae"``).
         """
         logger.info("")

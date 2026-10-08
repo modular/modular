@@ -4994,7 +4994,7 @@ def _fp8_mla_scale_params(
 
     When `override` is `None` the kernel uses the on-disk
     `weight_scale.block_size`. When the per-head row count straddles
-    that block, callers pass an explicit override (e.g. 64 vs the
+    that block, callers pass an explicit override (such as 64 vs the
     on-disk 128); both N- and K-direction matmul granularities take the
     same value because the straddling sits along the M-disk axis.
     """
@@ -9858,7 +9858,7 @@ def block_scaled_preshuffle_grouped_scale_4d(
             per-expert token count this step.
         num_active_experts: Scalar ``uint32`` number of active expert slots.
         num_experts: Graph-build-time upper bound on ``num_active_experts``
-            (e.g. ``weight.shape[0]``). Used to size the output buffer.
+            (such as ``weight.shape[0]``). Used to size the output buffer.
         max_rows_per_expert: Graph-build-time upper bound on the UNPADDED rows
             one expert can hold, used to size its slot. Padded here to the
             kernel's 32-row stride, so pass a token count rather than a padded
@@ -12066,7 +12066,7 @@ def tpool_patch_merger(
         kW: Merge kernel width.
         max_h: Maximum ``H`` across all videos in the batch (for grid sizing).
             May be a Python int (baked as a graph constant) or a
-            ``TensorValue`` computed at runtime (e.g. via ``ops.max``).
+            ``TensorValue`` computed at runtime (such as via ``ops.max``).
         max_w: Maximum ``W`` across all videos in the batch (for grid sizing).
             May be a Python int or a ``TensorValue``.
     Returns:

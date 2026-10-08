@@ -516,9 +516,9 @@ def decode_spec_decode_input_values(
         kv_params: The unified ``{"target", "draft"}`` KV params, used to
             unflatten the KV group.
         num_ep_inputs: Number of expert-parallel inputs the target declared,
-            i.e. ``len(ep_input_types)`` as passed to the builder.
+            that is, ``len(ep_input_types)`` as passed to the builder.
         num_leading_inputs: Number of inputs the signature declared ahead of
-            ``tokens``, i.e. ``len(leading_input_types)`` as passed to the
+            ``tokens``; that is, ``len(leading_input_types)`` as passed to the
             builder. A count rather than a flag, because these sit before
             every anchor the decode could otherwise resynchronize on.
         allow_trailing: Accept inputs past the canonical tail and return them

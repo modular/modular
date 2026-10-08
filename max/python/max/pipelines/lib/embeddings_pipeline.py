@@ -54,6 +54,9 @@ logger = logging.getLogger("max.pipelines")
 EmbeddingsPipelineType = Pipeline[
     EmbeddingsGenerationInputs, EmbeddingsGenerationOutput
 ]
+"""Base type of :class:`EmbeddingsPipeline`, a :class:`Pipeline` mapping
+embeddings inputs to embeddings outputs.
+"""
 
 
 @final

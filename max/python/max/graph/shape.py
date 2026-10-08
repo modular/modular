@@ -67,3 +67,6 @@ class Shape(list[Dim]):
 
 StaticShape = list[StaticDim]
 ShapeLike = Iterable[DimLike]
+"""Anything a shape accepts: an iterable of :data:`DimLike` values, such
+as a ``Shape`` or a list of ints.
+"""

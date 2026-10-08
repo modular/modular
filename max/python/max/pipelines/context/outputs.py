@@ -139,7 +139,7 @@ class GenerationOutput(BaseModel):
     """The final status of the generation process."""
 
     output: list[OutputContent]
-    """List of OutputContent objects (text, images, etc.) representing generated content."""
+    """List of OutputContent objects (text, images, and so on) representing generated content."""
 
     usage: Usage | None = None
     """Usage reported in the API response. Image generation keeps token

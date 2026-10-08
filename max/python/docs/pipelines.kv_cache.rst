@@ -14,8 +14,15 @@ max.pipelines.kv_cache
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.kv_cache.paged_kv_cache.kv_group_coordinator
+   max.pipelines.kv_cache.paged_kv_cache.recurrent_coordinator
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    pipelines.kv_cache.paged_kv_cache.kv_group_coordinator
    pipelines.kv_cache.paged_kv_cache.recurrent_coordinator

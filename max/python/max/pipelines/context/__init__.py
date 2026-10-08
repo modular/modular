@@ -11,6 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Request contexts and supporting types for MAX pipelines.
+
+A context carries one request's state across generation steps: its prompt
+and generated tokens, sampling parameters, structured-output state, and the
+outputs produced so far.
+"""
+
 from .context import (
     FUTURE_TOKEN,
     AudioContext,

@@ -160,7 +160,7 @@ class BenchmarkResultGroups(BaseModel):
 
     ``summary`` is always populated; the remaining groups are ``None``
     when the underlying result has nothing to report for that group
-    (e.g. ``cache_stats`` on a pixel-generation iteration).
+    (such as ``cache_stats`` on a pixel-generation iteration).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)

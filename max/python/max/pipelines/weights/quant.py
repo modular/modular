@@ -818,7 +818,7 @@ def _load_standalone_quant_config(
 ) -> dict[str, Any] | None:
     """Try to load quantization config from a standalone hf_quant_config.json file.
 
-    Some models (e.g., nvidia/Llama-3.1-405B-Instruct-NVFP4) store their quantization
+    Some models (such as nvidia/Llama-3.1-405B-Instruct-NVFP4) store their quantization
     config in a separate hf_quant_config.json file rather than in the main config.json.
 
     The standalone file has a different structure:
@@ -1343,7 +1343,7 @@ def parse_quant_config(
     Args:
         huggingface_config: HuggingFace model configuration.
         state_dict: Weight state dict to inspect for scales.
-        dtype: Target dtype (e.g. float8_e4m3fn or packed fp4).
+        dtype: Target dtype (such as float8_e4m3fn or packed fp4).
         state_dict_name_prefix: Optional prefix for state dict keys.
         ignored_modules_prefix: Prefix of modules to ignore when parsing.
 

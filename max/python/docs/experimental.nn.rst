@@ -14,8 +14,16 @@ max.experimental.nn
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.experimental.nn.common_layers.functional_kernels
+   max.experimental.nn.norm
+   max.experimental.nn.rope
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    experimental.nn.common_layers.functional_kernels
    experimental.nn.norm

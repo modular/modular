@@ -547,7 +547,7 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
     """Wraps a RequestDriver to cap the number of concurrent in-flight turns.
 
     Acquires a semaphore slot before issuing each turn request and releases it
-    as soon as the response returns. Inter-turn delays (e.g. delay_until_next_message)
+    as soon as the response returns. Inter-turn delays (such as delay_until_next_message)
     fall outside the slot's hold window, so idle user-think-time does not consume
     concurrency capacity.
 

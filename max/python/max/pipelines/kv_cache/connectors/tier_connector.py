@@ -707,7 +707,7 @@ class TierConnector(KVConnector):
 
         Not a scheduler hot-path call: transfers settle through
         ``poll_transfers``. This is a real quiesce for tests and teardown that
-        need a stable tier state (e.g. asserting disk residency after an
+        need a stable tier state (such as asserting disk residency after an
         offload's write-through has landed).
         """
         self._native.wait_for_writes()

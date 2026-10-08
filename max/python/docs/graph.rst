@@ -14,8 +14,16 @@ max.graph
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.graph.ops
+   max.graph.quantization
+   max.graph.weights
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    graph.ops
    graph.quantization

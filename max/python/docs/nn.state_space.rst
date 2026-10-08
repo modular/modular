@@ -14,8 +14,14 @@ max.nn.state\_space
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.nn.state_space.kimi_delta
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    nn.state_space.kimi_delta
 

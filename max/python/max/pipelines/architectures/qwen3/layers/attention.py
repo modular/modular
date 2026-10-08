@@ -73,14 +73,14 @@ class Qwen3Attention(Module, Shardable):
             hidden_size: The dimension of the hidden states.
             kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
             layer_idx: The layer number associated with this Attention block.
-            dtype: DType of the attention inputs and weights (e.g. for linear projections).
+            dtype: DType of the attention inputs and weights (such as for linear projections).
             devices: Device to place the weights and run the computation.
             linear_cls: Linear class to use for the projection layers.
             scale: Value used to scale the results of the attention output.
             has_bias: Whether to use an attention bias. Defaults to False.
             qk_norm_eps: Value to use for numerical stability. Defaults to 1e-6.
             norm_dtype: DType for Q/K RMSNorm weights. If None, uses dtype. Use a
-                non-FP8 type (e.g. bfloat16) for FP8 models where norms are not quantized.
+                non-FP8 type (such as bfloat16) for FP8 models where norms are not quantized.
             quant_config: Optional quantization config for dynamic quantized QKV matmul.
         """
 

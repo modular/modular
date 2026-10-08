@@ -960,7 +960,7 @@ class WanExecutor(
         """Return True when the full transformer pass can be skipped.
 
         Matches the TaylorSeer-Wan2.1 reference schedule: anchor on
-        ``step == 0`` and every ``interval``-th step thereafter (e.g.
+        ``step == 0`` and every ``interval``-th step thereafter (such as
         steps 0, 5, 10, … with ``interval=5``).
 
         Cold-start safety: if the per-stream cache state has no anchor

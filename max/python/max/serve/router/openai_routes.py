@@ -533,13 +533,13 @@ def _get_audio_handler(
 def _content_before_tool_call_marker(parser: ToolParser, response: str) -> str:
     """Truncates ``response`` at the parser's first structural tool-call marker.
 
-    Used when ``parse_complete`` raises with a marker present — e.g. a
+    Used when ``parse_complete`` raises with a marker present — for example, a
     ``max_tokens`` truncation landing mid tool-call block, so the marker was
     emitted but no complete block exists. Surfacing the raw response would
     leak the literal marker into ``message.content``; instead return only the
     content before the first marker. Structural parsers expose their markers
     as ``SECTION_BEGIN``/``CALL_BEGIN`` class attributes; for parsers without
-    them (e.g. the JSON-based Llama parser), or when no marker is present
+    them (such as the JSON-based Llama parser), or when no marker is present
     (a genuinely unexpected parser error), the response is returned unchanged.
     """
     cut = len(response)

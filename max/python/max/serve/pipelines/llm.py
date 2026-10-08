@@ -317,7 +317,7 @@ class TokenGeneratorPipeline(
         """Tokenizes and submits ``request``, returning a token-chunk generator.
 
         Awaiting this coroutine tokenizes the request and hands it off to the
-        model worker. A failure during that submission (e.g. a tokenization
+        model worker. A failure during that submission (such as a tokenization
         error or a dead worker) raises here, before the generator is returned,
         so the caller can surface it as an error response before any streaming
         headers are sent.

@@ -67,6 +67,9 @@ class EmbeddingsContext(BaseContext, Protocol):
 EmbeddingsGenerationContextType = TypeVar(
     "EmbeddingsGenerationContextType", bound=EmbeddingsContext
 )
+EmbeddingsGenerationContextType.__doc__ = (
+    "The context type an embeddings pipeline serves."
+)
 
 
 @dataclass(frozen=True)

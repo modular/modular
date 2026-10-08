@@ -14,8 +14,14 @@ max.pipelines.request
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.request.provider_options
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    pipelines.request.provider_options
 

@@ -700,7 +700,7 @@ def gather_rule(
     local gather on each rank as if the missing cross-rank entries
     were zero and then sums — only correct when the caller has masked
     indices to each rank's owned slice. Letting the picker pick it
-    silently produces wrong results in the common case (e.g. gathering
+    silently produces wrong results in the common case (such as gathering
     a few token positions out of a seq-sharded residual stream). When
     the gather axis is sharded under this rule, the picker must
     ``allgather`` to :class:`Replicated` first. Callers that genuinely

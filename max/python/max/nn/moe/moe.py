@@ -312,12 +312,12 @@ class MoE(Module, Shardable):
         shared_experts_dtype: Weight storage dtype for shared-expert MLPs. When
             equal to ``dtype`` (routed experts) and ``quant_config`` is set,
             shared experts use the same quantization as routed experts. When
-            different (e.g. BF16 shared weights with packed NVFP4 routed experts),
+            different (such as BF16 shared weights with packed NVFP4 routed experts),
             shared linears omit ``quant_config`` unless
             ``shared_experts_quant_config`` is set. Defaults to ``dtype``.
         shared_experts_quant_config: Optional separate :class:`QuantConfig` for
             shared-expert MLPs when their storage dtype differs from routed
-            experts (e.g. MXFP8 shared with NVFP4 routed). Defaults to
+            experts (such as MXFP8 shared with NVFP4 routed). Defaults to
             ``None``.
         pre_expert_norm_cls: A callable that returns a normalization
             module to apply before expert computation. Defaults to

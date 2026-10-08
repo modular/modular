@@ -316,7 +316,7 @@ class ImageEncoder(CompiledComponent):
         - ``bn.running_var`` -> ``encoder_bn_var``
 
         Casts each weight to the dtype expected by the corresponding
-        Weight in the module's raw_state_dict (e.g. GroupNorm affine
+        Weight in the module's raw_state_dict (such as GroupNorm affine
         params stay float32 even when the model dtype is bfloat16).
         """
         state_dict: dict[str, Any] = {}

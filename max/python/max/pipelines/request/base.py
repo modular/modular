@@ -38,6 +38,8 @@ class RequestID:
 
 
 DUMMY_REQUEST_ID = RequestID("cuda_graph_dummy")
+"""Stand-in request ID for work that has no client request, such as the
+warmup pass run while capturing a CUDA graph."""
 
 
 @runtime_checkable
@@ -46,7 +48,7 @@ class Request(Protocol):
 
     This protocol defines the interface for request types, ensuring that
     all requests can be tracked and referenced consistently throughout the
-    system. Any class (dataclass, Pydantic model, etc.) that provides a
+    system. Any class (dataclass, Pydantic model and so on) that provides a
     ``request_id`` attribute satisfies this protocol.
     """
 

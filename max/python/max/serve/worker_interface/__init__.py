@@ -87,7 +87,7 @@ class ModelWorkerProxy(ABC, Generic[BaseContextType, PipelineOutputType]):
     async def wait_until_connected(self, timeout_s: float | None) -> None:
         """Block until the proxy is ready to accept requests.
 
-        Transports that establish a connection to the worker (e.g. ZMQ)
+        Transports that establish a connection to the worker (such as ZMQ)
         override this to wait for that handshake at startup, before the server
         serves traffic, so runtime admission never has to distinguish "not
         connected yet" from a genuinely full queue. ``timeout_s`` of ``None``

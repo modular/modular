@@ -50,11 +50,19 @@ if TYPE_CHECKING:
 
 # TODO: Bound this to TextContext, after we've audited the class.
 UnboundContextType = TypeVar("UnboundContextType", covariant=True)
+UnboundContextType.__doc__ = (
+    "The context type a tokenizer creates from a request."
+)
+
 TokenizerEncoded = TypeVar("TokenizerEncoded")
+TokenizerEncoded.__doc__ = "The tokenized form a tokenizer's encode() returns."
 
 # Decode is typed independently of the encode output: serving decodes arrays,
 # log-probability responses decode one id, and the CLI decodes a token list.
 TokenIds: TypeAlias = npt.NDArray[np.integer[Any]] | Sequence[int] | int
+"""Token ids decoded or encoded by a tokenizer: an array, a sequence, or
+a single id, matching the shape of the request that produced them.
+"""
 
 
 @runtime_checkable

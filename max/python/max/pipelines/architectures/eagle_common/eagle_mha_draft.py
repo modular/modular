@@ -70,7 +70,7 @@ class Eagle3MHADraftConfig:
     """Minimal config for an Eagle3 MHA draft over a DeepseekV3-shaped MLA target.
 
     Held separate from ``DeepseekV3Config`` so MLA-specific fields
-    (``kv_lora_rank``, ``v_head_dim``, etc.) and validators don't apply to
+    (``kv_lora_rank``, ``v_head_dim`` and so on) and validators don't apply to
     the MHA draft.
     """
 

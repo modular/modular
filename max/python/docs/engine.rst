@@ -42,4 +42,9 @@ Configuration
 Types
 -----
 
-.. py:data:: CustomExtensionsType
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   CustomExtensionsType

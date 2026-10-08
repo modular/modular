@@ -79,6 +79,9 @@ logger = logging.getLogger("max.pipelines")
 
 
 PipelineTypes: TypeAlias = Pipeline[Any, Any]
+"""A :class:`Pipeline` with its input and output types erased, used where
+the registry handles pipelines of any variant.
+"""
 
 
 @dataclass(frozen=True)
@@ -112,7 +115,7 @@ def get_pipeline_for_task(
     """Returns the pipeline class for the given task and config.
 
     Args:
-        task: The pipeline task (e.g. text generation, embeddings).
+        task: The pipeline task (such as text generation, embeddings).
         pipeline_config: Pipeline configuration (may select speculative path).
 
     Returns:
@@ -472,7 +475,7 @@ class PipelineRegistry:
 
         Args:
             architecture_name: The architecture class name to look up
-                (e.g. ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
+                (such as ``"LlamaForCausalLM"`` or ``"FluxPipeline"``).
             prefer_module_v3: Whether to use the ModuleV3 architecture variant.
                 When ``False`` (default), uses the standard graph API architecture name.
                 When ``True``, appends the ``_ModuleV3`` suffix to look up the

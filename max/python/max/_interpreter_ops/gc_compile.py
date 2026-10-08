@@ -111,7 +111,7 @@ def uint_view_dtype(dtype: DType) -> DType:
         The unsigned integer dtype of the same bit width.
 
     Raises:
-        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
+        NotImplementedError: For sub-byte dtypes (such as ``float4_e2m1fn``), which
             pack multiple elements per byte and so cannot be reinterpreted
             element-for-element as a whole-byte unsigned int.
     """
@@ -464,7 +464,7 @@ class GCFamilySpec(Protocol):
     models.
 
     Each ``*_gc.py`` provides a concrete class implementing this Protocol
-    (e.g. ``matmul_gc._MatmulFamily``); registered once via
+    (such as ``matmul_gc._MatmulFamily``); registered once via
     :func:`register_family` by wrapping it in a :class:`GCOpFamily`.
     Implementations are typically stateless, with methods closing over
     their module's own globals rather than instance state.

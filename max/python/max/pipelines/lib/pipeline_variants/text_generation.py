@@ -717,7 +717,7 @@ class TextGenerationPipeline(
         """Returns vision encoder metrics for the most recent batch.
 
         Returns ``None`` for text-only models and for batches that did no
-        vision encoding (e.g. decode steps). The metrics come from the
+        vision encoding (such as decode steps). The metrics come from the
         pipeline-owned :class:`VisionEncoderCache`, if this pipeline has one;
         otherwise, for a model that owns its encoder cache internally, from
         :class:`SupportsPooledVisionMetrics`.

@@ -288,7 +288,7 @@ class NemotronOpenCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         """Split a conversation into (prompt-messages, last-assistant-text).
 
         Returns ``None`` if the trace does not end on a non-empty assistant
-        reply (e.g. truncated traces or traces that only contain tool calls).
+        reply (such as truncated traces or traces that only contain tool calls).
         """
         last_assistant_idx: int | None = None
         for i in range(len(messages) - 1, -1, -1):

@@ -159,8 +159,8 @@ def _gpu_pci_bus_id(device: _UcxDevice) -> str | None:
 def _first_active_ib_port(ports_dir: Path) -> str | None:
     """Returns the first InfiniBand-link-layer port that is ACTIVE, else None.
 
-    Filters out non-IB RDMA devices (e.g. AWS EFA reports a non-InfiniBand
-    link layer) and down ports.
+    Filters out non-IB RDMA devices (for example, AWS EFA reports a
+    non-InfiniBand link layer) and down ports.
     """
     if not ports_dir.is_dir():
         return None
@@ -194,7 +194,7 @@ def local_ib_device(
     device). Returns None when no such device exists.
 
     Args:
-        gpu_bus_id: PCIe bus id of the GPU, e.g. ``0000:65:00.0``.
+        gpu_bus_id: PCIe bus id of the GPU, for example, ``0000:65:00.0``.
         pci_devices_root: Override of ``/sys/bus/pci/devices`` (for testing).
         ib_class_root: Override of ``/sys/class/infiniband`` (for testing).
         verbs_dev_root: Override of ``/dev/infiniband`` (for testing).

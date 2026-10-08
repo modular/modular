@@ -37,7 +37,7 @@ class LoRABenchmarkManager:
 
     This class coordinates all LoRA-related operations for benchmarking:
     - Parses LoRA adapter paths and configurations
-    - Reads adapter metadata (rank, target modules, etc.)
+    - Reads adapter metadata (rank, target modules and so on)
     - Optionally manages traffic distribution across adapters
     - Provides interface for loading/unloading operations
     """

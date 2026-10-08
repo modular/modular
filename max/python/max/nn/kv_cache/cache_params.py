@@ -545,7 +545,7 @@ class KVCacheMemory:
     device order.
 
     ``replicated`` indicates that all buffers hold identical bytes. This is true
-    for certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
+    for certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, and so on.
     """
 
     replicated: bool
@@ -618,7 +618,7 @@ class KVCacheBufferInterface(Protocol):
 class MultiKVCacheBuffer(KVCacheBufferInterface):
     """A tree of KVCache buffers for one data-parallel replica.
 
-    ``children`` maps a cache name (e.g. ``"target"``/``"draft"`` for
+    ``children`` maps a cache name (such as ``"target"``/``"draft"`` for
     speculative decoding, or ``"sliding"``/``"global"`` for hybrid models) to
     that cache's buffer for this replica.
     """
@@ -664,7 +664,7 @@ class KVCacheBuffer(KVCacheBufferInterface):
 
     ``replicates_kv_across_tp`` is ``True`` when the KV data is replicated
     identically across TP shards and ``False`` when it is sharded. The data is
-    replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, etc.
+    replicated in certain cases like TP + MLA, TP + MiniMaxM3IndexerAttn, and so on.
     """
 
     leaf_id: str = field(kw_only=True)
@@ -888,7 +888,7 @@ class KVCacheQuantizationConfig:
     """Data type of quantization scales, if quantization is enabled"""
 
     quantization_granularity: int = 128
-    """Block-size used for KVCache quantization along head-dimension (e.g. 128).
+    """Block-size used for KVCache quantization along head-dimension, such as 128.
 
     Counted in logical elements, so a packed NVFP4 cache uses 16."""
 
@@ -903,7 +903,7 @@ class BatchCharacteristics:
 
     :meth:`~max.pipelines.kv_cache.PagedKVCacheManager.runtime_inputs` uses
     it to resolve the dispatch
-    key once: e.g. for graph-capture replay, ``max_cache_valid_length`` is
+    key once. For example, for graph-capture replay, ``max_cache_valid_length`` is
     aligned up to a cache length recorded during capture and every data-parallel
     replica must run the identical captured graph. The batch's real values must
     not exceed these.
@@ -1497,7 +1497,7 @@ class KVCacheParams(KVCacheParamInterface):
     instead of one ``[..., num_layers, ...]`` multi-layer buffer.
 
     Each attention dispatch then binds only its own per-layer buffer, so the
-    pool total can exceed a per-allocation size cap (e.g. a device's maximum
+    pool total can exceed a per-allocation size cap (such as a device's maximum
     single allocation) while every individual buffer stays under it. Defaults
     to ``False`` (one multi-layer buffer), keeping all other backends and
     models byte-identical."""
@@ -3269,7 +3269,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
 
     Children may be leaf :class:`KVCacheParams` instances or nested
     :class:`MultiKVCacheParams` subtrees, so arbitrarily deep hierarchies
-    are supported (e.g. ``{target: {sliding, mla}, draft: mha}``). The
+    are supported (such as ``{target: {sliding, mla}, draft: mha}``). The
     whole tree is consumed through the :class:`KVCacheParamInterface` —
     callers never need to know how many blocks that is.
 
@@ -3324,7 +3324,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
         Children may be leaf :class:`KVCacheParams` instances, one
         :class:`RecurrentStateParams`, or nested
         :class:`MultiKVCacheParams` trees, enabling arbitrarily deep KV
-        cache hierarchies (e.g. ``{target: {sliding, mla}, draft: mha}``).
+        cache hierarchies (such as ``{target: {sliding, mla}, draft: mha}``).
         All children must share the same ``page_size``,
         ``data_parallel_degree``, ``n_devices``, and
         ``kv_connector_config`` values.
@@ -3639,7 +3639,7 @@ def spec_decode_cache_slack(params: KVCacheParamInterface) -> int:
     A speculative-decode step can over-speculate past the per-request
     ``max_seq_len`` cap into this slack (the KV pool reserves it beyond
     ``max_seq_len``), so any per-request sizing derived from ``max_seq_len``
-    -- the pool's page budget, the sparse-indexer score scratch, etc. -- must
+    -- the pool's page budget, the sparse-indexer score scratch and so on -- must
     add it. Centralized here so ``_compute_seq_len``, pool sizing, and
     ``OverlapTextGenerationPipeline._effective_max_cache_length`` stay in sync.
 

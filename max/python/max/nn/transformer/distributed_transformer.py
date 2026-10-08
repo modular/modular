@@ -77,7 +77,7 @@ def distributed_logits_postprocess(
         lm_head: Language model head (takes per-device inputs + signal buffers).
         signal_buffers: Signal buffers for collective operations.
         return_logits: Which logits to return.
-        device: Primary device for scalar ops (e.g. ops.range).
+        device: Primary device for scalar ops (such as ops.range).
         norm_shards: Per-device normalization functions. When None, hidden
             states are passed directly to lm_head without normalization.
         return_hidden_states: Which hidden states to return.

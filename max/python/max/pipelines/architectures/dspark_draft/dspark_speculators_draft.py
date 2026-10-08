@@ -370,7 +370,7 @@ class DSparkSpeculatorsDraft(Module):
         Args:
             base_logits: Base draft logits ``[batch, num_slots, draft_vocab]``
                 with a static slot axis (slot 0 = the first drafted position,
-                i.e. after the caller's anchor-slot drop).
+                that is, after the caller's anchor-slot drop).
             anchor_tokens: Anchor/bonus token ids ``[batch]``, target vocab.
             sampler: Draws step ``k``'s ``[batch]`` DRAFT-vocab id from its
                 ``[batch, draft_vocab]`` corrected logits in place of the

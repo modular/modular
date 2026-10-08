@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Config for the unified DSpark Gemma4 31B pipeline.
 
-The draft checkpoint (e.g. ``RedHatAI/gemma-4-31B-it-speculator.dspark``) is
+The draft checkpoint (such as ``RedHatAI/gemma-4-31B-it-speculator.dspark``) is
 in the vLLM *speculators* format; its parsing lives in the shared
 ``speculators_common`` package. This module only binds the parsed draft
 config to the Gemma4 target.

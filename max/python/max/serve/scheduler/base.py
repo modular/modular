@@ -42,7 +42,7 @@ class PrefillRequest(
 
     Generic over the context type: msgspec decodes each field at its declared
     type, so the DI prefill decoder must be parameterized with the
-    architecture's concrete context subclass (e.g. a ``TextAndVisionContext``
+    architecture's concrete context subclass (such as a ``TextAndVisionContext``
     subclass for VLMs) or the wire silently narrows the context to the base
     class, dropping vision fields. The ``tag`` stays the class name
     (``"PrefillRequest"``) for every parameterization, keeping the decode

@@ -194,9 +194,9 @@ def convert_safetensor_state_dict(
 
     Two checkpoint layouts are supported:
 
-    - bf16 (e.g. ``unsloth/Llama-4-Scout-...``): routed experts are already
+    - bf16 (such as ``unsloth/Llama-4-Scout-...``): routed experts are already
       fused (``feed_forward.experts.gate_up_proj``); only names are remapped.
-    - compressed-tensors FP8-dynamic (e.g. ``RedHatAI/...-FP8-dynamic``): routed
+    - compressed-tensors FP8-dynamic (such as ``RedHatAI/...-FP8-dynamic``): routed
       experts are split per-expert and are stacked into the fused FP8 layout;
       ``weight_scale`` tensors are cast to float32. Attention, router, lm_head
       and embeddings stay bf16 (they are not quantized in the checkpoint).

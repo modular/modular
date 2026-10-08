@@ -13,7 +13,7 @@
 
 """Scrape GPU utilization from remote DCGM-exporter Prometheus endpoints.
 
-Off the accelerator node (e.g. a disaggregated Mammoth bench pod), local NVML
+Off the accelerator node (such as a disaggregated Mammoth bench pod), local NVML
 sees none of the engine's GPUs. The engine nodes' ``nvidia-dcgm-exporter`` does,
 and a ``--gpu-metrics-host`` caller passes its endpoints (the Mammoth driver
 reads Prometheus instead; see ``gpu_metrics_prometheus``). This turns them

@@ -31,7 +31,7 @@ class TensorStruct:
     every field annotation is ``Tensor``, ``Buffer``, or
     ``Optional[Tensor | Buffer]``.  Scalars, numpy arrays, ints,
     strings, and other non-tensor types are rejected with a
-    ``TypeError`` when the subclass is defined (i.e. at import time).
+    ``TypeError`` when the subclass is defined (that is, at import time).
 
     No runtime validation overhead -- the frozen dataclass ``__init__``
     assigns fields directly with no extra checks on the hot path.

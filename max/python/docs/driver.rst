@@ -40,6 +40,9 @@ Buffers
    HostHazardError
    Usage
 
+Buffer operations
+-----------------
+
 .. autosummary::
    :nosignatures:
    :toctree: generated
@@ -73,6 +76,9 @@ Launch tracing
    :template: autosummary/class.rst
 
    LaunchTraceEntry
+
+Launch tracing functions
+------------------------
 
 .. autosummary::
    :nosignatures:

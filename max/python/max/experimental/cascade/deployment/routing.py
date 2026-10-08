@@ -15,8 +15,8 @@
 :class:`RoundRobinPool` deploys a worker to every runtime in a pool and hands
 back a proxy that spreads calls across them round-robin. :class:`HybridRuntime`
 routes each worker to a named child runtime (a pool) by matching the worker's
-``deploy_hints`` -- e.g. a ``"cpu"``-hinted worker deploys into the ``"cpu"``
-pool, a ``"gpu"``-hinted worker into the ``"gpu"`` pool.
+``deploy_hints``. For example, a ``"cpu"``-hinted worker deploys into the
+``"cpu"`` pool, and a ``"gpu"``-hinted worker into the ``"gpu"`` pool.
 
 Both are :class:`~max.experimental.cascade.core.Runtime` subclasses so they
 satisfy ``pipeline.deploy(runtime)``. They are pure routers: ``deploy`` returns

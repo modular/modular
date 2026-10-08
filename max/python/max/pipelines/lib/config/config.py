@@ -100,7 +100,7 @@ else:
 def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     """Return the Pydantic model class for a field annotation, if any.
 
-    Unwraps ``Optional``/``Union`` annotations (e.g. ``KVCacheConfig | None``)
+    Unwraps ``Optional``/``Union`` annotations (such as ``KVCacheConfig | None``)
     and returns the first :class:`~pydantic.BaseModel` subclass found. Returns
     ``None`` for non-model annotations such as ``dict[str, Any]`` or ``str``,
     so plain data dicts are never treated as nested config sub-models.
@@ -1021,7 +1021,7 @@ class PipelineConfig(ConfigFileModel):
         """Normalize dash-keyed dicts from cyclopts CLI parsing to underscores.
 
         When cyclopts parses CLI args like ``--pipeline.models.main.model-path``,
-        it produces nested dicts with dash-separated keys (e.g.
+        it produces nested dicts with dash-separated keys (such as
         ``{"main": {"model-path": "value"}}``).  Pydantic expects underscore-
         separated field names, so we normalise before validation.
 
@@ -1029,12 +1029,12 @@ class PipelineConfig(ConfigFileModel):
         ``--pipeline.models.main.kv-cache.kv-cache-format`` resolve to
         ``{"main": {"kv_cache": {"kv_cache_format": ...}}}``. Recursion is
         schema-aware: it only descends into keys whose field is a Pydantic
-        model, leaving plain data dicts (e.g. ``vision_config_overrides``)
+        model, leaving plain data dicts (such as ``vision_config_overrides``)
         untouched so legitimately-dashed data keys are preserved.
 
         Raises:
             ValueError: If two keys at the same level normalize to the same
-                field name (e.g. mixing ``kv-cache`` and ``kv_cache``), which
+                field name (such as mixing ``kv-cache`` and ``kv_cache``), which
                 would otherwise silently drop one of the values.
         """
 

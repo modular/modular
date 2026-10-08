@@ -124,7 +124,7 @@ class ArtificialAnalysisBenchmarkDataset(BenchmarkDataset):
                 ``ignore_eos`` is enabled so the model generates the full
                 budget (AA requires "at least N" output tokens).
             shuffle: Whether to shuffle the content order. Default ``True``.
-            input_len: Input-token budget per prompt as a distribution (e.g.
+            input_len: Input-token budget per prompt as a distribution (such as
                 ``"N(10000, 1500)"`` or a constant like ``10000``); sampled
                 per request and measured with the served model's tokenizer
                 (required).

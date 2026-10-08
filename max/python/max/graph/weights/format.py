@@ -30,8 +30,8 @@ class WeightsFormat(str, Enum):
     File extension: ``.gguf``
 
     Optimized for quantized large language models, particularly those from the
-    llama.cpp ecosystem. Supports multiple quantization schemes (``Q4_K``,
-    ``Q5_K``, ``Q8_0``, etc.) and includes model metadata in the file.
+    llama.cpp ecosystem. Supports multiple quantization schemes (such as
+    ``Q4_K``, ``Q5_K``, and ``Q8_0``) and includes model metadata in the file.
     """
 
     safetensors = "safetensors"

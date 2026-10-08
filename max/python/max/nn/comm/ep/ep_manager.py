@@ -585,7 +585,7 @@ class EPBatchManager:
         """Rebinds the buffer fields from a threaded :class:`EPCommBuffers`.
 
         Called at the top of the EP MoE forward so the kernel-dispatch helpers,
-        which read ``self._send_buf_ptrs`` etc., see the (subgraph-rebound)
+        which read ``self._send_buf_ptrs`` and so on, see the (subgraph-rebound)
         buffer values passed in as a forward argument.
         """
         self._atomic_counters = [
