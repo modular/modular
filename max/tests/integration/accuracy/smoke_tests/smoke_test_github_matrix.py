@@ -45,8 +45,7 @@ DISABLE: set[str] = set()
 # To add a model, trigger the smoke test with it first:
 # https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
 # then list it below with the HW it passed on. VLMs also go in is_vision_model
-# in smoke_test.py, and reasoning models in is_reasoning_model in
-# eval_runner.py.
+# in smoke_test.py.
 # Every entry is exactly one line. The only comment allowed is an existing
 # Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off

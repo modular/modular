@@ -172,37 +172,9 @@ def call_eval(
     num_questions: int,
     disable_timeouts: bool,
     metrics_url: str | None = None,
-    model_alias: str | None = None,
     lm_eval_metadata: str | None = None,
 ) -> tuple[EvalResults, EvalSamples]:
-    extra_gen_kwargs = ""
-    # model_alias carries the original recipe key (e.g. "nvidia/Kimi-K2.5-NVFP4__internal")
-    # when model is a local path that doesn't contain the model name keywords.
-    check_name = (model_alias or model).casefold()
-    is_reasoning_model = any(
-        kw in check_name
-        for kw in (
-            "academic-ds",
-            "deepseek-r1",
-            "deepseek-v3",
-            "deepseek-v4",
-            "gemma-4",
-            "gpt-oss",
-            "inkling",
-            "internvl3_5",
-            "qwen3",
-            "kimi-k2",
-            "minimax-m2",
-            "minimax-m3",
-            "muse-glimmer",
-            "nemotron",
-            "step-3.5",
-            "glm-5",
-        )
-    )
-    # Reasoning models needs extra tokens for .. reasoning
-    if is_reasoning_model:
-        extra_gen_kwargs = ",max_gen_toks=4096"
+    extra_gen_kwargs = ",max_gen_toks=4096"
 
     # GPT-OSS sometimes gets stuck in a reasoning loop. To ensure consistency
     # in CI, we add a repetition penalty which helps prevent the loop

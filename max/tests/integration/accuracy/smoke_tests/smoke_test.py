@@ -776,7 +776,6 @@ def smoke_test(
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
-                model_alias=model if served != model else None,
                 lm_eval_metadata=lm_eval_metadata,
             )
 
