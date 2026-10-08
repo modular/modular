@@ -2255,6 +2255,34 @@ def test_dp_ce_balance__balanced_ce_across_replicas_schedules() -> None:
     assert has_request(inputs.batches[1], ce_ctxs[1].request_id)
 
 
+def test_dp_ce_balance__pool_fills_step_when_no_replica_has_tg() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ce_ctxs = [create_lora_context(seq_len=20) for _ in range(8)]
+    for ctx in ce_ctxs:
+        batch_constructor.enqueue_new_request(ctx)
+
+    # A prefill-only worker never has TG work. Once the replicas are level,
+    # no single equal-sized request strictly improves occupancy, but holding
+    # the rest back would only idle the fleet: every request runs now.
+    inputs = batch_constructor.construct_batch()
+    assert not batch_constructor._ce_pending
+    assert [len(batch) for batch in inputs.batches] == [4, 4]
+
+
+def test_dp_ce_balance__pool_waits_for_occupancy_gain_when_tg_runs() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    for replica_idx in range(2):
+        tg_ctx = create_lora_context(is_tg=True)
+        batch_constructor.enqueue_new_request(tg_ctx, replica_idx=replica_idx)
+    for _ in range(4):
+        batch_constructor.enqueue_new_request(create_lora_context(seq_len=20))
+
+    # With TG to run instead, pooled work still binds only where it improves
+    # occupancy: one request per replica levels the step, the rest wait.
+    batch_constructor.construct_batch()
+    assert len(batch_constructor._ce_pending) == 2
+
+
 def test_dp_ce_balance__release_pooled_request() -> None:
     batch_constructor = create_dp_balance_constructor()
     ctx = create_lora_context()

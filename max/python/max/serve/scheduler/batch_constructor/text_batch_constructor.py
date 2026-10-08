@@ -1624,7 +1624,9 @@ class TextBatchConstructor:
         - Deferrable mid-prefill tails (per replica, all-or-nothing) and then
           pooled unbound requests are added largest-first wherever they
           strictly improve the step's occupancy (mean/max of per-replica CE
-          tokens, capped at the CE chunk budget).
+          tokens, capped at the CE chunk budget). When no replica has TG
+          work, as on a prefill-only worker, pooled requests instead fill
+          the step up to that budget: holding them back would idle the fleet.
         - Pooled requests bind to the replica with the lightest queue total
           plus their own weight, at the moment the planner schedules them:
           binding is deferred until first run so it uses fresh loads.
@@ -1733,6 +1735,7 @@ class TextBatchConstructor:
 
         # Pooled requests may only bind to replicas running CE this step
         # (otherwise they would queue behind a deferred tail).
+        no_tg_work = all(not replica.tg_reqs for replica in self.replicas)
         pool_binds: list[tuple[RequestID, int]] = []
         for req_id, pending in sorted(
             self._ce_pending.items(),
@@ -1753,15 +1756,17 @@ class TextBatchConstructor:
             trial[replica_idx] = min(
                 trial[replica_idx] + pending.weights[replica_idx], target
             )
-            if max(step_load) == 0 or _occupancy(trial) > _occupancy(step_load):
+            if (
+                no_tg_work
+                or max(step_load) == 0
+                or _occupancy(trial) > _occupancy(step_load)
+            ):
                 step_load = trial
                 queues[replica_idx].append(pending.weights[replica_idx])
                 pool_binds.append((req_id, replica_idx))
 
         floor_exists = any(floor)
-        fleet_idle = not floor_exists and all(
-            not replica.tg_reqs for replica in self.replicas
-        )
+        fleet_idle = not floor_exists and no_tg_work
         threshold = self.scheduler_config.dp_ce_balance_threshold
         occupancy = _occupancy(step_load)
         # A below-threshold step with work on 2+ replicas need not be held:
