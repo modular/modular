@@ -37,7 +37,11 @@ struct TensorTuple[*Ts: AnyType](
     """A heterogeneous tuple of a kernel's tensor arguments, held by value.
 
     A kernel takes one `TensorTuple` per variadic tensor argument, with the
-    element types in an infer-only `TypeList` bound by tensor-argument traits:
+    element types in an infer-only `TypeList` bound by tensor-argument traits.
+    A signature can take one per operand list (an output tuple and an input
+    tuple) but not two on the same side: a graph op's flat operand list cannot
+    carry run boundaries, so `mogg-verify-kernels` rejects a second variadic
+    per side, as it does for the legacy `VariadicTensors` lane:
 
     ```mojo
     def execute[
@@ -53,10 +57,12 @@ struct TensorTuple[*Ts: AnyType](
     The struct is a `Tuple` of tensor arguments in all but two respects. It puts
     no bound of its own on the element types, so a kernel's list needs only
     its tensor-argument bound; the elements must be `Copyable` to be held
-    and `Deinitable` to be dropped, and that is checked where the tuple is
-    instantiated. And its storage is a plain aggregate rather than a
-    parameter pack, so it crosses a kernel launch as one argument (see
-    `_mlir_type`).
+    and `Deinitable` to be dropped, as every emitted tensor argument is, and
+    that is checked where the tuple is instantiated. And its storage is a
+    plain aggregate rather than a parameter pack, so it crosses a kernel
+    launch as one argument (see `_mlir_type`).
+
+    The graph compiler builds the tuple from the arguments it emits.
 
     Like `TileTensor`, the tuple is its own device representation, over its
     elements' device types: when every element is `DevicePassable`, so is the

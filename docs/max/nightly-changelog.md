@@ -642,6 +642,16 @@ This version is still a work in progress.
   engine exposes for the tensor's storage. Element loads and stores on the
   tensor go through that pointer.
 
+- Added `TensorTuple` to the `extensibility` package, so a custom kernel can
+  take a variadic output tensor argument and a variadic input tensor argument
+  together. Each is a `TensorTuple[*Ts]` over an infer-only `TypeList` bound by
+  tensor-argument traits, and its elements may differ in dtype and shape. A
+  signature takes at most one tuple per operand list. The tuple holds its
+  elements by value and, when every element is `DevicePassable`, crosses a
+  kernel launch as one argument. Kernel import now rejects a variadic pack of
+  tensor-trait arguments (`*xs: *Ts`) with a diagnostic that points at
+  `TensorTuple`.
+
 - Added `max.nn.kernels.keyed_uniform`, which draws one uniform value in
   `[0, 1)` per row of a seed tensor. Every row is its own Philox key, so a
   row's value is a function of its seed alone, not of the row's position or of
