@@ -24,7 +24,11 @@ from dataclasses import dataclass
 from typing import Any
 
 import huggingface_hub
-from max.driver import accelerator_api
+from max.driver import (
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig
 from max.graph.weights import WeightData
@@ -1444,13 +1448,22 @@ def apply_fused_kernel_flags(
     # checkpoint on a CPU-only host yields a different weight layout. The
     # assumption is build-host == inference-target; fixing it properly
     # means threading the target device spec in here.
-    # MXFP8 is cuda-only here: the fused kernel is SM100, and on AMD the
-    # MoE gate/up SwiGLU is fused by `fused_silu_mx_kernel` off the
-    # chained path instead (as MXFP4 already does). Gating the flag rather
-    # than the call site keeps the sigma-permutation and the kernel choice
-    # consistent.
+    # The flag means "gate_up is sigma-permuted on N", not "use the SM100
+    # kernel", so every consumer of that layout keys off it. Widen the gfx950
+    # term only once another AMD arch grows an interleaved gate/up reader.
+    # `accelerator_architecture_name()` raises on a GPU-less host and this runs
+    # during checkpoint parsing, so the count check comes first.
+    # On gfx950 the MoE weights are preshuffled, so the graph cannot apply the
+    # sigma permute; the loader must run `sigma_interleave_gate_up` before the
+    # preshuffle and set `QuantConfig.gate_up_sigma_interleaved`, or `MoE`
+    # refuses to build (see `MoE._needs_graph_sigma_permute`).
+    on_gfx950 = (
+        accelerator_count() > 0 and accelerator_architecture_name() == "gfx950"
+    )
     config.can_use_fused_swiglu = (
-        config.is_nvfp4 or (config.is_mxfp8 and accelerator_api() == "cuda")
+        config.is_nvfp4
+        or (config.is_mxfp8 and accelerator_api() == "cuda")
+        or (config.is_mxfp8 and on_gfx950)
     ) and (os.environ.get("MAX_DISABLE_FUSED_SWIGLU_NVFP4") != "1")
 
     return config

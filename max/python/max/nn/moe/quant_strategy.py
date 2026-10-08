@@ -24,6 +24,7 @@ from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
     block_scales_interleave,
     grouped_dynamic_block_scaled_matmul_amd,
+    grouped_dynamic_block_scaled_matmul_amd_swiglu_quant,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_dynamic_scaled_mxfp6_matmul,
     grouped_matmul_block_scaled,
@@ -647,6 +648,81 @@ class BlockScaledStrategy:
             a_scales_max_padded_m=a_scales_max_padded_m,
             decode_grid_m_cap=decode_grid_m_cap,
             decode_grid_m_rows=decode_grid_m_rows,
+        )
+
+    def grouped_matmul_swiglu_quant(
+        self,
+        weight: TensorValue,
+        weight_scales: TensorValue,
+        expert_inputs: tuple[TensorValue, ...] = (),
+        estimated_total_m: TensorValue | None = None,
+        a_scales_preshuffled: bool = False,
+        a_scales_max_padded_m: int = 0,
+        decode_grid_m_cap: int = 0,
+        decode_grid_m_rows: int = 0,
+        out_scales_max_padded_m: int = 0,
+        swiglu_alpha: float = 1.702,
+        swiglu_limit: float = 7.0,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Runs gemm1 with the clamped SwiGLU and the MXFP8 requantize folded
+        into its epilogue.
+
+        Returns the activation already quantized plus its E8M0 block scales,
+        so the caller skips the standalone activation kernel. Output N is half
+        the matmul's N, since each (gate, up) pair collapses to one value.
+
+        Args:
+            weight: The gate/up weight, sigma-permuted on N so gate and up sit
+                in adjacent columns. Split halves cannot be paired in-register
+                and are rejected by the kernel's layout assumptions.
+            weight_scales: Matching sigma-permuted E8M0 weight scales.
+            expert_inputs: The EP dispatch 5-tuple.
+            estimated_total_m: Row-count estimate used to pick the band.
+            a_scales_preshuffled: True when the input A-scales already sit in
+                the per-expert slot layout, so the standalone preshuffle is
+                skipped.
+            a_scales_max_padded_m: Build-time slot stride of those input
+                scales; required when ``a_scales_preshuffled``.
+            decode_grid_m_cap: Band cap for the decode grid.
+            decode_grid_m_rows: Worst-case rows one expert can receive.
+            out_scales_max_padded_m: Per-expert slot stride for the EMITTED
+                scales. Nonzero selects the 4D slot layout that gemm2 reads
+                without a preshuffle; zero emits plain row-major.
+            swiglu_alpha: Alpha for the clamped SwiGLU the epilogue applies.
+            swiglu_limit: Clamp limit for that SwiGLU.
+
+        Returns:
+            The MXFP8 activation and its E8M0 block scales.
+        """
+        if not self.preshuffled_b:
+            raise NotImplementedError(
+                "the fused SwiGLU+MXFP8 epilogue only exists in the"
+                " preshuffled-B kernel; set preshuffled_b=True"
+            )
+        (
+            hidden,
+            hidden_scales,
+            expert_start,
+            expert_ids,
+            usage_stats,
+        ) = expert_inputs
+
+        return grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
+            hidden,
+            weight,
+            hidden_scales,
+            weight_scales,
+            expert_start,
+            expert_ids,
+            usage_stats.to(DeviceRef.CPU()),
+            estimated_total_m=estimated_total_m,
+            a_scales_preshuffled=a_scales_preshuffled,
+            a_scales_max_padded_m=a_scales_max_padded_m,
+            decode_grid_m_cap=decode_grid_m_cap,
+            decode_grid_m_rows=decode_grid_m_rows,
+            out_scales_max_padded_m=out_scales_max_padded_m,
+            swiglu_alpha=swiglu_alpha,
+            swiglu_limit=swiglu_limit,
         )
 
     def prepare_weight_scales(

@@ -316,6 +316,14 @@ class QuantConfig:
     applying the preshuffle (e.g. Kimi K2.5's
     ``weight_adapters.py:_shuffle_group``)."""
 
+    gate_up_sigma_interleaved: bool = False
+    """Whether the weight loader ran ``sigma_interleave_gate_up`` on the raw
+    gate/up weights and scales before preshuffling them. The graph permute that
+    produces the fused-SwiGLU layout cannot run on preshuffled weights, so
+    ``MoE`` requires this flag instead of silently feeding the fused epilogue
+    split gate/up halves. Set it in lockstep with the loader, as M3's
+    ``preshuffle_mx_experts_for_amd`` does."""
+
     @classmethod
     def blockscaled_fp8(
         cls,

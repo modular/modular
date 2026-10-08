@@ -194,7 +194,7 @@ struct PreShuffledBGroupedGEMM[
         )
     )
     @__name(
-        t"mx_preb_pers_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}{"_cds" if cluster_drain_sched else ""}{"_mc2" if mfma_cluster == 2 else ""}{"_pd3" if pipeline_depth == 3 else ""}{"_sg4" if scale_group == 4 else ""}{"_bas" if b_addr_split else ""}"
+        t"mx_preb_pers_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}{"_cds" if cluster_drain_sched else ""}{"_mc2" if mfma_cluster == 2 else ""}{"_pd3" if pipeline_depth == 3 else ""}{"_sg4" if scale_group == 4 else ""}{"_bas" if b_addr_split else ""}{"_fq" if fuse_swiglu_mxfp8 else ""}"
     )
     @__llvm_metadata(
         `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
@@ -229,6 +229,7 @@ struct PreShuffledBGroupedGEMM[
         scale_group: Int = 1,
         b_addr_split: Bool = False,
         waves_per_eu: Int = 0,
+        fuse_swiglu_mxfp8: Bool = False,
     ](
         c_tensor: TileTensor[
             mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=CEngine
@@ -259,6 +260,13 @@ struct PreShuffledBGroupedGEMM[
         ],
         num_active_experts: Int32,
         max_padded_M: Int32,
+        # Destination for the fused epilogue's E8M0 scales, and the
+        # per-expert slot stride (0 = plain row-major).
+        c_scales_ptr: Pointer[UInt8, MutAnyOrigin],
+        c_scales_max_padded_m: UInt32,
+        # Clamped-SwiGLU constants, read only by the fused epilogue.
+        swiglu_alpha: Float32,
+        swiglu_limit: Float32,
     ):
         var _num_active_experts = Int(num_active_experts)
         var _max_padded_M = Int(max_padded_M)
@@ -279,6 +287,7 @@ struct PreShuffledBGroupedGEMM[
             pipeline_depth=pipeline_depth,
             scale_group=scale_group,
             b_addr_split=b_addr_split,
+            fuse_swiglu_mxfp8=fuse_swiglu_mxfp8,
         ]
         # K_SCALES (= K / 32) derived from A's K byte extent. The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -348,7 +357,13 @@ struct PreShuffledBGroupedGEMM[
             var sfa_start_row = expert_slot * _max_padded_M
             var sfa_padded_M = align_up(Int(M), 32)
 
-            var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
+            comptime C_N = N // 2 if fuse_swiglu_mxfp8 else N
+            comptime assert LayoutC.static_shape[1] == C_N, (
+                "C's N extent must match the epilogue's output width;"
+                " a mismatch means fuse_swiglu_mxfp8 did not reach this"
+                " kernel and it would overrun c"
+            )
+            var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(C_N)
             comptime A_K_BYTES = a_tensor.static_shape[1]
             var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
             var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
@@ -364,7 +379,7 @@ struct PreShuffledBGroupedGEMM[
             # written. That is what makes the uninitialized pad scale cells in
             # `sfa` (whose V# DOES extend to `sfa_padded_M`) safe — the C rows
             # they would feed are OOB-clamped and discarded.
-            var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+            var c_tile = TileTensor(c_ptr, row_major(M, Idx[C_N]))
             var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
             var b_pre_tile = TileTensor(
                 b_pre_ptr, row_major(Idx[1], Idx[N * K_BYTES])
@@ -412,6 +427,12 @@ struct PreShuffledBGroupedGEMM[
                     sfb_tile,
                     Int(n_tile),
                     Int(m_tile),
+                    c_scales_ptr,
+                    Int(a_start_row),
+                    expert_slot,
+                    Int(c_scales_max_padded_m),
+                    swiglu_alpha,
+                    swiglu_limit,
                 )
 
                 # advance to this WG's next claim in the global counter
@@ -435,7 +456,7 @@ struct PreShuffledBGroupedGEMM[
         )
     )
     @__name(
-        t"mx_preb_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}{"_cds" if cluster_drain_sched else ""}{"_mc2" if mfma_cluster == 2 else ""}{"_pd3" if pipeline_depth == 3 else ""}{"_sg4" if scale_group == 4 else ""}{"_bas" if b_addr_split else ""}"
+        t"mx_preb_lb{Self.lane_bytes}{Self.fmt_suffix}_BM{BM}_BN{BN}_WN{WN}_BK{BK_ELEMS}_N{N}_KB{K_BYTES}{"_cds" if cluster_drain_sched else ""}{"_mc2" if mfma_cluster == 2 else ""}{"_pd3" if pipeline_depth == 3 else ""}{"_sg4" if scale_group == 4 else ""}{"_bas" if b_addr_split else ""}{"_fq" if fuse_swiglu_mxfp8 else ""}"
     )
     @__llvm_metadata(
         `llvm.amdgpu-waves-per-eu`=_waves_per_eu_attr[waves_per_eu]()
@@ -470,6 +491,7 @@ struct PreShuffledBGroupedGEMM[
         scale_group: Int = 1,
         b_addr_split: Bool = False,
         waves_per_eu: Int = 0,
+        fuse_swiglu_mxfp8: Bool = False,
     ](
         c_tensor: TileTensor[
             mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=CEngine
@@ -500,6 +522,13 @@ struct PreShuffledBGroupedGEMM[
         ],
         num_active_experts: Int32,
         max_padded_M: Int32,
+        # Destination for the fused epilogue's E8M0 scales, and the
+        # per-expert slot stride (0 = plain row-major).
+        c_scales_ptr: Pointer[UInt8, MutAnyOrigin],
+        c_scales_max_padded_m: UInt32,
+        # Clamped-SwiGLU constants, read only by the fused epilogue.
+        swiglu_alpha: Float32,
+        swiglu_limit: Float32,
     ):
         var _max_padded_M = Int(max_padded_M)
         comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
@@ -519,6 +548,7 @@ struct PreShuffledBGroupedGEMM[
             pipeline_depth=pipeline_depth,
             scale_group=scale_group,
             b_addr_split=b_addr_split,
+            fuse_swiglu_mxfp8=fuse_swiglu_mxfp8,
         ]
         # K_SCALES (= K / 32) derived from A's K byte extent. The
         # preshuffled sfa_tensor's static shape is layout-dependent (i32-cell
@@ -542,7 +572,8 @@ struct PreShuffledBGroupedGEMM[
         var sfa_start_row = block_idx.z * _max_padded_M
         var sfa_padded_M = align_up(Int(M), 32)
 
-        var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(N)
+        comptime C_N = N // 2 if fuse_swiglu_mxfp8 else N
+        var c_ptr = c_tensor.ptr + Int(a_start_row) * Int(C_N)
         comptime A_K_BYTES = a_tensor.static_shape[1]
         var a_ptr = a_tensor.ptr + Int(a_start_row) * Int(A_K_BYTES)
         var b_pre_ptr = b_pre_tensor.ptr + Int(expert_id) * Int(N) * Int(
@@ -551,7 +582,7 @@ struct PreShuffledBGroupedGEMM[
         var sfa_ptr = sfa_tensor.ptr + sfa_start_row * Int(K_SCALES)
         var sfb_ptr = sfb_tensor.ptr + Int(expert_id) * Int(N) * Int(K_SCALES)
 
-        var c_tile = TileTensor(c_ptr, row_major(M, Idx[N]))
+        var c_tile = TileTensor(c_ptr, row_major(M, Idx[C_N]))
         var a_tile = TileTensor(a_ptr, row_major(M, Idx[A_K_BYTES]))
         var b_pre_tile = TileTensor(
             b_pre_ptr, row_major(Idx[1], Idx[N * K_BYTES])
@@ -585,6 +616,12 @@ struct PreShuffledBGroupedGEMM[
             sfb_tile,
             block_idx.x,
             block_idx.y,
+            c_scales_ptr,
+            Int(a_start_row),
+            block_idx.z,
+            Int(c_scales_max_padded_m),
+            swiglu_alpha,
+            swiglu_limit,
         )
 
     # --------------------------------------------------------------------- #
@@ -607,6 +644,7 @@ struct PreShuffledBGroupedGEMM[
         b_addr_split: Bool = False,
         waves_per_eu: Int = 0,
         static_grid_z: Bool = False,
+        fuse_swiglu_mxfp8: Bool = False,
     ](
         c: TileTensor[mut=True, ...],
         a: TileTensor[.uint8, ...],
@@ -619,6 +657,12 @@ struct PreShuffledBGroupedGEMM[
         num_active_experts: Int,
         ctx: DeviceContext,
         grid_m_cap: Int = -1,
+        c_scales_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[
+            UInt8, MutAnyOrigin
+        ](unsafe_from_address=16),
+        c_scales_max_padded_m: UInt32 = 0,
+        swiglu_alpha: Float32 = 1.702,
+        swiglu_limit: Float32 = 7.0,
     ) raises:
         comptime MatmulDeviceFunctionType = BlockScaledMatmulAMD_PreB[
             BM=BM,
@@ -634,9 +678,10 @@ struct PreShuffledBGroupedGEMM[
             pipeline_depth=pipeline_depth,
             scale_group=scale_group,
             b_addr_split=b_addr_split,
+            fuse_swiglu_mxfp8=fuse_swiglu_mxfp8,
         ]
 
-        comptime N = c.static_shape[1]
+        comptime N = c.static_shape[1] * (2 if fuse_swiglu_mxfp8 else 1)
         comptime K_BYTES = (
             b_pre.static_shape[1] // N if b_pre.flat_rank
             == 2 else b_pre.static_shape[2]
@@ -709,6 +754,7 @@ struct PreShuffledBGroupedGEMM[
                 scale_group,
                 b_addr_split,
                 waves_per_eu,
+                fuse_swiglu_mxfp8,
             ]
             ctx.enqueue_function[kernel](
                 c,
@@ -720,6 +766,10 @@ struct PreShuffledBGroupedGEMM[
                 expert_ids_i,
                 Int32(num_active_experts),
                 Int32(max_padded_M),
+                c_scales_ptr,
+                c_scales_max_padded_m,
+                swiglu_alpha,
+                swiglu_limit,
                 grid_dim=(Self.total_wg, 1, 1),
                 block_dim=MatmulDeviceFunctionType.num_threads,
             )
@@ -754,6 +804,7 @@ struct PreShuffledBGroupedGEMM[
                 scale_group,
                 b_addr_split,
                 waves_per_eu,
+                fuse_swiglu_mxfp8,
             ]
             # grid.y cap: decode cap when supplied, else full A-scale stride.
             var m_cap = (
@@ -775,6 +826,10 @@ struct PreShuffledBGroupedGEMM[
                 expert_ids_i,
                 Int32(num_active_experts),
                 Int32(max_padded_M),
+                c_scales_ptr,
+                c_scales_max_padded_m,
+                swiglu_alpha,
+                swiglu_limit,
                 grid_dim=(
                     ceildiv(N, BN),
                     ceildiv(m_cap, BM),
@@ -1229,7 +1284,9 @@ def _launch_block_scaled_grouped[
 
 
 def block_scaled_grouped_matmul_amd_preb[
-    lane_bytes: Int = 0, fp6_format: Int = 0
+    lane_bytes: Int = 0,
+    fp6_format: Int = 0,
+    fuse_swiglu_mxfp8: Bool = False,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[.uint8, ...],
@@ -1244,6 +1301,12 @@ def block_scaled_grouped_matmul_amd_preb[
     estimated_total_m: Int = 0,
     decode_grid_m_cap: Int = -1,
     decode_grid_m_rows: Int = 0,
+    c_scales_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[UInt8, MutAnyOrigin](
+        unsafe_from_address=16
+    ),
+    c_scales_max_padded_m: Int = 0,
+    swiglu_alpha: Float32 = 1.702,
+    swiglu_limit: Float32 = 7.0,
 ) raises:
     """Launches grouped MXFP4 matmul on AMD CDNA4 with pre-shuffled weights.
 
@@ -1262,6 +1325,10 @@ def block_scaled_grouped_matmul_amd_preb[
         fp6_format: 0 selects E2M3, 1 selects E3M2. Ignored unless
             `lane_bytes` resolves to 24 — both FP6 encodings put 24 bytes in a
             lane, so the byte count cannot choose between them.
+        fuse_swiglu_mxfp8: Folds the clamped SwiGLU and the MXFP8 requantize
+            into gemm1's epilogue. `c` then carries half the matmul's N as
+            packed E4M3 and `c_scales_ptr` receives its E8M0 block scales.
+            Requires the gate_up weight sigma-permuted on N.
 
     Args:
         c: Output tensor [total_tokens, N].
@@ -1282,6 +1349,14 @@ def block_scaled_grouped_matmul_amd_preb[
             selecting the direct kernel over the persistent one; not a bound.
         decode_grid_m_rows: Rows grid.y must cover per expert on the decode
             bands. 0 falls back to the full A-scale stride.
+        c_scales_ptr: Destination for the fused epilogue's E8M0 scales.
+            Unread unless `fuse_swiglu_mxfp8`.
+        c_scales_max_padded_m: Per-expert slot stride for those scales; 0
+            writes plain row-major.
+        swiglu_alpha: Alpha for the clamped SwiGLU. Unread unless
+            `fuse_swiglu_mxfp8`.
+        swiglu_limit: Clamp limit for the clamped SwiGLU. Unread unless
+            `fuse_swiglu_mxfp8`.
     """
 
     comptime assert (
@@ -1295,7 +1370,9 @@ def block_scaled_grouped_matmul_amd_preb[
         == 2 else b_pre.static_shape[1] * b_pre.static_shape[2]
     )
 
-    comptime N = c.static_shape[1]
+    # `c` carries the halved N when the epilogue is fused; recover the
+    # matmul's N, which is what the tiling and the b_pre extents use.
+    comptime N = c.static_shape[1] * (2 if fuse_swiglu_mxfp8 else 1)
     comptime packed_K = a.static_shape[1]
 
     comptime K_LOGICAL = a_scales.static_shape[1] * 32
@@ -1399,6 +1476,7 @@ def block_scaled_grouped_matmul_amd_preb[
             b_addr_split=b_addr_split,
             waves_per_eu=waves_per_eu,
             static_grid_z=use_decode_cap,
+            fuse_swiglu_mxfp8=fuse_swiglu_mxfp8,
         ](
             c,
             a,
@@ -1411,6 +1489,10 @@ def block_scaled_grouped_matmul_amd_preb[
             num_active_experts,
             ctx,
             grid_m_cap,
+            c_scales_ptr,
+            UInt32(c_scales_max_padded_m),
+            swiglu_alpha,
+            swiglu_limit,
         )
 
     # Autotune entry point, mirroring the AMD dense-matmul hook in

@@ -141,6 +141,8 @@ _EXTRA_CONSTRAINTS = {
     "test_mxfp4_grouped_matmul_amd_expert_offset.mojo": ["//:amd_gpu"],
     "test_mxfp6_grouped_matmul_amd.mojo": ["//:mi355_gpu"],
     "test_mxfp4_grouped_matmul_amd_kernels.mojo": ["//:amd_gpu"],
+    # Fused SwiGLU + MXFP8 epilogue in the preb kernel. gfx950 only.
+    "test_swiglu_epilogue_amd.mojo": ["//:mi355_gpu"],
     "test_mxfp6_grouped_matmul_amd_kernels.mojo": ["//:mi355_gpu"],
     "test_mxfp4_preshuffle_layouts.mojo": ["//:amd_gpu"],
     "test_router_gate_mixed_gemv_amd.mojo": ["//:amd_gpu"],
@@ -354,6 +356,8 @@ _GPU_MEMORY = {
     "test_grouped_block_scaled_gemm_nvfp4_execution.mojo": "1.5",
     "test_grouped_matmul.mojo": "17",
     "test_grouped_matmul_nvfp4_dispatch.mojo": "1.5",
+    # The M3-shape dispatch cases hold two N=K=6144 expert weight copies.
+    "test_swiglu_epilogue_amd.mojo": "1",
     "test_grouped_matmul_sm100_block_fp4.mojo": "1.5",
     "test_grouped_matmul_sm100_blockwise_fp8.mojo": "1.5",
     "test_grouped_matmul_sm100_mxfp8.mojo": "1.5",

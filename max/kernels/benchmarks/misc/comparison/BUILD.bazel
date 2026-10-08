@@ -416,3 +416,26 @@ modular_py_binary(
         requirement("torch"),
     ],
 )
+
+# MiniMax-M3 MoE FFN chain bench (MAX only, gfx950): gemm1 -> SwiGLU
+# + requant -> gemm2, device-graph replay, rotating cold weights.
+modular_py_binary(
+    name = "bench_amd_m3_moe_chain",
+    srcs = ["bench_amd_m3_moe_chain.py"],
+    main = "bench_amd_m3_moe_chain.py",
+    tags = [
+        "gpu",
+        "manual",
+        "no-mypy",
+        "no-pydeps",
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("torch"),
+    ],
+)

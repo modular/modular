@@ -23,16 +23,21 @@ skipped every MXFP8 expert while the caller still flipped
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from typing import cast
+
 import numpy as np
 import pytest
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph.type import Shape
 from max.graph.weights import WeightData
+from max.nn.moe import MoE
 from max.pipelines.weights.block_scaled_preshuffle import (
     preshuffle_block_scaled_b_experts,
     preshuffle_block_scaled_b_scales,
     preshuffle_block_scaled_b_stacked,
+    sigma_interleave_gate_up,
 )
 
 _N, _K_BYTES = 16, 64
@@ -182,6 +187,153 @@ def test_preshuffle_b_experts_counts_matches_under_virtual_devices(
 
     assert preshuffle_block_scaled_b_experts(state_dict) == 1
     assert state_dict[name] is before, "virtual mode must not permute bytes"
+
+
+def _sigma_fused(gate: np.ndarray, up: np.ndarray) -> np.ndarray:
+    """The sigma-permuted gate_up: row 2i is gate row i, row 2i+1 is up row i."""
+    d, k = gate.shape
+    out = np.empty((2 * d, k), dtype=gate.dtype)
+    out[0::2] = gate
+    out[1::2] = up
+    return out
+
+
+def test_sigma_interleave_before_preshuffle_matches_fused_reference() -> None:
+    """Interleave-then-preshuffle equals preshuffling one sigma-ordered N=2D
+    weight, which is what the fused SwiGLU epilogue reads. Also pins that two
+    N=D blobs concatenate to the N=2D blob, which is how the graph reassembles
+    them. The companion test below covers the wrong order.
+    """
+    gate = _weight_bytes(21, (_N, _K_BYTES))
+    up = _weight_bytes(22, (_N, _K_BYTES))
+    g_name = "layers.0.mlp.experts.0.gate_proj.weight"
+    u_name = "layers.0.mlp.experts.0.up_proj.weight"
+    state_dict = {
+        g_name: WeightData.from_numpy(gate.copy(), g_name),
+        u_name: WeightData.from_numpy(up.copy(), u_name),
+    }
+
+    assert sigma_interleave_gate_up(state_dict) == 1
+    preshuffle_block_scaled_b_experts(state_dict)
+
+    # `MoE.gate_up_proj` stacks gate then up per expert, so the kernel sees the
+    # two halves concatenated.
+    got = np.concatenate(
+        [_result_bytes(state_dict[g_name]), _result_bytes(state_dict[u_name])],
+        axis=0,
+    )
+    np.testing.assert_array_equal(got, _expected_b_5d(_sigma_fused(gate, up)))
+
+
+def test_preshuffle_then_graph_permute_is_not_the_sigma_layout() -> None:
+    """Pins the bug: permuting after the preshuffle does not produce the layout.
+
+    Reproduces what a graph-level ``reshape([E, 2, D, K]) -> permute`` does to
+    already-preshuffled blobs, and asserts it differs from the real thing --
+    so anyone who moves the interleave back after the preshuffle fails here
+    instead of shipping a model that silently computes wrong values.
+    """
+    gate = _weight_bytes(23, (_N, _K_BYTES))
+    up = _weight_bytes(24, (_N, _K_BYTES))
+
+    # Wrong order: preshuffle each projection, then interleave the rows of the
+    # shuffled buffers as though they were still logical N rows.
+    wrong = _sigma_fused(_expected_b_5d(gate), _expected_b_5d(up))
+    # Right order: interleave the raw rows, then preshuffle as one N=2D weight.
+    right = _expected_b_5d(_sigma_fused(gate, up))
+
+    assert wrong.shape == right.shape, (
+        "shapes match, which is why this is silent"
+    )
+    assert not np.array_equal(wrong, right), (
+        "if these are equal the preshuffle no longer interleaves N with K and"
+        " the ordering constraint this test guards has gone away"
+    )
+
+
+def test_sigma_interleave_scales() -> None:
+    """Scales take the same treatment, or gemm1 pairs a row with a wrong scale."""
+    gate = _weight_bytes(31, (_MN, _K_SCALES))
+    up = _weight_bytes(32, (_MN, _K_SCALES))
+    g_name = "layers.0.mlp.experts.0.gate_proj.weight_scale"
+    u_name = "layers.0.mlp.experts.0.up_proj.weight_scale"
+    state_dict = {
+        g_name: WeightData.from_numpy(gate.copy(), g_name),
+        u_name: WeightData.from_numpy(up.copy(), u_name),
+    }
+
+    assert sigma_interleave_gate_up(state_dict) == 1
+
+    fused = _sigma_fused(gate, up)
+    np.testing.assert_array_equal(
+        _result_bytes(state_dict[g_name]), fused[:_MN]
+    )
+    np.testing.assert_array_equal(
+        _result_bytes(state_dict[u_name]), fused[_MN:]
+    )
+
+
+def test_sigma_interleave_rejects_missing_sibling() -> None:
+    """A gate without its up raises: interleaving half pairs the wrong rows."""
+    g_name = "layers.0.mlp.experts.0.gate_proj.weight"
+    state_dict = {
+        g_name: WeightData.from_numpy(_weight_bytes(41, (_N, _K_BYTES)), g_name)
+    }
+
+    with pytest.raises(ValueError, match="both gate_proj and up_proj"):
+        sigma_interleave_gate_up(state_dict)
+
+
+def test_sigma_interleave_leaves_down_proj_alone() -> None:
+    """down_proj has no sibling to pair with and must pass through untouched."""
+    d_name = "layers.0.mlp.experts.0.down_proj.weight"
+    raw = _weight_bytes(51, (_N, _K_BYTES))
+    state_dict = {d_name: WeightData.from_numpy(raw.copy(), d_name)}
+
+    assert sigma_interleave_gate_up(state_dict) == 0
+    np.testing.assert_array_equal(_result_bytes(state_dict[d_name]), raw)
+
+
+def _moe_layout_stub(
+    *, fused: bool, preshuffled: bool, interleaved: bool
+) -> SimpleNamespace:
+    """The surface `MoE._needs_graph_sigma_permute` reads, without a graph."""
+    return SimpleNamespace(
+        _uses_fused_swiglu_layout=lambda: fused,
+        _weights_preshuffled=preshuffled,
+        quant_config=SimpleNamespace(gate_up_sigma_interleaved=interleaved),
+    )
+
+
+@pytest.mark.parametrize(
+    ("fused", "preshuffled", "interleaved", "expected"),
+    [
+        (False, False, False, False),
+        (False, True, False, False),
+        (True, False, False, True),
+        (True, True, True, False),
+    ],
+)
+def test_graph_sigma_permute_decision(
+    fused: bool, preshuffled: bool, interleaved: bool, expected: bool
+) -> None:
+    """Raw weights are permuted in the graph; interleaved preshuffled ones are not."""
+    stub = _moe_layout_stub(
+        fused=fused, preshuffled=preshuffled, interleaved=interleaved
+    )
+    assert MoE._needs_graph_sigma_permute(cast(MoE, stub)) is expected
+
+
+def test_preshuffled_fused_layout_needs_the_load_time_interleave() -> None:
+    """A loader that preshuffles without interleaving must not build.
+
+    The graph cannot permute preshuffled rows, so skipping the permute here
+    would feed the fused epilogue split gate/up halves -- it runs and computes
+    wrong activations with no error.
+    """
+    stub = _moe_layout_stub(fused=True, preshuffled=True, interleaved=False)
+    with pytest.raises(ValueError, match="sigma_interleave_gate_up"):
+        MoE._needs_graph_sigma_permute(cast(MoE, stub))
 
 
 # Kimi K3's routed gate/up shard at TP8: `[E, N, K_BYTES]` stacked by the

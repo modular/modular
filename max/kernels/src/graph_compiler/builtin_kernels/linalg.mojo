@@ -1192,6 +1192,112 @@ struct Struct_grouped_matmul_block_scaled_amd[
             )
 
 
+@extensibility.register("mo.grouped.matmul.block.scaled.amd.swiglu.quant")
+struct Struct_grouped_matmul_block_scaled_amd_swiglu_quant[
+    lane_bytes: Int = 32, scales_max_padded_m: Int = 0
+]:
+    """MOGG wrapper for grouped MXFP8 matmul with a fused SwiGLU epilogue.
+
+    Runs gemm1 of an MoE FFN and folds the clamped SwiGLU plus the MXFP8
+    requantize into its epilogue, so the activation leaves the kernel already
+    quantized and no standalone activation kernel is needed. AMD
+    preshuffled-B only.
+
+    Parameters:
+        lane_bytes: Operand bytes per lane. MXFP8 only, so always 32.
+        scales_max_padded_m: Per-expert slot stride for the emitted scales.
+            Nonzero writes the 4D slot layout that gemm2 reads without a
+            preshuffle; 0 writes plain row-major.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        a_type: DType,
+        b_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=.float8_e4m3fn, rank=2, ...],
+        c_scales: OutputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
+        a: InputTensor[dtype=a_type, rank=2, ...],
+        b: InputTensor[dtype=b_type, rank=3, ...],
+        a_scales: InputTensor[dtype=.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=.float8_e8m0fnu, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=.int32, rank=1, ...],
+        max_num_tokens_per_expert: UInt32,
+        num_active_experts: UInt32,
+        estimated_total_m: UInt32,
+        decode_grid_m_cap: UInt32,
+        decode_grid_m_rows: UInt32,
+        swiglu_alpha: Float32,
+        swiglu_limit: Float32,
+        context: DeviceContext,
+    ) raises:
+        """Executes gemm1 with the SwiGLU and MXFP8 requantize fused in.
+
+        Parameters:
+            a_type: The activation dtype (one byte wide).
+            b_type: The weight dtype (one byte wide).
+            target: The target GPU device.
+
+        Args:
+            c: The MXFP8 activation, shape (total_tokens, N / 2).
+            c_scales: The activation's E8M0 block scales.
+            a: The input tensor of shape (total_tokens, K).
+            b: Sigma-permuted weights, (num_experts, N, K).
+            a_scales: The A scale factors in 2D layout.
+            b_scales: Sigma-permuted B scale factors in 3D layout.
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            max_num_tokens_per_expert: The maximum token count for any expert.
+            num_active_experts: The number of active experts.
+            estimated_total_m: Estimated total received tokens for this GPU,
+                used to pick the persistent vs direct kernel path.
+            decode_grid_m_cap: Decode-band gate; 0 disables.
+            decode_grid_m_rows: Rows grid.y must cover per expert at decode.
+            swiglu_alpha: Alpha for the clamped SwiGLU.
+            swiglu_limit: Clamp limit for the clamped SwiGLU.
+            context: The device context pointer.
+        """
+        comptime assert is_gpu[
+            target
+        ](), "grouped block-scaled matmul only supports GPUs"
+        comptime assert Self.lane_bytes == 32, (
+            "the fused SwiGLU+MXFP8 epilogue is MXFP8-only, so a lane always"
+            " covers 32 bytes"
+        )
+        comptime assert (
+            size_of[a_type]() == 1 and size_of[b_type]() == 1
+        ), "grouped block-scaled matmul operands must be one byte wide"
+        if num_active_experts == 0:
+            return
+        block_scaled_grouped_matmul_amd_preb[
+            lane_bytes=Self.lane_bytes, fuse_swiglu_mxfp8=True
+        ](
+            c.to_tile_tensor[.int64](),
+            a.to_tile_tensor[.int64]().bitcast[.uint8](),
+            b.to_tile_tensor[.int64]().bitcast[.uint8](),
+            a_scales.to_tile_tensor[.int64](),
+            b_scales.to_tile_tensor[.int64](),
+            expert_start_indices.to_tile_tensor[.int64](),
+            expert_ids.to_tile_tensor[.int64](),
+            Int(max_num_tokens_per_expert),
+            Int(num_active_experts),
+            context,
+            Int(estimated_total_m),
+            -1 if decode_grid_m_cap == 0 else Int(decode_grid_m_cap),
+            Int(decode_grid_m_rows),
+            c_scales.to_tile_tensor[.int64]()
+            .ptr.bitcast[UInt8]()
+            .unsafe_origin_cast[MutAnyOrigin](),
+            Self.scales_max_padded_m,
+            swiglu_alpha,
+            swiglu_limit,
+        )
+
+
 @extensibility.register("mo.batched.matmul.dynamic.scaled.fp8")
 struct Struct_batched_matmul_dynamic_scaled_fp8:
     """Registers the `mo.batched.matmul.dynamic.scaled.fp8` graph op with the graph compiler.

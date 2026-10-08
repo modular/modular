@@ -234,6 +234,86 @@ def _shuffle_scale_4d(src: np.ndarray, dst: np.ndarray) -> None:
     np.copyto(dst_v, src_v)
 
 
+def sigma_interleave_gate_up(
+    state_dict: dict[str, WeightData],
+    *,
+    include_shared_weights: bool = False,
+) -> int:
+    """Interleaves gate/up rows on the N axis, in place, BEFORE any preshuffle.
+
+    The fused SwiGLU epilogue needs ``gate_up`` sigma-permuted on N: row 2i is
+    gate row i, row 2i+1 is up row i, so a lane holds both halves of a pair in
+    one accumulator fragment.
+
+    Must run on the RAW weight. The 5D preb layout interleaves N with K
+    (consecutive N rows 16 bytes apart), so permuting a shuffled buffer moves
+    byte chunks rather than rows -- valid bytes, right shapes, wrong values.
+    ``test_preshuffle_then_graph_permute_is_not_the_sigma_layout`` guards this.
+
+    Each projection keeps its own ``[D, K]`` entry: rows ``0..D-1`` of the
+    fused weight go to ``gate_proj``, ``D..2D-1`` to ``up_proj``. The graph
+    concatenates them per expert, and two N=D preshuffled blobs concatenate to
+    exactly the N=2D blob because n_outer's stride depends only on K.
+
+    Args:
+        state_dict: Weights to rewrite in place.
+        include_shared_weights: Also interleave the fused shared expert.
+
+    Returns:
+        How many (gate, up) pairs were interleaved.
+    """
+    pairs: dict[str, dict[str, str]] = {}
+    for name in state_dict:
+        for rx in (_EXPERT_WEIGHT_RE, _EXPERT_SCALE_RE) + (
+            (_SHARED_EXPERT_WEIGHT_RE, _SHARED_EXPERT_SCALE_RE)
+            if include_shared_weights
+            else ()
+        ):
+            if m := rx.match(name):
+                proj = m.group("proj")
+                if proj == "down_proj":
+                    continue
+                # Key on everything but the projection, so a weight pairs
+                # with its own sibling and never with a scale.
+                key = name.replace(f".{proj}.", ".<proj>.")
+                pairs.setdefault(key, {})[proj] = name
+                break
+
+    n = 0
+    for key, byproj in sorted(pairs.items()):
+        if {"gate_proj", "up_proj"} - byproj.keys():
+            raise ValueError(
+                "sigma interleave needs both gate_proj and up_proj for "
+                f"{key!r} but found {sorted(byproj)}; interleaving one half "
+                "would silently pair the wrong rows"
+            )
+        g_name, u_name = byproj["gate_proj"], byproj["up_proj"]
+        g_wd, u_wd = state_dict[g_name], state_dict[u_name]
+        g = np.from_dlpack(
+            g_wd.to_buffer().view(DType.uint8, g_wd.shape.static_dims)
+        )
+        u = np.from_dlpack(
+            u_wd.to_buffer().view(DType.uint8, u_wd.shape.static_dims)
+        )
+        if g.shape != u.shape or g.ndim != 2:
+            raise ValueError(
+                f"gate/up shape mismatch for {key!r}: {g.shape} vs {u.shape}"
+            )
+        d, k = g.shape
+        fused = np.empty((2 * d, k), dtype=np.uint8)
+        fused[0::2] = g
+        fused[1::2] = u
+        for name, half in ((g_name, fused[:d]), (u_name, fused[d:])):
+            state_dict[name] = dataclasses.replace(
+                WeightData.from_numpy(
+                    np.ascontiguousarray(half), name=state_dict[name].name
+                ),
+                dtype=state_dict[name].dtype,
+            )
+        n += 1
+    return n
+
+
 def preshuffle_block_scaled_b_experts(
     state_dict: dict[str, WeightData],
     *,

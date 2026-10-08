@@ -6808,6 +6808,182 @@ def grouped_matmul_ragged(
     return output
 
 
+def grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    estimated_total_m: TensorValue | None = None,
+    a_scales_preshuffled: bool = False,
+    a_scales_max_padded_m: int = 0,
+    decode_grid_m_cap: int = 0,
+    decode_grid_m_rows: int = 0,
+    out_scales_max_padded_m: int = 0,
+    swiglu_alpha: float = 1.702,
+    swiglu_limit: float = 7.0,
+) -> tuple[TensorValue, TensorValue]:
+    """Performs a grouped MXFP8 matmul with SwiGLU and requantize fused in.
+
+    Runs gemm1 of an MoE FFN and folds the clamped SwiGLU plus the MXFP8
+    requantize into its epilogue, so the activation leaves the kernel already
+    quantized and no standalone activation kernel is needed. Because each
+    (gate, up) pair collapses to one output value, the result carries half the
+    matmul's N.
+
+    Requires ``weight`` and ``b_scales`` sigma-permuted on N -- gate and up in
+    adjacent columns -- since the epilogue pairs columns inside one lane's
+    accumulator fragment. AMD preshuffled-B only.
+
+    Args:
+        hidden_states: MXFP8 activations, shape ``[total_tokens, K]``.
+        weight: Sigma-permuted expert weights, ``[num_experts, N, K]``.
+        a_scales: Activation E8M0 scales, ``[num_scale_rows, K/32]``.
+        b_scales: Sigma-permuted weight E8M0 scales,
+            ``[num_experts, N, K/32]``.
+        expert_start_indices: Where each expert's tokens start.
+        expert_ids: The expert ID for each group.
+        expert_usage_stats_host: ``[max_tokens_per_expert,
+            num_active_experts]``.
+        estimated_total_m: Row-count estimate used to select the band.
+        a_scales_preshuffled: True when the INPUT A-scales already sit in the
+            per-expert slot layout (the KS224 ``ep_wait`` fold), so the
+            standalone preshuffle is skipped.
+        a_scales_max_padded_m: Build-time slot stride the producer used for
+            the input A-scales. Required when ``a_scales_preshuffled``.
+        decode_grid_m_cap: Decode-band gate; 0 disables.
+        decode_grid_m_rows: Rows grid.y must cover per expert at decode.
+        out_scales_max_padded_m: Per-expert slot stride for the EMITTED
+            scales. Nonzero writes the 4D slot layout that gemm2 consumes
+            without a preshuffle; zero writes plain row-major. Distinct from
+            ``a_scales_max_padded_m``, which describes the input.
+        swiglu_alpha: Alpha for the clamped SwiGLU the epilogue applies.
+        swiglu_limit: Clamp limit for that SwiGLU.
+
+    Returns:
+        The MXFP8 activation ``[total_tokens, N/2]`` and its E8M0 block
+        scales.
+    """
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+    if (
+        hidden_states.dtype != DType.float8_e4m3fn
+        or weight.dtype != DType.float8_e4m3fn
+    ):
+        raise TypeError(
+            "the fused SwiGLU+MXFP8 epilogue is MXFP8-only; hidden_states and"
+            f" weight must be float8_e4m3fn but got {hidden_states.dtype},"
+            f" {weight.dtype}"
+        )
+    if (a_scales.dtype != DType.float8_e8m0fnu) or (
+        b_scales.dtype != DType.float8_e8m0fnu
+    ):
+        raise TypeError(
+            "a_scales and b_scales must be float8_e8m0fnu but got"
+            f" {a_scales.dtype}, {b_scales.dtype}"
+        )
+    if int(weight.shape[1]) % 2 != 0:
+        raise ValueError(
+            "the sigma-permuted gate/up weight must have even N but got"
+            f" {weight.shape[1]}"
+        )
+    out_n = weight.shape[1] // 2
+
+    if estimated_total_m is None:
+        estimated_total_m_arg = ops.constant(
+            0, dtype=DType.uint32, device=hidden_states.device
+        )
+    else:
+        estimated_total_m_arg = estimated_total_m.cast(DType.uint32)
+
+    # Same preshuffle-exactly-once rule as the unfused path: the preb kernel
+    # reads A-scales in the 4D grouped layout, and `ep_wait` may already have
+    # written them there.
+    if not a_scales_preshuffled:
+        a_scales = block_scaled_preshuffle_grouped_scale_4d(
+            a_scales,
+            expert_start_indices,
+            expert_usage_stats_host[0].cast(DType.uint32),
+            expert_usage_stats_host[1].cast(DType.uint32),
+            num_experts=int(weight.shape[0]),
+        )
+        max_num_tokens_arg = expert_usage_stats_host[0]
+    else:
+        if a_scales_max_padded_m <= 0:
+            raise ValueError(
+                "a_scales_max_padded_m must be > 0 when"
+                " a_scales_preshuffled=True"
+            )
+        max_num_tokens_arg = ops.constant(
+            a_scales_max_padded_m,
+            dtype=expert_usage_stats_host.dtype,
+            device=expert_usage_stats_host.device,
+        )
+
+    decode_grid_m_cap_arg = ops.constant(
+        decode_grid_m_cap, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+    decode_grid_m_rows_arg = ops.constant(
+        decode_grid_m_rows, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+
+    # The emitted scales are either one row per token (row-major) or a fixed
+    # per-expert slot of `out_scales_max_padded_m` rows, which is what lets
+    # gemm2 read them with no preshuffle.
+    if out_scales_max_padded_m > 0:
+        scales_rows: Dim = Dim(int(weight.shape[0])) * out_scales_max_padded_m
+    else:
+        scales_rows = hidden_states.shape[0]
+
+    MXFP8_SF_VECTOR_SIZE = 32
+    outputs = ops.custom(
+        "mo.grouped.matmul.block.scaled.amd.swiglu.quant",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            max_num_tokens_arg,
+            expert_usage_stats_host[1],
+            estimated_total_m_arg,
+            decode_grid_m_cap_arg,
+            decode_grid_m_rows_arg,
+            ops.constant(swiglu_alpha, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(swiglu_limit, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[hidden_states.shape[0], out_n],
+                device=hidden_states.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[
+                    scales_rows,
+                    ceildiv(out_n, Dim(MXFP8_SF_VECTOR_SIZE)),
+                ],
+                device=hidden_states.device,
+            ),
+        ],
+        parameters={
+            # MXFP8 is one element per byte, so a lane always covers 32 bytes.
+            "lane_bytes": 32,
+            "scales_max_padded_m": out_scales_max_padded_m,
+        },
+    )
+    return outputs[0].tensor, outputs[1].tensor
+
+
 def grouped_dynamic_block_scaled_matmul_amd(
     hidden_states: TensorValue,
     weight: TensorValue,
