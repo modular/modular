@@ -149,9 +149,10 @@ def copy_local_to_dram_32_32_8[
 ):
     # TODO: use copy_local_to_dram instead once fixed. This is a workaround for now.
 
-    # `distribute` / `distance` / `Element` are `LayoutTensor`-only, so bridge
-    # and vectorize there; the resource descriptor below is built from the
-    # native pointer-backed base.
+    # The distributed-fragment API this workaround needs (`distance` from a raw
+    # pointer, fragment `element_layout`, and `Element` loads feeding the AMD
+    # buffer store) is `LayoutTensor`-only, so bridge and vectorize there; the
+    # resource descriptor below is built from the native pointer-backed base.
     var dst_lt = dst.to_layout_tensor().vectorize[1, 4]()
     var src_lt = src.to_layout_tensor().vectorize[1, 4]()
 
@@ -236,11 +237,13 @@ struct AMD_MMA[
     ]()
 
     # The flat register tiles are stored as `TileTensor` and bridged to
-    # `LayoutTensor` only at the irreducible AMD-DMA / `TiledTensorCore` MMA
-    # boundaries (see `MMATileBuffers`). The shared-memory tile stays
-    # `LayoutTensor` (nested swizzled layout + AMD `row_major` DMA path), so its
-    # type lives on `MMATileBuffers`, not here. `stack_allocation` yields a
-    # `MutUntrackedOrigin`, so the register-tile type matches that origin.
+    # `LayoutTensor` only at the irreducible AMD-DMA / `TiledTensorCore.mma`
+    # boundaries (see `MMATileBuffers`); the shared-memory tile stays
+    # `LayoutTensor` (swizzled in-place loaders + AMD `row_major` DMA path),
+    # so its type lives on `MMATileBuffers`, not here. `stack_allocation`
+    # yields a `MutUntrackedOrigin`, so the register-tile type matches that
+    # origin.
+
     comptime MMARegTileLayout[num_mmas: Int] = row_major[
         num_mmas * Self.num_k_tiles, Self.simd_width
     ]()
@@ -309,11 +312,13 @@ struct MMATileBuffers[
     The public operand (`tensor_type`) and the flat register tiles are
     `TileTensor`. The DRAM→LOCAL→SHARED path is irreducibly `LayoutTensor`:
     `tile_io`'s `TileTensor` copiers explicitly reject the AMD `buffer_load` /
-    `row_major` prefetch path, `TileTensor` has no `tiled_iterator`, and the
-    swizzled (nested `blocked_product`) shared-memory layout is not flat so it
-    cannot be bridged via `to_layout_tensor()`. The incoming `TileTensor` is
-    therefore bridged to a `LayoutTensor` for the gmem iterator and the shared
-    tile, and the flat register tiles are bridged per AMD-DMA / MMA call.
+    `row_major` prefetch path, `TileTensor` has no `tiled_iterator` for the
+    gmem walk, and the swizzled (nested `blocked_product`) shared-memory
+    layout is consumed by `LayoutTensor`-only code paths (the AMD `row_major`
+    copier and the swizzled `TensorCore` in-place loaders), so it stays
+    `LayoutTensor` end to end. The incoming `TileTensor` is therefore bridged
+    to a `LayoutTensor` for the gmem iterator and the shared tile, and the
+    flat register tiles are bridged per AMD-DMA / MMA call.
     """
 
     # Bridged `LayoutTensor` type for the incoming operand. The gmem iterator
@@ -332,9 +337,9 @@ struct MMATileBuffers[
     # Tensor types for different memory regions
 
     # Shared memory allocation for matrix data shared across the block. This
-    # stays `LayoutTensor`: the swizzled nested layout is not flat (so it is
-    # not bridgeable) and the AMD `row_major` `copy_local_to_shared` path is
-    # `LayoutTensor`-only.
+    # stays `LayoutTensor`: its consumers are `LayoutTensor`-only (the AMD
+    # `row_major` `copy_local_to_shared` path and the swizzled in-place
+    # `TensorCore` loaders below).
     comptime SharedMemTileType = LayoutTensor[
         Self.mma_type.in_type,
         Self.smem_layout,
@@ -348,7 +353,7 @@ struct MMATileBuffers[
 
     # Tile view optimized for matrix multiplication acceleration (MMA)
     # operations. Stays `LayoutTensor` -- it feeds the `LayoutTensor`-only
-    # `TiledTensorCore` `load_a` / `load_b`.
+    # swizzled in-place `TensorCore` `load_a` / `load_b` (via `.mma_op`).
     @__allow_legacy_any_origin_fields
     var shared_mem_warp_tile: Self.SharedMemTileType.TileType[
         Self.warp_rows, Self.mma_type.WK
