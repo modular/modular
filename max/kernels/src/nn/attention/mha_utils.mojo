@@ -744,8 +744,12 @@ def _copy_frag_to_smem[
         ]()
 
 
-# Legacy LayoutTensor-overload retained: its callers (mha.mojo, mla.mojo,
-# p-fragment scatter tests) still pass LayoutTensor register views, and the
+# Legacy LayoutTensor-overload retained: its callers still pass LayoutTensor
+# register views — gpu/mha.mojo (mha_single_batch,
+# mha_single_batch_pipelined, mha_decoding_single_batch_pipelined),
+# gpu/mla.mojo (mla_decoding_single_batch, mla_prefill_single_batch), and
+# the p-fragment scatter tests. gpu/mha.mojo's mha_decoding_single_batch
+# already passes a native TileTensor and binds to the overload above. The
 # shared-memory operand has no TileTensor iterator equivalent yet.
 @inline(.always)
 def _copy_frag_to_smem[
