@@ -6891,7 +6891,7 @@ struct DeviceContextBase[
         """Returns True if this device is compatible with MAX.
 
         This method checks whether the current device is compatible with the
-        Modular Accelerated Execution (MAX) runtime. It's useful for validating
+        MAX runtime. It's useful for validating
         that the device can execute the compiled code before attempting operations.
 
         Returns:
