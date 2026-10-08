@@ -496,13 +496,13 @@ struct LocalToSharedTileCopier[
             var dst_frag_offset = Scalar[dst.linear_idx_type](
                 dst_fragments._distance(dst)
             )
-            comptime num_vecs = src.LayoutType.static_product // simd_size
+            comptime num_vecs = src.LayoutType.static_product
 
             comptime for i in range(num_vecs):
-                var src_idx = src.layout(Idx[i * simd_size])
+                var src_idx = src.layout(Idx[i])
                 var dst_idx = dst_fragments.layout[
                     linear_idx_type=dst.linear_idx_type
-                ](Idx[i * simd_size])
+                ](Idx[i])
                 var dst_idx_base = umod(
                     dst_idx,
                     Scalar[dst.linear_idx_type](swizzle_fn.size()),
