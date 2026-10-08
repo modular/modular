@@ -82,6 +82,7 @@ from extensibility import (
     OutputVariadicTensors,
 )
 from builtin_primitives.primitives import (
+    _dense_row_major_anchor_stride,
     foreach,
     view_copy_impl,
 )
@@ -1290,6 +1291,7 @@ struct Slice:
     def get_view_alignment[
         rank: Int,
         dtype: DType,
+        input_shape: IntTuple,
         input_strides: IntTuple,
         static_starts: IntTuple,
         static_steps: IntTuple,
@@ -1299,6 +1301,13 @@ struct Slice:
         comptime stride_types = _IntTupleToCoordLike[.int, input_strides]
         comptime start_types = _IntTupleToCoordLike[.int, static_starts]
         comptime step_types = _IntTupleToCoordLike[.int, static_steps]
+
+        # A stride that is only known at runtime still moves the pointer by a
+        # whole multiple of this one, so it bounds the alignment the same way a
+        # static stride does. 0 when nothing can be established.
+        comptime anchor = _dense_row_major_anchor_stride(
+            rank, input_shape, input_strides
+        )
 
         var alignment = input_alignment
         comptime for i in range(rank):
@@ -1314,27 +1323,41 @@ struct Slice:
                 return 1
 
             comptime if start_types[i].static_value != 0:
-                comptime if not stride_types[i].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    start_types[i].static_value
-                    * stride_types[i].static_value
-                    * align_of[dtype](),
-                )
+                comptime if stride_types[i].is_static_value:
+                    alignment = gcd(
+                        alignment,
+                        start_types[i].static_value
+                        * stride_types[i].static_value
+                        * align_of[dtype](),
+                    )
+                else:
+                    comptime if anchor == 0:
+                        return 1
+                    alignment = gcd(
+                        alignment,
+                        start_types[i].static_value
+                        * anchor
+                        * align_of[dtype](),
+                    )
 
             # Stepping along a non-innermost dimension moves the pointer by
             # `step[i] * strides[i]` elements, so that stride bounds the
             # alignment.
             comptime if i != rank - 1:
-                comptime if not stride_types[i].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    step_types[i].static_value
-                    * stride_types[i].static_value
-                    * align_of[dtype](),
-                )
+                comptime if stride_types[i].is_static_value:
+                    alignment = gcd(
+                        alignment,
+                        step_types[i].static_value
+                        * stride_types[i].static_value
+                        * align_of[dtype](),
+                    )
+                else:
+                    comptime if anchor == 0:
+                        return 1
+                    alignment = gcd(
+                        alignment,
+                        step_types[i].static_value * anchor * align_of[dtype](),
+                    )
 
         return alignment
 
@@ -1368,6 +1391,7 @@ struct Slice:
                 Self.get_view_alignment[
                     rank,
                     dtype,
+                    input._static_shape_tuple,
                     input._static_strides_tuple,
                     static_starts,
                     static_steps,

@@ -2517,9 +2517,43 @@ comptime _MoggSliceStrideTypes[
 ]()
 
 
+def _dense_row_major_anchor_stride(
+    rank: Int, shape: IntTuple, strides: IntTuple
+) -> Int:
+    """Returns a stride that every dynamic stride of this layout is a whole
+    multiple of, or 0 when no such stride can be established.
+
+    Walks outward from the innermost dimension for as long as
+    `stride[k] == shape[k + 1] * stride[k + 1]` holds with every term static,
+    and returns the outermost stride of that run. Strides reaching a kernel are
+    dense row-major strides, possibly permuted by a transpose or scaled by a
+    slice step, and all three keep every outer stride a whole multiple of the
+    innermost dense-chain stride. A layout that is broadcast, permuted or
+    step-scaled across the run fails the equality and yields 0.
+    """
+    if rank < 2 or Int(strides[rank - 1]) != 1:
+        return 0
+
+    var anchor = 0
+    for k in range(rank - 2, -1, -1):
+        var stride = Int(strides[k])
+        var inner_shape = Int(shape[k + 1])
+        var inner_stride = Int(strides[k + 1])
+        if (
+            stride == UNKNOWN_VALUE
+            or inner_shape == UNKNOWN_VALUE
+            or inner_stride == UNKNOWN_VALUE
+            or stride != inner_shape * inner_stride
+        ):
+            break
+        anchor = stride
+    return anchor
+
+
 def _mogg_slice_view_alignment[
     rank: Int,
     dtype: DType,
+    input_shape: IntTuple,
     input_strides: IntTuple,
     static_starts: IntTuple,
     static_steps: IntTuple,
@@ -2531,6 +2565,9 @@ def _mogg_slice_view_alignment[
     comptime stride_types = _IntTupleToCoordLike[DType.int, input_strides]
     comptime start_types = _IntTupleToCoordLike[DType.int, static_starts]
     comptime step_types = _IntTupleToCoordLike[DType.int, static_steps]
+    comptime anchor = _dense_row_major_anchor_stride(
+        rank, input_shape, input_strides
+    )
 
     var alignment = input_alignment
     comptime for i in range(rank):
@@ -2541,14 +2578,20 @@ def _mogg_slice_view_alignment[
         comptime if not start_types[i].is_static_value:
             return 1
         comptime if start_types[i].static_value != 0:
-            comptime if not stride_types[i].is_static_value:
-                return 1
-            alignment = gcd(
-                alignment,
-                start_types[i].static_value
-                * stride_types[i].static_value
-                * align_of[dtype](),
-            )
+            comptime if stride_types[i].is_static_value:
+                alignment = gcd(
+                    alignment,
+                    start_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
+            else:
+                comptime if anchor == 0:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    start_types[i].static_value * anchor * align_of[dtype](),
+                )
 
         # Iterating a non-innermost dim advances the pointer by
         # `step[i] * strides[i]` elements per step, so that stride bounds the
@@ -2558,14 +2601,20 @@ def _mogg_slice_view_alignment[
         # strided view over-report its alignment and emit a misaligned
         # (faulting) vector load on GPU.
         comptime if i != rank - 1:
-            comptime if not stride_types[i].is_static_value:
-                return 1
-            alignment = gcd(
-                alignment,
-                step_types[i].static_value
-                * stride_types[i].static_value
-                * align_of[dtype](),
-            )
+            comptime if stride_types[i].is_static_value:
+                alignment = gcd(
+                    alignment,
+                    step_types[i].static_value
+                    * stride_types[i].static_value
+                    * align_of[dtype](),
+                )
+            else:
+                comptime if anchor == 0:
+                    return 1
+                alignment = gcd(
+                    alignment,
+                    step_types[i].static_value * anchor * align_of[dtype](),
+                )
     return alignment
 
 
@@ -2601,6 +2650,7 @@ def mogg_tensor_create_slice[
         _mogg_slice_view_alignment[
             rank,
             dtype,
+            input._static_shape_tuple,
             input._static_strides_tuple,
             static_starts,
             static_steps,
