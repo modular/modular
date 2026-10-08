@@ -36,11 +36,11 @@ package_group(
         "//Mojo/docs/site/...",
         "//bazel/...",
         "//docs/...",
-        "//max/python/max/_core/internal/...",
+        "//max/python/max/_core/mcl/...",
         "//max/tests/internal/API/c/...",  # Only when testing internally
         "//oss/modular/bazel/...",
         "//oss/modular/docs/...",
-        "//oss/modular/max/python/max/_core/internal/...",  # Only when testing internally
+        "//oss/modular/max/python/max/_core/mcl/...",  # Only when testing internally
         "//plugins/...",
         "//utils/...",
     ],
@@ -295,7 +295,7 @@ td_library(
 mlir_nanobind(
     name = "KGENDialectNanobindInc",
     srcs = glob(["include/Mojo/KGENDialect/*.td"]),
-    allowlist = "//max/python/max/_core/internal/modules/dialects:allowlist.txt",
+    allowlist = "//max/python/max/_core/mcl/modules/dialects:allowlist.txt",
     output_dir = "include/Mojo/KGENDialect/Nanobind",
     deps = [
         ":KGENDialectTdFiles",

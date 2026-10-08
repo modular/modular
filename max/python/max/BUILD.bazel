@@ -20,15 +20,15 @@ filegroup(
 
 modular_nanobind_extension(
     name = "_core.bindings",
-    srcs = ["//max/python/max/_core/internal:_core.cpp"],
+    srcs = ["//max/python/max/_core/mcl:_core.cpp"],
     module_name = "_core",
     new_link_root = "../modular/lib",
     deps = [
         "//Support:BazelRunfiles",
         "//Support:NanobindUtils",
         "//Support:NixlPluginDir",
-        "//max/python/max/_core/internal:AsyncRTPython",
-        "//max/python/max/_core/internal/modules",
+        "//max/python/max/_core/mcl:AsyncRTPython",
+        "//max/python/max/_core/mcl/modules",
         "@llvm-project//llvm:Support",
     ],
 )
