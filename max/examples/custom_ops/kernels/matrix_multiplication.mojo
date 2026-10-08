@@ -82,8 +82,8 @@ def outer_product_acc(
 
     Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
     `res` is a matrix. This is a `TileTensor` mirror of
-    `layout.math.outer_product_acc`, used so the block-tiled kernels do not
-    need to bridge their register tiles back to `LayoutTensor`.
+    `layout.math.outer_product_acc`, used so the block-tiled kernels operate
+    entirely on native `TileTensor`s.
 
     Constraints:
 
@@ -881,27 +881,21 @@ def tensor_core_matrix_multiplication[
                     )
 
                     # Load fragments of A and B into registers
-                    var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                    var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
+                    var a_reg = mma_op.load_a(A_mma_tile)
+                    var b_reg = mma_op.load_b(B_mma_tile)
 
                     # Perform MMA operation and accumulate the result
-                    var d_reg_m_n = mma_op.mma_op(
-                        a_reg,
-                        b_reg,
-                        c_reg_m_n.to_layout_tensor(),
-                    )
+                    var d_reg_m_n = mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
 
                     # Store the accumulated result back to the register tile
-                    c_reg_m_n.to_layout_tensor().copy_from(d_reg_m_n)
+                    c_reg_m_n.copy_from(d_reg_m_n)
 
     # Write the final accumulated results to the output matrix
     comptime for mma_m in range(WM // MMA_M):
         comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
-            mma_op.store_d(
-                C_mma_tile.to_layout_tensor(), c_reg_m_n.to_layout_tensor()
-            )
+            mma_op.store_d(C_mma_tile, c_reg_m_n)
 
 
 # ===-----------------------------------------------------------------------=== #

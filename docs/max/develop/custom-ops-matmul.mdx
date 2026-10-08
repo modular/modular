@@ -754,18 +754,17 @@ hardware. However, they can be a challenge to work with.
 
 MAX contains interfaces that make it more ergonomic to program these dedicated
 hardware units. The following is an example of how to perform the same
-calculation as the above, only on a Tensor Core. The tensor interfaces and
-allocations use `TileTensor`; the copy and Tensor Core helpers in this example
-still require explicit legacy views at their API boundaries:
+calculation as the above, only on a Tensor Core. The tensor interfaces,
+allocations, copies, and Tensor Core helpers all operate on `TileTensor`
+natively:
 
 ```mojo
 from std.math.uutils import udivmod
 from std.utils.index import Index
 from max.gpu import block_idx, warp_id
-from max.gpu.memory import async_copy_wait_all
 from max.gpu.sync import barrier
 from layout import TensorLayout, TileTensor, row_major, stack_allocation
-from layout.layout_tensor import Layout, copy_dram_to_sram_async
+from layout.tile_io import copy_dram_to_sram
 from layout.tensor_core import TensorCore
 
 
@@ -814,23 +813,17 @@ def tensor_core_matrix_multiplication[
         row_major[WM // MMA_M, (WN * 4) // MMA_N]()
     ).fill(0)
 
-    # Copy and fragment helpers retain their legacy views at API boundaries.
     for k_i in range(K // BK):
-        barrier()
-
         var A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
         var B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
-        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
-            A_sram_tile.to_layout_tensor().vectorize[1, 4](),
-            A_dram_tile.to_layout_tensor().vectorize[1, 4](),
+        copy_dram_to_sram[thread_layout=row_major[4, 8]()](
+            A_sram_tile, A_dram_tile
         )
-        copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
-            B_sram_tile.to_layout_tensor().vectorize[1, 4](),
-            B_dram_tile.to_layout_tensor().vectorize[1, 4](),
+        copy_dram_to_sram[thread_layout=row_major[4, 8]()](
+            B_sram_tile, B_dram_tile
         )
 
-        async_copy_wait_all()
         barrier()
 
         var A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
@@ -848,24 +841,18 @@ def tensor_core_matrix_multiplication[
                         mma_k, mma_n
                     )
 
-                    var a_reg = mma_op.load_a(A_mma_tile.to_layout_tensor())
-                    var b_reg = mma_op.load_b(B_mma_tile.to_layout_tensor())
+                    var a_reg = mma_op.load_a(A_mma_tile)
+                    var b_reg = mma_op.load_b(B_mma_tile)
 
-                    var d_reg_m_n = mma_op.mma_op(
-                        a_reg,
-                        b_reg,
-                        c_reg_m_n.to_layout_tensor(),
-                    )
+                    var d_reg_m_n = mma_op.mma_op(a_reg, b_reg, c_reg_m_n)
 
-                    c_reg_m_n.to_layout_tensor().copy_from(d_reg_m_n)
+                    c_reg_m_n.copy_from(d_reg_m_n)
 
     comptime for mma_m in range(WM // MMA_M):
         comptime for mma_n in range(WN // MMA_N):
             var C_mma_tile = C_warp_tile.tile[MMA_M, MMA_N](mma_m, mma_n)
             var c_reg_m_n = c_reg.tile[1, 4](mma_m, mma_n)
-            mma_op.store_d(
-                C_mma_tile.to_layout_tensor(), c_reg_m_n.to_layout_tensor()
-            )
+            mma_op.store_d(C_mma_tile, c_reg_m_n)
 ```
 
 ## Conclusion
