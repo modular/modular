@@ -49,6 +49,9 @@ modular_eager_py_test(
         "test_text_model.py",
     ],
     env = {
+        # Compile only the graphs the interpreter refuses, not every graph
+        # in the background.
+        "MAX_EAGER_EXECUTOR": "fallback-internal",
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
     exec_properties = {
