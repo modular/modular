@@ -2175,6 +2175,22 @@ def test_dp_ce_balance__pools_new_requests_and_binds_when_fleet_idle() -> None:
     assert not batch_constructor._ce_pending
 
 
+def test_dp_ce_balance__binding_records_pool_wait() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context()
+    batch_constructor.enqueue_new_request(ctx)
+    batch_constructor._ce_pending[ctx.request_id].entered_at -= 0.5
+
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        batch_constructor.construct_batch()
+
+    mock_metrics.ce_pool_wait_time.assert_called_once()
+    (wait_ms,) = mock_metrics.ce_pool_wait_time.call_args.args
+    assert 500 <= wait_ms < 1000
+
+
 def test_dp_ce_balance__pooled_request_prefers_replica_with_cached_prefix() -> (
     None
 ):
@@ -2583,6 +2599,30 @@ def test_dp_ce_balance__bound_requests_are_priced_post_prefix_cache() -> None:
     # reads as 100/60 and the chunk size is cut to 60 for no reason.
     assert batch_constructor._ce_step_quota is None
     assert batch_constructor._ce_deferred_replicas == set()
+
+
+def test_dp_ce_balance__pool_wait_restarts_when_a_preempted_request_returns() -> (
+    None
+):
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ctx, replica_idx=0)
+    # Arrival is the deferral deadline and survives the re-pool on purpose.
+    batch_constructor._ce_arrival[ctx.request_id] = time.monotonic() - 60.0
+
+    batch_constructor._preempt_request(
+        ctx, 0, reason=PreemptionReason.KV_CACHE_MEMORY
+    )
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        batch_constructor.construct_batch()
+
+    # Only the second stay in the pool counts, not the first wait plus the
+    # encoding that ran before the preemption.
+    mock_metrics.ce_pool_wait_time.assert_called_once()
+    (wait_ms,) = mock_metrics.ce_pool_wait_time.call_args.args
+    assert 0 <= wait_ms < 1000
 
 
 def test_dp_ce_balance__preempted_request_returns_to_the_pool() -> None:

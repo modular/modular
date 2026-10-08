@@ -243,6 +243,13 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "Prefill-local time a request spends enqueued before its first CE batch executes."
         ),
     ),  # type: ignore
+    "maxserve.ce_pool_wait_time": _meter.create_histogram(
+        "maxserve.ce_pool_wait_time",
+        unit="ms",
+        description=(
+            "Time a CE request spends in the data-parallel balancer's unbound pool, from arrival until it is bound to a replica."
+        ),
+    ),  # type: ignore
     "maxserve.di.decode_postprocess_time": _meter.create_histogram(
         "maxserve.di.decode_postprocess_time",
         unit="ms",
@@ -1326,6 +1333,14 @@ class _AsyncMetrics:
                 "maxserve.di.prefill_queue_wait_time",
                 ms,
                 self.extra_attributes,
+            ),
+        )
+
+    def ce_pool_wait_time(self, ms: float) -> None:
+        """Time from a CE request's arrival to its DP balancer binding."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.ce_pool_wait_time", ms, self.extra_attributes
             ),
         )
 

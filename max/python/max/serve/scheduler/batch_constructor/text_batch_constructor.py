@@ -71,11 +71,13 @@ class _PendingCERequest:
     tokens, per replica, from a read-only probe of the device and shared
     (host/disk) cache tiers at enqueue time. The shared tiers give the same
     answer on every replica; per-replica differences come from device-cache
-    residency only.
+    residency only. ``entered_at`` is when this stay in the pool began, which
+    differs from the deferral deadline once a preempted request re-enters.
     """
 
     ctx: TextContext
     weights: list[int]
+    entered_at: float = field(default_factory=time.monotonic)
 
 
 @dataclass
@@ -757,6 +759,18 @@ class TextBatchConstructor:
             ctx.model_name
             if self._lora_manager and is_lora(ctx, self._lora_manager)
             else None
+        )
+
+    def _bind_pooled_request(
+        self, request_id: RequestID, replica_idx: int
+    ) -> None:
+        """Moves a request from the DP pool onto a replica."""
+        pending = self._ce_pending.pop(request_id)
+        METRICS.ce_pool_wait_time(
+            (time.monotonic() - pending.entered_at) * 1000
+        )
+        self._bind_request(
+            pending.ctx, replica_idx, ce_weight=pending.weights[replica_idx]
         )
 
     def _ce_weight(self, ctx: TextContext) -> int:
@@ -1688,11 +1702,7 @@ class TextBatchConstructor:
             weights = self._ce_pending[req_id].weights
             replica_idx = min(seated, key=lambda i: sum(queues[i]) + weights[i])
             queues[replica_idx].append(weights[replica_idx])
-            self._bind_request(
-                self._ce_pending.pop(req_id).ctx,
-                replica_idx,
-                ce_weight=weights[replica_idx],
-            )
+            self._bind_pooled_request(req_id, replica_idx)
 
         # The floor: per-replica step CE tokens that run no matter what,
         # capped at the CE chunk budget. A replica's tails are deferrable only
@@ -1794,12 +1804,7 @@ class TextBatchConstructor:
             or can_reduce_chunk_size
         ):
             for req_id, replica_idx in pool_binds:
-                pending = self._ce_pending.pop(req_id)
-                self._bind_request(
-                    pending.ctx,
-                    replica_idx,
-                    ce_weight=pending.weights[replica_idx],
-                )
+                self._bind_pooled_request(req_id, replica_idx)
             self._ce_deferred_replicas = deferred
 
             if (

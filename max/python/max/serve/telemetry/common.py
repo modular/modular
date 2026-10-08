@@ -316,6 +316,7 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.di.prefill_span": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.reply_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.prefill_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.ce_pool_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.decode_postprocess_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.early_sync_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.handoff_to_first_token_time": HISTOGRAM_LATENCY_BUCKETS_MS,
