@@ -62,7 +62,11 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
     GEMMKind,
 )
-from internal_utils.fp8_utils import compute_dynamic_fp8_scale, fp8_quantize
+from internal_utils.fp8_utils import (
+    compute_dynamic_fp8_scale,
+    fp8_quantize,
+    guarded_inv_scale,
+)
 from max.gpu.primitives.grid_controls import PDLLevel
 
 comptime logger = Logger()
@@ -297,12 +301,13 @@ def quantize_tensor_dynamic_scaled_fp8[
         if num_rows == 0:
             return
 
-        # Per-tensor mode: two kernel launches.
-        # 1) Existing per-group kernel: computes per-group scales
-        #    and writes them to the scales buffer.
-        # 2) Per-tensor quantize kernel: loops over all per-group
-        #    scales to find the tensor-wide max, then re-quantizes
-        #    every element with that single scale.
+        # Per-tensor mode runs three launches, and each one only reads what an
+        # earlier launch wrote, since blocks of one grid can't order a read of
+        # a slot against another block's write to it.
+        # 1) Every (row, group) block writes its group max to scales.
+        # 2) One block reduces those maxes and writes the per-tensor scale back
+        #    to every slot.
+        # 3) Every block quantizes its group with the scale in its own slot.
         if num_rows > 1:
             var scales_kernel = _ComputeScalesFp8Kernel[
                 out_type=out_dtype,
@@ -322,17 +327,31 @@ def quantize_tensor_dynamic_scaled_fp8[
                 attributes=pdl_launch_attributes(pdl_level),
             )
 
+            var reduce_kernel = _ReducePerTensorScaleFp8Kernel[
+                out_type=out_dtype,
+                num_threads=num_threads,
+                num_groups=num_cols // group_size,
+            ](
+                scales.address_space_cast[.GENERIC](),
+                scale_ub.cast[scales_dtype](),
+                Int32(num_rows),
+            )
+
+            ctx.enqueue_function(
+                reduce_kernel,
+                grid_dim=1,
+                block_dim=num_threads,
+                attributes=pdl_launch_attributes(pdl_level),
+            )
+
             var quant_kernel = _QuantizeFp8KernelPerTensor[
                 num_threads=num_threads,
                 group_size=group_size,
                 simd_width=simd_width,
-                num_groups=num_cols // group_size,
             ](
                 wrap,
                 scaled_output.address_space_cast[.GENERIC](),
                 scales.address_space_cast[.GENERIC](),
-                scale_ub.cast[scales_dtype](),
-                Int32(num_rows),
             )
 
             ctx.enqueue_function(
@@ -810,9 +829,9 @@ struct _ComputeScalesFp8Kernel[
         """Compute per-group FP8 scale factors without quantizing.
 
         Each block scans its (row, group) tile via ``input_fn``, computes the
-        scale factor, and writes it to ``scales[group_idx, row]``. This is
-        the first half of the per-tensor path, so `_QuantizeFp8KernelPerTensor`
-        can find the tensor-wide max scale.
+        group's max-abs, and writes it to ``scales[group_idx, row]``. This is
+        the first launch of the per-tensor path; `_ReducePerTensorScaleFp8Kernel`
+        reduces these maxes to the tensor-wide scale.
         """
         var input_fn = self.input_fn
         var scales = TileTensor(self.scales.ptr, self.scales.layout)
@@ -859,6 +878,71 @@ struct _ComputeScalesFp8Kernel[
 
 
 @fieldwise_init
+struct _ReducePerTensorScaleFp8Kernel[
+    scales_type: DType,
+    scales_layout: TensorLayout,
+    scales_origin: MutOrigin,
+    scales_engine: TensorEngine,
+    scales_idx_type: DType,
+    //,
+    out_type: DType,
+    num_threads: Int,
+    num_groups: Int,
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
+    var scales: TileTensor[
+        mut=True,
+        Self.scales_type,
+        Self.scales_layout,
+        Self.scales_origin,
+        Engine=Self.scales_engine,
+        linear_idx_type=Self.scales_idx_type,
+    ]
+    var scale_ub: Scalar[Self.scales_type]
+    var num_rows_dev: Int32
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.num_threads)
+        )
+    )
+    def __call__(self) capturing:
+        """Reduces the per-group maxes to one per-tensor FP8 scale.
+
+        Runs as a single block. It reads every group max that
+        `_ComputeScalesFp8Kernel` wrote to ``scales``, then overwrites every
+        slot with the per-tensor scale factor, so downstream readers that index
+        ``scales[group_idx, row]`` all see the same value.
+        """
+        var scales = TileTensor(self.scales.ptr, self.scales.layout)
+        var num_rows = Int(self.num_rows_dev)
+        var tid = Int(thread_idx.x)
+
+        with PDL():
+            var thread_max = Scalar[Self.scales_type](0)
+            comptime for g in range(Self.num_groups):
+                for r in range(tid, num_rows, Self.num_threads):
+                    thread_max = max(
+                        thread_max,
+                        rebind[Scalar[Self.scales_type]](
+                            scales.load_linear(Index(g, r))
+                        ),
+                    )
+
+            # The writes below need no barrier: each thread overwrites only
+            # the slots it read itself.
+            var tensor_max = block.max[
+                block_size=Self.num_threads, broadcast=True
+            ](thread_max)
+            var scale_factor = compute_dynamic_fp8_scale[Self.out_type](
+                tensor_max, self.scale_ub
+            )[0]
+
+            comptime for g in range(Self.num_groups):
+                for r in range(tid, num_rows, Self.num_threads):
+                    scales.store_linear(Index(g, r), scale_factor)
+
+
+@fieldwise_init
 struct _QuantizeFp8KernelPerTensor[
     out_type: DType,
     scales_type: DType,
@@ -876,7 +960,6 @@ struct _QuantizeFp8KernelPerTensor[
     num_threads: Int,
     group_size: Int,
     simd_width: Int,
-    num_groups: Int,
 ](ImplicitlyCopyable, RegisterPassable, def() -> None):
     var input_fn: Self.InputFnType
     var output: TileTensor[
@@ -895,8 +978,6 @@ struct _QuantizeFp8KernelPerTensor[
         Engine=Self.scales_engine,
         linear_idx_type=Self.scales_idx_type,
     ]
-    var scale_ub: Scalar[Self.scales_type]
-    var num_rows_dev: Int32
 
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
@@ -904,20 +985,14 @@ struct _QuantizeFp8KernelPerTensor[
         )
     )
     def __call__(self) capturing:
-        """Per-tensor FP8 quantize kernel.
+        """Quantizes one (row, group) tile with the per-tensor FP8 scale.
 
-        Reads all per-group scales written by ``_ComputeScalesFp8Kernel``
-        (stored as ``scales[group_idx, row]``), finds the tensor-wide maximum
-        scale, and re-quantizes every element with that single scale.
-
-        Block (0, 0) thread 0 overwrites ``scales[0, 0]`` with the final
-        per-tensor scale factor so the caller can read it back.
+        Reads the scale that `_ReducePerTensorScaleFp8Kernel` wrote to
+        ``scales[group_idx, row]`` and does not write ``scales``.
         """
         var input_fn = self.input_fn
         var output = TileTensor(self.output.ptr, self.output.layout)
         var scales = TileTensor(self.scales.ptr, self.scales.layout)
-        var scale_ub = self.scale_ub
-        var num_rows = Int(self.num_rows_dev)
         comptime accum_type = get_accum_type[Self.in_type]()
 
         var tid = thread_idx.x
@@ -925,33 +1000,13 @@ struct _QuantizeFp8KernelPerTensor[
         var group_idx = block_idx.y
 
         with PDL():
-            # Find the max scale across all groups and rows.
-            # The scales buffer is small (Self.num_groups * num_rows), so a serial
-            # scan per block is cheap and avoids cross-block synchronisation.
-            var max_scale = Scalar[Self.scales_type](0)
-            comptime for g in range(Self.num_groups):
-                for r in range(num_rows):
-                    var s = rebind[Scalar[Self.scales_type]](
-                        scales.load_linear(Index(g, r))
-                    )
-                    max_scale = max(max_scale, s)
-
-            # `max_scale` is the tensor-wide max-abs: _ComputeScalesFp8Kernel writes
-            # each group's RAW max, and the scan above takes the largest. Route the
-            # scale and its reciprocal through the shared compute_dynamic_fp8_scale so
-            # the per-tensor path gets the SAME finite-reciprocal guard as the
-            # per-group kernels: a near-zero/denormal tensor max makes scale_factor
-            # underflow to a nonzero f32 denormal and 1/scale_factor overflow to +Inf,
-            # which NaNs the fp8 cast on a zero lane (0*Inf). The guard treats a
-            # non-finite reciprocal as zero scale, so the group quantizes to fp8 zero.
-            var scale_factor, scale_factor_recip = compute_dynamic_fp8_scale[
-                Self.out_type
-            ](max_scale.cast[accum_type](), scale_ub)
-
-            # Write the per-tensor scale to every position so downstream
-            # readers that index scales[group_idx, row] see the correct value.
-            if tid == 0:
-                scales.store_linear(Index(group_idx, row), scale_factor)
+            # The same guarded reciprocal compute_dynamic_fp8_scale uses, so a
+            # near-zero tensor quantizes to fp8 zero instead of 0 * Inf.
+            var scale_factor_recip = guarded_inv_scale(
+                rebind[Scalar[Self.scales_type]](
+                    scales.load_linear(Index(group_idx, row))
+                ).cast[accum_type]()
+            )
 
             for i in range(
                 Int(tid), Self.group_size // Self.simd_width, Self.num_threads
