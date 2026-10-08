@@ -79,10 +79,6 @@ def apply_rotary_emb(
 ) -> Tensor:
     """Apply real-valued rotary embeddings to ``x``.
 
-    Mirrors the legacy
-    :func:`max.pipelines.architectures.flux2.layers.embeddings.apply_rotary_emb`
-    expressed against :class:`~max.experimental.tensor.Tensor`.
-
     Args:
         x: Input tensor of shape ``[B, H, S, D]`` (``sequence_dim=2``) or
             ``[B, S, H, D]`` (``sequence_dim=1``).
