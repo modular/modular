@@ -381,7 +381,14 @@ def register_all_models() -> None:
         _LazyArch(
             "UnifiedDflashMiMoV2ForCausalLM",
             ".unified_dflash_mimo_v2",
-            "unified_dflash_mimo_v2_arch",
+            "unified_dflash_mimo_v2_speculator",
+            speculates_on="MiMoV2ForCausalLM",
+        ),
+        _LazyArch(
+            "UnifiedDflashMiMoV2ForCausalLM",
+            ".unified_dflash_mimo_v2",
+            "unified_dflash_mimo_v2_renamed_draft_speculator",
+            speculates_on="MiMoV2ForCausalLM",
         ),
         _LazyArch(
             "UnifiedDSparkDeepseekV4ForCausalLM",

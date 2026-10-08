@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -26,6 +27,9 @@ from max.pipelines.architectures.unified_dflash_mimo_v2 import (
     MiMoV2DFlashContextModel,
     UnifiedDflashMiMoV2Model,
 )
+from max.pipelines.architectures.unified_dflash_mimo_v2.batch_processor import (
+    UnifiedDflashMiMoV2BatchProcessor,
+)
 from max.pipelines.architectures.unified_dflash_mimo_v2.memory_planner import (
     MiMoV2DFlashMemoryPlanner,
 )
@@ -34,6 +38,8 @@ from max.pipelines.architectures.unified_dflash_mimo_v2.model_config import (
     UnifiedDflashMiMoV2Config,
     mimo_dflash_draft_width,
 )
+from max.pipelines.lib import Speculator, SupportedArchitecture
+from max.pipelines.lib.arch_lookup import select_speculator
 from max.pipelines.lib.config.config import (
     _apply_speculative_target_architecture,
 )
@@ -43,26 +49,47 @@ from max.pipelines.weights import HuggingFaceRepo
 DRAFT_HF = {"dflash_config": {"mask_token_id": 151675, "target_layer_ids": [0]}}
 
 
-def test_both_architectures_resolve_by_name() -> None:
-    fused = PIPELINE_REGISTRY.retrieve_architecture(
-        "UnifiedDflashMiMoV2ForCausalLM"
+def _fused(draft_arch: str) -> SupportedArchitecture:
+    speculator = select_speculator("MiMoV2ForCausalLM", "dflash", draft_arch)
+    assert speculator is not None
+    return speculator.derive()
+
+
+@pytest.mark.parametrize("draft_arch", ["LlamaForCausalLM", "DFlashDraftModel"])
+def test_the_speculator_derives_the_fused_architecture(draft_arch: str) -> None:
+    # Field for field what the fused architecture was when it was registered
+    # by name, so selecting it runs the same graph, KV tree and planner.
+    assert _fused(draft_arch) == replace(
+        mimo_v2_arch,
+        name="UnifiedDflashMiMoV2ForCausalLM",
+        pipeline_model=UnifiedDflashMiMoV2Model,
+        config=UnifiedDflashMiMoV2Config,
+        batching=UnifiedDflashMiMoV2BatchProcessor,
+        checkpoint_draft_width=mimo_dflash_draft_width,
+        memory_planner=MiMoV2DFlashMemoryPlanner,
+        supports_spec_decode_mixed_batches=True,
     )
-    assert fused is not None
-    assert fused.pipeline_model is UnifiedDflashMiMoV2Model
-    assert fused.config is UnifiedDflashMiMoV2Config
-    assert fused.checkpoint_draft_width is mimo_dflash_draft_width
+    assert (
+        PIPELINE_REGISTRY.retrieve_architecture(
+            "UnifiedDflashMiMoV2ForCausalLM"
+        )
+        is None
+    )
+
+
+def test_the_context_writer_resolves_by_name() -> None:
     base_ctx = PIPELINE_REGISTRY.retrieve_architecture(
         "MiMoV2DFlashContextForCausalLM"
     )
     assert base_ctx is not None
     assert base_ctx.pipeline_model is MiMoV2DFlashContextModel
     assert base_ctx.config is MiMoV2DFlashContextConfig
+    assert base_ctx.memory_planner is MiMoV2DFlashMemoryPlanner
     # Both serve the target checkpoint as the base arch does.
-    for arch in (fused, base_ctx):
+    for arch in (_fused("DFlashDraftModel"), base_ctx):
         assert arch.tokenizer is mimo_v2_arch.tokenizer
         assert arch.supported_encodings == mimo_v2_arch.supported_encodings
         assert arch.multi_gpu_supported
-        assert arch.memory_planner is MiMoV2DFlashMemoryPlanner
 
 
 def test_the_planner_counts_the_drafter(
@@ -93,38 +120,42 @@ def test_the_planner_counts_the_drafter(
     assert planner.estimate_weights_size(fused) == 2000 + 678
 
 
-def _resolved(
+def _selected(
     speculative: SpeculativeConfig | None, draft_arch: str = "LlamaForCausalLM"
-) -> str:
+) -> Speculator | None:
     models: dict[str, Any] = {
         "main": SimpleNamespace(
             huggingface_config=SimpleNamespace(
                 architectures=["MiMoV2ForCausalLM"]
             )
         ),
-        # The CLI path has already rewritten DFlashDraftModel by now.
         "draft": SimpleNamespace(
             huggingface_config=SimpleNamespace(architectures=[draft_arch])
         ),
     }
-    _apply_speculative_target_architecture(speculative, models)
-    return models["main"].huggingface_config.architectures[0]
+    speculator = _apply_speculative_target_architecture(speculative, models)
+    assert models["main"].huggingface_config.architectures == [
+        "MiMoV2ForCausalLM"
+    ]
+    return speculator
 
 
 @pytest.mark.parametrize("draft_arch", ["LlamaForCausalLM", "DFlashDraftModel"])
 def test_dflash_selects_the_fused_graph(draft_arch: str) -> None:
-    assert (
-        _resolved(SpeculativeConfig(speculative_method="dflash"), draft_arch)
-        == "UnifiedDflashMiMoV2ForCausalLM"
+    speculator = _selected(
+        SpeculativeConfig(speculative_method="dflash"), draft_arch
     )
+    assert speculator is not None
+    assert speculator.name == "UnifiedDflashMiMoV2ForCausalLM"
 
 
-def test_other_methods_keep_the_base_graph() -> None:
-    assert _resolved(None) == "MiMoV2ForCausalLM"
-    assert (
-        _resolved(SpeculativeConfig(speculative_method="dflash2"))
-        == "MiMoV2ForCausalLM"
-    )
+def test_no_speculation_keeps_the_base_graph() -> None:
+    assert _selected(None) is None
+
+
+def test_other_methods_are_rejected() -> None:
+    with pytest.raises(ValueError, match="No speculator for MiMoV2ForCausalLM"):
+        _selected(SpeculativeConfig(speculative_method="dflash2"))
 
 
 def _width(k: int | None, block: int = 8) -> int:
