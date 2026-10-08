@@ -90,6 +90,16 @@ _EXTRA_CONSTRAINTS = {
     "test_block_scaled_mma_amd.mojo": ["//:mi355_gpu"],
     "test_block_scaled_mma_amd_mixed.mojo": ["//:mi355_gpu"],
     "test_w4a8_grouped_matmul_amd.mojo": ["//:mi355_gpu"],
+    # Tiled blockwise-scaled FP8 dense matmul — CDNA4 16x16x128 FP8 MFMA,
+    # MI355X-specific.
+    "test_blockwise_fp8_matmul_amd.mojo": ["//:mi355_gpu"],
+    "test_batched_matmul_dynamic_scaled_fp8_amd_tiled.mojo": ["//:mi355_gpu"],
+    "test_batched_matmul_dynamic_scaled_fp8_amd_tiled_mla_layout.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_matmul_amd_bench.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_matmul_amd_asm.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_grouped_matmul_amd.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_grouped_matmul_amd_bench.mojo": ["//:mi355_gpu"],
+    "test_blockwise_fp8_grouped_matmul_amd_asm.mojo": ["//:mi355_gpu"],
     "test_mxfp6_matmul_amd.mojo": ["//:mi355_gpu"],
     "test_mxfp6_dequant_smoke.mojo": select({
         "//:nvidia_gpu": ["//:nvidia_gpu"],
@@ -195,6 +205,13 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_naive_blockwise_fp8_matmul.mojo": select({
+        "//:mi355_gpu": ["//:mi355_gpu"],
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_batched_matmul_dynamic_scaled_fp8_naive.mojo": select({
+        "//:mi355_gpu": ["//:mi355_gpu"],
         "//:h100_gpu": ["//:h100_gpu"],
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -229,6 +246,12 @@ _EXTRA_CONSTRAINTS = {
     for src in _GROUPED_GEMM_INFRA_TESTS
 }
 
+# Formerly B200-only (SM100 tests) but now exercise arch-neutral fallback
+# paths; pulled out of _B200_TESTS for explicit multi-arch rules below.
+_AMD_GENERIC_FALLBACK_TESTS = [
+    "test_grouped_matmul_dynamic_scaled_fp8.mojo",
+]
+
 _FILECHECK_TESTS = [
     "test_block_swizzle.mojo",
     "test_matmul_selection_heuristic.mojo",
@@ -258,7 +281,6 @@ _B200_TESTS = [
     "test_matmul_sm100_fp8_smallm_band_dispatch.mojo",
     "test_matmul_sm100_structured_quick.mojo",
     "test_matmul_sm100_blockwise_fp8.mojo",
-    "test_grouped_matmul_dynamic_scaled_fp8.mojo",
     "test_matmul_sm100_1sm_blockwise_fp8_part_a.mojo",
     "test_matmul_sm100_1sm_blockwise_fp8_part_b.mojo",
     "test_matmul_sm100_2sm_blockwise_fp8_part_a.mojo",
@@ -343,6 +365,8 @@ _GPU_MEMORY = {
     "test_mxfp6_matmul_amd.mojo": "2",
     "test_block_scaled_mma_amd_pack_k.mojo": "1",
     "test_blockwise_fp8_1d2d_structured.mojo": "1.5",
+    "test_blockwise_fp8_grouped_matmul_amd.mojo": "4",
+    "test_blockwise_fp8_grouped_matmul_amd_bench.mojo": "4",
     "test_bulk_mma_pair_cta_sm100.mojo": "1.5",
     "test_cublaslt_scaled_mxfp8_matmul.mojo": "1.5",
     "test_cublaslt_scaled_nvfp4_matmul.mojo": "1.5",
@@ -511,6 +535,37 @@ _GPU_MEMORY = {
         ],
     )
     for src in _B200_TESTS
+    if src not in _AMD_GENERIC_FALLBACK_TESTS
+]
+
+# Multi-arch coverage for the fallback tests removed from _B200_TESTS.
+[
+    mojo_test(
+        name = src + ".test",
+        size = "large",
+        srcs = [src],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+        exec_properties = {
+            "test.resources:gpu-memory": _GPU_MEMORY.get(src, DEFAULT_GPU_MEMORY),
+        },
+        tags = ["gpu"],
+        target_compatible_with = select({
+            "//:mi355_gpu": ["//:mi355_gpu"],
+            "//:h100_gpu": ["//:h100_gpu"],
+            "//:b200_gpu": ["//:b200_gpu"],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:max_mojo",
+            "//max:nn",
+            "//max:structured_kernels",
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ] + _EXTRA_DEPS.get(src, []),
+    )
+    for src in _AMD_GENERIC_FALLBACK_TESTS
 ]
 
 # B200 smoke tests - tagged manual for local-only execution, not run in CI
@@ -711,6 +766,8 @@ mojo_test(
             ["manual"] if src in [
                 "test_multistage_gemm_fp8.mojo",  # TODO: KERN-1480 Fix and remove this tag
                 "test_ping_pong_shapes.mojo",  # TODO: KERN-2631 Flaky on AMD, re-enable
+                "test_blockwise_fp8_matmul_amd_bench.mojo",  # perf bench, local-only
+                "test_blockwise_fp8_grouped_matmul_amd_bench.mojo",  # perf bench, local-only
             ] else []
         ),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
@@ -724,7 +781,7 @@ mojo_test(
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + [
+        exclude = _FILECHECK_TESTS + _B200_TESTS + _B200_SMOKE_TESTS + _GROUPED_BLOCK_SCALED_GEMM_B200_TESTS + _AMD_GENERIC_FALLBACK_TESTS + [
             "test_w4a8_grouped_shapes.mojo",
             "test_matmul_pdl_race.mojo",
             "test_grouped_matmul_swiglu_nvfp4_interleave.mojo",

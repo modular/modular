@@ -854,6 +854,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         m_scale_granularity: Int,
         n_scale_granularity: Int,
         k_scale_granularity: Int,
+        static_grid_z: Bool,
         target: StaticString,
     ](
         c: OutputTensor[dtype=c_type, rank=2, ...],
@@ -865,6 +866,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         expert_ids: InputTensor[dtype=.int32, rank=1, ...],
         max_num_tokens_per_expert: UInt32,
         num_active_experts: UInt32,
+        decode_grid_m_cap: UInt32,
         context: DeviceContext,
     ) raises:
         comptime assert is_gpu[target](), (
@@ -878,6 +880,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             n_scale_granularity,
             k_scale_granularity,
             transpose_b=True,
+            static_grid_z=static_grid_z,
             target=target,
         ](
             c.to_tile_tensor[.int64](),
@@ -890,6 +893,7 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
             Int(max_num_tokens_per_expert),
             Int(num_active_experts),
             context,
+            Int(decode_grid_m_cap),
         )
 
 

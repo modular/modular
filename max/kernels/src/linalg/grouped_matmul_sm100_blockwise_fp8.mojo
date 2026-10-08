@@ -17,7 +17,7 @@ from std.collections import Optional
 from std.math import ceildiv, gcd
 from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of, simd_width_of
-from max.gpu.host.info import B200, H100, _is_sm10x_gpu
+from max.gpu.host.info import B200, H100, MI355X, _is_sm10x_gpu
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.collections.string.string_span import get_static_string
 from max.gpu import WARP_SIZE
@@ -85,6 +85,9 @@ from layout.tma_async import (
 )
 from std.logger import Logger
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_grouped_matmul
+from linalg.matmul.gpu.amd.blockwise_scaled_fp8_grouped_matmul_amd import (
+    blockwise_scaled_fp8_grouped_matmul_amd,
+)
 
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
@@ -2849,6 +2852,7 @@ def grouped_matmul_dynamic_scaled_fp8[
     n_scale_granularity: Int,
     k_scale_granularity: Int,
     transpose_b: Bool = False,
+    static_grid_z: Bool = False,
     target: StaticString = "cpu",
 ](
     c: TileTensor[mut=True, c_type, address_space=.GENERIC, ...],
@@ -2865,6 +2869,7 @@ def grouped_matmul_dynamic_scaled_fp8[
     max_num_tokens_per_expert: Int,
     num_active_experts: Int,
     ctx: DeviceContext,
+    decode_grid_m_cap: Int = 0,
 ) raises:
     """TileTensor primary implementation of `grouped_matmul_dynamic_scaled_fp8`.
     """
@@ -2879,7 +2884,8 @@ def grouped_matmul_dynamic_scaled_fp8[
     comptime assert (
         _is_sm10x_gpu(ctx.default_device_info)
         or ctx.default_device_info == H100
-    ), "Only support SM100 or SM90"
+        or ctx.target.is_amd_gpu()
+    ), "Only support SM100, SM90, or AMD GPUs"
     comptime assert (
         m_scale_granularity == 1
         and n_scale_granularity == k_scale_granularity == 128
@@ -2940,6 +2946,18 @@ def grouped_matmul_dynamic_scaled_fp8[
         task_id=get_safe_task_id(ctx),
     ):
         comptime if _is_sm10x_gpu(ctx.default_device_info):
+            # static_grid_z / decode_grid_m_cap are honored only by the AMD
+            # tiled blockwise-FP8 grouped kernel below.
+            if decode_grid_m_cap:
+                raise Error(
+                    "decode_grid_m_cap is only honored by the AMD tiled"
+                    " blockwise-FP8 grouped matmul"
+                )
+            comptime assert not static_grid_z, (
+                "static_grid_z is only honored by the AMD tiled blockwise-FP8"
+                " grouped matmul"
+            )
+
             # MMA_N=128 halves the number of dispatched (expert, n) tiles vs
             # 64, which dominates runtime for small-M-per-expert decode.
             comptime umma_shape: IndexList[3] = Index(64, 128, 32)
@@ -2969,24 +2987,69 @@ def grouped_matmul_dynamic_scaled_fp8[
             return
 
         else:
-            naive_blockwise_scaled_fp8_grouped_matmul[
-                BLOCK_DIM_M=16,
-                BLOCK_DIM_N=16,
-                transpose_b=transpose_b,
-                scales_granularity_mnk=Index(
-                    m_scale_granularity,
-                    n_scale_granularity,
-                    k_scale_granularity,
-                ),
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                a_offsets,
-                expert_ids,
-                max_num_tokens_per_expert,
-                num_active_experts,
-                ctx,
+            # AMD gfx950 routes the E4M3 fp32-scale case to the tiled MFMA
+            # kernel; anything else falls through to the naive reference below.
+            comptime N = c.static_shape[1]
+            comptime K = a.static_shape[1]
+            comptime amd_tiled = (
+                ctx.default_device_info == MI355X
+                and a_scales_type == .float32
+                and b_scales_type == .float32
+                and N > 0
+                and K > 0
+                and K % 128 == 0
+                and N % 128 == 0
             )
+            comptime if amd_tiled:
+                blockwise_scaled_fp8_grouped_matmul_amd[
+                    transpose_b=transpose_b,
+                    N_SCALE=n_scale_granularity,
+                    K_SCALE=k_scale_granularity,
+                    static_grid_z=static_grid_z,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets.bitcast[.uint32](),
+                    expert_ids.bitcast[.int32](),
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                    decode_grid_m_cap,
+                )
+            else:
+                # static_grid_z / decode_grid_m_cap are honored only by the AMD
+                # tiled blockwise-FP8 grouped kernel above.
+                if decode_grid_m_cap:
+                    raise Error(
+                        "decode_grid_m_cap is only honored by the AMD tiled"
+                        " blockwise-FP8 grouped matmul"
+                    )
+                comptime assert not static_grid_z, (
+                    "static_grid_z is only honored by the AMD tiled"
+                    " blockwise-FP8 grouped matmul"
+                )
+
+                naive_blockwise_scaled_fp8_grouped_matmul[
+                    BLOCK_DIM_M=16,
+                    BLOCK_DIM_N=16,
+                    transpose_b=transpose_b,
+                    scales_granularity_mnk=Index(
+                        m_scale_granularity,
+                        n_scale_granularity,
+                        k_scale_granularity,
+                    ),
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    expert_ids,
+                    max_num_tokens_per_expert,
+                    num_active_experts,
+                    ctx,
+                )

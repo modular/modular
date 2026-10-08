@@ -7886,6 +7886,8 @@ def grouped_dynamic_scaled_fp8_matmul(
     input_scale_spec: InputScaleSpec,
     weight_scale_spec: WeightScaleSpec,
     out_type: DType = DType.bfloat16,
+    static_grid_z: bool = False,
+    decode_grid_m_cap: int = 0,
 ) -> TensorValue:
     """Grouped blockwise scaled matmul used in MoE layer.
 
@@ -7903,6 +7905,10 @@ def grouped_dynamic_scaled_fp8_matmul(
         expert_usage_stats_host: The maximum number of tokens assigned to any expert, and the number of active experts.
         input_scale_spec: The scaling granularity for the input tensor.
         weight_scale_spec: The scaling granularity for the weight tensor.
+        static_grid_z: Make grid.z the static expert count instead of the
+            runtime `num_active_experts` tensor read; capture-safe on AMD.
+        decode_grid_m_cap: Decode-band gate on the AMD path; 0 disables. Bounds
+            grid.y to a capture-safe upper bound derived from the call shape.
 
     Returns:
         The result of the matmul operation.
@@ -8006,6 +8012,10 @@ def grouped_dynamic_scaled_fp8_matmul(
     else:
         raise ValueError("grouped FP8 matmul only supports blockwise scaling")
 
+    decode_grid_m_cap_arg = ops.constant(
+        decode_grid_m_cap, dtype=DType.uint32, device=DeviceRef.CPU()
+    )
+
     output = ops.custom(
         "mo.grouped.matmul.dynamic.scaled.fp8",
         device=hidden_states.device,
@@ -8018,6 +8028,7 @@ def grouped_dynamic_scaled_fp8_matmul(
             expert_ids,
             expert_usage_stats_host[0],
             expert_usage_stats_host[1],
+            decode_grid_m_cap_arg,
         ],
         out_types=[
             TensorType(
@@ -8032,6 +8043,7 @@ def grouped_dynamic_scaled_fp8_matmul(
             "m_scale_granularity": input_scale_spec.block_size[0],
             "n_scale_granularity": weight_scale_spec.block_size[0],
             "k_scale_granularity": weight_scale_spec.block_size[1],
+            "static_grid_z": static_grid_z,
         },
     )[0].tensor
 

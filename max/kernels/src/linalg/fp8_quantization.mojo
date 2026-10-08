@@ -34,7 +34,7 @@ from max.gpu import (
 )
 from max.gpu.primitives.grid_controls import PDL, pdl_launch_attributes
 from max.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from max.gpu.host.info import B200, _is_sm10x_gpu
+from max.gpu.host.info import B200, GPUInfo, MI355X, _is_sm10x_gpu
 from layout import (
     Coord,
     Idx,
@@ -54,6 +54,9 @@ from std.utils.index import Index, IndexList, StaticTuple
 from std.utils.numerics import get_accum_type, max_finite
 
 from .matmul import matmul
+from .matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd import (
+    blockwise_scaled_fp8_matmul_amd,
+)
 from .matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
@@ -2170,6 +2173,53 @@ def convert_e4m3fn_to_e4m3fnuz(
 ########################################################
 
 
+def _amd_blockwise_tiled_ok[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    a_scales_type: DType,
+    b_scales_type: DType,
+    transpose_b: Bool,
+    scales_granularity_mnk: IndexList[3],
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+    device_info: GPUInfo,
+    a_static_k: Int,
+    c_static_n: Int,
+]() -> Bool:
+    """Gate for the AMD gfx950 tiled blockwise-FP8 dense matmul.
+
+    Extracted so a test can `assert_true` the gate directly instead of only
+    exercising `via_dispatch=True`, which passes even if this predicate
+    silently regresses to False (falls back to the naive kernel with
+    identical numerics). `a_static_k` / `c_static_n` are the caller's
+    `type_of(a).static_shape[1]` / `type_of(c).static_shape[1]` (K of A, N
+    of C); pass -1 for a dynamic (non-comptime-known) dimension.
+    """
+    # The whole gate is a comptime decision (every input is a comptime param).
+    # `not elementwise_lambda_fn` materializes an `Optional` of a parameterized
+    # closure, which is illegal at runtime ("parameterized functions cannot be
+    # used at runtime"), so the predicate must be evaluated at comptime, not just
+    # the `device_info` term.
+    return comptime (
+        device_info == MI355X
+        and transpose_b
+        and a_type == .float8_e4m3fn
+        and b_type == .float8_e4m3fn
+        and a_scales_type == .float32
+        and b_scales_type == .float32
+        and (c_type == .bfloat16 or c_type == .float32)
+        and not elementwise_lambda_fn
+        and scales_granularity_mnk[0] == 1
+        and scales_granularity_mnk[1] == 128
+        and scales_granularity_mnk[2] == 128
+        and a_static_k > 0
+        and c_static_n > 0
+        # K need not be a multiple of 128: the tiled kernel zero-masks the
+        # partial final K-slab and indexes the per-128-block scale by real
+        # `kb`.
+    )
+
+
 def blockwise_scaled_fp8_with_epilogue[
     c_type: DType,
     a_type: DType,
@@ -2270,17 +2320,40 @@ def blockwise_scaled_fp8_with_epilogue[
             )
 
     else:
-        # The naive kernel supports the normal epilogue on non-B200 GPUs.
-        naive_blockwise_scaled_fp8_matmul[
+        # AMD gfx950: tiled MFMA blockwise-FP8 dense matmul for the GLM E4M3 +
+        # fp32-per-[128,128]-block case; everything else falls back to naive.
+        comptime amd_blockwise_tiled_ok = _amd_blockwise_tiled_ok[
+            c_type=c_type,
+            a_type=a_type,
+            b_type=b_type,
+            a_scales_type=a_scales_type,
+            b_scales_type=b_scales_type,
             transpose_b=transpose_b,
             scales_granularity_mnk=scales_granularity_mnk,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            ctx,
-        )
+            device_info=ctx.default_device_info,
+            a_static_k=type_of(a).static_shape[1],
+            c_static_n=type_of(c).static_shape[1],
+        ]()
+
+        comptime if amd_blockwise_tiled_ok:
+            blockwise_scaled_fp8_matmul_amd[
+                transpose_b=transpose_b,
+                N_SCALE=scales_granularity_mnk[1],
+                K_SCALE=scales_granularity_mnk[2],
+            ](c, a, b, a_scales, b_scales, ctx)
+        else:
+            # The naive kernel supports the normal epilogue on non-B200 GPUs.
+            naive_blockwise_scaled_fp8_matmul[
+                transpose_b=transpose_b,
+                scales_granularity_mnk=scales_granularity_mnk,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+            ](
+                c,
+                a,
+                b,
+                a_scales,
+                b_scales,
+                ctx,
+            )
         return

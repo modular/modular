@@ -2864,8 +2864,10 @@ def _buffer_load_impl[
     comptime elem_size = type_of(src).element_size
     comptime M = type_of(dist).static_shape[0]
     comptime N = type_of(dist).static_shape[1]
-    comptime src_s0 = type_of(dist).static_stride[0]
-    comptime src_s1 = type_of(dist).static_stride[1]
+    # `src` may carry a runtime row stride (batched per-batch view), where
+    # `static_stride` is only a sentinel; read layout values (static ones fold).
+    var src_s0 = Int(dist.layout.stride[0]().value())
+    var src_s1 = Int(dist.layout.stride[1]().value())
     comptime dst_s0 = dst_layout.static_stride[0]
     comptime dst_s1 = dst_layout.static_stride[1]
 
