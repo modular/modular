@@ -22,6 +22,12 @@ The two adapters are deliberately not ``Module`` subclasses. The driver
 registers the target and draft modules under the same attribute names the
 hand-written modules used, so weight loading, ``state_dict`` keys and the
 weights registry are unchanged.
+
+The driver runs on graph values, but nothing outside it has to. A caller may
+pass experimental :class:`~max.experimental.tensor.Tensor` inputs, one per
+device, and gets ``Tensor`` outputs back; an adapter that subclasses
+:class:`TensorAdapter` reads and returns ``Tensor`` values too. Both convert at
+the boundary, so a ModuleV3 model never reaches for the graph API.
 """
 
 from __future__ import annotations
@@ -29,9 +35,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any, Generic, Literal, Protocol, TypeVar
+from typing import Any, Generic, Literal, Protocol
 
+from max import tree
 from max.dtype import DType
+from max.experimental.nn import Module as ModuleV3
+from max.experimental.realization_context import current_realization_context
+from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -46,7 +56,7 @@ from max.graph import (
     ops,
 )
 from max.nn.kernels import topk_fused_sampling_with_dist
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import KVCacheInputsPerDevice, PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.penalties import LogitPenalties
 from max.nn.sampling.rejection_sampler import (
@@ -58,15 +68,16 @@ from max.nn.transformer import ReturnHiddenStates
 from max.pipelines.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
-from typing_extensions import override
+from typing_extensions import TypeVar, override
 
+from ._tensor_compat import as_graph_values, as_tensors
 from .config import MAGIC_DRAFT_TOKEN_ID, SpeculativeConfig
 from .ragged_token_merger import RaggedTokenMerger, _shape_to_scalar
 from .spec_input_types import (
     SpecDecodeGraphSignature,
     SpecDecodeInputTypeSpec,
 )
-from .spec_target import SpecDecodeTarget
+from .spec_target import SpecDecodeTarget, Verified
 from .spec_width_policy import declares_skippable_draft
 from .unified_graph_ops import (
     accept_and_pick_next_tokens,
@@ -89,11 +100,45 @@ __all__ = [
     "SequentialBatch",
     "SequentialDriver",
     "SequentialProposer",
+    "TensorAdapter",
 ]
 
+_T = TypeVar("_T", TensorValue, Tensor, default=TensorValue)
+"""The value type adapters see: a graph value, or an experimental ``Tensor``."""
 
-@dataclass(frozen=True)
-class DistributedInputs:
+_B = TypeVar("_B", BufferValue, Tensor, default=BufferValue)
+"""The buffer type adapters see, ``Tensor`` alongside a ``Tensor`` :obj:`_T`."""
+
+_V = TypeVar("_V", Value[Any], Tensor, default=Value[Any])
+"""The type of an input the driver passes through without reading."""
+
+
+TensorLike = TypeVar("TensorLike", TensorValue, Tensor)
+"""Constrains a call's inputs to all graph values or all ``Tensor`` values,
+and returns its outputs as the same type."""
+
+BufferLike = TypeVar("BufferLike", BufferValue, Tensor)
+"""The buffer counterpart of :obj:`TensorLike`."""
+
+
+class TensorAdapter:
+    """Marks a target or proposer that runs on experimental ``Tensor`` values.
+
+    The driver hands such an adapter its batch and carries as single-device
+    ``Tensor`` values, one per device where it holds a list, and accepts
+    ``Tensor`` results back. A ModuleV3 adapter therefore builds its
+    distributed inputs with :meth:`~max.experimental.tensor.Tensor.from_shard_values`
+    rather than converting graph values itself.
+    """
+
+
+def _for_adapter(adapter: object, value: Any) -> Any:
+    """Converts ``value`` to the value type ``adapter`` runs on."""
+    return as_tensors(value) if isinstance(adapter, TensorAdapter) else value
+
+
+@tree.dataclass(frozen=True)
+class DistributedInputs(Generic[_T]):
     """The CPU-side inputs only a ``distributed=True`` signature declares.
 
     They arrive together or not at all, and a model that reads one reads all
@@ -103,17 +148,17 @@ class DistributedInputs:
     EAGLE and DFlash ones -- run the same driver while declaring none.
     """
 
-    host_input_row_offsets: TensorValue
-    host_merged_offsets: TensorValue
+    host_input_row_offsets: _T
+    host_merged_offsets: _T
     """CPU mirror of :attr:`SequentialBatch.merged_offsets`."""
-    host_query_offsets: TensorValue
+    host_query_offsets: _T
     """CPU mirror of :attr:`SequentialBatch.query_offsets_per_dev`."""
-    data_parallel_splits: TensorValue
+    data_parallel_splits: _T
     """Per-replica batch boundaries."""
 
 
-@dataclass(frozen=True)
-class SequentialBatch:
+@tree.dataclass(frozen=True)
+class SequentialBatch(Generic[_T, _B, _V]):
     """One spec-decode iteration's graph inputs, merged and broadcast.
 
     Built by the driver in phase 1 so that the target adapter, the proposer and
@@ -121,13 +166,13 @@ class SequentialBatch:
     recomputing the broadcast.
     """
 
-    tokens: TensorValue
-    input_row_offsets: TensorValue
-    draft_tokens: TensorValue
-    signal_buffers: list[BufferValue]
-    kv_collections: list[PagedCacheValues]
-    draft_kv_collections: list[PagedCacheValues]
-    passthrough_kv: Mapping[str, list[PagedCacheValues]]
+    tokens: _T
+    input_row_offsets: _T
+    draft_tokens: _T
+    signal_buffers: list[_B]
+    kv_collections: list[KVCacheInputsPerDevice[_T, _B]]
+    draft_kv_collections: list[KVCacheInputsPerDevice[_T, _B]]
+    passthrough_kv: Mapping[str, list[KVCacheInputsPerDevice[_T, _B]]]
     """Cache leaves beyond the primary pair, keyed by the model's name for them.
 
     The driver drives exactly one target leaf and one draft leaf: it advances
@@ -136,7 +181,7 @@ class SequentialBatch:
     driver should drive as the primary one and reaches the rest through here,
     listing in :attr:`SequentialProposer.passthrough_decode_swaps` any that
     need the same ``q = 1`` retarget."""
-    draft_cache_lengths: list[TensorValue]
+    draft_cache_lengths: list[_T]
     """Per-device draft cache lengths for this step.
 
     Always equal to each :attr:`draft_kv_collections` entry's
@@ -144,29 +189,29 @@ class SequentialBatch:
     (:attr:`SequentialProposer.draft_cache` is ``TARGET``), where the count is
     a RoPE position rather than a write pointer and the collections keep the
     lengths they came in with."""
-    return_n_logits: TensorValue
-    distributed: DistributedInputs | None
+    return_n_logits: _T
+    distributed: DistributedInputs[_T] | None
     """The distributed-only inputs, ``None`` on a single-device graph."""
-    batch_context_lengths: list[TensorValue]
-    ep_inputs: list[Value[Any]] | None
+    batch_context_lengths: list[_T]
+    ep_inputs: list[_V] | None
     devices: Sequence[DeviceRef]
     data_parallel_degree: int
 
-    vision_embeddings: list[TensorValue]
+    vision_embeddings: list[_T]
     """Per-device merged vision embeddings, empty for a text-only target.
 
     A vision target scatters these into the merged sequence before running
     its stack, so they reach the target adapter rather than the driver's
     phases -- which never read them."""
-    vision_scatter_indices: list[TensorValue]
+    vision_scatter_indices: list[_T]
     """Per-device merge positions for :attr:`vision_embeddings`."""
 
-    merged_tokens: TensorValue
-    merged_offsets: TensorValue
-    merged_offsets_per_dev: list[TensorValue]
+    merged_tokens: _T
+    merged_offsets: _T
+    merged_offsets_per_dev: list[_T]
     """The verify window's offsets, on every device. Stable across the loop."""
 
-    query_offsets_per_dev: list[TensorValue]
+    query_offsets_per_dev: list[_T]
     """Offsets over *this* draft call's query, on every device.
 
     The merged offsets for step 0, which runs over the whole corrected
@@ -181,7 +226,7 @@ class SequentialBatch:
     them from its adapters through here, rather than the driver growing a
     field per model for values none of its phases understand."""
 
-    num_accepted: TensorValue | None
+    num_accepted: _T | None
     """How many draft tokens each request accepted, ``None`` before the accept.
 
     Set for the whole propose phase, so a draft can derive per-step state from
@@ -217,7 +262,7 @@ class SequentialBatch:
         return self.draft_block_offsets.shape[0] - 1
 
     @property
-    def dist(self) -> DistributedInputs:
+    def dist(self) -> DistributedInputs[_T]:
         """:attr:`distributed`, for a model that requires it.
 
         A sharded target or draft cannot run without the host mirrors and the
@@ -256,45 +301,45 @@ only ever consumed here -- nothing on this side hands it back out.
 """
 
 
-@dataclass(frozen=True)
-class DraftStepInput:
+@tree.dataclass(frozen=True)
+class DraftStepInput(Generic[_T]):
     """Loop-carried state between draft steps.
 
     Every draft in the tree threads the previous step's token and its
     per-device hidden state.
     """
 
-    tokens: TensorValue
-    hidden: list[TensorValue]
-    reuse: list[TensorValue] = field(default_factory=list)
+    tokens: _T
+    hidden: list[_T]
+    reuse: list[_T] = field(default_factory=list)
     """Step 0's reused result, empty for a draft that declares no
     :attr:`SequentialProposer.reuse`."""
 
 
-@dataclass(frozen=True)
-class Proposed:
+@tree.dataclass(frozen=True)
+class Proposed(Generic[_T]):
     """One draft invocation's contribution.
 
     Carries the step's logits alongside the hidden state the next step
     consumes.
     """
 
-    logits: TensorValue | None
+    logits: _T | None
     """Logits over this call's query, ``None`` only alongside :attr:`token`."""
-    hidden: list[TensorValue]
-    reuse: list[TensorValue] = field(default_factory=list)
+    hidden: list[_T]
+    reuse: list[_T] = field(default_factory=list)
     """Per-device work step 0 did that every later step reuses unchanged.
 
     Read from the prefill only. A later step returns nothing here, because
     reusing step 0's result is the point."""
 
-    carry: list[TensorValue] = field(default_factory=list)
+    carry: list[_T] = field(default_factory=list)
     """Step 0's hidden state, already gathered at each accepted position.
 
     Empty for a draft that hands back its whole verified window and lets the
     driver do the gather"""
 
-    token: TensorValue | None = None
+    token: _T | None = None
     """Step 0's proposed token, for a draft that produced :attr:`carry`."""
 
 
@@ -389,8 +434,12 @@ class DraftCache(Enum):
     zeroing and the advance at once."""
 
 
-class SequentialProposer(Protocol[_TargetHiddenT]):
-    """A draft that emits one token per step, K steps deep."""
+class SequentialProposer(Protocol[_TargetHiddenT, _T, _B, _V]):
+    """A draft that emits one token per step, K steps deep.
+
+    Runs on graph values unless it subclasses :class:`TensorAdapter`, in
+    which case its type arguments are ``Tensor``.
+    """
 
     hidden_dim: DimLike
     """Trailing dim of the carried hidden state, used when rebinding it."""
@@ -427,16 +476,19 @@ class SequentialProposer(Protocol[_TargetHiddenT]):
 
     def prefill(
         self,
-        batch: SequentialBatch,
-        tokens: TensorValue,
+        batch: SequentialBatch[_T, _B, _V],
+        tokens: _T,
         target_hidden: _TargetHiddenT,
-    ) -> Proposed:
+    ) -> Proposed[_T]:
         """Runs draft step 0 over the whole target-corrected sequence."""
         ...
 
     def step(
-        self, batch: SequentialBatch, draft_input: DraftStepInput, index: int
-    ) -> Proposed:
+        self,
+        batch: SequentialBatch[_T, _B, _V],
+        draft_input: DraftStepInput[_T],
+        index: int,
+    ) -> Proposed[_T]:
         """Runs draft step ``index`` over one token per batch element."""
         ...
 
@@ -490,11 +542,15 @@ class SequentialDriver(
 
     def __init__(
         self,
-        target: SpecDecodeTarget[SequentialBatch, _TargetHiddenT],
-        proposer: SequentialProposer[_TargetHiddenT],
+        target: SpecDecodeTarget[SequentialBatch, _TargetHiddenT]
+        | SpecDecodeTarget[
+            SequentialBatch[Tensor, Tensor, Tensor], Any, Tensor
+        ],
+        proposer: SequentialProposer[_TargetHiddenT]
+        | SequentialProposer[Any, Tensor, Tensor, Tensor],
         *,
-        target_model: Module,
-        draft_model: Module,
+        target_model: Module | ModuleV3[..., Any],
+        draft_model: Module | ModuleV3[..., Any],
         input_spec: SpecDecodeInputTypeSpec,
         speculative_config: SpeculativeConfig | None = None,
         enable_structured_output: bool = False,
@@ -630,38 +686,50 @@ class SequentialDriver(
 
     def __call__(
         self,
-        tokens: TensorValue,
-        input_row_offsets: TensorValue,
-        draft_tokens: TensorValue,
+        tokens: TensorLike,
+        input_row_offsets: TensorLike,
+        draft_tokens: TensorLike,
         *,
-        kv_collections: list[PagedCacheValues],
-        return_n_logits: TensorValue,
-        signal_buffers: list[BufferValue] | None = None,
-        host_input_row_offsets: TensorValue | None = None,
-        data_parallel_splits: TensorValue | None = None,
-        batch_context_lengths: list[TensorValue] | None = None,
-        seed: TensorValue,
-        temperature: TensorValue,
-        top_k: TensorValue,
-        max_k: TensorValue,
-        top_p: TensorValue,
-        min_top_p: TensorValue,
-        in_thinking_phase: TensorValue | None = None,
-        ep_inputs: list[Value[Any]] | None = None,
-        draft_kv_collections: list[PagedCacheValues] | None = None,
-        passthrough_kv: Mapping[str, list[PagedCacheValues]] | None = None,
-        vision_embeddings: list[TensorValue] | None = None,
-        vision_scatter_indices: list[TensorValue] | None = None,
-        pinned_bitmask: TensorValue | None = None,
-        wait_payload: BufferValue | None = None,
-        device_bitmask_scratch: BufferValue | None = None,
+        kv_collections: Sequence[
+            KVCacheInputsPerDevice[TensorLike, BufferLike]
+        ],
+        return_n_logits: TensorLike,
+        signal_buffers: Sequence[BufferLike] | None = None,
+        host_input_row_offsets: TensorLike | None = None,
+        data_parallel_splits: TensorLike | None = None,
+        batch_context_lengths: Sequence[TensorLike] | None = None,
+        seed: TensorLike,
+        temperature: TensorLike,
+        top_k: TensorLike,
+        max_k: TensorLike,
+        top_p: TensorLike,
+        min_top_p: TensorLike,
+        in_thinking_phase: TensorLike | None = None,
+        ep_inputs: Sequence[Value[Any] | Tensor] | None = None,
+        draft_kv_collections: Sequence[
+            KVCacheInputsPerDevice[TensorLike, BufferLike]
+        ]
+        | None = None,
+        passthrough_kv: Mapping[
+            str, Sequence[KVCacheInputsPerDevice[TensorLike, BufferLike]]
+        ]
+        | None = None,
+        vision_embeddings: Sequence[TensorLike] | None = None,
+        vision_scatter_indices: Sequence[TensorLike] | None = None,
+        pinned_bitmask: TensorLike | None = None,
+        wait_payload: BufferLike | None = None,
+        device_bitmask_scratch: BufferLike | None = None,
         extra: Mapping[str, Any] | None = None,
-        draft_probs_full: TensorValue | None = None,
+        draft_probs_full: TensorLike | None = None,
         penalties: LogitPenalties | None = None,
-        draft_slot_ids: TensorValue | None = None,
-        draft_block_offsets: TensorValue | None = None,
-    ) -> tuple[TensorValue, ...]:
+        draft_slot_ids: TensorLike | None = None,
+        draft_block_offsets: TensorLike | None = None,
+    ) -> tuple[TensorLike, ...]:
         """Runs one spec-decode iteration: verify K drafts, propose K more.
+
+        Takes either graph values or single-device experimental ``Tensor``
+        values, one per device wherever an argument is a list, and returns
+        the outputs as the same type.
 
         Args:
             tokens: 1-D ragged prompt token IDs ``[total_seq_len]``; segment
@@ -672,7 +740,10 @@ class SequentialDriver(
             kv_collections: Per-device target caches.
             return_n_logits: How many tokens of logits the target returns.
             signal_buffers: One buffer per device for collective signaling;
-                None on a single-device graph, which declares none.
+                None on a single-device graph, which declares none. A
+                ``Tensor`` caller may omit them: the driver then uses the
+                current realization context's, which is where a ModuleV3
+                trace keeps them.
             host_input_row_offsets: CPU mirror of ``input_row_offsets``, used
                 to compute the merged offsets without a device sync. None
                 unless the signature is distributed, along with the two below.
@@ -715,6 +786,94 @@ class SequentialDriver(
             ``(num_accepted, next_tokens, next_draft_tokens)``, plus
             ``next_draft_probs_full`` under ``draft_proposal="sampled"``.
         """
+        takes_tensors = isinstance(tokens, Tensor)
+        signals: Sequence[BufferLike | BufferValue] | None = signal_buffers
+        if signals is None and takes_tensors:
+            # Read as the collective ops read it; not every context holds one.
+            signals = getattr(
+                current_realization_context(None), "signal_buffers", None
+            )
+        outputs = self._run(
+            **as_graph_values(
+                dict(
+                    tokens=tokens,
+                    input_row_offsets=input_row_offsets,
+                    draft_tokens=draft_tokens,
+                    kv_collections=list(kv_collections),
+                    return_n_logits=return_n_logits,
+                    signal_buffers=list(signals) if signals else None,
+                    host_input_row_offsets=host_input_row_offsets,
+                    data_parallel_splits=data_parallel_splits,
+                    batch_context_lengths=list(batch_context_lengths or []),
+                    seed=seed,
+                    temperature=temperature,
+                    top_k=top_k,
+                    max_k=max_k,
+                    top_p=top_p,
+                    min_top_p=min_top_p,
+                    in_thinking_phase=in_thinking_phase,
+                    ep_inputs=list(ep_inputs) if ep_inputs else None,
+                    draft_kv_collections=list(draft_kv_collections)
+                    if draft_kv_collections is not None
+                    else None,
+                    passthrough_kv={
+                        name: list(leaf)
+                        for name, leaf in (passthrough_kv or {}).items()
+                    },
+                    vision_embeddings=list(vision_embeddings or []),
+                    vision_scatter_indices=list(vision_scatter_indices or []),
+                    pinned_bitmask=pinned_bitmask,
+                    wait_payload=wait_payload,
+                    device_bitmask_scratch=device_bitmask_scratch,
+                    extra=dict(extra or {}),
+                    draft_probs_full=draft_probs_full,
+                    penalties=penalties,
+                    draft_slot_ids=draft_slot_ids,
+                    draft_block_offsets=draft_block_offsets,
+                )
+            )
+        )
+        # Per-element Any: the constrained return type cannot narrow on the
+        # runtime check.
+        result: tuple[Any, ...] = (
+            as_tensors(outputs) if takes_tensors else outputs
+        )
+        return result
+
+    def _run(
+        self,
+        tokens: TensorValue,
+        input_row_offsets: TensorValue,
+        draft_tokens: TensorValue,
+        *,
+        kv_collections: list[PagedCacheValues],
+        return_n_logits: TensorValue,
+        signal_buffers: list[BufferValue] | None = None,
+        host_input_row_offsets: TensorValue | None = None,
+        data_parallel_splits: TensorValue | None = None,
+        batch_context_lengths: list[TensorValue] | None = None,
+        seed: TensorValue,
+        temperature: TensorValue,
+        top_k: TensorValue,
+        max_k: TensorValue,
+        top_p: TensorValue,
+        min_top_p: TensorValue,
+        in_thinking_phase: TensorValue | None = None,
+        ep_inputs: list[Value[Any]] | None = None,
+        draft_kv_collections: list[PagedCacheValues] | None = None,
+        passthrough_kv: Mapping[str, list[PagedCacheValues]] | None = None,
+        vision_embeddings: list[TensorValue] | None = None,
+        vision_scatter_indices: list[TensorValue] | None = None,
+        pinned_bitmask: TensorValue | None = None,
+        wait_payload: BufferValue | None = None,
+        device_bitmask_scratch: BufferValue | None = None,
+        extra: Mapping[str, Any] | None = None,
+        draft_probs_full: TensorValue | None = None,
+        penalties: LogitPenalties | None = None,
+        draft_slot_ids: TensorValue | None = None,
+        draft_block_offsets: TensorValue | None = None,
+    ) -> tuple[TensorValue, ...]:
+        """Runs one spec-decode iteration on graph values."""
         draft_slot_ids, draft_block_offsets = self._draft_rows(
             draft_slot_ids, draft_block_offsets
         )
@@ -799,7 +958,9 @@ class SequentialDriver(
                 draft_block_offsets=draft_block_offsets,
             )
 
-            verified = self._target.verify(batch)
+            verified: Verified[Any] = as_graph_values(
+                self._target.verify(_for_adapter(self._target, batch))
+            )
 
         with Graph.current.profile_scope(
             "verify_and_sample", color=ProfileScopeColor.ORANGE
@@ -971,8 +1132,13 @@ class SequentialDriver(
         batch = replace(batch, num_accepted=num_accepted)
         sampled = self._draft_proposal == "sampled"
         with Graph.current.profile_scope("draft_step_0"):
-            prefill = self._proposer.prefill(
-                batch, shifted_corrected, target_hidden
+            proposer = self._proposer
+            prefill: Proposed = as_graph_values(
+                proposer.prefill(
+                    _for_adapter(proposer, batch),
+                    _for_adapter(proposer, shifted_corrected),
+                    _for_adapter(proposer, target_hidden),
+                )
             )
 
             splits = (
@@ -1258,7 +1424,13 @@ class SequentialDriver(
                     batch_context_lengths=batch_context_lengths,
                 )
 
-                proposed = self._proposer.step(step_batch, draft_input, index)
+                proposed: Proposed = as_graph_values(
+                    self._proposer.step(
+                        _for_adapter(self._proposer, step_batch),
+                        _for_adapter(self._proposer, draft_input),
+                        index,
+                    )
+                )
 
                 assert proposed.logits is not None, (
                     "a draft step must return logits; only the prefill may hand"

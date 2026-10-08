@@ -77,6 +77,9 @@ from max.nn.kernels import (
     moe_router_group_limited as _moe_router_group_limited,
 )
 from max.nn.kernels import (
+    mtp_eh_norm as _mtp_eh_norm,
+)
+from max.nn.kernels import (
     quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
 )
 from max.nn.kernels import (
@@ -222,6 +225,7 @@ fused_silu_quantized = F.functional(_fused_silu_quantized)
 # Routing decisions must match the placement of the (replicated) router
 # scores so every device agrees on expert assignment under TP/EP.
 moe_router_group_limited = F.functional(_moe_router_group_limited)
+mtp_eh_norm = F.functional(_mtp_eh_norm)
 
 
 def _moe_sigmoid_gemv_router_rule(
@@ -264,6 +268,7 @@ __all__ = [
     "moe_finalize",
     "moe_router_group_limited",
     "moe_sigmoid_gemv_router",
+    "mtp_eh_norm",
     "quantize_dynamic_scaled_float8",
     "rms_norm_key_cache",
     "rope_ragged",

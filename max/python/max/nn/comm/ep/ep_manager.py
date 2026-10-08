@@ -541,17 +541,22 @@ class EPBatchManager:
             }
             start_idx += n_gpus
 
-    def comm_buffers(self, input_vals: Iterable[Value[Any]]) -> EPCommBuffers:
+    def comm_buffers(
+        self, input_vals: Iterable[Value[Any] | Tensor]
+    ) -> EPCommBuffers:
         """Fetches the EP buffers and wraps them as an :class:`EPCommBuffers`.
 
         Args:
-            input_vals: Graph input values containing all buffer references,
-                in the same order as :meth:`input_types`.
+            input_vals: The inputs declared by :meth:`input_types`, in order,
+                as graph values or single-device tensors.
 
         Returns:
             Dataclass containing the EP comm tensors.
         """
-        self.fetch_buffers(input_vals)
+        self.fetch_buffers(
+            v.graph_values[0] if isinstance(v, Tensor) else v
+            for v in input_vals
+        )
         eplb_log2phy: dict[int, Tensor] | None = None
         eplb_logcnt: dict[int, Tensor] | None = None
         if self.config.eplb_enabled:

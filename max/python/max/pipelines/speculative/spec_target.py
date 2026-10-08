@@ -20,10 +20,11 @@ the driver hands :meth:`SpecDecodeTarget.verify`.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar
+from typing import Generic, Protocol
 
+from max import tree
 from max.graph import BufferType, TensorType, TensorValue
+from typing_extensions import TypeVar
 
 __all__ = ["SpecDecodeTarget", "Verified"]
 
@@ -33,9 +34,12 @@ _TargetHiddenT = TypeVar("_TargetHiddenT")
 _BatchT = TypeVar("_BatchT", contravariant=True)
 """The driver's batch type. Contravariant: ``verify`` only consumes it."""
 
+_LogitsT = TypeVar("_LogitsT", default=TensorValue)
+"""The logits' value type: a graph value, or an experimental ``Tensor``."""
 
-@dataclass(frozen=True)
-class Verified(Generic[_TargetHiddenT]):
+
+@tree.dataclass(frozen=True)
+class Verified(Generic[_TargetHiddenT, _LogitsT]):
     """What the target contributes: verification logits and hidden states.
 
     Naming the two results is the point. The target output tuple is
@@ -45,14 +49,14 @@ class Verified(Generic[_TargetHiddenT]):
     and ``[0]`` and ``[2 : 2 + n]`` in another. The adapter owns that layout.
     """
 
-    logits: TensorValue
+    logits: _LogitsT
     hidden: _TargetHiddenT
 
 
-class SpecDecodeTarget(Protocol[_BatchT, _TargetHiddenT]):
+class SpecDecodeTarget(Protocol[_BatchT, _TargetHiddenT, _LogitsT]):
     """The target model's entry point and output layout."""
 
-    def verify(self, batch: _BatchT) -> Verified[_TargetHiddenT]:
+    def verify(self, batch: _BatchT) -> Verified[_TargetHiddenT, _LogitsT]:
         """Runs the target over the merged prompt + draft tokens."""
         ...
 

@@ -17,10 +17,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Any
+from typing import Any, Generic, overload
 
 from max import tree
 from max.dtype import DType
+from max.experimental.tensor import Tensor
 from max.graph import (
     BufferType,
     BufferValue,
@@ -35,6 +36,9 @@ from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
 )
+from typing_extensions import TypeVar
+
+from ._tensor_compat import as_graph_values, as_tensors
 
 __all__ = [
     "SpecDecodeGraphInputs",
@@ -80,6 +84,12 @@ class SpecDecodeInputTypeSpec:
     sequential driver skips on one device, tensor-parallel or data-parallel,
     and the block driver on one device, for argmax and sampled proposals
     alike. A sampled step pads the skipped rows' distributions with zeros."""
+    trace_owns_signal_buffers: bool = False
+    """Declare no signal-buffer inputs, whatever the flags above say.
+
+    A graph traced by :meth:`~max.experimental.nn.Module.compile` appends its
+    own after every declared input, so declaring them here too would leave
+    two sets."""
     enable_sampled_draft_proposal: bool = False
     """Declare the ``draft_probs_full`` input: the distribution the draft
     sampled its token from, which the acceptance test's residual subtracts and
@@ -88,6 +98,12 @@ class SpecDecodeInputTypeSpec:
     ``draft_proposal="sampled"``."""
     vocab_size: int | None = None
     """Static vocabulary size, required by ``enable_sampled_draft_proposal``."""
+
+
+def _declares_signal_buffers(spec: SpecDecodeInputTypeSpec) -> bool:
+    return (
+        spec.distributed or spec.include_signal_buffers
+    ) and not spec.trace_owns_signal_buffers
 
 
 def build_spec_decode_input_types(
@@ -173,7 +189,7 @@ def build_spec_decode_input_types(
                 device=DeviceRef.CPU(),
             )
         )
-    if spec.distributed or spec.include_signal_buffers:
+    if _declares_signal_buffers(spec):
         all_input_types.extend(Signals(devices=devices).input_types())
 
     all_input_types.extend(kv_params.flattened_kv_inputs())
@@ -287,8 +303,19 @@ def spec_decode_tail_input_types(
     return tuple(all_input_types)
 
 
-@dataclass(frozen=True)
-class SpecDecodeGraphInputs:
+_T = TypeVar("_T", TensorValue, Tensor, default=TensorValue)
+"""The inputs' value type: a graph value, or an experimental ``Tensor``."""
+
+_B = TypeVar("_B", BufferValue, Tensor, default=BufferValue)
+"""The buffer type, ``Tensor`` alongside a ``Tensor`` :obj:`_T`."""
+
+_V = TypeVar("_V", Value[Any], Tensor, default=Value[Any])
+"""The type of an input the decode does not interpret, ``Tensor`` alongside a
+``Tensor`` :obj:`_T`."""
+
+
+@tree.dataclass(frozen=True)
+class SpecDecodeGraphInputs(Generic[_T, _B, _V]):
     """A unified spec-decode graph's inputs, named rather than positional.
 
     Every field corresponds to one group of
@@ -296,51 +323,49 @@ class SpecDecodeGraphInputs:
     exactly when the spec flag that gates its group is unset.
     """
 
-    tokens: TensorValue
-    input_row_offsets: TensorValue
-    return_n_logits: TensorValue
-    kv_tree: KVCacheInputs[TensorValue, BufferValue]
-    draft_tokens: TensorValue
-    seed: TensorValue
-    temperature: TensorValue
-    top_k: TensorValue
-    max_k: TensorValue
-    top_p: TensorValue
-    min_top_p: TensorValue
+    tokens: _T
+    input_row_offsets: _T
+    return_n_logits: _T
+    kv_tree: KVCacheInputs[_T, _B]
+    draft_tokens: _T
+    seed: _T
+    temperature: _T
+    top_k: _T
+    max_k: _T
+    top_p: _T
+    min_top_p: _T
 
-    host_input_row_offsets: TensorValue | None = None
-    data_parallel_splits: TensorValue | None = None
-    draft_probs_full: TensorValue | None = None
-    in_thinking_phase: TensorValue | None = None
-    draft_slot_ids: TensorValue | None = None
+    host_input_row_offsets: _T | None = None
+    data_parallel_splits: _T | None = None
+    draft_probs_full: _T | None = None
+    in_thinking_phase: _T | None = None
+    draft_slot_ids: _T | None = None
     """Which drafter rows this step computes, as the tensor's extent:
     ``arange(batch_size * rows_per_seq)`` to draft, empty to skip. ``None``
     unless the spec set ``include_skippable_draft``."""
-    draft_block_offsets: TensorValue | None = None
+    draft_block_offsets: _T | None = None
     """The draft forward's ragged row offsets: ``[0, K, 2K, ...]`` to draft,
     all zeros to skip. ``None`` unless the spec set
     ``include_skippable_draft``."""
-    pinned_bitmask: TensorValue | None = None
-    wait_payload: BufferValue | None = None
-    device_bitmask_scratch: BufferValue | None = None
+    pinned_bitmask: _T | None = None
+    wait_payload: _B | None = None
+    device_bitmask_scratch: _B | None = None
 
-    vision_embeddings: list[TensorValue] = field(default_factory=list)
-    vision_scatter_indices: list[TensorValue] = field(default_factory=list)
-    signal_buffers: list[BufferValue] = field(default_factory=list)
-    batch_context_lengths: list[TensorValue] = field(default_factory=list)
-    ep_inputs: list[Value[Any]] = field(default_factory=list)
+    vision_embeddings: list[_T] = field(default_factory=list)
+    vision_scatter_indices: list[_T] = field(default_factory=list)
+    signal_buffers: list[_B] = field(default_factory=list)
+    batch_context_lengths: list[_T] = field(default_factory=list)
+    ep_inputs: list[_V] = field(default_factory=list)
 
-    leading: list[Value[Any]] = field(default_factory=list)
+    leading: list[_V] = field(default_factory=list)
     """Inputs ahead of ``tokens``, for a model that declares its own group
     first. Empty unless the signature declared one."""
 
-    trailing: list[Value[Any]] = field(default_factory=list)
+    trailing: list[_V] = field(default_factory=list)
     """Inputs past the canonical tail, for a model that appends its own
     group. Empty unless the decode allowed trailing."""
 
-    def kv(
-        self, *path: str
-    ) -> list[KVCacheInputsPerDevice[TensorValue, BufferValue]]:
+    def kv(self, *path: str) -> list[KVCacheInputsPerDevice[_T, _B]]:
         """Returns one KV leaf's per-device inputs, addressed by name.
 
         Raises:
@@ -367,7 +392,7 @@ class SpecDecodeGraphInputs:
         return list(tree.leaves(node, leaf=KVCacheInputsPerDevice))
 
     @property
-    def host_offsets(self) -> TensorValue:
+    def host_offsets(self) -> _T:
         """:attr:`host_input_row_offsets`, for a model that declares it.
 
         Declared by every ``distributed=True`` spec and no other.
@@ -376,13 +401,13 @@ class SpecDecodeGraphInputs:
         return self.host_input_row_offsets
 
     @property
-    def dp_splits(self) -> TensorValue:
+    def dp_splits(self) -> _T:
         """:attr:`data_parallel_splits`, for a model that declares it."""
         assert self.data_parallel_splits is not None
         return self.data_parallel_splits
 
     @property
-    def thinking_phase(self) -> TensorValue:
+    def thinking_phase(self) -> _T:
         """:attr:`in_thinking_phase`, for a model that declares it.
 
         Declared whenever the spec sets ``include_in_thinking_phase``.
@@ -553,7 +578,7 @@ def decode_spec_decode_input_values(
     data_parallel_splits = take().tensor if spec.distributed else None
 
     signal_buffers: list[BufferValue] = []
-    if spec.distributed or spec.include_signal_buffers:
+    if _declares_signal_buffers(spec):
         signal_buffers = [take().buffer for _ in devices]
 
     kv_tree = kv_params.unflatten_kv_inputs(it)
@@ -676,14 +701,35 @@ class SpecDecodeGraphSignature:
             leading_input_types=self.leading_input_types(),
         )
 
+    @overload
     def decode_inputs(
         self,
         graph_inputs: Iterable[Value[Any]],
         kv_params: KVCacheParamInterface | None = None,
-    ) -> SpecDecodeGraphInputs:
-        """Decodes a graph built from :meth:`input_types` back into names."""
+    ) -> SpecDecodeGraphInputs: ...
+
+    @overload
+    def decode_inputs(
+        self,
+        graph_inputs: Iterable[Tensor],
+        kv_params: KVCacheParamInterface | None = None,
+    ) -> SpecDecodeGraphInputs[Tensor, Tensor, Tensor]: ...
+
+    def decode_inputs(
+        self,
+        graph_inputs: Iterable[Value[Any]] | Iterable[Tensor],
+        kv_params: KVCacheParamInterface | None = None,
+    ) -> SpecDecodeGraphInputs[Any, Any, Any]:
+        """Decodes a graph built from :meth:`input_types` back into names.
+
+        Takes the graph's inputs, or the single-device ``Tensor`` values a
+        ModuleV3 ``forward`` receives for them; the result holds the same
+        type.
+        """
+        inputs = list(graph_inputs)
+        takes_tensors = any(isinstance(value, Tensor) for value in inputs)
         decoded = decode_spec_decode_input_values(
-            graph_inputs,
+            as_graph_values(inputs),
             self.input_spec,
             kv_params=self._signature_kv(kv_params),
             num_ep_inputs=len(self.ep_input_types()),
@@ -696,7 +742,7 @@ class SpecDecodeGraphSignature:
             decoded.draft_slot_ids,
             decoded.draft_block_offsets,
         )
-        return decoded
+        return as_tensors(decoded) if takes_tensors else decoded
 
     def _draft_rows(
         self,
