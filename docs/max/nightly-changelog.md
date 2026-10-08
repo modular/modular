@@ -70,6 +70,11 @@ This version is still a work in progress.
 
 ## MAX framework
 
+- Fixed memory planning on Linux CUDA and HIP GPUs that share physical memory
+  with the CPU. MAX now includes reclaimable filesystem cache in available
+  memory and respects cgroup memory limits, preventing false out-of-memory
+  errors when planning a model.
+
 - Added `max.profiler.oneshot.cuda_profiler_region()`, a context manager that
   brackets a region with `cudaProfilerStart`/`cudaProfilerStop` so `nsys`/`ncu`
   capture only the wrapped region.
