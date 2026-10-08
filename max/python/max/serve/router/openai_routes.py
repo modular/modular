@@ -109,6 +109,7 @@ from max.serve.pipelines.preprocess_cache_stats import (
     PreprocessedImageMask,
     preprocessed_image_probe,
 )
+from max.serve.router._disconnect import raise_on_disconnect
 from max.serve.router._image_resolution import (
     MediaRef,
     _ImageFact,
@@ -157,6 +158,7 @@ from max.serve.telemetry.common import request_trace_ctx
 from max.serve.telemetry.metrics import METRICS, ConversationTurn
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import RequestQueueFull
+from max.support._taskgroups import CancelGroup
 from openai.types.chat.chat_completion_chunk import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
@@ -2548,8 +2550,9 @@ async def openai_create_chat_completion(
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(token_stream, ping=100000, sep="\n")
 
-        response = await response_generator.complete([token_request])
-        return response
+        async with CancelGroup() as group:
+            group.create_task(raise_on_disconnect(request))
+            return await response_generator.complete([token_request])
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
@@ -3694,7 +3697,9 @@ async def openai_create_completion(
                 sep="\n",
             )
 
-        resp = await response_generator.complete(token_requests)
+        async with CancelGroup() as group:
+            group.create_task(raise_on_disconnect(request))
+            resp = await response_generator.complete(token_requests)
         # ICK: The token generator doesn't know about http requests, so sets
         # the wrong id.  Overwrite with the http id.
         resp.id = http_req_id

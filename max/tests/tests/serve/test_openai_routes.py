@@ -28,7 +28,7 @@ import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tokenizer import (
@@ -75,7 +75,12 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.request import register_request
 from max.serve.router import _image_resolution
+from max.serve.router._disconnect import (
+    ClientDisconnected,
+    raise_on_disconnect,
+)
 from max.serve.router._image_resolution import (
     _decode_data_uri_base64,
     decode_and_validate_images,
@@ -99,6 +104,7 @@ from max.serve.router.openai_routes import (
     _tool_choice_label,
     get_tool_parser,
     openai_create_chat_completion,
+    openai_create_completion,
     openai_parse_chat_completion_request,
     record_request_end,
 )
@@ -119,6 +125,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
 from PIL import Image
 from pydantic import AnyUrl, ValidationError
 from sse_starlette.sse import AppStatus
+from starlette.types import Message, Scope
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -1513,7 +1520,8 @@ async def test_openai_chat_completion_cancels_disconnected_request(
         # wait for request to reach backend
         req = await asyncio.wait_for(request_queue.get(), timeout=1.0)
         assert req.request_id == RequestID("disconnect-test")
-        request_started.set()
+        # receive() stays pending: this covers cancelling the handler, and the
+        # tests below cover a disconnect seen through receive().
 
         # simulate disconnection
         session.cancel()
@@ -1521,6 +1529,225 @@ async def test_openai_chat_completion_cancels_disconnected_request(
         # expect cancellation request to backend
         cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
         assert cancel == [RequestID("disconnect-test")]
+
+
+def _echo_pipeline() -> tuple[
+    TokenGeneratorPipeline,
+    _WritableQueue[BaseContext],
+    _WritableQueue[list[RequestID]],
+]:
+    """Builds an echo pipeline whose worker never answers, so a request stays
+    in flight until it is cancelled."""
+    request_queue = _WritableQueue[BaseContext]()
+    cancel_queue = _WritableQueue[list[RequestID]]()
+    model_worker = ZmqModelWorkerProxy(
+        request_queue=request_queue,
+        response_queue=asyncio.Queue[Any](),
+        cancel_queue=cancel_queue,
+    )
+    pipeline = TokenGeneratorPipeline(
+        model_name="echo",
+        tokenizer=EchoPipelineTokenizer(),
+        model_worker=model_worker,
+    )
+    return pipeline, request_queue, cancel_queue
+
+
+def _chat_request_body() -> bytes:
+    return json.dumps(
+        simple_openai_request(model_name="echo", content="test data")
+    ).encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_non_streaming_cancels_on_disconnect(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+) -> None:
+    """A non-streaming request is cancelled when its client disconnects.
+
+    Starlette never cancels a plain endpoint, so unlike the test above the
+    handler task is left running: only the disconnect itself may stop it.
+    """
+    request_started = asyncio.Event()
+    pipeline, request_queue, cancel_queue = _echo_pipeline()
+    mock_request = _make_disconnect_request(
+        pipeline=pipeline,
+        pipeline_config=mock_pipeline_config,
+        request_started=request_started,
+        body=_chat_request_body(),
+    )
+
+    session = asyncio.create_task(openai_create_chat_completion(mock_request))
+    req = await asyncio.wait_for(request_queue.get(), timeout=1.0)
+    assert req.request_id == RequestID("disconnect-test")
+    request_started.set()
+
+    cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+    assert cancel == [RequestID("disconnect-test")]
+    # The request_session middleware turns this into the 499.
+    with pytest.raises(ClientDisconnected):
+        await asyncio.wait_for(session, timeout=1.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        pytest.param("/v1/chat/completions", None, id="chat"),
+        pytest.param(
+            "/v1/completions",
+            json.dumps({"model": "echo", "prompt": "test data"}).encode(),
+            id="completions",
+        ),
+    ],
+)
+async def test_non_streaming_cancels_behind_middleware(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+    path: str,
+    body: bytes | None,
+) -> None:
+    """The disconnect reaches the route through the request_session
+    middleware, whose BaseHTTPMiddleware wrapper drops the disconnect for a
+    non-blocking ``Request.is_disconnected()``, and the middleware answers
+    it with a 499."""
+    pipeline, request_queue, cancel_queue = _echo_pipeline()
+    app = FastAPI()
+    app.state.pipeline = pipeline
+    app.state.pipeline_config = mock_pipeline_config
+    app.state.settings = Settings(
+        api_types=[APIType.OPENAI], use_heartbeat=False
+    )
+    register_request(app)
+    app.add_api_route(
+        "/v1/chat/completions",
+        openai_create_chat_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+    app.add_api_route(
+        "/v1/completions",
+        openai_create_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+
+    client_gone = asyncio.Event()
+    messages: list[Message] = [
+        {
+            "type": "http.request",
+            "body": body if body is not None else _chat_request_body(),
+            "more_body": False,
+        }
+    ]
+
+    async def receive() -> Message:
+        if messages:
+            return messages.pop(0)
+        await client_gone.wait()
+        return {"type": "http.disconnect"}
+
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8000),
+        "app": app,
+    }
+    call = asyncio.create_task(app(scope, receive, send))
+    req = await asyncio.wait_for(request_queue.get(), timeout=5.0)
+    client_gone.set()
+
+    cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+    assert cancel == [req.request_id]
+    await asyncio.wait_for(call, timeout=1.0)
+    assert sent[0]["status"] == 499
+    # A completions request is keyed per prompt as "<request id>_<index>".
+    headers = dict(sent[0]["headers"])
+    assert (
+        headers[b"x-request-id"].decode() == req.request_id.value.split("_")[0]
+    )
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_non_streaming_maps_errors(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+) -> None:
+    """An error from the completion still reaches the route's own mapping
+    while the disconnect watch runs beside it."""
+    pipeline, _, _ = _echo_pipeline()
+    mock_request = _make_disconnect_request(
+        pipeline=pipeline,
+        pipeline_config=mock_pipeline_config,
+        request_started=asyncio.Event(),
+        body=_chat_request_body(),
+    )
+
+    with (
+        patch.object(
+            OpenAIChatResponseGenerator,
+            "complete",
+            AsyncMock(side_effect=InputError("bad request")),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await asyncio.wait_for(
+            openai_create_chat_completion(mock_request), timeout=1.0
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "bad request"
+
+
+def _watched_request(*messages: Message | Exception) -> Mock:
+    pending = list(messages)
+
+    async def receive() -> Message:
+        if not pending:
+            await asyncio.Event().wait()
+        message = pending.pop(0)
+        if isinstance(message, Exception):
+            raise message
+        return message
+
+    request = Mock()
+    request.receive = receive
+    request.state = SimpleNamespace(request_id="watch-test")
+    return request
+
+
+@pytest.mark.asyncio
+async def test_raise_on_disconnect_raises_after_body_messages() -> None:
+    request = _watched_request(
+        {"type": "http.request", "body": b"", "more_body": False},
+        {"type": "http.disconnect"},
+    )
+
+    with pytest.raises(ClientDisconnected):
+        await asyncio.wait_for(raise_on_disconnect(request), timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_raise_on_disconnect_returns_when_receive_fails() -> None:
+    """A failed watch leaves the request running rather than abandoning it."""
+    request = _watched_request(RuntimeError("receive failed"))
+
+    await asyncio.wait_for(raise_on_disconnect(request), timeout=1.0)
 
 
 @pytest.mark.asyncio

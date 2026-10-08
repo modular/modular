@@ -20,6 +20,10 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from max.serve._error_envelope import openai_error_body
+from max.serve.router._disconnect import (
+    CLIENT_CLOSED_REQUEST,
+    ClientDisconnected,
+)
 from max.serve.telemetry import common as telemetry
 from max.serve.telemetry._trace_context import (
     end_span_after,
@@ -94,6 +98,13 @@ def register_request(app: FastAPI, *, structured_logging: bool = False) -> None:
         except HTTPException as e:
             status_code = e.status_code
             raise  # already wrapped
+        except ClientDisconnected:
+            status_code = CLIENT_CLOSED_REQUEST
+            logger.info("Client disconnected; cancelled request %s", request_id)
+            return Response(
+                status_code=CLIENT_CLOSED_REQUEST,
+                headers={"X-Request-ID": request_id},
+            )
         except Exception:
             # Returned rather than raised. This middleware runs outside
             # Starlette's ExceptionMiddleware, so a raise here never reaches the

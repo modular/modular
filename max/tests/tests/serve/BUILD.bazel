@@ -85,6 +85,7 @@ modular_py_test(
         requirement("pytest-asyncio"),
         requirement("pyzmq"),
         requirement("sse-starlette"),
+        requirement("starlette"),
         requirement("taskgroup"),
         requirement("transformers"),
         requirement("pillow"),
