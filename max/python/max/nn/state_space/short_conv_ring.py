@@ -13,12 +13,11 @@
 """Depthwise causal short convolution over a ring of past inputs.
 
 The conv state is ``[slots, ring_len, channels]``, the input at position
-``p`` at ring index ``p % ring_len``. :func:`short_conv_ring_fwd` computes
-``x + conv(x)`` with pre-chunk taps read from the ring and writes nothing;
-:func:`short_conv_ring_commit` then writes each sequence's last ``ring_len``
-inputs. One pair of ops covers decode, prefill, mixed batches and
-speculative verify. ``ring_len`` is ``kernel_size - 1`` plus the largest
-rollback a verify step can cause.
+``p`` at ring index ``p % ring_len``. :func:`short_conv_ring` computes
+``x + conv(x)`` with pre-chunk taps read from the ring and, with ``commit``,
+writes each sequence's last ``ring_len`` inputs in the same launch. One op
+covers decode, prefill, mixed batches and speculative verify. ``ring_len`` is
+``kernel_size - 1`` plus the largest rollback a verify step can cause.
 """
 
 from __future__ import annotations
@@ -26,7 +25,7 @@ from __future__ import annotations
 from max.graph import BufferValue, TensorType, TensorValue, ops
 
 
-def short_conv_ring_fwd(
+def short_conv_ring(
     x: TensorValue,
     weight: TensorValue,
     ring: BufferValue,
@@ -34,25 +33,30 @@ def short_conv_ring_fwd(
     positions: TensorValue,
     conv_rows: TensorValue,
     layer_row: TensorValue,
+    *,
+    commit: bool,
 ) -> TensorValue:
-    """Returns ``x + conv(x)`` over a ragged batch; reads ``ring``, writes
-    nothing.
+    """Returns ``x + conv(x)`` over a ragged batch, optionally committing the
+    chunk to ``ring``.
 
     Args:
         x: ``[total_seq_len, channels]`` input.
         weight: ``[channels, kernel_size]`` taps; the last multiplies the
             current token.
-        ring: ``[slots, ring_len, channels]`` conv state.
+        ring: ``[slots, ring_len, channels]`` conv state; written in place
+            when ``commit`` is set.
         input_row_offsets: ``[batch + 1]`` uint32.
         positions: ``[total_seq_len]`` uint32 position per token.
         conv_rows: ``[num_layers, batch]`` uint32 ring slot per sequence.
         layer_row: Scalar uint32 CPU row of ``conv_rows`` this layer reads.
+        commit: Whether to write each sequence's last ``ring_len`` rows of
+            ``x`` into its slot of ``ring``.
 
     Returns:
         Same shape and dtype as ``x``.
     """
     return ops.inplace_custom(
-        "mo.short_conv_ring_fwd",
+        "mo.short_conv_ring",
         device=x.device,
         values=[
             x,
@@ -64,31 +68,5 @@ def short_conv_ring_fwd(
             layer_row,
         ],
         out_types=[TensorType(x.dtype, x.shape, device=x.device)],
+        parameters={"commit": commit},
     )[0].tensor
-
-
-def short_conv_ring_commit(
-    x: TensorValue,
-    ring: BufferValue,
-    input_row_offsets: TensorValue,
-    positions: TensorValue,
-    conv_rows: TensorValue,
-    layer_row: TensorValue,
-) -> None:
-    """Writes each sequence's last ``ring_len`` rows of ``x`` into its slot
-    of ``ring``. Issue after every reader of ``ring`` in the same forward.
-
-    Args:
-        x: ``[total_seq_len, channels]`` conv input.
-        ring: ``[slots, ring_len, channels]`` conv state, written in place.
-        input_row_offsets: ``[batch + 1]`` uint32.
-        positions: ``[total_seq_len]`` uint32 position per token.
-        conv_rows: ``[num_layers, batch]`` uint32 ring slot per sequence.
-        layer_row: Scalar uint32 CPU row of ``conv_rows`` this layer reads.
-    """
-    ops.inplace_custom(
-        "mo.short_conv_ring_commit",
-        device=x.device,
-        values=[ring, x, input_row_offsets, positions, conv_rows, layer_row],
-        out_types=[],
-    )

@@ -38,6 +38,5 @@ Functions
    kda_chunk_supports_head_dims
    kda_decode
    mamba2_ssd_chunk_scan_varlen_fwd_inplace
-   short_conv_ring_commit
-   short_conv_ring_fwd
+   short_conv_ring
    verify_width_operand
