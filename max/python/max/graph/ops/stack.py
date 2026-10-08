@@ -26,25 +26,6 @@ def _axis_bounds(rank: int) -> tuple[int, int]:
     return -(rank + 1), rank
 
 
-def _axis_out_of_range_error(
-    axis: int, lower_bound: int, upper_bound: int
-) -> str:
-    return f"Axis out of range (expected to be in range of [{lower_bound}, {upper_bound}], but got {axis})"
-
-
-def _stack_axis_bounds(rank: int) -> tuple[int, int]:
-    # For stack, valid axis range is [-rank-1, rank] because we're inserting a new dimension
-    return -(rank + 1), rank
-
-
-def _check_stack_axis_in_bounds(axis: int, rank: int) -> None:
-    lower_bound, upper_bound = _stack_axis_bounds(rank)
-    if axis < lower_bound or axis > upper_bound:
-        raise IndexError(
-            _axis_out_of_range_error(axis, lower_bound, upper_bound)
-        )
-
-
 def stack(values: Iterable[TensorValueLike], axis: int = 0) -> TensorValue:
     """Stacks tensors along a new axis.
 

@@ -1352,10 +1352,6 @@ _strong_tensor_value_like = (_Value[mo.TensorType], TensorValue, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
 
 
-def _is_numeric(obj: Any) -> TypeGuard[Numeric]:
-    return isinstance(obj, _numeric)
-
-
 def _is_scalar(obj: Any) -> TypeGuard[Scalar]:
     return isinstance(obj, _scalar)
 

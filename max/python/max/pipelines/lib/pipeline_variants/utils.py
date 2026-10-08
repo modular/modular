@@ -81,37 +81,6 @@ def _count_token_subsequence(
     return count
 
 
-def calculate_num_steps(
-    context: TextGenerationContextType,
-    num_steps: int,
-    max_seq_len: int,
-) -> int:
-    """Compute the number of generation steps allowed for a context.
-
-    The value is clamped by the remaining capacity with respect to
-    the model's configured ``max_seq_len``.
-
-    Args:
-        context: The context whose sequence length constraints apply.
-        num_steps: Desired number of steps to attempt.
-        max_seq_len: The maximum allowed sequence length for the model.
-
-    Returns:
-        The number of steps to execute for this context (>= 1).
-
-    Raises:
-        ValueError: If the current request length is already >= ``max_seq_len``.
-    """
-    num_available_steps = context.compute_num_available_steps(max_seq_len)
-
-    if num_available_steps <= 0:
-        raise ValueError(
-            f"Request {context.request_id} length ({len(context.tokens)}) is larger than or equal to the configured max_length ({max_seq_len})"
-        )
-
-    return min(num_available_steps, num_steps)
-
-
 def build_response(
     context_batch: list[TextGenerationContextType],
     max_seq_len: int,

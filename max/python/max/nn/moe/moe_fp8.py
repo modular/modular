@@ -40,11 +40,6 @@ from .quant_strategy import (
 _T = TypeVar("_T")
 
 
-def _scalar_max(t: TensorValue) -> TensorValue:
-    """Reduces a tensor to a rank-0 scalar max value."""
-    return ops.max(t).reshape([])
-
-
 class MoEQuantized(MoE):
     """Mixture of Experts with FP8 or NVFP4 quantization."""
 

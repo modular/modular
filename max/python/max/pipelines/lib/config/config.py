@@ -1746,26 +1746,6 @@ class PipelineConfig(ConfigFileModel):
     # should rely on the BaseModel implementation.
 
 
-def _parse_flag_bool(value: str, flag_name: str) -> bool:
-    if value.lower() == "true":
-        return True
-    elif value.lower() == "false":
-        return False
-    else:
-        raise ValueError(
-            f"Invalid boolean value: {value} for flag: {flag_name}"
-        )
-
-
-def _parse_flag_int(value: str, flag_name: str) -> int:
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise ValueError(
-            f"Invalid integer value: {value} for flag: {flag_name}"
-        ) from exc
-
-
 PrometheusMetricsMode = Literal[
     "instrument_only", "launch_server", "launch_multiproc_server"
 ]
