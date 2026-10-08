@@ -903,6 +903,9 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
               "the number of trivial loops erased">,
     Statistic<"numErasedTry", "num-erased-try",
               "the number of trivial try erased">,
+    Statistic<"numImpliedConditions", "num-implied-conditions",
+              "the number of if conditions implied by a region that never "
+              "falls through">,
   ];
 }
 
