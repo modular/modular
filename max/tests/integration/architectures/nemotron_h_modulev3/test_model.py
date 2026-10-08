@@ -37,7 +37,6 @@ from max.experimental import functional as F
 from max.experimental.functional import collective_ops
 from max.experimental.sharding import (
     DeviceMesh,
-    Partial,
     Replicated,
     Sharded,
     auto_reshard,
@@ -185,8 +184,8 @@ def _trace_on_devices(
 ) -> tuple[list[DType], int, list[str]]:
     """Traces the tiny model at TP=``n`` on a CPU mesh.
 
-    Only the allreduce of partial sums may reshard, so any other collective
-    fails the trace.
+    Uses the serving path's strict resharding policy, so every placement
+    transition must be explicit.
 
     Args:
         monkeypatch: Replaces the collectives with recorders.
@@ -217,11 +216,9 @@ def _trace_on_devices(
     model = _model_on_devices(config)
     monkeypatch.setattr(F, "distributed_broadcast", record_broadcast)
     monkeypatch.setattr(collective_ops, "allreduce_sum", record_allreduce)
-    # "raise" would refuse the allreduce too, and "silent" hides a peer
-    # copy, which is a move but not a placement transition.
     with (
         warnings.catch_warnings(record=True) as moves,
-        auto_reshard({(Partial, Replicated)}, mode="warn"),
+        auto_reshard(mode="raise"),
     ):
         warnings.simplefilter("always")
         model.trace(

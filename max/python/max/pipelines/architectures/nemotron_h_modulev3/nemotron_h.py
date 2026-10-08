@@ -94,7 +94,9 @@ class NemotronHBlock(Module[..., Tensor]):
         self.mixer = mixer
 
     def forward(self, h: Tensor, *mixer_args: object) -> Tensor:
-        return h + self.mixer(self.norm(h), *mixer_args)
+        # Row-parallel mixers leave partial sums; reduce before the residual add.
+        mixed = self.mixer(self.norm(h), *mixer_args).to(h.mapping)
+        return h + mixed
 
 
 class NemotronHBackbone(Module[..., Tensor]):
