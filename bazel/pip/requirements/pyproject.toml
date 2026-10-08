@@ -67,7 +67,6 @@ dependencies = [
   "pydantic-settings>=2.5.2", # >=2.5.2 required by mcp>=1.19
   "pygame-ce",
   "pygments",
-  "pyinstrument",
   "pytest-asyncio==0.23.7",
   "pytest-benchmark",
   "pytest-mock",
