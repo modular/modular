@@ -5330,21 +5330,23 @@ def mha_decoding_single_batch[
     tile_and_unswitch[[BN]](start, end, loop_over_kvcache)
 
     comptime if decoding_warp_split_k:
-        var output_reg_vecs = (
-            output_reg_tile.tile[
-                num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
-            ](0, 0)
-            .to_layout_tensor()
-            .vectorize[1, p_frag_size // 2]()
-        )
+        var output_reg_vecs = output_reg_tile.tile[
+            num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
+        ](0, 0).vectorize[1, p_frag_size // 2]()
         # offset on the pointer is to avoid possible races
         # with `accum_smem_warp_tile`.
         var o_smem_ptr = q_smem.bitcast[Scalar[accum_type]]()
-        var scratch = LayoutTensor[
+        var scratch = TileTensor[
             accum_type,
-            Layout.row_major(2 * num_warps_n, BM),
+            type_of(row_major[2 * num_warps_n, BM]()),
+            MutAnyOrigin,
             address_space=.SHARED,
-        ](o_smem_ptr + num_warps_n * (num_warps_n - 1) * WM * WN)
+        ](
+            ptr=(
+                o_smem_ptr + num_warps_n * (num_warps_n - 1) * WM * WN
+            ).unsafe_origin_cast[MutAnyOrigin](),
+            layout=row_major[2 * num_warps_n, BM](),
+        )
 
         # Note: Sink handling is done after warp reduction in partition-specific logic below.
         # The warp reduction just combines warps; sink contribution is added to rowsum later.
@@ -5360,8 +5362,6 @@ def mha_decoding_single_batch[
             output_reg_vecs,
             scratch.tile[2 * num_warps_n, WM](0, warp_y),
             o_smem_ptr,
-            rowmax,
-            rowsum,
         )
 
     # Apply softmax denumerator.

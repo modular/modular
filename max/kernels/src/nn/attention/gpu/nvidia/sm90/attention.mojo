@@ -36,9 +36,11 @@ from layout import (
     IntTuple,
     Layout,
     LayoutTensor,
+    TensorLayout,
     TileTensor,
     row_major,
 )
+from layout.tensor_engine import DefaultEngine
 from layout.layout_tensor import copy_local_to_shared
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import tile_layout_k_major
@@ -243,10 +245,10 @@ def _apply_mask[
     decoding: Bool,
     accum_type: DType,
     mask_t: MHAMask,
-    reg_tile_layout: Layout,
-    element_layout: Layout,
+    PLayoutType: TensorLayout,
     //,
     # last_iter: Bool,
+    p_element_size: Int,
     WM: Int,
     WN: Int,
     num_m_mmas: Int,
@@ -262,16 +264,16 @@ def _apply_mask[
     kv_tile_start_row: UInt32,
     mask: mask_t,
     mask_status: TileMaskStatus,
-    # Legacy scalar view: TileTensor has no `element_layout` equivalent for
-    # the per-fragment indexing below.
-    p_reg_tile: LayoutTensor[
+    p_reg_tile: TileTensor[
+        mut=True,
         accum_type,
-        reg_tile_layout,
+        PLayoutType,
         MutAnyOrigin,
         address_space=.LOCAL,
-        element_layout=element_layout,
+        Engine=DefaultEngine[element_width=p_element_size],
     ],
 ):
+    comptime assert p_reg_tile.flat_rank == 4
     comptime num_groups_per_thread = min(
         2, ceildiv(group, 8)
     ) if decoding else 2
@@ -288,7 +290,7 @@ def _apply_mask[
     else:
         batch_cache_valid_length = 0
 
-    comptime p_frag_simdwidth = element_layout.size()
+    comptime p_frag_simdwidth = p_element_size
     # Vectorize by 2.
     var fragment_row: UInt32 = lane // 4
     var fragment_col: UInt32 = (

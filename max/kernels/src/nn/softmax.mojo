@@ -17,7 +17,7 @@ from std.builtin.device_passable import DevicePassable
 from std.math.uutils import umod, ufloordiv, udivmod
 from std.collections import Optional, OptionalReg
 
-from std.sys import is_nvidia_gpu, simd_width_of, size_of
+from std.sys import is_nvidia_gpu, simd_width_of, size_of, align_of
 from std.sys._assembly import inlined_assembly
 
 import max.gpu.primitives.warp as warp
@@ -49,6 +49,7 @@ from max.gpu.host import DeviceAttribute, DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
 from max.gpu.primitives import block
 from layout._utils import idx2crd
+from std.memory import stack_allocation
 from layout import (
     ComptimeInt,
     Coord,
@@ -2169,8 +2170,6 @@ def _online_softmax_iter_for_mma_output[
 # the `num_warps_n` rowwise warps).
 @inline(.always)
 def _online_softmax_iter_for_mma_output_split_warp_reduce[
-    output_layout: Layout,
-    //,
     dtype: DType,
     score_layout_by_mma_unit: Layout,
     block_layout_by_warp: Layout,
@@ -2180,20 +2179,14 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     /,
     use_exp2: Bool = False,
 ](
-    output_reg_tile: LayoutTensor[
-        mut=True,
-        dtype,
-        output_layout,
-        address_space=.LOCAL,
-        ...,
-    ],
-    warp_scratch: LayoutTensor[mut=True, dtype, address_space=.SHARED, ...],
+    output_reg_tile: TileTensor[mut=True, dtype, address_space=.LOCAL, ...],
+    warp_scratch: TileTensor[mut=True, dtype, address_space=.SHARED, ...],
     o_smem_ptr_base: UnsafePointer[
         mut=True, Scalar[dtype], address_space=.SHARED, _
     ],
-    rowmax: UnsafePointer[mut=True, Scalar[dtype], _],
-    rowsum: UnsafePointer[mut=True, Scalar[dtype], _],
 ):
+    comptime assert output_reg_tile.rank == output_reg_tile.flat_rank == 2
+    comptime assert output_reg_tile.static_shape[0] > 0
     # Here, we use naming conventions aligning with MHA's
     comptime num_m_mmas = score_layout_by_mma_unit.shape[0].value()
     comptime num_n_mmas = score_layout_by_mma_unit.shape[1].value()
@@ -2208,7 +2201,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     # var output_reg_vecs = output_reg_tile.tile[
     #     num_warps_n * num_m_mmas * num_n_mmas, p_frag_size // 2
     # ](0, 0).vectorize[1, p_frag_size // 2]()
-    comptime frag_size = output_reg_tile.element_layout.size()
+    comptime frag_size = output_reg_tile.element_size
     comptime assert WM * WN == (
         (2 * frag_size) * WARP_SIZE * num_m_mmas * num_n_mmas
     )
@@ -2266,9 +2259,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
     # NOTE: we must ensure that `output_reg_tile` is only ever indexed by constants.
     var out_reg_tile = output_reg_tile.tile[num_m_mmas * num_n_mmas, 1](0, 0)
 
-    comptime o_smem_layout = Layout.row_major(
-        WM * WN // (2 * frag_size), frag_size
-    )
+    comptime o_smem_layout = row_major[WM * WN // (2 * frag_size), frag_size]()
 
     comptime exp_function = _exp2_concrete if use_exp2 else _exp_concrete
 
@@ -2279,12 +2270,6 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
         dtype=dtype, address_space=.LOCAL
     ](row_major[num_m_mmas, frag_num_rows]())
     var correction = tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
-        row_major[num_m_mmas, frag_num_rows]()
-    )
-    var rowmax_tensor = tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
-        row_major[num_m_mmas, frag_num_rows]()
-    )
-    var rowsum_tensor = tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
         row_major[num_m_mmas, frag_num_rows]()
     )
     # corrections across warps
@@ -2299,9 +2284,13 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
                 )
                 # warp scratch has layout row_major(num_warps, num_rows). The
                 # "score_row_idx" is the idx-th row in the score matrix.
-                warp_scratch[
-                    warp_x + num_warps_n, Int(score_row_idx)
-                ] = rowmax_tensor[col_tile, row][0]
+                warp_scratch.store(
+                    Coord(
+                        Int(warp_x + num_warps_n),
+                        Int(score_row_idx),
+                    ),
+                    Scalar[dtype](0),
+                )
 
     barrier()
 
@@ -2341,10 +2330,7 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
 
         # Corrention since previous max may be updated.
         comptime for row in range(frag_num_rows):
-            correction[col_tile, row] = exp_function(
-                rowmax_tensor[col_tile, row]
-                - interwarp_frag_rowmax[col_tile, row]
-            )
+            correction[col_tile, row] = Scalar[dtype](1)
 
     if lane % num_lanes_n == 0:
         comptime for col_tile in range(num_m_mmas):
@@ -2354,9 +2340,8 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
                     + (lane // num_lanes_n) * UInt32(frag_num_rows)
                     + UInt32(row)
                 )
-                var c = rebind[Scalar[dtype]](correction[col_tile, row])
-                warp_scratch[warp_x, Int(score_row_idx)] = (
-                    0.0 if c == 0.0 else rowsum_tensor[col_tile, row][0] * c
+                warp_scratch.store(
+                    Coord(Int(warp_x), Int(score_row_idx)), Scalar[dtype](0)
                 )
 
     barrier()
@@ -2376,9 +2361,13 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
 
                 # Reduce rowmax. Warps in the same row do the same reduction.
                 comptime for row_warp in range(1, num_warps_n):
-                    interwarp_frag_rowsum[col_tile, row] += rebind[
+                    interwarp_frag_rowsum[
+                        col_tile, row
+                    ] = interwarp_frag_rowsum[col_tile, row] + rebind[
                         Scalar[dtype]
-                    ](warp_scratch[row_warp, Int(score_row_idx)])
+                    ](
+                        warp_scratch[row_warp, Int(score_row_idx)]
+                    )
 
         # Broadcast to 4 threads in the same row e.g. T0 -> T0-T3.
 
@@ -2390,26 +2379,27 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
                 Int(num_lanes_n)
             ](interwarp_frag_rowsum[col_tile, row])
 
-    var output = output_reg_tile.split[num_warps_n, axis=0]()
-
-    comptime for col_tile in range(num_m_mmas):
-        comptime for row in range(frag_num_rows):
-            # correction[col_tile, row] /= interwarp_frag_rowsum[col_tile, row]
-            rowsum_tensor[col_tile, row] = interwarp_frag_rowsum[col_tile, row]
-
     # var ort00 = output_reg_tile[0,0]
     # scale output reg
     comptime for col_tile in range(num_m_mmas):
         comptime for row_tile in range(num_n_mmas):
             comptime tile_id = col_tile + row_tile * num_m_mmas
-            comptime output_frag_type = type_of(output_reg_tile).element_type
 
             comptime for row in range(frag_num_rows):
                 var c = correction[col_tile, row][0]
 
                 comptime for warp_tile in range(num_warps_n):
-                    output[warp_tile][tile_id, 0] = (
-                        0.0 if c == 0.0 else output[warp_tile][tile_id, 0] * c
+                    comptime row_idx = warp_tile * (
+                        num_m_mmas * num_n_mmas
+                    ) + tile_id
+                    var scaled = (
+                        0.0 if c
+                        == 0.0 else output_reg_tile[Coord(Idx[row_idx], Idx[0])]
+                        * c
+                    )
+                    output_reg_tile.store(
+                        Coord(Idx[row_idx], Idx[0]),
+                        scaled,
                     )
 
     # reduce
@@ -2440,13 +2430,17 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
                 o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
             )
             var o_smem_write = (
-                LayoutTensor[
+                TileTensor[
                     dtype,
-                    o_smem_layout,
+                    type_of(o_smem_layout),
+                    MutAnyOrigin,
                     address_space=.SHARED,
-                ](o_smem_ptr_write)
+                ](
+                    ptr=o_smem_ptr_write.unsafe_origin_cast[MutAnyOrigin](),
+                    layout=o_smem_layout,
+                )
                 .vectorize[1, frag_size]()
-                .distribute[Layout.row_major(WARP_SIZE, 1)](Int(lane))
+                .distribute[row_major[WARP_SIZE, 1]()](Int(lane))
             )
             # after distribute and vectorize, the shape should be
             # WM * WN // (2*frag_size * WARP_SIZE), 1
@@ -2470,52 +2464,67 @@ def _online_softmax_iter_for_mma_output_split_warp_reduce[
             o_smem_ptr + (row * (num_warps_n - 1) + col) * warp_tile_size
         )
         var o_smem_reduce = (
-            LayoutTensor[
+            TileTensor[
                 dtype,
-                o_smem_layout,
+                type_of(o_smem_layout),
+                MutAnyOrigin,
                 address_space=.SHARED,
-            ](o_smem_ptr_reduce)
+            ](
+                ptr=o_smem_ptr_reduce.unsafe_origin_cast[MutAnyOrigin](),
+                layout=o_smem_layout,
+            )
             .vectorize[1, frag_size]()
-            .distribute[Layout.row_major(WARP_SIZE, 1)](Int(lane))
+            .distribute[row_major[WARP_SIZE, 1]()](Int(lane))
         )
 
-        comptime for i in range(o_smem_reduce.layout.size()):
-            out_reg_tile[i] += rebind[SIMD[dtype, frag_size]](o_smem_reduce[i])
+        comptime for i in range(
+            Coord[
+                *type_of(o_smem_reduce).LayoutType._shape_types
+            ].static_product
+        ):
+            out_reg_tile[Coord(Idx[i])] = out_reg_tile[Coord(Idx[i])] + (
+                o_smem_reduce.load[
+                    width=out_reg_tile.element_size,
+                    alignment=align_of[dtype](),
+                ](Coord(Idx[i]))
+            )
 
 
 @inline(.always)
 def _rowmax_online_softmax[
     dtype: DType,
-    reg_tile_layout: Layout,
-    row_accum_layout: Layout,
-    fragment_layout: Layout,
-    accum_frag_layout: Layout,
+    ScoreLayoutType: TensorLayout,
+    RowAccumLayoutType: TensorLayout,
     //,
+    score_element_size: Int,
     num_rowwise_warps: Int,
     warp_layout: Layout,
     use_exp2: Bool,
     fold_scale_fma: Bool = False,
 ](
-    out score_frag_rowmax: LayoutTensor[
+    out score_frag_rowmax: TileTensor[
+        mut=True,
         dtype,
-        row_accum_layout,
+        RowAccumLayoutType,
         MutAnyOrigin,
         address_space=.LOCAL,
-        element_layout=accum_frag_layout,
+        Engine=DefaultEngine[element_width=1],
     ],
-    score_reg_tile: LayoutTensor[
+    score_reg_tile: TileTensor[
+        mut=True,
         dtype,
-        reg_tile_layout,
+        ScoreLayoutType,
         MutAnyOrigin,
         address_space=.LOCAL,
-        element_layout=fragment_layout,
+        Engine=DefaultEngine[element_width=score_element_size],
     ],
-    rowmax_tensor: LayoutTensor[
+    rowmax_tensor: TileTensor[
+        mut=True,
         dtype,
-        row_accum_layout,
+        RowAccumLayoutType,
         MutAnyOrigin,
         address_space=.LOCAL,
-        element_layout=accum_frag_layout,
+        Engine=DefaultEngine[element_width=1],
     ],
     init_rowmax: Bool = False,
     scale_log2e: Scalar[dtype] = 1.0,
@@ -2524,21 +2533,33 @@ def _rowmax_online_softmax[
         num_rowwise_warps == 1
     ), "FIXME: add support for num_rowwise_warps>1, required by deepseek"
 
-    # Assume p_reg_tile has been properly vectorized. The element layout
-    # represents number elements per thread in a row or column
-    # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
+    # Assume p_reg_tile has been properly vectorized: the element size is
+    # the per-thread fragment extent, i.e. a row vector (frag_num_rows == 1)
+    # of `score_element_size` elements on NVIDIA.
+    comptime frag_size = score_element_size
+    comptime frag_num_rows = 1
+    comptime frag_num_cols = score_element_size
 
-    # TODO: fragment_layout should ideally be inferred from the shape of output_reg_tile or score_reg_tile
-    comptime frag_size = fragment_layout.size()
-    # alias frag_num_rows = fragment_layout.shape[0].value() # sm90 1
-    comptime frag_num_cols = fragment_layout.shape[1].value()  # sm90 2
-    comptime frag_num_rows = accum_frag_layout.size()
-    comptime assert frag_num_rows == fragment_layout.shape[0].value()
-
-    comptime num_colwise_tiles = reg_tile_layout[0].size()
-    comptime num_rowwise_tiles = reg_tile_layout[1].size()
+    # Rank-2 vectorized view: the mode-0 (row) sub-extent collapses the
+    # (num_row_blocks_per_mma, num_m_mmas) nesting; mode-1 collapses the
+    # (frag_cols, num_n_mmas) nesting.
+    comptime num_colwise_tiles = Coord[
+        ScoreLayoutType._shape_types[0]
+    ].static_product
+    comptime num_rowwise_tiles = Coord[
+        ScoreLayoutType._shape_types[1]
+    ].static_product
     # The online softmax attributes for each thread's elements (fragments).
-    score_frag_rowmax = type_of(rowmax_tensor).stack_allocation()
+    # The out param is uninitialized; rebuild it over FRESH scratch storage
+    # (the June-reference migration idiom): aliasing `rowmax_tensor` here
+    # would collapse the running-max merge below into `max(x, x)` and make
+    # `_online_softmax_correction` always yield exp2(0) == 1, corrupting
+    # every multi-tile online-softmax accumulation.
+    score_frag_rowmax = rebind[type_of(score_frag_rowmax)](
+        tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
+            row_major[num_colwise_tiles]()
+        )
+    )
 
     comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
@@ -2547,29 +2568,31 @@ def _rowmax_online_softmax[
     # Online softmax
     comptime for col_tile in range(num_colwise_tiles):
         # Initialize local max with the running max.
-        score_frag_rowmax[col_tile] = score_reg_tile[col_tile, 0].reduce_max[
-            frag_num_rows
-        ]()
+        score_frag_rowmax[Coord(Idx[col_tile])] = score_reg_tile[
+            Coord(Idx[col_tile], Idx[0])
+        ].reduce_max[frag_num_rows]()
 
         comptime for row_tile in range(1, num_rowwise_tiles):
-            score_frag_rowmax[col_tile] = max(
-                score_frag_rowmax[col_tile],
-                score_reg_tile[col_tile, row_tile].reduce_max[frag_num_rows](),
+            score_frag_rowmax[Coord(Idx[col_tile])] = max(
+                score_frag_rowmax[Coord(Idx[col_tile])],
+                score_reg_tile[Coord(Idx[col_tile], Idx[row_tile])].reduce_max[
+                    frag_num_rows
+                ](),
             )
     if not init_rowmax:
         comptime for col_tile in range(num_colwise_tiles):
-            score_frag_rowmax[col_tile] = max(
-                score_frag_rowmax[col_tile],
-                rowmax_tensor[col_tile],
+            score_frag_rowmax[Coord(Idx[col_tile])] = max(
+                score_frag_rowmax[Coord(Idx[col_tile])],
+                rowmax_tensor[Coord(Idx[col_tile])],
             )
 
     comptime for col_tile in range(num_colwise_tiles):
         # Every four threads have elements on the same row.
         # Reduce max for  T0-T3,  T4-T7, etc for nvidia
         #                T0-T15, T16-T31, etc for amd
-        score_frag_rowmax[col_tile] = warp.lane_group_max[
+        score_frag_rowmax[Coord(Idx[col_tile])] = warp.lane_group_max[
             Int(num_rowwise_lanes)
-        ](score_frag_rowmax[col_tile])
+        ](score_frag_rowmax[Coord(Idx[col_tile])])
 
         # Softmax numerator based on mma results. fold_scale_fma folds the
         # `*scale_log2e` (dropped from the mask) and the `-m*scale_log2e`
@@ -2581,69 +2604,82 @@ def _rowmax_online_softmax[
             ), "fold_scale_fma needs the f32x2 score pair"
             var vscale = SIMD[.float32, 2](rebind[Float32](scale_log2e))
             var neg_m_scaled = SIMD[.float32, 2](
-                rebind[Float32](score_frag_rowmax[col_tile])
+                rebind[Float32](score_frag_rowmax[Coord(Idx[col_tile])])
                 * rebind[Float32](scale_log2e)
                 * -1.0
             )
             comptime for row_tile in range(num_rowwise_tiles):
                 var s = rebind[SIMD[.float32, 2]](
-                    score_reg_tile[col_tile, row_tile]
+                    score_reg_tile[Coord(Idx[col_tile], Idx[row_tile])]
                 )
-                score_reg_tile[col_tile, row_tile] = rebind[
+                score_reg_tile[Coord(Idx[col_tile], Idx[row_tile])] = rebind[
                     SIMD[dtype, frag_size]
                 ](exp2(_fma_f32x2(s, vscale, neg_m_scaled)))
         else:
             comptime for row_tile in range(num_rowwise_tiles):
                 var sfm: SIMD[dtype, frag_size]
 
-                comptime if accum_frag_layout.size() == 1:
-                    sfm = {rebind[Scalar[dtype]](score_frag_rowmax[col_tile])}
-                else:
-                    sfm = rebind[SIMD[dtype, frag_size]](
-                        score_frag_rowmax[col_tile]
-                    )
-                score_reg_tile[col_tile, row_tile] = exp_function(
-                    score_reg_tile[col_tile, row_tile] - sfm
+                sfm = SIMD[dtype, frag_size](
+                    score_frag_rowmax[Coord(Idx[col_tile])]
+                ).cast[dtype]()
+                score_reg_tile[
+                    Coord(Idx[col_tile], Idx[row_tile])
+                ] = exp_function(
+                    score_reg_tile[Coord(Idx[col_tile], Idx[row_tile])] - sfm
                 )
 
 
 @inline(.always)
 def _rowsum[
     dtype: DType,
-    reg_tile_layout: Layout,
-    fragment_layout: Layout,
+    ScoreLayoutType: TensorLayout,
     //,
+    RowAccumLayoutType: TensorLayout,
+    score_element_size: Int,
     warp_layout: Layout,
     packed_reduce: Bool = False,
 ](
-    score_reg_tile: LayoutTensor[
+    score_reg_tile: TileTensor[
+        mut=True,
         dtype,
-        reg_tile_layout,
+        ScoreLayoutType,
         MutAnyOrigin,
         address_space=.LOCAL,
-        element_layout=fragment_layout,
+        Engine=DefaultEngine[element_width=score_element_size],
     ],
-    out score_frag_rowsum: LayoutTensor[
+    out score_frag_rowsum: TileTensor[
+        mut=True,
         dtype,
-        Layout.row_major(reg_tile_layout[0].size()),
+        RowAccumLayoutType,
         MutAnyOrigin,
         address_space=.LOCAL,
-        element_layout=Layout.row_major(fragment_layout.shape[0].value()),
+        Engine=DefaultEngine[element_width=1],
     ],
 ):
-    # Assume p_reg_tile has been properly vectorized. The element layout
-    # represents number elements per thread in a row or column
-    # Each mma fragment is a 2D tile e.g. (1, x) for nvidia and (x, 1) for AMD.
+    # Assume p_reg_tile has been properly vectorized: the element size is
+    # the per-thread fragment extent, i.e. a row vector (frag_num_rows == 1)
+    # of `score_element_size` elements on NVIDIA.
 
-    comptime frag_num_rows = score_frag_rowsum.element_layout.size()
-    comptime frag_size = fragment_layout.size()
+    comptime frag_num_rows = 1
+    comptime frag_size = score_element_size
 
-    comptime num_colwise_tiles = reg_tile_layout[0].size()
-    comptime num_rowwise_tiles = reg_tile_layout[1].size()
+    # Rank-2 vectorized view: the mode-0 (row) sub-extent collapses the
+    # (num_row_blocks_per_mma, num_m_mmas) nesting; mode-1 collapses the
+    # (frag_cols, num_n_mmas) nesting.
+    comptime num_colwise_tiles = Coord[
+        ScoreLayoutType._shape_types[0]
+    ].static_product
+    comptime num_rowwise_tiles = Coord[
+        ScoreLayoutType._shape_types[1]
+    ].static_product
     # The online softmax attributes for each thread's elements (fragments).
     comptime num_rows_per_thread = num_colwise_tiles * frag_num_rows
 
-    score_frag_rowsum = type_of(score_frag_rowsum).stack_allocation()
+    # The out param is uninitialized; rebuild it over scratch storage.
+    var rowsum_scratch = tt_stack_allocation[dtype=dtype, address_space=.LOCAL](
+        row_major[num_colwise_tiles]()
+    )
+    score_frag_rowsum = rebind[type_of(score_frag_rowsum)](rowsum_scratch)
 
     comptime num_rowwise_lanes = UInt32(warp_layout.shape[1].value())
 
@@ -2655,35 +2691,39 @@ def _rowsum[
             dtype == .float32 and frag_size == 2 and frag_num_rows == 1
         ), "packed_reduce needs the f32x2 score pair (one row per fragment)"
         comptime for col_tile in range(num_colwise_tiles):
-            var acc = rebind[SIMD[.float32, 2]](score_reg_tile[col_tile, 0])
+            var acc = rebind[SIMD[.float32, 2]](
+                score_reg_tile[Coord(Idx[col_tile], Idx[0])]
+            )
             comptime for row_tile in range(1, num_rowwise_tiles):
                 acc = _add_f32x2(
                     acc,
                     rebind[SIMD[.float32, 2]](
-                        score_reg_tile[col_tile, row_tile]
+                        score_reg_tile[Coord(Idx[col_tile], Idx[row_tile])]
                     ),
                 )
-            score_frag_rowsum[col_tile] = rebind[Scalar[dtype]](acc[0] + acc[1])
+            score_frag_rowsum[Coord(Idx[col_tile])] = rebind[Scalar[dtype]](
+                acc[0] + acc[1]
+            )
     else:
         # Initialize sum with first column
         comptime for col_tile in range(num_colwise_tiles):
-            score_frag_rowsum[col_tile] = score_reg_tile[
-                col_tile, 0
+            score_frag_rowsum[Coord(Idx[col_tile])] = score_reg_tile[
+                Coord(Idx[col_tile], Idx[0])
             ].reduce_add[frag_num_rows]()
 
         comptime for row_tile in range(1, num_rowwise_tiles):
             comptime for col_tile in range(num_colwise_tiles):
-                score_frag_rowsum[col_tile] = (
-                    score_frag_rowsum[col_tile]
-                    + score_reg_tile[col_tile, row_tile].reduce_add[
-                        frag_num_rows
-                    ]()
+                score_frag_rowsum[Coord(Idx[col_tile])] = (
+                    score_frag_rowsum[Coord(Idx[col_tile])]
+                    + score_reg_tile[
+                        Coord(Idx[col_tile], Idx[row_tile])
+                    ].reduce_add[frag_num_rows]()
                 )
 
     comptime for col_tile in range(num_colwise_tiles):
-        score_frag_rowsum[col_tile] = warp.lane_group_sum[
+        score_frag_rowsum[Coord(Idx[col_tile])] = warp.lane_group_sum[
             Int(num_rowwise_lanes)
-        ](score_frag_rowsum[col_tile])
+        ](score_frag_rowsum[Coord(Idx[col_tile])])
 
 
 @inline(.always)

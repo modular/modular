@@ -19,6 +19,8 @@ into concrete kernel instantiations.
 """
 
 from std.math import ceildiv, exp2, recip
+from std.memory import Pointer
+from std.simd import SIMD
 from std.math.uutils import umod, uceildiv
 from std.math.constants import log2e
 from std.sys import align_of, get_defined_int, simd_width_of
@@ -41,7 +43,9 @@ from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.sync import named_barrier
 from layout import (
+    ComptimeInt,
     Coord,
+    Idx,
     IntTuple,
     Layout,
     LayoutTensor,
@@ -50,6 +54,8 @@ from layout import (
     row_major,
     stack_allocation,
 )
+from layout.tile_layout import Layout as TTLayout
+from layout.tensor_engine import DefaultEngine
 from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
@@ -1555,8 +1561,6 @@ def _mha_sm90[
         var p_reg_tile = stack_allocation[
             dtype=accum_type, address_space=.LOCAL, alignment=4
         ](s_reg_tile_layout)
-        # Softmax and register/shared fragments still use legacy views.
-        var p_reg_legacy = p_reg_tile.to_layout_tensor()
         var output_reg_buffer = stack_allocation[
             dtype=accum_type,
             address_space=.LOCAL,
@@ -1584,52 +1588,114 @@ def _mha_sm90[
             p_frag_buffer.layout,
         ).to_layout_tensor()
 
-        # Legacy element-layout view: `_apply_mask` and the frozen softmax
-        # reductions require LayoutTensor params.
+        # Nested TileTensor views over the flat register tiles: the
+        # hand-built nested layouts mirror the legacy `p_vec_output_layout`
+        # / `o_vec_output_layout` IntTuple geometry leaf-for-leaf (pinned by
+        # `test_mha_vec_output_layout_crd2idx_parity`). `frag_cols` is hoisted
+        # to an explicit param: a parameterized alias whose type arguments
+        # perform division trips a KGEN crash when the alias is instantiated
+        # through a function return type.
+        comptime p_frag_cols = p_frag_size // (
+            num_row_blocks_per_mma * frag_simdwidth
+        )
+        comptime o_frag_cols = o_frag_size // (
+            num_row_blocks_per_mma * frag_simdwidth
+        )
+        comptime _PVecTTLayout = TTLayout[
+            Coord[
+                Coord[
+                    ComptimeInt[num_row_blocks_per_mma],
+                    ComptimeInt[num_m_mmas],
+                ],
+                Coord[ComptimeInt[p_frag_cols], ComptimeInt[num_n_mmas]],
+            ].element_types,
+            Coord[
+                Coord[ComptimeInt[frag_simdwidth], ComptimeInt[p_frag_size]],
+                Coord[
+                    ComptimeInt[num_row_blocks_per_mma * frag_simdwidth],
+                    ComptimeInt[num_m_mmas * p_frag_size],
+                ],
+            ].element_types,
+        ]
+        comptime _OVecTTLayout = TTLayout[
+            Coord[
+                Coord[
+                    ComptimeInt[num_row_blocks_per_mma],
+                    ComptimeInt[num_m_mmas],
+                ],
+                Coord[ComptimeInt[o_frag_cols], ComptimeInt[num_n_mmas]],
+            ].element_types,
+            Coord[
+                Coord[ComptimeInt[frag_simdwidth], ComptimeInt[o_frag_size]],
+                Coord[
+                    ComptimeInt[num_row_blocks_per_mma * frag_simdwidth],
+                    ComptimeInt[num_m_mmas * o_frag_size],
+                ],
+            ].element_types,
+        ]
+        comptime VecPType = TileTensor[
+            accum_type,
+            _PVecTTLayout,
+            MutAnyOrigin,
+            address_space=.LOCAL,
+            Engine=DefaultEngine[element_width=frag_simdwidth],
+        ]
+        comptime VecOType = TileTensor[
+            accum_type,
+            _OVecTTLayout,
+            MutAnyOrigin,
+            address_space=.LOCAL,
+            Engine=DefaultEngine[element_width=frag_simdwidth],
+        ]
+
         @inline(.always)
         def vectorize_p_reg_tile(
-            out result: LayoutTensor[
-                accum_type,
-                p_vec_output_layout,
-                MutAnyOrigin,
-                address_space=.LOCAL,
-                element_layout=element_layout,
-            ],
+            out result: VecPType,
         ) {imm}:
-            result = {p_reg_legacy.ptr.unsafe_origin_cast[MutAnyOrigin]()}
+            result = {
+                rebind[
+                    Pointer[
+                        SIMD[accum_type, frag_simdwidth],
+                        MutAnyOrigin,
+                        address_space=.LOCAL,
+                    ]
+                ](p_reg_tile.ptr.unsafe_origin_cast[MutAnyOrigin]()),
+                _PVecTTLayout(),
+            }
 
-        # Legacy element-layout view: `scale_output`/`write_output` scalar
-        # math and `output_reg_to_smem` require LayoutTensor params.
         @inline(.always)
         def vectorize_o_reg_tile(
-            out result: LayoutTensor[
-                accum_type,
-                o_vec_output_layout,
-                MutAnyOrigin,
-                address_space=.LOCAL,
-                element_layout=element_layout,
-            ],
+            out result: VecOType,
         ) {imm}:
-            result = {output_reg_tile.ptr}
+            result = {
+                rebind[
+                    Pointer[
+                        SIMD[accum_type, frag_simdwidth],
+                        MutAnyOrigin,
+                        address_space=.LOCAL,
+                    ]
+                ](output_reg_buffer.ptr.unsafe_origin_cast[MutAnyOrigin]()),
+                _OVecTTLayout(),
+            }
 
         var rowmax_buffer = stack_allocation[
             dtype=accum_type,
             address_space=.LOCAL,
             alignment=align_of[accum_type](),
         ](row_major[num_rows_per_warp]())
-        var rowmax = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
+        var rowmax = TileTensor[address_space=.LOCAL](
             rowmax_buffer.ptr.unsafe_origin_cast[MutAnyOrigin](),
             rowmax_buffer.layout,
-        ).to_layout_tensor()
+        )
         var rowsum_buffer = stack_allocation[
             dtype=accum_type,
             address_space=.LOCAL,
             alignment=align_of[accum_type](),
         ](row_major[num_rows_per_warp]())
-        var rowsum = TileTensor[address_space=.LOCAL, linear_idx_type=.int32](
+        var rowsum = TileTensor[address_space=.LOCAL](
             rowsum_buffer.ptr.unsafe_origin_cast[MutAnyOrigin](),
             rowsum_buffer.layout,
-        ).to_layout_tensor()
+        )
 
         # Mask global memory iterator.
         var mask_warp_row = warp_y * UInt32(WM)
@@ -1696,7 +1762,13 @@ def _mha_sm90[
             var max_len: UInt32 = (
                 num_keys_arg if decoding else max_seq_len.as_uint32()
             )
-            _apply_mask[WM, MMA_N0, num_m_mmas, num_n_mmas](
+            _apply_mask[
+                frag_simdwidth,
+                WM,
+                MMA_N0,
+                num_m_mmas,
+                num_n_mmas,
+            ](
                 mask_warp_row,
                 position,
                 lane,
@@ -1718,12 +1790,14 @@ def _mha_sm90[
             # if we specialize and unswitch on `first_iter`
             # otherwise, the branch requires synchronization
             comptime for row in range(num_rows_per_warp):
-                var c = SIMD[accum_type, element_layout.size()](
-                    rebind[Scalar[accum_type]](correction[row])
+                var c = SIMD[accum_type, frag_simdwidth](
+                    rebind[Scalar[accum_type]](correction[Coord(Idx[row])])
                 )
 
                 comptime for col in range(num_cols_output):
-                    vout[row, col] = vout[row, col] * c
+                    vout[Coord(Idx[row], Idx[col])] = (
+                        vout[Coord(Idx[row], Idx[col])] * c
+                    )
 
         @inline(.always)
         def elementwise_reciprocal(
@@ -1731,10 +1805,10 @@ def _mha_sm90[
         ):
             # new_rowsum, old_rowsum = 1/old_rowsum, new_rowsum
             comptime for row in range(num_rows_per_warp):
-                var old = old_rowsum[row]
-                var new = new_rowsum[row]
-                new_rowsum[row] = recip(old)[0]
-                old_rowsum[row] = new
+                var old = old_rowsum[Coord(Idx[row])]
+                var new = new_rowsum[Coord(Idx[row])]
+                new_rowsum[Coord(Idx[row])] = recip(old)[0]
+                old_rowsum[Coord(Idx[row])] = new
 
         @inline(.always)
         def write_output(
@@ -1746,10 +1820,14 @@ def _mha_sm90[
 
             # Apply softmax denumerator.
             comptime for row in range(num_rows_per_warp):
-                var rs_inv = vout.element_type(rowsum_inv[row][0])
+                var rs_inv = SIMD[accum_type, frag_simdwidth](
+                    rowsum_inv[Coord(Idx[row])][0]
+                )
 
                 comptime for col in range(num_cols_output):
-                    vout[row, col] = vout[row, col] * rs_inv
+                    vout[Coord(Idx[row], Idx[col])] = (
+                        vout[Coord(Idx[row], Idx[col])] * rs_inv
+                    )
 
             var output_ptr: UnsafePointer[
                 Scalar[output_type], MutAnyOrigin
@@ -1865,7 +1943,7 @@ def _mha_sm90[
                         ]()
                         * log2e
                     )
-                    rowmax[i] = sink_weight
+                    rowmax[Coord(Idx[i])] = sink_weight
             else:
                 sink_weight = (
                     sink_weights_ptr.unsafe_value()[q_head_indices[0]].cast[
@@ -1875,11 +1953,12 @@ def _mha_sm90[
                 )
 
                 comptime for i in range(num_rows_per_warp):
-                    rowmax[i] = sink_weight
+                    rowmax[Coord(Idx[i])] = sink_weight
 
         # Compute initial rowmax
         var attention_rowmax = _rowmax_online_softmax[
             # threads layout by warp
+            frag_simdwidth,
             1,
             mma_thread_layout,
             use_exp2=True,
@@ -1888,9 +1967,11 @@ def _mha_sm90[
         rowmax.copy_from(attention_rowmax)
 
         # Compute rowsum
-        var attention_rowsum = _rowsum[mma_thread_layout](
-            vectorize_p_reg_tile()
-        )
+        var attention_rowsum = _rowsum[
+            type_of(rowsum_buffer.layout),
+            frag_simdwidth,
+            mma_thread_layout,
+        ](vectorize_p_reg_tile())
 
         # Add sink weight contribution to rowsum
         comptime if not SinkType.is_null:
@@ -1898,14 +1979,22 @@ def _mha_sm90[
 
             comptime if decoding:
                 comptime for i in range(q_head_indices.size):
-                    var sink_contribution = exp2(sink_weight - rowmax[i])
-                    attention_rowsum[i] += sink_contribution[0]
+                    var sink_contribution = exp2(
+                        sink_weight - rowmax[Coord(Idx[i])]
+                    )
+                    attention_rowsum[Coord(Idx[i])] = (
+                        attention_rowsum[Coord(Idx[i])] + sink_contribution[0]
+                    )
 
             else:
                 comptime for i in range(num_rows_per_warp):
                     # Compute exp2((sink_weight - rowmax[j]) * log2e)
-                    var sink_contribution = exp2(sink_weight - rowmax[i])
-                    attention_rowsum[i] += sink_contribution[0]
+                    var sink_contribution = exp2(
+                        sink_weight - rowmax[Coord(Idx[i])]
+                    )
+                    attention_rowsum[Coord(Idx[i])] = (
+                        attention_rowsum[Coord(Idx[i])] + sink_contribution[0]
+                    )
 
         rowsum.copy_from(attention_rowsum)
 
@@ -1935,12 +2024,11 @@ def _mha_sm90[
                 p_frag.vectorize[
                     1, a_frag_size
                 ]().copy_from(  # copy new pfrag, used by `p_mul_v` on next iter
-                    p_reg_legacy.reshape[
-                        Layout.row_major(
-                            num_m_mmas * num_n_mmas * frag_ratio,
-                            a_frag_size,
-                        )
-                    ]().vectorize[1, a_frag_size](),
+                    p_reg_tile.reshape(
+                        row_major[
+                            num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
+                        ]()
+                    ).to_layout_tensor(),
                 )
 
                 # new pipeline states
@@ -1964,6 +2052,7 @@ def _mha_sm90[
                 # Compute rowmax for current scores
                 var current_rowmax = _rowmax_online_softmax[
                     # threads layout by warp
+                    frag_simdwidth,
                     1,
                     mma_thread_layout,
                     use_exp2=True,
@@ -1986,13 +2075,15 @@ def _mha_sm90[
                                 var q_head_idx = q_heads[i]
                                 exp_sum_ptr[q_head_idx] = rebind[
                                     Scalar[PartitionType.accum_dtype]
-                                ](rowsum[i])
+                                ](rowsum[Coord(Idx[i])])
                                 qk_max_ptr[q_head_idx] = rebind[
                                     Scalar[PartitionType.accum_dtype]
-                                ](rowmax[i])
-                    var score_frag_rowsum = rebind[type_of(rowsum)](
-                        _rowsum[mma_thread_layout](vectorize_p_reg_tile())
-                    )
+                                ](rowmax[Coord(Idx[i])])
+                    var score_frag_rowsum = _rowsum[
+                        type_of(rowsum_buffer.layout),
+                        frag_simdwidth,
+                        mma_thread_layout,
+                    ](vectorize_p_reg_tile())
                     rowmax.copy_from(score_frag_rowmax)
                     elementwise_reciprocal(rowsum, score_frag_rowsum)
                     wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
@@ -2034,26 +2125,24 @@ def _mha_sm90[
                     q_idx_old = q_idx_new
                     q_phase_old = q_pipeline_state.phase()
                 else:
-                    var score_frag_rowsum = rebind[type_of(rowsum)](
-                        _rowsum[mma_thread_layout](vectorize_p_reg_tile())
-                    )
+                    var score_frag_rowsum = _rowsum[
+                        type_of(rowsum_buffer.layout),
+                        frag_simdwidth,
+                        mma_thread_layout,
+                    ](vectorize_p_reg_tile())
 
                     _online_softmax_correction[use_exp2=True](
-                        TileTensor[address_space=.LOCAL](
-                            rowmax.ptr, row_major[num_rows_per_warp]()
-                        ),
-                        TileTensor[address_space=.LOCAL](
-                            score_frag_rowmax.ptr,
-                            row_major[num_rows_per_warp](),
-                        ),
+                        rowmax,
+                        score_frag_rowmax,
                     )
                     # rowmax now holds score_frag_rowmax
                     # score_frag_rowmax now holds the correction
 
                     comptime for i in range(num_rows_per_warp):
-                        rowsum[i] = (
-                            rowsum[i] * score_frag_rowmax[i]
-                            + score_frag_rowsum[i]
+                        rowsum[Coord(Idx[i])] = (
+                            rowsum[Coord(Idx[i])]
+                            * score_frag_rowmax[Coord(Idx[i])]
+                            + score_frag_rowsum[Coord(Idx[i])]
                         )
 
                     wait_for_p_mul_v(read_idx_v)  # can rw output and pfrag
@@ -2080,11 +2169,9 @@ def _mha_sm90[
                 break
 
         p_frag.vectorize[1, a_frag_size]().copy_from(
-            p_reg_legacy.reshape[
-                Layout.row_major(
-                    num_m_mmas * num_n_mmas * frag_ratio, a_frag_size
-                )
-            ]().vectorize[1, a_frag_size](),
+            p_reg_tile.reshape(
+                row_major[num_m_mmas * num_n_mmas * frag_ratio, a_frag_size]()
+            ).to_layout_tensor(),
         )
         p_mul_v(
             read_pipeline_states.index(),
@@ -2104,13 +2191,13 @@ def _mha_sm90[
                     var q_head_idx = q_heads[i]
                     exp_sum_ptr[q_head_idx] = rebind[
                         Scalar[PartitionType.accum_dtype]
-                    ](rowsum[i])
+                    ](rowsum[Coord(Idx[i])])
                     qk_max_ptr[q_head_idx] = rebind[
                         Scalar[PartitionType.accum_dtype]
-                    ](rowmax[i])
+                    ](rowmax[Coord(Idx[i])])
 
         comptime for row in range(num_rows_per_warp):
-            rowsum[row] = recip(rowsum[row])[0]
+            rowsum[Coord(Idx[row])] = recip(rowsum[Coord(Idx[row])])[0]
         wgmma_1.wait_group()
         write_output(position, q_pipeline_state.index(), rowsum)
         # don't arrive
