@@ -15,9 +15,9 @@
 from std.math import ceil, ceildiv
 from std.sys.info import size_of
 
-from layout import Layout, TileTensor
+from layout import TileTensor
 from std.memory import UnsafePointer, bitcast, unsafe_memcpy
-from std.utils import IndexList, StaticTuple, product
+from std.utils import IndexList, StaticTuple
 
 
 @inline(.always)
@@ -289,35 +289,30 @@ struct Q4sym[
                     ceil(`d` / group_size) * size_of(self).
             input_shape: The shape of the input tensor.
         """
-        var input_tensor = input_tt.to_layout_tensor()
-        var output_tensor = output_tt.to_layout_tensor()
         comptime assert (
-            input_rank == input_tensor.rank
+            input_rank == input_tt.rank
         ), "input_rank must match tensor rank"
         comptime assert (
-            input_tensor.rank == output_tensor.rank
+            input_tt.rank == output_tt.rank
         ), "input tensor and output tensor must have the same rank"
         # TODO: check contiguous inputs and outputs
 
-        # Read and quantize `input_tensor`` to blocked format, dump the raw
-        # struct/block into `output_tensor`
+        # Read and quantize `input_tt` to blocked format, dump the raw
+        # struct/block into `output_tt`
         assert (
-            input_shape[input_tensor.rank - 1] % Self.group_size == 0
+            input_shape[input_tt.rank - 1] % Self.group_size == 0
         ), "Only support fully divisible dimensions right now."
 
-        var blob_output_ptr = output_tensor.ptr
+        var blob_output_ptr = output_tt.ptr
         var base_block_ptr = blob_output_ptr.bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
-        var outer_stride = product(input_tensor.runtime_layout.stride.value)
-        var input_inner_stride = input_tensor.runtime_layout.shape.value[
-            input_tensor.rank - 1
-        ]
+        var outer_stride = Int(input_tt.layout.stride_coord().product())
+        var input_inner_stride = Int(input_tt.dim[input_rank - 1]())
         var output_inner_stride = ceildiv(
-            Int(input_tensor.runtime_layout.shape[input_tensor.rank - 1]),
-            Self.group_size,
+            Int(input_tt.dim[input_rank - 1]()), Self.group_size
         )
 
         # TODO: vectorize parallelize, blah blah blah
@@ -326,7 +321,7 @@ struct Q4sym[
                 var flat_index_input = (
                     input_inner_stride * i + j * Self.group_size
                 )
-                var loaded_group = input_tensor.ptr.load[width=Self.group_size](
+                var loaded_group = input_tt.ptr.load[width=Self.group_size](
                     flat_index_input
                 )
 
@@ -369,34 +364,28 @@ struct Q4sym[
             output_tt: The output tensor containing the decoded input.
             output_shape: The shape of the output tensor.
         """
-        var input_tensor = input_tt.to_layout_tensor()
-        var output_tensor = output_tt.to_layout_tensor()
         comptime assert (
-            output_rank == output_tensor.rank
+            output_rank == output_tt.rank
         ), "output_rank must match tensor rank"
         comptime assert (
-            input_tensor.rank == output_tensor.rank
+            input_tt.rank == output_tt.rank
         ), "input tensor and output tensor must have the same rank"
-        # Read and dequantize `input_tensor` which are the bytes of the raw
-        # blocked format. Write the corresponding results to `output_tensor`
+        # Read and dequantize `input_tt` which are the bytes of the raw
+        # blocked format. Write the corresponding results to `output_tt`
         assert (
-            output_tensor.runtime_layout.shape.value[output_tensor.rank - 1]
-            % Self.group_size
-            == 0
+            Int(output_tt.dim[output_rank - 1]()) % Self.group_size == 0
         ), "Only support fully divisible dimensions right now."
 
         # TODO: check contiguous inputs and outputs
 
-        var uint8_input_ptr = input_tensor.ptr
+        var uint8_input_ptr = input_tt.ptr
         var base_block_ptr = uint8_input_ptr.bitcast[
             Q4sym[Self.group_size, Self.float_dtype]
         ]()
 
         # as we support only inner-most dim, treat like rank-2 tensor
-        var output_inner_dim = output_tensor.runtime_layout.shape.value[
-            output_tensor.rank - 1
-        ]
-        var outer_dim = product(output_tensor.runtime_layout.stride.value)
+        var output_inner_dim = Int(output_tt.dim[output_rank - 1]())
+        var outer_dim = Int(output_tt.layout.stride_coord().product())
 
         # Note: this is calculated assuming a pointer of Q4Sym's
         var input_inner_dim = ceildiv(output_inner_dim, Self.group_size)
@@ -415,7 +404,7 @@ struct Q4sym[
                 var flat_index_output = (
                     output_inner_dim * i + j * Self.group_size
                 )
-                output_tensor.ptr.store(
+                output_tt.ptr.store(
                     flat_index_output,
                     encoded.decode_fully(),
                 )
@@ -491,17 +480,15 @@ def q4_k_dequantize_impl(
         input_tt: The input tensor containing Q4_K encoded data.
         output_tt: The output tensor to write dequantized float32 values to.
     """
-    var input_tensor = input_tt.to_layout_tensor()
-    var output_tensor = output_tt.to_layout_tensor()
     comptime group_nelems = block_Q4_K.group_size
     # 2 elements per byte.
     comptime group_nbytes = group_nelems // 2
     comptime block_nelems = block_QK_K.quantized_k
     comptime block_nbytes = size_of[block_Q4_K]()
 
-    var num_blocks = input_tensor.size() // block_nbytes
-    var input_q4_k_ptr = input_tensor.ptr.bitcast[block_Q4_K]()
-    var output_ptr = output_tensor.ptr.bitcast[Float32]()
+    var num_blocks = input_tt.num_elements() // block_nbytes
+    var input_q4_k_ptr = input_tt.ptr.bitcast[block_Q4_K]()
+    var output_ptr = output_tt.ptr.bitcast[Float32]()
     for block_idx in range(num_blocks):
         var src_ptr = input_q4_k_ptr + block_idx
         var dst_ptr = output_ptr + (block_idx * block_nelems)
@@ -594,15 +581,13 @@ def q6_k_dequantize_impl[
         output_tt: The output tensor to write dequantized float32 values to.
         output_shape: The shape of the output tensor.
     """
-    var input_tensor = input_tt.to_layout_tensor()
-    var output_tensor = output_tt.to_layout_tensor()
     comptime group_nelems = block_Q6_K.group_size
     comptime block_nelems = block_QK_K.quantized_k
     comptime block_nbytes = size_of[block_Q6_K]()
 
     var num_blocks = (output_shape[0] * output_shape[1]) // block_nelems
-    var input_q6_k_ptr = input_tensor.ptr.bitcast[block_Q6_K]()
-    var dst_ptr = output_tensor.ptr.bitcast[Float32]()
+    var input_q6_k_ptr = input_tt.ptr.bitcast[block_Q6_K]()
+    var dst_ptr = output_tt.ptr.bitcast[Float32]()
     var dst_idx = 0
     for block_idx in range(num_blocks):
         var src_ptr = input_q6_k_ptr + block_idx
