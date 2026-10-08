@@ -53,6 +53,8 @@ comptime SOCK_DGRAM: c_int = 2
 """Connectionless, unreliable datagrams."""
 comptime SOCK_RAW: c_int = 3
 """Raw protocol access."""
+comptime SOCK_SEQPACKET: c_int = 5
+"""Sequenced, reliable, connection-based messages that keep their boundaries."""
 
 # ===----------------------------------------------------------------------=== #
 # Socket option level and names
@@ -111,16 +113,35 @@ comptime TCP_NODELAY: c_int = 1
 # `send` and `recv` flags
 # ===----------------------------------------------------------------------=== #
 
+comptime MSG_OOB: c_int = 0x1
+"""Send or receive out-of-band data."""
 comptime MSG_PEEK: c_int = 0x2
 """Peek at incoming data without consuming it."""
+comptime MSG_DONTROUTE: c_int = 0x4
+"""Send directly to the interface, bypassing routing."""
+comptime MSG_CTRUNC: c_int = constant["MSG_CTRUNC", linux=0x8, macos=0x20]()
+"""Ancillary data was truncated (reported in `recvmsg`'s `msg_flags`)."""
+comptime MSG_TRUNC: c_int = constant["MSG_TRUNC", linux=0x20, macos=0x10]()
+"""The datagram was truncated (reported in `recvmsg`'s `msg_flags`)."""
 comptime MSG_DONTWAIT: c_int = constant[
     "MSG_DONTWAIT", linux=0x40, macos=0x80
 ]()
 """Non-blocking operation for this call only."""
+comptime MSG_EOR: c_int = constant["MSG_EOR", linux=0x80, macos=0x8]()
+"""Terminate a record, on socket types that have records."""
+comptime MSG_WAITALL: c_int = constant["MSG_WAITALL", linux=0x100, macos=0x40]()
+"""Block until the full request is received."""
 comptime MSG_NOSIGNAL: c_int = constant[
     "MSG_NOSIGNAL", linux=0x4000, macos=0x80000
 ]()
 """Don't raise `SIGPIPE` on send to a closed peer."""
+
+# ===----------------------------------------------------------------------=== #
+# Control message types
+# ===----------------------------------------------------------------------=== #
+
+comptime SCM_RIGHTS: c_int = 1
+"""Control message carrying file descriptors (level `SOL_SOCKET`)."""
 
 # ===----------------------------------------------------------------------=== #
 # `shutdown` directions

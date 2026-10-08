@@ -15,10 +15,15 @@
 from test_utils.cabi_check import AbiConstant, AbiTypedef, AbiTypedefLike
 
 from std.net._sys.linux import (
+    MSG_CMSG_CLOEXEC,
+    MSG_ERRQUEUE,
+    MSG_MORE,
+    MSG_ZEROCOPY,
     SOCK_CLOEXEC,
     SOCK_NONBLOCK,
     SO_DOMAIN,
     SO_PROTOCOL,
+    SO_ZEROCOPY,
     sa_family_t,
     sockaddr,
     sockaddr_in,
@@ -55,5 +60,10 @@ comptime CABI_CONSTANTS = [
     AbiConstant("SOCK_CLOEXEC", SOCK_CLOEXEC),
     AbiConstant("SO_PROTOCOL", SO_PROTOCOL),
     AbiConstant("SO_DOMAIN", SO_DOMAIN),
+    AbiConstant("SO_ZEROCOPY", SO_ZEROCOPY),
+    AbiConstant("MSG_ERRQUEUE", MSG_ERRQUEUE),
+    AbiConstant("MSG_MORE", MSG_MORE),
+    AbiConstant("MSG_ZEROCOPY", MSG_ZEROCOPY),
+    AbiConstant("MSG_CMSG_CLOEXEC", MSG_CMSG_CLOEXEC),
 ]
 """The constants to check."""

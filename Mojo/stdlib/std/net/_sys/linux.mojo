@@ -32,6 +32,16 @@ comptime SO_PROTOCOL: c_int = 38
 """Get the socket protocol (read-only)."""
 comptime SO_DOMAIN: c_int = 39
 """Get the socket domain (read-only)."""
+comptime SO_ZEROCOPY: c_int = 60
+"""Allow `MSG_ZEROCOPY` sends on the socket."""
+comptime MSG_ERRQUEUE: c_int = 0x2000
+"""Receive from the error queue, where `MSG_ZEROCOPY` completions arrive."""
+comptime MSG_MORE: c_int = 0x8000
+"""More data follows; hold back a partial packet until it arrives."""
+comptime MSG_ZEROCOPY: c_int = 0x4000000
+"""Send from the caller's buffer without copying; needs `SO_ZEROCOPY` set."""
+comptime MSG_CMSG_CLOEXEC: c_int = 0x40000000
+"""Set close-on-exec on file descriptors received with `SCM_RIGHTS`."""
 
 
 @fieldwise_init
