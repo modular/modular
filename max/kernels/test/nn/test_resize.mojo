@@ -15,6 +15,7 @@ from layout import Coord, TileTensor, row_major
 from max.gpu.host import DeviceContext
 from nn.resize import (
     CoordinateTransformationMode,
+    _AxisTaps,
     RoundMode,
     resize_cubic,
     resize_linear,
@@ -204,6 +205,51 @@ def _check_cubic_uint8_matches_float32(
     if in_shape == out_shape:
         for i in range(len(got)):
             assert_equal(got[i], as_f32[i])
+
+
+def _naive_cubic(
+    src: List[Float32], in_shape: IndexList[4], out_shape: IndexList[4]
+) -> List[Float32]:
+    """Resizes W, then H, of src with one scalar FMA per tap in tap order.
+    This is the rounding every fast path in resize_cubic must reproduce bit
+    for bit."""
+    var data = src.copy()
+    var shape = in_shape
+    for d in range(2, 0, -1):
+        var n_in = shape[d]
+        var n_out = out_shape[d]
+        var taps = _AxisTaps(n_in, n_out)
+        var outer = 1
+        for e in range(d):
+            outer *= shape[e]
+        var inner = 1
+        for e in range(d + 1, 4):
+            inner *= shape[e]
+        var next = List[Float32](length=outer * n_out * inner, fill=0)
+        for o in range(outer):
+            for i in range(n_out):
+                var weights = taps.weights(i)
+                for c in range(inner):
+                    var acc = Float32(0)
+                    for k in range(len(weights)):
+                        var j = taps.start_of(i) + k
+                        acc = data[(o * n_in + j) * inner + c].fma(
+                            weights[k], acc
+                        )
+                    next[(o * n_out + i) * inner + c] = acc
+        data = next^
+        shape[d] = n_out
+    return data^
+
+
+def _check_cubic_matches_naive(
+    in_shape: IndexList[4], out_shape: IndexList[4]
+) raises:
+    var src = _pattern(in_shape.flattened_length())
+    var got = _resize_cubic_f32(src, in_shape, out_shape)
+    var want = _naive_cubic(src, in_shape, out_shape)
+    for i in range(len(want)):
+        assert_equal(got[i], want[i])
 
 
 def main() raises:
@@ -875,3 +921,38 @@ def main() raises:
         )
 
     test_cubic_uint8_matches_float32()
+
+    def test_cubic_fast_paths_match_naive() raises:
+        print("== test_cubic_fast_paths_match_naive")
+        # Each channel count takes a different unrolled transposed pass, the
+        # one channel at a time fallback, or the slab pass once it fills a
+        # vector.
+        var channels: List[Int] = [1, 2, 3, 4, 7, 16, 17]
+        for c in channels:
+            _check_cubic_matches_naive(
+                IndexList[4](2, 37, 53, c), IndexList[4](2, 19, 70, c)
+            )
+        # A width pass over many narrow slabs, with no height pass.
+        _check_cubic_matches_naive(
+            IndexList[4](1, 20, 9, 7), IndexList[4](1, 20, 5, 7)
+        )
+        # Channels first, so the width pass has one element per slab.
+        _check_cubic_matches_naive(
+            IndexList[4](3, 40, 61, 1), IndexList[4](3, 17, 29, 1)
+        )
+        # A long axis over enough slabs for the transposed pass, so it needs
+        # many windows.
+        _check_cubic_matches_naive(
+            IndexList[4](1, 16, 3840, 3), IndexList[4](1, 16, 448, 3)
+        )
+        # Fewer columns than a vector, so they move one at a time.
+        _check_cubic_matches_naive(
+            IndexList[4](1, 20, 7, 1), IndexList[4](1, 20, 5, 1)
+        )
+        # 387 columns end 3 past a multiple of the ring size, for 8- and
+        # 16-lane vectors, so the last vector would wrap the ring.
+        _check_cubic_matches_naive(
+            IndexList[4](1, 16, 129, 3), IndexList[4](1, 16, 100, 3)
+        )
+
+    test_cubic_fast_paths_match_naive()

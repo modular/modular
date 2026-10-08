@@ -13,7 +13,8 @@
 """Implements tensor resize (upsample/downsample) with nearest, linear, and cubic interpolation."""
 
 from std.algorithm import vectorize
-from std.math import ceil, floor
+from std.bit import bit_width
+from std.math import align_down, align_up, ceil, ceildiv, floor
 
 
 from max.algorithm.functional import elementwise
@@ -21,6 +22,7 @@ from max.algorithm.reduction import _get_nd_indices_from_flat_index
 from max.gpu.host import DeviceContext
 from layout import (
     Coord,
+    Idx,
     ImmTileTensor,
     MutTileTensor,
     TensorLayout,
@@ -29,7 +31,7 @@ from layout import (
     row_major,
 )
 from std.memory import unsafe_memcpy
-from std.sys import simd_width_of
+from std.sys import simd_width_of, size_of
 
 from std.utils import IndexList, StaticTuple
 
@@ -469,22 +471,33 @@ def resize_cubic[
             "cannot resize an empty input to a non-empty output",
         )
         return
+    var outer = in_shape[0]
+    var inner = in_shape[3]
+    _resize_2d_fused(
+        _AxisTaps(in_shape[2], out_shape[2]),
+        _AxisTaps(in_shape[1], out_shape[1]),
+        input.reshape(row_major((outer, in_shape[1], in_shape[2] * inner))),
+        output.reshape(row_major((outer, out_shape[1], out_shape[2] * inner))),
+        in_shape[2],
+        out_shape[2],
+        inner,
+    )
 
-    comptime if in_dtype == DType.float32:
-        _resize_passes(
-            input.bitcast[DType.float32](), output, in_shape, out_shape
-        )
-    else:
-        var converted = List[Float32](unsafe_uninit_length=input.num_elements())
-        var flat = row_major((1, input.num_elements()))
-        _cast_rows(input.reshape(flat), TileTensor(converted, flat))
-        _resize_passes(
-            TileTensor(converted, input.layout).as_imm(),
-            output,
-            in_shape,
-            out_shape,
-        )
 
+comptime _WIDTH = simd_width_of[DType.float32]()
+"""Float32 lanes in a vector, the width every cubic pass works in."""
+
+comptime _TILE_BYTES = 16384
+"""Bytes of input window a pass aims to keep resident in L1."""
+
+comptime _PIPE_COLS = 64
+"""Input columns a transposed pass moves between bursts of taps."""
+
+comptime _GROUP = 8
+"""Independent accumulators a pass interleaves to cover FMA latency."""
+
+comptime _MAX_UNROLLED_CHANNELS = 4
+"""Most vectors per input position a transposed pass unrolls."""
 
 comptime _CUBIC_SUPPORT = 2
 """Half-width of the cubic filter, in input pixels before any stretch."""
@@ -500,6 +513,7 @@ struct _AxisTaps(Movable):
     var start: List[Int]
     var offset: List[Int]
     var coeffs: List[Float32]
+    var max_count: Int
 
     def __init__(out self, in_dim: Int, out_dim: Int):
         """Builds the taps of a resize of in_dim inputs to out_dim: the
@@ -515,6 +529,7 @@ struct _AxisTaps(Movable):
         self.offset = List[Int](capacity=out_dim + 1)
         self.offset.append(0)
         self.coeffs = List[Float32]()
+        self.max_count = 0
         if in_dim == out_dim:
             for i in range(out_dim):
                 self.coeffs.append(1)
@@ -550,6 +565,7 @@ struct _AxisTaps(Movable):
         """Ends the next output's taps at the end of coeffs."""
         self.start.append(start)
         self.offset.append(len(self.coeffs))
+        self.max_count = max(self.max_count, self.count_of(len(self.start) - 1))
 
     @inline(.always)
     def start_of(self, i: Int) -> Int:
@@ -560,6 +576,11 @@ struct _AxisTaps(Movable):
     def count_of(self, i: Int) -> Int:
         """Returns how many inputs output i reads."""
         return self.offset.unsafe_get(i + 1) - self.offset.unsafe_get(i)
+
+    @inline(.always)
+    def end_of(self, i: Int) -> Int:
+        """Returns the input after the last one output i reads."""
+        return self.start_of(i) + self.count_of(i)
 
     @inline(.always)
     def weights(self, i: Int) -> Span[Float32, origin_of(self.coeffs)]:
@@ -597,25 +618,591 @@ def _tap_offset(pos: Int, center: Float32, inv_stretch: Float32) -> Float32:
 
 
 @inline(.always)
-def _weighted_row_sum(
+def _weighted_row_sum[
+    wraps: Bool
+](
     taps: _AxisTaps,
     i: Int,
     rows: TileTensor[DType.float32, ...],
     dst: MutTileTensor[DType.float32, ...],
+    begin: Int,
+    end: Int,
 ):
-    """Writes row i of dst as a weighted sum of input rows."""
+    """Writes columns [begin, end) of row i of dst as a weighted sum of input
+    rows. begin is a multiple of _GROUP vectors. With wraps, rows is a ring
+    of a power-of-two size holding input row r at r % size."""
+    comptime block = _GROUP * _WIDTH
+    debug_assert(begin % block == 0, "begin must be block aligned")
     var first = taps.start_of(i)
+    var n = taps.count_of(i)
     var weights = taps.weights(i)
-
-    def row_sum[width: Int](c: Int) {imm}:
-        var acc = SIMD[DType.float32, width](0)
-        for k in range(len(weights)):
-            acc = rows.load[width=width]((first + k, c)).fma(
-                SIMD[DType.float32, width](weights.unsafe_get(k)), acc
+    var mask = Int(rows.dim[0]()) - 1
+    var c = begin
+    # Halving the group for what is left keeps several accumulators in
+    # flight when a row is narrower than _GROUP vectors, which happens at
+    # fewer elements the wider the vectors are.
+    comptime for halvings in range(bit_width(_GROUP)):
+        comptime group = _GROUP >> halvings
+        comptime span = group * _WIDTH
+        while c + span <= end:
+            # A view per group keeps each vector's offset a compile-time
+            # constant, so the loads need no per-vector index registers.
+            var cols = rows.tile(
+                Coord(rows.dim[0](), Idx[span]), (0, c // span)
             )
+            var acc = Array[SIMD[DType.float32, _WIDTH], group](fill=0)
+            for k in range(n):
+                var w = SIMD[DType.float32, _WIDTH](weights.unsafe_get(k))
+                var r = (first + k) & mask if wraps else first + k
+                comptime for q in range(group):
+                    acc[q] = cols.load[width=_WIDTH]((r, q * _WIDTH)).fma(
+                        w, acc[q]
+                    )
+            comptime for q in range(group):
+                dst.store((i, c + q * _WIDTH), acc[q])
+            c += span
+    while c < end:
+        var acc = Float32(0)
+        for k in range(n):
+            var r = (first + k) & mask if wraps else first + k
+            acc = rows.load[width=1]((r, c)).fma(weights.unsafe_get(k), acc)
         dst.store((i, c), acc)
+        c += 1
 
-    vectorize[simd_width_of[DType.float32]()](Int(rows.dim[1]()), row_sum)
+
+def _lane_group_mask[
+    width: Int, *, halves: Bool, high: Bool
+]() -> IndexList[width]:
+    """Returns a two-vector shuffle that works within each group of 4 lanes.
+
+    It interleaves the low or high pairs of the two vectors. With halves, it
+    joins their low or high halves instead.
+    """
+    var mask = IndexList[width]()
+    for g in range(0, width, 4):
+        var lo = g + (2 if high else 0)
+        comptime if halves:
+            mask[g], mask[g + 1] = lo, lo + 1
+            mask[g + 2], mask[g + 3] = width + lo, width + lo + 1
+        else:
+            mask[g], mask[g + 1] = lo, width + lo
+            mask[g + 2], mask[g + 3] = lo + 1, width + lo + 1
+    return mask
+
+
+@inline(.always)
+def _load_lane_groups[
+    dtype: DType, //, width: Int
+](src: TileTensor[dtype, ...], row: Int, col: Int) -> SIMD[dtype, width]:
+    """Loads columns [col, col + 4) of rows row, row + 4, ... into
+    consecutive groups of 4 lanes."""
+    comptime if width == 4:
+        return rebind[SIMD[dtype, width]](src.load[width=4]((row, col)))
+    else:
+        comptime half = width // 2
+        return rebind[SIMD[dtype, width]](
+            _load_lane_groups[half](src, row, col).join(
+                _load_lane_groups[half](src, row + half, col)
+            )
+        )
+
+
+@inline(.always)
+def _load_transposed[
+    dtype: DType, //, width: Int
+](src: TileTensor[dtype, ...], row: Int, col: Int) -> Array[
+    SIMD[dtype, width], width
+]:
+    """Loads the width x width block of src at (row, col) as one vector per
+    column.
+
+    This is a transpose of 4 x 4 blocks. Moving whole blocks folds into
+    4-wide loads, which leaves shuffles that stay within groups of 4 lanes.
+    Every vector ISA does those in one cheap instruction.
+    """
+    comptime assert width % 4 == 0, "width must be a multiple of 4"
+    comptime pairs_lo = _lane_group_mask[width, halves=False, high=False]()
+    comptime pairs_hi = _lane_group_mask[width, halves=False, high=True]()
+    comptime halves_lo = _lane_group_mask[width, halves=True, high=False]()
+    comptime halves_hi = _lane_group_mask[width, halves=True, high=True]()
+    var cols = Array[SIMD[dtype, width], width](fill=0)
+    comptime for c in range(0, width, 4):
+        var r0 = _load_lane_groups[width](src, row, col + c)
+        var r1 = _load_lane_groups[width](src, row + 1, col + c)
+        var r2 = _load_lane_groups[width](src, row + 2, col + c)
+        var r3 = _load_lane_groups[width](src, row + 3, col + c)
+        var t0 = r0.shuffle[pairs_lo](r1)
+        var t1 = r0.shuffle[pairs_hi](r1)
+        var t2 = r2.shuffle[pairs_lo](r3)
+        var t3 = r2.shuffle[pairs_hi](r3)
+        cols[c] = t0.shuffle[halves_lo](t2)
+        cols[c + 1] = t0.shuffle[halves_hi](t2)
+        cols[c + 2] = t1.shuffle[halves_lo](t3)
+        cols[c + 3] = t1.shuffle[halves_hi](t3)
+    return cols^
+
+
+@inline(.always)
+def _move_block[
+    to_tile: Bool
+](
+    src: TileTensor[DType.float32, ...],
+    dst: MutTileTensor[DType.float32, ...],
+    col: Int,
+    slot: Int,
+):
+    """Moves _WIDTH columns, starting at column col and tile row slot, in the
+    direction _move_columns describes."""
+    comptime if to_tile:
+        var m = _load_transposed[_WIDTH](src, 0, col)
+        comptime for q in range(_WIDTH):
+            dst.store((slot + q, 0), m[q])
+    else:
+        var m = _load_transposed[_WIDTH](src, slot, 0)
+        comptime for q in range(_WIDTH):
+            dst.store((q, col), m[q])
+
+
+@inline(.always)
+def _move_columns[
+    to_tile: Bool
+](
+    src: TileTensor[DType.float32, ...],
+    dst: MutTileTensor[DType.float32, ...],
+    begin: Int,
+    end: Int,
+    partial: Bool,
+) -> Int:
+    """Moves columns [begin, end) of _WIDTH rows into a tile, or back out of
+    the tile when not to_tile, and returns the end of the columns moved.
+
+    The tile holds one column per row. It is a ring: column j is in tile row
+    j % ring, where ring is the tile's row count. begin and ring are
+    multiples of _WIDTH, and columns before begin must already be moved.
+    Without partial, only whole vectors of columns move.
+    """
+    var ring: Int
+    comptime if to_tile:
+        ring = Int(dst.dim[0]())
+    else:
+        ring = Int(src.dim[0]())
+    var j = begin
+    var slot = begin % ring
+    while j + _WIDTH <= end:
+        _move_block[to_tile](src, dst, j, slot)
+        j += _WIDTH
+        slot += _WIDTH
+        if slot == ring:
+            slot = 0
+    if partial:
+        while j < end:
+            comptime for s in range(_WIDTH):
+                comptime if to_tile:
+                    dst.store((j % ring, s), src.load[width=1]((s, j)))
+                else:
+                    dst.store((s, j), src.load[width=1]((j % ring, s)))
+            j += 1
+    return j
+
+
+@inline(.always)
+def _add_tap[
+    n: Int, //, channels: Int, first: Int
+](
+    mut acc: Array[SIMD[DType.float32, _WIDTH], n],
+    taps: _AxisTaps,
+    tile: TileTensor[DType.float32, ...],
+    mask: Int,
+    i: Int,
+    k: Int,
+):
+    """Adds tap k of output i to accumulators [first, first + channels)."""
+    var w = SIMD[DType.float32, _WIDTH](taps.weights(i).unsafe_get(k))
+    var p = (taps.start_of(i) + k) & mask
+    comptime for ch in range(channels):
+        acc[first + ch] = tile.load[width=_WIDTH]((p, ch * _WIDTH)).fma(
+            w, acc[first + ch]
+        )
+
+
+def _tap_pixels(channels: Int) -> Int:
+    """Returns how many outputs a transposed pass interleaves, which keeps 4
+    to 8 accumulators in flight."""
+    if channels <= 2:
+        return 4
+    if channels <= _MAX_UNROLLED_CHANNELS:
+        return 2
+    # The pass goes one channel at a time past the counts it unrolls.
+    return 1
+
+
+@inline(.always)
+def _apply_taps_interleaved[
+    channels: Int, pixels: Int
+](
+    taps: _AxisTaps,
+    tile: TileTensor[DType.float32, ...],
+    mask: Int,
+    out_tile: MutTileTensor[DType.float32, ...],
+    begin: Int,
+    end: Int,
+    tile_first_output: Int,
+):
+    """Applies the taps of outputs [begin, end), pixels outputs at a time to
+    keep that many independent accumulators in flight."""
+    var i = begin
+    while i < end:
+        var group = pixels if i + pixels <= end else 1
+        var acc = Array[SIMD[DType.float32, _WIDTH], pixels * channels](fill=0)
+        if group == pixels:
+            var shared = taps.count_of(i)
+            comptime for p in range(1, pixels):
+                shared = min(shared, taps.count_of(i + p))
+            for k in range(shared):
+                comptime for p in range(pixels):
+                    _add_tap[channels, p * channels](
+                        acc, taps, tile, mask, i + p, k
+                    )
+            comptime for p in range(pixels):
+                for k in range(shared, taps.count_of(i + p)):
+                    _add_tap[channels, p * channels](
+                        acc, taps, tile, mask, i + p, k
+                    )
+        else:
+            for k in range(taps.count_of(i)):
+                _add_tap[channels, 0](acc, taps, tile, mask, i, k)
+        comptime for p in range(pixels):
+            if p < group:
+                comptime for ch in range(channels):
+                    out_tile.store(
+                        (i + p - tile_first_output, ch * _WIDTH),
+                        acc[p * channels + ch],
+                    )
+        i += group
+
+
+@inline(.always)
+def _apply_taps_to_tile(
+    taps: _AxisTaps,
+    tile: TileTensor[DType.float32, ...],
+    out_tile: MutTileTensor[DType.float32, ...],
+    begin: Int,
+    end: Int,
+    tile_first_output: Int,
+):
+    """Applies the taps of outputs [begin, end) to a ring of a power-of-two
+    number of input positions, one per row, writing output i to row
+    i - tile_first_output of out_tile."""
+    var mask = Int(tile.dim[0]()) - 1
+    var channels = Int(tile.dim[1]()) // _WIDTH
+    comptime for c in range(1, _MAX_UNROLLED_CHANNELS + 1):
+        if channels == c:
+            _apply_taps_interleaved[c, _tap_pixels(c)](
+                taps,
+                tile.reshape(row_major((Int(tile.dim[0]()), Idx[c * _WIDTH]))),
+                mask,
+                out_tile.reshape(
+                    row_major((Int(out_tile.dim[0]()), Idx[c * _WIDTH]))
+                ),
+                begin,
+                end,
+                tile_first_output,
+            )
+            return
+    for ch in range(channels):
+        _apply_taps_interleaved[1, 1](
+            taps,
+            tile[:, ch * _WIDTH : (ch + 1) * _WIDTH],
+            mask,
+            out_tile[:, ch * _WIDTH : (ch + 1) * _WIDTH],
+            begin,
+            end,
+            tile_first_output,
+        )
+
+
+@fieldwise_init
+struct _Window(TrivialRegisterPassable):
+    """Outputs [first_output, end_output), run as steps [first_step,
+    end_step)."""
+
+    var first_output: Int
+    var end_output: Int
+    var first_step: Int
+    var end_step: Int
+
+
+@fieldwise_init
+struct _Step(TrivialRegisterPassable):
+    """Input columns [cols_begin, cols_end) to transpose, and the output the
+    step finishes up to, outputs_end."""
+
+    var cols_begin: Int
+    var cols_end: Int
+    var outputs_end: Int
+
+
+struct _TransposedPlan(Movable):
+    """The schedule of a transposed pass.
+
+    A transposed pass resamples one slab per vector lane. It moves the
+    slabs, transposed, into a ring of ring_positions input positions. Each
+    position is inner rows of the ring, one vector each, that share a tap
+    weight. Input columns move into the ring once each, in order, skipping
+    only those no output reads.
+
+    Outputs are cut into windows whose results fit in _TILE_BYTES. A window
+    alternates transposing a few columns with finishing the outputs they
+    complete, so memory traffic overlaps independent FMAs.
+    """
+
+    var ring_positions: Int
+    var windows: List[_Window]
+    var steps: List[_Step]
+    var inner: Int
+    var lookahead: Int
+    var position_bytes: Int
+
+    def __init__(
+        out self,
+        taps: _AxisTaps,
+        in_dim: Int,
+        out_dim: Int,
+        inner: Int,
+        slabs: Int,
+    ):
+        """Plans the pass, or nothing when the slab pass runs instead:
+        an inner that fills a vector, a width that keeps its size, or
+        fewer slabs than lanes never reaches the transposed schedule."""
+        self.ring_positions = 0
+        self.windows = List[_Window]()
+        self.steps = List[_Step]()
+        self.inner = inner
+        # Columns move in whole vectors, so the ring holds up to a vector's
+        # worth past the last position a window reads.
+        self.lookahead = ceildiv(_WIDTH, inner)
+        self.position_bytes = inner * _WIDTH * size_of[DType.float32]()
+        if inner >= _WIDTH or in_dim == out_dim or slabs < _WIDTH:
+            return
+        # A power of two makes a position a mask, and a multiple of the
+        # vector width keeps a vector of columns from wrapping.
+        self.ring_positions = _WIDTH
+        while (
+            self.ring_positions < taps.max_count + self.lookahead
+            or 2 * self.ring_positions * self.position_bytes <= _TILE_BYTES
+        ):
+            self.ring_positions *= 2
+        var transposed = 0
+        var first = 0
+        while first < len(taps.start):
+            var end = self._window_end(taps, first)
+            transposed = self._add_window(
+                taps, first, end, in_dim * inner, transposed
+            )
+            first = end
+
+    def _window_end(self, taps: _AxisTaps, first: Int) -> Int:
+        """Returns the end of the window that starts at output first: as many
+        outputs as the ring and _TILE_BYTES hold, and at least one."""
+        var lo = taps.start_of(first)
+        var hi = taps.end_of(first)
+        var end = first + 1
+        while end < len(taps.start):
+            var next_hi = max(hi, taps.end_of(end))
+            if (
+                next_hi - lo + self.lookahead > self.ring_positions
+                or (end + 1 - first) * self.position_bytes > _TILE_BYTES
+            ):
+                break
+            hi = next_hi
+            end += 1
+        return end
+
+    def _add_window(
+        mut self,
+        taps: _AxisTaps,
+        first: Int,
+        end: Int,
+        total: Int,
+        var transposed: Int,
+    ) -> Int:
+        """Adds the steps of the window of outputs [first, end), given that
+        the first transposed of the total input columns have moved. Returns
+        how many have moved after it."""
+        var lo = taps.start_of(first)
+        var hi = 0
+        for i in range(first, end):
+            hi = max(hi, taps.end_of(i))
+        var pixels = _tap_pixels(self.inner)
+        transposed = max(transposed, align_down(lo * self.inner, _WIDTH))
+        var needed = min(total, align_up(hi * self.inner, _WIDTH))
+        var first_step = len(self.steps)
+        var finished = first
+        while finished < end:
+            var cols_begin = transposed
+            var cols_end = max(transposed, min(needed, transposed + _PIPE_COLS))
+            # Leftover columns move only at the end of the input.
+            if cols_end == total:
+                transposed = total
+            else:
+                transposed += align_down(cols_end - transposed, _WIDTH)
+            var ready = transposed // self.inner
+            var step_first = finished
+            while finished < end and taps.end_of(finished) <= ready:
+                finished += 1
+            # Whole groups only until the window's last outputs, so outputs
+            # keep their accumulators interleaved.
+            if finished < end:
+                finished = step_first + align_down(
+                    finished - step_first, pixels
+                )
+            self.steps.append(_Step(cols_begin, cols_end, finished))
+        self.windows.append(_Window(first, end, first_step, len(self.steps)))
+        return transposed
+
+
+struct _SlabPass(Movable):
+    """Resamples one dimension of independent [in_dim, inner] slabs."""
+
+    var taps: _AxisTaps
+    var in_dim: Int
+    var out_dim: Int
+    var inner: Int
+    var strip: Int
+    var plan: _TransposedPlan
+    var tile: List[Float32]
+    var out_tile: List[Float32]
+
+    def __init__(
+        out self,
+        var taps: _AxisTaps,
+        in_dim: Int,
+        out_dim: Int,
+        inner: Int,
+        slabs: Int,
+    ):
+        comptime block = _GROUP * _WIDTH
+        self.in_dim = in_dim
+        self.out_dim = out_dim
+        self.inner = inner
+        # Column strips of a wide slab whose input window stays in L1.
+        self.strip = max(
+            block,
+            align_down(
+                _TILE_BYTES
+                // (max(taps.max_count, 1) * size_of[DType.float32]()),
+                block,
+            ),
+        )
+        self.plan = _TransposedPlan(taps, in_dim, out_dim, inner, slabs)
+        self.tile = List[Float32](
+            unsafe_uninit_length=self.plan.ring_positions * inner * _WIDTH
+        )
+        self.out_tile = List[Float32](
+            # A plan's window always takes one output, which may overflow
+            # _TILE_BYTES.
+            unsafe_uninit_length=(
+                max(
+                    _TILE_BYTES // size_of[DType.float32](), inner * _WIDTH
+                ) if self.plan.ring_positions
+                > 0 else 0
+            )
+        )
+        self.taps = taps^
+
+    def batch(self, slabs_left: Int) -> Int:
+        """Returns how many slabs the next resize takes: a vector of them on
+        the transposed path, while that many are left."""
+        return _WIDTH if self.inner < _WIDTH and slabs_left >= _WIDTH else 1
+
+    @inline(.always)
+    def resize(
+        mut self,
+        src: TileTensor[DType.float32, ...],
+        dst: MutTileTensor[DType.float32, ...],
+    ):
+        """Resamples each row of src, a flattened slab, into the same row of
+        dst. Takes as many rows as batch returned. One row runs the slab
+        path, and a vector of rows runs the transposed path."""
+        if Int(src.dim[0]()) != 1:
+            return self._resize_transposed(src, dst)
+        var rows = src[Idx[0], :].reshape(row_major((self.in_dim, self.inner)))
+        var out_rows = dst[Idx[0], :].reshape(
+            row_major((self.out_dim, self.inner))
+        )
+        var col = 0
+        while col < self.inner:
+            var col_end = min(self.inner, col + self.strip)
+            for i in range(self.out_dim):
+                _weighted_row_sum[wraps=False](
+                    self.taps, i, rows, out_rows, col, col_end
+                )
+            col = col_end
+
+    def _resize_transposed(
+        mut self,
+        src: TileTensor[DType.float32, ...],
+        dst: MutTileTensor[DType.float32, ...],
+    ):
+        """Resamples the rows of src, a vector of flattened slabs, into those
+        of dst, one slab per vector lane, for inner too narrow to fill a
+        vector."""
+        var steps = Span(self.plan.steps)
+        var position_len = self.inner * _WIDTH
+        var ring_positions = self.plan.ring_positions
+        var tile_cols = TileTensor(
+            self.tile, row_major((ring_positions * self.inner, Idx[_WIDTH]))
+        )
+        var tile_positions = TileTensor(
+            self.tile, row_major((ring_positions, position_len))
+        )
+        var out_cols = TileTensor(
+            self.out_tile,
+            row_major((len(self.out_tile) // _WIDTH, Idx[_WIDTH])),
+        )
+        var out_positions = TileTensor(
+            self.out_tile,
+            row_major((len(self.out_tile) // position_len, position_len)),
+        )
+        var total = Int(src.dim[1]())
+        for window in self.plan.windows:
+            var lo = window.first_output * self.inner
+            var window_dst = dst[:, lo : window.end_output * self.inner]
+            var finished = window.first_output
+            var stored = 0
+            for s in range(window.first_step, window.end_step):
+                var step = steps.unsafe_get(s)
+                _ = _move_columns[to_tile=True](
+                    src,
+                    tile_cols,
+                    step.cols_begin,
+                    step.cols_end,
+                    partial=step.cols_end == total,
+                )
+                if step.outputs_end > finished:
+                    _apply_taps_to_tile(
+                        self.taps,
+                        tile_positions,
+                        out_positions,
+                        finished,
+                        step.outputs_end,
+                        window.first_output,
+                    )
+                    finished = step.outputs_end
+                stored = _move_columns[to_tile=False](
+                    out_cols,
+                    window_dst,
+                    stored,
+                    (finished - window.first_output) * self.inner,
+                    partial=False,
+                )
+            _ = _move_columns[to_tile=False](
+                out_cols,
+                window_dst,
+                stored,
+                (window.end_output - window.first_output) * self.inner,
+                partial=True,
+            )
 
 
 def _cast_rows[
@@ -630,51 +1217,86 @@ def _cast_rows[
         vectorize[simd_width_of[dtype]()](Int(src.dim[1]()), cast_at)
 
 
-def _resize_slabs(
-    taps: _AxisTaps,
-    src: TileTensor[DType.float32, ...],
+def _resize_rows[
+    in_dtype: DType, //
+](
+    mut w_pass: _SlabPass,
+    src: TileTensor[in_dtype, ...],
     dst: MutTileTensor[DType.float32, ...],
-    in_dim: Int,
-    out_dim: Int,
+    stage: MutTileTensor[DType.float32, ...],
+):
+    """Resamples W of a batch of input rows into dst. Integer rows convert
+    into stage first. An unchanged W converts or copies the rows."""
+    if w_pass.in_dim == w_pass.out_dim:
+        _cast_rows(src, dst)
+        return
+    comptime if in_dtype == DType.float32:
+        w_pass.resize(src.bitcast[DType.float32](), dst)
+    else:
+        var rows = Int(src.dim[0]())
+        _cast_rows(src, stage[0:rows, :])
+        w_pass.resize(stage[0:rows, :], dst)
+
+
+def _resize_2d_fused[
+    in_dtype: DType, //
+](
+    var taps_w: _AxisTaps,
+    taps_h: _AxisTaps,
+    src: TileTensor[in_dtype, ...],
+    dst: MutTileTensor[DType.float32, ...],
+    in_w: Int,
+    out_w: Int,
     inner: Int,
 ):
-    """Resamples each row of src, a flattened [in_dim, inner] slab, into the
-    same row of dst."""
+    """Resamples W, then H, of [outer, H, W * inner] views of row-major
+    [outer, H, W, inner] tensors, keeping only the W-resampled rows the H
+    filter still needs in a ring. Integer input is converted a batch of rows
+    at a time, as the W pass reaches it. An unchanged H writes the W pass
+    straight into dst.
+    """
+    var mid_row = out_w * inner
+    var in_h = Int(src.dim[1]())
+    var same_h = in_h == Int(dst.dim[1]())
+    var w_pass = _SlabPass(taps_w^, in_w, out_w, inner, in_h)
+    # Filling batch rows while the previous max_count - 1 are live needs
+    # max_count + batch - 1 slots. A power of two makes a slot a mask, and a
+    # multiple of batch keeps an aligned batch from wrapping.
+    var batch = w_pass.batch(in_h)
+    var capacity = batch
+    while capacity < taps_h.max_count + batch - 1:
+        capacity *= 2
+    var ring_buffer = List[Float32](
+        unsafe_uninit_length=0 if same_h else capacity * mid_row
+    )
+    var ring = TileTensor(ring_buffer, row_major((capacity, mid_row)))
+    var in_row = Int(src.dim[2]())
+    var stage_buffer = List[Float32](
+        unsafe_uninit_length=0 if in_dtype == DType.float32 else batch * in_row
+    )
+    var stage = TileTensor(stage_buffer, row_major((batch, in_row)))
     for o in range(Int(src.dim[0]())):
-        var rows = src[o, :].reshape(row_major((in_dim, inner)))
-        var out_rows = dst[o, :].reshape(row_major((out_dim, inner)))
-        for i in range(out_dim):
-            _weighted_row_sum(taps, i, rows, out_rows)
-
-
-def _resize_passes(
-    src: ImmTileTensor[DType.float32, ...],
-    dst: MutTileTensor[DType.float32, ...],
-    in_shape: IndexList[4],
-    out_shape: IndexList[4],
-):
-    """Resamples W, then H, through a temporary that holds the W-resampled
-    input."""
-    var outer = in_shape[0]
-    var in_h = in_shape[1]
-    var in_w = in_shape[2]
-    var inner = in_shape[3]
-    var out_h = out_shape[1]
-    var out_w = out_shape[2]
-    var mid = List[Float32](unsafe_uninit_length=outer * in_h * out_w * inner)
-    _resize_slabs(
-        _AxisTaps(in_w, out_w),
-        src.reshape(row_major((outer * in_h, in_w * inner))),
-        TileTensor(mid, row_major((outer * in_h, out_w * inner))),
-        in_w,
-        out_w,
-        inner,
-    )
-    _resize_slabs(
-        _AxisTaps(in_h, out_h),
-        TileTensor(mid, row_major((outer, in_h * out_w * inner))).as_imm(),
-        dst.reshape(row_major((outer, out_h * out_w * inner))),
-        in_h,
-        out_h,
-        out_w * inner,
-    )
+        var src_rows = src[o, :, :]
+        var dst_rows = dst[o, :, :]
+        var produced = 0
+        for i in range(Int(dst.dim[1]())):
+            while produced < taps_h.end_of(i):
+                var rows = w_pass.batch(in_h - produced)
+                var batch_rows = src_rows[produced : produced + rows, :]
+                if same_h:
+                    _resize_rows(
+                        w_pass,
+                        batch_rows,
+                        dst_rows[produced : produced + rows, :],
+                        stage,
+                    )
+                else:
+                    var slot = produced & (capacity - 1)
+                    _resize_rows(
+                        w_pass, batch_rows, ring[slot : slot + rows, :], stage
+                    )
+                produced += rows
+            if not same_h:
+                _weighted_row_sum[wraps=True](
+                    taps_h, i, ring, dst_rows, 0, mid_row
+                )
