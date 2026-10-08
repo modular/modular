@@ -93,6 +93,9 @@ class AlwaysSignalBuffersMixin:
     devices: list[Device]
     """Device list that must be provided by the model class."""
 
+    pipeline_config: PipelineConfig
+    """Pipeline config that must be provided by the model class."""
+
     @cached_property
     def signal_buffers(self) -> list[Buffer]:
         """Override to always create signal buffers.
@@ -109,10 +112,15 @@ class AlwaysSignalBuffersMixin:
             in compile-only mode.
         """
         # Import here to avoid circular dependency
-        from max.nn.comm import Signals
+        from max.nn.comm import MulticastPool, Signals
 
         # Signals.allocate initializes the signal buffers and enables p2p access
-        return Signals.allocate(self.devices)
+        buffers = Signals.allocate(self.devices)
+        # The memory estimate charges the pool for these models too.
+        MulticastPool.allocate(
+            self.devices, self.pipeline_config.multicast_pool_bytes()
+        )
+        return buffers
 
 
 @dataclass
@@ -611,10 +619,16 @@ class PipelineModel(
             return []
 
         # Import here to avoid circular dependency
-        from max.nn.comm import Signals
+        from max.nn.comm import MulticastPool, Signals
 
         # Signals.allocate initializes the signal buffers and enables p2p access
-        return Signals.allocate(self.devices)
+        buffers = Signals.allocate(self.devices)
+        # The allreduce kernel finds the pool through the driver registry, so
+        # registering it here is the whole wiring.
+        MulticastPool.allocate(
+            self.devices, self.pipeline_config.multicast_pool_bytes()
+        )
+        return buffers
 
     @property
     def _resolved_encoding(self) -> SupportedEncoding:

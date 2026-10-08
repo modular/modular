@@ -22,7 +22,7 @@ import pytest
 from max.driver import CPU, DeviceSpec, load_devices
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.comm import Signals
+from max.nn.comm import MulticastPool, Signals
 from max.nn.kv_cache import MHAKVCacheParams, MultiKVCacheParams
 from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
@@ -45,6 +45,7 @@ from test_common.pipeline_model_dummy import (
 )
 
 GIB = 1024**3
+_CONFIG = "max.pipelines.lib.config.config"
 
 
 def _mha_params(num_layers: int, per_layer_buffers: bool) -> MHAKVCacheParams:
@@ -671,3 +672,209 @@ def test_estimate_signal_buffer_memory__always_signal_buffers_mixin(
     got = planner.estimate_signal_buffer_memory(cfg)
     expected = Signals.NUM_BYTES * expected_count_per_gpu * max(ngpus, 1)
     assert got == expected
+
+
+_ALLREDUCE = "max.nn.comm.allreduce"
+
+
+@pytest.mark.parametrize(
+    "num_devices,num_tokens,hidden_size,expected",
+    [
+        # Below the rank floor: no pool regardless of payload.
+        (2, 8192, 8192, 0),
+        # Exactly num_tokens x hidden_size x bf16.
+        (4, 8192, 4096, 8192 * 4096 * 2),
+        (8, 8192, 8192, 8192 * 8192 * 2),
+        # Unaligned payloads are returned as is; the driver does the rounding.
+        (4, 1000, 4096, 1000 * 4096 * 2),
+        # Past the ceiling the pool is disabled outright, not truncated.
+        (8, 8192, 65536, 0),
+        # An architecture reporting no hidden width or no token budget gets
+        # no pool.
+        (8, 8192, 0, 0),
+        (8, 0, 4096, 0),
+    ],
+)
+def test_multicast_pool_capacity_bytes(
+    num_devices: int, num_tokens: int, hidden_size: int, expected: int
+) -> None:
+    """``capacity_bytes`` is the single sizing authority for the NVLS pool."""
+    assert (
+        MulticastPool.capacity_bytes(
+            num_devices=num_devices,
+            num_tokens=num_tokens,
+            hidden_size=hidden_size,
+        )
+        == expected
+    )
+
+
+def _gpu_config(
+    num_devices: int, hidden_size: int | str | None
+) -> DummyPipelineConfig:
+    cfg = DummyPipelineConfig(
+        model_path="dummy",
+        quantization_encoding=DUMMY_LLAMA_ARCH.default_encoding,
+        max_batch_size=1,
+        max_length=1024,
+        device_specs=[DeviceSpec.accelerator(id=i) for i in range(num_devices)],
+    )
+    if hidden_size is not None:
+        cfg.model.huggingface_config.hidden_size = hidden_size
+    return cfg
+
+
+def _driver_pool(supported: bool = True) -> MagicMock:
+    driver_pool = MagicMock()
+    driver_pool.is_supported.return_value = supported
+    return driver_pool
+
+
+@pytest.fixture
+def multicast_pool_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(MulticastPool, "ENABLED", True)
+
+
+def test_multicast_pool_bytes__disabled_by_default() -> None:
+    """Until a kernel consumes the pool, serving neither charges nor sizes it:
+    the driver is not even asked."""
+    assert MulticastPool.ENABLED is False
+    cfg = _gpu_config(8, hidden_size=4096)
+    driver_pool = _driver_pool()
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]) as load,
+        patch(f"{_CONFIG}.SymmetricPool", driver_pool),
+    ):
+        assert cfg.multicast_pool_bytes() == 0
+    load.assert_not_called()
+    driver_pool.is_supported.assert_not_called()
+
+
+@pytest.mark.usefixtures("multicast_pool_enabled")
+def test_multicast_pool_bytes__charges_the_capacity() -> None:
+    """The charge is the sized capacity once the driver confirms support."""
+    cfg = _gpu_config(8, hidden_size=4096)
+    capacity = MulticastPool.capacity_bytes(
+        8, cfg.runtime.max_batch_input_tokens, 4096
+    )
+    assert capacity > 0
+    driver_pool = _driver_pool()
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]),
+        patch(f"{_CONFIG}.SymmetricPool", driver_pool),
+    ):
+        assert cfg.multicast_pool_bytes() == capacity
+    driver_pool.is_supported.assert_called_once_with([])
+
+
+@pytest.mark.usefixtures("multicast_pool_enabled")
+def test_multicast_pool_bytes__unsupported_devices_is_zero() -> None:
+    """A box the driver cannot back a pool on is not charged for one."""
+    cfg = _gpu_config(8, hidden_size=4096)
+    driver_pool = _driver_pool(supported=False)
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]),
+        patch(f"{_CONFIG}.SymmetricPool", driver_pool),
+    ):
+        assert cfg.multicast_pool_bytes() == 0
+
+
+@pytest.mark.usefixtures("multicast_pool_enabled")
+@pytest.mark.parametrize(
+    "num_devices,hidden_size",
+    [
+        # Below the rank floor.
+        (2, 4096),
+        # No integer hidden width: a MagicMock attribute, or a string.
+        (8, None),
+        (8, "4096"),
+        # Payload past the ceiling.
+        (8, 65536),
+    ],
+)
+def test_multicast_pool_bytes__sizing_rejections_skip_the_driver(
+    num_devices: int, hidden_size: int | str | None
+) -> None:
+    """Sizing rejects before the driver is consulted."""
+    cfg = _gpu_config(num_devices, hidden_size=hidden_size)
+    driver_pool = _driver_pool()
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]) as load,
+        patch(f"{_CONFIG}.SymmetricPool", driver_pool),
+    ):
+        assert cfg.multicast_pool_bytes() == 0
+    load.assert_not_called()
+    driver_pool.is_supported.assert_not_called()
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+def test_estimate_signal_buffer_memory__multicast_pool(
+    enabled: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The planner charges the pool per GPU alongside the signal buffers,
+    and only while the pool is enabled."""
+    monkeypatch.setattr(MulticastPool, "ENABLED", enabled)
+    cfg = _gpu_config(8, hidden_size=4096)
+    arch_config = DUMMY_LLAMA_ARCH.config.initialize(
+        cfg, max_seq_len=cfg.model.max_length or 4096
+    )
+    planner = PagedMemoryPlanner(arch_config)
+    ngpus = len(cfg.model.device_specs)
+
+    with (
+        patch(f"{_CONFIG}.load_devices", return_value=[]),
+        patch(f"{_CONFIG}.SymmetricPool", _driver_pool()),
+    ):
+        got = planner.estimate_signal_buffer_memory(cfg)
+
+    capacity = MulticastPool.capacity_bytes(
+        ngpus, cfg.runtime.max_batch_input_tokens, 4096
+    )
+    pool_bytes = capacity if enabled else 0
+    assert got == (Signals.NUM_BYTES + pool_bytes) * ngpus
+
+
+def test_multicast_pool_allocate__zero_bytes_skips_the_driver() -> None:
+    """A zero charge means no pool: the driver is neither queried nor asked
+    to allocate."""
+    driver_pool = MagicMock()
+    with patch(f"{_ALLREDUCE}.DriverSymmetricPool", driver_pool):
+        assert MulticastPool.allocate([MagicMock()], 0) is None
+    driver_pool.lookup.assert_not_called()
+    driver_pool.allocate.assert_not_called()
+
+
+def test_multicast_pool_allocate__reuses_the_registered_pool() -> None:
+    """A second model over the same devices gets the existing pool instead
+    of a failing second allocation."""
+    driver_pool = MagicMock()
+    existing = object()
+    driver_pool.lookup.return_value = existing
+    with (
+        patch(f"{_ALLREDUCE}.is_virtual_device_mode", return_value=False),
+        patch(f"{_ALLREDUCE}.DriverSymmetricPool", driver_pool),
+    ):
+        assert MulticastPool.allocate([MagicMock()], 4096) is existing
+    driver_pool.allocate.assert_not_called()
+
+
+def test_multicast_pool_allocate__failure_falls_back_with_a_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failed allocation is a fallback, but a warned one: the estimate has
+    already reserved the bytes and they now go unused."""
+    driver_pool = MagicMock()
+    driver_pool.lookup.return_value = None
+    driver_pool.allocate.side_effect = RuntimeError("cuMulticastCreate failed")
+    with (
+        patch(f"{_ALLREDUCE}.is_virtual_device_mode", return_value=False),
+        patch(f"{_ALLREDUCE}.DriverSymmetricPool", driver_pool),
+        caplog.at_level(logging.WARNING, logger=_ALLREDUCE),
+    ):
+        assert MulticastPool.allocate([MagicMock()], 4096) is None
+    assert any(
+        record.levelno == logging.WARNING
+        and "cuMulticastCreate failed" in record.getMessage()
+        and "4096" in record.getMessage()
+        for record in caplog.records
+    )

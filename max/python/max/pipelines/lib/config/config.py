@@ -21,9 +21,9 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
 from max.config import ConfigFileModel
-from max.driver import accelerator_api
+from max.driver import SymmetricPool, accelerator_api, load_devices
 from max.engine import InferenceSession
-from max.nn.comm import Signals
+from max.nn.comm import MulticastPool, Signals
 from max.pipelines.diffusion.config import resolve_denoising_cache
 from max.pipelines.kv_cache.config import KVCacheConfig, is_fp4_kv_cache_format
 from max.pipelines.lib._model_components import (
@@ -1291,6 +1291,39 @@ class PipelineConfig(ConfigFileModel):
             self.runtime.device_graph_capture and accelerator_api() == "hip"
         )
 
+    def multicast_pool_bytes(self) -> int:
+        """Returns the per-device symmetric multicast pool bytes, or ``0``.
+
+        The pool backs NVSwitch (NVLS) allreduce. This is the single place the
+        sizing inputs are read, so the allocation site and the memory estimate
+        cannot disagree; ``0`` means no pool is created and collectives stay
+        peer-to-peer.
+
+        Returns:
+            Per-device pool bytes, or ``0`` when no pool will be allocated.
+        """
+        if not MulticastPool.ENABLED:
+            return 0
+        hidden_size = getattr(self.model.huggingface_config, "hidden_size", 0)
+        if not isinstance(hidden_size, int):
+            return 0
+        capacity = MulticastPool.capacity_bytes(
+            num_devices=len(self.model.device_specs),
+            num_tokens=self.runtime.max_batch_input_tokens,
+            hidden_size=hidden_size,
+        )
+        if capacity == 0:
+            return 0
+        # A multi-GPU box without NVSwitch cannot back a pool; charging for
+        # one the driver will refuse would shrink the KV cache for nothing.
+        devices = load_devices(self.model.device_specs)
+        if not SymmetricPool.is_supported(devices):
+            return 0
+        # The driver rounds the reservation up to its allocation granularity
+        # (2 MiB per GPU on current hardware), well inside the estimate's own
+        # margin, so the request is charged as is.
+        return capacity
+
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None
     ) -> int:
@@ -1304,6 +1337,9 @@ class PipelineConfig(ConfigFileModel):
         broadcast (see ``rust_kv/kv-tier-connector/src/copy_engine.rs``), so they
         contribute no additional term here.
 
+        The per-GPU symmetric multicast pool backing NVLS allreduce is
+        charged alongside, when :meth:`multicast_pool_bytes` is non-zero.
+
         Returns 0 for single-device pipelines.
 
         Args:
@@ -1316,7 +1352,7 @@ class PipelineConfig(ConfigFileModel):
         ngpus = len(self.model.device_specs)
         if ngpus <= 1:
             return 0
-        return Signals.NUM_BYTES * ngpus
+        return (Signals.NUM_BYTES + self.multicast_pool_bytes()) * ngpus
 
     def _validate_repo_access(self) -> None:
         """Validates that every model's repo was provided and is accessible.
