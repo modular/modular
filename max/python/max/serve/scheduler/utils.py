@@ -20,7 +20,6 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
-from max.driver import Buffer
 from max.nn.kv_cache.metrics import dkv_tier_degraded
 from max.pipelines.context import TextContext
 from max.pipelines.kv_cache import PagedKVCacheManagerInterface
@@ -1415,22 +1414,3 @@ def get_cancelled_reqs(
         for req_id in req_ids:
             cancelled_reqs.append(req_id)
     return cancelled_reqs
-
-
-def reshape_flat_kv_blocks_to_grid(
-    flat_blocks: list[Buffer], dp: int, group_name: str
-) -> list[list[Buffer]]:
-    """Reshape a flat per-device buffer list into ``[dp][tp]`` row-major.
-
-    Matches the primary tensor grid that ``KVTransferEngine`` expects
-    when registering an extra tensor group. ``flat_blocks`` is
-    ``[r0t0, r0t1, ..., r0t(tp-1), r1t0, ...]`` as produced by
-    ``PagedKVCacheManager.runtime_inputs``.
-    """
-    tp = len(flat_blocks) // dp
-    if dp * tp != len(flat_blocks):
-        raise ValueError(
-            f"{group_name} KV tensor group has {len(flat_blocks)} "
-            f"buffers, not divisible by DP={dp}."
-        )
-    return [list(flat_blocks[r * tp : (r + 1) * tp]) for r in range(dp)]
