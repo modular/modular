@@ -32,8 +32,8 @@ def _check_device_placement(op_name: str, todo: str = "") -> None:
     - ``Error``: raise ``ValueError``.
 
     Args:
-        op_name: The public op name, e.g. ``"ops.cumsum"``.
-        todo: Tracking ticket for GPU kernel work, e.g. ``"TODO(KERN-1095)."``.
+        op_name: The public op name, e.g. ``"ops.nonzero"``.
+        todo: Tracking ticket for GPU kernel work, e.g. ``"TODO(GEX-2041)."``.
     """
     policy = Graph.current.strict_device_placement
     if policy is DevicePlacementPolicy.Ignore:

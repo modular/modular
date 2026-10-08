@@ -352,7 +352,7 @@ def _shuffle[
         return llvm_intrinsic[
             "llvm.nvvm.shfl.sync." + mnemonic + ".i32", Scalar[dtype]
         ](Int32(mask), val, offset, WIDTH_MASK)
-    elif dtype.is_integral() and bit_width_of[dtype]() == 64:
+    elif bit_width_of[dtype]() == 64:
         var val_bitcast = bitcast[.uint32, simd_width * 2](val)
         var val_half1, val_half2 = val_bitcast.deinterleave()
         var shuffle1 = _shuffle[mnemonic, WIDTH_MASK=WIDTH_MASK](

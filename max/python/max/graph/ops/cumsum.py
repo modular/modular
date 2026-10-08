@@ -15,10 +15,7 @@
 from max._core.dialects import builtin, kgen, rmo
 
 from ..graph import Graph
-from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
-from .transfer_to import transfer_to
-from .validation import _check_device_placement
 
 
 def cumsum(
@@ -54,8 +51,7 @@ def cumsum(
           back of the axis back to the front, rather than front-to-back
 
     Raises:
-        ValueError: If ``x`` is on a non-CPU device and
-            ``strict_device_placement=DevicePlacementPolicy.Error``.
+        ValueError: If ``axis`` is out of range for the rank of ``x``.
     """
     x = TensorValue(x)
 
@@ -64,13 +60,8 @@ def cumsum(
     if not 0 <= axis < x.rank:
         raise ValueError(f"Invalid {axis=} for input {x.rank=}")
 
-    old_device = x.device if not x.device.is_cpu() else None
-    if old_device is not None:
-        _check_device_placement("ops.cumsum", "TODO(KERN-1095).")
-        x = transfer_to(x, DeviceRef.CPU())
-    # TODO(KERN-1095): Add GPU kernel support for cumsum.
     index_type = builtin.IndexType()
-    result = Graph.current._add_op_generated(
+    return Graph.current._add_op_generated(
         rmo.MoCumsumOp,
         result=x.type,
         input=x,
@@ -79,6 +70,3 @@ def cumsum(
         reverse=builtin.IntegerAttr(index_type, int(reverse)),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    if old_device is not None:
-        return transfer_to(result, old_device)
-    return result

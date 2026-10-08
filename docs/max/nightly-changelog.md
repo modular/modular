@@ -594,6 +594,9 @@ This version is still a work in progress.
   the per-module `quantized_layers` map of a modelopt `MIXED_PRECISION`
   checkpoint and refuses any module, algorithm, or group size the caller did
   not declare it can load.
+- `ops.cumsum` now runs on GPU. It previously copied a GPU input to the host,
+  ran there, and copied the result back. On GPU, float32 inputs accumulate in
+  float32 rather than float64.
 
 ### C API
 
