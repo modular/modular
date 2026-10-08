@@ -546,21 +546,13 @@ def _scatter_to_vocab(
     Returns:
         ``[batch_size, vocab_size]`` float32 probabilities.
     """
-    device = dist.device
-    batch = dist.shape[0]
-    m = dist.shape[1]
-    rows = ops.broadcast_to(
-        ops.unsqueeze(
-            ops.range(0, batch, 1, batch, dtype=DType.int64, device=device),
-            axis=1,
-        ),
-        [batch, m],
-    )
-    indices = ops.stack([rows, token_ids.cast(DType.int64)], axis=-1)
     zeros = ops.broadcast_to(
-        ops.constant(0.0, DType.float32, device=device), [batch, vocab_size]
+        ops.constant(0.0, DType.float32, device=dist.device),
+        [dist.shape[0], vocab_size],
     )
-    return ops.scatter_nd(zeros, dist.cast(DType.float32), indices)
+    return ops.scatter(
+        zeros, dist.cast(DType.float32), token_ids.cast(DType.int64), axis=1
+    )
 
 
 class BlockDriver(

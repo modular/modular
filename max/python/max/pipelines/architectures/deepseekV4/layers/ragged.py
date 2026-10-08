@@ -33,9 +33,8 @@ length of a graph input (:func:`window_count`) rather than being read back
 from the device: a read-back would sync every forward and rule out device
 graph capture.
 
-Segment ids are a compare-and-reduce over an ``[n, b]`` mask rather than a
-scatter or ``repeat_interleave``, neither of which has a GPU kernel; for
-serving batch sizes the mask is nothing.
+Segment ids are a prefix sum over segment ends rather than a
+``repeat_interleave``, which has no GPU kernel.
 """
 
 from __future__ import annotations
@@ -106,18 +105,17 @@ def segment_ids(
         total: The row count ``offsets[b]`` as a graph dim.
     """
     b = offsets.shape[0] - 1
-    idx = arange_to(total, total, device)
-    ends = ops.reshape(
-        ops.gather(offsets, arange_to(b, b, device) + 1, axis=0), [1, b]
+    # A row's segment is the number of segment ends at or before it. Ends at
+    # or past ``total`` land in an extra sink row; zero-length segments
+    # repeat an end, hence the add.
+    pos = arange_to(Dim(total) + 1, Dim(total) + 1, device)
+    ends = ops.gather(offsets, arange_to(b, b, device) + 1, axis=0)
+    ends = ops.min(ends, pos[-1])
+    hist = ops.scatter_add(
+        pos * 0, ops.broadcast_to(scalar(1, device), [b]), ends, axis=0
     )
-    ids = ops.squeeze(
-        ops.sum(
-            ops.cast(ops.reshape(idx, [total, 1]) >= ends, DType.int32),
-            axis=-1,
-        ),
-        axis=-1,
-    )
-    return ids, idx
+    ids = ops.rebind(ops.cumsum(hist, axis=0)[:-1], [total])
+    return ids, ops.rebind(pos[:-1], [total])
 
 
 @dataclass

@@ -175,9 +175,6 @@ class LFM2ShortConv(Module):
             if conv_b is not None:
                 conv_out = conv_out + conv_b
 
-            # scatter_nd is GPU-friendly (unlike ops.scatter, which round-trips
-            # through CPU via TODO(GEX-2197)), so use it for the per-request
-            # state stack update inside the loop.
             indices = ops.reshape(r_ix, [1, 1])
             state_stack_next = ops.scatter_nd(
                 state_stack, state_r_next, indices

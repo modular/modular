@@ -473,9 +473,7 @@ class DeepseekV4RoutedExperts(Module):
         # aligned_start[g]) when that is below start[g + 1]; the rest of the
         # tile is never multiplied into a stored row, so any slot's scales
         # do. Rows past aligned_start[groups] are in no group; clamped to the
-        # last one they fail the same test. The row maps are a
-        # compare-and-reduce rather than ops.scatter, which runs on the host:
-        # those round trips beside the tokens broadcast deadlocked 2 GPUs.
+        # last one they fail the same test.
         row_group, row_ids = segment_ids(aligned_start, padded, device)
         row_group = ops.min(row_group, groups - 1)
         in_group = row_ids - ops.gather(aligned_start, row_group, axis=0)

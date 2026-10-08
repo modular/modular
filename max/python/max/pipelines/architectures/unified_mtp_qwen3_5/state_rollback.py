@@ -134,22 +134,24 @@ def accepted_row_plan(
 
     if plan_rows is None:
         plan_rows = total_rows
-    out_pos = ops.range(
+    # A replay row's request is the number of request ends at or before it.
+    # Ends at or past ``plan_rows`` land in an extra sink position.
+    pos = ops.range(
         start=0,
-        stop=plan_rows,
-        out_dim=plan_rows,
+        stop=Dim(plan_rows) + 1,
+        out_dim=Dim(plan_rows) + 1,
         device=device,
         dtype=DType.int64,
     )
+    out_pos = ops.rebind(pos[:-1], [plan_rows])
+    ends = ops.min(replay_offsets[1:], pos[-1])
+    ones = ops.broadcast_to(
+        ops.constant(1, DType.int64, device=device), ends.shape
+    )
+    ends_per_pos = ops.scatter_add(pos * 0, ones, ends, axis=0)
     last_row = _shape_to_scalar(Dim("batch_size"), device) - 1
     row_of_pos = ops.min(
-        ops.sum(
-            (
-                ops.unsqueeze(out_pos, -1)
-                >= ops.unsqueeze(replay_offsets[1:], 0)
-            ).cast(DType.int64),
-            axis=-1,
-        ).reshape([-1]),
+        ops.rebind(ops.cumsum(ends_per_pos, axis=0)[:-1], [plan_rows]),
         last_row,
     )
     row_indices = ops.gather(starts, row_of_pos, axis=0) + (
