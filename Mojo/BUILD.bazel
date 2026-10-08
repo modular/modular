@@ -57,6 +57,7 @@ pkg_files(
     name = "docs",
     srcs = [
         ":CODialect.doc",
+        ":DEPGRAPHDialect.doc",
         ":HLCFDialect.doc",
         ":INTERPDialect.doc",
         ":KGENDialect.doc",
@@ -122,6 +123,37 @@ modular_cc_library(
         "//Support:Base",
         "//Support:Compiler",
         "@llvm-project//mlir:IR",
+    ],
+)
+
+td_library(
+    name = "DepGraphDialectTdFiles",
+    srcs = glob(["include/Mojo/DepGraphDialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:OpBaseTdFiles",
+    ],
+)
+
+gentbl_mlir_dialect(
+    name = "DepGraphDialectIncGen",
+    dialect = "depgraph",
+    td_file = "include/Mojo/DepGraphDialect/DepGraph.td",
+    deps = [
+        ":DepGraphDialectTdFiles",
+    ],
+)
+
+modular_cc_library(
+    name = "DepGraphDialect",
+    srcs = glob(["lib/DepGraphDialect/*.cpp"]),
+    hdrs = glob(["include/Mojo/DepGraphDialect/*.h"]),
+    deps = [
+        ":DepGraphDialectIncGen",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
     ],
 )
 
@@ -1487,6 +1519,7 @@ modular_cc_library(
     ],
     deps = [
         ":CODialect",
+        ":DepGraphDialect",
         ":ExecutionEngine",
         ":HLCFDialect",
         ":Interpreter",

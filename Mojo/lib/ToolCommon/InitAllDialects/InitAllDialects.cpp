@@ -15,6 +15,7 @@
 #include "Mojo/ToolCommon/InitAllDialects/IndexInterpreterInterface.h"
 
 #include "Mojo/CODialect/CODialect.h"
+#include "Mojo/DepGraphDialect/DepGraphDialect.h"
 #include "Mojo/HLCFDialect/HLCFDialect.h"
 #include "Mojo/Interpreter/InterpreterDialect.h"
 #include "Mojo/Interpreter/InterpreterInterface.h"
@@ -286,6 +287,7 @@ void M::registerAllKGENDialects(mlir::DialectRegistry &registry) {
       LIT::LITDialect,
       POP::POPDialect,
       CO::CODialect,
+      DepGraph::DepGraphDialect,
       MDialect,
       DebugInfo::DebugInfoDialect,
       mlir::index::IndexDialect,
