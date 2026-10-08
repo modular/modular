@@ -144,11 +144,12 @@ def _create_jenga_kv_cache(
     huge_page_bytes = max(
         leaf.bytes_per_page for leaf in params.leaves().values()
     )
-    # No max_seq_len: the pool must be allowed to be smaller than a request.
+    # The oversized request below exercises allocation rollback directly.
     return JengaKVCacheManager.create(
         params=params,
         available_bytes=num_huge_pages * huge_page_bytes,
         max_batch_size=8,
+        max_seq_len=3 * page_size,
     )
 
 

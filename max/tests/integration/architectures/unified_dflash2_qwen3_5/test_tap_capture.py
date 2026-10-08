@@ -168,6 +168,7 @@ def _create_kv_manager(
         params=params,
         available_bytes=num_huge_blocks * huge_page_bytes * len(params.devices),
         max_batch_size=max_batch_size,
+        max_seq_len=128,
     )
 
 

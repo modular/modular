@@ -33,7 +33,6 @@ from max.nn.kv_cache.cache_params import (
     KVCacheBufferInterface,
     KVCacheMemory,
     KVConnectorType,
-    PagedKVLeafRegion,
     spec_decode_cache_slack,
 )
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
@@ -219,8 +218,8 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         params: KVCacheParamInterface,
         available_bytes: int,
         max_batch_size: int,
+        max_seq_len: int,
         max_num_input_tokens: int | None = None,
-        max_seq_len: int | None = None,
     ) -> JengaKVCacheManager:
         """Creates a JengaKVCacheManager.
 
@@ -308,30 +307,30 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
             replica_kv_memory=replica_kv_memory,
             max_batch_size=max_batch_size,
             max_num_input_tokens=max_num_input_tokens,
+            max_seq_len=max_seq_len,
             connector=connector,
             pools=pools,
             groups=groups,
             slabs=slabs,
         )
-        if max_seq_len is not None:
-            slack = spec_decode_cache_slack(params)
-            seq_len_with_slack = max_seq_len + slack
-            if not manager._fits_in_cache(seq_len_with_slack):
-                effective = manager.effective_max_seq_length
-                max_tokens = effective if effective is not None else 0
-                slack_str = (
-                    f" (plus {slack} speculative-decode slack tokens)"
-                    if slack > 0
-                    else ""
-                )
-                raise RuntimeError(
-                    "Insufficient cache memory to support a batch containing one"
-                    f" request at the max sequence length of {max_seq_len} tokens"
-                    f"{slack_str}. A request approaching the max sequence length would"
-                    " exhaust the KV cache and crash the model worker. Reduce"
-                    f" --max-length to at most {max_tokens} or increase the available"
-                    " KV cache memory (e.g. raise --device-memory-utilization)."
-                )
+        slack = spec_decode_cache_slack(params)
+        seq_len_with_slack = max_seq_len + slack
+        if not manager._fits_in_cache(seq_len_with_slack):
+            effective = manager.effective_max_seq_length
+            max_tokens = effective if effective is not None else 0
+            slack_str = (
+                f" (plus {slack} speculative-decode slack tokens)"
+                if slack > 0
+                else ""
+            )
+            raise RuntimeError(
+                "Insufficient cache memory to support a batch containing one"
+                f" request at the max sequence length of {max_seq_len} tokens"
+                f"{slack_str}. A request approaching the max sequence length would"
+                " exhaust the KV cache and crash the model worker. Reduce"
+                f" --max-length to at most {max_tokens} or increase the available"
+                " KV cache memory (e.g. raise --device-memory-utilization)."
+            )
         return manager
 
     def __init__(
@@ -343,6 +342,7 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         kv_buffers: Sequence[KVCacheBufferInterface],
         replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]],
         max_batch_size: int,
+        max_seq_len: int,
         max_num_input_tokens: int | None = None,
         connector: KVConnector | None = None,
         groups: Mapping[str, KVGroupCoordinatorInterface],
@@ -375,12 +375,11 @@ class JengaKVCacheManager(JengaBlockManager, PagedKVCacheManagerInterface):
         self._devices_per_replica = devices_per_replica
 
         leaves = params.leaves()
-        # Only paged leaves read `num_blocks`. Row-addressed leaves can have
-        # much smaller pages, and so many more of them.
-        max_num_blocks = max(
-            leaf_infos[leaf_id].ratio * self._num_huge_blocks
-            for leaf_id, leaf in leaves.items()
-            if isinstance(leaf, PagedKVLeafRegion)
+        # LUT columns index logical sequence pages, not physical page IDs.
+        # Tiny scale pages can give a slab millions of physical pages, but
+        # a request still only addresses its sequence length plus slack.
+        max_num_blocks = ceildiv(
+            max_seq_len + spec_decode_cache_slack(params), params.page_size
         )
         # One instance across every leaf, shard and replica. Leaf ids are
         # already unique, a replica's shards are the destinations of one

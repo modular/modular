@@ -35,6 +35,7 @@ from max.nn.kv_cache import (
     KVCacheGroupId,
     KVCacheInputs,
     KVCacheInputsPerDevice,
+    KVCacheQuantizationConfig,
     MHAKVCacheParams,
     MultiKVCacheParams,
     RecurrentStateInputsPerDevice,
@@ -45,6 +46,7 @@ from max.nn.kv_cache.cache_params import (
     KVCacheParamInterface,
     KVConnectorType,
     SpeculativeMethod,
+    spec_decode_cache_slack,
 )
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import padded_lut_cols
@@ -93,7 +95,11 @@ def make_leaf(
 
 
 def create_manager(
-    params: KVCacheParamInterface, num_huge_blocks: int, max_batch_size: int
+    params: KVCacheParamInterface,
+    num_huge_blocks: int,
+    max_batch_size: int,
+    *,
+    max_seq_len: int = 4,
 ) -> JengaKVCacheManager:
     tp_degree = params.tensor_parallel_degree
     # A huge block is the least common multiple of the leaf page sizes.
@@ -104,6 +110,7 @@ def create_manager(
         params=params,
         available_bytes=num_huge_blocks * huge_page_bytes * len(params.devices),
         max_batch_size=max_batch_size,
+        max_seq_len=max_seq_len,
     )
 
 
@@ -276,7 +283,7 @@ def test_num_draft_tokens_per_step_threaded_from_params() -> None:
     property.
     """
     mgr = make_single_leaf_manager(
-        num_huge_blocks=10,
+        num_huge_blocks=20,
         speculative_method="dflash",
         num_draft_tokens=3,
     )
@@ -494,7 +501,9 @@ def make_recurrent_manager(
         ),
     )
     params = MultiKVCacheParams.from_params({"attn": attn, "state": state})
-    return create_manager(params, num_huge_blocks, max_batch_size)
+    return create_manager(
+        params, num_huge_blocks, max_batch_size, max_seq_len=64
+    )
 
 
 def test_a_forward_is_handed_state_rows_cut_to_its_own_batch() -> None:
@@ -555,7 +564,7 @@ def make_small_row_page_manager(
 
 
 def test_a_small_row_addressed_page_does_not_widen_the_paged_table() -> None:
-    """Checks the page table is sized from the paged leaf's page count."""
+    """Checks a tiny row page does not change the logical LUT width."""
     max_batch_size = 4
     mgr = make_small_row_page_manager(max_batch_size=max_batch_size)
     attn_id = next(
@@ -570,8 +579,81 @@ def test_a_small_row_addressed_page_does_not_widen_the_paged_table() -> None:
     declared = mgr._stager._slots[f"0/{attn_id}"].descriptor
     assert declared.max_shape == (
         max_batch_size,
-        padded_lut_cols(paged_blocks),
+        padded_lut_cols(1),
     )
+
+
+@pytest.mark.parametrize("max_seq_len", [1024, 1025])
+@pytest.mark.parametrize("speculative_method", [None, "mtp"])
+def test_quantized_lut_staging_uses_logical_sequence_pages(
+    max_seq_len: int, speculative_method: SpeculativeMethod | None
+) -> None:
+    """Bounds target/draft scale LUTs and stages the capture boundary."""
+    params = MultiKVCacheParams.from_params(
+        {
+            name: MHAKVCacheParams(
+                dtype=DType.float8_e4m3fn,
+                num_layers=layers,
+                n_kv_heads=1,
+                head_dim=128,
+                page_size=128,
+                devices=[DeviceRef.CPU()],
+                kvcache_quant_config=KVCacheQuantizationConfig(),
+                speculative_method=speculative_method,
+                num_draft_tokens=5 if speculative_method else 0,
+            )
+            for name, layers in (("target", 8), ("draft", 1))
+        }
+    )
+    manager = JengaKVCacheManager.create(
+        params=params,
+        available_bytes=16 * 1024**2,
+        max_batch_size=32,
+        max_seq_len=max_seq_len,
+    )
+    capture_length = max_seq_len + spec_decode_cache_slack(params)
+    logical_pages = (capture_length + 127) // 128
+    for leaf_id in params.leaves():
+        slot = manager._stager._slots[f"0/{leaf_id}"]
+        assert slot.descriptor.max_shape == (32, padded_lut_cols(logical_pages))
+        assert slot.descriptor.nbytes < 8192
+    # The physical scale-page capacity must be much wider than a logical row.
+    scale_id = next(key for key in params.leaves() if key.endswith("/scales"))
+    assert (
+        manager._leaf_infos[scale_id].ratio * manager._num_huge_blocks
+        > 100 * logical_pages
+    )
+
+    ctx = make_ctx(max_seq_len)
+    manager.claim(ctx)
+    manager.alloc(ctx)
+    manager.runtime_inputs([[ctx]], max_cache_length=capture_length)
+    arenas = {slot.arena for slot in manager._stager._slots.values()}
+    buffers = {arena: arena._device for arena in arenas}
+    manager.runtime_inputs([[ctx]], max_cache_length=capture_length)
+    assert all(arena._device is buffers[arena] for arena in arenas)
+
+
+def test_windowed_lut_staging_can_exceed_physical_page_count() -> None:
+    """Keeps absolute sequence columns even when only a short window is held."""
+    params = make_leaf(n_kv_heads=1, page_size=128, window_size=256)
+    page_bytes = next(iter(params.leaves().values())).bytes_per_page
+    manager = JengaKVCacheManager.create(
+        params=params,
+        available_bytes=8 * page_bytes,
+        max_batch_size=1,
+        max_seq_len=4096,
+    )
+    ctx = make_ctx(4096)
+    manager.claim(ctx)
+    while ctx.tokens.active_length > 256:
+        ctx.tokens.chunk(256)
+        manager.alloc(ctx)
+        manager.runtime_inputs([[ctx]], max_cache_length=4096)
+        ctx.update(42)
+        manager.step(ctx)
+    manager.alloc(ctx)
+    manager.runtime_inputs([[ctx]], max_cache_length=4096)
 
 
 def test_a_connector_keeps_the_sliding_window_group(
@@ -712,7 +794,9 @@ def test_the_state_does_not_change_what_attention_reuses() -> None:
 
     reused: list[int] = []
     for mgr in (
-        create_manager(plain, num_huge_blocks=400, max_batch_size=4),
+        create_manager(
+            plain, num_huge_blocks=400, max_batch_size=4, max_seq_len=64
+        ),
         make_recurrent_manager(num_huge_blocks=400),
     ):
         _run_until_committed(mgr, make_ctx(33))
@@ -785,6 +869,7 @@ def test_kv_budget_is_split_across_devices(
         params=params,
         available_bytes=total_huge_blocks * huge_page_bytes,
         max_batch_size=8,
+        max_seq_len=1,
     )
     per_device_huge_blocks = total_huge_blocks // 2
     assert mgr._num_huge_blocks == per_device_huge_blocks
@@ -805,6 +890,7 @@ def test_tp_huge_pages_use_per_device_page_size() -> None:
         params=params,
         available_bytes=8 * per_device_page * 2,
         max_batch_size=8,
+        max_seq_len=1,
     )
     assert mgr._num_huge_blocks == 8
 
@@ -817,6 +903,7 @@ def test_mixed_dp_tp_splits_budget_and_uses_per_device_pages() -> None:
         params=params,
         available_bytes=8 * per_device_page * 4,
         max_batch_size=8,
+        max_seq_len=1,
     )
     assert mgr._num_huge_blocks == 8
 
@@ -934,7 +1021,10 @@ def test_a_slab_of_memory_size_admits_the_batch_it_was_sized_for(
     assert size < PLENTY, "the batch must bind before the budget does"
 
     mgr = JengaKVCacheManager.create(
-        params=params, available_bytes=size, max_batch_size=max_batch_size
+        params=params,
+        available_bytes=size,
+        max_batch_size=max_batch_size,
+        max_seq_len=16,
     )
     for _ in range(max_batch_size):
         ctx = make_ctx(16)
