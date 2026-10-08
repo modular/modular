@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# A `TileTensor` argument puts `"` in the instantiated function's name, and
+# The quoted string parameter puts `"` in the tensor helper's name, and
 # the mangler encodes each one as `~Q` to keep the symbol ELF-safe, so the
 # instance name no longer matches the generator's own symbol. Reflection must
 # find the generator anyway.
@@ -19,18 +19,26 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %t | FileCheck %s
 
+# CHECK: takes_tile_tensor{{.*}}~Qquoted~Q
 # CHECK: PASS {{.*}} test_one
 
+from std.reflection import reflect_fn
 from std.testing import TestSuite
-from layout import TensorLayout, TileTensor
+from layout import TileTensor
 from layout.tile_layout import row_major
 
 comptime layout = row_major[128, 1]()
 
 
-def takes_tile_tensor[
-    layout: TensorLayout
-](x: TileTensor[DType.float32, layout, MutAnyOrigin]):
+@fieldwise_init
+struct EscapedName[value: StaticString](TrivialRegisterPassable):
+    pass
+
+
+def takes_tile_tensor(
+    x: TileTensor[DType.float32, type_of(layout), MutAnyOrigin],
+    marker: EscapedName["quoted"],
+):
     pass
 
 
@@ -39,4 +47,5 @@ def test_one() raises:
 
 
 def main() raises:
+    print(reflect_fn[takes_tile_tensor].linkage_name())
     TestSuite.discover_tests[__functions_in_module()]().run()
