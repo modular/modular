@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# A `LayoutTensor` argument puts `"` in the instantiated function's name, and
+# A `TileTensor` argument puts `"` in the instantiated function's name, and
 # the mangler encodes each one as `~Q` to keep the symbol ELF-safe, so the
 # instance name no longer matches the generator's own symbol. Reflection must
 # find the generator anyway.
@@ -22,12 +22,15 @@
 # CHECK: PASS {{.*}} test_one
 
 from std.testing import TestSuite
-from layout import Layout, LayoutTensor
+from layout import TensorLayout, TileTensor
+from layout.tile_layout import row_major
 
-comptime layout = Layout.row_major(128)
+comptime layout = row_major[128, 1]()
 
 
-def takes_layout_tensor(x: LayoutTensor[DType.float32, layout, MutAnyOrigin]):
+def takes_tile_tensor[
+    layout: TensorLayout
+](x: TileTensor[DType.float32, layout, MutAnyOrigin]):
     pass
 
 
