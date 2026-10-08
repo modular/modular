@@ -17,7 +17,6 @@ from nn.concat import (
     _fused_dual_concat_gpu,
     elementwise_epilogue_type,
 )
-from std.sys.info import is_gpu
 
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
@@ -145,14 +144,12 @@ def test_dual_concat_inner_most_single_dim(ctx: DeviceContext) raises:
         input_fn_1,
         output_1_fn,
         2,
-        out0.LayoutType,
-        out1.LayoutType,
     ](
         rank - 1,
         input_shapes_0,
-        out0.as_unsafe_any_origin(),
+        out0.layout,
         input_shapes_1,
-        out1.as_unsafe_any_origin(),
+        out1.layout,
         ctx,
     )
 
@@ -316,14 +313,12 @@ def test_dual_concat_general_axis(ctx: DeviceContext) raises:
         input_fn_1,
         output_1_fn,
         2,
-        out0.LayoutType,
-        out1.LayoutType,
     ](
         1,
         input_shapes_0,
-        out0.as_unsafe_any_origin(),
+        out0.layout,
         input_shapes_1,
-        out1.as_unsafe_any_origin(),
+        out1.layout,
         ctx,
     )
 
@@ -513,13 +508,11 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
         input_fn_1,
         output_1_static_fn,
         size_1,
-        out0_static.LayoutType,
-        out1_static.LayoutType,
     ](
         input_shapes_0,
-        out0_static.as_unsafe_any_origin(),
+        out0_static.layout,
         input_shapes_1,
-        out1_static.as_unsafe_any_origin(),
+        out1_static.layout,
         ctx,
     )
 
@@ -560,13 +553,11 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
         input_fn_1,
         output_1_dyn_fn,
         size_1,
-        out0_dyn.LayoutType,
-        out1_dyn.LayoutType,
     ](
         input_shapes_0,
-        out0_dyn.as_unsafe_any_origin(),
+        out0_dyn.layout,
         input_shapes_1,
-        out1_dyn.as_unsafe_any_origin(),
+        out1_dyn.layout,
         ctx,
     )
 
@@ -610,8 +601,7 @@ def test_dual_concat_inner_most_static_vs_dynamic(ctx: DeviceContext) raises:
 
 
 def main() raises:
-    comptime if is_gpu():
-        with DeviceContext() as ctx:
-            test_dual_concat_inner_most_single_dim(ctx)
-            test_dual_concat_general_axis(ctx)
-            test_dual_concat_inner_most_static_vs_dynamic(ctx)
+    with DeviceContext() as ctx:
+        test_dual_concat_inner_most_single_dim(ctx)
+        test_dual_concat_general_axis(ctx)
+        test_dual_concat_inner_most_static_vs_dynamic(ctx)

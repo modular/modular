@@ -1741,7 +1741,7 @@ struct Concat:
             target=target,
         ](
             input_shapes,
-            output.to_tile_tensor[.int64](),
+            output.runtime_layout(),
             ctx,
         )
 
