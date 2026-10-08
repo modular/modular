@@ -44,6 +44,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_mega_ffn_nvfp4_fusion_gpu.py",
+    "test_mega_ffn_nvfp4_fusion_ir.py",
     "test_rowwise_reductions.py",
     "test_runtime_source_notes.py",
     "test_scatter.py",
@@ -108,6 +109,7 @@ modular_py_test(
     srcs = glob(
         ["*.py"],
         exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+            "_mega_ffn_graphs.py",
             "_rowwise_reduction_specs.py",
             "buffer_create_init_shared.py",
             "fusion_utils.py",
@@ -146,6 +148,20 @@ modular_py_test(
         "gpu",
     ],
     deps = _GRAPH_COMMON_DEPS,
+)
+
+# The MoE FFN graphs both MegaFFN fusion targets below build.
+modular_py_library(
+    name = "mega_ffn_graphs",
+    testonly = True,
+    srcs = ["_mega_ffn_graphs.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+    ],
 )
 
 # Shared by every `test_*_fusion.py` file in the bulk `graph` target above:
@@ -545,27 +561,46 @@ modular_py_test(
     srcs = [
         "test_mega_ffn_nvfp4_fusion_gpu.py",
     ],
-    # Disable the MEF compile cache so the `*_fires_in_mo_ir` tests always run
-    # the MO pipeline (and emit the IR dump they grep): the cache key is
-    # structural, so their graph would otherwise be a cache hit off the
-    # compiles-and-runs test's identical graph and skip the pipeline (no dump).
-    env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
-    # Every case compiles its own graphs, so unsharded the file runs close to
-    # the CI timeout. One case per shard runs the compiles in parallel.
-    shard_count = 5,
     # B200-only: the fused MegaFFN NVFP4 kernel the fusion lowers to is SM100a
     # (Blackwell) specific. Off SM100 the pattern does not fire and the legs
     # run as standalone kernels, so there is nothing to exercise.
+    gpu_constraints = ["//:b200_gpu"],
+    precompile_mefs = True,
+    precompile_shards = 3,
     tags = ["gpu"],
-    target_compatible_with = ["//:b200_gpu"],
     deps = [
+        ":mega_ffn_graphs",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
         "//max/python/max/graph",
-        "//max/python/max/nn",
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+# The fusion's IR checks only compile, so they run on a CPU worker against a
+# virtual SM100 device. Virtual-device mode latches process-wide, so this is
+# its own target.
+modular_py_test(
+    name = "test_mega_ffn_nvfp4_fusion_ir",
+    size = "large",
+    srcs = [
+        "test_mega_ffn_nvfp4_fusion_ir.py",
+    ],
+    # The checks read the IR dump a compile writes, which a cache hit skips.
+    env = {"MODULAR_MAX_ENABLE_MODEL_IR_CACHE": "false"},
+    # The virtual CUDA (sm_100a) graphs need the NVPTX compiler to elaborate
+    # kernels, which is Linux-only (CUDACompilationDevice).
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":mega_ffn_graphs",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
     ],
 )
 
