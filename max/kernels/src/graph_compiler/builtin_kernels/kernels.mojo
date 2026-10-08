@@ -1689,7 +1689,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
+        ](idx: Coord, val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
                 cast_saturating[out_dtype](val),
@@ -1766,7 +1766,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
+        ](idx: Coord, val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
                 rebind[SIMD[dtype, width]](val),

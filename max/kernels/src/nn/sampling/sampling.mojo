@@ -25,8 +25,7 @@ from max.gpu.host.info import is_gpu
 from layout import TensorEngine, TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
 
-from std.utils import IndexList
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord
 
 
 def apply_penalties_to_logits[

@@ -25,7 +25,7 @@ from layout import (
     row_major,
 )
 
-from std.utils import Index, IndexList
+from std.utils import Index
 
 from ...utils import (
     ElementwiseComputeFn,

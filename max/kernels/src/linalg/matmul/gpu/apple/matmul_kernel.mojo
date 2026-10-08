@@ -31,7 +31,6 @@ from max.gpu import WARP_SIZE, block_dim, block_idx, lane_id, thread_idx
 from std.math import align_down, ceildiv
 from max.gpu.host import DeviceContext
 from std.sys import align_of, size_of
-from std.utils import IndexList
 from layout import TensorEngine, TileTensor, Idx
 from layout.tile_layout import Layout, TensorLayout, row_major
 from layout.coord import Coord
@@ -997,7 +996,7 @@ struct AppleM5MatMul[
                         else:
                             for e in range(min(4, n - acol)):
                                 epilogue[Self.c_type, 1](
-                                    IndexList[2](arow, acol + e),
+                                    (arow, acol + e),
                                     SIMD[Self.c_type, 1](y[e]),
                                 )
                     else:

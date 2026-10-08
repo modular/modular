@@ -16,8 +16,6 @@ from nn.gather_scatter import scatter_elements
 from extensibility import DynamicTensor
 from std.testing import assert_equal
 
-from std.utils import IndexList
-
 
 def main() raises:
     var ctx = DeviceContext(api="cpu")

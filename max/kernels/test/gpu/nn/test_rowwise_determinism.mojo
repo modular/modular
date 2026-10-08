@@ -52,7 +52,7 @@ from layout import Coord, TileTensor, row_major
 from nn.normalization import *
 from nn.softmax import softmax
 from std.utils.coord import ComptimeInt
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 comptime _NUM_RUNS = 8
 

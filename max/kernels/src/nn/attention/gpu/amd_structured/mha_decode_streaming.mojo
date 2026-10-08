@@ -25,7 +25,6 @@ from max.gpu import block_idx
 from max.gpu.sync import barrier
 from max.gpu import warp_id as get_warp_id
 from std.memory import bitcast
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
 from layout.swizzle import Swizzle

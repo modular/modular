@@ -48,9 +48,7 @@ from layout.tma_async import (
     create_tensor_tile,
 )
 from layout.tile_layout import Layout
-from std.utils.index import IndexList
 from std.memory import unsafe_stack_allocation
-from std.utils.index import IndexList
 
 # Core matrix constant from tensor_core_async.mojo
 comptime _CM_NUM_ROWS = 8

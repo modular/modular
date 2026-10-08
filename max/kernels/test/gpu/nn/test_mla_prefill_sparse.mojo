@@ -53,7 +53,6 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
-from std.utils.index import Index, IndexList
 from std.utils.numerics import min_or_neg_inf
 
 

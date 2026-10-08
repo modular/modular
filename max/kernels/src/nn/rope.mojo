@@ -28,11 +28,8 @@ from layout import (
     TensorLayout,
     TileTensor,
     coord,
-    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
-
-from std.utils import IndexList
 
 
 @inline(.always)
@@ -76,41 +73,44 @@ def apply_rope[
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength, alignment: Int](
-        idx: IndexList[3], val: SIMD[dtype, width]
+        idx: Coord, val: SIMD[dtype, width]
     ) -> None,
 ](
     x: TileTensor[dtype, ...],
-    idx: IndexList[3],
+    idx: Coord,
     freq_val: SIMD[freq_dtype, width],
     output_fn: OutputFn,
 ):
     comptime rank = 3
+    comptime assert idx.rank == rank
     comptime assert rank - 1 >= 0
-    var indices = get_safetensors_idx(idx[rank - 1], x.static_shape[rank - 1])
-    var pos_re = idx
-    var pos_im = idx
-    pos_re[rank - 1] = indices[0]
-    pos_im[rank - 1] = indices[1]
+    # Normalize to all-dynamic elements: the last element is reassigned at
+    # runtime below, which static (`ComptimeInt`) elements forbid.
+    var idx_dyn = idx.make_dynamic[.int64]()
+    var indices = get_safetensors_idx(
+        Int(idx[rank - 1].value()), x.static_shape[rank - 1]
+    )
+    var pos_re = idx_dyn
+    var pos_im = idx_dyn
+    pos_re.replace_dynamic[rank - 1](Int64(indices[0]))
+    pos_im.replace_dynamic[rank - 1](Int64(indices[1]))
     comptime width_2 = width // 2
 
     var val: SIMD[dtype, width]
 
     comptime if interleaved:
-        var coord = Coord(idx)
-        val = x.load[width=width, alignment=1](coord)
+        val = x.load[width=width, alignment=1](idx_dyn)
     else:
-        var re_coord = Coord(pos_re)
-        var im_coord = Coord(pos_im)
         val = rebind[SIMD[dtype, width]](
-            x.load[width=width_2, alignment=1](re_coord).interleave(
-                x.load[width=width_2, alignment=1](im_coord)
+            x.load[width=width_2, alignment=1](pos_re).interleave(
+                x.load[width=width_2, alignment=1](pos_im)
             )
         )
 
     var res = _rope(val, freq_val)
 
     comptime if interleaved:
-        output_fn[alignment=alignment](idx, res)
+        output_fn[alignment=alignment](idx_dyn, res)
     else:
         var output_re, output_im = res.deinterleave()
         output_fn[alignment=alignment](pos_re, output_re)
@@ -127,7 +127,7 @@ def rope_ragged[
     OutputFn: ImplicitlyCopyable
     & RegisterPassable
     & def[width: SIMDLength, alignment: Int](
-        idx: IndexList[3], val: SIMD[dtype, width]
+        idx: Coord, val: SIMD[dtype, width]
     ) -> None,
     rope_first: Bool = False,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
@@ -220,9 +220,7 @@ def rope_ragged[
             )
             return
         else:
-            var idx = rebind[IndexList[3]](coord_to_index_list(idx_arg))
-
-            var global_token_idx = idx[0]
+            var global_token_idx = Int(idx_arg[0].value())
 
             var batch_idx: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
@@ -230,7 +228,7 @@ def rope_ragged[
             var token_idx = Int(
                 UInt32(global_token_idx) - input_row_offsets[batch_idx]
             )
-            var head_dim_idx = idx[2]
+            var head_dim_idx = Int(idx_arg[2].value())
 
             # Use position_ids if provided, otherwise fall back to cache calculation
             var post_seq_idx = start_pos[batch_idx] + UInt32(token_idx)
@@ -285,7 +283,7 @@ def rope_ragged[
             apply_rope[
                 interleaved=interleaved,
                 alignment=alignment,
-            ](x, idx, f_c_temp, output_fn)
+            ](x, idx_arg, f_c_temp, output_fn)
 
     comptime target_simd_width = (
         simd_width_of[dtype, target=CompilationTarget.current()]() if is_cpu[

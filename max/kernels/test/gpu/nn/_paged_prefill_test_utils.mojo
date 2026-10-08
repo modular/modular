@@ -42,7 +42,6 @@ from std.testing import assert_almost_equal
 
 from max.gpu.host import DeviceContext
 from std.memory import alloc
-from std.utils.index import Index, IndexList
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (

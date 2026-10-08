@@ -40,7 +40,7 @@ from layout import (
 from max.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList, StaticTuple
+from std.utils.index import StaticTuple
 
 
 def _argsort_cpu[

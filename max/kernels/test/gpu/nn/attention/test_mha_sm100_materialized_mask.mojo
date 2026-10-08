@@ -57,7 +57,6 @@ from kv_cache.types import (
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import MaterializedMask
 
-from std.utils import IndexList
 
 from std.collections import Set
 

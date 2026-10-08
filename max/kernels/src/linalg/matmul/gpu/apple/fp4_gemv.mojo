@@ -62,7 +62,6 @@ from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
 from std.math import ceildiv
 import max.gpu.primitives.warp as warp
-from std.utils import IndexList
 
 from layout import Coord, TensorEngine, TileTensor, TensorLayout
 from layout.tile_layout import row_major

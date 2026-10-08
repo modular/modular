@@ -35,7 +35,6 @@ from std.memory import unsafe_memset_zero, unsafe_stack_allocation
 from std.testing import *
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Check parameterization

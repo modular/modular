@@ -64,7 +64,6 @@ from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
 from max.gpu.host.info import _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 
 from _paged_prefill_test_utils import (
     CACHE_DEPTH,

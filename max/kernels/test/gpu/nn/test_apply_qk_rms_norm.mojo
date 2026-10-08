@@ -19,7 +19,7 @@ from layout import Coord, TileTensor, row_major
 from nn.normalization import apply_qk_rms_norm
 from std.testing import assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def run_apply_qk_rms_norm_gpu[

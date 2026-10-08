@@ -38,7 +38,6 @@ from std.utils.numerics import isinf, isnan
 from std.math import ceildiv
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 from extensibility import InputTensor, OutputTensor
 
 

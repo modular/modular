@@ -46,7 +46,6 @@ from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
-from std.utils.index import IndexList
 from std.utils.numerics import min_or_neg_inf
 
 comptime Q_DEPTH = 576

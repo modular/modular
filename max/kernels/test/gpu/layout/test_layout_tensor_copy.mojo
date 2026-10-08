@@ -48,8 +48,6 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 
-from std.utils import IndexList
-
 
 def print_tile_tensor(tensor: TileTensor):
     comptime assert tensor.rank == tensor.flat_rank == 2

@@ -21,7 +21,6 @@ from max.algorithm import elementwise, mean, sum
 from std.algorithm.functional import unswitch
 from max.gpu.host import DeviceContext
 
-from std.utils import IndexList
 from std.utils.coord import Coord
 
 # ===----------------------------------------------------------------------=== #

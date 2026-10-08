@@ -65,7 +65,7 @@ from layout.tile_tensor import lt_to_tt, stack_allocation
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 
 from std.utils import StaticTuple
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from ...utils import (

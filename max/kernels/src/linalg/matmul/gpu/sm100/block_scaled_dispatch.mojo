@@ -36,7 +36,7 @@ from linalg.utils import (
     elementwise_epilogue_type,
     elementwise_compute_lambda_type,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from linalg.matmul.vendor.blas import matmul
 from std.memory import UnsafePointer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle

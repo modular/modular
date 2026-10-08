@@ -21,7 +21,6 @@ availability probes.
 from std.sys import simd_width_of, size_of, default_accelerator
 from std.pathlib import Path
 from max.algorithm import elementwise
-from std.utils import IndexList
 from std.ffi import _get_global_or_null, external_call
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function

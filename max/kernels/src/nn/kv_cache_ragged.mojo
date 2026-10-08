@@ -5298,12 +5298,12 @@ def kv_cache_store_ragged[
     cache_t: KVCacheT,
     //,
     target: StaticString,
-    input_fn: def[width: Int, alignment: Int](
-        idx: IndexList[3]
-    ) capturing -> SIMD[cache_t.dtype, width],
+    input_fn: def[width: Int, alignment: Int](idx: Coord) capturing -> SIMD[
+        cache_t.dtype, width
+    ],
 ](
     cache: cache_t,
-    input_shape: IndexList[3],
+    input_shape: Coord,
     input_row_offsets: TileTensor[
         mut=False, .uint32, address_space=.GENERIC, ...
     ],
@@ -5325,7 +5325,7 @@ def kv_cache_store_ragged[
 
     Args:
         cache: The KVCache object to write key or value entries into.
-        input_shape: Shape of the input as a 3D index list (tokens, heads,
+        input_shape: Shape of the input as a 3D coordinate (tokens, heads,
             head_size).
         input_row_offsets: Tensor with shape (batch_size + 1,) denoting the
             start of each sequence along the ragged sequence dimension.
@@ -5356,9 +5356,7 @@ def kv_cache_store_ragged[
         # pages follow.
         if row >= Int(input_row_offsets[input_row_offsets.num_elements() - 1]):
             return
-        var input_idx = IndexList[3](
-            row, Int(idx[1].value()), Int(idx[2].value())
-        )
+        var input_idx = Coord(row, Int(idx[1].value()), Int(idx[2].value()))
         var loaded_val = input_fn[width=width, alignment=alignment](input_idx)
         var batch_idx = get_batch_from_row_offsets(input_row_offsets, row)
         var token_idx = Int(UInt32(row) - input_row_offsets[batch_idx])
@@ -5387,7 +5385,7 @@ def kv_cache_store_ragged[
         simd_width,
         target=target,
         _trace_description="kv_cache_store_ragged",
-    ](Coord(input_shape), context)
+    ](input_shape, context)
 
 
 def kv_cache_store_padded[

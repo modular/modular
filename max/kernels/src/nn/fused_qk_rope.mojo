@@ -115,7 +115,6 @@ def get_identity_rope_coeff[width: Int, dtype: DType]() -> SIMD[dtype, width]:
 def rope_q_proj[
     dtype: DType,
     freq_dtype: DType,
-    rank: Int,
     width: SIMDLength,
     output_dtype: DType,
     //,
@@ -127,7 +126,7 @@ def rope_q_proj[
 ](
     q_proj: TileTensor[dtype, ...],
     output: TileTensor[mut=True, output_dtype, ...],
-    idx: IndexList[rank],
+    idx: Coord,
     freq_val: SIMD[freq_dtype, width],
     head_size: Int,
 ):
@@ -143,7 +142,6 @@ def rope_q_proj[
         dtype: Element type of the `q_proj` tile tensor (inferred).
         freq_dtype: Element type of the `freq_val` frequency
             coefficients (inferred).
-        rank: Rank of the index list and tile tensors (inferred).
         width: Number of elements per SIMD vector (inferred).
         output_dtype: Element type of the `output` tile tensor (inferred).
         interleaved: Whether the RoPE weights use interleaved real and
@@ -158,15 +156,18 @@ def rope_q_proj[
     Args:
         q_proj: The query projection tile tensor to read from.
         output: The mutable output tile tensor to write the rotated result.
-        idx: The index list identifying the load and store coordinate.
+        idx: The coordinate identifying the load and store position.
         freq_val: The RoPE frequency coefficients for this position.
         head_size: The size of each attention head dimension.
     """
+    comptime rank = idx.rank
     comptime assert q_proj.flat_rank == rank
     comptime assert output.flat_rank == rank
-    var coord = Coord(idx)
-    comptime assert q_proj.flat_rank >= coord.flat_rank
-    comptime assert output.flat_rank >= coord.flat_rank
+    comptime assert q_proj.flat_rank >= idx.flat_rank
+    comptime assert output.flat_rank >= idx.flat_rank
+    # Normalize to all-dynamic elements: the last element is reassigned at
+    # runtime below, which static (`ComptimeInt`) elements forbid.
+    var idx_dyn = idx.make_dynamic[.int64]()
 
     comptime width_2 = width // 2
     comptime half_alignment = align_of[
@@ -174,19 +175,19 @@ def rope_q_proj[
     ]() if alignment == align_of[SIMD[dtype, width]]() else alignment
 
     comptime if interleaved:
-        var val_inter = q_proj.load[width=width, alignment=alignment](coord)
+        var val_inter = q_proj.load[width=width, alignment=alignment](idx_dyn)
         var res_inter = cast_saturating[output_dtype](
             rope_value(val_inter, freq_val)
         )
-        output.store[alignment=alignment](coord, res_inter)
+        output.store[alignment=alignment](idx_dyn, res_inter)
     else:
         comptime if has_nope_prefix:
-            if idx[rank - 1] >= rope_dim:
+            if Int(idx[rank - 1].value()) >= rope_dim:
                 var val_pass = q_proj.load[width=width, alignment=alignment](
-                    coord
+                    idx_dyn
                 )
                 output.store[alignment=alignment](
-                    coord, cast_saturating[output_dtype](val_pass)
+                    idx_dyn, cast_saturating[output_dtype](val_pass)
                 )
                 return
 
@@ -196,27 +197,26 @@ def rope_q_proj[
         else:
             split_size = head_size
 
-        var indices = get_safetensors_idx(idx[rank - 1], split_size)
-        var pos_re = idx
-        var pos_im = idx
-        pos_re[rank - 1] = indices[0]
-        pos_im[rank - 1] = indices[1]
-
-        var coord_re = Coord(pos_re)
-        var coord_im = Coord(pos_im)
+        var indices = get_safetensors_idx(
+            Int(idx[rank - 1].value()), split_size
+        )
+        var pos_re = idx_dyn
+        var pos_im = idx_dyn
+        pos_re.replace_dynamic[rank - 1](Int64(indices[0]))
+        pos_im.replace_dynamic[rank - 1](Int64(indices[1]))
 
         var val = rebind[SIMD[dtype, width]](
             q_proj.load[width=width_2, alignment=half_alignment](
-                coord_re
+                pos_re
             ).interleave(
-                q_proj.load[width=width_2, alignment=half_alignment](coord_im)
+                q_proj.load[width=width_2, alignment=half_alignment](pos_im)
             )
         )
 
         var res = cast_saturating[output_dtype](rope_value(val, freq_val))
         var output_re, output_im = res.deinterleave()
-        output.store[alignment=half_alignment](coord_re, output_re)
-        output.store[alignment=half_alignment](coord_im, output_im)
+        output.store[alignment=half_alignment](pos_re, output_re)
+        output.store[alignment=half_alignment](pos_im, output_im)
 
 
 @inline(.always)
@@ -401,7 +401,7 @@ def fused_qk_rope[
                 rope_q_proj[interleaved=interleaved, alignment=_alignment](
                     q_proj,
                     output,
-                    coord_to_index_list(idx),
+                    idx,
                     f_c_temp,
                     head_size,
                 )
@@ -638,7 +638,7 @@ def fused_qk_rope_ragged[
                 ](
                     q_proj,
                     output,
-                    coord_to_index_list(idx),
+                    idx,
                     f_c_temp,
                     q_head_size,
                 )

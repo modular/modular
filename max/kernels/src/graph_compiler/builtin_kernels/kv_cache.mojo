@@ -122,7 +122,7 @@ struct Struct_kv_cache_store_paged:
         @inline(.always)
         def input_fn[
             width: Int, alignment: Int
-        ](idx: IndexList[3]) capturing -> SIMD[kv_type, width]:
+        ](idx: Coord) capturing -> SIMD[kv_type, width]:
             # The value dtype is the producer compute dtype (bf16), which need
             # not match the cache: an FP8 cache saturates on the store rather
             # than emitting NaN for out-of-range values.
@@ -134,7 +134,7 @@ struct Struct_kv_cache_store_paged:
 
         kv_cache_store_ragged[input_fn=input_fn, target=target](
             cache,
-            inputs.shape(),
+            inputs.shape_coord(),
             input_row_offsets.to_tile_tensor(),
             context,
         )
@@ -274,7 +274,7 @@ struct Struct_kv_cache_store_k_scales_paged:
             var loaded_val = input_k_scales._lambda_load[
                 width=width, element_alignment=alignment
             ](
-                IndexList[3](
+                (
                     row,
                     Int(idx[1].value()),
                     Int(idx[2].value()),
