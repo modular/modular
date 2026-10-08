@@ -17,9 +17,9 @@
 
 # RUN: not kgen %s -elaborate 2>&1 | FileCheck %s
 
-from layout import Layout, LayoutTensor
+from layout import Layout
 
 
-def kernel(tensor: LayoutTensor):
+def kernel[layout: Layout]():
     # CHECK: cannot materialize comptime value of type 'Layout' to runtime because it is not 'ImplicitlyCopyable'
-    var size = tensor.layout.size()
+    var size = layout.size()
