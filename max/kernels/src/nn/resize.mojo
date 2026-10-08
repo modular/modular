@@ -151,7 +151,7 @@ def resize_nearest_neighbor[
     var scales = StaticTuple[Float32, input.rank]()
     for i in range(input.rank):
         scales[i] = (Float64(output.dim(i)) / Float64(input.dim(i))).cast[
-            DType.float32
+            .float32
         ]()
 
     @inline(.always)
@@ -340,7 +340,7 @@ def resize_linear[
         # need to consider output dims when upsampling and input dims when downsampling
         tmp_dims[i] = max(Int(input.dim(i)), Int(output.dim(i)))
         scales[i] = (Float64(output.dim(i)) / Float64(input.dim(i))).cast[
-            DType.float32
+            .float32
         ]()
         if Int(input.dim(i)) != Int(output.dim(i)):
             resize_dims.append(i)
@@ -416,10 +416,7 @@ def resize_linear[
 
 def resize_cubic[
     in_dtype: DType, //
-](
-    input: ImmTileTensor[in_dtype, ...],
-    output: MutTileTensor[DType.float32, ...],
-):
+](input: ImmTileTensor[in_dtype, ...], output: MutTileTensor[.float32, ...],):
     """Resizes the height and width of an `[outer, H, W, inner]` tensor with
     antialiased cubic interpolation.
 
@@ -452,7 +449,7 @@ def resize_cubic[
         input.rank == 4 and output.rank == 4
     ), "input and output must be [outer, H, W, inner]"
     comptime assert (
-        in_dtype == DType.float32 or in_dtype.is_integral()
+        in_dtype == .float32 or in_dtype.is_integral()
     ), "input must be float32 or an integer type"
 
     var in_shape = rebind[IndexList[4]](
@@ -623,8 +620,8 @@ def _weighted_row_sum[
 ](
     taps: _AxisTaps,
     i: Int,
-    rows: TileTensor[DType.float32, ...],
-    dst: MutTileTensor[DType.float32, ...],
+    rows: TileTensor[.float32, ...],
+    dst: MutTileTensor[.float32, ...],
     begin: Int,
     end: Int,
 ):
@@ -650,9 +647,9 @@ def _weighted_row_sum[
             var cols = rows.tile(
                 Coord(rows.dim[0](), Idx[span]), (0, c // span)
             )
-            var acc = Array[SIMD[DType.float32, _WIDTH], group](fill=0)
+            var acc = Array[SIMD[.float32, _WIDTH], group](fill=0)
             for k in range(n):
-                var w = SIMD[DType.float32, _WIDTH](weights.unsafe_get(k))
+                var w = SIMD[.float32, _WIDTH](weights.unsafe_get(k))
                 var r = (first + k) & mask if wraps else first + k
                 comptime for q in range(group):
                     acc[q] = cols.load[width=_WIDTH]((r, q * _WIDTH)).fma(
@@ -746,8 +743,8 @@ def _load_transposed[
 def _move_block[
     to_tile: Bool
 ](
-    src: TileTensor[DType.float32, ...],
-    dst: MutTileTensor[DType.float32, ...],
+    src: TileTensor[.float32, ...],
+    dst: MutTileTensor[.float32, ...],
     col: Int,
     slot: Int,
 ):
@@ -767,8 +764,8 @@ def _move_block[
 def _move_columns[
     to_tile: Bool
 ](
-    src: TileTensor[DType.float32, ...],
-    dst: MutTileTensor[DType.float32, ...],
+    src: TileTensor[.float32, ...],
+    dst: MutTileTensor[.float32, ...],
     begin: Int,
     end: Int,
     partial: Bool,
@@ -809,15 +806,15 @@ def _move_columns[
 def _add_tap[
     n: Int, //, channels: Int, first: Int
 ](
-    mut acc: Array[SIMD[DType.float32, _WIDTH], n],
+    mut acc: Array[SIMD[.float32, _WIDTH], n],
     taps: _AxisTaps,
-    tile: TileTensor[DType.float32, ...],
+    tile: TileTensor[.float32, ...],
     mask: Int,
     i: Int,
     k: Int,
 ):
     """Adds tap k of output i to accumulators [first, first + channels)."""
-    var w = SIMD[DType.float32, _WIDTH](taps.weights(i).unsafe_get(k))
+    var w = SIMD[.float32, _WIDTH](taps.weights(i).unsafe_get(k))
     var p = (taps.start_of(i) + k) & mask
     comptime for ch in range(channels):
         acc[first + ch] = tile.load[width=_WIDTH]((p, ch * _WIDTH)).fma(
@@ -841,9 +838,9 @@ def _apply_taps_interleaved[
     channels: Int, pixels: Int
 ](
     taps: _AxisTaps,
-    tile: TileTensor[DType.float32, ...],
+    tile: TileTensor[.float32, ...],
     mask: Int,
-    out_tile: MutTileTensor[DType.float32, ...],
+    out_tile: MutTileTensor[.float32, ...],
     begin: Int,
     end: Int,
     tile_first_output: Int,
@@ -853,7 +850,7 @@ def _apply_taps_interleaved[
     var i = begin
     while i < end:
         var group = pixels if i + pixels <= end else 1
-        var acc = Array[SIMD[DType.float32, _WIDTH], pixels * channels](fill=0)
+        var acc = Array[SIMD[.float32, _WIDTH], pixels * channels](fill=0)
         if group == pixels:
             var shared = taps.count_of(i)
             comptime for p in range(1, pixels):
@@ -884,8 +881,8 @@ def _apply_taps_interleaved[
 @inline(.always)
 def _apply_taps_to_tile(
     taps: _AxisTaps,
-    tile: TileTensor[DType.float32, ...],
-    out_tile: MutTileTensor[DType.float32, ...],
+    tile: TileTensor[.float32, ...],
+    out_tile: MutTileTensor[.float32, ...],
     begin: Int,
     end: Int,
     tile_first_output: Int,
@@ -1118,8 +1115,8 @@ struct _SlabPass(Movable):
     @inline(.always)
     def resize(
         mut self,
-        src: TileTensor[DType.float32, ...],
-        dst: MutTileTensor[DType.float32, ...],
+        src: TileTensor[.float32, ...],
+        dst: MutTileTensor[.float32, ...],
     ):
         """Resamples each row of src, a flattened slab, into the same row of
         dst. Takes as many rows as batch returned. One row runs the slab
@@ -1141,8 +1138,8 @@ struct _SlabPass(Movable):
 
     def _resize_transposed(
         mut self,
-        src: TileTensor[DType.float32, ...],
-        dst: MutTileTensor[DType.float32, ...],
+        src: TileTensor[.float32, ...],
+        dst: MutTileTensor[.float32, ...],
     ):
         """Resamples the rows of src, a vector of flattened slabs, into those
         of dst, one slab per vector lane, for inner too narrow to fill a
@@ -1222,16 +1219,16 @@ def _resize_rows[
 ](
     mut w_pass: _SlabPass,
     src: TileTensor[in_dtype, ...],
-    dst: MutTileTensor[DType.float32, ...],
-    stage: MutTileTensor[DType.float32, ...],
+    dst: MutTileTensor[.float32, ...],
+    stage: MutTileTensor[.float32, ...],
 ):
     """Resamples W of a batch of input rows into dst. Integer rows convert
     into stage first. An unchanged W converts or copies the rows."""
     if w_pass.in_dim == w_pass.out_dim:
         _cast_rows(src, dst)
         return
-    comptime if in_dtype == DType.float32:
-        w_pass.resize(src.bitcast[DType.float32](), dst)
+    comptime if in_dtype == .float32:
+        w_pass.resize(src.bitcast[.float32](), dst)
     else:
         var rows = Int(src.dim[0]())
         _cast_rows(src, stage[0:rows, :])
@@ -1244,7 +1241,7 @@ def _resize_2d_fused[
     var taps_w: _AxisTaps,
     taps_h: _AxisTaps,
     src: TileTensor[in_dtype, ...],
-    dst: MutTileTensor[DType.float32, ...],
+    dst: MutTileTensor[.float32, ...],
     in_w: Int,
     out_w: Int,
     inner: Int,
@@ -1272,7 +1269,7 @@ def _resize_2d_fused[
     var ring = TileTensor(ring_buffer, row_major((capacity, mid_row)))
     var in_row = Int(src.dim[2]())
     var stage_buffer = List[Float32](
-        unsafe_uninit_length=0 if in_dtype == DType.float32 else batch * in_row
+        unsafe_uninit_length=0 if in_dtype == .float32 else batch * in_row
     )
     var stage = TileTensor(stage_buffer, row_major((batch, in_row)))
     for o in range(Int(src.dim[0]())):
