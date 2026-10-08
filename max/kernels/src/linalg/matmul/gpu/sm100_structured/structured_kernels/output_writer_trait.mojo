@@ -27,7 +27,7 @@ writer can later move to a closed-source tree.
 - `num_peers: Int`: number of C TMA descriptors the kernel must supply in
   `c_tma_ops` (1 for the local store, one per peer for reduce-scatter).
 - `write_batched[...]( c_tma_ops, c_tiles, stage, tile_coord, shape,
-  compute_fn, alpha )`:
+  epilogue_fn, compute_fn, alpha )`:
   a static method that *constructs the concrete writer and writes one batched
   output tile*. Construction lives inside the policy, where the concrete writer
   type is named and non-erased; the kernel only passes the `c_tma_ops` array
@@ -64,7 +64,11 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Coord
 from layout.tma_async import TMATensorTile
 
-from linalg.utils import ElementwiseComputeFn, elementwise_epilogue_type
+from linalg.utils import (
+    ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
+    elementwise_epilogue_type,
+)
 
 from std.utils.index import IndexList
 
@@ -93,6 +97,7 @@ trait OutputWriter:
 
     @staticmethod
     def write_batched[
+        EpilogueFnType: ElementwiseEpilogueFn,
         ComputeFnType: ElementwiseComputeFn,
         //,
         tma_origin: ImmOrigin,
@@ -111,6 +116,7 @@ trait OutputWriter:
         num_output_stages: Int,
         num_output_warps: Int,
         elementwise_lambda_fn: Optional[elementwise_epilogue_type],
+        has_epilogue_fn: Bool,
         has_compute_fn: Bool,
         register_based_epilogue: Bool,
     ](
@@ -127,6 +133,7 @@ trait OutputWriter:
         stage: OutputStage[opc],
         tile_coord: Tuple[UInt32, UInt32, UInt32],
         shape: Tuple[UInt32, UInt32],
+        epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
         alpha: Float32 = Float32(1.0),
     ):
@@ -140,6 +147,7 @@ trait OutputWriter:
         pipeline stage directly, with no rebind needed.
 
         Parameters:
+            EpilogueFnType: Type of the elementwise epilogue closure.
             ComputeFnType: Type of the compute epilogue closure.
             tma_origin: Origin of the C TMA descriptor memory.
             c_type: Element `DType` of the output C tensor.
@@ -159,6 +167,8 @@ trait OutputWriter:
             num_output_warps: Number of warps participating in the epilogue.
             elementwise_lambda_fn: Optional fused elementwise epilogue that
                 writes the output tile to global memory, or `None`.
+            has_epilogue_fn: Whether `epilogue_fn` stores the output tile
+                to global memory instead of the TMA store.
             has_compute_fn: Whether `compute_fn` is applied to the
                 accumulator before the store.
             register_based_epilogue: Whether the epilogue runs from register
@@ -173,6 +183,8 @@ trait OutputWriter:
             tile_coord: `(m, n, k_start)` block coordinates of the output
                 tile.
             shape: `(M, N)` problem dimensions for bounds checking.
+            epilogue_fn: Stores each output value to global memory;
+                ignored unless `has_epilogue_fn` is True.
             compute_fn: Element-wise epilogue applied to each output value;
                 ignored unless `has_compute_fn` is True.
             alpha: Scaling factor applied to the accumulator (defaults to 1).

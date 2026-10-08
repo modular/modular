@@ -329,6 +329,7 @@ _B200_TESTS = [
     "test_matmul_sm100_2sm_bf16_bias.mojo",
     "test_matmul_sm100_fused_bias_residual_dispatch.mojo",
     "test_matmul_compute_fn_sm100.mojo",
+    "test_matmul_epilogue_fn_sm100.mojo",
     "test_small_mn_gemms_row_oob.mojo",
     "test_lora_expand_qkv_sm100.mojo",
 ]

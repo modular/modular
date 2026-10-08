@@ -95,8 +95,10 @@ from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100 import MmaOpSM100_SS
 from linalg.utils import (
     ElementwiseComputeFn,
+    ElementwiseEpilogueFn,
     elementwise_epilogue_type,
     identity_compute_fn,
+    no_epilogue_fn,
 )
 from ..structured_kernels.config import MatmulConfig, OutputPipelineConfig
 from ..structured_kernels.tile_pipeline import (
@@ -787,9 +789,11 @@ struct BlackwellMatmulSM100Kernel[
     @staticmethod
     @inline(.always)
     def write_output_tile[
+        EpilogueFnType: ElementwiseEpilogueFn,
         ComputeFnType: ElementwiseComputeFn,
         //,
         tma_origin: ImmOrigin,
+        has_epilogue_fn: Bool,
         has_compute_fn: Bool,
     ](
         c_tma_ops: Pointer[
@@ -799,6 +803,7 @@ struct BlackwellMatmulSM100Kernel[
         stage: Self.OutputPipeline.Stage,
         tile_coord: Tuple[UInt32, UInt32, UInt32],
         shape: Tuple[UInt32, UInt32],
+        epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
     ):
         """Write one batched output tile through the injected writer policy.
@@ -807,8 +812,11 @@ struct BlackwellMatmulSM100Kernel[
         `Self.output_writer_type.write_batched`
 
         Parameters:
+            EpilogueFnType: Type of the elementwise epilogue closure.
             ComputeFnType: Type of the compute epilogue closure.
             tma_origin: Origin type for the C TMA descriptor memory.
+            has_epilogue_fn: Whether `epilogue_fn` stores the output
+                instead of the TMA store.
             has_compute_fn: Whether `compute_fn` is applied before the
                 store.
 
@@ -820,6 +828,8 @@ struct BlackwellMatmulSM100Kernel[
                 read.
             tile_coord: `(m, n, k_start)` coordinates of the output tile.
             shape: `(M, N)` problem dimensions for bounds checking.
+            epilogue_fn: Stores each output value; ignored unless
+                `has_epilogue_fn` is True.
             compute_fn: Element-wise epilogue applied to each output value;
                 ignored unless `has_compute_fn` is True.
         """
@@ -840,9 +850,10 @@ struct BlackwellMatmulSM100Kernel[
             Self.SmemType.num_output_stages,
             Self.num_output_warps,
             Self.elementwise_lambda_fn,
+            has_epilogue_fn,
             has_compute_fn,
             Self.register_based_epilogue,
-        ](c_tma_ops, c_tiles, stage, tile_coord, shape, compute_fn)
+        ](c_tma_ops, c_tiles, stage, tile_coord, shape, epilogue_fn, compute_fn)
 
     # ========== Kernel Context Type ==========
     # Type comptime for KernelContext with this kernel's parameters
@@ -1734,7 +1745,7 @@ struct BlackwellMatmulSM100Kernel[
             my_rank_dev: Rank index of this GPU for multi-GPU reduce-scatter
                 (defaults to 0).
         """
-        Self._run_impl[has_compute_fn=False](
+        Self._run_impl[has_epilogue_fn=False, has_compute_fn=False](
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -1745,6 +1756,76 @@ struct BlackwellMatmulSM100Kernel[
             workspace,
             rank_sigs,
             my_rank_dev,
+            no_epilogue_fn,
+            identity_compute_fn,
+        )
+
+    @staticmethod
+    @inline(.always)
+    @__llvm_metadata(`nvvm.cluster_dim`=Self.cluster_shape)
+    @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(c_tma_ops, `nvvm.grid_constant`)
+    @__llvm_arg_metadata(epilogue_load_tma_op, `nvvm.grid_constant`)
+    @__name(
+        StaticString(Self.config.get_kernel_name())
+        + StaticString("_epilogue_fn")
+    )
+    def run_with_epilogue_fn[
+        EpilogueFnType: ElementwiseEpilogueFn
+    ](
+        a_tma_op: Self.ATmaOp,
+        b_tma_op: Self.BTmaOp,
+        c_tma_ops: Array[Self.CTmaOp, Self.num_c_tma_descriptors],
+        epilogue_load_tma_op: Self.EpilogueLoadTmaOp,
+        bias_1d_tile: Self.Bias1DTile,
+        cluster_dim: StaticTuple[Int32, 3],
+        mnk: StaticTuple[UInt32, 3],
+        workspace: Span[UInt64, MutAnyOrigin],
+        epilogue_fn: EpilogueFnType,
+    ):
+        """Kernel entry point for SM100 matmul that stores its output
+        through an elementwise epilogue value.
+
+        Same as `run` for the local store, with `epilogue_fn` writing each
+        output value to global memory instead of the TMA store.
+
+        Parameters:
+            EpilogueFnType: Type of the elementwise epilogue closure.
+
+        Args:
+            a_tma_op: 3D TMA descriptor for the A input matrix.
+            b_tma_op: 3D TMA descriptor for the B input matrix.
+            c_tma_ops: Array holding the single C TMA descriptor; only its
+                shape is used.
+            epilogue_load_tma_op: TMA descriptor for the epilogue load
+                (bias) tensor; unused on this path.
+            bias_1d_tile: 1D bias tile in global memory; unused on this path.
+            cluster_dim: Thread block cluster dimensions for CLC scheduling.
+            mnk: Problem dimensions `(M, N, K)` in elements.
+            workspace: Workspace buffer for profiling and scheduling state.
+            epilogue_fn: Stores each output value to global memory.
+        """
+        comptime assert (
+            not Self.output_writer_type.needs_sync
+            and Self.num_c_tma_descriptors == 1
+        ), "an elementwise epilogue value requires the local output writer"
+        comptime assert not Self.config.use_tma_epilogue_load, (
+            "use_tma_epilogue_load is mutually exclusive with an elementwise"
+            " epilogue value"
+        )
+        Self._run_impl[has_epilogue_fn=True, has_compute_fn=False](
+            a_tma_op,
+            b_tma_op,
+            c_tma_ops,
+            epilogue_load_tma_op,
+            bias_1d_tile,
+            cluster_dim,
+            mnk,
+            workspace,
+            None,
+            Int32(0),
+            epilogue_fn,
             identity_compute_fn,
         )
 
@@ -1806,7 +1887,7 @@ struct BlackwellMatmulSM100Kernel[
         comptime assert (
             not Self.config.use_tma_epilogue_load
         ), "use_tma_epilogue_load is mutually exclusive with a compute epilogue"
-        Self._run_impl[has_compute_fn=True](
+        Self._run_impl[has_epilogue_fn=False, has_compute_fn=True](
             a_tma_op,
             b_tma_op,
             c_tma_ops,
@@ -1817,14 +1898,17 @@ struct BlackwellMatmulSM100Kernel[
             workspace,
             rank_sigs,
             my_rank_dev,
+            no_epilogue_fn,
             compute_fn,
         )
 
     @staticmethod
     @inline(.always)
     def _run_impl[
+        EpilogueFnType: ElementwiseEpilogueFn,
         ComputeFnType: ElementwiseComputeFn,
         //,
+        has_epilogue_fn: Bool,
         has_compute_fn: Bool,
     ](
         a_tma_op: Self.ATmaOp,
@@ -1842,13 +1926,19 @@ struct BlackwellMatmulSM100Kernel[
             ]
         ],
         my_rank_dev: Int32,
+        epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
     ):
-        """Shared body of `run` and `run_with_compute_fn`.
+        """Shared body of `run`, `run_with_epilogue_fn`, and
+        `run_with_compute_fn`.
 
-        `compute_fn` is applied in the epilogue when `has_compute_fn` is True
-        and ignored otherwise.
+        `epilogue_fn` stores the output when `has_epilogue_fn` is True, and
+        `compute_fn` is applied in the epilogue when `has_compute_fn` is True;
+        each is ignored otherwise.
         """
+        comptime assert not (
+            has_epilogue_fn and has_compute_fn
+        ), "pass either epilogue_fn or compute_fn, not both"
         var my_rank = Int(my_rank_dev)
         Self.validate_constraints()
 
@@ -2212,13 +2302,15 @@ struct BlackwellMatmulSM100Kernel[
                         with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
                                 Self.write_output_tile[
-                                    has_compute_fn=has_compute_fn
+                                    has_epilogue_fn=has_epilogue_fn,
+                                    has_compute_fn=has_compute_fn,
                                 ](
                                     Pointer(to=c_tma_ops),
                                     smem.c_tiles(),
                                     output_stage,
                                     (current.m, current.n, current.k_start),
                                     (mnk[0], mnk[1]),
+                                    epilogue_fn,
                                     compute_fn,
                                 )
                         tile_idx += 1
