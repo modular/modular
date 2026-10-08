@@ -597,6 +597,13 @@ This version is still a work in progress.
 - `ops.cumsum` now runs on GPU. It previously copied a GPU input to the host,
   ran there, and copied the result back. On GPU, float32 inputs accumulate in
   float32 rather than float64.
+- `ops.scatter`, `ops.scatter_add`, `ops.scatter_max`, `ops.scatter_min`,
+  and `ops.scatter_mul` now run on GPU. They no longer copy GPU inputs to the
+  CPU and back, so they also work under
+  `strict_device_placement=DevicePlacementPolicy.Error`. As on CPU, the
+  reductions apply duplicate indices atomically in an unspecified order, and
+  `ops.scatter` keeps an unspecified winner among duplicates. On Apple silicon
+  GPUs, the reductions support only 32-bit dtypes.
 
 ### C API
 

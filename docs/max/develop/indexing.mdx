@@ -143,8 +143,6 @@ is `F.scatter(input, updates, indices, axis=-1)`. `updates` comes before
 `indices`, the opposite of the argument order you might expect. The `indices`
 tensor must have the same shape as `updates`.
 
-`F.scatter` currently runs on CPU only.
-
 The following example writes 4 expert outputs back into an 8-token sequence.
 [`F.tile`](/api/python/experimental.functional#max.experimental.functional.tile)
 repeats the route indices across all 64 feature positions so that `indices` has

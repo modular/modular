@@ -622,7 +622,7 @@ struct Scatter:
     ) raises:
         check_axis_in_range[output.rank](axis)
 
-        scatter_elements(
+        scatter_elements[target=target](
             input,
             indices,
             updates,
@@ -676,7 +676,7 @@ struct ScatterAdd:
         ]:
             return lhs + rhs
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[target=target, reduce_fn=reduce_func](
             input,
             indices,
             updates,
@@ -729,7 +729,7 @@ struct ScatterMax:
         ]:
             return max(lhs, rhs)
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[target=target, reduce_fn=reduce_func](
             input,
             indices,
             updates,
@@ -782,7 +782,7 @@ struct ScatterMin:
         ]:
             return min(lhs, rhs)
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[target=target, reduce_fn=reduce_func](
             input,
             indices,
             updates,
@@ -835,7 +835,7 @@ struct ScatterMul:
         ]:
             return lhs * rhs
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[target=target, reduce_fn=reduce_func](
             input,
             indices,
             updates,

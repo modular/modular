@@ -827,7 +827,7 @@ def _atomic_reduce[
     comptime if is_apple_gpu():
         # KERN-3243 tracks a real fix for these dtypes.
         comptime assert bit_width_of[dtype]() == 32, (
-            "scatter_nd atomic reduce needs a 32-bit dtype on Apple GPU:"
+            "scatter atomic reduce needs a 32-bit dtype on Apple GPU:"
             " Metal has no atomic primitive at any other width"
         )
 
@@ -1383,6 +1383,7 @@ def scatter_elements[
     input_type: DType,
     indices_type: DType,
     *,
+    target: StaticString = "cpu",
     reduce_fn: OptionalReg[
         def[
             dtype: DType, width: SIMDLength
@@ -1403,6 +1404,7 @@ def scatter_elements[
         rank: Rank of the `input`, `indices`, `updates`, and `output` tensors.
         input_type: Element type of `input`, `updates`, and `output`.
         indices_type: Element type of `indices` (must be `int32` or `int64`).
+        target: Target backend to execute on, such as "cpu" or "gpu".
         reduce_fn: Reduction function to apply: none (default, overwrite),
             add, mul, max, min. Updates for duplicate indices are reduced
             atomically, in unspecified order (without a reduce_fn,
@@ -1440,10 +1442,17 @@ def scatter_elements[
 
     var axis = _axis if _axis >= 0 else _axis + rank
 
-    # Do serial or parallel unsafe_memcpy depending on output size.
-    unsafe_parallel_memcpy(
-        dest=output.unsafe_ptr(), src=input.unsafe_ptr(), count=output.size()
-    )
+    comptime if is_gpu[target]():
+        ctx.enqueue_copy(output.unsafe_ptr(), input.unsafe_ptr(), output.size())
+    else:
+        unsafe_parallel_memcpy(
+            dest=output.unsafe_ptr(),
+            src=input.unsafe_ptr(),
+            count=output.size(),
+        )
+
+    if indices.size() == 0:
+        return
 
     var input_ax_dim = input.dim_size(axis)
 
@@ -1471,7 +1480,11 @@ def scatter_elements[
             output.to_tile_tensor()[Coord(output_coords)] = update_val
 
     # cannot use simd_width > 1 here because consecutive updates are not contiguous
-    elementwise[1](update_func, indices.shape_coord(), ctx)
+    elementwise[
+        simd_width=1,
+        target=target,
+        _trace_description="scatter_elements",
+    ](update_func, indices.shape_coord(), ctx)
 
 
 @inline(.always)

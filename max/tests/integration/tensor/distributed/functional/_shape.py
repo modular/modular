@@ -818,12 +818,7 @@ class _Scatter:
         """Scatter along non-sharded axis — placement preserved.
 
         ops.scatter(input, updates, indices, axis).
-        scatter/scatter_add are CPU-only Mojo kernels.
         """
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter is CPU-only")
-
         x_np = np.zeros((4, 4), dtype=np.float32)
         updates_np = np.ones((4, 2), dtype=np.float32)
         idx_np = np.array([[0, 1], [2, 3], [0, 1], [2, 3]], dtype=np.int32)
@@ -868,9 +863,6 @@ class _Scatter:
 
     def test_scatter_add_non_sharded_axis(self) -> None:
         """scatter_add along non-sharded axis — placement preserved."""
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter_add is CPU-only")
         x_np = np.zeros((4, 4), dtype=np.float32)
         updates_np = np.ones((4, 2), dtype=np.float32)
         idx_np = np.array([[0, 1], [2, 3], [0, 1], [2, 3]], dtype=np.int32)
@@ -1029,13 +1021,7 @@ class _ScatterNd:
         assert result.placements == (Replicated(),)
 
     def test_scatter_nd_add_replicated(self) -> None:
-        """scatter_nd_add on replicated tensor — placement preserved.
-
-        scatter_nd_add is CPU-only (the Mojo kernel does not support GPU).
-        """
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter_nd_add is CPU-only")
+        """scatter_nd_add on replicated tensor — placement preserved."""
         x_np = np.ones((4, 4), dtype=np.float32)
         updates_np = np.array([[1, 1, 1, 1], [2, 2, 2, 2]], dtype=np.float32)
         idx_np = np.array([[0], [2]], dtype=np.int32)

@@ -4978,7 +4978,7 @@ class TestSplitOp:
 
 
 class TestScatterOp:
-    """Tests for scatter op via MO interpreter (CPU-only, MO_HostOnly)."""
+    """Tests for scatter op via MO interpreter on CPU."""
 
     @staticmethod
     def _scatter_ref(
@@ -5179,7 +5179,7 @@ class TestScatterOp:
 
 
 class TestScatterAddOp:
-    """Tests for scatter_add op via MO interpreter (CPU-only, MO_HostOnly).
+    """Tests for scatter_add op via MO interpreter on CPU.
 
     Uses ``F.scatter_add`` which routes through ``ops.scatter_add`` ->
     ``rmo.MoScatterAddOp`` -> ``mo.scatter.add`` -> interpreter handler.
@@ -5340,7 +5340,7 @@ class TestScatterAddOp:
 
 
 class TestScatterMaxOp:
-    """Tests for scatter_max op via MO interpreter (CPU-only, MO_HostOnly).
+    """Tests for scatter_max op via MO interpreter on CPU.
 
     Uses ``F.scatter_max`` which routes through ``ops.scatter_max`` ->
     ``rmo.MoScatterMaxOp`` -> ``mo.scatter.max`` -> interpreter handler.
@@ -5451,7 +5451,7 @@ class TestScatterMaxOp:
 
 
 class TestScatterMinOp:
-    """Tests for scatter_min op via MO interpreter (CPU-only, MO_HostOnly).
+    """Tests for scatter_min op via MO interpreter on CPU.
 
     Uses ``F.scatter_min`` which routes through ``ops.scatter_min`` ->
     ``rmo.MoScatterMinOp`` -> ``mo.scatter.min`` -> interpreter handler.
@@ -5564,7 +5564,7 @@ class TestScatterMinOp:
 
 
 class TestScatterMulOp:
-    """Tests for scatter_mul op via MO interpreter (CPU-only, MO_HostOnly).
+    """Tests for scatter_mul op via MO interpreter on CPU.
 
     Uses ``F.scatter_mul`` which routes through ``ops.scatter_mul`` ->
     ``rmo.MoScatterMulOp`` -> ``mo.scatter.mul`` -> interpreter handler.
