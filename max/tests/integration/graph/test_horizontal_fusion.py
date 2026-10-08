@@ -20,7 +20,9 @@ here, which is why these check the fusion outcome and not only the numbers:
 the unfused form computes the same answer, just with the duplicate load.
 
 The pass also moves a consumer into its producer's epilogue when the
-producer's result has other readers, which output fusion leaves alone.
+producer's result has other readers, which output fusion leaves alone. A
+consumer that reads a strided window of the result runs there only where the
+window selects the element.
 """
 
 from __future__ import annotations
@@ -28,15 +30,18 @@ from __future__ import annotations
 import re
 
 import numpy as np
+import pytest
 from fusion_utils import run_and_verify_fusion
-from max.driver import Buffer
+from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def _f32(*shape: int) -> TensorType:
-    return TensorType(DType.float32, list(shape), device=DeviceRef.CPU())
+def _f32(*shape: int, device: DeviceRef | None = None) -> TensorType:
+    return TensorType(
+        DType.float32, list(shape), device=device or DeviceRef.CPU()
+    )
 
 
 def test_two_adds_share_operand(session: InferenceSession) -> None:
@@ -496,3 +501,172 @@ def test_matmul_result_read_in_branch(session: InferenceSession) -> None:
             session, graph, a_np, b_np, y_np, pred_np
         )
         np.testing.assert_allclose(out, mm_np + branch, rtol=1e-4, atol=1e-4)
+
+
+_CONCAT_SLICE = r"mo\.concat.*mo\.slice"
+
+_DEVICES = [
+    pytest.param(DeviceRef.CPU(), id="cpu"),
+    pytest.param(
+        DeviceRef.GPU(),
+        id="gpu",
+        marks=pytest.mark.skipif(
+            accelerator_count() == 0, reason="requires an accelerator"
+        ),
+    ),
+]
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_matmul_slice_step(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """A matmul returned whole and as a strided window, in one kernel.
+
+    Unlike concat, matmul calls its epilogue only when told the epilogue does
+    work, and writes its own output otherwise. The store into the window is
+    that work: a kernel that skipped it would leave the window unwritten.
+    Integer inputs keep the GPU's TF32 matmul exact.
+    """
+    with Graph(
+        "matmul_slice_step",
+        input_types=[_f32(64, 32, device=device), _f32(32, 64, device=device)],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        mm = a @ b
+        graph.output(mm, mm[1::2])
+
+    a_np = np.random.randint(-3, 4, (64, 32)).astype(np.float32)
+    b_np = np.random.randint(-3, 4, (32, 64)).astype(np.float32)
+    full_out, strided = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.matmul.*mo\.slice"
+    )
+    expected = a_np @ b_np
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(strided, expected[1::2])
+
+
+def test_bmm_window(session: InferenceSession) -> None:
+    """The KV-window idiom on a batched matmul: each batch's trailing rows,
+    stored beside the full result from the batched matmul's epilogue."""
+    with Graph(
+        "bmm_window", input_types=[_f32(2, 16, 8), _f32(2, 8, 16)]
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        bmm = a @ b
+        graph.output(bmm, bmm[:, -4:])
+
+    a_np = np.random.randn(2, 16, 8).astype(np.float32)
+    b_np = np.random.randn(2, 8, 16).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.batch_matmul.*mo\.slice"
+    )
+    expected = a_np @ b_np
+    np.testing.assert_allclose(full_out, expected, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(window, expected[:, -4:], rtol=1e-4, atol=1e-4)
+
+
+def test_conv_window(session: InferenceSession) -> None:
+    """A convolution returned whole and as its trailing rows, in one kernel.
+
+    Convolution, like matmul, calls its epilogue only when told the epilogue
+    does work, so the store into the window has to count as work.
+    """
+    with Graph(
+        "conv_window", input_types=[_f32(2, 6, 6, 3), _f32(3, 3, 3, 4)]
+    ) as graph:
+        x, w = (v.tensor for v in graph.inputs)
+        conv = ops.conv2d(x, w)
+        graph.output(conv, conv[:, -2:])
+
+    x_np = np.random.randn(2, 6, 6, 3).astype(np.float32)
+    w_np = np.random.randn(3, 3, 3, 4).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session, graph, x_np, w_np, fused=r"mo\.conv.*mo\.slice"
+    )
+    # NHWC input and RSCF filter: each filter tap scales a shifted input.
+    expected = np.zeros((2, 4, 4, 4), dtype=np.float32)
+    for r in range(3):
+        for s in range(3):
+            expected += x_np[:, r : r + 4, s : s + 4] @ w_np[r, s]
+    np.testing.assert_allclose(full_out, expected, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(window, expected[:, -2:], rtol=1e-4, atol=1e-4)
+
+
+def test_matmul_reshape_window(session: InferenceSession) -> None:
+    """A window of a reshaped matmul result stays its own kernel.
+
+    Epilogue fusion moves the reshape and the add into the matmul's epilogue,
+    which then stores at a reshaped index. The matmul still hands it vectors
+    along its own 64-wide inner dim, each spanning several rows of the narrow
+    reshaped result, so a select, which tests a vector once at its first
+    index, would store whole vectors into rows the window skips. Integer
+    inputs keep the matmul exact.
+    """
+    with Graph(
+        "matmul_reshape_window",
+        input_types=[_f32(8, 16), _f32(16, 64), _f32(128, 4)],
+    ) as graph:
+        a, b, y = (v.tensor for v in graph.inputs)
+        full = ops.reshape(a @ b, [128, 4]) + y
+        graph.output(full, full[::2])
+
+    model = session.load(graph)
+    summaries = model.kernel_summaries
+    assert any(
+        re.search(r"mo\.matmul.*mo\.static\.reshape.*mo\.add", s)
+        for s in summaries
+    ), summaries
+    assert not any(re.search(r"mo\.matmul.*mo\.slice", s) for s in summaries), (
+        summaries
+    )
+    rng = np.random.default_rng(0)
+    arrays = [
+        rng.integers(-3, 4, dims).astype(np.float32)
+        for dims in ([8, 16], [16, 64], [128, 4])
+    ]
+    results = model.execute(
+        *(
+            Buffer.from_numpy(arr).to(model.input_devices[i])
+            for i, arr in enumerate(arrays)
+        )
+    )
+    full_out, window_out = (r.to_numpy() for r in results)
+    expected = (arrays[0] @ arrays[1]).reshape(128, 4) + arrays[2]
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window_out, expected[::2])
+
+
+def test_concat_slice_runtime_start(session: InferenceSession) -> None:
+    """A window starting at a runtime offset stays its own kernel.
+
+    The store into a window carries its start statically, so the merge
+    declines, and the slice copies its window out of the concat's result.
+    """
+    start_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
+    with Graph(
+        "concat_slice_runtime_start",
+        input_types=[_f32(2, 8, 16), _f32(2, 3, 16), start_type],
+    ) as graph:
+        cache, new, start = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        window = ops.slice_tensor(
+            full, [slice(None), (slice(start, start + 8), 8), slice(None)]
+        )
+        graph.output(full, window)
+
+    model = session.load(graph)
+    assert not any(
+        re.search(_CONCAT_SLICE, s) for s in model.kernel_summaries
+    ), model.kernel_summaries
+    cache_np = np.random.randn(2, 8, 16).astype(np.float32)
+    new_np = np.random.randn(2, 3, 16).astype(np.float32)
+    results = model.execute(
+        Buffer.from_numpy(cache_np),
+        Buffer.from_numpy(new_np),
+        Buffer.from_numpy(np.array(3, dtype=np.int64)),
+    )
+    full_out, window_out = (r.to_numpy() for r in results)
+    expected = np.concatenate([cache_np, new_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window_out, expected[:, 3:11])
