@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from dataclasses import dataclass
 from typing import Optional
 
 import numpy as np
@@ -378,19 +377,6 @@ class MidBlock2D(Module[[Tensor, Tensor | None], Tensor]):
             hidden_states = self.resnets[i + 1](hidden_states, temb)
 
         return hidden_states
-
-
-@dataclass
-class DecoderOutput:
-    r"""Output of decoding method.
-
-    Args:
-        sample (`Tensor` of shape `(batch_size, num_channels, height, width)`):
-            The decoded output sample from the last layer of the model.
-    """
-
-    sample: Tensor
-    commit_loss: Tensor | None = None
 
 
 class Encoder(Module[[Tensor], Tensor]):

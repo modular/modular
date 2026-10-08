@@ -27,14 +27,12 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
-from max.pipelines.context import TextContext
 from max.pipelines.lib import (
     AlwaysSignalBuffersMixin,
     KVCacheConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
 )
 from max.pipelines.lib.memory_estimation import MemoryPlan
 from typing_extensions import override
@@ -316,39 +314,3 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next_token_logits=model_outputs[0],
                 logits=model_outputs[0],
             )
-
-
-def maybe_build_deepseekv3_nextn_kwargs(
-    target_model: PipelineModel[TextContext],
-    draft_model_cls: type[PipelineModel[TextContext]],
-) -> dict[str, Any]:
-    """Builds kwargs needed to pass to DeepseekV3NextNModel constructor."""
-    if not issubclass(draft_model_cls, DeepseekV3NextNModel):
-        return {}
-    if not isinstance(target_model, DeepseekV3Model):
-        raise ValueError(
-            "DeepseekV3NextNModel can only be used with DeepseekV3 target models"
-        )
-
-    required_prefixes = ("embed_tokens.", "lm_head.")
-    shared_weights: dict[str, DLPackArray] = {}
-    for name, value in target_model.state_dict.items():
-        for prefix in required_prefixes:
-            if name.startswith(prefix):
-                shared_weights[name] = value
-
-    if len(shared_weights) != len(required_prefixes):
-        raise ValueError(
-            f"Missing weight prefixes {required_prefixes} in target DeepseekV3 "
-            f"state_dict. Cannot share weights with NextN draft model."
-        )
-
-    logger.info(
-        "Sharing DeepseekV3 embedding and head weights with NextN draft model."
-    )
-
-    return {
-        "shared_weights": shared_weights,
-        # Share EP buffers between target and draft to avoid duplicating
-        "shared_ep_comm_initializer": target_model.ep_comm_initializer,
-    }
