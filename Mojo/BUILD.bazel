@@ -1450,6 +1450,7 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     deps = [
         ":Compiler",
+        ":DepGraphDialect",
         ":DialectChecksum",
         ":ToolCommon",
     ],

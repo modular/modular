@@ -428,6 +428,13 @@ public:
   /// to decls that have not been resolved.
   LogicalResult finalizeImportedBytecodeModules();
 
+  //===--------------------------------------------------------------------===//
+  // Module Dependency Graph
+
+  /// Whether experimental incremental parsing is enabled. Dep edges are only
+  /// recorded, and the dep graph only built, when it is.
+  bool isIncrParsingEnabled() const { return incrParsingEnabled; }
+
   /// Record a dep edge `importer` -> `imported`, attributed to each end's
   /// nearest enclosing file module or package. No-ops if either end has no
   /// module state or is erroneous.
@@ -706,6 +713,11 @@ private:
   /// A flag indicating if prebuilt packages should not be considered during
   /// parsing.
   bool disablePrebuiltPackages = false;
+
+  /// Whether experimental incremental parsing is enabled. Currently always
+  /// false; a follow-up wires it to a parser-config option and tool flag
+  /// alongside the incremental parsing cache.
+  bool incrParsingEnabled = false;
 
   /// If true, auto-import the builtin package.
   bool useBuiltinModule = true;

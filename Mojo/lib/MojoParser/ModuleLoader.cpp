@@ -16,6 +16,9 @@
 #include "ClosureEmitter.h"
 #include "ModuleStore.h"
 
+#include "Mojo/DepGraphDialect/DepGraphAnalysis.h"
+#include "Mojo/DepGraphDialect/DepGraphDialect.h"
+#include "Mojo/DepGraphDialect/DepGraphOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/DeclResolver.h"
@@ -1047,6 +1050,12 @@ ModuleLoader::createModuleState(StringAttr declName,
   if (moduleState.decl->isErroneous())
     return moduleState;
 
+  // The source buffer is available now, so record its content hash up front.
+  if (shared.isIncrParsingEnabled()) {
+    moduleState.contentHash =
+        DepGraph::hashModuleBuffer(moduleBuffer->getBuffer());
+  }
+
   // Auto-import the core language modules.
   if (LLVM_LIKELY(shared.hasBuiltinModule()))
     shared.importBuiltinModules(*moduleState.decl);
@@ -1340,7 +1349,7 @@ ModuleState &ModuleLoader::createErrorModuleState(SMLoc loc, StringAttr name,
 }
 
 void ModuleLoader::recordDepEdge(ASTDecl *importer, ASTDecl *imported) {
-  if (!importer || !imported)
+  if (!shared.isIncrParsingEnabled() || !importer || !imported)
     return;
   // Attribute both ends to their enclosing file module (or package).
   importer = importer->getNearestDeclOfType<FileModuleOp, PackageOp>();
@@ -1357,7 +1366,7 @@ void ModuleLoader::recordDepEdge(ASTDecl *importer, ASTDecl *imported) {
 
 void ModuleLoader::recordModuleImportDepEdges(ASTDecl *importer,
                                               ASTDecl &module) {
-  if (!importer)
+  if (!shared.isIncrParsingEnabled() || !importer)
     return;
   recordDepEdge(importer, &module);
   // A dotted `import a.b.c` also resolves through each ancestor package's
@@ -1368,4 +1377,82 @@ void ModuleLoader::recordModuleImportDepEdges(ASTDecl *importer,
        ancestor = ancestor->getParentDecl())
     if (isa_and_nonnull<PackageOp>(ancestor->getIfOperation()))
       recordDepEdge(importer, ancestor);
+}
+
+mlir::OwningOpRef<DepGraph::GraphOp>
+ModuleLoader::buildDepGraph(const ASTDecl *rootDecl) {
+  auto *ctx = getContext();
+  // Loaded here rather than with the other parser dialects: the parser also
+  // runs inside graph compiler passes, which cannot load a dialect they do not
+  // declare, and only the incremental parsing cache needs this one.
+  ctx->getOrLoadDialect<DepGraph::DepGraphDialect>();
+  auto unknownLoc = mlir::UnknownLoc::get(ctx);
+  // Build the graph op detached; ownership passes to the returned OwningOpRef.
+  mlir::OpBuilder b(ctx);
+  auto graph = DepGraph::GraphOp::create(b, unknownLoc,
+                                         /*root=*/mlir::FlatSymbolRefAttr{});
+  mlir::OpBuilder gb =
+      mlir::OpBuilder::atBlockBegin(&graph.getBody().emplaceBlock());
+
+  // Create a node per materialized .mojo file module; a never-materialized
+  // module has no content hash and is dropped rather than emitted hashless.
+  // moduleStates is a MapVector, so node emission order is deterministic.
+  llvm::DenseMap<const ASTDecl *, DepGraph::ModuleNodeOp> nodeMap;
+  nodeMap.reserve(store->moduleStates.size());
+  for (auto &[decl, state] : store->moduleStates) {
+    if (!state->contentHash)
+      continue;
+    auto node = DepGraph::ModuleNodeOp::create(
+        gb, unknownLoc, state->qualifiedName, *state->sourcePath(),
+        mlir::ValueRange{});
+    node.setContentHashAttr(mlir::StringAttr::get(ctx, *state->contentHash));
+    nodeMap[decl] = node;
+  }
+
+  // Map a dep-edge target to its module node.
+  StringAttr initName = StringAttr::get(ctx, "__init__");
+  auto resolveToNode = [&](ASTDecl *dep) -> DepGraph::ModuleNodeOp {
+    if (auto node = nodeMap.lookup(dep))
+      return node;
+    auto *modState = store->moduleStates.lookup(dep);
+    if (modState && modState->origin && !modState->origin->bytecodeReader) {
+      if (auto *initState = modState->nestedModules.lookup(initName))
+        return nodeMap.lookup(initState->decl);
+    }
+    return {};
+  };
+
+  // Wire dep edges for file-module importers only; package and root entries
+  // are already covered by the per-file edges.
+  for (auto &[importer, importees] : store->depEdges) {
+    auto importerNode = nodeMap.lookup(importer);
+    if (!importerNode)
+      continue;
+
+    // The package folding is many-to-one (a package and its __init__ share a
+    // node), so two distinct edge targets can resolve to the same node; the
+    // SetVector drops such duplicates while keeping insertion order.
+    llvm::SmallSetVector<mlir::Value, 8> depVals;
+    for (ASTDecl *dep : importees) {
+      DepGraph::ModuleNodeOp node = resolveToNode(dep);
+      // Drop targets without a node (prebuilt packages, packages with no
+      // __init__.mojo).
+      if (!node)
+        continue;
+      // Drop self-edges: an __init__.mojo's edge to its own package folds
+      // back onto itself.
+      if (node == importerNode)
+        continue;
+      depVals.insert(node.getHandle());
+    }
+    if (!depVals.empty())
+      importerNode.getDepsMutable().assign(depVals.getArrayRef());
+  }
+
+  // Set the root only if it resolves to an emitted node, so `root` always
+  // names a real `depgraph.module` (as the verifier requires).
+  if (auto rootNode = nodeMap.lookup(rootDecl))
+    graph.setRootAttr(mlir::FlatSymbolRefAttr::get(ctx, rootNode.getSymName()));
+
+  return mlir::OwningOpRef<DepGraph::GraphOp>(graph);
 }

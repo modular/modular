@@ -24,6 +24,14 @@
 #include <memory>
 #include <optional>
 
+namespace M {
+namespace KGEN {
+namespace DepGraph {
+class GraphOp;
+}
+} // namespace KGEN
+} // namespace M
+
 namespace M::KGEN::LIT {
 
 /// The binding a module name is about to make: which entity it names, where
@@ -279,6 +287,11 @@ private:
   /// each ancestor package, since editing an ancestor `__init__.mojo` can
   /// affect it.
   void recordModuleImportDepEdges(ASTDecl *importer, ASTDecl &module);
+
+  /// Build the module import dependency graph from parse-time data (call after
+  /// all decls resolve). Sets the graph `root` if `rootDecl` is the main
+  /// module.
+  mlir::OwningOpRef<DepGraph::GraphOp> buildDepGraph(const ASTDecl *rootDecl);
 
   /// The directories searched before the working directory and the source
   /// manager's include directories: configured search paths, or the defaults

@@ -25,6 +25,7 @@
 #include "ParserEvaluationContext.h"
 #include "Signatures.h"
 
+#include "Mojo/DepGraphDialect/DepGraphAnalysis.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/ASTType.h"
@@ -55,6 +56,7 @@
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/ADT/bit.h"
@@ -1292,6 +1294,11 @@ LogicalResult SharedState::materializeDeferredModule(ASTDecl &decl, SMLoc loc) {
   Lexer lexer(diags, moduleBuffer);
   decl.setLoc(lexer.getToken().getLoc());
   decl.setParseCursor(lexer.getCursor(), LexerCursor::getEOF(moduleBuffer));
+
+  // The source buffer is now available, so backfill the content hash that
+  // could not be computed when the deferred module was registered.
+  if (isIncrParsingEnabled())
+    state->contentHash = DepGraph::hashModuleBuffer(moduleBuffer->getBuffer());
 
   // Auto-import the core language modules and notify the listener - the
   // module's content now exists.

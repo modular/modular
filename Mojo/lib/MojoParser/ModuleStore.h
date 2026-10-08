@@ -106,6 +106,9 @@ struct ModuleState {
   /// Insert a nested module state.
   ModuleState &insertNestedModule(mlir::StringAttr name,
                                   std::unique_ptr<ModuleState> module) {
+    module->qualifiedName = qualifiedName.empty()
+                                ? name.getValue().str()
+                                : qualifiedName + "." + name.getValue().str();
     nestedModuleAllocations.emplace_back(std::move(module));
     nestedModules.insert({name, nestedModuleAllocations.back().get()});
     return *nestedModuleAllocations.back();
@@ -129,6 +132,13 @@ struct ModuleState {
       return spec->path.string();
     return std::nullopt;
   }
+  /// Hash of the module's source (xxh3-64 hex, .mojo files only); nullopt
+  /// until the source buffer materializes.
+  std::optional<std::string> contentHash;
+
+  /// Fully-qualified dotted name, set by insertNestedModule; empty for the
+  /// top-level module state.
+  std::string qualifiedName;
   /// For a package, the location of the import statement that first pulled it
   /// in; used for diagnostics. Imported module states are shared across all
   /// compilation units so we can only meaningfully track one location, even if
