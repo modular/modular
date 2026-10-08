@@ -1878,5 +1878,15 @@ class DKVConnector(KVConnector):
                     dkv_peer_loads=m["peer_loads"],
                     dkv_peer_load_failures=m["peer_load_failures"],
                     dkv_hints_rejected=m["hints_rejected"],
+                    dkv_hints_rejected_by_reason=dict(
+                        m["hints_rejected_by_reason"]
+                    ),
+                    # Per-call counters: summed per leaf client, since each
+                    # client issues its own RPCs on its own socket and lock.
+                    dkv_rpc_calls=dict(m["rpc_calls"]),
+                    dkv_rpc_time_ms=dict(m["rpc_time_ms"]),
+                    dkv_rpc_socket_wait_ms=dict(m["rpc_socket_wait_ms"]),
+                    dkv_lock_waits=dict(m["lock_waits"]),
+                    dkv_lock_wait_ms=dict(m["lock_wait_ms"]),
                 )
         return total

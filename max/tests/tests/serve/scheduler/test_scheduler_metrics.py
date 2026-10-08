@@ -17,7 +17,7 @@ import logging
 import re
 from contextlib import contextmanager
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.pipelines.kv_cache.kv_connector import BlockCount, ByteCount
@@ -508,7 +508,11 @@ def test_dkv_peer_counters_are_silent_without_a_tier() -> None:
 
 
 def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
-    """A batch that pulled cross-node reports it on the line, log, and counters."""
+    """A batch that pulled cross-node reports it on the line, log, and counters.
+
+    The per-call maps reach the log and the counters too, the labels that
+    moved and no others.
+    """
     metrics = _make_metrics(
         dkv_connected_clients=2,
         dkv_total_clients=2,
@@ -518,6 +522,12 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
         dkv_peer_loads=3,
         dkv_peer_load_failures=4,
         dkv_hints_rejected=5,
+        dkv_hints_rejected_by_reason={"chain_mismatch": 5, "unparseable": 0},
+        dkv_rpc_calls={"read_blocks": 3, "heartbeat": 0},
+        dkv_rpc_time_ms={"read_blocks": 2.5, "heartbeat": 0.0},
+        dkv_rpc_socket_wait_ms={"read_blocks": 0.5},
+        dkv_lock_waits={"prepare_load": 2, "offload": 0},
+        dkv_lock_wait_ms={"prepare_load": 1.25},
     )
 
     assert (
@@ -532,6 +542,17 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     assert extra["dkv_peer_loads"] == 3
     assert extra["dkv_peer_load_failures"] == 4
     assert extra["dkv_hints_rejected"] == 5
+    assert {
+        k: v for k, v in extra.items() if "_rpc_" in k or "_lock_" in k
+    } == {
+        "dkv_rpc_calls_read_blocks": 3,
+        "dkv_rpc_time_ms_read_blocks": 2.5,
+        "dkv_rpc_socket_wait_ms_read_blocks": 0.5,
+        "dkv_lock_waits_prepare_load": 2,
+        "dkv_lock_wait_ms_prepare_load": 1.25,
+    }
+    assert extra["dkv_hints_rejected_chain_mismatch"] == 5
+    assert "dkv_hints_rejected_unparseable" not in extra
 
     with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
         metrics.publish_metrics()
@@ -542,6 +563,65 @@ def test_dkv_peer_counters_carry_their_values_to_every_surface() -> None:
     mock_metrics.dkv_peer_loads.assert_called_once_with(3)
     mock_metrics.dkv_peer_load_failures.assert_called_once_with(4)
     mock_metrics.dkv_hints_rejected.assert_called_once_with(5)
+    mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
+        5, reason="chain_mismatch"
+    )
+    mock_metrics.dkv_rpc_calls.assert_called_once_with(3, op="read_blocks")
+    mock_metrics.dkv_rpc_time_ms.assert_called_once_with(2.5, op="read_blocks")
+    mock_metrics.dkv_rpc_socket_wait_ms.assert_called_once_with(
+        0.5, op="read_blocks"
+    )
+    mock_metrics.dkv_lock_waits.assert_called_once_with(2, entry="prepare_load")
+    mock_metrics.dkv_lock_wait_ms.assert_called_once_with(
+        1.25, entry="prepare_load"
+    )
+
+
+def test_dkv_per_call_counters_publish_one_series_per_label() -> None:
+    """Each per-call map publishes one increment per key that moved.
+
+    A zero increment changes no counter, so the zeros never leave the
+    scheduler thread.
+    """
+    metrics = _make_metrics(
+        dkv_connected_clients=1,
+        dkv_total_clients=1,
+        dkv_rpc_calls={"read_blocks": 3, "touch_blocks": 2, "heartbeat": 0},
+        dkv_rpc_time_ms={
+            "read_blocks": 2.5,
+            "touch_blocks": 4.0,
+            "heartbeat": 0.0,
+        },
+        dkv_rpc_socket_wait_ms={"read_blocks": 0.5, "touch_blocks": 0.0},
+        dkv_lock_waits={"poll_transfers": 6, "offload": 0},
+        dkv_lock_wait_ms={"poll_transfers": 1.25, "offload": 0.0},
+        dkv_hints_rejected_by_reason={"chain_mismatch": 7, "unparseable": 0},
+    )
+
+    with patch("max.serve.scheduler.utils.METRICS") as mock_metrics:
+        metrics.publish_metrics()
+
+    mock_metrics.dkv_rpc_calls.assert_has_calls(
+        [call(3, op="read_blocks"), call(2, op="touch_blocks")], any_order=True
+    )
+    assert mock_metrics.dkv_rpc_calls.call_count == 2
+    mock_metrics.dkv_rpc_time_ms.assert_has_calls(
+        [call(2.5, op="read_blocks"), call(4.0, op="touch_blocks")],
+        any_order=True,
+    )
+    assert mock_metrics.dkv_rpc_time_ms.call_count == 2
+    mock_metrics.dkv_rpc_socket_wait_ms.assert_called_once_with(
+        0.5, op="read_blocks"
+    )
+    mock_metrics.dkv_lock_waits.assert_called_once_with(
+        6, entry="poll_transfers"
+    )
+    mock_metrics.dkv_lock_wait_ms.assert_called_once_with(
+        1.25, entry="poll_transfers"
+    )
+    mock_metrics.dkv_hints_rejected_by_reason.assert_called_once_with(
+        7, reason="chain_mismatch"
+    )
 
 
 def test_dkv_peer_clause_appears_on_rejected_hints_alone() -> None:

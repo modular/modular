@@ -414,7 +414,34 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.dkv.hints_rejected": _meter.create_counter(
         "maxserve.dkv.hints_rejected",
         unit="hints",
-        description="Cache hints that arrived but were unusable: bytes that did not parse, an unknown version, a chain that does not describe the request, or no entry for the requested group. Counted per entry on the two-phase load path and per call on the fused one.",
+        description="Cache hints that arrived but were unusable: bytes that did not parse, an unknown version, a chain that does not describe the request, no entry for the requested group, or a source instance record that failed validation. Counted per entry on the two-phase load path and per call on the fused one.",
+    ),  # type: ignore
+    # Per-call dKV client counters. Counters, not histograms, so a dashboard
+    # derives the per-call mean as time over calls; the rpc_*_latency
+    # histograms above record one per-batch mean each.
+    "maxserve.dkv.hints_rejected_by_reason": _meter.create_counter(
+        "maxserve.dkv.hints_rejected_by_reason",
+        description="maxserve.dkv.hints_rejected split by `reason`: unparseable bytes, no entry for the group, a chain that does not contain the request, or an instance record that failed validation.",
+    ),  # type: ignore
+    "maxserve.dkv.rpc_calls": _meter.create_counter(
+        "maxserve.dkv.rpc_calls",
+        description="dKV RPCs the connector clients issued, split by `op`, including calls to peer dKV instances, transfer settles and touches.",
+    ),  # type: ignore
+    "maxserve.dkv.rpc_time_ms": _meter.create_counter(
+        "maxserve.dkv.rpc_time_ms",
+        description="Cumulative wall milliseconds of dKV RPCs, split by `op`, including calls to peer dKV instances and the wait for the client's socket. Divide by maxserve.dkv.rpc_calls for the per-call mean.",
+    ),  # type: ignore
+    "maxserve.dkv.rpc_socket_wait_ms": _meter.create_counter(
+        "maxserve.dkv.rpc_socket_wait_ms",
+        description="Cumulative milliseconds dKV RPCs queued for their client's single REQ socket behind another call in flight, split by `op`, including calls to peer dKV instances.",
+    ),  # type: ignore
+    "maxserve.dkv.lock_waits": _meter.create_counter(
+        "maxserve.dkv.lock_waits",
+        description="Times a dKV connector entry point took the connector lock, split by `entry`.",
+    ),  # type: ignore
+    "maxserve.dkv.lock_wait_ms": _meter.create_counter(
+        "maxserve.dkv.lock_wait_ms",
+        description="Cumulative milliseconds dKV connector entry points waited for the connector lock, split by `entry`.",
     ),  # type: ignore
     "maxserve.spec_decode.acceptance_rate_per_position": _meter.create_histogram(
         "maxserve.spec_decode.acceptance_rate_per_position",
@@ -1786,6 +1813,60 @@ class _AsyncMetrics:
                 "maxserve.dkv.hints_rejected",
                 value,
                 self.extra_attributes,
+            ),
+        )
+
+    def dkv_hints_rejected_by_reason(self, value: int, reason: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.hints_rejected_by_reason",
+                value,
+                {**self.extra_attributes, "reason": reason},
+            ),
+        )
+
+    def dkv_rpc_calls(self, value: int, op: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.rpc_calls",
+                value,
+                {**self.extra_attributes, "op": op},
+            ),
+        )
+
+    def dkv_rpc_time_ms(self, value: float, op: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.rpc_time_ms",
+                value,
+                {**self.extra_attributes, "op": op},
+            ),
+        )
+
+    def dkv_rpc_socket_wait_ms(self, value: float, op: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.rpc_socket_wait_ms",
+                value,
+                {**self.extra_attributes, "op": op},
+            ),
+        )
+
+    def dkv_lock_waits(self, value: int, entry: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.lock_waits",
+                value,
+                {**self.extra_attributes, "entry": entry},
+            ),
+        )
+
+    def dkv_lock_wait_ms(self, value: float, entry: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.lock_wait_ms",
+                value,
+                {**self.extra_attributes, "entry": entry},
             ),
         )
 
