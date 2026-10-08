@@ -46,6 +46,8 @@ from .math import (
     acosh,
     align_down,
     align_up,
+    mulwide,
+    mulhi,
     asin,
     asinh,
     atan,

@@ -39,11 +39,9 @@ from std.random.philox import Random
 
 from std.sys import Endian
 
-from std.math import cos, fma, log, pi, sin, sqrt
+from std.math import cos, fma, log, pi, sin, sqrt, mulwide
 
 from std.memory import bitcast
-
-from std._gpu.intrinsics import mulwide
 
 
 def _mulhilow(a: UInt32, b: UInt32) -> SIMD[.uint32, 2]:
