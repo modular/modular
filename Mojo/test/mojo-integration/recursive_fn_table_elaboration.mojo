@@ -98,6 +98,30 @@ def serializer_table() -> Array[Serializer, 3]:
 comptime SERIALIZERS = serializer_table()
 
 
+# MOCO-4947: Two recursive scc in the graph a <-> b, and __deinit__s from ArcPointer
+struct Ty(ImplicitlyCopyable):
+    var v: Optional[ArcPointer[Ty]]
+
+    def __init__(out self):
+        self.v = None
+
+    comptime leaf = Ty()
+
+
+def f(n: Int, t: Ty) -> Int:
+    return n
+
+
+def a(n: Int) -> Int:
+    return b(n)
+
+
+def b(n: Int) -> Int:
+    if n == 1:
+        return f(a(n + 1), Ty.leaf)
+    return n
+
+
 def main() raises:
     # CHECK: "ok"
     print(Value(Value.STRING, Payload(Str("ok"))).to_string())
@@ -111,3 +135,6 @@ def main() raises:
     )
     # CHECK: [1,"x"]
     print(Value(Value.ARRAY, Payload(arr^)).to_string())
+
+    # CHECK: 0
+    print(a(0))
