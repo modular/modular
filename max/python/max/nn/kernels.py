@@ -7036,7 +7036,8 @@ def grouped_dynamic_block_scaled_matmul_amd(
             rows one expert can hold, sizing the per-step A-scale slot buffer.
             ``None`` falls back to the post-expansion row count, which
             over-allocates each slot roughly ``top_k``-fold. Must be positive
-            when given. Ignored unless ``preshuffled_b``.
+            when given, and requires ``preshuffled_b`` without
+            ``a_scales_preshuffled``, the only combination that sizes slots.
         decode_grid_m_cap: Decode-band gate on the AMD preb path; 0 disables.
             Selects the band; `decode_grid_m_rows` bounds the grid.
         decode_grid_m_rows: Rows grid.y must cover per expert on the decode
@@ -7070,6 +7071,12 @@ def grouped_dynamic_block_scaled_matmul_amd(
     if mixed_w4a8 and (preshuffled_b or a_scales_preshuffled):
         raise ValueError(
             "mixed AMD W4A8 requires row-major operands and scales"
+        )
+    preshuffle_a_scales = preshuffled_b and not a_scales_preshuffled
+    if a_scales_max_rows_per_expert is not None and not preshuffle_a_scales:
+        raise ValueError(
+            "a_scales_max_rows_per_expert requires preshuffled_b=True and"
+            " a_scales_preshuffled=False; it has no effect otherwise"
         )
 
     a_elems_per_byte = 2 if hidden_states.dtype == DType.uint8 else 1
@@ -7178,7 +7185,7 @@ def grouped_dynamic_block_scaled_matmul_amd(
     # upstream `ep.fused_silu.mxfp4` kernel already wrote the scale directly
     # into the slot layout, so we skip the standalone preshuffle entirely.
     # Preshuffle must run exactly once: non-EP + up-proj keep `a_scales_preshuffled=False`.
-    if preshuffled_b and not a_scales_preshuffled:
+    if preshuffle_a_scales:
         a_scales = block_scaled_preshuffle_grouped_scale_4d(
             a_scales,
             expert_start_indices,
