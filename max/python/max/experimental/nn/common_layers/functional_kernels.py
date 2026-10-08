@@ -59,6 +59,9 @@ from max.nn.kernels import (
     mla_decode_graph as _mla_decode_graph,
 )
 from max.nn.kernels import (
+    mla_fp8_index_top_k as _mla_fp8_index_top_k,
+)
+from max.nn.kernels import (
     mla_prefill_decode_graph as _mla_prefill_decode_graph,
 )
 from max.nn.kernels import (
@@ -74,10 +77,22 @@ from max.nn.kernels import (
     moe_router_group_limited as _moe_router_group_limited,
 )
 from max.nn.kernels import (
+    quantize_dynamic_scaled_float8 as _quantize_dynamic_scaled_float8,
+)
+from max.nn.kernels import (
     rms_norm_key_cache as _rms_norm_key_cache,
 )
 from max.nn.kernels import (
+    rope_ragged as _rope_ragged,
+)
+from max.nn.kernels import (
     rope_split_store_ragged as _rope_split_store_ragged,
+)
+from max.nn.kernels import (
+    store_k_cache_ragged as _store_k_cache_ragged,
+)
+from max.nn.kernels import (
+    store_k_scale_cache_ragged as _store_k_scale_cache_ragged,
 )
 
 
@@ -176,6 +191,11 @@ mla_prefill_graph = F.functional(_mla_prefill_graph)
 mla_decode_graph = F.functional(_mla_decode_graph)
 mla_prefill_decode_graph = F.functional(_mla_prefill_decode_graph)
 hyper_connection_gates = F.functional(_hyper_connection_gates)
+mla_fp8_index_top_k = F.functional(_mla_fp8_index_top_k)
+rope_ragged = F.functional(_rope_ragged)
+quantize_dynamic_scaled_float8 = F.functional(_quantize_dynamic_scaled_float8)
+store_k_cache_ragged = F.functional(_store_k_cache_ragged)
+store_k_scale_cache_ragged = F.functional(_store_k_scale_cache_ragged)
 
 
 def fused_silu_rule(
@@ -239,11 +259,16 @@ __all__ = [
     "fused_silu",
     "grouped_matmul_ragged",
     "hyper_connection_gates",
+    "mla_fp8_index_top_k",
     "moe_create_indices",
     "moe_finalize",
     "moe_router_group_limited",
     "moe_sigmoid_gemv_router",
+    "quantize_dynamic_scaled_float8",
     "rms_norm_key_cache",
+    "rope_ragged",
     "rope_split_store_ragged",
     "stack_device_shards",
+    "store_k_cache_ragged",
+    "store_k_scale_cache_ragged",
 ]

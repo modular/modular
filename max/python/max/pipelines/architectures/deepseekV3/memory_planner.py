@@ -249,6 +249,21 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
         """
         return _ep_max_rank_send_tokens_for_pipeline(pipeline_config)
 
+    def _ep_fuse_ffn_combine_send(
+        self,
+        pipeline_config: PipelineConfig,
+        huggingface_config: AutoConfig,
+    ) -> bool:
+        """Whether the graph this plans for fuses the combine send.
+
+        Must match what the model builds: dropping the FFN output buffer for a
+        graph that still materializes it under-reserves activation memory.
+        Subclasses whose graph never fuses override this to return ``False``.
+        """
+        return ep_fuse_ffn_combine_send_for_pipeline(
+            pipeline_config, huggingface_config
+        )
+
     def estimate_weights_size(self, pipeline_config: PipelineConfig) -> int:
         """Estimates weight memory for DeepseekV3 models.
 
@@ -438,7 +453,7 @@ class DeepseekV3MemoryPlanner(PagedMemoryPlanner):
             # for it would hand the KV cache a bill for a tensor that does not
             # exist. Both sides read one flag so the estimate cannot disagree
             # with the graph.
-            if not ep_fuse_ffn_combine_send_for_pipeline(
+            if not self._ep_fuse_ffn_combine_send(
                 pipeline_config, huggingface_config
             ):
                 moe_activation_memory += (

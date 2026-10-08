@@ -26,9 +26,15 @@ from max.nn.comm.ep.ep_manager import (
 from max.pipelines.architectures.deepseekV3.memory_planner import (
     DeepseekV3MemoryPlanner,
 )
+from max.pipelines.architectures.deepseekV3_modulev3.memory_planner import (
+    DeepseekV3ModuleV3MemoryPlanner,
+)
 from max.pipelines.architectures.glm5_1.arch import glm5_1_arch
 from max.pipelines.architectures.glm5_1.memory_planner import (
     Glm5_1MemoryPlanner,
+)
+from max.pipelines.architectures.glm5_1_modulev3.arch import (
+    glm5_1_modulev3_arch,
 )
 from max.pipelines.architectures.unified_mtp_glm5_2.arch import (
     unified_mtp_glm5_2_arch,
@@ -172,3 +178,40 @@ def test_glm_without_mtp_plans_what_ep_init_adds(
     assert plan() == reserve
     pipeline_config.runtime.ep_size = 1
     assert plan() == 0
+
+
+def test_glm_modulev3_plans_through_the_deepseek_planner() -> None:
+    """Without DeepSeek's terms the EP heap and MoE activations are unplanned."""
+    assert (
+        glm5_1_modulev3_arch.memory_planner is DeepseekV3ModuleV3MemoryPlanner
+    )
+
+
+def test_modulev3_reserves_the_ffn_output_even_when_fusion_is_requested() -> (
+    None
+):
+    """ModuleV3 never fuses the combine send, so it must keep the reserve.
+
+    The graph-API planner drops the FFN output term when the fusion is on; the
+    ModuleV3 graph still materializes that tensor, so dropping it would be an
+    under-reserve.
+    """
+    huggingface_config = _mock_huggingface_config()
+    fused = _mock_pipeline_config(quantization_encoding="float4_e2m1fnx2")
+    fused.runtime.ep_fuse_ffn_combine_send = True
+    unfused = _mock_pipeline_config(quantization_encoding="float4_e2m1fnx2")
+    unfused.runtime.ep_fuse_ffn_combine_send = False
+    # Short context keeps the MLA term below the MoE term, which is the one
+    # the fusion changes.
+    for config in (fused, unfused):
+        config.model.max_length = 4096
+
+    v2 = _planner(DeepseekV3MemoryPlanner)
+    v3 = _planner(DeepseekV3ModuleV3MemoryPlanner)
+
+    assert v2.estimate_activation_memory(
+        fused, huggingface_config
+    ) < v2.estimate_activation_memory(unfused, huggingface_config)
+    assert v3.estimate_activation_memory(
+        fused, huggingface_config
+    ) == v2.estimate_activation_memory(unfused, huggingface_config)

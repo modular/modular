@@ -97,20 +97,29 @@ class DeepseekV3Model(DeepseekV2Model):
                 f" this node ({n_devices}); for single-node set"
                 f" ep_size={n_devices}."
             )
+        if self.pipeline_config.runtime.ep_fuse_ffn_combine_send:
+            logger.warning(
+                "ep_fuse_ffn_combine_send is not implemented on ModuleV3; the"
+                " MoE FFN output is materialized before the combine."
+            )
         ep_max_tokens_per_rank = calculate_ep_max_tokens_per_rank(
             max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
             ep_size=ep_size,
             data_parallel_degree=self.pipeline_config.model.data_parallel_degree,
             use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
         )
-        # Only enable shared expert fusion if the shared expert is of
-        # the same shape as routed experts.
-        fused_shared_expert = model_config.n_shared_experts == 1
-
         # Set correct dispatch dtype, depending on the quant config.
         dispatch_dtype = DType.bfloat16
         dispatch_quant_config = None
         quant_config = model_config.quant_config
+        # Only enable shared expert fusion if the shared expert is of the same
+        # shape as routed experts, and carries the same weight layout: a
+        # modelopt ``*shared_experts*`` ignore leaves them bf16, which cannot be
+        # stacked with the packed routed experts.
+        fused_shared_expert = model_config.n_shared_experts == 1 and (
+            quant_config is None
+            or quant_config.shared_experts_use_quant(self.dtype)
+        )
         if quant_config is not None and (
             self.dtype.is_float8() or quant_config.is_nvfp4
         ):
@@ -157,7 +166,7 @@ class DeepseekV3Model(DeepseekV2Model):
 
     @override
     def _create_model_config(self, state_dict: dict[str, Any]) -> Any:
-        model_config = DeepseekV3Config.initialize(
+        model_config = self.model_config_cls.initialize(
             self.pipeline_config, max_seq_len=self.max_seq_len
         )
         model_config.max_batch_context_length = (

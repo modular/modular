@@ -63,8 +63,13 @@ def _scale(weight: QuantAwareTensor) -> Tensor | None:
     return None
 
 
-class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
-    """Latent Attention with RoPE and quantize-aware projection weights."""
+class QuantizedLatentAttention(Module[..., Any]):
+    """Weights, absorbed-projection views and the MLA kernel call.
+
+    Carries everything the dense and the DeepSeek-V3.2 sparse latent-attention
+    modules share. It defines no ``forward``: the two differ in what they
+    return, so they are siblings rather than parent and child.
+    """
 
     def __init__(
         self,
@@ -352,6 +357,10 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
 
         return result.reshape([result.shape[0], self.n_heads * self.v_head_dim])
 
+
+class QuantizedLatentAttentionWithRope(QuantizedLatentAttention):
+    """Latent Attention with RoPE and quantize-aware projection weights."""
+
     def forward(
         self,
         x: Tensor,
@@ -389,8 +398,8 @@ class QuantizedLatentAttentionWithRope(Module[..., Tensor]):
 
 
 def tensor_parallel_latent_attention_with_rope(
-    layer: QuantizedLatentAttentionWithRope,
-) -> QuantizedLatentAttentionWithRope:
+    layer: QuantizedLatentAttention,
+) -> QuantizedLatentAttention:
     """Modifies latent attention layer to be tensor parallel along the TP axis.
 
     The weights not sharded here stay replicated.

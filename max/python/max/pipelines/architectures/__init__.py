@@ -90,6 +90,11 @@ def register_all_models() -> None:
         ),
         _LazyArch("DeepseekV4ForCausalLM", ".deepseekV4", "deepseekV4_arch"),
         _LazyArch(
+            "DeepseekV32ForCausalLM_ModuleV3",
+            ".deepseekV3_2_modulev3",
+            "deepseekV3_2_modulev3_arch",
+        ),
+        _LazyArch(
             "DeepseekV3ForCausalLM_ModuleV3",
             ".deepseekV3_modulev3",
             "deepseekV3_modulev3_arch",
@@ -180,6 +185,11 @@ def register_all_models() -> None:
             "Glm5NextForConditionalGeneration", ".glm5_next", "glm5_next_arch"
         ),
         _LazyArch("GlmMoeDsaForCausalLM", ".glm5_1", "glm5_1_arch"),
+        _LazyArch(
+            "GlmMoeDsaForCausalLM_ModuleV3",
+            ".glm5_1_modulev3",
+            "glm5_1_modulev3_arch",
+        ),
         _LazyArch("GptOssForCausalLM", ".gpt_oss", "gpt_oss_arch"),
         _LazyArch(
             "GptOssForCausalLM_ModuleV3",

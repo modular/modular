@@ -12,40 +12,40 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.architectures.deepseekV3.tool_parser import (
-    resolve_deepseekv3_tool_parser,
-)
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
-from . import weight_adapters
-from .batch_processor import DeepseekV3ModuleV3BatchProcessor
-from .memory_planner import (
+from ..deepseekV3_modulev3.batch_processor import (
+    DeepseekV3ModuleV3BatchProcessor,
+)
+from ..deepseekV3_modulev3.memory_planner import (
     DeepseekV3ModuleV3MemoryPlanner,
 )
-from .model import DeepseekV3Model
-from .model_config import DeepseekV3Config
+from . import weight_adapters
+from .model import DeepseekV3_2Model
+from .model_config import DeepseekV3_2Config
 
-deepseekV3_modulev3_arch = SupportedArchitecture(
-    name="DeepseekV3ForCausalLM_ModuleV3",
+deepseekV3_2_modulev3_arch = SupportedArchitecture(
+    name="DeepseekV32ForCausalLM_ModuleV3",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
-        "deepseek-ai/DeepSeek-V3",
+        "deepseek-ai/DeepSeek-V3.2",
+        "deepseek-ai/DeepSeek-V3.2-Exp",
     ],
-    default_encoding=DeepseekV3Config.DEFAULT_ENCODING,
-    supported_encodings=DeepseekV3Config.SUPPORTED_ENCODINGS,
+    default_encoding=DeepseekV3_2Config.DEFAULT_ENCODING,
+    supported_encodings=DeepseekV3_2Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
-    pipeline_model=DeepseekV3Model,
+    pipeline_model=DeepseekV3_2Model,
+    batching=DeepseekV3ModuleV3BatchProcessor,
     tokenizer=TextTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
     },
+    supports_empty_batches=True,
     requires_max_batch_context_length=True,
-    config=DeepseekV3Config,
-    batching=DeepseekV3ModuleV3BatchProcessor,
-    tool_parser=resolve_deepseekv3_tool_parser,
+    config=DeepseekV3_2Config,
     memory_planner=DeepseekV3ModuleV3MemoryPlanner,
 )

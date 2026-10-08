@@ -44,8 +44,12 @@ _MLA_RAW_PROJECTIONS: frozenset[str] = frozenset(
 
 # Projections backed by ``QuantizedLinear`` (one inner ``weight`` attribute
 # that's itself an :class:`FP8BlockTensor` module).
+# ``wq_b`` / ``wk`` are the V3.2 sparse-attention indexer projections; they
+# never appear in a V3 checkpoint, so listing them here is inert for V3 and
+# lets V3.2 reuse this adapter. ``weights_proj`` is deliberately absent: it
+# stays bf16 even in an FP8 checkpoint.
 _FP8_LINEAR_PROJECTIONS: frozenset[str] = frozenset(
-    {"gate_proj", "up_proj", "down_proj", "o_proj"}
+    {"gate_proj", "up_proj", "down_proj", "o_proj", "wq_b", "wk"}
 )
 
 

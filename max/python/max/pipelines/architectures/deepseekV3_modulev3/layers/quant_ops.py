@@ -1009,8 +1009,13 @@ def grouped_matmul_silu(
     quant_config: QuantConfig | None,
     scales_offset: Tensor | None = None,
     estimated_total_m: Tensor | None = None,
+    accum_dtype: DType | None = None,
 ) -> QuantAwareTensor:
-    """Gate/up grouped matmul + SwiGLU, returning the down-projection input."""
+    """Gate/up grouped matmul + SwiGLU, returning the down-projection input.
+
+    ``accum_dtype`` upcasts the gate/up output before the SwiGLU, which
+    DeepSeek-V3.2 does in float32.
+    """
     # Pre-quantized EP activations carry their own per-expert scale offset;
     # single-device tokens rely on the caller-supplied one.
     offset = (
@@ -1022,6 +1027,10 @@ def grouped_matmul_silu(
         isinstance(tokens, NVFP4Activation)
         and quant_config is not None
         and quant_config.can_use_fused_swiglu
+        # The fused kernel computes the activation internally, so it cannot
+        # carry a float32 gate/up accumulation. ``ExpertParallelMoE``'s weight
+        # layout is gated on the same condition.
+        and accum_dtype is None
     ):
         assert isinstance(gate_up, NVFP4Tensor) and isinstance(
             down, NVFP4Tensor
@@ -1060,7 +1069,13 @@ def grouped_matmul_silu(
     # pre-quantized upstream (EP dispatch); otherwise emit bf16 and let the
     # down matmul quantize.
     prequantized = isinstance(tokens, (FP8BlockTensor, NVFP4Activation))
-    requant_weight = down if prequantized else None
+    # NVFP4's down matmul quantizes from bf16 only, so a float32 SwiGLU output
+    # has to be packed by the fused quantized SiLU instead.
+    requant_weight = (
+        down if prequantized or isinstance(down, NVFP4Tensor) else None
+    )
+    if accum_dtype is not None:
+        gate_up_out = gate_up_out.cast(accum_dtype)
     return grouped_silu(
         gate_up_out,
         expert_start_indices,

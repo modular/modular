@@ -10,84 +10,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Config for GLM-5.1 (GlmMoeDsa) models."""
+"""Config for GLM-5.x (GlmMoeDsa) models, in the ModuleV3 API."""
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
-from typing import Any, ClassVar
+from typing import ClassVar
 
 from max.graph import DeviceRef
-from max.pipelines.architectures.deepseekV3_2.model_config import (
-    DeepseekV3_2Config,
-    resolve_indexer_types,
-)
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
-from max.pipelines.lib.registry import PIPELINE_REGISTRY
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
 )
-from transformers import AutoConfig
 from typing_extensions import Self, override
 
-logger = logging.getLogger("max.pipelines")
-
-
-def glm_unpadded_vocab_size(
-    pipeline_config: PipelineConfig,
-) -> int | None:
-    """Returns the tokenizer's token count, or ``None`` to skip tail masking."""
-    try:
-        tokenizer = PIPELINE_REGISTRY.get_active_tokenizer(
-            pipeline_config.model.huggingface_model_repo
-        )
-    except Exception as e:
-        # Skipping the mask leaves the untrained tail sampleable, so say so
-        # rather than degrading silently.
-        logger.warning(
-            "GLM-5.x: could not read the tokenizer vocab size (%s); the "
-            "padded vocab tail will not be masked.",
-            e,
-        )
-        return None
-
-    return len(tokenizer)
-
-
-def glm_rope_scaling(huggingface_config: AutoConfig) -> dict[str, Any] | None:
-    """Return YaRN rope_scaling for MAX, or None for standard RoPE.
-
-    GLM-5.x repos declare ``rope_parameters`` with ``rope_type: "default"``
-    (standard RoPE). Transformers may mirror that into ``rope_scaling``; MAX
-    DeepSeek-V3.2 paths only accept YaRN or no scaling.
-    """
-    rope_scaling = getattr(huggingface_config, "rope_scaling", None)
-    if rope_scaling is not None:
-        rope_type = rope_scaling.get("rope_type", rope_scaling.get("type"))
-        if rope_type in (None, "default"):
-            return None
-        return rope_scaling
-
-    rope_parameters = getattr(huggingface_config, "rope_parameters", None)
-    if isinstance(rope_parameters, dict):
-        rope_type = rope_parameters.get("rope_type")
-        if rope_type in (None, "default"):
-            return None
-
-    return rope_scaling
+from ..deepseekV3_2_modulev3.model_config import (
+    DeepseekV3_2Config,
+    resolve_indexer_types,
+)
+from ..glm5_1.model_config import glm_rope_scaling, glm_unpadded_vocab_size
 
 
 @dataclass(kw_only=True)
 class Glm5_1Config(DeepseekV3_2Config):
-    """Configuration for GLM-5.1 models.
+    """Configuration for GLM-5.x models (ModuleV3).
 
-    Skeleton alias of :class:`~max.pipelines.architectures.deepseekV3_2.model_config.DeepseekV3_2Config`
-    until GLM-specific bring-up diverges from DeepSeek-V3.2.
+    GLM shares DeepSeek-V3.2's sparse-MLA decoder; it differs in declaring
+    standard RoPE rather than YaRN, and in padding ``lm_head`` past the
+    tokenizer's vocabulary.
     """
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
@@ -137,11 +91,17 @@ class Glm5_1Config(DeepseekV3_2Config):
             cache_dtype=cache_dtype,
         )
 
+        if pipeline_config.runtime.pipeline_role == "prefill_only":
+            graph_mode = "prefill"
+        elif pipeline_config.runtime.pipeline_role == "decode_only":
+            graph_mode = "decode"
+        else:
+            graph_mode = "auto"
+
         return cls(
             dtype=dtype,
             kv_params=kv_params,
             devices=device_refs,
-            use_subgraphs=model_config.use_subgraphs,
             vocab_size=config.vocab_size,
             hidden_size=config.hidden_size,
             intermediate_size=config.intermediate_size,
@@ -175,6 +135,8 @@ class Glm5_1Config(DeepseekV3_2Config):
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
             attention_dropout=config.attention_dropout,
+            graph_mode=graph_mode,
+            data_parallel_degree=model_config.data_parallel_degree,
             index_head_dim=config.index_head_dim,
             index_n_heads=config.index_n_heads,
             index_topk=config.index_topk,
