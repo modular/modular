@@ -1266,23 +1266,13 @@ struct AMD4WaveMatmul[
                 comptime for i in range(len(schedule.kernel)):
                     _bind[schedule.kernel[i]](k)
 
-            # The schedule leaves several buffer_load_lds prefetches in flight
-            # into the LDS double-buffer at the main-loop-to-epilogue boundary,
-            # counting on MMA-cycle latency to hide them before the epilogue's
-            # ds_read. Two cases erase that cushion: split-K launches
-            # grid_dim.z = num_splits extra workgroups so occupancy is high and
-            # per-workgroup latency hiding collapses, and K_per_split == 2*BK
-            # leaves no main loop so the prologue's partial drain runs straight
-            # into the epilogue with prefetches still in flight. Either way the
-            # epilogue can read LDS slots before the writes land, corrupting a
-            # few ULPs as run-to-run non-determinism. Drain VMEM and LDS once
-            # here; the num_splits == 1 loop case keeps the cushion and compiles
-            # this away.
-            comptime _num_K_iters_static = K_per_split // (2 * BK)
-            comptime if _num_K_iters_static == 1 or num_splits > 1:
-                s_waitcnt[vmcnt=UInt32(0)]()
-                s_waitcnt[lgkmcnt=UInt32(0)]()
-                s_barrier()
+            # All 4 warps write the LDS tiles that the epilogue reads. The
+            # schedule puts a barrier after the epilogue reads, not before.
+            # Drain VMEM and LDS and sync all warps here, so that all writes
+            # are complete before a warp reads a tile.
+            s_waitcnt[vmcnt=UInt32(0)]()
+            s_waitcnt[lgkmcnt=UInt32(0)]()
+            s_barrier()
 
             # Epilogue.
             comptime for i in range(len(schedule.epilogue)):
@@ -1873,27 +1863,16 @@ struct AMD4WaveMatmul[
             comptime for i in range(len(schedule.prologue)):
                 _bind[schedule.prologue[i]](0)
 
-            # See the matching block in `run()` for the full rationale.
-            # When `K_per_split == 2*BK` the main loop runs zero times
-            # and the framework epilogue starts immediately after the
-            # prologue's `partial_prologue_drain`, with 6 prefetches
-            # still in flight. The first epilogue block's `ds_read`
-            # races with those `buffer_load_lds → LDS` writes (which
-            # the per-block `wait_vm[0]` only drains AFTER the
-            # frag-load issues). Mirror the handwritten body's
-            # top-of-iter sync to drain everything before the
-            # epilogue's first `ds_read` fires.
-            comptime _num_K_iters_static = K_per_split // (2 * BK)
-            comptime if _num_K_iters_static == 1:
-                s_waitcnt[vmcnt=UInt32(0)]()
-                s_waitcnt[lgkmcnt=UInt32(0)]()
-                s_barrier()
-
             # Main loop: step 2*BK because each schedule iter unrolls 2
             # source K-iters (matches ping-pong's stepping).
             for k in range(BK * 2, K_per_split, BK * 2):
                 comptime for i in range(len(schedule.kernel)):
                     _bind[schedule.kernel[i]](k)
+
+            # See the matching drain in run().
+            s_waitcnt[vmcnt=UInt32(0)]()
+            s_waitcnt[lgkmcnt=UInt32(0)]()
+            s_barrier()
 
             # Epilogue.
             comptime for i in range(len(schedule.epilogue)):

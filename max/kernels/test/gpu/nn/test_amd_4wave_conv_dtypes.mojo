@@ -29,16 +29,11 @@ Shape regimes (each dtype runs all eight):
   - 3×3 N=2 (batched M = N*H*W decomposition).
   - 3×3 C_in=384 K-padded (large K-pad alignment).
 
-The FP8 1×1 case (K_padded == 2*BK == 256 → single outer K-iter)
-historically hit a kernel-scheduling corner: the framework-scheduled
-body's per-block emit issues frag-loads BEFORE the per-block
-`wait_vm[0]`, so when the main loop runs zero times the first
-epilogue block's `ds_read` raced with the prologue's still-in-flight
-`buffer_load_lds → LDS` writes. The kernel now emits a
-`wait_vm(0) + wait_lgkm(0) + s_barrier` drain between prologue and
-main loop when `num_K_iters_static == 1`, mirroring the handwritten
-body's top-of-iter sync — both BM=64 and BM=128 are correct at this
-corner.
+The FP8 1×1 case (K_padded == 2*BK == 256) has no main loop. Before,
+the first epilogue `ds_read` could read LDS before the prologue's
+`buffer_load_lds` writes were complete. Now the kernel drains
+(`wait_vm(0) + wait_lgkm(0) + s_barrier`) before the epilogue for all
+shapes. Thus BM=64 and BM=128 are correct for this case.
 """
 
 from max.gpu.host import DeviceContext
