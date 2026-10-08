@@ -387,6 +387,11 @@ def format_gpu_statistics_title(n_devices: int) -> str:
     return f"GPU Statistics (aggregated across {n_devices} {device_label})"
 
 
+def gpu_utilization_group_label(group: str) -> str:
+    """GPU statistics row label for one group's utilization."""
+    return f"GPU utilization, {group} (%)"
+
+
 def format_percentile_table(rows: Sequence[PercentileRow]) -> str:
     """Render per-metric percentile stats as one table, one row per metric."""
     headers = ["Metric", "Mean", "Std", "P50", "P90", "P95", "P99"]
@@ -669,6 +674,17 @@ def print_benchmark_summary(
             )
             if values
         ]
+        # The mean across roles hides which disaggregated engine is
+        # saturated; generate-github-summary.py reads these rows into the
+        # triage line.
+        gpu_rows.extend(
+            PercentileRow(
+                gpu_utilization_group_label(group),
+                StandardPercentileMetrics([float(v) for v in values], unit="%"),
+            )
+            for group, values in gpu.gpu_utilization_by_group.items()
+            if values
+        )
         if gpu_rows:
             n_devices = max(
                 len(gpu.peak_gpu_memory_mib),

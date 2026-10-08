@@ -52,6 +52,38 @@ def test_make_gpu_recorder_host_selects_dcgm(
 
 @patch("max.profiler.gpu.BackgroundRecorder")
 @patch("max.benchmark.benchmark_serving.DCGMBackgroundRecorder")
+@patch("max.benchmark.benchmark_serving.PrometheusGPURecorder")
+def test_make_gpu_recorder_prometheus_wins_over_dcgm(
+    mock_prometheus: MagicMock, mock_dcgm: MagicMock, mock_local: MagicMock
+) -> None:
+    """Prometheus narrows to the engine's GPUs, so it outranks a DCGM host."""
+    recorder = _make_gpu_recorder(
+        collect_gpu_stats=True,
+        gpu_metrics_host="10.0.0.5",
+        gpu_metrics_prometheus_url="http://prom:9090",
+        gpu_metrics_selector='namespace="bench"',
+    )
+
+    mock_prometheus.assert_called_once_with(
+        "http://prom:9090", 'namespace="bench"'
+    )
+    mock_dcgm.assert_not_called()
+    mock_local.assert_not_called()
+    assert recorder is mock_prometheus.return_value
+
+
+def test_make_gpu_recorder_prometheus_requires_a_selector() -> None:
+    """Without a selector the mean would span every GPU Prometheus scrapes."""
+    with pytest.raises(ValueError, match="selector"):
+        _make_gpu_recorder(
+            collect_gpu_stats=True,
+            gpu_metrics_host="",
+            gpu_metrics_prometheus_url="http://prom:9090",
+        )
+
+
+@patch("max.profiler.gpu.BackgroundRecorder")
+@patch("max.benchmark.benchmark_serving.DCGMBackgroundRecorder")
 def test_make_gpu_recorder_empty_host_selects_local(
     mock_dcgm: MagicMock, mock_local: MagicMock
 ) -> None:

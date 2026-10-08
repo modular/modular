@@ -79,6 +79,9 @@ from max.benchmark.benchmark_shared.datasets.types import (
     RequestSamples,
     Samples,
 )
+from max.benchmark.benchmark_shared.gpu_metrics_prometheus import (
+    PrometheusGPURecorder,
+)
 from max.benchmark.benchmark_shared.gpu_metrics_scraper import (
     DCGMBackgroundRecorder,
     GPUStatsSnapshot,
@@ -180,27 +183,43 @@ def _expand_pids(pids: list[int]) -> list[int]:
 
 
 def _make_gpu_recorder(
-    *, collect_gpu_stats: bool, gpu_metrics_host: str
+    *,
+    collect_gpu_stats: bool,
+    gpu_metrics_host: str,
+    gpu_metrics_prometheus_url: str = "",
+    gpu_metrics_selector: str = "",
 ) -> GpuStatsRecorder | None:
     """Choose the GPU-stats recorder for this run, or None to disable it.
 
-    ``gpu_metrics_host`` is a source selector, not an additive toggle: a
-    non-empty value means the load generator runs off the accelerator node (a
-    disaggregated Mammoth bench pod) with no local engine GPUs, so stats must
-    come from the engine nodes' DCGM exporter(s) rather than local NVML.
-    Running both would double-count and destabilize the device set
-    :func:`_aggregate_gpu_stats` aggregates over. Returned un-entered; the
+    The remote sources are source selectors, not additive toggles: either one
+    means the load generator runs off the accelerator node (a disaggregated
+    Mammoth bench pod) with no local engine GPUs, so stats must come from the
+    engine nodes rather than local NVML. Prometheus wins over a direct DCGM
+    scrape because its pod labels narrow the device set to the engine's own
+    GPUs. Running more than one would double-count and destabilize the device
+    set :func:`_aggregate_gpu_stats` aggregates over. Returned un-entered; the
     caller is responsible for entering it as a context manager.
 
     Args:
         collect_gpu_stats: Whether GPU-stats collection is enabled at all.
         gpu_metrics_host: Remote DCGM endpoint(s); empty selects local NVML.
+        gpu_metrics_prometheus_url: Prometheus that scrapes the engine's DCGM
+            exporter; takes precedence over ``gpu_metrics_host``.
+        gpu_metrics_selector: Label matchers for the engine's GPUs in that
+            Prometheus.
 
     Returns:
         A recorder to sample GPU stats, or None when disabled/unavailable.
+
+    Raises:
+        ValueError: If a Prometheus URL is given without a selector.
     """
     if not collect_gpu_stats:
         return None
+    if gpu_metrics_prometheus_url:
+        return PrometheusGPURecorder(
+            gpu_metrics_prometheus_url, gpu_metrics_selector
+        )
     if gpu_metrics_host:
         return DCGMBackgroundRecorder(gpu_metrics_host)
     try:
@@ -622,6 +641,8 @@ async def benchmark(
         gpu_recorder = _make_gpu_recorder(
             collect_gpu_stats=args.collect_gpu_stats,
             gpu_metrics_host=args.gpu_metrics_host,
+            gpu_metrics_prometheus_url=args.gpu_metrics_prometheus_url,
+            gpu_metrics_selector=args.gpu_metrics_selector,
         )
         if gpu_recorder is not None:
             gpu_recorder = benchmark_stack.enter_context(gpu_recorder)
@@ -853,8 +874,11 @@ async def benchmark(
         )
 
     gpu_metrics: list[GPUStatsSnapshot] | None = None
+    gpu_device_groups: dict[str, str] = {}
     if args.collect_gpu_stats and gpu_recorder is not None:
         gpu_metrics = gpu_recorder.stats
+        if isinstance(gpu_recorder, PrometheusGPURecorder):
+            gpu_device_groups = gpu_recorder.device_groups
 
     cpu_metrics_result: CPUMetrics | None = None
     if cpu_collector is not None:
@@ -886,6 +910,7 @@ async def benchmark(
             max_concurrency=max_concurrency,
             collect_gpu_stats=args.collect_gpu_stats,
             metrics_by_endpoint=endpoint_metrics,
+            gpu_device_groups=gpu_device_groups,
         )
     else:
         text_result = build_text_generation_result(
@@ -903,6 +928,7 @@ async def benchmark(
             spec_decode_stats=spec_decode_stats,
             kv_block_size=args.kv_block_size,
             record_request_text=args.record_request_text,
+            gpu_device_groups=gpu_device_groups,
         )
         if outputs_by_session is not None:
             text_result.session_server_stats = {

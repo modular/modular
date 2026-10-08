@@ -897,6 +897,12 @@ class BenchmarkResult(BaseModel):
     peak_gpu_memory_mib: list[float] = Field(default_factory=list)
     available_gpu_memory_mib: list[float] = Field(default_factory=list)
     gpu_utilization: list[float] = Field(default_factory=list)
+    # Per-device utilization split by group (a disaggregated engine's role,
+    # with a node suffix when the role spans nodes); empty when the GPU
+    # source can't tell the devices apart.
+    gpu_utilization_by_group: dict[str, list[float]] = Field(
+        default_factory=dict
+    )
     cpu_metrics: CPUMetrics | None = None
     metrics_by_endpoint: Mapping[str, ParsedMetrics] = Field(
         default_factory=dict
@@ -1114,6 +1120,8 @@ class BenchmarkResult(BaseModel):
             "available_gpu_memory_mib": self.available_gpu_memory_mib,
             "gpu_utilization": self.gpu_utilization,
         }
+        if self.gpu_utilization_by_group:
+            d["gpu_utilization_by_group"] = self.gpu_utilization_by_group
         if self.cpu_metrics is not None:
             d["cpu_metrics"] = dataclasses.asdict(self.cpu_metrics)
         if self.metrics_by_endpoint:
@@ -1254,6 +1262,7 @@ def build_result_groups(result: BenchmarkResult) -> BenchmarkResultGroups:
             peak_gpu_memory_mib=result.peak_gpu_memory_mib,
             available_gpu_memory_mib=result.available_gpu_memory_mib,
             gpu_utilization=result.gpu_utilization,
+            gpu_utilization_by_group=result.gpu_utilization_by_group,
         )
         if (
             result.peak_gpu_memory_mib

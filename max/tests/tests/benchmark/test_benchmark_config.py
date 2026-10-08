@@ -671,6 +671,30 @@ def test_workload_yaml_spellings_agree(
 # ===----------------------------------------------------------------------=== #
 
 
+class TestGpuMetricsPrometheus:
+    """A Prometheus GPU source needs a selector, checked at parse time."""
+
+    def test_url_without_selector_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="requires --gpu-metrics-selector"):
+            ServingBenchmarkConfig(
+                gpu_metrics_prometheus_url="http://prom:9090"
+            )
+
+    def test_blank_selector_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="requires --gpu-metrics-selector"):
+            ServingBenchmarkConfig(
+                gpu_metrics_prometheus_url="http://prom:9090",
+                gpu_metrics_selector="  ",
+            )
+
+    def test_url_with_selector_is_accepted(self) -> None:
+        config = ServingBenchmarkConfig(
+            gpu_metrics_prometheus_url="http://prom:9090",
+            gpu_metrics_selector='namespace="bench"',
+        )
+        assert config.gpu_metrics_selector == 'namespace="bench"'
+
+
 class TestImageFlags:
     """--image-fraction is mutually exclusive with --random-image-*."""
 

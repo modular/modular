@@ -189,6 +189,7 @@ def _gpu_benchmark_result(
     tool_call_response_rate: float | None = None,
     image_request_rate: float | None = None,
     lora_request_rate: float | None = None,
+    gpu_utilization_by_group: dict[str, list[float]] | None = None,
 ) -> BenchmarkResult:
     return BenchmarkResult(
         task_type="text",
@@ -196,6 +197,7 @@ def _gpu_benchmark_result(
         peak_gpu_memory_mib=[40000.0, 40500.0],
         available_gpu_memory_mib=[39000.0, 38500.0],
         gpu_utilization=[95.0, 97.0],
+        gpu_utilization_by_group=gpu_utilization_by_group or {},
         text_data=TextGenAggregates(
             duration=60.0,
             completed=100,
@@ -286,6 +288,31 @@ def test_print_benchmark_summary_tabulates_gpu_stats(
     )
     assert util is not None
     assert float(util.group(1).strip()) == 96.0
+    assert "GPU utilization, prefill" not in out
+
+
+def test_print_benchmark_summary_splits_gpu_utilization_by_role(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A disaggregated run adds one utilization row per role and node."""
+    print_benchmark_summary(
+        metrics=_gpu_benchmark_result(
+            gpu_utilization_by_group={
+                "prefill": [95.0],
+                "decode node 1": [97.0],
+            }
+        ),
+        request_rate=float("inf"),
+        max_concurrency=8,
+        achieved_request_rate=1.66,
+        collect_gpu_stats=True,
+        collect_cpu_stats=False,
+    )
+    out = capsys.readouterr().out
+    for label, mean in (("prefill", 95.0), ("decode node 1", 97.0)):
+        row = re.search(rf"│\s*GPU utilization, {label} \(%\)\s*│([^│]+)│", out)
+        assert row is not None, label
+        assert float(row.group(1).strip()) == mean
 
 
 def _make_request(

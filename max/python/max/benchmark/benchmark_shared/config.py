@@ -1033,14 +1033,41 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Control Flags"},
     )
 
+    gpu_metrics_prometheus_url: str = Field(
+        default="",
+        description=(
+            "Base URL of a Prometheus that scrapes the engine nodes' DCGM "
+            "exporter with Kubernetes pod mapping (e.g. "
+            "'http://kps-prometheus.kube-prometheus-stack.svc:9090'). When "
+            "set with --gpu-metrics-selector, --collect-gpu-stats reports "
+            "each GPU's aggregates over the measured window from Prometheus, "
+            "ahead of --gpu-metrics-host and local NVML."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    gpu_metrics_selector: str = Field(
+        default="",
+        description=(
+            "PromQL label matchers, without braces, that select the engine's "
+            "GPUs in --gpu-metrics-prometheus-url (e.g. "
+            '\'namespace="bench",pod=~"engine-.*"\'). Required with '
+            "--gpu-metrics-prometheus-url, so idle GPUs elsewhere stay out "
+            "of the mean."
+        ),
+        json_schema_extra={"group": "Control Flags"},
+    )
+
     gpu_metrics_host: str = Field(
         default="",
         description=(
             "DCGM-exporter host, 'host:port', or full URL to scrape GPU "
             "utilization from when the benchmark runs off the accelerator "
-            "node (e.g. a disaggregated Mammoth deployment). When set, "
+            "node and no Prometheus scrapes it (Mammoth uses "
+            "--gpu-metrics-prometheus-url instead). When set, "
             "--collect-gpu-stats reads this remote endpoint instead of local "
-            "NVML. A bare host expands to 'http://<host>:9400/metrics'. "
+            "NVML; --gpu-metrics-prometheus-url takes precedence. A bare host "
+            "expands to 'http://<host>:9400/metrics'. "
             "Accepts a comma-separated list of endpoints (one exporter pod "
             "per accelerator node) for multi-node engines; every endpoint is "
             "scraped each interval and merged into one snapshot."
@@ -1259,6 +1286,22 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
                 "--warmup-delay-estimated-ttft-ms /"
                 " --warmup-delay-estimated-tpot-ms require"
                 " --warmup-delay-biased to be set."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _check_gpu_metrics_selector(self) -> ServingBenchmarkConfig:
+        """A Prometheus source needs a selector, or the mean spans the cluster.
+
+        Checked at parse time so a missing selector fails before warmup
+        rather than after it.
+        """
+        if (
+            self.gpu_metrics_prometheus_url
+            and not self.gpu_metrics_selector.strip()
+        ):
+            raise ValueError(
+                "--gpu-metrics-prometheus-url requires --gpu-metrics-selector."
             )
         return self
 

@@ -15,18 +15,18 @@
 
 Off the accelerator node (e.g. a disaggregated Mammoth bench pod), local NVML
 sees none of the engine's GPUs. The engine nodes' ``nvidia-dcgm-exporter`` does,
-and the driver passes its endpoints to the bench pod as ``GPU_METRICS_HOST``.
-This turns those endpoints into the same ``list[GPUStatsSnapshot]`` the local
-recorder produces, so downstream aggregation, printing, JSON, and CSV are
-unchanged.
+and a ``--gpu-metrics-host`` caller passes its endpoints (the Mammoth driver
+reads Prometheus instead; see ``gpu_metrics_prometheus``). This turns them
+into the same ``list[GPUStatsSnapshot]`` the local recorder produces, so
+downstream aggregation, printing, JSON, and CSV are unchanged.
 
 Multi-node caveat: the exporter runs one pod per accelerator node, so a
 multi-node engine has several. Scraping a single Service ClusterIP would
-load-balance to one backing pod, so ``GPU_METRICS_HOST`` carries every ready
+load-balance to one backing pod, so ``--gpu-metrics-host`` takes every
 endpoint (comma-separated) and :class:`DCGMBackgroundRecorder` scrapes them all
 each interval, merging their snapshots into one by the union of device keys.
-:func:`_gpu_key` qualifies each key by ``Hostname``, so keys stay unique per
-node and endpoints never clobber each other. A single endpoint failing an
+:func:`_gpu_key` keys each device by its DCGM ``UUID``, so keys stay unique
+across nodes and survive an exporter restart. A single endpoint failing an
 interval is logged and skipped; the rest of that sample still lands.
 """
 
@@ -52,7 +52,7 @@ from .prometheus_fetch import fetch_metrics
 logger = logging.getLogger(__name__)
 
 GPUDeviceKey: TypeAlias = str
-"""Stable per-GPU key: ``"<Hostname>:gpu<N>"``, else ``UUID``, else ``"gpu<N>"``.
+"""Stable per-GPU key: the device ``UUID``, else a host-and-index fallback.
 
 An alias of ``str`` (not a ``NewType``) so snapshots stay interchangeable with
 the local NVML recorder's ``dict[str, GPUStats]`` the same aggregation consumes.
@@ -73,8 +73,8 @@ _FB_FREE = "DCGM_FI_DEV_FB_FREE"
 _GPU_UTIL = "DCGM_FI_DEV_GPU_UTIL"
 _MEM_COPY_UTIL = "DCGM_FI_DEV_MEM_COPY_UTIL"
 
-# Host labels tried in order; preferred over ``UUID`` for keys as they read
-# better in logs and are present even when the exporter omits device UUIDs.
+# Host labels tried in order, for the fallback key when an exporter omits
+# device UUIDs.
 _HOSTNAME_LABELS = ("Hostname", "instance")
 
 
@@ -82,7 +82,8 @@ def dcgm_metrics_url(host: str) -> str:
     """Return the Prometheus scrape URL for a DCGM-exporter ``host``.
 
     A bare host or ``host:port`` is expanded to ``http://<host>:9400/metrics``;
-    anything already carrying a scheme is used verbatim.
+    anything already carrying a scheme is used verbatim. A port that is not a
+    valid number falls back to :data:`DCGM_METRICS_PORT` with a warning.
 
     Args:
         host: DCGM-exporter host, ``host:port``, or full URL.
@@ -101,15 +102,27 @@ def dcgm_metrics_url(host: str) -> str:
     hostname = parsed.hostname or host
     if ":" in hostname:
         hostname = f"[{hostname}]"
-    port = parsed.port or DCGM_METRICS_PORT
+    try:
+        port = parsed.port or DCGM_METRICS_PORT
+    except ValueError:
+        # ``parsed.port`` raises on a non-numeric or out-of-range port. Every
+        # other failure on this path is soft -- no exporter disables the
+        # feature, a failed scrape is logged and skipped -- so a typo in
+        # ``--gpu-metrics-host`` shouldn't be the one thing that aborts a run.
+        logger.warning(
+            "Malformed port in GPU metrics host %r; scraping port %d instead",
+            host,
+            DCGM_METRICS_PORT,
+        )
+        port = DCGM_METRICS_PORT
     return f"http://{hostname}:{port}/metrics"
 
 
 def _dcgm_metrics_urls(hosts: str | Sequence[str]) -> list[str]:
     """Expand one or many DCGM-exporter hosts into distinct scrape URLs.
 
-    ``hosts`` is either a comma-separated string (the ``GPU_METRICS_HOST``
-    wire format the driver emits, one entry per exporter pod) or an already
+    ``hosts`` is either a comma-separated string (the ``--gpu-metrics-host``
+    form, one entry per exporter pod) or an already
     split sequence. Blank entries are dropped and duplicates are removed while
     preserving order, so a single host and a multi-node list share one path.
 
@@ -132,7 +145,16 @@ def _dcgm_metrics_urls(hosts: str | Sequence[str]) -> list[str]:
 
 
 def _gpu_key(labels: dict[str, str]) -> GPUDeviceKey:
-    """Build a stable per-GPU key from a DCGM sample's labels."""
+    """Build a stable per-GPU key from a DCGM sample's labels.
+
+    ``UUID`` names the physical device, so it survives an exporter restart.
+    ``Hostname`` on a DaemonSet pod is the pod name, which a restart changes:
+    keying on it would split one GPU's series into two entries, inflating both
+    the device count and the mean. Host labels are only the fallback for an
+    exporter that omits UUIDs.
+    """
+    if uuid := labels.get("UUID"):
+        return uuid
     gpu = labels.get("gpu")
     hostname = next(
         (labels[label] for label in _HOSTNAME_LABELS if labels.get(label)),
@@ -140,8 +162,6 @@ def _gpu_key(labels: dict[str, str]) -> GPUDeviceKey:
     )
     if hostname and gpu is not None:
         return f"{hostname}:gpu{gpu}"
-    if uuid := labels.get("UUID"):
-        return uuid
     if gpu is not None:
         return f"gpu{gpu}"
     # No device label: bucket under one key so the sample stays visible.
@@ -257,9 +277,20 @@ class DCGMBackgroundRecorder(GpuStatsRecorder):
 
     def _sample(self) -> GPUStatsSnapshot:
         merged: GPUStatsSnapshot = {}
-        for url in self._urls:
+        for index, url in enumerate(self._urls):
+            # Endpoints are scraped serially, so on shutdown the ones not yet
+            # reached would each add a timeout to the join in __exit__. The
+            # first is scraped unconditionally, so a sweep that races
+            # shutdown still contributes a sample rather than nothing.
+            if index and self._stop.is_set():
+                break
             try:
                 raw_text = fetch_metrics(url, timeout_s=self._timeout_s)
+                # Parsing sits inside the try so a malformed payload costs the
+                # same as an unreachable endpoint. Escaping here would kill
+                # the sampling thread, and collection would end silently for
+                # the rest of the run.
+                snapshot = parse_dcgm_metrics(raw_text)
             except Exception as exc:
                 # Tolerate one endpoint failing: costs its slice of a sample,
                 # not the whole interval and not the run.
@@ -267,16 +298,19 @@ class DCGMBackgroundRecorder(GpuStatsRecorder):
                     "Failed to collect DCGM metrics from %s: %s", url, exc
                 )
                 continue
-            # _gpu_key qualifies by Hostname, so keys from different exporter
+            # _gpu_key keys by device UUID, so keys from different exporter
             # pods are unique and a later endpoint can't clobber an earlier's.
-            merged.update(parse_dcgm_metrics(raw_text))
+            merged.update(snapshot)
         return merged
 
     def _run(self) -> None:
+        # Held locally so a worker that outlives __exit__'s join keeps writing
+        # to this list, not to the frozen copy __exit__ hands the caller.
+        stats = self._stats
         while True:
             snapshot = self._sample()
             if snapshot:
-                self._stats.append(snapshot)
+                stats.append(snapshot)
             # ``wait`` returns True once stopped, for prompt shutdown.
             if self._stop.wait(self._interval):
                 return
@@ -298,5 +332,20 @@ class DCGMBackgroundRecorder(GpuStatsRecorder):
     ) -> None:
         self._stop.set()
         if self._thread is not None:
-            self._thread.join(timeout=self._timeout_s + self._interval + 1.0)
+            # _sample checks the stop event only between endpoints, so budget
+            # the serial sweep rather than one endpoint's nominal wait.
+            self._thread.join(
+                timeout=self._timeout_s * max(1, len(self._urls))
+                + self._interval
+                + 1.0
+            )
+            # A request timeout bounds socket inactivity, not a whole
+            # response, so a slow exporter can outlast any budget. Freeze what
+            # the caller reads rather than trust the join.
+            if self._thread.is_alive():
+                logger.warning(
+                    "DCGM recorder still scraping at shutdown; its last sample"
+                    " is dropped"
+                )
+            self._stats = list(self._stats)
             self._thread = None
