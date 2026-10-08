@@ -53,27 +53,9 @@ from .transforms import HadamardTransform
 
 
 def exclusive_prefix_sum(x: TensorValue) -> TensorValue:
-    """Returns ``[0, x[0], x[0] + x[1], ...]``, one entry longer than ``x``.
-
-    A masked row sum rather than :func:`~max.graph.ops.cumsum`, which has no
-    GPU kernel (KERN-1095) and so runs the scan on the host. The host round
-    trip that reaches it lowers to a device-to-host copy plus an ``mgp.sync``,
-    and a blocking sync cannot be recorded into a captured device graph, which
-    takes capture off the table for the whole model.
-
-    ``x`` holds one entry per request, so the ``[n + 1, n]`` selection mask
-    this materializes is batch-sized rather than token-sized.
-    """
-    n = x.shape[0]
-    device = x.device
-    rows = ops.range(
-        0, n + 1, 1, out_dim=n + 1, dtype=DType.int64, device=device
-    )
-    cols = ops.range(0, n, 1, out_dim=n, dtype=DType.int64, device=device)
-    below = ops.unsqueeze(cols, 0) < ops.unsqueeze(rows, -1)
-    return ops.squeeze(
-        ops.sum(ops.where(below, ops.unsqueeze(x, 0), 0), axis=-1), -1
-    )
+    """Returns ``[0, x[0], x[0] + x[1], ...]``, one entry longer than ``x``."""
+    zero = ops.constant(0, x.dtype, device=x.device).reshape([1])
+    return ops.concat([zero, ops.cumsum(x, axis=0)], axis=0)
 
 
 def act_quant(

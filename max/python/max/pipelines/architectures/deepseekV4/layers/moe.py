@@ -459,9 +459,6 @@ class DeepseekV4RoutedExperts(Module):
         # group's scale offset.
         counts = start[1 : groups + 1] - start[0:groups]
         aligned_counts = (counts + (SF_ROWS - 1)) // SF_ROWS * SF_ROWS
-        # Kept on device, as are the row maps below: ops.cumsum/ops.scatter
-        # run on the host, and those round trips beside the tokens broadcast
-        # closed a 2-GPU deadlock.
         aligned_start = count_offsets(aligned_counts)
         scale_offsets = ops.cast(
             aligned_start[0:groups] // SF_ROWS - start[0:groups] // SF_ROWS,
@@ -476,7 +473,9 @@ class DeepseekV4RoutedExperts(Module):
         # aligned_start[g]) when that is below start[g + 1]; the rest of the
         # tile is never multiplied into a stored row, so any slot's scales
         # do. Rows past aligned_start[groups] are in no group; clamped to the
-        # last one they fail the same test.
+        # last one they fail the same test. The row maps are a
+        # compare-and-reduce rather than ops.scatter, which runs on the host:
+        # those round trips beside the tokens broadcast deadlocked 2 GPUs.
         row_group, row_ids = segment_ids(aligned_start, padded, device)
         row_group = ops.min(row_group, groups - 1)
         in_group = row_ids - ops.gather(aligned_start, row_group, axis=0)

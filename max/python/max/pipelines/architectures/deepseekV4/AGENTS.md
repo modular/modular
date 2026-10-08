@@ -35,8 +35,8 @@ numbers below refer to `ISSUES.md` / `DECISIONS.md` there).
   captured (it also closed a 2-GPU collective deadlock, DRIV-462). The one
   size a ragged batch derives from its lengths, the per-ratio window count,
   arrives as the length of a host input (`layers/ragged.py`
-  `window_count`). Ops without a GPU kernel (`ops.cumsum`, `ops.scatter`,
-  `ops.tile`) round-trip through the host implicitly; keep them out.
+  `window_count`). Ops without a GPU kernel (`ops.scatter`, `ops.tile`)
+  round-trip through the host implicitly; keep them out.
 - **A compressed zone is a `slots_per_page = page_size // ratio` leaf written
   by the stock ragged store with `cache_lengths // ratio`** (the kernel takes
   the page size from the buffer's static slot dim). Each chunk stores

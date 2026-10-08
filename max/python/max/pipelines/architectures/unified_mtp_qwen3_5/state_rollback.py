@@ -124,23 +124,10 @@ def accepted_row_plan(
     starts = ops.rebind(merged_offsets.cast(DType.int64)[:-1], ["batch_size"])
     accepted = accepted_lengths(merged_offsets, num_accepted, num_draft_tokens)
 
-    # ``ops.cumsum`` is CPU-only, and a device-to-host hop here would stall
-    # the stream every step; the batch is small enough that a triangular sum
-    # is cheaper than the sync.
-    batch_pos = ops.range(
-        start=0,
-        stop=Dim("batch_size"),
-        out_dim=Dim("batch_size"),
-        device=device,
-        dtype=DType.int64,
-    )
-    lower = (ops.unsqueeze(batch_pos, -1) >= ops.unsqueeze(batch_pos, 0)).cast(
-        DType.int64
-    )
     replay_offsets = ops.concat(
         [
             ops.constant(0, DType.int64, device=device).reshape([1]),
-            ops.sum(lower * ops.unsqueeze(accepted, 0), axis=-1).reshape([-1]),
+            ops.cumsum(accepted, axis=0),
         ],
         axis=0,
     )

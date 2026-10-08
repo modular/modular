@@ -33,9 +33,9 @@ length of a graph input (:func:`window_count`) rather than being read back
 from the device: a read-back would sync every forward and rule out device
 graph capture.
 
-There is no ``cumsum`` or ``repeat_interleave`` on the GPU (KERN-1095), so
-prefix sums and segment ids are written as compare-and-reduce over ``[n, b]``
-masks, which for serving batch sizes is nothing.
+Segment ids are a compare-and-reduce over an ``[n, b]`` mask rather than a
+scatter or ``repeat_interleave``, neither of which has a GPU kernel; for
+serving batch sizes the mask is nothing.
 """
 
 from __future__ import annotations
@@ -89,13 +89,8 @@ def arange_to(
 
 def count_offsets(counts: TensorValue) -> TensorValue:
     """Exclusive prefix sums: ``[b]`` int32 counts -> ``[b + 1]`` int32."""
-    device = counts.device
-    b = counts.shape[0]
-    rows = arange_to(b + 1, b + 1, device)
-    cols = arange_to(b, b, device)
-    mask = ops.reshape(cols, [1, b]) < ops.reshape(rows, [b + 1, 1])
-    contrib = ops.where(mask, ops.reshape(counts, [1, b]), scalar(0, device))
-    return ops.squeeze(ops.sum(contrib, axis=-1), axis=-1)
+    zero = ops.reshape(scalar(0, counts.device), [1])
+    return ops.concat([zero, ops.cumsum(counts, axis=0)], axis=0)
 
 
 def segment_ids(
