@@ -42,6 +42,7 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 
@@ -135,7 +136,8 @@ class _Mean:
         """A mean over unevenly sharded rows divides by the global count."""
         t_np = np.arange(10, dtype=np.float32).reshape(5, 2)
         t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
-        result = mean(t, axis=0)
+        with auto_reshard(mode="silent"):
+            result = mean(t, axis=0)
         expected = t_np.mean(axis=0, keepdims=True)
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
 
@@ -191,7 +193,8 @@ class _Cumsum:
         """A prefix sum over the sharded axis continues across shards."""
         t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
         t = transfer_to(Tensor(t_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
-        result = cumsum(t, axis=0)
+        with auto_reshard(mode="silent"):
+            result = cumsum(t, axis=0)
         np.testing.assert_allclose(
             result.to_numpy(), np.cumsum(t_np, axis=0), rtol=1e-5
         )

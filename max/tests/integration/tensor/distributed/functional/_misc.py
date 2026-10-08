@@ -41,6 +41,7 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
@@ -252,7 +253,8 @@ class _PoolingPartial:
         """max_pool2d is non-linear — Partial auto-reduced."""
         x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
         x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
-        result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
+        with auto_reshard(mode="silent"):
+            result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
         assert not any(isinstance(p, Partial) for p in result.placements)
 
 

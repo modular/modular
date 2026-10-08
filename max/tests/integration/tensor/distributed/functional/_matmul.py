@@ -45,6 +45,7 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 
@@ -497,7 +498,8 @@ class _LayerNorm:
         b = transfer_to(
             Tensor(b_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
-        result = layer_norm(x, w, b, epsilon=1e-5)
+        with auto_reshard(mode="silent"):
+            result = layer_norm(x, w, b, epsilon=1e-5)
         assert result.placements == (Replicated(),)
 
         # Verify numerics: the result should match layer_norm on the

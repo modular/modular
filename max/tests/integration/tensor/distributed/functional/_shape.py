@@ -67,6 +67,7 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 
@@ -963,7 +964,8 @@ class _Where:
         )
         x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         y = transfer_to(Tensor(y_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
-        result = where(cond, x, y)
+        with auto_reshard(mode="silent"):
+            result = where(cond, x, y)
         assert result.placements == (Sharded(0),)
         assert tuple(result.shape) == (4, 2)
         np.testing.assert_allclose(

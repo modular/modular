@@ -48,6 +48,7 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 
@@ -85,7 +86,8 @@ class _UnaryNonlinear:
     def test_relu_partial_auto_reduces(self) -> None:
         arr = np.array([[1.0, -2.0], [3.0, -4.0]], dtype=np.float32)
         t = self.partial_fn(arr, self.MESH_1D, (Partial(),))
-        result = relu(t)
+        with auto_reshard(mode="silent"):
+            result = relu(t)
         # Non-linear op auto-reduces Partial -> Replicated, then applies relu.
         assert result.placements == (Replicated(),)
         expected = np.maximum(arr * 4, 0.0)
@@ -95,7 +97,8 @@ class _UnaryNonlinear:
         arr = np.ones((2, 2), dtype=np.float32)
         t = self.partial_fn(arr, self.MESH_1D, (Partial(),))
         # auto_reduce_partial is now a no-op; transfer_to is deterministic.
-        result = relu(t)
+        with auto_reshard(mode="silent"):
+            result = relu(t)
         assert result.placements == (Replicated(),)
 
 
@@ -195,7 +198,8 @@ class _BinaryNonlinear:
         b = np.full((4, 8), 3.0, dtype=np.float32)
         ta = self.partial_fn(a, self.MESH_1D, (Partial(),))
         tb = self.partial_fn(b, self.MESH_1D, (Partial(),))
-        result = mul(ta, tb)
+        with auto_reshard(mode="silent"):
+            result = mul(ta, tb)
         assert result.placements == (Partial(),)
         expected = (a * 4) * (b * 4)
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
@@ -265,7 +269,8 @@ class _BinaryLinear:
         tb = transfer_to(
             Tensor(b), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
-        result = add(ta, tb)
+        with auto_reshard(mode="silent"):
+            result = add(ta, tb)
         assert not any(isinstance(p, Partial) for p in result.placements)
         expected = (a * 4) + b
         np.testing.assert_allclose(result.to_numpy(), expected, rtol=1e-5)
@@ -278,7 +283,8 @@ class _BinaryLinear:
             Tensor(b), DeviceMapping(self.MESH_1D, (Replicated(),))
         )
         # auto_reduce_partial is now a no-op; transfer_to is deterministic.
-        result = add(ta, tb)
+        with auto_reshard(mode="silent"):
+            result = add(ta, tb)
         assert result.placements == (Replicated(),)
 
 
@@ -371,7 +377,8 @@ class _Broadcast:
         b = np.arange(8, dtype=np.float32) + 1.0
         ta = transfer_to(Tensor(a), DeviceMapping(self.MESH_2, (Sharded(1),)))
         tb = transfer_to(Tensor(b), DeviceMapping(self.MESH_2, (Replicated(),)))
-        result = add(ta, tb)
+        with auto_reshard(mode="silent"):
+            result = add(ta, tb)
         assert tuple(result.shape) == (4, 8)
         np.testing.assert_allclose(result.to_numpy(), a + b, rtol=1e-5)
 
@@ -457,7 +464,8 @@ class _Cast:
         """Reduces fractional contributions before a non-linear integer cast."""
         arr = np.full((2, 4), 0.6, dtype=np.float32)
         t = self.partial_fn(arr, self.MESH_1D, (Partial(),))
-        result = cast(t, DType.int32)
+        with auto_reshard(mode="silent"):
+            result = cast(t, DType.int32)
         assert result.placements == (Replicated(),)
         expected = (arr * self.MESH_1D.num_devices).astype(np.int32)
         np.testing.assert_array_equal(result.to_numpy(), expected)
@@ -571,7 +579,8 @@ class _MixedPlacement:
             Tensor(a_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
         b = transfer_to(Tensor(b_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
-        result = add(a, b)
+        with auto_reshard(mode="silent"):
+            result = add(a, b)
         assert result.placements == (Sharded(0),)
         assert tuple(result.shape) == (4, 2)
         np.testing.assert_allclose(result.to_numpy(), a_np + b_np, rtol=1e-5)
@@ -584,7 +593,8 @@ class _MixedPlacement:
         b = transfer_to(
             Tensor(b_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
-        result = mul(a, b)
+        with auto_reshard(mode="silent"):
+            result = mul(a, b)
         assert result.placements == (Sharded(0),)
         assert tuple(result.shape) == (4, 2)
         np.testing.assert_allclose(result.to_numpy(), a_np * b_np, rtol=1e-5)

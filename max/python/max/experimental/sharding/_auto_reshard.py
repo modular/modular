@@ -53,7 +53,7 @@ from .types import TensorLayout
 _AUTO_RESHARD_POLICY: contextvars.ContextVar[
     tuple[frozenset[Transition], str]
 ] = contextvars.ContextVar(
-    "max_auto_reshard_policy", default=(DEFAULT_TRANSITIONS, "silent")
+    "max_auto_reshard_policy", default=(DEFAULT_TRANSITIONS, "raise")
 )
 """The allowed transitions and the reshard mode of the innermost block."""
 

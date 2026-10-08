@@ -20,7 +20,16 @@ from typing import Any
 from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.sharding import DeviceMapping, Replicated
 from max.experimental.tensor import Tensor
+
+
+def _replicated(x: Tensor) -> Tensor:
+    # The row-parallel output projections leave a Partial sum under TP, and
+    # RMSNorm is not linear, so reduce before the post-norms.
+    return F.transfer_to(
+        x, DeviceMapping(x.mesh, (Replicated(),) * x.mesh.ndim)
+    )
 
 
 class Gemma3TransformerBlock(Module[..., Tensor]):
@@ -65,8 +74,12 @@ class Gemma3TransformerBlock(Module[..., Tensor]):
             input_row_offsets=input_row_offsets,
             **kwargs,
         )
-        hidden_states = F.add(residual, self.post_attention_layernorm(attn_out))
+        hidden_states = F.add(
+            residual, self.post_attention_layernorm(_replicated(attn_out))
+        )
 
         residual = hidden_states
         mlp_out = self.mlp(self.pre_feedforward_layernorm(hidden_states))
-        return F.add(residual, self.post_feedforward_layernorm(mlp_out))
+        return F.add(
+            residual, self.post_feedforward_layernorm(_replicated(mlp_out))
+        )

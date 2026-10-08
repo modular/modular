@@ -120,7 +120,8 @@ class TestRaiseMode:
         lay = layout(mesh_1d(2), (16,), S0)
         single = layout(DeviceMesh.single(CPU()), (16,), R)
         s = RuleCall([AxisAssignment((S0, R), (S0,))], (lay, single))
-        picked = pick(s)
+        with auto_reshard(mode="silent"):
+            picked = pick(s)
         assert inputs(picked, 0) == (S0,)
         assert inputs(picked, 1) == (R,)
 
@@ -179,8 +180,9 @@ class TestRanking:
     ) -> None:
         lay = layout(mesh_1d(4), (16, 16), R)
         s0, s1 = AxisAssignment((S0,), (S0,)), AxisAssignment((S1,), (S1,))
-        assert inputs(pick(rule_call(lay, s0, s1))) == (S0,)
-        assert inputs(pick(rule_call(lay, s1, s0))) == (S1,)
+        with auto_reshard(mode="silent"):
+            assert inputs(pick(rule_call(lay, s0, s1))) == (S0,)
+            assert inputs(pick(rule_call(lay, s1, s0))) == (S1,)
 
 
 class TestReshardMode:
@@ -252,12 +254,12 @@ class TestAllowedTransitions:
 
 class TestScoping:
     def test_default_outside_any_block(self) -> None:
-        assert policy() == (DEFAULT_TRANSITIONS, "silent")
+        assert policy() == (DEFAULT_TRANSITIONS, "raise")
         assert DEFAULT_TRANSITIONS == ALL_TRANSITIONS - {(Partial, Sharded)}
 
     def test_a_bare_block_is_the_default_policy(self) -> None:
         with auto_reshard():
-            assert policy() == (DEFAULT_TRANSITIONS, "silent")
+            assert policy() == (DEFAULT_TRANSITIONS, "raise")
 
     def test_a_nested_block_keeps_what_it_leaves_out(self) -> None:
         with auto_reshard({(Partial, Replicated)}, mode="raise"):
@@ -266,7 +268,7 @@ class TestScoping:
             with auto_reshard(ALL_TRANSITIONS):
                 assert policy() == (ALL_TRANSITIONS, "raise")
             assert policy() == ({(Partial, Replicated)}, "raise")
-        assert policy() == (DEFAULT_TRANSITIONS, "silent")
+        assert policy() == (DEFAULT_TRANSITIONS, "raise")
 
     def test_an_unknown_mode_is_rejected(self) -> None:
         unknown: Any = "loud"
@@ -284,7 +286,7 @@ class TestScoping:
         with pytest.raises(RuntimeError):
             with auto_reshard(mode="warn"):
                 raise RuntimeError("boom")
-        assert policy() == (DEFAULT_TRANSITIONS, "silent")
+        assert policy() == (DEFAULT_TRANSITIONS, "raise")
 
     def test_works_as_a_decorator(self) -> None:
         @auto_reshard(mode="warn")
@@ -292,7 +294,7 @@ class TestScoping:
             return policy()
 
         assert f() == (DEFAULT_TRANSITIONS, "warn")
-        assert policy() == (DEFAULT_TRANSITIONS, "silent")
+        assert policy() == (DEFAULT_TRANSITIONS, "raise")
 
 
 class TestPerMeshAxis:
@@ -302,7 +304,8 @@ class TestPerMeshAxis:
         s = rule_call(
             lay, AxisAssignment((S0,), (S0,)), AxisAssignment((S1,), (S1,))
         )
-        assert inputs(pick(s)) == (S1,)
+        with auto_reshard(mode="silent"):
+            assert inputs(pick(s)) == (S1,)
 
     def test_an_unreachable_row_is_skipped(self) -> None:
         """Nothing turns a Replicated input into a Partial one."""
@@ -325,7 +328,8 @@ class TestPerMeshAxis:
         s = rule_call(
             lay, AxisAssignment((S0,), (S0,)), AxisAssignment((S1,), (S1,))
         )
-        assert inputs(pick(s)) == (S0, S1)
+        with auto_reshard(mode="silent"):
+            assert inputs(pick(s)) == (S0, S1)
 
     def test_no_reachable_row_raises(self) -> None:
         lay = layout(mesh_1d(2), (16,), Sharded(0))
