@@ -95,6 +95,7 @@ from _rocblas.rocblas import (
     rocblas_destroy_handle,
 )
 from max.gpu.host import DeviceContext
+from max.gpu.host._kernel_load_gate import KernelLoadScope
 from max.gpu.host._amdgpu_hip import HIP
 from max.gpu.host._nvidia_cuda import CUDA
 from layout import (
@@ -398,7 +399,8 @@ def _get_global_handle[
 
     # Otherwise, we have not initialized the handle yet.
     var handle_ptr = alloc(AllocLayout[Handle[backend]].single()).unsafe_leak()
-    handle_ptr.unsafe_write(Handle[backend]())
+    with KernelLoadScope(ctx):
+        handle_ptr.unsafe_write(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
         handle_ptr.bitcast[NoneType](),
@@ -563,7 +565,7 @@ def matmul[
             transpose_b,
         )
 
-    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+    with KernelLoadScope(ctx), Trace[TraceLevel.OP, target=StaticString("gpu")](
         String(t"{handle.resolved_backend}_matmul"),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),

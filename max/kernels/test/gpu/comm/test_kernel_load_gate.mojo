@@ -27,13 +27,18 @@ runtime, and DRIV-462 for the pinned-worker edge.
 
 The gate breaks the cycle by making the load wait on an AsyncRT value rather
 than parking the worker, so the donated worker still runs that launch.
-Measured: 117ms with the gate, 20s without, the latter bounded only by the
-spin timeout below. Both spins are bounded so a regression fails on elapsed
-time rather than wedging the GPU and timing out.
+Measured on 2xB200: each round finishes in 110-370ms with its gate, and in
+20s without it, bounded only by the spin timeout below. Both spins are bounded
+so a regression fails on elapsed time rather than wedging the GPU and timing
+out.
 
-Note this covers loads that go through `loadFunction`. A vendor BLAS call
-that stalls on a busy device starves the same worker and the gate does not
-see it; that gap is real and is recorded on GEX-4227.
+Three calls block this way, each behind its own gate, and each gets its own
+round with a fresh spinner: bringing up a vendor BLAS handle, a vendor
+dispatch that first uses a GEMM kernel, which the library loads lazily, and a
+first-time kernel load. Neither vendor call reaches `loadFunction`. Any one of
+them starves the worker, so each has to be gated. They cannot share a window:
+a gated wait donates the worker, the peer launches and the collective closes,
+so whatever the lane does next runs on an idle device and proves nothing.
 
 It also cannot see a gate whose state got duplicated by static linking: this
 binary links one copy of everything, where a served process links five. Only
@@ -41,6 +46,9 @@ an end-to-end run across the real shared objects covers that, so keep the
 gate's state in the driver object and off file scope. See KernelLoadGate.h.
 """
 
+import linalg.matmul.vendor.blas as vendor_blas
+
+from layout import TileTensor, row_major
 from std.runtime._asyncrt import TaskGroup
 from std.testing import assert_true
 from std.time import global_perf_counter_ns, monotonic, sleep
@@ -68,6 +76,15 @@ comptime MAX_HEALTHY_SEC = 10.0
 # the call that waits for the device to quiesce, but safely under the per-block
 # cap on every target. The per-SM figure is not a legal per-block request.
 comptime OPT_IN_SMEM_BYTES = UInt32(64 * 1024)
+
+# Side of the square operands the dispatch round multiplies. The handle round
+# dispatches nothing, so this is the first GEMM the library runs.
+comptime MM = 2048
+
+# The blocking call each round lands in the window.
+comptime _HANDLE_BRING_UP = 0
+comptime _VENDOR_DISPATCH = 1
+comptime _COLD_LOAD = 2
 
 
 def _spin_until_released(flag: MutPointer[Int32, MutAnyOrigin]):
@@ -173,18 +190,50 @@ def _enqueue_release(
     clock.mark("dev1: release enqueued")
 
 
+def _bring_up_vendor_handle_on_busy_device(ctx: DeviceContext, clock: _Clock):
+    """Brings up the vendor BLAS handle for `ctx` while it is saturated.
+
+    Creating the handle blocks on a busy device like a kernel load does, but
+    never reaches `loadFunction`. Nothing is dispatched, so the dispatch round
+    still meets an unused library.
+    """
+    clock.mark("loader: starting vendor handle bring-up on dev0")
+    try:
+        with ctx.push_context():
+            _ = vendor_blas._get_global_handle[DType.float32](ctx)
+    except e:
+        print("loader: vendor handle bring-up raised: ", e)
+    clock.mark("loader: vendor handle bring-up returned")
+
+
+def _vendor_matmul_on_busy_device(
+    ctx: DeviceContext,
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    clock: _Clock,
+):
+    """Runs a vendor BLAS matmul on `ctx` while it is saturated.
+
+    The handle already exists, so only the dispatch can block: the library
+    loads the GEMM kernel it picks on first use.
+    """
+    clock.mark("loader: starting vendor matmul on dev0")
+    try:
+        vendor_blas.matmul(ctx, c, a, b, c_row_major=True)
+    except e:
+        print("loader: vendor matmul raised: ", e)
+    clock.mark("loader: vendor matmul returned")
+
+
 def _cold_load_onto_busy_device(ctx: DeviceContext, clock: _Clock):
     """Cold-loads an unrelated kernel onto `ctx` while it is saturated.
-
-    Sleeps first so the load lands after the spinner is resident but before
-    the peer has launched, which is the window the gate has to survive.
 
     The shared-memory opt-in is what gives this teeth. `loadFunction` issues
     cuFuncSetAttribute for MAX_DYNAMIC_SHARED_SIZE_BYTES only when a size is
     requested, and that is the call that waits for the device to quiesce. A
     bare compile_function passes -1, skips it, and never blocks.
     """
-    sleep(LOADER_DELAY_SEC)
     clock.mark("loader: starting cold load on dev0")
     try:
         _ = ctx.compile_function[_unrelated](
@@ -252,37 +301,67 @@ def _assert_no_stall(clock: _Clock) raises:
             "collective took ",
             elapsed_sec,
             (
-                "s; a kernel load interleaved with the launch and blocked until"
-                " the spin bound expired"
+                "s; a blocking driver call interleaved with the launch and"
+                " blocked until the spin bound expired"
             ),
         ),
     )
 
 
-def main() raises:
-    _require_two_peer_gpus()
+def _run_round[call: Int](ctx0: DeviceContext, ctx1: DeviceContext) raises:
+    """Lands one blocking call from the starved lane in a fresh window.
 
-    var ctx0 = DeviceContext(device_id=0)
-    var ctx1 = DeviceContext(device_id=1)
+    Parameters:
+        call: Which blocking call the lane makes: `_HANDLE_BRING_UP`,
+            `_VENDOR_DISPATCH` or `_COLD_LOAD`.
+    """
     var flag_buf = _create_release_flag(ctx0)
     var flag = flag_buf.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+
+    var a_buf = ctx0.enqueue_create_buffer[.float32](MM * MM)
+    var b_buf = ctx0.enqueue_create_buffer[.float32](MM * MM)
+    var c_buf = ctx0.enqueue_create_buffer[.float32](MM * MM)
+    ctx0.enqueue_memset(a_buf, Float32(1.0))
+    ctx0.enqueue_memset(b_buf, Float32(1.0))
+    ctx0.enqueue_memset(c_buf, Float32(0.0))
+    ctx0.synchronize()
+    var a_tt = TileTensor(a_buf, row_major(MM, MM)).as_imm()
+    var b_tt = TileTensor(b_buf, row_major(MM, MM)).as_imm()
+    var c_tt = TileTensor(c_buf, row_major(MM, MM))
+
     var clock = _Clock()
+    comptime if call == _HANDLE_BRING_UP:
+        clock.mark("round: vendor handle bring-up")
+    elif call == _VENDOR_DISPATCH:
+        clock.mark("round: vendor dispatch")
+    else:
+        clock.mark("round: cold load")
 
     # The load has to be in flight before the collective opens its window, and
     # on the worker that device 1's launch will be pinned to. Affinity tasks
     # sit on a private queue only their own worker dequeues, so a worker parked
     # in a blocking driver call starves the launch queued behind it and the
     # collective can never complete. The loader's sleep holds that worker until
-    # device 0 is saturated, landing the load mid-fan-out. See DRIV-462.
+    # device 0 is saturated, landing the load mid-fan-out, before the peer has
+    # launched: the window the gate has to survive. See DRIV-462.
     var tg = TaskGroup()
     # Resolved before the coroutine exists: a raise between the two would
     # abandon it, and Coroutine is not implicitly destroyable.
     var loader_worker = task_id_for_device(Int(ctx1.id()))
 
+    @__copy_capture(a_tt)
+    @__copy_capture(b_tt)
+    @__copy_capture(c_tt)
     @inline(.always)
     @__parameter
     __async def loader() -> None:
-        _cold_load_onto_busy_device(ctx0, clock)
+        sleep(LOADER_DELAY_SEC)
+        comptime if call == _HANDLE_BRING_UP:
+            _bring_up_vendor_handle_on_busy_device(ctx0, clock)
+        elif call == _VENDOR_DISPATCH:
+            _vendor_matmul_on_busy_device(ctx0, c_tt, a_tt, b_tt, clock)
+        else:
+            _cold_load_onto_busy_device(ctx0, clock)
 
     tg._create_task(loader(), desired_worker_id=loader_worker)
 
@@ -298,3 +377,18 @@ def main() raises:
 
     _assert_peer_arrived(ctx0, flag_buf)
     _assert_no_stall(clock)
+    _ = a_buf^
+    _ = b_buf^
+    _ = c_buf^
+
+
+def main() raises:
+    _require_two_peer_gpus()
+
+    var ctx0 = DeviceContext(device_id=0)
+    var ctx1 = DeviceContext(device_id=1)
+    # Handle bring-up happens once per device, so it goes first, and the
+    # dispatch round then finds the handle built and only the dispatch left.
+    _run_round[_HANDLE_BRING_UP](ctx0, ctx1)
+    _run_round[_VENDOR_DISPATCH](ctx0, ctx1)
+    _run_round[_COLD_LOAD](ctx0, ctx1)
