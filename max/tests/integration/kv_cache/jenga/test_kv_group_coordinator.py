@@ -313,11 +313,11 @@ def test_claiming_revives_parked_blocks() -> None:
     pool = make_pool()
     keys = block_keys(3)
     commit(pool, [VALUES], keys)
-    parked = len(pool.free_huge_blocks)
+    parked = pool.num_free_huge_blocks
 
     row = full_group(pool).claim_hit_blocks(keys, 0)
 
-    assert len(pool.free_huge_blocks) == parked - 1
+    assert pool.num_free_huge_blocks == parked - 1
     assert all(block.ref_cnt == 1 for block in row[VALUES])
 
 

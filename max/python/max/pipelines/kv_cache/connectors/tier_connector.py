@@ -511,8 +511,8 @@ class TierConnector(KVConnector):
             leaf_id: leaf_buffers.host_bytes_per_page
             for leaf_id, leaf_buffers in replica_kv_memory[0].items()
         }
-        # The Rust pool hands out every huge block it is given -- unlike the
-        # Python pool, it reserves no null block -- so one is enough.
+        # The host pool is built without a null block -- unlike the device
+        # pool -- so it hands out every huge block, and one is enough.
         num_huge_blocks, huge_page_bytes, cache_ratios = compute_jenga_ratios(
             available_bytes=host_offload_max_bytes,
             cache_sizes=leaf_cache_sizes,

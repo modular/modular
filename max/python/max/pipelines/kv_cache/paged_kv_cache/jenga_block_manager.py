@@ -972,13 +972,14 @@ class JengaBlockManager:
         """
         pool = self.pools[replica_idx]
         return BlockCount(
-            free=len(pool.free_huge_blocks), total=len(pool.huge_blocks)
+            free=pool.num_free_huge_blocks,
+            total=pool.num_allocatable_huge_blocks,
         )
 
     def little_block_count(self, replica_idx: int = 0) -> dict[str, BlockCount]:
         """Returns each leaf's little-block occupancy for the given replica."""
         pool = self.pools[replica_idx]
-        total_huge_blocks = len(pool.huge_blocks)
+        total_huge_blocks = pool.num_allocatable_huge_blocks
         return {
             leaf_id: BlockCount(
                 free=pool.num_free_blocks(leaf_id),

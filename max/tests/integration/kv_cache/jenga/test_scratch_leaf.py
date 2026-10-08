@@ -240,7 +240,7 @@ def test_the_ring_is_never_published() -> None:
     for _ in range(4):
         forward(bm, ctx)
 
-    assert bm.pools[0].prefix_caches[RING] == {}
+    assert not bm.pools[0].prefix_caches[RING]
     assert bm.pools[0].prefix_caches[FULL], (
         "the paged leaf has to publish for this to mean anything"
     )

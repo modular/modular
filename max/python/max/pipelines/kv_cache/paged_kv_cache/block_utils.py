@@ -17,22 +17,20 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Generic, Protocol, TypeVar
 
 import numpy as np
 import numpy.typing as npt
 from max._core_mojo import block_hasher, block_hasher_sha256
+from max._kv_core import InsufficientBlocksError as InsufficientBlocksError
+from max._kv_core import LittleKVCacheBlock as LittleKVCacheBlock
 from max.nn.kv_cache.cache_params import KVHashAlgo
 from max.pipelines.context import TokenHashOverride
 from max.profiler import traced
 from typing_extensions import Self
 
-__all__ = ["KVHashAlgo"]
-
-
-class InsufficientBlocksError(Exception):
-    """Exception raised when there are insufficient free blocks to satisfy an allocation."""
+__all__ = ["InsufficientBlocksError", "KVHashAlgo", "LittleKVCacheBlock"]
 
 
 DEFAULT_PARENT_HASH: bytes = b"\x00" * 8
@@ -192,54 +190,6 @@ class KVCacheBlock:
         return f"KVCacheBlock(bid={self.bid}, ref_cnt={self.ref_cnt}, block_hash={self.block_hash!r})"
 
 
-@dataclass
-class HugeKVCacheBlock:
-    bid: int
-    little_blocks: dict[str, Sequence[LittleKVCacheBlock]] = field(
-        default_factory=dict
-    )
-    little_block_type: str | None = None
-
-    # Used to construct a doubly linked list for free blocks.
-    # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
-    prev_free_block: HugeKVCacheBlock | None = None
-    next_free_block: HugeKVCacheBlock | None = None
-
-    @property
-    def ref_cnt(self) -> int:
-        if self.little_block_type is None:
-            return 0
-        else:
-            return sum(
-                block.ref_cnt
-                for block in self.little_blocks[self.little_block_type]
-            )
-
-
-@dataclass
-class LittleKVCacheBlock:
-    # Block ID, ranging from 0 to total_num_blocks - 1. It is also this block's
-    # page index into its cache's view of the pool buffer: the little blocks of
-    # huge block ``h`` are ``[h * ratio, (h + 1) * ratio)``.
-    bid: int
-    cache_id: str
-    # The huge block whose bytes this block occupies. It backs this block only
-    # while its ``little_block_type`` is this block's ``cache_id``.
-    huge_block: HugeKVCacheBlock
-    # Reference count.
-    ref_cnt: int = 0
-    # The hash of the block composed of (block hash, tuple of token IDs).
-    # It is only available when the block is full.
-    block_hash: bytes | None = None
-    # Whether the block is the null block.
-    is_null: bool = False
-
-    # Used to construct a doubly linked list for free blocks.
-    # These two attributes should only be manipulated by FreeKVCacheBlockQueue.
-    prev_free_block: LittleKVCacheBlock | None = None
-    next_free_block: LittleKVCacheBlock | None = None
-
-
 BlockT = TypeVar("BlockT", bound=FreeListNode)
 
 
@@ -368,5 +318,3 @@ class _FreeKVCacheBlockQueue(Generic[BlockT]):
 
 
 FreeKVCacheBlockQueue = _FreeKVCacheBlockQueue[KVCacheBlock]
-FreeHugeKVCacheBlockQueue = _FreeKVCacheBlockQueue[HugeKVCacheBlock]
-FreeLittleKVCacheBlockQueue = _FreeKVCacheBlockQueue[LittleKVCacheBlock]
