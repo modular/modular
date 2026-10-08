@@ -5129,6 +5129,15 @@ ParseResult DeclResolver::resolveBody(ExtensionDeclOp extensionDeclOp,
   if (ParserBase(shared, lexer).parseSuite(extensionDecl))
     return failure();
 
+  // The conflict check below and the verification of the extension's
+  // conformances need the struct's members, so resolve the struct. Resolving it
+  // looks up its members, which resolves its extensions, including this one.
+  // Mark this extension resolved first, as structs do once their members are
+  // parsed, so that those lookups see its members rather than a cycle.
+  extensionDecl.resolvedness = DeclResolvedness::body;
+  if (failed(resolveBody(structAstDecl, extensionDecl.getLoc())))
+    return failure();
+
   // Now check for conflicts; things in the extension shouldn't already be in
   // the struct, unless they're both methods because overloading is fine.
   if (extensionDecl.declsInScope && structAstDecl.declsInScope) {

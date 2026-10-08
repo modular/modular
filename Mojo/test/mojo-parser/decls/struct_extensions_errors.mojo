@@ -169,4 +169,40 @@ def test_collisions(s: BaseStruct):
     var result = s.colliding
 
 
+# // -----
+
+
+# Test a collision when the extension comes before the struct it extends.
+
+
+__extension BaseStruct:
+    # expected-error @below {{invalid redefinition of 'colliding'}}
+    comptime colliding: Int = 43
+
+
+struct BaseStruct:
+    # expected-note @below {{extension declaration conflicts with struct declaration}}
+    comptime colliding: Int = 42
+
+
+# // -----
+
+
+# Test a collision when a use resolves the extension before the struct.
+
+
+def test_collisions() -> Int:
+    return BaseStruct.colliding
+
+
+__extension BaseStruct:
+    # expected-error @below {{invalid redefinition of 'colliding'}}
+    comptime colliding: Int = 43
+
+
+struct BaseStruct:
+    # expected-note @below {{extension declaration conflicts with struct declaration}}
+    comptime colliding: Int = 42
+
+
 # TODO(MOCO-522): Add a test for a function and an extension having same name.
