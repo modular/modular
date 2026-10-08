@@ -354,8 +354,10 @@ public:
   /// Import the specified module or package, returning the decl. Always returns
   /// a valid decl, even if a corresponding module or package could not be
   /// found.
+  ///
+  /// Non-null \p importer records dep edges to the module and its ancestors.
   ASTDecl &importModule(const ImportPath &path, PackageOp currentPackage,
-                        llvm::SMLoc loc);
+                        llvm::SMLoc loc, ASTDecl *importer = nullptr);
 
   /// Return true if the package has a nested module with the given name in the
   /// module-state cache. The package body must be resolved before calling this
@@ -425,6 +427,11 @@ public:
   /// decls have been resolved, as this will erase bytecode operations attached
   /// to decls that have not been resolved.
   LogicalResult finalizeImportedBytecodeModules();
+
+  /// Record a dep edge `importer` -> `imported`, attributed to each end's
+  /// nearest enclosing file module or package. No-ops if either end has no
+  /// module state or is erroneous.
+  void recordDepEdge(ASTDecl *importer, ASTDecl *imported);
 
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;

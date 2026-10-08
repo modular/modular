@@ -506,10 +506,13 @@ void ModuleLoader::eraseState(ASTDecl *decl) {
 //===----------------------------------------------------------------------===//
 
 ASTDecl &ModuleLoader::importModule(const SharedState::ImportPath &path,
-                                    PackageOp currentPackage, llvm::SMLoc loc) {
+                                    PackageOp currentPackage, llvm::SMLoc loc,
+                                    ASTDecl *importer) {
   ModuleState *moduleState = lookupPackageState(currentPackage);
   assert(moduleState && "unexpected package without a module state");
-  return *importModuleState(path, moduleState->decl, loc).decl;
+  ASTDecl &module = *importModuleState(path, moduleState->decl, loc).decl;
+  recordModuleImportDepEdges(importer, module);
+  return module;
 }
 
 ModuleState &
@@ -1334,4 +1337,35 @@ ModuleState &ModuleLoader::createErrorModuleState(SMLoc loc, StringAttr name,
       diag.attachNote(loc) << note;
   }
   return *state;
+}
+
+void ModuleLoader::recordDepEdge(ASTDecl *importer, ASTDecl *imported) {
+  if (!importer || !imported)
+    return;
+  // Attribute both ends to their enclosing file module (or package).
+  importer = importer->getNearestDeclOfType<FileModuleOp, PackageOp>();
+  imported = imported->getNearestDeclOfType<FileModuleOp, PackageOp>();
+  if (!importer || !imported)
+    return;
+  // A failed import's placeholder state must not become a graph node or edge.
+  if (!store->moduleStates.lookup(importer) ||
+      !store->moduleStates.lookup(imported) || importer->isErroneous() ||
+      imported->isErroneous())
+    return;
+  store->depEdges[importer].insert(imported);
+}
+
+void ModuleLoader::recordModuleImportDepEdges(ASTDecl *importer,
+                                              ASTDecl &module) {
+  if (!importer)
+    return;
+  recordDepEdge(importer, &module);
+  // A dotted `import a.b.c` also resolves through each ancestor package's
+  // `__init__.mojo`, which can re-export or shadow the next path component -
+  // so an edit to any ancestor can change what the import means, not just an
+  // edit to the leaf module.
+  for (ASTDecl *ancestor = module.getParentDecl(); ancestor;
+       ancestor = ancestor->getParentDecl())
+    if (isa_and_nonnull<PackageOp>(ancestor->getIfOperation()))
+      recordDepEdge(importer, ancestor);
 }

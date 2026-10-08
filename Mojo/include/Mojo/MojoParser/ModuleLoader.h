@@ -151,7 +151,8 @@ public:
   /// a valid decl, even if a corresponding module or package could not be
   /// found.
   ASTDecl &importModule(const SharedState::ImportPath &path,
-                        PackageOp currentPackage, llvm::SMLoc loc);
+                        PackageOp currentPackage, llvm::SMLoc loc,
+                        ASTDecl *importer);
 
   /// Import the specified module or package, returning the module state.
   /// Always returns a valid module state, even if the module could not be
@@ -233,6 +234,15 @@ public:
                                       bool unlisted = false,
                                       const Twine &note = {});
 
+  //===--------------------------------------------------------------------===//
+  // Module Dependency Graph
+  //===--------------------------------------------------------------------===//
+
+  /// Record a dep edge `importer` -> `imported`, attributed to each end's
+  /// nearest enclosing file module or package. No-ops if either end has no
+  /// module state or is erroneous.
+  void recordDepEdge(ASTDecl *importer, ASTDecl *imported);
+
 private:
   /// The state this package op was imported as, or null. Distinct from
   /// `lookupState` only because one op can be reached through several decls.
@@ -264,6 +274,11 @@ private:
   /// the module could not be found.
   ModuleState &importRelativeModuleState(const SharedState::ImportPath &path,
                                          ASTDecl *parentDecl, llvm::SMLoc loc);
+
+  /// Record dep edges for a dotted `import a.b.c`: to the leaf `module` and
+  /// each ancestor package, since editing an ancestor `__init__.mojo` can
+  /// affect it.
+  void recordModuleImportDepEdges(ASTDecl *importer, ASTDecl &module);
 
   /// The directories searched before the working directory and the source
   /// manager's include directories: configured search paths, or the defaults

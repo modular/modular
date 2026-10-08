@@ -932,8 +932,9 @@ void SharedState::materializePrecompiledStdlibOp(Operation *op) {
 }
 
 ASTDecl &SharedState::importModule(const ImportPath &path,
-                                   PackageOp currentPackage, llvm::SMLoc loc) {
-  return getModuleLoader().importModule(path, currentPackage, loc);
+                                   PackageOp currentPackage, llvm::SMLoc loc,
+                                   ASTDecl *importer) {
+  return getModuleLoader().importModule(path, currentPackage, loc, importer);
 }
 
 SmallVector<ASTDecl *>
@@ -975,6 +976,10 @@ SharedState::getWrappedSourcePath(unsigned bufferId) const {
   return it == impl->wrapperBuffers.end()
              ? std::optional<StringRef>(std::nullopt)
              : it->second;
+}
+
+void SharedState::recordDepEdge(ASTDecl *importer, ASTDecl *imported) {
+  return getModuleLoader().recordDepEdge(importer, imported);
 }
 
 bool SharedState::hasBuiltinModule() const { return useBuiltinModule; }

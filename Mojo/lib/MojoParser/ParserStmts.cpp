@@ -4255,9 +4255,10 @@ ParseResult StmtParser::parseImportStmt() {
     // Absolute `import`s are built into nested ImportOps at parse time, with no
     // UnresolvedImportOp placeholder. Resolve the target module first so a
     // missing module is reported eagerly (this locates the module file; it does
-    // not parse its body).
-    ASTDecl &module =
-        shared.importModule(modulePath, /*currentPackage=*/nullptr, importLoc);
+    // not parse its body). This one call records the dep edges for both
+    // binding forms below.
+    ASTDecl &module = shared.importModule(
+        modulePath, /*currentPackage=*/nullptr, importLoc, curDeclScope);
 
     if (!boundModuleName.has_value()) {
       // 'import a.b.c' binds the chain 'a' -> 'a.b' -> 'a.b.c' under the

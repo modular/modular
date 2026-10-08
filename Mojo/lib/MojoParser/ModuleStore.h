@@ -198,6 +198,9 @@ struct ModuleStore {
   /// fixed, this map should be removed in favor of just `moduleStates`.
   llvm::DenseMap<PackageOp, ModuleState *> packageStates;
 
+  /// Import edges: importer decl -> set of directly-imported module decls.
+  DenseMap<ASTDecl *, llvm::SetVector<ASTDecl *>> depEdges;
+
   /// Every origin, owned here so it outlives the states pointing at it.
   llvm::SmallVector<std::unique_ptr<ModuleOrigin>> originAllocations;
 

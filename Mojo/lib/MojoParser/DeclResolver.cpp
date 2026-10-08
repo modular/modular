@@ -1187,7 +1187,8 @@ LogicalResult DeclResolver::importDeclFromModule(
     SMLoc destNameLoc, bool resolveTarget) {
 
   auto modulePath = SharedState::ImportPath::fromAttr(moduleName);
-  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc);
+  ASTDecl &module =
+      shared.importModule(modulePath, currentPackage, loc, /*importer=*/&dest);
   shared.notifyListenerOnModuleImport(module, modulePath, loc);
 
   // A relative self-import written inside a package's __init__ (`from . import
@@ -1200,13 +1201,17 @@ LogicalResult DeclResolver::importDeclFromModule(
   // is still resolving; this one fires once the body is resolved but a specific
   // re-export binding inside it is being resolved on demand.
   bool selfReferential = false;
+  ASTDecl *initDecl = nullptr;
   if (auto initOrFail = bodyResolvePackageInit(module, loc);
-      succeeded(initOrFail) && *initOrFail == &dest) {
-    for (ASTDecl *d : dest.lookupInCurrentScope(sourceName))
-      if (isAlreadyProcessing(*d)) {
-        selfReferential = true;
-        break;
-      }
+      succeeded(initOrFail)) {
+    initDecl = *initOrFail;
+    if (initDecl == &dest) {
+      for (ASTDecl *d : dest.lookupInCurrentScope(sourceName))
+        if (isAlreadyProcessing(*d)) {
+          selfReferential = true;
+          break;
+        }
+    }
   }
 
   // Check to see if the module has the construct we are importing.
@@ -1244,6 +1249,15 @@ LogicalResult DeclResolver::importDeclFromModule(
     results.assign(result.getIfSuccess().begin(), result.getIfSuccess().end());
   }
   assert(!results.empty() && "other cases handled above");
+
+  // Depend on the file that defines each resolved symbol, not on everything
+  // the package re-exports.
+  for (ASTDecl *r : results)
+    shared.recordDepEdge(&dest, r);
+
+  // Also depend on the mediating package `__init__`.
+  if (initDecl && initDecl != &dest)
+    shared.recordDepEdge(&dest, initDecl);
 
   shared.notifyListenerOnRef(results, sourceName, sourceNameLoc);
   shared.notifyListenerOnRef(results, destName, destNameLoc);
@@ -1330,7 +1344,8 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
     currentPackage = context.getIfOperation()->getParentOfType<PackageOp>();
 
   // Make sure the module has been resolved.
-  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc);
+  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc,
+                                        /*importer=*/&context);
   if (failed(resolveBody(module, loc)))
     return failure();
 
@@ -2028,9 +2043,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   }
 
   // Utility for resolving a decl within the Startup module.
-  ASTDecl &startupModule =
-      shared.importModule({"std", "builtin", "_startup"},
-                          /*currentPackage=*/nullptr, funcDecl.getLoc());
+  ASTDecl &startupModule = shared.importModule(
+      {"std", "builtin", "_startup"}, /*currentPackage=*/nullptr,
+      funcDecl.getLoc(), /*importer=*/&funcDecl);
   auto resolveStartDecl = [&](StringRef name) -> ASTDecl * {
     auto result = shared.lookupAndResolveDecl(
         name, funcDecl.getLoc(), startupModule, /*searchParentScopes=*/false);
