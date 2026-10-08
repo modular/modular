@@ -1535,16 +1535,6 @@ class InferenceSession:
         """
         self._set_mojo_define("DUMP_GPU_ASM", str(option))
 
-    def _dump_gpu_llvm(self, option: bool | str | Path = True) -> None:
-        """Enables dumping of gpu llvm.
-
-        Specifying a True would print the kernel output to screen, specifying a
-        string or Path would write the kernel output to the specified path. If
-        a path contains '%' it is replaced with a unique identifier for the
-        kernel.
-        """
-        self._set_mojo_define("DUMP_GPU_LLVM", str(option))
-
     def _set_mojo_define(self, key: str, value: bool | int | str) -> None:
         """Enables overwriting of any mojo config directly."""
         self._impl.set_mojo_define(key, value)

@@ -124,10 +124,6 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         "maxserve.num_input_tokens",
         description="Cumulative input tokens processed.",
     ),  # type: ignore
-    "maxserve.num_input_characters": _meter.create_counter(
-        "maxserve.num_input_characters",
-        description="Cumulative input characters processed.",
-    ),  # type: ignore
     "maxserve.num_output_tokens": _meter.create_counter(
         "maxserve.num_output_tokens",
         description="Cumulative output tokens generated.",
@@ -1094,13 +1090,6 @@ class _AsyncMetrics:
         self.client.send_measurement(
             MaxMeasurement(
                 "maxserve.num_input_tokens", value, self.extra_attributes
-            ),
-        )
-
-    def input_characters(self, value: int) -> None:
-        self.client.send_measurement(
-            MaxMeasurement(
-                "maxserve.num_input_characters", value, self.extra_attributes
             ),
         )
 

@@ -25,8 +25,6 @@ class TokenGenerationSchedulerConfig:
     max_batch_size: int
     """The maximum number of requests that can be in the token generation batch."""
 
-    """The number of tokens to generate for each request in the token generation iteration."""
-
     target_tokens_per_batch_ce: int
     """The target total number of tokens to encode in the context encoding batch."""
 
