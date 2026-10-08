@@ -2232,6 +2232,96 @@ def mogg_index_reshape[
     return out
 
 
+@register_internal("mogg.index.slice.select")
+@inline(.always)
+def mogg_index_slice_select[
+    rank: Int,
+    //,
+    static_starts: IntTuple,
+    static_steps: IntTuple,
+    in_static_shape: IntTuple,
+    out_static_shape: IntTuple,
+](
+    index: IndexList[rank],
+    in_shape: IndexList[rank] = _reshape_static_index_list[
+        rank, in_static_shape
+    ](),
+    out_shape: IndexList[rank] = _reshape_static_index_list[
+        rank, out_static_shape
+    ](),
+) -> Tuple[IndexList[rank], Bool]:
+    """Maps an index into a slice's input to the index into its output.
+
+    Backs `mogg.index.slice.select`, whose body runs at the returned index
+    only where the slice selects `index`. The slice follows `mo.slice`: a
+    start resolves against its input dim the numpy way, and the output shape
+    bounds the slice, so stops are never read. A runtime shape is read only
+    where its static counterpart is `UNKNOWN_VALUE`, and a dim the static
+    bounds and shapes prove unsliced costs nothing.
+
+    Parameters:
+        rank: The rank of the slice's input and output.
+        static_starts: The slice's start per dim, as written.
+        static_steps: The slice's positive step per dim.
+        in_static_shape: The slice's input shape, where statically known.
+        out_static_shape: The slice's output shape, where statically known.
+
+    Args:
+        index: An index into the slice's input.
+        in_shape: The input's runtime shape.
+        out_shape: The output's runtime shape.
+
+    Returns:
+        The index into the slice's output, and whether the slice selects
+        `index` at all. The index means nothing where it does not.
+    """
+    var result = index
+    var in_slice = True
+    comptime for d in range(rank):
+        comptime start = Int(static_starts[d])
+        comptime step = Int(static_steps[d])
+        comptime n_in = Int(in_static_shape[d])
+        comptime n_out = Int(out_static_shape[d])
+        comptime unsliced = (
+            start == 0 and step == 1 and n_in != UNKNOWN_VALUE and n_in == n_out
+        )
+        comptime if not unsliced:
+            var in_dim: Int
+            comptime if n_in != UNKNOWN_VALUE:
+                in_dim = n_in
+            else:
+                in_dim = in_shape[d]
+            var out_dim: Int
+            comptime if n_out != UNKNOWN_VALUE:
+                out_dim = n_out
+            else:
+                out_dim = out_shape[d]
+            # Numpy's start resolution, which `MOToMAP` already applied where
+            # the dim is static: from the end if negative, then clamped to 0.
+            # A start past the end needs no clamp, since `out_dim` is then 0.
+            # Nor does a negative start whose clamp a static `n_out` rules
+            # out: it fires only on an input dim too short to hold `n_out`
+            # elements `step` apart, and the bound check below trusts `n_out`
+            # already.
+            var s = start
+            comptime if start < 0:
+                comptime clamp_needed = (
+                    n_out == UNKNOWN_VALUE or (n_out - 1) * step + 1 < -start
+                )
+                comptime if clamp_needed:
+                    s = max(start + in_dim, 0)
+                else:
+                    s = start + in_dim
+            var offset = index[d] - s
+            comptime if step != 1:
+                in_slice = in_slice and offset % step == 0
+            var j = offset // step
+            # Unsigned, a negative index wraps past `out_dim`: one compare.
+            in_slice = in_slice and UInt(j) < UInt(out_dim)
+            result[d] = j
+    return (result, in_slice)
+
+
 # ===----------------------------------------------------------------------===#
 # POP operations
 # ===----------------------------------------------------------------------===#
