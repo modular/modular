@@ -92,7 +92,8 @@ vfplist: vfpdef (',' vfpdef)* [',']
 stmt: simple_stmt | compound_stmt
 simple_stmt: small_stmt (';' small_stmt)* [';'] NEWLINE
 small_stmt: (expr_stmt | print_stmt | del_stmt | pass_stmt | flow_stmt |
-             import_stmt | global_stmt | exec_stmt | assert_stmt)
+             import_stmt | global_stmt | exec_stmt | assert_stmt |
+             enum_case_stmt)
 expr_stmt: testlist_star_expr_stmt (annassign | augassign (yield_expr|testlist) |
                      ('=' (yield_expr|testlist_star_expr))*)
 top_expr_stmt: testlist_star_expr (annassign | augassign (yield_expr|testlist) |
@@ -244,7 +245,7 @@ type_factor: ('+'|'-'|'~') type_factor | type_power
 type_power: [AWAIT] type_atom trailer* ['**' factor]
 type_atom: functype | generatortype | atom
 
-classdef: STRUCT NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
+classdef: (STRUCT | ENUM) NAME [metaparams] ['(' [arglist] ')'] (where_clause)* ':' suite | ('class' | TRAIT | EXTENSION) NAME [metaparams] ['(' [arglist] ')'] ':' suite
 
 typeconvexpr: atom trailer* | functype | generatortype
 typeconv: (['*'|VAR|IMM|MUT|OUT|DEINIT] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/' | '*' | '//'
@@ -338,3 +339,8 @@ case_block: "case" patterns [guard] ':' suite
 guard: 'if' namedexpr_test
 patterns: pattern (',' pattern)* [',']
 pattern: (expr|star_expr) ['as' expr]
+
+# An `__enum` case. As a small_stmt it takes a doc string and `;` as a field
+# does; the compiler rejects it outside an `__enum`. "case" stays a soft
+# keyword: no expression statement starts with two names.
+enum_case_stmt: "case" NAME ['(' [arglist] ')']

@@ -36,6 +36,7 @@ KEYWORDS = [
     "del",
     "elif",
     "else",
+    "__enum",
     "escaping",
     "except",
     "exec",

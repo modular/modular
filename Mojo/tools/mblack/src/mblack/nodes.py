@@ -452,7 +452,7 @@ def whitespace(
         if not prevp or prevp.type == token.AT or prevp.type == token.DOT:
             return NO
 
-    elif p.type == syms.classdef:
+    elif p.type in {syms.classdef, syms.enum_case_stmt}:
         if t == token.LPAR:
             return NO
 

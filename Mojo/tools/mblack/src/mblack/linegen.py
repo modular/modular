@@ -632,12 +632,12 @@ class LineGenerator(Visitor[Line]):
         parens: set[str],
         nodeTypes: set[int] | None = None,
     ):
-        # Only sort for struct/trait, not regular class
+        # Only sort for struct/enum/trait, not regular class
         from mblib2to3.pgen2 import token as mtoken
 
         if nodeTypes is None:
             nodeTypes = set()
-        if node.children[0].type in (mtoken.STRUCT, mtoken.TRAIT):
+        if node.children[0].type in (mtoken.STRUCT, mtoken.ENUM, mtoken.TRAIT):
             self._sort_struct_trait_conformances(node)
         # Fallback to original logic
         yield from self.visit_stmt(node, keywords, parens, nodeTypes)
@@ -687,7 +687,12 @@ class LineGenerator(Visitor[Line]):
             self.visit_classdef_sorted,
             keywords={"class"},
             parens=Ø,
-            nodeTypes={mtoken.STRUCT, mtoken.TRAIT, mtoken.EXTENSION},
+            nodeTypes={
+                mtoken.STRUCT,
+                mtoken.ENUM,
+                mtoken.TRAIT,
+                mtoken.EXTENSION,
+            },
         )
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(
