@@ -27,7 +27,7 @@ import importlib
 import pathlib
 import time
 from collections.abc import Awaitable, Coroutine
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
