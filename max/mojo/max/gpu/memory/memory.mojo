@@ -58,7 +58,7 @@ from std.memory.unsafe import bitcast
 from std.utils import IndexList, StaticTuple
 from std.utils.numerics import get_accum_type
 
-from std._gpu._utils import (
+from max.gpu._utils import (
     to_i16,
     to_i32,
     to_i64,

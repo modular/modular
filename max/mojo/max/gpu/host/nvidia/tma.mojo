@@ -24,10 +24,10 @@ support for various data types and memory layouts.
 from .. import DeviceBuffer
 from std.sys import size_of
 
-from std._gpu._utils import to_llvm_ptr
-
 from std.utils import IndexList, StaticTuple
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+
+from max.gpu._utils import to_llvm_ptr
 
 
 @fieldwise_init("implicit")
