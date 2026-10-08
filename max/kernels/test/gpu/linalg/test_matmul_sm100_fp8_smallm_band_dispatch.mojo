@@ -52,7 +52,7 @@ from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     matmul_dispatch_sm100_bf16,
     DISPATCH_HIT,
 )
-from linalg.utils import identity_compute_fn
+from linalg.utils import identity_compute_fn, no_epilogue_fn
 from std.utils.index import IndexList
 from std.testing import assert_equal
 
@@ -133,7 +133,7 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
 
     # MAX Mojo path: the production static-scaled FP8 dispatch entry.
     var status = matmul_dispatch_sm100_fp8[transpose_b=transpose_b](
-        c_tensor, a_tensor, b_tensor, scaled_compute_fn, ctx
+        c_tensor, a_tensor, b_tensor, no_epilogue_fn, scaled_compute_fn, ctx
     )
     _assert_hit(status, "FP8", N, K, m)
 
@@ -199,7 +199,7 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     # MAX Mojo path: the SM100 bf16 static matmul dispatch entry (no epilogue).
     var status = matmul_dispatch_sm100_bf16[
         transpose_b=transpose_b, has_compute_fn=False
-    ](c_tensor, a_tensor, b_tensor, identity_compute_fn, ctx)
+    ](c_tensor, a_tensor, b_tensor, no_epilogue_fn, identity_compute_fn, ctx)
     _assert_hit(status, "BF16", N, K, m)
 
     # Reference: same GEMM via vendor cuBLASLt.
