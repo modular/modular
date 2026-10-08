@@ -305,10 +305,6 @@ _EXTRA_CONSTRAINTS = {
     # `probe_block_scan_metal` is an Apple-only regression probe asserting
     # block.sum/prefix_sum are correct at the ghost-warp geometry.
     "probe_block_scan_metal.mojo": ["//:apple_gpu"],
-    "test_fused_qk_rope.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-3104
     "test_fused_qk_rope_ragged.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

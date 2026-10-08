@@ -21,7 +21,7 @@ from std.sys.info import align_of, simd_width_of
 from max.gpu import WARP_SIZE, block_dim, block_idx, thread_idx
 from max.gpu.primitives.warp import shuffle_xor
 from max.gpu.sync import barrier
-from max.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
+from max.gpu.host import DeviceContext, get_gpu_target
 from max.gpu.host.info import is_cpu, is_gpu
 from std.collections import OptionalReg
 from kv_cache.types import (
@@ -54,7 +54,6 @@ from nn.attention.cpu.mha import (
     flash_attention_kv_cache as flash_attention_kv_cache_cpu,
 )
 from nn.fused_qk_rope import (
-    fused_qk_rope,
     get_identity_rope_coeff,
     get_safetensors_idx,
     rope_value,
@@ -370,93 +369,6 @@ def _matmul_common[
             target=target,
             elementwise_lambda_fn=elementwise_lambda_fn,
         ](c_nd, hidden_state_2d, weight, context)
-
-
-# ===-----------------------------------------------------------------------===#
-# Fused QK RoPE (padded)
-# ===-----------------------------------------------------------------------===#
-
-
-@inline(.always)
-def generic_fused_qk_rope_bshd_paged[
-    dtype: DType,
-    //,
-    *,
-    interleaved: Bool,
-    target: StaticString,
-](
-    q_proj: TileTensor[mut=False, dtype, ...],
-    kv_collection: PagedKVCacheCollection,
-    freqs_cis: TileTensor[mut=False, dtype, ...],
-    layer_idx: UInt32,
-    valid_lengths: TileTensor[mut=False, .uint32, ...],
-    output: TileTensor[mut=True, dtype, ...],
-    context: DeviceContext,
-) raises:
-    """Performs a fused RoPE projection for Q and K with paged KV cache.
-
-    Applies RoPE to both Q (returned) and K (in the paged cache) to ensure
-    proper dependency ordering after fused_qkv_padded_matmul.
-
-    Args:
-        q_proj: Query projection tensor of shape [batch, seq_len, n_heads, head_dim].
-        kv_collection: The paged KV cache collection.
-        freqs_cis: Frequency tensor for RoPE of shape [max_seq_len, head_dim].
-        layer_idx: The layer index for accessing the correct cache.
-        valid_lengths: Tensor of shape [batch] containing the valid length for each
-            sequence. RoPE is only applied to positions within these lengths.
-        output: Output tensor for Q with RoPE applied, same shape as q_proj.
-        context: Device context pointer for execution.
-    """
-
-    @inline(.always)
-    def description_fn() {imm} -> String:
-        return String(";").join(
-            Span(
-                [
-                    trace_arg(
-                        "output",
-                        coord_to_index_list(output.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "q_proj",
-                        coord_to_index_list(q_proj.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "freqs_cis",
-                        coord_to_index_list(freqs_cis.layout.shape_coord()),
-                    ),
-                    trace_arg(
-                        "valid_lengths",
-                        coord_to_index_list(valid_lengths.layout.shape_coord()),
-                    ),
-                    "layer_idx=" + String(layer_idx),
-                    "num_heads=" + String(kv_collection.kv_params.num_heads),
-                    "head_size=" + String(kv_collection.kv_params.head_size),
-                    "interleaved=" + String(interleaved),
-                ]
-            )
-        )
-
-    with Trace[TraceLevel.OP, target=target](
-        "mo.fused_qk_rope.padded.paged.nhead_"
-        + String(kv_collection.kv_params.num_heads)
-        + ".hdim_"
-        + String(kv_collection.kv_params.head_size),
-        Trace[TraceLevel.OP]._get_detail_str(description_fn),
-        task_id=get_safe_task_id(context),
-    ):
-        fused_qk_rope[
-            kv_collection.CacheType, interleaved=interleaved, target=target
-        ](
-            q_proj,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            valid_lengths,
-            output,
-            context,
-        )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3430,75 +3342,3 @@ def generic_get_paged_cache_with_scales[
         page_stride = Int(page_stride[0]),
         scales_page_stride = Int(scales_page_stride[0]),
     }
-
-
-# ===-----------------------------------------------------------------------===#
-# GPU→CPU Page Copy for KV Cache Offloading
-# ===-----------------------------------------------------------------------===#
-
-
-def copy_kv_pages_d2h[
-    dtype: DType,
-](
-    device_kv_blocks: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    host_kv_blocks: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
-    src_page_ids: TileTensor[mut=False, .int64, address_space=.GENERIC, ...],
-    dst_page_ids: TileTensor[mut=False, .int64, address_space=.GENERIC, ...],
-    layer_idx: Int,
-    ctx: DeviceContext,
-) raises:
-    """Copy selected pages for a single layer from device to host KV cache.
-
-    This function performs true GPU→CPU async copy using enqueue_copy.
-    It copies only the specified layer for each page, with separate source
-    and destination page IDs to support independent page ID spaces.
-
-    The 6D tensor layout is: [num_pages, kv_dim, num_layers, page_size, num_heads, head_dim]
-
-    Args:
-        device_kv_blocks: Source GPU KV cache blocks .
-        host_kv_blocks: Destination CPU KV cache blocks.
-        src_page_ids: Pointer to GPU page IDs.
-        dst_page_ids: Pointer to CPU page IDs.
-        layer_idx: Which layer to copy.
-        ctx: Device context for GPU operations.
-    """
-
-    comptime assert device_kv_blocks.flat_rank == 6
-    comptime assert host_kv_blocks.flat_rank == 6
-    comptime assert src_page_ids.flat_rank == 1
-    comptime assert dst_page_ids.flat_rank == 1
-
-    var kv_dim = Int(device_kv_blocks.dim[1]())
-    var page_size = Int(device_kv_blocks.dim[3]())
-    var num_heads = Int(device_kv_blocks.dim[4]())
-    var head_size = Int(device_kv_blocks.dim[5]())
-    var num_pages_to_copy = Int(src_page_ids.dim[0]())
-
-    var elements_per_layer_slice = page_size * num_heads * head_size
-
-    for i in range(num_pages_to_copy):
-        var src_page_id = Int(src_page_ids[i])
-        var dst_page_id = Int(dst_page_ids[i])
-
-        for kv_idx in range(kv_dim):
-            var src_offset = Int(
-                device_kv_blocks.layout(
-                    Coord(src_page_id, kv_idx, layer_idx, 0, 0, 0)
-                )
-            )
-
-            var dst_offset = Int(
-                host_kv_blocks.layout(
-                    Coord(dst_page_id, kv_idx, layer_idx, 0, 0, 0)
-                )
-            )
-
-            var src_buf = DeviceBuffer[dtype](
-                ctx,
-                device_kv_blocks.ptr + src_offset,
-                elements_per_layer_slice,
-                owning=False,
-            )
-
-            ctx.enqueue_copy(host_kv_blocks.ptr + dst_offset, src_buf)

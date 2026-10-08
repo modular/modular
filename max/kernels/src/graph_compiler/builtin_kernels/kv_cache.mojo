@@ -40,7 +40,6 @@ from layout import (
 from internal_utils.fp8_utils import cast_saturating
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.kv_cache import (
-    copy_kv_pages_d2h,
     fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged,
     fused_dual_qk_rms_norm_rope_ragged_paged,
     fused_qk_rms_norm_ragged_paged,
@@ -1424,34 +1423,4 @@ struct Struct_kv_cache_ragged_paged_2m_iadd:
             batch_seq_len.to_tile_tensor(),
             layer_idx,
             context,
-        )
-
-
-@extensibility.register("mo.kv_cache.copy_pages_d2h")
-struct KVCacheCopyPagesD2H:
-    """Registers the `mo.kv_cache.copy_pages_d2h` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        device_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        host_kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        src_page_ids: InputTensor[dtype=.int64, rank=1, ...],
-        dst_page_ids: InputTensor[dtype=.int64, rank=1, ...],
-        layer_idx: UInt32,
-        ctx: DeviceContext,
-    ) raises:
-        var gpu_ctx = ctx
-
-        copy_kv_pages_d2h(
-            device_kv_blocks.to_tile_tensor(),
-            host_kv_blocks.to_tile_tensor(),
-            src_page_ids.to_tile_tensor(),
-            dst_page_ids.to_tile_tensor(),
-            Int(layer_idx),
-            gpu_ctx,
         )

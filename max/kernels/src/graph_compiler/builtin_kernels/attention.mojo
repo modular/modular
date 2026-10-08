@@ -44,7 +44,6 @@ from nn.attention.cpu.mha import flash_attention as nn_flash_attention
 from nn.attention.cpu.mha import flash_attention_split_kv
 from nn.kv_cache import (
     generic_flash_attention_kv_cache_padded,
-    generic_fused_qk_rope_bshd_paged,
     generic_fused_qkv_matmul_kv_cache_bshd_paged,
     generic_get_paged_cache,
     generic_get_paged_cache_with_scales,
@@ -2348,53 +2347,6 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
             dummy_position_ids,
             layer_idx,
             output,
-            context,
-        )
-
-
-@extensibility.register("mo.fused_qk_rope.padded.paged")
-struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
-    """Registers the `mo.fused_qk_rope.padded.paged` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=4, ...],
-        q_proj: InputTensor[dtype=dtype, rank=4, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=dtype, rank=2, ...],
-        layer_idx: UInt32,
-        valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        context: DeviceContext,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
-        )
-        generic_fused_qk_rope_bshd_paged[
-            interleaved=Self.interleaved,
-            target=target,
-        ](
-            q_proj.to_tile_tensor[.int64](),
-            kv_collection,
-            freqs_cis.to_tile_tensor[.int64](),
-            layer_idx,
-            valid_lengths.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
             context,
         )
 

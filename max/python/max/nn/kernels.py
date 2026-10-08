@@ -2481,70 +2481,6 @@ def fused_dual_qk_rms_norm_rope_nvfp4_ragged(
     return (results[0].tensor, results[1].tensor)
 
 
-def fused_qk_padded_rope(
-    kv_params: KVCacheParams,
-    input: TensorValue,
-    kv_collection: PagedCacheValues,
-    freqs_cis: TensorValue,
-    layer_idx: TensorValue,
-    valid_lengths: TensorValue,
-    interleaved: bool = True,
-) -> TensorValue:
-    """Computes fused query-key RoPE with padded inputs and paged KV cache.
-
-    This function applies Rotary Positional Embeddings (RoPE) to both Q and K tensors,
-    where K is stored in the paged KV cache. This is the padded equivalent of
-    fused_qk_ragged_rope.
-
-    Args:
-        kv_params: KV cache parameters.
-        input: Query tensor of shape [batch, seq_len, n_heads, head_dim].
-        kv_collection: Paged KV cache collection.
-        freqs_cis: Frequency tensor of shape (max_seq_len * 2, head_dim).
-        layer_idx: Layer index for KV cache (must be uint32 on CPU).
-        valid_lengths: Buffer of shape [batch] containing the valid length for each
-            sequence (must be uint32). RoPE is only applied to positions within
-            these lengths.
-        interleaved: Whether to use interleaved RoPE pattern.
-
-    Returns:
-        Query tensor with RoPE applied, same shape as input.
-
-    Note:
-        Unlike fused_qk_ragged_rope which requires ragged inputs, this function
-        works with padded batch inputs where sequences may have different actual
-        lengths but are padded to a uniform shape.
-    """
-    _check_dtype(DType.uint32, layer_idx=layer_idx, valid_lengths=valid_lengths)
-
-    _check_rank(4, input=input)
-
-    _check_rank(1, valid_lengths=valid_lengths)
-
-    parameters: dict[str, bool | int | str | DType] = {
-        "interleaved": interleaved,
-    }
-
-    # Use custom op that calls the Mojo fused_qk_rope kernel with paged cache
-    return ops.inplace_custom(
-        "mo.fused_qk_rope.padded.paged",
-        device=input.device,
-        values=[
-            input,
-            *kv_collection.flatten_without_attention_dispatch_metadata(),
-            freqs_cis,
-            layer_idx,
-            valid_lengths,
-        ],
-        out_types=[
-            TensorType(
-                dtype=input.dtype, shape=input.shape, device=input.device
-            )
-        ],
-        parameters=parameters,
-    )[0].tensor
-
-
 def _validate_kv_cache_store_common(
     kv_collection: PagedCacheValues,
     layer_idx: TensorValue,
@@ -2787,32 +2723,6 @@ def store_k_cache_padded(
         valid_lengths,
         layer_idx,
         key_or_value=KEY_CACHE_INDEX,
-    )
-
-
-def store_v_cache_padded(
-    kv_collection: PagedCacheValues,
-    x_v: TensorValue,
-    valid_lengths: TensorValue,
-    layer_idx: TensorValue,
-) -> None:
-    """Stores the value tensor into the paged KV cache for padded inputs.
-
-    Args:
-        kv_collection: The paged KV cache collection to write into.
-        x_v: The value tensor of rank 4 containing the new value projections.
-        valid_lengths: Buffer of shape ``[batch]`` (dtype ``uint32``)
-            indicating the actual (non-padded) sequence length for each
-            batch element.
-        layer_idx: The scalar layer index (dtype ``uint32``) identifying which
-            transformer layer's cache to update.
-    """
-    kv_cache_store_paged_padded(
-        kv_collection,
-        x_v,
-        valid_lengths,
-        layer_idx,
-        key_or_value=VALUE_CACHE_INDEX,
     )
 
 
@@ -5219,85 +5129,6 @@ def mla_prefill_graph(
         out_types=[_build_mla_prefill_decode_out_type(q, v_head_dim)],
         parameters=parameters,
     )[0].tensor
-
-
-def compute_mla_dispatch_args_scalar(
-    batch_size: TensorValue,
-    max_cache_valid_length: TensorValue,
-    q_max_seq_len: TensorValue,
-    num_heads: int,
-    device: DeviceRef,
-    is_fp8_kv: bool = False,
-) -> TensorValue:
-    """Computes scalar dispatch arguments for the MLA decode kernel.
-
-    Produces a CPU tensor of shape ``[3]`` containing pre-computed integer
-    arguments used by the capturable MLA decode kernel variant to enable CUDA
-    graph capture.
-
-    Args:
-        batch_size: Scalar tensor indicating the current batch size.
-        max_cache_valid_length: Scalar tensor with the maximum valid cache
-            sequence length across all requests in the batch.
-        q_max_seq_len: Scalar tensor with the maximum query sequence length
-            in the current batch.
-        num_heads: Number of query attention heads.
-        device: The :class:`~max.graph.DeviceRef` on which to run the op.
-
-    Returns:
-        A CPU :class:`~max.graph.TensorValue` of shape ``[3]`` and dtype
-        ``int64`` containing the dispatch scalar arguments.
-    """
-    results = ops.custom(
-        "mo.mla.compute_dispatch_args.scalar",
-        device=device,
-        values=[batch_size, max_cache_valid_length, q_max_seq_len],
-        out_types=[
-            TensorType(shape=[3], dtype=DType.int64, device=DeviceRef.CPU()),
-        ],
-        parameters={"num_heads": num_heads, "is_fp8_kv": is_fp8_kv},
-    )
-    return results[0].tensor
-
-
-def compute_mha_decode_num_partitions(
-    batch_size: TensorValue,
-    max_cache_valid_length: TensorValue,
-    n_kv_heads: int,
-    device: DeviceRef,
-) -> TensorValue:
-    """Computes the MHA decode partition count inside a graph.
-
-    Wraps the ``mo.mha.decode.get_num_partitions`` kernel as a graph op so
-    that the partition heuristic can be evaluated dynamically during graph
-    execution rather than only at graph-build time.
-
-    Args:
-        batch_size: Scalar int64 tensor with the current batch size.
-        max_cache_valid_length: Scalar int64 tensor with the maximum valid
-            cache length across all requests.
-        n_kv_heads: Number of key-value attention heads per device
-            (compile-time constant).
-        device: The :class:`~max.graph.DeviceRef` whose hardware info
-            determines the partition heuristic.
-
-    Returns:
-        A CPU :class:`~max.graph.TensorValue` of shape ``[1]`` and dtype
-        ``int64`` containing the computed partition count.
-    """
-    request = ops.stack(
-        [batch_size.reshape([]), max_cache_valid_length.reshape([])], axis=0
-    )
-    results = ops.custom(
-        "mo.mha.decode.get_num_partitions",
-        device=device,
-        values=[request],
-        out_types=[
-            TensorType(shape=[1], dtype=DType.int64, device=DeviceRef.CPU()),
-        ],
-        parameters={"n_kv_heads": n_kv_heads},
-    )
-    return results[0].tensor
 
 
 def mla_decode_graph(
@@ -11818,41 +11649,6 @@ def sliced_add(
             )
         ],
     )[0].tensor
-
-
-def kv_cache_copy_pages_d2h(
-    device_kv_collection: PagedCacheValues,
-    device_page_ids: TensorValue,
-    host_kv_blocks: BufferValue,
-    host_page_ids: TensorValue,
-    layer_idx: int,
-    device_ref: DeviceRef,
-) -> None:
-    """Copy KV cache pages from GPU to CPU for a single layer.
-
-    Performs async GPU->CPU copy of specified pages for layer-wise KV cache
-    offloading.
-
-    Args:
-        device_kv_collection: Source KV cache on GPU.
-        device_page_ids: Source page IDs to read from GPU.
-        host_kv_collection: Destination KV cache on CPU.
-        host_page_ids: Destination page IDs to write to CPU.
-            Must have same length as device_page_ids.
-        layer_idx: Which layer to copy.
-        device_ref: Device for the GPU context.
-    """
-    ops.inplace_custom(
-        name="mo.kv_cache.copy_pages_d2h",
-        device=device_ref,
-        values=[
-            device_kv_collection.kv_blocks,
-            host_kv_blocks,
-            device_page_ids,
-            host_page_ids,
-            ops.constant(layer_idx, DType.uint32, device=DeviceRef.CPU()),
-        ],
-    )
 
 
 def inplace_memcpy(dst: BufferValue, src: TensorValue) -> None:
