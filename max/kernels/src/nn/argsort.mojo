@@ -149,8 +149,8 @@ def _bitonic_local_sort_kernel[
 ):
     """GPU kernel: local bitonic sort using shared memory.
 
-    Each block independently sorts 256 elements. Fuses all stages from 1 to
-    log2(256)=8 into a single kernel launch.
+    Each block sorts 256 elements, with adjacent blocks finishing in opposite
+    directions. Fuses all stages from 1 to log2(256)=8 into one kernel launch.
     """
     var _n_arg = Int(n_arg)
     comptime BLOCK_SIZE = 256
@@ -193,7 +193,8 @@ def _bitonic_local_sort_kernel[
                 else:
                     cmp_val = vi < vp
 
-                var direction = (tid & k) == 0
+                # Global merges require adjacent blocks to form bitonic runs.
+                var direction = (gid & k) == 0
                 if cmp_val == direction:
                     shared_vals.unsafe_store(tid, vp)
                     shared_vals.unsafe_store(partner, vi)

@@ -1,0 +1,13 @@
+{
+  "target": "argsort",
+  "spec": {
+    "n": 257,
+    "ascending": 0,
+    "dist": 0,
+    "data_seed": 12345
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "Descending sort just above a block boundary, padded to 512 elements; fixed kernel passes on B200.",
+  "findings": []
+}
