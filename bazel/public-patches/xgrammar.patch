@@ -1402,7 +1402,33 @@ index d68479f..360396f 100644
    }
 
    // Phase 3: Combine results (no priority — merge with deduplication)
-@@ -955,12 +968,52 @@ bool GrammarMatcher::Impl::FillNextTokenBitmask(
+@@ -700,6 +713,25 @@ bool GrammarMatcher::Impl::AcceptToken(int32_t token_id, bool debug_print) {
+       is_completed_.push_back(atomic_completed);
+       token_length_history.push_back(1);
+     } else {
++      // Upstream bug: the atomic path predicted its rules on one history row, which it
++      // then popped, while the byte path pushed token.size() rows. A rule predicted
++      // there keeps that row as rule_start_pos, which is now the byte path's first
++      // row, so completing it looks up the wrong parents and drops the continuation
++      // after the token. Re-point those rules at the merged row, where the atomic
++      // parents are merged below. Only a multi-byte token taken by both paths gets
++      // here; a special token never takes the byte path.
++      const int32_t atomic_pos = scanable_state_history_.size() - token.size();
++      const int32_t merged_pos = scanable_state_history_.size() - 1;
++      for (auto& state : atomic_states) {
++        if (state.rule_start_pos == atomic_pos) {
++          state.rule_start_pos = merged_pos;
++        }
++      }
++      for (auto& entry : atomic_completable) {
++        if (entry.second.rule_start_pos == atomic_pos) {
++          entry.second.rule_start_pos = merged_pos;
++        }
++      }
+       auto byte_states = GetLatestScanableStates();
+       std::vector<ParserState> merged = byte_states;
+       StateEqualForParsing state_eq;
+@@ -955,12 +987,52 @@ bool GrammarMatcher::Impl::FillNextTokenBitmask(
    SetTokenBitmask(
        bitmask_data_ptr, tmp_accepted_bitset_, tmp_rejected_indices_, can_reach_end, false
    );
