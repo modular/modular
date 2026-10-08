@@ -26,6 +26,8 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     TransientScheduler,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+    attn_tmem_addr,
     StagedPipeline,
     VProducerPipeline,
     KConsumerPipeline,
@@ -267,7 +269,6 @@ __extension SM100MLA:
         var rope_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
             attn_smem.rope_smem_base()
         )
-        var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         # Extra blockscale barriers are placed after the SM100AttentionSMem layout.
         # Align to 8 bytes for SharedMemBarrier.
@@ -312,10 +313,6 @@ __extension SM100MLA:
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
             tma_to_cvt_pipeline.init()
             cvt_to_mma_pipeline.init()
-        elif warp_idx == 1:
-            tcgen05_alloc[Self.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -329,10 +326,7 @@ __extension SM100MLA:
 
         barrier()
 
-        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
-        # barrier publish it), and carry it by register into the shared
-        # fa4_softmax / fa4_correction consumers (see depth-512 fix).
-        var tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = attn_tmem_addr[cluster_size=1]()
 
         var role = warp_idx_to_role(warp_idx)
 
@@ -441,16 +435,12 @@ __extension SM100MLA:
             ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
-                tcgen05_release_allocation_lock[Self.cta_group]()
-                tcgen05_dealloc[Self.cta_group](
-                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-                )
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
             ](k_rope_lut, seq_info)
             Self.mma(
-                ptr_tmem_addr[0],
+                tmem_addr,
                 cvt_to_mma_pipeline,
                 seq_info.prompt_idx,
                 pos.score_row,
@@ -2038,6 +2028,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     )
     comptime assert smem_use <= fa4_config.sm100_smem_carveout
 
+    assert_sm_exclusive_smem[smem_use]()
     ctx.enqueue_function[kernel](
         q_tma_op,
         k_nope_tma_op,

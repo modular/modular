@@ -67,6 +67,7 @@ from nn.attention.gpu.nvidia.common import (
 from nn.attention.mha_mask import MHAMask, MASK_VALUE
 from nn.attention.mha_utils import null_pointer, unread_pointer
 from nn.attention.mha_operand import MHAOperand
+from kv_cache.types import kv_sub_tile_rows, kv_tma_fold_chunks
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
@@ -413,6 +414,32 @@ def fp8_p_bias[fp8_p: Bool](threshold: Float32) -> Float32:
     ) if fp8_p else Float32(0)
 
 
+@inline(.always)
+def mla_decode_k_fold_chunks[
+    kv_dtype: DType, config: MLA_SM100_Decode_Config
+]() -> Int:
+    """Returns the depth-chunk fold factor for the dense decode K descriptor.
+
+    The SW128 box is at most one 64-element atom wide, so a 64 x 576 bf16 stage
+    otherwise takes 9 TMAs. The chunk-outer rank-4 fold writes byte-identical
+    SMEM in one TMA. Only the bf16 kernel issues K through `tma_copy_k` with
+    this fold; the native-fp8 kernels share the descriptor but issue rank-3
+    copies, so fp8 KV always gets 1. The descriptor builder and the
+    `tma_copy_k` issue site must both use this value.
+    """
+    comptime if kv_dtype != DType.bfloat16:
+        return 1
+    return kv_tma_fold_chunks[
+        kv_dtype,
+        config.kv_tma_swizzle_mode,
+        BK=config.input_q_depth,
+        head_size=config.input_q_depth,
+        box_rows=kv_sub_tile_rows(config.BK_PV, config.page_size),
+        smem_BN=config.BN_QK,
+        page_size=config.page_size,
+    ]()
+
+
 # ------------------------------------------------------------------------------
 # MLA decoding configuration for SM100
 # ------------------------------------------------------------------------------
@@ -614,8 +641,7 @@ struct MLA_SM100_Decode_Config:
         else:
             self.num_threads = WARPGROUP_SIZE * 3
 
-        # 4 bytes for the TMEM base pointer
-        var smem_use = 4
+        var smem_use = 0
         self.tmem_used = Self.TMEM_CORR_LI + 1
         self.decoding_warp_split_k = decoding_warp_split_k
         self.page_size = page_size
@@ -751,12 +777,11 @@ struct MLA_SM100_Decode_Config:
             # stage and its barrier pair does. Spend the leftover there only.
             if native_fp8_unified_gather:
                 var extra_kv_stage = smem_per_kv + 2 * Self.mbar_size
-                # The sparse dispatch adds idx_bars, idx_smem and the TMEM
-                # pointer on top of `smem_used`; reserve them or the deeper
-                # ring overflows the carveout at launch rather than here.
+                # The sparse dispatch adds idx_bars and idx_smem on top of
+                # `smem_used`; reserve them or the deeper ring overflows the
+                # carveout at launch rather than here.
                 var sparse_reserve = (
                     2 * self.num_kv_stages * Self.mbar_size
-                    + 4
                     + self.num_kv_stages * self.BN_QK * 4
                 )
                 var leftover = (

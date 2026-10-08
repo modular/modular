@@ -44,7 +44,6 @@ from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
 from max.gpu.sync import barrier
 from max.gpu.primitives.warp import broadcast
 from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
-from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from nn.attention.gpu.mha import q_num_matrix_view_rows
@@ -52,6 +51,8 @@ from nn.attention.gpu.nvidia.sm100.smem import SM100AttentionSMem
 from nn.attention.gpu.nvidia.sm100.softmax_warp import fa4_softmax
 from nn.attention.gpu.nvidia.sm100.correction_warp import fa4_correction
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     kv_sub_tile_rows,
@@ -137,7 +138,6 @@ struct MLASmemStorage[
     var k_scale_smem: Array[UInt8, Self.k_scale_bytes]
     var correction_smem: Array[Float32, Self.correction_smem_size]
     var mbar_base: Array[SharedMemBarrier, Self.num_mbars]
-    var tmem_addr: Array[UInt32, 1]
 
 
 __extension SM100MLA:
@@ -490,7 +490,6 @@ __extension SM100MLA:
         var k_scale_smem = rebind[SharedMemPointer[Scalar[config.scale_dtype]]](
             attn_smem.k_scale_smem()
         )
-        var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         comptime num_reg_softmax = 184
         comptime num_reg_correction = 96
@@ -499,14 +498,10 @@ __extension SM100MLA:
 
         comptime assert not Self.PartitionType.do_partition
 
-        # Initialize barriers and tmem address
+        # Initialize barriers
         var warp_idx = UInt32(warp_id[broadcast=True]())
         if warp_idx == 0:
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
-        elif warp_idx == 1:
-            tcgen05_alloc[Self.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -526,7 +521,7 @@ __extension SM100MLA:
 
         barrier()
 
-        var tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = attn_tmem_addr[cluster_size=1]()
         var role = warp_idx_to_role(warp_idx)
 
         if role == WarpRole.Softmax0 or role == WarpRole.Softmax1:
@@ -2227,6 +2222,7 @@ def mla_sm100_prefill_per_token_scale[
         # dynamic-smem region, so reserve the max of both footprints.
         comptime smem_use = cfg.launch_smem_used()
 
+        assert_sm_exclusive_smem[smem_use]()
         ctx.enqueue_function[kernel](
             q_nope_tma_op,
             q_rope_tma_op,

@@ -30,7 +30,6 @@ from max.gpu import (
     thread_idx,
     WARP_SIZE,
 )
-from max.gpu.sync import barrier
 from std.math import ceildiv, exp2
 from std.math.constants import log2e
 from max.gpu.primitives.cluster import elect_one_sync
@@ -44,6 +43,7 @@ from max.gpu.memory import (
 )
 from max.gpu.sync import (
     named_barrier,
+    syncwarp,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
@@ -52,11 +52,8 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from std.ffi import UnsafeUnion
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_ld,
     tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
     tcgen05_st,
     tcgen05_cp,
     tcgen05_store_wait,
@@ -80,6 +77,7 @@ from nn.attention.gpu.nvidia.sm100.correction_warp import fa4_correction
 from nn.attention.gpu.mha import q_num_matrix_view_rows
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
     SM100TensorAccumulator,
     add_ftz,
     sub_ftz,
@@ -105,7 +103,6 @@ from layout import (
     coord,
     stack_allocation as tt_stack_allocation,
 )
-from layout.swizzle import make_swizzle
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     ld_shared_v4_u32,
     cvt_fp8x8_from_2xu32_to_bf16x8_packed_u32x4,
@@ -422,7 +419,6 @@ struct MLAPrefillSparse[
         var is_k_valid_ptr: UnsafePointer[
             UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
         ] = smem.is_k_valid.unsafe_ptr()
-        var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
         var rowwise_max_ptr: UnsafePointer[
             Float32, origin_of(smem.rowwise_max), address_space=.SHARED
         ] = smem.rowwise_max.unsafe_ptr()
@@ -464,14 +460,7 @@ struct MLAPrefillSparse[
         Self.Common._load_q_prologue(
             full_q_ptr, q_tma_op, prologue_q_ptr, cta_id, seq_idx
         )
-
-        if warp_idx == 0:
-            tcgen05_alloc[Int32(Self.config.cta_group)](
-                tmem_addr_ptr, Self.config.sm100_tmem_cols
-            )
-            tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
-
-        barrier()
+        syncwarp()
 
         if warpgroup_idx == 0:
             warpgroup_reg_alloc[144]()
@@ -660,12 +649,38 @@ struct MLAPrefillSparse[
                     ) & 1
                     sv_p1_done_ptr[prev_buf].wait(prev_phase)
 
-                var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
-                    uninitialized=True
-                )
+                # Write S to scores smem as 8 bf16 per uint128, stride 64
+                # uint128 between writes--exactly the K-major SW128B layout
+                # the SS-MMA reads. Keep the packed 128-bit store: a plain
+                # SIMD[bf16, 8] store scalarizes into bank-conflicting
+                # half-word stores.
+                def store_s() {imm}:
+                    comptime for i in range(P_PER_THREAD // 8):
+                        var s_vec = SIMD[Self.qkv_dtype, 8](
+                            s_bf16[i * 8 + 0],
+                            s_bf16[i * 8 + 1],
+                            s_bf16[i * 8 + 2],
+                            s_bf16[i * 8 + 3],
+                            s_bf16[i * 8 + 4],
+                            s_bf16[i * 8 + 5],
+                            s_bf16[i * 8 + 6],
+                            s_bf16[i * 8 + 7],
+                        )
+                        st_shared_v4_b32_at_bf16_elem_off[
+                            out_dtype=Self.qkv_dtype
+                        ](
+                            scores_ptr,
+                            s_smem_bf16_elem_base + i * 512,
+                            bitcast[.uint32, 4](s_vec),
+                        )
+
+                # Rescale O (in TMEM) if mi changed materially. Chunk 0's
+                # TMEM load is issued before the S/P smem write to overlap its
+                # latency, and stays in this branch so the loaded tuple never
+                # crosses a control-flow join (ptxas spills it whole if it does).
                 if k > 0 and any_rescale:
                     tcgen05_fence_after()
-                    o_chunk_prefetch = tcgen05_ld[
+                    var o_chunk_prefetch = tcgen05_ld[
                         datapaths=32,
                         bits=32,
                         repeat=O_RESCALE_CHUNK,
@@ -673,32 +688,7 @@ struct MLAPrefillSparse[
                         pack=False,
                         width=O_RESCALE_CHUNK,
                     ](UInt32(Self.O_TMEM_ADDR))
-
-                # Write S to scores smem as 8 bf16 per uint128, stride 64
-                # uint128 between writes--exactly the K-major SW128B layout
-                # the SS-MMA reads. Keep the packed 128-bit store: a plain
-                # SIMD[bf16, 8] store scalarizes into bank-conflicting
-                # half-word stores.
-                comptime for i in range(P_PER_THREAD // 8):
-                    var s_vec = SIMD[Self.qkv_dtype, 8](
-                        s_bf16[i * 8 + 0],
-                        s_bf16[i * 8 + 1],
-                        s_bf16[i * 8 + 2],
-                        s_bf16[i * 8 + 3],
-                        s_bf16[i * 8 + 4],
-                        s_bf16[i * 8 + 5],
-                        s_bf16[i * 8 + 6],
-                        s_bf16[i * 8 + 7],
-                    )
-                    st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.qkv_dtype](
-                        scores_ptr,
-                        s_smem_bf16_elem_base + i * 512,
-                        bitcast[.uint32, 4](s_vec),
-                    )
-
-                # Rescale O (in TMEM) if mi changed materially; chunk 0
-                # was prefetched above, chunks 1..N-1 load sequentially.
-                if k > 0 and any_rescale:
+                    store_s()
                     tcgen05_load_wait()
                     var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
                         fill_with_unrolled=lambda [j: Int]() -> Float32: (
@@ -741,6 +731,8 @@ struct MLAPrefillSparse[
                         )
                     tcgen05_store_wait()
                     tcgen05_fence_before()
+                else:
+                    store_s()
 
                 # Make scores smem writes (and any TMEM stores) visible to
                 # the SV MMA, then release the so_ready slot for this k.
@@ -835,9 +827,13 @@ struct MLAPrefillSparse[
             # col_group = depth_col_block*2 + atom_idx*4 + chunk tiles v_depth=512.
             comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
 
-            comptime o_sw = make_swizzle[
-                Self.output_dtype, TensorMapSwizzle.SWIZZLE_128B
-            ]()
+            # SW128B swizzle of row `head_local`: XORs the 16 B chunk index with
+            # `head_local % 8` and keeps the offset within a chunk, so each
+            # chunk is one contiguous 8-element store.
+            var o_row_base = (
+                Int(depth_col_block) * 2 * GROUP_STRIDE + Int(head_local) * 64
+            )
+            var o_sw_row = head_local % UInt32(8)
 
             comptime for atom_idx in range(Self.NUM_SV_ATOMS):
                 comptime atom_o_tmem_addr = (
@@ -846,9 +842,6 @@ struct MLAPrefillSparse[
 
                 comptime for chunk in range(2):
                     comptime CHUNK = 64
-                    var col_group = (
-                        Int(depth_col_block) * 2 + atom_idx * 4 + chunk
-                    )
                     var c_chunk: Array[Float32, CHUNK]
                     c_chunk = tcgen05_ld[
                         datapaths=32,
@@ -860,15 +853,37 @@ struct MLAPrefillSparse[
                     ](UInt32(atom_o_tmem_addr + chunk * CHUNK))
                     tcgen05_load_wait()
 
-                    comptime for i in range(CHUNK // 2):
-                        var v0_f32 = c_chunk[2 * i] * output_scale
-                        var v1_f32 = c_chunk[2 * i + 1] * output_scale
-                        var v = SIMD[Self.qkv_dtype, 2](
-                            v0_f32.cast[Self.qkv_dtype](),
-                            v1_f32.cast[Self.qkv_dtype](),
+                    comptime for g in range(CHUNK // 8):
+                        var v = SIMD[Self.qkv_dtype, 8](
+                            (c_chunk[8 * g + 0] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 1] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 2] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 3] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 4] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 5] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 6] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
+                            (c_chunk[8 * g + 7] * output_scale).cast[
+                                Self.qkv_dtype
+                            ](),
                         )
-                        var smem_offset = col_group * GROUP_STRIDE + o_sw(
-                            Int(head_local) * 64 + i * 2
+                        var smem_offset = (
+                            o_row_base
+                            + (atom_idx * 4 + chunk) * GROUP_STRIDE
+                            + Int((UInt32(g) ^ o_sw_row) * UInt32(8))
                         )
                         # Store only the real head rows; padded rows
                         # [num_q_heads, 64) carry dropped MMA output and would
@@ -885,9 +900,11 @@ struct MLAPrefillSparse[
                         )
                         var store_off = (
                             smem_offset * (1 - pad_row)
-                            + (Self.SMemType.O_SIZE - 2) * pad_row
+                            + (Self.SMemType.O_SIZE - 8) * pad_row
                         )
-                        (o_ptr + store_off).store[width=2](v)
+                        st_shared_v4_b32_at_bf16_elem_off[
+                            out_dtype=Self.qkv_dtype
+                        ](o_ptr, store_off, bitcast[.uint32, 4](v))
 
             named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
             if warp_idx == 0:
@@ -909,11 +926,6 @@ struct MLAPrefillSparse[
                     )
                     cp_async_bulk_commit_group()
             cp_async_bulk_wait_group[0]()
-
-            if warp_idx == 0:
-                tcgen05_dealloc[Int32(Self.config.cta_group)](
-                    tmem_addr_ptr[], Self.config.sm100_tmem_cols
-                )
 
         elif warpgroup_idx == 1:
             # K producer
@@ -1529,6 +1541,7 @@ def mla_prefill_sparse[
 
     comptime smem_size = size_of[MLASparseSharedMemory[config]]()
 
+    assert_sm_exclusive_smem[smem_size]()
     ctx.enqueue_function[kernel](
         q_tma_op,
         k_tma_op,

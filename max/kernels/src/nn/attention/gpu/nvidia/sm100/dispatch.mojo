@@ -27,6 +27,9 @@ from max.gpu.host import (
     Dim,
     FuncAttribute,
 )
+from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+)
 from nn.attention.gpu.nvidia.common import ImmutTileTensor1D
 from layout import Coord, TensorEngine
 from layout.tma_async import RaggedTMA3DTile, TMATensorTile
@@ -813,6 +816,7 @@ def mha_sm100_dispatch[
                             fa4_config.num_kv_heads,
                             ".",
                         )
+                        assert_sm_exclusive_smem[smem_use]()
                         ctx.enqueue_function[kernel](
                             q_tma_op,
                             k_tma_op,
@@ -994,6 +998,7 @@ def mha_sm100_dispatch[
                             fa4_config.num_kv_heads,
                             ".",
                         )
+                        assert_sm_exclusive_smem[smem_use]()
                         ctx.enqueue_function[kernel](
                             q_tma_op,
                             k_tma_op,

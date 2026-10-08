@@ -33,16 +33,13 @@ SMEM Layout (native FP8):
 from std.math import ceildiv
 from std.sys import size_of
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, warp_id
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, syncwarp
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_fence_before,
-    tcgen05_release_allocation_lock,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -66,6 +63,7 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     SharedMemPointer,
@@ -525,7 +523,6 @@ struct MLA_SM100_Decode_QKV_FP8[
         mbar_base += out_pipeline.num_mbars()
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
         var is_leader = elect() != 0
 
         if warp_idx == 8:
@@ -541,10 +538,6 @@ struct MLA_SM100_Decode_QKV_FP8[
                 q_tma.prefetch_descriptor()
                 k_tma.prefetch_descriptor()
                 o_tma.prefetch_descriptor()
-        elif warp_idx == 9:
-            tcgen05_alloc[Self.config.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         barrier()
 
         if warp_idx < 4:  # softmax warpgroup
@@ -555,7 +548,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 fold_q=Self.fold_q,
                 q_len_fold=Self.q_len_fold,
             ](
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 s_bars,
                 p_bars,
                 p_smem.bitcast[
@@ -577,7 +570,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
             warpgroup_reg_alloc[num_reg_correction]()
             Self.Common_MLA_Op.Correction(
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 o_bars,
                 c_bars,
                 corr_done_bars,
@@ -598,7 +591,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     q_smem.as_unsafe_any_origin(),
                     kv_smem.as_unsafe_any_origin(),
                     mbar_q,
@@ -608,7 +601,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 )
             elif warp_idx == 10:
                 Self.mmaPV(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     kv_smem.as_unsafe_any_origin(),
                     p_smem.as_unsafe_any_origin(),
                     p_bars,
@@ -625,17 +618,12 @@ struct MLA_SM100_Decode_QKV_FP8[
                     o_tma,
                     offset_position,
                 )
-        barrier()
+        syncwarp()
 
-        # PDL: Signal that this CTA is done
+        # PDL: the combine kernel can launch once every thread of the CTA has
+        # signaled (or exited), so each thread signals after its own work.
         comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
-
-        if warp_idx == 9:
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
-            tcgen05_dealloc[Self.config.cta_group](
-                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-            )
 
     # --------------------------------------------------------------------------
     # Load: TMA Q (FP8) directly, TMA KV (FP8) directly

@@ -65,7 +65,6 @@ ring is not on that loop, so leftover SMEM buys depth on the SW64 side only
   P stages:       N x 64 x 64 x 1 bytes               (SWIZZLE_64B, separate region)
   max/li:         128 x 4 x 3 = 1536 bytes
   barriers:       (6N+2M+11) fixed + output + idx_bars (2N) barriers
-  ptr_tmem_addr:  4 bytes
   idx_smem:       N x 64 x 4 bytes
 """
 
@@ -81,7 +80,7 @@ from max.gpu import (
     warp_id,
     lane_id,
 )
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, syncwarp
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -91,10 +90,7 @@ from max.gpu.memory import (
     fence_async_view_proxy,
 )
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_fence_before,
-    tcgen05_release_allocation_lock,
 )
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
@@ -119,6 +115,7 @@ from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     SharedMemPointer,
@@ -212,7 +209,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
     ]()
     # Worst-case padding that 16-byte aligns idx_smem for ld.shared.v4; the
     # dispatch adds this to the SMEM it reserves.
-    comptime idx_smem_align_pad = 12 if Self.gather4_idx_batch > 0 else 0
+    comptime idx_smem_align_pad = 8 if Self.gather4_idx_batch > 0 else 0
 
     comptime UMMAQKTSS = DecodeSM100QKTSS_FP8[
         operand_type=Self.fp8_type,
@@ -556,8 +553,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         ](mbar_base8)
         var mbar_base9: MBarType = idx_bars.end()
 
-        var ptr_tmem_addr = (mbar_base9).bitcast[UInt32]()
-        var idx_smem_base = (ptr_tmem_addr + 1).bitcast[Int32]()
+        var idx_smem_base = mbar_base9.bitcast[Int32]()
         comptime if Self.idx_smem_align_pad > 0:
             idx_smem_base += ((16 - (Int(idx_smem_base) & 15)) & 15) // 4
         comptime idx_smem_stride = Self.config.BN_QK
@@ -582,10 +578,6 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 o_tma.prefetch_descriptor()
                 comptime if Self.has_extra_kv:
                     extra_k_tma.prefetch_descriptor()
-        elif warp_idx == 9:
-            tcgen05_alloc[Self.config.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         # Zero the NoPE tail before the warpgroups read it. The fence publishes
         # the generic-proxy stores to the async proxy for the tcgen05 read.
         comptime if Self.config.input_q_depth < Self.config.padded_q_depth:
@@ -617,7 +609,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 fold_q=Self.fold_shared_index,
                 q_len_fold=Self.q_len_fold,
             ](
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 s_bars,
                 p_bars,
                 p_smem.bitcast[
@@ -643,7 +635,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         elif warp_idx >= 4 and warp_idx < 8:
             warpgroup_reg_alloc[num_reg_correction]()
             Self.Common_MLA_Op.Correction(
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 o_bars,
                 c_bars,
                 corr_done_bars,
@@ -670,7 +662,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     q_smem.as_unsafe_any_origin(),
                     kv_smem.as_unsafe_any_origin(),
                     mbar_q,
@@ -680,7 +672,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 )
             elif warp_idx == 10:
                 Self.mmaPV(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     kv_smem.as_unsafe_any_origin(),
                     p_smem.as_unsafe_any_origin(),
                     p_bars,
@@ -733,16 +725,10 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 kv_pipeline_mma,
                 offset_position,
             )
-        barrier()
+        syncwarp()
 
         comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
-
-        if warp_idx == 9:
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
-            tcgen05_dealloc[Self.config.cta_group](
-                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-            )
 
     @staticmethod
     @inline(.always)

@@ -77,8 +77,6 @@ def fa4_correction[
         _ = mbars.combined_p_o_consumer(0)[].arrive()
         _ = mbars.combined_p_o_consumer(1)[].arrive()
 
-    # `tmem_addr` passed in by register (read once post-barrier in the kernel
-    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o0_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O0))
     var o1_tmem = TmemAddress(tmem_addr + UInt32(config.TMEM_O1))
     var correction_smem_arg = smem.correction_smem()

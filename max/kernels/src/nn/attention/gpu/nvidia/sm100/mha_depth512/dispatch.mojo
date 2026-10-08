@@ -44,6 +44,7 @@ from nn.attention.mha_utils import (
     _is_decoding,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
     kv_sub_tile_rows,
     kv_tma_fold_chunks,
     o_store_tma_blocks_per_op,
@@ -356,6 +357,7 @@ def mha_sm100_depth512_dispatch[
                         PartitionType,
                     ].kernel
 
+                    assert_sm_exclusive_smem[smem_use]()
                     ctx.enqueue_function[kernel](
                         q_tma_op,
                         k_tma_op,
@@ -485,6 +487,7 @@ def mha_sm100_depth512_dispatch[
                         PartitionType,
                     ].kernel
 
+                    assert_sm_exclusive_smem[smem_use]()
                     ctx.enqueue_function[kernel](
                         q_tma_op,
                         k_tma_op,

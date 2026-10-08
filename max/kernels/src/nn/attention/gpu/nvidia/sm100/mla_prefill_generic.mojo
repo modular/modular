@@ -20,6 +20,8 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     TransientScheduler,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     KConsumerPipeline,
@@ -460,7 +462,6 @@ __extension SM100MLA:
         var rope_smem = rebind[SharedMemPointer[Scalar[KRopeType.dtype]]](
             attn_smem.rope_smem_base()
         )
-        var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
         #
@@ -494,10 +495,6 @@ __extension SM100MLA:
         if warp_idx == 0:
             # Initialize all barriers (S/C/order/Q1Sync/KV/O) in one call
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
-        elif warp_idx == 1:
-            tcgen05_alloc[Self.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -517,19 +514,17 @@ __extension SM100MLA:
         # Load/MMA warps), so it is the only divergence-free place to honor the
         # contract that *every* CTA signal launch-dependents — otherwise a
         # back-to-back consumer grid's `wait` hangs (see MLA decode).  The
-        # data-independent prologue above (barrier init, tmem alloc, TMA
-        # descriptor prefetch) overlaps the predecessor grid's tail; `wait`
+        # data-independent prologue above (barrier init, TMA descriptor
+        # prefetch) overlaps the predecessor grid's tail; `wait`
         # fences here before the data-dependent Q/K/V loads in `Self.load`;
         # `launch` lets the successor grid's prologue overlap our compute.
         comptime if MLA_PREFILL_PDL_LEVEL > PDLLevel.OFF:
             wait_on_dependent_grids()
             launch_dependent_grids()
 
-        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
-        # barrier publish it), and carry it by register into the shared
-        # fa4_softmax / fa4_correction consumers. See the depth-512 fix: the
-        # consumers must not re-read `tmem_addr_ptr()` in their bodies.
-        var tmem_addr = ptr_tmem_addr[0]
+        # Read the TMEM base once and carry it by register into the shared
+        # fa4_softmax / fa4_correction consumers.
+        var tmem_addr = attn_tmem_addr[cluster_size=1]()
 
         var role = warp_idx_to_role[Self.config.fa4_config.single_o](warp_idx)
 
@@ -554,7 +549,6 @@ __extension SM100MLA:
                 False,
                 Self.MaxSeqLenType,
                 output_nonempty=output_nonempty,
-                single_softmax_wg=Self.config.fa4_config.single_o,
             ](
                 attn_smem,
                 tmem_addr,
@@ -620,16 +614,12 @@ __extension SM100MLA:
             warpgroup_reg_dealloc[num_reg_other]()
 
             if not seq_info.is_valid():
-                tcgen05_release_allocation_lock[Self.cta_group]()
-                tcgen05_dealloc[Self.cta_group](
-                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-                )
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
             ](k_rope_lut, seq_info)
             Self.mma(
-                ptr_tmem_addr[0],
+                tmem_addr,
                 misc_mbars,
                 seq_info.prompt_idx,
                 pos.score_row,
@@ -2832,6 +2822,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
         # dynamic-smem region, so reserve the max of both footprints.
         comptime smem_use = cfg.launch_smem_used()
 
+        assert_sm_exclusive_smem[smem_use]()
         ctx.enqueue_function[kernel](
             q_tma_op,
             k_nope_tma_op,

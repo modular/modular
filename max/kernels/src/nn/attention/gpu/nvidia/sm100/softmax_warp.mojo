@@ -27,18 +27,17 @@ from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
     umma_arrive_leader_cta,
+    syncwarp,
 )
 from max.gpu.primitives.cluster import (
     block_rank_in_cluster,
     load_cluster_smem,
 )
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_dealloc,
     tcgen05_fence_after,
     tcgen05_fence_before,
     tcgen05_ld,
     tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
     tcgen05_store_wait,
 )
 from max.gpu.primitives.warp import _vote_nvidia_helper
@@ -1141,7 +1140,7 @@ def fa4_ws_level2_reduce_scatter_write[
 
     **Single-warpgroup invocation (`single_wg`).** There is no second partial to
     merge when only WG0 is alive -- `total_iters_combined == 1`, where WG1 has
-    already returned through `named_barrier[256](2)`. Reaching the barrier at
+    already returned. Reaching the barrier at
     (2) below with 128 of its 256 threads gone is a HANG, so that case cannot
     simply call this with a neutral peer. `single_wg=True` drops the scatter,
     the barrier and the gather, leaving `O_final = O_0[band g] * recip(l_0)`.
@@ -2459,15 +2458,6 @@ def fa4_softmax[
     # MLA). A pure-2Q kernel (or one whose mask needs the runtime FULL_MASK
     # slow path, where MLA cannot switch) must leave this False.
     output_nonempty: Bool = False,
-    # The generic MLA-prefill single-O path physically drops the 2nd softmax
-    # warpgroup (launches 3 WGs / 384 threads). When True, WG0 is the ONLY
-    # softmax WG, so the WG0<->WG1 pair rendezvous `named_barrier[2*WG](2)`
-    # before the terminal TMEM dealloc must be skipped (no WG1 arrives ->
-    # otherwise a 256-thread barrier with only 128 arrivals hangs). Default
-    # False keeps the per-token-scale / blockscale siblings (still 2 softmax
-    # WGs even for their single-O configs) and every non-single-O path
-    # byte-identical.
-    single_softmax_wg: Bool = False,
     # Effective cross-stage-P switch, computed once at the kernel level where
     # config, MaskType and the store shape are all visible. Defaults True so
     # the config-level gate alone decides for callers that do not thread it;
@@ -2583,8 +2573,6 @@ def fa4_softmax[
         _is_decoding[MaxSeqLenType](),
     ]
 
-    # `tmem_addr` passed in by register (read once post-barrier in the kernel
-    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var o_smem = smem.o_smem[output_type]()
     var o_prod_mbar: MBarType = (
         mbars.mbar_base + MiscMBarsType.O_producer_offset
@@ -3561,8 +3549,7 @@ def fa4_softmax[
     # partitions empty, never the rank-0 writer; also covers M6 idle CTAs) WG1
     # has zero work and MMA never commits s1, so pipeline_s.wait() below would
     # hang; peel_mask (num_sets==1) would also underflow mask_iters[0]. Skip
-    # everything WG1 would do and drop to the final cross-WG sync that gates
-    # TMEM dealloc (the dealloc, `warp_idx == 0`, runs at the kernel terminal).
+    # everything WG1 would do and exit.
     #
     # single-O (wide-V fallback): the two per-WG O partials do NOT fit in
     # the 512-col TMEM (`2*BN + 2*padded_ov > 512`), so single-O aliases
@@ -3580,7 +3567,7 @@ def fa4_softmax[
         if (
             config.single_o or total_iters_combined <= UInt32(1)
         ) and warp_group_idx == UInt32(1):
-            named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+            syncwarp()
             return
 
         # Empty partition (total_iters_combined == 0; WG0 only -- WG1 returned
@@ -3688,9 +3675,7 @@ def fa4_softmax[
                         head_idx,
                         gmem_row + cta_q_offset,
                     )
-                # Release WG1 (parked on this 2*WG barrier above) before the
-                # kernel terminal cluster_sync + TMEM dealloc.
-                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+                syncwarp()
                 return
 
         # Workspace (traditional/unfused) split-K empty partition. The workspace
@@ -3699,9 +3684,7 @@ def fa4_softmax[
         # -- reachable once windowed / chunked masks leave trailing partitions
         # empty) must be handled here, or WG0 hangs on `pipeline_s.wait()` below
         # (no scores were ever produced). Write `lse_p = -inf` (skip the O store;
-        # the separate `fa4_splitk_combine` folds `exp2(lse_p - m*) = 0`), then
-        # rendezvous with WG1 (parked on the 2*WG barrier at its early return for
-        # `total_iters_combined <= 1`) exactly as the T==1 non-empty exit does.
+        # the separate `fa4_splitk_combine` folds `exp2(lse_p - m*) = 0`).
         # `_ws_write_lse(-inf, 0)` -> `log2(0) + (-inf)*scale_log2e = -inf`.
         #
         # This is the ONLY egress that writes LSE without an O store, which is
@@ -3714,27 +3697,12 @@ def fa4_softmax[
                 _ws_write_lse(
                     min_or_neg_inf[accum_dtype](), Scalar[accum_dtype](0)
                 )
-                comptime if not single_softmax_wg:
-                    named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
-                # Free the TMEM this CTA allocated in the prologue. The non-empty
-                # workspace exit deallocs at the end of its store path (which this
-                # early return skips), and the MMA warp likewise returns for
-                # `total_iters == 0` WITHOUT issuing any MMA (`mma_warp.mojo`'s
-                # empty-partition guard), so no TMEM op is in flight -- warp 0
-                # frees it here, mirroring the non-empty exit. Omitting it leaks
-                # the CTA's TMEM (CUDA_ERROR_TENSOR_MEMORY_LEAK).
-                if warp_idx == 0:
-                    tcgen05_release_allocation_lock[Int32(cta_group)]()
-                    tcgen05_dealloc[Int32(cta_group)](
-                        tmem_addr, UInt32(config.sm100_tmem_cols)
-                    )
+                syncwarp()
                 return
     # All-masked row (valid_length 0): no scores produced, so `pipeline_s.wait()`
     # below would hang. Write a deterministic zero output row (the O accumulator
     # was never produced, so `zero_fill` skips the TMEM read), then take WG0's
-    # normal terminal exit -- rendezvous on the 2*WG barrier (unless there is no
-    # second WG) and free the TMEM warp 0 owns on the single-CTA path; a bare
-    # return would leak it and wedge the next launch.
+    # normal terminal exit.
     comptime if config.num_q == 1 and not (config.splitk_partitions > 1):
         if total_iters_combined == UInt32(0):
             fa4_scale_write_output[config, zero_fill=True](
@@ -3751,14 +3719,7 @@ def fa4_softmax[
                 head_idx,
                 gmem_row + cta_q_offset,
             )
-            comptime if not single_softmax_wg:
-                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
-            comptime if not config.pair_cta and config.splitk_partitions == 1:
-                if warp_idx == 0:
-                    tcgen05_release_allocation_lock[Int32(cta_group)]()
-                    tcgen05_dealloc[Int32(cta_group)](
-                        tmem_addr, UInt32(config.sm100_tmem_cols)
-                    )
+            syncwarp()
             return
 
     pipeline_s.wait()
@@ -3914,14 +3875,11 @@ def fa4_softmax[
     # dataflow is the enforcement: this call consumes the clamped value.
     #
     # A full-warpgroup barrier HERE is safe because every `return` that can
-    # precede it is warpgroup-uniform: the 1Q T<=1 exit parks the whole of WG1,
-    # and the three empty-partition / all-masked exits are gated on
-    # `total_iters_combined`, a per-CTA quantity (each of those blocks arrives at
-    # a 256-count `named_barrier(2)` before returning, so a per-warp predicate
-    # there would already hang today). This exchange adds NO uniformity
-    # obligation the function did not already carry. A future early return
-    # between `peel_mask` and here WOULD: make it warpgroup-uniform, or skip the
-    # exchange for the whole warpgroup.
+    # precede it is warpgroup-uniform: the 1Q T<=1 exit returns the whole of
+    # WG1, and the three empty-partition / all-masked exits are gated on
+    # `total_iters_combined`, a per-CTA quantity. A future early return between
+    # `peel_mask` and here must be warpgroup-uniform too, or skip the exchange
+    # for the whole warpgroup.
     row_max = sk_shared_max(row_max)
 
     # use_fma carries the running max in the negated log2-domain
@@ -4609,15 +4567,14 @@ def fa4_softmax[
                     _ws_write_lse(sk_m, sk_l)
 
                 if total_iters_combined == UInt32(1):
-                    # WG0 alone: WG1 returned at the num_q==1 early-out having
-                    # already taken `named_barrier[256](2)`, so Level 2's
-                    # 256-count barrier(3) would HANG. `single_wg` drops the
+                    # WG0 alone: WG1 returned at the num_q==1 early-out, so
+                    # Level 2's 256-count barrier(3) would HANG. `single_wg` drops the
                     # whole cross-WG transport rather than feeding it a neutral
                     # peer, which would not fix the barrier count.
                     o_prod_mbar[0].wait(o_phase)
                     tcgen05_fence_after()
                     sk_epilogue[True]()
-                    named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+                    syncwarp()
                 else:
                     # BOTH waits, for the two distinct reasons the key-split
                     # T>=2 arm documents below. The OWN wait gates this WG's
@@ -4633,15 +4590,7 @@ def fa4_softmax[
                         o_phase ^ (total_iters_combined & UInt32(1))
                     )
                     sk_epilogue[False]()
-                    named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
-                comptime if (
-                    not config.pair_cta and config.splitk_partitions == 1
-                ):
-                    if warp_idx == 0:
-                        tcgen05_release_allocation_lock[Int32(cta_group)]()
-                        tcgen05_dealloc[Int32(cta_group)](
-                            tmem_addr, UInt32(config.sm100_tmem_cols)
-                        )
+                    syncwarp()
                 return
 
             if total_iters_combined == UInt32(1):
@@ -4740,9 +4689,7 @@ def fa4_softmax[
                             gmem_row + cta_q_offset + ws_o_row_off,
                         )
                     _ws_write_lse(m_cta_t1_ws, l_cta_t1_ws)
-                # WG1 already hit `named_barrier[256](2)` and returned; WG0 hits
-                # it here so the pair-WG sync resolves before TMEM dealloc.
-                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
+                syncwarp()
             else:
                 # T>=2: hierarchical two-level combine (both WGs active). Wait
                 # BOTH o_prod producers. The OWN wait gates this WG's Level-1
@@ -4884,13 +4831,7 @@ def fa4_softmax[
                             gmem_row + cta_q_offset + ws_o_row_off,
                         )
                     _ws_write_lse(m_cta_ws, l_cta_ws)
-                named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
-            comptime if not config.pair_cta and config.splitk_partitions == 1:
-                if warp_idx == 0:
-                    tcgen05_release_allocation_lock[Int32(cta_group)]()
-                    tcgen05_dealloc[Int32(cta_group)](
-                        tmem_addr, UInt32(config.sm100_tmem_cols)
-                    )
+                syncwarp()
             return
 
         if config.single_o or total_iters_combined == UInt32(1):
@@ -4978,24 +4919,7 @@ def fa4_softmax[
                 # Workspace split-K: emit the fused per-row LSE alongside the
                 # per-partition O (T==1: WG0 owns the full row_max/row_sum).
                 _ws_write_lse(row_max, row_sum_total)
-            # WG1 already participated in `named_barrier[2*WG](2)` and
-            # returned; WG0 must hit it here so the pair-WG sync resolves
-            # before TMEM dealloc. Mirrors the unconditional sync below.
-            # When the generic single-O path drops WG1 entirely
-            # (`single_softmax_wg`), there is no peer WG to rendezvous with, so
-            # this 256-thread barrier would hang with only WG0's 128 arrivals.
-            # The correction / MMA -> dealloc ordering is carried by the
-            # o-producer mbars (unchanged), not this softmax-only barrier.
-            comptime if not single_softmax_wg:
-                named_barrier[Int32(2 * WARPGROUP_SIZE)](2)
-            # Pair-CTA and 1Q split-K defer dealloc to the kernel terminal
-            # (after the cluster_sync); only plain single-CTA deallocs inline.
-            comptime if not config.pair_cta and config.splitk_partitions == 1:
-                if warp_idx == 0:
-                    tcgen05_release_allocation_lock[Int32(cta_group)]()
-                    tcgen05_dealloc[Int32(cta_group)](
-                        tmem_addr, UInt32(config.sm100_tmem_cols)
-                    )
+            syncwarp()
             return
 
         # (WS T>=2 two-level combine handled above and returned; the non-WS
@@ -5232,14 +5156,4 @@ def fa4_softmax[
                             head_idx,
                             out_row_idx,
                         )
-    named_barrier[Int32(2 * WARPGROUP_SIZE)](4)
-    # Pair-CTA and 1Q split-K defer dealloc to the kernel after cluster_sync so
-    # that no CTA exits while a peer's cluster-scoped access is in flight
-    # (stmatrix for pair-CTA; the DSMEM `(max,sum)` peer reads for split-K).
-    # Only plain single-CTA deallocs inline here.
-    comptime if not config.pair_cta and config.splitk_partitions == 1:
-        if warp_idx == 0:
-            tcgen05_release_allocation_lock[Int32(cta_group)]()
-            tcgen05_dealloc[Int32(cta_group)](
-                tmem_addr, UInt32(config.sm100_tmem_cols)
-            )
+    syncwarp()

@@ -38,17 +38,7 @@ from max.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory, fence_mbarrier_init
-from max.gpu.primitives.cluster import (
-    block_rank_in_cluster,
-    cluster_arrive_relaxed,
-    cluster_sync,
-    cluster_wait,
-)
-from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
-    tcgen05_release_allocation_lock,
-)
+from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from layout import Coord
 from layout.tma_async import (
     SharedMemBarrier,
@@ -56,6 +46,7 @@ from layout.tma_async import (
     TMATensorTile,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    attn_tmem_addr,
     SharedMemPointer,
     MBarType,
     elect,
@@ -277,15 +268,6 @@ struct SM100MHADepth512[
 
         # ---- Initialization (per-CTA, then cluster sync) ----------------
 
-        # The pair-CTA `tcgen05.alloc` lowers to a handshake on an mbarrier in
-        # both CTAs' reserved SMEM, which the driver initializes before the
-        # kernel body runs. Nothing in the body orders that init before the
-        # peer's arrive, so compute-sanitizer racecheck reports a race unless a
-        # cluster barrier precedes the alloc. A full `cluster_sync()` here
-        # costs 1-4% on prefill (every CTA pays a round trip before barrier
-        # init); splitting it costs nothing measurable, because only the
-        # allocating warp waits, and the alloc already waits for the peer.
-        cluster_arrive_relaxed()
         var warp_idx = UInt32(warp_id[broadcast=True]())
         __match warp_idx:
             case 0:
@@ -293,13 +275,6 @@ struct SM100MHADepth512[
                 Depth512MBars[Self.config.num_kv_stages, Self.config.split_o](
                     smem.mbar_base()
                 ).init(lane_idx=Int32(thread_idx.x))
-            case 1:
-                # TMEM allocation (pair-CTA cooperative).
-                cluster_wait()
-                tcgen05_alloc[Int32(Self.cta_group)](
-                    smem.tmem_addr_ptr(),
-                    UInt32(Self.config.sm100_tmem_cols),
-                )
             case 2:
                 var e = elect()
                 if e != 0:
@@ -309,26 +284,12 @@ struct SM100MHADepth512[
                 if e != 0:
                     v_tma_op.prefetch_descriptor()
 
-        if warp_idx != 1:
-            cluster_wait()
         fence_mbarrier_init()
         cluster_sync()
 
-        # Read the TMEM base from SMEM EXACTLY ONCE here, where the prologue
-        # `cluster_sync()` (preceded by `tcgen05_alloc`'s SMEM store +
-        # MEMBAR.ALL) has provably published it, and carry it in a register to
-        # every consumer warp (softmax/correction/mma) as an explicit argument.
-        # Do NOT let the consumers re-read `smem.tmem_addr_ptr()` in their
-        # bodies: SASS showed the in-body re-reads (the P@V O-operand load deep
-        # in the MMA loop) gated only on KV-pipeline barriers, not on the alloc
-        # publish, so under SM co-residency with the TP `allreduce_1stage` grid
-        # (graph capture) a re-read could observe a stale/pre-alloc slot value
-        # -> garbage TMEM base -> invalid `UTCHMMA` operand ->
-        # CUDA_ERROR_ILLEGAL_INSTRUCTION. Reading once post-barrier and passing
-        # by register (matches the proven `SM100MHA2Q` FA4 structure) removes
-        # every in-body slot reload. Value is identical to the old per-warp
-        # reads (same published base), so single-shot is bit-identical.
-        var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+        # Read the TMEM base once and carry it in a register to every consumer
+        # warp (softmax/correction/mma), matching `SM100MHA2Q`.
+        var tmem_addr = attn_tmem_addr[cluster_size=Self.cta_group]()
 
         # ---- Warp dispatch -----------------------------------------------
 
@@ -444,10 +405,6 @@ struct SM100MHADepth512[
             ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
-                tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](
-                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
-                )
                 return
             var pos: PositionSummary = PositionSummary.create[
                 ragged=Self.ragged,

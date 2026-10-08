@@ -16,10 +16,10 @@ Two comptime-selected tiles share this file: head<=64 on a single CTA
 (cta_group=1) with K and V sharing one k-major gather buffer, and head=128 on a
 2-CTA cluster (cta_group=2) with CTA-split K + a separate full-V gather (the
 shared-KV simplification is impossible when CTA-split-K@base0 and full-V@base0
-collide).  The cg2 cluster scaffold (grid, cta_id/seq_idx split, tcgen05_alloc
-[cta_group], CTA_MASK multicast, cross-CTA arrive_cluster handshakes) mirrors the
-dequant `mla_prefill_sparse_kv_fp8.mojo`; the compute stays native f8f6f4.  Both
-tiles read V mn-major from a k-major SW64 buffer at BK=b_topk=64.
+collide).  The cg2 cluster scaffold (grid, cta_id/seq_idx split, CTA_MASK
+multicast, cross-CTA arrive_cluster handshakes) mirrors the dequant
+`mla_prefill_sparse_kv_fp8.mojo`; the compute stays native f8f6f4.  Both tiles
+read V mn-major from a k-major SW64 buffer at BK=b_topk=64.
 
 All of Q, K, V, and P are FP8 e4m3; QK^T and P*V run natively on tensor cores
 via `tcgen05.mma.kind::f8f6f4` (KIND_F8F6F4) with NO in-SMEM FP8->BF16 dequant.
@@ -74,6 +74,7 @@ from max.gpu.memory import (
 )
 from max.gpu.sync import (
     named_barrier,
+    syncwarp,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
@@ -81,11 +82,8 @@ from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_ld,
     tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
     tcgen05_st,
     tcgen05_store_wait,
     tcgen05_fence_after,
@@ -99,6 +97,7 @@ from kv_cache.types import KVCacheT
 from nn.attention.gpu.mha import q_num_matrix_view_rows
 from nn.attention.gpu.nvidia.common import elect
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
     SM100TensorAccumulator,
     add_ftz,
     mul_ftz,
@@ -119,7 +118,7 @@ from layout import (
     Coord,
     coord,
 )
-from layout.swizzle import make_swizzle, make_ldmatrix_swizzle
+from layout.swizzle import make_ldmatrix_swizzle
 from layout.tma_async import (
     create_tensor_tile,
     TMATensorTile,
@@ -195,7 +194,7 @@ struct MLASparseSharedMemoryQKVFP8[config: MLASparseConfig]:
     # correct by their passing test suites -- and matches
     # `mla_decode_utils.mojo`'s own `TMEM_S1 - TMEM_S0 == 32` at BN_QK=64.
     # O occupies TMEM cols [0, 256) (2 atoms x O_ATOM_PHYS_COLS=128).  TMEM
-    # fits up to (sm100_tmem_cols - S_TMEM_BASE) // S_SLOT_STRIDE = 8 ring
+    # fits up to (512 - S_TMEM_BASE) // S_SLOT_STRIDE = 8 ring
     # slots, but 4 is plenty: QK can already race 4 k-blocks ahead of softmax,
     # and these production shapes are KV-gather-latency bound (not S-handoff
     # bound), so a deeper ring buys no wall-clock while costing TMEM columns.
@@ -229,7 +228,6 @@ struct MLASparseSharedMemoryQKVFP8[config: MLASparseConfig]:
     var rowwise_max: Array[Float32, WARPGROUP_SIZE]
     var rowwise_sum: Array[Float32, WARPGROUP_SIZE]
     var is_k_valid: Array[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
-    var tmem_addr: Array[UInt32, 1]
 
     var prologue_q: Array[SharedMemBarrier, 1]
     # QK^T MMA done (S slot in TMEM ready for WG0).  Sized to the S-TMEM
@@ -749,10 +747,6 @@ struct MLAPrefillSparseQKVFP8[
         var warp_idx = warp_id()
         var lane_idx = lane_id()
         var warpgroup_idx = warp.broadcast(thread_idx.x // WARPGROUP_SIZE)
-        var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
-        var num_k_blocks = max(
-            ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1
-        )
         var num_kv_rows = kv_lut.num_kv_rows()
         var indices_base = seq_idx * UInt32(indices_stride)
 
@@ -789,7 +783,6 @@ struct MLAPrefillSparseQKVFP8[
         var is_k_valid_ptr: UnsafePointer[
             UInt8, origin_of(smem.is_k_valid), address_space=.SHARED
         ] = smem.is_k_valid.unsafe_ptr()
-        var tmem_addr_ptr = smem.tmem_addr.unsafe_ptr()
         var prologue_q_ptr = smem.prologue_q.unsafe_ptr()
         var qk_done_ptr: UnsafePointer[
             SharedMemBarrier, origin_of(smem.qk_done), address_space=.SHARED
@@ -890,19 +883,15 @@ struct MLAPrefillSparseQKVFP8[
         cluster_sync()
 
         Self._load_q_fp8(q_ptr, q_tma_op, prologue_q_ptr, seq_idx, cta_id)
-
-        if warp_idx == 0:
-            tcgen05_alloc[Int32(Self.config.cta_group)](
-                tmem_addr_ptr, Self.config.sm100_tmem_cols
-            )
-            tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
-        barrier()
+        syncwarp()
 
         if warpgroup_idx == 0:
             comptime if Self.is_cg2:
                 warpgroup_reg_alloc[240]()
             else:
                 warpgroup_reg_alloc[168]()
+            var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
+            var num_k_blocks = Self._num_k_blocks(top_k_length)
             Self._softmax_epilogue(
                 p_ptr,
                 kv_ptr,
@@ -915,7 +904,6 @@ struct MLAPrefillSparseQKVFP8[
                 so_ready_ptr,
                 k_valid_ready_ptr,
                 k_valid_free_ptr,
-                tmem_addr_ptr,
                 o_tma_op,
                 scale,
                 attn_sink_ptr,
@@ -926,13 +914,14 @@ struct MLAPrefillSparseQKVFP8[
         elif warpgroup_idx == 1:
             # K producer.  cg2 frees WG2 to be the V producer; both cg2
             # producers dealloc to 64 (fp8 gather is light -- no dequant
-            # staging) so WG0's softmax epilogue can absorb the freed regs,
-            # mirroring cg1's WG2/WG3 dealloc[88] idle/mma pattern.
+            # staging) so WG0's softmax epilogue can absorb the freed regs.
             comptime if Self.is_cg2:
                 warpgroup_reg_dealloc[64]()
             else:
                 warpgroup_reg_alloc[168]()
             var local_warp_idx = UInt32(warp_id() - 4)
+            var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
+            var num_k_blocks = Self._num_k_blocks(top_k_length)
             for k in range(num_k_blocks):
                 var buf = k % UInt32(Self.config.num_mbars)
                 var phase = (k / UInt32(Self.config.num_mbars)) & 1
@@ -986,6 +975,8 @@ struct MLAPrefillSparseQKVFP8[
                 # through to the 128-reg launch default.
                 warpgroup_reg_dealloc[64]()
                 var local_warp_idx = UInt32(warp_id() - 8)
+                var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
+                var num_k_blocks = Self._num_k_blocks(top_k_length)
                 for k in range(num_k_blocks):
                     var buf = k % UInt32(Self.config.num_mbars)
                     var phase = (k / UInt32(Self.config.num_mbars)) & 1
@@ -1014,9 +1005,15 @@ struct MLAPrefillSparseQKVFP8[
                         v_ready_ptr[buf].arrive_cluster(UInt32(0))
             else:
                 # V shares the KV buffer -> no separate V producer. Idle.
-                warpgroup_reg_dealloc[88]()
+                warpgroup_reg_dealloc[24]()
         else:
-            warpgroup_reg_dealloc[88]()
+            # WG1's 168 and this 104 are well above the <= 26 registers either
+            # role holds live, but lowering them to 64 and 48 measured about
+            # 1% slower at h16 and h64: ptxas reschedules the softmax and MMA
+            # code even though nothing spills.
+            warpgroup_reg_dealloc[104]()
+            var top_k_length = topk_lengths.load[width=1](Coord(seq_idx))
+            var num_k_blocks = Self._num_k_blocks(top_k_length)
             # Only the leader CTA issues the 2SM MMA; it drives both CTAs' TMEM.
             if cta_id == 0 and warp_idx == 12 and elect_one_sync():
                 Self._mma(
@@ -1046,6 +1043,14 @@ struct MLAPrefillSparseQKVFP8[
                     Int32(top_k_length),
                     Int(num_k_blocks),
                 )
+
+    # Each role recomputes this after its `setmaxnreg` instead of sharing one
+    # value from before the role split: a value live across the split spills
+    # or not depending on which register ptxas gave it and each role's cap.
+    @inline(.always)
+    @staticmethod
+    def _num_k_blocks(top_k_length: UInt32) -> UInt32:
+        return max(ceildiv(top_k_length, UInt32(Self.config.B_TOPK)), 1)
 
     # ------------------------------------------------------------------
     # MMA warp (WG3 warp 12, single elected lane): QK^T(k) then PV(k-1).
@@ -1251,9 +1256,6 @@ struct MLAPrefillSparseQKVFP8[
         k_valid_free_ptr: UnsafePointer[
             mut=True, SharedMemBarrier, address_space=.SHARED, ...
         ],
-        tmem_addr_ptr: UnsafePointer[
-            mut=True, UInt32, address_space=.SHARED, ...
-        ],
         o_tma_op: TMATensorTile[
             Self.output_dtype, Self.o_tile_shape, Self.o_desc_shape
         ],
@@ -1385,12 +1387,13 @@ struct MLAPrefillSparseQKVFP8[
                 var prev_phase = ((k - 1) / UInt32(Self.config.num_mbars)) & 1
                 sv_done_ptr[prev_buf].wait(prev_phase)
 
-            var o_chunk_prefetch = Array[Float32, O_RESCALE_CHUNK](
-                uninitialized=True
-            )
+            # Rescale O (in TMEM) if mi changed materially. Chunk 0's
+            # TMEM load is issued before the S/P smem write to overlap its
+            # latency, and stays in this branch so the loaded tuple never
+            # crosses a control-flow join (ptxas spills it whole if it does).
             if k > 0 and any_rescale:
                 tcgen05_fence_after()
-                o_chunk_prefetch = tcgen05_ld[
+                var o_chunk_prefetch = tcgen05_ld[
                     datapaths=32,
                     bits=32,
                     repeat=O_RESCALE_CHUNK,
@@ -1398,17 +1401,14 @@ struct MLAPrefillSparseQKVFP8[
                     pack=False,
                     width=O_RESCALE_CHUNK,
                 ](UInt32(Self.O_TMEM_ADDR))
-
-            # Write FP8 P (exp2 numerators) into the double-buffered P SMEM in
-            # the SW64 k-major layout the PV A descriptor reads.
-            Self._write_p_fp8[P_PER_THREAD](
-                p_ptr + cur_buf * UInt32(Self.SMemType.P_STAGE_SIZE),
-                nums,
-                query,
-                key_base,
-            )
-
-            if k > 0 and any_rescale:
+                # Write FP8 P (exp2 numerators) into the double-buffered P SMEM
+                # in the SW64 k-major layout the PV A descriptor reads.
+                Self._write_p_fp8[P_PER_THREAD](
+                    p_ptr + cur_buf * UInt32(Self.SMemType.P_STAGE_SIZE),
+                    nums,
+                    query,
+                    key_base,
+                )
                 tcgen05_load_wait()
                 var o_scaled_0 = Array[_, O_RESCALE_CHUNK](
                     fill_with_unrolled=lambda [j: Int]() -> Float32: (
@@ -1448,6 +1448,13 @@ struct MLAPrefillSparseQKVFP8[
                     )
                 tcgen05_store_wait()
                 tcgen05_fence_before()
+            else:
+                Self._write_p_fp8[P_PER_THREAD](
+                    p_ptr + cur_buf * UInt32(Self.SMemType.P_STAGE_SIZE),
+                    nums,
+                    query,
+                    key_base,
+                )
 
             fence_async_view_proxy()
             comptime if Self.is_cg2:
@@ -1500,9 +1507,13 @@ struct MLAPrefillSparseQKVFP8[
         var head_local = head_row_block * UInt32(32) + UInt32(lane_idx)
 
         comptime GROUP_STRIDE = Self.NUM_Q_HEADS_PER_CTA * 64
-        comptime o_sw = make_swizzle[
-            Self.output_dtype, TensorMapSwizzle.SWIZZLE_128B
-        ]()
+        # SW128B swizzle of row `head_local`: XORs the 16 B chunk index with
+        # `head_local % 8` and keeps the offset within a chunk, so each
+        # chunk is one contiguous 8-element store.
+        var o_row_base = (
+            Int(depth_col_block) * 2 * GROUP_STRIDE + Int(head_local) * 64
+        )
+        var o_sw_row = head_local % UInt32(8)
 
         var o_ptr = kv_ptr.bitcast[Scalar[Self.output_dtype]]()
 
@@ -1512,7 +1523,6 @@ struct MLAPrefillSparseQKVFP8[
             )
             comptime for chunk in range(2):
                 comptime CHUNK = 64
-                var col_group = Int(depth_col_block) * 2 + atom_idx * 4 + chunk
                 var c_chunk = tcgen05_ld[
                     datapaths=32,
                     bits=32,
@@ -1523,24 +1533,46 @@ struct MLAPrefillSparseQKVFP8[
                 ](UInt32(atom_o_tmem_addr + chunk * CHUNK))
                 tcgen05_load_wait()
 
-                comptime for i in range(CHUNK // 2):
-                    var v0_f32 = c_chunk[2 * i] * output_scale
-                    var v1_f32 = c_chunk[2 * i + 1] * output_scale
-                    var v = SIMD[Self.output_dtype, 2](
-                        v0_f32.cast[Self.output_dtype](),
-                        v1_f32.cast[Self.output_dtype](),
+                comptime for g in range(CHUNK // 8):
+                    var v = SIMD[Self.output_dtype, 8](
+                        (c_chunk[8 * g + 0] * output_scale).cast[
+                            Self.output_dtype
+                        ](),
+                        (c_chunk[8 * g + 1] * output_scale).cast[
+                            Self.output_dtype
+                        ](),
+                        (c_chunk[8 * g + 2] * output_scale).cast[
+                            Self.output_dtype
+                        ](),
+                        (c_chunk[8 * g + 3] * output_scale).cast[
+                            Self.output_dtype
+                        ](),
+                        (c_chunk[8 * g + 4] * output_scale).cast[
+                            Self.output_dtype
+                        ](),
+                        (c_chunk[8 * g + 5] * output_scale).cast[
+                            Self.output_dtype
+                        ](),
+                        (c_chunk[8 * g + 6] * output_scale).cast[
+                            Self.output_dtype
+                        ](),
+                        (c_chunk[8 * g + 7] * output_scale).cast[
+                            Self.output_dtype
+                        ](),
                     )
-                    var smem_offset = col_group * GROUP_STRIDE + o_sw(
-                        Int(head_local) * 64 + i * 2
+                    var smem_offset = (
+                        o_row_base
+                        + (atom_idx * 4 + chunk) * GROUP_STRIDE
+                        + Int((UInt32(g) ^ o_sw_row) * UInt32(8))
                     )
                     var pad_row = Int(
                         head_local >= UInt32(Self.NUM_Q_HEADS_PER_CTA)
                     )
                     var store_off = (
                         smem_offset * (1 - pad_row)
-                        + (Self.SMemType.O_SIZE - 2) * pad_row
+                        + (Self.SMemType.O_SIZE - 8) * pad_row
                     )
-                    (o_ptr + store_off).store[width=2](v)
+                    st_shared_v4_b32(o_ptr, store_off, bitcast[.uint32, 4](v))
 
         named_barrier[Int32(WARPGROUP_SIZE)](Int32(0))
         if warp_idx == 0:
@@ -1560,11 +1592,6 @@ struct MLAPrefillSparseQKVFP8[
                 )
                 cp_async_bulk_commit_group()
         cp_async_bulk_wait_group[0]()
-
-        if warp_idx == 0:
-            tcgen05_dealloc[Int32(Self.config.cta_group)](
-                tmem_addr_ptr[], Self.config.sm100_tmem_cols
-            )
 
 
 @inline(.always)
@@ -1666,6 +1693,7 @@ def mla_prefill_sparse_qkv_fp8[
 
     comptime smem_size = size_of[MLASparseSharedMemoryQKVFP8[config]]()
 
+    assert_sm_exclusive_smem[smem_size]()
     ctx.enqueue_function[kernel](
         q_tma_op,
         kv_tma_op,

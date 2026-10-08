@@ -53,11 +53,8 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from std.ffi import UnsafeUnion
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_ld,
     tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
     tcgen05_st,
     tcgen05_cp,
     tcgen05_store_wait,
@@ -166,7 +163,6 @@ struct MLASparseConfig[
     comptime num_mbars = Self.num_mbars_
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime num_threads: Int = 512
-    comptime sm100_tmem_cols = 512
 
     comptime q_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     comptime k_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
@@ -281,7 +277,6 @@ struct MLASparseSharedMemory[config: MLASparseConfig]:
     comptime NUM_KV_VALID_LANES = Self.MASK_BYTES_PER_BUF
     comptime INDICES_PER_LANE = 8
     var is_k_valid: Array[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
-    var tmem_addr: Array[UInt32, 1]
 
     # store rowwise max and sum for each threads in a warp group
     var rowwise_max: Array[Float32, WARPGROUP_SIZE]

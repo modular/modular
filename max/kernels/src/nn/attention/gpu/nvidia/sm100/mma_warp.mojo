@@ -256,8 +256,6 @@ def fa4_mma[
     # Key-split and non-WS keep `PARTIAL_K`.
     comptime CUT_LAST_TILE = PARTIAL_K or config.ws_shared_key
 
-    # `tmem_addr` passed in by register (read once post-barrier in the kernel
-    # prologue); do NOT re-read `smem.tmem_addr_ptr()` here.
     var q_smem = smem.q_smem()
 
     var s0_tmem = tmem_addr + UInt32(config.TMEM_S0)
