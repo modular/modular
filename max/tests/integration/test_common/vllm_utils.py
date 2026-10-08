@@ -71,40 +71,64 @@ def _setup_ninja_path() -> None:
 
 
 def _setup_cutlass_path() -> None:
-    """Expose the ``cutlass`` package shipped by ``nvidia-cutlass-dsl-libs-base``.
+    """Expose the ``cutlass`` package shipped by ``nvidia-cutlass-dsl-libs-*``.
 
-    vLLM's CUTE flash-attention path (used by the Kimi-K2.6 vision tower, among
-    others) lazily does ``import cutlass.cute``. The ``nvidia-cutlass-dsl`` wheel
-    is an empty metapackage; the actual ``cutlass`` package is shipped by
-    ``nvidia-cutlass-dsl-libs-base`` under ``nvidia_cutlass_dsl/python_packages``
-    and exposed via a ``nvidia_cutlass_dsl.pth`` file. Python's ``site`` machinery
-    processes ``.pth`` files at startup, but Bazel's ``pycross`` runfiles layout
-    does not, so that directory never lands on ``sys.path`` and ``import cutlass``
-    fails with ``ModuleNotFoundError``.
+    vLLM's CUTE kernels (the Kimi-K2.6 vision tower and the bf16x3 router GEMM
+    warmup, among others) lazily do ``import cutlass``. The
+    ``nvidia-cutlass-dsl`` wheel is an empty metapackage; the ``cutlass``
+    package lives under ``nvidia_cutlass_dsl/python_packages`` (before 4.6) or
+    ``nvidia_cutlass_dsl/dsl_packages`` (4.6 and later), exposed via a ``.pth``
+    file. From 4.6 that package is also split across the ``libs-core``,
+    ``libs-base``, ``libs-cu12`` and ``libs-cu13`` wheels, which pip unpacks
+    into one shared ``nvidia_cutlass_dsl`` directory. Bazel's ``pycross``
+    runfiles layout neither processes ``.pth`` files nor merges wheels, so
+    ``import cutlass`` fails, or finds ``cutlass`` without ``cutlass._mlir``.
 
-    Locate the relocated package directory and prepend it to both ``sys.path``
-    (for this process) and ``PYTHONPATH`` (so it is inherited by vLLM's spawned
-    worker processes, which is where the import actually happens). This must run
-    before vLLM is constructed.
+    Rebuild the merged directory as a per-host mirror of symlinks to every
+    wheel's files, then prepend the mirror and its package directory to both
+    ``sys.path`` (for this process) and ``PYTHONPATH`` (so it is inherited by
+    vLLM's spawned worker processes, which is where the import actually
+    happens). This must run before vLLM is constructed.
     """
-    # The libs-base wheel's site-packages root is on sys.path, with cutlass
-    # nested under `nvidia_cutlass_dsl/python_packages`. Scan for it rather than
-    # hard-coding version- or hash-specific runfiles paths.
-    for entry in list(sys.path):
-        if not entry:
-            continue
-        candidate = os.path.join(entry, "nvidia_cutlass_dsl", "python_packages")
-        if os.path.isdir(os.path.join(candidate, "cutlass")):
-            if candidate not in sys.path:
-                sys.path.insert(0, candidate)
-            pythonpath = os.environ.get("PYTHONPATH", "")
-            if candidate not in pythonpath.split(os.pathsep):
-                os.environ["PYTHONPATH"] = (
-                    candidate + os.pathsep + pythonpath
-                    if pythonpath
-                    else candidate
-                )
-            return
+    sources = [
+        os.path.join(entry, "nvidia_cutlass_dsl")
+        for entry in sys.path
+        if entry and os.path.isdir(os.path.join(entry, "nvidia_cutlass_dsl"))
+    ]
+    if not sources:
+        return
+
+    digest = hashlib.sha1("\0".join(sources).encode()).hexdigest()[:12]
+    mirror_root = (
+        pathlib.Path(tempfile.gettempdir()) / f"max_cutlass_dsl_{digest}"
+    )
+    mirror = mirror_root / "nvidia_cutlass_dsl"
+    for source in sources:
+        for dirpath, _, filenames in os.walk(source):
+            target_dir = mirror / os.path.relpath(dirpath, source)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            for filename in filenames:
+                link = target_dir / filename
+                if not link.exists() and not link.is_symlink():
+                    try:
+                        link.symlink_to(os.path.join(dirpath, filename))
+                    except FileExistsError:
+                        pass  # created concurrently by another process
+
+    for subdir in ("dsl_packages", "python_packages"):
+        packages = mirror / subdir
+        if (packages / "cutlass" / "__init__.py").is_file():
+            break
+    else:
+        return
+
+    pythonpath = os.environ.get("PYTHONPATH", "")
+    for path in (str(mirror_root), str(packages)):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+        if path not in pythonpath.split(os.pathsep):
+            pythonpath = path + os.pathsep + pythonpath if pythonpath else path
+    os.environ["PYTHONPATH"] = pythonpath
 
 
 # Self-contained sitecustomize, auto-imported at interpreter startup so it runs
