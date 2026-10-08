@@ -268,6 +268,27 @@ modular_py_test(
 )
 
 modular_py_test(
+    name = "test_graph_capture_compiled_callable_gpu",
+    size = "medium",
+    srcs = ["test_graph_capture_compiled_callable_gpu.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
     name = "test_mla_probe_strategy_gpu",
     timeout = "long",
     srcs = ["test_mla_probe_strategy_gpu.py"],

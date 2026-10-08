@@ -38,6 +38,8 @@ import time
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import replace
+from functools import cached_property
+from typing import Any
 
 import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
@@ -186,6 +188,20 @@ def _release_graph_capture_outputs_to_borrowed(
     )
 
 
+def _engine_model_and_signal_buffers(
+    model: Model | CompiledCallable[..., Any],
+) -> tuple[Model, list[Buffer]]:
+    """Returns the engine model to capture and the inputs appended to each call.
+
+    A :class:`~max.experimental.compilation.CompiledCallable` (ModuleV3) wraps
+    its engine model and appends its signal buffers to every call, so capture,
+    replay and verification must append them too.
+    """
+    if isinstance(model, CompiledCallable):
+        return model.engine_model, model.signal_buffers
+    return model, []
+
+
 def _pack_model_graph_key(key: AttnKeyInterface) -> int:
     """Maps a capture key to a uint64 for the C++ capture layer."""
     return hash(key) & 0xFFFFFFFFFFFFFFFF
@@ -197,7 +213,7 @@ class ServeGraphCaptureRunner:
     def __init__(
         self,
         *,
-        model: Model,
+        model: Model | CompiledCallable[..., Any],
         kv_params: KVCacheParamInterface,
         warmup_model_inputs: WarmupModelInputs,
         max_cache_length_upper_bound: int,
@@ -205,14 +221,15 @@ class ServeGraphCaptureRunner:
         num_speculative_tokens: int = 0,
         widths_by_batch_size: Sequence[Sequence[int]] | None = None,
     ) -> None:
-        self._model = model
+        self._engine_model, self._signal_buffers = (
+            _engine_model_and_signal_buffers(model)
+        )
         self._warmup_model_inputs = warmup_model_inputs
         self._num_speculative_tokens = num_speculative_tokens
         # Resolved once: replay is the hot path graph capture exists to keep
         # free of host work, so when the guard is off the only cost it adds is
         # this attribute being falsy.
         self._host_input_guard_mode = _resolve_host_input_guard_mode()
-        self._host_input_names: list[str] | None = None
         self._host_inputs_reported: set[str] = set()
         if max_cache_length_upper_bound < 1:
             raise ValueError(
@@ -273,10 +290,7 @@ class ServeGraphCaptureRunner:
         unknown keys.
         """
         self.graph_entries.pop(key, None)
-        model = self._model
-        if isinstance(model, CompiledCallable):
-            model = model.engine_model
-        model.release_captured_graph(_pack_model_graph_key(key))
+        self._engine_model.release_captured_graph(_pack_model_graph_key(key))
 
     def _probe_verify_widths(self, batch_size: int) -> list[int]:
         """Returns the verify widths to capture for ``batch_size``."""
@@ -371,16 +385,11 @@ class ServeGraphCaptureRunner:
                     batch_size, batch_characteristics
                 ) as model_inputs:
                     input_buffers = model_inputs.buffers
-                    if isinstance(self._model, CompiledCallable):
-                        output_buffers = self._model.engine_model.capture(
-                            _pack_model_graph_key(graph_key),
-                            *input_buffers,
-                            *self._model.signal_buffers,
-                        )
-                    else:
-                        output_buffers = self._model.capture(
-                            _pack_model_graph_key(graph_key), *input_buffers
-                        )
+                    output_buffers = self._engine_model.capture(
+                        _pack_model_graph_key(graph_key),
+                        *input_buffers,
+                        *self._signal_buffers,
+                    )
                     if not self._is_spec_decode:
                         outputs = ModelOutputs(*output_buffers)
                     else:
@@ -419,16 +428,13 @@ class ServeGraphCaptureRunner:
             len(self._recorded_cache_lengths),
         )
 
-        if hasattr(self._model, "_await_device_graphs"):
-            logger.info(
-                "Awaiting remaining device graph instantiation threads."
-            )
-            t0 = time.perf_counter()
-            self._model._await_device_graphs()
-            logger.info(
-                "Device graph instantiation complete in %.3fs.",
-                time.perf_counter() - t0,
-            )
+        logger.info("Awaiting remaining device graph instantiation threads.")
+        t0 = time.perf_counter()
+        self._engine_model._await_device_graphs()
+        logger.info(
+            "Device graph instantiation complete in %.3fs.",
+            time.perf_counter() - t0,
+        )
 
         logger.info(
             "Overlap device graph pre-capture complete for decode batch sizes "
@@ -436,34 +442,24 @@ class ServeGraphCaptureRunner:
             self._max_batch_size,
         )
 
-    def _host_input_name(self, index: int) -> str:
-        """Returns the model's name for positional input ``index``.
+    @cached_property
+    def _host_input_names(self) -> list[str]:
+        """Returns the engine model's input names, by position.
 
         ``captured_inputs`` is the prefix of the model's declared inputs that
         graph capture recorded -- ``replay`` appends the signal buffers after
         it -- so positions line up with ``input_metadata`` over that prefix.
         """
-        if self._host_input_names is None:
-            model = self._model
-            if isinstance(model, CompiledCallable):
-                model = model.engine_model
-            try:
-                self._host_input_names = [
-                    spec.name for spec in model.input_metadata
-                ]
-            except AttributeError:
-                self._host_input_names = []
-        if index < len(self._host_input_names):
-            name = self._host_input_names[index]
-            if name:
-                return name
-        return f"<input {index}>"
+        return [
+            spec.name or f"<input {index}>"
+            for index, spec in enumerate(self._engine_model.input_metadata)
+        ]
 
     def _guard_host_input(
         self, index: int, captured: Buffer, live: Buffer
     ) -> None:
         """Applies the configured guard to one host-resident replay input."""
-        name = self._host_input_name(index)
+        name = self._host_input_names[index]
         diagnostic = _host_input_diagnostic(name, index, captured, live)
         if diagnostic is None:
             return
@@ -592,17 +588,13 @@ class ServeGraphCaptureRunner:
 
         if debug_verify_replay:
             verify_inputs = debug_verify_model_inputs or model_inputs
-            self._model.debug_verify_replay(
+            self._engine_model.debug_verify_replay(
                 packed_model_graph_key,
                 *verify_inputs.buffers,
+                *self._signal_buffers,
             )
 
-        if isinstance(self._model, CompiledCallable):
-            self._model.engine_model.replay(
-                packed_model_graph_key,
-                *captured_inputs,
-                *self._model.signal_buffers,
-            )
-        else:
-            self._model.replay(packed_model_graph_key, *captured_inputs)
+        self._engine_model.replay(
+            packed_model_graph_key, *captured_inputs, *self._signal_buffers
+        )
         return outputs

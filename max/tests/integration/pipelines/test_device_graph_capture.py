@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -52,6 +53,10 @@ class DummyModel:
     def __init__(self, output_buffer: Buffer) -> None:
         self.output_buffer = output_buffer
         self.input_devices = [CPU()]
+        self.input_metadata = [
+            SimpleNamespace(name=name)
+            for name in ("tokens", "input_row_offsets", "return_n_logits")
+        ]
         self.capture_calls: list[tuple[int, list[Buffer]]] = []
         self.replay_calls: list[tuple[int, list[Buffer]]] = []
         self.debug_verify_replay_calls: list[tuple[int, list[Buffer]]] = []
@@ -65,6 +70,9 @@ class DummyModel:
 
     def debug_verify_replay(self, graph_key: int, *buffers: Buffer) -> None:
         self.debug_verify_replay_calls.append((graph_key, list(buffers)))
+
+    def _await_device_graphs(self) -> None:
+        pass
 
 
 class EagleDummyModel(DummyModel):
@@ -277,7 +285,10 @@ def test_replay_guard_abort_reads_the_captured_value_before_refresh(
     runner, captured = _runner_with_captured_host_input(capture_model.model)
     live = MockModelInputs(active_batch_size=1, eos_prob=0.0, return_n_logits=4)
 
-    with pytest.raises(RuntimeError, match="changed since capture"):
+    with pytest.raises(
+        RuntimeError,
+        match=r"'return_n_logits' \(index 2\) changed since capture",
+    ):
         runner.replay(model_inputs=live, batch_characteristics=_bc(1, 1, 1))
     assert captured.to_numpy()[0] == 1
     assert not capture_model.model.replay_calls
@@ -525,6 +536,39 @@ def test_release_graph_reaches_the_engine_model_of_a_compiled_callable() -> (
     )
     runner.release_graph(_gk(num_partitions=1, q_max_seq_len=1))
     compiled.engine_model.release_captured_graph.assert_called_once()
+
+
+def test_replay_appends_the_signal_buffers_of_a_compiled_callable() -> None:
+    compiled = MagicMock(spec=CompiledCallable)
+    signal = Buffer.zeros((1,), dtype=DType.float32)
+    compiled.signal_buffers = [signal]
+    runner = ServeGraphCaptureRunner(
+        model=compiled,
+        kv_params=_mock_kv_params(),
+        warmup_model_inputs=MagicMock(),
+        max_cache_length_upper_bound=10,
+        max_batch_size=1,
+    )
+    inputs = MockModelInputs(active_batch_size=1, eos_prob=0.0)
+    key = _gk(num_partitions=1, q_max_seq_len=1)
+    runner._records[_bc(1, 1, 1)] = key
+    runner.graph_entries[key] = (
+        inputs.buffers,
+        ModelOutputs(logits=signal),
+    )
+
+    runner.replay(
+        model_inputs=inputs,
+        batch_characteristics=_bc(1, 1, 1),
+        debug_verify_replay=True,
+    )
+
+    engine_model = compiled.engine_model
+    verify_args = engine_model.debug_verify_replay.call_args.args
+    replay_args = engine_model.replay.call_args.args
+    assert verify_args[-1] is signal
+    assert replay_args[-1] is signal
+    assert len(replay_args) == 1 + len(inputs.buffers) + 1
 
 
 @pytest.mark.parametrize(
