@@ -52,6 +52,7 @@ from max.serve.pipelines.preprocess_cache_stats import (
 from max.serve.telemetry._trace_context import inject_trace_carrier
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
+from max.serve.telemetry.ttft_join import log_ttft_join
 from max.serve.worker_interface import ModelWorkerProxy
 from max.serve.worker_interface.lora_queue import LoRAQueue
 
@@ -356,6 +357,9 @@ class TokenGeneratorPipeline(
         # Ids of chunks the reasoning parser reduced to nothing visible,
         # carried onto the next emitted chunk so token_ids stays complete.
         skipped_token_ids: list[int] = []
+        # Prefill often stamps hops on a delimiter-only first output that
+        # this loop skips. Keep the last stamp until METRICS.ttft.
+        ttft_join_hops: dict[str, float] | None = None
 
         # For reasoning models, we assume that there is always a reasoning span at the very start
         # We do not support multiple reasoning spans per response
@@ -369,9 +373,18 @@ class TokenGeneratorPipeline(
             reasoning_parser.reset()
         is_still_reasoning = reasoning_parser is not None
 
+        ipt_ms = 0.0
+        api_pre_tokenize_ms = 0.0
+        api_submit_ms = 0.0
         async with _awaiting_admission(self.model_worker):
-            with record_ms(METRICS.input_time):
+            if request.timestamp_ns:
+                api_pre_tokenize_ms = StopWatch(
+                    start_ns=request.timestamp_ns
+                ).elapsed_ms
+                METRICS.di_api_pre_tokenize(api_pre_tokenize_ms)
+            with record_ms(METRICS.input_time) as ipt_sw:
                 context = await self.tokenizer.new_context(request)
+            ipt_ms = ipt_sw.elapsed_ms
             # Read after tokenization, which is what moved the cache's
             # counters. Nothing is published for a text-only request.
             self._preprocess_cache_stats.record(
@@ -446,16 +459,22 @@ class TokenGeneratorPipeline(
             # example a dead worker — raises before the generator is returned,
             # letting the caller respond with an HTTP error before streaming
             # headers are sent.
+            submit_sw = StopWatch()
             response_stream = await self.model_worker.stream(
                 context.request_id, context
             )
+            api_submit_ms = submit_sw.elapsed_ms
+            METRICS.di_api_submit(api_submit_ms)
 
         async def _generate() -> AsyncGenerator[TokenGeneratorOutput, None]:
             nonlocal \
                 decode_elapsed_ms, \
                 num_generated_tokens, \
                 first_chunk_yielded, \
-                is_still_reasoning
+                is_still_reasoning, \
+                ttft_join_hops
+            first_worker_recv_ms: float | None = None
+            skipped_n = 0
             try:
                 with record_ms(METRICS.output_time):
                     async for responses, batch_id in response_stream:
@@ -463,6 +482,10 @@ class TokenGeneratorPipeline(
                         assert len(responses) > 0
                         assert isinstance(responses[0], TextGenerationOutput)
                         response = TextGenerationOutput.merge(responses)
+                        if first_worker_recv_ms is None:
+                            first_worker_recv_ms = ttft_sw.elapsed_ms
+                        if response.ttft_join_hops_ms:
+                            ttft_join_hops = response.ttft_join_hops_ms
 
                         num_generated_tokens += len(response.tokens)
 
@@ -554,6 +577,8 @@ class TokenGeneratorPipeline(
                                 )
                             else:
                                 skipped_token_ids.extend(response.tokens)
+                            if not first_chunk_yielded:
+                                skipped_n += 1
                             continue
 
                         token_count = len(tokens) if tokens is not None else 0
@@ -635,7 +660,26 @@ class TokenGeneratorPipeline(
                         # Record metrics - one TTFT/ITL per chunk
                         is_first_chunk = not first_chunk_yielded
                         if is_first_chunk:
-                            METRICS.ttft(ttft_sw.elapsed_ms)
+                            server_ttft_ms = ttft_sw.elapsed_ms
+                            METRICS.ttft(server_ttft_ms)
+                            hops = (
+                                dict(ttft_join_hops) if ttft_join_hops else {}
+                            )
+                            hops["api_pre_tokenize_ms"] = api_pre_tokenize_ms
+                            hops["api_submit_ms"] = api_submit_ms
+                            yield_gap_ms = (
+                                server_ttft_ms - first_worker_recv_ms
+                                if first_worker_recv_ms is not None
+                                else 0.0
+                            )
+                            log_ttft_join(
+                                request_id=request.request_id,
+                                server_ttft_ms=server_ttft_ms,
+                                ipt_ms=ipt_ms,
+                                hops=hops,
+                                skipped_n=skipped_n,
+                                yield_gap_ms=yield_gap_ms,
+                            )
                             decode_sw.reset()
                             first_chunk_yielded = True
                         else:

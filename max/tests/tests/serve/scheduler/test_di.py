@@ -480,6 +480,45 @@ def test_one_req_end_to_end() -> None:
         assert single_token.tokens == [tok]
 
 
+def test_ttft_join_hops_ride_first_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MAX_SERVE_TTFT_JOIN", "1")
+    decode, prefill, q, ctx = (
+        create_default_di_scheduler_and_submit_one_request()
+    )
+    req_id = ctx.request_id
+    decode.run_iteration()
+    prefill.run_iteration()
+    run_until(lambda: req_id in done_request_ids(q), decode, prefill)
+
+    first = q.response_queue.get()[req_id]
+    assert first.result is not None
+    hops = first.result.ttft_join_hops_ms
+    assert hops is not None
+    assert "admit_ms" in hops
+    assert "mw_queue_wait_ms" in hops
+    # PrefillResponse is before transfer/TG. onload_wait is recorded at
+    # ready (first decode token). The finer TG split lands there too.
+    assert "transfer_wait_ms" not in hops
+    assert "tg_queue_ms" not in hops
+    assert "tg_first_out_ms" not in hops
+    later = q.response_queue.get()[req_id]
+    assert later.result is not None
+    # Hop-carry keeps the stamp on later outputs until the request is
+    # released, so a skipped first chunk can still join leftover.
+    later_hops = later.result.ttft_join_hops_ms
+    assert later_hops is not None
+    assert "admit_ms" in later_hops
+    assert later_hops.get("onload_wait_ms", 0.0) >= 0.0
+    assert "transfer_wait_ms" in later_hops
+    assert later_hops["transfer_wait_ms"] >= 0.0
+    assert "tg_queue_ms" in later_hops
+    assert later_hops["tg_queue_ms"] >= 0.0
+    assert "tg_first_out_ms" in later_hops
+    assert later_hops["tg_first_out_ms"] >= 0.0
+
+
 def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
     """
     Both engines are constructed with their natural ``[dp][tp]`` layout.
@@ -1010,6 +1049,7 @@ def test_structured_output_handoff_discards_prefill_token_by_default(
     one-token chunked-CE continuation instead of a completed generation
     step.
     """
+    monkeypatch.setenv("MAX_SERVE_TTFT_JOIN", "1")
     monkeypatch.setattr(
         TextBatchConstructor,
         "structured_output_enabled",
@@ -1047,6 +1087,7 @@ def test_structured_output_handoff_discards_prefill_token_by_default(
     assert response_count(q, req_id) == 0, (
         "No output is produced until decode's own forward samples token 1"
     )
+    assert decode._ttft_join_hops.get(req_id, {}).get("handoff") == 1.0
 
 
 def test_handoff_to_first_token_metric_recorded_end_to_end(

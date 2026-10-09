@@ -59,6 +59,9 @@ def _make_self(
         ),
         kv_cache=kv_cache,
         prefill_reqs_per_replica=[0],
+        # JOIN is off here; the real method returns immediately. The
+        # unbound call still looks the attribute up on this fake.
+        _record_ttft_hop=lambda *_args, **_kwargs: None,
         _send_admitted_request_to_prefill=MagicMock(),
     )
 

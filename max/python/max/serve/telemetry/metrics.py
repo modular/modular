@@ -266,6 +266,28 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
             "(see '_should_early_sync_prev_batch')."
         ),
     ),  # type: ignore
+    "maxserve.di.api_pre_tokenize": _meter.create_histogram(
+        "maxserve.di.api_pre_tokenize",
+        unit="ms",
+        description=(
+            "API-local time from HTTP accept to tokenize start (parse / route)."
+        ),
+    ),  # type: ignore
+    "maxserve.di.api_submit": _meter.create_histogram(
+        "maxserve.di.api_submit",
+        unit="ms",
+        description=(
+            "API-local time from tokenize done to model-worker ZMQ put."
+        ),
+    ),  # type: ignore
+    "maxserve.di.mw_queue_wait": _meter.create_histogram(
+        "maxserve.di.mw_queue_wait",
+        unit="ms",
+        description=(
+            "Decode-worker time from first ZMQ pull of a request to "
+            "admission-queue enqueue (drain gap)."
+        ),
+    ),  # type: ignore
     "maxserve.di.ce_preempted_tg_iteration_count": _meter.create_counter(
         "maxserve.di.ce_preempted_tg_iteration_count",
         description=(
@@ -1283,6 +1305,28 @@ class _AsyncMetrics:
                 "maxserve.batch_execution_time",
                 execution_time,
                 {**self.extra_attributes, "batch_type": batch_type},
+            ),
+        )
+
+    def di_api_pre_tokenize(self, ms: float) -> None:
+        """API-local time from HTTP accept to tokenize start."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.api_pre_tokenize", ms, self.extra_attributes
+            ),
+        )
+
+    def di_api_submit(self, ms: float) -> None:
+        """API-local time from tokenize done to model-worker ZMQ put."""
+        self.client.send_measurement(
+            MaxMeasurement("maxserve.di.api_submit", ms, self.extra_attributes),
+        )
+
+    def di_mw_queue_wait(self, ms: float) -> None:
+        """Decode-worker time from first ZMQ pull to admission enqueue."""
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.di.mw_queue_wait", ms, self.extra_attributes
             ),
         )
 

@@ -17,7 +17,7 @@ import queue
 import time
 import uuid
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, auto
 
 from max.pipelines.context import (
@@ -64,6 +64,8 @@ from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
 from max.serve.scheduler.interface import Scheduler
 from max.serve.scheduler_result import SchedulerResult
 from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.ttft_join import is_enabled as ttft_join_enabled
+from max.serve.telemetry.ttft_join import log_kv_hold
 
 from .base import SchedulerProgress
 from .batch_constructor import TextBatchConstructor
@@ -87,6 +89,25 @@ class DecodeRequestPhase(Enum):
 
     TRANSFERRING = auto()
     """``PrefillResponse`` landed; its KV transfer is in flight."""
+
+
+_KV_HOLD_LOG_INTERVAL_S = 5.0
+
+
+@dataclass
+class _YieldGapStamps:
+    """Decode-clock times that split the wait after a PrefillResponse.
+
+    The first visible token waits on the admission-time onload, prefill's
+    KV transfer, and a TG slot, in that order. Kept only under
+    ``MAX_SERVE_TTFT_JOIN``.
+    """
+
+    response_at: float | None = None
+    onload_done_at: float | None = None
+    transfer_done_at: float | None = None
+    ready_at: float | None = None
+    tg_start_at: float | None = None
 
 
 @dataclass
@@ -193,10 +214,149 @@ class DecodeScheduler(Scheduler):
         # before that). Only ever populated when the handoff feature flag
         # is on.
         self._handoff_landed_at: dict[RequestID, float] = {}
+        # request_id -> hop ms for MAX_SERVE_TTFT_JOIN. Copied onto each
+        # output until cancel/evict/release; the API keeps the stamp until
+        # the chunk that records server TTFT.
+        self._ttft_join_hops: dict[RequestID, dict[str, float]] = {}
+        self._yield_gap: dict[RequestID, _YieldGapStamps] = {}
+        self._kv_hold_logged_at = 0.0
         self._last_batch_activity: float = time.monotonic()
         # None corresponds to the default destination address.
         # TODO: delete the default destination address.
         self.remote_endpoints: set[str] = set()
+
+    def _record_ttft_hop(self, req_id: RequestID, key: str, ms: float) -> None:
+        if not ttft_join_enabled():
+            return
+        self._ttft_join_hops.setdefault(req_id, {})[key] = ms
+
+    def _discard_ttft_join(self, req_id: RequestID) -> None:
+        self._ttft_join_hops.pop(req_id, None)
+        self._yield_gap.pop(req_id, None)
+
+    def _yield_gap_stamps(self, req_id: RequestID) -> _YieldGapStamps | None:
+        if not ttft_join_enabled():
+            return None
+        return self._yield_gap.setdefault(req_id, _YieldGapStamps())
+
+    def _stamp_transfer_progress(self, now: float) -> None:
+        for req_id, pending in self.requests.items():
+            stamps = self._yield_gap_stamps(req_id)
+            assert stamps is not None
+            if (
+                stamps.onload_done_at is None
+                and pending.onload_event.is_complete()
+            ):
+                stamps.onload_done_at = now
+            if (
+                stamps.transfer_done_at is None
+                and pending.phase is DecodeRequestPhase.TRANSFERRING
+                and pending.transfer is not None
+                and self.transfer_engine.is_complete(pending.transfer)
+            ):
+                stamps.transfer_done_at = now
+
+    def _record_ready(self, req_id: RequestID, now: float) -> None:
+        stamps = self._yield_gap.get(req_id)
+        if stamps is None or stamps.response_at is None:
+            return
+        # An onload that finished before the response landed added no wait.
+        for key, done_at in (
+            ("onload_wait_ms", stamps.onload_done_at),
+            ("transfer_wait_ms", stamps.transfer_done_at),
+        ):
+            waited = (
+                done_at if done_at is not None else now
+            ) - stamps.response_at
+            self._record_ttft_hop(req_id, key, max(waited, 0.0) * 1000)
+        stamps.ready_at = now
+
+    def _record_tg_start(
+        self, inputs: TextGenerationInputs[TextContext]
+    ) -> None:
+        now = time.monotonic()
+        for batch in inputs.batches:
+            for ctx in batch:
+                stamps = self._yield_gap.get(ctx.request_id)
+                if (
+                    stamps is None
+                    or stamps.ready_at is None
+                    or stamps.tg_start_at is not None
+                ):
+                    continue
+                stamps.tg_start_at = now
+                self._record_ttft_hop(
+                    ctx.request_id,
+                    "tg_queue_ms",
+                    (now - stamps.ready_at) * 1000,
+                )
+
+    def _record_tg_first_output(self, req_id: RequestID, now: float) -> None:
+        stamps = self._yield_gap.get(req_id)
+        if stamps is None or stamps.tg_start_at is None:
+            return
+        if "tg_first_out_ms" in self._ttft_join_hops.get(req_id, {}):
+            return
+        self._record_ttft_hop(
+            req_id, "tg_first_out_ms", (now - stamps.tg_start_at) * 1000
+        )
+
+    def _maybe_log_kv_hold(self) -> None:
+        """Logs, per replica, KV blocks held by requests not yet decoding.
+
+        Decode reserves a request's whole context at admission, before
+        prefill runs, so those blocks sit idle until the transfer lands.
+        """
+        if not ttft_join_enabled() or self.kv_cache is None:
+            return
+        now = time.monotonic()
+        if now - self._kv_hold_logged_at < _KV_HOLD_LOG_INTERVAL_S:
+            return
+        self._kv_hold_logged_at = now
+        for replica_idx, replica in enumerate(self.batch_constructor.replicas):
+            awaiting: set[int] = set()
+            transferring: set[int] = set()
+            n_awaiting = n_transferring = 0
+            for pending in self.requests.values():
+                if (
+                    pending.replica_idx != replica_idx
+                    or not self.kv_cache.contains(pending.context)
+                ):
+                    continue
+                blocks = self.kv_cache.get_req_blocks(pending.context)
+                if pending.phase is DecodeRequestPhase.TRANSFERRING:
+                    transferring.update(blocks)
+                    n_transferring += 1
+                else:
+                    awaiting.update(blocks)
+                    n_awaiting += 1
+            decoding: set[int] = set()
+            n_decoding = 0
+            for ctx in (*replica.tg_reqs.values(), *replica.ce_reqs.values()):
+                if self.kv_cache.contains(ctx):
+                    decoding.update(self.kv_cache.get_req_blocks(ctx))
+                    n_decoding += 1
+            count = self.kv_cache.block_count(replica_idx)
+            log_kv_hold(
+                replica=replica_idx,
+                n_awaiting_prefill=n_awaiting,
+                blocks_awaiting_prefill=len(awaiting),
+                n_transferring=n_transferring,
+                blocks_transferring=len(transferring),
+                n_decoding=n_decoding,
+                blocks_decoding=len(decoding),
+                blocks_shared=len((awaiting | transferring) & decoding),
+                blocks_free=count.free,
+                blocks_total=count.total,
+            )
+
+    def _maybe_attach_ttft_join(
+        self, req_id: RequestID, output: TextGenerationOutput
+    ) -> TextGenerationOutput:
+        hops = self._ttft_join_hops.get(req_id)
+        if not hops:
+            return output
+        return replace(output, ttft_join_hops_ms=dict(hops))
 
     @traced
     def handle_transfer_engine_response(
@@ -218,6 +378,7 @@ class DecodeScheduler(Scheduler):
         self.batch_constructor.release_grammar_build(message.id)
         self.kv_cache.release(pending.context)
         self.pipeline.release(message.id)
+        self._discard_ttft_join(message.id)
         self.response_queue.put_nowait(
             {message.id: SchedulerResult.failed(message.error)}
         )
@@ -243,13 +404,16 @@ class DecodeScheduler(Scheduler):
             return
 
         postprocess_start = time.monotonic()
+        stamps = self._yield_gap_stamps(request_id)
+        if stamps is not None:
+            stamps.response_at = postprocess_start
         if pending.ce_done_ping_at is not None:
             # Decode-clock span from prefill's "ce_done" ping to this real
             # reply landing (reply construction + KV-transfer
             # initiation + serialize + network, all on prefill's side).
-            METRICS.di_reply_rtt(
-                (postprocess_start - pending.ce_done_ping_at) * 1000
-            )
+            reply_ms = (postprocess_start - pending.ce_done_ping_at) * 1000
+            METRICS.di_reply_rtt(reply_ms)
+            self._record_ttft_hop(request_id, "reply_ms", reply_ms)
 
         context = pending.context
         is_constrained = (
@@ -269,6 +433,9 @@ class DecodeScheduler(Scheduler):
             # wait adds.
             context.tokens.skip_processing(context.tokens.active_length - 1)
             self._handoff_landed_at[request_id] = time.monotonic()
+            # Marker, not a duration. leftover_ms ignores keys outside
+            # the named hop list; the join line prints it as a bool.
+            self._record_ttft_hop(request_id, "handoff", 1.0)
         else:
             # Update the context with the generated token
             context.update(message.generated_token_id)
@@ -295,7 +462,9 @@ class DecodeScheduler(Scheduler):
                 )
 
             # Send singular token to the API process
-            output = context.to_generation_output()
+            output = self._maybe_attach_ttft_join(
+                request_id, context.to_generation_output()
+            )
             self.response_queue.put_nowait(
                 {request_id: SchedulerResult.create(output)}
             )
@@ -324,11 +493,15 @@ class DecodeScheduler(Scheduler):
 
         now = time.monotonic()
         if message.event == "arrived":
-            METRICS.di_dispatch_rtt((now - pending.phase_entered_at) * 1000)
+            dispatch_ms = (now - pending.phase_entered_at) * 1000
+            METRICS.di_dispatch_rtt(dispatch_ms)
+            self._record_ttft_hop(message.id, "disp_ms", dispatch_ms)
             pending.arrived_ping_at = now
         elif message.event == "ce_done":
             if pending.arrived_ping_at is not None:
-                METRICS.di_prefill_span((now - pending.arrived_ping_at) * 1000)
+                span_ms = (now - pending.arrived_ping_at) * 1000
+                METRICS.di_prefill_span(span_ms)
+                self._record_ttft_hop(message.id, "span_ms", span_ms)
             pending.ce_done_ping_at = now
 
     @traced
@@ -435,9 +608,16 @@ class DecodeScheduler(Scheduler):
         )
 
         for context in items:
+            recv_at = time.monotonic()
             self.pending_reqs[context.request_id] = context
+            enqueued_at = time.monotonic()
             self._admission_enqueue_time.setdefault(
-                context.request_id, time.monotonic()
+                context.request_id, enqueued_at
+            )
+            queue_wait_ms = (enqueued_at - recv_at) * 1000
+            METRICS.di_mw_queue_wait(queue_wait_ms)
+            self._record_ttft_hop(
+                context.request_id, "mw_queue_wait_ms", queue_wait_ms
             )
 
         while (
@@ -480,11 +660,13 @@ class DecodeScheduler(Scheduler):
                 break
 
             admitted_at = time.monotonic()
-            enqueued_at = self._admission_enqueue_time.pop(req_id, None)
-            if enqueued_at is not None:
-                METRICS.di_decode_admission_queue_wait_time(
-                    (admitted_at - enqueued_at) * 1000
-                )
+            # Same name is already bound to float above, so pop() cannot
+            # take a None default under the 3.10 dict overloads.
+            if req_id in self._admission_enqueue_time:
+                enqueued_at = self._admission_enqueue_time.pop(req_id)
+                admit_ms = (admitted_at - enqueued_at) * 1000
+                METRICS.di_decode_admission_queue_wait_time(admit_ms)
+                self._record_ttft_hop(req_id, "admit_ms", admit_ms)
             self.prefill_reqs_per_replica[replica_idx] += 1
             if self.batch_constructor.structured_output_enabled:
                 # Start this request's grammar build now, the instant it's
@@ -504,6 +686,7 @@ class DecodeScheduler(Scheduler):
                 # A handoff may have landed and been enqueued here before
                 # its CE step ever ran; nothing will ever read it back.
                 self._handoff_landed_at.pop(req_id, None)
+                self._discard_ttft_join(req_id)
                 # Send the cancelled result back to the response q
                 self.response_queue.put_nowait(
                     {req_id: SchedulerResult.cancelled()}
@@ -545,6 +728,7 @@ class DecodeScheduler(Scheduler):
                 # but pop defensively rather than lean on that invariant.
                 self.batch_constructor.release_grammar_build(req_id)
                 self._handoff_landed_at.pop(req_id, None)
+                self._discard_ttft_join(req_id)
                 self.kv_cache.release(data)
 
             # TODO: Do not crash the scheduler if a request does not have a target endpoint.
@@ -597,6 +781,7 @@ class DecodeScheduler(Scheduler):
             # request got stuck; nothing will ever read it back. A grammar
             # build may also still be running from admission time.
             self._handoff_landed_at.pop(req_id, None)
+            self._discard_ttft_join(req_id)
             self.batch_constructor.release_grammar_build(req_id)
 
             if pending.phase is DecodeRequestPhase.TRANSFERRING:
@@ -657,6 +842,9 @@ class DecodeScheduler(Scheduler):
         iteration, so a same-tick cancellation is already flagged on its
         record before this checks it.
         """
+        now = time.monotonic()
+        if ttft_join_enabled():
+            self._stamp_transfer_progress(now)
         ready_ids = []
         for req_id, pending in self.requests.items():
             if not pending.onload_event.is_complete():
@@ -686,9 +874,11 @@ class DecodeScheduler(Scheduler):
                 # A grammar build may still be running too, from admission
                 # time.
                 self._handoff_landed_at.pop(request_id, None)
+                self._discard_ttft_join(request_id)
                 self.batch_constructor.release_grammar_build(request_id)
                 continue
 
+            self._record_ready(request_id, now)
             self.batch_constructor.enqueue_new_request(
                 pending.context, pending.replica_idx
             )
@@ -711,6 +901,8 @@ class DecodeScheduler(Scheduler):
             inputs: The inputs containing the batch of requests to schedule.
         """
         assert len(inputs.batches) > 0
+        if self._yield_gap:
+            self._record_tg_start(inputs)
         with _trace_batch("decode", inputs):
             responses = self.pipeline.execute(inputs)
 
@@ -725,7 +917,9 @@ class DecodeScheduler(Scheduler):
 
         self.batch_constructor.advance_requests(inputs)
 
-        # Release terminated requests
+        # Release terminated requests. Discard join hops after the
+        # response is queued so tg_queue_ms / tg_first_out_ms can ride
+        # the first TG token even when that token is also EOS.
         num_terminated_requests = 0
         for request_id, response in responses.items():
             if response.is_done:
@@ -734,25 +928,33 @@ class DecodeScheduler(Scheduler):
 
         # Send the responses to the API process
         if responses:
+            now = time.monotonic()
             if self._handoff_landed_at:
                 # Any of these responses could be a handoff's first real
                 # token -- the one case with no equivalent wait in the
                 # ordinary path, whose token already arrives with the
                 # PrefillResponse. Pop rather than peek: this fires at most
                 # once per request, the first time its output is sent.
-                now = time.monotonic()
                 for req_id in responses:
                     landed_at = self._handoff_landed_at.pop(req_id, None)
                     if landed_at is not None:
                         METRICS.di_handoff_to_first_token_time(
                             (now - landed_at) * 1000
                         )
+            if self._yield_gap:
+                for req_id in responses:
+                    self._record_tg_first_output(req_id, now)
             self.response_queue.put_nowait(
                 {
-                    req_id: SchedulerResult.create(response)
+                    req_id: SchedulerResult.create(
+                        self._maybe_attach_ttft_join(req_id, response)
+                    )
                     for req_id, response in responses.items()
                 }
             )
+            for request_id, response in responses.items():
+                if response.is_done:
+                    self._discard_ttft_join(request_id)
 
         return num_terminated_requests
 
@@ -795,6 +997,7 @@ class DecodeScheduler(Scheduler):
 
         # Update the active decode batch
         self.check_for_completed_transfers()
+        self._maybe_log_kv_hold()
 
         # Construct the batch to execute
         t0 = time.monotonic()
@@ -810,6 +1013,7 @@ class DecodeScheduler(Scheduler):
             # A handoff may have landed and started this wait before its
             # grammar build failed; nothing will ever read it back.
             self._handoff_landed_at.pop(failed_id, None)
+            self._discard_ttft_join(failed_id)
             self.response_queue.put_nowait(
                 {failed_id: SchedulerResult.failed(error)}
             )

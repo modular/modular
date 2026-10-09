@@ -49,10 +49,15 @@ def _make_self(
         dispatcher=MagicMock(),
         batch_constructor=MagicMock(),
         _handoff_landed_at={},
+        _ttft_join_hops={},
+        _yield_gap={},
     )
     # Bind the real instance method so the cancel-to-prefill path runs.
     self_obj._send_cancel_to_prefill = (
         DecodeScheduler._send_cancel_to_prefill.__get__(self_obj)
+    )
+    self_obj._discard_ttft_join = DecodeScheduler._discard_ttft_join.__get__(
+        self_obj
     )
     return self_obj
 

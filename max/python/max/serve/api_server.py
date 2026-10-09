@@ -67,6 +67,7 @@ from max.serve.telemetry.common import (
     send_telemetry_log,
 )
 from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.ttft_join import announce_enabled
 from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
 from max.serve.worker_interface.lora_queue import LoRAQueue
@@ -134,6 +135,7 @@ async def lifespan(
         )
 
     logger.info("Starting server...")
+    announce_enabled()
 
     async with AsyncExitStack() as exit_stack:
         media_root = Path(
