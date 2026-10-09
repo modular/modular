@@ -86,6 +86,16 @@ class _DkvClient(Protocol):
 
     def abandon_prepared(self) -> None: ...
 
+    def is_healthy(self) -> bool: ...
+
+    def lookup(
+        self,
+        *,
+        group_ids: Sequence[int],
+        block_hashes: Sequence[int],
+        hint: bytes | None = ...,
+    ) -> Sequence[Sequence[bool]]: ...
+
     def offload(
         self,
         *,
@@ -1344,6 +1354,11 @@ class DKVConnector(KVConnector):
             for leaf_id, group_id in self._leaves.items()
             if group_id.is_sliding_window()
         ]
+        # :meth:`probe` asks one leaf and its masks are read as a
+        # full-attention run, which only a full leaf answers.
+        self._probe_leaf_id: str | None = (
+            self._full_leaf_ids[0] if self._full_leaf_ids else None
+        )
         # One window for every sliding leaf (``_validate_dkv_leaves`` rejects a
         # tree with two), so resolve it once. 0 only when there is no sliding
         # leaf at all, per the note below.
@@ -1431,6 +1446,56 @@ class DKVConnector(KVConnector):
             dkv_hash: depth for depth, dkv_hash in enumerate(dkv_hashes, 1)
         }
         return resident
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+    ) -> list[Mapping[str, Sequence[bool]]]:
+        """Reports what each replica could load of ``block_hashes``.
+
+        One lookup of the first full-attention leaf, for pricing a request
+        before it is bound: every replica of a tenant shares one store, so one
+        healthy replica's client answers for every replica that can load. It
+        costs two RPCs, a ``read_blocks`` that pins and a ``release_blocks``
+        before it returns, and the read bumps that leaf's read tally on the
+        server. A replica with a degraded leaf client loads nothing until it
+        reconnects, so it answers all misses. A tree with no full-attention
+        leaf raises ``ValueError``: a sliding leaf's mask cannot price a run. Holds no pin past the call,
+        takes no hint, which would dial peers, and leaves every replica's
+        outstanding lease alone.
+        """
+        # TODO(CLIN-2044): this pinned read bumps read_ref_tally on this leaf
+        # alone and stages G2 inside read_blocks, so at diskWriteThreshold >= 2
+        # this leaf turns disk-eligible first; a presence-only lookup fixes both.
+        probe_leaf_id = self._probe_leaf_id
+        if probe_leaf_id is None:
+            raise ValueError("dkv probe needs a full-attention leaf")
+        misses: Mapping[str, Sequence[bool]] = {
+            probe_leaf_id: [False] * len(block_hashes)
+        }
+        able = [r for r in replica_idxs if self._can_load(r)]
+        if not block_hashes or not able:
+            return [misses for _ in replica_idxs]
+        dkv_hashes = [_to_dkv_u64(h) for h in block_hashes]
+        (mask,) = self._clients[able[0]][probe_leaf_id].lookup(
+            group_ids=[self._wire_ids[probe_leaf_id]],
+            block_hashes=dkv_hashes,
+        )
+        if len(mask) != len(dkv_hashes):
+            raise ValueError(
+                f"dkv lookup answered {len(mask)} blocks wide over "
+                f"{len(dkv_hashes)} blocks"
+            )
+        resident: Mapping[str, Sequence[bool]] = {probe_leaf_id: mask}
+        return [resident if r in able else misses for r in replica_idxs]
+
+    def _can_load(self, replica_idx: int) -> bool:
+        """Whether every leaf client of ``replica_idx`` is serving."""
+        return all(
+            client.is_healthy()
+            for client in self._clients[replica_idx].values()
+        )
 
     def _abandon_leases(self, replica_idx: int) -> None:
         """Hands back whatever leases this replica is still holding.

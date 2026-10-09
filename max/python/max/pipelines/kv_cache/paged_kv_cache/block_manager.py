@@ -42,6 +42,7 @@ from max.pipelines.context import (
 from max.pipelines.kv_cache.kv_connector import (
     CompletedTransfer,
     KVConnector,
+    KVConnectorProbe,
     KVLoadFailed,
     KVLoadRefused,
     KVTransfer,
@@ -868,65 +869,109 @@ class BlockManager:
         return loaded_blocks, event
 
     @traced
-    def count_cached_prefix_blocks(
-        self, block_hashes: Sequence[bytes], replica_idx: int = 0
-    ) -> PrefixCacheHits:
-        """Counts contiguous leading blocks resident in this replica's caches.
+    def count_cached_prefix_blocks_per_replica(
+        self, block_hashes: Sequence[bytes]
+    ) -> list[PrefixCacheHits]:
+        """Counts each replica's contiguous cached prefix of ``block_hashes``.
 
-        Walks ``block_hashes`` in prefix order through the device prefix
-        cache and then the connector's tiers, mirroring the reuse order of
-        :meth:`get_full_blocks_from_prefix_cache`, and stops at the first
-        block found in no tier. The external half runs the same
-        ``lookup``-and-reconcile the reuse path runs, so the two cannot
-        disagree about what a hit would be worth.
+        Walks ``block_hashes`` in prefix order through each replica's device
+        prefix cache and then the connector's tiers, mirroring the reuse order
+        of :meth:`get_full_blocks_from_prefix_cache`, and stops at the first
+        block found in no tier. The external half asks the connector's
+        :meth:`~max.pipelines.kv_cache.kv_connector.KVConnectorProbe.probe`,
+        or its ``lookup`` when it has no probe, and reconciles the answer with
+        the rules the reuse path runs.
 
-        Unlike the reuse path this is strictly read-only: no blocks are
-        allocated or onboarded, no LRU state is touched, and no per-request
-        state is created, so it is safe to call for requests that are not
-        (and may never be) claimed on this replica — for example, for prefix-aware
-        data-parallel routing. Counts reflect index presence only and ignore
-        transient staging constraints the reuse path enforces (such as free
-        device blocks to load into).
+        Unlike the reuse path this allocates and onboards nothing, touches no
+        LRU state, and creates no per-request state, so it is safe to call for
+        requests that are not (and may never be) claimed on any replica, such
+        as for prefix-aware data-parallel routing. Counts reflect index
+        presence only and ignore transient staging constraints the reuse path
+        enforces (such as free device blocks to load into).
+
+        The device hits are per replica, but the external tiers are shared, so
+        they are probed once over the hashes past the shortest device run and
+        each replica reads its external run off its answer from where its own
+        device run ends. A replica that cannot load from the external tiers
+        right now counts none there.
 
         Args:
             block_hashes: The request's block hash chain, in prefix order.
-            replica_idx: The replica whose caches are probed.
 
         Returns:
-            Per-tier counts of the contiguous cached prefix.
+            One :class:`PrefixCacheHits` per replica, indexed by replica.
         """
         if not self.enable_prefix_caching:
-            return PrefixCacheHits()
-
-        num_device_hits = 0
-        if not self._only_use_kv_connector_last_level_cache:
-            device_prefix_cache = self.device_block_pools[
-                replica_idx
-            ].prefix_cache
-            for block_hash in block_hashes:
-                if self._cross_replica_copy_enabled:
-                    _, blk = self._find_block_in_any_replica(
-                        block_hash, replica_idx
-                    )
-                    present = blk is not None
-                else:
-                    present = block_hash in device_prefix_cache
-                if not present:
-                    break
-                num_device_hits += 1
-
-        remaining = block_hashes[num_device_hits:]
-        num_external_hits = 0
-        if remaining:
-            resident = self.connector.lookup(remaining, replica_idx=replica_idx)
-            num_external_hits = longest_joint_prefix_hit(
-                [(LeafShape.full(), mask) for mask in resident.values()]
-            )
-
-        return PrefixCacheHits(
-            device_blocks=num_device_hits,
-            external_blocks=num_external_hits,
+            return [PrefixCacheHits() for _ in range(self.num_replicas)]
+        device_hits = [
+            self._count_device_prefix_blocks(block_hashes, replica_idx)
+            for replica_idx in range(self.num_replicas)
+        ]
+        external_hits = self._count_external_runs(
+            block_hashes, device_hits, range(self.num_replicas)
         )
+        return [
+            PrefixCacheHits(device_blocks=device, external_blocks=external)
+            for device, external in zip(device_hits, external_hits, strict=True)
+        ]
+
+    def _count_device_prefix_blocks(
+        self, block_hashes: Sequence[bytes], replica_idx: int
+    ) -> int:
+        """Counts the leading hashes the device reuse path would serve."""
+        if self._only_use_kv_connector_last_level_cache:
+            return 0
+        device_prefix_cache = self.device_block_pools[replica_idx].prefix_cache
+        num_device_hits = 0
+        for block_hash in block_hashes:
+            if self._cross_replica_copy_enabled:
+                _, blk = self._find_block_in_any_replica(
+                    block_hash, replica_idx
+                )
+                present = blk is not None
+            else:
+                present = block_hash in device_prefix_cache
+            if not present:
+                break
+            num_device_hits += 1
+        return num_device_hits
+
+    def _count_external_runs(
+        self,
+        block_hashes: Sequence[bytes],
+        device_hits: Sequence[int],
+        replica_idxs: Sequence[int],
+    ) -> list[int]:
+        """The external run continuing each replica's device run.
+
+        Asks about the hashes past the shortest device run once; a longer
+        device run reads its continuation from its own offset into its
+        replica's masks. A connector's tiers are shared across replicas, so
+        one ``lookup`` answers for all of them when the connector has no
+        probe; a probe answers per replica, which lets it price a replica that
+        cannot load right now with no hits.
+        """
+        first = min(device_hits)
+        remaining = block_hashes[first:]
+        if not remaining:
+            return [0] * len(device_hits)
+        connector = self.connector
+        if isinstance(connector, KVConnectorProbe):
+            answers = connector.probe(remaining, replica_idxs)
+        else:
+            shared = connector.lookup(remaining, replica_idx=replica_idxs[0])
+            answers = [shared for _ in replica_idxs]
+        return [
+            longest_joint_prefix_hit(
+                [
+                    (LeafShape.full(), mask[device - first :])
+                    for mask in answer.values()
+                ]
+            )
+            if device < len(block_hashes)
+            else 0
+            for device, answer in zip(device_hits, answers, strict=True)
+        ]
 
     @traced
     def get_full_blocks_from_prefix_cache(

@@ -458,3 +458,42 @@ class KVConnector(Protocol):
     def take_metrics(self) -> KVCacheMetrics:
         """Reads and clears the per-batch transfer counters."""
         return KVCacheMetrics()
+
+
+@runtime_checkable
+class KVConnectorProbe(Protocol):
+    """A connector that prices its tiers without taking state.
+
+    Optional: the cache manager prices a connector without it through
+    :meth:`KVConnector.lookup`, which suits a connector whose lookup keeps no
+    state.
+    """
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+    ) -> list[Mapping[str, Sequence[bool]]]:
+        """Estimates what each replica could load of ``block_hashes``.
+
+        Separate from :meth:`KVConnector.lookup` because a lookup may take
+        state for the :meth:`KVConnector.load` that follows (dKV leases every
+        leaf's blocks), while pricing runs for requests that may never be
+        claimed here and must leave nothing behind. A connector may answer
+        from fewer leaves than :attr:`KVConnector.leaves` names when one is
+        representative; the caller reconciles the masks as it does a lookup's.
+
+        One residency read may serve every replica that can load, since the
+        replicas of a store share it. A replica that cannot load right now,
+        such as one whose client is reconnecting, answers all misses.
+
+        Args:
+            block_hashes: Hashes to ask about, in prefix order and in canonical
+                bytes form (see :class:`KVConnector`).
+            replica_idxs: DP replicas to price.
+
+        Returns:
+            One answer per entry of ``replica_idxs``, in order: positional
+            masks as :meth:`KVConnector.lookup` returns them, for some leaves.
+        """
+        ...

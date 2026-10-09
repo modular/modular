@@ -358,12 +358,12 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
     ) -> list[PrefixCacheHits]:
         """Counts each replica's contiguous cached prefix for a request.
 
-        Computes the request's block hashes once and queries every replica's
-        block manager read-only, without claiming the request or mutating any
-        per-request state. Intended for prefix-aware data-parallel routing:
-        callers can compare replicas' hit num_blocks (across the device, host,
-        and disk tiers) before deciding which replica should serve the
-        request.
+        Computes the request's block hashes once and counts every replica's
+        device hits, probing the shared external tiers once for all of them,
+        without claiming the request or mutating any per-request state.
+        Intended for prefix-aware data-parallel routing: callers can compare
+        replicas' hit num_blocks (across the device, host, and disk tiers)
+        before deciding which replica should serve the request.
 
         Args:
             ctx: The request context to count cached prefix blocks for.
@@ -375,7 +375,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             return [PrefixCacheHits() for _ in self._replica]
 
         # The hash chain is identical across replicas (same algo, seed, and
-        # block size), so hash once and only vary the lookups.
+        # block size), so hash once.
         block_manager = self._replica[0].block_manager
         block_hashes = compute_block_hashes(
             ctx,
@@ -384,12 +384,9 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             block_manager.kv_hash_algo,
             block_manager.kv_hash_seed,
         )
-        return [
-            replica.block_manager.count_cached_prefix_blocks(
-                block_hashes, replica_idx
-            )
-            for replica_idx, replica in enumerate(self._replica)
-        ]
+        return block_manager.count_cached_prefix_blocks_per_replica(
+            block_hashes
+        )
 
     def alloc(self, ctx: TextContext) -> KVTransfer:
         """Allocates blocks for a request.

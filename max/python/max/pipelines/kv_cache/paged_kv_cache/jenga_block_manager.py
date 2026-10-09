@@ -501,6 +501,8 @@ class JengaBlockManager:
         """
         desired_hashes = self._compute_block_hashes(ctx, [])
         hit_counts: list[PrefixCacheHits] = []
+        # TODO(CLIN-2043): prices DP admission with a leased lookup per replica
+        # on every leaf; pricing once needs a shape-aware probe across leaves.
         for replica_idx in range(self._num_replicas):
             num_hit_blocks = self._find_longest_device_prefix_cache_hit(
                 desired_hashes, replica_idx, self._cross_replica_copy_enabled

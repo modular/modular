@@ -13,6 +13,8 @@
 
 import time
 from collections.abc import Mapping, Sequence
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -27,9 +29,17 @@ from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     CompletedTransfer,
+    KVConnector,
     KVLoadFailed,
 )
 from max.pipelines.kv_cache.paged_kv_cache import PrefixCacheHits
+from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
+    BlockManager,
+    compute_block_hashes,
+)
+from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
+    PagedKVCacheManager,
+)
 from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
@@ -2210,6 +2220,78 @@ def test_dp_ce_balance__pooled_request_prefers_replica_with_cached_prefix() -> (
 
     inputs = batch_constructor.construct_batch()
     assert has_request(inputs.batches[1], ctx.request_id)
+
+
+class _LookupOnlyConnector:
+    """A connector written against the protocol from before ``probe``.
+
+    It does not inherit :class:`KVConnector`, so it has no ``probe`` and is
+    priced through ``lookup`` alone.
+    """
+
+    def __init__(self) -> None:
+        self.held: set[bytes] = set()
+        self.lookups = 0
+
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        self.lookups += 1
+        return {"full": [h in self.held for h in block_hashes]}
+
+
+def test_dp_ce_balance__a_connector_without_probe_is_priced_by_lookup() -> None:
+    page_size = 16
+    connector = _LookupOnlyConnector()
+    block_manager = BlockManager(
+        total_num_blocks=32,
+        block_size=page_size,
+        connector=cast(KVConnector, connector),
+        enable_prefix_caching=True,
+        num_replicas=2,
+    )
+    ctx = create_lora_context(seq_len=96)
+    hashes = compute_block_hashes(
+        ctx,
+        [],
+        page_size,
+        block_manager.kv_hash_algo,
+        block_manager.kv_hash_seed,
+    )
+    # Unequal device runs over one external continuation: replica 1 holds a
+    # block more on device, so its external run starts a block later.
+    for replica_idx, depth in ((0, 1), (1, 2)):
+        pool = block_manager.device_block_pools[replica_idx]
+        for block_hash in hashes[:depth]:
+            block, _ = pool.alloc_block()
+            pool.commit_into_prefix_cache(block_hash, block)
+    connector.held = set(hashes[1:4])
+    cache = cast(
+        PagedKVCacheManager,
+        SimpleNamespace(
+            params=SimpleNamespace(enable_prefix_caching=True),
+            _replica=[SimpleNamespace(block_manager=block_manager)] * 2,
+        ),
+    )
+
+    hits = PagedKVCacheManager.get_prefix_cache_hit_counts(cache, ctx)
+
+    assert hits == [
+        PrefixCacheHits(device_blocks=1, external_blocks=3),
+        PrefixCacheHits(device_blocks=2, external_blocks=2),
+    ]
+    assert connector.lookups == 1, "the shared tiers answer every replica once"
+    batch_constructor = create_dp_balance_constructor()
+    _mock_kv_cache_of(batch_constructor).get_prefix_cache_hit_counts = Mock(
+        side_effect=lambda c: PagedKVCacheManager.get_prefix_cache_hit_counts(
+            cache, c
+        )
+    )
+    batch_constructor.enqueue_new_request(ctx)
+    assert batch_constructor._ce_pending[ctx.request_id].weights == [32, 32]
 
 
 def test_dp_ce_balance__defers_lone_unexpired_ce_when_tg_available() -> None:
