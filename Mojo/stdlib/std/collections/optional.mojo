@@ -844,6 +844,49 @@ struct Optional[T: AnyType](
             return self._value^._unsafe_unchecked_unwrap[Self.T]()
         return default^
 
+    def or_raise[
+        E: AnyType
+    ](
+        deinit self, var error: Some[def() -> E]
+    ) raises E -> Self.T where conforms_to(Self.T, Movable & Deinitable):
+        """Returns the contained value or raises an error if empty.
+
+        Consumes the `Optional`, moving out its contained value if present.
+        Calls `error` exactly once if empty and does not call it otherwise.
+
+        Parameters:
+            E: The type of the error that is raised if no value is present.
+
+        Args:
+            error: A function that constructs the error when no value is present.
+
+        Returns:
+            The value contained in the `Optional`.
+
+        Raises:
+            E: The error returned by `error` if the `Optional` is empty.
+
+        Examples:
+
+        ```mojo
+        def make_error() {} -> Error:
+            return Error("optional is empty")
+
+        var present = Optional(123)
+        print(present^.or_raise(make_error))  # Output: 123
+
+        var empty = Optional[Int](None)
+        try:
+            _ = empty^.or_raise(make_error)
+        except error:
+            print(error)  # Output: optional is empty
+        ```
+        """
+        if not self:
+            raise error()
+
+        return self._value^._unsafe_unchecked_unwrap[Self.T]()
+
     @__allow_legacy_custom_self_type
     def copied[
         mut: Bool,

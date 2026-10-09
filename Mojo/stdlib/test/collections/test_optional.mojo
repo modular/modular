@@ -282,6 +282,35 @@ def test_optional_unwrap() raises:
         _ = a[]
 
 
+def test_optional_or_raise() raises:
+    var some = Optional(123)
+    assert_equal(
+        some^.or_raise(lambda () -> Error: Error("optional is none")), 123
+    )
+
+    var none = Optional[Int](None)
+    with assert_raises(contains="optional is none"):
+        _ = none^.or_raise(lambda () -> Error: Error("optional is none"))
+
+
+def test_optional_or_raise_constructs_error_lazily() raises:
+    var calls = 0
+
+    def error() {mut calls} -> Error:
+        calls += 1
+        return Error("optional is None")
+
+    var some = Optional(123)
+    assert_equal(some^.or_raise(error), 123)
+    assert_equal(calls, 0)
+
+    var none = Optional[Int](None)
+    with assert_raises(contains="optional is None"):
+        _ = none^.or_raise(error)
+
+    assert_equal(calls, 1)
+
+
 def test_optional_repr_wrap() raises:
     var o = Optional(10)
     assert_equal(repr(o), "Optional[SIMD[DType.int, 1]](Int(10))")
