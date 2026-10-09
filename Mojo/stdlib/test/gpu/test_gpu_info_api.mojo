@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std._gpu.host.info import GPUInfo, _all_target_accelerator_values
+from std._gpu.host.info import GPUInfo
 from std.testing import TestSuite, assert_equal
 
 

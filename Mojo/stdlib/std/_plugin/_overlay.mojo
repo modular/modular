@@ -17,13 +17,13 @@ from .cuda import CUDAPlugin
 from .hip import HIPPlugin
 from .metal import MetalPlugin
 
-from std._gpu.host.info import (
-    TargetAcceleratorCollection,
-    EmptyTargetCollection,
-)
+from std._gpu.host.info import TargetAcceleratorCollection
+from std._gpu.host._builtin_targets import BuiltinTargets
 
 comptime STD_PLUGINS = PluginSelector[
     DefaultPlugin, MetalPlugin, CUDAPlugin, HIPPlugin
 ]
 
-comptime ADDITIONAL_TARGETS: TargetAcceleratorCollection = EmptyTargetCollection
+comptime TARGETS = TypeList.of[
+    Trait=TargetAcceleratorCollection, BuiltinTargets
+]()

@@ -108,6 +108,9 @@ def main() raises:
         comptime assert info.name == "wombat42"
     elif expect == "error_default_accelerator":
         # CHECK-INVALID-default_accelerator: GPU architecture 'wombat42' is not supported.
+        # CHECK-INVALID-default_accelerator: Supported GPU architectures:
+        # CHECK-INVALID-default_accelerator: NVIDIA: sm_52 (Maxwell)
+        # CHECK-INVALID-default_accelerator: Apple: metal:1 (M1)
         # Force resolution of `.default_accelerator` to trigger error.
         comptime assert (
             TargetAccelerator.default_accelerator.gpu_info.name != ""

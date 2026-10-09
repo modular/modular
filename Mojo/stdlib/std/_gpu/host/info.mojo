@@ -29,9 +29,7 @@ from std.sys.info import (
     _TargetType,
 )
 
-from std._plugin._overlay import ADDITIONAL_TARGETS
-
-from ._builtin_targets import BuiltinTargets
+from std._plugin._overlay import TARGETS
 
 
 @always_inline("builtin")
@@ -85,9 +83,7 @@ struct _LookupTargetAccelerator[
         Elt: TargetAcceleratorType,
         Idx: Int,
     ] Bool,
-    Collections: TypeList[Trait=TargetAcceleratorCollection, ...] = TypeList.of[
-        Trait=TargetAcceleratorCollection, BuiltinTargets, ADDITIONAL_TARGETS
-    ](),
+    Collections: TypeList[Trait=TargetAcceleratorCollection, ...] = TARGETS,
 ]:
     comptime by_target_arch[target_arch: StaticString] = (
         _LookupTargetAccelerator[
@@ -129,7 +125,7 @@ struct _LookupTargetAccelerator[
             # FIXME(MSTDL-3207): This error is not applicable to all the queries
             #       where `single_result` is used.
             comptime assert False, _build_unsupported_arch_error[
-                _accelerator_arch()
+                Self.Collections, _accelerator_arch()
             ]()
         else:
             comptime assert False, String(
@@ -220,15 +216,24 @@ trait TargetAcceleratorCollection:
     def normalize_target_arch(target_arch0: StaticString) -> String:
         ...
 
-
-struct EmptyTargetCollection(TargetAcceleratorCollection):
-    comptime vendor_name: String = "<empty>"
-
-    comptime RAW_TARGETS = TypeList.of[Trait=TargetAcceleratorType]().values
-
     @staticmethod
-    def normalize_target_arch(target_arch0: StaticString) -> String:
-        return target_arch0
+    def supported_archs_message() -> String:
+        """Describes this collection's targets for the unsupported-arch error.
+
+        Returns:
+            One indented paragraph naming the collection's architectures.
+        """
+        return String("  ", _supported_archs_line[Self](), "\n\n")
+
+
+comptime _encodes_with_host_layout[C: TargetAcceleratorCollection]: Bool = (
+    C.encode_device_types_with_host_layout
+)
+
+# TODO(DRIV-154): Decide this per target rather than for the whole build.
+comptime _encode_device_types_with_host_layout: Bool = TARGETS.any[
+    _encodes_with_host_layout
+]()
 
 
 def _target_accelerator_values[
@@ -247,9 +252,7 @@ def _target_accelerator_values[
     return list^
 
 
-def _unsupported_arch_error_additions[
-    C: TargetAcceleratorCollection
-]() -> String:
+def _supported_archs_line[C: TargetAcceleratorCollection]() -> String:
     var string = String(t"{C.vendor_name}: ")
 
     comptime for idx in range(C.TARGETS.length):
@@ -537,36 +540,22 @@ struct GPUInfo(Copyable, Equatable, Movable, RegisterPassable, Writable):
 # ===-----------------------------------------------------------------------===#
 
 
-def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
+def _build_unsupported_arch_error[
+    Collections: TypeList[Trait=TargetAcceleratorCollection, ...],
+    target_arch: StaticString,
+]() -> String:
     """Builds a helpful error message for unsupported GPU architectures.
 
     Provides a comprehensive list of all supported GPU architectures across
     all vendors with documentation links.
 
     Parameters:
+        Collections: The target collections whose architectures to list.
         target_arch: The unsupported target architecture string.
 
     Returns:
         A detailed error message with supported architectures and doc links.
     """
-    comptime nvidia_archs = (
-        "sm_52 (Maxwell), sm_60/sm_61 (Pascal), sm_75 (Turing), sm_80 (Ampere"
-        " A100), sm_86 (Ampere A10), sm_87 (Orin), sm_89 (Ada L4/RTX4090),"
-        " sm_90/sm_90a (Hopper H100), sm_100/sm_100a (Blackwell B100/B200),"
-        " sm_110 (Jetson Thor), sm_120/sm_120a (Blackwell RTX5090), sm_121 (DGX"
-        " Spark)"
-    )
-    comptime amd_archs = (
-        "gfx90a (MI250X), gfx942 (MI300X/MI300A), gfx950 (MI355X), gfx1030"
-        " (Radeon 6900), gfx1033 (Van Gogh), gfx1100 (Radeon 7900), gfx1101"
-        " (Radeon 7800), gfx1102 (Radeon 7600), gfx1103 (Radeon 780M),"
-        " gfx1150/gfx1151/gfx1152 (Radeon 8xx), gfx1200 (Radeon 9060), gfx1201"
-        " (Radeon 9070), gfx1250 (MI455X)"
-    )
-    comptime apple_archs = (
-        "metal:1 (M1), metal:2 (M2), metal:3 (M3), metal:4 (M4)"
-    )
-
     var prefix: String
 
     comptime if target_arch == "":
@@ -576,28 +565,10 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
             "GPU architecture '", target_arch, "' is not supported."
         )
 
-    return String(
-        prefix,
-        "\n\nSupported GPU architectures:\n\n",
-        "  NVIDIA: ",
-        nvidia_archs,
-        "\n  See: https://developer.nvidia.com/cuda-gpus\n\n",
-        "  AMD: ",
-        amd_archs,
-        (
-            "\n  See:"
-            " https://rocm.docs.amd.com/en/latest/release/gpu_os_support.html"
-            "\n\n"
-        ),
-        "  Apple: ",
-        apple_archs,
-        (
-            "\n  See:"
-            " https://developer.apple.com/metal/Metal-Feature-Set-Tables.pdf"
-            "\n\n"
-        ),
-        comptime (_unsupported_arch_error_additions[ADDITIONAL_TARGETS]()),
-    )
+    var message = String(prefix, "\n\nSupported GPU architectures:\n\n")
+    comptime for idx in range(Collections.length):
+        message.write(Collections[idx].supported_archs_message())
+    return message^
 
 
 # All supported target architectures in canonical form.
@@ -609,11 +580,12 @@ def _build_unsupported_arch_error[target_arch: StaticString]() -> String:
 # SYNC: This list must stay in sync with the TargetTraits accelerator tables
 #       in Mojo/lib/Target/. Run the following test to verify:
 #       bazel test //Mojo/test/mojo-tool:build/internal/verify_supported_accelerators_sync.mojo.test
-comptime _all_target_accelerator_values: List[String] = (
-    _target_accelerator_values[BuiltinTargets]()
-    + ["cuda"]
-    + _target_accelerator_values[ADDITIONAL_TARGETS]()
-)
+def _all_target_accelerators() -> List[String]:
+    var list = List[String]()
+    comptime for idx in range(TARGETS.length):
+        list.extend(_target_accelerator_values[TARGETS[idx]]())
+    list.append("cuda")
+    return list^
 
 
 # ===-----------------------------------------------------------------------===#

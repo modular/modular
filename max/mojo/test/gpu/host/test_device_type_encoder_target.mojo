@@ -14,8 +14,10 @@
 from std.sys.info import _TargetType, _accelerator_arch, _current_target
 from std.testing import assert_true, TestSuite
 
-from std._gpu.host.info import get_gpu_target
-from std._plugin._overlay import ADDITIONAL_TARGETS
+from std._gpu.host.info import (
+    _encode_device_types_with_host_layout,
+    get_gpu_target,
+)
 from max.gpu.host.info import _device_type_encoder_target
 
 
@@ -28,8 +30,7 @@ def _same_target[a: _TargetType, b: _TargetType]() -> Bool:
 def test_encoder_target_follows_the_build() raises:
     comptime target = _device_type_encoder_target()
     comptime if (
-        _accelerator_arch() == ""
-        or ADDITIONAL_TARGETS.encode_device_types_with_host_layout
+        _accelerator_arch() == "" or _encode_device_types_with_host_layout
     ):
         assert_true(_same_target[target, _current_target()]())
     else:
