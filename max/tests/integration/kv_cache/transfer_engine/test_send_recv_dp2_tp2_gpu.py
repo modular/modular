@@ -24,7 +24,7 @@ import multiprocessing as mp
 import time
 
 import numpy as np
-from _transfer_engine_helpers import join_peers, kv_group
+from _transfer_engine_helpers import every_leaf, join_peers, kv_group
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -85,8 +85,8 @@ def transfer_routine_sender(
     start_time_0 = time.time()
     transfer_req_0 = engine.initiate_send_transfer(
         remote_md,
-        src_idxs=[0, 1],
-        dst_idxs=[0, 1],
+        src_idxs=every_leaf(remote_md, [0, 1]),
+        dst_idxs=every_leaf(remote_md, [0, 1]),
         src_replica_idx=1,
         dst_replica_idx=0,
     )
@@ -98,8 +98,8 @@ def transfer_routine_sender(
     start_time_1 = time.time()
     transfer_req_1 = engine.initiate_send_transfer(
         remote_md,
-        src_idxs=[0, 1],
-        dst_idxs=[0, 1],
+        src_idxs=every_leaf(remote_md, [0, 1]),
+        dst_idxs=every_leaf(remote_md, [0, 1]),
         src_replica_idx=0,
         dst_replica_idx=1,
     )

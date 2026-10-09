@@ -31,7 +31,7 @@ Uses 4 GPUs total (2 for sender, 2 for receiver).
 import multiprocessing as mp
 
 import numpy as np
-from _transfer_engine_helpers import join_peers, kv_group, kv_memory
+from _transfer_engine_helpers import every_leaf, join_peers, kv_group, kv_memory
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -90,8 +90,8 @@ def sender_routine(
     for dst_replica_idx in range(2):
         transfer_req = engine.initiate_send_transfer(
             remote_md,
-            src_idxs=[0, 1],
-            dst_idxs=[0, 1],
+            src_idxs=every_leaf(remote_md, [0, 1]),
+            dst_idxs=every_leaf(remote_md, [0, 1]),
             src_replica_idx=0,
             dst_replica_idx=dst_replica_idx,
         )

@@ -291,10 +291,11 @@ class PrefillScheduler(Scheduler):
         dst_idxs = dst_idxs[num_already_cached_blocks:]
         assert dst_idxs.count(-1) == 0
 
+        leaf_ids = self.transfer_engine.leaf_ids
         transfer_data = self.transfer_engine.initiate_send_transfer(
             remote_metadata,
-            src_idxs,
-            dst_idxs,
+            {leaf_id: list(src_idxs) for leaf_id in leaf_ids},
+            {leaf_id: list(dst_idxs) for leaf_id in leaf_ids},
             src_replica_idx=src_replica_idx,
             dst_replica_idx=transfer_dest.dst_replica_idx,
         )

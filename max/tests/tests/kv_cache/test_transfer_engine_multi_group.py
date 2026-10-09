@@ -267,6 +267,14 @@ def test_replicas_with_different_group_counts_raises() -> None:
         KVTransferEngine("engine", [replica0, replica1])
 
 
+def test_duplicate_leaf_ids_raise_before_registration() -> None:
+    """A repeated leaf id is rejected before any agent registers memory."""
+    with pytest.raises(ValueError, match="leaf_ids must be unique"):
+        KVTransferEngine(
+            "engine", [[_group(64), _group(16)]], leaf_ids=["full", "full"]
+        )
+
+
 # ---------------------------------------------------------------------------
 # Per-group descriptor arithmetic (the SERVOPT-1456 stride-mismatch guard)
 # ---------------------------------------------------------------------------
@@ -286,7 +294,7 @@ def test_build_group_descriptors_uses_own_stride_per_group() -> None:
     device_id = 3
 
     descs = _build_group_descriptors(
-        base_addrs, bytes_per_group, page_idxs, device_id
+        base_addrs, bytes_per_group, [page_idxs, page_idxs], device_id
     )
 
     # Group-major, page-inner ordering; one descriptor per (group, page).
@@ -305,6 +313,21 @@ def test_build_group_descriptors_uses_own_stride_per_group() -> None:
         addr, size, _ = descs[off + i]
         assert addr == 0x5000 + k * 16
         assert size == 16
+
+
+def test_build_group_descriptors_addresses_each_group_by_its_own_pages() -> (
+    None
+):
+    """Groups that allocate pages independently each use their own indices."""
+    descs = _build_group_descriptors(
+        [0x1000, 0x5000], [800, 16], [[1], [20, 21]], device_id=0
+    )
+
+    assert descs == [
+        (0x1000 + 1 * 800, 800, 0),
+        (0x5000 + 20 * 16, 16, 0),
+        (0x5000 + 21 * 16, 16, 0),
+    ]
 
 
 # ---------------------------------------------------------------------------

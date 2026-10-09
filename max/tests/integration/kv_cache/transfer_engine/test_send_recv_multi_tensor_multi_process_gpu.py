@@ -16,7 +16,7 @@ import time
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import join_peers, kv_group
+from _transfer_engine_helpers import every_leaf, join_peers, kv_group
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
@@ -59,7 +59,11 @@ def transfer_routine_sender(
     # Perform transfers
     start_time = time.time()
     transfer_req = engine_1.initiate_send_transfer(
-        remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
+        remote_md,
+        every_leaf(remote_md, src_idxs),
+        every_leaf(remote_md, dst_idxs),
+        src_replica_idx=0,
+        dst_replica_idx=0,
     )
     transfer_queue.put(transfer_req)
     engine_1.sync_and_release(transfer_req)

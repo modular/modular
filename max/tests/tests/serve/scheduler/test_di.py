@@ -1395,7 +1395,9 @@ def test_prefix_caching_prefill_skips_cached_blocks_in_transfer() -> None:
     # Transfer should only cover the non-cached pages
     assert len(prefill.active_transfers) == 1
     active = next(iter(prefill.active_transfers.values()))
-    transferred_pages = len(active.transfer.src_idxs)
+    transferred_pages = max(
+        len(idxs) for idxs in active.transfer.src_idxs.values()
+    )
     assert transferred_pages < num_total_pages, (
         f"Expected fewer than {num_total_pages} pages transferred, "
         f"got {transferred_pages}"
@@ -2246,7 +2248,6 @@ def test_spec_decode_fixture_builds_multi_kv_topology() -> None:
     bytes_per_group = prefill.transfer_engine.bytes_per_group
     assert len(bytes_per_group) == 2
     assert bytes_per_group[0] != bytes_per_group[1]
-    assert prefill.transfer_engine.bytes_per_page == sum(bytes_per_group)
 
 
 def test_non_spec_decode_fixture_stays_single_kv() -> None:

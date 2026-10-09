@@ -37,7 +37,7 @@ from threading import Thread
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import kv_memory
+from _transfer_engine_helpers import every_leaf, kv_memory
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import (
     KVTransferEngine,
@@ -78,7 +78,11 @@ def _sender_routine(
     dst_idxs: list[int],
 ) -> None:
     transfer_req = engine.initiate_send_transfer(
-        remote, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
+        remote,
+        every_leaf(remote, src_idxs),
+        every_leaf(remote, dst_idxs),
+        src_replica_idx=0,
+        dst_replica_idx=0,
     )
     queue.put(transfer_req)
     engine.sync_and_release(transfer_req)
@@ -92,7 +96,11 @@ def _reader_routine(
     dst_idxs: list[int],
 ) -> None:
     transfer_req = engine.initiate_read_transfer(
-        remote, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
+        remote,
+        every_leaf(remote, src_idxs),
+        every_leaf(remote, dst_idxs),
+        src_replica_idx=0,
+        dst_replica_idx=0,
     )
     queue.put(transfer_req)
     engine.sync_and_release(transfer_req)
@@ -318,6 +326,152 @@ def test_connect_rejects_group_bpp_mismatch_dram() -> None:
     )
 
     with pytest.raises(ValueError, match="mismatch"):
+        engine_1.connect(engine_2.metadata)
+
+    engine_2.cleanup()
+    engine_1.cleanup()
+
+
+def _values_and_scales_engine(name: str, slab: Buffer) -> KVTransferEngine:
+    # Jenga views one slab once per leaf. Scale pages are a quarter the size
+    # of value pages, so the same 48 bytes hold 3 value pages or 12 scale
+    # pages, and the two leaves' ids index the same memory.
+    return KVTransferEngine(
+        name,
+        [[kv_memory(slab, 3), kv_memory(slab, 12)]],
+        leaf_ids=["full", "full/scales"],
+    )
+
+
+# Value page 1 is int16 8..15 and scale page 10 is int16 20..21 of the
+# source slab. On the destination, value page 2 is int16 16..23 and scale
+# page 6 is int16 12..13. No two of them overlap.
+_SRC_IDXS = {"full": [1], "full/scales": [10]}
+_DST_IDXS = {"full": [2], "full/scales": [6]}
+
+
+def _expected_destination() -> np.ndarray:
+    expected = np.zeros(24, dtype=np.int16)
+    expected[16:24] = np.arange(8, 16, dtype=np.int16) + 100
+    expected[12:14] = np.arange(20, 22, dtype=np.int16) + 100
+    return expected
+
+
+def test_send_recv_independent_leaf_ids_dram() -> None:
+    """Each leaf moves the pages its own ids name, in a shared slab."""
+    slab_1 = Buffer.from_numpy(np.arange(24, dtype=np.int16) + 100)
+    slab_2 = Buffer.from_numpy(np.zeros(24, dtype=np.int16))
+    engine_1 = _values_and_scales_engine("engine_1", slab_1)
+    engine_2 = _values_and_scales_engine("engine_2", slab_2)
+    engine_1.connect(engine_2.metadata)
+    engine_2.connect(engine_1.metadata)
+
+    queue: Queue[TransferReqData] = Queue()
+
+    def send() -> None:
+        transfer_req = engine_1.initiate_send_transfer(
+            engine_2.metadata,
+            _SRC_IDXS,
+            _DST_IDXS,
+            src_replica_idx=0,
+            dst_replica_idx=0,
+        )
+        queue.put(transfer_req)
+        engine_1.sync_and_release(transfer_req)
+
+    _run_transfer_pair(
+        Thread(target=send),
+        Thread(target=_peer_routine, args=(engine_2, queue)),
+    )
+
+    assert np.array_equal(slab_2.to_numpy(), _expected_destination())
+
+    engine_2.cleanup()
+    engine_1.cleanup()
+
+
+def test_read_independent_leaf_ids_dram() -> None:
+    """A read moves each leaf's pages by its own ids, in a shared slab."""
+    slab_1 = Buffer.from_numpy(np.arange(24, dtype=np.int16) + 100)
+    slab_2 = Buffer.from_numpy(np.zeros(24, dtype=np.int16))
+    engine_1 = _values_and_scales_engine("engine_1", slab_1)
+    engine_2 = _values_and_scales_engine("engine_2", slab_2)
+    engine_1.connect(engine_2.metadata)
+    engine_2.connect(engine_1.metadata)
+
+    queue: Queue[TransferReqData] = Queue()
+
+    def read() -> None:
+        transfer_req = engine_2.initiate_read_transfer(
+            engine_1.metadata,
+            _SRC_IDXS,
+            _DST_IDXS,
+            src_replica_idx=0,
+            dst_replica_idx=0,
+        )
+        queue.put(transfer_req)
+        engine_2.sync_and_release(transfer_req)
+
+    _run_transfer_pair(
+        Thread(target=read),
+        Thread(target=_peer_routine, args=(engine_1, queue)),
+    )
+
+    assert np.array_equal(slab_2.to_numpy(), _expected_destination())
+
+    engine_2.cleanup()
+    engine_1.cleanup()
+
+
+def test_send_checks_each_group_dram() -> None:
+    """A transfer must name every group, within that group's own pages."""
+    engine_1 = _values_and_scales_engine(
+        "engine_1", Buffer.from_numpy(np.zeros(24, dtype=np.int16))
+    )
+    engine_2 = _values_and_scales_engine(
+        "engine_2", Buffer.from_numpy(np.zeros(24, dtype=np.int16))
+    )
+    engine_1.connect(engine_2.metadata)
+
+    with pytest.raises(ValueError, match="must name every leaf"):
+        engine_1.initiate_send_transfer(
+            engine_2.metadata,
+            {"full": [1]},
+            {"full": [2]},
+            src_replica_idx=0,
+            dst_replica_idx=0,
+        )
+    # Page 7 exists among the scales but not among the values.
+    with pytest.raises(ValueError, match="leaf 'full'"):
+        engine_1.initiate_send_transfer(
+            engine_2.metadata,
+            {"full": [7], "full/scales": [7]},
+            {"full": [0], "full/scales": [0]},
+            src_replica_idx=0,
+            dst_replica_idx=0,
+        )
+
+    engine_2.cleanup()
+    engine_1.cleanup()
+
+
+def test_connect_rejects_leaf_id_mismatch_dram() -> None:
+    """Engines whose leaf ids differ must fail at connect()."""
+    engine_1 = _values_and_scales_engine(
+        "engine_1", Buffer.from_numpy(np.zeros(24, dtype=np.int16))
+    )
+    engine_2 = KVTransferEngine(
+        "engine_2",
+        [
+            [
+                kv_memory(Buffer.from_numpy(np.zeros(24, dtype=np.int16)), 3),
+                kv_memory(Buffer.from_numpy(np.zeros(24, dtype=np.int16)), 12),
+            ]
+        ],
+        leaf_ids=["target", "target/scales"],
+    )
+
+    with pytest.raises(ValueError, match="Leaf mismatch"):
         engine_1.connect(engine_2.metadata)
 
     engine_2.cleanup()

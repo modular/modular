@@ -21,6 +21,7 @@ from multiprocessing.process import BaseProcess
 from max.driver import Buffer
 from max.dtype import DType
 from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.pipelines.kv_cache import KVTransferEngineMetadata
 
 # Under bazel's default 300s medium-test timeout, so a stuck peer fails the
 # test with its captured output rather than being killed as a TIMEOUT.
@@ -55,6 +56,13 @@ def kv_group(
         replicated=replicated,
         buffers=[view_2d_uint8(b, total_num_pages) for b in bufs],
     )
+
+
+def every_leaf(
+    remote: KVTransferEngineMetadata, idxs: Sequence[int]
+) -> dict[str, list[int]]:
+    """Addresses every group of ``remote`` with the same page indices."""
+    return {leaf_id: list(idxs) for leaf_id in remote.leaf_ids}
 
 
 def join_peers(
