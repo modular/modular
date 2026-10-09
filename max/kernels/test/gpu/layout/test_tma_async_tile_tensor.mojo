@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""TMA load tests for the `create_tma_tile` overload taking a `TileTensor`.
+"""TMA load and store tests for TileTensor descriptors and shared sources.
 
 The descriptor's global shape and strides must come from the TileTensor's
 layout. Each test builds the source as a DeviceBuffer-backed TileTensor and
@@ -24,19 +24,32 @@ result against the host values:
   the padding, which leak into the result if the descriptor ignores the
   tensor's strides
 - bfloat16 with a padded row stride
+
+Store tests compare native immutable and legacy flat/nested shared views across
+ranks 2–5, direct and rank-dispatched APIs, both descriptor box orders, and
+nonzero global coordinates. Rank-4/5 tiles contain multiple descriptor boxes.
 """
 
 from std.math import align_up
 from std.sys import size_of
 
-from max.gpu.sync import barrier
+from max.gpu.sync import (
+    barrier,
+    cp_async_bulk_commit_group,
+    cp_async_bulk_wait_group,
+)
 from max.gpu.host import DeviceContext
+from max.gpu.memory import fence_async_view_proxy
 from max.gpu import block_idx, thread_idx
 from layout import (
     ComptimeInt,
     Coord,
     Idx,
     MixedLayout,
+    Layout,
+    LayoutTensor,
+    IntTuple,
+    coord,
     RowMajorLayout,
     TileTensor,
     row_major,
@@ -47,9 +60,11 @@ from layout.tma_async import (
     TMATensorTile,
     _idx_product,
     create_tma_tile,
+    create_tensor_tile,
 )
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
+from std.utils.static_tuple import StaticTuple
 
 
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
@@ -167,8 +182,203 @@ def test_tma_load_tile_tensor[
                 assert_equal(dst_host[m, n].cast[.float32](), 0.0)
 
 
+@__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
+def tma_store_rank_kernel[
+    tile_shape: Coord,
+    desc_shape: Coord,
+    k_major: Bool,
+    legacy: Int,
+    generic: Bool,
+](tma_tile: TMATensorTile[.float32, tile_shape, desc_shape, k_major]):
+    comptime rank = tile_shape.rank
+    comptime size = _idx_product[tile_shape]()
+    var ptr = unsafe_stack_allocation[
+        size, Float32, address_space=.SHARED, alignment=128
+    ]()
+    for i in range(thread_idx.x, size, 32):
+        ptr[i] = Float32(i + 1)
+    barrier()
+    fence_async_view_proxy()
+
+    if thread_idx.x == 0:
+        comptime if legacy == 1:
+            # A rank-one source verifies that TMA does not use logical strides
+            # to address the descriptor's higher-rank physical boxes.
+            var src = LayoutTensor[
+                .float32,
+                Layout.row_major(size),
+                address_space=.SHARED,
+                alignment=128,
+            ](ptr)
+            comptime if generic:
+                var coords = StaticTuple[UInt32, rank]()
+                comptime for i in range(rank):
+                    coords[i] = UInt32(4 if i == 0 else 1)
+                tma_tile.async_store(src, coords)
+            elif rank == 2:
+                tma_tile.async_store(src, (4, 1))
+            elif rank == 3:
+                tma_tile.async_store_3d(src, (4, 1, 1))
+            elif rank == 4:
+                tma_tile.async_store_4d(src, (4, 1, 1, 1))
+            else:
+                tma_tile.async_store_5d(src, (4, 1, 1, 1, 1))
+        elif legacy == 2:
+            var src = LayoutTensor[
+                .float32,
+                Layout.row_major(IntTuple(IntTuple(2, size // 4), 2)),
+                address_space=.SHARED,
+                alignment=128,
+            ](ptr)
+            comptime if generic:
+                var coords = StaticTuple[UInt32, rank]()
+                comptime for i in range(rank):
+                    coords[i] = UInt32(4 if i == 0 else 1)
+                tma_tile.async_store(src, coords)
+            elif rank == 2:
+                tma_tile.async_store(src, (4, 1))
+            elif rank == 3:
+                tma_tile.async_store_3d(src, (4, 1, 1))
+            elif rank == 4:
+                tma_tile.async_store_4d(src, (4, 1, 1, 1))
+            else:
+                tma_tile.async_store_5d(src, (4, 1, 1, 1, 1))
+        else:
+            var src = TileTensor(
+                ptr.unsafe_mut_cast[False](), row_major[size]()
+            )
+            comptime if generic:
+                var coords = StaticTuple[UInt32, rank]()
+                comptime for i in range(rank):
+                    coords[i] = UInt32(4 if i == 0 else 1)
+                tma_tile.async_store(src, coords)
+            elif rank == 2:
+                tma_tile.async_store(src, (4, 1))
+            elif rank == 3:
+                tma_tile.async_store_3d(src, (4, 1, 1))
+            elif rank == 4:
+                tma_tile.async_store_4d(src, (4, 1, 1, 1))
+            else:
+                tma_tile.async_store_5d(src, (4, 1, 1, 1, 1))
+
+        cp_async_bulk_commit_group()
+        cp_async_bulk_wait_group[0]()
+
+
+def test_tma_store_rank[
+    tile_shape: Coord,
+    desc_shape: Coord,
+    global_shape: Coord,
+    k_major: Bool,
+    legacy: Int,
+    generic: Bool,
+](ctx: DeviceContext) raises:
+    comptime rank = tile_shape.rank
+    var dst = HostDeviceTileTensor[.float32](
+        row_major(Coord[*global_shape.element_types]()), ctx
+    )
+    var initial_host = dst.host_tensor()
+    for i in range(_idx_product[global_shape]()):
+        initial_host.ptr[i] = -1
+    dst.to_device()
+    var tma = create_tensor_tile[
+        tile_shape,
+        k_major_tma=k_major,
+        __desc_shape=desc_shape,
+    ](ctx, dst.device_tensor())
+    ctx.enqueue_function[
+        tma_store_rank_kernel[tile_shape, desc_shape, k_major, legacy, generic]
+    ](tma, grid_dim=1, block_dim=32)
+    dst.to_host()
+    var host = dst.host_tensor()
+
+    # Decode destination coordinates independently of the device offset helper.
+    # Values outside the translated tile must retain the sentinel.
+    for linear in range(_idx_product[global_shape]()):
+        var remaining = linear
+        var local = StaticTuple[Int, rank]()
+        var inside = True
+        comptime for reverse in range(rank):
+            comptime dim = rank - reverse - 1
+            var value = remaining % Int(global_shape[dim].value())
+            remaining //= Int(global_shape[dim].value())
+            local[dim] = value - (4 if dim == rank - 1 else 1)
+            inside = inside and (0 <= local[dim] < Int(tile_shape[dim].value()))
+        if not inside:
+            assert_equal(host.ptr[linear], Float32(-1))
+            continue
+
+        var box = 0
+        var inner = 0
+        comptime for i in range(rank):
+            comptime dim = rank - i - 1 if k_major else i
+            comptime copies = Int(tile_shape[dim].value()) // Int(
+                desc_shape[dim].value()
+            )
+            box = box * copies + local[dim] // Int(desc_shape[dim].value())
+            inner = inner * Int(desc_shape[i].value()) + local[i] % Int(
+                desc_shape[i].value()
+            )
+        assert_equal(
+            host.ptr[linear],
+            Float32(box * _idx_product[desc_shape]() + inner + 1),
+        )
+
+    print(
+        "TMA store passed: rank=",
+        rank,
+        " k_major=",
+        k_major,
+        " source_mode=",
+        legacy,
+        " generic=",
+        generic,
+    )
+
+
+def test_tma_store_ranks(ctx: DeviceContext) raises:
+    comptime for legacy in range(3):
+        comptime for api in range(2):
+            comptime generic = api == 1
+            comptime for major in range(2):
+                comptime k_major = major == 1
+                test_tma_store_rank[
+                    coord[8, 8],
+                    coord[8, 8],
+                    coord[12, 16],
+                    k_major,
+                    legacy,
+                    generic,
+                ](ctx)
+                test_tma_store_rank[
+                    coord[2, 2, 8],
+                    coord[2, 2, 8],
+                    coord[4, 4, 16],
+                    k_major,
+                    legacy,
+                    generic,
+                ](ctx)
+                test_tma_store_rank[
+                    coord[2, 2, 2, 8],
+                    coord[1, 2, 2, 8],
+                    coord[4, 4, 4, 16],
+                    k_major,
+                    legacy,
+                    generic,
+                ](ctx)
+                test_tma_store_rank[
+                    coord[2, 2, 2, 2, 8],
+                    coord[1, 1, 2, 2, 8],
+                    coord[4, 4, 4, 4, 16],
+                    k_major,
+                    legacy,
+                    generic,
+                ](ctx)
+
+
 def main() raises:
     with DeviceContext() as ctx:
+        test_tma_store_ranks(ctx)
         print("test_tma_load_tile_tensor_f32")
         test_tma_load_tile_tensor[
             dtype=DType.float32, M=8, N=8, tileM=4, tileN=4, row_stride=8

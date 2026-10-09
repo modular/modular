@@ -2104,14 +2104,14 @@ struct TMATensorTile[
         Dispatches to the rank-specific TileTensor async_store methods.
 
         Parameters:
-            coord_rank: The dimensionality of the tensor (must be 2 or 3).
+            coord_rank: The dimensionality of the tensor (must be 2, 3, 4, or 5).
             cta_group: CTA group configuration. Defaults to 1.
 
         Args:
             dst: TileTensor in shared memory from which data will be copied.
             coords: The N-dimensional coordinates in the destination tensor.
         """
-        comptime assert coord_rank in (2, 3, 4)
+        comptime assert coord_rank in (2, 3, 4, 5)
 
         comptime if coord_rank == 2:
             self.async_store(dst, (Int(coords[0]), Int(coords[1])))
@@ -2128,6 +2128,18 @@ struct TMATensorTile[
                     Int(coords[1]),
                     Int(coords[2]),
                     Int(coords[3]),
+                ),
+            )
+
+        elif coord_rank == 5:
+            self.async_store_5d(
+                dst,
+                (
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                    Int(coords[4]),
                 ),
             )
 
@@ -2449,6 +2461,41 @@ struct TMATensorTile[
         )
 
     @inline(.always)
+    def _async_store_2d(
+        self,
+        src: ImmPointer[Scalar[Self.dtype], _, address_space=.SHARED],
+        coords: Tuple[Int, Int],
+    ):
+        # TMA addresses descriptor boxes from the shared pointer, independently
+        # of the source tensor's logical shape and strides.
+        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
+        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
+        comptime copy_size = _idx_product[Self.desc_shape]()
+        comptime mn_dim: Int = (Self.tile_shape.element_types[0].static_value)
+        comptime k_dim: Int = (Self.tile_shape.element_types[1].static_value)
+        comptime num_copies_dim0 = (
+            mn_dim // copy_dim0 if Self.is_k_major else k_dim // copy_dim0
+        )
+        comptime num_copies_dim1 = (
+            k_dim // copy_dim1 if Self.is_k_major else mn_dim // copy_dim1
+        )
+
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
+
+                cp_async_bulk_tensor_global_shared_cta(
+                    src + copy_offset,
+                    Pointer(to=self.descriptor).bitcast[NoneType](),
+                    Index(
+                        coords[0] + j * copy_dim1,
+                        coords[1] + i * copy_dim0,
+                    ),
+                )
+
+    @inline(.always)
     def async_store(
         self,
         src: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
@@ -2474,32 +2521,7 @@ struct TMATensorTile[
             type_of(src).alignment % 128 == 0
         ), "TMA requires 128B alignment in shared memory"
 
-        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
-        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
-        comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime mn_dim: Int = (Self.tile_shape.element_types[0].static_value)
-        comptime k_dim: Int = (Self.tile_shape.element_types[1].static_value)
-        comptime num_copies_dim0 = (
-            mn_dim // copy_dim0 if Self.is_k_major else k_dim // copy_dim0
-        )
-        comptime num_copies_dim1 = (
-            k_dim // copy_dim1 if Self.is_k_major else mn_dim // copy_dim1
-        )
-
-        comptime for i in range(num_copies_dim0):
-            comptime for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = UInt32(
-                    (i * num_copies_dim1 + j) * copy_size
-                )
-
-                cp_async_bulk_tensor_global_shared_cta(
-                    src.ptr + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
-                    Index(
-                        coords[0] + j * copy_dim1,
-                        coords[1] + i * copy_dim0,
-                    ),
-                )
+        self._async_store_2d(src.ptr, coords)
 
     @inline(.always)
     def async_store(
@@ -2510,39 +2532,61 @@ struct TMATensorTile[
         """
         Schedules an asynchronous store from shared memory to global memory.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
-        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+        The caller must ensure the shared pointer is aligned to 128 bytes.
 
         Args:
             src: TileTensor in shared memory from which data will be copied.
             coords: The 2D coordinates in the destination tensor where data will be stored.
         """
+        self._async_store_2d(src.ptr, coords)
+
+    @inline(.always)
+    def _async_store_3d(
+        self,
+        src: ImmPointer[Scalar[Self.dtype], _, address_space=.SHARED],
+        coords: Tuple[Int, Int, Int],
+    ):
+        # TMA addresses descriptor boxes from the shared pointer, independently
+        # of the source tensor's logical shape and strides.
         comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
         comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
+        comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
         comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime mn_dim: Int = (Self.tile_shape.element_types[0].static_value)
-        comptime k_dim: Int = (Self.tile_shape.element_types[1].static_value)
-        comptime num_copies_dim0 = (
-            mn_dim // copy_dim0 if Self.is_k_major else k_dim // copy_dim0
+        comptime num_copies_dim0 = ceildiv(
+            Self.tile_shape.element_types[0].static_value, copy_dim0
         )
-        comptime num_copies_dim1 = (
-            k_dim // copy_dim1 if Self.is_k_major else mn_dim // copy_dim1
+        comptime num_copies_dim1 = ceildiv(
+            Self.tile_shape.element_types[1].static_value, copy_dim1
+        )
+        comptime num_copies_dim2 = ceildiv(
+            Self.tile_shape.element_types[2].static_value, copy_dim2
         )
 
-        comptime for i in range(num_copies_dim0):
-            comptime for j in range(num_copies_dim1):
-                comptime copy_offset: UInt32 = UInt32(
-                    (i * num_copies_dim1 + j) * copy_size
-                )
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
+                    comptime copy_offset: UInt32 = UInt32(
+                        _desc_offset[
+                            3,
+                            Index(
+                                num_copies_dim0,
+                                num_copies_dim1,
+                                num_copies_dim2,
+                            ),
+                            Self.is_k_major,
+                        ](Index(m, i, j))
+                        * copy_size
+                    )
 
-                cp_async_bulk_tensor_global_shared_cta(
-                    src.ptr + copy_offset,
-                    Pointer(to=self.descriptor).bitcast[NoneType](),
-                    Index(
-                        coords[0] + j * copy_dim1,
-                        coords[1] + i * copy_dim0,
-                    ),
-                )
+                    cp_async_bulk_tensor_global_shared_cta(
+                        src + copy_offset,
+                        Pointer(to=self.descriptor).bitcast[NoneType](),
+                        Index(
+                            coords[0] + j * copy_dim2,
+                            coords[1] + i * copy_dim1,
+                            coords[2] + m * copy_dim0,
+                        ),
+                    )
 
     @inline(.always)
     def async_store_3d(
@@ -2572,53 +2616,7 @@ struct TMATensorTile[
             type_of(src).alignment % 128 == 0
         ), "TMA requires 128B alignment in shared memory"
 
-        # The descriptor layout i.e. data per copy can be smaller than the shared memory
-        # tile shape due to WGMMA requirement. E.g. k-major no swizzle WGMMA BM x 16B to be
-        # one continuous chunk in shared memory. We need to break down tile shape in K by 16B.
-        #
-        # dim0, dim1 are MN, K for K-major and K, MN for MN-major because our inputs are
-        # row_major(K, MN) for the latter.
-        #
-        # TODO: use layout algebra here
-        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
-        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
-        comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
-        comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime num_copies_dim0 = ceildiv(
-            Self.tile_shape.element_types[0].static_value, copy_dim0
-        )
-        comptime num_copies_dim1 = ceildiv(
-            Self.tile_shape.element_types[1].static_value, copy_dim1
-        )
-        comptime num_copies_dim2 = ceildiv(
-            Self.tile_shape.element_types[2].static_value, copy_dim2
-        )
-
-        comptime for m in range(num_copies_dim0):
-            comptime for i in range(num_copies_dim1):
-                comptime for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = UInt32(
-                        _desc_offset[
-                            3,
-                            Index(
-                                num_copies_dim0,
-                                num_copies_dim1,
-                                num_copies_dim2,
-                            ),
-                            Self.is_k_major,
-                        ](Index(m, i, j))
-                        * copy_size
-                    )
-
-                    cp_async_bulk_tensor_global_shared_cta(
-                        src.ptr + copy_offset,
-                        Pointer(to=self.descriptor).bitcast[NoneType](),
-                        Index(
-                            coords[0] + j * copy_dim2,
-                            coords[1] + i * copy_dim1,
-                            coords[2] + m * copy_dim0,
-                        ),
-                    )
+        self._async_store_3d(src.ptr, coords)
 
     @inline(.always)
     def async_store_3d(
@@ -2629,16 +2627,26 @@ struct TMATensorTile[
         """
         Schedules an asynchronous store from shared memory to global memory at 3D coordinates.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
-        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+        The caller must ensure the shared pointer is aligned to 128 bytes.
 
         Args:
             src: TileTensor in shared memory from which data will be copied.
             coords: The 3D coordinates in the destination tensor.
         """
+        self._async_store_3d(src.ptr, coords)
+
+    @inline(.always)
+    def _async_store_4d(
+        self,
+        src: ImmPointer[Scalar[Self.dtype], _, address_space=.SHARED],
+        coords: Tuple[Int, Int, Int, Int],
+    ):
+        # TMA addresses descriptor boxes from the shared pointer, independently
+        # of the source tensor's logical shape and strides.
         comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
         comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
         comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
+        comptime copy_dim3 = Self.desc_shape.element_types[3].static_value
         comptime copy_size = _idx_product[Self.desc_shape]()
         comptime num_copies_dim0 = ceildiv(
             Self.tile_shape.element_types[0].static_value, copy_dim0
@@ -2649,32 +2657,37 @@ struct TMATensorTile[
         comptime num_copies_dim2 = ceildiv(
             Self.tile_shape.element_types[2].static_value, copy_dim2
         )
+        comptime num_copies_dim3 = ceildiv(
+            Self.tile_shape.element_types[3].static_value, copy_dim3
+        )
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
+                        comptime copy_offset: UInt32 = UInt32(
+                            _desc_offset[
+                                4,
+                                Index(
+                                    num_copies_dim0,
+                                    num_copies_dim1,
+                                    num_copies_dim2,
+                                    num_copies_dim3,
+                                ),
+                                Self.is_k_major,
+                            ](Index(n, m, i, j))
+                            * copy_size
+                        )
 
-        comptime for m in range(num_copies_dim0):
-            comptime for i in range(num_copies_dim1):
-                comptime for j in range(num_copies_dim2):
-                    comptime copy_offset: UInt32 = UInt32(
-                        _desc_offset[
-                            3,
+                        cp_async_bulk_tensor_global_shared_cta(
+                            src + copy_offset,
+                            Pointer(to=self.descriptor).bitcast[NoneType](),
                             Index(
-                                num_copies_dim0,
-                                num_copies_dim1,
-                                num_copies_dim2,
+                                coords[0] + j * copy_dim3,
+                                coords[1] + i * copy_dim2,
+                                coords[2] + m * copy_dim1,
+                                coords[3] + n * copy_dim0,
                             ),
-                            Self.is_k_major,
-                        ](Index(m, i, j))
-                        * copy_size
-                    )
-
-                    cp_async_bulk_tensor_global_shared_cta(
-                        src.ptr + copy_offset,
-                        Pointer(to=self.descriptor).bitcast[NoneType](),
-                        Index(
-                            coords[0] + j * copy_dim2,
-                            coords[1] + i * copy_dim1,
-                            coords[2] + m * copy_dim0,
-                        ),
-                    )
+                        )
 
     @inline(.always)
     def async_store_4d(
@@ -2704,51 +2717,7 @@ struct TMATensorTile[
             type_of(src).alignment % 128 == 0
         ), "TMA requires 128B alignment in shared memory"
 
-        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
-        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
-        comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
-        comptime copy_dim3 = Self.desc_shape.element_types[3].static_value
-        comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime num_copies_dim0 = ceildiv(
-            Self.tile_shape.element_types[0].static_value, copy_dim0
-        )
-        comptime num_copies_dim1 = ceildiv(
-            Self.tile_shape.element_types[1].static_value, copy_dim1
-        )
-        comptime num_copies_dim2 = ceildiv(
-            Self.tile_shape.element_types[2].static_value, copy_dim2
-        )
-        comptime num_copies_dim3 = ceildiv(
-            Self.tile_shape.element_types[3].static_value, copy_dim3
-        )
-        comptime for n in range(num_copies_dim0):
-            comptime for m in range(num_copies_dim1):
-                comptime for i in range(num_copies_dim2):
-                    comptime for j in range(num_copies_dim3):
-                        comptime copy_offset: UInt32 = UInt32(
-                            _desc_offset[
-                                4,
-                                Index(
-                                    num_copies_dim0,
-                                    num_copies_dim1,
-                                    num_copies_dim2,
-                                    num_copies_dim3,
-                                ),
-                                Self.is_k_major,
-                            ](Index(n, m, i, j))
-                            * copy_size
-                        )
-
-                        cp_async_bulk_tensor_global_shared_cta(
-                            src.ptr + copy_offset,
-                            Pointer(to=self.descriptor).bitcast[NoneType](),
-                            Index(
-                                coords[0] + j * copy_dim3,
-                                coords[1] + i * copy_dim2,
-                                coords[2] + m * copy_dim1,
-                                coords[3] + n * copy_dim0,
-                            ),
-                        )
+        self._async_store_4d(src.ptr, coords)
 
     @inline(.always)
     def async_store_4d(
@@ -2759,87 +2728,22 @@ struct TMATensorTile[
         """
         Schedules an asynchronous store from shared memory to global memory at 4D coordinates.
 
-        TileTensor overload - accepts TileTensor instead of LayoutTensor.
-        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+        The caller must ensure the shared pointer is aligned to 128 bytes.
 
         Args:
             src: TileTensor in shared memory from which data will be copied.
             coords: The 4D coordinates in the destination tensor.
         """
-        comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
-        comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
-        comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
-        comptime copy_dim3 = Self.desc_shape.element_types[3].static_value
-        comptime copy_size = _idx_product[Self.desc_shape]()
-        comptime num_copies_dim0 = ceildiv(
-            Self.tile_shape.element_types[0].static_value, copy_dim0
-        )
-        comptime num_copies_dim1 = ceildiv(
-            Self.tile_shape.element_types[1].static_value, copy_dim1
-        )
-        comptime num_copies_dim2 = ceildiv(
-            Self.tile_shape.element_types[2].static_value, copy_dim2
-        )
-        comptime num_copies_dim3 = ceildiv(
-            Self.tile_shape.element_types[3].static_value, copy_dim3
-        )
-        comptime for n in range(num_copies_dim0):
-            comptime for m in range(num_copies_dim1):
-                comptime for i in range(num_copies_dim2):
-                    comptime for j in range(num_copies_dim3):
-                        comptime copy_offset: UInt32 = UInt32(
-                            _desc_offset[
-                                4,
-                                Index(
-                                    num_copies_dim0,
-                                    num_copies_dim1,
-                                    num_copies_dim2,
-                                    num_copies_dim3,
-                                ),
-                                Self.is_k_major,
-                            ](Index(n, m, i, j))
-                            * copy_size
-                        )
-
-                        cp_async_bulk_tensor_global_shared_cta(
-                            src.ptr + copy_offset,
-                            Pointer(to=self.descriptor).bitcast[NoneType](),
-                            Index(
-                                coords[0] + j * copy_dim3,
-                                coords[1] + i * copy_dim2,
-                                coords[2] + m * copy_dim1,
-                                coords[3] + n * copy_dim0,
-                            ),
-                        )
+        self._async_store_4d(src.ptr, coords)
 
     @inline(.always)
-    def async_store_5d(
+    def _async_store_5d(
         self,
-        src: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
+        src: ImmPointer[Scalar[Self.dtype], _, address_space=.SHARED],
         coords: Tuple[Int, Int, Int, Int, Int],
     ):
-        """
-        Schedules an asynchronous store from shared memory to global memory at specified 5D coordinates.
-
-        This method initiates a hardware-accelerated asynchronous transfer of data from shared memory
-        to the specified destination in global memory for 5D tensors.
-
-        Args:
-            src: The source tensor in shared memory from which data will be copied.
-                 Must be 128-byte aligned.
-            coords: The 5D coordinates in the destination tensor where data will be stored.
-
-        Constraints:
-
-            - The source tensor must be 128-byte aligned in shared memory.
-            - The descriptor layout may be smaller than the shared memory tile shape
-              to accommodate hardware requirements.
-        """
-        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
-        comptime assert (
-            type_of(src).alignment % 128 == 0
-        ), "TMA requires 128B alignment in shared memory"
-
+        # TMA addresses descriptor boxes from the shared pointer, independently
+        # of the source tensor's logical shape and strides.
         comptime copy_dim0 = Self.desc_shape.element_types[0].static_value
         comptime copy_dim1 = Self.desc_shape.element_types[1].static_value
         comptime copy_dim2 = Self.desc_shape.element_types[2].static_value
@@ -2882,7 +2786,7 @@ struct TMATensorTile[
                             )
 
                             cp_async_bulk_tensor_global_shared_cta(
-                                src.ptr + copy_offset,
+                                src + copy_offset,
                                 Pointer(to=self.descriptor).bitcast[NoneType](),
                                 Index(
                                     coords[0] + j * copy_dim4,
@@ -2892,6 +2796,50 @@ struct TMATensorTile[
                                     coords[4] + o * copy_dim0,
                                 ),
                             )
+
+    @inline(.always)
+    def async_store_5d(
+        self,
+        src: LayoutTensor[Self.dtype, _, address_space=.SHARED, ...],
+        coords: Tuple[Int, Int, Int, Int, Int],
+    ):
+        """
+        Schedules an asynchronous store from shared memory to global memory at specified 5D coordinates.
+
+        This method initiates a hardware-accelerated asynchronous transfer of data from shared memory
+        to the specified destination in global memory for 5D tensors.
+
+        Args:
+            src: The source tensor in shared memory from which data will be copied.
+                 Must be 128-byte aligned.
+            coords: The 5D coordinates in the destination tensor where data will be stored.
+
+        Constraints:
+
+            - The source tensor must be 128-byte aligned in shared memory.
+            - The descriptor layout may be smaller than the shared memory tile shape
+              to accommodate hardware requirements.
+        """
+        # https://docs.nvidia.com/cuda/cuda-c-programming-guide/index.html?highlight=tma#table-alignment-multi-dim-tma
+        comptime assert (
+            type_of(src).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
+
+        self._async_store_5d(src.ptr, coords)
+
+    @inline(.always)
+    def async_store_5d(
+        self,
+        src: TileTensor[Self.dtype, address_space=.SHARED, ...],
+        coords: Tuple[Int, Int, Int, Int, Int],
+    ):
+        """Schedules an asynchronous store from shared memory at 5D coordinates.
+
+        Args:
+            src: The source tensor in shared memory, aligned to 128 bytes.
+            coords: The coordinates in the destination global tensor.
+        """
+        self._async_store_5d(src.ptr, coords)
 
     @inline(.always)
     def commit_group(self):
