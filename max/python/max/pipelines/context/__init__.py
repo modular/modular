@@ -47,7 +47,12 @@ from .context_validators import (
     validate_vision_position_ids,
 )
 from .eos_tracking import EOSTracker
-from .exceptions import InputError, PromptTooLongError
+from .exceptions import (
+    InputError,
+    MediaBudgetExceeded,
+    MediaDecodeError,
+    PromptTooLongError,
+)
 from .log_probabilities import LogProbabilities
 from .logit_processors_type import (
     BatchLogitsProcessor,
@@ -73,7 +78,16 @@ from .tokens import (
     TokenHashOverride,
     TokenSlice,
 )
-from .video import open_video_container
+from .video import (
+    SampledVideo,
+    VideoSource,
+    VideoStreamInfo,
+    decode_video_frames,
+    open_video_container,
+    plan_frame_indices,
+    probe_video,
+    validate_video,
+)
 
 __all__ = [
     "FUTURE_TOKEN",
@@ -93,11 +107,14 @@ __all__ = [
     "InputError",
     "LogProbabilities",
     "LogitsProcessor",
+    "MediaBudgetExceeded",
+    "MediaDecodeError",
     "PixelContext",
     "PixelGenerationContextType",
     "ProcessorInputs",
     "PromptTooLongError",
     "Range",
+    "SampledVideo",
     "SamplingParams",
     "SamplingParamsGenerationConfigDefaults",
     "SamplingParamsInput",
@@ -112,7 +129,12 @@ __all__ = [
     "TokenHashOverride",
     "TokenSlice",
     "VLMContextType",
+    "VideoSource",
+    "VideoStreamInfo",
+    "decode_video_frames",
     "open_video_container",
+    "plan_frame_indices",
+    "probe_video",
     "validate_aspect_ratio_args",
     "validate_flux2_max_pixel_area",
     "validate_image_grid_thw_args",
@@ -120,6 +142,7 @@ __all__ = [
     "validate_initial_prompt_has_image",
     "validate_only_one_image",
     "validate_requires_vision_context",
+    "validate_video",
     "validate_vision_position_ids",
     "validate_wan_max_pixel_area",
 ]

@@ -114,10 +114,12 @@ from max.serve.router._image_resolution import (
     MediaRef,
     _ImageFact,
     _request_media_budget,
+    charge_decoded_images,
     decode_and_validate_images,
     emit_media_facts,
     make_media_ref,
     resolve_image_from_url,
+    validate_videos,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -1647,12 +1649,17 @@ class _ParsedChatRequest(NamedTuple):
     a second time. An entry is ``None`` where the decode was skipped because
     the tokenizer already holds that image's preprocessed tensor. See
     :func:`decode_and_validate_images`.
+
+    ``max_decoded_bytes`` is the decoded-byte allowance of each video, carried
+    onward because videos are decoded in the tokenizer rather than here. See
+    :func:`video_decoded_allowance`.
     """
 
     messages: list[TextGenerationRequestMessage]
     images: list[bytes]
     videos: list[bytes]
     decoded_images: list[Image.Image | None]
+    max_decoded_bytes: int | None
 
 
 def _coerce_positive_int(value: Any) -> int | None:
@@ -1988,7 +1995,7 @@ async def openai_parse_chat_completion_request(
                 decoded_images, skip_decode = await asyncio.to_thread(
                     _resolve_and_decode_images,
                     request_images,
-                    budget.limit,
+                    budget.remaining,
                     preprocessed_image_mask,
                     messages,
                     facts,
@@ -2005,6 +2012,7 @@ async def openai_parse_chat_completion_request(
             emit_media_facts(facts)
             raise
         emit_media_facts(facts)
+        charge_decoded_images(budget, decoded_images)
         if skip_decode is not None:
             cached = sum(skip_decode)
             METRICS.vision_preprocess_cache_hits(cached)
@@ -2016,10 +2024,24 @@ async def openai_parse_chat_completion_request(
         )
         for video_url in video_refs
     ]
-    request_videos = await asyncio.gather(*resolve_video_tasks)
+    request_videos = list(await asyncio.gather(*resolve_video_tasks))
+
+    # Check each video's header at the boundary, mirroring the image path, so
+    # an unreadable or oversized video becomes a clean 400 here instead of a
+    # worker-side 500. The video itself is decoded once, later, by the
+    # tokenizer. Each video gets an equal share of what encoded media and
+    # decoded images leave of the request budget; the share travels with the
+    # request, so the videos cannot jointly exceed the budget. Runs off the
+    # event loop because opening a container parses data synchronously.
+    video_allowance = budget.share(len(request_videos))
+    await asyncio.to_thread(validate_videos, request_videos, video_allowance)
 
     return _ParsedChatRequest(
-        messages, request_images, list(request_videos), decoded_images
+        messages,
+        request_images,
+        request_videos,
+        decoded_images,
+        video_allowance,
     )
 
 
@@ -2275,6 +2297,7 @@ async def openai_create_chat_completion(
             request_images,
             request_videos,
             request_decoded_images,
+            request_max_decoded_bytes,
         ) = await openai_parse_chat_completion_request(
             completion_request,
             tokenizer.expects_content_wrapping,
@@ -2520,6 +2543,7 @@ async def openai_create_chat_completion(
             images=request_images,
             decoded_images=request_decoded_images,
             videos=request_videos,
+            max_decoded_bytes=request_max_decoded_bytes,
             tools=tools,
             timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,

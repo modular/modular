@@ -42,7 +42,12 @@ from httpx import (
     TimeoutException,
     TransportError,
 )
-from max.pipelines.context.exceptions import InputError
+from max.pipelines.context import validate_video
+from max.pipelines.context.exceptions import (
+    InputError,
+    MediaBudgetExceeded,
+    MediaDecodeError,
+)
 from max.pipelines.lib.tokenizer import ALLOWED_IMAGE_FORMATS
 from max.serve.config import Settings
 from max.serve.telemetry.metrics import METRICS
@@ -422,6 +427,7 @@ def decode_and_validate_images(
             f"{len(images)} image(s); it must be aligned with ``images``."
         )
     decoded: list[Image.Image | None] = []
+    remaining = max_decoded_bytes
     for index, image_bytes in enumerate(images):
         # The codec window: the header parse through the full pixel decode,
         # and nothing past it. The per-architecture processor runs downstream
@@ -442,7 +448,7 @@ def decode_and_validate_images(
             Image.DecompressionBombError,
         ) as e:
             _record_fact(facts, _ImageFact("unknown", rejection="undecodable"))
-            raise InputError("invalid or unreadable image content") from e
+            raise MediaDecodeError("invalid or unreadable image content") from e
         image_format = _metric_image_format(image)
         pixels = image.width * image.height
         # Bound decoded memory with the same knob that bounds the fetch --
@@ -458,21 +464,26 @@ def decode_and_validate_images(
         # ``Image.open`` does. It still precedes the only expensive step
         # (``load()``, which allocates the buffer), which is the property that
         # matters -- a bomb is refused before the allocation, not after.
-        if max_decoded_bytes is not None:
-            estimated = _estimated_decoded_bytes(image)
-            if estimated > max_decoded_bytes:
+        #
+        # The bound is aggregate: every image that is actually decoded draws
+        # down ``remaining``, so many individually small images cannot add up
+        # to more than the request budget either.
+        estimated = _estimated_decoded_bytes(image)
+        if remaining is not None:
+            assert max_decoded_bytes is not None
+            if estimated > remaining:
                 _record_fact(
                     facts,
                     _ImageFact(
                         image_format, pixels, rejection="decode_too_large"
                     ),
                 )
-                raise InputError(
+                raise MediaBudgetExceeded(
                     "image decodes to "
                     f"{to_human_readable_bytes(estimated)}, exceeding the "
                     "maximum media size of "
                     f"{to_human_readable_bytes(max_decoded_bytes)} per request "
-                    f"by {to_human_readable_bytes(estimated - max_decoded_bytes)}"
+                    f"by {to_human_readable_bytes(estimated - remaining)}"
                 )
         if skip_decode is not None and skip_decode[index]:
             # Past both cheap checks, so this image is as validated as any
@@ -485,6 +496,8 @@ def decode_and_validate_images(
             # after the header read -- so only the decode sample is missing.
             _record_fact(facts, _ImageFact(image_format, pixels))
             continue
+        if remaining is not None:
+            remaining -= estimated
         try:
             image.load()
         except (
@@ -497,13 +510,51 @@ def decode_and_validate_images(
             _record_fact(
                 facts, _ImageFact(image_format, pixels, rejection="undecodable")
             )
-            raise InputError("invalid or unreadable image content") from e
+            raise MediaDecodeError("invalid or unreadable image content") from e
         _record_fact(
             facts,
             _ImageFact(image_format, pixels, decode_ms=decode.elapsed_ms),
         )
         decoded.append(image)
     return decoded
+
+
+def charge_decoded_images(
+    budget: _MediaByteBudget, decoded_images: Sequence[Image.Image | None]
+) -> None:
+    """Charge the pixel buffers :func:`decode_and_validate_images` allocated.
+
+    Skipped images (``None``) hold no pixels and cost nothing. The decode
+    already refused anything that would overrun ``budget.remaining``, so this
+    only records what it let through.
+    """
+    budget.charge(
+        sum(
+            _estimated_decoded_bytes(image)
+            for image in decoded_images
+            if image is not None
+        ),
+        "image",
+    )
+
+
+def validate_videos(videos: list[bytes], max_decoded_bytes: int | None) -> None:
+    """Validate each resolved video at the router boundary.
+
+    Images are eagerly decoded here so malformed, non-image, or truncated
+    content fails as a clean 400 instead of reaching the model worker and
+    crashing it with a 500 (see :func:`decode_and_validate_images`). Videos
+    previously skipped this entirely: they were passed through as raw bytes and
+    first touched inside the worker, so the same malformed input surfaced as a
+    500 or a worker crash rather than a clean rejection.
+
+    :func:`~max.pipelines.context.validate_video` reads only the header: a
+    video is decoded exactly once, by the tokenizer, so damage inside the
+    stream surfaces there. A frame larger than ``max_decoded_bytes`` is
+    rejected before anything is decoded.
+    """
+    for video_bytes in videos:
+        validate_video(video_bytes, max_decoded_bytes)
 
 
 class _MediaByteBudget:
@@ -566,7 +617,12 @@ class _MediaByteBudget:
             f"{media_kind} media exceeds the maximum media size of "
             f"{to_human_readable_bytes(self.limit)} per request by "
             f"{to_human_readable_bytes(over)}",
+            error=MediaBudgetExceeded,
         )
+
+    def share(self, n: int) -> int | None:
+        """An equal ``1/n`` share of what is left (``None`` if unbounded)."""
+        return None if self.remaining is None else self.remaining // max(n, 1)
 
 
 def _max_media_bytes(settings: Settings | None) -> int | None:
@@ -1005,7 +1061,7 @@ def _sniff_image_mime(image: Image.Image) -> str:
     """
     image_format = image.format
     if not image_format:
-        raise InputError("invalid or unreadable image content")
+        raise MediaDecodeError("invalid or unreadable image content")
     # MPO is a multi-picture JPEG; every other format PIL names maps directly.
     if image_format == "MPO":
         return "image/jpeg"

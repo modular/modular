@@ -383,6 +383,17 @@ class TextGenerationRequest:
     because the tokenizer already holds that image's preprocessed tensor --
     the same per-index fallback to :attr:`images` applies.
     """
+    max_decoded_bytes: int | None = None
+    """
+    Decoded (in-memory) bytes each of this request's videos may retain: an
+    equal share of the ``Settings.max_media_bytes`` budget left after every
+    encoded image and video and every decoded image is accounted for. A video
+    is decoded later, in the tokenizer, so the allowance travels with the
+    request to bound how many frames that decode may keep. Because the shares
+    sum to what remains, the videos cannot jointly exceed the budget.
+    API-process-only, like :attr:`decoded_images`.
+    ``None`` means unbounded (offline/test callers, or the limit disabled).
+    """
     tools: list[TextGenerationRequestTool] | None = None
     """
     A list of tools that can be invoked during the generation process. This

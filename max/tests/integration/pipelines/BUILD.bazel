@@ -197,6 +197,7 @@ modular_py_test(
             "test_pipeline_config_resolve.py",
             "test_structured_output_spec_decode_gpu.py",
             "test_model_manifest.py",
+            "test_video.py",
             "test_weight_loader.py",
         ],
     ),
@@ -220,6 +221,22 @@ modular_py_test(
         "//max/python/max/support",
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:numerics",
+        requirement("numpy"),
+    ],
+)
+
+# The shared video decoder needs neither network nor GPU, so it gets its own
+# target rather than riding along with the network-tagged suite above.
+modular_py_test(
+    name = "test_video",
+    srcs = ["test_video.py"],
+    target_compatible_with = select({
+        # libx264 encode via PyAV is unreliable on the macOS CI image.
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/pipelines/context",
         requirement("av"),
         requirement("numpy"),
     ],

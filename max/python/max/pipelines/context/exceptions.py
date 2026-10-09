@@ -15,7 +15,12 @@
 
 from __future__ import annotations
 
-__all__ = ["InputError", "PromptTooLongError"]
+__all__ = [
+    "InputError",
+    "MediaBudgetExceeded",
+    "MediaDecodeError",
+    "PromptTooLongError",
+]
 
 
 class InputError(ValueError):
@@ -25,6 +30,19 @@ class InputError(ValueError):
     for invalid input data, such as missing images for vision models or incorrect
     parameter combinations.
     """
+
+
+class MediaDecodeError(InputError):
+    """Raised when client-supplied media is malformed, unsupported, or unreadable.
+
+    The one type for every decoder-specific failure on untrusted media (PyAV,
+    PIL, bad base64), so serving code can report it to the user without
+    knowing which backend raised.
+    """
+
+
+class MediaBudgetExceeded(InputError):
+    """Raised when client-supplied media does not fit the request media budget."""
 
 
 class PromptTooLongError(InputError):

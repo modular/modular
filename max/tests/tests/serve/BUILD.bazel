@@ -70,6 +70,7 @@ modular_py_test(
         "//max/python/max/serve/telemetry:kernel_capture",
         "//max/python/max/serve/worker_interface",
         requirement("async-asgi-testclient"),
+        requirement("av"),
         requirement("fastapi"),
         requirement("httpx"),
         requirement("openai"),

@@ -39,9 +39,11 @@ from collections.abc import AsyncIterator
 from typing import Any
 from unittest import mock
 
+import av
+import numpy as np
 import pytest
 from httpx import ConnectError, ReadTimeout
-from max.pipelines.context.exceptions import InputError
+from max.pipelines.context.exceptions import InputError, MediaBudgetExceeded
 from max.serve.config import Settings
 from max.serve.pipelines.preprocess_cache_stats import (
     preprocessed_image_probe,
@@ -49,6 +51,7 @@ from max.serve.pipelines.preprocess_cache_stats import (
 from max.serve.router import _image_resolution
 from max.serve.router._image_resolution import (
     _METRIC_IMAGE_FORMATS,
+    decode_and_validate_images,
     make_media_ref,
     resolve_image_from_url,
 )
@@ -64,6 +67,30 @@ pytestmark = pytest.mark.asyncio
 
 def _data_uri(payload: bytes) -> str:
     return "data:image/png;base64," + base64.b64encode(payload).decode()
+
+
+def _mp4_bytes(width: int = 32, height: int = 32, num_frames: int = 4) -> bytes:
+    """Encodes a tiny valid H.264 MP4, so router video validation accepts it."""
+    buf = io.BytesIO()
+    container = av.open(buf, mode="w", format="mp4")
+    stream = container.add_stream("libx264", rate=24)
+    assert isinstance(stream, av.VideoStream)
+    stream.width = width
+    stream.height = height
+    stream.pix_fmt = "yuv420p"
+    for i in range(num_frames):
+        arr = np.full((height, width, 3), fill_value=i * 30, dtype=np.uint8)
+        frame = av.VideoFrame.from_ndarray(arr, format="rgb24")
+        for packet in stream.encode(frame):
+            container.mux(packet)
+    for packet in stream.encode():
+        container.mux(packet)
+    container.close()
+    return buf.getvalue()
+
+
+def _video_data_uri(payload: bytes) -> str:
+    return "data:video/mp4;base64," + base64.b64encode(payload).decode()
 
 
 def _png_bytes(size: tuple[int, int] = (8, 8)) -> bytes:
@@ -417,7 +444,8 @@ async def test_parse_accepts_within_cap_image_and_video() -> None:
     """A small image + small video within all caps parse successfully."""
     png = _png_bytes()
     image_uri = _data_uri(png)
-    video_uri = _data_uri(b"\x20" * 64)
+    video = _mp4_bytes()
+    video_uri = _video_data_uri(video)
     request = CreateChatCompletionRequest.model_validate(
         {
             "model": "test",
@@ -443,7 +471,106 @@ async def test_parse_accepts_within_cap_image_and_video() -> None:
     assert len(parsed.images) == 1
     assert len(parsed.videos) == 1
     assert parsed.images[0] == png
-    assert parsed.videos[0] == b"\x20" * 64
+    assert parsed.videos[0] == video
+
+
+async def test_parse_validates_video_against_remaining_budget() -> None:
+    """A frame is checked against what is left after encoded media is charged."""
+    video = _mp4_bytes()
+    frame_bytes = 32 * 32 * 3
+    request = _video_request([_video_data_uri(video)])
+
+    with pytest.raises(MediaBudgetExceeded, match="more than the maximum"):
+        await openai_parse_chat_completion_request(
+            request,
+            wrap_content=True,
+            settings=Settings(max_media_bytes=len(video) + frame_bytes - 1),
+        )
+
+    parsed = await openai_parse_chat_completion_request(
+        request,
+        wrap_content=True,
+        settings=Settings(max_media_bytes=len(video) + frame_bytes),
+    )
+    assert parsed.max_decoded_bytes == frame_bytes
+
+
+async def test_parse_splits_remaining_budget_across_videos() -> None:
+    """Each video gets an equal share, so together they cannot exceed it."""
+    video = _mp4_bytes()
+    frame_bytes = 32 * 32 * 3
+    request = _video_request([_video_data_uri(video)] * 2)
+
+    with pytest.raises(MediaBudgetExceeded, match="more than the maximum"):
+        await openai_parse_chat_completion_request(
+            request,
+            wrap_content=True,
+            settings=Settings(
+                max_media_bytes=2 * len(video) + 2 * frame_bytes - 1
+            ),
+        )
+
+    parsed = await openai_parse_chat_completion_request(
+        request,
+        wrap_content=True,
+        settings=Settings(max_media_bytes=2 * len(video) + 2 * frame_bytes),
+    )
+    assert parsed.max_decoded_bytes == frame_bytes
+
+
+def test_decoded_image_budget_is_aggregate() -> None:
+    """Many small images cannot add up to more than the request budget."""
+    png = _png_bytes((64, 64))
+    each = 64 * 64 * 3
+    with pytest.raises(MediaBudgetExceeded, match="image decodes to"):
+        decode_and_validate_images([png, png], max_decoded_bytes=2 * each - 1)
+    assert len(decode_and_validate_images([png, png], 2 * each)) == 2
+
+
+async def test_parse_charges_decoded_image_against_video_budget() -> None:
+    """A decoded image and a video draw on the same budget."""
+    png = _png_bytes()
+    video = _mp4_bytes()
+    image_bytes = 8 * 8 * 3
+    frame_bytes = 32 * 32 * 3
+    request = CreateChatCompletionRequest.model_validate(
+        {
+            "model": "test",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "hi"},
+                        {
+                            "type": "image_url",
+                            "image_url": {"url": _data_uri(png)},
+                        },
+                        {
+                            "type": "video_url",
+                            "video_url": {"url": _video_data_uri(video)},
+                        },
+                    ],
+                }
+            ],
+        }
+    )
+    encoded = len(png) + len(video)
+
+    with pytest.raises(MediaBudgetExceeded, match="more than the maximum"):
+        await openai_parse_chat_completion_request(
+            request,
+            wrap_content=True,
+            settings=Settings(
+                max_media_bytes=encoded + image_bytes + frame_bytes - 1
+            ),
+        )
+
+    parsed = await openai_parse_chat_completion_request(
+        request,
+        wrap_content=True,
+        settings=Settings(max_media_bytes=encoded + image_bytes + frame_bytes),
+    )
+    assert parsed.max_decoded_bytes == frame_bytes
 
 
 # ---------------------------------------------------------------------------
@@ -998,7 +1125,7 @@ async def test_parse_counts_media_items_per_admitted_request(
                         },
                         {
                             "type": "video_url",
-                            "video_url": {"url": _data_uri(b"\x20" * 64)},
+                            "video_url": {"url": _video_data_uri(_mp4_bytes())},
                         },
                     ],
                 }
