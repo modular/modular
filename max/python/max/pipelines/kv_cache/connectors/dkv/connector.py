@@ -1789,28 +1789,28 @@ class DKVConnector(KVConnector):
         Each ``block_hashes`` element follows the same 8-or-32 byte contract as
         :meth:`load` (truncated to its first 8 bytes at the dkv boundary; see
         :func:`_to_dkv_u64`). Best-effort and fire-and-forget: the Rust client
-        spawns the touch RPC and returns immediately, so this never blocks the
-        caller and a missed touch costs at most a later refetch, never
-        correctness. A no-op when ``MODULAR_DKV_DISABLE_G0_TOUCH`` is set (the
-        kill-switch, read once at construction).
+        queues the touch RPC behind the settles queued before it and returns
+        immediately, so this never blocks the caller and a missed touch costs
+        at most a later refetch, never correctness. A no-op when
+        ``MODULAR_DKV_DISABLE_G0_TOUCH`` is set (the kill-switch, read once at
+        construction).
 
         Not chunked. ``shard_keys`` mints one key per TP shard, so a long
         sequence on a full leaf is a large request (TP=8 over 780 blocks is
-        ~6k keys), but splitting it here would break the walk: the pyo3 shim
-        spawns each ``touch`` as its own task that then contends for the
-        connector mutex, so two calls have no ordering, and which key ends up
-        MRU depends on which chunk lands last. Chunking belongs inside
-        ``Connector::touch``, where the splits can be awaited in order
-        (SERVOPT-1615). Windowing the sliding leaves removes the pathological
-        case (a 1k window is 8 blocks however long the sequence is).
+        ~6k keys). Touches run in the order they are sent, so chunks would
+        land in order, but splitting here costs a Python call and a queued
+        RPC per chunk; chunking belongs in ``Toucher::send``, which queues the
+        whole walk (SERVOPT-1615). Windowing the sliding leaves removes the
+        pathological case (a 1k window is 8 blocks however long the sequence
+        is).
 
         Routes to the processing replica's per-leaf clients, one call per leaf.
         """
         if self._g0_touch_disabled:
             return
         # Honor the KVConnector.touch contract ("never raises into the caller").
-        # This runs on the scheduler thread BEFORE the Rust client's fire-and-
-        # forget spawn, so a bad hash length (_to_dkv_u64 -> ValueError) or an
+        # This runs on the scheduler thread BEFORE the Rust client queues the
+        # touch, so a bad hash length (_to_dkv_u64 -> ValueError) or an
         # out-of-range replica_idx (IndexError) would otherwise propagate here.
         # A missed recency touch is never a correctness issue, so swallow and
         # log at debug (matches offload's swallow posture; design section 4).
