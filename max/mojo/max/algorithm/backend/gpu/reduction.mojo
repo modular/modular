@@ -37,14 +37,14 @@ from max.gpu.primitives.grid_controls import (
 )
 from max.gpu.primitives import warp
 from std.memory import unsafe_stack_allocation
-from std.atomic import Atomic
+from std.atomic import Atomic, Ordering, fence
 
 from std.utils import IndexList
 from std.utils.coord import Coord, coord_to_index_list
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 from std.sys import get_defined_int
-from std.sys.info import simd_width_of
+from std.sys.info import is_apple_gpu, simd_width_of
 
 
 comptime _PDL_LEVEL = PDLLevel.ON
@@ -652,6 +652,11 @@ def twophase_reduce_kernel[
             comptime for i in range(num_reductions):
                 partials[unsafe_offset=base + i] = partial[i]
 
+            # Release the partial stores before the counter bump. On Apple GPUs
+            # `fetch_add` defaults to RELAXED (Metal lowers only relaxed RMWs
+            # and only seq_cst fences); elsewhere seq_cst already covers this.
+            comptime if is_apple_gpu():
+                fence[Ordering.SEQUENTIAL, scope="gpu"]()
             var finished = Atomic[Int32].fetch_add(
                 counters.unsafe_offset(row_idx), Int32(1)
             )
@@ -662,6 +667,10 @@ def twophase_reduce_kernel[
         # so the entire block can participate cooperatively.
         is_last_block = broadcast[block_size=BLOCK_SIZE](is_last_block)
         if is_last_block:
+            # Acquire half: every thread loads partials below, and `broadcast`'s
+            # barrier is not a device-scope acquire.
+            comptime if is_apple_gpu():
+                fence[Ordering.SEQUENTIAL, scope="gpu"]()
             # Each thread loads a stripe of the partials and reduces locally.
             var thread_accum = StaticTuple[Scalar[accum_type], num_reductions]()
 
