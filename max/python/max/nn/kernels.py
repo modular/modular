@@ -8479,12 +8479,6 @@ def quantize_dynamic_scaled_float8(
     Returns:
         The quantized tensor and the scales.
     """
-    if input.rank != 2:
-        raise ValueError("input must be rank 2 tensor")
-
-    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
-        raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
-
     if not math.isfinite(amax_floor) or amax_floor < 0.0:
         raise ValueError(
             f"amax_floor must be finite and non-negative, got {amax_floor}"
@@ -8502,34 +8496,14 @@ def quantize_dynamic_scaled_float8(
             " op takes no amax_floor parameter"
         )
 
-    if not isinstance(input.shape[1], StaticDim):
-        raise ValueError(
-            "input.shape[1] must be a statically known dimension. Input shape"
-            f" received: {input.shape}"
-        )
-
-    if group_size_or_per_token == -1:
-        if input_scale_spec.is_block or weight_scale_spec.is_block:
-            assert input_scale_spec.block_size is not None
-            group_size = input_scale_spec.block_size[1]
-        else:
-            group_size = int(input.shape[1])
-    else:
-        group_size = group_size_or_per_token
-
-    a_scales_dim1 = input.shape[0]
-    if input_scale_spec.is_block or weight_scale_spec.is_block:
-        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
-            raise ValueError(
-                "both input and weight must be blockwise scaled for blockwise"
-                " scaling"
-            )
-
-        # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
-        padding_size = 16 // scales_type.size_in_bytes
-        a_scales_dim1 = (
-            (input.shape[0] + padding_size - 1) // padding_size
-        ) * padding_size
+    group_size, out_types = _dynamic_scaled_float8_quant_out_types(
+        input,
+        input_scale_spec,
+        weight_scale_spec,
+        group_size_or_per_token,
+        out_type,
+        scales_type,
+    )
 
     values: list[Value[Any]] = [
         input,
@@ -8561,19 +8535,157 @@ def quantize_dynamic_scaled_float8(
         op_name,
         device=input.device,
         values=values,
-        out_types=[
-            TensorType(
-                dtype=out_type,
-                shape=[input.shape[0], input.shape[1]],
-                device=input.device,
-            ),
-            TensorType(
-                dtype=scales_type,
-                shape=[input.shape[1] // group_size, a_scales_dim1],
-                device=input.device,
-            ),
-        ],
+        out_types=out_types,
         parameters=parameters,
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def _dynamic_scaled_float8_quant_out_types(
+    input: TensorValue,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
+    group_size_or_per_token: int,
+    out_type: DType,
+    scales_type: DType,
+) -> tuple[int, list[TensorType]]:
+    """Validates a dynamic-scaled FP8 quantize and returns its group size and
+    ``[quantized, scales]`` output types (shared by the standalone and the
+    rms_norm-fused quantize ops so both emit the same scale layout)."""
+    if input.rank != 2:
+        raise ValueError("input must be rank 2 tensor")
+
+    if out_type not in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
+        raise ValueError("out_type must be float8_e4m3fn or float8_e4m3fnuz")
+
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            "input.shape[1] must be a statically known dimension. Input shape"
+            f" received: {input.shape}"
+        )
+
+    if group_size_or_per_token == -1:
+        if input_scale_spec.is_block or weight_scale_spec.is_block:
+            assert input_scale_spec.block_size is not None
+            group_size = input_scale_spec.block_size[1]
+        else:
+            group_size = int(input.shape[1])
+    else:
+        group_size = group_size_or_per_token
+
+    a_scales_dim1 = input.shape[0]
+    if input_scale_spec.is_block or weight_scale_spec.is_block:
+        if not (input_scale_spec.is_block and weight_scale_spec.is_block):
+            raise ValueError(
+                "both input and weight must be blockwise scaled for blockwise"
+                " scaling"
+            )
+
+        # For blockwise scaling pad the a_scales to 16 Bytes. This is required by NVIDIA SM90+ TMA instructions
+        padding_size = 16 // scales_type.size_in_bytes
+        a_scales_dim1 = (
+            (input.shape[0] + padding_size - 1) // padding_size
+        ) * padding_size
+
+    out_types = [
+        TensorType(
+            dtype=out_type,
+            shape=[input.shape[0], input.shape[1]],
+            device=input.device,
+        ),
+        TensorType(
+            dtype=scales_type,
+            shape=[input.shape[1] // group_size, a_scales_dim1],
+            device=input.device,
+        ),
+    ]
+    return group_size, out_types
+
+
+def rms_norm_quantize_dynamic_scaled_float8(
+    input: TensorValue,
+    gamma: TensorValue,
+    epsilon: float,
+    input_scale_spec: InputScaleSpec,
+    weight_scale_spec: WeightScaleSpec,
+    *,
+    weight_offset: float = 0.0,
+    multiply_before_cast: bool = False,
+    scale_ub: float = 1200.0,
+    group_size_or_per_token: int = -1,
+    out_type: DType = DType.float8_e4m3fn,
+    scales_type: DType = DType.float32,
+) -> tuple[TensorValue, TensorValue]:
+    """RMS-normalizes ``input`` and quantizes the result to FP8 with dynamic
+    group (blockwise) scales in a single kernel.
+
+    Equivalent to :func:`~max.graph.ops.rms_norm` followed by
+    :func:`quantize_dynamic_scaled_float8` with the same arguments, including
+    the ``[K // group_size, M_padded]`` scale layout, without materializing
+    the normalized activation. Group scales only: a per-token group
+    (``group_size == K``) is rejected, that case fuses through the graph
+    compiler's rms_norm + quantize composite instead.
+
+    Args:
+        input: The ``[M, K]`` activation to normalize and quantize.
+        gamma: The ``[K]`` RMSNorm weight, already in ``input``'s dtype and
+            on its device.
+        epsilon: The RMSNorm epsilon.
+        input_scale_spec: Activation scale spec; supplies the group size when
+            ``group_size_or_per_token`` is -1.
+        weight_scale_spec: Weight scale spec of the consuming matmul.
+        weight_offset: Constant added to ``gamma`` (Gemma-style norms).
+        multiply_before_cast: RMSNorm gamma-multiply order; see
+            :func:`~max.graph.ops.rms_norm`.
+        scale_ub: Upper bound of the dynamic scale.
+        group_size_or_per_token: Columns per scale, or -1 to take the
+            activation block size from ``input_scale_spec``.
+        out_type: FP8 output dtype.
+        scales_type: Scale dtype. Defaults to float32, which the
+            blockwise-FP8 matmuls require.
+
+    Returns:
+        The quantized ``[M, K]`` tensor and its ``[K // group_size, M_padded]``
+        scales.
+    """
+    group_size, out_types = _dynamic_scaled_float8_quant_out_types(
+        input,
+        input_scale_spec,
+        weight_scale_spec,
+        group_size_or_per_token,
+        out_type,
+        scales_type,
+    )
+    num_cols = int(input.shape[1])
+    if not 0 < group_size < num_cols or num_cols % group_size != 0:
+        raise ValueError(
+            "rms_norm_quantize_dynamic_scaled_float8 needs a group size that"
+            f" is a proper divisor of the row width; got group_size="
+            f"{group_size} for {num_cols} columns (per-token scales fuse via"
+            " ops.rms_norm + quantize_dynamic_scaled_float8 instead)"
+        )
+    if gamma.shape != input.shape[-1:] or gamma.dtype != input.dtype:
+        raise ValueError(
+            f"gamma must be [{num_cols}] in {input.dtype}; got {gamma.shape}"
+            f" {gamma.dtype}"
+        )
+
+    result = ops.custom(
+        "mo.rms_norm_quantize_dynamic_scaled_float8",
+        device=input.device,
+        values=[
+            input,
+            gamma,
+            ops.constant(epsilon, DType.float32, device=DeviceRef.CPU()),
+            ops.constant(weight_offset, input.dtype, device=DeviceRef.CPU()),
+            ops.constant(scale_ub, DType.float32, device=DeviceRef.CPU()),
+        ],
+        out_types=out_types,
+        parameters={
+            "group_size_or_per_token": group_size,
+            "multiply_before_cast": multiply_before_cast,
+        },
     )
 
     return result[0].tensor, result[1].tensor
