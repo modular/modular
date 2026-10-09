@@ -513,6 +513,9 @@ def get_server_cmd(
 
     if framework == "vllm" and accelerator(serve_image) == "amd":
         env["VLLM_ROCM_USE_AITER"] = "1"
+        # AITER's unquantized MoE rejects Nemotron-H's non-gated MLP.
+        if "nemotron" in model.casefold():
+            VLLM += ["--moe-backend", "triton"]
 
     if framework in ("max", "max-ci"):
         # Force MAX to rely solely on the KVConnector for prefix cache hits to test
