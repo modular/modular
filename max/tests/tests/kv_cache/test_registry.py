@@ -78,64 +78,32 @@ def _load_kv_manager_with_defaults(
 
 
 class TestUseJengaKvCache:
-    """Allowlist and opt-out behavior for the Jenga manager."""
+    """Default and opt-out behavior for the Jenga manager."""
 
     @pytest.mark.parametrize(
-        ("model_name", "expected"),
-        [
-            ("meta-llama/Llama-3.1-8B-Instruct", True),
-            ("google/gemma-4-31B-it", True),
-            ("openai/gpt-oss-20b", True),
-            ("openai/gpt-oss-120b", True),
-            ("GptOssForCausalLM", True),
-            ("allenai/Olmo-3-7B-Instruct", True),
-            ("Olmo3ForCausalLM", True),
-            ("allenai/OLMo-2-1124-7B-Instruct", True),
-            ("stepfun-ai/Step-3.5-Flash", True),
-            ("Step3p5ForCausalLM", True),
-            ("modularai/inkling", True),
-            ("nvidia/Kimi-K2.6-NVFP4", True),
-            ("amd/Kimi-K2.7-Code-MXFP4", True),
-            ("moonshotai/Kimi-VL-A3B-Instruct", True),
-            ("KimiK25ForConditionalGeneration", True),
-            ("deepseek-ai/DeepSeek-V3.2", True),
-            ("DeepseekV32ForCausalLM", True),
-            ("deepseek-ai/DeepSeek-V2-Lite", True),
-            ("Qwen/Qwen3-8B", False),
-            ("FAKE", False),
-        ],
+        "model_name", ["openai/gpt-oss-20b", "Qwen/Qwen3-8B"]
     )
-    def test_model_allowlist(
-        self, model_name: str, expected: bool, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
-        assert (
-            _use_jenga_kv_cache(
-                create_kv_params(),
-                is_di_enabled=False,
-                model_name=model_name,
-            )
-            is expected
-        )
-
     def test_legacy_env_disables_jenga(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, model_name: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("MODULAR_USE_LEGACY_KV_CACHE", "1")
         assert not _use_jenga_kv_cache(
             create_kv_params(),
             is_di_enabled=False,
-            model_name="openai/gpt-oss-20b",
+            model_name=model_name,
         )
 
+    @pytest.mark.parametrize(
+        "model_name", ["openai/gpt-oss-20b", "Qwen/Qwen3-8B"]
+    )
     def test_disaggregated_inference_disables_jenga(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, model_name: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
         assert not _use_jenga_kv_cache(
             create_kv_params(),
             is_di_enabled=True,
-            model_name="openai/gpt-oss-20b",
+            model_name=model_name,
         )
 
     def test_a_state_selects_jenga_whatever_else_says(
@@ -165,6 +133,42 @@ class TestUseJengaKvCache:
         )
 
 
+@pytest.mark.parametrize(
+    "model_name", ["Qwen/Qwen3-8B", "FAKE", "/local/model"]
+)
+@patch("max.pipelines.kv_cache.registry.JengaKVCacheManager.create")
+def test_load_kv_manager_defaults_to_jenga(
+    mock_create: MagicMock,
+    model_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("MODULAR_USE_LEGACY_KV_CACHE", raising=False)
+    params = create_kv_params()
+    result = _load_kv_manager_with_defaults(
+        params=params,
+        max_batch_size=16,
+        max_seq_len=2048,
+        session=MagicMock(),
+        available_cache_memory=1024**3,
+        model_name=model_name,
+    )
+    assert result is mock_create.return_value
+    mock_create.assert_called_once_with(
+        params=params,
+        available_bytes=1024**3,
+        max_batch_size=16,
+        max_num_input_tokens=None,
+        max_seq_len=2048,
+    )
+
+
+@pytest.fixture
+def legacy_kv_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Explicitly select the legacy manager for its allocation tests."""
+    monkeypatch.setenv("MODULAR_USE_LEGACY_KV_CACHE", "1")
+
+
+@pytest.mark.usefixtures("legacy_kv_cache")
 class TestLoadKvManager:
     """Tests for load_kv_manager function."""
 
@@ -313,6 +317,7 @@ class TestLoadKvManager:
             )
 
 
+@pytest.mark.usefixtures("legacy_kv_cache")
 class TestLoadKvManagers:
     """Tests for load_kv_managers function (plural - supports MultiKVCacheParams)."""
 

@@ -106,7 +106,7 @@ def test_a_hybrid_is_capped_at_exactly_what_its_slab_admits() -> None:
     assert admits(cap)
     assert not admits(cap + 1)
 
-    # A state can only live on a slab, whatever the allowlist says.
+    # A state can only live on a slab, even when disaggregated inference is enabled.
     assert (
         max_seq_len_fitting_in_cache(
             params, BUDGET, is_di_enabled=True, model_name="Qwen/Qwen3-8B"

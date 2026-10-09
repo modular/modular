@@ -35,36 +35,20 @@ from .paged_kv_cache.jenga_cache_manager import JengaKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
-# Temporary allowlist for the Jenga cutover.
-_JENGA_MODEL_NAME_SUBSTRINGS = (
-    "llama",  # Llama 3/4: full
-    "gemma",  # Gemma 3/4: full + SWA
-    "gpt-oss",  # full + SWA
-    "gptoss",  # same as gpt-oss
-    "olmo",  # Olmo 2: full; Olmo 3: 3:1 SWA:full
-    "step-3",  # Step-3.5: full + SWA
-    "step3",  # same as step-3
-    "inkling",  # full + SWA
-    "kimi",  # Kimi K2.x / Kimi-VL: MLA full (Eagle3 draft adds an SWA group)
-    "deepseek",  # DeepSeek V2/V3: MLA full; V3.2 adds a sparse-indexer group
-)
-
 
 def _use_jenga_kv_cache(
     params: KVCacheParamInterface, is_di_enabled: bool, model_name: str
 ) -> bool:
     """Whether the Jenga KV cache serves this cache.
 
-    A recurrent state can only live on Jenga, so it overrides the allowlist.
+    Jenga is the default for all models. A recurrent state can only live on
+    Jenga, so it overrides the legacy opt-out.
     `MODULAR_USE_LEGACY_KV_CACHE=1` otherwise forces the legacy KV cache.
 
     TODO: temporary flag for the Jenga cutover. Delete once the transition is complete.
     """
     if recurrent_leaf(params) is not None:
         return True
-    name = model_name.lower()
-    if not any(token in name for token in _JENGA_MODEL_NAME_SUBSTRINGS):
-        return False
     prefer_legacy = os.getenv("MODULAR_USE_LEGACY_KV_CACHE", "0").lower() in (
         "1",
         "true",

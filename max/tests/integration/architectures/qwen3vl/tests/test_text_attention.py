@@ -31,7 +31,7 @@ from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
 from max.pipelines.architectures.qwen3vl_moe.nn.text_rotary import (
     Qwen3VLTextRotaryEmbedding,
 )
-from max.pipelines.kv_cache import PagedKVCacheManager, load_kv_manager
+from max.pipelines.kv_cache import PagedKVCacheManagerInterface, load_kv_manager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.qwen3_vl_moe.configuration_qwen3_vl_moe import (
@@ -282,7 +282,7 @@ def generate_qwen3_max_outputs(
         model_name="FAKE",
         max_num_input_tokens=None,
     )
-    assert isinstance(kv_manager, PagedKVCacheManager)
+    assert isinstance(kv_manager, PagedKVCacheManagerInterface)
 
     input_type = TensorType(
         dtype, [Dim("total_seq_len"), hidden_size], device=device_ref
