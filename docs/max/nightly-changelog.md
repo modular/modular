@@ -737,6 +737,10 @@ This version is still a work in progress.
   engines are unaffected. An engine whose storage has no pointer, such as
   `TMemEngine`, overrides it to run its own load loop.
 
+- Upgraded the bundled `libnvptxcompiler` from CUDA 13.3 to CUDA 13.4 Update 1
+  (13.4.92), bringing the latest bug fixes and performance improvements from
+  NVIDIA's PTX compiler.
+
 ## Breaking changes
 
 - `max.gpu.primitives.warp.reduce()` and `lane_group_reduce()` now take the
