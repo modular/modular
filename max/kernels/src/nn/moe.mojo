@@ -946,20 +946,15 @@ def single_group_router_kernel[
     n_experts_per_tok: Int,
     norm_weights: Bool,
     num_threads: Int,
-    scores_input_fn: OptionalReg[
-        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
-    ] = None,
-    score_splits: Int = 1,
-    apply_sigmoid: Bool = False,
+    scores_input_fn: def[width: Int](IndexList[2]) capturing -> SIMD[
+        scores_type, width
+    ],
 ](
     expert_indices: TileTensor[
         mut=True, .int32, ExpertIndicesLayoutType, MutAnyOrigin
     ],
     expert_weights: TileTensor[
         mut=True, scores_type, ExpertWeightsLayoutType, MutAnyOrigin
-    ],
-    expert_scores: TileTensor[
-        scores_type, ExpertScoresLayoutType, ImmutAnyOrigin
     ],
     expert_bias: TileTensor[bias_type, ExpertBiasLayoutType, ImmutAnyOrigin],
     routed_scaling_factor: Float32,
@@ -968,20 +963,15 @@ def single_group_router_kernel[
 
     Fuses: corrected = scores + bias → top-k selection (`_block_top_k`) →
     weight = corrected - bias → optional normalize → scale.
-
-    With `score_splits > 1`, `expert_scores` holds `score_splits` stacked
-    `[num_tokens, n_routed_experts]` partial sums, which the kernel adds as
-    it loads them. With `apply_sigmoid`, it applies a sigmoid to each loaded
-    score. Both apply only when `scores_input_fn` is unset.
     """
 
     comptime assert expert_indices.flat_rank == 2
     comptime assert expert_weights.flat_rank == 2
-    comptime assert expert_scores.flat_rank == 2
+    comptime assert ExpertScoresLayoutType.flat_rank == 2
     comptime assert expert_bias.flat_rank == 1
 
     comptime assert (
-        expert_scores.static_shape[1] == n_routed_experts
+        ExpertScoresLayoutType.static_shape[1] == n_routed_experts
     ), "expert_scores.static_shape[1] must be equal to n_routed_experts"
 
     comptime assert (
@@ -1005,28 +995,12 @@ def single_group_router_kernel[
     var warp_id = warp_id()
     var lane_id = lane_id()
 
-    @inline(.always)
-    def load_score(expert: Int) {imm} -> Scalar[scores_type]:
-        var score = Scalar[scores_type](0)
-        comptime for split in range(score_splits):
-            score += expert_scores.load[width=1](
-                (split * grid_dim.x + token_idx, expert)
-            )
-        comptime if apply_sigmoid:
-            score = sigmoid(score)
-        return score
-
     with PDL():
         var thread_expert_bias = expert_bias.load[width=1](Coord(tid)).cast[
             scores_type
         ]()
 
-        var thread_expert_score: Scalar[scores_type]
-        comptime if scores_input_fn:
-            comptime scores_fn = scores_input_fn.value()
-            thread_expert_score = scores_fn[width=1]((token_idx, tid))
-        else:
-            thread_expert_score = load_score(tid)
+        var thread_expert_score = scores_input_fn[width=1]((token_idx, tid))
         var biased_score = thread_expert_score + thread_expert_bias
 
         var sorted_val3 = _block_top_k[n_experts_per_tok, num_threads](
@@ -1038,11 +1012,9 @@ def single_group_router_kernel[
             # get the original weights and normalize them
             var original_weight: Scalar[scores_type] = 0
             if lane_id < n_experts_per_tok:
-                comptime if scores_input_fn:
-                    comptime d_fn = scores_input_fn.value()
-                    original_weight = d_fn[width=1]((token_idx, sorted_val3.p))
-                else:
-                    original_weight = load_score(sorted_val3.p)
+                original_weight = scores_input_fn[width=1](
+                    (token_idx, sorted_val3.p)
+                )
 
             var weights_sum = warp.lane_group_sum[num_lanes=sum_lanes](
                 original_weight
@@ -1257,11 +1229,6 @@ def single_group_router[
     n_experts_per_tok: Int,
     norm_weights: Bool,
     target: StaticString,
-    scores_input_fn: OptionalReg[
-        def[width: Int](IndexList[2]) capturing -> SIMD[scores_type, width]
-    ] = None,
-    score_splits: Int = 1,
-    apply_sigmoid: Bool = False,
 ](
     expert_indices: TileTensor[mut=True, .int32, ...],
     expert_weight: TileTensor[mut=True, scores_type, ...],
@@ -1284,18 +1251,78 @@ def single_group_router[
         norm_weights: If True, normalize selected weights to sum to 1 before
             applying routed_scaling_factor.
         target: The target device to run the kernel on.
-        scores_input_fn: Optional fused input lambda to load scores. If None,
-            scores are loaded directly from expert_scores.
-        score_splits: Number of stacked partial-sum score blocks in
-            expert_scores to add on load.
-        apply_sigmoid: Whether to apply a sigmoid to each loaded score.
 
     Inputs:
         expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
         expert_weights: Output expert weights. Shape: [num_tokens, n_experts_per_tok].
-        expert_scores: Input routing scores. Shape:
-            [score_splits * num_tokens, n_routed_experts], the `score_splits`
-            partial-sum blocks stacked along the first axis.
+        expert_scores: Input routing scores. Shape: [num_tokens, n_routed_experts].
+        expert_bias: Per-expert correction bias used for selection only.
+        routed_scaling_factor: Scalar multiplied into every output weight.
+        context: The device context.
+    """
+
+    def load_scores[
+        width: Int
+    ](coords: IndexList[2]) capturing -> SIMD[scores_type, width]:
+        return expert_scores.load[width=width]((coords[0], coords[1]))
+
+    single_group_router[
+        n_routed_experts,
+        n_experts_per_tok,
+        norm_weights,
+        target,
+        scores_input_fn=load_scores,
+    ](
+        expert_indices,
+        expert_weight,
+        expert_scores.layout,
+        expert_bias,
+        routed_scaling_factor,
+        context,
+    )
+
+
+def single_group_router[
+    scores_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    target: StaticString,
+    scores_input_fn: def[width: Int](IndexList[2]) capturing -> SIMD[
+        scores_type, width
+    ],
+](
+    expert_indices: TileTensor[mut=True, .int32, ...],
+    expert_weight: TileTensor[mut=True, scores_type, ...],
+    scores_layout: Some[TensorLayout],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
+    routed_scaling_factor: Float32,
+    context: DeviceContext,
+) raises:
+    """Launch the single-group MoE router on GPU, loading scores via a lambda.
+
+    The kernel reads scores only through `scores_input_fn`, so the scores
+    tensor is described by its layout alone.
+
+    Parameters:
+        scores_type: DType of routing scores and output weights.
+        bias_type: DType of the expert correction bias.
+        n_routed_experts: Total number of experts (e.g. 384 for Kimi K2.5).
+        n_experts_per_tok: Experts selected per token, must be a power of 2
+            (e.g. 8 for Kimi K2.5).
+        norm_weights: If True, normalize selected weights to sum to 1 before
+            applying routed_scaling_factor.
+        target: The target device to run the kernel on.
+        scores_input_fn: Lambda that loads the score at a
+            `[token, expert]` coordinate.
+
+    Inputs:
+        expert_indices: Output expert indices. Shape: [num_tokens, n_experts_per_tok].
+        expert_weights: Output expert weights. Shape: [num_tokens, n_experts_per_tok].
+        scores_layout: Layout of the routing scores. Shape:
+            [num_tokens, n_routed_experts].
         expert_bias: Per-expert correction bias used for selection only.
         routed_scaling_factor: Scalar multiplied into every output weight.
         context: The device context.
@@ -1303,28 +1330,16 @@ def single_group_router[
     comptime assert is_gpu[
         target
     ](), "Single group router is only supported on GPU"
-    comptime assert score_splits >= 1, "score_splits must be positive"
-    comptime assert (
-        score_splits == 1 or not scores_input_fn
-    ), "score_splits applies only to stacked scores, not scores_input_fn"
 
-    if expert_scores.dim(0) == 0:
+    var num_tokens = Int(scores_layout.shape[0]().value())
+    if num_tokens == 0:
         return
-    if Int(expert_scores.dim(0)) % score_splits != 0:
-        raise Error(
-            "expert_scores rows (",
-            expert_scores.dim(0),
-            ") must be a multiple of score_splits (",
-            score_splits,
-            ")",
-        )
 
     var gpu_ctx = context
 
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.router_single_group", task_id=Int(gpu_ctx.id())
     ):
-        # comptime num_tokens = Int(expert_scores.dim(0))
         comptime num_threads = n_routed_experts
         comptime hw_info = gpu_ctx.default_device_info
         comptime blocks_per_sm = hw_info.threads_per_multiprocessor // num_threads
@@ -1336,25 +1351,22 @@ def single_group_router[
             bias_type,
             expert_indices.LayoutType,
             expert_weight.LayoutType,
-            expert_scores.LayoutType,
+            type_of(scores_layout),
             expert_bias.LayoutType,
             n_routed_experts,
             n_experts_per_tok,
             norm_weights,
             num_threads,
             scores_input_fn=scores_input_fn,
-            score_splits=score_splits,
-            apply_sigmoid=apply_sigmoid,
         ]
 
         # launch the kernle using gpu_ctx
         gpu_ctx.enqueue_function[kernel](
             expert_indices,
             expert_weight,
-            expert_scores,
             expert_bias,
             routed_scaling_factor,
-            grid_dim=Int(expert_scores.dim(0)) // score_splits,
+            grid_dim=num_tokens,
             block_dim=num_threads,
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
@@ -1450,6 +1462,61 @@ def router_gemv_partials_kernel[
                 (split, first_token + t, first_expert + e),
                 acc.reduce_add(),
             )
+
+
+@inline(.always)
+def _single_group_router_on_partials[
+    scores_type: DType,
+    bias_type: DType,
+    //,
+    n_routed_experts: Int,
+    n_experts_per_tok: Int,
+    norm_weights: Bool,
+    target: StaticString,
+    num_splits: Int,
+](
+    expert_indices: TileTensor[mut=True, .int32, ...],
+    expert_weights: TileTensor[mut=True, scores_type, ...],
+    partials: TileTensor[mut=False, scores_type, ...],
+    expert_bias: TileTensor[mut=False, bias_type, ...],
+    routed_scaling_factor: Float32,
+    context: DeviceContext,
+) raises:
+    """Runs the single-group router on the sigmoid of summed partial scores.
+
+    `partials` stacks `num_splits` blocks of `[num_tokens, n_routed_experts]`
+    partial dot products along its first axis. The loader adds the blocks
+    and applies the sigmoid, so no separate reduction runs.
+    """
+    var num_tokens = Int(partials.dim(0)) // num_splits
+
+    def load_scores[
+        width: Int
+    ](coords: IndexList[2]) capturing -> SIMD[scores_type, width]:
+        var score = partials.load[width=width]((coords[0], coords[1]))
+        # The router launches one block per token, so `grid_dim.x` is the
+        # token count. Capturing `num_tokens` instead reads wrong values
+        # on the device.
+        comptime for split in range(1, num_splits):
+            score += partials.load[width=width](
+                (split * Int(grid_dim.x) + coords[0], coords[1])
+            )
+        return sigmoid(score)
+
+    single_group_router[
+        n_routed_experts,
+        n_experts_per_tok,
+        norm_weights,
+        target,
+        scores_input_fn=load_scores,
+    ](
+        expert_indices,
+        expert_weights,
+        row_major((num_tokens, Idx[n_routed_experts])),
+        expert_bias,
+        routed_scaling_factor,
+        context,
+    )
 
 
 @inline(.always)
@@ -1568,13 +1635,12 @@ def sigmoid_gemv_single_group_router[
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
 
-        single_group_router[
+        _single_group_router_on_partials[
             n_routed_experts,
             n_experts_per_tok,
             norm_weights=norm_weights,
             target=target,
-            score_splits=num_splits,
-            apply_sigmoid=True,
+            num_splits=num_splits,
         ](
             expert_indices,
             expert_weights,

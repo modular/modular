@@ -2224,15 +2224,11 @@ struct Struct_moe_single_group_router:
             n_experts_per_tok,
             norm_weights=norm_weights,
             target=target,
-            scores_input_fn=OptionalReg[
-                def[
-                    width: Int
-                ](IndexList[2]) capturing -> SIMD[scores_type, width]
-            ](scores_input_fn),
+            scores_input_fn=scores_input_fn,
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
-            expert_scores.to_tile_tensor[.int64]().as_imm(),
+            expert_scores.runtime_layout(),
             expert_bias.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
