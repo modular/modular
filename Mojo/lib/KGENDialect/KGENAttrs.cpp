@@ -5349,7 +5349,7 @@ TypedAttr SugarAttr::get(MLIRContext *context, SugarKind kind,
 }
 
 Type SugarAttr::getMemberAliasType() const {
-  return cast<TypeParamAttr>(getSugared()).getMlirType();
+  return ParamType::get(getSugared());
 }
 
 TypedAttr SugarAttr::getMemberAlias(Type type, StringAttr memberName,
