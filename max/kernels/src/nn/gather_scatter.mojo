@@ -15,7 +15,13 @@
 from std.collections.string.string_span import get_static_string
 from std.math import align_down, ceildiv, iota
 from std.sys import align_of, bit_width_of, simd_width_of, size_of
-from std.sys.info import CompilationTarget, is_apple_gpu
+from std.sys.info import (
+    CompilationTarget,
+    _is_sm_9x_or_newer,
+    is_amd_gpu,
+    is_apple_gpu,
+    is_nvidia_gpu,
+)
 from std.utils.numerics import neg_inf
 
 from max.algorithm import elementwise, sync_parallelize, unsafe_parallel_memcpy
@@ -808,6 +814,22 @@ struct ScatterOobIndexStrategy(
 
 
 @inline(.always)
+def _has_native_atomic_add[dtype: DType]() -> Bool:
+    """Whether adding `dtype` is a single hardware atomic on this target.
+
+    Apple GPUs keep the compare-exchange loop. Sub-32-bit types would compile
+    to a word-sized compare-exchange loop anyway, except 16-bit floats, which
+    have a native atomic add from sm_90.
+    """
+    comptime if not (is_nvidia_gpu() or is_amd_gpu()):
+        return False
+    elif bit_width_of[dtype]() >= 32:
+        return dtype.is_integral() or dtype.is_floating_point()
+    else:
+        return dtype.is_half_float() and _is_sm_9x_or_newer()
+
+
+@inline(.always)
 def _atomic_reduce[
     dtype: DType,
     //,
@@ -823,11 +845,14 @@ def _atomic_reduce[
     each update exactly once regardless of interleaving. `compare_exchange`
     compares floats bitwise (via their integral representation), so NaN
     payloads cannot livelock the loop.
+
+    Max and min stay on the loop: the update is skipped when the destination
+    already dominates it, so a native atomic measured no faster.
     """
     comptime if is_apple_gpu():
         # KERN-3243 tracks a real fix for these dtypes.
         comptime assert bit_width_of[dtype]() == 32, (
-            "scatter atomic reduce needs a 32-bit dtype on Apple GPU:"
+            "scatter_nd atomic reduce needs a 32-bit dtype on Apple GPU:"
             " Metal has no atomic primitive at any other width"
         )
 
@@ -842,6 +867,30 @@ def _atomic_reduce[
             return
 
 
+comptime _AtomicUpdateFn = def[dtype: DType](
+    MutPointer[Scalar[dtype], ...], Scalar[dtype]
+) thin -> None
+
+
+@inline(.always)
+def _atomic_add[
+    dtype: DType, //
+](ptr: MutPointer[Scalar[dtype], ...], update: Scalar[dtype]):
+    """Adds an update atomically, using compare-exchange on unsupported targets.
+    """
+    comptime if _has_native_atomic_add[dtype]():
+        _ = Atomic.fetch_add(ptr, update)
+    else:
+
+        @inline(.always)
+        def add[
+            ty: DType, width: SIMDLength
+        ](lhs: SIMD[ty, width], rhs: SIMD[ty, width]) -> SIMD[ty, width]:
+            return lhs + rhs
+
+        _atomic_reduce[add](ptr, update)
+
+
 @inline(.always)
 def scatter_nd_generator[
     output_type: DType,
@@ -849,11 +898,7 @@ def scatter_nd_generator[
     //,
     oob_index_strategy: ScatterOobIndexStrategy = ScatterOobIndexStrategy.UNDEFINED,
     target: StaticString = "cpu",
-    reduce_fn: OptionalReg[
-        def[
-            dtype: DType, width: SIMDLength
-        ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
-    ] = None,
+    atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
     *,
     _trace_description: StaticString = "scatter_nd",
 ](
@@ -871,12 +916,11 @@ def scatter_nd_generator[
         indices_type: Type of the indices tensor.
         oob_index_strategy: Strategy to handle out of bounds indices.
         target: Target cpu or cuda.
-        reduce_fn: Reduction function to apply: none (default), add, mul, max,
-                   min. When set, every update is folded in atomically, in
-                   unspecified order — the atomic runs on all updates, not
-                   only detected duplicates, since duplicate index vectors
-                   can only be known at runtime. Without a reduce_fn,
-                   duplicates leave an unspecified winner instead.
+        atomic_update_fn: Callable that atomically applies an update to a
+            destination pointer. Called for every update on CPU and GPU, in
+            unspecified order. Use `_atomic_add` for addition or
+            `_atomic_reduce[reduce_fn]` for a binary reduction. Without a
+            callable, duplicate indices leave an unspecified winner.
         _trace_description: A description of the function, used for profiling and tracing.
 
     Args:
@@ -1052,9 +1096,10 @@ def scatter_nd_generator[
                     output_offset + output_strides[i] * output_index_tensor[i]
                 )
 
-            comptime if reduce_fn:
+            comptime if atomic_update_fn:
+                comptime atomic_update = atomic_update_fn.value()
                 for i in range(count_copy):
-                    _atomic_reduce[reduce_fn.value()](
+                    atomic_update(
                         output_flat.ptr.unsafe_offset(output_offset + i),
                         updates_flat.load[width=1](Coord(updates_offset + i)),
                     )
@@ -1133,9 +1178,10 @@ def scatter_nd_generator[
                 width=simd_width, alignment=access_alignment
             ](Coord(updates_base + elem))
 
-            comptime if reduce_fn:
+            comptime if atomic_update_fn:
+                comptime atomic_update = atomic_update_fn.value()
                 comptime for lane in range(simd_width):
-                    _atomic_reduce[reduce_fn.value()](
+                    atomic_update(
                         output_flat.ptr.unsafe_offset(
                             output_base + elem + lane
                         ),
@@ -1384,11 +1430,7 @@ def scatter_elements[
     indices_type: DType,
     *,
     target: StaticString = "cpu",
-    reduce_fn: OptionalReg[
-        def[
-            dtype: DType, width: SIMDLength
-        ](SIMD[dtype, width], SIMD[dtype, width]) thin -> SIMD[dtype, width]
-    ] = None,
+    atomic_update_fn: OptionalReg[_AtomicUpdateFn] = None,
 ](
     input: ManagedTensorSlice[dtype=input_type, rank=rank, ...],
     indices: ManagedTensorSlice[dtype=indices_type, rank=rank, ...],
@@ -1405,10 +1447,11 @@ def scatter_elements[
         input_type: Element type of `input`, `updates`, and `output`.
         indices_type: Element type of `indices` (must be `int32` or `int64`).
         target: Target backend to execute on, such as "cpu" or "gpu".
-        reduce_fn: Reduction function to apply: none (default, overwrite),
-            add, mul, max, min. Updates for duplicate indices are reduced
-            atomically, in unspecified order (without a reduce_fn,
-            duplicates leave an unspecified winner instead).
+        atomic_update_fn: Callable that atomically applies an update to a
+            destination pointer. Called for every update on CPU and GPU, in
+            unspecified order. Use `_atomic_add` for addition or
+            `_atomic_reduce[reduce_fn]` for a binary reduction. Without a
+            callable, duplicate indices leave an unspecified winner.
 
     Args:
         input: Source tensor copied into `output` before scattering.
@@ -1466,14 +1509,15 @@ def scatter_elements[
         )
         var update_val = updates.to_tile_tensor()[indices_coords]
 
-        comptime if reduce_fn:
+        comptime if atomic_update_fn:
+            comptime atomic_update = atomic_update_fn.value()
             var output_tt = output.to_tile_tensor()
             var output_offset = 0
             for i in range(rank):
                 output_offset += (
                     Int(output_tt.dynamic_stride(i)) * output_coords[i]
                 )
-            _atomic_reduce[reduce_fn.value()](
+            atomic_update(
                 output.unsafe_ptr().unsafe_offset(output_offset), update_val
             )
         else:

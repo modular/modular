@@ -42,6 +42,8 @@ from layout.tile_layout import Layout as TileLayout
 from nn.concat import fused_concat
 from nn.gather_scatter import (
     Axis,
+    _atomic_add,
+    _atomic_reduce,
     ScatterOobIndexStrategy,
     apply_packed_bitmask,
     gather,
@@ -340,7 +342,7 @@ struct ScatterNDSkipNegIndices:
         scatter_nd_generator[
             oob_index_strategy=ScatterOobIndexStrategy.SKIP,
             target=target,
-            reduce_fn=None,
+            atomic_update_fn=None,
             _trace_description="scatter_nd.skip_neg_indices",
         ](
             input.to_tile_tensor[.int64](),
@@ -365,17 +367,9 @@ struct ScatterNDAdd:
         indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        @inline(.always)
-        def reduce_fn[
-            dtype: DType, width: SIMDLength
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-            dtype, width
-        ]:
-            return lhs + rhs
-
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_add,
             _trace_description="scatter_nd.add",
         ](
             input.to_tile_tensor[.int64](),
@@ -426,7 +420,7 @@ struct ScatterNDMul:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.mul",
         ](
             input.to_tile_tensor[.int64](),
@@ -477,7 +471,7 @@ struct ScatterNDMin:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.min",
         ](
             input.to_tile_tensor[.int64](),
@@ -528,7 +522,7 @@ struct ScatterNDMax:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.max",
         ](
             input.to_tile_tensor[.int64](),
@@ -669,15 +663,7 @@ struct ScatterAdd:
     ) raises:
         check_axis_in_range[output.rank](Int(axis))
 
-        @inline(.always)
-        def reduce_func[
-            dtype: DType, width: SIMDLength
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-            dtype, width
-        ]:
-            return lhs + rhs
-
-        scatter_elements[target=target, reduce_fn=reduce_func](
+        scatter_elements[target=target, atomic_update_fn=_atomic_add](
             input,
             indices,
             updates,
@@ -730,7 +716,9 @@ struct ScatterMax:
         ]:
             return max(lhs, rhs)
 
-        scatter_elements[target=target, reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,
@@ -783,7 +771,9 @@ struct ScatterMin:
         ]:
             return min(lhs, rhs)
 
-        scatter_elements[target=target, reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,
@@ -836,7 +826,9 @@ struct ScatterMul:
         ]:
             return lhs * rhs
 
-        scatter_elements[target=target, reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,

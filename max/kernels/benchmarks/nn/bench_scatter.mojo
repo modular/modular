@@ -16,7 +16,7 @@ from std.random import rand, randint
 from std.benchmark import *
 from max.gpu.host import DeviceContext
 from std.memory import alloc, dealloc
-from nn.gather_scatter import scatter_elements
+from nn.gather_scatter import _atomic_reduce, scatter_elements
 from extensibility import DynamicTensor
 
 from std.utils.index import Index
@@ -86,7 +86,7 @@ def bench_scatter(mut bencher: Bencher, spec: ScatterSpec) raises:
         ) -> SIMD[_dtype, width]:
             return input_val + update_val
 
-        scatter_elements[reduce_fn=reduce_fn](
+        scatter_elements[atomic_update_fn=_atomic_reduce[reduce_fn]](
             data_tensor,
             indices_tensor,
             updates_tensor,

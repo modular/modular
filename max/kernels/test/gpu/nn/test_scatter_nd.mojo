@@ -24,7 +24,13 @@ indices.
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 from layout import TileTensor, row_major
-from nn.gather_scatter import ScatterOobIndexStrategy, scatter_nd_generator
+from nn.gather_scatter import (
+    ScatterOobIndexStrategy,
+    _AtomicUpdateFn,
+    _atomic_add,
+    _atomic_reduce,
+    scatter_nd_generator,
+)
 
 comptime dtype = DType.float32
 comptime itype = DType.int64
@@ -471,7 +477,9 @@ def test_reduce_add[
         return lhs + rhs
 
     scatter_nd_generator[
-        oob_index_strategy=strategy, target="gpu", reduce_fn=reduce_fn
+        oob_index_strategy=strategy,
+        target="gpu",
+        atomic_update_fn=_atomic_reduce[reduce_fn],
     ](data_tt, idx_tt, upd_tt, out_tt, ctx)
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
@@ -604,6 +612,7 @@ def test_reduce_duplicate_indices[
     n_targets: Int,
     update_fn: def(Int) thin -> Scalar[dt],
     cols: Int = 16,
+    atomic_update_fn: _AtomicUpdateFn = _atomic_reduce[reduce_op],
 ](ctx: DeviceContext) raises:
     """Index rows collide on `n_targets` output rows (`n_idx // n_targets`
     duplicates each), so concurrent threads reduce into the same output
@@ -645,7 +654,7 @@ def test_reduce_duplicate_indices[
     var upd_tt = TileTensor(upd_dev, row_major[n_idx, cols]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 1]())
 
-    scatter_nd_generator[target="gpu", reduce_fn=reduce_op](
+    scatter_nd_generator[target="gpu", atomic_update_fn=atomic_update_fn](
         data_tt, idx_tt, upd_tt, out_tt, ctx
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -710,7 +719,7 @@ def test_elem_scatter_duplicate_indices(ctx: DeviceContext) raises:
     var upd_tt = TileTensor(upd_dev, row_major[n_idx]())
     var idx_tt = TileTensor(idx_dev, row_major[n_idx, 2]())
 
-    scatter_nd_generator[target="gpu", reduce_fn=_add](
+    scatter_nd_generator[target="gpu", atomic_update_fn=_atomic_add](
         data_tt, idx_tt, upd_tt, out_tt, ctx
     )
     ctx.enqueue_copy(out_host, out_dev)
@@ -755,14 +764,20 @@ def main() raises:
         test_reduce_add[SKIP](ctx)
         test_unaligned_slice(ctx)
 
-        test_reduce_duplicate_indices[f32, _add, 4096, 4, _upd_ones[f32]](ctx)
-        test_reduce_duplicate_indices[i32, _add, 4096, 4, _upd_ones[i32]](ctx)
+        test_reduce_duplicate_indices[
+            f32, _add, 4096, 4, _upd_ones[f32], 16, _atomic_add
+        ](ctx)
+        test_reduce_duplicate_indices[
+            i32, _add, 4096, 4, _upd_ones[i32], 16, _atomic_add
+        ](ctx)
         # These dtypes fail to compile on Apple GPU; see `_atomic_reduce`.
         comptime if not ctx.target.is_apple_gpu():
-            test_reduce_duplicate_indices[bf16, _add, 192, 1, _upd_ones[bf16]](
-                ctx
-            )
-            test_reduce_duplicate_indices[i8, _add, 100, 1, _upd_ones[i8]](ctx)
+            test_reduce_duplicate_indices[
+                bf16, _add, 192, 1, _upd_ones[bf16], 16, _atomic_add
+            ](ctx)
+            test_reduce_duplicate_indices[
+                i8, _add, 100, 1, _upd_ones[i8], 16, _atomic_add
+            ](ctx)
         test_reduce_duplicate_indices[
             f32, _mul, 4096, 4, _upd_twos_then_ones[f32, 16]
         ](ctx)

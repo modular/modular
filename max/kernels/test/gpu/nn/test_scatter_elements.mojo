@@ -23,11 +23,16 @@ from std.collections import OptionalReg
 from std.math import isnan
 from std.testing import assert_equal, assert_true
 from std.utils import IndexList
-from std.utils.numerics import max_finite, nan
+from std.utils.numerics import inf, max_finite, nan
 
 from extensibility import DynamicTensor
 from max.gpu.host import DeviceContext
-from nn.gather_scatter import scatter_elements
+from nn.gather_scatter import (
+    _AtomicUpdateFn,
+    _atomic_add,
+    _atomic_reduce,
+    scatter_elements,
+)
 
 comptime ReduceFn = def[dtype: DType, width: SIMDLength](
     SIMD[dtype, width], SIMD[dtype, width]
@@ -105,6 +110,16 @@ def _is_poison[dt: DType](v: Scalar[dt]) -> Bool:
         return v == max_finite[dt]()
 
 
+@inline(.always)
+def _upd_with_inf[dt: DType](k: Int) -> Scalar[dt]:
+    return inf[dt]() if k % 7 == 0 else Scalar[dt](k % 3 + 1)
+
+
+@inline(.always)
+def _upd_with_nan[dt: DType](k: Int) -> Scalar[dt]:
+    return nan[dt]() if k % 7 == 0 else Scalar[dt](k % 3 + 1)
+
+
 def _unravel[rank: Int](flat: Int, shape: IndexList[rank]) -> IndexList[rank]:
     var coords = IndexList[rank]()
     var rem = flat
@@ -129,6 +144,12 @@ def _check_output[
     dt: DType
 ](got: List[Scalar[dt]], expected: List[Scalar[dt]], label: String) raises:
     for i in range(len(expected)):
+        comptime if dt.is_floating_point():
+            if isnan(expected[i]):
+                assert_true(
+                    isnan(got[i]), String(label, " expected NaN, i=", i)
+                )
+                continue
         assert_equal(got[i], expected[i], String(label, " i=", i))
     for i in range(len(expected), len(got)):
         assert_true(
@@ -143,6 +164,11 @@ def run_case[
     itype: DType,
     update_fn: def(Int) thin -> Scalar[dt],
     reduce_fn: OptionalReg[ReduceFn] = None,
+    atomic_update_fn: OptionalReg[_AtomicUpdateFn] = (
+        OptionalReg[_AtomicUpdateFn](
+            _atomic_reduce[reduce_fn.value()]
+        ) if reduce_fn else None
+    ),
 ](
     gpu: DeviceContext,
     cpu: DeviceContext,
@@ -215,7 +241,7 @@ def run_case[
             expected[o] = updates[k]
 
     var cpu_out = _poisoned_output[dt](n_in)
-    scatter_elements[target="cpu", reduce_fn=reduce_fn](
+    scatter_elements[target="cpu", atomic_update_fn=atomic_update_fn](
         DynamicTensor[dt, rank](input.unsafe_ptr(), in_shape),
         DynamicTensor[itype, rank](indices.unsafe_ptr(), upd_shape),
         DynamicTensor[dt, rank](updates.unsafe_ptr(), upd_shape),
@@ -235,7 +261,7 @@ def run_case[
     gpu.enqueue_copy(idx_dev, indices.unsafe_ptr())
     gpu.enqueue_copy(out_dev, gpu_out.unsafe_ptr())
 
-    scatter_elements[target="gpu", reduce_fn=reduce_fn](
+    scatter_elements[target="gpu", atomic_update_fn=atomic_update_fn](
         DynamicTensor[dt, rank](in_dev.unsafe_ptr(), in_shape),
         DynamicTensor[itype, rank](idx_dev.unsafe_ptr(), upd_shape),
         DynamicTensor[dt, rank](upd_dev.unsafe_ptr(), upd_shape),
@@ -300,7 +326,7 @@ def test_reductions[dt: DType](gpu: DeviceContext, cpu: DeviceContext) raises:
     # of threads reduce into the same elements concurrently.
     comptime heavy_in = IndexList[2](5, 4099)
     comptime heavy_upd = IndexList[2](5, 4099)
-    run_case[dt, DType.int64, _upd_small[dt], _add](
+    run_case[dt, DType.int64, _upd_small[dt], _add, _atomic_add](
         gpu, cpu, heavy_in, heavy_upd, 1, dup_targets=4
     )
     run_case[dt, DType.int32, _upd_sparse_twos[dt], _mul](
@@ -312,7 +338,7 @@ def test_reductions[dt: DType](gpu: DeviceContext, cpu: DeviceContext) raises:
     run_case[dt, DType.int64, _upd_signed[dt], _min](
         gpu, cpu, heavy_in, heavy_upd, -1, dup_targets=4
     )
-    run_case[dt, DType.int64, _upd_small[dt], _add](
+    run_case[dt, DType.int64, _upd_small[dt], _add, _atomic_add](
         gpu,
         cpu,
         IndexList[3](7, 3, 11),
@@ -326,12 +352,33 @@ def test_reductions[dt: DType](gpu: DeviceContext, cpu: DeviceContext) raises:
     )
 
 
+def test_native_add_dtypes(gpu: DeviceContext, cpu: DeviceContext) raises:
+    """64-bit adds, and inf and NaN, which an atomic add carries through."""
+    comptime heavy = IndexList[2](5, 4099)
+    comptime f64 = DType.float64
+    comptime f32 = DType.float32
+    comptime if not gpu.target.is_apple_gpu():
+        run_case[f64, DType.int64, _upd_small[f64], _add, _atomic_add](
+            gpu, cpu, heavy, (5, 4099), 1, dup_targets=4
+        )
+    run_case[f32, DType.int64, _upd_with_inf[f32], _add, _atomic_add](
+        gpu, cpu, heavy, (5, 4099), 1, dup_targets=4
+    )
+    run_case[f32, DType.int64, _upd_with_nan[f32], _add, _atomic_add](
+        gpu, cpu, heavy, (5, 4099), 1, dup_targets=4
+    )
+    # Every update of a row hits one element.
+    run_case[f32, DType.int32, _upd_small[f32], _add, _atomic_add](
+        gpu, cpu, IndexList[2](3, 8191), (3, 8191), 1, dup_targets=1
+    )
+
+
 def test_narrow_reductions(gpu: DeviceContext, cpu: DeviceContext) raises:
     """16- and 8-bit dtypes go through sub-word compare-exchange atomics.
     Few enough collisions that bf16 sums stay exact."""
     comptime bf16 = DType.bfloat16
     comptime i8 = DType.int8
-    run_case[bf16, DType.int64, _upd_small[bf16], _add](
+    run_case[bf16, DType.int64, _upd_small[bf16], _add, _atomic_add](
         gpu, cpu, IndexList[2](3, 31), (3, 31), 1, dup_targets=2
     )
     run_case[bf16, DType.int64, _upd_signed[bf16], _max](
@@ -354,9 +401,9 @@ def test_narrow_reductions(gpu: DeviceContext, cpu: DeviceContext) raises:
 
 def test_empty_updates(gpu: DeviceContext, cpu: DeviceContext) raises:
     """No updates: the output is a plain copy of the input."""
-    run_case[DType.float32, DType.int64, _upd_small[DType.float32], _add](
-        gpu, cpu, IndexList[2](7, 5), (0, 5), 0
-    )
+    run_case[
+        DType.float32, DType.int64, _upd_small[DType.float32], _add, _atomic_add
+    ](gpu, cpu, IndexList[2](7, 5), (0, 5), 0)
 
 
 def main() raises:
@@ -365,6 +412,7 @@ def main() raises:
         test_overwrite(gpu, cpu)
         test_reductions[DType.float32](gpu, cpu)
         test_reductions[DType.int32](gpu, cpu)
+        test_native_add_dtypes(gpu, cpu)
         # Metal has no atomic compare-exchange at any width but 32 bits.
         comptime if not gpu.target.is_apple_gpu():
             test_reductions[DType.int64](gpu, cpu)

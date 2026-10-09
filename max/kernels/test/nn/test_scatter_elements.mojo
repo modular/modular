@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from nn.gather_scatter import scatter_elements
+from nn.gather_scatter import _atomic_reduce, scatter_elements
 from extensibility import DynamicTensor
 from std.testing import assert_equal
 
@@ -197,7 +197,9 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return max(v1, v2)
 
-        scatter_elements[reduce_fn=_max](data, indices, updates, 1, output, ctx)
+        scatter_elements[atomic_update_fn=_atomic_reduce[_max]](
+            data, indices, updates, 1, output, ctx
+        )
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
@@ -251,7 +253,9 @@ def main() raises:
         ](v1: SIMD[ty, width], v2: SIMD[ty, width]) -> SIMD[ty, width]:
             return v1 + v2
 
-        scatter_elements[reduce_fn=_add](data, indices, updates, 0, output, ctx)
+        scatter_elements[atomic_update_fn=_atomic_reduce[_add]](
+            data, indices, updates, 0, output, ctx
+        )
 
         comptime dups_per_target = n_idx // n_targets
         for i in range(rows):
