@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Literal, cast
 
+from max.driver import accelerator_api, accelerator_architecture_name
 from max.dtype import DType
 from max.graph import BufferValue, Dim, StaticDim, TensorType, TensorValue, ops
 
@@ -42,6 +43,17 @@ KdaStateLayout = Literal["K_FIRST", "V_FIRST"]
 _SUPPORTED_HEAD_DIMS = ((32, 32), (128, 128))
 """``(key_head_dim, value_head_dim)`` pairs the op is compiled for."""
 
+_AMD_CHUNK_HEAD_DIM = 128
+"""Key and value head width of the AMD ``kda_chunk`` path."""
+
+_AMD_CHUNK_ARCH = "gfx950"
+"""The only AMD architecture the ``kda_chunk`` path is built for."""
+
+
+def _is_amd_chunk_arch() -> bool:
+    """Reports whether the accelerator is the AMD ``kda_chunk`` target."""
+    return accelerator_architecture_name().startswith(_AMD_CHUNK_ARCH)
+
 
 def kda_chunk_supports_head_dims(
     key_head_dim: int, value_head_dim: int
@@ -50,6 +62,9 @@ def kda_chunk_supports_head_dims(
 
     Callers that can fall back to the sequential recurrence should ask this
     before routing to :func:`kda_chunk`, which raises on an unsupported pair.
+    On an AMD accelerator only gfx950 runs ``kda_chunk``, and only at
+    ``(128, 128)`` with as many key heads as value heads (``Hk == Hv``),
+    which this helper cannot see and the caller must ensure.
 
     Args:
         key_head_dim: Per-head key width.
@@ -58,7 +73,67 @@ def kda_chunk_supports_head_dims(
     Returns:
         ``True`` when the pair is one the op is compiled for.
     """
+    if accelerator_api() == "hip":
+        return (
+            _is_amd_chunk_arch()
+            and key_head_dim == value_head_dim == _AMD_CHUNK_HEAD_DIM
+        )
     return (key_head_dim, value_head_dim) in _SUPPORTED_HEAD_DIMS
+
+
+def _check_amd_chunk_contract(
+    q: TensorValue,
+    v: TensorValue,
+    raw_gate: TensorValue,
+    state_pool: BufferValue,
+    *,
+    output_dtype: DType,
+    gate_mode: KdaGateMode,
+    use_computebound: bool,
+) -> None:
+    """Rejects what the AMD ``kda_chunk`` path does not implement.
+
+    The op would reject these too, but at graph compile time or execution,
+    with a diagnostic that names a Mojo parameter rather than the argument.
+    """
+    if not _is_amd_chunk_arch():
+        raise ValueError(
+            f"kda_chunk on AMD requires {_AMD_CHUNK_ARCH}, got "
+            f"{accelerator_architecture_name()}"
+        )
+    if gate_mode != "safe":
+        raise ValueError(
+            f"kda_chunk on AMD supports gate_mode='safe' only, got {gate_mode!r}"
+        )
+    if use_computebound:
+        raise ValueError("kda_chunk on AMD has no compute-bound variant")
+    if (
+        q.dtype != DType.bfloat16
+        or output_dtype != DType.bfloat16
+        or raw_gate.dtype != DType.float32
+        or state_pool.dtype != DType.float32
+    ):
+        raise ValueError(
+            "kda_chunk on AMD takes bf16 q/k/v/output and fp32 gates/state, "
+            f"got q {q.dtype}, output {output_dtype}, raw_gate "
+            f"{raw_gate.dtype}, state_pool {state_pool.dtype}"
+        )
+    _check_rank(3, q=q, v=v)
+    dims = (q.shape[1], q.shape[2], v.shape[1], v.shape[2])
+    if all(isinstance(d, StaticDim) for d in dims):
+        got = tuple(int(d) for d in dims)
+        num_key_heads, key_head_dim, num_value_heads, value_head_dim = got
+        if (
+            key_head_dim != _AMD_CHUNK_HEAD_DIM
+            or value_head_dim != _AMD_CHUNK_HEAD_DIM
+            or num_key_heads != num_value_heads
+        ):
+            raise ValueError(
+                "kda_chunk on AMD requires key_head_dim == value_head_dim == "
+                f"{_AMD_CHUNK_HEAD_DIM} and num_key_heads == num_value_heads, "
+                "got (num_key_heads, key_head_dim, num_value_heads, "
+                f"value_head_dim) = {got}"
+            )
 
 
 KDA_GATE_LOWER_BOUND = -5.0
@@ -388,6 +463,12 @@ def kda_chunk(
     ``use_computebound=True`` selects the fused compute-bound kernel instead
     of the L1/L2/L3 pipeline on supported shapes.
 
+    On an AMD accelerator (gfx950 only) the op runs a separate pipeline over
+    64-token chunks with a narrower contract: ``key_head_dim ==
+    value_head_dim == 128``, ``num_key_heads == num_value_heads``,
+    ``gate_mode="safe"``, bf16 ``q``/``k``/``v`` and output, fp32 gates and
+    state, and ``use_computebound=False``.
+
     Args:
         q: ``[total_tokens, num_key_heads, key_head_dim]``.
         k: ``[total_tokens, num_key_heads, key_head_dim]``.
@@ -412,10 +493,21 @@ def kda_chunk(
         ``[total_tokens, num_value_heads, value_head_dim]``.
 
     Raises:
-        ValueError: If the dtype groupings bind no kernel, or the ranks and
-            extents disagree. The kernel's own shape guards are
-            ``debug_assert``, so they are absent from a production build.
+        ValueError: If the dtype groupings bind no kernel, the ranks and
+            extents disagree, or, on AMD, the arguments fall outside the AMD
+            contract. The kernel's own shape guards are ``debug_assert`` on
+            NVIDIA, so they are absent from a production build.
     """
+    if accelerator_api() == "hip":
+        _check_amd_chunk_contract(
+            q,
+            v,
+            raw_gate,
+            state_pool,
+            output_dtype=output_dtype,
+            gate_mode=gate_mode,
+            use_computebound=use_computebound,
+        )
     return _kda_recurrence(
         "kda_chunk",
         q,
