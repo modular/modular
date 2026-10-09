@@ -358,6 +358,16 @@ def test_reverse() raises:
     _test_dtype[.float64]()
 
 
+def test_reverse_all_lengths() raises:
+    for length in range(40):
+        var values = List[Int32](capacity=length)
+        for i in range(length):
+            values.append(Int32(i))
+        Span(values).reverse()
+        for i in range(length):
+            assert_equal(values[i], Int32(length - 1 - i))
+
+
 def test_apply() raises:
     def _test[D: DType]() raises:
         def _twice[w: SIMDLength](x: SIMD[D, w]) -> SIMD[D, w]:

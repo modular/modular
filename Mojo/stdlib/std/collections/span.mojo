@@ -886,7 +886,6 @@ struct Span[
         var ptr = self.unsafe_ptr()
         var length = len(self)
         var middle = length // 2
-        var is_odd = length % 2 != 0
         var processed = 0
 
         comptime for i in range(len(widths)):
@@ -902,14 +901,12 @@ struct Span[
                     rhs_ptr.unsafe_store(lhs_v)
                     processed += w
 
-        if is_odd:
-            var value = ptr[unsafe_offset=middle + 1]
-            # Use an unsafe origin cast to silence the (correct) exclusivity error.
-            var middle_prev = ptr.unsafe_offset(middle - 1).unsafe_origin_cast[
-                MutAnyOrigin
-            ]()
-            ptr.unsafe_offset(middle + 1).unsafe_write_move_from(middle_prev)
-            middle_prev.unsafe_write(value)
+        for i in range(processed, middle):
+            var lhs_ptr = ptr.unsafe_offset(i)
+            var rhs_ptr = ptr.unsafe_offset(length - 1 - i)
+            var lhs_v = lhs_ptr.unsafe_load()
+            lhs_ptr.unsafe_store(rhs_ptr.unsafe_load())
+            rhs_ptr.unsafe_store(lhs_v)
 
     @__allow_legacy_custom_self_type
     def apply[
