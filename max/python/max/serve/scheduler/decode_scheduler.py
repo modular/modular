@@ -323,7 +323,9 @@ class DecodeScheduler(Scheduler):
                     or not self.kv_cache.contains(pending.context)
                 ):
                     continue
-                blocks = self.kv_cache.get_req_blocks(pending.context)
+                blocks = shared_block_ids(
+                    self.kv_cache.get_req_blocks_per_leaf(pending.context)
+                )
                 if pending.phase is DecodeRequestPhase.TRANSFERRING:
                     transferring.update(blocks)
                     n_transferring += 1
@@ -334,7 +336,11 @@ class DecodeScheduler(Scheduler):
             n_decoding = 0
             for ctx in (*replica.tg_reqs.values(), *replica.ce_reqs.values()):
                 if self.kv_cache.contains(ctx):
-                    decoding.update(self.kv_cache.get_req_blocks(ctx))
+                    decoding.update(
+                        shared_block_ids(
+                            self.kv_cache.get_req_blocks_per_leaf(ctx)
+                        )
+                    )
                     n_decoding += 1
             count = self.kv_cache.block_count(replica_idx)
             log_kv_hold(
