@@ -61,26 +61,13 @@ class MoEQuantized(MoE):
         if self._uses_nvidia_block_scaled_ep_layout:
             return NvMxf4f8Strategy(self.quant_config, self.dtype)
         elif self.quant_config.is_mxfp6:
-            if not self.quant_config.block_scaled_preshuffled_b:
-                raise ValueError(
-                    "MXFP6 MoE requires preshuffled B weights: the 24-byte FP6 "
-                    "lane fragment is read plane-split and the dense "
-                    "row-major grouped kernel cannot address it. The weight "
-                    "loader must call preshuffle_block_scaled_b_experts with "
-                    "lane_bytes=MXFP6_LANE_BYTES and set "
-                    "block_scaled_preshuffled_b=True."
-                )
             return Mxfp6Strategy(self.quant_config, self.dtype)
         elif self.quant_config.is_mxfp4 or self.quant_config.is_mxfp8:
             # MXFP8 shares this path: the MOGG grouped-matmul op infers the
             # element packing from the tensors, and the E8M0 scale layout is
             # format-independent. Without this, MXFP8 would fall through to
             # `Fp8Strategy` (legacy per-tensor scales).
-            return BlockScaledStrategy(
-                self.quant_config,
-                self.dtype,
-                preshuffled_b=self.quant_config.block_scaled_preshuffled_b,
-            )
+            return BlockScaledStrategy(self.quant_config, self.dtype)
         return Fp8Strategy(self.quant_config, self.dtype)
 
     def configure_ep_scale_fusion(self, dispatch_supports_fold: bool) -> None:
@@ -112,7 +99,6 @@ class MoEQuantized(MoE):
             and uses_mx_ep_token_format(
                 self.ep_batch_manager.config, self.quant_config
             )
-            and self.quant_config.block_scaled_preshuffled_b
         )
 
     @property
@@ -241,7 +227,7 @@ class MoEQuantized(MoE):
         # This sits before NvMxf4f8Strategy.prepare_weight_scales lifts to the
         # 5D tcgen05 layout the kernel expects.
         # Same ordering rule as the weight; see MoE.gate_up_proj.
-        if self._needs_graph_sigma_permute():
+        if self._uses_fused_swiglu_layout():
             shard = shard.reshape([len(gate_scales), 2, -1, scale_k_dim])
             shard = ops.permute(shard, [0, 2, 1, 3])
             return shard.reshape([len(gate_scales), -1, scale_k_dim]).to(
@@ -580,8 +566,6 @@ class MoEQuantized(MoE):
                 self._ep_batch_manager
                 and self.use_swigluoai
                 and isinstance(strategy, (BlockScaledStrategy, Mxfp6Strategy))
-                and self.quant_config is not None
-                and self.quant_config.block_scaled_preshuffled_b
             )
             else 0
         )

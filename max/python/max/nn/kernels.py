@@ -6984,6 +6984,111 @@ def grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
     return outputs[0].tensor, outputs[1].tensor
 
 
+# MFMA geometry of the AMD preb B layouts, mirroring the constants of the
+# same name in `linalg/matmul/gpu/amd/block_scaled_preshuffle_layouts.mojo`.
+_MFMA_MN_LANES = 16
+_MFMA_K_LANES = 4
+_MFMA_LANE_BYTES = 16
+
+MXFP6_LANE_BYTES = 24
+"""Bytes one lane feeds the MFMA for FP6 (32 elements x 6 bits).
+
+MXFP4 and MXFP8 both use 16-byte lanes (FP8 splits its 32-byte fragment into
+two 16-byte halves at a K stride), so 24 is the only width that needs the
+plane-split layout.
+"""
+
+
+def preshuffle_block_scaled_b(
+    weight: TensorValue, lane_bytes: int = _MFMA_LANE_BYTES
+) -> TensorValue:
+    """Permutes MX expert weights into the AMD preb kernel's B layout.
+
+    A pure byte permutation of constant weights, so the graph compiler hoists
+    it into model init. With 16-byte lanes (MXFP4, MXFP8) each
+    ``[N, K_BYTES]`` expert becomes ``(N0, K0, KLane=4, NLane=16, KPack=16)``,
+    the ``b_5d_grouped_layout`` the kernel reads with coalesced loads. With
+    :data:`MXFP6_LANE_BYTES`, no power-of-two load covers a lane, so each MFMA
+    tile stores the first 16 bytes of every lane fragment as one plane and the
+    last 8 as a second, each ordered ``(KLane, NLane, byte)``.
+
+    Args:
+        weight: Row-major expert weights ``[E, N, K_BYTES]`` as the checkpoint
+            stores them, with any graph-side reordering of N already applied.
+        lane_bytes: Bytes one lane feeds the MFMA: 16, or
+            :data:`MXFP6_LANE_BYTES` for MXFP6.
+
+    Returns:
+        The permuted weights, same shape and dtype.
+
+    Raises:
+        ValueError: If the weight is not rank 3, ``N`` is not a multiple of 16,
+            or ``K_BYTES`` is not a whole number of MFMA K tiles.
+    """
+    if lane_bytes not in (_MFMA_LANE_BYTES, MXFP6_LANE_BYTES):
+        raise ValueError(
+            f"unsupported preb lane width {lane_bytes}; expected"
+            f" {_MFMA_LANE_BYTES} or {MXFP6_LANE_BYTES}"
+        )
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+    e, n, k_bytes = (int(d) for d in weight.shape)
+    tile_k_bytes = _MFMA_K_LANES * lane_bytes
+    if n % _MFMA_MN_LANES or k_bytes % tile_k_bytes:
+        raise ValueError(
+            f"preb weights need N % {_MFMA_MN_LANES} == 0 and K_BYTES %"
+            f" {tile_k_bytes} == 0, got {weight.shape}"
+        )
+    n0, k0 = n // _MFMA_MN_LANES, k_bytes // tile_k_bytes
+    w = weight.reshape([e, n0, _MFMA_MN_LANES, k0, _MFMA_K_LANES, lane_bytes])
+    # (n0, nlane, k0, klane, byte) -> (n0, k0, klane, nlane, byte)
+    w = ops.permute(w, [0, 1, 3, 4, 2, 5])
+    if lane_bytes == MXFP6_LANE_BYTES:
+        planes = ops.split(
+            w,
+            [_MFMA_LANE_BYTES, MXFP6_LANE_BYTES - _MFMA_LANE_BYTES],
+            axis=-1,
+        )
+        w = ops.concat(
+            [plane.reshape([e, n0, k0, -1]) for plane in planes], axis=-1
+        )
+    return w.reshape([e, n, k_bytes])
+
+
+def preshuffle_block_scaled_b_scales(scales: TensorValue) -> TensorValue:
+    """Permutes E8M0 expert weight scales into the AMD preb kernel's layout.
+
+    Each ``[MN, K_SCALES]`` expert becomes ``(MN_block, K_block, K_lane=4,
+    MN_lane=16, K_pack=2, MN_pack=2)``: every i32 cell holds the 2x2
+    ``(mn_pack, k_pack)`` bytes one lane loads at once, in the order the
+    kernel's OPSEL byte selector reads them (``Shuffler.scale_4d_byte_off``).
+    Hoisted into model init like :func:`preshuffle_block_scaled_b`.
+
+    Args:
+        scales: Row-major E8M0 scales ``[E, MN, K_SCALES]``.
+
+    Returns:
+        The permuted scales, same shape and dtype.
+
+    Raises:
+        ValueError: If the scales are not rank 3, ``MN`` is not a multiple of
+            32, or ``K_SCALES`` is not a multiple of 8.
+    """
+    if scales.rank != 3:
+        raise ValueError(f"expected scales of rank 3 but got {scales.rank}")
+    e, mn, k_scales = (int(d) for d in scales.shape)
+    if mn % 32 or k_scales % 8:
+        raise ValueError(
+            "preb scales need MN % 32 == 0 and K_SCALES % 8 == 0, got"
+            f" {scales.shape}"
+        )
+    s = scales.reshape([e, mn // 32, 2, 16, k_scales // 8, 2, 4])
+    # (mn_pack, mn_lane, k_block, k_pack, k_lane)
+    #   -> (k_block, k_lane, mn_lane, k_pack, mn_pack)
+    s = ops.permute(s, [0, 1, 4, 6, 3, 5, 2])
+    return s.reshape([e, mn, k_scales])
+
+
 def grouped_dynamic_block_scaled_matmul_amd(
     hidden_states: TensorValue,
     weight: TensorValue,
@@ -7285,7 +7390,7 @@ def grouped_dynamic_scaled_mxfp6_matmul(
     Preshuffled-B only: an FP6 lane fragment is 24 bytes and reaches the MFMA
     plane-split, a layout the dense row-major grouped kernel has no path for.
     ``weight`` must therefore already carry the plane-split permutation from
-    ``preshuffle_block_scaled_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
+    :func:`preshuffle_block_scaled_b` with ``lane_bytes=MXFP6_LANE_BYTES``.
 
     Args:
         hidden_states: Packed activations ``[total_tokens, K * 3 // 4]``.
@@ -9283,9 +9388,10 @@ def dynamic_block_scaled_matmul_mxfp6(
         out_type: The dtype of the result.
         preshuffled_b: When True, ``b`` and ``b_scales`` must already be in
             the plane-split / packed-scale layouts produced by
-            ``preshuffle_block_scaled_b_dense`` (a one-time, load-time cost
-            for the static weight). Ignored (falls back to the row-major
-            kernel) for small ``M`` -- see ``mxfp6_block_scaled_matmul_amd``.
+            :func:`preshuffle_block_scaled_b` and
+            :func:`preshuffle_block_scaled_b_scales` on a ``[1, N, K]`` view.
+            Ignored (falls back to the row-major kernel) for small ``M`` --
+            see ``mxfp6_block_scaled_matmul_amd``.
 
     Returns:
         The result of the matmul operation, ``[M, N]``.

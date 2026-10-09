@@ -655,36 +655,6 @@ class MoE(Module, Shardable):
 
         return shards
 
-    @property
-    def _weights_preshuffled(self) -> bool:
-        return (
-            self.quant_config is not None
-            and self.quant_config.block_scaled_preshuffled_b
-        )
-
-    def _needs_graph_sigma_permute(self) -> bool:
-        """Whether the graph must sigma-permute gate/up for the fused layout.
-
-        Preshuffled weights have no logical N rows left to permute, so the
-        loader must have interleaved them first; a loader that preshuffles
-        without interleaving would feed the fused epilogue split gate/up
-        halves, which runs and silently produces wrong activations.
-        """
-        if not self._uses_fused_swiglu_layout():
-            return False
-        if not self._weights_preshuffled:
-            return True
-        assert self.quant_config is not None
-        if not self.quant_config.gate_up_sigma_interleaved:
-            raise ValueError(
-                "the fused SwiGLU layout needs gate/up sigma-interleaved, but"
-                " the weights are preshuffled (no graph permute possible) and"
-                " the loader did not run sigma_interleave_gate_up; call it"
-                " before preshuffle_block_scaled_b_experts and set"
-                " QuantConfig.gate_up_sigma_interleaved"
-            )
-        return False
-
     def _uses_fused_swiglu_layout(self) -> bool:
         # True when gate_up weights and scales are sigma-permuted to the
         # (gate, up) interleaved N-axis layout that the fused
@@ -741,10 +711,10 @@ class MoE(Module, Shardable):
         # innermost rows are now interleaved (g_0, u_0, g_1, u_1, ...). One
         # bulk permute replaces E per-expert stacks to keep the graph small
         # and the constant-folding tractable.
-        # Only valid on raw row-major rows: the preb layout interleaves N
-        # with K, so there are no logical rows left here to permute.
-        # `sigma_interleave_gate_up` does it at load time instead.
-        if self._needs_graph_sigma_permute():
+        # Must precede the AMD preb permutation, which interleaves N with K
+        # and leaves no logical rows to permute; the strategy applies it to
+        # this tensor at the grouped matmul.
+        if self._uses_fused_swiglu_layout():
             shard = shard.reshape([len(gate_list), 2, -1, k_dim])
             shard = ops.permute(shard, [0, 2, 1, 3])
             return shard.reshape([len(gate_list), -1, k_dim])

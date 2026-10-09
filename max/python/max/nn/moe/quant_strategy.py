@@ -22,6 +22,7 @@ from max.graph import DeviceRef, TensorValue, ops
 
 from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
+    MXFP6_LANE_BYTES,
     block_scales_interleave,
     grouped_dynamic_block_scaled_matmul_amd,
     grouped_dynamic_block_scaled_matmul_amd_swiglu_quant,
@@ -30,6 +31,8 @@ from ..kernels import (
     grouped_matmul_block_scaled,
     grouped_matmul_blocked_swiglu,
     grouped_quantize_dynamic_block_scaled,
+    preshuffle_block_scaled_b,
+    preshuffle_block_scaled_b_scales,
     quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_block_scaled_mxfp6,
     quantize_dynamic_scaled_float8,
@@ -560,26 +563,18 @@ class NvMxf4f8Strategy:
 
 
 class BlockScaledStrategy:
-    """MXFP4 quantization for MoE.
+    """MXFP4 and MXFP8 quantization for MoE on AMD.
 
-    When `preshuffled_b=True`, the MOGG MXFP4 grouped-matmul op dispatches
-    to the preshuffled-B kernel variant (`block_scaled_grouped_matmul_amd_preb`),
-    which expects B in the 5D layout from `Shuffler.preshuffle_b_5d`. The
-    caller is responsible for applying that preshuffle at weight load
-    time (such as Kimi K2.5's `weight_adapters.py:_batch_preshuffle_experts`).
-    Models without a preshuffle weight adapter must leave
-    `preshuffled_b=False` so the dense row-major kernel is used.
+    Runs the preshuffled-B grouped matmul
+    (`block_scaled_grouped_matmul_amd_preb`). Weights and scales arrive
+    row-major, as the checkpoint stores them; the graph permutes them into the
+    preb layout, and the graph compiler hoists that into model init, as it
+    does the NVIDIA scale interleave.
     """
 
-    def __init__(
-        self,
-        config: QuantConfig,
-        dtype: DType,
-        preshuffled_b: bool = False,
-    ):
+    def __init__(self, config: QuantConfig, dtype: DType):
         self.config = config
         self.dtype = dtype
-        self.preshuffled_b = preshuffled_b
 
     def quantize(
         self,
@@ -636,14 +631,14 @@ class BlockScaledStrategy:
 
         return grouped_dynamic_block_scaled_matmul_amd(
             hidden,
-            weight,
+            preshuffle_block_scaled_b(weight),
             hidden_scales,
             weight_scales,
             expert_start,
             expert_ids,
             usage_stats.to(DeviceRef.CPU()),
             estimated_total_m=estimated_total_m,
-            preshuffled_b=self.preshuffled_b,
+            preshuffled_b=True,
             a_scales_preshuffled=a_scales_preshuffled,
             a_scales_max_padded_m=a_scales_max_padded_m,
             decode_grid_m_cap=decode_grid_m_cap,
@@ -694,11 +689,6 @@ class BlockScaledStrategy:
         Returns:
             The MXFP8 activation and its E8M0 block scales.
         """
-        if not self.preshuffled_b:
-            raise NotImplementedError(
-                "the fused SwiGLU+MXFP8 epilogue only exists in the"
-                " preshuffled-B kernel; set preshuffled_b=True"
-            )
         (
             hidden,
             hidden_scales,
@@ -709,7 +699,7 @@ class BlockScaledStrategy:
 
         return grouped_dynamic_block_scaled_matmul_amd_swiglu_quant(
             hidden,
-            weight,
+            preshuffle_block_scaled_b(weight),
             hidden_scales,
             weight_scales,
             expert_start,
@@ -731,7 +721,11 @@ class BlockScaledStrategy:
         down: TensorValue,
         device: DeviceRef,
     ) -> tuple[TensorValue, TensorValue]:
-        return gate_up, down
+        """Permutes the scales into the preb kernel's layout."""
+        return (
+            preshuffle_block_scaled_b_scales(gate_up.to(device)),
+            preshuffle_block_scaled_b_scales(down.to(device)),
+        )
 
     def fused_silu_quantize(
         self,
@@ -763,8 +757,8 @@ class Mxfp6Strategy:
 
     Preshuffled-B only: an FP6 lane fragment is 24 bytes, which the kernel
     reads plane-split, and the dense row-major grouped kernel has no path for
-    that layout. The weight loader must apply
-    ``preshuffle_block_scaled_b_experts(..., lane_bytes=MXFP6_LANE_BYTES)``.
+    that layout. The graph permutes the row-major weights into it, as
+    :class:`BlockScaledStrategy` does.
 
     Unlike :class:`Mxfp4Strategy` there is no fused activation kernel, so the
     down-projection input is produced as bf16 SwiGLU followed by a standalone
@@ -831,7 +825,7 @@ class Mxfp6Strategy:
 
         return grouped_dynamic_scaled_mxfp6_matmul(
             hidden,
-            weight,
+            preshuffle_block_scaled_b(weight, lane_bytes=MXFP6_LANE_BYTES),
             hidden_scales,
             weight_scales,
             expert_start,
@@ -851,7 +845,11 @@ class Mxfp6Strategy:
         down: TensorValue,
         device: DeviceRef,
     ) -> tuple[TensorValue, TensorValue]:
-        return gate_up, down
+        """Permutes the scales into the preb kernel's layout."""
+        return (
+            preshuffle_block_scaled_b_scales(gate_up.to(device)),
+            preshuffle_block_scaled_b_scales(down.to(device)),
+        )
 
     def fused_silu_quantize(
         self,

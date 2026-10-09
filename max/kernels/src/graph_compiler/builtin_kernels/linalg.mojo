@@ -1504,8 +1504,8 @@ struct Struct_matmul_dynamic_block_scaled_mxfp6[
         preshuffled_b: When True, `b` and `b_scales` must already be in the
             plane-split / packed-scale layouts from
             `Shuffler.preshuffle_b_planes` / `preshuffle_scale_4d` (a
-            one-time, load-time cost for the static weight; see
-            `preshuffle_block_scaled_b_dense`). Ignored (falls back to the
+            one-time cost for the static weight, which the graph applies
+            with `preshuffle_block_scaled_b`). Ignored (falls back to the
             row-major dispatch) when `M` is within the decode range -- see
             `mxfp6_block_scaled_matmul_amd`.
     """

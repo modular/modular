@@ -68,6 +68,11 @@ This version is still a work in progress.
   expert would split an NVFP4 block. On MI355 GPUs, or on eight GPUs, use
   the BF16 checkpoint (`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`).
 
+- Kimi K2.5 MXFP4 checkpoints, such as `amd/Kimi-K2.5-MXFP4`, start up
+  faster on AMD MI355 GPUs. A warm start on eight GPUs dropped from about
+  350 seconds to 48 seconds, and peak host memory during loading from about
+  590 GiB to 13 GiB.
+
 ## MAX framework
 
 - Fixed memory planning on Linux CUDA and HIP GPUs that share physical memory

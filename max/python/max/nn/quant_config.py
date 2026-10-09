@@ -306,24 +306,6 @@ class QuantConfig:
     """Which OCP FP6 encoding an MXFP6 checkpoint holds. Read through
     :attr:`mxfp6_format`, which rejects the question for non-MXFP6 configs."""
 
-    block_scaled_preshuffled_b: bool = False
-    """Whether MXFP4 weight ``B`` is preshuffled into the 5D layout that the
-    AMD preb kernel reads (produced by ``Shuffler.preshuffle_b_5d``). When
-    True, ``MoEQuantized`` dispatches the grouped matmul to the
-    ``block_scaled_grouped_matmul_amd_preb`` kernel variant; when False (default)
-    it dispatches to the dense row-major ``block_scaled_grouped_matmul_amd``
-    kernel. Must be set in lockstep with the weight loader actually
-    applying the preshuffle (such as Kimi K2.5's
-    ``weight_adapters.py:_shuffle_group``)."""
-
-    gate_up_sigma_interleaved: bool = False
-    """Whether the weight loader ran ``sigma_interleave_gate_up`` on the raw
-    gate/up weights and scales before preshuffling them. The graph permute that
-    produces the fused-SwiGLU layout cannot run on preshuffled weights, so
-    ``MoE`` requires this flag instead of silently feeding the fused epilogue
-    split gate/up halves. Set it in lockstep with the loader, as M3's
-    ``preshuffle_mx_experts_for_amd`` does."""
-
     @classmethod
     def blockscaled_fp8(
         cls,

@@ -1453,10 +1453,6 @@ def apply_fused_kernel_flags(
     # term only once another AMD arch grows an interleaved gate/up reader.
     # `accelerator_architecture_name()` raises on a GPU-less host and this runs
     # during checkpoint parsing, so the count check comes first.
-    # On gfx950 the MoE weights are preshuffled, so the graph cannot apply the
-    # sigma permute; the loader must run `sigma_interleave_gate_up` before the
-    # preshuffle and set `QuantConfig.gate_up_sigma_interleaved`, or `MoE`
-    # refuses to build (see `MoE._needs_graph_sigma_permute`).
     on_gfx950 = (
         accelerator_count() > 0 and accelerator_architecture_name() == "gfx950"
     )
