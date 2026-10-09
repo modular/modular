@@ -1085,14 +1085,62 @@ PatternEmitState::emitCommands(OpBuilder &builder,
   return success();
 }
 
-/// Consider an "or" pattern like (1, x)|(x, 2).  This is handled by emitting
-/// temporary vardecls for the bound value, which is then initialized on each
-/// arm.  This sets up the temporary VarDecls to use for the intermediates.
+/// Consider an "or" pattern like (1, x)|(x, 2). This emits one VarDecl for
+/// each bound name before the nested match, then initializes it in every arm.
+using OrCaseBindings = SmallVector<PatternBoundName, 4>;
+
+/// Verify that each alternative binds the same names, kinds, and value types.
+static LogicalResult
+validateOrBindings(SMLoc loc, ArrayRef<PatternBoundName> firstBindings,
+                   ArrayRef<PatternBoundName> caseBindings,
+                   ASTDecl &curDeclScope) {
+  llvm::StringMap<const PatternBoundName *> caseByName;
+  for (const PatternBoundName &bn : caseBindings)
+    caseByName[bn.name] = &bn;
+
+  SharedState &shared = curDeclScope.getShared();
+  for (const PatternBoundName &bn : firstBindings) {
+    auto it = caseByName.find(bn.name);
+    if (it == caseByName.end()) {
+      shared.emitError(loc, "or-pattern alternatives must bind the same names")
+          << "; '" << bn.name << "' is bound in one alternative but not "
+          << "the other";
+      return failure();
+    }
+    const PatternBoundName &caseBN = *it->second;
+    if (bn.bindingKind != caseBN.bindingKind) {
+      shared.emitError(loc, "or-pattern binding '")
+          << bn.name
+          << "' must use the same 'var'/'ref' kind in each alternative";
+      return failure();
+    }
+    if (!bn.value.getRValueType().isEqualCanon(caseBN.value.getRValueType())) {
+      auto diag = shared.emitError(loc, "or-pattern binding '")
+                  << bn.name << "' has incompatible types across alternatives";
+      diag.attachNote(loc) << "first alternative has type "
+                           << bn.value.getRValueType()
+                           << ", this alternative has type "
+                           << caseBN.value.getRValueType();
+      return failure();
+    }
+    caseByName.erase(it);
+  }
+
+  if (!caseByName.empty()) {
+    shared.emitError(loc, "or-pattern alternatives must bind the same names")
+        << "; '" << caseByName.begin()->first()
+        << "' is bound in one alternative but not the other";
+    return failure();
+  }
+  return success();
+}
+
 static LogicalResult
 initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
                SmallVectorImpl<PatternBoundName> &aggregateBindings,
-               ArrayRef<PatternBoundName> caseBindings, ASTDecl &curDeclScope) {
-  if (caseBindings.empty())
+               ArrayRef<OrCaseBindings> alternativeBindings,
+               ASTDecl &curDeclScope) {
+  if (alternativeBindings.empty() || alternativeBindings.front().empty())
     return success();
 
   // Create one VarDecl per binding before the nested or-match so each
@@ -1102,7 +1150,7 @@ initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
   emitter.builder->setInsertionPoint(matchOp);
   Location mlirLoc = emitter.shared.translateLocation(loc);
 
-  for (const PatternBoundName &bn : caseBindings) {
+  for (const PatternBoundName &bn : alternativeBindings.front()) {
     ASTType varType = bn.value.getRValueType();
     bool isRefOrBind = bn.bindingKind == PatternDeclKind::kRef ||
                        bn.bindingKind == PatternDeclKind::kBind;
@@ -1122,13 +1170,41 @@ initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
       break;
     }
 
-    // Match DeclRefNode pattern bindings: ref/bind wrap with a placeholder
-    // origin replaced when the value is stored.
-    if (isRefOrBind)
-      varType = RefType::getAnyOrigin(varType, /*isMut=*/true);
+    if (isRefOrBind) {
+      bool allMValues = llvm::all_of(
+          alternativeBindings, [&](const OrCaseBindings &caseBindings) {
+            auto it = llvm::find_if(caseBindings,
+                                    [&](const PatternBoundName &caseBN) {
+                                      return caseBN.name == bn.name;
+                                    });
+            assert(it != caseBindings.end() && "bindings were validated");
+            return it->value.isMValue();
+          });
+      if (allMValues) {
+        RefType commonRefType = bn.value.getMValueType();
+        for (const OrCaseBindings &caseBindings :
+             llvm::drop_begin(alternativeBindings)) {
+          auto it =
+              llvm::find_if(caseBindings, [&](const PatternBoundName &caseBN) {
+                return caseBN.name == bn.name;
+              });
+          assert(it != caseBindings.end() && "bindings were validated");
+          commonRefType = IREmitter::getCommonRefType(
+              commonRefType, it->value.getMValueType());
+          if (!commonRefType) {
+            emitter.emitError(loc, "or-pattern binding '")
+                << bn.name
+                << "' has incompatible reference types across alternatives";
+            return failure();
+          }
+        }
+        varType = commonRefType;
+      } else {
+        varType = RefType::getAnyOrigin(varType, /*isMut=*/true);
+      }
+    }
 
-    // Temporary slots only — do not register in the AST scope. The enclosing
-    // match case materializes the user-visible bindings from these values.
+    // The caller installs this declaration after opening the case scope.
     VarDeclOp varDecl =
         emitter.emitVarDecl(bn.name, varType, mlirLoc, declKind);
     if (!varDecl)
@@ -1136,7 +1212,7 @@ initOrBindings(const OpBuilder &builder, HLCF::MatchOp matchOp, SMLoc loc,
 
     CValue slot =
         isRefOrBind ? CValue(RLValue(varDecl)) : CValue(MLValue(varDecl));
-    aggregateBindings.push_back({bn.name, slot, bn.bindingKind});
+    aggregateBindings.push_back({bn.name, slot, bn.bindingKind, varDecl});
   }
   return success();
 }
@@ -1198,7 +1274,14 @@ static LogicalResult checkOrBindings(
     ExprDest storeDest(destLV, EC_VarInit);
     SyntheticNode locExpr(loc);
     IREmitter emitter(curDeclScope, builder);
-    if (!emitter.emitCResult(caseBN.value, &locExpr, storeDest))
+    CValue caseValue = caseBN.value;
+    ASTType aggregateValueType = bn.value.getRValueType();
+    if (caseValue.isMValue() && sugarIsa<RefType>(aggregateValueType)) {
+      Value reference = emitter.emitRebindOpIfNeeded(
+          caseValue.getMValueReference(), aggregateValueType, loc);
+      caseValue = CValue::getMValueForRef(reference);
+    }
+    if (!emitter.emitCResult(caseValue, &locExpr, storeDest))
       return failure();
     builder = *emitter.builder; // Keep builder in sync.
     caseByName.erase(it);
@@ -1229,23 +1312,39 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
       HLCF::MatchOp::create(builder, loc, TypeRange(),
                             /*caseRegionsCount=*/cmd.orAlternatives.size());
 
-  SmallVector<PatternBoundName, 4> aggregateBindings;
+  SmallVector<Block *, 2> alternativeBlocks;
+  SmallVector<OrCaseBindings, 2> alternativeBindings;
   for (auto [idx, alt] : llvm::enumerate(cmd.orAlternatives)) {
     Block &block = matchOp.getCaseRegions()[idx].emplaceBlock();
     builder.setInsertionPointToStart(&block);
+    alternativeBlocks.push_back(&block);
 
     ASTDecl &scope = createBindingScope(cmd.expr->getLoc());
     PatternEmitState altState{scope, rootSubject, rootPath, matchLocation,
                               pathValues};
-    SmallVector<PatternBoundName, 4> caseBindings;
+    OrCaseBindings caseBindings;
     if (failed(altState.emitCommands(builder, alt, caseBindings)))
       return failure();
+    alternativeBindings.push_back(std::move(caseBindings));
+  }
 
-    if (idx == 0) {
-      if (failed(initOrBindings(builder, matchOp, cmd.expr->getLoc(),
-                                aggregateBindings, caseBindings, curDeclScope)))
-        return failure();
-    }
+  ArrayRef<PatternBoundName> firstBindings = alternativeBindings.front();
+  for (const OrCaseBindings &caseBindings :
+       llvm::drop_begin(alternativeBindings)) {
+    if (failed(validateOrBindings(cmd.expr->getLoc(), firstBindings,
+                                  caseBindings, curDeclScope)))
+      return failure();
+  }
+
+  SmallVector<PatternBoundName, 4> aggregateBindings;
+  if (failed(initOrBindings(builder, matchOp, cmd.expr->getLoc(),
+                            aggregateBindings, alternativeBindings,
+                            curDeclScope)))
+    return failure();
+
+  for (auto [block, caseBindings] :
+       llvm::zip_equal(alternativeBlocks, alternativeBindings)) {
+    builder.setInsertionPointToEnd(block);
     if (failed(checkOrBindings(builder, cmd.expr->getLoc(), aggregateBindings,
                                caseBindings, curDeclScope)))
       return failure();
@@ -1266,7 +1365,8 @@ PatternEmitState::emitOr(OpBuilder &builder, const PatternCommand &cmd,
       Value refVal = RefLoadOp::create(builder, loc, rl);
       resultBinding = CValue::getMValueForRef(refVal);
     }
-    bindings.push_back({bn.name, resultBinding, bn.bindingKind});
+    bindings.push_back(
+        {bn.name, resultBinding, bn.bindingKind, bn.declaration});
   }
   return success();
 }

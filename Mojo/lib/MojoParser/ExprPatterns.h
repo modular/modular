@@ -88,6 +88,8 @@ struct PatternBoundName {
   StringRef name;
   CValue value;
   PatternDeclKind bindingKind;
+  /// Shared declaration already emitted for an Or-pattern binding.
+  VarDeclOp declaration{};
 };
 
 /// Parsed `case` arm for `match`: pattern, optional guard, suite cursor, and
