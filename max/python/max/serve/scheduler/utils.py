@@ -1463,6 +1463,16 @@ class SchedulerLogger:
             logger.info(metrics.pretty_format(), extra=metrics.to_log_extra())
 
 
+def held_blocks_per_leaf(
+    kv_cache: PagedKVCacheManagerInterface, ctx: TextContext
+) -> dict[str, int]:
+    """Returns how many blocks the request holds in each KV leaf."""
+    return {
+        leaf_id: len(blocks)
+        for leaf_id, blocks in kv_cache.get_req_blocks_per_leaf(ctx).items()
+    }
+
+
 def get_cancelled_reqs(
     cancel_q: MAXPullQueue[list[RequestID]],
 ) -> list[RequestID]:

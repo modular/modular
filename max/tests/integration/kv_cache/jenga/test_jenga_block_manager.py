@@ -1199,30 +1199,32 @@ def test_two_windows_converge_on_prefix_cache_hit() -> None:
 
 
 # ===--------------------------------------------------------------------=== #
-# get_req_blocks
+# num_req_blocks
 # ===--------------------------------------------------------------------=== #
 
 
-def test_get_req_blocks_returns_first_leaf_blocks() -> None:
+def test_num_req_blocks_counts_pages_when_leaf_ids_differ() -> None:
     bm = make_manager(
-        {FULL: full(ratio=1), SLIDING: sliding(ratio=1, window=10)},
+        {VALUES: full(ratio=1), SCALES: full(ratio=10)},
         block_size=1,
+        num_huge_blocks=8,
     )
     ctx = make_ctx(num_tokens=3)
     bm.claim(ctx)
     bm.alloc(ctx)
 
     per_leaf = bm.get_req_blocks_per_leaf(ctx)
-    assert bm.get_req_blocks(ctx) == next(iter(per_leaf.values()))
+    assert per_leaf[VALUES] != per_leaf[SCALES]
+    assert bm.num_req_blocks(ctx) == 3
 
 
-def test_get_req_blocks_empty_when_claimed_not_allocated() -> None:
+def test_num_req_blocks_zero_when_claimed_not_allocated() -> None:
     bm = make_manager({FULL: full(ratio=1)}, block_size=1)
     ctx = make_ctx(num_tokens=3)
     bm.claim(ctx)
 
-    assert bm.get_req_blocks(ctx) == []
-    assert not bm.get_req_blocks(ctx)
+    assert bm.get_req_blocks_per_leaf(ctx) == {FULL: []}
+    assert bm.num_req_blocks(ctx) == 0
 
 
 # ===--------------------------------------------------------------------=== #

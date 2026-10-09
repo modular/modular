@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from collections.abc import Mapping
 from enum import Enum
 from typing import Generic, Literal, TypeVar
 
@@ -124,3 +125,21 @@ class CancelRequest(msgspec.Struct, tag=True, omit_defaults=True, kw_only=True):
 
     id: RequestID
     """Unique identifier of the request to cancel."""
+
+
+def shared_block_ids(blocks_per_leaf: Mapping[str, list[int]]) -> list[int]:
+    """Returns the one block id row every leaf shares.
+
+    The DI transfer addresses every leaf with the same page indices, which
+    only holds when the leaves share one block space.
+
+    Raises:
+        ValueError: If the leaves hold different block ids.
+    """
+    rows = list(blocks_per_leaf.values())
+    if any(row != rows[0] for row in rows[1:]):
+        raise ValueError(
+            "DI transfers need every KV leaf to share block ids, got "
+            f"{dict(blocks_per_leaf)}"
+        )
+    return rows[0] if rows else []

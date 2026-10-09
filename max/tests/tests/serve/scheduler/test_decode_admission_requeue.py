@@ -135,5 +135,5 @@ def test_requeued_request_is_readmitted_after_cached_prefix_eviction() -> None:
     assert not self_obj.pending_reqs
     assert ctx.tokens.processed_length == 0
     assert ctx.tokens.active_length == len(ctx.tokens)
-    assert len(kv_cache.get_req_blocks(ctx)) == 5
+    assert kv_cache.num_req_blocks(ctx) == 5
     kv_cache.release(evictor)

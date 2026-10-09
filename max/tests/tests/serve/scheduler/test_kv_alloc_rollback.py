@@ -77,7 +77,7 @@ def _assert_untouched(
     assert ctx.cached_prefix_length == 0
     assert ctx.cached_prefix_external_length == 0
     assert kv_cache.contains(ctx)
-    assert kv_cache.get_req_blocks(ctx) == []
+    assert kv_cache.num_req_blocks(ctx) == 0
 
 
 def test_paged_alloc_failure_rolls_back_prefix_reuse() -> None:
@@ -112,7 +112,7 @@ def test_paged_alloc_failure_rolls_back_prefix_reuse() -> None:
     assert kv_cache.alloc(ctx).is_complete()
     assert ctx.tokens.processed_length == 2 * page_size
     assert ctx.cached_prefix_length == 2 * page_size
-    assert len(kv_cache.get_req_blocks(ctx)) == 5
+    assert kv_cache.num_req_blocks(ctx) == 5
 
 
 def _create_jenga_kv_cache(

@@ -946,9 +946,8 @@ class JengaBlockManager:
     def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
         """Returns the pages the request holds, per leaf.
 
-        Distinct from :meth:`PagedKVCacheManagerInterface.get_req_blocks`
-        (a single flat ``list[int]``, sized for one leaf): Jenga's caches
-        aren't interchangeable, so this returns one list per leaf instead.
+        Each leaf tiles huge blocks at its own ratio, so one leaf's block ids
+        say nothing about another's.
         """
         self._replica_of(ctx)
         return {
@@ -957,12 +956,11 @@ class JengaBlockManager:
             for leaf_id, blocks in group.blocks_of(ctx.request_id).items()
         }
 
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds for the first leaf.
-
-        TODO: Delete this method after refactoring downstream callers.
-        """
-        return next(iter(self.get_req_blocks_per_leaf(ctx).values()))
+    def num_req_blocks(self, ctx: TextContext) -> int:
+        """Returns the request's length in pages, its longest leaf row."""
+        return max(
+            len(blocks) for blocks in self.get_req_blocks_per_leaf(ctx).values()
+        )
 
     def huge_block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the huge-block occupancy for the given replica.

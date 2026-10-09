@@ -58,6 +58,7 @@ from max.serve.scheduler.base import (
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
+    shared_block_ids,
 )
 from max.serve.scheduler.di_dispatchers import DecodeDispatcherClient
 from max.serve.scheduler.interface import Scheduler
@@ -369,8 +370,8 @@ class DecodeScheduler(Scheduler):
         # Set dst_idx to -1 to denote pages which the decode already has due
         # to prefix caching. processed_length is in tokens; divide by
         # page_size to convert to blocks. dst_idxs is already per-replica
-        # (get_req_blocks returns blocks on the replica the request was
-        # claimed on), so no further scaling by data-parallel degree.
+        # (get_req_blocks_per_leaf returns blocks on the replica the request
+        # was claimed on), so no further scaling by data-parallel degree.
         for i in range(
             data.tokens.processed_length // self.kv_cache.params.page_size
         ):
@@ -407,7 +408,9 @@ class DecodeScheduler(Scheduler):
         to complete before this request can join a TG batch or release
         its blocks; see ``check_for_completed_transfers``.
         """
-        dst_idxs = self.kv_cache.get_req_blocks(context)
+        dst_idxs = shared_block_ids(
+            self.kv_cache.get_req_blocks_per_leaf(context)
+        )
         self.requests[req_id] = PendingDecodeRequest(
             context=context,
             replica_idx=replica_idx,

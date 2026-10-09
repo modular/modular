@@ -479,7 +479,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             # Allocate blocks for request if we need more.
             if _does_req_need_more_blocks(
                 ctx,
-                len(self.get_req_blocks(ctx)),
+                self.num_req_blocks(ctx),
                 self.params,
             ):
                 raise ValueError(
@@ -555,7 +555,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         absolute_max_cached_len = 0
         for batch_idx, ctx in enumerate(batch):
             # Get the blocks for this request.
-            blocks = self.get_req_blocks(ctx)
+            blocks = self._block_manager.get_req_blocks(ctx)
 
             # Sanity check that we have enough blocks.
             seq_len = _compute_seq_len(
@@ -781,9 +781,17 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         """Returns aggregated metrics across all replicas."""
         return self._block_manager.metrics
 
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds on the replica it was claimed on."""
-        return self._block_manager.get_req_blocks(ctx)
+    def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
+        """Returns the request's block IDs, repeated under every leaf.
+
+        Every leaf of this cache shares one block space.
+        """
+        blocks = self._block_manager.get_req_blocks(ctx)
+        return {leaf_id: list(blocks) for leaf_id in self.params.leaves()}
+
+    def num_req_blocks(self, ctx: TextContext) -> int:
+        """Returns how many pages long the request is on its claimed replica."""
+        return len(self._block_manager.get_req_blocks(ctx))
 
     def host_byte_count(self) -> ByteCount:
         """Returns the host KV tier occupancy in bytes, shared by every replica."""

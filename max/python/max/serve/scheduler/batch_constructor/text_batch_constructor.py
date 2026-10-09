@@ -44,6 +44,7 @@ from ..lora_scheduler_utils import (
     is_active_lora,
     is_lora,
 )
+from ..utils import held_blocks_per_leaf
 from .grammar_gate import AsyncGrammarGate
 from .token_budget import (
     ActiveTokenBudget,
@@ -1213,8 +1214,9 @@ class TextBatchConstructor:
         """
         replica_requests = self.replicas[replica_idx]
         for ctx in reversed(list(replica_requests.ce_reqs.values())):
-            if self.kv_cache.contains(ctx) and self.kv_cache.get_req_blocks(
-                ctx
+            if (
+                self.kv_cache.contains(ctx)
+                and self.kv_cache.num_req_blocks(ctx) > 0
             ):
                 self._preempt_request(
                     ctx, replica_idx, reason=PreemptionReason.KV_CACHE_MEMORY
@@ -1316,14 +1318,14 @@ class TextBatchConstructor:
                         replica_idx, no_other_work
                     )
                     if fatal:
-                        held_blocks = len(self.kv_cache.get_req_blocks(ctx))
+                        held_blocks = held_blocks_per_leaf(self.kv_cache, ctx)
                         raise InsufficientBlocksError(
                             f"_add_ce_requests: InsufficientBlocksError is "
                             f"fatal on replica {replica_idx} -- no other "
                             f"work and nothing in flight to free blocks. "
                             f"Request {ctx.request_id} has "
                             f"{len(ctx.tokens)} tokens and already holds "
-                            f"{held_blocks} blocks. {e}"
+                            f"blocks per leaf {held_blocks}. {e}"
                         ) from e
                     self._return_to_request_queue(ctx, replica_idx)
                     break
@@ -1423,8 +1425,8 @@ class TextBatchConstructor:
                             replica_idx, no_other_work=len(batch) == 0
                         )
                         if fatal:
-                            held_blocks = len(
-                                self.kv_cache.get_req_blocks(candidate_context)
+                            held_blocks = held_blocks_per_leaf(
+                                self.kv_cache, candidate_context
                             )
                             raise InsufficientBlocksError(
                                 f"_add_tg_requests: InsufficientBlocksError "
@@ -1433,8 +1435,8 @@ class TextBatchConstructor:
                                 f"blocks. Request "
                                 f"{candidate_context.request_id} has "
                                 f"{len(candidate_context.tokens)} tokens "
-                                f"and already holds {held_blocks} "
-                                f"blocks. {e}"
+                                f"and already holds blocks per leaf "
+                                f"{held_blocks}. {e}"
                             ) from e
                         return
 

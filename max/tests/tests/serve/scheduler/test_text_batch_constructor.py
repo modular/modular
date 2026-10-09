@@ -339,7 +339,8 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.pending_transfers_exist = Mock(return_value=False)
-    kv_cache.get_req_blocks = Mock(return_value=[])
+    kv_cache.num_req_blocks = Mock(return_value=0)
+    kv_cache.get_req_blocks_per_leaf = Mock(return_value={"full": []})
     set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
@@ -440,7 +441,8 @@ def _presence_test_setup(
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.pending_transfers_exist = Mock(return_value=False)
-    kv_cache.get_req_blocks = Mock(return_value=[])
+    kv_cache.num_req_blocks = Mock(return_value=0)
+    kv_cache.get_req_blocks_per_leaf = Mock(return_value={"full": []})
     set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
@@ -600,10 +602,13 @@ def test_text_batch_constructor__tg_insufficient_blocks_preempts_ce_block_holder
         )
     )
     kv_cache.pending_transfers_exist = Mock(return_value=False)
-    kv_cache.get_req_blocks = Mock(
-        side_effect=lambda ctx: (
-            [0] if ctx.request_id == holder.request_id else []
-        )
+    kv_cache.num_req_blocks = Mock(
+        side_effect=lambda ctx: 1 if ctx.request_id == holder.request_id else 0
+    )
+    kv_cache.get_req_blocks_per_leaf = Mock(
+        side_effect=lambda ctx: {
+            "full": [0] if ctx.request_id == holder.request_id else []
+        }
     )
     # A full cache forces TG priority, so the parked prefill is never
     # popped by _add_ce_requests before the decode request's alloc fails.
@@ -2971,7 +2976,10 @@ def test_text_batch_constructor__oom_deferred_while_onload_in_flight(
             ]
         )
     )
-    kv_cache.get_req_blocks = Mock(return_value=[0, 1, 2, 3, 4])
+    kv_cache.num_req_blocks = Mock(return_value=5)
+    kv_cache.get_req_blocks_per_leaf = Mock(
+        return_value={"full": [0, 1, 2, 3, 4]}
+    )
     batch_constructor = TextBatchConstructor(
         scheduler_config=_cordon_config(),
         pipeline=pipeline,

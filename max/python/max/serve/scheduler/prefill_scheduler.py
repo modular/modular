@@ -46,6 +46,7 @@ from max.serve.scheduler.base import (
     PrefillProgressPing,
     PrefillRequest,
     PrefillResponse,
+    shared_block_ids,
 )
 from max.serve.scheduler.interface import Scheduler
 from max.serve.telemetry.metrics import METRICS
@@ -56,7 +57,7 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger, _trace_batch
+from .utils import SchedulerLogger, _trace_batch, held_blocks_per_leaf
 
 logger = logging.getLogger("max.serve")
 
@@ -202,8 +203,8 @@ class PrefillScheduler(Scheduler):
         for active in self.active_transfers.values():
             if self.transfer_engine.is_complete(active.transfer):
                 self.transfer_engine.cleanup_transfer(active.transfer)
-                blocks_released = len(
-                    self.kv_cache.get_req_blocks(active.context)
+                blocks_released = held_blocks_per_leaf(
+                    self.kv_cache, active.context
                 )
                 # Release from paged cache (scheduler manages primary KV cache lifecycle)
                 self.kv_cache.release(active.context)
@@ -212,8 +213,9 @@ class PrefillScheduler(Scheduler):
                 self.pipeline.release(active.context.request_id)
                 to_be_deleted.append(active.context.request_id)
                 logger.debug(
-                    "KV transfer complete for request %s: releasing %d blocks "
-                    "back to prefill pool. Remaining in-flight transfers: %d.",
+                    "KV transfer complete for request %s: releasing blocks "
+                    "per leaf %s back to prefill pool. Remaining in-flight "
+                    "transfers: %d.",
                     active.context.request_id,
                     blocks_released,
                     len(self.active_transfers) - len(to_be_deleted),
@@ -258,12 +260,12 @@ class PrefillScheduler(Scheduler):
         # If cancelled, release the request's blocks instead of transferring them.
         if req_id in self.outstanding_cancelled_requests:
             self.outstanding_cancelled_requests.remove(req_id)
-            blocks_held = len(self.kv_cache.get_req_blocks(context))
+            blocks_held = held_blocks_per_leaf(self.kv_cache, context)
             self.kv_cache.release(context)
             self.pipeline.release(req_id)
             logger.warning(
                 "Dropping cancelled request %s before KV transfer: released "
-                "%d blocks on replica %d.",
+                "blocks per leaf %s on replica %d.",
                 req_id,
                 blocks_held,
                 src_replica_idx,
@@ -277,7 +279,9 @@ class PrefillScheduler(Scheduler):
 
         # Retrieve source block ids.
         req_id = context.request_id
-        src_idxs = self.kv_cache.get_req_blocks(context)
+        src_idxs = shared_block_ids(
+            self.kv_cache.get_req_blocks_per_leaf(context)
+        )
         dst_idxs = transfer_dest.dst_block_ids
         assert len(src_idxs) == len(dst_idxs)
 
@@ -300,7 +304,7 @@ class PrefillScheduler(Scheduler):
             transfer=transfer_data,
         )
         transfer_pinned = sum(
-            len(self.kv_cache.get_req_blocks(at.context))
+            self.kv_cache.num_req_blocks(at.context)
             for at in self.active_transfers.values()
         )
         block_count = self.kv_cache.block_count(src_replica_idx)
