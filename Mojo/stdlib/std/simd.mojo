@@ -3734,7 +3734,14 @@ def _powf_scalar(
     var integral, fractional = _modf_scalar(exponent)
 
     if integral == exponent:
-        return _powi(base, integral.cast[DType.int32]())
+        if abs(integral) < 2147483648.0:
+            return _powi(base, integral.cast[DType.int32]())
+        # Too large for `_powi`: |base| ** exponent, negated for odd ones.
+        var mag = abs(base)
+        if mag != 1 and not _isnan(mag):
+            mag = std.math.exp(exponent.cast[base.dtype]() * std.math.log(mag))
+        var half = integral * 0.5
+        return -mag if base < 0 and _floor(half) != half else mag
 
     if fractional and base < 0:
         return _nan[base.dtype]()

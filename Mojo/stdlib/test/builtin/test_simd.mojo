@@ -1915,6 +1915,23 @@ def test_powf() raises:
     )
 
 
+def test_powf_large_whole_exponent() raises:
+    # Whole exponents too large for an Int32, and infinite ones.
+    comptime inf = FloatLiteral.infinity
+    assert_equal(Float64(0.5) ** Float64(4294967296.0), 0.0)
+    assert_equal(Float64(2.0) ** Float64(4294967296.0), inf)
+    assert_equal(Float64(2.0) ** Float64(-2147483648.0), 0.0)
+    assert_equal(Float64(-2.0) ** Float64(4294967297.0), -inf)
+    assert_equal(Float64(-1.0) ** Float64(4294967297.0), -1.0)
+    assert_equal(Float32(0.5) ** Float32(1e10), 0.0)
+    assert_equal(Float64(0.5) ** Float64(inf), 0.0)
+    assert_equal(Float64(2.0) ** Float64(-inf), 0.0)
+    assert_equal(Float64(1.0) ** Float64(inf), 1.0)
+    assert_almost_equal(
+        Float64(1.0000001) ** Float64(3e9), 1.9423975992963885e130, rtol=1e-8
+    )
+
+
 def test_rpow() raises:
     comptime F32x4 = SIMD[.float32, 4]
     comptime I32x4 = SIMD[.int32, 4]
