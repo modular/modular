@@ -848,7 +848,7 @@ struct Optional[T: AnyType](
         E: AnyType
     ](
         deinit self, var error: Some[def() -> E]
-    ) raises E -> Self.T where conforms_to(Self.T, Movable & Deinitable):
+    ) raises E -> Self.T where conforms_to(Self.T, Movable):
         """Returns the contained value or raises an error if empty.
 
         Consumes the `Optional`, moving out its contained value if present.
@@ -883,6 +883,7 @@ struct Optional[T: AnyType](
         ```
         """
         if not self:
+            self^.deinit_assert_empty()
             raise error()
 
         return self._value^._unsafe_unchecked_unwrap[Self.T]()

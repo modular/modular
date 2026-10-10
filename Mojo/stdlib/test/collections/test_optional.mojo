@@ -311,6 +311,22 @@ def test_optional_or_raise_constructs_error_lazily() raises:
     assert_equal(calls, 1)
 
 
+def test_optional_or_raise_linear_type() raises:
+    def error() {} -> Error:
+        return Error("optional is none")
+
+    var some = Optional(ExplicitDelOnly(123))
+    var value = some^.or_raise(error)
+    var data = value.data
+    value^.destroy()
+    assert_equal(data, 123)
+
+    var none = Optional[ExplicitDelOnly](None)
+    with assert_raises(contains="optional is none"):
+        var unexpected = none^.or_raise(error)
+        unexpected^.destroy()
+
+
 def test_optional_repr_wrap() raises:
     var o = Optional(10)
     assert_equal(repr(o), "Optional[SIMD[DType.int, 1]](Int(10))")
