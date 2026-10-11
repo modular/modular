@@ -882,7 +882,7 @@ struct Optional[T: AnyType](
         ```
         """
         if not self:
-            self^.deinit_assert_empty()
+            self._value^.deinit_with[_NoneType](_NoneType.__deinit__)
             raise error()
 
         return self._value^._unsafe_unchecked_unwrap[Self.T]()
