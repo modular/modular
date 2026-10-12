@@ -22,8 +22,6 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from std.utils import IndexList
-
 
 def test_rope_ragged[
     rope_dim: Int, dtype: DType
@@ -143,8 +141,8 @@ def test_rope_ragged[
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {var q_out_tensor} -> None:
-        q_out_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var q_out_tensor} -> None:
+        q_out_tensor.store[width=width](idx, val)
 
     rope_ragged[
         dtype,
@@ -292,16 +290,14 @@ def test_rope_ragged_rope_first[
     @inline(.always)
     def full_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {var full_out_tensor} -> None:
-        full_out_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var full_out_tensor} -> None:
+        full_out_tensor.store[width=width](idx, val)
 
     @inline(.always)
     def prefix_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {
-        var prefix_out_tensor
-    } -> None:
-        prefix_out_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var prefix_out_tensor} -> None:
+        prefix_out_tensor.store[width=width](idx, val)
 
     rope_ragged[
         dtype,

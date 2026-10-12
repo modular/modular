@@ -20,8 +20,6 @@ memory specifications, thread organization, and performance characteristics.
 
 from std.sys.info import _TargetType, _accelerator_arch, _current_target
 
-from std._plugin._overlay import ADDITIONAL_TARGETS
-
 
 @__doc_inline
 from std._gpu.host.info import (
@@ -59,6 +57,7 @@ from std._gpu.host._builtin_targets import (
     MI300A,
     MI300X,
     MI355X,
+    MI455X,
     MetalM1,
     MetalM1Metal4,
     MetalM2,
@@ -99,7 +98,10 @@ from std._gpu.host._builtin_targets import (
     TeslaP100,
 )
 
-from std._gpu.host.info import _empty_target
+from std._gpu.host.info import (
+    _empty_target,
+    _encode_device_types_with_host_layout,
+)
 
 from std._gpu.host._builtin_targets import (
     _a100_target,
@@ -124,7 +126,7 @@ def _device_type_encoder_target() -> _TargetType:
     """
     comptime if _accelerator_arch() == "":
         return _current_target()
-    elif ADDITIONAL_TARGETS.encode_device_types_with_host_layout:
+    elif _encode_device_types_with_host_layout:
         return _current_target()
     else:
         return get_gpu_target()._mlir_value

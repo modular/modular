@@ -103,7 +103,6 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
     MLASparseConfig,
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
-from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#

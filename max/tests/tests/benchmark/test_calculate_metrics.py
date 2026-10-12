@@ -1991,16 +1991,18 @@ def test_aggregate_gpu_stats_disabled_or_empty() -> None:
         [],
         [],
         [],
+        {},
     )
     assert _aggregate_gpu_stats(collect_gpu_stats=True, gpu_metrics=None) == (
         [],
         [],
         [],
+        {},
     )
     # Snapshots with no devices report nothing rather than raising.
     assert _aggregate_gpu_stats(
         collect_gpu_stats=True, gpu_metrics=[{}, {}]
-    ) == ([], [], [])
+    ) == ([], [], [], {})
 
 
 def test_aggregate_gpu_stats_single_device_across_snapshots() -> None:
@@ -2009,7 +2011,7 @@ def test_aggregate_gpu_stats_single_device_across_snapshots() -> None:
         {"n:gpu0": _gpu_stats(util=80, used_mib=100, free_mib=900)},
         {"n:gpu0": _gpu_stats(util=90, used_mib=300, free_mib=700)},
     ]
-    peak, avail, util = _aggregate_gpu_stats(
+    peak, avail, util, _ = _aggregate_gpu_stats(
         collect_gpu_stats=True, gpu_metrics=snapshots
     )
     assert peak == [300.0]
@@ -2040,7 +2042,7 @@ def test_aggregate_gpu_stats_tolerates_changing_device_set() -> None:
         },
     ]
 
-    peak, avail, util = _aggregate_gpu_stats(
+    peak, avail, util, _ = _aggregate_gpu_stats(
         collect_gpu_stats=True, gpu_metrics=snapshots
     )
 
@@ -2052,6 +2054,33 @@ def test_aggregate_gpu_stats_tolerates_changing_device_set() -> None:
     assert util == [75.0, 50.0]
     # Reported mean GPU util is the mean across all engine devices seen.
     assert statistics.mean(util) == 62.5
+
+
+def test_aggregate_gpu_stats_splits_utilization_by_group() -> None:
+    """Each group gets its devices' utilization, in the mapping's order.
+
+    A device with no group still counts toward the overall list, and a
+    grouped device absent from every snapshot adds nothing.
+    """
+    snapshot = {
+        "GPU-a": _gpu_stats(util=96, used_mib=100, free_mib=900),
+        "GPU-b": _gpu_stats(util=94, used_mib=100, free_mib=900),
+        "GPU-c": _gpu_stats(util=38, used_mib=100, free_mib=900),
+        "GPU-d": _gpu_stats(util=50, used_mib=100, free_mib=900),
+    }
+    _, _, util, by_group = _aggregate_gpu_stats(
+        collect_gpu_stats=True,
+        gpu_metrics=[snapshot],
+        gpu_device_groups={
+            "GPU-c": "decode",
+            "GPU-a": "prefill",
+            "GPU-b": "prefill",
+            "GPU-z": "decode",
+        },
+    )
+    assert util == [96.0, 94.0, 38.0, 50.0]
+    assert by_group == {"decode": [38.0], "prefill": [96.0, 94.0]}
+    assert list(by_group) == ["decode", "prefill"]
 
 
 def test_tool_rates_count_offers_and_calls_separately() -> None:

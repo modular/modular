@@ -25,16 +25,13 @@ methods invoked by the individual warps.
 from std.math import ceildiv
 from std.sys import size_of
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, warp_id
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, syncwarp
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.memory import external_memory
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_fence_before,
-    tcgen05_release_allocation_lock,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -55,6 +52,7 @@ from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     SharedMemPointer,
@@ -64,6 +62,7 @@ from nn.attention.gpu.nvidia.common import KVTMATile
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
+    mla_decode_k_fold_chunks,
     MLA_SM100_Decode_Common,
     QOTMATile,
     ORaggedTMATile,
@@ -123,6 +122,9 @@ struct MLA_SM100_Decode_KV_BF16[
     """
 
     comptime kv_type = Self.KVLUTType.dtype
+    comptime k_fold_chunks = mla_decode_k_fold_chunks[
+        Self.kv_type, Self.config
+    ]()
     comptime AccumType = get_accum_type[Self.q_type]()
     # 576 / 64 = 9
     comptime NumQKBlocks = Self.config.padded_q_depth // Self.config.BN_QK
@@ -435,7 +437,6 @@ struct MLA_SM100_Decode_KV_BF16[
             out_pipeline.num_mbars()
         )  # barrier total [23 + (num_out_stages)*2]
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
         var is_leader = elect() != 0
         if warp_idx == 8:
             if is_leader:
@@ -451,16 +452,12 @@ struct MLA_SM100_Decode_KV_BF16[
                 q_tma.prefetch_descriptor()
                 k_tma.prefetch_descriptor()
                 o_tma.prefetch_descriptor()
-        elif warp_idx == 9:
-            tcgen05_alloc[Self.config.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         barrier()
 
         if warp_idx < 4:  # softmax warpgroup
             warpgroup_reg_alloc[num_reg_softmax]()
             Self.Common_MLA_Op.Softmax(
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 s_bars,
                 p_bars,
                 kv_smem.bitcast[Scalar[Self.q_type]]().as_unsafe_any_origin(),
@@ -480,7 +477,7 @@ struct MLA_SM100_Decode_KV_BF16[
         elif warp_idx >= 4 and warp_idx < 8:  # correction warpgroup
             warpgroup_reg_alloc[num_reg_correction]()
             Self.Common_MLA_Op.Correction(
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 o_bars,
                 c_bars,
                 corr_done_bars,
@@ -501,7 +498,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     q_smem.as_unsafe_any_origin(),
                     (kv_smem)
                     .bitcast[Scalar[Self.q_type]]()
@@ -513,7 +510,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 )
             elif warp_idx == 10:
                 Self.mmaPV(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     (kv_smem)
                     .bitcast[Scalar[Self.q_type]]()
                     .as_unsafe_any_origin(),
@@ -529,18 +526,12 @@ struct MLA_SM100_Decode_KV_BF16[
                     o_tma,
                     offset_position,
                 )
-        barrier()
+        syncwarp()
 
-        # PDL: Signal that this CTA is done so dependent grids (combine kernel) can start.
-        # This must be called by all threads in the CTA after all work is complete.
+        # PDL: the combine kernel can launch once every thread of the CTA has
+        # signaled (or exited), so each thread signals after its own work.
         comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
-
-        if warp_idx == 9:
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
-            tcgen05_dealloc[Self.config.cta_group](
-                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-            )
 
     # --------------------------------------------------------------------------
     # MLA decoding load_q and load_kv function
@@ -629,7 +620,9 @@ struct MLA_SM100_Decode_KV_BF16[
             elect_mask,
         )
         var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
-        paged_rows.tma_copy_k[needs_partial=False](
+        paged_rows.tma_copy_k[
+            needs_partial=False, fold_chunks=Self.k_fold_chunks
+        ](
             k_tma,
             stage_ptr,
             k0_bar[],
@@ -660,7 +653,9 @@ struct MLA_SM100_Decode_KV_BF16[
                 ),
                 elect_mask,
             )
-            paged_rows.tma_copy_k[needs_partial=False](
+            paged_rows.tma_copy_k[
+                needs_partial=False, fold_chunks=Self.k_fold_chunks
+            ](
                 k_tma,
                 stage_ptr,
                 k_mbar[],

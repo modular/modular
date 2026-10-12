@@ -18,7 +18,7 @@ from layout import Coord, TileTensor, row_major
 from nn.normalization import row_mean_of_squares_qk
 from std.testing import assert_almost_equal
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 def run_row_mean_of_squares_qk_gpu[

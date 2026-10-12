@@ -30,6 +30,7 @@ from layout import (
     Idx,
     Layout,
     TileTensor,
+    coord_to_index_list,
     row_major,
 )
 from layout._fillers import random
@@ -39,7 +40,7 @@ from std.memory import unsafe_stack_allocation
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    LayoutTensorMHAOperand,
+    TileTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.attention.gpu.nvidia.sm90.attention import kv_coord
@@ -52,26 +53,15 @@ from std.math import ceildiv
 @__llvm_arg_metadata(src_tma_tile, `nvvm.grid_constant`)
 @__llvm_arg_metadata(dst_tma_tile, `nvvm.grid_constant`)
 def mha_operand_tma_copy_kernel[
-    rank: Int,
-    tile_shape: IndexList[rank],
-    desc_shape: IndexList[rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     smem_layout: Layout,
     kv_t: MHAOperand,
     swizzle_mode: TensorMapSwizzle,
     head_size: Int,
 ](
-    src_tma_tile: TMATensorTile[
-        kv_t.dtype,
-        rank,
-        tile_shape,
-        desc_shape,
-    ],
-    dst_tma_tile: TMATensorTile[
-        kv_t.dtype,
-        rank,
-        tile_shape,
-        desc_shape,
-    ],
+    src_tma_tile: TMATensorTile[kv_t.dtype, tile_shape, desc_shape],
+    dst_tma_tile: TMATensorTile[kv_t.dtype, tile_shape, desc_shape],
     src_operand: kv_t,
     dst_operand: kv_t,
 ):
@@ -103,8 +93,8 @@ def mha_operand_tma_copy_kernel[
     # Calculate col coordinates
     # Declare row coordinates
 
-    comptime tile_m = tile_shape[0]
-    comptime elements = _idx_product[rank, tile_shape]()
+    comptime tile_m = Int(tile_shape.element_types[0].static_value.value())
+    comptime elements = _idx_product[tile_shape]()
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[kv_t.dtype]()
     # Loop over columns to copy full head size
     for kv_tile_start_row in range(0, num_keys, tile_m):
@@ -181,10 +171,9 @@ def mha_operand_copy[
     var grid_z = batch_size
 
     comptime kernel = mha_operand_tma_copy_kernel[
-        type_of(src_tma).rank,
         type_of(src_tma).tile_shape,
         type_of(src_tma).desc_shape,
-        Layout.row_major(type_of(src_tma).tile_shape),
+        Layout.row_major(coord_to_index_list(type_of(src_tma).tile_shape)),
         kv_t,
         swizzle_mode,
         head_size,
@@ -713,7 +702,7 @@ def test_tile_tensor[
             ).shape_coord()
         ),
     )
-    var src_operand = LayoutTensorMHAOperand(
+    var src_operand = TileTensorMHAOperand(
         src_tt.as_imm().as_unsafe_any_origin()
     )
 
@@ -739,7 +728,7 @@ def test_tile_tensor[
                 ).shape_coord()
             ),
         )
-        var dst_operand = LayoutTensorMHAOperand(
+        var dst_operand = TileTensorMHAOperand(
             dst_tt.as_imm().as_unsafe_any_origin()
         )
 
@@ -781,10 +770,10 @@ def test_tile_tensor[
                     ),
                 )
 
-                var src_host_operand = LayoutTensorMHAOperand(
+                var src_host_operand = TileTensorMHAOperand(
                     src_host_tt.as_unsafe_any_origin()
                 )
-                var dst_host_operand = LayoutTensorMHAOperand(
+                var dst_host_operand = TileTensorMHAOperand(
                     dst_host_tt.as_unsafe_any_origin()
                 )
 

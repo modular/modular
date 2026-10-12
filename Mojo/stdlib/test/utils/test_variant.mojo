@@ -22,6 +22,8 @@ from std.traits import (
 from std.sys import size_of
 
 from test_utils import (
+    CopyCounter,
+    MoveCounter,
     MoveCopyCounter,
     ObservableDel,
     ConfigureTrivial,
@@ -299,6 +301,24 @@ def test_variant_trivial_moveinit() raises:
     # check variant of non-movable type
     # # TODO(MOCO-3383): Compiler issue with folding non-struct types
     # assert_false(IsTriviallyMovable[Variant[NonMovable]])
+
+
+def test_variant_trivial_move_is_bitwise() raises:
+    comptime Counter = MoveCounter[Int, trivial_move=True]
+    var v1 = Variant[Counter](Counter(42))
+    var moves = v1[Counter].move_count
+    var v2 = v1^
+    assert_equal(v2[Counter].value, 42)
+    assert_equal(v2[Counter].move_count, moves)
+
+
+def test_variant_trivial_copy_is_bitwise() raises:
+    comptime Counter = CopyCounter[Int, trivial_copy=True]
+    var v1 = Variant[Counter](Counter(42))
+    var copies = v1[Counter].copy_count
+    var v2 = v1.copy()
+    assert_equal(v2[Counter].value, 42)
+    assert_equal(v2[Counter].copy_count, copies)
 
 
 def test_variant_write_to() raises:

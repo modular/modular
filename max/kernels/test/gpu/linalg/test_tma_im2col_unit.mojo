@@ -22,7 +22,7 @@ Test cases from CUTLASS (simplest first):
 """
 
 from std.sys import size_of
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, coord, row_major
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext, FuncAttribute
@@ -36,7 +36,6 @@ from layout.tma_async import (
     create_tensor_tile_im2col,
 )
 from std.memory import alloc
-from std.utils.index import Index, IndexList
 
 
 # ============================================================================
@@ -47,13 +46,12 @@ from std.utils.index import Index, IndexList
 @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
 def im2col_load_kernel[
     dtype: DType,
-    tile_rank: Int,
-    tile_shape: IndexList[tile_rank],
-    desc_shape: IndexList[tile_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     BM: Int,
     BK: Int,
 ](
-    act_tma_op: TMATensorTileIm2col[dtype, tile_rank, tile_shape, desc_shape],
+    act_tma_op: TMATensorTileIm2col[dtype, tile_shape, desc_shape],
     output_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
     k_coord: Int32,
     m_coord: Int32,
@@ -287,7 +285,7 @@ def run_im2col_test[
 
     var act_tma = create_tensor_tile_im2col[
         dtype,
-        tile_shape=Index(BM, BK),
+        tile_shape=coord[BM, BK],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
     ](
         ctx,
@@ -335,7 +333,6 @@ def run_im2col_test[
 
     comptime kernel = im2col_load_kernel[
         dtype,
-        type_of(act_tma).rank,
         type_of(act_tma).tile_shape,
         type_of(act_tma).desc_shape,
         BM,

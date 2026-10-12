@@ -210,7 +210,7 @@ def fused_rope_rmsnorm_kernel[
                     rope_q_proj[interleaved=True](
                         q_rope,
                         q_rope_output,
-                        Index(global_token_idx, head_idx, head_dim_idx),
+                        (global_token_idx, head_idx, head_dim_idx),
                         f_c,
                         rope_dim,
                     )
@@ -408,7 +408,7 @@ def fused_rope_rmsnorm_quantization_kernel[
                     ](
                         q_rope,
                         q_rope_output,
-                        Index(global_token_idx, head_idx, head_dim_idx),
+                        (global_token_idx, head_idx, head_dim_idx),
                         f_c,
                         rope_dim,
                     )

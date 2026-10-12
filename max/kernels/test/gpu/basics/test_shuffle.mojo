@@ -114,6 +114,10 @@ def test_shuffle_idx_int64(ctx: DeviceContext) raises:
     _shuffle_idx_launch_helper[.int64, 1](ctx)
 
 
+def test_shuffle_idx_fp64(ctx: DeviceContext) raises:
+    _shuffle_idx_launch_helper[.float64, 1](ctx)
+
+
 def test_shuffle_idx_int(ctx: DeviceContext) raises:
     _shuffle_idx_launch_helper[.int, 1](ctx)
 
@@ -181,6 +185,10 @@ def test_shuffle_up_fp16_packed(ctx: DeviceContext) raises:
 
 def test_shuffle_up_int64(ctx: DeviceContext) raises:
     _shuffle_up_launch_helper[.int64, 1](ctx)
+
+
+def test_shuffle_up_fp64(ctx: DeviceContext) raises:
+    _shuffle_up_launch_helper[.float64, 1](ctx)
 
 
 def test_shuffle_up_int(ctx: DeviceContext) raises:
@@ -252,6 +260,10 @@ def test_shuffle_down_int64(ctx: DeviceContext) raises:
     _shuffle_down_launch_helper[.int64, 1](ctx)
 
 
+def test_shuffle_down_fp64(ctx: DeviceContext) raises:
+    _shuffle_down_launch_helper[.float64, 1](ctx)
+
+
 def test_shuffle_down_int(ctx: DeviceContext) raises:
     _shuffle_down_launch_helper[.int, 1](ctx)
 
@@ -313,6 +325,10 @@ def test_shuffle_xor_fp16_packed(ctx: DeviceContext) raises:
 
 def test_shuffle_xor_int64(ctx: DeviceContext) raises:
     _shuffle_xor_launch_helper[.int64, 1](ctx)
+
+
+def test_shuffle_xor_fp64(ctx: DeviceContext) raises:
+    _shuffle_xor_launch_helper[.float64, 1](ctx)
 
 
 def test_shuffle_xor_int(ctx: DeviceContext) raises:
@@ -399,7 +415,8 @@ def test_warp_sum(ctx: DeviceContext) raises:
     _warp_sum_launch_helper[.float32](ctx)
     _warp_sum_launch_helper[.bfloat16](ctx)
     _warp_sum_launch_helper[.float16](ctx)
-    comptime if ctx.target.is_amd_gpu():
+    # Metal does not support DType.float64.
+    comptime if not ctx.target.is_apple_gpu():
         _warp_sum_launch_helper[.float64](ctx)
 
 
@@ -677,6 +694,12 @@ def main() raises:
         test_shuffle_xor_int64(ctx)
         test_shuffle_xor_int(ctx)
         test_shuffle_xor_uint(ctx)
+        # Metal does not support DType.float64.
+        comptime if not ctx.target.is_apple_gpu():
+            test_shuffle_idx_fp64(ctx)
+            test_shuffle_up_fp64(ctx)
+            test_shuffle_down_fp64(ctx)
+            test_shuffle_xor_fp64(ctx)
         test_warp_reduce_fp32(ctx)
         test_warp_reduce_bf16(ctx)
         test_warp_reduce_bf16_packed(ctx)

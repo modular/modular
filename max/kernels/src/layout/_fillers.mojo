@@ -31,7 +31,7 @@ from layout.coord import Coord
 
 from .layout import Layout
 from .layout_tensor import LayoutTensor
-from .tile_layout import TensorLayout
+from .tile_layout import TensorLayout, row_major
 from .tile_tensor import TileTensor
 
 from std.utils.numerics import max_finite
@@ -108,17 +108,25 @@ def _filler_impl[
         - Type casting is performed to ensure type compatibility.
     """
 
+    # Legacy fillers write the physical scalar prefix, independent of strides.
     comptime if not use_runtime_layout:
         comptime num_elements = tensor.layout.size() * tensor.element_size
-
-        comptime for i in range(num_elements):
-            var val = filler(i)
-            tensor.ptr[i] = val.cast[tensor.dtype]()
+        var static_tensor = TileTensor[
+            address_space=tensor.address_space,
+            linear_idx_type=tensor.linear_idx_type,
+        ](tensor.ptr, row_major[num_elements]())
+        _filler_impl[use_runtime_layout=use_runtime_layout](
+            static_tensor, filler
+        )
     else:
         var num_elements = tensor.runtime_layout.size() * tensor.element_size
-        for i in range(num_elements):
-            var val = filler(i)
-            tensor.ptr[i] = val.cast[tensor.dtype]()
+        var runtime_tensor = TileTensor[
+            address_space=tensor.address_space,
+            linear_idx_type=tensor.linear_idx_type,
+        ](tensor.ptr, row_major(num_elements))
+        _filler_impl[use_runtime_layout=use_runtime_layout](
+            runtime_tensor, filler
+        )
 
 
 def arange[
@@ -158,11 +166,12 @@ def arange[
     Example:
 
         ```mojo
-        from layout import Layout, LayoutTensor
+        from std.collections import Array
+        from layout import TileTensor, row_major
         from layout._fillers import arange
 
         var storage = Array[Float32, 16](uninitialized=True)
-        var tensor = LayoutTensor[.float32, Layout(4, 4)](storage)
+        var tensor = TileTensor(storage, row_major[4, 4]())
         arange(tensor, 0, 0.5, 10)  # Fills with [0, 0.5, 1, 1.5, ...]
         ```
     """
@@ -221,11 +230,12 @@ def random[
     Example:
 
         ```mojo
-        from layout import Layout, LayoutTensor
+        from std.collections import Array
+        from layout import TileTensor, row_major
         from layout._fillers import random
 
         var storage = Array[Float32, 16](uninitialized=True)
-        var tensor = LayoutTensor[.float32, Layout(4, 4)](storage)
+        var tensor = TileTensor(storage, row_major[4, 4]())
         random(tensor, -1.0, 1.0)  # Fills with random values between -1 and 1
         ```
     """
@@ -330,6 +340,7 @@ def arange[
     Example:
 
         ```mojo
+        from std.collections import Array
         from layout import TileTensor, row_major
         from layout._fillers import arange
 
@@ -396,6 +407,7 @@ def random[
     Example:
 
         ```mojo
+        from std.collections import Array
         from layout import TileTensor, row_major
         from layout._fillers import random
 

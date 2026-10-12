@@ -23,6 +23,7 @@ from layout import (
     Layout,
     RowMajorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tma_async import (
@@ -33,6 +34,9 @@ from max.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from std.logger import Logger
 from std.memory import bitcast
 
+from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+)
 from nn.attention.gpu.nvidia.common import (
     NonNullPointer,
     NullPointer,
@@ -47,7 +51,7 @@ from nn.attention.mha_utils import (
 )
 from nn.attention.gpu.nvidia.common import KVTMATile
 from std.utils.numerics import get_accum_type, nan
-from std.utils.index import Index, IndexList
+
 
 comptime logger = Logger()
 
@@ -152,6 +156,7 @@ def _unbucketed_split_error(num_partitions: Int) -> Error:
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
     MLA_SM100_Decode_Config,
+    mla_decode_k_fold_chunks,
     QOTMATile,
     ORaggedTMATile,
     ScalesTMATile,
@@ -1675,6 +1680,7 @@ def mla_decode_sm100_sink_split_k[
         depth=mla_config.input_q_depth,
         BK=mla_config.input_q_depth,
         swizzle_mode=mla_config.kv_tma_swizzle_mode,
+        fold_chunks=mla_decode_k_fold_chunks[k_t.dtype, mla_config](),
     ](ctx)
     var o_ptr = rebind[UnsafePointer[Scalar[output_type], origin=MutAnyOrigin]](
         output.ptr
@@ -2859,6 +2865,7 @@ def launch_mla_sm100_decode_enqueue_kernel[
     # the MLA decode kernel with the combine kernel, reducing host synchronization.
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
 
+    assert_sm_exclusive_smem[config.smem_used]()
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
@@ -2965,6 +2972,7 @@ def launch_mla_sm100_decode_native_fp8[
         Engine=scalar_args_buf.Engine,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    assert_sm_exclusive_smem[config.smem_used]()
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
@@ -3080,6 +3088,7 @@ def launch_mla_sm100_decode_native_fp8_layout_g[
         Engine=scalar_args_buf.Engine,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config_g.decoding_warp_split_k else PDLLevel.OFF
+    assert_sm_exclusive_smem[config_g.smem_used]()
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
@@ -3190,6 +3199,7 @@ def launch_mla_sm100_decode_fp8_per_token_scale_rope_aware[
         Engine=scalar_args_buf.Engine,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
+    assert_sm_exclusive_smem[config.smem_used]()
     ctx.enqueue_function[kernel](
         q_nope_tma,
         q_rope_tma,
@@ -3237,44 +3247,42 @@ def launch_mla_sm100_decode_sparse[
     # tile_width = padded_depth / 8 = 64 INT64 elements (nope only).
     k_nope_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.padded_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.padded_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     # K_rope gather4 TMA: BF16, SWIZZLE_128B.
     k_rope_tma: TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
                 (config.padded_depth + config.rope_depth * 2) // 2,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.bfloat16,
                 (config.padded_depth + config.rope_depth * 2) // 2,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
+        ],
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3299,43 +3307,41 @@ def launch_mla_sm100_decode_sparse[
     # Extra KV parameters (separate always-attend cache).
     extra_k_nope_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.padded_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.padded_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     extra_k_rope_tma: TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
                 (config.padded_depth + config.rope_depth * 2) // 2,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.bfloat16,
                 (config.padded_depth + config.rope_depth * 2) // 2,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
+        ],
     ],
     extra_kv_lut: KVLUTType,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -3389,11 +3395,10 @@ def launch_mla_sm100_decode_sparse[
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Sparse kernel needs extra SMEM beyond config.smem_used:
     # - 4 idx_bars barriers (4 * 8 = 32 bytes)
-    # - ptr_tmem_addr (4 bytes, UInt32)
     # - idx_smem double-buffered (2 * BN_QK * sizeof(Int32) = 512 bytes)
-    # Total extra: 548 bytes.
-    comptime sparse_extra_smem = 4 * config.mbar_size + 4 + 2 * config.BN_QK * 4
+    comptime sparse_extra_smem = 4 * config.mbar_size + 2 * config.BN_QK * 4
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
+    assert_sm_exclusive_smem[sparse_smem_used]()
     ctx.enqueue_function[kernel](
         q_tma,
         k_nope_tma,
@@ -3454,23 +3459,22 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     # Single K gather4 TMA: INT64, SWIZZLE_NONE, tile_width=72 INT64 (576 B).
     k_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3495,23 +3499,22 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     # Extra KV parameters (separate always-attend cache).
     extra_k_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     extra_kv_lut: KVLUTType,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -3563,16 +3566,16 @@ def launch_mla_sm100_decode_sparse_kv_fp8[
     # Extra SMEM beyond the BF16-rope sparse kernel's budget:
     # - 4 idx_bars barriers (4 * mbar_size bytes)
     # - per-block cvt→QK handoff bars: 9 blocks x num_kv_stages (144 bytes)
-    # - ptr_tmem_addr (4 bytes, UInt32)
     # - idx_smem double-buffered (2 * BN_QK * sizeof(Int32) = 512 bytes)
     comptime cvt_blk_bars_smem = (
         config.padded_q_depth // config.BN_QK
     ) * config.num_kv_stages * config.mbar_size
     comptime sparse_extra_smem = (
-        4 * config.mbar_size + cvt_blk_bars_smem + 4 + 2 * config.BN_QK * 4
+        4 * config.mbar_size + cvt_blk_bars_smem + 2 * config.BN_QK * 4
     )
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 
+    assert_sm_exclusive_smem[sparse_smem_used]()
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
@@ -3628,23 +3631,22 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     # and so is the same at either row width. Only the column-group count moves.
     k_tma: TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
                 config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.bfloat16,
                 config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
+        ],
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3669,23 +3671,22 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     # same descriptor shape as the main K TMA.
     extra_k_tma: TMATensorTile[
         DType.bfloat16,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.bfloat16,
                 config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.bfloat16,
                 config.input_q_depth,
                 TensorMapSwizzle.SWIZZLE_128B,
             ](),
-        ),
+        ],
     ],
     extra_kv_lut: KVLUTType,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -3733,11 +3734,11 @@ def launch_mla_sm100_decode_sparse_kv_bf16[
     comptime kernel = KernelStruct.kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Extra SMEM beyond the dense config:
-    #   - ptr_tmem_addr (4 bytes, UInt32)
     #   - idx_smem double-buffered (2 * BN_QK * sizeof(Int32) = 512 bytes)
-    comptime sparse_extra_smem = 4 + 2 * config.BN_QK * 4
+    comptime sparse_extra_smem = 2 * config.BN_QK * 4
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 
+    assert_sm_exclusive_smem[sparse_smem_used]()
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,
@@ -3795,23 +3796,22 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     # the SW64 layout the native FP8 MMA operand expects from this in SMEM.
     k_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     o_tma: ORaggedTMATile[
         dtype=output_type,
@@ -3835,23 +3835,22 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
     attn_sink_ptr: AttnSinkPtrType,
     extra_k_tma: TMATensorTile[
         DType.int64,
-        2,
-        tile_shape=IndexList[2](
+        tile_shape=coord[
             config.BK_PV,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
-        desc_shape=IndexList[2](
+        ],
+        desc_shape=coord[
             1,
             _gather4_box_width[
                 DType.int64,
                 config.input_q_depth // 8,
                 TensorMapSwizzle.SWIZZLE_NONE,
             ](),
-        ),
+        ],
     ],
     extra_kv_lut: KVLUTType,
     extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -3885,7 +3884,7 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         "------ Dispatching to SM100 Sparse MLA-DECODE (native FP8 Q+KV) ------"
     )
 
-    comptime kernel = MLA_SM100_Decode_Sparse_QKV_FP8[
+    comptime KernelType = MLA_SM100_Decode_Sparse_QKV_FP8[
         q_type=q_type,
         KVLUTType=KVLUTType,
         output_type=output_type,
@@ -3901,21 +3900,24 @@ def launch_mla_sm100_decode_sparse_qkv_fp8[
         fold_shared_index=fold_shared_index,
         q_len_fold=q_len_fold,
         Engine=scalar_args_buf.Engine,
-    ].kernel
+    ]
+    comptime kernel = KernelType.kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     # Extra SMEM beyond config.smem_used (unified-gather native FP8, no
     # cvt_blk_bars -- the second KV buffer + its pipeline are already
     # folded into config.smem_used via native_fp8_unified_gather):
     #   - idx_bars: 2*N barriers (depth matches config.num_kv_stages, N)
-    #   - ptr_tmem_addr (4 bytes, UInt32)
     #   - idx_smem, N-deep (N * BN_QK * sizeof(Int32))
+    #   - up to 8 bytes to 16-byte align idx_smem when the gather4 indices
+    #     are loaded in ld.shared.v4 batches
     comptime sparse_extra_smem = (
         2 * config.num_kv_stages * config.mbar_size
-        + 4
+        + KernelType.idx_smem_align_pad
         + config.num_kv_stages * config.BN_QK * 4
     )
     comptime sparse_smem_used = config.smem_used + sparse_extra_smem
 
+    assert_sm_exclusive_smem[sparse_smem_used]()
     ctx.enqueue_function[kernel](
         q_tma,
         k_tma,

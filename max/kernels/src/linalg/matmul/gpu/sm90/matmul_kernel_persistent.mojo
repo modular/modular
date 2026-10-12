@@ -28,7 +28,7 @@ from max.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu import thread_idx
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from layout import TensorLayout, TileTensor
+from layout import Coord, TensorLayout, TileTensor
 from layout.tma_async import TMATensorTile
 from max.gpu.memory import external_memory
 
@@ -52,22 +52,19 @@ __extension HopperMatmulSM90Kernel:
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     def run_persistent[
-        a_tma_rank: Int,
-        b_tma_rank: Int,
-        c_tma_rank: Int,
-        a_tile_shape: IndexList[a_tma_rank],
-        b_tile_shape: IndexList[b_tma_rank],
-        c_tile_shape: IndexList[c_tma_rank],
-        a_desc_shape: IndexList[a_tma_rank],
-        b_desc_shape: IndexList[b_tma_rank],
-        c_desc_shape: IndexList[c_tma_rank],
+        a_tile_shape: Coord,
+        b_tile_shape: Coord,
+        c_tile_shape: Coord,
+        a_desc_shape: Coord,
+        b_desc_shape: Coord,
+        c_desc_shape: Coord,
         grid_shape: IndexList[2],
         schedule: MatmulSchedule,
         c_tensor_layout: TensorLayout,
     ](
-        a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
-        b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
-        c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
+        a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
         c: TileTensor[
             c_type, c_tensor_layout, MutAnyOrigin, Engine=Self.c_engine
         ],
@@ -185,11 +182,10 @@ __extension HopperMatmulSM90Kernel:
     )
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     def run_unaligned[
-        c_tma_rank: Int,
-        c_tile_shape: IndexList[c_tma_rank],
-        c_desc_shape: IndexList[c_tma_rank],
+        c_tile_shape: Coord,
+        c_desc_shape: Coord,
     ](
-        c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
+        c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
         a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=Self.a_engine],
         b: TileTensor[b_type, b_layout, ImmutAnyOrigin, Engine=Self.b_engine],
         c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=Self.c_engine],

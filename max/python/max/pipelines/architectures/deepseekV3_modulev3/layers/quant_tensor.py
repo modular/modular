@@ -41,7 +41,7 @@ class QTensor(Module[[], None]):
     QTensors are :class:`~max.experimental.nn.Module` subclasses so that
     parameter discovery finds the inner tensors. They are data wrappers, not
     callable layers — pass them to a quantized kernel op
-    (e.g. ``quant_ops.matmul``).
+    (such as ``quant_ops.matmul``).
     """
 
     def forward(self) -> None:

@@ -35,7 +35,6 @@ from std.sys import (
     get_defined_bool,
     get_defined_dtype,
     get_defined_int,
-    has_amd_gpu_accelerator,
     size_of,
     simd_width_of,
 )
@@ -464,7 +463,7 @@ def _verify_results[
             )
         )
     # sum_out: bit-identical on AMD non-multimem; 1-ULP tolerance on NVIDIA.
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if fused_sum_mismatch != 0:
             raise Error(
                 String(

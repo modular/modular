@@ -34,6 +34,7 @@ from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     TextGenAggregates,
 )
+from pydantic import ValidationError
 
 pytestmark = pytest.mark.usefixtures("offline_dryrun_mocks")
 
@@ -365,6 +366,139 @@ max-benchmark-duration-s: 1500
 
     assert "max_benchmark_duration_s=300" in stdout, stdout
     assert "max_benchmark_duration_s=1500" not in stdout, stdout
+
+
+def _multiplier_cmd(
+    tmp_path: Path,
+    workload_config: Path,
+    *extra: str,
+    cli_multiplier: bool = True,
+) -> list[str]:
+    multiplier = ["--num-prompts-multiplier", "3"] if cli_multiplier else []
+    return [
+        "--model",
+        "HuggingFaceTB/SmolLM2-135M",
+        "--workload-config",
+        str(workload_config),
+        "--max-concurrency",
+        "2,4",
+        *multiplier,
+        "--log-dir",
+        str(tmp_path),
+        "--dry-run",
+        *extra,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected_duration_s"),
+    [((), 300), (("--max-benchmark-duration-s", "60"), 60)],
+)
+def test_num_prompts_multiplier_scales_per_concurrency_level(
+    tmp_path: Path,
+    workload_config: Path,
+    capsys: pytest.CaptureFixture[str],
+    extra: tuple[str, ...],
+    expected_duration_s: int,
+) -> None:
+    """Each level gets multiplier * mc prompts, with or without a duration."""
+    sweep_benchmark_serving.main(
+        _multiplier_cmd(tmp_path, workload_config, *extra)
+    )
+    stdout, _stderr = capsys.readouterr()
+
+    assert "max_concurrency=2 request_rate=inf num_prompts=6" in stdout, stdout
+    assert "max_concurrency=4 request_rate=inf num_prompts=12" in stdout, stdout
+    assert f"max_benchmark_duration_s={expected_duration_s}" in stdout, stdout
+
+
+def test_num_prompts_multiplier_conflicts_with_num_prompts(
+    tmp_path: Path, workload_config: Path
+) -> None:
+    with pytest.raises(ValueError, match="pass only one"):
+        sweep_benchmark_serving.main(
+            _multiplier_cmd(tmp_path, workload_config, "--num-prompts", "50")
+        )
+
+
+def test_num_prompts_multiplier_rejects_unbounded_concurrency(
+    tmp_path: Path, workload_config: Path
+) -> None:
+    cmd = _multiplier_cmd(tmp_path, workload_config)
+    cmd[cmd.index("2,4")] = "2,none"
+    with pytest.raises(ValueError, match="must be bounded"):
+        sweep_benchmark_serving.main(cmd)
+
+
+def test_cli_num_prompts_multiplier_overrides_workload_num_prompts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A CLI multiplier replaces the YAML's num-prompts instead of conflicting."""
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(
+        yaml.safe_dump(
+            {
+                "dataset-name": "random",
+                "random-input-len": 100,
+                "random-output-len": 50,
+                "num-prompts": 500,
+            }
+        )
+    )
+
+    sweep_benchmark_serving.main(_multiplier_cmd(tmp_path, workload_config))
+    stdout, _stderr = capsys.readouterr()
+
+    assert "num_prompts=6" in stdout, stdout
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ((), ("num_prompts=4", "num_prompts=8")),
+        (("--num-prompts", "7"), ("num_prompts=7",)),
+    ],
+)
+def test_workload_num_prompts_multiplier(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    extra: tuple[str, ...],
+    expected: tuple[str, ...],
+) -> None:
+    """A YAML multiplier applies per level unless the CLI sets the count."""
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(
+        yaml.safe_dump(
+            {
+                "dataset-name": "random",
+                "random-input-len": 100,
+                "random-output-len": 50,
+                "num-prompts-multiplier": 2,
+            }
+        )
+    )
+    sweep_benchmark_serving.main(
+        _multiplier_cmd(tmp_path, workload_config, *extra, cli_multiplier=False)
+    )
+    stdout, _stderr = capsys.readouterr()
+
+    for line in expected:
+        assert line in stdout, stdout
+
+
+def test_workload_num_prompts_multiplier_rejects_fractional(
+    tmp_path: Path,
+) -> None:
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(
+        yaml.safe_dump(
+            {"dataset-name": "random", "num-prompts-multiplier": 3.5}
+        )
+    )
+    with pytest.raises(ValidationError, match="fractional part"):
+        sweep_benchmark_serving.main(
+            _multiplier_cmd(tmp_path, workload_config, cli_multiplier=False)
+        )
 
 
 def test_cli_max_concurrency_overrides_workload_config(

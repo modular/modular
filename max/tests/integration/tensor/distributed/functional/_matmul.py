@@ -45,8 +45,8 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
-from max.experimental.sharding.placements import ReduceOp
 from max.experimental.tensor import Tensor
 
 _F32 = DType.float32
@@ -73,7 +73,7 @@ class _RowTP:
             DeviceMapping(self.MESH_1D, (Sharded(0),)),
         )
         out = matmul(lhs, rhs)
-        assert out.placements == (Partial(ReduceOp.SUM),)
+        assert out.placements == (Partial(),)
         # Row-TP: S(1) x S(0) -> Partial. Gather produces correct matmul.
         # ones(2,8) @ ones(8,4) = 8 * ones(2,4)
         np.testing.assert_allclose(
@@ -498,7 +498,8 @@ class _LayerNorm:
         b = transfer_to(
             Tensor(b_np), DeviceMapping(self.MESH_2, (Replicated(),))
         )
-        result = layer_norm(x, w, b, epsilon=1e-5)
+        with auto_reshard(mode="silent"):
+            result = layer_norm(x, w, b, epsilon=1e-5)
         assert result.placements == (Replicated(),)
 
         # Verify numerics: the result should match layer_norm on the

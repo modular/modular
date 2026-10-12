@@ -213,16 +213,20 @@ struct Struct_ep_init:
 
         # Initialize atomic counters to zero for synchronization
         # These counters coordinate work between different thread blocks.
+        # A config that can host a fused EP kernel allocates the reserved
+        # words too (`allocation_size()`); the memset zeroes them as well.
         comptime assert (
             atomic_counters_0.static_spec.static_size
             == EPLocalSyncCounters[n_experts].total_size()
+            or atomic_counters_0.static_spec.static_size
+            == EPLocalSyncCounters[n_experts].allocation_size()
         ), "Atomic counters 0 size doesn't match expected size."
         var atomic_counters_0_buf = atomic_counters_0.to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
 
         comptime assert (
             atomic_counters_1.static_spec.static_size
-            == EPLocalSyncCounters[n_experts].total_size()
+            == atomic_counters_0.static_spec.static_size
         ), "Atomic counters 1 size doesn't match expected size."
         var atomic_counters_1_buf = atomic_counters_1.to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))

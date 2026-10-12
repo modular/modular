@@ -26,8 +26,7 @@ from std.sys import (
     align_of,
     get_defined_bool,
     get_defined_int,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
+    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -40,11 +39,16 @@ from max.gpu import WARP_SIZE, lane_id
 from max.gpu.host import DeviceBuffer
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
+    Coord,
+    DefaultEngine,
     ImmTileTensor,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     TensorLayout,
+    TileTensor,
+    lt_to_tt_idx,
+    row_major,
     UNKNOWN_VALUE,
 )
 from layout.layout_tensor import LayoutTensorIter
@@ -278,7 +282,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
     def shared_mem_bytes[
         shared_kv: Bool = False, sm_90: Bool = False
     ](self) -> Int:
-        if not has_nvidia_gpu_accelerator():
+        if not default_accelerator().is_nvidia_gpu():
             return 0
 
         comptime persistent = (
@@ -301,7 +305,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
                 + self.warp_scratch_smem_size()
             )
 
-        if self.num_warps_n() > 1 or has_amd_gpu_accelerator():
+        if self.num_warps_n() > 1 or default_accelerator().is_amd_gpu():
             num_smem_elements += self.p_smem_size()
 
         var num_smem_bytes = size_of[self.dtype]() * num_smem_elements
@@ -403,25 +407,27 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             # Warp count is unchanged here; only the tile grows.
             self.num_keys_per_block = num_keys_per_block.or_else(
                 128 if (
-                    has_amd_gpu_accelerator()
+                    default_accelerator().is_amd_gpu()
                     and Self.dtype.is_float8()
                     and depth == 128
                 ) else (
                     (
                         32 if depth == 512 else 64
-                    ) if has_amd_gpu_accelerator() else depth
+                    ) if default_accelerator().is_amd_gpu() else depth
                 )
             )
             # BM
             self.num_queries_per_block = num_queries_per_block.or_else(
                 32 if Self.dtype
-                == .float32 else (128 if has_amd_gpu_accelerator() else 64)
+                == .float32 else (
+                    128 if default_accelerator().is_amd_gpu() else 64
+                )
             )
             var bk_arch_factor = 2 if num_pipeline_stages <= 2 else 1
             var bk_type_factor = 1 if Self.dtype == DType.float32 else 2
             self.BK = BK.or_else(
                 16 * bk_arch_factor * bk_type_factor
-            ) if has_nvidia_gpu_accelerator() else BK.or_else(
+            ) if default_accelerator().is_nvidia_gpu() else BK.or_else(
                 64 if Self.dtype.is_float8() else 32
             )
             self.WN = WN.or_else(
@@ -429,7 +435,7 @@ struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
             )
         self.WM = WM.or_else(
             32 if Self.dtype
-            == .float32 else (32 if has_amd_gpu_accelerator() else 16)
+            == .float32 else (32 if default_accelerator().is_amd_gpu() else 16)
         )
 
     def write_to(self, mut writer: Some[Writer]):
@@ -513,12 +519,12 @@ def _copy_frag_to_smem_nvidia[
     type0: DType,
     layout0: Layout,
     type1: DType,
-    layout1: Layout,
+    layout1: TensorLayout,
 ](
     p_smem_iter: LayoutTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
-    p_reg_tile: LayoutTensor[type1, layout1, _, address_space=.LOCAL],
+    p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],
     warp_x: UInt32,
     warp_y: UInt32,
 ):
@@ -536,14 +542,19 @@ def _copy_frag_to_smem_nvidia[
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
-    # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
-    var p_smem_tile = LayoutTensor[
-        mut=False,
-        p_smem_iter.dtype,
-        Layout.row_major(BM, BN),
-        address_space=.SHARED,
-    ](p_smem_iter.ptr)
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var p_smem_tile = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
+        p_smem_iter.ptr, row_major[BM, BN]()
+    ).as_imm()
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](
+        Coord(Int(warp_y), Int(warp_x))
+    )
+    comptime assert p_reg_tile.rank == p_reg_tile.flat_rank == 2
+    comptime assert p_reg_tile.Engine == DefaultEngine[element_width=1]
+    comptime assert p_reg_tile.element_size == 1
+    comptime assert p_reg_tile.static_shape[0] > 0
+    comptime assert p_reg_tile.static_shape[1] > 0
+    comptime assert frag_simd_width > 0
+    comptime assert p_reg_tile.static_shape[1] % frag_simd_width == 0
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
     comptime swizzle_fn = make_ldmatrix_swizzle[p_smem_tile.dtype, BK]()
@@ -551,15 +562,24 @@ def _copy_frag_to_smem_nvidia[
     comptime for n_mma in range(num_n_mmas):
         comptime for m_mma in range(num_m_mmas):
             var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
-                m_mma, n_mma
+                Coord(m_mma, n_mma)
             ).vectorize[1, frag_simd_width]()
-            var p_smem_frag = p_smem_mma_tile.distribute[
-                Layout.row_major(8, 4)
-            ](lane_id())
-            var frag_offset = p_smem_frag.distance(p_smem_tile)
+            var p_smem_frag = p_smem_mma_tile.distribute[row_major[8, 4]()](
+                lane_id()
+            )
+            var frag_offset = UInt32(
+                p_smem_frag.unsafe_ptr() - p_smem_tile.unsafe_ptr()
+            )
 
-            comptime for i in range(p_reg_vecs.shape[1]()):
-                comptime offset_in_frag = type_of(p_smem_frag).layout(i)
+            comptime for i in range(p_reg_vecs.static_shape[1]):
+                comptime offset_in_frag = (
+                    i % p_smem_frag.static_shape[0]
+                ) * p_smem_frag.static_stride[0] + (
+                    (i // p_smem_frag.static_shape[0])
+                    % p_smem_frag.static_shape[1]
+                ) * p_smem_frag.static_stride[
+                    1
+                ]
 
                 # Translate offset in BM x BN matrix to the right BM x BK tile.
                 comptime OffsetType = type_of(frag_offset)
@@ -608,12 +628,12 @@ def _copy_frag_to_smem_amd[
     type0: DType,
     layout0: Layout,
     type1: DType,
-    layout1: Layout,
+    layout1: TensorLayout,
 ](
     p_smem_iter: LayoutTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
-    p_reg_tile: LayoutTensor[type1, layout1, _, address_space=.LOCAL],
+    p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],
     warp_x: UInt32,
     warp_y: UInt32,
 ):
@@ -628,26 +648,33 @@ def _copy_frag_to_smem_amd[
 
     # This tile is used for offset computation because 1st mma output is organized
     # for BM x BN output tile. The layout for 2nd mma is in p_smem_iter.
-    # Use ImmutAnyOrigin so distance() call below does not see aliased writable args.
-    var p_smem_tile = LayoutTensor[
-        mut=False,
-        p_smem_iter.dtype,
-        Layout.row_major(BM, BN),
-        address_space=.SHARED,
-    ](p_smem_iter.ptr)
+    var p_smem_tile = TileTensor[address_space=.SHARED, linear_idx_type=.int32](
+        p_smem_iter.ptr, row_major[BM, BN]()
+    ).as_imm()
 
-    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var p_smem_warp_tile = p_smem_tile.tile[WM, WN](
+        Coord(Int(warp_y), Int(warp_x))
+    )
+    comptime assert p_reg_tile.rank == p_reg_tile.flat_rank == 2
+    comptime assert p_reg_tile.Engine == DefaultEngine[element_width=1]
+    comptime assert p_reg_tile.element_size == 1
+    comptime assert p_reg_tile.static_shape[0] > 0
+    comptime assert p_reg_tile.static_shape[1] > 0
+    comptime assert frag_simd_width > 0
+    comptime assert p_reg_tile.static_shape[1] % frag_simd_width == 0
     var p_reg_vecs = p_reg_tile.vectorize[1, frag_simd_width]()
 
     comptime for n_mma in range(num_n_mmas):
         comptime for m_mma in range(num_m_mmas):
             var p_smem_mma_tile = p_smem_warp_tile.tile[MMA_M, MMA_N](
-                m_mma, n_mma
+                Coord(m_mma, n_mma)
             ).vectorize[frag_simd_width, 1]()
-            var p_smem_frag = p_smem_mma_tile.distribute[
-                Layout.row_major(4, 16)
-            ](lane_id())
-            var frag_offset = p_smem_frag.distance(p_smem_tile)
+            var p_smem_frag = p_smem_mma_tile.distribute[row_major[4, 16]()](
+                lane_id()
+            )
+            var frag_offset = UInt32(
+                p_smem_frag.unsafe_ptr() - p_smem_tile.unsafe_ptr()
+            )
 
             comptime for i in range(frag_simd_width):
                 comptime offset_in_frag = BN * i
@@ -684,8 +711,64 @@ def _copy_frag_to_smem[
     type0: DType,
     layout0: Layout,
     type1: DType,
+    layout1: TensorLayout,
+](
+    p_smem_iter: LayoutTensorIter[
+        mut=True, type0, layout0, address_space=.SHARED, ...
+    ],
+    p_reg_tile: TileTensor[type1, layout1, address_space=.LOCAL, ...],
+    warp_x: UInt32,
+    warp_y: UInt32,
+):
+    comptime if is_nvidia_gpu():
+        _copy_frag_to_smem_nvidia[
+            BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
+        ](
+            p_smem_iter,
+            p_reg_tile,
+            warp_x,
+            warp_y,
+        )
+    elif is_amd_gpu():
+        _copy_frag_to_smem_amd[
+            BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
+        ](
+            p_smem_iter,
+            p_reg_tile,
+            warp_x,
+            warp_y,
+        )
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
+        ]()
+
+
+# Legacy LayoutTensor-overload retained: its callers still pass LayoutTensor
+# register views — gpu/mha.mojo (mha_single_batch,
+# mha_single_batch_pipelined, mha_decoding_single_batch_pipelined),
+# gpu/mla.mojo (mla_decoding_single_batch, mla_prefill_single_batch), and
+# the p-fragment scatter tests. gpu/mha.mojo's mha_decoding_single_batch
+# already passes a native TileTensor and binds to the overload above. The
+# shared-memory operand has no TileTensor iterator equivalent yet.
+@inline(.always)
+def _copy_frag_to_smem[
+    BM: Int,
+    BN: Int,
+    BK: Int,
+    WM: Int,
+    WN: Int,
+    MMA_M: Int,
+    MMA_N: Int,
+    frag_simd_width: Int,
+    *,
+    type0: DType,
+    layout0: Layout,
+    type1: DType,
     layout1: Layout,
 ](
+    # Shared-memory iterator params stay legacy: there is no TileTensor
+    # iterator equivalent yet (repo-wide migration tracking).
     p_smem_iter: LayoutTensorIter[
         mut=True, type0, layout0, address_space=.SHARED, ...
     ],
@@ -696,11 +779,25 @@ def _copy_frag_to_smem[
     comptime if is_nvidia_gpu():
         _copy_frag_to_smem_nvidia[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
-        ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+        ](
+            p_smem_iter,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
+            warp_x,
+            warp_y,
+        )
     elif is_amd_gpu():
         _copy_frag_to_smem_amd[
             BM, BN, BK, WM, WN, MMA_M, MMA_N, frag_simd_width
-        ](p_smem_iter, p_reg_tile, warp_x, warp_y)
+        ](
+            p_smem_iter,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
+            warp_x,
+            warp_y,
+        )
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()

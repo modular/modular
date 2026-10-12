@@ -17,9 +17,10 @@ Covers the two building blocks added for prefix-aware data-parallel routing:
 
 - ``compute_block_hashes``: pure block hashing that neither reads nor writes
   per-request state and chains onto existing hashes.
-- ``BlockManager.count_cached_prefix_blocks`` over the device prefix cache
-  and ``KVConnector.lookup``: contiguous, tier-ordered (device -> external)
-  hit counting with no side effects on pools, LRUs, or request state.
+- ``BlockManager.count_cached_prefix_blocks_per_replica`` over the device
+  prefix cache and the connector's tiers: contiguous, tier-ordered
+  (device -> external) hit counting with no side effects on pools, LRUs, or
+  request state.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.kv_connector import (
     ByteCount,
     CompletedTransfer,
+    KVConnector,
 )
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
     BlockManager,
@@ -109,6 +111,7 @@ class _TierStubConnector:
     def __init__(self, held: set[bytes] | None = None) -> None:
         self._held = held or set()
         self.received_hashes: list[bytes] | None = None
+        self.probes: list[tuple[list[bytes], list[int]]] = []
 
     @property
     def leaves(self) -> Mapping[str, KVCacheGroupId]:
@@ -131,6 +134,14 @@ class _TierStubConnector:
         assert all(isinstance(h, bytes) for h in block_hashes)
         self.received_hashes = list(block_hashes)
         return {"full": [h in self._held for h in block_hashes]}
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+    ) -> list[Mapping[str, Sequence[bool]]]:
+        self.probes.append((list(block_hashes), list(replica_idxs)))
+        return [self.lookup(block_hashes, replica_idx=r) for r in replica_idxs]
 
     def load(
         self,
@@ -261,7 +272,7 @@ def test_compute_block_hashes_partial_block_returns_empty() -> None:
 
 
 # ---------------------------------------------------------------------------
-# count_cached_prefix_blocks: device tier
+# count_cached_prefix_blocks_per_replica: device tier
 # ---------------------------------------------------------------------------
 
 
@@ -272,7 +283,7 @@ def test_count_device_hits_contiguous_prefix() -> None:
 
     _seed_device_prefix_cache(bm, hashes[:3])
 
-    hits = bm.count_cached_prefix_blocks(hashes)
+    hits = bm.count_cached_prefix_blocks_per_replica(hashes)[0]
     assert hits == PrefixCacheHits(device_blocks=3)
     assert hits.total_blocks == 3
 
@@ -287,7 +298,7 @@ def test_count_stops_at_device_gap() -> None:
     # but not reachable as part of the contiguous prefix.
     _seed_device_prefix_cache(bm, [hashes[0], hashes[2]])
 
-    hits = bm.count_cached_prefix_blocks(hashes)
+    hits = bm.count_cached_prefix_blocks_per_replica(hashes)[0]
     assert hits == PrefixCacheHits(device_blocks=1)
 
 
@@ -296,7 +307,10 @@ def test_count_with_no_hits_is_zero() -> None:
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
     hashes = _compute_block_hashes(bm, ctx, [])
 
-    assert bm.count_cached_prefix_blocks(hashes) == PrefixCacheHits()
+    assert (
+        bm.count_cached_prefix_blocks_per_replica(hashes)[0]
+        == PrefixCacheHits()
+    )
 
 
 def test_count_respects_prefix_caching_disabled() -> None:
@@ -304,7 +318,10 @@ def test_count_respects_prefix_caching_disabled() -> None:
     ctx = _make_ctx(np.arange(33, dtype=np.int32))
     hashes = _compute_block_hashes(bm, ctx, [])
 
-    assert bm.count_cached_prefix_blocks(hashes) == PrefixCacheHits()
+    assert (
+        bm.count_cached_prefix_blocks_per_replica(hashes)[0]
+        == PrefixCacheHits()
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -437,8 +454,8 @@ def test_count_is_read_only() -> None:
     num_free_before = bm.device_block_pool.num_free_blocks
     prefix_cache_before = dict(bm.device_block_pool.prefix_cache)
 
-    first = bm.count_cached_prefix_blocks(hashes)
-    second = bm.count_cached_prefix_blocks(hashes)
+    first = bm.count_cached_prefix_blocks_per_replica(hashes)[0]
+    second = bm.count_cached_prefix_blocks_per_replica(hashes)[0]
 
     assert first == second == PrefixCacheHits(device_blocks=2)
     assert bm.device_block_pool.num_free_blocks == num_free_before
@@ -447,7 +464,7 @@ def test_count_is_read_only() -> None:
 
 
 # ---------------------------------------------------------------------------
-# count_cached_prefix_blocks: continuation into connector tiers
+# count_cached_prefix_blocks_per_replica: continuation into connector tiers
 # ---------------------------------------------------------------------------
 
 
@@ -462,7 +479,7 @@ def test_count_continues_into_the_connectors_tiers() -> None:
     _seed_device_prefix_cache(bm, hashes[:1])
     connector._held = {hashes[1], hashes[2], hashes[4]}
 
-    hits = bm.count_cached_prefix_blocks(hashes)
+    hits = bm.count_cached_prefix_blocks_per_replica(hashes)[0]
 
     assert hits == PrefixCacheHits(device_blocks=1, external_blocks=2)
     assert hits.total_blocks == 3
@@ -477,10 +494,42 @@ def test_count_all_device_hits_skips_connector() -> None:
     hashes = _compute_block_hashes(bm, ctx, [])
     _seed_device_prefix_cache(bm, hashes)
 
-    hits = bm.count_cached_prefix_blocks(hashes)
+    hits = bm.count_cached_prefix_blocks_per_replica(hashes)[0]
 
     assert hits == PrefixCacheHits(device_blocks=4)
     assert connector.received_hashes is None
+
+
+def test_replicas_share_one_probe_of_the_external_tiers() -> None:
+    """Every replica reads its external run off one probe of the shared tier.
+
+    Replica 1's device run is a block longer than replica 0's, so its external
+    run starts a block later in the same answer rather than asking again.
+    """
+    connector = _TierStubConnector()
+    bm = BlockManager(
+        total_num_blocks=32,
+        block_size=BLOCK_SIZE,
+        connector=cast(KVConnector, connector),
+        enable_prefix_caching=True,
+        num_replicas=2,
+    )
+    ctx = _make_ctx(np.arange(41, dtype=np.int32))  # 5 full blocks
+    hashes = _compute_block_hashes(bm, ctx, [])
+    for replica_idx, depth in ((0, 1), (1, 2)):
+        pool = bm.device_block_pools[replica_idx]
+        for h in hashes[:depth]:
+            block, _ = pool.alloc_block()
+            pool.commit_into_prefix_cache(h, block)
+    connector._held = {hashes[1], hashes[2], hashes[3]}
+
+    hits = bm.count_cached_prefix_blocks_per_replica(hashes)
+
+    assert hits == [
+        PrefixCacheHits(device_blocks=1, external_blocks=3),
+        PrefixCacheHits(device_blocks=2, external_blocks=2),
+    ]
+    assert connector.probes == [(list(hashes[1:]), [0, 1])]
 
 
 # ---------------------------------------------------------------------------

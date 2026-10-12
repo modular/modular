@@ -87,7 +87,7 @@ class TextEncoder(Module[[Tensor], Tensor]):
     def adapt_loader(loader: WeightLoader) -> WeightLoader:
         """Translate this Module's parameter queries to HF Mistral3 keys.
 
-        The encoder asks for ``encoder.*`` names (e.g.
+        The encoder asks for ``encoder.*`` names (such as
         ``"encoder.layers.0.input_layernorm.weight"``); the source
         checkpoint stores them under one of several HF prefixes
         (``language_model.model.``, ``model.``, or none).  Each query is

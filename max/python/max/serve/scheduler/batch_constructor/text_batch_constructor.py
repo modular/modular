@@ -44,6 +44,7 @@ from ..lora_scheduler_utils import (
     is_active_lora,
     is_lora,
 )
+from ..utils import held_blocks_per_leaf
 from .grammar_gate import AsyncGrammarGate
 from .token_budget import (
     ActiveTokenBudget,
@@ -71,11 +72,13 @@ class _PendingCERequest:
     tokens, per replica, from a read-only probe of the device and shared
     (host/disk) cache tiers at enqueue time. The shared tiers give the same
     answer on every replica; per-replica differences come from device-cache
-    residency only.
+    residency only. ``entered_at`` is when this stay in the pool began, which
+    differs from the deferral deadline once a preempted request re-enters.
     """
 
     ctx: TextContext
     weights: list[int]
+    entered_at: float = field(default_factory=time.monotonic)
 
 
 @dataclass
@@ -759,6 +762,18 @@ class TextBatchConstructor:
             else None
         )
 
+    def _bind_pooled_request(
+        self, request_id: RequestID, replica_idx: int
+    ) -> None:
+        """Moves a request from the DP pool onto a replica."""
+        pending = self._ce_pending.pop(request_id)
+        METRICS.ce_pool_wait_time(
+            (time.monotonic() - pending.entered_at) * 1000
+        )
+        self._bind_request(
+            pending.ctx, replica_idx, ce_weight=pending.weights[replica_idx]
+        )
+
     def _ce_weight(self, ctx: TextContext) -> int:
         """Prices a bound CE request in post-prefix-cache tokens.
 
@@ -1199,8 +1214,9 @@ class TextBatchConstructor:
         """
         replica_requests = self.replicas[replica_idx]
         for ctx in reversed(list(replica_requests.ce_reqs.values())):
-            if self.kv_cache.contains(ctx) and self.kv_cache.get_req_blocks(
-                ctx
+            if (
+                self.kv_cache.contains(ctx)
+                and self.kv_cache.num_req_blocks(ctx) > 0
             ):
                 self._preempt_request(
                     ctx, replica_idx, reason=PreemptionReason.KV_CACHE_MEMORY
@@ -1302,14 +1318,14 @@ class TextBatchConstructor:
                         replica_idx, no_other_work
                     )
                     if fatal:
-                        held_blocks = len(self.kv_cache.get_req_blocks(ctx))
+                        held_blocks = held_blocks_per_leaf(self.kv_cache, ctx)
                         raise InsufficientBlocksError(
                             f"_add_ce_requests: InsufficientBlocksError is "
                             f"fatal on replica {replica_idx} -- no other "
                             f"work and nothing in flight to free blocks. "
                             f"Request {ctx.request_id} has "
                             f"{len(ctx.tokens)} tokens and already holds "
-                            f"{held_blocks} blocks. {e}"
+                            f"blocks per leaf {held_blocks}. {e}"
                         ) from e
                     self._return_to_request_queue(ctx, replica_idx)
                     break
@@ -1409,8 +1425,8 @@ class TextBatchConstructor:
                             replica_idx, no_other_work=len(batch) == 0
                         )
                         if fatal:
-                            held_blocks = len(
-                                self.kv_cache.get_req_blocks(candidate_context)
+                            held_blocks = held_blocks_per_leaf(
+                                self.kv_cache, candidate_context
                             )
                             raise InsufficientBlocksError(
                                 f"_add_tg_requests: InsufficientBlocksError "
@@ -1419,8 +1435,8 @@ class TextBatchConstructor:
                                 f"blocks. Request "
                                 f"{candidate_context.request_id} has "
                                 f"{len(candidate_context.tokens)} tokens "
-                                f"and already holds {held_blocks} "
-                                f"blocks. {e}"
+                                f"and already holds blocks per leaf "
+                                f"{held_blocks}. {e}"
                             ) from e
                         return
 
@@ -1624,7 +1640,9 @@ class TextBatchConstructor:
         - Deferrable mid-prefill tails (per replica, all-or-nothing) and then
           pooled unbound requests are added largest-first wherever they
           strictly improve the step's occupancy (mean/max of per-replica CE
-          tokens, capped at the CE chunk budget).
+          tokens, capped at the CE chunk budget). When no replica has TG
+          work, as on a prefill-only worker, pooled requests instead fill
+          the step up to that budget: holding them back would idle the fleet.
         - Pooled requests bind to the replica with the lightest queue total
           plus their own weight, at the moment the planner schedules them:
           binding is deferred until first run so it uses fresh loads.
@@ -1686,11 +1704,7 @@ class TextBatchConstructor:
             weights = self._ce_pending[req_id].weights
             replica_idx = min(seated, key=lambda i: sum(queues[i]) + weights[i])
             queues[replica_idx].append(weights[replica_idx])
-            self._bind_request(
-                self._ce_pending.pop(req_id).ctx,
-                replica_idx,
-                ce_weight=weights[replica_idx],
-            )
+            self._bind_pooled_request(req_id, replica_idx)
 
         # The floor: per-replica step CE tokens that run no matter what,
         # capped at the CE chunk budget. A replica's tails are deferrable only
@@ -1733,6 +1747,7 @@ class TextBatchConstructor:
 
         # Pooled requests may only bind to replicas running CE this step
         # (otherwise they would queue behind a deferred tail).
+        no_tg_work = all(not replica.tg_reqs for replica in self.replicas)
         pool_binds: list[tuple[RequestID, int]] = []
         for req_id, pending in sorted(
             self._ce_pending.items(),
@@ -1753,15 +1768,17 @@ class TextBatchConstructor:
             trial[replica_idx] = min(
                 trial[replica_idx] + pending.weights[replica_idx], target
             )
-            if max(step_load) == 0 or _occupancy(trial) > _occupancy(step_load):
+            if (
+                no_tg_work
+                or max(step_load) == 0
+                or _occupancy(trial) > _occupancy(step_load)
+            ):
                 step_load = trial
                 queues[replica_idx].append(pending.weights[replica_idx])
                 pool_binds.append((req_id, replica_idx))
 
         floor_exists = any(floor)
-        fleet_idle = not floor_exists and all(
-            not replica.tg_reqs for replica in self.replicas
-        )
+        fleet_idle = not floor_exists and no_tg_work
         threshold = self.scheduler_config.dp_ce_balance_threshold
         occupancy = _occupancy(step_load)
         # A below-threshold step with work on 2+ replicas need not be held:
@@ -1789,12 +1806,7 @@ class TextBatchConstructor:
             or can_reduce_chunk_size
         ):
             for req_id, replica_idx in pool_binds:
-                pending = self._ce_pending.pop(req_id)
-                self._bind_request(
-                    pending.ctx,
-                    replica_idx,
-                    ce_weight=pending.weights[replica_idx],
-                )
+                self._bind_pooled_request(req_id, replica_idx)
             self._ce_deferred_replicas = deferred
 
             if (

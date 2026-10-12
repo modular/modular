@@ -16,7 +16,7 @@ from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 
 from nn.argsort import argsort
-from std.testing import assert_equal
+from std.testing import assert_equal, assert_false, assert_true
 
 
 def linear_filler(i: Int, n: Int) -> Float32:
@@ -25,6 +25,14 @@ def linear_filler(i: Int, n: Int) -> Float32:
 
 def reverse_filler(i: Int, n: Int) -> Float32:
     return Float32(n - i)
+
+
+def scrambled_filler(i: Int, n: Int) -> Float32:
+    return Float32((i * 73 + 19) % n - n // 2)
+
+
+def repeated_filler(i: Int, n: Int) -> Float32:
+    return Float32((i * 73) % 17 - 8)
 
 
 def test_argsort[
@@ -65,6 +73,8 @@ def test_argsort[
     # Copy results back
     var indices_host_ptr = ctx.enqueue_create_host_buffer[.int64](N)
     ctx.enqueue_copy(indices_host_ptr, device_indices)
+    var input_after = ctx.enqueue_create_host_buffer[dtype](N)
+    ctx.enqueue_copy(input_after, device_input)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
@@ -75,16 +85,30 @@ def test_argsort[
     )
     argsort[ascending=ascending](expected_indices, input_host)
 
+    # Equal keys may have different index orders on CPU and GPU. Check the
+    # gathered values and the complete permutation instead of tie order.
+    var seen = List[Bool](length=N, fill=False)
     for i in range(N):
+        var index = Int(indices_host_ptr[i])
+        assert_true(
+            index >= 0 and index < N,
+            msg=String(t"index {index} is out of range for N={N}"),
+        )
+        assert_false(
+            seen[index],
+            msg=String(t"duplicate index {index} for N={N}"),
+        )
+        seen[index] = True
         assert_equal(
-            indices_host_ptr[i],
-            expected_indices_ptr[i],
+            input_host_ptr[index],
+            input_host_ptr[Int(expected_indices_ptr[i])],
             msg=String(
                 t"indices[{i}] = {indices_host_ptr[i]} expected_indices[{i}] ="
                 t" {expected_indices_ptr[i]} N = {N} ascending = {ascending} at"
                 t" position {i}"
             ),
         )
+        assert_equal(input_after[i], input_host_ptr[i])
 
     # Cleanup device buffers
     _ = device_indices^
@@ -104,8 +128,22 @@ def test_argsort_helper[
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=1024)
 
 
+def test_argsort_multiblock[
+    *, dtype: DType, ascending: Bool
+](ctx: DeviceContext) raises:
+    for n in [255, 256, 257, 300, 448, 511, 512, 513, 1024, 4096]:
+        test_argsort[dtype, filler=scrambled_filler, ascending=ascending](
+            ctx, n
+        )
+        test_argsort[dtype, filler=repeated_filler, ascending=ascending](ctx, n)
+
+
 def main() raises:
-    with DeviceContext() as ctx:  # argmax tests
+    with DeviceContext() as ctx:
+        test_argsort_multiblock[dtype=DType.float32, ascending=True](ctx)
+        test_argsort_multiblock[dtype=DType.float32, ascending=False](ctx)
+        test_argsort_multiblock[dtype=DType.int64, ascending=True](ctx)
+        test_argsort_multiblock[dtype=DType.int64, ascending=False](ctx)
         test_argsort_helper[
             dtype=DType.float32, filler=linear_filler, ascending=True
         ](ctx)

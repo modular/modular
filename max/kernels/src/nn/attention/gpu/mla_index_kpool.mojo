@@ -36,6 +36,11 @@ from std.math import ceildiv, exp, max
 from layout import TensorEngine, TensorLayout, TileTensor
 
 from max.gpu import block_dim, block_idx, thread_idx
+from max.gpu.primitives import block
+
+# Threads per `kpool_expand_topk_kernel` block. The kernel compacts the selected
+# pools with block-wide scans, so every launch must use exactly this width.
+comptime KPOOL_EXPAND_BLOCK_SIZE = 128
 
 
 @inline(.always)
@@ -712,14 +717,21 @@ def kpool_expand_topk_kernel[
     The indexer selects pools; attention reads tokens. Each selected pool
     expands to the `kpool` consecutive positions it covers.
 
-    An unselected slot expands to `-1` in every one of its positions, never to
-    a clamped valid one, which would point attention at a token the indexer did
-    not choose.
+    With `always_select_tail` the row also carries up to `kpool - 1` of the
+    query's most recent positions, the ones no complete pool covers yet. Their
+    location comes from the query's visible count, so it tracks the pool
+    currently being filled.
 
-    With `always_select_tail` the output carries `kpool - 1` further columns
-    holding the query's most recent positions, the ones no complete pool covers
-    yet. Their location comes from the query's visible count, so it tracks the
-    pool currently being filled.
+    Each row is packed: the selected pools first, in selection order, then the
+    tail, then `-1` in every remaining column. Unselected slots never become
+    clamped valid positions, which would point attention at a token the
+    indexer did not choose. Packing keeps every valid entry ahead of the
+    padding, so a row has at most `visible` leading valid entries; the sparse
+    decode bounds its scan by the context length and would otherwise skip a
+    tail placed in the last columns.
+
+    Launch with `KPOOL_EXPAND_BLOCK_SIZE` threads per block, one block per
+    token row.
 
     Parameters:
         OutLayoutType: Layout of `out_indices`.
@@ -748,7 +760,13 @@ def kpool_expand_topk_kernel[
     """
     comptime tail_width = (kpool - 1) if always_select_tail else 0
     comptime out_width = pool_topk * kpool + tail_width
+    comptime pools_per_thread = ceildiv(pool_topk, KPOOL_EXPAND_BLOCK_SIZE)
 
+    debug_assert(
+        Int(block_dim.x) == KPOOL_EXPAND_BLOCK_SIZE,
+        "kpool_expand_topk_kernel needs KPOOL_EXPAND_BLOCK_SIZE threads",
+    )
+    # Uniform across the block, so returning before the block scans is safe.
     var token_idx = block_idx.x
     if token_idx >= Int(total_seq_len):
         return
@@ -764,21 +782,49 @@ def kpool_expand_topk_kernel[
     # Causal: a query sees its own position and everything before it.
     var visible = Int(cache_lengths[b]) + local + 1
 
-    var tail_count = visible % kpool
+    var tail_count = (visible % kpool) if always_select_tail else 0
     var tail_start = visible - tail_count
 
-    var col = thread_idx.x
+    # Each thread owns a contiguous run of pool slots, so a scan of the
+    # per-thread counts gives every selected pool its packed rank in selection
+    # order, and the last thread's inclusive sum is the row's total.
+    var row = token_idx * pool_topk
+    var first_slot = Int(thread_idx.x) * pools_per_thread
+    var pids = Array[Int32, pools_per_thread](fill=-1)
+    var num_selected = 0
+    for i in range(pools_per_thread):
+        var j = first_slot + i
+        if j < pool_topk:
+            pids[i] = pool_ids.raw_load(row + j)
+            if pids[i] >= 0:
+                num_selected += 1
+    var inclusive = block.prefix_sum[block_size=KPOOL_EXPAND_BLOCK_SIZE](
+        Int32(num_selected)
+    )
+    var rank = Int(inclusive) - num_selected
+    var total_selected = Int(
+        block.broadcast[block_size=KPOOL_EXPAND_BLOCK_SIZE](
+            inclusive, src_thread=KPOOL_EXPAND_BLOCK_SIZE - 1
+        )
+    )
+
+    var out_row = token_idx * out_width
+    for i in range(pools_per_thread):
+        var pid = Int(pids[i])
+        if pid >= 0:
+            for c in range(kpool):
+                out_indices.raw_store(
+                    out_row + rank * kpool + c, Int32(pid * kpool + c)
+                )
+            rank += 1
+
+    var packed = total_selected * kpool
+    var col = packed + Int(thread_idx.x)
     while col < out_width:
-        var value = Int32(-1)
-        if col < pool_topk * kpool:
-            var pid = Int(
-                pool_ids.raw_load(token_idx * pool_topk + col // kpool)
-            )
-            if pid >= 0:
-                value = Int32(pid * kpool + col % kpool)
-        else:
-            var tail_idx = col - pool_topk * kpool
-            if tail_idx < tail_count:
-                value = Int32(tail_start + tail_idx)
-        out_indices.raw_store(token_idx * out_width + col, value)
-        col += block_dim.x
+        var tail_idx = col - packed
+        out_indices.raw_store(
+            out_row + col,
+            Int32(tail_start + tail_idx) if tail_idx
+            < tail_count else Int32(-1),
+        )
+        col += KPOOL_EXPAND_BLOCK_SIZE

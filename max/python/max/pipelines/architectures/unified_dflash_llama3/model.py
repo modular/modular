@@ -94,7 +94,7 @@ class UnifiedDflashLlama3Inputs(UnifiedSpecDecodeInputs):
 
 class UnifiedDflashLlama3Model(
     _UnifiedSpecDecodeModelMixin,
-    GraphPipelineModelWithKVCache[TextContext],
+    GraphPipelineModelWithKVCache[TextContext, UnifiedDflashLlama3Config],
 ):
     """Unified DFlash Llama3: target + draft in one compiled graph."""
 
@@ -261,10 +261,9 @@ class UnifiedDflashLlama3Model(
         self,
         session: InferenceSession,
         state_dict: dict[str, Any],
-        model_config: Any,
+        model_config: UnifiedDflashLlama3Config,
     ) -> tuple[Graph, dict[str, Any]]:
         del session
-        assert isinstance(model_config, UnifiedDflashLlama3Config)
 
         nn_model = UnifiedDflashLlama3Module(model_config)
 

@@ -487,48 +487,53 @@ def bench_shape[
         @__copy_capture(kv_out_ptr)
         def k_in[
             width: Int, alignment: Int
-        ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
-            return (_any(kv_out_ptr) + idx[0] * kv_dim + idx[2]).load[
-                width=width
-            ]()
+        ](idx: Coord) capturing -> SIMD[OUT_DTYPE, width]:
+            return (
+                _any(kv_out_ptr)
+                + Int(idx[0].value()) * kv_dim
+                + Int(idx[2].value())
+            ).load[width=width]()
 
         @inline(.always)
         @__copy_capture(kv_out_ptr, total_seq)
         def v_in[
             width: Int, alignment: Int
-        ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
+        ](idx: Coord) capturing -> SIMD[OUT_DTYPE, width]:
             return (
-                _any(kv_out_ptr) + total_seq * kv_dim + idx[0] * kv_dim + idx[2]
+                _any(kv_out_ptr)
+                + total_seq * kv_dim
+                + Int(idx[0].value()) * kv_dim
+                + Int(idx[2].value())
             ).load[width=width]()
 
         @inline(.always)
         @__copy_capture(kv_out_ptr, total_seq)
         def ik_in[
             width: Int, alignment: Int
-        ](idx: IndexList[3]) capturing -> SIMD[OUT_DTYPE, width]:
+        ](idx: Coord) capturing -> SIMD[OUT_DTYPE, width]:
             return (
                 _any(kv_out_ptr)
                 + 2 * total_seq * kv_dim
-                + idx[0] * ik_dim
-                + idx[2]
+                + Int(idx[0].value()) * ik_dim
+                + Int(idx[2].value())
             ).load[width=width]()
 
         kv_cache_store_ragged[target="gpu", input_fn=k_in](
             main_collection.get_key_cache(layer_idx),
-            IndexList[3](total_seq, MAIN_KV_HEADS, HEAD_SIZE),
+            (total_seq, MAIN_KV_HEADS, HEAD_SIZE),
             iro_tt,
             ctx,
         )
         kv_cache_store_ragged[target="gpu", input_fn=v_in](
             main_collection.get_value_cache(layer_idx),
-            IndexList[3](total_seq, MAIN_KV_HEADS, HEAD_SIZE),
+            (total_seq, MAIN_KV_HEADS, HEAD_SIZE),
             iro_tt,
             ctx,
         )
         comptime if HAS_INDEXER:
             kv_cache_store_ragged[target="gpu", input_fn=ik_in](
                 index_collection.get_key_cache(layer_idx),
-                IndexList[3](total_seq, 1, HEAD_SIZE),
+                (total_seq, 1, HEAD_SIZE),
                 iro_tt,
                 ctx,
             )

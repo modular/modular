@@ -24,6 +24,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import H100
 from layout import (
     Layout,
+    coord,
     DefaultEngine,
     TensorLayout,
     TensorEngine,
@@ -347,29 +348,39 @@ def _warp_specialize_gemm_with_multicasting_impl[
 
     comptime c_smem_rows = c_smem_rows_reg if not swapAB else c_smem_rows_swapAB
     comptime c_smem_cols = c_smem_cols_reg if not swapAB else c_smem_cols_swapAB
-    comptime c_smem_tile = Index(c_smem_rows, c_smem_cols)
+    comptime c_smem_tile = coord[c_smem_rows, c_smem_cols]
 
     # BK is always 64
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
+        Int32(
+            min(
+                log2_floor(c_smem_tile.element_types[1].static_value // 8),
+                3,
+            )
+        )
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
     var c_tma_op = create_tma_tile_template[
         c_type,
-        2,
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
+        __desc_shape=coord[
+            c_smem_tile.element_types[0].static_value,
+            c_smem_tile.element_types[1].static_value,
+        ],
     ]()
 
     comptime if use_tma_store:
         c_tma_op = create_tensor_tile[
             c_smem_tile,
             swizzle_mode=c_swizzle,
-            __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
+            __desc_shape=coord[
+                c_smem_tile.element_types[0].static_value,
+                c_smem_tile.element_types[1].static_value,
+            ],
         ](ctx, c_device)
 
     var lut_ptr = ctx.enqueue_create_buffer[.uint32](0)
@@ -479,24 +490,23 @@ def _warp_specialize_gemm_with_multicasting_impl[
     comptime if k_align == 16:
         comptime if not swapAB:
             var a_tma_op = create_tensor_tile[
-                Index(
-                    BM // CLUSTER_N, BK
-                ) if config.partitioned_multicast else Index(BM, BK),
+                coord[
+                    BM // CLUSTER_N if config.partitioned_multicast else BM,
+                    BK,
+                ],
                 swizzle_mode=a_swizzle,
             ](ctx, a_device)
 
             var b_tma_op = create_tensor_tile[
-                Index(
-                    BN // CLUSTER_M, BK
-                ) if config.partitioned_multicast else Index(BN, BK),
+                coord[
+                    BN // CLUSTER_M if config.partitioned_multicast else BN,
+                    BK,
+                ],
                 swizzle_mode=b_swizzle,
             ](ctx, b_device)
 
             comptime if schedule != MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_regular[].run_persistent[
-                    type_of(a_tma_op).rank,
-                    type_of(b_tma_op).rank,
-                    type_of(c_tma_op).rank,
                     type_of(a_tma_op).tile_shape,
                     type_of(b_tma_op).tile_shape,
                     type_of(c_tma_op).tile_shape,
@@ -526,9 +536,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
                 comptime kernel = matmul_kernel_regular[
                     hilbert_swizzle=hilbert_swizzle
                 ].run[
-                    type_of(a_tma_op).rank,
-                    type_of(b_tma_op).rank,
-                    type_of(c_tma_op).rank,
                     type_of(a_tma_op).tile_shape,
                     type_of(b_tma_op).tile_shape,
                     type_of(c_tma_op).tile_shape,
@@ -558,24 +565,23 @@ def _warp_specialize_gemm_with_multicasting_impl[
                 )
         else:
             var a_tma_op = create_tensor_tile[
-                Index(
-                    BM // CLUSTER_N, BK
-                ) if config.partitioned_multicast else Index(BM, BK),
+                coord[
+                    BM // CLUSTER_N if config.partitioned_multicast else BM,
+                    BK,
+                ],
                 swizzle_mode=a_swizzle,
             ](ctx, b_device)
 
             var b_tma_op = create_tensor_tile[
-                Index(
-                    BN // CLUSTER_M, BK
-                ) if config.partitioned_multicast else Index(BN, BK),
+                coord[
+                    BN // CLUSTER_M if config.partitioned_multicast else BN,
+                    BK,
+                ],
                 swizzle_mode=b_swizzle,
             ](ctx, a_device)
 
             comptime if schedule == MatmulSchedule.NONE:
                 comptime kernel = matmul_kernel_swapAB.run[
-                    type_of(a_tma_op).rank,
-                    type_of(b_tma_op).rank,
-                    type_of(c_tma_op).rank,
                     type_of(a_tma_op).tile_shape,
                     type_of(b_tma_op).tile_shape,
                     type_of(c_tma_op).tile_shape,
@@ -611,7 +617,6 @@ def _warp_specialize_gemm_with_multicasting_impl[
             swapAB == False
         ), "swapAB is not supported for unaligned kernel"
         comptime kernel = matmul_kernel_regular[].run_unaligned[
-            type_of(c_tma_op).rank,
             type_of(c_tma_op).tile_shape,
             type_of(c_tma_op).desc_shape,
         ]
@@ -812,35 +817,40 @@ def warp_specialize_gemm_with_multicasting_splitk[
         config.num_pipeline_stages,
         k_group_size,
     ]()
-    comptime c_smem_tile = Index(
+    comptime c_smem_tile = coord[
         c_smem_layout.shape[0].value(),
         c_smem_layout.shape[1].value() // config.num_consumer,
-    )
+    ]
 
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
     # make sure TMA_BN = 64 -> 128B swizzle, 32 -> 64B swizzle and etc.
     comptime c_swizzle = TensorMapSwizzle(
-        Int32(min(log2_floor(c_smem_tile[1] // 8), 3))
+        Int32(
+            min(
+                log2_floor(c_smem_tile.element_types[1].static_value // 8),
+                3,
+            )
+        )
     ) if use_tma_store else TensorMapSwizzle.SWIZZLE_NONE
 
+    comptime pm_a = (BM // CLUSTER_N if config.partitioned_multicast else BM)
+    comptime pm_b = (BN // CLUSTER_M if config.partitioned_multicast else BN)
     var a_tma_op = create_tensor_tile[
-        Index(BM // CLUSTER_N, BK) if config.partitioned_multicast else Index(
-            BM, BK
-        ),
+        coord[pm_a, BK],
         swizzle_mode=a_swizzle,
     ](ctx, a_device)
     var b_tma_op = create_tensor_tile[
-        Index(BN // CLUSTER_M, BK) if config.partitioned_multicast else Index(
-            BN, BK
-        ),
+        coord[pm_b, BK],
         swizzle_mode=b_swizzle,
     ](ctx, b_device)
-
     var c_tma_op = create_tensor_tile[
         c_smem_tile,
         swizzle_mode=c_swizzle,
-        __desc_shape=Index(c_smem_tile[0], c_smem_tile[1]),
+        __desc_shape=coord[
+            c_smem_tile.element_types[0].static_value,
+            c_smem_tile.element_types[1].static_value,
+        ],
     ](ctx, c_device)
 
     comptime scheduler = SplitKTileScheduler[
@@ -923,9 +933,6 @@ def warp_specialize_gemm_with_multicasting_splitk[
     ), "requested SMEM size exceeds 227KB limit."
 
     comptime kernel = matmul_kernel.run_splitk[
-        type_of(a_tma_op).rank,
-        type_of(b_tma_op).rank,
-        type_of(c_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(b_tma_op).tile_shape,
         type_of(c_tma_op).tile_shape,

@@ -256,18 +256,18 @@ struct ZPointer[T: AnyType](TrivialRegisterPassable):
         )
 
 
-trait ConvertibleToZLayoutTensor:
-    def to_tensor(self) -> ZLayoutTensor:
+trait ConvertibleToZTileTensor:
+    def to_tensor(self) -> ZTileTensor:
         ...
 
 
-struct ZLayoutTensor(TrivialRegisterPassable):
+struct ZTileTensor(TrivialRegisterPassable):
     def __init__(out self):
         pass
 
     @implicit
-    def __init__[C: ConvertibleToZLayoutTensor](out self, c: C):
-        var z: ZLayoutTensor = c.to_tensor()
+    def __init__[C: ConvertibleToZTileTensor](out self, c: C):
+        var z: ZTileTensor = c.to_tensor()
 
 
 @fieldwise_init
@@ -278,9 +278,9 @@ struct DeviceFunction[*ArgTypes: TrivialRegisterPassable]:
 
 
 @fieldwise_init
-struct ManagedLayoutTensor(ConvertibleToZLayoutTensor, Movable where False):
-    def to_tensor(self) -> ZLayoutTensor:
-        return ZLayoutTensor()
+struct ManagedTileTensor(ConvertibleToZTileTensor, Movable where False):
+    def to_tensor(self) -> ZTileTensor:
+        return ZTileTensor()
 
 
 # Never converted, the GPU just uses this one directly
@@ -289,7 +289,7 @@ struct NDBuffer(TrivialRegisterPassable):
     pass
 
 
-def kernel(t: ZLayoutTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
+def kernel(t: ZTileTensor, p: ZPointer[Int], n: NDBuffer) -> Int:
     return 73
 
 
@@ -303,12 +303,12 @@ def compile[
 
 def main():
     var thing = compile[kernel]()
-    var mlt = ManagedLayoutTensor()
+    var mtt = ManagedTileTensor()
     var ndb = NDBuffer()
     # This ZBool() is incorrect, not even close to the ZPointer[Int] that's
     # expected.
     # expected-error @below {{invalid call to 'call': value passed to 'args' cannot be converted from 'ZBool' to 'ZPointer[Int]'}}
-    var result1 = thing.call(mlt, ZBool(), ndb)
+    var result1 = thing.call(mtt, ZBool(), ndb)
 
 
 # // -----

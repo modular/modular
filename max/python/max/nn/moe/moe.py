@@ -312,12 +312,12 @@ class MoE(Module, Shardable):
         shared_experts_dtype: Weight storage dtype for shared-expert MLPs. When
             equal to ``dtype`` (routed experts) and ``quant_config`` is set,
             shared experts use the same quantization as routed experts. When
-            different (e.g. BF16 shared weights with packed NVFP4 routed experts),
+            different (such as BF16 shared weights with packed NVFP4 routed experts),
             shared linears omit ``quant_config`` unless
             ``shared_experts_quant_config`` is set. Defaults to ``dtype``.
         shared_experts_quant_config: Optional separate :class:`QuantConfig` for
             shared-expert MLPs when their storage dtype differs from routed
-            experts (e.g. MXFP8 shared with NVFP4 routed). Defaults to
+            experts (such as MXFP8 shared with NVFP4 routed). Defaults to
             ``None``.
         pre_expert_norm_cls: A callable that returns a normalization
             module to apply before expert computation. Defaults to
@@ -711,6 +711,9 @@ class MoE(Module, Shardable):
         # innermost rows are now interleaved (g_0, u_0, g_1, u_1, ...). One
         # bulk permute replaces E per-expert stacks to keep the graph small
         # and the constant-folding tractable.
+        # Must precede the AMD preb permutation, which interleaves N with K
+        # and leaves no logical rows to permute; the strategy applies it to
+        # this tensor at the grouped matmul.
         if self._uses_fused_swiglu_layout():
             shard = shard.reshape([len(gate_list), 2, -1, k_dim])
             shard = ops.permute(shard, [0, 2, 1, 3])
@@ -751,6 +754,33 @@ class MoE(Module, Shardable):
         Overridden in :class:`MoEQuantized` for NVFP4 support.
         """
         return None
+
+    def _can_fuse_megaffn_ep(self) -> bool:
+        """Whether this layer runs the one-launch fused EP MoE.
+
+        ``False`` on the base class: unquantized experts (for example the
+        bf16 MTP draft layer of an NVFP4 checkpoint) keep the shipping
+        dispatch / FFN / combine chain. :class:`MoEQuantized` overrides it.
+        Unlike the fused combine send this never raises: the fused workspace
+        is planned in addition to the shipping buffers, so falling back
+        cannot under-reserve.
+        """
+        return False
+
+    def _ep_fused_forward(
+        self,
+        x: TensorValue,
+        topk_ids: TensorValue,
+        router_weights: TensorValue,
+    ) -> TensorValue:
+        """Routed-expert output of the one-launch fused EP MoE.
+
+        Only reached when :meth:`_can_fuse_megaffn_ep` is ``True``.
+        """
+        raise NotImplementedError(
+            "the one-launch fused EP MoE needs quantized (NVFP4 or MXFP8)"
+            " experts"
+        )
 
     def _swigluoai_activation(self, gate_up: TensorValue) -> TensorValue:
         """Applies the configured OAI-style clamped SwiGLU activation."""

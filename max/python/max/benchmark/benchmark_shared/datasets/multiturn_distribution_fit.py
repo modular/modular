@@ -14,7 +14,7 @@
 """Build multiturn :class:`ChatSamples` from a pool of user texts and CLI distributions.
 
 Used when ``--fit-distributions`` is set so real datasets (instruct-coder,
-agentic-code, etc.) match ``--random-*`` and ``--delay-between-chat-turns``
+agentic-code and so on) match ``--random-*`` and ``--delay-between-chat-turns``
 the same way as :class:`RandomBenchmarkDataset` multiturn mode.
 """
 

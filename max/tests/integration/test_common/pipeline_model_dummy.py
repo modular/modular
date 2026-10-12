@@ -449,28 +449,6 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
     config=DummyLlamaArchConfig,
 )
 
-DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
-    name="LlamaForCausalLM",
-    task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=[
-        "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
-        "jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
-        "modularai/Llama-3.1-8B-Instruct-GGUF",
-    ],
-    default_encoding="float32",
-    supported_encodings={
-        "gptq",
-        "float32",
-        "bfloat16",
-    },
-    pipeline_model=DummyLlamaPipelineModel,
-    tokenizer=DummyTextTokenizer,
-    context_type=TextContext,
-    multi_gpu_supported=True,
-    default_weights_format=WeightsFormat.gguf,
-    config=DummyLlamaArchConfig,
-)
-
 DUMMY_GEMMA_ARCH = SupportedArchitecture(
     name="Gemma3ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,

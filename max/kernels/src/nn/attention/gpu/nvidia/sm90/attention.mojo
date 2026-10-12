@@ -16,11 +16,10 @@ SM90 (Hopper) multi-head attention producer-side helpers.
 
 Re-exports shared NVIDIA attention primitives from `common` and provides the
 SM90-specific implementations of `produce` (TMA-based Q/K/V tile staging),
-`_apply_mask`, `_get_position`, `get_q_head_idx`, `output_reg_to_smem`, and
-`_optional_lt_to_tt` consumed by the `sm90/mha.mojo` kernel.
+`_apply_mask`, `_get_position`, `get_q_head_idx`, and `output_reg_to_smem`
+consumed by the `sm90/mha.mojo` kernel.
 """
 
-from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import ufloordiv
 from std.math.constants import log2e
@@ -33,13 +32,15 @@ from max.gpu import thread_idx
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
+    Coord,
     IntTuple,
     Layout,
     LayoutTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
+    TensorLayout,
+    TileTensor,
     row_major,
 )
+from layout.tensor_engine import DefaultEngine
 from layout.layout_tensor import copy_local_to_shared
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import tile_layout_k_major
@@ -77,7 +78,7 @@ from std.utils import StaticTuple
 
 # Re-export shared NVIDIA attention primitives that now live in `common`, so
 # the helpers kept in this file (`produce`, `_apply_mask`, `_get_position`,
-# `get_q_head_idx`, `output_reg_to_smem`, `_optional_lt_to_tt`) and external
+# `get_q_head_idx`, `output_reg_to_smem`) and external
 # sm90 consumers (e.g. `sm90/mha.mojo`) keep resolving them via this module.
 from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
@@ -87,37 +88,17 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     OptionalPointer,
     Pack,
-    QTMATile,
+    QTMATilePrefill,
+    QTMATileFused,
     _LocalTT,
     _SharedMemTT,
     elect,
     kv_coord,
     output_reg_to_smem_st_matrix,
     q_coord,
-    q_tma,
+    q_tma_fused,
+    q_tma_prefill,
 )
-
-
-@inline(.always)
-def _optional_lt_to_tt[
-    dtype: DType,
-](
-    opt: OptionalReg[
-        LayoutTensor[dtype, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin]
-    ],
-) -> OptionalReg[ImmutTileTensor1D[dtype]]:
-    """Convert an OptionalReg[LayoutTensor] to OptionalReg[TileTensor]."""
-    if opt:
-        # NOTE: a plain `return lt_to_tt(opt.value())` compiles for the host
-        # target but FAILS the sm90 GPU-target compile: there `lt_to_tt`'s
-        # inferred result layout and `ImmutTileTensor1D`'s declared layout are
-        # structurally identical but not type-identical (the 1-D contiguous
-        # stride is `ComptimeInt[1]` on one side and a runtime `Int64` on the
-        # other). The stride of a contiguous 1-D tensor is always 1, so rebind
-        # to bridge the type-identity gap. Verify changes here with a remote
-        # GPU build (`--config=remote-b200`), not just a host build.
-        return rebind[ImmutTileTensor1D[dtype]](lt_to_tt(opt.value()))
-    return None
 
 
 @inline(.always)
@@ -264,10 +245,10 @@ def _apply_mask[
     decoding: Bool,
     accum_type: DType,
     mask_t: MHAMask,
-    reg_tile_layout: Layout,
-    element_layout: Layout,
+    PLayoutType: TensorLayout,
     //,
     # last_iter: Bool,
+    p_element_size: Int,
     WM: Int,
     WN: Int,
     num_m_mmas: Int,
@@ -283,14 +264,16 @@ def _apply_mask[
     kv_tile_start_row: UInt32,
     mask: mask_t,
     mask_status: TileMaskStatus,
-    p_reg_tile: LayoutTensor[
+    p_reg_tile: TileTensor[
+        mut=True,
         accum_type,
-        reg_tile_layout,
+        PLayoutType,
         MutAnyOrigin,
         address_space=.LOCAL,
-        element_layout=element_layout,
+        Engine=DefaultEngine[element_width=p_element_size],
     ],
 ):
+    comptime assert p_reg_tile.flat_rank == 4
     comptime num_groups_per_thread = min(
         2, ceildiv(group, 8)
     ) if decoding else 2
@@ -307,7 +290,7 @@ def _apply_mask[
     else:
         batch_cache_valid_length = 0
 
-    comptime p_frag_simdwidth = element_layout.size()
+    comptime p_frag_simdwidth = p_element_size
     # Vectorize by 2.
     var fragment_row: UInt32 = lane // 4
     var fragment_col: UInt32 = (
@@ -416,9 +399,8 @@ def produce[
     qkv_type: DType,
     BM: Int,
     BN: Int,
-    q_rank: Int,
-    q_tile_shape: IndexList[q_rank],
-    q_desc_shape: IndexList[q_rank],
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     depth: Int,
     padded_depth: Int,
     num_heads: Int,
@@ -439,7 +421,6 @@ def produce[
 ](
     q_tma_op: TMATensorTile[
         qkv_type,
-        q_rank,
         q_tile_shape,
         q_desc_shape,
     ],
@@ -504,7 +485,6 @@ def produce[
             tile (inferred).
         BN: Block size in the key/value (N) dimension of the attention
             tile (inferred).
-        q_rank: Rank of the query TMA tensor map descriptor (inferred).
         q_tile_shape: Per-dimension tile shape for query TMA copies
             (inferred).
         q_desc_shape: Per-dimension descriptor shape of the query TMA
@@ -598,14 +578,25 @@ def produce[
     @inline(.nodebug)
     def q_producer(
         q_idx: UInt32, offset: UInt32 = 0
-    ) -> LayoutTensor[
+    ) -> TileTensor[
         qkv_type,
-        Layout.row_major(q_tile_shape),
+        type_of(row_major(q_tile_shape)),
         type_of(q_smem).origin,
         address_space=.SHARED,
-        alignment=128,
+        linear_idx_type=.int32,
     ]:
-        return {q_smem + UInt32(q_size) * q_idx + offset}
+        # The allocation and unchanged stage/swizzle offsets preserve TMA's
+        # 128-byte destination alignment, which TileTensor does not encode.
+        return TileTensor[
+            qkv_type,
+            type_of(row_major(q_tile_shape)),
+            type_of(q_smem).origin,
+            address_space=.SHARED,
+            linear_idx_type=.int32,
+        ](
+            q_smem + UInt32(q_size) * q_idx + offset,
+            row_major(q_tile_shape),
+        )
 
     comptime assert pipeline_stages >= 2
 
@@ -1056,12 +1047,18 @@ def output_reg_to_smem[
     q_smem: UnsafePointer[
         Scalar[output_type], MutAnyOrigin, address_space=.SHARED
     ],
+    # Legacy register view: consumed by the register-A WGMMA/stmatrix path
+    # (`output_reg_to_smem_st_matrix` bridges via `_LocalTT`/`_SharedMemTT`)
+    # and by `copy_local_to_shared`'s fp32->half downcast, which has no
+    # TileTensor-native equivalent yet.
     output_reg_tile: LayoutTensor[
         accum_type,
         Layout.row_major(num_m_mmas, o_frag_size),
         MutAnyOrigin,
         address_space=.LOCAL,
     ],
+    # Returned legacy smem view feeds the masked-dst `copy_sram_to_dram`,
+    # whose TileTensor counterpart does not support masking or downcast.
 ) -> LayoutTensor[
     output_type,
     Layout.row_major(BM, padded_depth),
@@ -1099,6 +1096,9 @@ def output_reg_to_smem[
         output_reg_tile: Local register tile holding the accumulator output
             fragments.
     """
+    # Legacy smem view: bridges to `_LocalTT`/`_SharedMemTT` stmatrix call and
+    # is returned to the caller's masked `copy_sram_to_dram` (no TileTensor
+    # equivalents for those paths yet).
     var accum_smem_tile = LayoutTensor[
         output_type,
         Layout.row_major(BM, padded_depth),

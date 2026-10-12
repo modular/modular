@@ -14,8 +14,16 @@ max.experimental.nn
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.experimental.nn.common_layers.functional_kernels
+   max.experimental.nn.norm
+   max.experimental.nn.rope
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    experimental.nn.common_layers.functional_kernels
    experimental.nn.norm
@@ -45,6 +53,16 @@ Linear layers
    Conv2d
    Embedding
    Linear
+
+Hyper-connection
+----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   HyperConnection
 
 Functions
 ---------

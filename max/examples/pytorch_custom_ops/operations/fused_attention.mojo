@@ -52,12 +52,10 @@ leading to the final output.
 """
 
 
-from std.math import exp
-
 from max.gpu.host import DeviceContext
 from max.gpu import block_idx
 from max.gpu.sync import barrier
-from layout import Layout, LayoutTensor
+from layout import TensorLayout, TileTensor, row_major, stack_allocation
 from layout.math import max, sum
 from layout.tensor_core import TensorCore
 
@@ -90,13 +88,13 @@ struct FusedAttention:
         comptime assert rank == 2, "rank must be 2"
 
         # Query tensor
-        var Q = query.to_layout_tensor()
+        var Q = query.to_tile_tensor().as_unsafe_any_origin()
         # Key tensor
-        var K = key.to_layout_tensor()
+        var K = key.to_tile_tensor().as_unsafe_any_origin()
         # Value tensor
-        var V = value.to_layout_tensor()
+        var V = value.to_tile_tensor().as_unsafe_any_origin()
         # Attention output tensor
-        var O = output.to_layout_tensor()
+        var O = output.to_tile_tensor().as_unsafe_any_origin()
 
         comptime if target == "cpu":
             print("Running on CPU")
@@ -133,24 +131,26 @@ struct FusedAttentionAlias:
 
 @inline(.always)
 def matmul_b_transpose(
-    lhs: LayoutTensor,
-    rhs: LayoutTensor,
-    out res: LayoutTensor[
+    lhs: TileTensor,
+    rhs: TileTensor,
+    out res: TileTensor[
         lhs.dtype,
-        Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
-        MutAnyOrigin,
+        type_of(row_major[lhs.static_shape[0], rhs.static_shape[0]]()),
+        MutUntrackedOrigin,
     ],
 ):
-    res = type_of(res).stack_allocation()
+    res = stack_allocation[lhs.dtype](
+        row_major[lhs.static_shape[0], rhs.static_shape[0]]()
+    )
 
-    comptime for m in range(lhs.shape[0]()):
-        comptime for n in range(rhs.shape[0]()):
+    comptime for m in range(lhs.static_shape[0]):
+        comptime for n in range(rhs.static_shape[0]):
             res[m, n] = 0.0
 
-            comptime for k in range(lhs.shape[1]()):
-                res[m, n] += rebind[res.element_type](
+            comptime for k in range(lhs.static_shape[1]):
+                res[m, n] += rebind[res.ElementType](
                     lhs[m, k].cast[res.dtype]()
-                ) * rebind[res.element_type](rhs[n, k].cast[res.dtype]())
+                ) * rebind[res.ElementType](rhs[n, k].cast[res.dtype]())
 
 
 # The bulk of the code below implements what the papers calls
@@ -174,115 +174,132 @@ def matmul_b_transpose(
 @inline(.always)
 def fused_attention_cpu[
     BN: Int, BD: Int
-](
-    Q: LayoutTensor,
-    K: LayoutTensor,
-    V: LayoutTensor,
-    O: LayoutTensor[mut=True, ...],
-):
-    comptime N = K.shape[0]()
-    comptime D = K.shape[1]()
+](Q: TileTensor, K: TileTensor, V: TileTensor, O: TileTensor[mut=True, ...],):
+    comptime N = K.static_shape[0]
+    comptime D = K.static_shape[1]
 
     comptime for tile_n in range(N // BN):
         var Q_tile = Q.tile[BN, D](tile_n, 0)
 
         comptime for tile_d in range(D // BD):
-            var m_1 = (
-                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutAnyOrigin]
-                .stack_allocation()
-                .fill(Scalar[Q_tile.dtype].MIN)
+            var m_1 = stack_allocation[Q.dtype](row_major[BN]()).fill(
+                Scalar[Q.dtype].MIN
             )
 
-            var l_1 = (
-                LayoutTensor[Q_tile.dtype, Layout(BN, 1), MutAnyOrigin]
-                .stack_allocation()
-                .fill(0)
-            )
+            var l_1 = stack_allocation[Q.dtype](row_major[BN]()).fill(0)
 
-            var O_i = (
-                LayoutTensor[
-                    Q_tile.dtype, Layout.row_major(BN, BD), MutAnyOrigin
-                ]
-                .stack_allocation()
-                .fill(0)
-            )
+            var O_i = stack_allocation[Q.dtype](row_major[BN, BD]()).fill(0)
 
             comptime for tile_n_idx in range(N // BN):
                 var K_tile = K.tile[BN, D](tile_n_idx, 0)
                 var V_tile = V.tile[BN, BD](tile_n_idx, tile_d)
 
                 var S = matmul_b_transpose(Q_tile, K_tile)
-                var m_2 = max(m_1, rebind[type_of(m_1)](max[axis=1](S)))
-                var l_2 = exp(m_1 - m_2) * l_1 + sum[axis=1](exp(S - m_2))
+                var m_2 = stack_allocation[Q.dtype](row_major[BN]())
+                max[axis=1](S, m_2)
+                m_2.max(m_1)
 
-                var P = exp(S - m_2) / l_2
-                O_i = O_i * (l_1 / l_2) * exp(m_1 - m_2) + matmul["cpu"](
-                    P, V_tile
-                )
-                m_1 = m_2
-                l_1 = rebind[type_of(l_1)](l_2)
+                # l_2 = exp(m_1 - m_2) * l_1 + sum(axis=1, exp(S - m_2))
+                var l_2 = stack_allocation[Q.dtype](row_major[BN]())
+                l_2.copy_from(m_1)
+                l_2 -= m_2
+                l_2.exp()
+                l_2 *= l_1
+                var E = stack_allocation[Q.dtype](row_major[BN, BN]())
+                E.copy_from(S)
+                E -= m_2
+                E.exp()
+                var l_2_sum = stack_allocation[Q.dtype](row_major[BN]())
+                sum[axis=1](E, l_2_sum)
+                l_2 += l_2_sum
+
+                # P = exp(S - m_2) / l_2
+                E /= l_2
+                O_i *= l_1
+                O_i /= l_2
+                var m_1_delta = stack_allocation[Q.dtype](row_major[BN]())
+                m_1_delta.copy_from(m_1)
+                m_1_delta -= m_2
+                m_1_delta.exp()
+                O_i *= m_1_delta
+                var PV = matmul["cpu"](E, V_tile)
+                O_i += PV
+                m_1.copy_from(m_2)
+                l_1.copy_from(l_2)
 
             O.tile[BN, BD](tile_n, tile_d).copy_from(O_i)
 
 
 @inline(.always)
 def matmul[
+    dtype: DType,
+    rhs_dtype: DType,
+    //,
     target: StaticString,
     transpose_b: Bool = False,
 ](
-    lhs: LayoutTensor,
-    rhs: LayoutTensor,
-    out res: LayoutTensor[
-        lhs.dtype,
-        Layout.row_major(lhs.shape[0](), rhs.shape[0]()),
-        MutAnyOrigin,
+    lhs: TileTensor[dtype, ...],
+    rhs: TileTensor[rhs_dtype, ...],
+    out res: TileTensor[
+        dtype,
+        type_of(row_major[lhs.static_shape[0], rhs.static_shape[0]]()),
+        MutUntrackedOrigin,
         address_space=lhs.address_space,
-        element_layout=lhs.element_layout,
-        layout_int_type=lhs.layout_int_type,
-        linear_idx_type=lhs.linear_idx_type,
     ],
 ):
-    res = type_of(res).stack_allocation()
+    res = stack_allocation[dtype, address_space=lhs.address_space](
+        row_major[lhs.static_shape[0], rhs.static_shape[0]]()
+    )
 
     comptime if target == "cpu":
-        comptime for m in range(lhs.shape[0]()):
-            comptime for n in range(rhs.shape[1]()):
+        comptime for m in range(lhs.static_shape[0]):
+            comptime for n in range(rhs.static_shape[1]):
                 res[m, n] = 0.0
 
-                comptime for k in range(lhs.shape[1]()):
-                    res[m, n] += rebind[res.element_type](
+                comptime for k in range(lhs.static_shape[1]):
+                    res[m, n] += rebind[res.ElementType](
                         lhs[m, k].cast[res.dtype]()
-                    ) * rebind[res.element_type](rhs[k, n].cast[res.dtype]())
+                    ) * rebind[res.ElementType](rhs[k, n].cast[res.dtype]())
     else:
-        comptime M = res.shape[0]()
-        comptime N = res.shape[1]()
-        comptime K = lhs.shape[1]()
+        comptime M = lhs.static_shape[0]
+        comptime N = rhs.static_shape[0]
+        comptime K = lhs.static_shape[1]
 
-        var out_sram = LayoutTensor[
-            res.dtype,
-            Layout.row_major(M, N),
-            MutAnyOrigin,
-            address_space=.SHARED,
-        ].stack_allocation()
+        var out_sram = stack_allocation[res.dtype, address_space=.SHARED](
+            row_major[M, N]()
+        )
 
         comptime BK = 8
 
         comptime assert K % 8 == 0, "K needs to be a multiple of 8"
 
-        var mma_b_t = TensorCore[
-            lhs.dtype, res.dtype, Index(M, N, BK), transpose_b
-        ]()
+        var mma_b_t = TensorCore[dtype, dtype, Index(M, N, BK), transpose_b]()
 
-        var c_reg = mma_b_t.c_reg_tile_type.stack_allocation().fill(0)
+        var c_reg = stack_allocation[dtype, address_space=.LOCAL](
+            mma_b_t.c_fragment_layout
+        ).fill(0)
+
+        # `TensorCore`'s native loads require matching operand dtypes;
+        # rebind the B view once when `rhs` carries a different dtype.
+        var rhs_typed = rebind[
+            TileTensor[
+                dtype,
+                rhs.LayoutType,
+                rhs.origin,
+                Engine=rhs.Engine,
+                address_space=rhs.address_space,
+                linear_idx_type=rhs.linear_idx_type,
+            ]
+        ](rhs)
 
         comptime for k_i in range(K // BK):
             var a_reg = mma_b_t.load_a(lhs.tile[M, BK](0, k_i))
 
-            var b_reg = mma_b_t.load_b(rhs.tile[BK, N](k_i, 0))
+            var b_reg = mma_b_t.load_b(rhs_typed.tile[BK, N](k_i, 0))
 
             comptime if transpose_b:
                 b_reg = rebind[type_of(b_reg)](
-                    mma_b_t.load_b(rhs.tile[N, BK](0, k_i))
+                    mma_b_t.load_b(rhs_typed.tile[N, BK](0, k_i))
                 )
 
             var d_reg = mma_b_t.mma_op(a_reg, b_reg, c_reg)
@@ -295,41 +312,31 @@ def matmul[
 
 def fused_attention_kernel[
     q_dtype: DType,
-    q_layout: Layout,
+    q_layout: TensorLayout,
     k_dtype: DType,
-    k_layout: Layout,
+    k_layout: TensorLayout,
     v_dtype: DType,
-    v_layout: Layout,
+    v_layout: TensorLayout,
     o_dtype: DType,
-    o_layout: Layout,
+    o_layout: TensorLayout,
     BN: Int,
     BD: Int,
 ](
-    Q: LayoutTensor[q_dtype, q_layout, ImmutAnyOrigin],
-    K: LayoutTensor[k_dtype, k_layout, ImmutAnyOrigin],
-    V: LayoutTensor[v_dtype, v_layout, ImmutAnyOrigin],
-    O: LayoutTensor[o_dtype, o_layout, MutAnyOrigin],
+    Q: TileTensor[q_dtype, q_layout, ImmutAnyOrigin],
+    K: TileTensor[k_dtype, k_layout, ImmutAnyOrigin],
+    V: TileTensor[v_dtype, v_layout, ImmutAnyOrigin],
+    O: TileTensor[o_dtype, o_layout, MutAnyOrigin],
 ):
-    comptime N = Q.shape[0]()
-    comptime D = Q.shape[1]()
+    comptime N = Q.static_shape[0]
+    comptime D = Q.static_shape[1]
 
     var Q_tile = Q.tile[BN, D](block_idx.y, 0)
 
-    var m_1 = (
-        LayoutTensor[q_dtype, Layout(BN, 1), MutAnyOrigin]
-        .stack_allocation()
-        .fill(Scalar[q_dtype].MIN)
+    var m_1 = stack_allocation[q_dtype](row_major[BN]()).fill(
+        Scalar[q_dtype].MIN
     )
-    var l_1 = (
-        LayoutTensor[q_dtype, Layout(BN, 1), MutAnyOrigin]
-        .stack_allocation()
-        .fill(0)
-    )
-    var O_i = (
-        LayoutTensor[q_dtype, Layout.row_major(BN, BD), MutAnyOrigin]
-        .stack_allocation()
-        .fill(0)
-    )
+    var l_1 = stack_allocation[q_dtype](row_major[BN]()).fill(0)
+    var O_i = stack_allocation[q_dtype](row_major[BN, BD]()).fill(0)
 
     comptime BN_1 = 8
 
@@ -337,13 +344,37 @@ def fused_attention_kernel[
         var K_tile = K.tile[BN_1, D](tile_n_idx, 0)
         var V_tile = V.tile[BN_1, BD](tile_n_idx, block_idx.x)
         var S = matmul["gpu", transpose_b=True](Q_tile, K_tile)
-        var m_2 = max(m_1, rebind[type_of(m_1)](max[axis=1](S)))
-        var l_2 = exp(m_1 - m_2) * l_1 + sum[axis=1](exp(S - m_2))
-        var P = exp(S - m_2) / l_2
-        var O_j = O_i * (l_1 / l_2) * exp(m_1 - m_2) + matmul["gpu"](P, V_tile)
+        var m_2 = stack_allocation[q_dtype](row_major[BN]())
+        max[axis=1](S, m_2)
+        m_2.max(m_1)
+
+        # l_2 = exp(m_1 - m_2) * l_1 + sum(axis=1, exp(S - m_2))
+        var l_2 = stack_allocation[q_dtype](row_major[BN]())
+        l_2.copy_from(m_1)
+        l_2 -= m_2
+        l_2.exp()
+        l_2 *= l_1
+        var E = stack_allocation[q_dtype](row_major[BN, BN_1]())
+        E.copy_from(S)
+        E -= m_2
+        E.exp()
+        var l_2_sum = stack_allocation[q_dtype](row_major[BN]())
+        sum[axis=1](E, l_2_sum)
+        l_2 += l_2_sum
+
+        # P = exp(S - m_2) / l_2
+        E /= l_2
+        O_i *= l_1
+        O_i /= l_2
+        var m_1_delta = stack_allocation[q_dtype](row_major[BN]())
+        m_1_delta.copy_from(m_1)
+        m_1_delta -= m_2
+        m_1_delta.exp()
+        O_i *= m_1_delta
+        var PV = matmul["gpu"](E, V_tile)
+        O_i += PV
         m_1.copy_from(m_2)
-        l_1.copy_from(rebind[type_of(l_1)](l_2))
-        O_i.copy_from(O_j)
+        l_1.copy_from(l_2)
     O.tile[BN, BD](block_idx.y, block_idx.x).copy_from(O_i)
 
 
@@ -352,20 +383,20 @@ def fused_attention_gpu[
     BD: Int,
 ](
     ctx: DeviceContext,
-    Q: LayoutTensor,
-    K: LayoutTensor,
-    V: LayoutTensor,
-    mut O: LayoutTensor,
+    Q: TileTensor,
+    K: TileTensor,
+    V: TileTensor,
+    mut O: TileTensor,
 ) raises:
     comptime kernel_func = fused_attention_kernel[
         Q.dtype,
-        Q.layout,
+        Q.LayoutType,
         K.dtype,
-        K.layout,
+        K.LayoutType,
         V.dtype,
-        V.layout,
+        V.LayoutType,
         O.dtype,
-        O.layout,
+        O.LayoutType,
         BN,
         BD,
     ]
@@ -374,6 +405,6 @@ def fused_attention_gpu[
         K,
         V,
         O,
-        grid_dim=(Q.shape[1]() // BD, Q.shape[0]() // BN),
+        grid_dim=(Int(Q.dim[1]()) // BD, Int(Q.dim[0]()) // BN),
         block_dim=(32),
     )

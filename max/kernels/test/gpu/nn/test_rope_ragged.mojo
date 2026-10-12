@@ -23,8 +23,6 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden_with_position_ids,
 )
 
-from std.utils import IndexList
-
 
 def _test_rope_ragged_gpu_impl[
     rope_dim: Int, dtype: DType, has_position_ids: Bool
@@ -169,10 +167,8 @@ def _test_rope_ragged_gpu_impl[
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {
-        var q_out_device_tensor
-    } -> None:
-        q_out_device_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var q_out_device_tensor} -> None:
+        q_out_device_tensor.store[width=width](idx, val)
 
     # Execute rope_ragged kernel on GPU
     comptime if has_position_ids:
@@ -415,18 +411,16 @@ def test_rope_ragged_gpu_rope_first[
     @inline(.always)
     def full_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {
-        var full_out_device_tensor
-    } -> None:
-        full_out_device_tensor.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var full_out_device_tensor} -> None:
+        full_out_device_tensor.store[width=width](idx, val)
 
     @inline(.always)
     def prefix_output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {
+    ](idx: Coord, val: SIMD[dtype, width]) {
         var prefix_out_device_tensor
     } -> None:
-        prefix_out_device_tensor.store[width=width](Coord(idx), val)
+        prefix_out_device_tensor.store[width=width](idx, val)
 
     rope_ragged[
         dtype,

@@ -348,9 +348,8 @@ struct MatmulTileWriter[
 
     @inline(.always)
     def _write_tile_stmatrix[
-        tma_rank: Int,
-        tma_tile_shape: IndexList[tma_rank],
-        tma_desc_shape: IndexList[tma_rank],
+        tma_tile_shape: Coord,
+        tma_desc_shape: Coord,
         accum_type: DType,
         reg_tile_layout: Layout,
         EpilogueFnType: ElementwiseEpilogueFn,
@@ -359,9 +358,7 @@ struct MatmulTileWriter[
         has_epilogue_fn: Bool,
     ](
         self,
-        tma_op: TMATensorTile[
-            Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
-        ],
+        tma_op: TMATensorTile[Self.dtype, tma_tile_shape, tma_desc_shape],
         reg_tile: RegTile[accum_type, reg_tile_layout],
         output_tile: TileTensor[mut=True, Self.dtype, ...],
         tile_origin: IndexList[2],
@@ -370,13 +367,17 @@ struct MatmulTileWriter[
         """Use st.matrix instructions for optimized bf16 output."""
         var max_row, max_col = self._calculate_output_bounds()
 
-        comptime TMA_BN_regular = tma_tile_shape[
-            1
-        ] if Self.use_tma_store else Self.WG_BN
+        comptime TMA_BN_regular = (
+            tma_tile_shape.element_types[
+                1
+            ].static_value if Self.use_tma_store else Self.WG_BN
+        )
 
-        comptime TMA_BN_swapAB = tma_tile_shape[
-            0
-        ] if Self.use_tma_store else Self.WG_BM
+        comptime TMA_BN_swapAB = (
+            tma_tile_shape.element_types[
+                0
+            ].static_value if Self.use_tma_store else Self.WG_BM
+        )
 
         comptime TMA_BN = TMA_BN_swapAB if Self.swapAB else TMA_BN_regular
 
@@ -497,7 +498,8 @@ struct MatmulTileWriter[
                             Self.WG_BM * TMA_BN * self.local_thread_idx
                         )
                         comptime tma_smem_layout = row_major[
-                            tma_tile_shape[0], tma_tile_shape[1]
+                            tma_tile_shape.element_types[0].static_value,
+                            tma_tile_shape.element_types[1].static_value,
                         ]()
                         var tma_tile = TileTensor[
                             mut=True,
@@ -541,9 +543,8 @@ struct MatmulTileWriter[
 
     @inline(.always)
     def write_tile[
-        tma_rank: Int,
-        tma_tile_shape: IndexList[tma_rank],
-        tma_desc_shape: IndexList[tma_rank],
+        tma_tile_shape: Coord,
+        tma_desc_shape: Coord,
         accum_type: DType,
         reg_tile_layout: Layout,
         EpilogueFnType: ElementwiseEpilogueFn = type_of(no_epilogue_fn),
@@ -552,9 +553,7 @@ struct MatmulTileWriter[
         has_epilogue_fn: Bool = False,
     ](
         self,
-        tma_op: TMATensorTile[
-            Self.dtype, tma_rank, tma_tile_shape, tma_desc_shape
-        ],
+        tma_op: TMATensorTile[Self.dtype, tma_tile_shape, tma_desc_shape],
         reg_tile: RegTile[accum_type, reg_tile_layout],
         epilogue_fn: EpilogueFnType = no_epilogue_fn,
     ):
@@ -564,11 +563,8 @@ struct MatmulTileWriter[
         otherwise uses general register-to-global path.
 
         Parameters:
-            tma_rank: Number of dimensions in the TMA tensor descriptor.
-            tma_tile_shape: Shape of each TMA store tile per async copy, as
-                an index list of length `tma_rank`.
-            tma_desc_shape: Full shape of the TMA tensor descriptor as an
-                index list of length `tma_rank`.
+            tma_tile_shape: Shape of each TMA store tile per async copy.
+            tma_desc_shape: Full shape of the TMA tensor descriptor.
             accum_type: Data type of the WGMMA accumulator register tile.
             reg_tile_layout: Memory layout of the accumulator register tile.
             EpilogueFnType: Type of `epilogue_fn` (inferred).
@@ -595,9 +591,11 @@ struct MatmulTileWriter[
             tile_m, tile_n
         ](Coord(block_row, block_col))
 
-        comptime TMA_BN = tma_tile_shape[
-            1
-        ] if Self.use_tma_store else Self.WG_BN
+        comptime TMA_BN = (
+            tma_tile_shape.element_types[
+                1
+            ].static_value if Self.use_tma_store else Self.WG_BN
+        )
         comptime row_size_aligned = Self.N * size_of[Self.dtype]() % 16 == 0
 
         # Check if st.matrix optimization can be used

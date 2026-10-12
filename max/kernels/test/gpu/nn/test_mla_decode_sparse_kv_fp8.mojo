@@ -2095,9 +2095,14 @@ def run_test_sparse_kv_fp8_extra_kv[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     comptime sm_count = ctx.default_device_info.sm_count
+    # The sparse dispatch splits the gathered keys, max top-k plus max
+    # extra top-k, not the cache length.
     var dispatch_scalars = compute_mla_dispatch_scalars[
-        num_heads=num_heads, is_fp8_kv=True, half_sms=sm_count // 2
-    ](batch_size, max_cache_len, q_max_seq_len, sm_count)
+        num_heads=num_heads,
+        _is_cache_length_accurate=True,
+        is_fp8_kv=True,
+        half_sms=sm_count // 2,
+    ](batch_size, max_topk + max_extra_topk, q_max_seq_len, sm_count)
     var num_partitions = dispatch_scalars[2]
     print(
         "  num_partitions=",
@@ -3210,6 +3215,40 @@ def main() raises:
                 ek_topk_2,
                 ek_ecls_2,
                 ek_etopk_2,
+                ctx,
+            )
+
+            # Main top-k values that are not tile multiples pad the main
+            # segment. The long lists split; the short ones (45 + 24 keys,
+            # one page) cannot. The split-K line printed above each launch
+            # says which ran.
+            var ek_cls_3: List[Int] = [512]
+            var ek_topk_3: List[Int] = [300]
+            var ek_ecls_3: List[Int] = [256]
+            var ek_etopk_3: List[Int] = [200]
+            run_test_sparse_kv_fp8_extra_kv[
+                DType.bfloat16, DType.float8_e4m3fn, 16
+            ](
+                "sparse_kv_fp8_extra_kv_b1_h16_topk300_extra200",
+                ek_cls_3,
+                ek_topk_3,
+                ek_ecls_3,
+                ek_etopk_3,
+                ctx,
+            )
+
+            var ek_cls_4: List[Int] = [64, 256]
+            var ek_topk_4: List[Int] = [37, 45]
+            var ek_ecls_4: List[Int] = [64, 128]
+            var ek_etopk_4: List[Int] = [20, 24]
+            run_test_sparse_kv_fp8_extra_kv[
+                DType.bfloat16, DType.float8_e4m3fn, 16
+            ](
+                "sparse_kv_fp8_extra_kv_b2_h16_topk_unaligned",
+                ek_cls_4,
+                ek_topk_4,
+                ek_ecls_4,
+                ek_etopk_4,
                 ctx,
             )
 

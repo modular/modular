@@ -27,8 +27,8 @@ How it works:
 * The native connector answers only which blocks it holds (``lookup``) and loads
   exactly the blocks it is handed (``load``), so it carries no notion of
   attention shape, window widths or null blocks. What that presence is worth is
-  decided here, with the :mod:`~max.pipelines.kv_cache.prefix_hit` rules the
-  device pools and the dKV connector also run.
+  decided here, with the :mod:`max._kv_core` prefix-hit rules the device
+  pools and the dKV connector also run.
 * ``load``/``offload`` run on the scheduler thread (GIL released via pyo3) and
   do only cheap host block-pool bookkeeping, then hand the H2D/D2H copies and
   disk I/O to background native lanes. They return immediately with a transfer
@@ -511,8 +511,8 @@ class TierConnector(KVConnector):
             leaf_id: leaf_buffers.host_bytes_per_page
             for leaf_id, leaf_buffers in replica_kv_memory[0].items()
         }
-        # The Rust pool hands out every huge block it is given -- unlike the
-        # Python pool, it reserves no null block -- so one is enough.
+        # The host pool is built without a null block -- unlike the device
+        # pool -- so it hands out every huge block, and one is enough.
         num_huge_blocks, huge_page_bytes, cache_ratios = compute_jenga_ratios(
             available_bytes=host_offload_max_bytes,
             cache_sizes=leaf_cache_sizes,
@@ -707,7 +707,7 @@ class TierConnector(KVConnector):
 
         Not a scheduler hot-path call: transfers settle through
         ``poll_transfers``. This is a real quiesce for tests and teardown that
-        need a stable tier state (e.g. asserting disk residency after an
+        need a stable tier state (such as asserting disk residency after an
         offload's write-through has landed).
         """
         self._native.wait_for_writes()

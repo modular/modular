@@ -60,10 +60,7 @@ from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.memory import UnsafePointer, stack_allocation
 from std.sys import simd_width_of, size_of, get_defined_int
-from std.sys.info import (
-    has_amd_gpu_accelerator,
-    is_apple_gpu,
-)
+from std.sys.info import default_accelerator, is_apple_gpu
 from std.utils.coord import Coord, DynamicCoord, coord_to_index_list
 from std.utils.static_tuple import StaticTuple
 
@@ -149,7 +146,7 @@ comptime _SPLITK_BLOCK_SIZE = 128
 # pre-tuning path until swept there; the sibling per-element tier's own B200
 # A/B (see `_SPLITK_TOTAL_BLOCKS_TARGET`) changes sign past ~20 rows, so the
 # direction does not transfer for free.
-comptime _SPLITK_ROW_TIER_TUNED = has_amd_gpu_accelerator()
+comptime _SPLITK_ROW_TIER_TUNED = default_accelerator().is_amd_gpu()
 
 # Threads per block for the PER-ROW split-K tier — each block pays a fixed
 # cross-block-finish toll, so it wants few wide blocks. Kept separate from

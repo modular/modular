@@ -14,9 +14,8 @@
 from std.os import abort
 from std.pathlib import Path
 from std.sys import (
+    default_accelerator,
     has_accelerator,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
     size_of,
 )
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
@@ -39,7 +38,7 @@ comptime ROCTX_LIBRARY_PATHS: List[Path] = [
     "/opt/rocm/lib/librocprofiler-sdk-roctx.so",
 ]
 
-comptime LIBRARY_PATHS = CUDA_NVTX_LIBRARY_PATHS if has_nvidia_gpu_accelerator() else ROCTX_LIBRARY_PATHS
+comptime LIBRARY_PATHS = CUDA_NVTX_LIBRARY_PATHS if default_accelerator().is_nvidia_gpu() else ROCTX_LIBRARY_PATHS
 
 
 comptime _TraceType_OTHER = 0
@@ -96,7 +95,7 @@ def _init_dylib() -> OwnedDLHandle:
             materialize[LIBRARY_PATHS]()
         )
 
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             _setup_categories(
                 dylib._handle.get_function[
                     def(UInt32, CStringSpan[_]) thin abi("C") -> NoneType
@@ -338,18 +337,18 @@ struct _Mark:
     var _fn: Variant[_nvtxMarkEx.fn_type, _roctxMarkA.fn_type]
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxMarkEx.load()
         else:
             self._fn = _roctxMarkA.load()
 
     def __call__(self, val: _C_EventAttributes[_]):
-        comptime assert has_nvidia_gpu_accelerator()
+        comptime assert default_accelerator().is_nvidia_gpu()
         var attrs = c_event_attrs_ffi(val)
         self._fn[_nvtxMarkEx.fn_type](Pointer(to=attrs).as_unsafe_any_origin())
 
     def __call__(self, val: CStringSpan[_]):
-        comptime assert has_amd_gpu_accelerator()
+        comptime assert default_accelerator().is_amd_gpu()
         self._fn[_roctxMarkA.fn_type](val.as_unsafe_any_origin())
 
 
@@ -357,7 +356,7 @@ struct _RangeStart:
     var _fn: Variant[_nvtxRangeStartEx.fn_type, _roctxRangeStartA.fn_type]
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxRangeStartEx.load()
         else:
             self._fn = _roctxRangeStartA.load()
@@ -366,14 +365,14 @@ struct _RangeStart:
         self,
         val: _C_EventAttributes[_],
     ) -> RangeID:
-        comptime assert has_nvidia_gpu_accelerator()
+        comptime assert default_accelerator().is_nvidia_gpu()
         var attrs = c_event_attrs_ffi(val)
         return self._fn[_nvtxRangeStartEx.fn_type](
             Pointer(to=attrs).as_unsafe_any_origin()
         )
 
     def __call__(self, val: CStringSpan[_]) -> RangeID:
-        comptime assert has_amd_gpu_accelerator()
+        comptime assert default_accelerator().is_amd_gpu()
         return self._fn[_roctxRangeStartA.fn_type](val.as_unsafe_any_origin())
 
 
@@ -381,7 +380,7 @@ struct _RangeEnd:
     var _fn: def(RangeID) thin -> NoneType
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxRangeEnd.load()
         else:
             self._fn = _roctxRangeStop.load()
@@ -394,20 +393,20 @@ struct _RangePush:
     var _fn: Variant[_nvtxRangePushEx.fn_type, _roctxRangePushA.fn_type]
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxRangePushEx.load()
         else:
             self._fn = _roctxRangePushA.load()
 
     def __call__(self, val: _C_EventAttributes[_]) -> Int32:
-        comptime assert has_nvidia_gpu_accelerator()
+        comptime assert default_accelerator().is_nvidia_gpu()
         var attrs = c_event_attrs_ffi(val)
         return self._fn[_nvtxRangePushEx.fn_type](
             Pointer(to=attrs).as_unsafe_any_origin()
         )
 
     def __call__(self, val: CStringSpan[_]) -> Int32:
-        comptime assert has_amd_gpu_accelerator()
+        comptime assert default_accelerator().is_amd_gpu()
         return self._fn[_roctxRangePushA.fn_type](val.as_unsafe_any_origin())
 
 
@@ -415,7 +414,7 @@ struct _RangePop:
     var _fn: _nvtxRangePop.fn_type
 
     def __init__(out self) raises:
-        comptime if has_nvidia_gpu_accelerator():
+        comptime if default_accelerator().is_nvidia_gpu():
             self._fn = _nvtxRangePop.load()
         else:
             self._fn = _roctxRangePop.load()
@@ -457,7 +456,7 @@ def _start_range(
     comptime if _is_disabled():
         return 0
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         var info = EventAttributes(
             message=message.as_c_string_span(), color=color, category=category
         )
@@ -484,7 +483,7 @@ def _mark(
     comptime if _is_disabled():
         return
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         var info = EventAttributes(
             message=message.as_c_string_span(), color=color, category=category
         )

@@ -22,6 +22,7 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
+    KVCacheQuantizationConfig,
     MHAKVCacheParams,
     MLAKVCacheParams,
     MultiKVCacheParams,
@@ -708,7 +709,39 @@ def test_alloc_dummy_uses_null_block_without_refcount() -> None:
     dummy_ctx = create_text_context(np.zeros(1, dtype=np.int64))
     kv_manager.alloc_dummy(dummy_ctx)
     assert pool.num_free_blocks == 8
-    assert kv_manager.get_req_blocks(dummy_ctx) == [8]
+    assert list(kv_manager.get_req_blocks_per_leaf(dummy_ctx).values()) == [[8]]
+
+
+def test_req_blocks_per_leaf_repeats_row_for_quantized_leaves() -> None:
+    """Values and scales share one block space, so both get the same row."""
+    params = MHAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        n_kv_heads=1,
+        head_dim=128,
+        num_layers=2,
+        page_size=128,
+        devices=[DeviceRef.CPU()],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32
+        ),
+    )
+    kv_manager = PagedKVCacheManager(
+        params=params,
+        session=InferenceSession(devices=[CPU()]),
+        total_num_pages=8,
+        max_batch_size=4,
+    )
+    ctx = create_text_context(np.zeros(300, dtype=np.int64))
+    kv_manager.claim(ctx)
+    kv_manager.alloc(ctx)
+
+    per_leaf = kv_manager.get_req_blocks_per_leaf(ctx)
+    assert len(params.leaves()) == 2
+    assert per_leaf.keys() == params.leaves().keys()
+    values, scales = per_leaf.values()
+    assert values == scales
+    assert len(values) == 3
+    assert kv_manager.num_req_blocks(ctx) == 3
 
 
 def test_lut_tail_padding_sentinel_is_total_num_pages() -> None:

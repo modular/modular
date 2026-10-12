@@ -163,7 +163,7 @@ class _ShapeRearrangeFamily(gc_compile.GCFamilySpec):
         self, device: Device, module: Module | None = None
     ) -> Module:
         """Per-slot counterpart of :meth:`build_module`: one *device* only.
-        A ``CPU_ONLY`` op (e.g. ``Tile``) is skipped below via
+        A ``CPU_ONLY`` op (such as ``Tile``) is skipped below via
         :func:`_devices_for`."""
         if module is None:
             module = Module()

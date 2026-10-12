@@ -16,6 +16,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ExprNodes.h"
+#include "ExprPatterns.h"
 #include "IREmitter.h"
 #include "Mojo/MojoParser/ASTDecl.h"
 #include "Mojo/MojoParser/Constraints.h"
@@ -24,7 +25,6 @@
 #include "MojoUtils.h"
 #include "OverloadSet.h"
 #include "ParserBase.h"
-#include "PatternMatchIR.h"
 #include "Support/Compiler/OperationUtils.h"
 
 #include "Mojo/HLCFDialect/HLCFOps.h"
@@ -1622,15 +1622,16 @@ ParseResult StmtParser::parseMatchStmt(size_t curIndent, bool isComptime) {
     return success();
   }
 
-  // Because we don't know whether a case is allowed to consume an RValue, we
-  // convert the subject to a BValue before building patterns, so none of the
-  // later pattern emission can consume the RValue.  For example, any "var"
-  // bindings will have to do a copy. Comptime subjects stay as PValues.
-  if (!isComptime && subject.getIfRValue()) {
+  // Resolve lazy subjects once before branching into cases. Also borrow
+  // RValues because no individual pattern may consume the shared subject.
+  // Existing LValues already provide stable storage and retain mutability.
+  if (!isComptime && (subject.getIfRValue() || subject.getIfDLValue())) {
     // TODO: maintain RValueness for as long as we can.
-    subject = getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
-    if (!subject)
+    BValue subjectBVal =
+        getEmitter().emitBValue({subject, subjectExpr}, EC_MatchSubject);
+    if (!subjectBVal)
       return failure();
+    subject = subjectBVal;
   }
 
   // Shared path uniquing across all cases. Command lists are built while
@@ -3065,7 +3066,9 @@ ParseResult StmtParser::parseTryStmt(size_t curIndent) {
     }
     TryYieldOp::create(builder, translateLocation(getToken().getLoc()));
 
-    hasFinally = consumeIf(Token::kw_finally);
+    hasFinally =
+        isTokenInCurrentStatement(curIndent, /*allowSameIndent=*/true) &&
+        consumeIf(Token::kw_finally);
   } else {
     SMLoc finallyLoc;
     hasFinally = consumeIf(Token::kw_finally, &finallyLoc);
@@ -4252,9 +4255,10 @@ ParseResult StmtParser::parseImportStmt() {
     // Absolute `import`s are built into nested ImportOps at parse time, with no
     // UnresolvedImportOp placeholder. Resolve the target module first so a
     // missing module is reported eagerly (this locates the module file; it does
-    // not parse its body).
-    ASTDecl &module =
-        shared.importModule(modulePath, /*currentPackage=*/nullptr, importLoc);
+    // not parse its body). This one call records the dep edges for both
+    // binding forms below.
+    ASTDecl &module = shared.importModule(
+        modulePath, /*currentPackage=*/nullptr, importLoc, curDeclScope);
 
     if (!boundModuleName.has_value()) {
       // 'import a.b.c' binds the chain 'a' -> 'a.b' -> 'a.b.c' under the
@@ -4387,6 +4391,7 @@ StmtParser::parseImportModuleName(SharedState::ImportPath &parsedName,
 
 ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
                                        size_t curIndent) {
+  warnIfUnprefixedAsyncSpelling(getToken());
   if (consumeIf(Token::kw___async) && rejectTokenAtStartOfLine("'def' keyword"))
     return failure();
   consumeToken(); // Consume either 'def' or 'fn'.

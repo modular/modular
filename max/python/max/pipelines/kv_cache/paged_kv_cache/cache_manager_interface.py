@@ -148,8 +148,17 @@ class PagedKVCacheManagerInterface(ABC):
         """Returns aggregated metrics across all replicas."""
 
     @abstractmethod
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds on the replica it was claimed on."""
+    def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
+        """Returns the block IDs the request holds, keyed by leaf id.
+
+        Covers the replica the request was claimed on, with one entry per leaf
+        that :meth:`KVCacheParamInterface.leaves` names. A manager whose leaves
+        share one block space repeats the same row under every leaf.
+        """
+
+    @abstractmethod
+    def num_req_blocks(self, ctx: TextContext) -> int:
+        """Returns how many pages long the request is on its claimed replica."""
 
     @abstractmethod
     def get_device_buffer(self, replica_idx: int) -> KVCacheBufferInterface:

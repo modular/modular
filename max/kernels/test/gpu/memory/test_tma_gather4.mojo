@@ -473,7 +473,7 @@ def _run_paged_gather4_test[
     var kv_cache = collection.get_key_cache(0)
 
     # Create the TMA tile -- either directly or through MHAOperand.
-    # The tile type encodes box_width in tile_shape[1]; no need to
+    # The tile type encodes box_width in tile_shape.element_types[1].static_value; no need to
     # compute it separately.
     var kv_tile = kv_cache.create_gather4_tma_tile[
         tile_width=row_width, swizzle_mode=swizzle_mode
@@ -511,7 +511,6 @@ def _run_paged_gather4_test[
     comptime kernel = gather4_kernel[
         dtype,
         row_width,
-        type_of(kv_tile).rank,
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
@@ -688,7 +687,6 @@ def test_continuous_kv_cache[
     comptime kernel = gather4_kernel[
         dtype,
         row_width,
-        type_of(kv_tile).rank,
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
@@ -775,7 +773,6 @@ def test_device_buffer_overload[
     comptime kernel = gather4_kernel[
         dtype,
         row_width,
-        type_of(kv_tile).rank,
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         TensorMapSwizzle.SWIZZLE_NONE,
@@ -836,14 +833,11 @@ def test_mha_operand_gather4[
 def gather4_kernel[
     dtype: DType,
     tile_width: Int,
-    tile_rank: Int,
-    tile_shape_param: IndexList[tile_rank],
-    desc_shape_param: IndexList[tile_rank],
+    tile_shape_param: Coord,
+    desc_shape_param: Coord,
     swizzle_mode: TensorMapSwizzle,
 ](
-    kv_tile: TMATensorTile[
-        dtype, tile_rank, tile_shape_param, desc_shape_param
-    ],
+    kv_tile: TMATensorTile[dtype, tile_shape_param, desc_shape_param],
     d_out: MutPointer[Scalar[dtype], MutAnyOrigin],
     d_indices: MutPointer[Int32, MutAnyOrigin],
     num_tiles: Int32,
@@ -855,7 +849,7 @@ def gather4_kernel[
     over column groups.  The box width and number of column groups are
     derived from the tile's compile-time shape ``tile_shape_param[1]``.
     """
-    comptime box_width = tile_shape_param[1]
+    comptime box_width = Int(tile_shape_param[1].value())
     comptime num_col_groups = ceildiv(tile_width, box_width)
     var smem_tile = stack_allocation[
         dtype=dtype, address_space=.SHARED, alignment=128
@@ -952,7 +946,7 @@ def test_wide_gather4_device_buffer[
     var d_data = ctx.enqueue_create_buffer[dtype](num_elems)
     ctx.enqueue_copy(d_data, h_data)
 
-    # Create the TMA tile -- box_width is encoded in tile_shape[1].
+    # Create the TMA tile -- box_width is encoded in tile_shape.element_types[1].static_value.
     var kv_tile = create_tma_tile_gather4[
         dtype, tile_width=tile_width, swizzle_mode=swizzle_mode
     ](ctx, d_data, num_tokens)
@@ -976,7 +970,6 @@ def test_wide_gather4_device_buffer[
     comptime kernel = gather4_kernel[
         dtype,
         tile_width,
-        type_of(kv_tile).rank,
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
@@ -1112,7 +1105,6 @@ def test_wide_gather4_paged_kv[
     comptime kernel = gather4_kernel[
         dtype,
         tile_width,
-        type_of(kv_tile).rank,
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
@@ -1248,7 +1240,6 @@ def test_wide_gather4_continuous_kv[
     comptime kernel = gather4_kernel[
         dtype,
         tile_width,
-        type_of(kv_tile).rank,
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
@@ -1389,7 +1380,6 @@ def test_wide_gather4_mha_operand[
     comptime kernel = gather4_kernel[
         dtype,
         tile_width,
-        type_of(kv_tile).rank,
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
@@ -1453,7 +1443,9 @@ def test_non_divisible_width[
         dtype, tile_width=tile_width, swizzle_mode=swizzle_mode
     ](ctx, d_data, num_tokens)
 
-    comptime box_width = type_of(kv_tile).tile_shape[1]
+    comptime box_width = Int(
+        type_of(kv_tile).tile_shape.element_types[1].static_value.value()
+    )
     comptime num_col_groups = ceildiv(tile_width, box_width)
     comptime padded_row_width = num_col_groups * box_width
 
@@ -1497,7 +1489,6 @@ def test_non_divisible_width[
     comptime kernel = gather4_kernel[
         dtype,
         padded_row_width,
-        type_of(kv_tile).rank,
         type_of(kv_tile).tile_shape,
         type_of(kv_tile).desc_shape,
         swizzle_mode,
@@ -1575,11 +1566,10 @@ def gather4_tile_api_kernel[
     bn: Int,
     cols: Int,
     num_threads: Int,
-    tile_rank: Int,
-    tile_shape: IndexList[tile_rank],
-    desc_shape: IndexList[tile_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
 ](
-    g4t_tma: TMATensorTile[dtype, tile_rank, tile_shape, desc_shape],
+    g4t_tma: TMATensorTile[dtype, tile_shape, desc_shape],
     d_indices: MutPointer[Int32, MutAnyOrigin],
     output: MutPointer[Scalar[dtype], MutAnyOrigin],
 ):
@@ -1677,7 +1667,6 @@ def test_gather4_tile_api[
         bn,
         cols,
         num_threads,
-        type_of(g4t_tma).rank,
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
     ]
@@ -1866,7 +1855,6 @@ def test_gather4_tile_api_paged[
         topk,
         row_width,
         num_threads,
-        type_of(g4t_tma).rank,
         type_of(g4t_tma).tile_shape,
         type_of(g4t_tma).desc_shape,
     ]

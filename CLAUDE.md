@@ -57,7 +57,7 @@ pixi run test              # Run tests
 pixi run hello             # Run hello.mojo
 
 # Common Pixi tasks available in different directories:
-# - /mojo/: build, tests, examples, benchmarks
+# - /Mojo/: tests, format
 # - /max/examples/*/: main, test, hello, dev-server, format
 # - /Mojo/examples/*/: main, test, hello, dev-server, format
 
@@ -87,9 +87,9 @@ docker run --gpus=1 -p 8000:8000 docker.modular.com/modular/max-nvidia-full:late
 
 ```text
 modular/
-├── mojo/                    # Mojo programming language
+├── Mojo/                    # Mojo programming language
 │   ├── stdlib/              # Standard library implementation
-│   ├── docs/                # User documentation (mojolang.org)
+│   ├── docs/                # Docs: site/ (mojolang.org) and contributor guides
 │   ├── proposals/           # Language proposals (RFCs)
 │   ├── examples/            # Mojo usage examples
 │   └── integration-test/    # Integration tests

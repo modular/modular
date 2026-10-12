@@ -817,8 +817,8 @@ struct TileTensor[
         """Create a `DevicePointerEngine`-backed `TileTensor` from a
         `DevicePointer`.
 
-        Like the `DeviceBuffer` constructor, this produces a
-        `DevicePointerEngine`-backed tile that carries the full `DevicePointer`
+        Unlike the `DeviceBuffer` constructor's raw-pointer view, this produces
+        a `DevicePointerEngine`-backed tile that carries the full `DevicePointer`
         (its non-owning reference to the owning `DeviceBuffer` plus an element
         offset and size) to the kernel boundary, where
         `DevicePointer._to_device_type` encodes it to a bare device pointer.
@@ -5197,9 +5197,7 @@ def lt_to_tt[
                 Int64(lt.runtime_layout.stride.value[i])
             )
 
-    var ptr = Pointer[Scalar[dtype], lt.origin, address_space=lt.address_space](
-        unsafe_from_address=Int(lt.ptr)
-    )
+    var ptr = lt.ptr
     return TileTensor[
         dtype, ConcLayout, lt.origin, address_space=lt.address_space
     ](
@@ -5271,9 +5269,7 @@ def lt_to_tt_idx[
                 Int64(lt.runtime_layout.stride.value[i])
             )
 
-    var ptr = Pointer[Scalar[dtype], lt.origin, address_space=lt.address_space](
-        unsafe_from_address=Int(lt.ptr)
-    )
+    var ptr = lt.ptr
     return TileTensor[
         dtype,
         ConcLayout,

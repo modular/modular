@@ -53,7 +53,6 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_qkv_fp8 import (
     mla_prefill_sparse_qkv_fp8,
 )
 from std.testing import assert_equal
-from std.utils.index import Index, IndexList
 from std.utils.numerics import isnan, min_or_neg_inf
 
 

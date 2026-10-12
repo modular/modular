@@ -85,7 +85,7 @@ class BlockCount:
     def used_pct(self) -> float:
         """Returns the percentage of blocks currently in use, in ``[0, 100]``.
 
-        ``0`` when ``total`` is ``0`` (e.g. a tier with no configured
+        ``0`` when ``total`` is ``0`` (such as a tier with no configured
         capacity), rather than dividing by zero.
         """
         return 100 * self.used / self.total if self.total else 0.0
@@ -122,7 +122,7 @@ class ByteCount:
     def used_pct(self) -> float:
         """Returns the percentage of bytes currently in use, in ``[0, 100]``.
 
-        ``0`` when ``total`` is ``0`` (e.g. a tier with no configured
+        ``0`` when ``total`` is ``0`` (such as a tier with no configured
         capacity), rather than dividing by zero.
         """
         return 100 * self.used / self.total if self.total else 0.0
@@ -236,14 +236,14 @@ class KVConnector(Protocol):
     """Protocol for KV cache connectors managing external (non-device) tiers.
 
     The manager owns device tensors, block allocation, and device-side prefix
-    cache. Connectors handle external tier operations (e.g., host memory)
+    cache. Connectors handle external tier operations (such as host memory)
     via load/offload methods.
 
     All block hashes crossing this Protocol are in canonical bytes form:
-    8 big-endian bytes for ahash64-family algos (including ``sha256_64``),
+    8 big-endian bytes for ``ahash64``,
     32 bytes for full SHA-256 digests. The block hasher produces this
     canonical form directly, so callers pass the hashes through unchanged;
-    a connector that needs a narrower wire encoding (e.g. dKV's 64-bit key)
+    a connector that needs a narrower wire encoding (such as dKV's 64-bit key)
     validates and converts at its own boundary.
 
     Required call ordering per inference step:
@@ -279,7 +279,7 @@ class KVConnector(Protocol):
 
         What that presence is worth is the manager's to decide, since it
         depends on how far each leaf's attention reads back. The manager
-        reconciles the masks with :mod:`~max.pipelines.kv_cache.prefix_hit`,
+        reconciles the masks with :mod:`max._kv_core`'s prefix-hit rules,
         the same rules it runs over the device pools, so a connector needs no
         notion of attention shape, window widths or null blocks.
 
@@ -458,3 +458,42 @@ class KVConnector(Protocol):
     def take_metrics(self) -> KVCacheMetrics:
         """Reads and clears the per-batch transfer counters."""
         return KVCacheMetrics()
+
+
+@runtime_checkable
+class KVConnectorProbe(Protocol):
+    """A connector that prices its tiers without taking state.
+
+    Optional: the cache manager prices a connector without it through
+    :meth:`KVConnector.lookup`, which suits a connector whose lookup keeps no
+    state.
+    """
+
+    def probe(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idxs: Sequence[int],
+    ) -> list[Mapping[str, Sequence[bool]]]:
+        """Estimates what each replica could load of ``block_hashes``.
+
+        Separate from :meth:`KVConnector.lookup` because a lookup may take
+        state for the :meth:`KVConnector.load` that follows (dKV leases every
+        leaf's blocks), while pricing runs for requests that may never be
+        claimed here and must leave nothing behind. A connector may answer
+        from fewer leaves than :attr:`KVConnector.leaves` names when one is
+        representative; the caller reconciles the masks as it does a lookup's.
+
+        One residency read may serve every replica that can load, since the
+        replicas of a store share it. A replica that cannot load right now,
+        such as one whose client is reconnecting, answers all misses.
+
+        Args:
+            block_hashes: Hashes to ask about, in prefix order and in canonical
+                bytes form (see :class:`KVConnector`).
+            replica_idxs: DP replicas to price.
+
+        Returns:
+            One answer per entry of ``replica_idxs``, in order: positional
+            masks as :meth:`KVConnector.lookup` returns them, for some leaves.
+        """
+        ...

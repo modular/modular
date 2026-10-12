@@ -288,27 +288,35 @@ def execute_test[
     @__copy_capture(k_ptr, k_stride0)
     def k_load_fn[
         width: Int, alignment: Int = 1
-    ](idx: IndexList[3]) -> SIMD[dtype, width]:
-        var flat = idx[0] * k_stride0 + idx[1] * head_dim + idx[2]
+    ](idx: Coord) -> SIMD[dtype, width]:
+        var flat = (
+            Int(idx[0].value()) * k_stride0
+            + Int(idx[1].value()) * head_dim
+            + Int(idx[2].value())
+        )
         return (k_ptr + flat).load[width=width]()
 
     @__parameter
     @__copy_capture(v_ptr, v_stride0)
     def v_load_fn[
         width: Int, alignment: Int = 1
-    ](idx: IndexList[3]) -> SIMD[dtype, width]:
-        var flat = idx[0] * v_stride0 + idx[1] * head_dim + idx[2]
+    ](idx: Coord) -> SIMD[dtype, width]:
+        var flat = (
+            Int(idx[0].value()) * v_stride0
+            + Int(idx[1].value()) * head_dim
+            + Int(idx[2].value())
+        )
         return (v_ptr + flat).load[width=width]()
 
     kv_cache_store_ragged[target="gpu", input_fn=k_load_fn](
         unfused_k_cache,
-        IndexList[3](total_length, num_kv_heads, head_dim),
+        (total_length, num_kv_heads, head_dim),
         row_offsets,
         ctx,
     )
     kv_cache_store_ragged[target="gpu", input_fn=v_load_fn](
         unfused_v_cache,
-        IndexList[3](total_length, num_kv_heads, head_dim),
+        (total_length, num_kv_heads, head_dim),
         row_offsets,
         ctx,
     )
@@ -699,27 +707,35 @@ def execute_test_with_position_ids[
     @__copy_capture(k_ptr, k_stride0)
     def k_load_fn[
         width: Int, alignment: Int = 1
-    ](idx: IndexList[3]) -> SIMD[dtype, width]:
-        var flat = idx[0] * k_stride0 + idx[1] * head_dim + idx[2]
+    ](idx: Coord) -> SIMD[dtype, width]:
+        var flat = (
+            Int(idx[0].value()) * k_stride0
+            + Int(idx[1].value()) * head_dim
+            + Int(idx[2].value())
+        )
         return (k_ptr + flat).load[width=width]()
 
     @__parameter
     @__copy_capture(v_ptr, v_stride0)
     def v_load_fn[
         width: Int, alignment: Int = 1
-    ](idx: IndexList[3]) -> SIMD[dtype, width]:
-        var flat = idx[0] * v_stride0 + idx[1] * head_dim + idx[2]
+    ](idx: Coord) -> SIMD[dtype, width]:
+        var flat = (
+            Int(idx[0].value()) * v_stride0
+            + Int(idx[1].value()) * head_dim
+            + Int(idx[2].value())
+        )
         return (v_ptr + flat).load[width=width]()
 
     kv_cache_store_ragged[target="gpu", input_fn=k_load_fn](
         unfused_k_cache,
-        IndexList[3](total_length, num_kv_heads, head_dim),
+        (total_length, num_kv_heads, head_dim),
         row_offsets,
         ctx,
     )
     kv_cache_store_ragged[target="gpu", input_fn=v_load_fn](
         unfused_v_cache,
-        IndexList[3](total_length, num_kv_heads, head_dim),
+        (total_length, num_kv_heads, head_dim),
         row_offsets,
         ctx,
     )

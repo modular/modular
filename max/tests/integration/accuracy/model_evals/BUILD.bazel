@@ -218,6 +218,7 @@ sh_binary(
     srcs = ["run_exacto_gpqa_local.sh"],
     data = [
         "exacto_gpqa_task.py",
+        "exacto_streaming.py",
         ":exacto_gpqa_openrouter",
         ":exacto_report",
     ],

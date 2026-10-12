@@ -1814,8 +1814,14 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
         // Thrown type must be implicitly convertible to the error slot type.
         isErrorTypeConvertible()) {
 
-      return emitIndirectCallInTryBlock(
-          callee, std::move(callOperands), [&](VarDeclOp errDecl) {
+      // The callee is already resolved, so emit it unchecked in the try
+      // region rather than re-resolving it as an indirect call.
+      return emitCallInTryBlock(
+          callee, std::move(callOperands),
+          [&](CallOperands &&operands) {
+            return emitCallUnchecked(callee, std::move(operands));
+          },
+          [&](VarDeclOp errDecl) {
             // Move the error out of the temporary and into the overall error
             // slot, performing the implicit conversion.
             ExprDest moveDest(errSlot, EC_RaiseValue);

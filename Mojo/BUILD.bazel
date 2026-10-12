@@ -36,11 +36,11 @@ package_group(
         "//Mojo/docs/site/...",
         "//bazel/...",
         "//docs/...",
-        "//max/python/max/_core/internal/...",
+        "//max/python/max/_core/mcl/...",
         "//max/tests/internal/API/c/...",  # Only when testing internally
         "//oss/modular/bazel/...",
         "//oss/modular/docs/...",
-        "//oss/modular/max/python/max/_core/internal/...",  # Only when testing internally
+        "//oss/modular/max/python/max/_core/mcl/...",  # Only when testing internally
         "//plugins/...",
         "//utils/...",
     ],
@@ -57,6 +57,7 @@ pkg_files(
     name = "docs",
     srcs = [
         ":CODialect.doc",
+        ":DEPGRAPHDialect.doc",
         ":HLCFDialect.doc",
         ":INTERPDialect.doc",
         ":KGENDialect.doc",
@@ -122,6 +123,37 @@ modular_cc_library(
         "//Support:Base",
         "//Support:Compiler",
         "@llvm-project//mlir:IR",
+    ],
+)
+
+td_library(
+    name = "DepGraphDialectTdFiles",
+    srcs = glob(["include/Mojo/DepGraphDialect/*.td"]),
+    includes = ["include"],
+    deps = [
+        "@llvm-project//mlir:BuiltinDialectTdFiles",
+        "@llvm-project//mlir:OpBaseTdFiles",
+    ],
+)
+
+gentbl_mlir_dialect(
+    name = "DepGraphDialectIncGen",
+    dialect = "depgraph",
+    td_file = "include/Mojo/DepGraphDialect/DepGraph.td",
+    deps = [
+        ":DepGraphDialectTdFiles",
+    ],
+)
+
+modular_cc_library(
+    name = "DepGraphDialect",
+    srcs = glob(["lib/DepGraphDialect/*.cpp"]),
+    hdrs = glob(["include/Mojo/DepGraphDialect/*.h"]),
+    deps = [
+        ":DepGraphDialectIncGen",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
     ],
 )
 
@@ -263,7 +295,7 @@ td_library(
 mlir_nanobind(
     name = "KGENDialectNanobindInc",
     srcs = glob(["include/Mojo/KGENDialect/*.td"]),
-    allowlist = "//max/python/max/_core/internal/modules/dialects:allowlist.txt",
+    allowlist = "//max/python/max/_core/mcl/modules/dialects:allowlist.txt",
     output_dir = "include/Mojo/KGENDialect/Nanobind",
     deps = [
         ":KGENDialectTdFiles",
@@ -1013,7 +1045,7 @@ modular_shared_library(
     visibility = [
         "//Mojo:consumers",
         "//Mojo/stdlib/std:__pkg__",
-        "//Mojo/test/internal/profiling:__pkg__",
+        "//Mojo/test/mcl/profiling:__pkg__",
         "//Mojo/test/tracy:__pkg__",
         "//mojo/stdlib/std:__pkg__",
     ],
@@ -1418,6 +1450,7 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
     deps = [
         ":Compiler",
+        ":DepGraphDialect",
         ":DialectChecksum",
         ":ToolCommon",
     ],
@@ -1487,6 +1520,7 @@ modular_cc_library(
     ],
     deps = [
         ":CODialect",
+        ":DepGraphDialect",
         ":ExecutionEngine",
         ":HLCFDialect",
         ":Interpreter",

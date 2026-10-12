@@ -64,6 +64,9 @@ _VALIDATE_EXCLUDE = [
     "tests/test_backtick_bracket_scan.py",
     # `__match` is parsed but not yet implemented in the Mojo compiler.
     "tests/test_match_formatting.py",
+    # Samples include `__enum` declarations the compiler rejects (e.g. a body
+    # of `pass`).
+    "tests/test_enum_formatting.py",
 ]
 
 # Companion to `unit_tests` that compiles every sample with `mojo build`.

@@ -13,7 +13,11 @@
 """MiMo-V2.6-Flash with its DFlash drafter: the fused speculative graph, and
 the base graph that writes the drafter's context."""
 
-from .arch import mimo_v2_dflash_context_arch, unified_dflash_mimo_v2_arch
+from .arch import (
+    mimo_v2_dflash_context_arch,
+    unified_dflash_mimo_v2_renamed_draft_speculator,
+    unified_dflash_mimo_v2_speculator,
+)
 from .base_ctx import MiMoV2DFlashContextModel, prefixed_context_writer
 from .drafter import DrafterExport
 from .model import UnifiedDflashMiMoV2Model, fused_graph
@@ -28,5 +32,6 @@ __all__ = [
     "fused_graph",
     "mimo_v2_dflash_context_arch",
     "prefixed_context_writer",
-    "unified_dflash_mimo_v2_arch",
+    "unified_dflash_mimo_v2_renamed_draft_speculator",
+    "unified_dflash_mimo_v2_speculator",
 ]

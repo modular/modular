@@ -238,7 +238,7 @@ def _get_eplb_stats_accumulator(
 
     Args:
         pipeline: The model pipeline running in this worker process.
-        enabled: pipeline_config.runtime.eplb_profile i.e. whether the user has opted in to EPLB profiling for this run.
+        enabled: pipeline_config.runtime.eplb_profile; that is, whether the user has opted in to EPLB profiling for this run.
 
     Returns:
         The accumulator constructed by the pipeline's load_model, or

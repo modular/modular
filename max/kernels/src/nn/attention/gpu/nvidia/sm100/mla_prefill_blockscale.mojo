@@ -26,6 +26,8 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     TransientScheduler,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+    attn_tmem_addr,
     StagedPipeline,
     VProducerPipeline,
     KConsumerPipeline,
@@ -47,8 +49,8 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     Pack,
     q_coord,
-    q_tma,
-    QTMATile,
+    q_tma_prefill,
+    QTMATilePrefill,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -155,13 +157,11 @@ __extension SM100MLA:
     def mla_prefill_kernel_blockscale[
         blockwise_scale: Int = 0,
     ](
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.BM // 2,
             depth=Self.config.BK0,
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -269,7 +269,6 @@ __extension SM100MLA:
         var rope_smem = rebind[SharedMemPointer[Scalar[KVLUTType.dtype]]](
             attn_smem.rope_smem_base()
         )
-        var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         # Extra blockscale barriers are placed after the SM100AttentionSMem layout.
         # Align to 8 bytes for SharedMemBarrier.
@@ -314,10 +313,6 @@ __extension SM100MLA:
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
             tma_to_cvt_pipeline.init()
             cvt_to_mma_pipeline.init()
-        elif warp_idx == 1:
-            tcgen05_alloc[Self.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -331,10 +326,7 @@ __extension SM100MLA:
 
         barrier()
 
-        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
-        # barrier publish it), and carry it by register into the shared
-        # fa4_softmax / fa4_correction consumers (see depth-512 fix).
-        var tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = attn_tmem_addr[cluster_size=1]()
 
         var role = warp_idx_to_role(warp_idx)
 
@@ -443,16 +435,12 @@ __extension SM100MLA:
             ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
-                tcgen05_release_allocation_lock[Self.cta_group]()
-                tcgen05_dealloc[Self.cta_group](
-                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-                )
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
             ](k_rope_lut, seq_info)
             Self.mma(
-                ptr_tmem_addr[0],
+                tmem_addr,
                 cvt_to_mma_pipeline,
                 seq_info.prompt_idx,
                 pos.score_row,
@@ -512,13 +500,11 @@ __extension SM100MLA:
         seq_info: SeqInfo,
         max_seq_len: Self.MaxSeqLenType,
         mask: Self.MaskType,
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.BM // 2,
             depth=Self.config.BK0,  # padded depth -> 192
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -565,9 +551,15 @@ __extension SM100MLA:
             MutAnyOrigin,
             address_space=.SHARED,
         ]
-        comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+        comptime q_elems = type_of(q_tma_op).tile_shape.element_types[
+            0
+        ].static_value * type_of(q_tma_op).tile_shape.element_types[
+            1
+        ].static_value * type_of(
             q_tma_op
-        ).tile_shape[1] * type_of(q_tma_op).tile_shape[2]
+        ).tile_shape.element_types[
+            2
+        ].static_value
         comptime QType = SMemTensorLT[q_elems]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
@@ -1831,13 +1823,11 @@ def mla_sm100_prefill_blockscale[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    var q_tma_op = q_tma[
+    var q_tma_op = q_tma_prefill[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.BM // 2,
         depth=fa4_config.qk_depth,
         q_num_heads=fa4_config.num_q_heads,
-        group=fa4_config.group,
-        decoding=False,
     ](
         ctx,
         q.ptr,
@@ -1922,13 +1912,11 @@ def _mla_prefill_sm100_valid_length_dispatch[
         middle_dim=_,
         tma_blocks_per_op=_,
     ],
-    q_tma_op: QTMATile[
+    q_tma_op: QTMATilePrefill[
         q_type,
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.BM // 2,
         depth=fa4_config.qk_depth,
-        group=fa4_config.group,
-        decoding=False,
     ],
     k_nope_tma_op: KVTMATile[
         KVType.dtype,
@@ -2040,6 +2028,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
     )
     comptime assert smem_use <= fa4_config.sm100_smem_carveout
 
+    assert_sm_exclusive_smem[smem_use]()
     ctx.enqueue_function[kernel](
         q_tma_op,
         k_nope_tma_op,

@@ -384,6 +384,7 @@ def _matmul_float8(
     weight_scale: TensorValue,
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
+    x_scales: TensorValue | None = None,
 ) -> TensorValue:
     """Computes x @ weight.T with float8 quantization.
 
@@ -394,10 +395,26 @@ def _matmul_float8(
         input_scale: The input scale tensor (only required for static
             fp8 quantization).
         quant_config: The quantization configuration.
+        x_scales: Dynamic activation scales when ``x`` arrives already
+            quantized (e.g. by a fused rms_norm + quantize); skips the
+            in-place quantize. Only the dynamic per-row/block path takes it.
 
     Returns:
         The output tensor.
     """
+    if x_scales is not None and (
+        _is_apple_gpu()
+        or input_scale is not None
+        or (
+            quant_config.input_scale.is_tensor
+            and quant_config.weight_scale.is_tensor
+        )
+    ):
+        raise ValueError(
+            "pre-quantized activations (x_scales) are only supported on the"
+            " dynamic per-row/blockwise FP8 matmul path"
+        )
+
     if _is_apple_gpu():
         # Apple M5 weight-only (W8A16) path: keep the activation in bf16 (do NOT
         # quantize it to FP8) and feed the FP8-E4M3 weight straight to the kernel,
@@ -504,7 +521,7 @@ def _matmul_float8(
             rowwise_weight_spec,
             out_type=DType.bfloat16,
         )
-    else:
+    elif x_scales is None:
         # Dynamic non-per-tensor (per-row/block).
         x, x_scale = quantize_dynamic_scaled_float8(
             x,
@@ -513,6 +530,15 @@ def _matmul_float8(
             scales_type=weight_scale.dtype,
             out_type=weight.dtype,
         )
+        weight_scale = weight_scale.to(x.device)
+    else:
+        if x.dtype != weight.dtype or x_scales.dtype != weight_scale.dtype:
+            raise ValueError(
+                f"pre-quantized activation ({x.dtype}, scales {x_scales.dtype})"
+                f" must match the weight ({weight.dtype}, scales"
+                f" {weight_scale.dtype})"
+            )
+        x_scale = x_scales
         weight_scale = weight_scale.to(x.device)
 
     return dynamic_scaled_matmul(
@@ -566,6 +592,7 @@ def quantized_matmul(
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
     bias: TensorValue | None = None,
+    x_scales: TensorValue | None = None,
 ) -> TensorValue:
     """Single entry point for all quantized dense matmuls.
 
@@ -582,10 +609,21 @@ def quantized_matmul(
         weight_scale_2: Additional weight scale factor (NVFP4 only).
         bias: Optional bias tensor. Only the int8 W8A8 (Apple M5) path fuses it
             into the matmul epilogue; other formats leave the caller to add it.
+        x_scales: Dynamic activation scales for an ``x`` that is already FP8
+            (produced by a fused norm + quantize). Dynamic FP8 formats only.
 
     Returns:
         The output tensor.
     """
+    if x_scales is not None and quant_config.format not in (
+        QuantFormat.COMPRESSED_TENSORS_FP8,
+        QuantFormat.FBGEMM_FP8,
+        QuantFormat.BLOCKSCALED_FP8,
+    ):
+        raise ValueError(
+            "pre-quantized activations (x_scales) require a dynamic FP8"
+            f" format, got {quant_config.format}"
+        )
     match quant_config.format:
         case QuantFormat.NVFP4:
             assert input_scale is not None
@@ -628,6 +666,7 @@ def quantized_matmul(
                 weight_scale,
                 input_scale,
                 quant_config,
+                x_scales=x_scales,
             )
         case QuantFormat.INT8_W8A8:
             return _matmul_int8(x, weight, weight_scale, bias=bias)

@@ -87,12 +87,80 @@ def test_epilogue_fn[
     _ = c_out_dev^
 
 
+def test_compute_fn[
+    a_type: DType,
+    c_type: DType,
+    N: Int,
+    K: Int,
+    config: MatmulConfig[a_type, a_type, c_type, True],
+](ctx: DeviceContext, m: Int) raises:
+    """Checks that a compute closure's result is what the kernel stores
+    into `c`, at the index the closure was given."""
+    print(
+        "compute:",
+        a_type,
+        "->",
+        c_type,
+        m,
+        "x",
+        N,
+        "x",
+        K,
+        config.num_k_partitions,
+    )
+
+    var a_dev = ctx.enqueue_create_buffer[a_type](m * K)
+    var b_dev = ctx.enqueue_create_buffer[a_type](N * K)
+    var c_ref_dev = ctx.enqueue_create_buffer[c_type](m * N)
+    var c_dev = ctx.enqueue_create_buffer[c_type](m * N)
+
+    with a_dev.map_to_host() as ha, b_dev.map_to_host() as hb:
+        rand(ha.unsafe_ptr(), m * K, min=-1.0, max=1.0)
+        rand(hb.unsafe_ptr(), N * K, min=-1.0, max=1.0)
+    ctx.enqueue_memset(c_ref_dev, 0)
+    ctx.enqueue_memset(c_dev, 0)
+
+    var a = TileTensor(a_dev, row_major(m, Idx[K])).as_imm()
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K])).as_imm()
+    var c_ref = TileTensor(c_ref_dev, row_major(m, Idx[N]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
+
+    var scale: Int = 2
+
+    def scale_odd_rows_negated[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: IndexList[2], val: SIMD[dtype, width]) {var scale} -> SIMD[
+        dtype, width
+    ]:
+        var row_scale = -scale if idx[0] % 2 == 1 else scale
+        return val * SIMD[dtype, width](row_scale)
+
+    comptime if config.num_k_partitions > 1:
+        multistage_gemm[transpose_b=True, config=config](
+            c_ref, a, b, config, ctx
+        )
+        multistage_gemm[transpose_b=True, config=config](
+            c, a, b, config, scale_odd_rows_negated, ctx
+        )
+    else:
+        multistage_gemm[transpose_b=True, config=config](c_ref, a, b, ctx)
+        multistage_gemm[transpose_b=True, config=config](
+            c, a, b, scale_odd_rows_negated, ctx
+        )
+
+    with c_ref_dev.map_to_host() as h_ref, c_dev.map_to_host() as h_c:
+        for i in range(m * N):
+            var row_scale = -2 if (i // N) % 2 == 1 else 2
+            assert_equal(h_c[i], h_ref[i] * Scalar[c_type](row_scale))
+
+
 def main() raises:
     with DeviceContext() as ctx:
         comptime bf16_config = _amdgpu_matmul_config_from_block_shape[
             .float32, .bfloat16, .bfloat16, True, 512
         ](Index(128, 128))
         test_epilogue_fn[.bfloat16, .float32, 256, 512, bf16_config](ctx, 130)
+        test_compute_fn[.bfloat16, .float32, 256, 512, bf16_config](ctx, 130)
 
         comptime fp8_type = (
             DType.float8_e4m3fn if ctx.default_device_info
@@ -104,6 +172,7 @@ def main() raises:
         # Standard, skinny, and ping-pong branches of the FP8 dispatch.
         for m in [64, 300, 640]:
             test_epilogue_fn[fp8_type, .bfloat16, 4096, 512, fp8_config](ctx, m)
+            test_compute_fn[fp8_type, .bfloat16, 4096, 512, fp8_config](ctx, m)
 
         comptime split_k_config = MatmulConfig[
             .float32, .float32, .float32, True
@@ -115,3 +184,4 @@ def main() raises:
             num_k_partitions=4,
         )
         test_epilogue_fn[.float32, .float32, 128, 6144, split_k_config](ctx, 16)
+        test_compute_fn[.float32, .float32, 128, 6144, split_k_config](ctx, 16)

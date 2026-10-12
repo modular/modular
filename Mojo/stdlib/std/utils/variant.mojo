@@ -321,6 +321,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
     @inline(.always)
     def __init__(out self, *, copy: Self):
+        comptime if Self.__copy_ctor_is_trivial:
+            self._impl = copy._impl
+            return
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = copy.get_discriminant()
 
@@ -334,6 +337,9 @@ struct _DefaultVariantStorage[*Ts: AnyType](
 
     @inline(.always)
     def __init__(out self, *, deinit move: Self):
+        comptime if Self.__move_ctor_is_trivial:
+            self._impl = move._impl
+            return
         self = Self(unsafe_uninitialized=())
         self.get_discriminant() = move.get_discriminant()
 

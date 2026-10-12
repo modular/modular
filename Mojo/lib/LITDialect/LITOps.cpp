@@ -737,13 +737,11 @@ TypedAttr FnOp::getFuncLiteralGenerator(
 
   auto unboundGen = GeneratorAttr::get(fullSig.getInputParamTypes(), fnLiteral,
                                        fullSig.getParamListAttrs());
-  if (!bindings || llvm::all_of(bindings, [](TypedAttr binding) {
-        return isa<UnboundAttr>(binding);
-      })) {
+  if (!bindings || llvm::all_of(bindings, llvm::IsaPred<UnboundAttr>)) {
     // If all the provided bindings are unbound, return the original generator.
-    // FIXME: this is a hack to avoid the bug when UnboundAttr erased type
-    // dependencies, which results in BindParamsAttr being folded in a wrong
-    // way.
+    // FIXME(MOCO-3542): this is a hack to avoid the bug when UnboundAttr erased
+    // type dependencies, which results in BindParamsAttr being folded in a
+    // wrong way.
     //
     // E.g.,
     //

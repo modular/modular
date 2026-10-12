@@ -119,6 +119,7 @@ class SpeculativeConfig(ConfigFileModel):
     ``--num-speculative-tokens``,
     ``--num-speculative-tokens-per-batch-size``,
     ``--adaptive-speculative-widths``,
+    ``--adaptive-speculative-min-batch-size``,
     ``--num-speculative-tokens-mixed-batch``,
     ``--rejection-sampling-strategy``, and ``--synthetic-acceptance-rate``.
     Construct the config directly when configuring a pipeline
@@ -202,9 +203,11 @@ class SpeculativeConfig(ConfigFileModel):
     it carries. ``None`` verifies every drafted token, which is the behavior
     when the field is unset.
 
-    Applies to every speculative method. Block drafters (``dflash``) still
-    draft their whole checkpoint-fixed block every step; only how much of that
-    block the target verifies narrows.
+    Applies to every speculative method. A block drafter (``dflash``) still
+    drafts its whole checkpoint-fixed block, and narrowing changes only how
+    much of that block the target verifies. The exception is a count of
+    ``0``, where a draft that declares ``supports_zero_draft_rows`` skips the
+    draft forward too.
     """
 
     @property
@@ -253,9 +256,30 @@ class SpeculativeConfig(ConfigFileModel):
     how many widths are named.
     """
 
+    adaptive_speculative_min_batch_size: int = Field(
+        default=1,
+        ge=1,
+        description=(
+            "Smallest decode batch size that captures every adaptive verify "
+            "width. Smaller batches capture only the widest and round a "
+            "narrower request up to it. Requires adaptive_speculative_widths."
+        ),
+    )
+    """Decode batch size below which only the widest adaptive width is captured.
+
+    Small batches are memory-bound, so narrowing barely changes their step cost
+    while each extra width multiplies the captured graphs. Verifying more
+    drafts than asked is always correct, since every step drafts them all.
+    """
+
     @model_validator(mode="after")
     def _validate_adaptive_speculative_widths(self) -> Self:
         if self.adaptive_speculative_widths is None:
+            if self.adaptive_speculative_min_batch_size > 1:
+                raise ValueError(
+                    "adaptive_speculative_min_batch_size requires "
+                    "adaptive_speculative_widths."
+                )
             return self
         if self.num_speculative_tokens_per_batch_size is not None:
             raise ValueError(
@@ -400,6 +424,17 @@ class SpeculativeConfig(ConfigFileModel):
             "typical acceptance. Incompatible with "
             "``use_relaxed_acceptance_for_thinking``. An architecture that "
             "cannot sample its draft refuses 'sampled' at startup."
+        ),
+    )
+
+    logit_penalties: bool = Field(
+        default=False,
+        description=(
+            "Declares presence/frequency penalty inputs on the fused "
+            "speculative graph and applies them to the verified logits "
+            "before acceptance. For engines that feed those inputs (Mach); "
+            "MAX Serve's speculative pipeline does not, and only the "
+            "Qwen3.5 MTP graph declares them."
         ),
     )
 

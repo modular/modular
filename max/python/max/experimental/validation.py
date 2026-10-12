@@ -270,7 +270,7 @@ class EagerUsageValidator:
     Args:
         enabled: When ``False`` the scope does nothing at all, so a caller
             can construct one unconditionally from a config flag.
-        label: Names the scope in warnings, e.g. ``"initialization"``.
+        label: Names the scope in warnings, for example, ``"initialization"``.
     """
 
     def __init__(self, *, enabled: bool = True, label: str = "") -> None:

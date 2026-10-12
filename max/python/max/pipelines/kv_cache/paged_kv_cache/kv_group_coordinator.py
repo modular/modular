@@ -17,11 +17,11 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
+from max._kv_core import blocks_held_of_hit
 from max.nn.kv_cache import KVCacheGroupId
 from max.pipelines.context import TextContext
 from max.pipelines.modeling.types import RequestID
 
-from ..prefix_hit import blocks_held_of_hit
 from .block_utils import LittleKVCacheBlock
 from .jenga_block_pool import JengaBlockPool
 

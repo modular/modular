@@ -18,7 +18,7 @@ from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from max.gpu.host import DeviceContext, Dim
 from max.gpu import block_idx, thread_idx
 from max.gpu.memory import fence_mbarrier_init
-from layout import MixedLayout, TileTensor, row_major, stack_allocation
+from layout import Coord, MixedLayout, TileTensor, row_major, stack_allocation
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tile_io import copy_sram_to_dram
@@ -30,7 +30,6 @@ from layout.tma_async import (
 )
 from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
-from std.utils.index import IndexList
 
 
 # Test loading a single 2d tile.
@@ -38,20 +37,17 @@ from std.utils.index import IndexList
 def test_tma_mcast_load_kernel[
     dtype: DType,
     layout: MixedLayout,
-    tile_rank: Int,
-    tile_shape: IndexList[tile_rank],
+    tile_shape: Coord,
     thread_layout: MixedLayout,
     CLUSTER_M: UInt32,
     CLUSTER_N: UInt32,
 ](
     dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape],
+    tma_tile: TMATensorTile[dtype, tile_shape],
 ):
-    comptime tileM = tile_shape[0]
-    comptime tileN = tile_shape[1]
-    comptime expected_bytes = _idx_product[tile_rank, tile_shape]() * size_of[
-        dtype
-    ]()
+    comptime tileM = Int(tile_shape.element_types[0].static_value.value())
+    comptime tileN = Int(tile_shape.element_types[1].static_value.value())
+    comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     var block_rank = block_rank_in_cluster()
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
@@ -132,13 +128,16 @@ def test_tma_multicast_load_row_major[
     var tma_tensor = create_tma_tile[tileM, tileN](ctx, src.device_tensor())
     ctx.synchronize()
 
-    comptime __tileM = type_of(tma_tensor).tile_shape[0]
-    comptime __tileN = type_of(tma_tensor).tile_shape[1]
+    comptime __tileM = Int(
+        type_of(tma_tensor).tile_shape.element_types[0].static_value.value()
+    )
+    comptime __tileN = Int(
+        type_of(tma_tensor).tile_shape.element_types[1].static_value.value()
+    )
     comptime __thread_layout = row_major[__tileM, __tileN]()
     comptime kernel = test_tma_mcast_load_kernel[
         type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
-        type_of(tma_tensor).rank,  # tile rank
         type_of(tma_tensor).tile_shape,  # tile shape
         __thread_layout,  # thread layout
         UInt32(CLUSTER_M),
@@ -179,11 +178,10 @@ def test_tma_sliced_multicast_load_kernel[
     thread_layout: MixedLayout,
     CLUSTER_M: UInt32,
     CLUSTER_N: UInt32,
-    tma_rank: Int,
-    tma_tile_shape: IndexList[tma_rank],
+    tma_tile_shape: Coord,
 ](
     dst: TileTensor[dtype, type_of(layout), MutAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tma_rank, tma_tile_shape],
+    tma_tile: TMATensorTile[dtype, tma_tile_shape],
 ):
     comptime tileM = type_of(tile_layout).static_shape[0]
     comptime tileN = type_of(tile_layout).static_shape[1]
@@ -278,7 +276,6 @@ def test_tma_sliced_multicast_load_row_major[
         row_major[tileM, tileN](),
         UInt32(CLUSTER_M),
         UInt32(CLUSTER_N),
-        type_of(tma_tensor).rank,  # tma rank
         type_of(tma_tensor).tile_shape,  # tma tile shape
     ]
 

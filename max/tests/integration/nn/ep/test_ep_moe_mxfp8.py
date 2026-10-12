@@ -349,9 +349,7 @@ def test_ep_moe_mxfp8_nvidia(
         )
 
 
-def _mx_quant_config(
-    fmt: QuantFormat, *, preshuffled_b: bool = True
-) -> QuantConfig:
+def _mx_quant_config(fmt: QuantFormat) -> QuantConfig:
     """Builds an MX (block-scaled, group 32) quant config for the fold gate."""
     return QuantConfig(
         input_scale=InputScaleSpec(
@@ -369,7 +367,6 @@ def _mx_quant_config(
         attn_quantized_layers=set(),
         embedding_output_dtype=None,
         format=fmt,
-        block_scaled_preshuffled_b=preshuffled_b,
         can_use_fused_swiglu=True,
     )
 
@@ -441,16 +438,3 @@ def test_ep_mxfp8_scale_fold_gate_amd(n_devices: int) -> None:
             f"{fmt} EP A-scale fold did not engage"
         )
         assert ep_mxfp4_max_padded_m(ep_config) == expected_stride
-
-    # Boundary: the fold still requires the preshuffled-B grouped matmul, so
-    # widening the format check must not make it fire on the row-major kernel.
-    moe, ep_config = _build_ep_moe(
-        _mx_quant_config(QuantFormat.MXFP8, preshuffled_b=False),
-        n_devices,
-        max_tokens_per_rank,
-    )
-    moe.configure_ep_scale_fusion(dispatch_supports_fold=True)
-    assert not ep_config.mxfp4_a_scales_preshuffled, (
-        "the fold must stay off without a preshuffled-B matmul to read it"
-    )
-    assert ep_mxfp4_max_padded_m(ep_config) == 0

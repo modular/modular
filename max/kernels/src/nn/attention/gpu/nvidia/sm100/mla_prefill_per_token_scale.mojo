@@ -29,8 +29,8 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     Pack,
     q_coord,
-    q_tma,
-    QTMATile,
+    q_tma_prefill,
+    QTMATilePrefill,
 )
 from layout.tma_async import (
     create_tensor_tile,
@@ -38,22 +38,21 @@ from layout.tma_async import (
     SharedMemBarrier,
     TMATensorTile,
 )
-from layout import TileTensor
-from layout.tile_layout import row_major as tt_row_major
-from layout.coord import Idx, Coord
+from layout import TileTensor, row_major as tt_row_major
+from layout.coord import Idx, Coord, coord
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, thread_idx, warp_id
 from max.gpu.sync import barrier
 from max.gpu.primitives.warp import broadcast
 from max.gpu.host import DeviceAttribute, DeviceContext, FuncAttribute
-from max.gpu.compute.arch.tcgen05 import tcgen05_alloc
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.utils.index import Index
 from nn.attention.gpu.mha import q_num_matrix_view_rows
 from nn.attention.gpu.nvidia.sm100.smem import SM100AttentionSMem
 from nn.attention.gpu.nvidia.sm100.softmax_warp import fa4_softmax
 from nn.attention.gpu.nvidia.sm100.correction_warp import fa4_correction
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     kv_sub_tile_rows,
@@ -139,7 +138,6 @@ struct MLASmemStorage[
     var k_scale_smem: Array[UInt8, Self.k_scale_bytes]
     var correction_smem: Array[Float32, Self.correction_smem_size]
     var mbar_base: Array[SharedMemBarrier, Self.num_mbars]
-    var tmem_addr: Array[UInt32, 1]
 
 
 __extension SM100MLA:
@@ -162,7 +160,7 @@ __extension SM100MLA:
         t"sm100_mla_prefill_per_token_scale_{Self.qkv_dtype}_{Self.output_dtype}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
     def mla_prefill_kernel_per_token_scale(
-        q_nope_tma_op: QTMATile[
+        q_nope_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             # `BM // num_q` = 128 in both modes (one of two Q halves in
@@ -170,16 +168,12 @@ __extension SM100MLA:
             # folds across the 1Q/2Q configs.
             BM=Self.config.q_tile_rows(),
             depth=Self.config.nope_depth,
-            group=Self.config.group,
-            decoding=False,
         ],
-        q_rope_tma_op: QTMATile[
+        q_rope_tma_op: QTMATilePrefill[
             config.rope_gmem_dtype,
             Self.config.rope_gmem_swizzle_mode,
             BM=Self.config.q_tile_rows(),
             depth=Self.config.rope_depth,
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -201,19 +195,17 @@ __extension SM100MLA:
         ],
         q_scale_tma_op: TMATensorTile[
             config.scale_dtype,
-            2,
             # Per-Q-tile box (128 in both modes): 2Q issues two TMAs
             # (one per Q half, see the with_q / Q1 sites in
             # `load_per_token_scale`); 1Q issues one. Keeps the TMA-op
             # type folding across the 1Q/2Q configs.
-            Index(1, Self.config.q_tile_rows()),
-            Index(1, Self.config.q_tile_rows()),
+            coord[1, Self.config.q_tile_rows()],
+            coord[1, Self.config.q_tile_rows()],
         ],
         k_scale_tma_op: TMATensorTile[
             config.scale_dtype,
-            2,
-            Index(1, kv_sub_tile_rows(Self.config.BN, Self.page_size)),
-            Index(1, kv_sub_tile_rows(Self.config.BN, Self.page_size)),
+            coord[1, kv_sub_tile_rows(Self.config.BN, Self.page_size)],
+            coord[1, kv_sub_tile_rows(Self.config.BN, Self.page_size)],
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
@@ -288,21 +280,17 @@ __extension SM100MLA:
             # K_nope/K_rope/V/k_scale and the ragged store are
             # BM-independent), but the parser sees distinct parameter
             # expressions, so `rebind`.
-            comptime QNope1Q = QTMATile[
+            comptime QNope1Q = QTMATilePrefill[
                 Kernel1Q.KVLUTType.dtype,
                 Kernel1Q.config.qkv_swizzle_mode,
                 BM=Kernel1Q.config.q_tile_rows(),
                 depth=Kernel1Q.config.nope_depth,
-                group=Kernel1Q.config.group,
-                decoding=False,
             ]
-            comptime QRope1Q = QTMATile[
+            comptime QRope1Q = QTMATilePrefill[
                 Kernel1Q.config.rope_gmem_dtype,
                 Kernel1Q.config.rope_gmem_swizzle_mode,
                 BM=Kernel1Q.config.q_tile_rows(),
                 depth=Kernel1Q.config.rope_depth,
-                group=Kernel1Q.config.group,
-                decoding=False,
             ]
             comptime KNope1Q = KVTMATile[
                 Kernel1Q.KVLUTType.dtype,
@@ -326,19 +314,13 @@ __extension SM100MLA:
             ]
             comptime QScale1Q = TMATensorTile[
                 Kernel1Q.config.scale_dtype,
-                2,
-                Index(1, Kernel1Q.config.q_tile_rows()),
-                Index(1, Kernel1Q.config.q_tile_rows()),
+                coord[1, Kernel1Q.config.q_tile_rows()],
             ]
             comptime KScale1Q = TMATensorTile[
                 Kernel1Q.config.scale_dtype,
-                2,
-                Index(
+                coord[
                     1, kv_sub_tile_rows(Kernel1Q.config.BN, Kernel1Q.page_size)
-                ),
-                Index(
-                    1, kv_sub_tile_rows(Kernel1Q.config.BN, Kernel1Q.page_size)
-                ),
+                ],
             ]
             comptime O1Q = RaggedTMA3DTile[
                 Kernel1Q.output_dtype,
@@ -395,21 +377,17 @@ __extension SM100MLA:
     @staticmethod
     @inline(.always)
     def _kernel_impl_per_token_scale(
-        q_nope_tma_op: QTMATile[
+        q_nope_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.q_tile_rows(),
             depth=Self.config.nope_depth,
-            group=Self.config.group,
-            decoding=False,
         ],
-        q_rope_tma_op: QTMATile[
+        q_rope_tma_op: QTMATilePrefill[
             config.rope_gmem_dtype,
             Self.config.rope_gmem_swizzle_mode,
             BM=Self.config.q_tile_rows(),
             depth=Self.config.rope_depth,
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -431,15 +409,13 @@ __extension SM100MLA:
         ],
         q_scale_tma_op: TMATensorTile[
             config.scale_dtype,
-            2,
-            Index(1, Self.config.q_tile_rows()),
-            Index(1, Self.config.q_tile_rows()),
+            coord[1, Self.config.q_tile_rows()],
+            coord[1, Self.config.q_tile_rows()],
         ],
         k_scale_tma_op: TMATensorTile[
             config.scale_dtype,
-            2,
-            Index(1, kv_sub_tile_rows(Self.config.BN, Self.page_size)),
-            Index(1, kv_sub_tile_rows(Self.config.BN, Self.page_size)),
+            coord[1, kv_sub_tile_rows(Self.config.BN, Self.page_size)],
+            coord[1, kv_sub_tile_rows(Self.config.BN, Self.page_size)],
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_dtype,
@@ -514,7 +490,6 @@ __extension SM100MLA:
         var k_scale_smem = rebind[SharedMemPointer[Scalar[config.scale_dtype]]](
             attn_smem.k_scale_smem()
         )
-        var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         comptime num_reg_softmax = 184
         comptime num_reg_correction = 96
@@ -523,14 +498,10 @@ __extension SM100MLA:
 
         comptime assert not Self.PartitionType.do_partition
 
-        # Initialize barriers and tmem address
+        # Initialize barriers
         var warp_idx = UInt32(warp_id[broadcast=True]())
         if warp_idx == 0:
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
-        elif warp_idx == 1:
-            tcgen05_alloc[Self.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -550,7 +521,7 @@ __extension SM100MLA:
 
         barrier()
 
-        var tmem_addr = ptr_tmem_addr[0]
+        var tmem_addr = attn_tmem_addr[cluster_size=1]()
         var role = warp_idx_to_role(warp_idx)
 
         if role == WarpRole.Softmax0 or role == WarpRole.Softmax1:
@@ -686,21 +657,17 @@ __extension SM100MLA:
         seq_info: SeqInfo,
         max_seq_len: Self.MaxSeqLenType,
         mask: Self.MaskType,
-        q_nope_tma_op: QTMATile[
+        q_nope_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.q_tile_rows(),
             depth=Self.config.nope_depth,
-            group=Self.config.group,
-            decoding=False,
         ],
-        q_rope_tma_op: QTMATile[
+        q_rope_tma_op: QTMATilePrefill[
             config.rope_gmem_dtype,
             Self.config.rope_gmem_swizzle_mode,
             BM=Self.config.q_tile_rows(),
             depth=Self.config.rope_depth,
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -722,15 +689,13 @@ __extension SM100MLA:
         ],
         q_scale_tma_op: TMATensorTile[
             config.scale_dtype,
-            2,
-            Index(1, Self.config.q_tile_rows()),
-            Index(1, Self.config.q_tile_rows()),
+            coord[1, Self.config.q_tile_rows()],
+            coord[1, Self.config.q_tile_rows()],
         ],
         k_scale_tma_op: TMATensorTile[
             config.scale_dtype,
-            2,
-            Index(1, kv_sub_tile_rows(Self.config.BN, Self.page_size)),
-            Index(1, kv_sub_tile_rows(Self.config.BN, Self.page_size)),
+            coord[1, kv_sub_tile_rows(Self.config.BN, Self.page_size)],
+            coord[1, kv_sub_tile_rows(Self.config.BN, Self.page_size)],
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: Self.KRopeType,
@@ -782,13 +747,25 @@ __extension SM100MLA:
             MutAnyOrigin,
             address_space=.SHARED,
         ]
-        comptime q_nope_elems = type_of(q_nope_tma_op).tile_shape[0] * type_of(
+        comptime q_nope_elems = type_of(q_nope_tma_op).tile_shape.element_types[
+            0
+        ].static_value * type_of(q_nope_tma_op).tile_shape.element_types[
+            1
+        ].static_value * type_of(
             q_nope_tma_op
-        ).tile_shape[1] * type_of(q_nope_tma_op).tile_shape[2]
+        ).tile_shape.element_types[
+            2
+        ].static_value
         comptime QNopeType = SMemTensorLT[q_nope_elems]
-        comptime q_rope_elems = type_of(q_rope_tma_op).tile_shape[0] * type_of(
+        comptime q_rope_elems = type_of(q_rope_tma_op).tile_shape.element_types[
+            0
+        ].static_value * type_of(q_rope_tma_op).tile_shape.element_types[
+            1
+        ].static_value * type_of(
             q_rope_tma_op
-        ).tile_shape[1] * type_of(q_rope_tma_op).tile_shape[2]
+        ).tile_shape.element_types[
+            2
+        ].static_value
         comptime QRopeType = RopeMemTensorLT[q_rope_elems]
         comptime ScaleSmemLT[elems: Int] = TileTensor[
             config.scale_dtype,
@@ -796,13 +773,21 @@ __extension SM100MLA:
             MutAnyOrigin,
             address_space=.SHARED,
         ]
-        comptime q_scale_elems_tma = type_of(q_scale_tma_op).tile_shape[
-            0
-        ] * type_of(q_scale_tma_op).tile_shape[1]
+        comptime q_scale_elems_tma = type_of(
+            q_scale_tma_op
+        ).tile_shape.element_types[0].static_value * type_of(
+            q_scale_tma_op
+        ).tile_shape.element_types[
+            1
+        ].static_value
         comptime QScaleSmemType = ScaleSmemLT[q_scale_elems_tma]
-        comptime k_scale_elems_tma = type_of(k_scale_tma_op).tile_shape[
-            0
-        ] * type_of(k_scale_tma_op).tile_shape[1]
+        comptime k_scale_elems_tma = type_of(
+            k_scale_tma_op
+        ).tile_shape.element_types[0].static_value * type_of(
+            k_scale_tma_op
+        ).tile_shape.element_types[
+            1
+        ].static_value
         comptime KScaleSmemType = ScaleSmemLT[k_scale_elems_tma]
         comptime q_scale_elems = Self.config.BM
         comptime k_scale_elems = Self.config.BN
@@ -1956,7 +1941,7 @@ def q_scale_tma[
 ](
     ctx: DeviceContext,
     q_scale_tensor: TileTensor[dtype, ...],
-    out tma: TMATensorTile[dtype, 2, Index(1, BM), Index(1, BM)],
+    out tma: TMATensorTile[dtype, coord[1, BM], coord[1, BM]],
 ) raises:
     """Creates a 2-D TMA tile descriptor for the per-token Q scale tensor.
 
@@ -1979,9 +1964,9 @@ def q_scale_tma[
     )
 
     return create_tensor_tile[
-        Index(1, BM),
+        coord[1, BM],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __desc_shape=Index(1, BM),
+        __desc_shape=coord[1, BM],
     ](ctx, tensor)
 
 
@@ -2115,26 +2100,22 @@ def mla_sm100_prefill_per_token_scale[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    var q_nope_tma_op = q_tma[
+    var q_nope_tma_op = q_tma_prefill[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.nope_depth,
         q_num_heads=fa4_config.num_q_heads,
-        group=fa4_config.group,
-        decoding=False,
     ](
         ctx,
         q_nope.ptr,
         num_rows_q,
     )
 
-    var q_rope_tma_op = q_tma[
+    var q_rope_tma_op = q_tma_prefill[
         fa4_config.rope_gmem_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.rope_depth,
         q_num_heads=fa4_config.num_q_heads,
-        group=fa4_config.group,
-        decoding=False,
     ](
         ctx,
         q_rope.unsafe_ptr(),
@@ -2241,6 +2222,7 @@ def mla_sm100_prefill_per_token_scale[
         # dynamic-smem region, so reserve the max of both footprints.
         comptime smem_use = cfg.launch_smem_used()
 
+        assert_sm_exclusive_smem[smem_use]()
         ctx.enqueue_function[kernel](
             q_nope_tma_op,
             q_rope_tma_op,

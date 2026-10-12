@@ -134,34 +134,6 @@ def test_simd_load_store() raises:
     assert_equal(loaded2, SIMD[.float32, 4](5.0, 6.0, 7.0, 8.0))
 
 
-def test_to_layout_tensor() raises:
-    """Test to_layout_tensor() conversion."""
-    var storage = Array[Float32, 3 * 4](
-        fill_with=lambda (i: Int) -> Float32: Float32(i)
-    )
-    comptime spec = get_row_major_tensor_spec_static[.float32, 2, 3, 4]()
-    var tensor = ManagedTensorSlice[
-        mut=True, io_spec=IOSpec.Unknown, static_spec=spec
-    ](storage.unsafe_ptr(), (3, 4))
-
-    # Convert to LayoutTensor
-    var layout_tensor = tensor.to_layout_tensor()
-
-    # Verify the layout tensor has the same data
-    assert_equal(layout_tensor[0, 0], 0.0)
-    assert_equal(layout_tensor[1, 1], 5.0)
-    assert_equal(layout_tensor[2, 3], 11.0)
-
-    # Verify dimensions
-    assert_equal(Int(layout_tensor.runtime_layout.shape[0]), 3)
-    assert_equal(Int(layout_tensor.runtime_layout.shape[1]), 4)
-
-    # TODO(GEX-4147): ManagedTensorSlice needs to carry the Array's origin
-    # `tensor` holds an untracked pointer into `storage`; keep `storage` alive
-    # until the last read through it.
-    _ = storage^
-
-
 def test_stride_length() raises:
     """Test stride_length methods."""
     var storage = Array[Float32, 3 * 5](fill={})
@@ -217,7 +189,7 @@ def test_simd_load_store_2d() raises:
 
 
 def test_to_tile_tensor() raises:
-    """Test to_tile_tensor() conversion."""
+    """Test to_tile_tensor() conversion preserves dtype, layout, and pointer."""
     var storage = Array[Float32, 3 * 4](
         fill_with=lambda (i: Int) -> Float32: Float32(i)
     )
@@ -229,15 +201,23 @@ def test_to_tile_tensor() raises:
     # Convert to TileTensor
     var tile_tensor = tensor.to_tile_tensor[.int64]()
 
-    # Verify the layout tensor has the same data
+    # Verify dtype and rank are carried across.
+    comptime assert tile_tensor.dtype == DType.float32
     comptime assert tile_tensor.flat_rank == 2
+
+    # Verify the tile tensor views the same data.
     assert_equal(tile_tensor[0, 0], 0.0)
     assert_equal(tile_tensor[1, 1], 5.0)
     assert_equal(tile_tensor[2, 3], 11.0)
 
-    # Verify dimensions
+    # Verify the tile tensor is a view over the slice, not a copy.
+    assert_equal(Int(tile_tensor.unsafe_ptr()), Int(tensor.unsafe_ptr()))
+
+    # Verify dimensions and strides match the slice.
     assert_equal(tile_tensor.layout.shape[0]().value(), 3)
     assert_equal(tile_tensor.layout.shape[1]().value(), 4)
+    assert_equal(tile_tensor.layout.stride[0]().value(), 4)
+    assert_equal(tile_tensor.layout.stride[1]().value(), 1)
 
     # TODO(GEX-4147): ManagedTensorSlice needs to carry the Array's origin
     # `tensor` holds an untracked pointer into `storage`; keep `storage` alive

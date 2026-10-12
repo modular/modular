@@ -14,8 +14,15 @@ max.pipelines.diffusion
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.pipelines.diffusion.config
+   max.pipelines.diffusion.schedulers
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    pipelines.diffusion.config
    pipelines.diffusion.schedulers

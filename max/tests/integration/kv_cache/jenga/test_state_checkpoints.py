@@ -166,7 +166,8 @@ def forward(bm: JengaBlockManager, ctx: TextContext, token: int = 42) -> None:
 
 
 def published(bm: JengaBlockManager) -> list[bytes]:
-    return list(bm.pools[0].prefix_caches[CONV])
+    # Sorted: the pool's prefix cache is a Rust map with no insertion order.
+    return sorted(bm.pools[0].prefix_caches[CONV])
 
 
 # ===--------------------------------------------------------------------=== #

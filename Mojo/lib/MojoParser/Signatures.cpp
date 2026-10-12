@@ -887,6 +887,17 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
     }
   };
 
+  auto isDeclaredParam = [](ASTDecl *scope, ParamDeclRefAttr paramRef) -> bool {
+    auto userName = StringAttr::get(
+        scope->getContext(), KGEN::demangleParameterName(paramRef.getName()));
+    if (ArrayRef<ASTDecl *> decls = scope->lookup(userName); !decls.empty()) {
+      for (auto decl : decls)
+        if (CValue cv = decl->getIfIRValue())
+          return cv.getIfPValue() && isEqualCanon(cv.getIfPValue(), paramRef);
+    }
+    return false;
+  };
+
   // This functor adds a single parameter to the parameter list.
   auto declareAndAddParam = [&](Type type, StringRef name) {
     auto boundParamType = evaluator.getReboundType(type);
@@ -923,9 +934,14 @@ static ASTType addImplicitTypeParams(StringAttr argName, ASTType type,
         }
         // If we didn't find it, check to see if it is on the enclosing struct.
         if (!passingKind.has_value()) {
-          auto [curDecl, paramDecls, paramIdx] =
-              paramList.declScope.lookupParamReference(paramUse);
-          if (curDecl) // Any parameters from it are fine.
+          // We can not reuse ASTDecl::lookupParamReference here, as the parent
+          // decl might not have been fully resolved yet. E.g.,
+          // def [T : AnyType, F : def [Param[T, _]]() ]()
+          // when auto parameterized `[Param[T, _]`, `T` has not been put into
+          // the parameter list of the holding function yet.
+          //
+          // Any parameters from it are fine.
+          if (isDeclaredParam(&paramList.declScope, paramUse))
             passingKind = PassingKind::Inferred;
         }
 

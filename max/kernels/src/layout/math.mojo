@@ -33,54 +33,6 @@ from layout import (
 
 @inline(.always)
 def outer_product_acc(
-    res: LayoutTensor[mut=True, ...],
-    lhs: LayoutTensor,
-    rhs: LayoutTensor,
-):
-    """Updates result tensor with the outer product of two vectors.
-
-    Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
-    `res` is a matrix.
-
-    Args:
-        res: The result matrix to accumulate into, shape (M, N).
-        lhs: The left-hand side vector, shape (M,).
-        rhs: The right-hand side vector, shape (N,).
-
-    Constraints:
-
-        All tensors must have statically known shapes.
-        `res` must be rank 2.
-        `lhs` and `rhs` must be rank 1.
-        `res.shape[0]` `==` `lhs.shape[0]` and `res.shape[1]` `==` `rhs.shape[0]`.
-    """
-
-    comptime assert (
-        res.layout.known_shape()
-        and lhs.layout.known_shape()
-        and rhs.layout.known_shape()
-    ), "outer_product_acc expects inputs with statically known shapes"
-    comptime assert res.rank == 2, "Only rank 2 res is allowed."
-    comptime assert lhs.rank == 1, "Only rank 1 lhs is allowed."
-    comptime assert rhs.rank == 1, "Only rank 1 rhs is allowed."
-
-    comptime dtype = res.dtype
-
-    comptime M = res.shape[0]()
-    comptime N = res.shape[1]()
-
-    comptime assert lhs.shape[0]() == M, "lhs shape mismatch"
-    comptime assert rhs.shape[0]() == N, "rhs shape mismatch"
-
-    comptime for i in range(M):
-        comptime for j in range(N):
-            res[i, j] += rebind[res.element_type](
-                lhs[i].cast[dtype]()
-            ) * rebind[res.element_type](rhs[j].cast[dtype]())
-
-
-@inline(.always)
-def outer_product_acc(
     res: TileTensor[mut=True, ...],
     lhs: TileTensor,
     rhs: TileTensor,
@@ -206,28 +158,6 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         `outp.rank` must equal `inp.rank - 1`.
         Non-reduction dimensions must match between inp and outp.
         Currently only supports rank-2 inputs.
-
-    Example:
-
-    ```mojo
-    from layout import LayoutTensor, Layout
-    from layout.math import sum
-
-    data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
-    tensor = LayoutTensor[.int32, Layout.row_major(2, 3)](data)
-    print(tensor)
-    print("-----")
-    print(sum[0](tensor))
-    ```
-
-    Output:
-
-    ```plaintext
-    0 1 2
-    3 4 5
-    -----
-    3 5 7
-    ```
     """
 
     def sum_init[dtype: DType, width: Int]() -> SIMD[dtype, width]:
@@ -574,6 +504,19 @@ def sum[
     Returns:
         A rank-1 tensor with the input dtype and SIMD element width. Adjacent
         elements have disjoint storage.
+
+    Examples:
+
+    ```mojo
+    from std.collections import Array
+    from layout import TileTensor, row_major
+    from layout.math import sum
+
+    var data: Array[Int32, 6] = [0, 1, 2, 3, 4, 5]
+    var tensor = TileTensor(data, row_major[2, 3]())
+    var result = sum[0](tensor)
+    print(result[0], result[1], result[2])  # 3 5 7
+    ```
     """
     comptime size = Coord[inp.LayoutType._shape_types[1 - axis]].static_product
     var result = stack_allocation[

@@ -86,12 +86,18 @@ pool count but not that bound, so over-allocation is safe.
 
 import extensibility as compiler
 
-from max.gpu.host import DeviceContext
-from max.gpu.host.info import is_gpu
+from comm.sync import is_p2p_enabled
+from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from max.gpu.host import DeviceBuffer, DeviceContext
+from max.gpu.host.info import B200, is_gpu
+from max.gpu.primitives.grid_controls import PDLLevel
 from std.collections import Array
-from std.math import ceildiv
+from std.ffi import _get_global_or_null
+from std.math import align_up, ceildiv
 from std.memory import UnsafePointer
+from std.memory.alloc import Layout as AllocLayout
 from std.sys import size_of
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from layout import Coord, Idx, TileTensor, row_major
@@ -100,10 +106,20 @@ from extensibility import InputTensor, OutputTensor
 from extensibility import _MutableInputTensor as MutableInputTensor
 
 from linalg.fp4_utils import (
+    MXFP8_SF_DTYPE,
     MXFP8_SF_VECTOR_SIZE,
+    NVFP4_SF_DTYPE,
     NVFP4_SF_VECTOR_SIZE,
     SF_ATOM_K,
     SF_ATOM_M,
+    SF_MN_GROUP_SIZE,
+)
+from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d.grouped_1d1d_matmul_kernel import (
+    RealSwiGLUOutput,
+)
+from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
+    BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.output_writer import (
     P3_MAX_RANKS,
@@ -113,12 +129,27 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.row_scales import (
 )
 
 from shmem import shmem_my_pe
-from shmem.ep import pack_ptrs_array
-from shmem.ep_comm import EPLocalSyncCounters
+from shmem.ep import global_cache_insert, pack_ptrs_array
+from shmem.ep_comm import (
+    EPLocalSyncCounters,
+    NVBlockScaledTokenFormat,
+)
 
-from mega_ffn.mega_ffn_scheduler import ATOMIC_PAD
+from mega_ffn.mega_ffn_ep_workspace import (
+    MegaMoECounters,
+    fused_ep_token_block,
+    fused_ep_unsupported_reason,
+)
+from mega_ffn.mega_ffn_kernel import MODE_MEGAFFN
+from mega_ffn.mega_ffn_scheduler import (
+    ATOMIC_PAD,
+    POST_SELF_CLEAN_UP,
+    fused_l2_pool_slots,
+)
 from mega_ffn.mega_ffn_matmul import (
     EPCombineSendOperands,
+    FusedEPBankGeometry,
+    mega_ffn_block_scaled_ep_fused,
     mega_ffn_mxfp8_dispatch,
     mega_ffn_nvfp4_dispatch,
 )
@@ -815,3 +846,1161 @@ struct Struct_mega_ffn_ep_combine_send:
 
         _ = c_packed_buf^
         _ = c_swiglu_scales_buf^
+
+
+# ===----------------------------------------------------------------------=== #
+# One-launch fused EP MoE: `mega_ffn.ep_fused_init` + `mega_ffn.ep_fused`
+# ===----------------------------------------------------------------------=== #
+#
+# `mega_ffn.ep_fused` runs dispatch -> MegaFFN (L1 + SwiGLU + requant + L2) ->
+# weighted combine in ONE launch per rank (`mega_ffn_block_scaled_ep_fused` with
+# `ep_fused_full=True`), in the flag set the EP8 correctness gates qualified
+# (`test_mega_ffn_ep_fused_combine_send_full_ep8{,_nvfp4}`) plus the
+# device-derived EP generation (EP2): ready-pool L2 scheduling on dynamic L1
+# tile claiming, final contiguous rows with the production block reservation,
+# the in-epilogue send, the one-signal publication with poll-then-fence, and
+# the in-kernel combine wait and reduce.
+# NVFP4 or MXFP8 (`nvfp4`; unit input scale at MXFP8); PDL OFF (asserted).
+#
+# Workspace. `mega_ffn.ep_fused_init` runs once per device in the EP init graph,
+# right after `ep.init`, and decides whether the fused path can serve the EP
+# configuration (`fused_ep_unsupported_reason`). If it can, it allocates ONE
+# arena per rank, the `_FusedEPGeometry.OFF_*` fields at 128-byte offsets,
+# and records it in the process-wide global cache under this rank's dispatch
+# receive-count address. `ep.init` allocated that buffer for this EP instance
+# and never frees it, so the key is unique per EP instance and rank, and
+# `mega_ffn.ep_fused` finds every rank's arena through the receive-count table
+# the EP layer already passes. The init op records an arena only after it holds
+# its initial values. Arenas and records live as long as the process, like
+# `ep.init`'s buffers: nothing frees them at model teardown, so a captured
+# launch keeps valid addresses. The fused counters live in the words
+# `EPLocalSyncCounters` reserves past its regions (`MegaMoECounters`, in the
+# device's group-0 EP counter buffer). The init op takes that buffer in place
+# in the EP init graph, after `ep.init`, and synchronizes before it records the
+# arena; that graph finishes before any model graph runs `mega_ffn.ep_fused`,
+# whose launches take the same buffer in place, which orders them.
+#
+# Nothing is reset per launch: the kernel's own generation protocol
+# (parity-banked ingress state reset at the next monitor entry, sentinel re-arm
+# by the FULL waiter, POST arrival rotation) carries every word from launch to
+# launch. So an EP instance serves one execution at a time, as its shipping
+# buffers do: two graphs running concurrently on one instance would interleave
+# that state.
+#
+# EP generation: the kernel reads the device generation word
+# `arrival_count[GEN_WORD]` at entry and derives the ingress bank parity and
+# the block-base mailbox tag from it (`ep_device_generation=True`). Nothing
+# per-launch comes from the host, so a captured launch replays with the right
+# bank and tag; this binding passes BANK-0 bases of two-bank fields whose
+# strides are the launcher's (`FusedEPBankGeometry`), and the device-shared
+# `arrival_count` (one per EP instance and device, shared by every fused
+# layer of that instance) is what counts launches.
+
+comptime _FUSED_EP_WS_VERSION = 2
+"""Recorded with every arena; bump it when the arena or counter layout
+changes."""
+
+comptime _FUSED_EP_WS_LAYOUT_WORDS = 10
+"""Words of `_FusedEPGeometry.layout()`."""
+
+
+@inline(.always)
+def _arena_end(offset: Int, nbytes: Int) -> Int:
+    """Returns the next field's offset: the first multiple of 128 bytes at or
+    past `nbytes` bytes from `offset`.
+
+    A field needs 16-byte alignment (TMA bases, 128-bit accesses), which the
+    init op checks for the arena base; a field starts an L2 line only when
+    the allocator's base does."""
+    return align_up(offset + nbytes, 128)
+
+
+struct _FusedEPGeometry[
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    max_tpr: Int,
+    n_ranks: Int,
+    moe_dim: Int,
+    nvfp4: Bool,
+    token_block: Int,
+]:
+    """Comptime geometry shared by `mega_ffn.ep_fused_init` and
+    `mega_ffn.ep_fused`, so the allocation and the launch cannot disagree.
+
+    Every size is the fused gate harness's (`test_mega_ffn_ep_fused.mojo`):
+    NVFP4 or MXFP8 (`nvfp4`) token format at 16-byte alignment, the MMA
+    config (mma (128, token_block, 32), cta_group 1; token block 8 = decode,
+    32 = the dense specialization, the widest block the row-gather scale
+    transport serves without an SF-atom arena; k_group 4, except MXFP8 at
+    token block 32, which runs its 8 input-ring K tiles as 4 groups of 2),
+    staging rows
+    `n_local * n_ranks * max_tpr`, and the pool-slot bound from the
+    `mega_ffn_scheduler` helpers, which also sizes the fused counters'
+    Region H.
+    """
+
+    comptime n_local = Self.n_experts // Self.n_ranks
+    comptime n1 = 2 * Self.moe_dim
+    # Element format: NVFP4 (uint8 E2M1 pairs, E4M3 scales per 16 elements)
+    # or MXFP8 (float8_e4m3fn, E8M0 scales per 32). The K extents are BYTES.
+    comptime qdt = DType.uint8 if Self.nvfp4 else DType.float8_e4m3fn
+    comptime sfdt = NVFP4_SF_DTYPE if Self.nvfp4 else MXFP8_SF_DTYPE
+    comptime sfv = (
+        NVFP4_SF_VECTOR_SIZE if Self.nvfp4 else MXFP8_SF_VECTOR_SIZE
+    )
+    comptime k1 = Self.hidden_size // 2 if Self.nvfp4 else Self.hidden_size
+    comptime k2 = Self.moe_dim // 2 if Self.nvfp4 else Self.moe_dim
+    comptime k1g = Self.hidden_size // (Self.sfv * SF_ATOM_K)
+    comptime k2g = Self.moe_dim // (Self.sfv * SF_ATOM_K)
+    comptime n1g = Self.n1 // 128
+    comptime n2g = Self.hidden_size // 128
+    comptime rows = Self.n_local * Self.n_ranks * Self.max_tpr
+    comptime sf_blocks = Self.rows // SF_MN_GROUP_SIZE + Self.n_local + 1
+    comptime sf_atom = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
+
+    comptime OutLayout = type_of(row_major[Self.rows, Self.k1]())
+    comptime OffLayout = type_of(row_major[Self.n_local + 1]())
+    comptime Fmt = NVBlockScaledTokenFormat[
+        quant_dtype=Self.qdt,
+        scales_dtype=Self.sfdt,
+        output_layout=Self.OutLayout,
+        scales_offset_layout=Self.OffLayout,
+        Self.hidden_size,
+        Self.top_k,
+        16,
+    ]
+    comptime msg = Self.Fmt.msg_size()
+    comptime scales_off = Self.Fmt.scales_offset()
+
+    # Receive counts: the (n_local, n_ranks) grid, the ORD-R rank flags, then
+    # the per-local-expert reservation cursors (`recv_count_size()`).
+    comptime rc_words = Self.n_experts + Self.n_ranks + Self.n_local
+    comptime rc_cursor_base = Self.n_experts + Self.n_ranks
+
+    # Bank strides: the kernel selects bank `gen & 1` with the launcher's
+    # EXACT strides (`FusedEPBankGeometry`, in elements of each buffer's
+    # type; bytes for the staging buffer), so each parity-banked field below
+    # holds two banks of exactly these sizes.
+    comptime banks = FusedEPBankGeometry[
+        Self.n_local, Self.n_ranks, Self.max_tpr, Self.msg
+    ]
+    comptime staging_bank = Self.banks.staging_bank_bytes
+    comptime rc_bank_words = Self.banks.rc_bank_words
+    comptime ec_bank_words = Self.banks.ec_bank_words
+    comptime ef_bank_words = Self.banks.ef_bank_words
+    comptime eir_bank_words = Self.banks.eir_bank_words
+
+    comptime pool_slots = fused_l2_pool_slots(
+        Self.n_local, Self.n_ranks, Self.max_tpr, Self.top_k, Self.token_block
+    )
+    # The fused counters and `arrival_count`, in the EP counters' reserve.
+    comptime Counters = MegaMoECounters[Self.n_experts, Self.pool_slots]
+    comptime wait_ctr_base = EPLocalSyncCounters[
+        Self.n_experts
+    ].dispatch_async_size()
+    comptime rank_prefix_off = 2 * Self.n_experts
+
+    # The arena: byte offsets from a rank's base, in field order.
+    # Parity-banked fields hold two banks of the launcher's exact stride.
+    # Peers write the staging, receive and early counts, early flags,
+    # combine receive buffer and its counts.
+    comptime OFF_STAGING = 0
+    comptime OFF_RC = _arena_end(Self.OFF_STAGING, 2 * Self.staging_bank)
+    comptime OFF_EC = _arena_end(Self.OFF_RC, 2 * Self.rc_bank_words * 8)
+    comptime OFF_EF = _arena_end(Self.OFF_EC, 2 * Self.ec_bank_words * 8)
+    comptime OFF_EIR = _arena_end(Self.OFF_EF, 2 * Self.ef_bank_words * 4)
+    # Row offsets, expert ids and scale offsets: one copy, written and read
+    # inside one launch.
+    comptime OFF_RO = _arena_end(Self.OFF_EIR, 2 * Self.eir_bank_words * 4)
+    comptime OFF_EI = _arena_end(Self.OFF_RO, (Self.n_local + 1) * 4)
+    comptime OFF_OFF = _arena_end(Self.OFF_EI, Self.n_local * 4)
+    comptime OFF_SEND = _arena_end(Self.OFF_OFF, (Self.n_local + 1) * 4)
+    # Early-publication election counters, then the block-base mailbox
+    # (bases, then generation tags), then the dedicated rank-completion words
+    # (not Region B).
+    comptime OFF_EPC = _arena_end(Self.OFF_SEND, Self.max_tpr * Self.msg)
+    comptime OFF_MAILBOX = _arena_end(Self.OFF_EPC, Self.n_ranks * 4)
+    comptime OFF_RCC = _arena_end(Self.OFF_MAILBOX, 2 * Self.n_experts * 4)
+    comptime OFF_SRC_INFO = _arena_end(Self.OFF_RCC, Self.n_ranks * 4)
+    comptime OFF_CRECV = _arena_end(Self.OFF_SRC_INFO, Self.rows * 2 * 4)
+    comptime OFF_CRC = _arena_end(
+        Self.OFF_CRECV, Self.max_tpr * Self.top_k * Self.hidden_size * 2
+    )
+    # The packed L1 -> L2 intermediate and its 5D block scales, then the L1
+    # token and token-scale placeholders the fused path never reads.
+    comptime OFF_INTER = _arena_end(Self.OFF_CRC, Self.n_experts * 8)
+    comptime OFF_INTER_SF = _arena_end(Self.OFF_INTER, Self.rows * Self.k2)
+    comptime OFF_PH_A = _arena_end(
+        Self.OFF_INTER_SF, Self.sf_blocks * Self.k2g * Self.sf_atom
+    )
+    comptime OFF_PH_ASC = _arena_end(Self.OFF_PH_A, Self.rows * Self.k1)
+    comptime ARENA_BYTES = _arena_end(
+        Self.OFF_PH_ASC, Self.sf_blocks * Self.k1g * Self.sf_atom
+    )
+
+    @staticmethod
+    def layout() -> StaticTuple[Int, _FUSED_EP_WS_LAYOUT_WORDS]:
+        """Returns what an arena of this geometry is laid out for."""
+        return StaticTuple[Int, _FUSED_EP_WS_LAYOUT_WORDS](
+            _FUSED_EP_WS_VERSION,
+            Self.hidden_size,
+            Self.top_k,
+            Self.n_experts,
+            Self.max_tpr,
+            Self.n_ranks,
+            Self.moe_dim,
+            Int(Self.nvfp4),
+            Self.token_block,
+            Self.ARENA_BYTES,
+        )
+
+    # MXFP8 at token block 32: 4 input-ring group stages of 2 K tiles instead
+    # of 2 of 4, the same 8 K tiles pinned. Left to the config, k_group 2
+    # sizes the ring to 10 K tiles, which exceeds the fused SMEM budget.
+    comptime kg2 = not Self.nvfp4 and Self.token_block == 32
+
+    @staticmethod
+    def _pipe_stages() -> Optional[Int]:
+        if Self.kg2:
+            return 8
+        return None
+
+    comptime config = BlockScaledMatmulConfig[
+        Self.qdt,
+        Self.qdt,
+        DType.bfloat16,
+        Self.sfdt,
+        Self.sfdt,
+        True,
+    ](
+        scaling_kind=(
+            UMMAKind.KIND_MXF4NVF4 if Self.nvfp4 else UMMAKind.KIND_MXF8F6F4
+        ),
+        cluster_shape=Index(1, 1, 1),
+        mma_shape=Index(128, Self.token_block, 32),
+        block_swizzle_size=8,
+        cta_group=1,
+        AB_swapped=True,
+        k_group_size=2 if Self.kg2 else 4,
+        num_pipeline_stages=Self._pipe_stages(),
+        num_accum_pipeline_stages=2,
+        is_gmm=True,
+        gemm_kind=GEMMKind.GMM,
+    )
+
+
+@fieldwise_init
+struct _FusedEPWorkspaceRecord(Copyable, Movable):
+    """One rank's fused workspace as recorded in the global cache."""
+
+    var layout: StaticTuple[Int, _FUSED_EP_WS_LAYOUT_WORDS]
+    """`_FusedEPGeometry.layout()` of the arena."""
+
+    var device: Int
+    """The device holding the arena."""
+
+    var arena: Int
+    """The arena's device address."""
+
+
+def _fused_ep_ws_key(ep_recv_count_addr: UInt64) -> String:
+    """Returns the global-cache key of the arena of the rank whose dispatch
+    receive-count buffer (from `ep.init`) is at `ep_recv_count_addr`."""
+    return String(t"MEGA_FFN_EP_FUSED_WS_{ep_recv_count_addr}")
+
+
+def _fused_counters_reserve[
+    n_experts: Int
+](
+    atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...]
+) raises -> UnsafePointer[Int32, MutUntrackedOrigin]:
+    """Returns the words one device's EP counter buffer reserves past its
+    regions, where the fused counters (`MegaMoECounters`) live."""
+    if (
+        Int(atomic_counters.dim_size[0]())
+        != EPLocalSyncCounters[n_experts].allocation_size()
+    ):
+        raise Error("atomic_counters must be one EP counter buffer")
+    return EPLocalSyncCounters[n_experts](
+        atomic_counters.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
+    ).get_reserved_ptr()
+
+
+@inline(.always)
+def _fill[
+    dtype: DType
+](
+    context: DeviceContext, address: Int, count: Int, value: Scalar[dtype]
+) raises:
+    """Enqueues setting `count` elements at device `address` to `value`."""
+    context.enqueue_memset(
+        DeviceBuffer(
+            context,
+            UnsafePointer[Scalar[dtype], MutUntrackedOrigin](
+                unsafe_from_address=address
+            ),
+            count,
+            owning=False,
+        ),
+        value,
+    )
+
+
+struct _FusedEPPlan[
+    dispatch_dtype: DType,
+    hidden_size: Int,
+    top_k: Int,
+    n_experts: Int,
+    max_token_per_rank: Int,
+    n_gpus_per_node: Int,
+    n_nodes: Int,
+    dispatch_scale_dtype: DType,
+    dispatch_fmt_str: StaticString,
+    moe_dim: Int,
+    fused_shared_expert: Bool,
+    eplb: Bool,
+    nvfp4_dyn_global_scales: Bool,
+]:
+    """What the fused path does for an EP configuration, shared by
+    `mega_ffn.ep_fused_init` (which then allocates) and `mega_ffn.ep_fused_plan`
+    (which only reports): why the backend refuses it, or the geometry it
+    serves it with. Read `Geometry` only when `reason` is empty."""
+
+    comptime reason = fused_ep_unsupported_reason(
+        hidden_size=Self.hidden_size,
+        moe_dim=Self.moe_dim,
+        top_k=Self.top_k,
+        n_experts=Self.n_experts,
+        max_tokens_per_rank=Self.max_token_per_rank,
+        n_ranks=Self.n_gpus_per_node,
+        n_nodes=Self.n_nodes,
+        token_fmt=Self.dispatch_fmt_str,
+        quant_dtype=Self.dispatch_dtype,
+        scales_dtype=Self.dispatch_scale_dtype,
+        dyn_global_scales=Self.nvfp4_dyn_global_scales,
+        fused_shared_expert=Self.fused_shared_expert,
+        eplb=Self.eplb,
+    )
+    """Why the backend does not serve the configuration; empty if it does."""
+
+    comptime Geometry = _FusedEPGeometry[
+        Self.hidden_size,
+        Self.top_k,
+        Self.n_experts,
+        Self.max_token_per_rank,
+        Self.n_gpus_per_node,
+        Self.moe_dim,
+        Self.dispatch_dtype == DType.uint8,
+        fused_ep_token_block(Self.max_token_per_rank),
+    ]
+    """The arena and kernel geometry of a served configuration."""
+
+    @staticmethod
+    def write(
+        workspace: OutputTensor[dtype=DType.uint64, rank=1, ...],
+        refusal: OutputTensor[dtype=DType.uint8, rank=1, ...],
+    ) raises:
+        """Writes the answer: the arena's bytes and token block, or zeros and
+        the NUL-padded reason the backend refuses."""
+        comptime n_reason = Self.reason.byte_length()
+        if (
+            Int(workspace.dim_size[0]()) != 2
+            or Int(refusal.dim_size[0]()) <= n_reason
+        ):
+            raise Error("workspace must be [2]; refusal must fit the reason")
+        comptime if n_reason > 0:
+            workspace[0] = 0
+            workspace[1] = 0
+        else:
+            workspace[0] = UInt64(Self.Geometry.ARENA_BYTES)
+            workspace[1] = UInt64(Self.Geometry.token_block)
+        for i in range(Int(refusal.dim_size[0]())):
+            refusal[i] = Self.reason.as_bytes()[i] if i < n_reason else 0
+
+
+@compiler.register("mega_ffn.ep_fused_plan")
+struct Struct_mega_ffn_ep_fused_plan:
+    """MOGG wrapper that reports, without allocating, what
+    `mega_ffn.ep_fused_init` does for the same parameters: the arena's bytes
+    and token block, or why the backend refuses the configuration. It runs
+    on the host, so a memory plan can ask before any device memory exists.
+
+    With `exact=False` it reports an upper bound for a caller that knows the
+    dispatch element type but not the format, its global-scale mode, the
+    shared-expert rows or EPLB (a plan made before the checkpoint is
+    parsed): the answer for the one format served with that element type,
+    with none of those features, since EP init refuses and allocates nothing
+    for every other variant.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dispatch_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        dispatch_scale_dtype: DType,
+        dispatch_fmt_str: StaticString,
+        moe_dim: Int,
+        fused_shared_expert: Bool,
+        eplb: Bool,
+        target: StaticString,
+        *,
+        nvfp4_dyn_global_scales: Bool = False,
+        exact: Bool = True,
+    ](
+        workspace: OutputTensor[dtype=DType.uint64, rank=1, ...],
+        refusal: OutputTensor[dtype=DType.uint8, rank=1, ...],
+    ) raises:
+        """Reports the fused path's answer for an EP configuration.
+
+        Parameters:
+            dispatch_dtype: The EP dispatch element type.
+            hidden_size: Model hidden dimension.
+            top_k: Routing top-k.
+            n_experts: GLOBAL routed expert count.
+            max_token_per_rank: The EP per-rank token capacity.
+            n_gpus_per_node: GPUs per node (the EP world).
+            n_nodes: Nodes.
+            dispatch_scale_dtype: The EP dispatch block-scale type.
+            dispatch_fmt_str: The EP dispatch format (`ep.init`'s).
+            moe_dim: Routed experts' intermediate width (0 when unknown).
+            fused_shared_expert: Whether the dispatch carries shared-expert
+                rows.
+            eplb: Whether EPLB remaps experts to replicas.
+            target: Target device.
+            nvfp4_dyn_global_scales: Whether NVFP4 tokens carry their own
+                global scale.
+            exact: False for the upper bound described above; the format
+                parameters are then ignored.
+
+        Args:
+            workspace: `[2]` (host): the arena's bytes and token block, 0
+                and 0 when refused.
+            refusal: Host bytes of why the backend refuses the
+                configuration, NUL-padded; all zero when it does not.
+        """
+        comptime if not exact:
+            # Packed FP4 elements are served as NVFP4 and FP8 ones as MXFP8;
+            # MXFP4, MXFP6 and 128x128 block FP8 share those element types
+            # and are refused.
+            comptime fp4 = (
+                dispatch_dtype == DType.uint8
+                or dispatch_dtype == DType.float4_e2m1fn
+            )
+            _FusedEPPlan[
+                DType.uint8 if fp4 else dispatch_dtype,
+                hidden_size,
+                top_k,
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                NVFP4_SF_DTYPE if fp4 else MXFP8_SF_DTYPE,
+                "BLOCK_SCALED_NV",
+                moe_dim,
+                False,
+                False,
+                False,
+            ].write(workspace, refusal)
+        else:
+            _FusedEPPlan[
+                dispatch_dtype,
+                hidden_size,
+                top_k,
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                dispatch_scale_dtype,
+                dispatch_fmt_str,
+                moe_dim,
+                fused_shared_expert,
+                eplb,
+                nvfp4_dyn_global_scales,
+            ].write(workspace, refusal)
+
+
+@compiler.register("mega_ffn.ep_fused_init")
+struct Struct_mega_ffn_ep_fused_init:
+    """MOGG wrapper that sets up one device's fused EP MoE workspace.
+
+    Runs once per device in the EP init graph, after `ep.init`. Writes why the
+    fused path cannot serve the configuration, or allocates this rank's arena,
+    gives it its allocation-time values, zeroes the fused counters and records
+    the arena in the global cache.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dispatch_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        dispatch_scale_dtype: DType,
+        dispatch_fmt_str: StaticString,
+        moe_dim: Int,
+        fused_shared_expert: Bool,
+        eplb: Bool,
+        target: StaticString,
+        *,
+        nvfp4_dyn_global_scales: Bool = False,
+    ](
+        workspace: OutputTensor[dtype=DType.uint64, rank=1, ...],
+        refusal: OutputTensor[dtype=DType.uint8, rank=1, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        ep_dev_ptrs: InputTensor[dtype=DType.uint64, rank=2, ...],
+        context: DeviceContext,
+    ) raises:
+        """Sets up this device's fused workspace, or says why it cannot.
+
+        Parameters:
+            dispatch_dtype: The EP dispatch element type.
+            hidden_size: Model hidden dimension.
+            top_k: Routing top-k.
+            n_experts: GLOBAL routed expert count.
+            max_token_per_rank: The EP per-rank token capacity.
+            n_gpus_per_node: GPUs per node (the EP world).
+            n_nodes: Nodes.
+            dispatch_scale_dtype: The EP dispatch block-scale type.
+            dispatch_fmt_str: The EP dispatch format (`ep.init`'s).
+            moe_dim: Routed experts' intermediate width (0 when unknown).
+            fused_shared_expert: Whether the dispatch carries shared-expert
+                rows.
+            eplb: Whether EPLB remaps experts to replicas.
+            target: Target GPU device.
+            nvfp4_dyn_global_scales: Whether NVFP4 tokens carry their own
+                global scale.
+
+        Args:
+            workspace: `[2]` (host): the arena's bytes and token block, 0
+                and 0 when refused.
+            refusal: Host bytes of why the fused path cannot serve the
+                configuration, NUL-padded; all zero when it can.
+            atomic_counters: This device's group-0 EP sync counters, whose
+                reserved words hold the fused counters (zeroed here).
+            ep_dev_ptrs: This device's `ep.init` pointers `[2, 3]` (host).
+            context: Device context.
+        """
+        comptime assert is_gpu[target](), "the fused EP MoE only supports GPUs"
+        comptime n_ranks = n_gpus_per_node
+        comptime P = _FusedEPPlan[
+            dispatch_dtype,
+            hidden_size,
+            top_k,
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            dispatch_scale_dtype,
+            dispatch_fmt_str,
+            moe_dim,
+            fused_shared_expert,
+            eplb,
+            nvfp4_dyn_global_scales,
+        ]
+        comptime if P.reason.byte_length() > 0:
+            P.write(workspace, refusal)
+        else:
+            comptime G = P.Geometry
+            comptime assert G.rc_words == G.rc_bank_words, (
+                "the receive-count bank must be exactly the dispatch view's"
+                " words"
+            )
+            if not is_p2p_enabled():
+                raise Error("P2P is not supported on this system.")
+            var counters = G.Counters(
+                _fused_counters_reserve[n_experts](atomic_counters)
+            )
+
+            # `ep.init` just allocated this rank's buffers, so nothing is
+            # recorded under their address yet.
+            var key = _fused_ep_ws_key(ep_dev_ptrs[0, 2])
+            if _get_global_or_null(key):
+                raise Error(
+                    "a fused EP MoE workspace is already recorded for this EP"
+                    " instance"
+                )
+            var arena = Int(
+                context.enqueue_create_buffer[DType.uint8](
+                    G.ARENA_BYTES
+                ).take_ptr()
+            )
+            if arena % 16 != 0:
+                # TMA bases and 128-bit accesses need 16 bytes; the device
+                # allocator guarantees at least 64.
+                raise Error("the fused EP MoE arena must be 16-byte aligned")
+
+            # Allocation-time values; the kernel owns them afterwards. A
+            # parity-banked field holds two banks (the kernel picks `gen & 1`).
+            _fill(
+                context,
+                arena + G.OFF_RC,
+                2 * G.rc_bank_words,
+                UInt64.MAX_FINITE,
+            )
+            for b in range(2):
+                # Reservation cursors are counts (start at 0), not flags.
+                _fill(
+                    context,
+                    arena
+                    + G.OFF_RC
+                    + (b * G.rc_bank_words + G.rc_cursor_base) * 8,
+                    G.n_local,
+                    UInt64(0),
+                )
+            _fill(
+                context,
+                arena + G.OFF_EC,
+                2 * G.ec_bank_words,
+                UInt64.MAX_FINITE,
+            )
+            _fill(context, arena + G.OFF_EF, 2 * G.ef_bank_words, Int32(0))
+            _fill(context, arena + G.OFF_EIR, 2 * G.eir_bank_words, Int32(0))
+            _fill(context, arena + G.OFF_RO, G.n_local + 1, UInt32(0))
+            _fill(context, arena + G.OFF_EI, G.n_local, Int32(-1))
+            _fill(context, arena + G.OFF_OFF, G.n_local + 1, UInt32(0))
+            _fill(context, arena + G.OFF_EPC, n_ranks, Int32(0))
+            # Tags start at 0 and every launch publishes a strictly larger
+            # one, so a stale base can never satisfy a later launch's wait.
+            _fill(context, arena + G.OFF_MAILBOX, 2 * n_experts, Int32(0))
+            _fill(context, arena + G.OFF_RCC, n_ranks, Int32(0))
+            _fill(context, arena + G.OFF_SRC_INFO, G.rows * 2, Int32(-1))
+            # MAX_FINITE = "no count published yet"; the FULL waiter re-arms it.
+            _fill(context, arena + G.OFF_CRC, n_experts, UInt64.MAX_FINITE)
+            # The staging, send, combine receive, intermediate and placeholder
+            # fields need no initial value.
+
+            _fill(context, Int(counters.base), G.Counters.words, Int32(0))
+
+            # Publish only an initialized arena: a launch needs every rank's
+            # record, so a cache hit must mean that rank's initial values are
+            # in place. An error before this point leaves no record. The cache
+            # never replaces an entry (a second insert is dropped silently),
+            # so read the record back.
+            context.synchronize()
+            var record = alloc(
+                AllocLayout[_FusedEPWorkspaceRecord].single()
+            ).unsafe_leak()
+            record.unsafe_write(
+                _FusedEPWorkspaceRecord(G.layout(), Int(context.id()), arena)
+            )
+            global_cache_insert(key, record.bitcast[NoneType]())
+            var stored = _get_global_or_null(key)
+            if not stored or Int(stored.value()) != Int(record):
+                raise Error("could not record the fused EP MoE workspace")
+            P.write(workspace, refusal)
+
+
+@compiler.register("mega_ffn.ep_fused")
+struct Struct_mega_ffn_ep_fused:
+    """MOGG wrapper for the one-launch fused EP MoE (dispatch -> MegaFFN ->
+    weighted combine) on NVFP4 or MXFP8 routed experts.
+
+    Replaces `ep.dispatch_async` + `ep.dispatch_wait`, the local FFN and
+    `ep.combine_async` + `ep.combine_wait` for one MoE layer on one device and
+    returns the token-indexed routed output. Every rank must launch it for
+    every layer, including a rank that holds zero tokens (its peers wait for
+    its early counts and flags), so this binding never skips the launch.
+    """
+
+    @inline(.always)
+    @staticmethod
+    @__parameter
+    def execute[
+        b_type: DType,
+        scales_type: DType,
+        //,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.bfloat16, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=DType.bfloat16, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        router_weights: InputTensor[dtype=DType.float32, rank=2, ...],
+        input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        gate_up_weight: InputTensor[dtype=b_type, rank=3, ...],
+        gate_up_b_scales: InputTensor[dtype=scales_type, rank=6, ...],
+        down_weight: InputTensor[dtype=b_type, rank=3, ...],
+        down_b_scales: InputTensor[dtype=scales_type, rank=6, ...],
+        gate_up_expert_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        down_expert_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        c_input_scales: InputTensor[dtype=DType.float32, rank=1, ...],
+        ep_recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        context: DeviceContext,
+    ) raises:
+        """Runs one fused EP MoE layer on this device.
+
+        Parameters:
+            b_type: Weight element type (inferred): `uint8` packed E2M1 at
+                NVFP4, `float8_e4m3fn` at MXFP8.
+            scales_type: Weight block-scale type (inferred): E4M3 at NVFP4,
+                E8M0 at MXFP8.
+            hidden_size: Model hidden dimension.
+            top_k: Routing top-k.
+            n_experts: GLOBAL routed expert count.
+            max_token_per_rank: The EP per-rank token capacity.
+            n_gpus_per_node: GPUs per node (the EP world).
+            n_nodes: Must be 1 (P2P only).
+            target: Target GPU device.
+
+        Args:
+            output: Token-indexed routed output `(T, hidden)` BF16.
+            atomic_counters: This device's group-0 EP sync counters
+                (in place); their reserved words hold the fused counters.
+            input_tokens: Pre-dispatch BF16 tokens `(T, hidden)`.
+            topk_ids: Routed global expert ids `(T, top_k)`.
+            router_weights: Router weights `(T, top_k)`, applied once.
+            input_scales: Inverted NVFP4 dispatch input scale; `[0]` is read.
+                At MXFP8 pass 1.0: the quantization ignores it.
+            gate_up_weight: Sigma-permuted gate/up weights `(E, N1, K1 bytes)`.
+            gate_up_b_scales: Gate/up weight scales `(E, N1/128, K1g, 32, 4, 4)`.
+            down_weight: Down weights `(E, hidden, moe bytes)`.
+            down_b_scales: Down weight scales `(E, hidden/128, K2g, 32, 4, 4)`.
+            gate_up_expert_scales: Per-local-expert L1 alpha.
+            down_expert_scales: Per-local-expert L2 alpha.
+            c_input_scales: Per-local-expert L1 -> L2 requant scale.
+            ep_recv_count_ptrs: The EP dispatch receive-count table (host),
+                which names every rank's arena.
+            context: Device context.
+        """
+        comptime assert is_gpu[target](), "the fused EP MoE only supports GPUs"
+        comptime n_ranks = n_gpus_per_node
+        # The format and MoE width follow from the weights; the decision and
+        # geometry come from the same plan `mega_ffn.ep_fused_init` used.
+        comptime nvfp4 = b_type == DType.uint8
+        comptime P = _FusedEPPlan[
+            b_type,
+            hidden_size,
+            top_k,
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            scales_type,
+            "BLOCK_SCALED_NV",
+            Int(gate_up_weight.static_spec.shape_tuple[1]) // 2,
+            False,  # fused_shared_expert
+            False,  # eplb
+            False,  # nvfp4_dyn_global_scales
+        ]
+        comptime assert P.reason.byte_length() == 0, (
+            "the fused EP MoE does not serve this configuration;"
+            " `mega_ffn.ep_fused_init` reports why"
+        )
+        comptime G = P.Geometry
+        comptime assert (
+            Int(gate_up_weight.static_spec.shape_tuple[0]) == G.n_local
+            and Int(down_weight.static_spec.shape_tuple[0]) == G.n_local
+        ), "the weights must carry exactly this rank's local experts"
+        comptime assert (
+            Int(gate_up_weight.static_spec.shape_tuple[1]) == G.n1
+            and Int(gate_up_weight.static_spec.shape_tuple[2]) == G.k1
+        ), "gate/up weights must be (E, 2 * moe_dim, K1 bytes)"
+        comptime assert (
+            Int(down_weight.static_spec.shape_tuple[1]) == hidden_size
+            and Int(down_weight.static_spec.shape_tuple[2]) == G.k2
+        ), "down weights must be (E, hidden, K2 bytes)"
+
+        var counters = G.Counters(
+            _fused_counters_reserve[n_experts](atomic_counters)
+        )
+        if Int(ep_recv_count_ptrs.dim_size[0]()) != n_ranks:
+            raise Error("ep_recv_count_ptrs must hold one address per rank")
+        var n_tok = Int(input_tokens.dim_size[0]())
+        if n_tok > max_token_per_rank:
+            raise Error(
+                "the fused EP MoE's staging holds max_token_per_rank source"
+                " tokens per rank; this batch puts more on this rank"
+            )
+        if (
+            Int(topk_ids.dim_size[1]()) != top_k
+            or Int(router_weights.dim_size[1]()) != top_k
+        ):
+            raise Error("topk_ids / router_weights must be (T, top_k)")
+        # NOTE: no early return at n_tok == 0. A rank with no tokens still
+        # publishes its (empty) early counts and flags, and still receives and
+        # reduces nothing; skipping it would hang every peer.
+
+        var my_rank = Int(context.id())
+        # Every rank's arena, set up by `mega_ffn.ep_fused_init` before any
+        # launch. Fail closed rather than launch into a missing or different
+        # workspace: peers write into these arenas.
+        var bases = Array[Int, n_ranks](fill=0)
+        for r in range(n_ranks):
+            var found = _get_global_or_null(
+                _fused_ep_ws_key(ep_recv_count_ptrs[r])
+            )
+            if not found:
+                raise Error(
+                    "no fused EP MoE workspace for rank ",
+                    r,
+                    ": the EP init graph has not set it up",
+                )
+            ref record = found.value().unsafe_bitcast[
+                _FusedEPWorkspaceRecord
+            ]()[]
+            if record.layout != G.layout() or record.device != r:
+                raise Error(
+                    "the fused EP MoE workspace of rank ",
+                    r,
+                    " was set up for another configuration",
+                )
+            bases[r] = record.arena
+
+        # ---- peer tables: BANK-0 bases (the kernel selects the bank) ----
+        var recv_buf_ptrs = Array[
+            UnsafePointer[UInt8, MutUntrackedOrigin], n_ranks
+        ](fill=UnsafePointer[UInt8, MutUntrackedOrigin].unsafe_dangling())
+        var recv_count_ptrs = Array[
+            UnsafePointer[UInt64, MutUntrackedOrigin], n_ranks
+        ](fill=UnsafePointer[UInt64, MutUntrackedOrigin].unsafe_dangling())
+        var early_count_ptrs = Array[
+            UnsafePointer[UInt64, MutUntrackedOrigin], n_ranks
+        ](fill=UnsafePointer[UInt64, MutUntrackedOrigin].unsafe_dangling())
+        var early_flag_ptrs = Array[
+            UnsafePointer[Int32, MutUntrackedOrigin], n_ranks
+        ](fill=UnsafePointer[Int32, MutUntrackedOrigin].unsafe_dangling())
+        var p3_recv = StaticTuple[
+            UnsafePointer[UInt8, MutUntrackedOrigin], P3_MAX_RANKS
+        ](UnsafePointer[UInt8, MutUntrackedOrigin].unsafe_dangling())
+        var p4_rc = Array[
+            UnsafePointer[UInt64, MutUntrackedOrigin], P3_MAX_RANKS
+        ](fill=UnsafePointer[UInt64, MutUntrackedOrigin].unsafe_dangling())
+        for r in range(n_ranks):
+            recv_buf_ptrs[r] = UnsafePointer[UInt8, MutUntrackedOrigin](
+                unsafe_from_address=bases[r] + G.OFF_STAGING
+            )
+            recv_count_ptrs[r] = UnsafePointer[UInt64, MutUntrackedOrigin](
+                unsafe_from_address=bases[r] + G.OFF_RC
+            )
+            early_count_ptrs[r] = UnsafePointer[UInt64, MutUntrackedOrigin](
+                unsafe_from_address=bases[r] + G.OFF_EC
+            )
+            early_flag_ptrs[r] = UnsafePointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=bases[r] + G.OFF_EF
+            )
+            p3_recv[r] = UnsafePointer[UInt8, MutUntrackedOrigin](
+                unsafe_from_address=bases[r] + G.OFF_CRECV
+            )
+            p4_rc[r] = UnsafePointer[UInt64, MutUntrackedOrigin](
+                unsafe_from_address=bases[r] + G.OFF_CRC
+            )
+
+        # ---- this rank's buffers (bank-0 bases; the "prev" operands are
+        # ignored under `ep_device_generation` and get the same base) ----
+        var me = my_rank
+        var staging_me = bases[me] + G.OFF_STAGING
+        var rc_prev = UnsafePointer[UInt64, MutUntrackedOrigin](
+            unsafe_from_address=bases[me] + G.OFF_RC
+        )
+        var eir_cur = UnsafePointer[Int32, MutUntrackedOrigin](
+            unsafe_from_address=bases[me] + G.OFF_EIR
+        )
+        var eir_prev = eir_cur
+        var ro_tt = TileTensor(
+            UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_RO
+            ),
+            row_major[G.n_local + 1](),
+        )
+        var off_tt = TileTensor(
+            UnsafePointer[Scalar[DType.uint32], MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_OFF
+            ),
+            row_major[G.n_local + 1](),
+        )
+        var ei_tt = TileTensor(
+            UnsafePointer[Scalar[DType.int32], MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_EI
+            ),
+            row_major[G.n_local](),
+        )
+
+        # ---- MegaFFN operands (the gate harness's shapes) ----
+        # C is dead (`c_store_dead`: the rows leave through the send), so it
+        # needs no backing, as in `mega_ffn.ep_combine_send`.
+        var c_tt = TileTensor(
+            UnsafePointer[
+                Scalar[DType.bfloat16], MutAnyOrigin
+            ].unsafe_dangling(),
+            row_major(Coord(Int(0), Idx[hidden_size])),
+        )
+        var a_tt = TileTensor(
+            UnsafePointer[Scalar[G.qdt], ImmUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_PH_A
+            ),
+            row_major[G.rows, G.k1](),
+        )
+        var cp_tt = TileTensor(
+            UnsafePointer[Scalar[G.qdt], MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_INTER
+            ),
+            row_major[G.rows, G.k2](),
+        )
+        var w13_tt = TileTensor(
+            UnsafePointer[Scalar[G.qdt], ImmUntrackedOrigin](
+                unsafe_from_address=Int(gate_up_weight.unsafe_ptr())
+            ),
+            row_major[G.n_local, G.n1, G.k1](),
+        )
+        var w2_tt = TileTensor(
+            UnsafePointer[Scalar[G.qdt], ImmUntrackedOrigin](
+                unsafe_from_address=Int(down_weight.unsafe_ptr())
+            ),
+            row_major[G.n_local, hidden_size, G.k2](),
+        )
+        var asc_tt = TileTensor(
+            UnsafePointer[Scalar[G.sfdt], MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_PH_ASC
+            ),
+            row_major((Idx[G.sf_blocks], Idx[G.k1g], Idx[32], Idx[4], Idx[4])),
+        )
+        var csw_tt = TileTensor(
+            UnsafePointer[Scalar[G.sfdt], MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_INTER_SF
+            ),
+            row_major((Idx[G.sf_blocks], Idx[G.k2g], Idx[32], Idx[4], Idx[4])),
+        )
+        var w13s_tt = TileTensor(
+            UnsafePointer[Scalar[G.sfdt], MutUntrackedOrigin](
+                unsafe_from_address=Int(gate_up_b_scales.unsafe_ptr())
+            ),
+            row_major(
+                (
+                    Idx[G.n_local],
+                    Idx[G.n1g],
+                    Idx[G.k1g],
+                    Idx[32],
+                    Idx[4],
+                    Idx[4],
+                )
+            ),
+        )
+        var w2s_tt = TileTensor(
+            UnsafePointer[Scalar[G.sfdt], MutUntrackedOrigin](
+                unsafe_from_address=Int(down_b_scales.unsafe_ptr())
+            ),
+            row_major(
+                (
+                    Idx[G.n_local],
+                    Idx[G.n2g],
+                    Idx[G.k2g],
+                    Idx[32],
+                    Idx[4],
+                    Idx[4],
+                )
+            ),
+        )
+        var e1_tt = TileTensor(
+            UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin](
+                unsafe_from_address=Int(gate_up_expert_scales.unsafe_ptr())
+            ),
+            row_major[G.n_local](),
+        )
+        var e2_tt = TileTensor(
+            UnsafePointer[Scalar[DType.float32], MutUntrackedOrigin](
+                unsafe_from_address=Int(down_expert_scales.unsafe_ptr())
+            ),
+            row_major[G.n_local](),
+        )
+        var swiglu_out = RealSwiGLUOutput[G.k2, G.k2g, G.sfdt, G.sfv, False](
+            UnsafePointer[UInt8, MutAnyOrigin](
+                unsafe_from_address=bases[me] + G.OFF_INTER
+            ),
+            UnsafePointer[Scalar[G.sfdt], MutAnyOrigin](
+                unsafe_from_address=bases[me] + G.OFF_INTER_SF
+            ),
+            UnsafePointer[Float32, ImmutAnyOrigin](
+                unsafe_from_address=Int(c_input_scales.unsafe_ptr())
+            ),
+        )
+        # The format's compaction targets are never written on the fused path
+        # (the tokens are consumed straight from staging); they alias the L1
+        # placeholders, which are never read either.
+        var handler = G.Fmt(
+            TileTensor(
+                UnsafePointer[Scalar[G.qdt], MutUntrackedOrigin](
+                    unsafe_from_address=bases[me] + G.OFF_PH_A
+                ),
+                row_major[G.rows, G.k1](),
+            ),
+            TileTensor(
+                UnsafePointer[Scalar[G.sfdt], MutUntrackedOrigin](
+                    unsafe_from_address=bases[me] + G.OFF_PH_ASC
+                ),
+                row_major((Idx[G.sf_blocks], Idx[G.k1g], Idx[32], Idx[16])),
+            ),
+            off_tt,
+            context,
+        )
+        var in_tt = TileTensor(
+            UnsafePointer[Scalar[DType.bfloat16], ImmUntrackedOrigin](
+                unsafe_from_address=Int(input_tokens.unsafe_ptr())
+            ),
+            row_major((n_tok, Idx[hidden_size])),
+        )
+        var tk_tt = TileTensor(
+            UnsafePointer[Scalar[DType.int32], ImmUntrackedOrigin](
+                unsafe_from_address=Int(topk_ids.unsafe_ptr())
+            ),
+            row_major((n_tok, Idx[top_k])),
+        )
+        # Spelled exactly as the launcher's operand type
+        # (`EPLocalSyncCounters[num_experts * ep_n_ranks]`): Mojo unifies type
+        # parameters structurally, so `n_experts` would not match
+        # `(n_experts // n_ranks) * n_ranks` here.
+        comptime assert G.n_local * n_ranks == n_experts
+        var ep_ctrs = EPLocalSyncCounters[G.n_local * n_ranks](counters.base)
+        # The dispatch's global input scale: one device value read at index 0
+        # for every token (production passes 1 / gate_up_input).
+        var isc_p = UnsafePointer[Float32, ImmUntrackedOrigin](
+            unsafe_from_address=Int(input_scales.unsafe_ptr())
+        )
+
+        @__parameter
+        @inline(.always)
+        @__copy_capture(isc_p)
+        def in_scale_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+            return isc_p.load(0).cast[dtype]()
+
+        mega_ffn_block_scaled_ep_fused[
+            config=G.config,
+            num_experts=G.n_local,
+            SwiGLUOutputT=type_of(swiglu_out),
+            swiglu_match_bf16=True,
+            swiglu_use_inplace=True,
+            mode=MODE_MEGAFFN,
+            clean_up=POST_SELF_CLEAN_UP,
+            # FULL is specified with PDL off (asserted in-kernel).
+            pdl_level=PDLLevel(),
+            ep_dynamic_tile_claim=True,
+            ep_eligible_pool_queue=True,
+            ep_final_layout=True,
+            ep_prod_reserve=True,
+            ep_n_sms=B200.sm_count,
+            ep_n_ranks=n_ranks,
+            ep_max_tokens_per_rank=max_token_per_rank,
+            ep_p2p_world_size=n_ranks,
+            staging_rows=G.rows,
+            staging_n_ranks=n_ranks,
+            staging_max_tpr=max_token_per_rank,
+            staging_msg_bytes=G.msg,
+            staging_scales_offset=G.scales_off,
+            staging_n_topk=top_k,
+            emit_ffn_done=True,
+            p5_direct_scatter=True,
+            p5_row_cache=False,
+            p4_signal=True,
+            c_store_dead=True,
+            ep_emit_src_info=True,
+            p4_sweep_lane_parallel=True,
+            p4_release_every=True,
+            p4_direct_pair_release=True,
+            p4_one_signal=True,
+            p4_poll_fence=True,
+            # MXFP8 at token block 32 only, the measured configuration and the
+            # one its gates cover; NVFP4 and token block 8 keep the release at
+            # the first k-group.
+            ep_late_full_release=(not nvfp4 and G.token_block == 32),
+            ep_coop_src_info=(not nvfp4 and G.token_block == 32),
+            ep_fused_full=True,
+            ep_fused_full_verify=False,
+            ep_input_scales_wrapper=in_scale_fn,
+            # Bank and tag from the device generation word; replay-safe.
+            ep_device_generation=True,
+        ](
+            c_tt,
+            a_tt,
+            cp_tt,
+            w13_tt,
+            w2_tt,
+            ro_tt,
+            off_tt,
+            ei_tt,
+            e1_tt,
+            e2_tt,
+            asc_tt,
+            csw_tt,
+            w13s_tt,
+            w2s_tt,
+            G.n_local,
+            context,
+            swiglu_out,
+            UnsafePointer[Scalar[DType.uint32], MutAnyOrigin](
+                unsafe_from_address=Int(counters.arrival_count())
+            ),
+            UnsafePointer[UInt8, ImmutAnyOrigin](
+                unsafe_from_address=staging_me
+            ),
+            # Within-expert rank prefixes: Region B of the fused counters.
+            UnsafePointer[Scalar[DType.int32], ImmutAnyOrigin](
+                unsafe_from_address=Int(counters.base)
+                + (G.wait_ctr_base + G.rank_prefix_off) * size_of[Int32]()
+            ),
+            in_tt,
+            tk_tt,
+            ro_tt,
+            ei_tt,
+            handler,
+            UnsafePointer[UInt8, MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_SEND
+            ),
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            early_count_ptrs,
+            rc_prev,
+            early_flag_ptrs,
+            UnsafePointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_EPC
+            ),
+            eir_cur,
+            eir_prev,
+            ep_ctrs,
+            Int32(my_rank),
+            ep_prod_base_p=UnsafePointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_MAILBOX
+            ),
+            # Ignored under `ep_device_generation` (the tag is `gen + 1`).
+            ep_prod_gen=Int32(0),
+            src_info_ptr=UnsafePointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_SRC_INFO
+            ),
+            p3_control=0,
+            p3_atomic_counter=ep_ctrs.get_combine_async_ptr(),
+            p3_recv_buf_ptrs=p3_recv,
+            p3_n_ranks=n_ranks,
+            p3_p2p_world_size=n_ranks,
+            p3_top_k=top_k,
+            p3_msg_bytes=hidden_size * size_of[DType.bfloat16](),
+            p3_max_tokens_per_rank=max_token_per_rank,
+            p4_control=0,
+            p4_recv_count_ptrs=p4_rc,
+            # A DEDICATED word per destination: Region B (the combine's usual
+            # convention) is read live by this launch's L1 loader.
+            p4_rank_completion_counter=UnsafePointer[Int32, MutUntrackedOrigin](
+                unsafe_from_address=bases[me] + G.OFF_RCC
+            ),
+            p4_my_rank=Int32(my_rank),
+            ff_out_p=UnsafePointer[Scalar[DType.bfloat16], MutUntrackedOrigin](
+                unsafe_from_address=Int(output.unsafe_ptr())
+            ),
+            ff_rw_p=UnsafePointer[Float32, ImmUntrackedOrigin](
+                unsafe_from_address=Int(router_weights.unsafe_ptr())
+            ),
+        )

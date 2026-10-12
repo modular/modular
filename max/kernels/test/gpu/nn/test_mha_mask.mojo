@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
+from std.sys import default_accelerator
 from std.sys.info import CompilationTarget
 
 from max.gpu.host import get_gpu_target
@@ -117,13 +117,15 @@ def test_causal_mask_asm() raises:
 
         x[0] = vec[2]
 
-    var asm = _compile_code[kernel, target=get_gpu_target()]().asm
+    comptime target = default_accelerator()
+
+    var asm = _compile_code[kernel, target=target]().asm
     print(asm)
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if target.is_nvidia_gpu():
         assert_true("setp.lt.u64" not in asm)
         assert_true("setp.lt.s64" not in asm)
-    elif has_amd_gpu_accelerator():
+    elif target.is_amd_gpu():
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)
     else:
@@ -254,13 +256,15 @@ def test_sliding_window_causal_mask_asm() raises:
 
         x[0] = vec[2]
 
-    var asm = _compile_code[kernel, target=get_gpu_target()]().asm
+    comptime target = default_accelerator()
+
+    var asm = _compile_code[kernel, target=target]().asm
     print(asm)
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if target.is_nvidia_gpu():
         assert_true("setp.lt.u64" not in asm)
         assert_true("setp.lt.s64" not in asm)
-    elif has_amd_gpu_accelerator():
+    elif target.is_amd_gpu():
         # there is nothing special about these instructions
         assert_true("s_cselect_b64" in asm)
         assert_true("v_cndmask_b32_e64" in asm)

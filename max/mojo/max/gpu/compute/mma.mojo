@@ -26,7 +26,12 @@ from std.sys.info import (
     is_apple_m5,
 )
 
-from std._gpu._utils import (
+from std.memory import bitcast
+
+from std.utils import StaticTuple
+from std.utils.index import Index
+
+from max.gpu._utils import (
     _get_llvm_struct_fields,
     array_to_llvm_struct,
     llvm_struct_to_array,
@@ -35,10 +40,6 @@ from std._gpu._utils import (
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.mma_operand_descriptor import MMAOperandDescriptor
-from std.memory import bitcast
-
-from std.utils import StaticTuple
-from std.utils.index import Index
 
 # Import architecture-specific MMA implementations
 from .arch.mma_nvidia import _mma_nvidia

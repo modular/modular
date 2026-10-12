@@ -44,7 +44,7 @@ from internal_utils._utils import InitializationType
 from layout import Idx, TileTensor, row_major
 
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     MhaConfigV2,
@@ -196,10 +196,10 @@ def run_mha_prefill_v2[
                         Idx[depth],
                     ),
                 )
-                var k_op = LayoutTensorMHAOperand(
+                var k_op = TileTensorMHAOperand(
                     k_tt.as_imm().as_unsafe_any_origin()
                 )
-                var v_op = LayoutTensorMHAOperand(
+                var v_op = TileTensorMHAOperand(
                     v_tt.as_imm().as_unsafe_any_origin()
                 )
                 comptime if sink:

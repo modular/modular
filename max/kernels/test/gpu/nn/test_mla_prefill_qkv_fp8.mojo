@@ -22,7 +22,7 @@ from layout import (
 )
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_prefill
 from std.testing import assert_almost_equal
 
@@ -334,8 +334,8 @@ def test_prefill[
         row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(k_ref_device)
-    var v_ref_operand = LayoutTensorMHAOperand(v_ref_device)
+    var k_ref_operand = TileTensorMHAOperand(k_ref_device)
+    var v_ref_operand = TileTensorMHAOperand(v_ref_device)
 
     # create reference output
     mha_gpu_naive[_is_cache_length_accurate=True](

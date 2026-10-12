@@ -29,9 +29,8 @@ from std.sys import (
     align_of,
     get_defined_bool,
     get_defined_int,
-    has_amd_gpu_accelerator,
     has_amd_rdna_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
+    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -70,6 +69,7 @@ from max.gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
+    lt_to_tt_idx,
     Coord,
     Idx,
     IntTuple,
@@ -80,7 +80,6 @@ from layout import (
     TensorLayout,
     TileTensor,
     UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
     coord_to_index_list,
 )
@@ -93,6 +92,7 @@ from layout.layout_tensor import (
     copy_sram_to_dram,
 )
 from layout.swizzle import make_swizzle
+from layout.tile_tensor import stack_allocation
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.utils_gpu import _apple_m5_allow_lossy_f32_attention
@@ -134,7 +134,7 @@ from nn.attention.mha_mask import (
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    LayoutTensorMHAOperand,
+    TileTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.attention.gpu.mha_decode_partition_heuristic import (
@@ -333,7 +333,7 @@ def _mha_decode_fold_ok[
     """
 
     return (
-        has_amd_gpu_accelerator()
+        default_accelerator().is_amd_gpu()
         and not has_amd_rdna_gpu_accelerator()
         # fp16 shares bf16's decode MMA shape and fp32 has its own, but neither
         # is tested through the fold; widen once a test covers them.
@@ -515,9 +515,9 @@ def flash_attention_hw_supported[qkv_type: DType]() -> Bool:
         detected accelerator.
     """
 
-    return has_nvidia_gpu_accelerator() or (
+    return default_accelerator().is_nvidia_gpu() or (
         (qkv_type == .bfloat16 or qkv_type.is_float8())
-        and has_amd_gpu_accelerator()
+        and default_accelerator().is_amd_gpu()
     )
 
 
@@ -544,18 +544,19 @@ def depth_supported_by_gpu[
         `True` when the optimised flash-attention kernel supports `depth`
         on the given GPU.
     """
+    comptime target = CompilationTarget.from[info]()
 
     comptime is_sm100 = _is_sm10x_gpu(info)
     comptime is_sm90or100 = is_sm100 or (info == H100)
+
     comptime head_depth_supported = depth == 128 or (
-        depth == 64
-        and (is_sm90or100 or info == A100 or has_amd_gpu_accelerator())
+        depth == 64 and (is_sm90or100 or info == A100 or target.is_amd_gpu())
     ) or (
-        depth == 80 and config.dtype == .bfloat16 and has_amd_gpu_accelerator()
+        depth == 80 and config.dtype == .bfloat16 and target.is_amd_gpu()
     ) or (
         depth == 256
         and (
-            has_amd_gpu_accelerator()
+            target.is_amd_gpu()
             or (is_sm90or100 and mask_t.mask_safe_out_of_bounds)
         )
     ) or (
@@ -563,7 +564,7 @@ def depth_supported_by_gpu[
         and is_sm90or100
         and config.algorithm == FlashAttentionAlgorithm(3)
     ) or (
-        (is_sm100 or has_amd_gpu_accelerator()) and depth == 512
+        (is_sm100 or target.is_amd_gpu()) and depth == 512
     )
     return head_depth_supported
 
@@ -1241,7 +1242,7 @@ def flash_attention_dispatch[
                     # config.dtype == DType.bfloat16
                     # and output.dtype == DType.bfloat16
                     # and (config.depth == 64 or config.depth == 128)
-                    # and has_amd_gpu_accelerator()
+                    # and ctx.target.is_amd_gpu()
                     # and not has_amd_rdna_gpu_accelerator()
                     # and (k_t.page_size == 0 or k_t.page_size >= 64)
                 )
@@ -2224,7 +2225,7 @@ def _flash_attention_dense[
 ) raises:
     """Shared implementation behind the dense `flash_attention` overloads.
 
-    Wraps K and V in `LayoutTensorMHAOperand` adapters and delegates to
+    Wraps K and V in `TileTensorMHAOperand` adapters and delegates to
     `flash_attention_dispatch`. All tensor operands are `TileTensor`s.
     """
     # See the kV cache overloads for comments.
@@ -2288,7 +2289,7 @@ def _flash_attention_dense[
     # round-trip). BSHD layout: batch/seq are runtime, head/depth static, so
     # mirror `k`'s static pattern with `Idx` for the known dims. The operand
     # infers `buffer_layout` from the passed TileTensor.
-    var k_operand = LayoutTensorMHAOperand(
+    var k_operand = TileTensorMHAOperand(
         TileTensor(
             k.unsafe_ptr(),
             row_major(
@@ -2299,7 +2300,7 @@ def _flash_attention_dense[
             ),
         )
     )
-    var v_operand = LayoutTensorMHAOperand(
+    var v_operand = TileTensorMHAOperand(
         TileTensor(
             v.unsafe_ptr(),
             row_major(
@@ -3019,22 +3020,16 @@ def mha_single_batch[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation[stack_alignment=p_frag_align]()
-
+    var p_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
+    var output_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0)
+    # Copy helpers still require these legacy scalar views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation[stack_alignment=p_frag_align]()
-        .fill(0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Rowwise max and sum for online softmax
@@ -3081,14 +3076,11 @@ def mha_single_batch[
     )
 
     # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ](
+    var warp_scratch = TileTensor(
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
-        ]()
+        ](),
+        row_major[2 * num_warps_n, BM](),
     )
 
     # Mask global memory iterator.
@@ -3210,6 +3202,9 @@ def mha_single_batch[
         # P = Q @ K, register tile holding mma result.
         _ = p_reg_tile.fill(0)
 
+        # Retained legacy: both the input (a legacy iterator deref) and the
+        # consumer (`copy_dram_to_sram_async`) are legacy-only, so a native
+        # slice view would just round-trip.
         @inline(.always)
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
@@ -3268,7 +3263,9 @@ def mha_single_batch[
             static_num_iters=ufloordiv(depth, BK),
             k_group_size=config.k_group_size,
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             q_smem_iter,
             k_smem_iter,
             q_smem_iter,
@@ -3376,9 +3373,13 @@ def mha_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_y)),
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
         )
@@ -3448,7 +3449,9 @@ def mha_single_batch[
                 static_num_iters=ufloordiv(BN, BK),
                 k_group_size=config.k_group_size,
             ](
-                output_reg_tile,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile
+                ),
                 p_smem_iter,
                 v_smem_iter,
                 p_smem_iter,
@@ -3480,7 +3483,9 @@ def mha_single_batch[
                 static_num_iters=ufloordiv(BN, BK),
                 k_group_size=config.k_group_size,
             ](
-                output_reg_tile,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile
+                ),
                 p_reg_iter,
                 v_smem_iter,
                 p_smem_iter,
@@ -3763,22 +3768,16 @@ def mha_single_batch_pipelined[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation[stack_alignment=p_frag_align]()
-
+    var p_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
+    var output_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0)
+    # MMA and softmax helpers retain their legacy scalar views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation[stack_alignment=p_frag_align]()
-        .fill(0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Rowwise max and sum for online softmax
@@ -3831,14 +3830,11 @@ def mha_single_batch_pipelined[
     )
 
     # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
-        address_space=.SHARED,
-    ](
+    var warp_scratch = TileTensor(
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
-        ]()
+        ](),
+        row_major[p_frag_simdwidth * num_warps_n, BM](),
     )
 
     # Mask global memory iterator.
@@ -3962,7 +3958,9 @@ def mha_single_batch_pipelined[
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
                 k_group_size=config.k_group_size,
             ](
-                p_reg_tile,
+                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                    p_reg_tile
+                ),
                 q_gmem_iter,
                 k_gmem_iter,
                 q_smem_iter,
@@ -3993,7 +3991,9 @@ def mha_single_batch_pipelined[
                 next_op_b_linear_idx_type=type_of(v_gmem_iter).linear_idx_type,
                 k_group_size=config.k_group_size,
             ](
-                p_reg_tile,
+                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                    p_reg_tile
+                ),
                 # Pass shared memory iterator to hint not loading from global memory.
                 q_smem_iter,
                 k_gmem_iter,
@@ -4114,13 +4114,13 @@ def mha_single_batch_pipelined[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
-                1, p_frag_simdwidth
-            ](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[
-                1, p_frag_simdwidth
-            ](),
-            warp_scratch.tile[2 * num_warps_n, WM](0, Int(warp_y)),
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, p_frag_simdwidth](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, p_frag_simdwidth](),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
         )
@@ -4157,7 +4157,9 @@ def mha_single_batch_pipelined[
                 prefetch_init=False,
                 k_group_size=config.k_group_size,
             ](
-                output_reg_tile,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile
+                ),
                 p_smem_iter,
                 v_gmem_iter,
                 p_smem_iter,
@@ -4186,7 +4188,9 @@ def mha_single_batch_pipelined[
                 prefetch_init=False,
                 k_group_size=config.k_group_size,
             ](
-                output_reg_tile,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile
+                ),
                 p_reg_iter,
                 v_gmem_iter,
                 p_smem_iter,
@@ -4646,7 +4650,7 @@ def mha_decoding[
 @inline(.always)
 def scale_and_mask_helper[
     p_type: DType,
-    p_layout: Layout,
+    p_layout: TensorLayout,
     mask_t: MHAMask,
     group: Int,
     num_n_mmas: Int,
@@ -4654,8 +4658,8 @@ def scale_and_mask_helper[
     MMA_N: Int,
     simd_width: Int,
 ](
-    p_reg_tile: LayoutTensor[
-        mut=True, p_type, p_layout, _, address_space=.LOCAL
+    p_reg_tile: TileTensor[
+        mut=True, p_type, p_layout, address_space=.LOCAL, ...
     ],
     scale_log2e: Float32,
     num_keys: Int,
@@ -4671,27 +4675,9 @@ def scale_and_mask_helper[
     out-of-bounds and masked positions. Only threads with `lane < 4 * group`
     carry meaningful data; other threads return immediately. Designed for the
     decode inner loop where P is a 1-D column-vector across the key dimension.
-
-    Parameters:
-        p_type: Element data type of the P register tile.
-        p_layout: Layout of the P register tile.
-        mask_t: Attention mask type implementing `MHAMask`.
-        group: GQA group size (query heads per KV head).
-        num_n_mmas: Number of MMA operations along the N (key) dimension.
-        WN: Warp tile width along the N dimension.
-        MMA_N: MMA instruction width along N.
-        simd_width: SIMD vector width used in the register tile.
-
-    Args:
-        p_reg_tile: Mutable register tile holding Q·Kᵀ values.
-        scale_log2e: Pre-multiplied softmax scale (scale * log2e).
-        num_keys: Total number of valid keys in the sequence.
-        bound: Inclusive upper bound on the key index for the current tile.
-        lane: Intra-warp lane ID.
-        warp: Warp index within the CTA.
-        mask: Mask instance.
-        kv_tile_start_row: Global key index of the first column in this tile.
     """
+    # The masking body still indexes through the legacy scalar view.
+    var p_reg_tile_legacy = p_reg_tile.to_layout_tensor()
 
     # Apply mask and scale to mma result. Only the first row (lane 0-3) has
     # meaningful data, other fragments are zero. The mask is an 1D vector.
@@ -4728,23 +4714,26 @@ def scale_and_mask_helper[
                     kv_tile_start_row + key_offset + frag_lane_col + i
                 )
 
-                p_reg_tile[n_mma, i + i_group * simd_width] = mask.mask(
+                p_reg_tile_legacy[n_mma, i + i_group * simd_width] = mask.mask(
                     Index(
                         block_idx.z,
                         q_head_idx,
                         score_row,
                         score_col,
                     ),
-                    p_reg_tile[n_mma, i + i_group * simd_width]
+                    p_reg_tile_legacy[n_mma, i + i_group * simd_width]
                     * scale_log2e.cast[p_type](),
                 )
 
                 comptime if mask_t.apply_log2e_after_mask:
-                    p_reg_tile[n_mma, i + i_group * simd_width] = (
-                        p_reg_tile[n_mma, i + i_group * simd_width] * log2e
+                    p_reg_tile_legacy[n_mma, i + i_group * simd_width] = (
+                        p_reg_tile_legacy[n_mma, i + i_group * simd_width]
+                        * log2e
                     )
 
-                p_reg_tile[n_mma, i + i_group * simd_width] = _kernel_mask(
+                p_reg_tile_legacy[
+                    n_mma, i + i_group * simd_width
+                ] = _kernel_mask(
                     Index(score_row, score_col),
                     Index(
                         batch_cache_valid_length + 1,
@@ -4756,7 +4745,7 @@ def scale_and_mask_helper[
                         # led to correct output.
                         kv_tile_start_row + bound,
                     ),
-                    p_reg_tile[n_mma, i + i_group * simd_width],
+                    p_reg_tile_legacy[n_mma, i + i_group * simd_width],
                 )
 
 
@@ -4936,29 +4925,18 @@ def mha_decoding_single_batch[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation[stack_alignment=p_frag_align]()
+    var p_reg_tile = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
 
     # Note that
     # num_warps_n * num_n_mmas == BN // WN * num_n_mmas
     # so we can use multistage_mma
     comptime num_output_rows = num_m_mmas * num_n_mmas
     comptime num_output_rows_full = num_warps_n * num_output_rows if decoding_warp_split_k else num_output_rows
-    # alias num_output_rows = num_warps_n * num_m_mmas * num_n_mmas if decoding_warp_split_k else num_m_mmas * num_n_mmas
-    var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_output_rows_full, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation[stack_alignment=p_frag_align]()
-        .fill(0.0)
-    )
+    var output_reg_tile = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_output_rows_full, p_frag_size]()).fill(0.0)
 
     # Rowwise max and sum for online softmax
     comptime row_align = align_of[
@@ -5002,11 +4980,10 @@ def mha_decoding_single_batch[
     )
 
     # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    var warp_scratch = TileTensor(
+        (p_smem + BM * BN).bitcast[Scalar[accum_type]](),
+        row_major[2 * num_warps_n, BM](),
+    )
 
     # Account for group query.
     comptime kv_num_heads = num_heads // group
@@ -5042,6 +5019,8 @@ def mha_decoding_single_batch[
         BK // simd_size,
     )
 
+    # Retained legacy: both the input (a legacy iterator deref) and the
+    # consumer (`copy_dram_to_sram_async`) are legacy-only.
     @inline(.always)
     def _mask_tensor_row(
         tensor: LayoutTensor, num_rows: Int
@@ -5174,13 +5153,6 @@ def mha_decoding_single_batch[
         # For 16x8 mma output, group <= 8 only uses the first 8x8 matrix
         # each thread only has one fragment vector of size 2.
         comptime if group <= 8:
-            var output_reg_vecs = output_reg_tile.tile[
-                num_output_rows_full, p_frag_size // 2
-            ](0, 0).vectorize[1, p_frag_simdwidth]()
-            var p_reg_vecs = p_reg_tile.tile[
-                num_m_mmas * num_n_mmas, p_frag_size // 2
-            ](0, 0).vectorize[1, p_frag_simdwidth]()
-
             _online_softmax_iter_for_mma_output[
                 accum_type,
                 Layout.row_major(num_m_mmas, num_n_mmas),
@@ -5189,20 +5161,23 @@ def mha_decoding_single_batch[
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
-                output_reg_vecs,
-                p_reg_vecs,
+                output_reg_tile.tile[num_output_rows_full, p_frag_size // 2](
+                    0, 0
+                ).vectorize[1, p_frag_simdwidth](),
+                p_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
+                    0, 0
+                ).vectorize[1, p_frag_simdwidth](),
                 warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
                 rowmax,
                 rowsum,
             )
         else:
-            var output_reg_vecs = output_reg_tile.reshape[
-                Layout.row_major(2 * num_output_rows_full, p_frag_simdwidth)
-            ]().vectorize[1, p_frag_simdwidth]()
-            var p_reg_vecs = p_reg_tile.reshape[
-                Layout.row_major(2 * num_m_mmas * num_n_mmas, p_frag_simdwidth)
-            ]().vectorize[1, p_frag_simdwidth]()
-
+            comptime out_view_layout = row_major[
+                2 * num_output_rows_full, p_frag_simdwidth
+            ]()
+            comptime p_view_layout = row_major[
+                2 * num_m_mmas * num_n_mmas, p_frag_simdwidth
+            ]()
             _online_softmax_iter_for_mma_output[
                 accum_type,
                 Layout.row_major(2 * num_m_mmas, num_n_mmas),
@@ -5211,8 +5186,12 @@ def mha_decoding_single_batch[
                 warp_split_k=decoding_warp_split_k,
                 use_exp2=True,
             ](
-                output_reg_vecs,
-                p_reg_vecs,
+                output_reg_tile.reshape[type_of(out_view_layout)](
+                    out_view_layout
+                ).vectorize[1, p_frag_simdwidth](),
+                p_reg_tile.reshape[type_of(p_view_layout)](
+                    p_view_layout
+                ).vectorize[1, p_frag_simdwidth](),
                 warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
                 rowmax,
                 rowsum,
@@ -5289,7 +5268,10 @@ def mha_decoding_single_batch[
         # else:
         #   S[m, :] @ V[:, (0:WN) + n*WN]
         comptime if decoding_warp_split_k:
-            var p_reg_iter = p_reg_tile.tiled_iterator[
+            # Warp split-k is dead in every current instantiation; keep the
+            # legacy iterator view local to this branch until multistage_mma
+            # grows a native register iterator.
+            var p_reg_iter = p_reg_tile.to_layout_tensor().tiled_iterator[
                 MMA_K // MMA_N * num_m_mmas, p_frag_size
             ](0, 0)
             comptime IteratorTypeVSub = LayoutTensorIter[
@@ -5354,11 +5336,17 @@ def mha_decoding_single_batch[
         # offset on the pointer is to avoid possible races
         # with `accum_smem_warp_tile`.
         var o_smem_ptr = q_smem.bitcast[Scalar[accum_type]]()
-        var scratch = LayoutTensor[
+        var scratch = TileTensor[
             accum_type,
-            Layout.row_major(2 * num_warps_n, BM),
+            type_of(row_major[2 * num_warps_n, BM]()),
+            MutAnyOrigin,
             address_space=.SHARED,
-        ](o_smem_ptr + num_warps_n * (num_warps_n - 1) * WM * WN)
+        ](
+            ptr=(
+                o_smem_ptr + num_warps_n * (num_warps_n - 1) * WM * WN
+            ).unsafe_origin_cast[MutAnyOrigin](),
+            layout=row_major[2 * num_warps_n, BM](),
+        )
 
         # Note: Sink handling is done after warp reduction in partition-specific logic below.
         # The warp reduction just combines warps; sink contribution is added to rowsum later.
@@ -5374,8 +5362,6 @@ def mha_decoding_single_batch[
             output_reg_vecs,
             scratch.tile[2 * num_warps_n, WM](0, warp_y),
             o_smem_ptr,
-            rowmax,
-            rowsum,
         )
 
     # Apply softmax denumerator.
@@ -5426,12 +5412,15 @@ def mha_decoding_single_batch[
         num_rows=MMA_M // 2, row_size=WN, access_size=MMA_N
     ]()
 
+    # The FP32 -> half downcast copy still lives on the legacy path.
+    var output_reg_tile_legacy = output_reg_tile.to_layout_tensor()
+
     comptime if decoding_warp_split_k:
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.tile[num_output_rows, p_frag_size](0, 0)
+            output_reg_tile_legacy.tile[num_output_rows, p_frag_size](0, 0)
             .vectorize[1, 2]()
             .transpose(),
         )
@@ -5440,7 +5429,7 @@ def mha_decoding_single_batch[
             thread_layout=Layout.row_major(8, 4), swizzle=swizzle
         ](
             accum_smem_warp_tile.vectorize[1, 2](),
-            output_reg_tile.vectorize[1, 2]().transpose(),
+            output_reg_tile_legacy.vectorize[1, 2]().transpose(),
         )
 
     # Guard writing to shared memory.
@@ -5640,22 +5629,16 @@ def mha_decoding_single_batch_pipelined[
     comptime p_frag_simdwidth = p_frag_size // 2
     comptime p_frag_align = align_of[SIMD[accum_type, p_frag_size]]()
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation[stack_alignment=p_frag_align]()
-
+    var p_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
+    var output_reg_tile_native = stack_allocation[
+        accum_type, address_space=.LOCAL, alignment=p_frag_align
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]()).fill(0.0)
+    # MMA and softmax helpers retain their legacy scalar views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation[stack_alignment=p_frag_align]()
-        .fill(0.0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Account for group query.
@@ -5723,12 +5706,10 @@ def mha_decoding_single_batch_pipelined[
     )
 
     # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(p_frag_simdwidth * num_warps_n, BM),
-        MutAnyOrigin,
-        address_space=.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_unsafe_any_origin())
+    var warp_scratch = TileTensor(
+        (p_smem + BM * BN).bitcast[Scalar[accum_type]]().as_unsafe_any_origin(),
+        row_major[p_frag_simdwidth * num_warps_n, BM](),
+    )
 
     var q_offset = depth * kv_head_idx * group
 
@@ -5797,7 +5778,9 @@ def mha_decoding_single_batch_pipelined[
                 True,  # transpose_b
                 swizzle_a=True,
             ](
-                p_reg_tile,
+                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                    p_reg_tile
+                ),
                 q_gmem_iter,
                 k_gmem_iter,
                 q_smem_iter,
@@ -5817,7 +5800,9 @@ def mha_decoding_single_batch_pipelined[
                 True,  # transpose_b
                 swizzle_a=True,
             ](
-                p_reg_tile,
+                lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                    p_reg_tile
+                ),
                 q_smem_iter,
                 k_gmem_iter,
                 q_smem_iter,
@@ -5833,7 +5818,9 @@ def mha_decoding_single_batch_pipelined[
             simd_width=p_frag_simdwidth,
             group=group,
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             scale_log2e,
             num_keys,
             kv_tile_num_rows,
@@ -5845,12 +5832,6 @@ def mha_decoding_single_batch_pipelined[
 
         # For 16x8 mma output, only the top 8x4 matrix matters for GQA since
         # G <= 8 typically holds
-        var output_reg_vecs = output_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
-        var p_reg_vecs = p_reg_tile.tile[
-            num_m_mmas * num_n_mmas, p_frag_size // 2
-        ](0, 0).vectorize[1, p_frag_size // 2]()
 
         _online_softmax_iter_for_mma_output[
             accum_type,
@@ -5859,8 +5840,14 @@ def mha_decoding_single_batch_pipelined[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_vecs,
-            p_reg_vecs,
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](
+                    0, 0
+                )
+            ).vectorize[1, p_frag_size // 2](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.tile[num_m_mmas * num_n_mmas, p_frag_size // 2](0, 0)
+            ).vectorize[1, p_frag_size // 2](),
             warp_scratch.tile[2 * num_warps_n, WM](0, warp_y),
             rowmax,
             rowsum,
@@ -5904,7 +5891,9 @@ def mha_decoding_single_batch_pipelined[
             False,  # transpose_b
             swizzle_a=True,
         ](
-            output_reg_tile,
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile
+            ),
             p_smem_iter,
             v_gmem_iter,
             p_smem_iter,
@@ -6170,58 +6159,6 @@ comptime _NAIVE_BMM_BLOCK_TUPLE = StaticTuple[Int32, 1](
         * _NAIVE_BMM_BLOCK_DIM.z()
     )
 )
-
-
-def mha_gpu_naive[
-    output_type: DType,
-    k_t: MHAOperand,
-    v_t: MHAOperand,
-    mask_t: MHAMask,
-    //,
-    ragged: Bool = False,
-    sink: Bool = False,
-    _use_valid_length: Bool = False,
-    _is_cache_length_accurate: Bool = False,
-](
-    q: LayoutTensor[mut=False, address_space=.GENERIC, ...],
-    k: k_t,
-    v: v_t,
-    mask_functor: mask_t,
-    output: LayoutTensor[mut=True, output_type, address_space=.GENERIC, ...],
-    valid_length: OptionalReg[ImmutTileTensor1D[.uint32]],
-    scale: Float32,
-    batch_size: Int,
-    max_prompt_len: Int,
-    max_cache_size: Int,
-    num_heads: Int,
-    depth: Int,
-    group: Int,
-    ctx: DeviceContext,
-    sink_weights: OptionalReg[ImmutTileTensor1D[q.dtype]] = None,
-) raises:
-    """Adapts legacy query and output views to native tensor dispatch."""
-    mha_gpu_naive[
-        ragged=ragged,
-        sink=sink,
-        _use_valid_length=_use_valid_length,
-        _is_cache_length_accurate=_is_cache_length_accurate,
-    ](
-        lt_to_tt(q),
-        k,
-        v,
-        mask_functor,
-        lt_to_tt(output),
-        valid_length,
-        scale,
-        batch_size,
-        max_prompt_len,
-        max_cache_size,
-        num_heads,
-        depth,
-        group,
-        ctx,
-        sink_weights,
-    )
 
 
 def mha_gpu_naive[
@@ -6764,10 +6701,10 @@ def mha_gpu_naive[
         ctx: GPU device context for kernel dispatch.
         sink_weights: Optional sink-token weight tensor for attention sinks.
     """
-    var k_operand = LayoutTensorMHAOperand(
+    var k_operand = TileTensorMHAOperand(
         TileTensor(k.unsafe_ptr(), row_major(k.layout.shape_coord()))
     )
-    var v_operand = LayoutTensorMHAOperand(
+    var v_operand = TileTensorMHAOperand(
         TileTensor(v.unsafe_ptr(), row_major(v.layout.shape_coord()))
     )
     mha_gpu_naive[_is_cache_length_accurate=True, sink=sink](

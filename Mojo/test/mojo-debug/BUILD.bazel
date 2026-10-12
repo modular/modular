@@ -9,8 +9,8 @@ lit_tests(
         "*.lldb",
         "*.mojo",
     ]) + glob(
-        ["internal/*.lldb"],
-        # `internal/` is excluded via .bazelignore in the open source build.
+        ["mcl/*.lldb"],
+        # `mcl/` is excluded via .bazelignore in the open source build.
         allow_empty = True,
     ),
     custom_substitutions = {

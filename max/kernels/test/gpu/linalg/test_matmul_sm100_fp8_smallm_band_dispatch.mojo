@@ -36,6 +36,10 @@
 #   1. the dispatcher returns DISPATCH_HIT (MAX Mojo kernel, not vendor MISS);
 #   2. the DISPATCH_HIT output matches the vendor-cuBLASLt reference within
 #      FP8/BF16-accum tolerance (rtol/atol = 1e-2).
+#
+# It also checks tuned outlier rows (Nemotron-3.5-Lightning TP=2 qkv at m=64)
+# against cuBLASLt. A tuned row and the heuristic both return DISPATCH_HIT, so
+# that case guards the row's numerics, not that the dispatcher selects it.
 
 from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
@@ -48,7 +52,7 @@ from linalg.matmul.gpu.sm100_structured.default.dispatch import (
     matmul_dispatch_sm100_bf16,
     DISPATCH_HIT,
 )
-from linalg.utils import identity_compute_fn
+from linalg.utils import identity_compute_fn, no_epilogue_fn
 from std.utils.index import IndexList
 from std.testing import assert_equal
 
@@ -129,7 +133,7 @@ def check_fp8_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
 
     # MAX Mojo path: the production static-scaled FP8 dispatch entry.
     var status = matmul_dispatch_sm100_fp8[transpose_b=transpose_b](
-        c_tensor, a_tensor, b_tensor, scaled_compute_fn, ctx
+        c_tensor, a_tensor, b_tensor, no_epilogue_fn, scaled_compute_fn, ctx
     )
     _assert_hit(status, "FP8", N, K, m)
 
@@ -195,7 +199,7 @@ def check_bf16_band[N: Int, K: Int](ctx: DeviceContext, m: Int) raises:
     # MAX Mojo path: the SM100 bf16 static matmul dispatch entry (no epilogue).
     var status = matmul_dispatch_sm100_bf16[
         transpose_b=transpose_b, has_compute_fn=False
-    ](c_tensor, a_tensor, b_tensor, identity_compute_fn, ctx)
+    ](c_tensor, a_tensor, b_tensor, no_epilogue_fn, identity_compute_fn, ctx)
     _assert_hit(status, "BF16", N, K, m)
 
     # Reference: same GEMM via vendor cuBLASLt.
@@ -252,3 +256,7 @@ def main() raises:
         bf16_all[3136, 12544](ctx)
         bf16_all[7168, 3136](ctx)
         bf16_all[3136, 5120](ctx)
+
+        # Nemotron-3.5-Lightning TP=2 attention qkv, which has a tuned m=64
+        # row; the other m values take the heuristic.
+        bf16_all[2304, 2688](ctx)

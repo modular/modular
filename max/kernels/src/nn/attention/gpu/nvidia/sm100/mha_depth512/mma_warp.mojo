@@ -136,9 +136,6 @@ def depth512_mma[
     # P@V MMA types are defined inside pv_mma (depth-dependent).
 
     # ---- TMEM addresses ------------------------------------------------------
-    # `tmem_addr` is read ONCE in the kernel prologue (post-`cluster_sync`) and
-    # passed in by register; do NOT re-read `smem.tmem_addr_ptr()` here (see the
-    # publish-handshake note in `kernel.mojo`).
     var o_tmem = tmem_addr + UInt32(config.TMEM_O)
     var o_hi_tmem = tmem_addr + UInt32(config.TMEM_O_hi)
     var s_even_tmem = tmem_addr + UInt32(config.TMEM_S_even)

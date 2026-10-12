@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 # DOC: max/develop/indexing.mdx
 
-# scatter.py: route expert outputs back into a hidden state (CPU; scatter is CPU-only)
+# scatter.py: route expert outputs back into a hidden state
 #
 # Output:
 #   [Dim(8), Dim(64)]

@@ -33,6 +33,7 @@ RepoType = Literal["online", "local"]
 
 # Reference: https://github.com/ggerganov/llama.cpp/blob/eb5c3dc64bd967f2e23c87d9dec195f45468de60/src/llama.cpp#L20778
 RopeType = Literal["none", "normal", "neox", "longrope", "yarn"]
+"""The rotary position embedding (RoPE) implementation a model configures."""
 
 
 PipelineRole = Literal["prefill_and_decode", "prefill_only", "decode_only"]

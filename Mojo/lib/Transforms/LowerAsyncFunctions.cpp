@@ -11,7 +11,9 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-#include "AsyncFrame.h"
+#include "FrameData.h"
+#include "FrameEvaluation.h"
+#include "LegacyFrameEvaluation.h"
 #include "Mojo/CODialect/CODialect.h"
 #include "Mojo/CODialect/COOps.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
@@ -21,6 +23,7 @@
 #include "Mojo/POPDialect/POPDialect.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/POPDialect/POPTypes.h"
+#include "Mojo/ToolCommon/KGENPasses.h"
 #include "Mojo/TransformUtils/AsyncUtils.h"
 #include "Support/Threading/Shared.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
@@ -87,9 +90,11 @@ struct LowerAsyncBuildContext {
   LowerAsyncBuildContext(Shared<SymbolTable &> &sharedTable,
                          ImplicitLocOpBuilder &builder,
                          mlir::DominanceInfo &domInfo,
-                         TargetInfoAttr targetInfoAttr)
+                         TargetInfoAttr targetInfoAttr,
+                         FrameEvaluator evaluateFrame)
       : sharedTable(sharedTable), builder(builder),
-        targetInfoAttr(targetInfoAttr), dominanceInfo(domInfo) {}
+        targetInfoAttr(targetInfoAttr), dominanceInfo(domInfo),
+        evaluateFrame(evaluateFrame) {}
 
   void
   preprocessAsyncFunction(FuncOp funcOp, mlir::DominanceInfo &domInfo,
@@ -173,6 +178,7 @@ private:
   ImplicitLocOpBuilder &builder;
   TargetInfoAttr targetInfoAttr;
   mlir::DominanceInfo &dominanceInfo;
+  FrameEvaluator evaluateFrame;
 };
 
 //===----------------------------------------------------------------------===//
@@ -833,13 +839,11 @@ COTypes LowerAsyncBuildContext::calculateFrame(FuncOp original,
   auto [errorValue, memoryResultValue] = getErrorAndMemoryValues(original);
   // The transform function clones ops whose values should not be stored in
   // the frame. This includes constants and pointer offsets.
-  auto transform = [&](FuncOp originalFunction,
-                       DenseMap<Operation *, int> &opToState) {
-    cloneFrameArgs(original, builder, dominanceInfo, originalFunction,
-                   opToState);
+  auto transform = [&](FuncOp, DenseMap<Operation *, int> &opToState) {
+    cloneFrameArgs(original, builder, dominanceInfo, opToState);
   };
   FrameData frameData(original, dominanceInfo, errorValue, memoryResultValue,
-                      transform, /*isHot=*/!includeArgs);
+                      transform, /*isHot=*/!includeArgs, evaluateFrame);
   COTypes coTypes(
       builder.getContext(), std::move(frameData),
       StructType::get(original.getContext(), original.getResultTypes()));
@@ -1242,7 +1246,11 @@ void LowerAsyncFunctionsPass::runOnOperation() {
   // look it up.
   ImplicitLocOpBuilder b(module->getLoc(), module);
   auto &domInfo = getAnalysis<mlir::DominanceInfo>();
-  LowerAsyncBuildContext buildContext(sharedTable, b, domInfo, targetInfo);
+  FrameEvaluator evaluateFrame = useLivenessFrameEvaluation
+                                     ? evaluateFrameByLiveness
+                                     : evaluateFrameByStateNumbering;
+  LowerAsyncBuildContext buildContext(sharedTable, b, domInfo, targetInfo,
+                                      evaluateFrame);
 
   DenseMap<SymbolConstantAttr, Temp> temperatures;
   SmallVector<FuncOp> asyncFunctions;

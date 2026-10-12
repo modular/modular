@@ -279,3 +279,44 @@ def test_grouped_amd_matmul_rejects_unsupported_w4a8(
     """Operand pairs the dense W4A8 kernel cannot read never reach it."""
     with pytest.raises(error, match=match):
         _grouped_amd_matmul_custom_call(hidden, weight, **kwargs)
+
+
+_MXFP4_OPERANDS = (DType.uint8, _W4A8_K // 2)
+
+
+def test_grouped_amd_matmul_preshuffles_with_a_scale_row_bound() -> None:
+    """The bound reaches the preshuffle on the one path that sizes slots."""
+    custom = _grouped_amd_matmul_custom_call(
+        _MXFP4_OPERANDS,
+        _MXFP4_OPERANDS,
+        preshuffled_b=True,
+        a_scales_max_rows_per_expert=64,
+    )
+    names = [call.args[0] for call in custom.call_args_list]
+    assert names[-1] == "mo.grouped.matmul.block.scaled.amd"
+    assert len(names) == 2
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {
+            "preshuffled_b": True,
+            "a_scales_preshuffled": True,
+            "a_scales_max_padded_m": 64,
+        },
+    ],
+    ids=["row_major_b", "fused_preshuffled_a_scales"],
+)
+def test_grouped_amd_matmul_rejects_an_ignored_a_scale_row_bound(
+    kwargs: dict[str, Any],
+) -> None:
+    """A row bound that would size nothing fails at build, not at allocation."""
+    with pytest.raises(ValueError, match="a_scales_max_rows_per_expert"):
+        _grouped_amd_matmul_custom_call(
+            _MXFP4_OPERANDS,
+            _MXFP4_OPERANDS,
+            a_scales_max_rows_per_expert=64,
+            **kwargs,
+        )

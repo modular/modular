@@ -94,7 +94,7 @@ def register_op_handler(
     """Decorator to register an MO op handler.
 
     Args:
-        op_type: The MO operation class to handle (e.g., mo.AddOp).
+        op_type: The MO operation class to handle (such as mo.AddOp).
 
     Returns:
         Decorator function that registers the handler.
@@ -372,7 +372,7 @@ def _handle_transfer(
 ) -> Sequence[Buffer | None]:
     """Handle mo.transfer by transferring buffer between devices.
 
-    TransferOp transfers tensor contents between devices (e.g. CPU<->GPU).
+    TransferOp transfers tensor contents between devices (such as CPU<->GPU).
     When source and destination devices match and alwaysElideSameDeviceCopy is
     True, the result aliases the input. When the flag is False, a driver copy
     is made.
@@ -419,7 +419,7 @@ def _handle_buffer_create(
     ``BufferCreateOp`` has no operands and a single ``!mo.buffer<shape, dtype,
     device>`` result.  Shape, dtype, and target device are extracted from the
     result type.  The interpreter allocates a zeroed buffer so that downstream
-    ops (e.g. ``buffer.transfer``) have valid storage to write into.
+    ops (such as ``buffer.transfer``) have valid storage to write into.
     """
     result_type = graph.BufferType.from_mlir(
         list(op.results)[0].type  # type: ignore[arg-type]
@@ -1392,7 +1392,7 @@ def _handle_range(
 
     Raises:
         RuntimeError: If the declared static result length disagrees with the
-            model's actual output length, i.e. the start/stop/step interval
+            model's actual output length; that is, the start/stop/step interval
             is not evenly divisible by the step -- matching the ``RuntimeError``
             ``ops.range`` and ``Tensor.arange`` document for this same
             declared-vs-actual mismatch.

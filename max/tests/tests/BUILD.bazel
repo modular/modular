@@ -16,6 +16,7 @@ modular_py_test(
             "mojo_runtime_background_thread_subprocess_asyncio.py",
             "mojo_runtime_background_thread_subprocess_thread.py",
             "mojo_runtime_foreign_thread_subprocess.py",
+            "test_compilation.py",
             "test_compile_pool.py",
             "test_dim_substitute.py",
             "test_eager_cold_start_policy.py",
@@ -34,11 +35,6 @@ modular_py_test(
         # Unsure why, test_tensor slows down if this doesn't exist.
         "//max/python/max/_interpreter_ops",
     ],
-    # Every case compiles a distinct graph, which serializes past the timeout
-    # in one process.
-    per_test_shard_count = {
-        "test_compilation.py": 4,
-    },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -56,9 +52,45 @@ modular_py_test(
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
         "//max/python/max/mlir",
-        "//max/python/max/nn",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/modeling",
+        requirement("numpy"),
+    ],
+)
+
+# Eager ops outside the compiled graphs would otherwise compile each op cold
+# in every shard; the warmed eager-GC cache serves them instead.
+modular_eager_py_test(
+    name = "test_compilation",
+    srcs = [
+        "conftest.py",
+        "test_compilation.py",
+    ],
+    cpu_only = True,
+    # Don't background-compile every eager graph (SDLC-4307 CI cpu/mem).
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    ignore_extra_deps = [
+        # The interpreter imports it lazily; without it every eager op compiles.
+        "//max/python/max/_interpreter_ops",
+    ],
+    # Every case compiles a distinct graph, which serializes past the timeout
+    # in one process.
+    shard_count = 4,
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:_mlir_context",
+        "//max/python/max:tree",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+        "//max/python/max/nn",
         requirement("numpy"),
     ],
 )

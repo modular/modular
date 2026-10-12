@@ -75,6 +75,7 @@ class EagleLlama3Proposer:
     carry_dim_names = CarryDimNames()
     step_hidden_mode = ReturnHiddenStates.LAST
     uses_thinking_phase = False
+    supports_zero_draft_rows = True
 
     def __init__(self, draft: EagleLlama3, hidden_dim: DimLike) -> None:
         self.draft = draft

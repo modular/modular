@@ -32,7 +32,6 @@ from max.gpu.host.info import is_cpu
 
 from kv_cache.types import KVCacheT
 from layout import Coord, TileTensor
-from std.utils import IndexList
 
 from nn._ragged_utils import get_batch_from_row_offsets
 

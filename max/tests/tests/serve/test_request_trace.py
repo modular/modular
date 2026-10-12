@@ -320,6 +320,7 @@ def _mock_chat_request() -> Mock:
     request.request_path = "/v1/chat/completions"
     request.sampling_params = Mock()
     request.sampling_params.stop = []
+    request.messages = []
     return request
 
 

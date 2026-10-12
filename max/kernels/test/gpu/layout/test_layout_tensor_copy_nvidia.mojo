@@ -32,7 +32,6 @@ from layout.layout_tensor import (
 
 from layout.tile_io import copy_dram_to_sram_async, copy_sram_to_dram
 
-from std.utils import IndexList
 
 # ----------------------------------------------------------------------
 # dynamic async copy tests

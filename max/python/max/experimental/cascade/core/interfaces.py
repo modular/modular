@@ -153,7 +153,7 @@ class Runtime(AsyncExitStack, ABC):
 
         Single-consumer: the first call (across :py:meth:`stream_result` and
         :py:meth:`stream_next`) binds the stream; subsequent attempts on the
-        same ``resid`` raise. Used for lightweight inline streams (e.g. token
+        same ``resid`` raise. Used for lightweight inline streams (such as token
         streams) where backpressure rides on the underlying transport.
         """
         ...

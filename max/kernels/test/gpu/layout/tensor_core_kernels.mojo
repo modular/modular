@@ -20,7 +20,6 @@ from max.gpu.host import DeviceContext
 from max.gpu import thread_idx
 from layout import (
     Layout,
-    LayoutTensor,
     TensorLayout,
     TileTensor,
     row_major,
@@ -47,13 +46,14 @@ def mma_load_and_multiply[
     rhs: TileTensor[dtype, rhs_layout, MutAnyOrigin],
 ):
     var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
-    # TensorCore still returns legacy register fragments.
-    var a_reg_tile = mma.load_a(lhs.to_layout_tensor())
+    var a_reg_tile = mma.load_a(lhs)
     var a_frags = load_to_simd(a_reg_tile).cast[.float64]()
-    var b_reg_tile = mma.load_b(rhs.to_layout_tensor())
+    var b_reg_tile = mma.load_b(rhs)
     var b_frags = load_to_simd(b_reg_tile).cast[.float64]()
 
-    var c_reg_tile = mma.c_reg_tile_type.stack_allocation().fill(1.0)
+    var c_reg_tile = stack_allocation[dst_dtype, address_space=.LOCAL](
+        mma.c_fragment_layout
+    ).fill(1.0)
     var d_reg_tile = mma.mma_op(a_reg_tile, b_reg_tile, c_reg_tile)
     var d_frags = load_to_simd(d_reg_tile).cast[.float64]()
 
@@ -258,34 +258,25 @@ def mma_load_and_print_operands_kernel_ldmatrix[
 
     comptime a_simd_width = mma.a_reg_type.length
     comptime b_simd_width = mma.b_reg_type.length
-    var a_reg_tile = (
-        LayoutTensor[
-            dtype,
-            Layout.row_major(1, a_simd_width),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .vectorize[1, a_simd_width]()
+    var a_reg_tile = stack_allocation[dtype, address_space=.LOCAL](
+        row_major[1, a_simd_width]()
+    )
+    var b_reg_tile = stack_allocation[dtype, address_space=.LOCAL](
+        row_major[1, b_simd_width]()
     )
 
-    var b_reg_tile = (
-        LayoutTensor[
-            dtype,
-            Layout.row_major(1, b_simd_width),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .vectorize[1, b_simd_width]()
+    # Preserve coverage of the explicit-output legacy loader API.
+    mma.load_a(
+        a_smem.to_layout_tensor(),
+        a_reg_tile.to_layout_tensor().vectorize[1, a_simd_width](),
+    )
+    mma.load_b(
+        b_smem.to_layout_tensor(),
+        b_reg_tile.to_layout_tensor().vectorize[1, b_simd_width](),
     )
 
-    # Explicit-output loaders still use the legacy register-fragment API.
-    mma.load_a(a_smem.to_layout_tensor(), a_reg_tile)
-    mma.load_b(b_smem.to_layout_tensor(), b_reg_tile)
-
-    var a_frags = a_reg_tile[0, 0].cast[.float64]()
-    var b_frags = b_reg_tile[0, 0].cast[.float64]()
+    var a_frags = load_to_simd(a_reg_tile).cast[.float64]()
+    var b_frags = load_to_simd(b_reg_tile).cast[.float64]()
 
     # NVIDIA
     comptime if a_frags.length == 4 and b_frags.length == 2:

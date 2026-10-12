@@ -345,12 +345,6 @@ def load_json(path: str) -> dict[str, Any]:
         return json.load(f)
 
 
-def load_openbench_log(path: str) -> dict[str, Any]:
-    """Loads an openbench JSON eval log from ``path``."""
-    with open(path) as f:
-        return json.load(f)
-
-
 def format_score_line(dataset: str, summary: dict[str, Any]) -> str:
     """Renders the score, with a reference range only if the caller gave one.
 

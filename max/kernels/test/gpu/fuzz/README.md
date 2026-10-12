@@ -135,7 +135,8 @@ parameter the kernel specializes on is a `-D` define rather than a spec field.
 Build the target by name with the define, then run with `--no-build`:
 
 ```bash
-./bazelw build //max/kernels/test/gpu/fuzz:fuzz_topk_topp_sampling_dist.mojo.test \
+./bazelw build \
+    //max/kernels/test/gpu/fuzz:fuzz_topk_topp_sampling_dist.mojo.test \
     --mojocopt=-D --mojocopt=ttsd_bf16=1 --curses=no --noshow_progress
 python3 max/kernels/test/gpu/fuzz/fuzz.py --target topk_topp_sampling_dist \
     --oracle ref --no-build --budget 24
@@ -147,10 +148,11 @@ under `draft_proposal: sampled`, which switches `sampling_logits_dtype` for the
 whole sampling path. The in-source default is `float32`, so the bfloat16 arm
 only gets covered when it is built explicitly.
 
-| Define        | Target                    | Effect             |
-|---------------|---------------------------|--------------------|
-| `ttsd_bf16=1` | `topk_topp_sampling_dist` | bfloat16 logits in |
-| `ttmp_bf16=1` | `topk_topp_masked_probs`  | bfloat16 logits in |
+| Define          | Target                    | Effect                         |
+|-----------------|---------------------------|--------------------------------|
+| `ttsd_bf16=1`   | `topk_topp_sampling_dist` | bfloat16 logits in             |
+| `ttmp_bf16=1`   | `topk_topp_masked_probs`  | bfloat16 logits in             |
+| `argsort_i64=1` | `argsort`                 | int64 keys instead of float32. |
 
 The corpus records a spec, not a build config, so a replay entry always runs
 under the in-source default. Alternate configs belong in a live sweep, not the
@@ -191,7 +193,8 @@ design's non-gating → gating rollout:
 
   ```bash
   ./bazelw build //max/kernels/test/gpu/fuzz:all
-  python3 max/kernels/test/gpu/fuzz/fuzz.py --replay-corpus --no-build --timeout 30
+  python3 max/kernels/test/gpu/fuzz/fuzz.py \
+      --replay-corpus --no-build --timeout 30
   ```
 
 - **Nightly (non-gating / notify-only, slow):** a time-boxed live search per

@@ -4,7 +4,7 @@ package(default_visibility = ["//visibility:private"])
 
 _DATA = [
     "inputs/**",
-    "internal/inputs/**",
+    "mcl/inputs/**",
 ]
 
 filegroup(
@@ -14,10 +14,10 @@ filegroup(
         [
             "inputs/**/*.ll",
             "inputs/**/*.mojo",
-            "internal/inputs/**/*.ll",
-            "internal/inputs/**/*.mojo",
+            "mcl/inputs/**/*.ll",
+            "mcl/inputs/**/*.mojo",
         ],
-        # `internal/inputs/` fixtures may not include every extension.
+        # `mcl/inputs/` fixtures may not include every extension.
         allow_empty = True,
     ),
 )

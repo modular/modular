@@ -11,6 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Key-value cache types for MAX layers.
+
+Defines cache parameters, host-side buffers, and the input values that
+attention layers consume, for paged and recurrent caches alike.
+"""
+
 from .cache_params import (
     PACKED_PAGE_STRIDE,
     BatchCharacteristics,

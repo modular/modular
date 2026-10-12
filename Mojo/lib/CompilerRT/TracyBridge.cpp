@@ -21,7 +21,7 @@
 #include <cstdint>
 
 #if MODULAR_KGEN_PROFILING_ENABLED
-#include "Support/internal/Tracy/TracyZone.h"
+#include "Support/mcl/Tracy/TracyZone.h"
 #endif
 
 extern "C" {

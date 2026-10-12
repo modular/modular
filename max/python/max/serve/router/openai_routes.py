@@ -109,14 +109,17 @@ from max.serve.pipelines.preprocess_cache_stats import (
     PreprocessedImageMask,
     preprocessed_image_probe,
 )
+from max.serve.router._disconnect import raise_on_disconnect
 from max.serve.router._image_resolution import (
     MediaRef,
     _ImageFact,
     _request_media_budget,
+    charge_decoded_images,
     decode_and_validate_images,
     emit_media_facts,
     make_media_ref,
     resolve_image_from_url,
+    validate_videos,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -154,9 +157,10 @@ from max.serve.schemas.openai import (
 )
 from max.serve.telemetry._trace_context import set_phase_parent
 from max.serve.telemetry.common import request_trace_ctx
-from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.metrics import METRICS, ConversationTurn
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import RequestQueueFull
+from max.support._taskgroups import CancelGroup
 from openai.types.chat.chat_completion_chunk import (
     ChoiceDeltaToolCall,
     ChoiceDeltaToolCallFunction,
@@ -354,12 +358,30 @@ def record_request_start() -> None:
     METRICS.reqs_running(1)
 
 
+def _conversation_turn(
+    messages: Sequence[TextGenerationRequestMessage],
+) -> ConversationTurn | None:
+    """Tells a conversation's opening request from one that resends history.
+
+    A chat API is stateless, so a client continuing a conversation sends
+    the earlier turns again, assistant replies included. Their absence is
+    what marks the opening turn. Returns None for a request without
+    messages, such as a completion.
+    """
+    if not messages:
+        return None
+    if any(message.role == "assistant" for message in messages):
+        return "later"
+    return "first"
+
+
 @traced
 def record_request_end(
     request_path: str,
     elapsed_ms: float,
     output_tokens: int | None = None,
     input_tokens: int | None = None,
+    turn: ConversationTurn | None = None,
 ) -> None:
     # The HTTP status code is labeled onto ``maxserve.request_count`` by the
     # ``register_request`` middleware, which knows the code actually returned to
@@ -371,7 +393,7 @@ def record_request_end(
         METRICS.output_tokens_per_request(output_tokens)
     if input_tokens is not None:
         METRICS.input_tokens(input_tokens)
-        METRICS.input_tokens_per_request(input_tokens)
+        METRICS.input_tokens_per_request(input_tokens, turn)
 
 
 @overload
@@ -513,13 +535,13 @@ def _get_audio_handler(
 def _content_before_tool_call_marker(parser: ToolParser, response: str) -> str:
     """Truncates ``response`` at the parser's first structural tool-call marker.
 
-    Used when ``parse_complete`` raises with a marker present — e.g. a
+    Used when ``parse_complete`` raises with a marker present — for example, a
     ``max_tokens`` truncation landing mid tool-call block, so the marker was
     emitted but no complete block exists. Surfacing the raw response would
     leak the literal marker into ``message.content``; instead return only the
     content before the first marker. Structural parsers expose their markers
     as ``SECTION_BEGIN``/``CALL_BEGIN`` class attributes; for parsers without
-    them (e.g. the JSON-based Llama parser), or when no marker is present
+    them (such as the JSON-based Llama parser), or when no marker is present
     (a genuinely unexpected parser error), the response is returned unchanged.
     """
     cut = len(response)
@@ -549,10 +571,14 @@ class OpenAIChatResponseGenerator(
         emit_reasoning_content: bool = False,
         response_format_json_schema: dict[str, Any] | None = None,
         return_token_ids: bool = False,
+        turn: ConversationTurn | None = None,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
         self.return_token_ids = return_token_ids
+        # A pre-tokenized request reaches the generator without its
+        # messages, so the route classifies the turn and passes it in.
+        self._turn = turn
         # MiniMax ``reasoning_split=False`` folds reasoning into ``content`` as ``<think>...</think>``; ``_think_*`` track the stream fold.
         self.fold_reasoning_into_content = fold_reasoning_into_content
         self._think_opened = False
@@ -1154,6 +1180,7 @@ class OpenAIChatResponseGenerator(
                 # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
                 n_reasoning_tokens + n_tokens,
                 n_prompt_tokens,
+                self._turn or _conversation_turn(request.messages),
             )
 
     async def complete(
@@ -1224,16 +1251,15 @@ class OpenAIChatResponseGenerator(
                 for chunk in completed_outputs
                 if chunk.stop_sequence is not None
             ]
-            finish_reason: Literal["stop", "length"]
+            finish_status = completed_outputs[-1].status
             if len(stop_sequence) > 0:
                 idx = response_message.find(stop_sequence[0])
                 if idx >= 0:
                     response_message = response_message[:idx]
-                finish_reason = "stop"
-            else:
-                finish_reason = get_finish_reason_from_status(
-                    completed_outputs[-1].status, allow_none=False
-                )
+                finish_status = GenerationStatus.END_OF_SEQUENCE
+            finish_reason = get_finish_reason_from_status(
+                finish_status, allow_none=False
+            )
 
             # Kimi K2.5 (thinking enabled) can answer inside the prefilled
             # ``<think>`` block and stop without emitting ``</think>``, so the
@@ -1291,7 +1317,13 @@ class OpenAIChatResponseGenerator(
                                 is_streaming=False,
                             )
                         response_choices = self._tool_response_to_choices(
-                            parsed, logprobs=logprobs
+                            parsed,
+                            get_finish_reason_from_status(
+                                finish_status,
+                                allow_none=False,
+                                has_tool_calls=True,
+                            ),
+                            logprobs=logprobs,
                         )
                 except Exception as e:
                     # If parser fails, handle as traditional text. Structural
@@ -1398,6 +1430,7 @@ class OpenAIChatResponseGenerator(
                 # TODO: (MODELS-1117) determine whether to break out reasoning tokens into a separate metric
                 n_reasoning_tokens + n_tokens,
                 n_prompt_tokens,
+                self._turn or _conversation_turn(request.messages),
             )
 
     def _parse_resp_to_json(self, text: str) -> list[Any] | None:
@@ -1456,6 +1489,7 @@ class OpenAIChatResponseGenerator(
     def _tool_response_to_choices(
         self,
         parsed: ParsedToolResponse,
+        finish_reason: Literal["stop", "length", "tool_calls"],
         logprobs: ChatCompletionLogprobs | None = None,
     ) -> list[ChatCompletionResponseChoice]:
         """Translates a ParsedToolResponse to a list of chat completion choices."""
@@ -1479,7 +1513,7 @@ class OpenAIChatResponseGenerator(
                     function_call=None,
                     refusal="",
                 ),
-                finish_reason="tool_calls",
+                finish_reason=finish_reason,
                 logprobs=logprobs
                 or ChatCompletionLogprobs(content=[], refusal=[]),
             )
@@ -1615,12 +1649,17 @@ class _ParsedChatRequest(NamedTuple):
     a second time. An entry is ``None`` where the decode was skipped because
     the tokenizer already holds that image's preprocessed tensor. See
     :func:`decode_and_validate_images`.
+
+    ``max_decoded_bytes`` is the decoded-byte allowance of each video, carried
+    onward because videos are decoded in the tokenizer rather than here. See
+    :func:`video_decoded_allowance`.
     """
 
     messages: list[TextGenerationRequestMessage]
     images: list[bytes]
     videos: list[bytes]
     decoded_images: list[Image.Image | None]
+    max_decoded_bytes: int | None
 
 
 def _coerce_positive_int(value: Any) -> int | None:
@@ -1956,7 +1995,7 @@ async def openai_parse_chat_completion_request(
                 decoded_images, skip_decode = await asyncio.to_thread(
                     _resolve_and_decode_images,
                     request_images,
-                    budget.limit,
+                    budget.remaining,
                     preprocessed_image_mask,
                     messages,
                     facts,
@@ -1973,6 +2012,7 @@ async def openai_parse_chat_completion_request(
             emit_media_facts(facts)
             raise
         emit_media_facts(facts)
+        charge_decoded_images(budget, decoded_images)
         if skip_decode is not None:
             cached = sum(skip_decode)
             METRICS.vision_preprocess_cache_hits(cached)
@@ -1984,10 +2024,24 @@ async def openai_parse_chat_completion_request(
         )
         for video_url in video_refs
     ]
-    request_videos = await asyncio.gather(*resolve_video_tasks)
+    request_videos = list(await asyncio.gather(*resolve_video_tasks))
+
+    # Check each video's header at the boundary, mirroring the image path, so
+    # an unreadable or oversized video becomes a clean 400 here instead of a
+    # worker-side 500. The video itself is decoded once, later, by the
+    # tokenizer. Each video gets an equal share of what encoded media and
+    # decoded images leave of the request budget; the share travels with the
+    # request, so the videos cannot jointly exceed the budget. Runs off the
+    # event loop because opening a container parses data synchronously.
+    video_allowance = budget.share(len(request_videos))
+    await asyncio.to_thread(validate_videos, request_videos, video_allowance)
 
     return _ParsedChatRequest(
-        messages, request_images, list(request_videos), decoded_images
+        messages,
+        request_images,
+        request_videos,
+        decoded_images,
+        video_allowance,
     )
 
 
@@ -2243,6 +2297,7 @@ async def openai_create_chat_completion(
             request_images,
             request_videos,
             request_decoded_images,
+            request_max_decoded_bytes,
         ) = await openai_parse_chat_completion_request(
             completion_request,
             tokenizer.expects_content_wrapping,
@@ -2400,6 +2455,7 @@ async def openai_create_chat_completion(
             emit_reasoning_content=pipeline_config.runtime.emit_reasoning_content,
             response_format_json_schema=response_format_json_schema,
             return_token_ids=completion_request.return_token_ids,
+            turn=_conversation_turn(request_messages),
         )
         # Use request-level sampling params if provided, else server defaults.
         temp = (
@@ -2487,6 +2543,7 @@ async def openai_create_chat_completion(
             images=request_images,
             decoded_images=request_decoded_images,
             videos=request_videos,
+            max_decoded_bytes=request_max_decoded_bytes,
             tools=tools,
             timestamp_ns=request.state.request_timer.start_ns,
             request_path=request.url.path,
@@ -2517,8 +2574,9 @@ async def openai_create_chat_completion(
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(token_stream, ping=100000, sep="\n")
 
-        response = await response_generator.complete([token_request])
-        return response
+        async with CancelGroup() as group:
+            group.create_task(raise_on_disconnect(request))
+            return await response_generator.complete([token_request])
     except JSONDecodeError as e:
         logger.exception("JSONDecodeError in request %s", request_id)
         raise HTTPException(status_code=400, detail="Missing JSON.") from e
@@ -3663,7 +3721,9 @@ async def openai_create_completion(
                 sep="\n",
             )
 
-        resp = await response_generator.complete(token_requests)
+        async with CancelGroup() as group:
+            group.create_task(raise_on_disconnect(request))
+            resp = await response_generator.complete(token_requests)
         # ICK: The token generator doesn't know about http requests, so sets
         # the wrong id.  Overwrite with the http id.
         resp.id = http_req_id

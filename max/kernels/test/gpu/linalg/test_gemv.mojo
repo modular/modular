@@ -597,8 +597,7 @@ def main() raises:
         # FP32 router-GEMM dispatch shapes (small N, large K) with an epilogue,
         # at the dispatch's tile_m buckets (tile_n=1, 256 threads). Exercises
         # the split-K GEMV epilogue path that matmul_dispatch_sm100 now routes
-        # the FP32 router/gate GEMM to (the epilogue rides through as the
-        # elementwise_lambda_wrapper).
+        # the FP32 router/gate GEMM to.
         run_split_k_gemm[
             4,
             128,

@@ -27,7 +27,7 @@ from std.math.constants import log2e
 from std.sys import size_of, _RegisterPackType, get_defined_bool
 from std.sys._assembly import inlined_assembly
 from std.sys.intrinsics import llvm_intrinsic
-from std.bit import prev_power_of_two, pop_count
+from std.bit import log2_ceil, prev_power_of_two, pop_count
 from max.gpu import block_idx
 from max.gpu.globals import WARP_SIZE
 from max.gpu.primitives.id import cluster_dim
@@ -39,6 +39,7 @@ from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
 )
 from max.gpu.compute.arch.tcgen05 import tcgen05_ld, tcgen05_st
+from max.gpu.host.info import B200
 from layout import (
     IntTuple,
     Layout,
@@ -58,7 +59,10 @@ from layout.tile_layout import (
 from layout.swizzle import make_swizzle
 from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
-from nn.attention.gpu.nvidia.sm100.attention import FA4Config
+from nn.attention.gpu.nvidia.sm100.attention import (
+    FA4Config,
+    SM100_RESERVED_SMEM_BYTES,
+)
 
 # `elect` is defined in the shared NVIDIA module so SM90 and SM100 can both use
 # it without a cross-architecture import. Re-exported here for the many SM100
@@ -128,6 +132,61 @@ comptime SharedMemPointer[type: AnyType] = Pointer[
     type, MutAnyOrigin, address_space=.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
+
+# SM100 attention kernels do not allocate TMEM. Each kernel's shared-memory
+# footprint (checked by `assert_sm_exclusive_smem`) leaves room for one CTA per
+# SM, so the TMEM allocator has nothing to arbitrate and every kernel uses TMEM
+# from address 0.
+
+
+@inline(.always)
+def attn_tmem_addr[cluster_size: Int]() -> UInt32:
+    """Returns the TMEM base, 0, as a value ptxas cannot fold.
+
+    A literal 0 makes ptxas rebuild every TMEM operand per `tcgen05.mma` (an
+    `IMAD.MOV` plus an `R2UR` per use) instead of keeping one uniform
+    register; inline asm cannot hide it, since ptxas folds the PTX immediate.
+    A CTA's cluster rank is below `cluster_size`, so shifting it right by
+    `log2_ceil(cluster_size)` is a run-time 0 that costs an `S2R` and a shift.
+    Inline asm hides the rank from LLVM, which folds `cluster.ctarank` to 0
+    under `nvvm.cluster_dim` = (1, 1, 1), and ptxas folds neither the rank
+    nor the shift. `%cluster_ctaid.y` is also 0 in these 1-D clusters, but
+    ptxas computes it as `%ctaid.y` modulo the cluster shape: three
+    constant-bank loads and a reciprocal division.
+
+    Parameters:
+        cluster_size: CTAs per cluster, or 1 when launched without a cluster.
+    """
+    comptime assert cluster_size >= 1, "cluster_size must be positive"
+    comptime shift = log2_ceil(cluster_size)
+    comptime if shift == 0:
+        return inlined_assembly[
+            "mov.u32 $0, %cluster_ctarank;",
+            UInt32,
+            constraints="=r",
+            has_side_effect=False,
+        ]()
+    else:
+        return inlined_assembly[
+            String(
+                "{ .reg .b32 %rank; mov.u32 %rank, %cluster_ctarank;",
+                t" shr.u32 $0, %rank, {shift}; }}",
+            ),
+            UInt32,
+            constraints="=r",
+            has_side_effect=False,
+        ]()
+
+
+@inline(.always)
+def assert_sm_exclusive_smem[smem_bytes: Int]():
+    """Asserts that a second CTA of this kernel cannot be co-resident on the
+    SM: with less than half the SM's shared memory, two CTAs would share the
+    unallocated TMEM at address 0."""
+    comptime assert (
+        2 * (smem_bytes + SM100_RESERVED_SMEM_BYTES)
+        > B200.shared_memory_per_multiprocessor
+    ), "SM100 attention uses TMEM unallocated, so needs > half the SM's smem"
 
 
 # PagedRowIndices, kv_sub_tile_rows, kv_num_sub_tiles are now defined in
@@ -527,7 +586,7 @@ def blasst_vote_unanimous(
     # One aligned 32-bit read replaces 4 byte reads + a short-circuit AND
     # chain (which serializes the loads behind 3 branches). Legal because a
     # `(wg, phase)` group's 4 slots are consecutive bytes at a 4-byte-aligned
-    # address (`blasst_vote_byte_offset` follows the UInt32 `tmem_addr`, and
+    # address (`blasst_vote_byte_offset` follows the 8-byte mbarriers, and
     # `base` is a multiple of 4) and every slot only ever holds 0 or 1
     # (`kernel.mojo` zero-inits the region; `blasst_observe` writes 0/1), so
     # "all four nonzero" == "the word is 0x01010101".
@@ -3901,7 +3960,7 @@ def apply_mask[
 ):
     """Applies bitmask, computed, and out-of-bounds masking strategies to a row of `BN` attention scores.
 
-    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.mask`, and both paths apply the out-of-bounds clip via `apply_oob_mask`.
+    Scales by `scale_log2e` (unless `skip_scale`), then applies the mask strategy: the bitmask path uses `mask_select8` per 32-column batch, the computed path calls `mask.visibility_mask` (after `mask.add_row_bias` on the whole row for a mask with `has_row_bias`), and both paths apply the out-of-bounds clip via `apply_oob_mask`.
 
     Parameters:
         BN: Number of scores in the row; must be a multiple of 32 for
@@ -4011,22 +4070,39 @@ def apply_mask[
 
     else:
         comptime block_size = BN // simd_size
+        # A mask with a row-wise bias takes the whole scaled row at once;
+        # each pair then only needs the visibility select.
+        comptime row_bias = (
+            MaskType.has_row_bias and MaskStrategy.COMPUTED in mask_strategy
+        )
+        comptime if row_bias:
+            comptime if not skip_scale:
+                comptime for n in range(block_size):
+                    comptime frag_col = simd_size * n
+                    var scaled = mul_ftz(
+                        F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
+                    )
+                    srow[frag_col] = scaled[0]
+                    srow[frag_col + 1] = scaled[1]
+            mask.add_row_bias(
+                srow,
+                prompt_idx,
+                q_head_idx,
+                UInt32(score_row),
+                kv_tile_start_row,
+            )
 
         comptime for n in range(block_size):
             # score_col = mask_frag_col + j * 8
             comptime frag_col = simd_size * n
-            var s: F32x2
-
-            comptime if skip_scale:
-                s = F32x2(srow[frag_col], srow[frag_col + 1])
-            else:
-                s = mul_ftz(
-                    F32x2(srow[frag_col], srow[frag_col + 1]), scale_log2e
-                )
+            var s = F32x2(srow[frag_col], srow[frag_col + 1])
+            comptime if not (skip_scale or row_bias):
+                s = mul_ftz(s, scale_log2e)
             var score_col: Int32 = kv_tile_start_row + Int32(frag_col)
 
+            # `visibility_mask` is `mask` for every mask without a row bias.
             comptime if MaskStrategy.COMPUTED in mask_strategy:
-                s = mask.mask(
+                s = mask.visibility_mask(
                     IndexList[4, element_type=.uint32](
                         Int(prompt_idx),
                         Int(q_head_idx),

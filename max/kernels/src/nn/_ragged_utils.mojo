@@ -59,7 +59,11 @@ def get_batch_and_token_idx_from_row_offsets(
     comptime assert row_offsets.flat_rank == 1
 
     var batch_idx = get_batch_from_row_offsets(row_offsets, tok_idx)
-    return batch_idx, Int(tok_idx - Int(row_offsets[batch_idx]))
+    var batch_start = row_offsets[batch_idx]
+    assert tok_idx >= Int(
+        batch_start
+    ), "tok_idx is before its batch's first row"
+    return batch_idx, Int(UInt32(tok_idx) - batch_start)
 
 
 def merge_ragged_tensors[

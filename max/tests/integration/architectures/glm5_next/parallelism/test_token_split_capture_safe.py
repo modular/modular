@@ -84,7 +84,7 @@ def _transfers_to_host(graph: Graph) -> list[str]:
     """Every transfer in ``graph`` whose destination is the host.
 
     Read off the assembly because ``rmo.mo.transfer`` has no Python op class
-    (it is excluded from ``_core/internal/modules/dialects/allowlist.txt``,
+    (it is excluded from ``_core/mcl/modules/dialects/allowlist.txt``,
     which is also why :func:`~max.graph.ops.transfer_to` stages it through
     ``Graph._add_op``). Each prints as ``... : <source type> to <"cpu", 0>``;
     the host-to-device direction weight placement stages is the same op with a

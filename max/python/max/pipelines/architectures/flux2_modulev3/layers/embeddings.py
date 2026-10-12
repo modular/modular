@@ -79,10 +79,6 @@ def apply_rotary_emb(
 ) -> Tensor:
     """Apply real-valued rotary embeddings to ``x``.
 
-    Mirrors the legacy
-    :func:`max.pipelines.architectures.flux2.layers.embeddings.apply_rotary_emb`
-    expressed against :class:`~max.experimental.tensor.Tensor`.
-
     Args:
         x: Input tensor of shape ``[B, H, S, D]`` (``sequence_dim=2``) or
             ``[B, S, H, D]`` (``sequence_dim=1``).
@@ -91,7 +87,7 @@ def apply_rotary_emb(
         use_real: Must be True; only real-valued RoPE is supported.
         use_real_unbind_dim: Reshape strategy for splitting the head
             dim into pairs. ``-1`` (FLUX/CogVideoX) reshapes to
-            ``[..., D/2, 2]``; ``-2`` (Stable Audio etc.) reshapes to
+            ``[..., D/2, 2]``; ``-2`` (Stable Audio and so on) reshapes to
             ``[..., 2, D/2]``.
         sequence_dim: Index of the sequence dimension in ``x``.
 

@@ -53,7 +53,6 @@ from eval_runner import (
     resolve_canonical_repo_id,
     safe_model_name,
     test_single_request,
-    validate_hf_token,
     write_github_output,
     write_results,
 )
@@ -514,6 +513,9 @@ def get_server_cmd(
 
     if framework == "vllm" and accelerator(serve_image) == "amd":
         env["VLLM_ROCM_USE_AITER"] = "1"
+        # AITER's unquantized MoE rejects Nemotron-H's non-gated MLP.
+        if "nemotron" in model.casefold():
+            VLLM += ["--moe-backend", "triton"]
 
     if framework in ("max", "max-ci"):
         # Force MAX to rely solely on the KVConnector for prefix cache hits to test
@@ -710,8 +712,6 @@ def smoke_test(
     A 1.0 value means 100% accuracy.
 
     """
-    validate_hf_token()
-
     if print_cot and not print_responses:
         raise ValueError("--print-cot must be used with --print-responses")
 
@@ -779,7 +779,6 @@ def smoke_test(
                 num_questions=num_questions,
                 disable_timeouts=disable_timeouts,
                 metrics_url=metrics_url,
-                model_alias=model if served != model else None,
                 lm_eval_metadata=lm_eval_metadata,
             )
 

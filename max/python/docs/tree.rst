@@ -87,3 +87,4 @@ Type aliases
    :template: autosummary/class.rst
 
    Selector
+   Tree

@@ -207,7 +207,7 @@ class Device:
         For a CPU device this is always 0.
         For GPU accelerators this is the id of the device relative to this host.
         Along with the ``label``, an id can uniquely identify a device,
-        e.g. ``gpu:0``, ``gpu:1``.
+        such as ``gpu:0`` or ``gpu:1``.
 
         .. code-block:: python
 
@@ -455,7 +455,7 @@ class CompletionFlag:
         Raw 64-bit address of the underlying ``M::Driver::CompletionFlag``.
 
         Intended for packing into a graph-op payload buffer
-        (e.g. for ``mo.wait_host_value``); parallels the
+        (such as for ``mo.wait_host_value``); parallels the
         trampoline/user_data pointers returned by
         ``__unsafe_pack_py_host_func`` for ``mo.launch_host_func``.
 
@@ -584,21 +584,28 @@ class LaunchTraceEntry:
         """The kind of operation a trace entry describes."""
 
         KERNEL_LAUNCH = 0
+        """A compute kernel launched on the device."""
 
         MEMCPY = 1
+        """A memory copy between device or host locations."""
 
         MEMSET = 2
+        """A region of memory filled with a value."""
 
     class MemcpyKind(enum.Enum):
         """The direction of a memcpy entry."""
 
         NONE = 0
+        """Not a memcpy; the entry is a kernel launch or memset."""
 
         HTOD = 1
+        """Host-to-device copy."""
 
         DTOH = 2
+        """Device-to-host copy."""
 
         DTOD = 3
+        """Device-to-device copy."""
 
     @property
     def kind(self) -> LaunchTraceEntry.OperationKind:
@@ -607,7 +614,7 @@ class LaunchTraceEntry:
     @property
     def name(self) -> str:
         """
-        The kernel name, or the driver API name for copies/memsets (e.g. ``cuMemcpyHtoD``).
+        The kernel name, or the driver API name for copies/memsets (such as ``cuMemcpyHtoD``).
         """
 
     @property
@@ -615,19 +622,33 @@ class LaunchTraceEntry:
         """Deterministic, address-free hash of the operation parameters."""
 
     @property
-    def grid_x(self) -> int: ...
+    def grid_x(self) -> int:
+        """X dimension of the launch grid, in blocks."""
+
     @property
-    def grid_y(self) -> int: ...
+    def grid_y(self) -> int:
+        """Y dimension of the launch grid, in blocks."""
+
     @property
-    def grid_z(self) -> int: ...
+    def grid_z(self) -> int:
+        """Z dimension of the launch grid, in blocks."""
+
     @property
-    def block_x(self) -> int: ...
+    def block_x(self) -> int:
+        """X dimension of each thread block."""
+
     @property
-    def block_y(self) -> int: ...
+    def block_y(self) -> int:
+        """Y dimension of each thread block."""
+
     @property
-    def block_z(self) -> int: ...
+    def block_z(self) -> int:
+        """Z dimension of each thread block."""
+
     @property
-    def shared_mem_bytes(self) -> int: ...
+    def shared_mem_bytes(self) -> int:
+        """Bytes of dynamic shared memory requested by the launch."""
+
     @property
     def stream_index(self) -> int:
         """
@@ -639,13 +660,22 @@ class LaunchTraceEntry:
         """The copy direction; ``NONE`` unless ``kind`` is ``MEMCPY``."""
 
     @property
-    def memcpy_byte_size(self) -> int: ...
+    def memcpy_byte_size(self) -> int:
+        """Bytes copied; zero unless ``kind`` is ``MEMCPY``."""
+
     @property
-    def memset_byte_size(self) -> int: ...
+    def memset_byte_size(self) -> int:
+        """Bytes written; zero unless ``kind`` is ``MEMSET``."""
+
     @property
-    def memset_value(self) -> int: ...
+    def memset_value(self) -> int:
+        """The fill value; zero unless ``kind`` is ``MEMSET``."""
+
     @property
-    def memset_value_size(self) -> int: ...
+    def memset_value_size(self) -> int:
+        """
+        Element size of the fill value in bytes; zero unless ``kind`` is ``MEMSET``.
+        """
 
 class DeviceQueue:
     """
@@ -690,8 +720,9 @@ class DeviceQueue:
         Records an event on this queue.
 
         Returns:
-            DeviceEvent: A new event that will be signaled when all operations
-                submitted to this queue before this call have completed.
+            DeviceEvent: A new event that will be signaled when all
+            operations submitted to this queue before this call
+            have completed.
 
         Raises:
             ValueError: If recording the event failed.
@@ -803,7 +834,7 @@ class DeviceQueue:
         The native stream handle as an integer, or ``0`` if there is none.
 
         The handle is the CUDA ``CUstream`` / HIP ``hipStream_t``; ``0`` means
-        the stream has no native handle (e.g. a CPU device). Lets native code
+        the stream has no native handle (such as a CPU device). Lets native code
         outside MLRT order its own work against this stream -- for example,
         record a CUDA event on it. The handle remains owned by this stream; do
         not destroy it.
@@ -824,7 +855,7 @@ def begin_launch_trace() -> None:
     Records kernel launches, memory copies, and memsets across **all**
     streams into one enqueue-ordered list, clearing any previous trace.
     No stream or device handle is needed, so work enqueued on streams the
-    caller does not hold (e.g. a compiled graph's internal stream) is still
+    caller does not hold (such as a compiled graph's internal stream) is still
     captured. Only CUDA and HIP devices record entries; on other devices the
     trace is always empty. Intended for tests and debugging: pair with
     ``take_launch_trace`` to assert which device work a code path enqueues
@@ -837,8 +868,8 @@ def take_launch_trace() -> list[LaunchTraceEntry]:
 
     Returns:
         list[LaunchTraceEntry]: The operations enqueued since
-            ``begin_launch_trace``, in enqueue order across all streams.
-            Each entry's ``stream_index`` identifies its stream.
+        ``begin_launch_trace``, in enqueue order across all streams.
+        Each entry's ``stream_index`` identifies its stream.
     """
 
 def __unsafe_pack_py_host_func(fn: Callable) -> tuple[int, int]:
@@ -867,10 +898,10 @@ def set_virtual_device_count(count: int) -> None:
     """
     Sets the number of virtual devices for device creation.
 
-    When count is greater than 0, Device::create() will return VirtualDevice
-    instances instead of real hardware devices for GPU APIs, and
-    Device::numberOfDevices() will return this count. This allows creating
-    devices for GPU configurations that don't match the current hardware.
+    When count is greater than 0, device creation returns
+    virtual devices for GPU APIs, and device
+    enumeration reports this count. This allows creating devices for
+    GPU configurations beyond the current hardware.
 
     Args:
         count (int): The number of virtual devices. Set to 0 to disable
@@ -883,7 +914,7 @@ def get_virtual_device_count() -> int:
 
     Returns:
         int: The number of virtual devices, or 0 if virtual device mode
-            is disabled.
+        is disabled.
     """
 
 def is_virtual_device_mode() -> bool:
@@ -899,7 +930,7 @@ def enable_all_peer_access() -> None:
     Enables peer-to-peer memory access between all available GPU pairs.
 
     This must be called before any collective operations (allreduce,
-    broadcast, etc.) that require direct GPU-to-GPU memory access.
+    broadcast, and similar) that require direct GPU-to-GPU memory access.
     It is safe to call multiple times; the underlying runtime caches
     the result after the first successful enablement.
 
@@ -911,13 +942,14 @@ def set_virtual_device_api(api: str) -> None:
     """
     Sets the target API for virtual devices in compile-only mode.
 
-    This specifies which GPU API (e.g., "cuda", "hip", "metal") virtual
-    devices will use for compilation. Must be called before creating
-    virtual devices via set_virtual_device_count().
+    This specifies which GPU API virtual devices use for compilation,
+    such as ``"cuda"``, ``"hip"``, or ``"metal"``. Must be called
+    before creating virtual devices via
+    :func:`~max.driver.set_virtual_device_count`.
 
     Args:
-        api (str): The target API string (e.g., "cuda" for NVIDIA,
-            "hip" for AMD, "metal" for Apple).
+        api (str): The target API string, such as ``"cuda"`` for
+            NVIDIA, ``"hip"`` for AMD, or ``"metal"`` for Apple.
     """
 
 def get_virtual_device_api() -> str:
@@ -932,13 +964,14 @@ def set_virtual_device_target_arch(arch: str) -> None:
     """
     Sets the target GPU architecture for virtual devices in compile-only mode.
 
-    This specifies the GPU architecture (e.g., "sm_80", "sm_90") that virtual
-    devices will target when compiling code. Must be called before creating
-    virtual devices via set_virtual_device_count().
+    This specifies the GPU architecture that virtual devices target
+    when compiling code, such as ``"sm_80"`` or ``"sm_90"``. Must be
+    called before creating virtual devices via
+    :func:`~max.driver.set_virtual_device_count`.
 
     Args:
-        arch (str): The target GPU architecture string (e.g., "sm_80" for
-            Ampere/A100, "sm_90" for Hopper/H100).
+        arch (str): The target GPU architecture string, such as
+            ``"sm_80"`` for Ampere/A100 or ``"sm_90"`` for Hopper/H100.
     """
 
 def get_virtual_device_target_arch() -> str:
@@ -953,19 +986,19 @@ def set_virtual_cpu_target(cpu: str) -> None:
     """
     Sets the CPU target for host-independent kernel codegen.
 
-    When set before any CPU kernel compilation (e.g. before importing
-    ``max._interpreter_ops``), CPU kernels compile for this fixed target
-    instead of the build host's CPU, so the kernel cache can ship to and be
-    reused on a different host. Mirrors
+    Set this before any CPU kernel is compiled. CPU kernels compiled
+    afterwards target this CPU, so the kernel cache can be shipped to,
+    and reused on, a host with a different CPU. Mirrors
     :func:`set_virtual_device_target_arch` for GPUs.
 
     Args:
-        cpu (str): An LLVM target-CPU name (e.g. "x86-64-v3",
-            "neoverse-n1"), or "generic" for the most-portable baseline of
-            the host arch family ("x86-64" on x86_64, the armv8-a baseline
-            on AArch64; other families raise an error). Empty string
-            restores host-CPU codegen. "native" is rejected because it
-            would re-leak the build host's CPU.
+        cpu (str): An LLVM target-CPU name, such as ``x86-64-v3`` or
+            ``neoverse-n1``; ``generic``, for the most portable baseline
+            of the host architecture family (``x86-64`` on x86_64, the
+            armv8-a baseline on AArch64, an error for other families);
+            or an empty string, which restores host-CPU codegen.
+            ``native`` is rejected because it would compile for the
+            host's CPU.
     """
 
 def get_virtual_cpu_target() -> str:
@@ -1553,3 +1586,100 @@ class _ChunkedStagingRegion:
 
 def _release_buffers_to_borrowed(buffers: Sequence[Buffer]) -> list[Buffer]:
     """Convert owning buffers into borrowed wrappers over the same storage."""
+
+class SymmetricPool:
+    """
+    A driver-owned symmetric multicast pool shared by a set of devices.
+
+    The pool is a single fixed-capacity allocation, created once per device
+    set and registered in the driver. It outlives this handle: dropping the
+    Python object does not free device memory, and two handles for the same
+    devices refer to the same allocation.
+
+    Not constructible directly. Use :meth:`allocate()` once during session
+    setup, and :meth:`lookup()` afterwards.
+    """
+
+    @staticmethod
+    def allocate(devices: Sequence[Device], byte_size: int) -> SymmetricPool:
+        """
+        Allocates the pool over ``devices`` and registers it in the driver.
+
+        Args:
+            devices (Sequence[Device]): The devices to span, at least two,
+                in any order.
+            byte_size (int): Usable bytes per device. The driver rounds
+                the real allocation up to the multicast granularity.
+
+        Returns:
+            SymmetricPool: The newly registered pool.
+
+        Raises:
+            RuntimeError: If a pool is already registered for these
+                devices, fewer than two devices are given, a device lacks
+                multicast support, or the allocation fails.
+        """
+
+    @staticmethod
+    def lookup(devices: Sequence[Device]) -> SymmetricPool | None:
+        """
+        Returns the pool registered for ``devices``, or ``None``.
+
+        A registry read, never an allocation.
+
+        Args:
+            devices (Sequence[Device]): The devices the pool spans.
+
+        Returns:
+            SymmetricPool | None: The registered pool, if any.
+        """
+
+    @staticmethod
+    def is_supported(devices: Sequence[Device]) -> bool:
+        """
+        Returns whether ``devices`` can back a multicast pool.
+
+        Answers before any memory is committed. A device that cannot
+        report its capability counts as unsupported.
+
+        Args:
+            devices (Sequence[Device]): The devices a pool would span.
+
+        Returns:
+            bool: True when every device supports multicast.
+        """
+
+    @property
+    def byte_size(self) -> int:
+        """Usable bytes per device; the views are exactly this long."""
+
+    def unicast_view(self, device: Device) -> Buffer:
+        """
+        Returns the device's own view of the pool as a flat ``uint8`` buffer.
+
+        The buffer is non-owning; the driver owns the memory. Retype a
+        sub-region with :meth:`Buffer.view()`.
+
+        Args:
+            device (Device): One of the devices the pool spans.
+
+        Returns:
+            Buffer: A flat ``uint8`` view, ``byte_size`` bytes long.
+
+        Raises:
+            RuntimeError: If ``device`` is not one the pool spans.
+        """
+
+    def multicast_view(self, device: Device) -> Buffer:
+        """
+        Returns the multicast alias the switch reduces through.
+
+        Only meaningful to a kernel issuing multimem instructions; host
+        loads and stores through it are undefined.
+
+        Args:
+            device (Device): One of the devices the pool spans.
+
+        Returns:
+            Buffer: A flat ``uint8`` view, ``byte_size`` bytes long.
+        """

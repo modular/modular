@@ -459,9 +459,6 @@ class DeepseekV4RoutedExperts(Module):
         # group's scale offset.
         counts = start[1 : groups + 1] - start[0:groups]
         aligned_counts = (counts + (SF_ROWS - 1)) // SF_ROWS * SF_ROWS
-        # Kept on device, as are the row maps below: ops.cumsum/ops.scatter
-        # run on the host, and those round trips beside the tokens broadcast
-        # closed a 2-GPU deadlock.
         aligned_start = count_offsets(aligned_counts)
         scale_offsets = ops.cast(
             aligned_start[0:groups] // SF_ROWS - start[0:groups] // SF_ROWS,

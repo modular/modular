@@ -87,7 +87,7 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import thread_idx, warp_id as get_warp_id
 from max.gpu.memory import external_memory
-from layout import TensorLayout, TileTensor, row_major
+from layout import Coord, TensorLayout, TileTensor, coord, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
@@ -95,7 +95,7 @@ from layout.tma_async import (
     TMATensorTile,
     create_tensor_tile,
 )
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 
@@ -170,12 +170,10 @@ def mma_ws_cta1[
 def mma_throughput_kernel[
     a_type: DType,
     accum_type: DType,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     sink_layout: TensorLayout,
     BM: Int,
     BN: Int,
@@ -188,8 +186,8 @@ def mma_throughput_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[a_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[a_type, b_tile_shape, b_desc_shape],
     sink: TileTensor[accum_type, sink_layout, MutAnyOrigin],
 ):
     """SM100 single-CTA tcgen05 MMA-instruction throughput kernel.
@@ -533,20 +531,18 @@ def main() raises:
         var sink_dev = sink.device_tensor()
 
         var a_tma_op = create_tensor_tile[
-            Index(BM, BK_DESC), swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
+            coord[BM, BK_DESC], swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
         ](ctx, a.device_tensor())
         var b_tma_op = create_tensor_tile[
-            Index(BN, BK_DESC), swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
+            coord[BN, BK_DESC], swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE
         ](ctx, b.device_tensor())
 
         comptime smem_use = ((BM + BN) * size_of[dtype]() * BK_DESC + 24)
         comptime kernel = mma_throughput_kernel[
             dtype,
             accum_type,
-            type_of(a_tma_op).rank,
             type_of(a_tma_op).tile_shape,
             type_of(a_tma_op).desc_shape,
-            type_of(b_tma_op).rank,
             type_of(b_tma_op).tile_shape,
             type_of(b_tma_op).desc_shape,
             type_of(sink_dev).LayoutType,

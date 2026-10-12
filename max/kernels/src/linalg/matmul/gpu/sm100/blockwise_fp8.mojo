@@ -40,7 +40,7 @@ from structured_kernels.tile_types import (
 )
 from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tensor_tile
 from std.logger import Logger
-from std.utils.index import Index, IndexList
+from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -65,15 +65,12 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    a_scales_tile_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_tile_rank],
-    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -88,14 +85,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     # the kernel's BK.
     b_scaling_block_n: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type,
-        a_scales_tile_rank,
-        a_scales_tile_shape,
-        a_scales_desc_shape,
+        a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     num_iters: Int32,
@@ -484,15 +478,12 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     c_layout: TensorLayout,
     a_scales_layout: TensorLayout,
     b_scales_layout: TensorLayout,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    a_scales_tile_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_tile_rank],
-    a_scales_desc_shape: IndexList[a_scales_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -503,14 +494,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     b_scaling_block_n: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[mut=True, c_type, c_layout, MutAnyOrigin],
     a_scales_tma_op: TMATensorTile[
-        a_scales_type,
-        a_scales_tile_rank,
-        a_scales_tile_shape,
-        a_scales_desc_shape,
+        a_scales_type, a_scales_tile_shape, a_scales_desc_shape
     ],
     b_scales: TileTensor[b_scales_type, b_scales_layout, ImmutAnyOrigin],
     num_iters: Int32,
@@ -532,13 +520,10 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         c_layout,
         a_scales_layout,
         b_scales_layout,
-        a_tile_rank,
         a_tile_shape,
         a_desc_shape,
-        b_tile_rank,
         b_tile_shape,
         b_desc_shape,
-        a_scales_tile_rank,
         a_scales_tile_shape,
         a_scales_desc_shape,
         block_tile_shape,
@@ -702,13 +687,13 @@ def matmul_sm100_blockwise_scaled_fp8[
     )
 
     var a_tma_op = create_tensor_tile[
-        Index(1, BM, BK),
+        coord[1, BM, BK],
         swizzle_mode=a_swizzle,
     ](ctx, a_3D)
 
-    comptime b_tile_shape = Index(1, BN, BK) if transpose_b else Index(
-        1, BK, BN
-    )
+    comptime b_m = BN if transpose_b else BK
+    comptime b_n = BK if transpose_b else BN
+    comptime b_tile_shape = coord[1, b_m, b_n]
 
     var b_tma_op = create_tensor_tile[
         b_tile_shape,
@@ -716,8 +701,8 @@ def matmul_sm100_blockwise_scaled_fp8[
     ](ctx, b_3D)
 
     var a_scales_tma_op = create_tensor_tile[
-        Index(1, 1, BM),
-        __desc_shape=Index(1, 1, BM),
+        coord[1, 1, BM],
+        __desc_shape=coord[1, 1, BM],
     ](ctx, a_scales_3D)
     # NOTE: desc shape must be specified otherwise a constraint fails
 
@@ -740,13 +725,10 @@ def matmul_sm100_blockwise_scaled_fp8[
         type_of(c_kernel).LayoutType,
         type_of(a_scales_3D).LayoutType,
         type_of(b_scales_kernel).LayoutType,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
         block_tile_shape,

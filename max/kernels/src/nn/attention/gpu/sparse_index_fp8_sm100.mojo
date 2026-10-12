@@ -90,7 +90,6 @@ from max.gpu.compute.arch.tcgen05 import (
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.math import align_up, ceildiv
 from std.sys import get_defined_int, size_of
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from layout import (
@@ -99,6 +98,7 @@ from layout import (
     TensorEngine,
     TileTensor,
     UNKNOWN_VALUE,
+    coord,
 )
 from layout.tile_layout import row_major as tt_row_major
 from layout.tile_tensor import ImmTileTensor, MutTileTensor
@@ -202,12 +202,10 @@ comptime _Q1SmemOffset[
 
 comptime QTMATileT[
     dtype: DType, MMA_N: Int, depth: Int
-] = SplitLastDimTMATensorTile[dtype, Index(MMA_N, 1, depth), _INDEX_SWIZZLE]
+] = SplitLastDimTMATensorTile[dtype, coord[MMA_N, 1, depth], _INDEX_SWIZZLE]
 comptime KTMATileT[dtype: DType, BM_key: Int, depth: Int] = TMATensorTile[
     dtype,
-    4,
-    Index(1, BM_key, 1, depth),
-    Index(1, BM_key, 1, depth),
+    coord[1, BM_key, 1, depth],
 ]
 """The K descriptor, addressed by `(row_in_block, block)`.
 
@@ -1131,8 +1129,8 @@ def fp8_index_score_sm100[
         # Only the K-resident scorer reads this descriptor; the prefill routes
         # above build their own in the row order they fold in.
         var q_tma_tile = create_split_tma[
-            Index(MMA_N, 1, depth),
-            Index(UNKNOWN_VALUE, 1, depth),
+            coord[MMA_N, 1, depth],
+            coord[UNKNOWN_VALUE, 1, depth],
             _INDEX_SWIZZLE,
         ](
             ctx,

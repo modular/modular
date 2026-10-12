@@ -30,7 +30,7 @@ from nn.attention.gpu.mha import MHAConfig, _kernel_mask
 from nn.attention.mha_mask import MHAMask
 from nn.softmax import _softmax_gpu
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 

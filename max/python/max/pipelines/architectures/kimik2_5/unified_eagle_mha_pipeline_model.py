@@ -13,7 +13,7 @@
 """Eagle3 MHA-draft + Kimi K2.5 (MLA target) PipelineModel.
 
 Sibling of :class:`Eagle3KimiK25Model` for the case where the draft uses
-Llama-style MHA (e.g. ``LlamaForCausalLMEagle3`` checkpoints) over an MLA
+Llama-style MHA (such as ``LlamaForCausalLMEagle3`` checkpoints) over an MLA
 Kimi K2.5 target. Target and draft no longer share attention parameters; a
 separate MHA :class:`KVCacheParams` is constructed for the draft so the
 spec-decode pipeline allocates its KV cache for MHA shapes.

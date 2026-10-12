@@ -24,7 +24,9 @@ Functions
    flash_attention_ragged_gpu
    fused_silu
    grouped_matmul_ragged
+   hyper_connection_gates
    moe_create_indices
+   moe_finalize
    moe_router_group_limited
    moe_sigmoid_gemv_router
    rms_norm_key_cache

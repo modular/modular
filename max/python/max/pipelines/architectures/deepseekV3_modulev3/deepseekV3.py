@@ -44,6 +44,7 @@ from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
 from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
     QuantizedMoE,
 )
+from max.pipelines.lib import ModuleV3Outputs
 
 from ..deepseekV2_modulev3.layers.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
@@ -106,7 +107,7 @@ class DeepseekV3TextModel(
             Tensor | None,
             EPCommBuffers | None,
         ],
-        tuple[Tensor, ...],
+        ModuleV3Outputs,
     ]
 ):
     """The DeepseekV3 language model.
@@ -190,7 +191,7 @@ class DeepseekV3TextModel(
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
         comm_buffers: EPCommBuffers | None = None,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         if self.mesh is not None:
             tokens = F.distributed_broadcast(tokens, self.mesh)
             input_row_offsets = F.distributed_broadcast(
@@ -257,10 +258,10 @@ class DeepseekV3TextModel(
         if self.mesh is not None:
             last_logits = last_logits.to(self.mesh.devices[0])
         last_logits = F.cast(last_logits, DType.float32)
-        return (last_logits,)
+        return ModuleV3Outputs(next_token_logits=last_logits)
 
 
-class DeepseekV3(Module[..., tuple[Tensor, ...]]):
+class DeepseekV3(Module[..., ModuleV3Outputs]):
     """Top-level DeepseekV3 wrapper that unflattens variadic KV cache args."""
 
     def __init__(
@@ -281,7 +282,7 @@ class DeepseekV3(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         mesh = self.config.mesh
         assert mesh is not None
 

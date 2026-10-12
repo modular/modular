@@ -52,6 +52,7 @@ def producer_kernel(
     peer_recv_count: UnsafePointer[UInt64, MutUntrackedOrigin],
     peer_payload: UnsafePointer[UInt64, MutUntrackedOrigin],
     rank_completion_counter: UnsafePointer[Int32, MutUntrackedOrigin],
+    tickets: UnsafePointer[Int32, MutUntrackedOrigin],
     generation: UInt64,
 ):
     """One single-thread block per expert on the SOURCE GPU (peer writes).
@@ -76,7 +77,7 @@ def producer_kernel(
         )
         # The 1-entry peer array already points AT the peer, so index 0 is
         # the true remote buffer.
-        ep_signal_completion[
+        tickets[expert] = ep_signal_completion[
             False,
             n_experts_per_device=N_EXPERTS,
             has_rank_flag=True,
@@ -149,6 +150,7 @@ def _run_direction(
     var result = dst.enqueue_create_buffer[DType.int32](1)
     # The election counter is SOURCE-local, exactly as in production.
     var counter = src.enqueue_create_buffer[DType.int32](1)
+    var tickets = src.enqueue_create_buffer[DType.int32](N_EXPERTS)
 
     dst.enqueue_memset(recv_count, SENTINEL)
     src.enqueue_memset(counter, Int32(0))
@@ -164,12 +166,15 @@ def _run_direction(
                 h[e] = SENTINEL
         dst.enqueue_memset(payload, UInt64(0))
         dst.enqueue_memset(result, Int32(-1))
+        src.enqueue_memset(tickets, Int32(-2))
         dst.synchronize()
+        src.synchronize()
 
         src.enqueue_function[producer_kernel](
             recv_count.unsafe_ptr(),
             payload.unsafe_ptr(),
             counter.unsafe_ptr(),
+            tickets.unsafe_ptr(),
             UInt64(gen),
             grid_dim=N_EXPERTS,
             block_dim=1,
@@ -203,6 +208,29 @@ def _run_direction(
                 + " generation "
                 + String(gen)
                 + ": rank-flag sentinel was not restored by the consumer",
+            )
+        # Each producer gets a distinct election ticket, so the generation's
+        # tickets are 0..N_EXPERTS-1 and exactly one producer saw
+        # N_EXPERTS - 1 and wrote the rank flag.
+        with tickets.map_to_host() as h:
+            var seen = UInt64(0)
+            for e in range(N_EXPERTS):
+                var t = Int(h[e])
+                assert_true(
+                    t >= 0 and t < N_EXPERTS,
+                    String(label)
+                    + " generation "
+                    + String(gen)
+                    + ": election ticket out of range: "
+                    + String(t),
+                )
+                seen |= UInt64(1) << UInt64(t)
+            assert_true(
+                seen == (UInt64(1) << UInt64(N_EXPERTS)) - 1,
+                String(label)
+                + " generation "
+                + String(gen)
+                + ": election tickets are not a permutation of 0..N_EXPERTS-1",
             )
         # The elected producer must have reset the source-local counter.
         with counter.map_to_host() as h:

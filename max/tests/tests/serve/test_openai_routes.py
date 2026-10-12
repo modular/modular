@@ -21,14 +21,14 @@ import sys
 from collections.abc import Generator
 from threading import Thread
 from types import SimpleNamespace
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import numpy as np
 import pytest
 import pytest_asyncio
 from async_asgi_testclient import TestClient as AsyncTestClient
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.testclient import TestClient as SyncTestClient
 from max.pipelines.architectures.kimik2_5.tokenizer import (
@@ -75,7 +75,12 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
+from max.serve.request import register_request
 from max.serve.router import _image_resolution
+from max.serve.router._disconnect import (
+    ClientDisconnected,
+    raise_on_disconnect,
+)
 from max.serve.router._image_resolution import (
     _decode_data_uri_base64,
     decode_and_validate_images,
@@ -88,6 +93,7 @@ from max.serve.router.openai_routes import (
     _batch_id,
     _coerce_positive_float,
     _coerce_positive_int,
+    _conversation_turn,
     _convert_chat_completion_tools_to_token_generator_tools,
     _create_response_format,
     _get_cache_salt,
@@ -98,7 +104,9 @@ from max.serve.router.openai_routes import (
     _tool_choice_label,
     get_tool_parser,
     openai_create_chat_completion,
+    openai_create_completion,
     openai_parse_chat_completion_request,
+    record_request_end,
 )
 from max.serve.schemas.openai import (
     ChatCompletionLogprobs,
@@ -117,6 +125,7 @@ from openai.types.chat.chat_completion_stream_options_param import (
 from PIL import Image
 from pydantic import AnyUrl, ValidationError
 from sse_starlette.sse import AppStatus
+from starlette.types import Message, Scope
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -1410,6 +1419,7 @@ def _make_mock_request() -> Mock:
     mock_request.request_path = "/v1/chat/completions"
     mock_request.sampling_params = Mock()
     mock_request.sampling_params.stop = []
+    mock_request.messages = []
     return mock_request
 
 
@@ -1510,7 +1520,8 @@ async def test_openai_chat_completion_cancels_disconnected_request(
         # wait for request to reach backend
         req = await asyncio.wait_for(request_queue.get(), timeout=1.0)
         assert req.request_id == RequestID("disconnect-test")
-        request_started.set()
+        # receive() stays pending: this covers cancelling the handler, and the
+        # tests below cover a disconnect seen through receive().
 
         # simulate disconnection
         session.cancel()
@@ -1518,6 +1529,225 @@ async def test_openai_chat_completion_cancels_disconnected_request(
         # expect cancellation request to backend
         cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
         assert cancel == [RequestID("disconnect-test")]
+
+
+def _echo_pipeline() -> tuple[
+    TokenGeneratorPipeline,
+    _WritableQueue[BaseContext],
+    _WritableQueue[list[RequestID]],
+]:
+    """Builds an echo pipeline whose worker never answers, so a request stays
+    in flight until it is cancelled."""
+    request_queue = _WritableQueue[BaseContext]()
+    cancel_queue = _WritableQueue[list[RequestID]]()
+    model_worker = ZmqModelWorkerProxy(
+        request_queue=request_queue,
+        response_queue=asyncio.Queue[Any](),
+        cancel_queue=cancel_queue,
+    )
+    pipeline = TokenGeneratorPipeline(
+        model_name="echo",
+        tokenizer=EchoPipelineTokenizer(),
+        model_worker=model_worker,
+    )
+    return pipeline, request_queue, cancel_queue
+
+
+def _chat_request_body() -> bytes:
+    return json.dumps(
+        simple_openai_request(model_name="echo", content="test data")
+    ).encode("utf-8")
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_non_streaming_cancels_on_disconnect(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+) -> None:
+    """A non-streaming request is cancelled when its client disconnects.
+
+    Starlette never cancels a plain endpoint, so unlike the test above the
+    handler task is left running: only the disconnect itself may stop it.
+    """
+    request_started = asyncio.Event()
+    pipeline, request_queue, cancel_queue = _echo_pipeline()
+    mock_request = _make_disconnect_request(
+        pipeline=pipeline,
+        pipeline_config=mock_pipeline_config,
+        request_started=request_started,
+        body=_chat_request_body(),
+    )
+
+    session = asyncio.create_task(openai_create_chat_completion(mock_request))
+    req = await asyncio.wait_for(request_queue.get(), timeout=1.0)
+    assert req.request_id == RequestID("disconnect-test")
+    request_started.set()
+
+    cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+    assert cancel == [RequestID("disconnect-test")]
+    # The request_session middleware turns this into the 499.
+    with pytest.raises(ClientDisconnected):
+        await asyncio.wait_for(session, timeout=1.0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "path,body",
+    [
+        pytest.param("/v1/chat/completions", None, id="chat"),
+        pytest.param(
+            "/v1/completions",
+            json.dumps({"model": "echo", "prompt": "test data"}).encode(),
+            id="completions",
+        ),
+    ],
+)
+async def test_non_streaming_cancels_behind_middleware(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+    path: str,
+    body: bytes | None,
+) -> None:
+    """The disconnect reaches the route through the request_session
+    middleware, whose BaseHTTPMiddleware wrapper drops the disconnect for a
+    non-blocking ``Request.is_disconnected()``, and the middleware answers
+    it with a 499."""
+    pipeline, request_queue, cancel_queue = _echo_pipeline()
+    app = FastAPI()
+    app.state.pipeline = pipeline
+    app.state.pipeline_config = mock_pipeline_config
+    app.state.settings = Settings(
+        api_types=[APIType.OPENAI], use_heartbeat=False
+    )
+    register_request(app)
+    app.add_api_route(
+        "/v1/chat/completions",
+        openai_create_chat_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+    app.add_api_route(
+        "/v1/completions",
+        openai_create_completion,
+        methods=["POST"],
+        response_model=None,
+    )
+
+    client_gone = asyncio.Event()
+    messages: list[Message] = [
+        {
+            "type": "http.request",
+            "body": body if body is not None else _chat_request_body(),
+            "more_body": False,
+        }
+    ]
+
+    async def receive() -> Message:
+        if messages:
+            return messages.pop(0)
+        await client_gone.wait()
+        return {"type": "http.disconnect"}
+
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    scope: Scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "root_path": "",
+        "headers": [(b"content-type", b"application/json")],
+        "client": ("127.0.0.1", 12345),
+        "server": ("127.0.0.1", 8000),
+        "app": app,
+    }
+    call = asyncio.create_task(app(scope, receive, send))
+    req = await asyncio.wait_for(request_queue.get(), timeout=5.0)
+    client_gone.set()
+
+    cancel = await asyncio.wait_for(cancel_queue.get(), timeout=1.0)
+    assert cancel == [req.request_id]
+    await asyncio.wait_for(call, timeout=1.0)
+    assert sent[0]["status"] == 499
+    # A completions request is keyed per prompt as "<request id>_<index>".
+    headers = dict(sent[0]["headers"])
+    assert (
+        headers[b"x-request-id"].decode() == req.request_id.value.split("_")[0]
+    )
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_non_streaming_maps_errors(
+    mock_pipeline_config: PipelineConfig,
+    patch_openai_metrics: None,
+) -> None:
+    """An error from the completion still reaches the route's own mapping
+    while the disconnect watch runs beside it."""
+    pipeline, _, _ = _echo_pipeline()
+    mock_request = _make_disconnect_request(
+        pipeline=pipeline,
+        pipeline_config=mock_pipeline_config,
+        request_started=asyncio.Event(),
+        body=_chat_request_body(),
+    )
+
+    with (
+        patch.object(
+            OpenAIChatResponseGenerator,
+            "complete",
+            AsyncMock(side_effect=InputError("bad request")),
+        ),
+        pytest.raises(HTTPException) as exc_info,
+    ):
+        await asyncio.wait_for(
+            openai_create_chat_completion(mock_request), timeout=1.0
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "bad request"
+
+
+def _watched_request(*messages: Message | Exception) -> Mock:
+    pending = list(messages)
+
+    async def receive() -> Message:
+        if not pending:
+            await asyncio.Event().wait()
+        message = pending.pop(0)
+        if isinstance(message, Exception):
+            raise message
+        return message
+
+    request = Mock()
+    request.receive = receive
+    request.state = SimpleNamespace(request_id="watch-test")
+    return request
+
+
+@pytest.mark.asyncio
+async def test_raise_on_disconnect_raises_after_body_messages() -> None:
+    request = _watched_request(
+        {"type": "http.request", "body": b"", "more_body": False},
+        {"type": "http.disconnect"},
+    )
+
+    with pytest.raises(ClientDisconnected):
+        await asyncio.wait_for(raise_on_disconnect(request), timeout=1.0)
+
+
+@pytest.mark.asyncio
+async def test_raise_on_disconnect_returns_when_receive_fails() -> None:
+    """A failed watch leaves the request running rather than abandoning it."""
+    request = _watched_request(RuntimeError("receive failed"))
+
+    await asyncio.wait_for(raise_on_disconnect(request), timeout=1.0)
 
 
 @pytest.mark.asyncio
@@ -1714,6 +1944,116 @@ async def test_openai_chat_completion_usage_present_with_max_tokens_one(
     assert response.usage.total_tokens == 12
 
 
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        pytest.param([], None, id="no_messages"),
+        pytest.param(["user"], "first", id="opening_turn"),
+        pytest.param(["system", "user"], "first", id="system_prompt_only"),
+        pytest.param(
+            ["system", "user", "assistant", "user"], "later", id="second_turn"
+        ),
+        pytest.param(
+            ["user", "assistant", "tool"], "later", id="tool_result_turn"
+        ),
+    ],
+)
+def test_conversation_turn(
+    roles: list[Literal["system", "user", "assistant", "tool"]],
+    expected: str | None,
+) -> None:
+    messages = [
+        TextGenerationRequestMessage(role=role, content="x") for role in roles
+    ]
+    assert _conversation_turn(messages) == expected
+
+
+def test_record_request_end_labels_input_tokens_with_the_turn() -> None:
+    with patch("max.serve.router.openai_routes.METRICS") as metrics_mock:
+        record_request_end("/v1/chat/completions", 1.0, 3, 10, "later")
+
+    metrics_mock.input_tokens.assert_called_once_with(10)
+    metrics_mock.input_tokens_per_request.assert_called_once_with(10, "later")
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_completion_reports_the_conversation_turn() -> None:
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens="done",
+            token_count=1,
+            prompt_token_count=9,
+        ),
+    ]
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(return_value=chunks)
+    mock_request = _make_mock_request()
+    mock_request.messages = [
+        TextGenerationRequestMessage(role="user", content="hi"),
+        TextGenerationRequestMessage(role="assistant", content="hello"),
+        TextGenerationRequestMessage(role="user", content="again"),
+    ]
+
+    with (
+        patch("max.serve.router.openai_routes.METRICS", MagicMock()),
+        patch("max.serve.router.openai_routes.record_request_start"),
+        patch("max.serve.router.openai_routes.record_request_end") as end_mock,
+    ):
+        await OpenAIChatResponseGenerator(mock_pipeline).complete(
+            [mock_request]
+        )
+
+    assert end_mock.call_count == 1
+    assert end_mock.call_args.args[3] == 9
+    assert end_mock.call_args.args[4] == "later"
+
+
+@pytest.mark.parametrize("stream", [False, True], ids=["complete", "stream"])
+@pytest.mark.parametrize(
+    ("roles", "expected"),
+    [
+        pytest.param(["user"], "first", id="opening_turn"),
+        pytest.param(["user", "assistant", "user"], "later", id="second_turn"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_pretokenized_chat_completion_reports_the_conversation_turn(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+    stream: bool,
+    roles: list[str],
+    expected: str,
+) -> None:
+    # The orchestrator sends prompt_tokens beside the messages, and the
+    # route drops the messages from the token request it builds.
+    # sse-starlette binds this event to the first streaming test's loop
+    # (sysid/sse-starlette#59).
+    monkeypatch.setattr(AppStatus, "should_exit_event", None)
+    request = {
+        "model": "echo",
+        "messages": [{"role": role, "content": "hi"} for role in roles],
+        "prompt_tokens": [101, 202, 303],
+        "stream": stream,
+    }
+
+    with patch("max.serve.router.openai_routes.record_request_end") as end_mock:
+        async with AsyncTestClient(app, timeout=20.0) as client:
+            response = await client.post(
+                "/v1/chat/completions", json=request, stream=stream
+            )
+            assert response.status_code == 200
+            if stream:
+                async for _ in response.iter_content(1024):
+                    pass
+
+    assert end_mock.call_count == 1
+    assert end_mock.call_args.args[4] == expected
+
+
 def _all_reasoning_chunks(
     status: GenerationStatus,
 ) -> list[TokenGeneratorOutput]:
@@ -1842,6 +2182,68 @@ async def test_tool_parse_failure_does_not_leak_structural_marker(
     assert not choice.message.tool_calls
     assert "<tool_call>" not in (choice.message.content or "")
     assert choice.message.content == "I'll get the weather for Paris first."
+
+
+_QWEN_WEATHER_CALL = (
+    "<tool_call>\n<function=get_weather>\n"
+    "<parameter=city>\nParis\n</parameter>\n"
+    "</function>\n</tool_call>\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("status", "decoded", "expected_finish_reason"),
+    [
+        pytest.param(
+            GenerationStatus.MAXIMUM_LENGTH,
+            _QWEN_WEATHER_CALL * 2
+            + "<tool_call>\n<function=get_weather>\n<parameter=city>\nPa",
+            "length",
+            id="truncated_after_complete_calls",
+        ),
+        pytest.param(
+            GenerationStatus.END_OF_SEQUENCE,
+            _QWEN_WEATHER_CALL * 2,
+            "tool_calls",
+            id="natural_stop",
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_tool_call_finish_reason_reports_length_truncation(
+    patch_openai_metrics: None,
+    status: GenerationStatus,
+    decoded: str,
+    expected_finish_reason: str,
+) -> None:
+    """Regression (fuzz-found): a forced tool call that loops until
+    ``max_tokens`` used to come back with ``finish_reason="tool_calls"``,
+    so a client could not tell the output was truncated. The complete calls
+    are still returned, but the finish reason must say ``length``."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+    mock_pipeline.all_tokens = AsyncMock(
+        return_value=[
+            TokenGeneratorOutput(
+                status=status,
+                decoded_tokens=decoded,
+                token_count=64,
+                prompt_token_count=5,
+            )
+        ]
+    )
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=Qwen3_5ToolParser(),
+        parse_tool_calls=True,
+    )
+    response = await generator.complete([_make_mock_request()])
+
+    choice = response.choices[0]
+    assert choice.finish_reason == expected_finish_reason
+    assert choice.message.tool_calls is not None
+    assert len(choice.message.tool_calls) == 2
 
 
 async def _run_stream(

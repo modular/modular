@@ -338,12 +338,19 @@ public:
   /// failure.
   CValue emitIndirectCall(CValue callee, CallOperands &&operands);
 
-  /// Emit an indirect call to a resolved value in a try block, invoking a
-  /// callback to generate logic in the 'catch' block that is wrapped around the
-  /// call. This ensures that the ExprDest is updated and live after the try
-  /// block, which only works if the "catch" logic doesn't fall through.
+  /// Emit a call to `callee` in a try block, invoking a callback to generate
+  /// logic in the 'catch' block that is wrapped around the call. This ensures
+  /// that the ExprDest is updated and live after the try block, which only
+  /// works if the "catch" logic doesn't fall through.
   ///
   /// This emits an error and returns null on failure.
+  CValue
+  emitCallInTryBlock(CValue callee, CallOperands &&operands,
+                     function_ref<CValue(CallOperands &&)> emitCall,
+                     std::function<void(VarDeclOp errDecl)> emitCatchLogic);
+
+  /// Emit an indirect call to a resolved value in a try block. See
+  /// `emitCallInTryBlock`.
   CValue emitIndirectCallInTryBlock(
       CValue callee, CallOperands &&operands,
       std::function<void(VarDeclOp errDecl)> emitCatchLogic);

@@ -13,12 +13,7 @@
 
 from std.math import iota
 from std.random import rand
-from std.sys import (
-    argv,
-    has_amd_gpu_accelerator,
-    has_apple_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv, default_accelerator
 
 from std.benchmark import (
     Bench,
@@ -134,7 +129,7 @@ def top_k() raises:
 
     b.bench_function(top_k_cpu, BenchId("top_k_custom", "cpu"), metrics)
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         var gpu_ctx = DeviceContext()
 
         var out_vals_dev = Tensor[IOSpec.Output, val_spec](gpu_ctx).rand()
@@ -187,11 +182,12 @@ def matmul() raises:
 
     bench.bench_function(matmul_cpu, BenchId("cpu", "naive"), metrics)
 
+    comptime target = default_accelerator()
+
     comptime if (
-        has_amd_gpu_accelerator()
-        or has_apple_gpu_accelerator()
-        or has_nvidia_gpu_accelerator()
+        target.is_amd_gpu() or target.is_apple_gpu() or target.is_nvidia_gpu()
     ):
+        # TODO(MSTDL-3208): Should be DeviceContext[target]
         var gpu_ctx = DeviceContext()
         var a_dev = Tensor[IOSpec.Input, a_spec](gpu_ctx).rand()
         var b_dev = Tensor[IOSpec.Input, b_spec](gpu_ctx).rand()
@@ -214,7 +210,7 @@ def matmul() raises:
         bench_matmul_kernel["block_tiled"]()
         bench_matmul_kernel["block_tiled_vectorized"]()
 
-        comptime if not has_apple_gpu_accelerator():
+        comptime if not target.is_apple_gpu():
             bench_matmul_kernel["tensor_core"]()
 
     bench.config.verbose_metric_names = False
@@ -257,7 +253,7 @@ def tensor_core_mma() raises:
         bench.config.num_repetitions = 1
 
     # TODO: Add NVIDIA GPU support
-    comptime if has_amd_gpu_accelerator():
+    comptime if default_accelerator().is_amd_gpu():
         var gpu_ctx = DeviceContext()
         var a_dev = Tensor[IOSpec.Input, a_spec](gpu_ctx).rand()
         var b_dev = Tensor[IOSpec.Input, b_spec](gpu_ctx).rand()

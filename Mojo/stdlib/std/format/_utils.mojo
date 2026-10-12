@@ -23,7 +23,7 @@ from std.reflection.type_info import _unqualified_type_name
 from std.sys import size_of
 from std.sys.info import is_gpu
 from std.sys.defines import get_defined_int
-from std.ffi import CStringSpan
+from std.ffi import CStringSpan, c_char
 
 from std.bit import byte_swap
 from std.memory import bitcast, unsafe_memcpy
@@ -438,7 +438,7 @@ struct _FixedWriteBuffer(Writer):
 
         return CStringSpan(
             unsafe_from_ptr=self._data.unsafe_ptr()
-            .unsafe_bitcast[Int8]()
+            .unsafe_bitcast[c_char]()
             .unsafe_origin_cast[origin_of(self)]()
         )
 

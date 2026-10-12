@@ -29,7 +29,6 @@ from layout import (
     Idx,
     LTToTTLayout,
     Layout,
-    LayoutTensor,
     TileTensor,
     row_major,
 )
@@ -306,7 +305,9 @@ def test_conv2d_im2col_direct[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var output_lt = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
+    var output_tt_store = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
+    )
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -322,16 +323,16 @@ def test_conv2d_im2col_direct[
 
         @__parameter
         @inline(.always)
-        @__copy_capture(output_lt)
+        @__copy_capture(output_tt_store)
         def scale_epilogue[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
+            output_tt_store.store[
+                width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                rebind[IndexList[4]](coords),
-                rebind[SIMD[dtype, _width]](scaled),
+                Coord(coords[0], coords[1], coords[2], coords[3]),
+                scaled,
             )
 
         handled = dispatch_im2col_matmul_conv2d[
@@ -466,7 +467,9 @@ def test_conv2d_fused_apple[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var output_lt = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
+    var output_tt_store = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
+    )
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -482,16 +485,16 @@ def test_conv2d_fused_apple[
 
         @__parameter
         @inline(.always)
-        @__copy_capture(output_lt)
+        @__copy_capture(output_tt_store)
         def scale_epilogue[
             _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-            output_lt.store[
-                width=_width, store_alignment=align_of[dtype]() * _alignment
+            output_tt_store.store[
+                width=_width, alignment=align_of[dtype]() * _alignment
             ](
-                rebind[IndexList[4]](coords),
-                rebind[SIMD[dtype, _width]](scaled),
+                Coord(coords[0], coords[1], coords[2], coords[3]),
+                scaled,
             )
 
         handled = dispatch_fused_im2col_conv2d_apple[
@@ -624,7 +627,9 @@ def test_conv2d_gpu_dispatch[
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_dev, filter_host)
 
-    var output_lt = LayoutTensor[dtype, output_layout](output_dev.unsafe_ptr())
+    var output_tt_store = TileTensor(
+        output_dev.unsafe_ptr(), LTToTTLayout[output_layout]()
+    )
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(), LTToTTLayout[input_layout]()
     )
@@ -637,16 +642,16 @@ def test_conv2d_gpu_dispatch[
 
     @__parameter
     @inline(.always)
-    @__copy_capture(output_lt)
+    @__copy_capture(output_tt_store)
     def scale_epilogue[
         _dtype: DType, _rank: Int, _width: SIMDLength, _alignment: Int = 1
     ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
         var scaled = (val.cast[.float32]() * 2.0).cast[dtype]()
-        output_lt.store[
-            width=_width, store_alignment=align_of[dtype]() * _alignment
+        output_tt_store.store[
+            width=_width, alignment=align_of[dtype]() * _alignment
         ](
-            rebind[IndexList[4]](coords),
-            rebind[SIMD[dtype, _width]](scaled),
+            Coord(coords[0], coords[1], coords[2], coords[3]),
+            scaled,
         )
 
     conv_gpu[

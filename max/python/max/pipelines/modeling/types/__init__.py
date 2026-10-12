@@ -65,6 +65,7 @@ from .reasoning import (
 from .task import InputModality, PipelineTask
 from .tokenizer import (
     ChatEncoderOutcomesProbe,
+    LabelScoringTokenizer,
     PipelineTokenizer,
     PreprocessCacheStatsProbe,
     PreprocessedImageProbe,
@@ -90,6 +91,7 @@ from .utils import (
 PipelinesFactory = Callable[
     [], Pipeline[PipelineInputsType, PipelineOutputType]
 ]
+"""Callable with no arguments that constructs a configured pipeline."""
 
 __all__ = [
     "DUMMY_REQUEST_ID",
@@ -105,6 +107,7 @@ __all__ = [
     "EmbeddingsGenerationOutput",
     "ImageContentPart",
     "InputModality",
+    "LabelScoringTokenizer",
     "LogitsProcessor",
     "MessageContent",
     "OpenResponsesRequest",

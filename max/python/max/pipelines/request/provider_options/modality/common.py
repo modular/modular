@@ -21,7 +21,9 @@ class GeneratedMediaResponseFormat(str, Enum):
     """Response transport format for generated image/video outputs."""
 
     url = "url"
+    """The response carries a URL pointing at the generated media."""
     b64_json = "b64_json"
+    """The response embeds the base64-encoded media bytes in a JSON field."""
 
 
 class PixelProviderOptionsBase(BaseModel):
@@ -29,7 +31,7 @@ class PixelProviderOptionsBase(BaseModel):
 
     Fields here apply to any text-to-pixels or pixels-to-pixels pipeline and
     are read by the pixel tokenizer regardless of which modality block carries
-    them on the request. Modality-specific fields (e.g., ``num_frames`` for
+    them on the request. Modality-specific fields (such as ``num_frames`` for
     video, ``secondary_prompt`` for image) live on the per-modality subclasses.
     """
 

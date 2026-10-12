@@ -72,7 +72,6 @@ from max.gpu import (
     thread_idx,
 )
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
-from std.utils.index import IndexList
 
 
 # Upper bound on the runtime `tokens_per_block`; the host shrinks it to the

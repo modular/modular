@@ -44,7 +44,6 @@ from nn.attention.cpu.mha import flash_attention as nn_flash_attention
 from nn.attention.cpu.mha import flash_attention_split_kv
 from nn.kv_cache import (
     generic_flash_attention_kv_cache_padded,
-    generic_fused_qk_rope_bshd_paged,
     generic_fused_qkv_matmul_kv_cache_bshd_paged,
     generic_get_paged_cache,
     generic_get_paged_cache_with_scales,
@@ -111,6 +110,7 @@ from std.utils import IndexList
 from .kernels import *
 from nn.attention.gpu.mla_index_kpool import (
     kpool_compress_kernel,
+    KPOOL_EXPAND_BLOCK_SIZE,
     kpool_expand_topk_kernel,
     kpool_ring_close_kernel,
     kpool_seed_tail_kernel,
@@ -147,9 +147,10 @@ struct MLAKPoolExpandTopK:
 
         The indexer selects pools; attention reads tokens. Pool `p` covers
         positions `[p * kpool, (p + 1) * kpool)`, so the selection widens from
-        `pool_topk` to `pool_topk * kpool`. An unselected slot expands to `-1`
-        in every one of its positions rather than to a clamped valid one, which
-        would point attention at a token the indexer did not choose.
+        `pool_topk` to `pool_topk * kpool`. Each row is packed: the selected
+        pools in selection order, then the tail, then `-1`, never a clamped
+        valid position, which would point attention at a token the indexer did
+        not choose.
 
         Parameters:
             kpool: Tokens per pool.
@@ -201,7 +202,7 @@ struct MLAKPoolExpandTopK:
             clen_tt.as_imm(),
             Int32(total_seq_len),
             grid_dim=(total_seq_len, 1, 1),
-            block_dim=(128, 1, 1),
+            block_dim=(KPOOL_EXPAND_BLOCK_SIZE, 1, 1),
         )
 
 
@@ -2350,53 +2351,6 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
         )
 
 
-@extensibility.register("mo.fused_qk_rope.padded.paged")
-struct Struct_fused_qk_rope_padded_paged[interleaved: Bool]:
-    """Registers the `mo.fused_qk_rope.padded.paged` graph op with the graph compiler.
-    """
-
-    @inline(.always)
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=dtype, rank=4, ...],
-        q_proj: InputTensor[dtype=dtype, rank=4, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        page_stride: InputTensor[dtype=.int64, rank=1, ...],
-        cache_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=.uint32, rank=2, ...],
-        max_prompt_length: InputTensor[dtype=.uint32, rank=1, ...],
-        max_cache_length: InputTensor[dtype=.uint32, rank=1, ...],
-        freqs_cis: InputTensor[dtype=dtype, rank=2, ...],
-        layer_idx: UInt32,
-        valid_lengths: InputTensor[dtype=.uint32, rank=1, ...],
-        context: DeviceContext,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            page_stride,
-            cache_lengths,
-            kv_lookup_table,
-            max_prompt_length,
-            max_cache_length,
-        )
-        generic_fused_qk_rope_bshd_paged[
-            interleaved=Self.interleaved,
-            target=target,
-        ](
-            q_proj.to_tile_tensor[.int64](),
-            kv_collection,
-            freqs_cis.to_tile_tensor[.int64](),
-            layer_idx,
-            valid_lengths.to_tile_tensor[.int64](),
-            output.to_tile_tensor[.int64](),
-            context,
-        )
-
-
 @extensibility.register("mo.mha.padded.paged")
 struct Struct_mha_padded_paged:
     """Registers the `mo.mha.padded.paged` graph op with the graph compiler."""
@@ -2789,7 +2743,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
         )
 
         # Get the q_scales raw pointer for per-token Q scaling.
-        var q_scale_ptr = q_scales.to_layout_tensor().ptr
+        var q_scale_ptr = q_scales.unsafe_ptr()
 
         generic_flare_mla_decode_kv_cache_ragged[
             target=target,
@@ -3291,16 +3245,16 @@ struct Struct_mla_decode_graph_paged_fp8_sparse:
         var num_indices_sparse = sparse_indices.size()
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.to_layout_tensor().ptr
+            topk_lengths.unsafe_ptr()
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
         # `sparse_indices` still holds the logical key positions here; the
         # remap below produces the physical gather buffer and drops them.
         # Capture them for position-based causal masking (see
         # mla_decode_utils.mojo).
-        var logical_indices_ptr = sparse_indices.to_layout_tensor().ptr
+        var logical_indices_ptr = sparse_indices.unsafe_ptr()
 
         with Trace[TraceLevel.OP, target=target](
             "mo.mla.graph.decode.paged.fp8.sparse",
@@ -3593,10 +3547,10 @@ struct Struct_mla_decode_graph_bf16_paged_sparse:
         var num_indices_sparse = sparse_indices.size()
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.to_layout_tensor().ptr
+            topk_lengths.unsafe_ptr()
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         with Trace[TraceLevel.OP, target=target](
@@ -3842,10 +3796,10 @@ struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
         var num_indices_sparse = sparse_indices.size()
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.to_layout_tensor().ptr
+            topk_lengths.unsafe_ptr()
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         with Trace[TraceLevel.OP, target=target](
@@ -3963,7 +3917,7 @@ struct Struct_mla_prefill_sparse_paged:
         var num_indices_sparse = sparse_indices.size()
 
         var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
@@ -4002,7 +3956,7 @@ struct Struct_mla_prefill_sparse_paged:
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.to_layout_tensor().ptr.bitcast[UInt32](),
+                topk_lengths.unsafe_ptr().bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 
@@ -4075,11 +4029,11 @@ struct Struct_mla_prefill_sparse_paged_fp8:
         var num_indices_sparse = sparse_indices.size()
 
         var attn_sink_ptr = UnsafePointer[Float32, origin=ImmutAnyOrigin](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         var scales_ptr = UnsafePointer[Float32, ImmutAnyOrigin](
-            kv_scales.to_layout_tensor().ptr
+            kv_scales.unsafe_ptr()
         )
 
         var k_cache = kv_collection.get_key_cache(Int(layer_idx))
@@ -4107,7 +4061,7 @@ struct Struct_mla_prefill_sparse_paged_fp8:
                 row_major(num_indices_sparse),
             )
             var topk_lengths_tt = TileTensor(
-                topk_lengths.to_layout_tensor().ptr.bitcast[UInt32](),
+                topk_lengths.unsafe_ptr().bitcast[UInt32](),
                 row_major(Int(topk_lengths.dim_size(0))),
             )
 
@@ -4294,10 +4248,10 @@ struct Struct_mla_prefill_graph_decode_paged_sparse:
         var num_indices_sparse = sparse_indices.size()
 
         var topk_lengths_ptr = maybe_null_pointer[has_topk_lengths](
-            topk_lengths.to_layout_tensor().ptr
+            topk_lengths.unsafe_ptr()
         )
         var attn_sink_ptr = maybe_null_pointer[has_attn_sink](
-            attn_sink.to_layout_tensor().ptr
+            attn_sink.unsafe_ptr()
         )
 
         with Trace[TraceLevel.OP, target=target](
@@ -4531,6 +4485,8 @@ struct Struct_latent_sparse_attention_ragged_paged:
         //,
         window: Int,
         target: StaticString,
+        split_k: Bool = True,
+        portable_p_bf16: Bool = False,
     ](
         output: OutputTensor[dtype=q_type, rank=3, ...],
         q: InputTensor[dtype=q_type, rank=3, ...],
@@ -4570,7 +4526,12 @@ struct Struct_latent_sparse_attention_ragged_paged:
             comp_max_prompt_length,
             comp_max_cache_length,
         )
-        latent_sparse_attention_ragged_paged[target=target, window=window](
+        latent_sparse_attention_ragged_paged[
+            target=target,
+            window=window,
+            split_k=split_k,
+            portable_p_bf16=portable_p_bf16,
+        ](
             output.to_tile_tensor(),
             q.to_tile_tensor(),
             input_row_offsets.to_tile_tensor(),

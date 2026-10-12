@@ -1187,7 +1187,8 @@ LogicalResult DeclResolver::importDeclFromModule(
     SMLoc destNameLoc, bool resolveTarget) {
 
   auto modulePath = SharedState::ImportPath::fromAttr(moduleName);
-  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc);
+  ASTDecl &module =
+      shared.importModule(modulePath, currentPackage, loc, /*importer=*/&dest);
   shared.notifyListenerOnModuleImport(module, modulePath, loc);
 
   // A relative self-import written inside a package's __init__ (`from . import
@@ -1200,13 +1201,17 @@ LogicalResult DeclResolver::importDeclFromModule(
   // is still resolving; this one fires once the body is resolved but a specific
   // re-export binding inside it is being resolved on demand.
   bool selfReferential = false;
+  ASTDecl *initDecl = nullptr;
   if (auto initOrFail = bodyResolvePackageInit(module, loc);
-      succeeded(initOrFail) && *initOrFail == &dest) {
-    for (ASTDecl *d : dest.lookupInCurrentScope(sourceName))
-      if (isAlreadyProcessing(*d)) {
-        selfReferential = true;
-        break;
-      }
+      succeeded(initOrFail)) {
+    initDecl = *initOrFail;
+    if (initDecl == &dest) {
+      for (ASTDecl *d : dest.lookupInCurrentScope(sourceName))
+        if (isAlreadyProcessing(*d)) {
+          selfReferential = true;
+          break;
+        }
+    }
   }
 
   // Check to see if the module has the construct we are importing.
@@ -1244,6 +1249,15 @@ LogicalResult DeclResolver::importDeclFromModule(
     results.assign(result.getIfSuccess().begin(), result.getIfSuccess().end());
   }
   assert(!results.empty() && "other cases handled above");
+
+  // Depend on the file that defines each resolved symbol, not on everything
+  // the package re-exports.
+  for (ASTDecl *r : results)
+    shared.recordDepEdge(&dest, r);
+
+  // Also depend on the mediating package `__init__`.
+  if (initDecl && initDecl != &dest)
+    shared.recordDepEdge(&dest, initDecl);
 
   shared.notifyListenerOnRef(results, sourceName, sourceNameLoc);
   shared.notifyListenerOnRef(results, destName, destNameLoc);
@@ -1330,7 +1344,8 @@ LogicalResult DeclResolver::importWildcardDeclsFromModule(
     currentPackage = context.getIfOperation()->getParentOfType<PackageOp>();
 
   // Make sure the module has been resolved.
-  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc);
+  ASTDecl &module = shared.importModule(modulePath, currentPackage, loc,
+                                        /*importer=*/&context);
   if (failed(resolveBody(module, loc)))
     return failure();
 
@@ -1748,21 +1763,32 @@ void DeclResolver::resolveAllReferencedFrom(ASTDecl &decl,
 
   // Erase unresolved operations from source.
   if (eraseUnparsedDecls) {
+    // Several decls can share one operation, so collect before erasing:
+    // erasing inside the walk leaves the aliases dangling.
+    llvm::SmallPtrSet<Operation *, 8> opsToErase;
     for (ASTDecl *decl : parsedDeclList) {
-      // During trait body resolution we create decls that point to parent
-      // trait decl's FnOps. In order to avoid double frees later on in this
-      // loop bail early if we come across such a decl.
+      // Trait-body decls alias their parent trait's FnOps. Such a decl must not
+      // drive the erase, but is still nulled below.
       if (decl->getCursor().isInvalid())
         continue;
       if (decl->resolvedness == DeclResolvedness::unparsed &&
-          !decl->loadedFromBytecode)
+          !decl->loadedFromBytecode) {
         if (Operation *op = decl->getIfOperation()) {
-          if (!isa<UnresolvedImportOp>(op)) {
-            op->erase();
-            decl->setIRValue(nullptr);
-          }
+          if (!isa<UnresolvedImportOp>(op))
+            opsToErase.insert(op);
         }
+      }
     }
+
+    // Compares pointers without dereferencing: a decl may already hold a stale
+    // operation by this point.
+    for (ASTDecl *decl : parsedDeclList) {
+      if (opsToErase.contains(decl->getIfOperation()))
+        decl->setIRValue(nullptr);
+    }
+
+    for (Operation *op : opsToErase)
+      op->erase();
 
     // Erase from-import placeholders that resolved to a submodule and were
     // superseded by an ImportOp (see importDeclFromModule). This runs
@@ -2017,9 +2043,9 @@ void DeclResolver::exportMain(ASTDecl &funcDecl) {
   }
 
   // Utility for resolving a decl within the Startup module.
-  ASTDecl &startupModule =
-      shared.importModule({"std", "builtin", "_startup"},
-                          /*currentPackage=*/nullptr, funcDecl.getLoc());
+  ASTDecl &startupModule = shared.importModule(
+      {"std", "builtin", "_startup"}, /*currentPackage=*/nullptr,
+      funcDecl.getLoc(), /*importer=*/&funcDecl);
   auto resolveStartDecl = [&](StringRef name) -> ASTDecl * {
     auto result = shared.lookupAndResolveDecl(
         name, funcDecl.getLoc(), startupModule, /*searchParentScopes=*/false);

@@ -108,6 +108,9 @@ def main() raises:
         comptime assert info.name == "wombat42"
     elif expect == "error_default_accelerator":
         # CHECK-INVALID-default_accelerator: GPU architecture 'wombat42' is not supported.
+        # CHECK-INVALID-default_accelerator: Supported GPU architectures:
+        # CHECK-INVALID-default_accelerator: NVIDIA: sm_52 (Maxwell)
+        # CHECK-INVALID-default_accelerator: Apple: metal:1 (M1)
         # Force resolution of `.default_accelerator` to trigger error.
         comptime assert (
             TargetAccelerator.default_accelerator.gpu_info.name != ""
@@ -116,7 +119,8 @@ def main() raises:
         # CHECK-NON-ACCELERATOR: current_accelerator() requires an accelerator compilation target, but the current compilation target is '
         # CHECK-NON-ACCELERATOR-SAME: This function is only valid in code compiled for an accelerator
         # CHECK-NON-ACCELERATOR-SAME: use `default_accelerator()` instead.
-        _ = current_accelerator()
+        comptime value = current_accelerator().is_nvidia_gpu()
+        print(value)  # keep
     elif expect == "current_accelerator_in_offload":
 
         def _is_nvidia_in_offload() -> Bool:

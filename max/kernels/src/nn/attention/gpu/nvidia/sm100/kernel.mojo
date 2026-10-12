@@ -30,17 +30,14 @@ from max.gpu.primitives.grid_controls import (
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.compute.arch.mma_nvidia_sm100 import MMASmemDescriptorPair
 from max.gpu.primitives.warp import broadcast
-from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
-    tcgen05_release_allocation_lock,
-)
 from max.gpu.memory import fence_mbarrier_init
 from max.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from layout.tma_async import RaggedTMA3DTile
+from layout import Coord
+from layout.tma_async import RaggedTMA3DTile, TMATensorTile
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config, MHA_PDL_LEVEL
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    attn_tmem_addr,
     SharedMemPointer,
     SM100TensorAccumulator,
     elect,
@@ -54,7 +51,6 @@ from nn.attention.gpu.nvidia.common import (
     OptionalPointer,
     Pack,
     PositionSummary,
-    QTMATile,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
@@ -78,6 +74,8 @@ from .mma_warp import fa4_mma
 
 
 struct SM100MHA2Q[
+    q_tile_shape: Coord,
+    q_desc_shape: Coord,
     KVLUTType: MHAOperand,
     output_type: DType,
     MaskType: MHAMask,
@@ -95,6 +93,9 @@ struct SM100MHA2Q[
     Bundles the comptime tile configuration, TMA operand types, and warp-specialized dispatch (softmax, correction, load, and MMA warps) that together compute scaled dot-product attention over a KV cache. When the configuration admits a type-compatible one-query (1Q) variant, short sequences are routed to the cheaper 1Q body at runtime.
 
     Parameters:
+        q_tile_shape: Flat `Coord` tile shape for the Q tensor (rank is
+            derived from this value; rank-3 prefill or rank-4 fused-GQA).
+        q_desc_shape: Flat `Coord` descriptor shape for the Q tensor.
         KVLUTType: MHA operand describing the KV cache lookup table and dtype.
         output_type: Output dtype of the attention result.
         MaskType: Causal or unmasked attention mask type.
@@ -231,16 +232,16 @@ struct SM100MHA2Q[
 
     # TMA-op types as seen by `kernel`/`_kernel_impl`. Defined once so the 2Q
     # signatures and the 1Q-variant rebinds (see `kernel`) share a single
-    # definition.
-    comptime QTMAOpType = QTMATile[
+    # definition. The Q-tile shape is threaded in as inferred `Coord` params
+    # (`q_tile_shape`/`q_desc_shape`) so the struct supports BOTH the rank-3
+    # prefill shape (`fuse_gqa=False`) and the rank-4 fused-GQA decoding shape
+    # (`fuse_gqa=True`) without an in-struct Coord ternary (KGEN does not fold
+    # those). Dispatch picks the alias (`q_tma_prefill` or `q_tma_fused`) and
+    # passes its tile/desc shapes here.
+    comptime QTMAOpType = TMATensorTile[
         Self.KVLUTType.dtype,
-        Self.config.swizzle_mode,
-        BM=Self.config.BM // Self.config.num_q,
-        depth=Self.config.qk_depth,
-        group=Self.config.group,
-        decoding=False,
-        fuse_gqa=Self.fuse_gqa,
-        num_qk_stages=Self.config.num_qk_stages,
+        Self.q_tile_shape,
+        Self.q_desc_shape,
     ]
     comptime KTMAOpType = KVTMATile[
         Self.KVLUTType.dtype,
@@ -371,6 +372,8 @@ struct SM100MHA2Q[
 
         comptime if Self.config.can_switch_to_1q():
             comptime Kernel1Q = SM100MHA2Q[
+                Self.q_tile_shape,
+                Self.q_desc_shape,
                 Self.KVLUTType,
                 Self.output_type,
                 Self.MaskType,
@@ -458,8 +461,8 @@ struct SM100MHA2Q[
         # (`launch_smem_used()`), so it must be at least the real
         # `SM100AttentionSMem` byte footprint that the kernel actually writes.
         # Under-reserving (smem_used < smem_size) is an out-of-bounds __shared__
-        # write bug (the trailing mbar / tmem_addr regions overflow the carveout
-        # on init); over-reserving is safe. Equality is not required: the 2Q
+        # write bug (the trailing mbar region overflows the carveout on init);
+        # over-reserving is safe. Equality is not required: the 2Q
         # fused-KV path legitimately over-reserves a few bytes.
         comptime assert (
             Self.config.smem_used >= Self.SmemType.smem_size()
@@ -526,30 +529,17 @@ struct SM100MHA2Q[
         )
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        # Range-led nest (like the `warp_idx < 8 / < 12 / == 13 / == 12` dispatch
-        # below) rather than a flat `== 0 / == 1 / == 2` chain: three contiguous
-        # equality cases get lowered by ptxas to a constant-memory jump table
-        # (`LDC c[0x2]` + `BRX`) in the 2Q kernel (which inlines both the 1Q and 2Q
-        # bodies); leading with `< 2` keeps every level to <= 2 equality cases so the
-        # prologue dispatch stays a uniform predicate-branch chain. Same warp -> task
-        # mapping: warp 0 inits barriers, warp 1 allocates TMEM, warp 2 prefetches TMA.
-        if warp_idx < 2:
-            if warp_idx == 0:
-                # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
-                misc_mbars.init(lane_idx=Int32(thread_idx.x))
-                # BLASST: zero the skip-vote region ("don't skip") before it's
-                # published CTA-wide; the peel writes no vote, so this makes the
-                # peel's P@V never skip.
-                comptime if Self.SmemType.blasst_vote_slots > 0:
-                    var blasst_vote = smem.blasst_vote_smem()
-                    var blasst_lane = UInt32(thread_idx.x)
-                    if blasst_lane < UInt32(Self.SmemType.blasst_vote_slots):
-                        blasst_vote[blasst_lane] = UInt8(0)
-            else:  # warp_idx == 1
-                tcgen05_alloc[Int32(Self.cta_group)](
-                    smem.tmem_addr_ptr(),
-                    UInt32(Self.config.sm100_tmem_cols),
-                )
+        if warp_idx == 0:
+            # Initialize all barriers (S/C/order/Q1Sync/K/V/O) in one call
+            misc_mbars.init(lane_idx=Int32(thread_idx.x))
+            # BLASST: zero the skip-vote region ("don't skip") before it's
+            # published CTA-wide; the peel writes no vote, so this makes the
+            # peel's P@V never skip.
+            comptime if Self.SmemType.blasst_vote_slots > 0:
+                var blasst_vote = smem.blasst_vote_smem()
+                var blasst_lane = UInt32(thread_idx.x)
+                if blasst_lane < UInt32(Self.SmemType.blasst_vote_slots):
+                    blasst_vote[blasst_lane] = UInt8(0)
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -575,15 +565,9 @@ struct SM100MHA2Q[
         else:
             barrier()
 
-        # Read the TMEM base from SMEM EXACTLY ONCE here, post-barrier (the
-        # alloc on warp 1 + this barrier publish it), and carry it by register
-        # to every consumer (fa4_softmax / fa4_correction / fa4_mma). Mirrors
-        # the depth-512 fix: the consumers must NOT re-read
-        # `smem.tmem_addr_ptr()` in their bodies, because an in-body slot reload
-        # gated only on a pipeline barrier (not the alloc publish) can observe a
-        # stale/pre-alloc value under SM co-residency and feed a garbage TMEM
-        # operand to `UTCHMMA`. Same published value -> single-shot bit-identical.
-        var tmem_addr: UInt32 = smem.tmem_addr_ptr()[]
+        # Read the TMEM base once and carry it by register to every consumer
+        # (fa4_softmax / fa4_correction / fa4_mma).
+        var tmem_addr = attn_tmem_addr[cluster_size=Self.cluster_size]()
 
         # Programmatic Dependent Launch (PDL).  This is the only point every
         # thread of every CTA reaches before the warp-specialized early
@@ -591,8 +575,8 @@ struct SM100MHA2Q[
         # fall through), so it is the only divergence-free place to honor the
         # contract that *every* CTA signal launch-dependents — otherwise a
         # back-to-back consumer grid's `wait` hangs (see MLA decode).  The
-        # data-independent prologue above (barrier init, tmem alloc, TMA
-        # descriptor prefetch) overlaps the predecessor grid's tail; `wait`
+        # data-independent prologue above (barrier init, TMA descriptor
+        # prefetch) overlaps the predecessor grid's tail; `wait`
         # fences here before the data-dependent Q/K/V loads in `fa4_load`;
         # `launch` lets the successor grid's prologue overlap our compute.
         comptime if MHA_PDL_LEVEL > PDLLevel.OFF:
@@ -741,7 +725,12 @@ struct SM100MHA2Q[
                     )
                     comptime if not Self.pair_cta:
                         fa4_load[
-                            Self.config,
+                            q_tile_shape=Self.q_tile_shape,
+                            q_desc_shape=Self.q_desc_shape,
+                            KVLUTType=Self.KVLUTType,
+                            MaxSeqLenType=Self.MaxSeqLenType,
+                            MaskType=Self.MaskType,
+                            config=Self.config,
                             ValidLengthType=Self.ValidLengthType,
                             _is_cache_length_accurate=Self._is_cache_length_accurate,
                             is_leader=True,
@@ -764,7 +753,12 @@ struct SM100MHA2Q[
                         var cta_rank = block_rank_in_cluster() % 2
                         if cta_rank == 0:
                             fa4_load[
-                                Self.config,
+                                q_tile_shape=Self.q_tile_shape,
+                                q_desc_shape=Self.q_desc_shape,
+                                KVLUTType=Self.KVLUTType,
+                                MaxSeqLenType=Self.MaxSeqLenType,
+                                MaskType=Self.MaskType,
+                                config=Self.config,
                                 ValidLengthType=Self.ValidLengthType,
                                 _is_cache_length_accurate=Self._is_cache_length_accurate,
                                 is_leader=True,
@@ -783,7 +777,12 @@ struct SM100MHA2Q[
                             )
                         else:
                             fa4_load[
-                                Self.config,
+                                q_tile_shape=Self.q_tile_shape,
+                                q_desc_shape=Self.q_desc_shape,
+                                KVLUTType=Self.KVLUTType,
+                                MaxSeqLenType=Self.MaxSeqLenType,
+                                MaskType=Self.MaskType,
+                                config=Self.config,
                                 ValidLengthType=Self.ValidLengthType,
                                 _is_cache_length_accurate=Self._is_cache_length_accurate,
                                 is_leader=False,
@@ -806,10 +805,6 @@ struct SM100MHA2Q[
 
                 comptime if not cluster_discipline:
                     if not seq_info.is_valid():
-                        tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                        tcgen05_dealloc[Int32(Self.cta_group)](
-                            tmem_addr, UInt32(Self.config.sm100_tmem_cols)
-                        )
                         return
                 var execute: Bool = seq_info.is_valid()
                 comptime if Self.pair_cta:
@@ -847,23 +842,16 @@ struct SM100MHA2Q[
                 warpgroup_reg_dealloc[24]()
 
         # Cluster discipline (pair-CTA or 1Q split-K): a terminal cluster_sync
-        # before dealloc so no CTA exits and breaks the cluster while a peer's
+        # so no CTA exits and breaks the cluster while a peer's
         # cross-CTA access is still in flight. Pair-CTA protects cluster-scoped
         # stmatrix; 1Q split-K protects the DSMEM peer reads of this CTA's smem
         # (M4 combine) -- it is now the SOLE cluster-wide fence guarding those
         # reads (the combine dropped its in-helper round-2 barrier by packing the
         # bf16 output into each partition's OWN-band dead f32 slice, which no peer
         # reads). All early returns above were converted to fall-through so every
-        # thread reaches this sync point. TMEM dealloc is deferred here (out of
-        # the warp bodies) for the same reason.
+        # thread reaches this sync point.
         comptime if cluster_discipline:
             cluster_sync()
-
-            if warp_idx == 0:
-                tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
-                tcgen05_dealloc[Int32(Self.cta_group)](
-                    tmem_addr, UInt32(Self.config.sm100_tmem_cols)
-                )
 
     @staticmethod
     @inline(.always)

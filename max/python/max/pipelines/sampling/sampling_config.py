@@ -50,12 +50,21 @@ _CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
 # in ``PipelineConfig._resolve_default_structured_output_backend`` and
 # ``StructuredOutputHelper.from_tokenizer``.
 DEFAULT_STRUCTURED_OUTPUT_BACKEND = "xgrammar"
+"""Structured-output backend used when neither the user nor the resolved
+architecture specifies one. Single source of truth for the fallback in
+``PipelineConfig._resolve_default_structured_output_backend`` and
+``StructuredOutputHelper.from_tokenizer``.
+"""
 
 # Global default for whitespace-tolerant structured-output grammars, used when
 # neither the user nor the resolved architecture specifies one. False (compact
 # JSON, no whitespace between tokens) is the Gemma-4 runaway mitigation from
 # 0c57a6bd331; flipping it is a product decision, not a per-model tweak.
 DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE = False
+"""Whether whitespace-tolerant structured-output grammars are on by default,
+used when neither the user nor the resolved architecture specifies one. The
+off default produces compact JSON with no whitespace between tokens.
+"""
 
 
 class ToolCallPolicy(str, Enum):

@@ -59,6 +59,9 @@ def _make_self(
         ),
         kv_cache=kv_cache,
         prefill_reqs_per_replica=[0],
+        # JOIN is off here; the real method returns immediately. The
+        # unbound call still looks the attribute up on this fake.
+        _record_ttft_hop=lambda *_args, **_kwargs: None,
         _send_admitted_request_to_prefill=MagicMock(),
     )
 
@@ -135,5 +138,5 @@ def test_requeued_request_is_readmitted_after_cached_prefix_eviction() -> None:
     assert not self_obj.pending_reqs
     assert ctx.tokens.processed_length == 0
     assert ctx.tokens.active_length == len(ctx.tokens)
-    assert len(kv_cache.get_req_blocks(ctx)) == 5
+    assert kv_cache.num_req_blocks(ctx) == 5
     kv_cache.release(evictor)

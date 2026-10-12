@@ -86,10 +86,18 @@ class TestMatmulRule:
 
     def test_batch_sharded_lhs_only(self) -> None:
         """[B, M, K] x [B, K, N] with S(batch=0) on lhs, R on rhs."""
-        lhs = _layout(M(MESH_1D, S(0)), (2, 4, 8))
-        rhs = _layout(M(MESH_1D, R), (2, 8, 6))
+        lhs = _layout(M(MESH_1D, S(0)), (8, 4, 8))
+        rhs = _layout(M(MESH_1D, R), (8, 8, 6))
         _, (out,) = pick(matmul_rule, lhs, rhs)
         assert out.placements == (S(0),)
+
+    def test_batch_too_small_to_shard_rhs(self) -> None:
+        lhs = _layout(M(MESH_1D, S(0)), (2, 4, 8))
+        rhs = _layout(M(MESH_1D, R), (2, 8, 6))
+        args, (out,) = pick(matmul_rule, lhs, rhs)
+        assert args[0].placements == (R,)
+        assert args[1].placements == (R,)
+        assert out.placements == (R,)
 
     # -- Bilinear: P x R -> P, R x P -> P --------------------------------
 
@@ -127,12 +135,20 @@ class TestMatmulRule:
 
     def test_sharded_partial_picks_dp_with_allreduce(self) -> None:
         """S(M=0) x P: picker keeps lhs sharded, allreduces P->R on rhs (cheaper than allgather lhs)."""
-        lhs = _layout(M(MESH_1D, S(0)), (4, 8))
+        lhs = _layout(M(MESH_1D, S(0)), (32, 8))
         rhs = _layout(M(MESH_1D, P), (8, 6))
         args, (out,) = pick(matmul_rule, lhs, rhs)
         assert args[0].placements == (S(0),)
         assert args[1].placements == (R,)
         assert out.placements == (S(0),)
+
+    def test_small_sharded_lhs_is_cheaper_to_gather(self) -> None:
+        lhs = _layout(M(MESH_1D, S(0)), (4, 8))
+        rhs = _layout(M(MESH_1D, P), (8, 6))
+        args, (out,) = pick(matmul_rule, lhs, rhs)
+        assert args[0].placements == (R,)
+        assert args[1].placements == (P,)
+        assert out.placements == (P,)
 
     def test_s_k_lhs_replicated_rhs_picks_row_tp(self) -> None:
         """S(K) x R: cost model picks row-TP for free (R->S(K_rhs=0) is local slice)."""

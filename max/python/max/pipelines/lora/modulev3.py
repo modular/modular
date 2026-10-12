@@ -597,7 +597,7 @@ class _LoRAFanoutModel(Module[..., Tensor]):
 class LoRATargetModule:
     """One wrappable projection module and the PEFT projections it fuses.
 
-    ``path`` is the module's location within a decoder layer (e.g.
+    ``path`` is the module's location within a decoder layer (such as
     ``self_attn.qkv``); ``projections`` are the PEFT projection names it covers,
     in fused order -- ``("q_proj", "k_proj", "v_proj")`` for a fused qkv, or a
     single name like ``("o_proj",)``. A per-arch tuple of these is the single
@@ -659,7 +659,7 @@ def _slot_peft_keys(
     ``[layers.3.self_attn.{q,k,v}_proj.lora_A.weight]`` and
     ``...layers.3.self_attn.o_proj.lora_b`` ->
     ``[layers.3.self_attn.o_proj.lora_B.weight]``. The emitted key reuses the
-    namespace matched in the slot (e.g. ``single_transformer_blocks.5`` for
+    namespace matched in the slot (such as ``single_transformer_blocks.5`` for
     FLUX.2), so ``layer_prefixes`` selects the arch's block namespaces.
 
     Args:
@@ -706,8 +706,8 @@ def _fuse_projections_for_lora(
 
     For a ``stacked`` target, the checkpoint's per-projection weights (siblings
     under the target's parent path) concatenate on the output axis into the
-    target's single pre-fused weight. A name-transparent target (the default,
-    e.g. a ``stacked=False``
+    target's single pre-fused weight. A name-transparent target (the default;
+    for example, a ``stacked=False``
     :class:`~max.experimental.nn.common_layers.linear.QKVLinear`) keeps its
     separate per-projection children, so its base weights pass through unchanged
     under their native names -- concatenating them would drop the ``q_proj`` /

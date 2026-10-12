@@ -64,7 +64,7 @@ from nn.conv.conv_transpose import (
     pack_filter_shape as pack_filter_shape_conv_transpose,
 )
 from nn.fold import fold, fold_shape
-from nn.gather_scatter import normalize_neg_index
+from nn.gather_scatter import apply_packed_bitmask, normalize_neg_index
 from nn.irfft import irfft
 from nn.kv_cache import (
     generic_get_paged_cache,
@@ -102,7 +102,11 @@ from nn.rand_uniform import keyed_uniform, random_uniform
 from nn.repeat_interleave import repeat_interleave, repeat_interleave_shape
 from nn.roi_align import roi_align_nhwc
 from nn.rope import rope_ragged
-from nn.sampling import apply_penalties_to_logits, update_frequency_data
+from nn.sampling import (
+    apply_masked_penalties_to_logits,
+    apply_penalties_to_logits,
+    update_frequency_data,
+)
 from nn.split import split
 from nn.topk import fused_token_sampling_cpu as _fused_token_sampling_cpu
 from nn.topk import fused_token_sampling_gpu as _fused_token_sampling_gpu
@@ -377,7 +381,7 @@ struct NanCheckRaiseOp:
 
 
 # ===-----------------------------------------------------------------------===#
-# View kernels
+# View op stride types
 # ===-----------------------------------------------------------------------===#
 
 
@@ -1685,7 +1689,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool, rope_first: Bool]:
         @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
+        ](idx: Coord, val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
                 cast_saturating[out_dtype](val),
@@ -1762,7 +1766,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         @inline(.always)
         def output_fn[
             width: SIMDLength, alignment: Int
-        ](idx: IndexList[3], val: SIMD[dtype, width]) {var output} -> None:
+        ](idx: Coord, val: SIMD[dtype, width]) {var output} -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
                 rebind[SIMD[dtype, width]](val),
@@ -2220,15 +2224,11 @@ struct Struct_moe_single_group_router:
             n_experts_per_tok,
             norm_weights=norm_weights,
             target=target,
-            scores_input_fn=OptionalReg[
-                def[
-                    width: Int
-                ](IndexList[2]) capturing -> SIMD[scores_type, width]
-            ](scores_input_fn),
+            scores_input_fn=scores_input_fn,
         ](
             expert_indices.to_tile_tensor[.int64](),
             expert_weights.to_tile_tensor[.int64](),
-            expert_scores.to_tile_tensor[.int64]().as_imm(),
+            expert_scores.runtime_layout(),
             expert_bias.to_tile_tensor[.int64]().as_imm(),
             routed_scaling_factor,
             context,
@@ -2935,6 +2935,52 @@ struct Struct_sampler_apply_penalties:
         )
 
 
+@extensibility.register("sampler.apply_packed_bitmask_with_penalties")
+struct Struct_sampler_apply_packed_bitmask_with_penalties:
+    """Registers `sampler.apply_packed_bitmask_with_penalties`: the packed
+    grammar mask plus presence/frequency penalties in one output, so the
+    penalties ride the mask's full pass over the logits instead of a copy.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        dtype: DType,
+        penalty_type: DType,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        logits: InputTensor[dtype=dtype, rank=2, ...],
+        packed: InputTensor[dtype=.int32, rank=2, ...],
+        fill_value: Scalar[dtype],
+        compressed_frequency_data: InputTensor[dtype=.int32, rank=2, ...],
+        frequency_offsets: InputTensor[dtype=.uint32, rank=1, ...],
+        frequency_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        presence_penalty: InputTensor[dtype=penalty_type, rank=1, ...],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_valid_target[target](), "not a valid target"
+
+        apply_packed_bitmask[target](
+            output.to_tile_tensor(),
+            logits.to_tile_tensor(),
+            packed.to_tile_tensor(),
+            fill_value,
+            ctx,
+        )
+        apply_masked_penalties_to_logits[target=target](
+            output.to_tile_tensor[.int64](),
+            packed.to_tile_tensor[.int64](),
+            compressed_frequency_data.to_tile_tensor[.int64](),
+            frequency_offsets.to_tile_tensor[.int64](),
+            frequency_penalty.to_tile_tensor[.int64](),
+            presence_penalty.to_tile_tensor[.int64](),
+            ctx,
+        )
+
+
 @extensibility.register("sampler.update_frequency_data")
 struct Struct_sampler_update_frequency_data:
     """Registers the `sampler.update_frequency_data` graph op with the graph compiler.
@@ -3030,6 +3076,14 @@ struct BundledAllReduceSum:
         this kernel handles a single GPU. The mo.parallel framework is
         responsible for launching one instance per device and passing all N
         input buffers to each launch.
+
+        Because `mo.parallel` owns the fan-out, this path does not take the
+        kernel-load gate that `_launch_device_collective` claims for a
+        distributed op's per-device enqueues. A first-time kernel load on
+        another thread can therefore interleave with these launches and
+        deadlock against the device-side barrier (MXSERV-441); the lowering
+        emits N independent async stubs, with no single point to claim the
+        gate from or release it at.
 
         Parameters:
             dtype: Element type of the input and output tensors.

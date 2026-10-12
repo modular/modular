@@ -35,7 +35,12 @@
 #     GLM-5.3 the chat template renders a missing effort as "Max", so leaving
 #     it unset asks for longer reasoning than the harness does;
 #   * no client timeout and no output-token cap, so a repetition loop runs to
-#     the server's max_length and scores 0 at any serving speed.
+#     the server's max_length and scores 0 at any serving speed;
+#   * streamed responses, as the harness always streams. A non-streaming request
+#     is silent until it finishes, so a proxy idle timeout on the path would cut
+#     exactly the long answers and Inspect would re-sample them instead of
+#     scoring them. A stream that closes without a finish_reason is retried
+#     rather than scored as a short answer.
 # The requests go to chat completions rather than the Responses API. OpenRouter
 # translates Responses into each provider's own API, so that is the request a
 # provider receives.
@@ -85,6 +90,9 @@
 #                       score you cannot attribute to a config is not
 #                       evidence.
 #   --out-dir DIR      Results directory (default: /tmp/exacto-gpqa-results).
+#   --no-stream        Send non-streaming requests (Inspect's stock openai-api
+#                       provider). Fine against a local server; differs from
+#                       the harness, which always streams.
 #   --refresh          Rebuild the harness venv from scratch.
 #   -h, --help         Show this help.
 #
@@ -143,8 +151,9 @@ reference_source=""
 serve_config=""
 out_dir="/tmp/exacto-gpqa-results"
 refresh=0
+stream=1
 
-usage() { sed -n '15,106p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '15,114p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -161,6 +170,7 @@ while [[ $# -gt 0 ]]; do
     --serve-config) serve_config="$2"; shift 2 ;;
     --out-dir) out_dir="$2"; shift 2 ;;
     --refresh) refresh=1; shift ;;
+    --no-stream) stream=0; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "error: unknown option: $1" >&2; echo "try --help" >&2; exit 1 ;;
   esac
@@ -199,13 +209,15 @@ find_module() {
   exit 1
 }
 REPORT="$(find_module exacto_report.py)"
-# The task imports exacto_gpqa_openrouter from its own directory, so both must
+# The task imports its sibling modules from its own directory, so they must all
 # resolve to the same place.
 TASK="$(find_module exacto_gpqa_task.py)"
-[[ -f "$(dirname "$TASK")/exacto_gpqa_openrouter.py" ]] || {
-  echo "ERROR: exacto_gpqa_openrouter.py is not next to $TASK" >&2
-  exit 1
-}
+for sibling in exacto_gpqa_openrouter.py exacto_streaming.py; do
+  [[ -f "$(dirname "$TASK")/$sibling" ]] || {
+    echo "ERROR: $sibling is not next to $TASK" >&2
+    exit 1
+  }
+done
 
 ensure_venv() {
   local uv; uv="$(find_uv)"
@@ -363,9 +375,12 @@ mkdir -p "$out_dir"
 LOG_DIR="$out_dir/logs"
 rm -rf "$LOG_DIR"
 
+provider="openai-stream"
+[[ "$stream" == 0 ]] && provider="openai-api"
+
 args=(
   eval "$TASK@gpqa_diamond"
-  --model "openai-api/local/$model"
+  --model "$provider/local/$model"
   --epochs "$epochs"
   --max-connections "$max_connections"
   --log-format json
@@ -386,16 +401,26 @@ args=(
 [[ -n "$temperature" ]] && args+=(--temperature "$temperature")
 [[ "$reasoning_effort" != unset ]] && args+=(--reasoning-effort "$reasoning_effort")
 
-echo "[exacto] running gpqa_diamond: epochs=$epochs limit=${limit:-198(all)} temp=${temperature:-$EXPECTED_TEMPERATURE} reasoning_effort=$reasoning_effort"
+echo "[exacto] running gpqa_diamond: epochs=$epochs limit=${limit:-198(all)} temp=${temperature:-$EXPECTED_TEMPERATURE} reasoning_effort=$reasoning_effort provider=$provider"
 (
   cd "$out_dir"
   # Inspect resolves the endpoint from <SERVICE>_BASE_URL / <SERVICE>_API_KEY,
-  # where SERVICE is the middle segment of openai-api/<service>/<model>. It
+  # where SERVICE is the middle segment of <provider>/<service>/<model>. It
   # strips that segment before sending, so the server receives the bare id.
+  # Inspect resolves --model before it imports the task file, so the
+  # openai-stream provider is registered by importing exacto_streaming ahead
+  # of the CLI rather than from the task.
   env -u PYTHONPATH -u PYTHONHOME \
     LOCAL_BASE_URL="$url/v1" \
     LOCAL_API_KEY="${api_key:-dummy}" \
-    "$VENV/bin/inspect" "${args[@]}"
+    "$VENV/bin/python" -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+import exacto_streaming
+from inspect_ai._cli.main import main
+sys.argv = ["inspect"] + sys.argv[2:]
+sys.exit(main())
+' "$(dirname "$TASK")" "${args[@]}"
 )
 
 # Newest json under the (freshly cleared) log dir, so the exact filename

@@ -23,7 +23,6 @@ from max.dtype import DType
 from max.experimental.sharding import (
     ALL_TRANSITIONS,
     DEFAULT_TRANSITIONS,
-    ActionSet,
     AxisAssignment,
     DeviceMapping,
     DeviceMesh,
@@ -35,7 +34,6 @@ from max.experimental.sharding import (
     TensorLayout,
     Transition,
     auto_reshard,
-    build_action_set,
 )
 from max.experimental.sharding._auto_reshard import (
     _format_transition_set,
@@ -62,26 +60,18 @@ def message(
     names: Sequence[str] = ("x",),
     allowed: frozenset[Transition] = DEFAULT_TRANSITIONS,
     mode: Literal["warn", "raise"] = "raise",
-    fallback: bool = True,
 ) -> str:
     """Returns the report the picker raises or warns with for ``rows``."""
-    action_set = (
-        build_action_set(rows, layouts=layouts)
-        if fallback
-        else ActionSet(
-            axis_assignments=tuple(rows), layouts=layouts, mesh=layouts[0].mesh
-        )
-    )
     with auto_reshard(allowed, mode=mode):
         if mode == "warn":
             with pytest.warns(UserWarning) as record:
                 pick_reshard_action(
-                    action_set, op_name="custom_op", operand_names=names
+                    rows, layouts, op_name="custom_op", operand_names=names
                 )
             return str(record[0].message)
         with pytest.raises(ShardingError) as info:
             pick_reshard_action(
-                action_set, op_name="custom_op", operand_names=names
+                rows, layouts, op_name="custom_op", operand_names=names
             )
         return str(info.value)
 
@@ -92,7 +82,7 @@ def line_with(text: str, needle: str) -> str:
     return " ".join(line.split())
 
 
-PARTIAL_ROWS = [AxisAssignment((R,), R), AxisAssignment((S0,), S0)]
+PARTIAL_ROWS = [AxisAssignment((R,), (R,)), AxisAssignment((S0,), (S0,))]
 
 
 def test_names_the_call_and_lays_out_every_input() -> None:
@@ -130,10 +120,10 @@ def test_an_unchanged_input_keeps_its_code_in_the_cell() -> None:
         layout(mesh(2), (4, 8), S1),
         layout(mesh(2), (8, 16), R),
         rows=[
-            AxisAssignment((R, R), R),
-            AxisAssignment((S0, R), S0),
-            AxisAssignment((R, S1), S1),
-            AxisAssignment((S1, S0), P),
+            AxisAssignment((R, R), (R,)),
+            AxisAssignment((S0, R), (S0,)),
+            AxisAssignment((R, S1), (S1,)),
+            AxisAssignment((S1, S0), (P,)),
         ],
         names=("lhs", "rhs"),
     )
@@ -149,7 +139,7 @@ def test_an_unchanged_input_keeps_its_code_in_the_cell() -> None:
 def test_a_2d_mesh_gets_one_block_per_axis() -> None:
     text = message(
         layout(mesh(2, 2), (16, 16), P, P),
-        rows=[AxisAssignment((R,), R), AxisAssignment((S0,), S0)],
+        rows=[AxisAssignment((R,), (R,)), AxisAssignment((S0,), (S0,))],
     )
     lines = text.splitlines()
     dp = next(i for i, l in enumerate(lines) if l.startswith('  "dp"'))
@@ -170,14 +160,16 @@ def test_tells_the_user_both_ways_out() -> None:
 
 
 def test_no_cheaper_row_means_no_widening_hint() -> None:
-    text = message(layout(mesh(4), (1024,), P), rows=[AxisAssignment((R,), R)])
+    text = message(
+        layout(mesh(4), (1024,), P), rows=[AxisAssignment((R,), (R,))]
+    )
     assert "ALL_TRANSITIONS" not in text
 
 
 def test_a_narrowed_region_is_told_what_to_add() -> None:
     text = message(
         layout(mesh(4), (1024,), P),
-        rows=[AxisAssignment((R,), R)],
+        rows=[AxisAssignment((R,), (R,))],
         allowed=frozenset({(Sharded, Replicated)}),
     )
     assert (
@@ -195,40 +187,24 @@ def test_a_narrowed_region_is_told_what_to_add() -> None:
 
 
 def test_a_single_device_input_shows_its_own_mesh() -> None:
-    """Its placement is its mapping's, and landing on the op's mesh is a transfer."""
+    """Its placement is its own mapping's, and the pick never moves it."""
     text = message(
-        layout(mesh(2), (16,), S0),
+        layout(mesh(2), (16,), P),
         layout(DeviceMesh.single(CPU()), (16,), R),
-        rows=[AxisAssignment((S0, R), S0)],
+        rows=[AxisAssignment((R, R), (R,))],
         names=("x", "w"),
     )
     assert "  w      : float32[16]@cpu:0" in text
-    chosen = line_with(text, "chosen")
-    assert "x{S0} w{R} -> S0 cross_mesh_transfer(w)" in chosen
-    assert chosen.endswith("chosen, reshards w")
-    assert "  w = transfer_to(w, DeviceMapping(mesh, (R,)))" in text
-
-
-def test_a_cross_mesh_input_is_named_as_resharded() -> None:
-    text = message(
-        layout(mesh(2), (16,), R),
-        layout(DeviceMesh((CPU(), CPU()), (2,), ("dp",)), (16,), R),
-        rows=[AxisAssignment((R, R), R)],
-        names=("x", "w"),
-        mode="warn",
-    )
-    assert text.startswith("\ncustom_op(x, w) reshards w")
-    assert "cross_mesh_transfer(w)" in line_with(text, "chosen")
-    assert '  w      : float32[16]@mesh(dp=2){"dp":R}' in text
+    assert "x{P->R} w{R} -> R allreduce(x)" in line_with(text, "chosen")
+    assert "w = transfer_to" not in text
 
 
 def test_an_axis_with_no_allowed_row_still_constrains_the_next() -> None:
     """The suggested transfer_to must be reachable: extent 2 fits one axis."""
     text = message(
         layout(mesh(2, 2), (2, 16), R, R),
-        rows=[AxisAssignment((S0,), S0), AxisAssignment((S1,), S1)],
+        rows=[AxisAssignment((S0,), (S0,)), AxisAssignment((S1,), (S1,))],
         allowed=frozenset({(Partial, Replicated)}),
-        fallback=False,
     )
     assert (
         "  x = transfer_to(x, DeviceMapping(mesh, (Sharded(0), Sharded(1))))"

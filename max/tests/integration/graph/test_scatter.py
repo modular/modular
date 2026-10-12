@@ -14,12 +14,21 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 from max.driver import Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
+from max.graph import (
+    DevicePlacementPolicy,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    ops,
+)
 
 device_ref = DeviceRef.GPU() if accelerator_count() > 0 else DeviceRef.CPU()
 
@@ -53,12 +62,14 @@ def test_scatter(
 ) -> None:
     input_np = np.array(input, dtype=np.float32)
     input_type = TensorType(DType.float32, input_np.shape, device_ref)
-    with Graph("scatter", input_types=[input_type]) as graph:
-        input_val = ops.transfer_to(graph.inputs[0].tensor, DeviceRef.CPU())
-        updates_val = ops.constant(
-            updates, DType.float32, device=DeviceRef.CPU()
-        )
-        indices_val = ops.constant(indices, DType.int32, device=DeviceRef.CPU())
+    with Graph(
+        "scatter",
+        input_types=[input_type],
+        strict_device_placement=DevicePlacementPolicy.Error,
+    ) as graph:
+        input_val = graph.inputs[0].tensor
+        updates_val = ops.constant(updates, DType.float32, device=device_ref)
+        indices_val = ops.constant(indices, DType.int32, device=device_ref)
         out = ops.scatter(input_val, updates_val, indices_val, axis)
         graph.output(out)
 
@@ -235,11 +246,10 @@ _SCATTER_REDUCE_OPS = [
 def test_scatter_reduce_parallel_duplicate_indices(
     session: InferenceSession,
 ) -> None:
-    """The scatter-elements reduce ops run on CPU and split their updates
-    across worker threads once the update count exceeds the elementwise
-    grain size (32768); duplicate indices must still reduce atomically.
-    100k updates collide on 8 target rows; values keep each reduction exact
-    in float32 in any application order, so each result must match the
+    """Duplicate indices must reduce atomically: 100k updates collide on 8
+    target rows, which on CPU exceeds the elementwise grain size (32768) and
+    on GPU spreads across thousands of threads. Values keep each reduction
+    exact in float32 in any application order, so each result must match the
     serial numpy reference exactly. All four reduce ops share one graph so
     the test compiles once.
     """
@@ -254,18 +264,20 @@ def test_scatter_reduce_parallel_duplicate_indices(
         for _, np_reduce in _SCATTER_REDUCE_OPS
     ]
 
-    input_type = TensorType(DType.float32, input_array.shape, DeviceRef.CPU())
-    with Graph("scatter_reduce_dup", input_types=[input_type]) as graph:
+    input_type = TensorType(DType.float32, input_array.shape, device_ref)
+    with Graph(
+        "scatter_reduce_dup",
+        input_types=[input_type],
+        strict_device_placement=DevicePlacementPolicy.Error,
+    ) as graph:
         input_val = graph.inputs[0].tensor
-        indices = ops.constant(
-            indices_data, DType.int32, device=DeviceRef.CPU()
-        )
+        indices = ops.constant(indices_data, DType.int32, device=device_ref)
         graph.output(
             *(
                 op(
                     input_val,
                     ops.constant(
-                        updates_data, DType.float32, device=DeviceRef.CPU()
+                        updates_data, DType.float32, device=device_ref
                     ),
                     indices,
                     axis=0,
@@ -291,24 +303,92 @@ def test_scatter_reduce_parallel_duplicate_indices(
         )
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="requires a GPU to test device check"
+def _put_along_axis(
+    np_reduce: np.ufunc | None,
+    input: np.ndarray,
+    updates: np.ndarray,
+    indices: np.ndarray,
+    axis: int,
+) -> np.ndarray:
+    """Serial numpy reference for ``ops.scatter*`` along ``axis``."""
+    out = input.copy()
+    for pos in np.ndindex(indices.shape):
+        target = list(pos)
+        target[axis] = int(indices[pos])
+        if np_reduce is None:
+            out[tuple(target)] = updates[pos]
+        else:
+            out[tuple(target)] = np_reduce(out[tuple(target)], updates[pos])
+    return out
+
+
+@pytest.mark.parametrize(
+    "op,np_reduce",
+    [(ops.scatter, None), *_SCATTER_REDUCE_OPS],
+    ids=lambda v: getattr(v, "__name__", None),
 )
-def test_scatter_raises_on_gpu() -> None:
-    """ops.scatter raises ValueError at graph construction time on GPU input."""
-    with pytest.raises(ValueError, match=r"ops\.scatter"):
-        with Graph(
-            "scatter_gpu",
-            input_types=[
-                TensorType(DType.float32, [4, 2], device=DeviceRef.GPU())
-            ],
-            strict_device_placement=DevicePlacementPolicy.Error,
-        ):
-            input_val = Graph.current.inputs[0].tensor
-            updates = ops.constant(
-                [[1.1, 2.2], [3.3, 4.4]], DType.float32, device=DeviceRef.GPU()
-            )
-            indices = ops.constant(
-                [[0, 1], [3, 2]], DType.int32, device=DeviceRef.GPU()
-            )
-            ops.scatter(input_val, updates, indices, axis=0)
+@pytest.mark.parametrize("axis", [1, -1, -3])
+def test_scatter_family_stays_on_device(
+    session: InferenceSession,
+    op: Callable[..., TensorValue],
+    np_reduce: np.ufunc | None,
+    axis: int,
+) -> None:
+    """Every ``ops.scatter*`` builds under ``DevicePlacementPolicy.Error``
+    on the input's device (no implicit transfer) and matches numpy, with
+    negative axes, negative indices, and prime sizes. Overwrite indices are
+    distinct per slice; the reductions see duplicates.
+    """
+    input_shape = (5, 7, 11)
+    updates_shape = (3, 5, 7)
+    rng = np.random.default_rng(seed=abs(axis))
+    input_array = rng.integers(-8, 8, size=input_shape).astype(np.float32)
+    updates_data = rng.integers(-8, 8, size=updates_shape).astype(np.float32)
+    if np_reduce is np.multiply:
+        updates_data = rng.choice([0.5, 1.0, 2.0], size=updates_shape).astype(
+            np.float32
+        )
+    norm_axis = axis % len(input_shape)
+    dim = input_shape[norm_axis]
+    coords = np.indices(updates_shape)
+    if np_reduce is None:
+        # 3 is coprime with every axis size, so for fixed other coordinates
+        # this maps the updates along the axis to distinct positions.
+        other = coords.sum(axis=0) - coords[norm_axis]
+        indices_data = (coords[norm_axis] * 3 + other) % dim
+    else:
+        indices_data = coords.sum(axis=0) % 2
+    # Negative indices address the same positions from the end.
+    indices_data = np.where(
+        rng.random(size=updates_shape) < 0.5, indices_data - dim, indices_data
+    ).astype(np.int64)
+
+    input_type = TensorType(DType.float32, input_shape, device_ref)
+    with Graph(
+        "scatter_family",
+        input_types=[input_type],
+        strict_device_placement=DevicePlacementPolicy.Error,
+    ) as graph:
+        result = op(
+            graph.inputs[0].tensor,
+            ops.constant(updates_data, DType.float32, device=device_ref),
+            ops.constant(indices_data, DType.int64, device=device_ref),
+            axis=axis,
+        )
+        assert result.device == device_ref
+        graph.output(result)
+
+    model = session.load(graph)
+    input_tensor = Buffer.from_numpy(input_array).to(model.input_devices[0])
+    output = model.execute(input_tensor)[0]
+    assert isinstance(output, Buffer)
+    np.testing.assert_equal(
+        output.to_numpy(),
+        _put_along_axis(
+            np_reduce,
+            input_array,
+            updates_data,
+            np.where(indices_data < 0, indices_data + dim, indices_data),
+            norm_axis,
+        ),
+    )

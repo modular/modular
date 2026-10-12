@@ -47,7 +47,6 @@ from max.gpu import barrier, lane_id, thread_idx, warp_id, WARP_SIZE
 from max.gpu.host import DeviceContext
 from max.gpu.memory import AddressSpace
 from std.memory import stack_allocation
-from std.sys import has_amd_gpu_accelerator
 from std.testing import assert_equal
 
 from structured_kernels.pipeline import ProducerConsumerPipeline
@@ -130,7 +129,7 @@ def _run_config[num_stages: Int](ctx: DeviceContext, n_items: Int) raises:
     # Exactly two warps: producer (warp 0) + consumer (warp 1).
     comptime block_dim = 2 * WARP_SIZE
 
-    comptime if has_amd_gpu_accelerator():
+    comptime if ctx.target.is_amd_gpu():
         ctx.enqueue_function[
             pingpong_kernel[num_stages, AmdCounterBackend[1, 1]]
         ](result, Int32(n_items), grid_dim=1, block_dim=block_dim)

@@ -62,6 +62,7 @@ window's candidate entry]`` -- addressed by absolute row, or ``-1``.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -86,6 +87,22 @@ from .quantization import fp8_qat_quantize, linear_for
 from .ragged import RaggedRows, WindowRows
 from .rope import apply_rope_tail, rope_for_layer
 from .sparse_attention import sparse_attention
+
+# `MAX_DSV4_LATENT_ATTN_SPLIT_K=0` runs the SM100 latent attention route with
+# one CTA per row, so no split-K partial is rounded before the combine. Read
+# once, when the graph is built.
+# TODO(dsv4-attn-core): drop once the split-K vs single-CTA A/B is ruled.
+_LATENT_ATTN_SPLIT_K = (
+    os.environ.get("MAX_DSV4_LATENT_ATTN_SPLIT_K", "1") != "0"
+)
+# `MAX_DSV4_LATENT_ATTN_PORTABLE_P_BF16=1` runs the portable latent attention
+# kernel with the attention weights rounded to bf16 before the value product,
+# isolating that one SM100 rounding. Diagnostic; read at graph build.
+# TODO(dsv4-attn-core): drop with split_k once the numerics ruling tooling is
+# no longer needed.
+_LATENT_ATTN_PORTABLE_P_BF16 = (
+    os.environ.get("MAX_DSV4_LATENT_ATTN_PORTABLE_P_BF16", "0") == "1"
+)
 
 
 def weightless_rms_normalize(x: TensorValue, eps: float) -> TensorValue:
@@ -457,6 +474,8 @@ class DeepseekV4Attention(Module):
             ops.constant(layer_comp, DType.uint32, DeviceRef.CPU()),
             scale=self.softmax_scale,
             window=self.window,
+            split_k=_LATENT_ATTN_SPLIT_K,
+            portable_p_bf16=_LATENT_ATTN_PORTABLE_P_BF16,
         )
         return ops.reshape(o, [1, t, h, d])
 

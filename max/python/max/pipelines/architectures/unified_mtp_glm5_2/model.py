@@ -56,7 +56,7 @@ def _subtree_quantized(
 
     A projection is quantized iff the checkpoint provides a ``weight_scale``
     companion for it. Used to detect the MTP layer's per-subtree quantization
-    (e.g. NVFP4 leaves the whole MTP layer in bf16, with no scales).
+    (for example, NVFP4 leaves the whole MTP layer in bf16, with no scales).
     """
     return any(
         subtree in key and key.endswith(".weight_scale")

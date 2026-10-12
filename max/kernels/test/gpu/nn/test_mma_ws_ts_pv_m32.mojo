@@ -97,7 +97,14 @@ from max.gpu.compute.arch.tcgen05 import (
     tcgen05_st,
     tcgen05_store_wait,
 )
-from layout import ComptimeInt, RowMajorLayout, TileTensor, row_major
+from layout import (
+    ComptimeInt,
+    Coord,
+    RowMajorLayout,
+    TileTensor,
+    coord,
+    row_major,
+)
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core_async import tile_layout_mn_major_typed
 from layout.tma_async import (
@@ -111,7 +118,6 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
 )
 from std.testing import assert_true
-from std.utils.index import Index, IndexList
 
 # ---------------------------------------------------------------------------
 # Compile-time constants
@@ -170,11 +176,10 @@ comptime RTOL: Float32 = 0.02
 def pv_ts_batched_kernel[
     depth: Int,
     natural_load: Bool,
-    v_tile_rank: Int,
-    v_tile_shape: IndexList[v_tile_rank],
-    v_desc_shape: IndexList[v_tile_rank],
+    v_tile_shape: Coord,
+    v_desc_shape: Coord,
 ](
-    v_tma_op: TMATensorTile[OP_TYPE, v_tile_rank, v_tile_shape, v_desc_shape],
+    v_tma_op: TMATensorTile[OP_TYPE, v_tile_shape, v_desc_shape],
     p_input: TileTensor[
         OP_TYPE,
         RowMajorLayout[ComptimeInt[MMA_M], ComptimeInt[BN_KEYS]],
@@ -456,9 +461,10 @@ def test_pv_ts_batched[
     # DEPTH_TILE depth] (kernel lands each (quarter g, depth-tile t) sub-block in
     # band g). Natural: box = whole [BN_KEYS keys, DEPTH_TILE depth] (kernel lands
     # each depth-tile region in one TMA, all keys on the k axis). ----
-    comptime v_box = Index(BN_KEYS, DEPTH_TILE) if natural_load else Index(
-        PART_KEYS, DEPTH_TILE
-    )
+    # Int-folded row count: selecting between two distinct Coord types does
+    # not fold at comptime; selecting Ints does.
+    comptime v_box_rows = BN_KEYS if natural_load else PART_KEYS
+    comptime v_box = coord[v_box_rows, DEPTH_TILE]
     p_inp.to_device()
     v_inp.to_device()
     var v_tma_op = create_tensor_tile[
@@ -470,7 +476,6 @@ def test_pv_ts_batched[
     comptime kernel = pv_ts_batched_kernel[
         depth,
         natural_load,
-        type_of(v_tma_op).rank,
         type_of(v_tma_op).tile_shape,
         type_of(v_tma_op).desc_shape,
     ]

@@ -14,7 +14,7 @@
 """QwenImage attention layers: dual-stream attention, FeedForward, and transformer block.
 
 Weight key naming follows HuggingFace diffusers conventions:
-- Attention: attn.to_q, attn.to_k, attn.to_v, attn.to_out.0, attn.add_q_proj, etc.
+- Attention: attn.to_q, attn.to_k, attn.to_v, attn.to_out.0, attn.add_q_proj, and so on
 - FeedForward: img_mlp.net.0.proj (SwiGLU), img_mlp.net.2 (output linear)
 - Modulation: img_mod.1 (Linear after SiLU), txt_mod.1
 - Norms: img_norm1, img_norm2, txt_norm1, txt_norm2 (no affine, no weights)

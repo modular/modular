@@ -232,7 +232,7 @@ class BenchmarkDataset(ABC):
                 If provided, must have length equal to num_requests.
             shuffle: Whether to shuffle the dataset before sampling. Default is True.
             pool: Optional tokenizer process pool. Required by datasets that
-                fan tokenize work out to workers (e.g. Random/Synthetic).
+                fan tokenize work out to workers (such as Random/Synthetic).
                 Datasets that don't tokenize via the pool ignore it.
             **kwargs: Additional dataset-specific parameters
 

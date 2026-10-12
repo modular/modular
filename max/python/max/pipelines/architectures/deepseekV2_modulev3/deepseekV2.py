@@ -38,6 +38,7 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.moe_gate import DeepSeekV2MoEGate
 from .layers.rotary_embedding import DeepseekYarnRotaryEmbedding
@@ -79,7 +80,7 @@ def _get_mlp(
 
 
 class DeepseekV2TextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[[Tensor, PagedCacheValues, Tensor, Tensor], ModuleV3Outputs]
 ):
     """The DeepseekV2 language model.
 
@@ -167,7 +168,7 @@ class DeepseekV2TextModel(
         kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         h = self.embed_tokens(tokens)
 
         freqs_cis = F.cast(self.rope.freqs_cis, h.dtype).to(h.device)
@@ -188,10 +189,10 @@ class DeepseekV2TextModel(
             self.lm_head(self.norm(last_token_h)),
             DType.float32,
         )
-        return (last_logits,)
+        return ModuleV3Outputs(next_token_logits=last_logits)
 
 
-class DeepseekV2(Module[..., tuple[Tensor, ...]]):
+class DeepseekV2(Module[..., ModuleV3Outputs]):
     """Top-level DeepseekV2 wrapper that unflattens variadic KV cache args."""
 
     def __init__(
@@ -210,7 +211,7 @@ class DeepseekV2(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         kv_inputs = iter(x._graph_value for x in variadic_args)
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(kv_inputs)
         kv_collections = tree.leaves(

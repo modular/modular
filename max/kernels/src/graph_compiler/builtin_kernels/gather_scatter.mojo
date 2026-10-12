@@ -39,9 +39,11 @@ from layout import (
 from layout.int_tuple import _IntTupleToCoordLike
 from layout.coord import DynamicCoord
 from layout.tile_layout import Layout as TileLayout
-from nn.concat import fused_concat, _fused_dual_concat_gpu
+from nn.concat import fused_concat
 from nn.gather_scatter import (
     Axis,
+    _atomic_add,
+    _atomic_reduce,
     ScatterOobIndexStrategy,
     apply_packed_bitmask,
     gather,
@@ -82,6 +84,7 @@ from extensibility import (
     OutputVariadicTensors,
 )
 from builtin_primitives.primitives import (
+    _dense_row_major_anchor_stride,
     foreach,
     view_copy_impl,
 )
@@ -339,7 +342,7 @@ struct ScatterNDSkipNegIndices:
         scatter_nd_generator[
             oob_index_strategy=ScatterOobIndexStrategy.SKIP,
             target=target,
-            reduce_fn=None,
+            atomic_update_fn=None,
             _trace_description="scatter_nd.skip_neg_indices",
         ](
             input.to_tile_tensor[.int64](),
@@ -364,17 +367,9 @@ struct ScatterNDAdd:
         indices: InputTensor,
         ctx: DeviceContext,
     ) raises:
-        @inline(.always)
-        def reduce_fn[
-            dtype: DType, width: SIMDLength
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-            dtype, width
-        ]:
-            return lhs + rhs
-
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_add,
             _trace_description="scatter_nd.add",
         ](
             input.to_tile_tensor[.int64](),
@@ -425,7 +420,7 @@ struct ScatterNDMul:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.mul",
         ](
             input.to_tile_tensor[.int64](),
@@ -476,7 +471,7 @@ struct ScatterNDMin:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.min",
         ](
             input.to_tile_tensor[.int64](),
@@ -527,7 +522,7 @@ struct ScatterNDMax:
 
         scatter_nd_generator[
             target=target,
-            reduce_fn=reduce_fn,
+            atomic_update_fn=_atomic_reduce[reduce_fn],
             _trace_description="scatter_nd.max",
         ](
             input.to_tile_tensor[.int64](),
@@ -622,7 +617,7 @@ struct Scatter:
     ) raises:
         check_axis_in_range[output.rank](axis)
 
-        scatter_elements(
+        scatter_elements[target=target](
             input,
             indices,
             updates,
@@ -668,15 +663,7 @@ struct ScatterAdd:
     ) raises:
         check_axis_in_range[output.rank](Int(axis))
 
-        @inline(.always)
-        def reduce_func[
-            dtype: DType, width: SIMDLength
-        ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
-            dtype, width
-        ]:
-            return lhs + rhs
-
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[target=target, atomic_update_fn=_atomic_add](
             input,
             indices,
             updates,
@@ -729,7 +716,9 @@ struct ScatterMax:
         ]:
             return max(lhs, rhs)
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,
@@ -782,7 +771,9 @@ struct ScatterMin:
         ]:
             return min(lhs, rhs)
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,
@@ -835,7 +826,9 @@ struct ScatterMul:
         ]:
             return lhs * rhs
 
-        scatter_elements[reduce_fn=reduce_func](
+        scatter_elements[
+            target=target, atomic_update_fn=_atomic_reduce[reduce_func]
+        ](
             input,
             indices,
             updates,
@@ -997,7 +990,6 @@ def broadcast_shape_fn(
 
 
 @extensibility.register("mo.static.broadcast_to")
-@extensibility.view_kernel
 struct StaticBroadcastTo:
     """Registers the `mo.static.broadcast_to` graph op with the graph compiler.
     """
@@ -1044,7 +1036,7 @@ struct StaticBroadcastTo:
         return new_strides
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         in_rank: Int,
         out_rank: Int,
@@ -1085,9 +1077,7 @@ struct StaticBroadcastTo:
         # We need the extra output_shape argument.
         # Using `z.shape` instead will prevent the compiler from fusing the kernels.
 
-        var x_view = Self.update_input_view[z._static_shape_tuple](
-            x, output_shape
-        )
+        var x_view = Self.input_view[z._static_shape_tuple](x, output_shape)
 
         view_copy_impl[
             _trace_name=_trace_name,
@@ -1096,12 +1086,11 @@ struct StaticBroadcastTo:
 
 
 @extensibility.register("mo.static.reshape")
-@extensibility.view_kernel
 struct StaticReshape:
     """Registers the `mo.static.reshape` graph op with the graph compiler."""
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         output_rank: Int,
         //,
@@ -1142,7 +1131,7 @@ struct StaticReshape:
         shape: IndexList[output_rank],
         ctx: DeviceContext,
     ) raises:
-        var view_tensor = Self.update_input_view[output._static_shape_tuple](
+        var view_tensor = Self.input_view[output._static_shape_tuple](
             input, shape
         )
 
@@ -1179,7 +1168,6 @@ def reshape_shape_fn[
 
 
 @extensibility.register("mo.transpose")
-@extensibility.view_kernel
 struct Transpose:
     """Registers the `mo.transpose` graph op with the graph compiler."""
 
@@ -1201,7 +1189,7 @@ struct Transpose:
         return {new_shape, new_stride}
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -1242,7 +1230,7 @@ struct Transpose:
         permutations: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        var view = Self.update_input_view[
+        var view = Self.input_view[
             output._static_shape_tuple, static_permutations
         ](input, permutations)
 
@@ -1288,7 +1276,6 @@ def transpose_shape_fn(
 
 
 @extensibility.register("mo.slice")
-@extensibility.view_kernel
 struct Slice:
     """Registers the `mo.slice` graph op with the graph compiler."""
 
@@ -1296,6 +1283,7 @@ struct Slice:
     def get_view_alignment[
         rank: Int,
         dtype: DType,
+        input_shape: IntTuple,
         input_strides: IntTuple,
         static_starts: IntTuple,
         static_steps: IntTuple,
@@ -1305,6 +1293,13 @@ struct Slice:
         comptime stride_types = _IntTupleToCoordLike[.int, input_strides]
         comptime start_types = _IntTupleToCoordLike[.int, static_starts]
         comptime step_types = _IntTupleToCoordLike[.int, static_steps]
+
+        # A stride that is only known at runtime still moves the pointer by a
+        # whole multiple of this one, so it bounds the alignment the same way a
+        # static stride does. 0 when nothing can be established.
+        comptime anchor = _dense_row_major_anchor_stride(
+            rank, input_shape, input_strides
+        )
 
         var alignment = input_alignment
         comptime for i in range(rank):
@@ -1320,32 +1315,46 @@ struct Slice:
                 return 1
 
             comptime if start_types[i].static_value != 0:
-                comptime if not stride_types[i].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    start_types[i].static_value
-                    * stride_types[i].static_value
-                    * align_of[dtype](),
-                )
+                comptime if stride_types[i].is_static_value:
+                    alignment = gcd(
+                        alignment,
+                        start_types[i].static_value
+                        * stride_types[i].static_value
+                        * align_of[dtype](),
+                    )
+                else:
+                    comptime if anchor == 0:
+                        return 1
+                    alignment = gcd(
+                        alignment,
+                        start_types[i].static_value
+                        * anchor
+                        * align_of[dtype](),
+                    )
 
             # Stepping along a non-innermost dimension moves the pointer by
             # `step[i] * strides[i]` elements, so that stride bounds the
             # alignment.
             comptime if i != rank - 1:
-                comptime if not stride_types[i].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    step_types[i].static_value
-                    * stride_types[i].static_value
-                    * align_of[dtype](),
-                )
+                comptime if stride_types[i].is_static_value:
+                    alignment = gcd(
+                        alignment,
+                        step_types[i].static_value
+                        * stride_types[i].static_value
+                        * align_of[dtype](),
+                    )
+                else:
+                    comptime if anchor == 0:
+                        return 1
+                    alignment = gcd(
+                        alignment,
+                        step_types[i].static_value * anchor * align_of[dtype](),
+                    )
 
         return alignment
 
     @staticmethod
-    def update_input_view[
+    def input_view[
         dtype: DType,
         rank: Int,
         //,
@@ -1374,6 +1383,7 @@ struct Slice:
                 Self.get_view_alignment[
                     rank,
                     dtype,
+                    input._static_shape_tuple,
                     input._static_strides_tuple,
                     static_starts,
                     static_steps,
@@ -1414,7 +1424,7 @@ struct Slice:
         steps: InputTensor[rank=1, ...],
         ctx: DeviceContext,
     ) raises:
-        var view_tensor = Self.update_input_view[
+        var view_tensor = Self.input_view[
             output._static_shape_tuple, static_starts, static_steps
         ](input, starts, stops, steps)
 
@@ -1747,7 +1757,7 @@ struct Concat:
             target=target,
         ](
             input_shapes,
-            output.to_tile_tensor[.int64](),
+            output.runtime_layout(),
             ctx,
         )
 
@@ -1762,321 +1772,6 @@ def concat_shape_fn[
 ) raises -> IndexList[rank]:
     """Computes the output shape for the `mo.concat` graph op."""
     return concat_shape_impl(axis, inputs)
-
-
-@extensibility.register("mo.composite.concat_slice")
-struct FusedConcatSlice:
-    """Registers the `mo.composite.concat_slice` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-        static_starts: IntTuple,
-        static_steps: IntTuple,
-        axis: Int,
-    ](
-        concat_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        slice_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
-
-        check_axis_in_range[axis, rank]()
-
-        comptime for i in range(inputs.size):
-            input_shapes[i] = inputs[i].shape()
-
-        # Copy-capture the captured tensors into the device-kernel closures.
-        # A by-reference capture leaves the GPU kernel holding host-side
-        # pointers on Metal, so it reads garbage/zeros (the concat>=4-input
-        # all-zeros bug). Copy-capture brings the device pointers into the
-        # closure.
-        @inline(.always)
-        @__parameter
-        @__copy_capture(inputs)
-        def inputs_lambda[
-            input_index: Int,
-            width: Int,
-            _rank: Int,
-            alignment: Int = 1,
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            comptime assert (
-                input_index < inputs.size
-            ), "tensor index out of bounds"
-            return inputs[input_index]._lambda_load[
-                width=width, element_alignment=alignment
-            ](rebind[IndexList[rank]](indices))
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(concat_output, slice_output)
-        def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
-            var concat_indices = rebind[IndexList[rank]](indices)
-
-            # Write to the full concat output.
-            concat_output._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                concat_indices,
-                rebind[SIMD[concat_output.dtype, width]](value),
-            )
-
-            # Check if the current position falls within the slice range.
-            # The inner dimension is guaranteed not to be sliced by the pattern,
-            # so we only check the outer rank-1 dimensions.
-            var slice_indices = IndexList[rank]()
-
-            comptime slice_in_shape = concat_output._static_shape_tuple
-            comptime slice_out_shape = slice_output._static_shape_tuple
-
-            comptime for i in range(rank):
-                comptime start = Int(static_starts[i])
-                comptime step = Int(static_steps[i])
-
-                comptime dim_not_sliced = i == rank - 1 or (
-                    start == 0
-                    and step == 1
-                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
-                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
-                )
-
-                comptime if dim_not_sliced:
-                    slice_indices[i] = concat_indices[i]
-                else:
-                    var start_norm = (
-                        start if start
-                        >= 0 else start + concat_output.dim_size[i]()
-                    )
-                    if (indices[i] - start_norm) % step != 0:
-                        return
-                    var slice_idx = (indices[i] - start_norm) // step
-                    if slice_idx < 0 or slice_idx >= slice_output.dim_size[i]():
-                        return
-                    slice_indices[i] = slice_idx
-
-            slice_output._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                slice_indices,
-                rebind[SIMD[slice_output.dtype, width]](value),
-            )
-
-        fused_concat[
-            dtype,
-            rank,
-            inputs_lambda,
-            epilogue_wrapper,
-            axis=normalize_neg_index(axis, rank),
-            target=target,
-        ](
-            input_shapes,
-            concat_output.to_tile_tensor[.int64](),
-            ctx,
-        )
-
-
-@extensibility.register("mo.dual_fused_concat_slice")
-struct DualFusedConcatSlice:
-    """Registers the `mo.dual_fused_concat_slice` graph op with the graph compiler.
-    """
-
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-        num_inputs_0: Int,
-        static_starts_0: IntTuple,
-        static_steps_0: IntTuple,
-        static_starts_1: IntTuple,
-        static_steps_1: IntTuple,
-        axis: Int,
-    ](
-        concat_output_0: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        slice_output_0: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        concat_output_1: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        slice_output_1: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
-        ctx: DeviceContext,
-    ) capturing raises:
-        comptime num_inputs_1 = inputs.size - num_inputs_0
-        check_axis_in_range[axis, rank]()
-
-        var input_shapes_0 = StaticTuple[IndexList[rank], num_inputs_0]()
-        comptime for i in range(num_inputs_0):
-            input_shapes_0[i] = inputs[i].shape()
-
-        var input_shapes_1 = StaticTuple[IndexList[rank], num_inputs_1]()
-        comptime for i in range(num_inputs_1):
-            input_shapes_1[i] = inputs[num_inputs_0 + i].shape()
-
-        # Copy-capture the captured tensors into the device-kernel closures.
-        # A by-reference capture leaves the GPU kernel holding host-side
-        # pointers on Metal, so it reads garbage/zeros. Copy-capture brings
-        # the device pointers into the closure.
-        @inline(.always)
-        @__parameter
-        @__copy_capture(inputs)
-        def inputs_lambda_0[
-            input_index: Int,
-            width: Int,
-            _rank: Int,
-            alignment: Int = 1,
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            comptime assert (
-                input_index < num_inputs_0
-            ), "concat 0: tensor index out of bounds"
-            return inputs[input_index]._lambda_load[
-                width=width, element_alignment=alignment
-            ](rebind[IndexList[rank]](indices))
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(inputs)
-        def inputs_lambda_1[
-            input_index: Int,
-            width: Int,
-            _rank: Int,
-            alignment: Int = 1,
-        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
-            comptime assert (
-                input_index < num_inputs_1
-            ), "concat 1: tensor index out of bounds"
-            return inputs[num_inputs_0 + input_index]._lambda_load[
-                width=width, element_alignment=alignment
-            ](rebind[IndexList[rank]](indices))
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(concat_output_0, slice_output_0)
-        def epilogue_0[
-            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
-            var concat_indices = rebind[IndexList[rank]](indices)
-
-            concat_output_0._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                concat_indices,
-                rebind[SIMD[concat_output_0.dtype, width]](value),
-            )
-
-            var slice_indices = IndexList[rank]()
-            comptime slice_in_shape = concat_output_0._static_shape_tuple
-            comptime slice_out_shape = slice_output_0._static_shape_tuple
-
-            comptime for i in range(rank):
-                comptime start = Int(static_starts_0[i])
-                comptime step = Int(static_steps_0[i])
-
-                comptime dim_not_sliced = i == rank - 1 or (
-                    start == 0
-                    and step == 1
-                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
-                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
-                )
-
-                comptime if dim_not_sliced:
-                    slice_indices[i] = concat_indices[i]
-                else:
-                    var start_norm = (
-                        start if start
-                        >= 0 else start + concat_output_0.dim_size[i]()
-                    )
-                    if (indices[i] - start_norm) % step != 0:
-                        return
-                    var slice_idx = (indices[i] - start_norm) // step
-                    if (
-                        slice_idx < 0
-                        or slice_idx >= slice_output_0.dim_size[i]()
-                    ):
-                        return
-                    slice_indices[i] = slice_idx
-
-            slice_output_0._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                slice_indices,
-                rebind[SIMD[slice_output_0.dtype, width]](value),
-            )
-
-        @inline(.always)
-        @__parameter
-        @__copy_capture(concat_output_1, slice_output_1)
-        def epilogue_1[
-            _dtype: DType, _rank: Int, width: SIMDLength, *, alignment: Int = 1
-        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
-            var concat_indices = rebind[IndexList[rank]](indices)
-
-            concat_output_1._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                concat_indices,
-                rebind[SIMD[concat_output_1.dtype, width]](value),
-            )
-
-            var slice_indices = IndexList[rank]()
-            comptime slice_in_shape = concat_output_1._static_shape_tuple
-            comptime slice_out_shape = slice_output_1._static_shape_tuple
-
-            comptime for i in range(rank):
-                comptime start = Int(static_starts_1[i])
-                comptime step = Int(static_steps_1[i])
-
-                comptime dim_not_sliced = i == rank - 1 or (
-                    start == 0
-                    and step == 1
-                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
-                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
-                )
-
-                comptime if dim_not_sliced:
-                    slice_indices[i] = concat_indices[i]
-                else:
-                    var start_norm = (
-                        start if start
-                        >= 0 else start + concat_output_1.dim_size[i]()
-                    )
-                    if (indices[i] - start_norm) % step != 0:
-                        return
-                    var slice_idx = (indices[i] - start_norm) // step
-                    if (
-                        slice_idx < 0
-                        or slice_idx >= slice_output_1.dim_size[i]()
-                    ):
-                        return
-                    slice_indices[i] = slice_idx
-
-            slice_output_1._lambda_store[
-                width=width, element_alignment=alignment
-            ](
-                slice_indices,
-                rebind[SIMD[slice_output_1.dtype, width]](value),
-            )
-
-        _fused_dual_concat_gpu[
-            rank,
-            dtype,
-            inputs_lambda_0,
-            epilogue_0,
-            num_inputs_0,
-            inputs_lambda_1,
-            epilogue_1,
-            num_inputs_1,
-        ](
-            normalize_neg_index(axis, rank),
-            input_shapes_0,
-            concat_output_0.to_tile_tensor[.int64](),
-            input_shapes_1,
-            concat_output_1.to_tile_tensor[.int64](),
-            ctx,
-        )
 
 
 @extensibility.register("mo.split")

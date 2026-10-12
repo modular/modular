@@ -40,7 +40,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TMADescriptor
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import syncwarp
-from layout import Coord, TileTensor, row_major
+from layout import Coord, TileTensor, coord, row_major
 from layout.tile_layout import Layout as TileLayout
 from layout.tile_tensor import stack_allocation
 from layout._fillers import arange
@@ -55,8 +55,6 @@ from layout.tma_async import (
 )
 from std.memory import unsafe_stack_allocation
 
-from std.utils.index import Index, IndexList
-
 
 # =============================================================================
 # Test: Update 2 tensormaps (A, B) in a loop (simulating group changes)
@@ -69,20 +67,31 @@ def test_grouped_tensormap_update_kernel[
     dtype: DType,
     num_groups: Int,
     num_blocks: Int,
-    tma_rank: Int,
-    tile_shape: IndexList[tma_rank],
-    desc_shape: IndexList[tma_rank],
+    tile_shape: Coord,
+    desc_shape: Coord,
     thread_layout: TileLayout,
 ](
     # Output: concatenated results from all groups
     dst_a: TileTensor[
         dtype,
-        type_of(row_major[num_groups * tile_shape[0], tile_shape[1]]()),
+        type_of(
+            row_major[
+                num_groups
+                * Int(tile_shape.element_types[0].static_value.value()),
+                Int(tile_shape.element_types[1].static_value.value()),
+            ]()
+        ),
         MutAnyOrigin,
     ],
     dst_b: TileTensor[
         dtype,
-        type_of(row_major[num_groups * tile_shape[0], tile_shape[1]]()),
+        type_of(
+            row_major[
+                num_groups
+                * Int(tile_shape.element_types[0].static_value.value()),
+                Int(tile_shape.element_types[1].static_value.value()),
+            ]()
+        ),
         MutAnyOrigin,
     ],
     # Per-group source tensors (stored as pointers as integers)
@@ -93,15 +102,11 @@ def test_grouped_tensormap_update_kernel[
         .uint64, type_of(row_major[num_groups, 1]()), MutAnyOrigin
     ],
     # Template TMA descriptor (grid constant, for SMEM init)
-    template_tma_a: TMATensorTile[dtype, tma_rank, tile_shape, desc_shape],
-    template_tma_b: TMATensorTile[dtype, tma_rank, tile_shape, desc_shape],
+    template_tma_a: TMATensorTile[dtype, tile_shape, desc_shape],
+    template_tma_b: TMATensorTile[dtype, tile_shape, desc_shape],
     # Per-block GMEM tensormaps (TMATensorTileArray)
-    device_tma_a: TMATensorTileArray[
-        num_blocks, dtype, tma_rank, tile_shape, desc_shape
-    ],
-    device_tma_b: TMATensorTileArray[
-        num_blocks, dtype, tma_rank, tile_shape, desc_shape
-    ],
+    device_tma_a: TMATensorTileArray[num_blocks, dtype, tile_shape, desc_shape],
+    device_tma_b: TMATensorTileArray[num_blocks, dtype, tile_shape, desc_shape],
 ):
     """Kernel that updates 2 tensormaps for each group and loads data.
 
@@ -111,11 +116,9 @@ def test_grouped_tensormap_update_kernel[
     3. Load A and B tiles using block's GMEM tensormaps
     4. Store results to output for verification
     """
-    comptime M = tile_shape[0]
-    comptime N = tile_shape[1]
-    comptime expected_bytes = _idx_product[tma_rank, tile_shape]() * size_of[
-        dtype
-    ]()
+    comptime M = Int(tile_shape.element_types[0].static_value.value())
+    comptime N = Int(tile_shape.element_types[1].static_value.value())
+    comptime expected_bytes = _idx_product[tile_shape]() * size_of[dtype]()
 
     # Allocate SMEM for tiles
     var tile_a = stack_allocation[
@@ -216,7 +219,7 @@ def test_grouped_tensormap_update_kernel[
 
 def test_grouped_tensormap_update[
     num_groups: Int,
-    tile_shape: IndexList[2],
+    tile_shape: Coord,
 ](ctx: DeviceContext) raises:
     """Test updating 2 tensormaps in a loop simulating group iteration.
 
@@ -225,8 +228,8 @@ def test_grouped_tensormap_update[
     """
     print("  Testing", num_groups, "groups with tile shape", tile_shape)
 
-    comptime M = tile_shape[0]
-    comptime N = tile_shape[1]
+    comptime M = Int(tile_shape.element_types[0].static_value.value())
+    comptime N = Int(tile_shape.element_types[1].static_value.value())
     comptime tile_layout = row_major[M, N]()
     comptime num_blocks = 1  # Single block for this test
 
@@ -310,10 +313,10 @@ def test_grouped_tensormap_update[
     )
 
     # Create template TMA descriptors (using group 0's tensors)
-    var template_tma_a = create_tensor_tile[Index(M, N)](
+    var template_tma_a = create_tensor_tile[coord[M, N]](
         ctx, src_a0.device_tensor()
     )
-    var template_tma_b = create_tensor_tile[Index(M, N)](
+    var template_tma_b = create_tensor_tile[coord[M, N]](
         ctx, src_b0.device_tensor()
     )
 
@@ -328,7 +331,6 @@ def test_grouped_tensormap_update[
     var tma_array_a = TMATensorTileArray[
         num_blocks,
         type_of(template_tma_a).dtype,
-        type_of(template_tma_a).rank,
         type_of(template_tma_a).tile_shape,
         type_of(template_tma_a).desc_shape,
     ](device_tensormaps_a)
@@ -336,7 +338,6 @@ def test_grouped_tensormap_update[
     var tma_array_b = TMATensorTileArray[
         num_blocks,
         type_of(template_tma_b).dtype,
-        type_of(template_tma_b).rank,
         type_of(template_tma_b).tile_shape,
         type_of(template_tma_b).desc_shape,
     ](device_tensormaps_b)
@@ -362,7 +363,6 @@ def test_grouped_tensormap_update[
         DType.float32,
         num_groups,
         num_blocks,
-        type_of(template_tma_a).rank,
         type_of(template_tma_a).tile_shape,
         type_of(template_tma_a).desc_shape,
         tile_layout,  # thread_layout for copy
@@ -463,28 +463,28 @@ def main() raises:
         print("Test 0: 1 group, 8x4 tiles (sanity check)")
         test_grouped_tensormap_update[
             num_groups=1,
-            tile_shape=Index(8, 4),
+            tile_shape=coord[8, 4],
         ](ctx)
 
         print()
         print("Test 1: 2 groups, 8x4 tiles")
         test_grouped_tensormap_update[
             num_groups=2,
-            tile_shape=Index(8, 4),
+            tile_shape=coord[8, 4],
         ](ctx)
 
         print()
         print("Test 2: 4 groups, 8x4 tiles")
         test_grouped_tensormap_update[
             num_groups=4,
-            tile_shape=Index(8, 4),
+            tile_shape=coord[8, 4],
         ](ctx)
 
         print()
         print("Test 3: 4 groups, 16x4 tiles")
         test_grouped_tensormap_update[
             num_groups=4,
-            tile_shape=Index(16, 4),
+            tile_shape=coord[16, 4],
         ](ctx)
 
         print()

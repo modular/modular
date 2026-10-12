@@ -131,8 +131,9 @@ This version is still a work in progress.
 
 - The `async` and `await` keywords are renamed to `__async` and `__await` to
   mark async support as unstable. Write `__async def` and `__await expr`. The
-  unprefixed spellings are no longer keywords, so `async` and `await` are now
-  ordinary identifiers, and existing `async def` code no longer parses.
+  unprefixed spellings still work but emit a warning that async is unstable,
+  with a fix-it to the prefixed spelling. The prefixed spelling suppresses the
+  warning but doesn't make async stable.
 
 ## Library stabilizations
 
@@ -261,6 +262,15 @@ This version is still a work in progress.
   pay the cost of holding an extra `Int` field. Dynamic (runtime) alignment will
   eventually be supported after some more design considerations.
 
+- `Coord` has a new `replace_dynamic[at](value)` method, the in-place
+  counterpart to `replace`. It keeps the coordinate's type, so the element at
+  `at` must already be dynamic, and `value` takes that element's own dtype.
+
+  ```mojo
+  var c = Coord(ComptimeInt[3](), Int64(0))
+  c.replace_dynamic[1](Int64(7))  # Coord(ComptimeInt[3](), Int64(7))
+  ```
+
 - `Span` has a new `unsafe_deinit_elements()` method, which destroys every
   element in place and leaves the memory uninitialized.
 
@@ -314,11 +324,44 @@ This version is still a work in progress.
   v.reduce[2](add)       # was: v.reduce[add, 2]()
   ```
 
+- The TMA descriptor types `TMATensorTile`, `TMATensorTileArray`,
+  `TMATensorTileIm2col`, and `SplitLastDimTMATensorTile` in
+  `max.kernels.layout.tma_async` now take `tile_shape` and `desc_shape` as
+  flat `Coord` values instead of `IndexList[rank]`, and the separate `rank`
+  parameter is gone (rank is now derived as `tile_shape.rank`). Shape helpers
+  `_default_desc_shape`, `_padded_shape`, `_ragged_shape`, and
+  `_im2col_desc_shape` are now out-param functions returning concrete `Coord`
+  types. Migrate callers by passing `coord[...]` values directly and reading
+  shape dimensions via `.element_types[i].static_value`:
+
+  ```mojo
+  # was: TMATensorTile[dtype, rank=3, tile_shape=Index(BM,1,depth),
+  #                     desc_shape=Index(BM,1,depth)]
+  # now:
+  var tile = TMATensorTile[
+      dtype, coord[BM, 1, depth], coord[BM, 1, depth]
+  ]()
+  comptime BM_i = type_of(tile).tile_shape.element_types[0].static_value
+  ```
+
+  `QTMATile` split into `QTMATilePrefill` (rank-3, prefill/non-fused) and
+  `QTMATileFused` (rank-4, decoding or fused-GQA); the rank choice must now
+  be spelled at each use site. The companion factories `q_tma_prefill` and
+  `q_tma_fused` replace the deleted `q_tma`. The `QTMATile` alias itself was
+  removed outright after all in-tree consumers migrated; spell the rank
+  choice explicitly with `QTMATilePrefill` or `QTMATileFused`.
+
 ## Tooling changes
 
 - The `mojo` compiler now uses jemalloc as its allocator on Linux. Compiling
   large GPU kernel files is roughly 10 to 13 percent faster, because the
   compiler spends far less system time in glibc's arena management.
+
+- The Mojo language server now reports a value's address space as a semantic
+  token modifier (`addressSpace0` through `addressSpace15`, matching the
+  `AddressSpace` index) so editors can color shared, local, and constant memory
+  differently. The address space is found in the value's type or in a type
+  nested in its parameters, so an `Array` of shared pointers is marked too.
 
 ## Removed
 
@@ -331,8 +374,24 @@ This version is still a work in progress.
 
 ## Fixed
 
+- `c_char` now reflects the target's actual `char` signedness: unsigned by
+  default on Linux running on ARM (AAPCS64), signed everywhere else Mojo
+  currently targets (x86-64 Linux, macOS on Apple silicon). Previously
+  `c_char` was always signed, which could bind an FFI declaration to the
+  wrong C type on Linux/ARM.
+
+- `atof()` now rounds large mantissas correctly. Values whose significant
+  digits exceed 53 bits, such as `atof("123456789012345678")`, could round
+  to the wrong neighbouring double, and exact ties such as
+  `atof("4503599627370497.5")` did not round to even.
+
 - Splitting on an empty separator no longer puts the trailing empty slice out
   of bounds.
+
+- `atof()` accepts numbers with more than 19 significant digits, which
+  previously raised "The number is too long". Malformed inputs such as
+  `"1..2"`, `"1e5.0"`, or `"1e--5"`, which the old parser silently misread
+  by skipping the offending characters, now raise.
 
 - Struct layouts that recurse only through a parametric indirection now
   compile. A field such as `Optional[List[Pointer[Node, origin]]]` or

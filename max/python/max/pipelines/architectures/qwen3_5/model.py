@@ -75,6 +75,10 @@ class Qwen3_5Inputs(Llama3Inputs):
     Present only when the graph was built with M-RoPE wired in; see
     ``Qwen3_5.mrope_enabled``."""
 
+    vision_inputs_in_graph: bool = True
+    """Whether the graph declares the vision-merge inputs. False for
+    text-only checkpoints, which compile no vision encoder and so take none."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         return (
@@ -89,8 +93,12 @@ class Qwen3_5Inputs(Llama3Inputs):
             ),
             # Set by the pipeline's vision seam (``finalize_vision_inputs``)
             # on every prepared batch, empties included.
-            *self.vision_embeddings,
-            *self.vision_scatter_indices,
+            *(self.vision_embeddings if self.vision_inputs_in_graph else ()),
+            *(
+                self.vision_scatter_indices
+                if self.vision_inputs_in_graph
+                else ()
+            ),
             *(
                 ()
                 if self.decoder_position_ids is None
@@ -223,18 +231,24 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             language_graph = self._build_language_graph(
                 state_dict, module=module
             )
-            assert self._vision_state_dict is not None
-            vision_graph = self._build_vision_graph(module=module)
+            # Text-only checkpoints have no vision tower, hence no vision graph.
+            vision_graph = (
+                self._build_vision_graph(module=module)
+                if self._vision_state_dict is not None
+                else None
+            )
             timer.mark_build_complete()
             models = session.load_all(
                 module,
                 weights_registry={
                     **self.state_dict,
-                    **self._vision_state_dict,
+                    **(self._vision_state_dict or {}),
                 },
             )
             model = models[language_graph.name]
-            self.vision_model = models[vision_graph.name]
+            self.vision_model = (
+                models[vision_graph.name] if vision_graph is not None else None
+            )
 
         if self._num_linear_layers > 0 and not is_virtual_device_mode():
             self.check_state_budget()
@@ -540,6 +554,7 @@ class Qwen3_5Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         self._mrope_enabled = nn_model.mrope_enabled
         if isinstance(self._batch_processor, Qwen3_5BatchProcessor):
             self._batch_processor.mrope_enabled = self._mrope_enabled
+            self._batch_processor.vision_enabled = has_vision
         position_ids_count = 1 if nn_model.mrope_enabled else 0
 
         with Graph(

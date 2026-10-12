@@ -25,7 +25,7 @@ from layout import (
 )
 from nn.attention.gpu.mha import mha_gpu_naive
 from nn.attention.mha_mask import CausalMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.mla import flare_mla_decoding, flare_mla_prefill
 from nn.attention.gpu.nvidia.common import (
     ImmutTileTensor1D,
@@ -228,7 +228,7 @@ def test[
         )
         ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-        var k_operand = LayoutTensorMHAOperand(
+        var k_operand = TileTensorMHAOperand(
             k_device.as_imm().as_unsafe_any_origin()
         )
         var null_valid_length = TileTensor(
@@ -600,10 +600,10 @@ def test_prefill[
         row_major(Idx[0]),
     )
 
-    var k_ref_operand = LayoutTensorMHAOperand(
+    var k_ref_operand = TileTensorMHAOperand(
         k_ref_device.as_imm().as_unsafe_any_origin()
     )
-    var v_ref_operand = LayoutTensorMHAOperand(
+    var v_ref_operand = TileTensorMHAOperand(
         v_ref_device.as_imm().as_unsafe_any_origin()
     )
 

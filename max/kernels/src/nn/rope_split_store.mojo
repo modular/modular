@@ -31,16 +31,13 @@ from kv_cache.types import KVCacheT, PagedKVCacheCollection
 from layout import (
     Coord,
     CoordLike,
-    Idx,
     RowMajorLayout,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
 )
 from nn._ragged_utils import get_batch_from_row_offsets
 from nn.fused_qk_rope import rope_value
 from nn.rope import get_safetensors_idx
-from std.utils.index import IndexList
 
 
 # ===-----------------------------------------------------------------------===#
@@ -150,9 +147,8 @@ def _rope_split_store_ragged_impl[
     }:
         comptime simd_width = width
         comptime assert idx_arg.rank == 2
-        var idx = rebind[IndexList[2]](coord_to_index_list(idx_arg))
-        var global_token_idx = idx[0]
-        var col = idx[1]
+        var global_token_idx = Int(idx_arg[0].value())
+        var col = Int(idx_arg[1].value())
 
         # Guard: simd_width >= 2 is guaranteed by the comptime assert after
         # this function. We wrap in comptime if because elementwise

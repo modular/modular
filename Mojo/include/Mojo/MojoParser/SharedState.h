@@ -354,8 +354,10 @@ public:
   /// Import the specified module or package, returning the decl. Always returns
   /// a valid decl, even if a corresponding module or package could not be
   /// found.
+  ///
+  /// Non-null \p importer records dep edges to the module and its ancestors.
   ASTDecl &importModule(const ImportPath &path, PackageOp currentPackage,
-                        llvm::SMLoc loc);
+                        llvm::SMLoc loc, ASTDecl *importer = nullptr);
 
   /// Return true if the package has a nested module with the given name in the
   /// module-state cache. The package body must be resolved before calling this
@@ -425,6 +427,18 @@ public:
   /// decls have been resolved, as this will erase bytecode operations attached
   /// to decls that have not been resolved.
   LogicalResult finalizeImportedBytecodeModules();
+
+  //===--------------------------------------------------------------------===//
+  // Module Dependency Graph
+
+  /// Whether experimental incremental parsing is enabled. Dep edges are only
+  /// recorded, and the dep graph only built, when it is.
+  bool isIncrParsingEnabled() const { return incrParsingEnabled; }
+
+  /// Record a dep edge `importer` -> `imported`, attributed to each end's
+  /// nearest enclosing file module or package. No-ops if either end has no
+  /// module state or is erroneous.
+  void recordDepEdge(ASTDecl *importer, ASTDecl *imported);
 
   /// Get the list of files included while processing all modules.
   ArrayRef<std::string> getIncludedFiles() const;
@@ -699,6 +713,11 @@ private:
   /// A flag indicating if prebuilt packages should not be considered during
   /// parsing.
   bool disablePrebuiltPackages = false;
+
+  /// Whether experimental incremental parsing is enabled. Currently always
+  /// false; a follow-up wires it to a parser-config option and tool flag
+  /// alongside the incremental parsing cache.
+  bool incrParsingEnabled = false;
 
   /// If true, auto-import the builtin package.
   bool useBuiltinModule = true;

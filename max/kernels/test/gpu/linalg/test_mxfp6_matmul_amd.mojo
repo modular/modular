@@ -431,8 +431,8 @@ def run_case_preb[
 ) raises -> Bool:
     """Same shapes and reference as `run_case`, but drives
     `mxfp6_block_scaled_matmul_amd[preshuffled_b=True]`: B and its scales are
-    preshuffled once (untimed, mirroring the load-time cost
-    `preshuffle_block_scaled_b_dense` pays in production) before the call.
+    preshuffled once (untimed, mirroring the one-time cost
+    `preshuffle_block_scaled_b` pays at model init) before the call.
 
     Only valid for `M > DECODE_M_MAX` (64): the dispatcher silently takes the
     row-major decode path for smaller M regardless of `preshuffled_b`, so

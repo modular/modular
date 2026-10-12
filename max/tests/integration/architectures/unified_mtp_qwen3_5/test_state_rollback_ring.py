@@ -19,6 +19,8 @@ different row tables, and ring rows no request claims are poisoned.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import numpy as np
 import pytest
 from max.driver import CPU, Accelerator, Buffer
@@ -97,7 +99,7 @@ def _rows(batch: int, kind: int) -> np.ndarray:
     return flat.reshape(NUM_LAYERS, batch).astype(np.uint32)
 
 
-def _run(
+def _compile(
     seq_lengths: list[int],
     accepted: list[int],
     *,
@@ -105,15 +107,16 @@ def _run(
     rollback_width: int | None = None,
     rollback: bool = True,
     ring_row_shape: tuple[int, ...] = RING_ROW_SHAPE,
-) -> dict[str, np.ndarray]:
-    """Runs a verify and the ring rollback, plus a reference recurrence.
+) -> Callable[[], dict[str, np.ndarray]]:
+    """Compiles a verify and the ring rollback, plus a reference recurrence.
 
     The verify's own ``qkv`` stands in for the conv output. ``num_drafts`` is
     the verify width the ops read, and ``rollback_width`` overrides it for
     the fold alone. With ``rollback=False`` only the verify runs.
     ``ring_row_shape`` overrides the ring row the state cache declares.
 
-    Returns ``live``, the ring arm's pool, and ``reference``, the pool after
+    Returns a function that runs the graph and returns ``live``, the ring
+    arm's pool, and ``reference``, the pool after
     `gated_delta_recurrence_fwd` over the host-sliced accepted tokens, with
     the first layer's ``readout`` and ``reference_readout``.
     """
@@ -236,68 +239,75 @@ def _run(
     session = InferenceSession(devices=[device])
     model = session.load(graph)
 
-    def buf(values: np.ndarray) -> Buffer:
-        return Buffer.from_numpy(np.ascontiguousarray(values)).to(device)
+    def execute() -> dict[str, np.ndarray]:
+        def buf(values: np.ndarray) -> Buffer:
+            return Buffer.from_numpy(np.ascontiguousarray(values)).to(device)
 
-    def poisoned(shape: tuple[int, ...]) -> np.ndarray:
-        return np.full(shape, POISON, dtype=np.float32)
+        def poisoned(shape: tuple[int, ...]) -> np.ndarray:
+            return np.full(shape, POISON, dtype=np.float32)
 
-    buffers = {
-        "live": buf(init_rec),
-        "ring": buf(poisoned((POOL_ROWS, *ring_row_shape))),
-        "reference": buf(init_rec),
-    }
-    readout, reference_readout = model.execute(
-        buf(qkv),
-        buf(decay),
-        buf(beta),
-        buf(offsets),
-        buf(np.array(accepted, dtype=np.int64)),
-        buf(state_rows),
-        buf(ring_rows),
-        buf(ref_row_indices),
-        buf(ref_offsets),
-        *buffers.values(),
-    )
-    out = {
-        name: np.array(b.to(CPU()).to_numpy()) for name, b in buffers.items()
-    }
-    out["readout"] = np.array(readout.to(CPU()).to_numpy())
-    out["reference_readout"] = np.array(reference_readout.to(CPU()).to_numpy())
-    out["init"] = init_rec
-    out["ring_rows"] = ring_rows
-    return out
+        buffers = {
+            "live": buf(init_rec),
+            "ring": buf(poisoned((POOL_ROWS, *ring_row_shape))),
+            "reference": buf(init_rec),
+        }
+        readout, reference_readout = model.execute(
+            buf(qkv),
+            buf(decay),
+            buf(beta),
+            buf(offsets),
+            buf(np.array(accepted, dtype=np.int64)),
+            buf(state_rows),
+            buf(ring_rows),
+            buf(ref_row_indices),
+            buf(ref_offsets),
+            *buffers.values(),
+        )
+        out = {
+            name: np.array(b.to(CPU()).to_numpy())
+            for name, b in buffers.items()
+        }
+        out["readout"] = np.array(readout.to(CPU()).to_numpy())
+        out["reference_readout"] = np.array(
+            reference_readout.to(CPU()).to_numpy()
+        )
+        out["init"] = init_rec
+        out["ring_rows"] = ring_rows
+        return out
+
+    return execute
 
 
 @pytest.mark.parametrize("accepted", [[0], [1], [NUM_DRAFTS]])
 def test_the_fold_lands_on_the_accepted_prefix(accepted: list[int]) -> None:
     """Checks the fold matches the reference at each acceptance count."""
-    pools = _run([RING_LEN], accepted)
+    pools = _compile([RING_LEN], accepted)()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
 
 
 def test_each_request_folds_its_own_length() -> None:
     """Checks requests accepting 3, 1 and 0 drafts in one batch."""
-    pools = _run([RING_LEN] * 3, [NUM_DRAFTS, 1, 0])
+    pools = _compile([RING_LEN] * 3, [NUM_DRAFTS, 1, 0])()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
 
 
 def test_the_verify_leaves_the_live_pool_alone() -> None:
     """Checks the ring verify leaves the live pool unchanged."""
-    pools = _run([RING_LEN] * 2, [NUM_DRAFTS, 1], rollback=False)
+    pools = _compile([RING_LEN] * 2, [NUM_DRAFTS, 1], rollback=False)()
     np.testing.assert_array_equal(pools["live"], pools["init"])
 
 
 def test_a_stale_fold_length_is_detectable() -> None:
     """Checks folding a different accepted count changes the result."""
-    full = _run([RING_LEN], [NUM_DRAFTS])
-    partial = _run([RING_LEN], [1])
-    assert not np.array_equal(full["live"], partial["reference"])
+    # Compile both before running either: recording stops at the first execute.
+    full = _compile([RING_LEN], [NUM_DRAFTS])
+    partial = _compile([RING_LEN], [1])
+    assert not np.array_equal(full()["live"], partial()["reference"])
 
 
 def test_the_ring_is_addressed_by_its_own_row_table() -> None:
     """Checks the ring fills only the records of the rows its table claims."""
-    pools = _run([RING_LEN] * 3, [NUM_DRAFTS, 2, 1])
+    pools = _compile([RING_LEN] * 3, [NUM_DRAFTS, 2, 1])()
     ring = pools["ring"]
     claimed = pools["ring_rows"].reshape(-1)
     unclaimed = np.setdiff1d(np.arange(POOL_ROWS), claimed)
@@ -319,7 +329,7 @@ def test_a_committed_window_lands_on_the_forward(
     seq_lengths: list[int],
 ) -> None:
     """Checks a zero-width verify is the forward, with no ring or fold."""
-    pools = _run(seq_lengths, [0] * len(seq_lengths), num_drafts=0)
+    pools = _compile(seq_lengths, [0] * len(seq_lengths), num_drafts=0)()
     np.testing.assert_array_equal(pools["live"], pools["reference"])
     np.testing.assert_array_equal(pools["readout"], pools["reference_readout"])
     assert np.all(pools["ring"] == POISON), "the ring was written at width 0"
@@ -328,19 +338,19 @@ def test_a_committed_window_lands_on_the_forward(
 @pytest.mark.parametrize("length", [1, 2, 3, RING_LEN])
 def test_rolling_back_a_committed_window_is_detectable(length: int) -> None:
     """Checks a fold that ignores the zero width advances the state twice."""
-    pools = _run([length], [0], num_drafts=0, rollback_width=NUM_DRAFTS)
+    pools = _compile([length], [0], num_drafts=0, rollback_width=NUM_DRAFTS)()
     assert not np.array_equal(pools["live"], pools["reference"])
 
 
 def test_a_window_longer_than_the_ring_is_refused() -> None:
     """Checks a verify width the ring cannot hold raises."""
     with pytest.raises(Exception, match="needs a ring of at least"):
-        _run([RING_LEN + 1], [0], num_drafts=RING_LEN)
+        _compile([RING_LEN + 1], [0], num_drafts=RING_LEN)()
 
 
 def test_the_fold_skips_at_width_zero() -> None:
     """Checks a fold at width zero leaves the pool the verify left."""
-    pools = _run([RING_LEN], [NUM_DRAFTS], rollback_width=0)
+    pools = _compile([RING_LEN], [NUM_DRAFTS], rollback_width=0)()
     np.testing.assert_array_equal(pools["live"], pools["init"])
 
 
@@ -348,4 +358,4 @@ def test_a_ring_record_too_narrow_is_refused() -> None:
     """Checks a ring whose records cannot hold a GQA group raises."""
     narrow = (*RING_ROW_SHAPE[:-1], RECORD_ELEMENTS - 1)
     with pytest.raises(Exception, match=r"needs \d+ elements"):
-        _run([RING_LEN], [NUM_DRAFTS], ring_row_shape=narrow)
+        _compile([RING_LEN], [NUM_DRAFTS], ring_row_shape=narrow)()

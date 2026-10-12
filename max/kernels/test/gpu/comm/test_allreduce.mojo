@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import std.time
-from std.sys import size_of, has_amd_gpu_accelerator, simd_width_of
+from std.sys import size_of, simd_width_of
 from std.itertools import product
 
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
@@ -214,7 +214,7 @@ def allreduce_test[
         list_of_ctx[i].synchronize()
 
     # Vendor RCCL comparison (non-multimem path only and only if available).
-    comptime if not use_multimem and has_amd_gpu_accelerator():
+    comptime if not use_multimem and list_of_ctx.T.target.is_amd_gpu():
         try:
             # Prepare distinct outputs for vendor path to avoid aliasing.
             var out_dev_vendor = List[DeviceBuffer[dtype]](capacity=ngpus)

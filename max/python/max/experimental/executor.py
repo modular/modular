@@ -65,7 +65,7 @@ class Executor(Protocol):
 
         Args:
             graph: A finalized graph ready for execution.  The executor may
-                mutate the module internally (e.g. apply lowering passes);
+                mutate the module internally (for example, to apply lowering passes);
                 callers must not use the module after this call returns.
             inputs: Buffers corresponding to ``graph.inputs``, in order.
                 Mutable ``BufferType`` inputs are mutated in place; the

@@ -2323,6 +2323,7 @@ struct CumSum:
 
     @staticmethod
     def execute[
+        target: StaticString,
         dtype: DType,
         rank: Int,
         exclusive: Int,
@@ -2332,10 +2333,11 @@ struct CumSum:
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContext,
-    ):
+    ) raises:
         """Executes the `mo.cumsum` graph op.
 
         Parameters:
+            target: Compilation target string.
             dtype: Element type of the input and output tensors.
             rank: Tensor rank of the input and output tensors.
             exclusive: See the graph op signature.
@@ -2346,10 +2348,14 @@ struct CumSum:
             output: Output tensor receiving the result.
             input: Input tensor to reduce.
             ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If the GPU kernel launch fails.
         """
-        cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis](
+        cumsum[dtype, Bool(exclusive), Bool(reverse), axis=axis, target=target](
             output.to_tile_tensor[.int64](),
             input.to_tile_tensor[.int64](),
+            ctx,
         )
 
 

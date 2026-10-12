@@ -25,6 +25,7 @@ from max.algorithm.functional import (
 from max.algorithm.reduction import _simd_sum, _simd_sum_elementwise
 from std.bit import log2_floor
 from max.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     thread_idx,
     block_dim,
@@ -4203,3 +4204,296 @@ def rms_norm_fused_quantize_dynamic_scaled_fp8[
         num_phases=2,
         computationally_expensive=True,
     ](body, shape, context)
+
+
+# ===----------------------------------------------------------------------=== #
+# RMSNorm + group-scaled dynamic FP8 quantize (blockwise-FP8 activations)
+# ===----------------------------------------------------------------------=== #
+
+
+@fieldwise_init
+struct _RMSNormQuantizeFp8GroupKernel[
+    out_dtype: DType,
+    scales_dtype: DType,
+    output_layout: TensorLayout,
+    output_origin: MutOrigin,
+    output_engine: TensorEngine,
+    output_idx_type: DType,
+    scales_layout: TensorLayout,
+    scales_origin: MutOrigin,
+    scales_engine: TensorEngine,
+    scales_idx_type: DType,
+    gamma_layout: TensorLayout,
+    gamma_origin: ImmOrigin,
+    gamma_engine: TensorEngine,
+    gamma_idx_type: DType,
+    //,
+    in_dtype: DType,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) -> SIMD[in_dtype, width]
+    ),
+    num_cols: Int,
+    group_size: Int,
+    simd_width: Int,
+    multiply_before_cast: Bool,
+](ImplicitlyCopyable, RegisterPassable, def() -> None):
+    """RMS-normalizes one row per block and quantizes it to FP8 with one
+    dynamic scale per `group_size` columns (the blockwise-FP8 activation
+    layout; scales stored `[num_cols // group_size, rows]`).
+
+    Every thread owns one `simd_width`-wide vector of the row, so the row
+    stays register-resident across the sum-of-squares block reduction and
+    the group max, which is a `lane_group_max` over the
+    `group_size // simd_width` lanes tiling the group (an aligned lane
+    segment of one warp). The normalized value is formed and rounded to
+    `in_dtype` exactly as `rms_norm` writes it for `multiply_before_cast`, so
+    the quantized bytes match the unfused `rms_norm` +
+    `quantize_dynamic_scaled_fp8` pair up to the sum-of-squares reduction
+    order.
+    """
+
+    var input_fn: Self.InputFnType
+    var output: TileTensor[
+        mut=True,
+        Self.out_dtype,
+        Self.output_layout,
+        Self.output_origin,
+        Engine=Self.output_engine,
+        linear_idx_type=Self.output_idx_type,
+    ]
+    var scales: TileTensor[
+        mut=True,
+        Self.scales_dtype,
+        Self.scales_layout,
+        Self.scales_origin,
+        Engine=Self.scales_engine,
+        linear_idx_type=Self.scales_idx_type,
+    ]
+    var gamma: TileTensor[
+        mut=False,
+        Self.in_dtype,
+        Self.gamma_layout,
+        Self.gamma_origin,
+        Engine=Self.gamma_engine,
+        linear_idx_type=Self.gamma_idx_type,
+    ]
+    var epsilon: Scalar[Self.in_dtype]
+    var weight_offset: Scalar[Self.in_dtype]
+    var scale_ub: Scalar[Self.scales_dtype]
+
+    comptime num_threads = Self.num_cols // Self.simd_width
+    comptime lanes_per_group = Self.group_size // Self.simd_width
+
+    @__llvm_metadata(
+        MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+            Int32(Self.num_threads)
+        )
+    )
+    def __call__(self) capturing:
+        comptime accum = get_accum_type[Self.in_dtype]()
+        comptime assert (
+            Self.num_cols % Self.group_size == 0
+        ), "group_size must tile the row"
+        comptime assert (
+            Self.group_size % Self.simd_width == 0
+        ), "simd_width must tile group_size"
+        comptime assert (
+            Self.lanes_per_group.is_power_of_two()
+            and Self.lanes_per_group <= WARP_SIZE
+        ), "a scale group must be a power-of-two lane segment of one warp"
+        comptime assert (
+            Self.num_threads % WARP_SIZE == 0
+        ), "the row must tile whole warps"
+        comptime align = align_of[SIMD[Self.in_dtype, Self.simd_width]]()
+
+        var input_fn = self.input_fn
+        var output = TileTensor(self.output.ptr, self.output.layout)
+        var scales = TileTensor(self.scales.ptr, self.scales.layout)
+        var gamma = TileTensor(self.gamma.ptr, self.gamma.layout)
+
+        var tid = Int(thread_idx.x)
+        var row = Int(block_idx.x)
+        var col = tid * Self.simd_width
+        var group_idx = tid // Self.lanes_per_group
+        var lane_in_group = tid % Self.lanes_per_group
+
+        with PDL():
+            var x = input_fn.__call__[
+                width=Self.simd_width, alignment=Self.simd_width
+            ](row, col).cast[accum]()
+            var ssq = block.sum[block_size=Self.num_threads, broadcast=True](
+                (x * x).reduce_add()
+            )
+            var inv_rms = rsqrt(
+                ssq / Scalar[accum](Self.num_cols) + self.epsilon.cast[accum]()
+            )
+            var gamma_val = gamma.load[width=Self.simd_width, alignment=align](
+                Coord(col)
+            )
+            # The pair quantizes the bf16 row `rms_norm` wrote, so round the
+            # normalized value to `in_dtype` exactly where `rms_norm` does.
+            var normed_in: SIMD[Self.in_dtype, Self.simd_width]
+            comptime if Self.multiply_before_cast:
+                normed_in = (
+                    (x * inv_rms)
+                    * (
+                        gamma_val.cast[accum]()
+                        + self.weight_offset.cast[accum]()
+                    )
+                ).cast[Self.in_dtype]()
+            else:
+                normed_in = (x * inv_rms).cast[Self.in_dtype]() * (
+                    gamma_val + self.weight_offset
+                )
+            var normed = normed_in.cast[accum]()
+
+            var group_max: Scalar[accum]
+            comptime if Self.lanes_per_group >= 2:
+                group_max = warp.lane_group_max[num_lanes=Self.lanes_per_group](
+                    abs(normed).reduce_max()
+                )
+            else:
+                group_max = abs(normed).reduce_max()
+
+            var scale_factor: Scalar[Self.scales_dtype]
+            var scale_recip: Scalar[accum]
+            scale_factor, scale_recip = compute_dynamic_fp8_scale[
+                Self.out_dtype
+            ](group_max, self.scale_ub)
+
+            if lane_in_group == 0:
+                scales.store_linear(Index(group_idx, row), scale_factor)
+            output.store_linear(
+                Index(row, col),
+                fp8_quantize[Self.out_dtype](normed, scale_recip),
+            )
+
+
+def _rms_norm_quantize_lane_width[group_size: Int, num_cols: Int]() -> Int:
+    """Returns the widest lane (elements per thread) the fused kernel can use,
+    or 0 when none fits.
+
+    The row must tile whole warps, and a scale group must span a power-of-two
+    lane segment that fits in one warp. Trying widths from widest to narrowest
+    keeps every shape that already compiles on its current width; the narrower
+    candidates only matter where a 32-lane warp fits and a 64-lane wavefront
+    does not (256 columns at group 128 needs width 4 on CDNA).
+    """
+    comptime for width in [16, 8, 4, 2, 1]:
+        comptime lanes_per_group = group_size // width
+        comptime if (
+            group_size % width == 0
+            and (num_cols // width) % WARP_SIZE == 0
+            and lanes_per_group.is_power_of_two()
+            and lanes_per_group <= WARP_SIZE
+        ):
+            return width
+    return 0
+
+
+def rms_norm_quantize_dynamic_scaled_fp8[
+    in_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    InputFnType: ImplicitlyCopyable
+    & RegisterPassable
+    & (
+        def[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) -> SIMD[in_dtype, width]
+    ),
+    //,
+    group_size: Int,
+    num_cols: Int,
+    multiply_before_cast: Bool,
+    pdl_level: PDLLevel = PDLLevel.ON,
+](
+    input_fn: InputFnType,
+    output: TileTensor[mut=True, out_dtype, ...],
+    scales: TileTensor[mut=True, scales_dtype, ...],
+    gamma: TileTensor[mut=False, in_dtype, ...],
+    epsilon: Scalar[in_dtype],
+    weight_offset: Scalar[in_dtype],
+    scale_ub: Float32,
+    ctx: DeviceContext,
+    num_rows: Int,
+) raises:
+    """Fused `rms_norm` + `quantize_dynamic_scaled_fp8` for group (blockwise)
+    activation scales: one launch, no normalized round trip through HBM.
+
+    Produces the outputs of `rms_norm[multiply_before_cast=...]` followed by
+    `quantize_dynamic_scaled_fp8[group_size_or_per_token=group_size]`:
+    `output` is `[rows, num_cols]` FP8 and `scales` is
+    `[num_cols // group_size, rows]` (row `r`'s scale for column group `g`
+    at `scales[g, r]`; a padded trailing scale column is left untouched).
+    Per-token scales (`group_size == num_cols`) stay on
+    `rms_norm_fused_quantize_dynamic_scaled_fp8`.
+    """
+    comptime assert output.rank == 2, "expected rank-2 output"
+    comptime assert scales.rank == 2, "expected rank-2 scales"
+    comptime assert gamma.rank == 1, "gamma must have rank 1"
+    comptime assert out_dtype in (
+        DType.float8_e4m3fn,
+        DType.float8_e4m3fnuz,
+    ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
+    comptime assert scales_dtype in (
+        DType.bfloat16,
+        DType.float16,
+        DType.float32,
+    ), "scales dtype should be bfloat16, float16 or float32"
+    comptime assert (
+        group_size > 0 and group_size < num_cols and num_cols % group_size == 0
+    ), "group_size must be a proper divisor of the row width"
+
+    # Widest lane that still tiles the row into whole warps. A 64-lane CDNA
+    # wavefront can need a narrower lane than a 32-lane warp at the same shape.
+    comptime simd_width = _rms_norm_quantize_lane_width[group_size, num_cols]()
+    comptime assert simd_width > 0, (
+        "no lane width tiles the row into whole warps with a scale group per"
+        " warp segment"
+    )
+    comptime num_threads = num_cols // simd_width
+    comptime assert (
+        group_size % simd_width == 0
+    ), "group_size must be a multiple of the lane width"
+    comptime assert (
+        num_threads % WARP_SIZE == 0
+    ), "the row must tile whole warps at the lane width"
+    comptime assert (
+        num_threads <= ctx.default_device_info.max_thread_block_size
+    ), "row too wide for a single block"
+    comptime assert (
+        group_size // simd_width <= WARP_SIZE
+    ), "a scale group must fit in one warp"
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        "rms_norm_quantize_dynamic_scaled_fp8",
+        task_id=Int(ctx.id()),
+    ):
+        if num_rows == 0:
+            return
+
+        var kernel = _RMSNormQuantizeFp8GroupKernel[
+            num_cols=num_cols,
+            group_size=group_size,
+            simd_width=simd_width,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input_fn,
+            output.address_space_cast[.GENERIC](),
+            scales.address_space_cast[.GENERIC](),
+            gamma.address_space_cast[.GENERIC](),
+            epsilon,
+            weight_offset,
+            scale_ub.cast[scales_dtype](),
+        )
+        ctx.enqueue_function(
+            kernel,
+            grid_dim=(num_rows, 1, 1),
+            block_dim=num_threads,
+            attributes=pdl_launch_attributes(pdl_level),
+        )

@@ -75,7 +75,7 @@ rather than assuming the over-read is harmless.
 from std.math import align_up, ceildiv
 from std.memory import alloc
 from std.random import randn, seed
-from std.sys import get_defined_int, has_amd_gpu_accelerator
+from std.sys import get_defined_int
 from std.testing import assert_almost_equal
 from std.utils.index import IndexList
 
@@ -108,7 +108,7 @@ comptime OUT_DIM = 128  # one up-projection column block; see module docstring
 
 def main() raises:
     with DeviceContext() as ctx:
-        comptime if has_amd_gpu_accelerator():
+        comptime if ctx.target.is_amd_gpu():
             test_plan_gather_decompress(ctx, cache_length=500)
             # Larger page count: see the module docstring's Shapes section.
             test_plan_gather_decompress(ctx, cache_length=900)

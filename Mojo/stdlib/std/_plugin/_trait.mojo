@@ -30,19 +30,28 @@ comptime _ReduceGeneratorPluginHookFnType = (
     def[
         num_reductions: Int,
         init_type: DType,
-        input_0_fn: def[dtype: DType, width: Int, rank: Int](
-            IndexList[rank]
-        ) capturing[_] -> SIMD[dtype, width],
-        output_0_fn: def[dtype: DType, width: SIMDLength, rank: Int](
+        InputFnType: ImplicitlyCopyable
+        & RegisterPassable
+        & def[dtype: DType, width: Int, rank: Int](IndexList[rank]) -> SIMD[
+            dtype, width
+        ],
+        OutputFnType: ImplicitlyCopyable
+        & RegisterPassable
+        & def[dtype: DType, width: SIMDLength, rank: Int](
             IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
-        ) capturing[_] -> None,
-        reduce_function: def[ty: DType, width: SIMDLength, reduction_idx: Int](
+        ) -> None,
+        ReduceFnType: ImplicitlyCopyable
+        & RegisterPassable
+        & def[ty: DType, width: SIMDLength, reduction_idx: Int](
             SIMD[ty, width], SIMD[ty, width]
-        ) capturing[_] -> SIMD[ty, width],
+        ) -> SIMD[ty, width],
     ](
         shape: IndexList[_, element_type=DType.int64],
         init: StaticTuple[Scalar[init_type], num_reductions],
         reduce_dim: Int,
+        input_0_fn: InputFnType,
+        output_0_fn: OutputFnType,
+        reduce_function: ReduceFnType,
     ) thin
 )
 """Plugin-hook signature for `PluginHooks.reduce_generator_fn`; keep in sync with `_reduce_generator`."""

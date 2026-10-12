@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
+# RUN: %parse-mojo-isolated %s -verify-diagnostics | kgen-opt -verify-parameters -lower-semantic-cf -check-lifetimes -verify-parameters
 
 # A function we can call with minimal IR gruff but still verify the right
 # code is put out in the right place.
@@ -754,6 +755,22 @@ def match_or_pattern_bind(var point: Tuple[Int, Int]):
     case (2, ref x) | (ref x, 3):
         _ = x
         case_callee[4]()
+
+
+# CHECK-LABEL: lit.fn @"test_or_MOCO_4953
+def test_or_MOCO_4953(var a: Optional[Int]):
+    # The subject is materialized once before the alternatives, so both
+    # payload references have the same live origin and initialize one binding.
+    # CHECK:       [[X:%.*]] = lit.var.decl "x" ref : !lit.ref<!lit.ref<!Int, [[COMMON_ORIGIN:.*]]>, mut
+    # CHECK:       lit.ref.store {{.*}}, [[X]] : <!lit.ref<!Int, [[COMMON_ORIGIN]]>, mut
+    # CHECK:       lit.ref.store {{.*}}, [[X]] : <!lit.ref<!Int, [[COMMON_ORIGIN]]>, mut
+    # CHECK:       lit.var.decl "x" ref
+    __match (a, a):
+    case (.Some(x), .None) | (.None, .Some(x)):
+        _ = x
+    case _:
+        pass
+
 
 @fieldwise_init
 struct Vec3:

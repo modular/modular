@@ -18,7 +18,7 @@ types that abstract over the NVIDIA and AMD vendor libraries so callers can
 dispatch GEMM operations without binding to a specific vendor API.
 """
 
-from std.sys import has_amd_gpu_accelerator, size_of
+from std.sys import default_accelerator, size_of
 from std.math import ceildiv
 from std.ffi import _get_global_or_null, external_call
 
@@ -95,6 +95,7 @@ from _rocblas.rocblas import (
     rocblas_destroy_handle,
 )
 from max.gpu.host import DeviceContext
+from max.gpu.host._kernel_load_gate import KernelLoadScope
 from max.gpu.host._amdgpu_hip import HIP
 from max.gpu.host._nvidia_cuda import CUDA
 from layout import (
@@ -206,9 +207,9 @@ def _resolve_backend[
     comptime if backend is not Backend.AUTOMATIC:
         return backend
     # TODO: Remove this once we have a proper hipBLASLt backend for float32.
-    elif dtype == DType.float32 and has_amd_gpu_accelerator():
+    elif dtype == DType.float32 and default_accelerator().is_amd_gpu():
         return Backend.ROCBLAS
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         return Backend.HIPBLASLT
     # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
     # Replace this with float4-e2m1fn when GENAI-337 is fixed.
@@ -398,7 +399,8 @@ def _get_global_handle[
 
     # Otherwise, we have not initialized the handle yet.
     var handle_ptr = alloc(AllocLayout[Handle[backend]].single()).unsafe_leak()
-    handle_ptr.unsafe_write(Handle[backend]())
+    with KernelLoadScope(ctx):
+        handle_ptr.unsafe_write(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
         handle_ptr.bitcast[NoneType](),
@@ -563,7 +565,7 @@ def matmul[
             transpose_b,
         )
 
-    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+    with KernelLoadScope(ctx), Trace[TraceLevel.OP, target=StaticString("gpu")](
         String(t"{handle.resolved_backend}_matmul"),
         Trace[TraceLevel.OP]._get_detail_str(description_fn),
         task_id=get_safe_task_id(ctx),

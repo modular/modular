@@ -31,7 +31,7 @@ That difference makes it useful in two ways the token echo can't be:
   which is handy for ablation benchmarking runs.
 
 Because it stays in the text domain, it can only exercise *text-domain* parsing
-(e.g. tool-call extraction). It cannot exercise the *token-domain* reasoning
+(such as tool-call extraction). It cannot exercise the *token-domain* reasoning
 path, which needs real token ids -- use the token echo (``EchoTransformer`` with
 a real tokenizer) for that.
 

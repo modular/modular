@@ -51,6 +51,7 @@ nemotron_h_modulev3_arch = SupportedArchitecture(
     config=NemotronHConfig,
     batching=NemotronHModel.batch_processor_cls,
     memory_planner=NemotronHMemoryPlanner,
+    multi_gpu_supported=True,
     reasoning_parser="qwen3_5",
     tool_parser="qwen3_5",
 )

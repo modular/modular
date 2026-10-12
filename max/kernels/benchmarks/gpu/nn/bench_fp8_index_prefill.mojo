@@ -42,7 +42,8 @@ enough to clear the 448-token-tile gate), which is the configuration whose
 """
 
 from std.random import rand, seed
-from std.sys import get_defined_int
+from std.sys import bit_width_of, get_defined_int
+from std.builtin.dtype import _uint_type_of_width
 
 from max.benchmark import bencher_iter_custom
 from std.benchmark import Bench, Bencher, BenchId
@@ -71,7 +72,8 @@ from nn.attention.mha_operand import (
     KVCacheScalesMHAOperand,
 )
 from nn.attention.mha_mask import MaskName
-from std.math import ceildiv
+from std.math import ceildiv, log
+from std.memory import bitcast
 from std.utils.index import IndexList
 
 
@@ -136,6 +138,11 @@ def _launch_scorer[
     )
 
 
+def _exp_quantile(mean: Int, i: Int, n: Int) -> Int:
+    """Returns the `(i + 0.5) / n` quantile of an exponential with `mean`."""
+    return Int(-Float64(mean) * log(1.0 - (Float64(i) + 0.5) / Float64(n)))
+
+
 def _run_name[
     num_heads: Int,
     depth: Int,
@@ -148,6 +155,9 @@ def _run_name[
     max_num_keys: Int,
     spread: Int,
     label: String,
+    dist: Int = 0,
+    seq_dist: Int = 0,
+    cache_cap: Int = 0,
 ) -> String:
     var kind = String("fp8_index_score_sm100_prefill")
     if label.byte_length() > 0:
@@ -164,6 +174,9 @@ def _run_name[
         "max_num_keys=", max_num_keys, ", ",
         "spread=", spread, ", ",
         "out_dtype=", out_dtype,
+        String(", dist=", dist) if dist != 0 else String(),
+        String(", seq_dist=", seq_dist) if seq_dist != 0 else String(),
+        String(", cache_cap=", cache_cap) if cache_cap != 0 else String(),
     )
     # fmt: on
 
@@ -179,10 +192,14 @@ def execute_fp8_index_prefill[
     batch_size: Int,
     seq_len: Int,
     cache_len: Int,
-    max_num_keys: Int,
+    var max_num_keys: Int,
     spread: Int = 0,
     label: String = String(),
     run_benchmark: Bool = True,
+    digest: Int = 0,
+    dist: Int = 0,
+    seq_dist: Int = 0,
+    cache_cap: Int = 0,
 ) raises:
     """Benchmark one scorer invocation at one GLM-5.2 prefill shape.
 
@@ -195,7 +212,8 @@ def execute_fp8_index_prefill[
             the pure-prefill causal-cache=0 path that gate admits.
         cache_len: Cached tokens per sequence. 0 reproduces a fresh prefill;
             a nonzero value exercises the chunked-prefill-continuation path.
-        max_num_keys: Score-buffer row stride (>= any entry's key count).
+        max_num_keys: Score-buffer row stride (>= any entry's key count); 0
+            takes the deepest entry's.
         spread: Cache-depth raggedness, in percent of `cache_len`. 0 gives the
             uniform batch. Otherwise entry depths run linearly from
             `cache_len * (1 - spread/100)` to `cache_len * (1 + spread/100)`,
@@ -207,8 +225,46 @@ def execute_fp8_index_prefill[
         run_benchmark: Time the kernel over the harness' iteration loop. False
             launches it exactly once and reports nothing, which is what `ncu`
             wants -- the profiler does its own replay.
+        digest: Nonzero launches once and prints a bit-exact hash of the
+            scores instead of timing.
+        dist: Cache-depth distribution. 0 is the linear grade `spread`
+            describes; 1 draws depths from an exponential distribution with
+            mean `cache_len` (deterministic quantiles, deepest entry last),
+            and `spread` is ignored.
+        seq_dist: New-token distribution. 0 gives every entry `seq_len`; 1
+            draws lengths from an exponential distribution with mean
+            `seq_len`, so most token blocks of the shorter entries are empty.
+        cache_cap: Nonzero clamps every entry's cache depth to at most this,
+            bounding an exponential draw's tail.
     """
-    var total_seq_len = batch_size * seq_len
+    # Per-entry new-token and cache lengths, then the batch maxima every
+    # allocation is sized by, as production's captured-graph metadata is.
+    var seq_lens = List[Int](length=batch_size, fill=seq_len)
+    var cache_lens = List[Int](length=batch_size, fill=cache_len)
+    var lo_cache = cache_len - (cache_len * spread) // 100
+    var hi_cache = cache_len + (cache_len * spread) // 100
+    for i in range(batch_size):
+        if dist == 1:
+            cache_lens[i] = _exp_quantile(cache_len, i, batch_size)
+        elif batch_size > 1:
+            # Linear grade lo -> hi across the batch; a single-entry batch
+            # takes the mean, so `spread` cannot change a batch of one.
+            cache_lens[i] = lo_cache + (hi_cache - lo_cache) * i // (
+                batch_size - 1
+            )
+        if seq_dist == 1:
+            seq_lens[i] = max(1, _exp_quantile(seq_len, i, batch_size))
+        if cache_cap > 0:
+            cache_lens[i] = min(cache_lens[i], cache_cap)
+    var total_seq_len = 0
+    var max_seq_len = 0
+    var keys_per_seq = 0
+    var max_cache = 0
+    for i in range(batch_size):
+        total_seq_len += seq_lens[i]
+        max_seq_len = max(max_seq_len, seq_lens[i])
+        max_cache = max(max_cache, cache_lens[i])
+        keys_per_seq = max(keys_per_seq, cache_lens[i] + seq_lens[i])
 
     comptime kv_params = KVCacheStaticParams(
         num_heads=1, head_size=depth, is_mla=True
@@ -220,9 +276,19 @@ def execute_fp8_index_prefill[
     # Deepest entry sets every allocation: the page pool, the LUT width and the
     # cache-collection bound are all batch maxima, exactly as production's
     # captured-graph metadata is.
-    var lo_cache = cache_len - (cache_len * spread) // 100
-    var hi_cache = cache_len + (cache_len * spread) // 100
-    var keys_per_seq = hi_cache + seq_len
+    # Score rows are `max_num_keys` apart, so a deeper entry spills into the
+    # next row and races the CTA that owns it: the output stops being a
+    # function of the inputs.
+    if max_num_keys == 0:
+        max_num_keys = keys_per_seq
+    if max_num_keys < keys_per_seq:
+        raise Error(
+            "max_num_keys="
+            + String(max_num_keys)
+            + " is below the deepest entry's "
+            + String(keys_per_seq)
+            + " keys"
+        )
     var pages_per_seq = ceildiv(keys_per_seq, page_size)
     var num_blocks = batch_size * pages_per_seq + 1
 
@@ -240,20 +306,16 @@ def execute_fp8_index_prefill[
         batch_size + 1
     )
     with input_row_offsets_device.map_to_host() as iro_host:
-        for i in range(batch_size + 1):
-            iro_host[i] = UInt32(i * seq_len)
+        var off = 0
+        for i in range(batch_size):
+            iro_host[i] = UInt32(off)
+            off += seq_lens[i]
+        iro_host[batch_size] = UInt32(off)
 
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     with cache_lengths_device.map_to_host() as cl_host:
         for i in range(batch_size):
-            # Linear grade lo -> hi across the batch; a single-entry batch
-            # takes the mean, so `spread` cannot change a batch of one.
-            if batch_size > 1:
-                cl_host[i] = UInt32(
-                    lo_cache + (hi_cache - lo_cache) * i // (batch_size - 1)
-                )
-            else:
-                cl_host[i] = UInt32(cache_len)
+            cl_host[i] = UInt32(cache_lens[i])
 
     var k_shape = IndexList[6](
         num_blocks,
@@ -348,8 +410,8 @@ def execute_fp8_index_prefill[
         blocks,
         cache_lengths,
         lookup_table,
-        UInt32(seq_len),
-        UInt32(hi_cache),
+        UInt32(max_seq_len),
+        UInt32(max_cache),
         scales,
     )
 
@@ -380,7 +442,7 @@ def execute_fp8_index_prefill[
             input_row_offsets_tile,
             k_collection,
             batch_size,
-            seq_len,
+            max_seq_len,
             max_num_keys,
             launch_ctx,
         )
@@ -389,14 +451,50 @@ def execute_fp8_index_prefill[
     def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, ctx)
 
-    if run_benchmark:
+    var name = _run_name[num_heads, depth, page_size, out_dtype](
+        batch_size,
+        seq_len,
+        cache_len,
+        max_num_keys,
+        spread,
+        label,
+        dist,
+        seq_dist,
+        cache_cap,
+    )
+    if digest != 0:
+        # One launch over the -inf fill, hashed bit for bit: two builds of the
+        # scorer agree iff their digests do, `-inf` slots included.
+        kernel_launch(ctx)
+        ctx.synchronize()
+        var h = UInt64(0xCBF29CE484222325)
+        var written = 0
+        with o_device.map_to_host() as oh:
+            var op = oh.unsafe_ptr()
+            for i in range(o_size):
+                var v = op[i]
+                if v != -Scalar[out_dtype].MAX:
+                    written += 1
+                h = (
+                    h
+                    ^ UInt64(
+                        bitcast[
+                            _uint_type_of_width[bit_width_of[out_dtype]()]()
+                        ](v)
+                    )
+                ) * 0x100000001B3
+        print(
+            "#digest",
+            name,
+            ":",
+            hex(h),
+            "written=",
+            written,
+        )
+    elif run_benchmark:
         m.bench_function(
             bench_func,
-            BenchId(
-                _run_name[num_heads, depth, page_size, out_dtype](
-                    batch_size, seq_len, cache_len, max_num_keys, spread, label
-                )
-            ),
+            BenchId(name),
         )
     else:
         kernel_launch(ctx)
@@ -432,6 +530,14 @@ def main() raises:
     var label = String(arg_parse("label", ""))
     # False leaves a single launch for `ncu` to replay.
     var run_benchmark = arg_parse("run_benchmark", True)
+    # Nonzero prints a bit-exact hash of one launch's scores instead of timing.
+    var digest = arg_parse("digest", 0)
+    # 1 draws cache depths / new-token counts from an exponential
+    # distribution; see `execute_fp8_index_prefill`.
+    var dist = arg_parse("dist", 0)
+    var seq_dist = arg_parse("seq_dist", 0)
+    # Nonzero clamps every cache depth to at most this.
+    var cache_cap = arg_parse("cache_cap", 0)
 
     seed(0)
 
@@ -451,7 +557,11 @@ def main() raises:
                 spread,
                 label,
                 run_benchmark,
+                digest,
+                dist,
+                seq_dist,
+                cache_cap,
             )
 
-    if run_benchmark:
+    if run_benchmark and digest == 0:
         m.dump_report()

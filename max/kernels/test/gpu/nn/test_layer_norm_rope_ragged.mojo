@@ -20,8 +20,6 @@ from std.sys import align_of
 from std.testing import assert_almost_equal
 from std.utils.numerics import get_accum_type
 
-from std.utils.index import Index, IndexList
-
 
 def compute_layer_norm_rope_ragged_ref[
     dtype: DType, output_dtype: DType, freq_dtype: DType
@@ -105,8 +103,6 @@ def compute_layer_norm_rope_ragged_ref[
 
 
 def run_layer_norm_rope_ragged_gpu[
-    rank: Int,
-    //,
     dtype: DType,
     rope_dim: Int,
     max_seq_len: Int,
@@ -114,16 +110,17 @@ def run_layer_norm_rope_ragged_gpu[
     freq_dtype: DType = dtype,
 ](
     ctx: DeviceContext,
-    shape: IndexList[rank],
+    shape: Coord,
     row_offsets: List[UInt32],
     start_pos_vals: List[UInt32],
     rtol: Float64 = 0.01,
     atol: Float64 = 1e-8,
 ) raises:
+    comptime rank = shape.rank
     print("== run_layer_norm_rope_ragged_gpu")
 
-    var cols = shape[rank - 1]
-    var rows = shape.flattened_length() // cols
+    var cols = Int(shape[rank - 1].value())
+    var rows = Int(shape.product()) // cols
     var num_batches = len(start_pos_vals)
 
     var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
@@ -184,8 +181,8 @@ def run_layer_norm_rope_ragged_gpu[
     ctx.enqueue_copy(start_pos_d, start_pos_h)
     ctx.enqueue_copy(freqs_d, freqs_h)
 
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
-    var output_buf = TileTensor(output_d, row_major(Coord(shape)))
+    var data_buf = TileTensor(data_d, row_major(shape))
+    var output_buf = TileTensor(output_d, row_major(shape))
     var gamma = TileTensor(gamma_d, row_major(cols))
     var beta = TileTensor(beta_d, row_major(cols))
     var row_offsets_buf = TileTensor(row_offsets_d, row_major(num_batches + 1))
@@ -220,7 +217,7 @@ def run_layer_norm_rope_ragged_gpu[
     ](
         input_fn,
         output_fn,
-        Coord(shape),
+        shape,
         Int(cols),
         gamma,
         beta,
@@ -255,7 +252,7 @@ def main() raises:
             dtype=DType.float32, rope_dim=8, max_seq_len=16
         ](
             ctx,
-            Index(6, 8),
+            (6, 8),
             row_offsets=[UInt32(0), 3, 6],
             start_pos_vals=[UInt32(0), 5],
         )
@@ -265,7 +262,7 @@ def main() raises:
             dtype=DType.float32, rope_dim=64, max_seq_len=32
         ](
             ctx,
-            Index(6, 128),
+            (6, 128),
             row_offsets=[UInt32(0), 3, 6],
             start_pos_vals=[UInt32(0), 5],
         )
@@ -274,7 +271,7 @@ def main() raises:
             dtype=DType.float32, rope_dim=32, max_seq_len=32
         ](
             ctx,
-            Index(9, 64),
+            (9, 64),
             row_offsets=[UInt32(0), 2, 9],
             start_pos_vals=[UInt32(3), 11],
         )
@@ -283,7 +280,7 @@ def main() raises:
             dtype=DType.bfloat16, rope_dim=64, max_seq_len=32
         ](
             ctx,
-            Index(6, 128),
+            (6, 128),
             row_offsets=[UInt32(0), 3, 6],
             start_pos_vals=[UInt32(0), 5],
             rtol=5e-2,
@@ -299,7 +296,7 @@ def main() raises:
             freq_dtype=DType.bfloat16,
         ](
             ctx,
-            Index(6, 128),
+            (6, 128),
             row_offsets=[UInt32(0), 3, 6],
             start_pos_vals=[UInt32(0), 5],
             rtol=5e-2,

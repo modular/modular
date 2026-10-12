@@ -16,7 +16,7 @@ This test exercises the production code path for DeepSeek-V2/V3
 prefill: ``flare_mla_prefill`` with a ``KVCacheT`` for K_rope, dispatched
 to ``mla_sm100_prefill_generic`` on B200. The existing
 ``test_mla.mojo``/``test_mla_prefill_qkv_fp8.mojo`` tests cover only the
-contiguous K_rope path (``LayoutTensorMHAOperand``) and so do not
+contiguous K_rope path (``TileTensorMHAOperand``) and so do not
 exercise the sub-tile TMA loops in the kernel.
 
 The test is parameterised by ``-D page_size``; ``num_keys`` is iterated

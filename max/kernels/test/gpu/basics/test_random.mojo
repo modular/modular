@@ -20,7 +20,6 @@ from std.random import NormalRandom, Random
 from std.testing import *
 
 from std.utils.coord import Coord
-from std.utils.index import Index, IndexList
 
 from layout import TileTensor, Idx, row_major
 

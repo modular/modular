@@ -26,6 +26,7 @@ from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
     Coord,
+    coord,
     DefaultEngine,
     Idx,
     RowMajorLayout,
@@ -38,7 +39,6 @@ from std.collections import OptionalReg
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from .config import FusedSwiGLUMatmulConfig
@@ -124,7 +124,7 @@ def _blackwell_matmul_swiglu[
     var b_3d = _to_batched_3d(b_device)
 
     # Create TMA descriptors for A and B (same as default kernel)
-    comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
+    comptime a_tma_tile_shape = coord[1, BM // cluster_shape[1], BK]
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
@@ -132,9 +132,9 @@ def _blackwell_matmul_swiglu[
         swizzle_mode=config.a_swizzle,
     ](ctx, a_3d)
 
-    comptime b_tma_tile_shape = Index(
+    comptime b_tma_tile_shape = coord[
         1, BN // (cluster_shape[0] // config.cta_group), BK
-    )
+    ]
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
@@ -145,9 +145,9 @@ def _blackwell_matmul_swiglu[
     # Create 2D TMA descriptor for C output: [M, H] with half-width tiles.
     # ``c_tma_inner`` may pad ``HalfN`` up to 8 when ``register_swiglu``
     # is True (descriptor is allocated but unused in that path).
-    comptime c_tma_tile_shape = Index(
+    comptime c_tma_tile_shape = coord[
         KernelType.c_store_m, KernelType.c_tma_inner
-    )
+    ]
     var c_tma_op = create_tma_tile[
         KernelType.CTileLayout,
         KernelType.CDescLayout,
@@ -196,19 +196,16 @@ def _blackwell_matmul_swiglu[
 
     # Fully specialize the kernel, extracting TMA type parameters from the
     # concrete TMA op objects via type_of().  This matches the pattern in
-    # matmul_bf16fp8.mojo and avoids the "failed to infer a_rank" error
+    # matmul_bf16fp8.mojo and avoids the "failed to infer" error
     # that occurs when using a partial specialization in enqueue_function.
     comptime kernel = blackwell_swiglu_warp_specialized_kernel[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(c_tma_op).rank,
         type_of(c_tma_op).tile_shape,
         type_of(c_tma_op).desc_shape,
         transpose_b,

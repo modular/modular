@@ -34,7 +34,6 @@ accumulator set per row.
 
 from std.collections import Optional
 from std.math import ceildiv, min
-from std.utils import IndexList
 
 from max.gpu import WARP_SIZE, global_idx, lane_id
 from max.gpu.host import DeviceContext
@@ -160,7 +159,7 @@ def apple_gemv_kernel[
                 var y = dot.cast[c_type]()
                 comptime if elementwise_lambda_fn:
                     comptime epilogue = elementwise_lambda_fn.value()
-                    epilogue[c_type, 1](IndexList[2](mi, col), y)
+                    epilogue[c_type, 1]((mi, col), y)
                 else:
                     c.store(Coord(mi, col), y)
 

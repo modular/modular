@@ -45,14 +45,36 @@ _ALLOWED_DUPLICATE_PACKAGES = (
         # Only add these here if they are not globally
         # resolvable in `override-dependencies` (i.e. we
         # are required to diverge).
+        "apache-tvm-ffi",  # vllm 0.30.0 pins 0.1.11; MAX and sglang use 0.1.9
+        "click",  # vllm/sglang need >=8.4.2 via huggingface-hub; MAX tooling needs <8.2
+        "compressed-tensors",  # vllm/sglang need 0.17.0; MAX stays on 0.15.0.1
+        "cuda-bindings",  # vllm/sglang use CUDA 13; the default groups use CUDA 12
+        "cuda-pathfinder",  # Follows cuda-python's split
+        "cuda-python",  # vllm/sglang use CUDA 13; the default groups use CUDA 12
+        "cuda-toolkit",  # Differs between vllm's and sglang's torch versions
         "fastapi",  # vllm 0.24.0 caps fastapi below what other groups resolve to
+        "flashinfer-cubin",  # sglang pins 0.6.11.post1; MAX uses 0.6.8.post1
+        "flashinfer-python",  # MAX, vllm and sglang each pin a different version
+        "hf-xet",  # Follows huggingface-hub's split
+        "huggingface-hub",  # vllm 0.30.0 needs >=1.31, which forces click>=8.4.2
+        "idna",  # Follows mcp's split
         "llguidance",  # Not used by MAX directly; vllm pulls 1.7.5, sglang pins 0.7.30
-        "nvidia-cudnn-cu12",  # Differs between dependency groups' torch/CUDA versions
-        "nvidia-cudnn-frontend",  # vllm 0.24.0 pins a newer version than the default group
-        "nvidia-nccl-cu12",  # Differs between dependency groups' torch/CUDA versions
+        "mcp",  # vllm 0.30.0 needs mcp 2.x; MAX and sglang use 1.28.1
+        "nvidia-cublas",  # Differs between vllm's and sglang's torch versions
+        "nvidia-cudnn-cu13",  # Differs between vllm's and sglang's torch versions
+        "nvidia-cusparselt-cu13",  # Differs between vllm's and sglang's torch versions
+        "nvidia-cutlass-dsl",  # MAX, vllm and sglang each pin a different version
+        "nvidia-cutlass-dsl-libs-base",  # Follows nvidia-cutlass-dsl's split
+        "nvidia-cutlass-dsl-libs-core",  # Follows nvidia-cutlass-dsl's split
+        "nvidia-cutlass-dsl-libs-cu12",  # Follows nvidia-cutlass-dsl's split
+        "nvidia-cutlass-dsl-libs-cu13",  # Follows nvidia-cutlass-dsl's split
+        "nvidia-nccl-cu13",  # Differs between vllm's and sglang's torch versions
+        "nvidia-nvjitlink",  # Differs between vllm's and sglang's torch versions
+        "openai",  # vllm 0.30.0 needs >=2.25; sglang pins 2.6.1; MAX uses 2.11.0
         "outlines-core",  # Conflicts between vllm and sglang
-        "quack-kernels",  # sglang/vllm pin 0.6.1; flash-attn-4 (aarch64/darwin) pins >=0.3.3
-        "tilelang",  # MAX itself doesn't use tilelang, but the default environment group does; vllm 0.20.0 hard-pins 0.1.9
+        "quack-kernels",  # vllm pins 0.6.5, sglang 0.4.1; flash-attn-4 (aarch64/darwin) pins >=0.3.3
+        "sse-starlette",  # Follows mcp's split
+        "tilelang",  # MAX itself doesn't use tilelang, but the default environment group does; vllm 0.30.0 hard-pins 0.1.12
         "tokenspeed-mla",  # vllm pins ==0.1.8, sglang pins ==0.1.1
         "torchcodec",  # vllm pins a newer version than sglang
         "transformers",  # MAX pins 5.12.x; sglang pins 5.3.0, vllm aligns on 5.12.x

@@ -15,7 +15,7 @@
 Companion to `bench_mha_prefill_v2` (contiguous K/V). The kernel
 under test is the same — `mha_prefill_v2[config]` — but K and V are
 wrapped in `KVCacheMHAOperand` over a `PagedKVCacheCollection` instead
-of the contiguous `LayoutTensorMHAOperand`. This isolates the cost of
+of the contiguous `TileTensorMHAOperand`. This isolates the cost of
 the page-LUT indirection inside `block_paged_tile[KV_BLOCK=64]`.
 
 Methodology

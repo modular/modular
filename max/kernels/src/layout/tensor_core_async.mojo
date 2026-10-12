@@ -46,6 +46,8 @@ from max.gpu.compute.mma import (
     wgmma_wait_group_sync,
 )
 from layout.coord import Coord, Idx
+from layout.int_tuple import coord_to_int_tuple
+from layout.tensor_engine import DefaultEngine, _layout_row_major
 from layout import IntTuple, Layout, LayoutTensor, TileTensor
 from layout.layout import (
     MakeLayoutList,
@@ -236,6 +238,46 @@ def warpgroup_fence[
         )
 
     comptime for i in range(accum_layout.size()):
+        _warpgroup_fence_operand(accum.ptr[i])
+
+
+@inline(.always)
+def warpgroup_fence[
+    accum_type: DType,
+    //,
+](
+    accum: TileTensor[
+        accum_type,
+        address_space=.LOCAL,
+        Engine=DefaultEngine[element_width=1],
+        ...,
+    ],
+) where (accum.rank == accum.flat_rank == 2):
+    """Fences Hopper WGMMA accumulator registers against code motion.
+
+    The pointer walk requires contiguous scalar register storage so every
+    accumulator register receives the code-motion fence exactly once.
+
+    Parameters:
+        accum_type: Element data type of the accumulator; must be float32.
+
+    Args:
+        accum: A static row-major scalar register tile in local memory.
+    """
+    comptime assert (
+        accum_type == .float32
+    ), "Only float32 is supported for warpgroup fence"
+    comptime assert _layout_row_major[
+        type_of(accum).LayoutType
+    ](), "Native WGMMA fence requires contiguous static row-major registers"
+
+    @inline(.always)
+    def _warpgroup_fence_operand(reg: Scalar[accum_type]):
+        inlined_assembly["", NoneType, constraints="+f", has_side_effect=True](
+            reg
+        )
+
+    comptime for i in range(type_of(accum).LayoutType.static_product):
         _warpgroup_fence_operand(accum.ptr[i])
 
 
@@ -976,6 +1018,48 @@ def _convert_cfrags_to_simd[
         c_frags[0, i] = c_frags_in_tuple[i]
 
 
+@inline(.always)
+def _convert_cfrags_to_tuple[
+    c_type: DType, c_frag_size: Int
+](
+    c_frags: TileTensor[
+        c_type,
+        address_space=.LOCAL,
+        Engine=DefaultEngine[element_width=1],
+        ...,
+    ],
+) -> StaticTuple[Scalar[c_type], c_frag_size] where (
+    c_frags.rank == c_frags.flat_rank == 2
+):
+    comptime assert _layout_row_major[type_of(c_frags).LayoutType]()
+    comptime assert c_frags.static_shape[0] == 1
+    comptime assert c_frags.static_shape[1] == c_frag_size
+    var c_frags_in_tuple = StaticTuple[Scalar[c_type], c_frag_size]()
+    comptime for i in range(c_frag_size):
+        c_frags_in_tuple[i] = c_frags.ptr[unsafe_offset=i]
+    return c_frags_in_tuple
+
+
+@inline(.always)
+def _convert_cfrags_to_simd[
+    c_type: DType, c_frag_size: Int
+](
+    c_frags_in_tuple: StaticTuple[Scalar[c_type], c_frag_size],
+    c_frags: TileTensor[
+        mut=True,
+        c_type,
+        address_space=.LOCAL,
+        Engine=DefaultEngine[element_width=1],
+        ...,
+    ],
+) where (c_frags.rank == c_frags.flat_rank == 2):
+    comptime assert _layout_row_major[type_of(c_frags).LayoutType]()
+    comptime assert c_frags.static_shape[0] == 1
+    comptime assert c_frags.static_shape[1] == c_frag_size
+    comptime for i in range(c_frag_size):
+        c_frags.ptr[unsafe_offset=i] = c_frags_in_tuple[i]
+
+
 struct TensorCoreAsync[
     c_type: DType,
     a_type: DType,
@@ -1133,6 +1217,195 @@ struct TensorCoreAsync[
 
         comptime layout_b = "col" if Self.transpose_b else "row"
         comptime c_frag_size = Self.mma_shape[0] * Self.mma_shape[1] // 128
+
+        comptime for k_mma in range(num_k_mmas):
+            comptime scale_d = scale_c if k_mma == 0 else 1
+
+            # Offsets when K is multiple of canonical layouts.
+            comptime a_offset_bytes = (
+                k_mma // a_num_k_mmas_per_tile
+            ) * a_canonical_layout.size() * size_of[Self.a_type]()
+            comptime b_offset_bytes = (
+                k_mma // b_num_k_mmas_per_tile
+            ) * b_canonical_layout.size() * size_of[
+                Self.b_type
+            ]() if Self.transpose_b else 0
+
+            comptime a_k_mma_offset = (
+                k_mma % a_num_k_mmas_per_tile
+            ) * a_k_stride
+            comptime b_k_mma_offset = (
+                k_mma % b_num_k_mmas_per_tile
+            ) * b_k_stride
+
+            comptime for m_mma in range(num_m_mmas):
+                comptime a_offset = m_mma * a_m_stride + a_k_mma_offset + a_offset_bytes
+                var a_desc_m = a_desc + a_offset
+
+                comptime for n_mma in range(num_n_mmas):
+                    comptime mma_id = n_mma * num_m_mmas + m_mma
+
+                    comptime b_offset = n_mma * b_n_stride + b_k_mma_offset + b_offset_bytes
+                    var b_desc_n = b_desc + b_offset
+
+                    var c_frags = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+
+                    var c_frags_in_tuple = _convert_cfrags_to_tuple[
+                        Self.c_type, c_frag_size
+                    ](c_frags)
+
+                    var c_frags_out_tuple = wgmma_async[
+                        Self.mma_shape[0],
+                        Self.mma_shape[1],
+                        Self.mma_shape[2],
+                        a_type=Self.a_type,
+                        b_type=Self.b_type,
+                        layout_b=layout_b,
+                        scale_d=scale_d,
+                        scale_a=scale_a,
+                        scale_b=scale_b,
+                    ](a_desc_m, b_desc_n, c_frags_in_tuple)
+
+                    _convert_cfrags_to_simd[Self.c_type, c_frag_size](
+                        c_frags_out_tuple, c_frags
+                    )
+
+    @staticmethod
+    @inline(.always)
+    def wgmma[
+        num_warp_groups: Int = 1,
+        scale_c: Int = 1,
+        scale_a: Int = 1,
+        scale_b: Int = 1,
+        num_k_iters: Optional[Int] = None,
+    ](
+        a_smem_tile: TileTensor[
+            mut=True, Self.a_type, address_space=.SHARED, ...
+        ],
+        b_smem_tile: TileTensor[
+            mut=True, Self.b_type, address_space=.SHARED, ...
+        ],
+        c_reg_tile: TileTensor[
+            mut=True,
+            Self.c_type,
+            address_space=.LOCAL,
+            Engine=DefaultEngine[element_width=1],
+            ...,
+        ],
+        wg_idx: Int = 0,
+    ) where (c_reg_tile.rank == c_reg_tile.flat_rank == 2):
+        """Performs Hopper WGMMA with native shared-memory and register tiles.
+
+        The legacy overload remains separate to preserve its element-layout
+        contract. Descriptor metadata keeps the exact nested shape and stride
+        used by the legacy descriptor formulas; the tensors stay native.
+        C must be a contiguous row-major tile with one row per MMA and one
+        scalar per fragment register, matching the tuple lane order.
+
+        Parameters:
+            num_warp_groups: Number of warp groups to distribute work across (default: 1).
+            scale_c: Scale factor for matrix C. Valid values are 1 or 0 (default: 1).
+            scale_a: Scale factor for matrix A. Valid values are 1 or -1 (default: 1).
+            scale_b: Scale factor for matrix B. Valid values are 1 or -1 (default: 1).
+            num_k_iters: Number of iterations for the K dimension. This is useful to save computation when we pad shared memory. (default: None which is just `a_smem_layout[1].size() // mma_shape[2]`).
+
+        Args:
+            a_smem_tile: Matrix A in shared memory.
+            b_smem_tile: Matrix B in shared memory.
+            c_reg_tile: Output matrix C in register memory.
+            wg_idx: Warp group index for multi-warp group scenarios (default: 0).
+        """
+        comptime assert scale_c == 1 or scale_c == 0
+        comptime assert scale_a == 1 or scale_a == -1
+        comptime assert scale_b == 1 or scale_b == -1
+        comptime assert a_smem_tile.element_size == 1
+        comptime assert b_smem_tile.element_size == 1
+        comptime assert a_smem_tile.all_dims_known
+        comptime assert b_smem_tile.all_dims_known
+        comptime assert _layout_row_major[
+            type_of(c_reg_tile).LayoutType
+        ](), "Native WGMMA requires contiguous static row-major C registers"
+        comptime a_smem_layout = Layout(
+            coord_to_int_tuple[*type_of(a_smem_tile).LayoutType._shape_types](),
+            coord_to_int_tuple[
+                *type_of(a_smem_tile).LayoutType._stride_types
+            ](),
+        )
+        comptime b_smem_layout = Layout(
+            coord_to_int_tuple[*type_of(b_smem_tile).LayoutType._shape_types](),
+            coord_to_int_tuple[
+                *type_of(b_smem_tile).LayoutType._stride_types
+            ](),
+        )
+
+        comptime BM = a_smem_layout[0].size()
+        comptime BN = b_smem_layout[0].size()
+        comptime BK = a_smem_layout[1].size()
+
+        # Canonical layouts conform to WGMMA's layout requirement e.g.
+        # K-major layout requires BK = swizzle.bytes() // size_of[T]().
+        comptime a_canonical_K = Self.a_swizzle.bytes() // size_of[
+            Self.a_type
+        ]() if Self.a_swizzle != TensorMapSwizzle.SWIZZLE_NONE else BK
+        comptime a_canonical_layout_flat = tile_layout_k_major[
+            Self.a_type, BM, a_canonical_K, Self.a_swizzle
+        ]()
+        comptime a_canonical_layout = tile_to_descriptor[
+            Self.a_type, a_canonical_layout_flat, True
+        ]()
+        comptime b_canonical_K = Self.b_swizzle.bytes() // size_of[
+            Self.b_type
+        ]() if Self.b_swizzle != TensorMapSwizzle.SWIZZLE_NONE else BK
+        comptime b_canonical_layout_flat = tile_layout_k_major[
+            Self.b_type, BN, b_canonical_K, Self.b_swizzle
+        ]() if Self.transpose_b else b_smem_layout
+        comptime b_canonical_layout = tile_to_descriptor[
+            Self.b_type, b_canonical_layout_flat, Self.transpose_b
+        ]()
+
+        # Layout modes are always (MN, K) transpose or not.
+        # Note that shape00 may not equal core matrix dim for MN-major layouts.
+        comptime a_shape00 = a_canonical_layout[0].shape[0].value()
+        comptime a_stride01 = a_canonical_layout[0].stride[1].value()
+        comptime a_stride11 = a_canonical_layout[1].stride[1].value()
+        comptime b_shape00 = b_canonical_layout[0].shape[0].value()
+        comptime b_stride01 = b_canonical_layout[0].stride[1].value()
+        comptime b_stride11 = b_canonical_layout[1].stride[1].value()
+        comptime assert Self.mma_shape[0] % a_shape00 == 0
+        comptime assert Self.mma_shape[1] % b_shape00 == 0
+
+        # fmt: off
+        # Strides between WGMMA tiles
+        comptime a_m_stride = a_stride01 * (Self.mma_shape[0] // a_shape00) * size_of[Self.a_type]()
+        comptime b_n_stride = b_stride01 * (Self.mma_shape[1] // b_shape00) * size_of[Self.b_type]()
+        # K dim is stepped by 2 core matrices.
+        comptime a_k_stride = a_stride11 * 2 * size_of[Self.a_type]()
+        comptime b_k_stride = b_stride11 * 2 * size_of[Self.b_type]()
+
+        comptime num_m_mmas = a_canonical_layout[0].size() // Self.mma_shape[0] // num_warp_groups
+        comptime num_n_mmas = b_canonical_layout[0].size() // Self.mma_shape[1]
+        comptime num_k_mmas = num_k_iters.or_else(a_smem_layout[1].size() // Self.mma_shape[2])
+
+        # Number of wgmma per canonical layout. There can be multiple canonical layouts
+        # per K dim e.g. BF16 128B swizzle has BK = 64 while input K = 128.
+        comptime a_num_k_mmas_per_tile = a_canonical_K // Self.mma_shape[2]
+        comptime b_num_k_mmas_per_tile = b_canonical_K // Self.mma_shape[2] if Self.transpose_b else num_k_mmas
+        # fmt: on
+
+        var a_desc = _wgmma_descriptor[
+            a_canonical_layout, True, Self.a_swizzle
+        ](a_smem_tile.ptr)
+        var b_desc = _wgmma_descriptor[
+            b_canonical_layout, Self.transpose_b, Self.b_swizzle
+        ](b_smem_tile.ptr)
+
+        comptime if num_warp_groups > 1:
+            a_desc += a_m_stride * num_m_mmas * wg_idx
+
+        comptime layout_b = "col" if Self.transpose_b else "row"
+        comptime c_frag_size = Self.mma_shape[0] * Self.mma_shape[1] // 128
+        comptime assert c_reg_tile.static_shape[0] == num_m_mmas * num_n_mmas
+        comptime assert c_reg_tile.static_shape[1] == c_frag_size
 
         comptime for k_mma in range(num_k_mmas):
             comptime scale_d = scale_c if k_mma == 0 else 1

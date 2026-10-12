@@ -4057,15 +4057,16 @@ def _compile_one_parameter(
     return _compiler().compile_structural_tag(tag)
 
 
+@pytest.mark.parametrize("style", ["qwen_xml", "minimax_xml", "glm_xml"])
 @pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
-def test_xml_nested_any_value_is_json_on_qwen(
-    parameter: dict[str, Any], valid: str, runaway: str
+def test_xml_nested_any_value_is_json(
+    style: _XmlStyle, parameter: dict[str, Any], valid: str, runaway: str
 ) -> None:
-    # An any-typed value inside a qwen_xml parameter's JSON is itself JSON; a
-    # bare-value string there would run to </parameter> and admit any text.
-    compiled = _compile_one_parameter(parameter, "qwen_xml")
-    assert _accepts(compiled, _xml_frame("qwen_xml", valid))
-    assert not _accepts(compiled, _xml_frame("qwen_xml", runaway))
+    # An any-typed value inside a parameter's JSON is itself JSON; a bare-value
+    # string there would run to the value's close delimiter and admit any text.
+    compiled = _compile_one_parameter(parameter, style)
+    assert _accepts(compiled, _xml_frame(style, valid))
+    assert not _accepts(compiled, _xml_frame(style, runaway))
 
 
 def test_xml_top_level_any_value_stays_bare_on_qwen() -> None:
@@ -4073,16 +4074,15 @@ def test_xml_top_level_any_value_stays_bare_on_qwen() -> None:
     assert _accepts(compiled, _xml_frame("qwen_xml", "free text, {a: 1 zzz"))
 
 
-@pytest.mark.parametrize("style", ["minimax_xml", "glm_xml", "deepseek_xml"])
 @pytest.mark.parametrize("parameter,valid,runaway", _NESTED_ANY_PARAMETERS)
-def test_xml_nested_any_value_unchanged_on_other_styles(
-    style: _XmlStyle, parameter: dict[str, Any], valid: str, runaway: str
+def test_xml_nested_any_value_unchanged_on_deepseek(
+    parameter: dict[str, Any], valid: str, runaway: str
 ) -> None:
-    # TODO(qwen-hotfix-9 follow-up): these styles share the widening fixed
-    # for qwen_xml; the runaway assertion flips when they get the same fix.
-    compiled = _compile_one_parameter(parameter, style)
-    assert _accepts(compiled, _xml_frame(style, valid))
-    assert _accepts(compiled, _xml_frame(style, runaway))
+    # TODO(qwen-hotfix-9 follow-up): deepseek_xml shares the widening fixed for
+    # the other XML styles; the runaway assertion flips when it gets the fix.
+    compiled = _compile_one_parameter(parameter, "deepseek_xml")
+    assert _accepts(compiled, _xml_frame("deepseek_xml", valid))
+    assert _accepts(compiled, _xml_frame("deepseek_xml", runaway))
 
 
 def _pattern_keyed(pattern: str) -> dict[str, Any]:
@@ -4274,30 +4274,6 @@ def test_xml_bare_value_bound_past_budget_keeps_min_length() -> None:
     # A lower bound past the budget leaves the value unbounded.
     loose = _compile_xml_length(100_000, None)
     assert _accepts(loose, _qwen_state("N"))
-
-
-def test_xml_bare_value_dropped_bound_warns_through_max_logger(
-    capfd: pytest.CaptureFixture[str],
-) -> None:
-    # xgrammar's own logger writes every level to stderr, which the log
-    # collector files as an error. The binding routes it through the MAX
-    # logger instead, so a dropped bound arrives as a WARN line on stdout.
-    _compile_xml_length(2, 100_000)
-    # The MAX logger writes from its own thread, so give it a moment.
-    out = err = ""
-    for _ in range(50):
-        chunk_out, chunk_err = capfd.readouterr()
-        out += chunk_out
-        err += chunk_err
-        if "too large to enforce" in out:
-            break
-        time.sleep(0.05)
-    warning = [
-        line for line in out.splitlines() if "too large to enforce" in line
-    ]
-    assert len(warning) == 1, out
-    assert "WARN" in warning[0]
-    assert "too large to enforce" not in err
 
 
 def test_xml_bare_value_bound_near_budget_compiles() -> None:

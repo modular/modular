@@ -65,7 +65,7 @@ class ParallelArrayOps:
                 pinned buffer on the specified accelerator.
             max_workers: Maximum number of worker threads. Default is 24, which works
                 well for typical server CPUs. Consider setting to match your expected
-                number of arrays (e.g., 20 for up to 20 concurrent copies).
+                number of arrays (such as 20 for up to 20 concurrent copies).
         """
         if accelerator is not None and accelerator.is_host:
             raise ValueError(

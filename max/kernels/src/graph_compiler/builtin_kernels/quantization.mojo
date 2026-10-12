@@ -38,6 +38,7 @@ from layout import (
 )
 from nn.normalization import (
     rms_norm_fused_quantize_dynamic_scaled_fp8,
+    rms_norm_quantize_dynamic_scaled_fp8,
 )
 from std.utils.coord import ComptimeInt
 from std.utils.index import IndexList
@@ -227,6 +228,65 @@ def composite_rms_norm_fused_quantize_dynamic_scaled_fp8_shape[
     return rebind[IndexList[type_of(input).rank]](
         coord_to_index_list(input.shape().tuple())
     )
+
+
+@extensibility.register("mo.rms_norm_quantize_dynamic_scaled_float8")
+struct RMSNormQuantizeDynamicScaledFloat8:
+    """Registers the `mo.rms_norm_quantize_dynamic_scaled_float8` graph op:
+    `mo.reduce.rms_norm` fused with a group-scaled (blockwise-FP8)
+    `mo.quantize_dynamic_scaled_float8`. Same outputs and scale layout as the
+    unfused pair; `group_size_or_per_token` must be a proper divisor of the
+    row (per-token scales stay on the rms_norm + quantize composite).
+    """
+
+    @staticmethod
+    def execute[
+        input_type: DType,
+        scales_type: DType,
+        output_type: DType,
+        //,
+        group_size_or_per_token: Int,
+        multiply_before_cast: Bool,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=output_type, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        gamma: InputTensor[dtype=input_type, rank=1, ...],
+        epsilon: Float32,
+        weight_offset: Scalar[dtype=input_type],
+        scale_ub: Float32,
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert is_gpu[target](), "only valid on GPUs"
+        comptime num_cols = Int(input.static_spec.shape_tuple[1])
+        comptime assert (
+            num_cols != UNKNOWN_VALUE
+        ), "rms_norm_quantize_dynamic_scaled_float8 needs a static row width"
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) {var input} -> SIMD[input_type, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
+
+        rms_norm_quantize_dynamic_scaled_fp8[
+            group_size=group_size_or_per_token,
+            num_cols=num_cols,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input_fn,
+            output.to_tile_tensor[.int64](),
+            scales.to_tile_tensor[.int64](),
+            gamma.to_tile_tensor[.int64](),
+            epsilon.cast[input_type](),
+            weight_offset,
+            scale_ub,
+            ctx,
+            input.dim_size(0),
+        )
 
 
 @extensibility.register("mo.resize.nearest")

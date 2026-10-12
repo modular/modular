@@ -70,9 +70,9 @@ def _match_distribution_args(
     still owns its own numeric conversion (float vs. int) and error messages.
 
     Args:
-        schema: The full distribution string, e.g. "N(100, 5)".
+        schema: The full distribution string, for example, "N(100, 5)".
         prefix_pattern: A regex matching the case-insensitive prefix before
-            the opening paren, e.g. ``r"[Nn]"`` or ``r"[Ll][Nn]"``.
+            the opening paren, for example, ``r"[Nn]"`` or ``r"[Ll][Nn]"``.
         num_args: Expected number of comma-separated arguments.
 
     Returns:
@@ -619,7 +619,7 @@ class NegativeBinomialDistribution(DiscreteDistribution):
     ``np.random.negative_binomial(n, p)`` counts the number of failures before
     ``n`` successes, yielding values in {0, 1, 2, ...}. This class adds 1 to
     every sample so the support becomes {1, 2, 3, ...}, which is appropriate
-    for quantities that must be at least 1 (e.g. number of turns).
+    for quantities that must be at least 1 (such as number of turns).
 
     String schema: ``NB(n, p)``
     """

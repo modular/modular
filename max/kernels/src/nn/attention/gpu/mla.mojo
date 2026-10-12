@@ -26,7 +26,7 @@ from nn.attention.mha_utils import DynamicInt, MHA_PDL_LEVEL
 from std.math.constants import log2e
 from std.sys import (
     align_of,
-    has_amd_gpu_accelerator,
+    default_accelerator,
     get_defined_int,
     simd_width_of,
     size_of,
@@ -78,6 +78,7 @@ from max.gpu.memory import (
 )
 from kv_cache.types import KVCacheT
 from layout import (
+    lt_to_tt_idx,
     Coord,
     Idx,
     IntTuple,
@@ -109,7 +110,7 @@ from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import (
     KVCacheMHAOperand,
     MHAOperand,
-    LayoutTensorMHAOperand,
+    TileTensorMHAOperand,
     RaggedMHAOperand,
 )
 from nn.attention.mha_utils import (
@@ -189,7 +190,7 @@ def mla_decode_max_seq_len[dtype: DType, num_heads: Int]() -> Int:
             requires `num_heads <= AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS`.
     """
     return 1 if (
-        has_amd_gpu_accelerator()
+        default_accelerator().is_amd_gpu()
         and (
             not dtype.is_float8()
             or num_heads > AMD_MLA_DECODE_FOLD_MAX_NUM_HEADS
@@ -377,7 +378,9 @@ def flare_mla_decoding[
             1.0.
         d_indices: Optional sparse indices: `d_indices[batch *
             indices_stride + token]` gives the physical KV row index.
-            `None` for non-sparse.
+            Valid entries must form a prefix of each row, followed by
+            `-1`: the scan covers only `min(topk_length, cache_len +
+            q_len)` entries. `None` for non-sparse.
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
         topk_lengths: Optional per-batch array of actual valid sparse
@@ -569,7 +572,7 @@ def flare_mla_decoding[
     var num_keys = Int(k.dim[1]())
 
     # Preserve static/runtime dimension types for the operand's buffer layout.
-    var k_operand = LayoutTensorMHAOperand(
+    var k_operand = TileTensorMHAOperand(
         TileTensor(k.ptr, row_major(k.layout.shape_coord()))
     )
 
@@ -676,7 +679,7 @@ def flare_mla_decoding_dispatch[
     Parameters:
         k_t: KV cache operand type backing `k` (inferred). Either
             `KVCacheMHAOperand` (paged cache) or
-            `LayoutTensorMHAOperand` (TileTensor input).
+            `TileTensorMHAOperand` (TileTensor input).
         mask_t: Mask functor type applied to attention scores (inferred).
         dtype: Element type of `q` (inferred). Must be a half-float or
             `float8_e4m3fn`.
@@ -749,7 +752,9 @@ def flare_mla_decoding_dispatch[
             1.0.
         d_indices: Optional sparse indices: `d_indices[batch *
             indices_stride + token]` gives the physical KV row index.
-            `None` for non-sparse.
+            Valid entries must form a prefix of each row, followed by
+            `-1`: the scan covers only `min(topk_length, cache_len +
+            q_len)` entries. `None` for non-sparse.
         indices_stride: Allocation stride (max topk across all batches)
             for `d_indices` (defaults to 0).
         topk_lengths: Optional per-batch array of actual valid sparse
@@ -2160,24 +2165,19 @@ def mla_decoding_single_batch[
     comptime p_frag_size = frag_size[2]
     comptime p_frag_simdwidth = p_frag_size // 2
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
+    var p_reg_tile_native = tt_stack_allocation[
+        accum_type, address_space=.LOCAL
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
 
     comptime num_output_rows = num_m_mmas * (WN_O // MMA_N)  # num_n_mmas
     comptime num_output_rows_full = num_output_rows
+    var output_reg_tile_native = tt_stack_allocation[
+        accum_type, address_space=.LOCAL
+    ](row_major[num_output_rows_full, p_frag_size]()).fill(0)
+    # MMA, softmax and copy helpers retain their legacy LayoutTensor views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_output_rows_full, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0.0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Rowwise max and sum for online softmax
@@ -2208,12 +2208,11 @@ def mla_decoding_single_batch[
         p_smem, IteratorTypeP.layout_uint_type(BM * BN)
     )
 
-    # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ]((p_smem + BM * BN).bitcast[Scalar[accum_type]]())
+    # Each warp group needs separate maximum and sum slots.
+    var warp_scratch = TileTensor(
+        (p_smem + BM * BN).bitcast[Scalar[accum_type]](),
+        row_major[2 * num_warps_n, BM](),
+    )
 
     comptime kv_num_heads = 1
     comptime kv_head_idx = 0
@@ -2344,7 +2343,9 @@ def mla_decoding_single_batch[
             prefetch_init=True,
             static_num_iters=ufloordiv(nope_dim, BK),
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             q_smem_iter,
             k_gmem_iter,
             q_smem_iter,
@@ -2366,7 +2367,9 @@ def mla_decoding_single_batch[
             prefetch_init=False,
             static_num_iters=ufloordiv(rope_dim, BK),
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             q_smem_iter.next_unsafe(
                 q_smem_iter.linear_uint_type(ufloordiv(nope_dim, BK))
             ),
@@ -2484,11 +2487,13 @@ def mla_decoding_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[output_layout_by_mma_unit]().vectorize[
-                1, 2
-            ](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, warp_y),
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.reshape[output_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, warp_y)),
             rowmax,
             rowsum,
         )
@@ -2519,7 +2524,9 @@ def mla_decoding_single_batch[
             prefetch_init=False,
             static_num_iters=ufloordiv(BN, BK),
         ](
-            output_reg_tile,
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile
+            ),
             p_smem_iter,
             v_smem_iter,
             p_smem_iter,
@@ -2925,7 +2932,7 @@ def flare_mla_prefill[
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
+        var k_rope_operand = TileTensorMHAOperand(
             TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
         )
 
@@ -3038,7 +3045,7 @@ def flare_mla_prefill[
         var cro_buf = _ragged_offsets_view(cache_row_offsets)
         var k_operand = RaggedMHAOperand(_ragged_kv_view(k), cro_buf)
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
+        var k_rope_operand = TileTensorMHAOperand(
             TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord())),
             TileTensor(
                 k_rope_scales.ptr,
@@ -3163,7 +3170,7 @@ def flare_mla_prefill[
         )
 
         var v_operand = RaggedMHAOperand(_ragged_kv_view(v), cro_buf)
-        var k_rope_operand = LayoutTensorMHAOperand(
+        var k_rope_operand = TileTensorMHAOperand(
             TileTensor(k_rope.ptr, row_major(k_rope.layout.shape_coord()))
         )
 
@@ -3380,11 +3387,11 @@ def flare_mla_prefill_dispatch[
 
     Parameters:
         k_t: Key operand type backing `k` (inferred). Either
-            `RaggedMHAOperand` or `LayoutTensorMHAOperand`.
+            `RaggedMHAOperand` or `TileTensorMHAOperand`.
         v_t: Value operand type backing `v` (inferred). Either
-            `RaggedMHAOperand` or `LayoutTensorMHAOperand`.
+            `RaggedMHAOperand` or `TileTensorMHAOperand`.
         k_rope_t: KV cache operand type backing `k_rope` (inferred).
-            Either `KVCacheMHAOperand` or `LayoutTensorMHAOperand`.
+            Either `KVCacheMHAOperand` or `TileTensorMHAOperand`.
         mask_t: Mask functor type applied to attention scores (inferred).
         dtype: Element type of `q` (inferred). Must be `bfloat16` or
             `float8_e4m3fn`.
@@ -3889,22 +3896,17 @@ def mla_prefill_single_batch[
     comptime p_frag_size = frag_size[2]
     comptime p_frag_simdwidth = p_frag_size // 2
 
-    var p_reg_tile = LayoutTensor[
-        accum_type,
-        Layout.row_major(num_m_mmas * num_n_mmas, p_frag_size),
-        MutAnyOrigin,
-        address_space=.LOCAL,
-    ].stack_allocation()
+    var p_reg_tile_native = tt_stack_allocation[
+        accum_type, address_space=.LOCAL
+    ](row_major[num_m_mmas * num_n_mmas, p_frag_size]())
 
+    var output_reg_tile_native = tt_stack_allocation[
+        accum_type, address_space=.LOCAL
+    ](row_major[num_m_mmas * num_n_mmas_output, p_frag_size]()).fill(0)
+    # MMA, softmax and copy helpers retain their legacy LayoutTensor views.
+    var p_reg_tile = p_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     var output_reg_tile = (
-        LayoutTensor[
-            accum_type,
-            Layout.row_major(num_m_mmas * num_n_mmas_output, p_frag_size),
-            MutAnyOrigin,
-            address_space=.LOCAL,
-        ]
-        .stack_allocation()
-        .fill(0)
+        output_reg_tile_native.to_layout_tensor().as_unsafe_any_origin()
     )
 
     # Rowwise max and sum for online softmax
@@ -3936,15 +3938,12 @@ def mla_prefill_single_batch[
         p_smem, IteratorTypeP.layout_uint_type(BM * BN)
     )
 
-    # Scratch shared memory for reduction across warps.
-    var warp_scratch = LayoutTensor[
-        accum_type,
-        Layout.row_major(2 * num_warps_n, BM),
-        address_space=.SHARED,
-    ](
+    # Each warp group needs separate maximum and sum slots.
+    var warp_scratch = TileTensor(
         (p_smem + (BM * BN if num_warps_n > 1 else 0)).bitcast[
             Scalar[accum_type]
-        ]()
+        ](),
+        row_major[2 * num_warps_n, BM](),
     )
 
     # Mask global memory iterator.
@@ -4106,6 +4105,9 @@ def mla_prefill_single_batch[
         _ = p_reg_tile.fill(0)
 
         @inline(.always)
+        # Retained on LayoutTensor: it rewraps an iterator view's raw pointer
+        # with a runtime row bound, and its result feeds
+        # copy_dram_to_sram_async, which only accepts LayoutTensor operands.
         def _mask_tensor_row(
             tensor: LayoutTensor, num_rows: Int, out result: type_of(tensor)
         ) {imm}:
@@ -4177,7 +4179,9 @@ def mla_prefill_single_batch[
             static_num_iters=q_depth // BK,
             k_group_size=config.k_group_size,
         ](
-            p_reg_tile,
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile
+            ),
             q_smem_iter,
             k_smem_iter,
             q_smem_iter,
@@ -4292,11 +4296,13 @@ def mla_prefill_single_batch[
             Layout.row_major(8, 4),
             use_exp2=True,
         ](
-            output_reg_tile.reshape[reg_output_layout_by_mma_unit]().vectorize[
-                1, 2
-            ](),
-            p_reg_tile.reshape[reg_layout_by_mma_unit]().vectorize[1, 2](),
-            warp_scratch.tile[num_warps_n, WM](0, Int(warp_y)),
+            lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                output_reg_tile.reshape[reg_output_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            lt_to_tt_idx[linear_idx_type=p_reg_tile.linear_idx_type](
+                p_reg_tile.reshape[reg_layout_by_mma_unit]()
+            ).vectorize[1, 2](),
+            warp_scratch.tile[2 * num_warps_n, WM](Coord(0, Int(warp_y))),
             rowmax,
             rowsum,
         )
@@ -4366,7 +4372,9 @@ def mla_prefill_single_batch[
                 static_num_iters=ufloordiv(BN, BK),
                 k_group_size=config.k_group_size,
             ](
-                output_reg_tile,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile
+                ),
                 p_smem_iter,
                 v_smem_iter,
                 p_smem_iter,
@@ -4398,7 +4406,9 @@ def mla_prefill_single_batch[
                 static_num_iters=ufloordiv(BN, BK),
                 k_group_size=config.k_group_size,
             ](
-                output_reg_tile,
+                lt_to_tt_idx[linear_idx_type=output_reg_tile.linear_idx_type](
+                    output_reg_tile
+                ),
                 p_reg_iter,
                 v_smem_iter,
                 p_smem_iter,
@@ -4709,6 +4719,16 @@ def mla_prefill_plan_kernel[
 
     # which chunk this sequence starts in
     var start_chunk = seq_start_pos // buffer_size
+    # The batch scheduler is expected to cap combined context so this
+    # never fires in practice. This is a backstop against that invariant ever
+    # breaking (which has happened before).
+    debug_assert(
+        start_chunk < MAX_CHUNKS,
+        (
+            "mla_prefill_plan_kernel: start_chunk exceeds MAX_CHUNKS; the"
+            " batch's combined context overflowed the prefill buffer"
+        ),
+    )
     var processed_seq_len = UInt32(0)
     var seq_len_left = curr_seq_len
 

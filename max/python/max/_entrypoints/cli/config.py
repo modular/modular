@@ -194,6 +194,13 @@ def is_multiple(field_type: Any) -> bool:
     return get_origin(field_type) is list
 
 
+# Config fields whose CLI flag is spelled differently from the field. The
+# field name describes the mechanism for code that implements it; the flag
+# describes the effect for a user who only needs the outcome. Keyed by the
+# un-prefixed field name, so a ``draft_`` copy of the field renames too.
+_RENAMED_FLAGS = {"header_only_weights": "use-dummy-weights"}
+
+
 def get_normalized_flag_names(
     dataclass_field: Any, field_type: Any
 ) -> tuple[str, ...]:
@@ -201,6 +208,23 @@ def get_normalized_flag_names(
 
     if dataclass_field.name == "model_path":
         return ("--model", "--model-path", dataclass_field.name)
+
+    for field_name, flag in _RENAMED_FLAGS.items():
+        if dataclass_field.name == field_name:
+            normalized_name = flag
+        elif dataclass_field.name.endswith(f"_{field_name}"):
+            prefix = dataclass_field.name[: -len(field_name)]
+            normalized_name = f"{prefix.replace('_', '-')}{flag}"
+        else:
+            continue
+        # The trailing identifier keeps the Click parameter named after the
+        # field, so the value still routes to it.
+        if is_flag(field_type):
+            return (
+                f"--{normalized_name}/--no-{normalized_name}",
+                dataclass_field.name,
+            )
+        return (f"--{normalized_name}", dataclass_field.name)
 
     if is_flag(field_type):
         return (f"--{normalized_name}/--no-{normalized_name}",)

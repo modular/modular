@@ -1,0 +1,1020 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""End-to-end tests for the MAP-dialect fusion system's HorizontalFuser.
+
+Sibling kernels over one index space that share an operand are merged into a
+single multi-output kernel, so the shared operand is loaded once instead of
+once per kernel. Unlike the other fusers there is no producer/consumer edge
+here, which is why these check the fusion outcome and not only the numbers:
+the unfused form computes the same answer, just with the duplicate load.
+
+The pass also moves a consumer into its producer's epilogue when the
+producer's result has other readers, which output fusion leaves alone. A
+consumer that reads a strided window of the result runs there only where the
+window selects the element.
+"""
+
+from __future__ import annotations
+
+import platform
+import re
+
+import numpy as np
+import pytest
+import torch
+from fusion_utils import run_and_verify_fusion
+from max.driver import Buffer, accelerator_count
+from max.dtype import DType
+from max.engine import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, ops
+
+
+def _f32(*shape: int, device: DeviceRef | None = None) -> TensorType:
+    return TensorType(
+        DType.float32, list(shape), device=device or DeviceRef.CPU()
+    )
+
+
+def test_two_adds_share_operand(session: InferenceSession) -> None:
+    r"""Two adds sharing an operand fuse into one two-output kernel.
+
+    ```
+      y   x   z            y   x   z
+       \ / \ /              \  |  /
+       add add     -->    [add, add]
+    ```
+    """
+    with Graph(
+        "two_adds_share_operand",
+        input_types=[_f32(8), _f32(8), _f32(8)],
+    ) as graph:
+        x, y, z = (v.tensor for v in graph.inputs)
+        graph.output(x + y, x + z)
+
+    a = np.random.randn(8).astype(np.float32)
+    b = np.random.randn(8).astype(np.float32)
+    c = np.random.randn(8).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a, b, c, fused=r"mo\.add.*mo\.add"
+    )
+    np.testing.assert_allclose(out0, a + b, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out1, a + c, rtol=1e-5, atol=1e-5)
+
+
+def test_transitive_operand_sharing(session: InferenceSession) -> None:
+    r"""Sharing need only be pairwise: no operand is common to all three adds,
+    but fusing the first two leaves a kernel that shares an operand with the
+    third, so the pass collapses the whole chain on a later round.
+
+    ```
+      x   y   z   w           x  y  z  w
+       \ / \ / \ /             \ | | /
+       add add add   -->   [add, add, add]
+    ```
+    """
+    with Graph(
+        "transitive_operand_sharing",
+        input_types=[_f32(4), _f32(4), _f32(4), _f32(4)],
+    ) as graph:
+        x, y, z, w = (v.tensor for v in graph.inputs)
+        graph.output(x + y, y + z, z + w)
+
+    a = np.random.randn(4).astype(np.float32)
+    b = np.random.randn(4).astype(np.float32)
+    c = np.random.randn(4).astype(np.float32)
+    d = np.random.randn(4).astype(np.float32)
+    out0, out1, out2 = run_and_verify_fusion(
+        session, graph, a, b, c, d, fused=r"mo\.add.*mo\.add.*mo\.add"
+    )
+    np.testing.assert_allclose(out0, a + b, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out1, b + c, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out2, c + d, rtol=1e-5, atol=1e-5)
+
+
+def test_matmul_feeds_two_adds(session: InferenceSession) -> None:
+    """Horizontal fusion leaves a kernel output fusion can still absorb.
+
+    The two adds share the matmul's result, so they merge first; only then
+    does that result have the single use epilogue fusion requires, and the
+    matmul takes the pair into its epilogue. The intermediate is never
+    materialized -- the matmul's per-element value feeds both adds directly.
+    """
+    with Graph(
+        "matmul_feeds_two_adds",
+        input_types=[_f32(8, 8), _f32(8, 8), _f32(8, 8), _f32(8, 8)],
+    ) as graph:
+        a, b, y, z = (v.tensor for v in graph.inputs)
+        mm = a @ b
+        graph.output(mm + y, mm + z)
+
+    a_np = np.random.randn(8, 8).astype(np.float32)
+    b_np = np.random.randn(8, 8).astype(np.float32)
+    y_np = np.random.randn(8, 8).astype(np.float32)
+    z_np = np.random.randn(8, 8).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session,
+        graph,
+        a_np,
+        b_np,
+        y_np,
+        z_np,
+        fused=r"mo\.matmul.*mo\.add.*mo\.add",
+    )
+    expected = a_np @ b_np
+    np.testing.assert_allclose(out0, expected + y_np, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(out1, expected + z_np, rtol=1e-4, atol=1e-4)
+
+
+def test_add_and_cast_share_operand(session: InferenceSession) -> None:
+    r"""Two consumers of one input whose outputs differ in dtype.
+
+    The fused kernel's destinations are no longer interchangeable: whether an
+    accumulation buffer is needed is judged from a single epilogue result, so
+    this pins that a dtype-changing sibling still stores its own dtype.
+
+    ```
+      y   x                y   x
+       \ / \                \  |
+       add  cast   -->   [add, cast]
+       f32  f16           f32   f16
+    ```
+    """
+    with Graph(
+        "add_and_cast_share_operand",
+        input_types=[_f32(8), _f32(8)],
+    ) as graph:
+        x, y = (v.tensor for v in graph.inputs)
+        graph.output(x + y, ops.cast(x, DType.float16))
+
+    a = np.random.randn(8).astype(np.float32)
+    b = np.random.randn(8).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a, b, fused=r"mo\.add.*mo\.cast"
+    )
+    np.testing.assert_allclose(out0, a + b, rtol=1e-5, atol=1e-5)
+    np.testing.assert_array_equal(out1, a.astype(np.float16))
+
+
+def test_matmul_feeds_add_and_cast(session: InferenceSession) -> None:
+    """The dtype-mixed pair, fused into a matmul's epilogue.
+
+    `AllocateAccumulatingBuffers` decides whether the kernel needs a pre-cast
+    accumulation buffer from `dtypeChanges && containsMatmulOrConvOrConcat`,
+    reading the dtype off a single epilogue result -- so a matmul whose two
+    fused destinations disagree is the case that exercises that choice.
+    """
+    with Graph(
+        "matmul_feeds_add_and_cast",
+        input_types=[_f32(8, 8), _f32(8, 8), _f32(8, 8)],
+    ) as graph:
+        a, b, y = (v.tensor for v in graph.inputs)
+        mm = a @ b
+        graph.output(mm + y, ops.cast(mm, DType.float16))
+
+    a_np = np.random.randn(8, 8).astype(np.float32)
+    b_np = np.random.randn(8, 8).astype(np.float32)
+    y_np = np.random.randn(8, 8).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a_np, b_np, y_np, fused=r"mo\.matmul.*mo\.add.*mo\.cast"
+    )
+    expected = a_np @ b_np
+    np.testing.assert_allclose(out0, expected + y_np, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(
+        out1.astype(np.float32),
+        expected.astype(np.float16).astype(np.float32),
+        rtol=1e-2,
+        atol=1e-2,
+    )
+
+
+def test_two_adds_share_operand_dynamic(session: InferenceSession) -> None:
+    r"""The same pair over a symbolic extent.
+
+    Fusion pairs kernels by iteration domain, which for a symbolic shape is an
+    equality on the dim parameter rather than on a constant, so this covers the
+    comparison the static case cannot.
+
+    ```
+      y[n] x[n] z[n]          y   x   z
+         \ / \ /               \  |  /
+         add add      -->    [add, add]
+    ```
+    """
+    sym = TensorType(DType.float32, ["n"], device=DeviceRef.CPU())
+    with Graph(
+        "two_adds_share_operand_dynamic", input_types=[sym, sym, sym]
+    ) as graph:
+        x, y, z = (v.tensor for v in graph.inputs)
+        graph.output(x + y, x + z)
+
+    a = np.random.randn(12).astype(np.float32)
+    b = np.random.randn(12).astype(np.float32)
+    c = np.random.randn(12).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a, b, c, fused=r"mo\.add.*mo\.add"
+    )
+    np.testing.assert_allclose(out0, a + b, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out1, a + c, rtol=1e-5, atol=1e-5)
+
+
+def _execute(model: Model, *inputs: np.ndarray) -> tuple[np.ndarray, ...]:
+    # A 0-d bool predicate goes in as a plain bool, as in
+    # `run_and_verify_fusion`.
+    results = model.execute(
+        *(
+            bool(arr)
+            if arr.dtype == np.bool_ and arr.shape == ()
+            else Buffer.from_numpy(arr).to(model.input_devices[i])
+            for i, arr in enumerate(inputs)
+        )
+    )
+    return tuple(r.to_numpy() for r in results)
+
+
+def test_siblings_in_branch(session: InferenceSession) -> None:
+    """Siblings inside a conditional's branch fuse there, in that branch.
+
+    ```
+      if pred:              if pred:
+        x+y   x+z    -->      [x+y, x+z]
+      else:                 else:
+        x-y   x-z             [x-y, x-z]
+    ```
+    """
+    pred_type = TensorType(DType.bool, [], device=DeviceRef.CPU())
+    with Graph(
+        "siblings_in_branch",
+        input_types=[_f32(8), _f32(8), _f32(8), pred_type],
+    ) as graph:
+        x, y, z, pred = (v.tensor for v in graph.inputs)
+
+        def then_fn():  # noqa: ANN202
+            return [x + y, x + z]
+
+        def else_fn():  # noqa: ANN202
+            return [x - y, x - z]
+
+        r0, r1 = ops.cond(pred, [_f32(8), _f32(8)], then_fn, else_fn)
+        graph.output(r0, r1)
+
+    model = session.load(graph)
+    summaries = model.kernel_summaries
+    assert any(re.search(r"mo\.add.*mo\.add", s) for s in summaries), summaries
+    assert any(re.search(r"mo\.sub.*mo\.sub", s) for s in summaries), summaries
+
+    a = np.random.randn(8).astype(np.float32)
+    b = np.random.randn(8).astype(np.float32)
+    c = np.random.randn(8).astype(np.float32)
+    for pred_np, expected in (
+        (np.array(True), (a + b, a + c)),
+        (np.array(False), (a - b, a - c)),
+    ):
+        out0, out1 = _execute(model, a, b, c, pred_np)
+        np.testing.assert_allclose(out0, expected[0], rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(out1, expected[1], rtol=1e-5, atol=1e-5)
+
+
+def test_reader_in_branch_between_siblings(session: InferenceSession) -> None:
+    """A conditional that reads the first sibling, between the two, keeps them
+    apart.
+
+    The merged kernel would sit at the second sibling's position, below the
+    conditional that reads its first result.
+
+    ```
+      s = x + y
+      r = if pred: s * z  else: z      <- reads s
+      t = x + w                        <- shares x with s, but stays apart
+    ```
+    """
+    pred_type = TensorType(DType.bool, [], device=DeviceRef.CPU())
+    with Graph(
+        "reader_in_branch_between_siblings",
+        input_types=[_f32(8), _f32(8), _f32(8), _f32(8), pred_type],
+    ) as graph:
+        x, y, z, w, pred = (v.tensor for v in graph.inputs)
+        s = x + y
+
+        def then_fn():  # noqa: ANN202
+            return [s * z]
+
+        def else_fn():  # noqa: ANN202
+            return [z]
+
+        (r,) = ops.cond(pred, [_f32(8)], then_fn, else_fn)
+        t = x + w
+        graph.output(t, r)
+
+    model = session.load(graph)
+    summaries = model.kernel_summaries
+    assert not any(re.search(r"mo\.add.*mo\.add", s) for s in summaries), (
+        summaries
+    )
+
+    a, b, c, d = (np.random.randn(8).astype(np.float32) for _ in range(4))
+    for pred_np, branch in (
+        (np.array(True), (a + b) * c),
+        (np.array(False), c),
+    ):
+        out_t, out_r = _execute(model, a, b, c, d, pred_np)
+        np.testing.assert_allclose(out_t, a + d, rtol=1e-5, atol=1e-5)
+        np.testing.assert_allclose(out_r, branch, rtol=1e-5, atol=1e-5)
+
+
+def test_matmul_feeds_two_adds_dynamic(session: InferenceSession) -> None:
+    """The matmul chain over a symbolic extent.
+
+    `[N, N]` on every operand binds one dim parameter across the matmul, both
+    adds and both outputs, so the horizontal pair and the epilogue edge are
+    matched on a parameter rather than on a constant.
+    """
+    sym = TensorType(DType.float32, ["N", "N"], device=DeviceRef.CPU())
+    with Graph(
+        "matmul_feeds_two_adds_dynamic", input_types=[sym, sym, sym, sym]
+    ) as graph:
+        a, b, y, z = (v.tensor for v in graph.inputs)
+        mm = a @ b
+        graph.output(mm + y, mm + z)
+
+    a_np = np.random.randn(6, 6).astype(np.float32)
+    b_np = np.random.randn(6, 6).astype(np.float32)
+    y_np = np.random.randn(6, 6).astype(np.float32)
+    z_np = np.random.randn(6, 6).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session,
+        graph,
+        a_np,
+        b_np,
+        y_np,
+        z_np,
+        fused=r"mo\.matmul.*mo\.add.*mo\.add",
+    )
+    expected = a_np @ b_np
+    np.testing.assert_allclose(out0, expected + y_np, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(out1, expected + z_np, rtol=1e-4, atol=1e-4)
+
+
+def test_gather_feeds_two_adds(session: InferenceSession) -> None:
+    """The producer/epilogue chain through a store lambda.
+
+    `mo.matmul` declares `FusedComputeOutputTensor`, so its epilogue is a
+    compute lambda: it returns a value the kernel stores at its own index.
+    `mo.gather` declares `FusedOutputTensor` instead, so the epilogue owns
+    its stores. A multi-output epilogue has to issue one store per
+    destination either way, which the matmul tests only cover on the
+    compute side.
+    """
+    idx_type = TensorType(DType.int64, [4], device=DeviceRef.CPU())
+    with Graph(
+        "gather_feeds_two_adds",
+        input_types=[_f32(6, 4), idx_type, _f32(4, 4), _f32(4, 4)],
+    ) as graph:
+        x, idx, y, z = (v.tensor for v in graph.inputs)
+        g = ops.gather(x, idx, axis=0)
+        graph.output(g + y, g + z)
+
+    x_np = np.random.randn(6, 4).astype(np.float32)
+    idx_np = np.array([0, 2, 5, 1], dtype=np.int64)
+    y_np = np.random.randn(4, 4).astype(np.float32)
+    z_np = np.random.randn(4, 4).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session,
+        graph,
+        x_np,
+        idx_np,
+        y_np,
+        z_np,
+        fused=r"mo\.gather.*mo\.add.*mo\.add",
+    )
+    expected = x_np[idx_np]
+    np.testing.assert_allclose(out0, expected + y_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out1, expected + z_np, rtol=1e-5, atol=1e-5)
+
+
+def test_matmul_result_escapes(session: InferenceSession) -> None:
+    """A consumer fuses in while the producer's result is still read.
+
+    `MOToMAP` gives every fusible output an epilogue whose body is the bare
+    store, so that store and the add's are siblings over one index space. The
+    matmul keeps writing the result the graph output still wants and the add
+    stores beside it, rather than taking its destination over.
+    """
+    with Graph(
+        "matmul_result_escapes",
+        input_types=[_f32(8, 8), _f32(8, 8), _f32(8, 8)],
+    ) as graph:
+        a, b, y = (v.tensor for v in graph.inputs)
+        mm = a @ b
+        graph.output(mm, mm + y)
+
+    a_np = np.random.randn(8, 8).astype(np.float32)
+    b_np = np.random.randn(8, 8).astype(np.float32)
+    y_np = np.random.randn(8, 8).astype(np.float32)
+    out0, out1 = run_and_verify_fusion(
+        session, graph, a_np, b_np, y_np, fused=r"mo\.matmul.*mo\.add"
+    )
+    expected = a_np @ b_np
+    np.testing.assert_allclose(out0, expected, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(out1, expected + y_np, rtol=1e-4, atol=1e-4)
+
+
+def test_matmul_result_escapes_two_consumers(
+    session: InferenceSession,
+) -> None:
+    """An escaping result whose consumers must merge with each other first.
+
+    Epilogue fusion takes a lone consumer only: moving one of a pair in would
+    strand the other behind a producer it can no longer reach. So this waits
+    for `FuseHorizontal` to merge the adds, then absorbs the pair -- leaving
+    one kernel storing the escape and both sums.
+    """
+    with Graph(
+        "matmul_result_escapes_two_consumers",
+        input_types=[_f32(8, 8), _f32(8, 8), _f32(8, 8), _f32(8, 8)],
+    ) as graph:
+        a, b, y, z = (v.tensor for v in graph.inputs)
+        mm = a @ b
+        graph.output(mm, mm + y, mm + z)
+
+    a_np = np.random.randn(8, 8).astype(np.float32)
+    b_np = np.random.randn(8, 8).astype(np.float32)
+    y_np = np.random.randn(8, 8).astype(np.float32)
+    z_np = np.random.randn(8, 8).astype(np.float32)
+    out0, out1, out2 = run_and_verify_fusion(
+        session,
+        graph,
+        a_np,
+        b_np,
+        y_np,
+        z_np,
+        fused=r"mo\.matmul.*mo\.add.*mo\.add",
+    )
+    expected = a_np @ b_np
+    np.testing.assert_allclose(out0, expected, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(out1, expected + y_np, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(out2, expected + z_np, rtol=1e-4, atol=1e-4)
+
+
+def test_matmul_result_read_in_branch(session: InferenceSession) -> None:
+    """An escaping read inside a conditional whose result the consumer reads.
+
+    The branches read the matmul's result without the `mo.if` listing it as
+    an operand, so only they carry the edge back to the matmul. Merging the
+    add into the matmul would have the matmul wait on the conditional that
+    waits on it, so the add stays its own kernel.
+    """
+    pred_type = TensorType(DType.bool, [], device=DeviceRef.CPU())
+    with Graph(
+        "matmul_result_read_in_branch",
+        input_types=[_f32(8, 8), _f32(8, 8), _f32(8, 8), pred_type],
+    ) as graph:
+        a, b, y, pred = (v.tensor for v in graph.inputs)
+        mm = a @ b
+
+        def then_fn():  # noqa: ANN202
+            return [mm * y]
+
+        def else_fn():  # noqa: ANN202
+            return [mm - y]
+
+        (r,) = ops.cond(pred, [_f32(8, 8)], then_fn, else_fn)
+        graph.output(mm + r)
+
+    a_np = np.random.randn(8, 8).astype(np.float32)
+    b_np = np.random.randn(8, 8).astype(np.float32)
+    y_np = np.random.randn(8, 8).astype(np.float32)
+    mm_np = a_np @ b_np
+    for pred_np, branch in (
+        (np.array(True), mm_np * y_np),
+        (np.array(False), mm_np - y_np),
+    ):
+        (out,) = run_and_verify_fusion(
+            session, graph, a_np, b_np, y_np, pred_np
+        )
+        np.testing.assert_allclose(out, mm_np + branch, rtol=1e-4, atol=1e-4)
+
+
+_CONCAT_SLICE = r"mo\.concat.*mo\.slice"
+
+_DEVICES = [
+    pytest.param(DeviceRef.CPU(), id="cpu"),
+    pytest.param(
+        DeviceRef.GPU(),
+        id="gpu",
+        marks=pytest.mark.skipif(
+            accelerator_count() == 0, reason="requires an accelerator"
+        ),
+    ),
+]
+
+
+def test_concat_slice_window(session: InferenceSession) -> None:
+    """A concat returned whole and as its trailing window, in one kernel.
+
+    The slice reads the concat through a strided window, which the escaping
+    reader merge inverts onto the slice's store: the concat's epilogue stores
+    every element, and again into the window where the slice selects it.
+    """
+    with Graph(
+        "concat_slice_window", input_types=[_f32(2, 8, 16), _f32(2, 3, 16)]
+    ) as graph:
+        cache, new = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        graph.output(full, full[:, -8:])
+
+    cache_np = np.random.randn(2, 8, 16).astype(np.float32)
+    new_np = np.random.randn(2, 3, 16).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session, graph, cache_np, new_np, fused=_CONCAT_SLICE
+    )
+    expected = np.concatenate([cache_np, new_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window, expected[:, -8:])
+
+
+def test_concat_slice_window_dynamic(session: InferenceSession) -> None:
+    """The KV-cache window update, over symbolic batch and sequence extents.
+
+    The window's start is negative on a dim only known at runtime, so the
+    fused store resolves it against the concat's runtime shape.
+    """
+    cache_type = TensorType(
+        DType.float32, ["batch", 8, 16], device=DeviceRef.CPU()
+    )
+    new_type = TensorType(
+        DType.float32, ["batch", "seq", 16], device=DeviceRef.CPU()
+    )
+    with Graph(
+        "concat_slice_window_dynamic", input_types=[cache_type, new_type]
+    ) as graph:
+        cache, new = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        graph.output(full, full[:, -8:])
+
+    cache_np = np.random.randn(3, 8, 16).astype(np.float32)
+    new_np = np.random.randn(3, 5, 16).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session, graph, cache_np, new_np, fused=_CONCAT_SLICE
+    )
+    expected = np.concatenate([cache_np, new_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window, expected[:, -8:])
+
+
+def test_concat_slice_kv_windows(session: InferenceSession) -> None:
+    """The k and v cache updates of one attention block, each in one kernel.
+
+    Both windows slice with the same bounds, so they share those inputs; the
+    two slices must not pair with each other on that, or neither could fuse
+    into its concat.
+    """
+    cache_type = TensorType(
+        DType.float32, ["batch", 8, 16], device=DeviceRef.CPU()
+    )
+    new_type = TensorType(
+        DType.float32, ["batch", "seq", 16], device=DeviceRef.CPU()
+    )
+    with Graph(
+        "concat_slice_kv_windows",
+        input_types=[cache_type, new_type, cache_type, new_type],
+    ) as graph:
+        k_cache, k_new, v_cache, v_new = (v.tensor for v in graph.inputs)
+        k = ops.concat([k_cache, k_new], axis=1)
+        v = ops.concat([v_cache, v_new], axis=1)
+        graph.output(k, k[:, -8:], v, v[:, -8:])
+
+    arrays = [
+        np.random.randn(2, 8, 16).astype(np.float32),
+        np.random.randn(2, 5, 16).astype(np.float32),
+        np.random.randn(2, 8, 16).astype(np.float32),
+        np.random.randn(2, 5, 16).astype(np.float32),
+    ]
+    model = session.load(graph)
+    fused = [s for s in model.kernel_summaries if re.search(_CONCAT_SLICE, s)]
+    assert len(fused) == 2, model.kernel_summaries
+    k_out, k_win, v_out, v_win = run_and_verify_fusion(
+        session, graph, *arrays, fused=_CONCAT_SLICE
+    )
+    k_expected = np.concatenate(arrays[:2], axis=1)
+    v_expected = np.concatenate(arrays[2:], axis=1)
+    np.testing.assert_array_equal(k_out, k_expected)
+    np.testing.assert_array_equal(k_win, k_expected[:, -8:])
+    np.testing.assert_array_equal(v_out, v_expected)
+    np.testing.assert_array_equal(v_win, v_expected[:, -8:])
+
+
+def test_concat_slice_step(session: InferenceSession) -> None:
+    """A strided slice: the store skips the rows off the stride."""
+    with Graph(
+        "concat_slice_step", input_types=[_f32(4, 6, 16), _f32(4, 3, 16)]
+    ) as graph:
+        x, y = (v.tensor for v in graph.inputs)
+        full = ops.concat([x, y], axis=1)
+        graph.output(full, full[:, 1::2])
+
+    x_np = np.random.randn(4, 6, 16).astype(np.float32)
+    y_np = np.random.randn(4, 3, 16).astype(np.float32)
+    full_out, strided = run_and_verify_fusion(
+        session, graph, x_np, y_np, fused=_CONCAT_SLICE
+    )
+    expected = np.concatenate([x_np, y_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(strided, expected[:, 1::2])
+
+
+def test_concat_slice_two_dims(session: InferenceSession) -> None:
+    """A slice of two outer dims, each bounded on both ends."""
+    with Graph(
+        "concat_slice_two_dims", input_types=[_f32(5, 4, 8), _f32(5, 4, 8)]
+    ) as graph:
+        x, y = (v.tensor for v in graph.inputs)
+        full = ops.concat([x, y], axis=1)
+        graph.output(full, full[1:4, 2:7])
+
+    x_np = np.random.randn(5, 4, 8).astype(np.float32)
+    y_np = np.random.randn(5, 4, 8).astype(np.float32)
+    full_out, sliced = run_and_verify_fusion(
+        session, graph, x_np, y_np, fused=_CONCAT_SLICE
+    )
+    expected = np.concatenate([x_np, y_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(sliced, expected[1:4, 2:7])
+
+
+def test_concat_slice_relu_window(session: InferenceSession) -> None:
+    """A trailing window that is also rectified, in the concat's kernel.
+
+    The relu fuses onto the slice first, as an elementwise call that takes the
+    loop index. The merge moves both into a select in the concat's epilogue,
+    where that index is the window's own, so the relu runs there, on the rows
+    the window keeps.
+    """
+    with Graph(
+        "concat_slice_relu_window",
+        input_types=[_f32(2, 8, 16), _f32(2, 3, 16)],
+    ) as graph:
+        cache, new = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        graph.output(full, ops.relu(full[:, -8:]))
+
+    cache_np = np.random.randn(2, 8, 16).astype(np.float32)
+    new_np = np.random.randn(2, 3, 16).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session,
+        graph,
+        cache_np,
+        new_np,
+        fused=r"mo\.concat.*mo\.slice, mo\.relu",
+    )
+    expected = np.concatenate([cache_np, new_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window, np.maximum(expected[:, -8:], 0))
+
+
+def test_concat_slice_cast(session: InferenceSession) -> None:
+    """A window that is also converted, in the concat's kernel.
+
+    As with the relu, the cast runs in the select at the window's own index;
+    only the window's store there changes dtype.
+    """
+    with Graph(
+        "concat_slice_cast", input_types=[_f32(2, 8, 16), _f32(2, 3, 16)]
+    ) as graph:
+        cache, new = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        graph.output(full, ops.cast(full[:, -8:], DType.float16))
+
+    cache_np = np.random.randn(2, 8, 16).astype(np.float32)
+    new_np = np.random.randn(2, 3, 16).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session,
+        graph,
+        cache_np,
+        new_np,
+        fused=r"mo\.concat.*mo\.slice, mo\.cast",
+    )
+    expected = np.concatenate([cache_np, new_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window, expected[:, -8:].astype(np.float16))
+
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="requires an accelerator")
+def test_concat_slice_window_dynamic_gpu(session: InferenceSession) -> None:
+    """The KV-cache window update on a GPU, where the fused store runs inside
+    the concat kernel's device closure."""
+    cache_type = TensorType(
+        DType.float32, ["batch", 64, 4, 32], device=DeviceRef.GPU()
+    )
+    new_type = TensorType(
+        DType.float32, ["batch", "seq", 4, 32], device=DeviceRef.GPU()
+    )
+    with Graph(
+        "concat_slice_window_dynamic_gpu", input_types=[cache_type, new_type]
+    ) as graph:
+        cache, new = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        graph.output(full, full[:, -64:])
+
+    cache_np = np.random.randn(2, 64, 4, 32).astype(np.float32)
+    new_np = np.random.randn(2, 7, 4, 32).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session, graph, cache_np, new_np, fused=_CONCAT_SLICE
+    )
+    expected = np.concatenate([cache_np, new_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window, expected[:, -64:])
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_concat_slice_window_longer_than_dim(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """A trailing window longer than the runtime extent it slices.
+
+    The tuple form keeps numpy's clamp, so `[-8:]` of 5 rows is all 5 rows.
+    The fused store resolves the negative start against the concat's runtime
+    extent and must clamp it there too, or every row lands shifted by the
+    shortfall.
+    """
+    cache_type = TensorType(DType.float32, [2, "c", 16], device=device)
+    new_type = TensorType(DType.float32, [2, "s", 16], device=device)
+    with Graph(
+        "concat_slice_window_longer_than_dim",
+        input_types=[cache_type, new_type],
+    ) as graph:
+        cache, new = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        window = ops.slice_tensor(
+            full, [slice(None), (slice(-8, None), "w"), slice(None)]
+        )
+        graph.output(full, window)
+
+    cache_np = np.random.randn(2, 3, 16).astype(np.float32)
+    new_np = np.random.randn(2, 2, 16).astype(np.float32)
+    full_out, window_out = run_and_verify_fusion(
+        session, graph, cache_np, new_np, fused=_CONCAT_SLICE
+    )
+    expected = np.concatenate([cache_np, new_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window_out, expected[:, -8:])
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+def test_matmul_slice_step(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """A matmul returned whole and as a strided window, in one kernel.
+
+    Unlike concat, matmul calls its epilogue only when told the epilogue does
+    work, and writes its own output otherwise. The store into the window is
+    that work: a kernel that skipped it would leave the window unwritten.
+    Integer inputs keep the GPU's TF32 matmul exact.
+    """
+    with Graph(
+        "matmul_slice_step",
+        input_types=[_f32(64, 32, device=device), _f32(32, 64, device=device)],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        mm = a @ b
+        graph.output(mm, mm[1::2])
+
+    a_np = np.random.randint(-3, 4, (64, 32)).astype(np.float32)
+    b_np = np.random.randint(-3, 4, (32, 64)).astype(np.float32)
+    full_out, strided = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.matmul.*mo\.slice"
+    )
+    expected = a_np @ b_np
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(strided, expected[1::2])
+
+
+def test_bmm_window(session: InferenceSession) -> None:
+    """The KV-window idiom on a batched matmul: each batch's trailing rows,
+    stored beside the full result from the batched matmul's epilogue."""
+    with Graph(
+        "bmm_window", input_types=[_f32(2, 16, 8), _f32(2, 8, 16)]
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        bmm = a @ b
+        graph.output(bmm, bmm[:, -4:])
+
+    a_np = np.random.randn(2, 16, 8).astype(np.float32)
+    b_np = np.random.randn(2, 8, 16).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session, graph, a_np, b_np, fused=r"mo\.batch_matmul.*mo\.slice"
+    )
+    expected = a_np @ b_np
+    np.testing.assert_allclose(full_out, expected, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(window, expected[:, -4:], rtol=1e-4, atol=1e-4)
+
+
+def test_conv_window(session: InferenceSession) -> None:
+    """A convolution returned whole and as its trailing rows, in one kernel.
+
+    Convolution, like matmul, calls its epilogue only when told the epilogue
+    does work, so the store into the window has to count as work.
+    """
+    with Graph(
+        "conv_window", input_types=[_f32(2, 6, 6, 3), _f32(3, 3, 3, 4)]
+    ) as graph:
+        x, w = (v.tensor for v in graph.inputs)
+        conv = ops.conv2d(x, w)
+        graph.output(conv, conv[:, -2:])
+
+    x_np = np.random.randn(2, 6, 6, 3).astype(np.float32)
+    w_np = np.random.randn(3, 3, 3, 4).astype(np.float32)
+    full_out, window = run_and_verify_fusion(
+        session, graph, x_np, w_np, fused=r"mo\.conv.*mo\.slice"
+    )
+    # NHWC input and RSCF filter: each filter tap scales a shifted input.
+    expected = np.zeros((2, 4, 4, 4), dtype=np.float32)
+    for r in range(3):
+        for s in range(3):
+            expected += x_np[:, r : r + 4, s : s + 4] @ w_np[r, s]
+    np.testing.assert_allclose(full_out, expected, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(window, expected[:, -2:], rtol=1e-4, atol=1e-4)
+
+
+def test_matmul_reshape_window(session: InferenceSession) -> None:
+    """A window of a reshaped matmul result stays its own kernel.
+
+    Epilogue fusion moves the reshape and the add into the matmul's epilogue,
+    which then stores at a reshaped index. The matmul still hands it vectors
+    along its own 64-wide inner dim, each spanning several rows of the narrow
+    reshaped result, so a select, which tests a vector once at its first
+    index, would store whole vectors into rows the window skips. Integer
+    inputs keep the matmul exact.
+    """
+    with Graph(
+        "matmul_reshape_window",
+        input_types=[_f32(8, 16), _f32(16, 64), _f32(128, 4)],
+    ) as graph:
+        a, b, y = (v.tensor for v in graph.inputs)
+        full = ops.reshape(a @ b, [128, 4]) + y
+        graph.output(full, full[::2])
+
+    model = session.load(graph)
+    summaries = model.kernel_summaries
+    assert any(
+        re.search(r"mo\.matmul.*mo\.static\.reshape.*mo\.add", s)
+        for s in summaries
+    ), summaries
+    assert not any(re.search(r"mo\.matmul.*mo\.slice", s) for s in summaries), (
+        summaries
+    )
+    rng = np.random.default_rng(0)
+    arrays = [
+        rng.integers(-3, 4, dims).astype(np.float32)
+        for dims in ([8, 16], [16, 64], [128, 4])
+    ]
+    results = model.execute(
+        *(
+            Buffer.from_numpy(arr).to(model.input_devices[i])
+            for i, arr in enumerate(arrays)
+        )
+    )
+    full_out, window_out = (r.to_numpy() for r in results)
+    expected = (arrays[0] @ arrays[1]).reshape(128, 4) + arrays[2]
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window_out, expected[::2])
+
+
+_BF16_DEVICES = [
+    pytest.param(
+        DeviceRef.CPU(),
+        id="cpu",
+        marks=pytest.mark.skipif(
+            platform.machine() in ["arm64", "aarch64"],
+            reason="BF16 is not supported on ARM CPU architecture",
+        ),
+    ),
+    pytest.param(
+        DeviceRef.GPU(),
+        id="gpu",
+        marks=pytest.mark.skipif(
+            accelerator_count() == 0, reason="requires an accelerator"
+        ),
+    ),
+]
+
+
+def _run_bf16(
+    session: InferenceSession, graph: Graph, *inputs: torch.Tensor, fused: str
+) -> list[torch.Tensor]:
+    """Runs ``graph`` like ``run_and_verify_fusion``, but on torch tensors,
+    since numpy has no bfloat16."""
+    model = session.load(graph)
+    assert any(re.search(fused, s) for s in model.kernel_summaries), (
+        model.kernel_summaries
+    )
+    results = model.execute(
+        *(
+            Buffer.from_dlpack(t).to(model.input_devices[i])
+            for i, t in enumerate(inputs)
+        )
+    )
+    return [torch.from_dlpack(r).cpu() for r in results]
+
+
+@pytest.mark.parametrize("device", _BF16_DEVICES)
+def test_concat_slice_window_bf16(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """The KV-cache window update in bfloat16, the dtype caches are kept in."""
+    cache_type = TensorType(DType.bfloat16, ["batch", 8, 16], device=device)
+    new_type = TensorType(DType.bfloat16, ["batch", "seq", 16], device=device)
+    with Graph(
+        "concat_slice_window_bf16", input_types=[cache_type, new_type]
+    ) as graph:
+        cache, new = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        graph.output(full, full[:, -8:])
+
+    cache_t = torch.randn(3, 8, 16, dtype=torch.bfloat16)
+    new_t = torch.randn(3, 5, 16, dtype=torch.bfloat16)
+    full_out, window = _run_bf16(
+        session, graph, cache_t, new_t, fused=_CONCAT_SLICE
+    )
+    expected = torch.cat([cache_t, new_t], dim=1)
+    torch.testing.assert_close(full_out, expected, rtol=0, atol=0)
+    torch.testing.assert_close(window, expected[:, -8:], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("device", _BF16_DEVICES)
+def test_concat_slice_projection_window(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """A cache update whose new rows are sliced out of a projection.
+
+    The new rows are one group of heads of the reshaped projection, as in an
+    attention block's cache update. Prologue fusion reads them from the
+    projection inside the concat, and the window's store joins the concat's
+    epilogue, so the update and its window take one kernel.
+    """
+    cache_type = TensorType(DType.bfloat16, ["batch", 8, 2, 32], device=device)
+    proj_type = TensorType(DType.bfloat16, ["batch", "seq", 192], device=device)
+    with Graph(
+        "concat_slice_projection_window", input_types=[cache_type, proj_type]
+    ) as graph:
+        cache, proj = (v.tensor for v in graph.inputs)
+        heads = proj.reshape(["batch", "seq", 6, 32])
+        full = ops.concat([cache, heads[:, :, 4:]], axis=1)
+        graph.output(full, full[:, -8:])
+
+    cache_t = torch.randn(2, 8, 2, 32, dtype=torch.bfloat16)
+    proj_t = torch.randn(2, 3, 192, dtype=torch.bfloat16)
+    fused = (
+        r"Epilogue\(Prologue\(mo\.static\.reshape, mo\.slice, mo\.concat.*\), "
+        r"mo\.slice"
+    )
+    full_out, window = _run_bf16(session, graph, cache_t, proj_t, fused=fused)
+    new_rows = proj_t.reshape(2, 3, 6, 32)[:, :, 4:]
+    expected = torch.cat([cache_t, new_rows], dim=1)
+    torch.testing.assert_close(full_out, expected, rtol=0, atol=0)
+    torch.testing.assert_close(window, expected[:, -8:], rtol=0, atol=0)
+
+
+def test_concat_slice_runtime_start(session: InferenceSession) -> None:
+    """A window starting at a runtime offset stays its own kernel.
+
+    The store into a window carries its start statically, so the merge
+    declines, and the slice copies its window out of the concat's result.
+    """
+    start_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
+    with Graph(
+        "concat_slice_runtime_start",
+        input_types=[_f32(2, 8, 16), _f32(2, 3, 16), start_type],
+    ) as graph:
+        cache, new, start = (v.tensor for v in graph.inputs)
+        full = ops.concat([cache, new], axis=1)
+        window = ops.slice_tensor(
+            full, [slice(None), (slice(start, start + 8), 8), slice(None)]
+        )
+        graph.output(full, window)
+
+    model = session.load(graph)
+    assert not any(
+        re.search(_CONCAT_SLICE, s) for s in model.kernel_summaries
+    ), model.kernel_summaries
+    cache_np = np.random.randn(2, 8, 16).astype(np.float32)
+    new_np = np.random.randn(2, 3, 16).astype(np.float32)
+    results = model.execute(
+        Buffer.from_numpy(cache_np),
+        Buffer.from_numpy(new_np),
+        Buffer.from_numpy(np.array(3, dtype=np.int64)),
+    )
+    full_out, window_out = (r.to_numpy() for r in results)
+    expected = np.concatenate([cache_np, new_np], axis=1)
+    np.testing.assert_array_equal(full_out, expected)
+    np.testing.assert_array_equal(window_out, expected[:, 3:11])

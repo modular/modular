@@ -175,7 +175,7 @@ struct Depth512SM100Config[
         self.tmem_used = self.TMEM_S_odd + s_cols
 
         # SMEM budget
-        var smem_use = size_of[UInt32]()  # tmem_addr
+        var smem_use = 0
 
         # Q: BM rows × full depth
         var q_bytes = self.BM * qk_depth * Self.qkv_dtype_size

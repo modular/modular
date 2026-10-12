@@ -1472,6 +1472,11 @@ def topk_topp_sampling_from_prob_cluster[
                 raise Error("out_dist shape must match probs shape")
             dist_ptr = out_dist.unsafe_value().ptr
 
+        # A speculative-decoding step that skips its drafter samples zero
+        # draft rows, and a zero grid is rejected by `enqueue_function`.
+        if batch_size == 0:
+            return
+
         # Only the `emit_dist` variant spreads over a cluster: sampling alone
         # is one pass and does not repay the cluster's combines. A row takes
         # the narrowest cluster whose slice fits the staging budget, exactly

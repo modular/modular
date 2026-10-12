@@ -67,6 +67,7 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
 from max.experimental.tensor import Tensor
 
@@ -289,8 +290,7 @@ class _Reshape:
         )
 
     def test_gemma_qkv_merge_per_shard_shape(self) -> None:
-        """Merge using ``shape[1] * shape[2]`` — exercises the wrapper-landing
-        path on a merged target axis."""
+        """Merge using ``shape[1] * shape[2]``, sizes given per device."""
         T, n_heads, head_dim = 6, 8, 16
         q_dim = n_heads * head_dim
         t_np = np.arange(T * q_dim, dtype=np.float32).reshape(
@@ -819,12 +819,7 @@ class _Scatter:
         """Scatter along non-sharded axis — placement preserved.
 
         ops.scatter(input, updates, indices, axis).
-        scatter/scatter_add are CPU-only Mojo kernels.
         """
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter is CPU-only")
-
         x_np = np.zeros((4, 4), dtype=np.float32)
         updates_np = np.ones((4, 2), dtype=np.float32)
         idx_np = np.array([[0, 1], [2, 3], [0, 1], [2, 3]], dtype=np.int32)
@@ -864,14 +859,11 @@ class _Scatter:
             Shape((4, 2)),
             DeviceMapping(self.MESH_2, (Sharded(0),)),
         )
-        menu = scatter_rule(x, updates, idx, axis=0)
-        assert any(row.output == Replicated() for row in menu.axis_assignments)
+        rows = scatter_rule(x, updates, idx, axis=0)
+        assert any(row.outputs == (Replicated(),) for row in rows)
 
     def test_scatter_add_non_sharded_axis(self) -> None:
         """scatter_add along non-sharded axis — placement preserved."""
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter_add is CPU-only")
         x_np = np.zeros((4, 4), dtype=np.float32)
         updates_np = np.ones((4, 2), dtype=np.float32)
         idx_np = np.array([[0, 1], [2, 3], [0, 1], [2, 3]], dtype=np.int32)
@@ -972,7 +964,8 @@ class _Where:
         )
         x = transfer_to(Tensor(x_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
         y = transfer_to(Tensor(y_np), DeviceMapping(self.MESH_2, (Sharded(0),)))
-        result = where(cond, x, y)
+        with auto_reshard(mode="silent"):
+            result = where(cond, x, y)
         assert result.placements == (Sharded(0),)
         assert tuple(result.shape) == (4, 2)
         np.testing.assert_allclose(
@@ -1030,13 +1023,7 @@ class _ScatterNd:
         assert result.placements == (Replicated(),)
 
     def test_scatter_nd_add_replicated(self) -> None:
-        """scatter_nd_add on replicated tensor — placement preserved.
-
-        scatter_nd_add is CPU-only (the Mojo kernel does not support GPU).
-        """
-
-        if not isinstance(self.MESH_2.devices[0], CPU):
-            pytest.skip("scatter_nd_add is CPU-only")
+        """scatter_nd_add on replicated tensor — placement preserved."""
         x_np = np.ones((4, 4), dtype=np.float32)
         updates_np = np.array([[1, 1, 1, 1], [2, 2, 2, 2]], dtype=np.float32)
         idx_np = np.array([[0], [2]], dtype=np.int32)

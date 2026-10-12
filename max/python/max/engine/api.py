@@ -31,7 +31,6 @@ from max._core.engine import CompiledModels as _CompiledModels
 from max._core.engine import DebugConfig as DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
-from max._core.engine import ModelMetadata as ModelMetadata
 from max._core.engine import PrintStyle
 from max._core.engine import TensorSpec as TensorSpec
 from max._core.engine import read as _read
@@ -76,8 +75,8 @@ GPU profiling modes control the level of instrumentation when profiling
 MAX applications with NVIDIA Nsight Systems or Nsight Compute. Higher
 levels provide more detail but may introduce additional overhead.
 
-- ``off``: Disable GPU profiling instrumentation. This is the default
-  mode and incurs no profiling overhead.
+- ``off`` (default): Disable GPU profiling instrumentation. Incurs no
+  profiling overhead.
 - ``on``: Enable basic GPU profiling. Adds CUDA driver calls and NVTX
   markers for correlating kernel executions with host-side code.
 - ``detailed``: Enable detailed GPU profiling with additional NVTX
@@ -319,11 +318,6 @@ def _is_torch_tensor(obj: Any) -> bool:
     return t.__module__ == "torch" and t.__name__ == "Tensor"
 
 
-def _is_torch_metadata_module(obj: Any) -> bool:
-    """Checks if an object is an `TorchMetadata`."""
-    return type(obj).__name__ == "TorchMetadata"
-
-
 def _process_custom_extensions_object(
     custom_extension: CustomExtensionType,
 ) -> CustomExtensionType:
@@ -366,7 +360,10 @@ class SplitKReductionPrecision(IntEnum):
 
 
 class AssertLevel(str, Enum):
-    """The AssertLevel specifies the assert level used by the Mojo Ops."""
+    """Which Mojo asserts are kept in the compiled model.
+
+    Set with :meth:`InferenceSession.set_mojo_assert_level`.
+    """
 
     NONE = "none"
     WARN = "warn"
@@ -375,15 +372,25 @@ class AssertLevel(str, Enum):
 
 
 class LogLevel(str, Enum):
-    """The LogLevel specifies the log level used by the Mojo Ops."""
+    """Verbosity of Mojo logging in the compiled model.
+
+    Set with :meth:`InferenceSession.set_mojo_log_level`.
+    """
 
     NOTSET = "notset"
+    """No Mojo logging at all."""
     TRACE = "trace"
+    """Finest-grained logging; more detail than ``DEBUG``."""
     DEBUG = "debug"
+    """Detailed diagnostic information."""
     INFO = "info"
+    """Confirmation that things are working as expected."""
     WARNING = "warning"
+    """A sign that something unexpected happened; execution continues."""
     ERROR = "error"
+    """A failure in part of the run."""
     CRITICAL = "critical"
+    """A failure so serious the run cannot continue."""
 
 
 class CompilationStopped(RuntimeError):
@@ -970,7 +977,7 @@ class InferenceSession:
 
         Compiles are serialized process-wide: if another compile is in
         flight (from any session), this call blocks until it resolves
-        before scheduling this one. See ``_COMPILATION_LOCK``.
+        before scheduling this one.
 
         Args:
             model: A :class:`Graph` instance, a :class:`max.graph.Module`
@@ -1540,16 +1547,6 @@ class InferenceSession:
         kernel.
         """
         self._set_mojo_define("DUMP_GPU_ASM", str(option))
-
-    def _dump_gpu_llvm(self, option: bool | str | Path = True) -> None:
-        """Enables dumping of gpu llvm.
-
-        Specifying a True would print the kernel output to screen, specifying a
-        string or Path would write the kernel output to the specified path. If
-        a path contains '%' it is replaced with a unique identifier for the
-        kernel.
-        """
-        self._set_mojo_define("DUMP_GPU_LLVM", str(option))
 
     def _set_mojo_define(self, key: str, value: bool | int | str) -> None:
         """Enables overwriting of any mojo config directly."""

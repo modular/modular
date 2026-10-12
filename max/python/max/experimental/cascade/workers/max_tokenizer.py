@@ -147,7 +147,7 @@ class MAXTokenizer(TokenizerWorker):
     ) -> str:
         """Decode ``token`` ids back into text.
 
-        *skip_special_tokens* drops control tokens (e.g. ``<|eot_id|>``) so
+        *skip_special_tokens* drops control tokens (such as ``<|eot_id|>``) so
         the text matches what max-serve returns rather than leaking them into
         the response.
 

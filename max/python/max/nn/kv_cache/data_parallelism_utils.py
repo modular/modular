@@ -83,7 +83,7 @@ def split_input_row_offsets(
             graph.output(*split_offsets)
 
     The method computes new offsets by subtracting the previous offset from
-    the current offset (e.g. ``new_offset_3 = offset_3 - offset_2``).
+    the current offset (such as ``new_offset_3 = offset_3 - offset_2``).
 
     Args:
         num_replicas: The number of replicas to split the input row offsets into.

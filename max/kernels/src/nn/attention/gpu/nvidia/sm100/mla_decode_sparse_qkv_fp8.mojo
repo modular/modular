@@ -65,7 +65,6 @@ ring is not on that loop, so leftover SMEM buys depth on the SW64 side only
   P stages:       N x 64 x 64 x 1 bytes               (SWIZZLE_64B, separate region)
   max/li:         128 x 4 x 3 = 1536 bytes
   barriers:       (6N+2M+11) fixed + output + idx_bars (2N) barriers
-  ptr_tmem_addr:  4 bytes
   idx_smem:       N x 64 x 4 bytes
 """
 
@@ -73,7 +72,7 @@ from std.collections import OptionalReg
 from std.memory import UnsafePointer
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
-from std.sys import size_of
+from std.sys import get_defined_int, size_of
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     thread_idx,
@@ -81,7 +80,7 @@ from max.gpu import (
     warp_id,
     lane_id,
 )
-from max.gpu.sync import barrier
+from max.gpu.sync import barrier, syncwarp
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -91,10 +90,7 @@ from max.gpu.memory import (
     fence_async_view_proxy,
 )
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_fence_before,
-    tcgen05_release_allocation_lock,
 )
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
@@ -109,16 +105,17 @@ from layout import (
     RowMajorLayout,
     TensorEngine,
     TileTensor,
+    coord,
 )
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
 from nn.attention.mha_mask import MHAMask
 from nn.attention.mha_operand import MHAOperand
-from std.utils.index import IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     SharedMemPointer,
@@ -203,6 +200,16 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         Self.kv_gather4_tile_width,
         TensorMapSwizzle.SWIZZLE_NONE,
     ]()
+
+    # >0: the elected lane loads the row indices of this many 4-row chunks
+    # with back-to-back ld.shared.v4 before issuing their gather4s, so the
+    # SMEM latency is paid once per batch instead of once per gather4.
+    comptime gather4_idx_batch = get_defined_int[
+        "MLA_SPARSE_GATHER4_IDX_BATCH", 8
+    ]()
+    # Worst-case padding that 16-byte aligns idx_smem for ld.shared.v4; the
+    # dispatch adds this to the SMEM it reserves.
+    comptime idx_smem_align_pad = 8 if Self.gather4_idx_batch > 0 else 0
 
     comptime UMMAQKTSS = DecodeSM100QKTSS_FP8[
         operand_type=Self.fp8_type,
@@ -289,9 +296,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         # MLA_SM100_Decode_Sparse_KV_FP8's efficient contiguous gather).
         k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         o_tma: ORaggedTMATile[
             dtype=Self.output_type,
@@ -316,9 +322,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         attn_sink_ptr: Self.AttnSinkPtrType,
         extra_k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_kv_lut: Self.KVLUTType,
         extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]],
@@ -402,6 +407,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 )
             else:
                 extra_topk = extra_indices_stride
+        # Main-segment slot count: the clamped topk, tile-padded when extra KV
+        # follows it (see `OffsetPosition.sparse_topk`).
         topk = offset_position.num_keys - extra_topk
 
         var num_orig_blocks = ceildiv(topk, Self.config.BN_QK)
@@ -546,8 +553,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         ](mbar_base8)
         var mbar_base9: MBarType = idx_bars.end()
 
-        var ptr_tmem_addr = (mbar_base9).bitcast[UInt32]()
-        var idx_smem_base = (ptr_tmem_addr + 1).bitcast[Int32]()
+        var idx_smem_base = mbar_base9.bitcast[Int32]()
+        comptime if Self.idx_smem_align_pad > 0:
+            idx_smem_base += ((16 - (Int(idx_smem_base) & 15)) & 15) // 4
         comptime idx_smem_stride = Self.config.BN_QK
 
         var warp_idx = UInt32(warp_id[broadcast=True]())
@@ -570,10 +578,6 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 o_tma.prefetch_descriptor()
                 comptime if Self.has_extra_kv:
                     extra_k_tma.prefetch_descriptor()
-        elif warp_idx == 9:
-            tcgen05_alloc[Self.config.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         # Zero the NoPE tail before the warpgroups read it. The fence publishes
         # the generic-proxy stores to the async proxy for the tcgen05 read.
         comptime if Self.config.input_q_depth < Self.config.padded_q_depth:
@@ -589,8 +593,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
             var attn_sink_log2 = Float32(min_or_neg_inf[.float32]())
             comptime if Self.has_attn_sink:
-                var lane_idx = Int(lane_id())
-                var row = lane_idx & 0x3F
+                # The softmax row this thread owns; lane_id() would fold rows
+                # 32-63 onto 0-31 and give them the wrong heads' sinks.
+                var row = Int(thread_idx.x) & 0x3F
                 var head_idx_local = block_idx.x * Self.config.BM + row
                 if head_idx_local < Self.config.num_q_heads:
                     attn_sink_log2 = attn_sink_ptr.value()[head_idx_local].cast[
@@ -604,7 +609,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 fold_q=Self.fold_shared_index,
                 q_len_fold=Self.q_len_fold,
             ](
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 s_bars,
                 p_bars,
                 p_smem.bitcast[
@@ -625,12 +630,12 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 attn_sink_log2=attn_sink_log2,
                 logical_indices=logical_indices,
                 logical_indices_stride=indices_stride,
-                logical_indices_len=topk,
+                logical_indices_len=offset_position.sparse_topk,
             )
         elif warp_idx >= 4 and warp_idx < 8:
             warpgroup_reg_alloc[num_reg_correction]()
             Self.Common_MLA_Op.Correction(
-                ptr_tmem_addr[0],
+                attn_tmem_addr[cluster_size=1](),
                 o_bars,
                 c_bars,
                 corr_done_bars,
@@ -657,7 +662,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 )
             elif warp_idx == 9:
                 Self.mmaQK(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     q_smem.as_unsafe_any_origin(),
                     kv_smem.as_unsafe_any_origin(),
                     mbar_q,
@@ -667,7 +672,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 )
             elif warp_idx == 10:
                 Self.mmaPV(
-                    ptr_tmem_addr[0],
+                    attn_tmem_addr[cluster_size=1](),
                     kv_smem.as_unsafe_any_origin(),
                     p_smem.as_unsafe_any_origin(),
                     p_bars,
@@ -720,16 +725,10 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 kv_pipeline_mma,
                 offset_position,
             )
-        barrier()
+        syncwarp()
 
         comptime if Self.config.decoding_warp_split_k:
             launch_dependent_grids()
-
-        if warp_idx == 9:
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
-            tcgen05_dealloc[Self.config.cta_group](
-                ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-            )
 
     @staticmethod
     @inline(.always)
@@ -788,7 +787,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             return
 
         var idx_prod = idx_bars.producer()
-        var orig_topk_u32 = UInt32(topk)
+        var orig_topk_u32 = UInt32(offset_position.sparse_topk)
 
         var num_orig_tiles = num_k_tiles
         comptime if Self.has_extra_kv:
@@ -886,9 +885,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         ],
         k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         kv_lut: Self.KVLUTType,
         q_smem: SharedMemPointer[Scalar[Self.fp8_type]],
@@ -921,9 +919,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         topk: Int,
         extra_k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         extra_topk: Int,
     ):
@@ -963,9 +960,11 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             elect_mask,
         )
         if is_leader:
-            comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
-                q_tma
-            ).tile_shape[1]
+            comptime q_elems = type_of(q_tma).tile_shape.element_types[
+                0
+            ].static_value * type_of(q_tma).tile_shape.element_types[
+                1
+            ].static_value
             comptime q_tt_layout = tt_row_major[q_elems]()
             var q_smem_tensor = TileTensor[
                 Self.fp8_type,
@@ -1032,6 +1031,55 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
 
     @staticmethod
     @inline(.always)
+    def _issue_kv_gather(
+        cur_k_tma: TMATensorTile[
+            DType.int64,
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
+        ],
+        kv_stage_ptr: SharedMemPointer[Scalar[Self.fp8_type]],
+        k_mbar: MBarType,
+        idx_smem: SharedMemPointer[Int32],
+        is_leader: Bool,
+    ):
+        comptime box_w = Self.kv_gather4_box_w
+        comptime num_chunks = Self.config.BK_PV // 4
+        comptime if Self.gather4_idx_batch > 0:
+            comptime assert (
+                box_w * 8 == Self.config.input_q_depth
+            ), "per-chunk gather4 assumes one column group per row"
+            comptime B = Self.gather4_idx_batch
+            comptime assert num_chunks % B == 0
+            if is_leader:
+                var idx_u8 = idx_smem.bitcast[UInt8]()
+                comptime for b in range(num_chunks // B):
+                    var rows = StaticTuple[SIMD[DType.uint32, 4], B]()
+                    comptime for j in range(B):
+                        rows[j] = ld_shared_v4_u32(idx_u8, (b * B + j) * 16)
+                    comptime for j in range(B):
+                        comptime c = b * B + j
+                        var dst = TileTensor(
+                            kv_stage_ptr.bitcast[Int64]() + c * 4 * box_w,
+                            tt_row_major[4, box_w](),
+                        )
+                        var r = rows[j].cast[DType.int32]()
+                        cur_k_tma.async_copy_gather4[
+                            eviction_policy=CacheEviction.EVICT_LAST
+                        ](dst, k_mbar[], Int32(0), r[0], r[1], r[2], r[3])
+        else:
+            if is_leader:
+                cur_k_tma.async_copy_gather4_tile[
+                    tile_width=Self.config.input_q_depth // 8,
+                    eviction_policy=CacheEviction.EVICT_LAST,
+                ](
+                    kv_stage_ptr.bitcast[Int64](),
+                    k_mbar[],
+                    idx_smem,
+                    start_idx=0,
+                )
+
+    @staticmethod
+    @inline(.always)
     def _load_one_tile(
         mut kv_prod: DecodeKVProducer[
             Self.fp8_type,
@@ -1042,9 +1090,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         is_leader: Bool,
         cur_k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         mut idx_cons: ConsumerPipeline[Self.num_stages],
         idx_smem_base: SharedMemPointer[Int32],
@@ -1059,16 +1106,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         )
 
         expect_bytes_pred(k_mbar, Int32(kv_bytes), Int32(is_leader))
-        if is_leader:
-            cur_k_tma.async_copy_gather4_tile[
-                tile_width=Self.config.input_q_depth // 8,
-                eviction_policy=CacheEviction.EVICT_LAST,
-            ](
-                kv_stage_ptr.bitcast[Int64](),
-                k_mbar[],
-                idx_smem,
-                start_idx=0,
-            )
+        Self._issue_kv_gather(
+            cur_k_tma, kv_stage_ptr, k_mbar, idx_smem, is_leader
+        )
 
         idx_cons.release()
         kv_prod.commit_step()
@@ -1085,9 +1125,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         is_leader: Bool,
         cur_k_tma: TMATensorTile[
             DType.int64,
-            2,
-            tile_shape=IndexList[2](Self.config.BK_PV, Self.kv_gather4_box_w),
-            desc_shape=IndexList[2](1, Self.kv_gather4_box_w),
+            tile_shape=coord[Self.config.BK_PV, Self.kv_gather4_box_w],
+            desc_shape=coord[1, Self.kv_gather4_box_w],
         ],
         mut idx_cons: ConsumerPipeline[Self.num_stages],
         idx_smem_base: SharedMemPointer[Int32],
@@ -1110,16 +1149,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
             )
 
             expect_bytes_pred(k_mbar, Int32(kv_bytes), Int32(is_leader))
-            if is_leader:
-                cur_k_tma.async_copy_gather4_tile[
-                    tile_width=Self.config.input_q_depth // 8,
-                    eviction_policy=CacheEviction.EVICT_LAST,
-                ](
-                    kv_stage_ptr.bitcast[Int64](),
-                    k_mbar[],
-                    idx_smem,
-                    start_idx=0,
-                )
+            Self._issue_kv_gather(
+                cur_k_tma, kv_stage_ptr, k_mbar, idx_smem, is_leader
+            )
 
             idx_cons.release()
             kv_prod.commit_step()

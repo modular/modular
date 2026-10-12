@@ -34,6 +34,7 @@ class DSparkGemma4_31BProposer:
     """The DSpark Speculators draft: its own embedding, head and d2t map."""
 
     samples_from_anchor = False
+    supports_zero_draft_rows = False
 
     def __init__(
         self,

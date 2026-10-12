@@ -50,7 +50,7 @@ from std.math.uutils import umod, ufloordiv
 from std.collections import OptionalReg
 from std.sys import (
     align_of,
-    has_nvidia_gpu_accelerator,
+    default_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
@@ -330,6 +330,35 @@ struct TensorCore[
             )
         ), "unsupported CDNA input fragment"
 
+    @staticmethod
+    @inline(.always)
+    def _nvidia_input_pack_width[registers: Int, a_operand: Bool]() -> Int:
+        comptime if Self.in_type == .float32:
+            comptime assert (
+                registers in (2, 4) if a_operand else registers in (1, 2, 4)
+            )
+            return 1
+        elif Self.in_type == .float64:
+            comptime assert (
+                registers
+                in (1, 2, 4, 8) if a_operand else registers
+                in (1, 2, 4)
+            )
+            return 1
+        elif Self.in_type in (DType.float16, DType.bfloat16):
+            comptime assert (
+                registers in (4, 8) if a_operand else registers in (2, 4)
+            )
+            return 2
+        else:
+            comptime assert Self.in_type in (
+                DType.float8_e4m3fn,
+                DType.float8_e5m2,
+            )
+            comptime assert _has_native_f8_support()
+            comptime assert registers == (16 if a_operand else 8)
+            return 4
+
     @inline(.always)
     def load_a[
         swizzle: Optional[Swizzle] = None
@@ -347,7 +376,7 @@ struct TensorCore[
             address_space=.LOCAL,
         ],
     ):
-        """Loads a native matrix tile into CDNA A registers.
+        """Loads a native matrix tile into hardware A registers.
 
         Parameters:
             swizzle: Must be `None`; the tile layout supplies the addressing.
@@ -359,18 +388,22 @@ struct TensorCore[
             The native register fragment accepted by `mma_op`.
 
         Constraints:
-            The target must be AMD CDNA and M must be 16 or 32. K must be a
-            positive multiple of the MMA K dimension. Consecutive MMA register
-            groups are packed per lane. NVIDIA, RDNA, and swizzled loads are not
-            supported by this overload.
+            NVIDIA loads require exactly one MMA K dimension. AMD CDNA loads
+            require M to be 16 or 32 and K to be a positive multiple of MMA K;
+            consecutive register groups are packed per lane. RDNA and swizzled
+            loads are not supported.
         """
         comptime assert a.rank == a.flat_rank == 2 and a.element_size == 1
         comptime assert swizzle is None, "native A loads do not support swizzle"
         comptime K = a.static_shape[1]
         comptime assert K > 0 and K % Self.shape[2] == 0
-        Self._check_cdna_input_fragment[
-            Self.shape[0], num_matrix_reg[Self.shape[0], Self.shape[2]]()
-        ]()
+        comptime if not is_nvidia_gpu():
+            Self._check_cdna_input_fragment[
+                Self.shape[0], num_matrix_reg[Self.shape[0], Self.shape[2]]()
+            ]()
+        else:
+            comptime assert K == Self.shape[2]
+            comptime assert Self.shape[0] in (8, 16)
         debug_assert(
             Int(a.dim[0]()) == Self.shape[0], "source must have MMA M rows"
         )
@@ -379,10 +412,26 @@ struct TensorCore[
             type_of(res).LayoutType()
         )
         comptime assert fragment.flat_rank == 2
-        var row = lane_id() % Self.shape[0]
-        var k_base = (lane_id() // Self.shape[0]) * registers
-        comptime for register in range(registers):
-            fragment[0, register] = a.load[width=1]((row, k_base + register))
+        comptime if is_nvidia_gpu():
+            comptime width = Self._nvidia_input_pack_width[registers, True]()
+            comptime row_groups = Self.shape[0] // 8
+            comptime for register in range(registers):
+                var row = lane_id() // 4 + 8 * (
+                    (register // width) % row_groups
+                )
+                var k = (
+                    (lane_id() % 4) * width
+                    + 4 * width * ((register // width) // row_groups)
+                    + register % width
+                )
+                fragment[0, register] = a.load[width=1]((row, k))
+        else:
+            var row = lane_id() % Self.shape[0]
+            var k_base = (lane_id() // Self.shape[0]) * registers
+            comptime for register in range(registers):
+                fragment[0, register] = a.load[width=1](
+                    (row, k_base + register)
+                )
         return fragment
 
     @inline(.always)
@@ -406,7 +455,7 @@ struct TensorCore[
             address_space=.LOCAL,
         ],
     ):
-        """Loads a native matrix tile into CDNA B registers.
+        """Loads a native matrix tile into hardware B registers.
 
         Parameters:
             swizzle: Must be `None`; the tile layout supplies the addressing.
@@ -419,18 +468,25 @@ struct TensorCore[
             The native register fragment accepted by `mma_op`.
 
         Constraints:
-            The target must be AMD CDNA and N must be 16 or 32. K must be a
-            positive multiple of the MMA K dimension. Consecutive MMA register
-            groups are packed per lane. NVIDIA, RDNA, and swizzled loads are not
-            supported by this overload.
+            NVIDIA loads require exactly one MMA K dimension. AMD CDNA loads
+            require N to be 16 or 32 and K to be a positive multiple of MMA K;
+            consecutive register groups are packed per lane. RDNA, swizzled
+            loads, and transposed NVIDIA FP8 loads are not supported.
         """
         comptime assert b.rank == b.flat_rank == 2 and b.element_size == 1
         comptime assert swizzle is None, "native B loads do not support swizzle"
         comptime K = b.static_shape[1 if Self.transpose_b else 0]
         comptime assert K > 0 and K % Self.shape[2] == 0
-        Self._check_cdna_input_fragment[
-            Self.shape[1], num_matrix_reg[Self.shape[2], Self.shape[1]]()
-        ]()
+        comptime if not is_nvidia_gpu():
+            Self._check_cdna_input_fragment[
+                Self.shape[1], num_matrix_reg[Self.shape[2], Self.shape[1]]()
+            ]()
+        else:
+            comptime assert K == Self.shape[2] and Self.shape[1] == 8
+            comptime assert not (
+                Self.transpose_b
+                and Self.in_type in (DType.float8_e4m3fn, DType.float8_e5m2)
+            ), "transposed NVIDIA FP8 native loads are not supported"
         debug_assert(
             Int(b.dim[0 if Self.transpose_b else 1]()) == Self.shape[1],
             "source must have MMA N columns",
@@ -440,17 +496,31 @@ struct TensorCore[
             type_of(res).LayoutType()
         )
         comptime assert fragment.flat_rank == 2
-        var col = lane_id() % Self.shape[1]
-        var k_base = (lane_id() // Self.shape[1]) * registers
-        comptime for register in range(registers):
-            comptime if Self.transpose_b:
-                fragment[register, 0] = b.load[width=1](
-                    (col, k_base + register)
+        comptime if is_nvidia_gpu():
+            comptime width = Self._nvidia_input_pack_width[registers, False]()
+            comptime for register in range(registers):
+                var col = lane_id() // 4
+                var k = (
+                    (lane_id() % 4) * width
+                    + 4 * width * (register // width)
+                    + register % width
                 )
-            else:
-                fragment[register, 0] = b.load[width=1](
-                    (k_base + register, col)
-                )
+                comptime if Self.transpose_b:
+                    fragment[register, 0] = b.load[width=1]((col, k))
+                else:
+                    fragment[register, 0] = b.load[width=1]((k, col))
+        else:
+            var col = lane_id() % Self.shape[1]
+            var k_base = (lane_id() // Self.shape[1]) * registers
+            comptime for register in range(registers):
+                comptime if Self.transpose_b:
+                    fragment[register, 0] = b.load[width=1](
+                        (col, k_base + register)
+                    )
+                else:
+                    fragment[register, 0] = b.load[width=1](
+                        (k_base + register, col)
+                    )
         return fragment
 
     # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
@@ -1099,7 +1169,7 @@ struct TensorCore[
         else:
             comptime assert False, "No valid type to store to LayoutTensor d"
 
-    # need always_inline, otherwise the stack allocated LayoutTensor will not be valid
+    # Inlining keeps the stack-allocated result in the caller's allocation scope.
     @inline(.always)
     def mma_op(
         self,
@@ -1124,13 +1194,11 @@ struct TensorCore[
         var a_reg = load_to_simd(a)
         var b_reg = load_to_simd(b)
         var c_reg = load_to_simd(c)
-        var d_reg = c_reg
-        mma(d_reg, a_reg, b_reg, d_reg)
-        var d = type_of(res).stack_allocation()
-        d.vectorize[1, Self.c_reg_type.length]()[0, 0] = rebind[
-            type_of(d.vectorize[1, Self.c_reg_type.length]()[0, 0])
-        ](d_reg)
-        return d
+        var d = stack_allocation[Self.out_type, address_space=.LOCAL](
+            Self.c_fragment_layout
+        )
+        self._mma_into(a_reg, b_reg, c_reg, d)
+        return Self.c_reg_tile_type(d.unsafe_ptr().as_unsafe_any_origin())
 
     @inline(.always)
     def mma_op(
@@ -1172,20 +1240,24 @@ struct TensorCore[
         comptime assert a_packed.flat_rank == 2
         comptime assert b_packed.flat_rank == 2
         comptime assert c_packed.flat_rank == 2
-        var d_reg = c_packed.load[alignment=align_of[Self.out_type]()]((0, 0))
-        mma(
-            d_reg,
-            a_packed.load[alignment=align_of[Self.in_type]()]((0, 0)),
-            b_packed.load[alignment=align_of[Self.in_type]()]((0, 0)),
-            d_reg,
-        )
+        var c_reg = c_packed.load[alignment=align_of[Self.out_type]()]((0, 0))
+        var a_reg = a_packed.load[alignment=align_of[Self.in_type]()]((0, 0))
+        var b_reg = b_packed.load[alignment=align_of[Self.in_type]()]((0, 0))
         var d = stack_allocation[Self.out_type, address_space=.LOCAL](
             Self.c_fragment_layout
         )
+        self._mma_into(a_reg, b_reg, c_reg, d)
+        return d
+
+    @inline(.always)
+    def _mma_into(self, a: SIMD, b: SIMD, c: SIMD, d: Self.c_fragment_type):
+        var d_reg = c
+        mma(d_reg, a, b, d_reg)
         var d_packed = d.vectorize[1, Self.c_reg_type.length]()
         comptime assert d_packed.flat_rank == 2
-        d_packed.store[alignment=align_of[Self.out_type]()]((0, 0), d_reg)
-        return d
+        d_packed.store[alignment=align_of[Self.out_type]()](
+            (0, 0), rebind[Self.c_reg_type](d_reg)
+        )
 
     @inline(.always)
     def load_a[
@@ -1500,6 +1572,80 @@ struct TensorCore[
     @inline(.always)
     def load_b(
         self,
+        warp_tile: TileTensor,
+        fragments: TileTensor[mut=True, .bfloat16, ...],
+        scales: TileTensor[.bfloat16, ...],
+        mma_tile_coord_k: Int = 0,
+    ):
+        """Dequantizes repacked INT4 B operands into native bfloat16 registers.
+
+        Args:
+            warp_tile: Shared-memory tile of packed int32 or uint32 words.
+            fragments: Local scalar tile with four bfloat16 registers per row.
+            scales: Local scalar tile with one bfloat16 scale per fragment row.
+            mma_tile_coord_k: Coordinate selecting a contiguous 128-word tile.
+
+        Constraints:
+            Supports NVIDIA bfloat16 16-by-8-by-16 MMA only. The destination
+            has an even number of fragment rows between two and eight. Packed
+            words need only scalar alignment. This loader consumes the existing
+            INT4 repack format, not FP4 or FP8.
+        """
+        comptime assert is_nvidia_gpu() and Self.in_type == .bfloat16
+        comptime assert Self.supported_half
+        comptime assert warp_tile.dtype in (DType.int32, DType.uint32)
+        comptime assert warp_tile.address_space == .SHARED
+        comptime assert warp_tile.rank == warp_tile.flat_rank == 2
+        comptime assert warp_tile.element_size == 1
+        comptime assert type_of(warp_tile).LayoutType.all_dims_known
+        comptime assert warp_tile.static_stride[1] == 1
+        comptime assert warp_tile.static_shape[0] > 0
+        comptime assert fragments.address_space == .LOCAL
+        comptime assert fragments.rank == fragments.flat_rank == 2
+        comptime assert fragments.element_size == 1
+        comptime assert type_of(fragments).LayoutType.all_dims_known
+        comptime assert fragments.static_shape[1] == 4
+        comptime assert fragments.static_stride[1] == 1
+        comptime num_frags = fragments.static_shape[0]
+        comptime assert num_frags in (2, 4, 6, 8)
+        comptime assert scales.address_space == .LOCAL
+        comptime assert scales.rank == scales.flat_rank == 2
+        comptime assert scales.element_size == 1
+        comptime assert type_of(scales).LayoutType.all_dims_known
+        comptime assert scales.static_shape[0] == num_frags
+        comptime assert scales.static_shape[1] == 1
+        debug_assert(
+            mma_tile_coord_k >= 0
+            and (mma_tile_coord_k + 1) * 128 <= warp_tile.static_shape[1],
+            "K coordinate must select a complete 128-word repacked tile",
+        )
+        var offset = 128 * mma_tile_coord_k + 4 * umod(thread_idx.x, WARP_SIZE)
+        var vec = bitcast[.int32, 4](
+            warp_tile.load[width=4, alignment=align_of[warp_tile.dtype]()](
+                (0, offset)
+            )
+        )
+        comptime for i in range(0, num_frags, 2):
+            var q_int = vec[i // 2]
+            var scale = scales.load[width=1]((i, 0))
+            var v1 = _int4_to_bf16(q_int, scale)
+            q_int >>= 4
+            var v2 = _int4_to_bf16(q_int, scale)
+            fragments.store[width=4, alignment=align_of[BFloat16]()](
+                (i, 0), v1.join(v2)
+            )
+            q_int >>= 4
+            scale = scales.load[width=1]((i + 1, 0))
+            v1 = _int4_to_bf16(q_int, scale)
+            q_int >>= 4
+            v2 = _int4_to_bf16(q_int, scale)
+            fragments.store[width=4, alignment=align_of[BFloat16]()](
+                (i + 1, 0), v1.join(v2)
+            )
+
+    @inline(.always)
+    def load_b(
+        self,
         warp_tile: LayoutTensor,
         fragments: LayoutTensor[mut=True, ...],
         scales: LayoutTensor,
@@ -1520,7 +1666,7 @@ struct TensorCore[
 
             - The `warp_tile` must be in shared memory.
             - The `fragments` and `scales` must be in local memory.
-            - This function only supports half-precision data types (bfloat16, float16).
+            - The unpacker produces bfloat16 pairs from repacked INT4 words.
             - The quantized data is stored as int4 values packed into int32 elements.
             - Each thread processes multiple fragments by unpacking and dequantizing the int4 values.
         """
@@ -1541,27 +1687,7 @@ struct TensorCore[
         comptime pack_factor = 8
         comptime repack_tile = Index(64, 16)
 
-        @inline(.always)
-        def int4tobf16(i4: Int32, scale: BFloat16) -> SIMD[.bfloat16, 2]:
-            comptime MASK: Int32 = 0x000F000F
-            comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
-
-            comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
-            var BF16_BIAS = SIMD[.bfloat16, 2](-136, -136)
-            var BF16_SCALE = SIMD[.bfloat16, 2](scale, scale)
-            var BF16_ZERO = SIMD[.bfloat16, 2](0, 0)
-            var BF16_ONE = SIMD[.bfloat16, 2](1, 1)
-
-            var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
-
-            var v = (
-                bitcast[.bfloat16, 2](t)
-                .fma(BF16_ONE, BF16_BIAS)
-                .fma(BF16_SCALE, BF16_ZERO)
-            )
-            return v
-
-        # The wrap_tile is of shape [WK // 64, 128 * n_mma]
+        # The warp tile contains contiguous 128-word repacked blocks.
         # Every contiguous 128 ints stores a 64x16 repacked tile
         var mma_tile = warp_tile.tile[
             1, (repack_tile[0] * repack_tile[1]) // pack_factor
@@ -1573,14 +1699,14 @@ struct TensorCore[
 
         comptime for i in range(0, num_frags, 2):
             var q_int = vec[i // 2]
-            var v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales[i, 0]))
+            var v1 = _int4_to_bf16(q_int, bitcast[.bfloat16, 1](scales[i, 0]))
             q_int >>= 4
-            var v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales[i, 0]))
+            var v2 = _int4_to_bf16(q_int, bitcast[.bfloat16, 1](scales[i, 0]))
             fragments[i, 0] = rebind[frag_type](v1.join(v2))
             q_int >>= 4
-            v1 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales[i + 1, 0]))
+            v1 = _int4_to_bf16(q_int, bitcast[.bfloat16, 1](scales[i + 1, 0]))
             q_int >>= 4
-            v2 = int4tobf16(q_int, bitcast[.bfloat16, 1](scales[i + 1, 0]))
+            v2 = _int4_to_bf16(q_int, bitcast[.bfloat16, 1](scales[i + 1, 0]))
             fragments[i + 1, 0] = rebind[frag_type](v1.join(v2))
 
     @inline(.always)
@@ -1630,6 +1756,80 @@ struct TensorCore[
                     b_frag[n_mma, 0],
                     c_frag[n_mma * num_m_mmas + m_mma, 0],
                 )
+
+    @inline(.always)
+    def mma(
+        self,
+        a_frag: TileTensor[Self.in_type, ...],
+        b_frag: TileTensor[Self.in_type, ...],
+        c_frag: TileTensor[mut=True, ...],
+    ):
+        """Accumulates packed native register groups in hardware order.
+
+        Args:
+            a_frag: A register groups of shape (M, 1).
+            b_frag: B register groups of shape (N, 1).
+            c_frag: Mutable accumulator groups of shape (M * N, 1), with
+                group (m, n) stored at n * M + m.
+
+        Constraints:
+            Each element must hold exactly one hardware register group.
+            All fragments must reside in local memory. Outer strides may
+            include padding between register groups.
+        """
+        comptime assert c_frag.dtype == Self.out_type
+        comptime assert a_frag.rank == a_frag.flat_rank == 2
+        comptime assert b_frag.rank == b_frag.flat_rank == 2
+        comptime assert c_frag.rank == c_frag.flat_rank == 2
+        comptime assert a_frag.address_space == .LOCAL
+        comptime assert b_frag.address_space == .LOCAL
+        comptime assert c_frag.address_space == .LOCAL
+        comptime assert a_frag.element_size == Self.a_reg_type.length
+        comptime assert b_frag.element_size == Self.b_reg_type.length
+        comptime assert c_frag.element_size == Self.c_reg_type.length
+        comptime assert a_frag.static_shape[1] == 1
+        comptime assert b_frag.static_shape[1] == 1
+        comptime assert c_frag.static_shape[1] == 1
+        comptime num_m_mmas = a_frag.static_shape[0]
+        comptime num_n_mmas = b_frag.static_shape[0]
+        comptime assert num_m_mmas > 0 and num_n_mmas > 0
+        comptime assert c_frag.static_shape[0] == num_m_mmas * num_n_mmas
+        comptime for m_mma in range(num_m_mmas):
+            comptime for n_mma in range(num_n_mmas):
+                comptime c_index = n_mma * num_m_mmas + m_mma
+                var accum = c_frag.load[alignment=align_of[Self.out_type]()](
+                    (c_index, 0)
+                )
+                mma(
+                    accum,
+                    a_frag.load[alignment=align_of[Self.in_type]()]((m_mma, 0)),
+                    b_frag.load[alignment=align_of[Self.in_type]()]((n_mma, 0)),
+                    accum,
+                )
+                c_frag.store[alignment=align_of[Self.out_type]()](
+                    (c_index, 0), accum
+                )
+
+
+@inline(.always)
+def _int4_to_bf16(i4: Int32, scale: BFloat16) -> SIMD[.bfloat16, 2]:
+    comptime MASK: Int32 = 0x000F000F
+    comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
+
+    comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
+    var BF16_BIAS = SIMD[.bfloat16, 2](-136, -136)
+    var BF16_SCALE = SIMD[.bfloat16, 2](scale, scale)
+    var BF16_ZERO = SIMD[.bfloat16, 2](0, 0)
+    var BF16_ONE = SIMD[.bfloat16, 2](1, 1)
+
+    var t = lop[lut](i4, MASK, I4s_TO_BF16s_MAGIC_NUM)
+
+    var v = (
+        bitcast[.bfloat16, 2](t)
+        .fma(BF16_ONE, BF16_BIAS)
+        .fma(BF16_SCALE, BF16_ZERO)
+    )
+    return v
 
 
 @inline(.always)
@@ -1730,7 +1930,7 @@ def get_mma_shape[
         where `MxN` is the output matrix size and `K` is the reduction dimension.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         comptime if accum_type == .float32 and input_type == .float32:
             comptime if shape_id == 0:
                 return shape_16x8x8

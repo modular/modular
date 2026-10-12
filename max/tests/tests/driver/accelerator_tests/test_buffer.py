@@ -472,6 +472,27 @@ def test_batch_inplace_copy_skips_identity_on_accelerator() -> None:
     np.testing.assert_array_equal(other_dst.to(CPU()).to_numpy(), [99.0])
 
 
+def test_batch_inplace_copy_lands_same_address_on_different_devices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Check inplace copies across devices don't get de-duplicated if the
+    addresses are identical.
+    """
+    gpu = Accelerator()
+    src = Buffer.from_numpy(np.array([1, 2, 3, 4], dtype=np.uint32))
+    cpu_dst = Buffer.from_numpy(np.zeros(4, dtype=np.uint32))
+    gpu_dst = Buffer.from_numpy(np.zeros(4, dtype=np.uint32)).to(gpu)
+    gpu.synchronize()
+
+    # Patch _data_ptr to return the same value
+    monkeypatch.setattr(Buffer, "_data_ptr", lambda self: 2)
+    batch_inplace_copy([cpu_dst, gpu_dst], [src, src])
+    gpu.synchronize()
+
+    np.testing.assert_array_equal(cpu_dst.to_numpy(), [1, 2, 3, 4])
+    np.testing.assert_array_equal(gpu_dst.to(CPU()).to_numpy(), [1, 2, 3, 4])
+
+
 def test_batch_inplace_copy_pinned_poison_pill_parity() -> None:
     """Mostly DtoD plus staging Buffer pairs: value parity vs per-copy loop.
 

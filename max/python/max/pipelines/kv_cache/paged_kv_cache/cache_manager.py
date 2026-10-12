@@ -358,12 +358,12 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
     ) -> list[PrefixCacheHits]:
         """Counts each replica's contiguous cached prefix for a request.
 
-        Computes the request's block hashes once and queries every replica's
-        block manager read-only, without claiming the request or mutating any
-        per-request state. Intended for prefix-aware data-parallel routing:
-        callers can compare replicas' hit num_blocks (across the device, host,
-        and disk tiers) before deciding which replica should serve the
-        request.
+        Computes the request's block hashes once and counts every replica's
+        device hits, probing the shared external tiers once for all of them,
+        without claiming the request or mutating any per-request state.
+        Intended for prefix-aware data-parallel routing: callers can compare
+        replicas' hit num_blocks (across the device, host, and disk tiers)
+        before deciding which replica should serve the request.
 
         Args:
             ctx: The request context to count cached prefix blocks for.
@@ -375,7 +375,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             return [PrefixCacheHits() for _ in self._replica]
 
         # The hash chain is identical across replicas (same algo, seed, and
-        # block size), so hash once and only vary the lookups.
+        # block size), so hash once.
         block_manager = self._replica[0].block_manager
         block_hashes = compute_block_hashes(
             ctx,
@@ -384,12 +384,9 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             block_manager.kv_hash_algo,
             block_manager.kv_hash_seed,
         )
-        return [
-            replica.block_manager.count_cached_prefix_blocks(
-                block_hashes, replica_idx
-            )
-            for replica_idx, replica in enumerate(self._replica)
-        ]
+        return block_manager.count_cached_prefix_blocks_per_replica(
+            block_hashes
+        )
 
     def alloc(self, ctx: TextContext) -> KVTransfer:
         """Allocates blocks for a request.
@@ -463,7 +460,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 prepare attention dispatch metadata. When provided, the dispatch
                 metadata (and ``max_prompt_length``/``max_cache_length``) is
                 resolved from these
-                (e.g. graph-capture-aligned) values rather than the batch's real
+                (such as graph-capture-aligned) values rather than the batch's real
                 values, so the resolved key matches a captured graph. The batch's
                 real values must not exceed these. When ``None``, the metadata is
                 prepared from the real per-replica values.
@@ -479,7 +476,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
             # Allocate blocks for request if we need more.
             if _does_req_need_more_blocks(
                 ctx,
-                len(self.get_req_blocks(ctx)),
+                self.num_req_blocks(ctx),
                 self.params,
             ):
                 raise ValueError(
@@ -555,7 +552,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         absolute_max_cached_len = 0
         for batch_idx, ctx in enumerate(batch):
             # Get the blocks for this request.
-            blocks = self.get_req_blocks(ctx)
+            blocks = self._block_manager.get_req_blocks(ctx)
 
             # Sanity check that we have enough blocks.
             seq_len = _compute_seq_len(
@@ -659,7 +656,7 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
                 views. If not provided, uses request-derived runtime length.
             batch_characteristics: Optional upper-bound batch shape applied
                 uniformly across every replica when preparing attention dispatch
-                metadata. When provided (e.g. graph-capture replay, where every
+                metadata. When provided (such as graph-capture replay, where every
                 DP replica must run the identical captured graph), the dispatch
                 key is resolved once from these aligned values; the real
                 per-replica values must not exceed them. When ``None``, each
@@ -781,9 +778,17 @@ class PagedKVCacheManager(PagedKVCacheManagerInterface):
         """Returns aggregated metrics across all replicas."""
         return self._block_manager.metrics
 
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds on the replica it was claimed on."""
-        return self._block_manager.get_req_blocks(ctx)
+    def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
+        """Returns the request's block IDs, repeated under every leaf.
+
+        Every leaf of this cache shares one block space.
+        """
+        blocks = self._block_manager.get_req_blocks(ctx)
+        return {leaf_id: list(blocks) for leaf_id in self.params.leaves()}
+
+    def num_req_blocks(self, ctx: TextContext) -> int:
+        """Returns how many pages long the request is on its claimed replica."""
+        return len(self._block_manager.get_req_blocks(ctx))
 
     def host_byte_count(self) -> ByteCount:
         """Returns the host KV tier occupancy in bytes, shared by every replica."""

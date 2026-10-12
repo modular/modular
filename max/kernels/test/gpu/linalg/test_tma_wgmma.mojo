@@ -22,16 +22,19 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu import block_idx, thread_idx
 from layout import (
     TensorLayout,
+    ComptimeInt,
+    CoordLike,
+    IntTuple,
     Coord,
     Layout,
     LayoutTensor,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tile_layout import Layout as NativeLayout
 from layout.tile_tensor import stack_allocation
-from layout.int_tuple import _IntTupleToCoordLike
-from std.utils import TypeList
+from std.builtin.variadics import TypeList
 from layout._fillers import arange
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.int_tuple import product
@@ -54,15 +57,25 @@ from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 
+comptime _StaticCoordLeaf[mode: IntTuple, idx: Int]: CoordLike = ComptimeInt[
+    Int(mode[idx])
+]
+
+
+comptime _StaticCoordMode[mode: IntTuple] = Coord[
+    *TypeList.tabulate[len(mode), _StaticCoordLeaf[mode, _]]()
+]
+
+
 # Keep the nested SMEM modes used by the existing descriptor formulas.
 comptime _SmemLayout[legacy: Layout] = NativeLayout[
     shape_types=TypeList.of[
-        Coord[*_IntTupleToCoordLike[.int64, legacy.shape[0]]],
-        Coord[*_IntTupleToCoordLike[.int64, legacy.shape[1]]],
+        _StaticCoordMode[legacy.shape[0]],
+        _StaticCoordMode[legacy.shape[1]],
     ](),
     stride_types=TypeList.of[
-        Coord[*_IntTupleToCoordLike[.int64, legacy.stride[0]]],
-        Coord[*_IntTupleToCoordLike[.int64, legacy.stride[1]]],
+        _StaticCoordMode[legacy.stride[0]],
+        _StaticCoordMode[legacy.stride[1]],
     ](),
 ]
 
@@ -128,12 +141,10 @@ def tma_wgmma_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     wgmma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -141,8 +152,8 @@ def tma_wgmma_kernel[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     a_smem: Bool = True,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[c_type, CLayout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
@@ -164,22 +175,33 @@ def tma_wgmma_kernel[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
 
-    var a_smem_tile = stack_allocation[
-        dtype=a_type, address_space=.SHARED, alignment=128
-    ](
+    comptime assert a_smem_layout.all_dims_known()
+    comptime assert b_smem_layout.all_dims_known()
+
+    var a_smem_tile = TileTensor[address_space=.SHARED](
+        unsafe_stack_allocation[
+            BM * BK,
+            Scalar[a_type],
+            address_space=.SHARED,
+            alignment=128,
+        ](),
         _SmemLayout[a_smem_layout](
             Coord[*_SmemLayout[a_smem_layout].shape_types](),
             Coord[*_SmemLayout[a_smem_layout].stride_types](),
-        )
+        ),
     )
 
-    var b_smem_tile = stack_allocation[
-        dtype=b_type, address_space=.SHARED, alignment=128
-    ](
+    var b_smem_tile = TileTensor[address_space=.SHARED](
+        unsafe_stack_allocation[
+            BN * BK,
+            Scalar[b_type],
+            address_space=.SHARED,
+            alignment=128,
+        ](),
         _SmemLayout[b_smem_layout](
             Coord[*_SmemLayout[b_smem_layout].shape_types](),
             Coord[*_SmemLayout[b_smem_layout].stride_types](),
-        )
+        ),
     )
 
     comptime accum_type = get_accum_type[a_type]()
@@ -241,14 +263,13 @@ def tma_wgmma_kernel[
         mbar[0].wait(phase)
         phase ^= 1
 
-        warpgroup_fence(c_reg_tile.to_layout_tensor())
+        warpgroup_fence(c_reg_tile)
         wgmma_op.arrive()
 
         comptime if a_smem:
-            wgmma_op.wgmma(
-                a_smem_tile, b_smem_tile, c_reg_tile.to_layout_tensor()
-            )
+            wgmma_op.wgmma(a_smem_tile, b_smem_tile, c_reg_tile)
         else:
+            # The register/shared overload still requires legacy fragments.
             var a_reg_tile = _load_a_reg_tile[wgmma_shape](
                 a_smem_tile.as_unsafe_any_origin().to_layout_tensor()
             )
@@ -258,7 +279,7 @@ def tma_wgmma_kernel[
                 c_reg_tile.to_layout_tensor(),
             )
         wgmma_op.commit_group()
-        warpgroup_fence(c_reg_tile.to_layout_tensor())
+        warpgroup_fence(c_reg_tile)
         wgmma_op.wait_group()
 
         barrier()
@@ -278,11 +299,20 @@ def tma_wgmma_kernel[
             # Tile at (mma_id, 0) is a long vector containing all fragments
             # for this warp.
             var c_frag = c_reg_tile.tile[1, c_frag_size](mma_id, 0)
+            var c_output_frag = stack_allocation[
+                dtype=c_type, address_space=.LOCAL, alignment=16
+            ](row_major[1, c_frag_size]())
+
+            # Scalar views avoid requiring wider SIMD alignment on C registers.
+            comptime for i in range(c_frag_size):
+                c_output_frag.tile[1, 1](0, i).copy_from(
+                    c_frag.tile[1, 1](0, i)
+                )
 
             # A warp is organized as row_major(8, 4) and each thread owns 2 contiguous
             # elementwise. This pattern repeats to fill the warp tile.
             copy_local_to_dram[row_major[8, 4]()](
-                warp_tile.vectorize[1, 2](), c_frag.vectorize[1, 2]()
+                warp_tile.vectorize[1, 2](), c_output_frag.vectorize[1, 2]()
             )
 
 
@@ -340,11 +370,11 @@ def test_tma_wgmma[
     a.to_device()
     b.to_device()
 
-    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    var a_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=a_swizzle](
         ctx, a.device_tensor()
     )
     var b_tma_op = create_tensor_tile[
-        Index(BN, BK) if transpose_b else Index(BK, BN),
+        coord[BN if transpose_b else BK, BK if transpose_b else BN],
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
@@ -353,10 +383,8 @@ def test_tma_wgmma[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
         block_tile_shape,

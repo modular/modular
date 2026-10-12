@@ -23,12 +23,7 @@ from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
 from std.builtin.device_passable import DevicePassable
-from std.sys import (
-    CompilationTarget,
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import CompilationTarget, argv, default_accelerator
 
 from max.gpu.host import (
     ConstantMemoryMapping,
@@ -103,9 +98,9 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         If SHMEM initialization or the launched function fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         _shmem_launch_mpi[func]()
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         _shmem_launch_tcp[func]()
     else:
         CompilationTarget.unsupported_target_error[

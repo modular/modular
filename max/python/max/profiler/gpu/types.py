@@ -34,16 +34,10 @@ ThrottleReason = Literal[
 """Vendor-neutral reason that a GPU's clock is below its boost ceiling.
 
 The vocabulary mirrors the categories NVML exposes today; new vendors
-(e.g. ROCm-SMI, once it exposes an equivalent API) should map their
+(such as ROCm-SMI, once it exposes an equivalent API) should map their
 reasons onto these names where possible and extend the list otherwise.
 """
 
-# Reasons that indicate the GPU was performance-capped by hardware
-# (thermal, power, sync-boost) rather than by user/application settings
-# or simply being idle. Use ``set(stats.throttle_reasons) &
-# HARDWARE_THROTTLE_REASONS`` to decide whether a benchmark run was
-# throttled. A bare non-empty list is misleading because ``"gpu_idle"``
-# is reported whenever the GPU was idle at sample time.
 HARDWARE_THROTTLE_REASONS: frozenset[ThrottleReason] = frozenset(
     {
         "sw_power_cap",
@@ -54,6 +48,15 @@ HARDWARE_THROTTLE_REASONS: frozenset[ThrottleReason] = frozenset(
         "hw_power_brake_slowdown",
     }
 )
+"""Throttle reasons that mean hardware performance-capped the GPU.
+
+These reasons (thermal, power, sync-boost) are imposed by the hardware.
+User or application settings and GPU idleness are not hardware throttling.
+When ``stats.throttle_reasons`` is not ``None``, intersect with
+``set(stats.throttle_reasons)`` to decide whether a benchmark run was
+throttled: a bare non-empty list is misleading because ``"gpu_idle"`` is
+reported whenever the GPU was idle at sample time.
+"""
 
 
 class GPUStats(msgspec.Struct):

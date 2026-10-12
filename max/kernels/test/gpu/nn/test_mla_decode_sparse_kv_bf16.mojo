@@ -32,7 +32,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from nn.attention.mha_mask import CausalMask, NullMask
+from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
 from nn.attention.mha_operand import KVCacheMHAOperand
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
 from nn.attention.gpu.mla import flare_mla_decoding
@@ -1643,6 +1643,7 @@ def run_test_sparse_kv_bf16_extra_kv[
     extra_cache_lengths: List[Int],
     extra_topk_per_batch: List[Int],
     ctx: DeviceContext,
+    mask: Some[MHAMask],
 ) raises:
     var batch_size = len(cache_lengths)
     comptime q_max_seq_len = 1
@@ -2101,7 +2102,7 @@ def run_test_sparse_kv_bf16_extra_kv[
         out_tt,
         q_tt,
         kv_cache,
-        NullMask(),
+        mask,
         row_offsets_tt,
         scale,
         ctx,
@@ -2684,6 +2685,7 @@ def main() raises:
                 ek_ecls_1,
                 ek_etopk_1,
                 ctx,
+                NullMask(),
             )
 
             var ek_cls_2: List[Int] = [256, 384]
@@ -2697,6 +2699,40 @@ def main() raises:
                 ek_ecls_2,
                 ek_etopk_2,
                 ctx,
+                NullMask(),
+            )
+
+            # A main top-k that is not a tile multiple pads the main
+            # segment, so the extra keys start at slot 128, not 100.
+            var ek_cls_3: List[Int] = [256, 384]
+            var ek_topk_3: List[Int] = [100, 37]
+            var ek_ecls_3: List[Int] = [64, 128]
+            var ek_etopk_3: List[Int] = [64, 100]
+            run_test_sparse_kv_bf16_extra_kv[.bfloat16, 64](
+                "sparse_kv_bf16_extra_kv_b2_h64_topk_unaligned",
+                ek_cls_3,
+                ek_topk_3,
+                ek_ecls_3,
+                ek_etopk_3,
+                ctx,
+                NullMask(),
+            )
+
+            # Causal mask over a padded main segment: the causal horizon
+            # (cache 59 + 1) still covers all 20 keys, so the padded extra
+            # slots 64-73 must count as keys 10-19 and stay visible.
+            var ek_cls_4: List[Int] = [59]
+            var ek_topk_4: List[Int] = [10]
+            var ek_ecls_4: List[Int] = [64]
+            var ek_etopk_4: List[Int] = [10]
+            run_test_sparse_kv_bf16_extra_kv[.bfloat16, 64](
+                "sparse_kv_bf16_extra_kv_b1_h64_causal_padded",
+                ek_cls_4,
+                ek_topk_4,
+                ek_ecls_4,
+                ek_etopk_4,
+                ctx,
+                CausalMask(),
             )
 
             # =====================================================

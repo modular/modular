@@ -14,9 +14,10 @@
 """Test warp-level bitonic sort correctness in MoE router."""
 
 from max.gpu.host import DeviceContext
-from layout import TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from nn.moe import router_group_limited, single_group_router
 from std.testing import assert_equal
+from std.utils.index import IndexList
 
 
 def test_warp_bitonic_sort_interleaved[
@@ -307,6 +308,60 @@ def test_single_group_router_raw_score_used_for_weights[
             )
 
 
+def test_single_group_router_scores_from_layout_and_lambda[
+    n_experts: Int,
+    topk_experts: Int,
+](ctx: DeviceContext) raises:
+    """Scores come only from the lambda; the router sees just their layout.
+
+    Token `t` scores expert `e` as `n_experts - (e - t) mod n_experts`, so its
+    top-k are experts `t, t+1, ..., t+k-1` with raw scores `n, n-1, ...`.
+    """
+    var num_tokens = 3
+    var bias_dev = ctx.enqueue_create_buffer[.float32](n_experts)
+    var indices_dev = ctx.enqueue_create_buffer[.int32](
+        num_tokens * topk_experts
+    )
+    var weights_dev = ctx.enqueue_create_buffer[.float32](
+        num_tokens * topk_experts
+    )
+    bias_dev.enqueue_fill(0.0)
+
+    var out_layout = row_major(Coord(num_tokens, Idx[topk_experts]))
+    var indices_tensor = TileTensor(indices_dev, out_layout)
+    var weights_tensor = TileTensor(weights_dev, out_layout)
+    var bias_tensor = TileTensor(bias_dev, row_major[n_experts]())
+
+    def scores_fn[
+        width: Int
+    ](coords: IndexList[2]) capturing -> SIMD[.float32, width]:
+        var rotated = (coords[1] - coords[0] + n_experts) % n_experts
+        return SIMD[.float32, width](Float32(n_experts - rotated))
+
+    single_group_router[
+        n_experts, topk_experts, True, "gpu", scores_input_fn=scores_fn
+    ](
+        indices_tensor,
+        weights_tensor,
+        row_major(Coord(num_tokens, Idx[n_experts])),
+        bias_tensor.as_imm(),
+        Float32(1.0),
+        ctx,
+    )
+    ctx.synchronize()
+
+    var raw_sum: Float32 = 0
+    for r in range(topk_experts):
+        raw_sum += Float32(n_experts - r)
+
+    with indices_dev.map_to_host() as idx_map, weights_dev.map_to_host() as wgt_map:
+        for t in range(num_tokens):
+            for r in range(topk_experts):
+                var i = t * topk_experts + r
+                assert_equal(Int(idx_map[i]), t + r)
+                assert_equal(wgt_map[i], Float32(n_experts - r) / raw_sum)
+
+
 def main() raises:
     with DeviceContext() as ctx:
         # academic-ds-9b: 64 experts, 8 groups, 8 experts/group
@@ -319,3 +374,4 @@ def main() raises:
         test_single_group_router_raw_score_used_for_weights[384, 8](ctx)
         # Nemotron-H: a top-k that is not a power of two.
         test_single_group_router_raw_score_used_for_weights[128, 6](ctx)
+        test_single_group_router_scores_from_layout_and_lambda[384, 8](ctx)

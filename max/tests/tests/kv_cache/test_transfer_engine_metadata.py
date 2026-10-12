@@ -65,8 +65,8 @@ def test_kv_metadata_extends_with_kv_fields() -> None:
     kv_fields = set(KVTransferEngineMetadata.__struct_fields__)
     assert base_fields <= kv_fields
     assert kv_fields - base_fields == {
-        "total_num_pages",
-        "bytes_per_page",
+        "leaf_ids",
+        "num_pages_per_group",
         "bytes_per_group",
         "replicated_per_group",
     }
@@ -85,8 +85,8 @@ def test_kv_metadata_roundtrip_all_fields() -> None:
         memory_type=nixl.MemoryType.VRAM,
         hostname="host-b",
         agents_meta=[[_agent_meta()]],
-        total_num_pages=17,
-        bytes_per_page=800,
+        leaf_ids=["full", "full/scales"],
+        num_pages_per_group=[17, 68],
         bytes_per_group=[784, 16],
         replicated_per_group=[True, True],
     )
@@ -94,6 +94,7 @@ def test_kv_metadata_roundtrip_all_fields() -> None:
         msgspec.json.encode(md), type=KVTransferEngineMetadata
     )
     assert dec == md
-    assert dec.total_num_pages == 17
+    assert dec.leaf_ids == ["full", "full/scales"]
+    assert dec.num_pages_per_group == [17, 68]
     assert dec.bytes_per_group == [784, 16]
     assert dec.replicated_per_group == [True, True]

@@ -16,8 +16,6 @@ from layout import Coord, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from nn.slice import sliced_add
 
-from std.utils import IndexList
-
 
 def test_sliced_add[
     dtype: DType,
@@ -31,8 +29,7 @@ def test_sliced_add[
     ), "batch_end_idx must be less than or equal to rows"
 
     # Create managed buffers and host views.
-    var shape = IndexList[2](rows, cols)
-    var layout = row_major(Coord(shape))
+    var layout = row_major((rows, cols))
     var a = HostDeviceTileTensor[dtype](layout, ctx)
     var b = HostDeviceTileTensor[dtype](layout, ctx)
     var c = HostDeviceTileTensor[dtype](layout, ctx)

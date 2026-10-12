@@ -13,6 +13,7 @@
 """Sampling custom ops."""
 
 from .min_p import MinPSampler
+from .penalties import LogitPenalties
 from .rejection_sampler import (
     AcceptanceSampler,
     RejectionSampler,
@@ -25,6 +26,7 @@ from .rejection_sampler import (
 
 __all__ = [
     "AcceptanceSampler",
+    "LogitPenalties",
     "MinPSampler",
     "RejectionSampler",
     "RejectionSamplerWithResiduals",

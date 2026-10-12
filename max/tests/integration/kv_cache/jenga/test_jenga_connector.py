@@ -504,7 +504,7 @@ def test_onload_is_skipped_when_the_run_does_not_fit() -> None:
     # Two huge blocks between them cannot carve a 4-page run for both leaves.
     tight = make_manager(connector, leaves=(VALUES, SCALES), num_huge_blocks=3)
     pool = tight.pools[0]
-    free_before = len(pool.free_huge_blocks)
+    free_before = pool.num_free_huge_blocks
     connector.loads.clear()
     replay = make_ctx([1, 2, 3, 4, 5])
     tight.claim(replay)
@@ -514,7 +514,7 @@ def test_onload_is_skipped_when_the_run_does_not_fit() -> None:
     assert not connector.loads, "asked for a run the pool cannot hold"
     assert replay.tokens.processed_length == 0
     # Nothing was drawn on the way out.
-    assert len(pool.free_huge_blocks) == free_before
+    assert pool.num_free_huge_blocks == free_before
     assert not pool.prefix_caches[VALUES]
 
 
@@ -587,7 +587,7 @@ def test_alloc_drains_landed_transfers_so_pins_do_not_accumulate() -> None:
     connector = FakeConnector([FULL])
     manager = make_manager(connector)
     pool = manager.pools[0]
-    free_huge = len(pool.free_huge_blocks)
+    free_huge = pool.num_free_huge_blocks
 
     for _ in range(4):
         ctx = make_ctx([1, 2, 3, 4])
@@ -608,7 +608,7 @@ def test_alloc_drains_landed_transfers_so_pins_do_not_accumulate() -> None:
     manager.release(drain)
 
     assert not manager.pending_transfers_exist(0), "alloc did not drain pins"
-    assert len(pool.free_huge_blocks) == free_huge, (
+    assert pool.num_free_huge_blocks == free_huge, (
         "huge blocks never came back: pinned pages kept them out of the pool"
     )
 

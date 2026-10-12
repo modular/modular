@@ -41,8 +41,8 @@ from max.experimental.sharding import (
     Partial,
     Replicated,
     Sharded,
+    auto_reshard,
 )
-from max.experimental.sharding.placements import ReduceOp
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 
@@ -142,7 +142,7 @@ class _Conv2dInputChannelParallel:
         # C_in is axis 2 in RSCF filter
         f = transfer_to(Tensor(f_np), DeviceMapping(self.MESH_2, (Sharded(2),)))
         result = F.conv2d(x, f)
-        assert result.placements == (Partial(ReduceOp.SUM),)
+        assert result.placements == (Partial(),)
 
     def test_conv2d_cin_sharded_numerics(self) -> None:
         """S(C_in) x S(C_in_f) -> Partial, gathered result correct."""
@@ -253,7 +253,8 @@ class _PoolingPartial:
         """max_pool2d is non-linear — Partial auto-reduced."""
         x_np = np.ones((1, 4, 4, 2), dtype=np.float32)
         x = self.partial_fn(x_np, self.MESH_2, (Partial(),))
-        result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
+        with auto_reshard(mode="silent"):
+            result = F.max_pool2d(x, kernel_size=(2, 2), stride=2)
         assert not any(isinstance(p, Partial) for p in result.placements)
 
 

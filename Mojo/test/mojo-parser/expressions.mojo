@@ -1300,3 +1300,11 @@ def testHasOverloadedFooMethods():
     foo.foo()
     # CHECK: lit.call {{.*}}@HasOverloadedFooMethods::@"foo{{.*}}(%foo){{.*}}owned_in_mem) -> !kgen.none>
     foo^.foo()
+
+# A variadic `def` type in a parameter list can reference an earlier parameter
+# of the same function before it is added to the parameter list.
+# CHECK-LABEL: lit.fn @"test_variadic_def_param_refs_outer_param
+def test_variadic_def_param_refs_outer_param[
+    Tr: type_of(AnyType), F: def[*Ts: Tr](*args: *Ts) thin -> None
+]():
+    pass

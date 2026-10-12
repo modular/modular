@@ -52,6 +52,8 @@ def reduce_scatter_rms_norm(
 
     Args:
         inputs: The input tensors to reduce and scatter, one per device.
+            Shapes must match within a group (see ``group_size``), and only
+            axis 0 may differ across groups.
         signal_buffers: Device buffer values used for synchronization.
         gammas: RMSNorm gamma weights, one per device (input dtype, length
             ``cols``).
@@ -134,14 +136,22 @@ def reduce_scatter_rms_norm(
             "reduce_scatter_rms_norm requires group_size to evenly divide the "
             f"number of input tensors. Got: {group_size=} and {num_devices=}"
         )
-    # Shapes need only match within a group: DP replicas are independent
-    # collectives and may carry different symbolic dims.
+    # Shapes must match within a group. Across groups only axis 0 (the
+    # scattered rows) may differ: DP replicas carry different symbolic row
+    # counts, but the kernel gates the fused path on device 0's columns.
     for group_start in range(0, num_devices, group_size):
         group_inputs = inputs[group_start : group_start + group_size]
         if not all(t.shape == group_inputs[0].shape for t in group_inputs[1:]):
             raise ValueError(
                 "reduce_scatter_rms_norm requires the same shape across all "
                 f"input tensors in each group. Got: {inputs=}"
+            )
+    for t in inputs[1:]:
+        if t.shape[1:] != inputs[0].shape[1:]:
+            raise ValueError(
+                "reduce_scatter_rms_norm requires the same shape in all "
+                "dimensions except axis 0 (rows) across every input tensor, "
+                f"including across groups. Got: {inputs=}"
             )
     # The residual is indexed by GLOBAL row, so a shard-shaped one runs past its
     # own storage on every rank whose shard does not start at row 0.

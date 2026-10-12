@@ -45,8 +45,7 @@ DISABLE: set[str] = set()
 # To add a model, trigger the smoke test with it first:
 # https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
 # then list it below with the HW it passed on. VLMs also go in is_vision_model
-# in smoke_test.py, and reasoning models in is_reasoning_model in
-# eval_runner.py.
+# in smoke_test.py.
 # Every entry is exactly one line. The only comment allowed is an existing
 # Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.
 # fmt: off
@@ -101,8 +100,8 @@ CUSTOM_MODELS: Mapping[str, set[str]] = {
     "microsoft/Phi-3.5-mini-instruct__modulev3": _1xB200 | _1xMI355,
     "microsoft/phi-4__modulev3": _1xB200 | _1xMI355,
     "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": _1xB200 | _1xMI355,
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": _1xB200,
-    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": _1xMI355,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": _1xB200 | _2xB200,
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": _1xMI355 | _2xMI355,
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": _8xB200,
     "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": _8xB200,

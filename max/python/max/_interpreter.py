@@ -157,7 +157,7 @@ def _is_interpretable_custom(op: _core.Operation) -> bool:
 def can_execute(graph: Graph, max_ops: int | None = None) -> bool:
     """Check whether the interpreter can handle this graph.
 
-    Scans the graph for ops that require compilation (e.g. a custom op
+    Scans the graph for ops that require compilation (such as a custom op
     that mutates an operand buffer in place) and for ops without a
     registered handler. Optionally enforces a maximum dispatchable-op
     count so that large graphs still get compiler fusion.

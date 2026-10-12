@@ -13,6 +13,7 @@
 """Subpackage exposing `std.utils.coord` as `layout.coord` for kernel imports."""
 
 from std.utils.coord import (
+    _CoordReplaceAt,
     ComptimeInt,
     Coord,
     CoordLike,

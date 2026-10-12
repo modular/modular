@@ -165,10 +165,11 @@ def __async():
 def __await():
     pass
 
-# Unprefixed `async` and `await` are ordinary identifiers.
+# expected-error @+1 {{'async' cannot be used as a function name in this context}}
 def async():
     pass
 
+# expected-error @+1 {{'await' cannot be used as a function name in this context}}
 def await():
     pass
 

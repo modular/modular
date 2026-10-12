@@ -285,6 +285,12 @@ def lamport_allreduce_rmsnorm[
     comptime max_tpb = ctx.default_device_info.max_thread_block_size
     comptime BLOCK_SIZE = align_down(max_tpb, WARP_SIZE)
 
+    # A zero grid is rejected by `enqueue_function`. Every rank sees the same
+    # `rows`, and the generation flag only advances in-kernel, so skipping
+    # the launch on all ranks leaves the rotation in step.
+    if rows == 0:
+        return
+
     if cols % atomic_width != 0:
         raise Error(
             "lamport_allreduce_rmsnorm requires cols % atomic_width == 0 (whole"

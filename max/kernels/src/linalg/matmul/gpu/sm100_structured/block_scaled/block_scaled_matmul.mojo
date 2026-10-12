@@ -25,6 +25,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.host.info import B200
 from max.gpu.primitives.grid_controls import pdl_launch_attributes, PDLLevel
 from layout import (
+    coord,
     ComptimeInt,
     Coord,
     CoordLike,
@@ -37,7 +38,6 @@ from layout import (
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import BlockScaledMatmulConfig
@@ -198,7 +198,7 @@ def _create_tma_and_launch[
     var N_maybe_swapped = Int(b_3d.dim[1]())
 
     # A matrix TMA
-    comptime a_tma_tile_shape = Index(1, BM // cluster_shape[1], BK)
+    comptime a_tma_tile_shape = coord[1, BM // cluster_shape[1], BK]
     var a_tma_op = create_tma_tile[
         matmul_kernel.ATileLayout,
         matmul_kernel.ADescLayout,
@@ -207,11 +207,10 @@ def _create_tma_and_launch[
     ](ctx, a_3d)
 
     # B matrix TMA
-    comptime b_tma_tile_shape = Index(
-        1, BN // (cluster_shape[0] // config.cta_group), BK
-    ) if transpose_b else Index(
-        1, BK, BN // (cluster_shape[0] // config.cta_group)
-    )
+    comptime bscl_n = BN // (cluster_shape[0] // config.cta_group)
+    comptime bscl_m = bscl_n if transpose_b else BK
+    comptime bscl_n2 = BK if transpose_b else bscl_n
+    comptime b_tma_tile_shape = coord[1, bscl_m, bscl_n2]
     var b_tma_op = create_tma_tile[
         matmul_kernel.BTileLayout,
         matmul_kernel.BDescLayout,
@@ -220,17 +219,26 @@ def _create_tma_and_launch[
     ](ctx, b_3d)
 
     # C matrix TMA
-    comptime c_tma_tile_shape_mma128 = Index(
-        1, 64, config.output_tile_shape[1]
-    ) if not config.AB_swapped else Index(1, config.output_tile_shape[0], 64)
-    comptime c_tma_tile_shape = Index(
-        1, config.output_tile_shape[0], config.output_tile_shape[1]
-    ) if (MMA_M == 256 or config.cta_group == 1) else c_tma_tile_shape_mma128
-    comptime c_tma_tile_shape_final = c_tma_tile_shape if not config.AB_swapped else Index(
-        1,
-        c_tma_tile_shape[1],
-        config.c_swizzle.bytes() // size_of[c_type](),
+    comptime m128_1 = (
+        64 if not config.AB_swapped else config.output_tile_shape[0]
     )
+    comptime m128_2 = (
+        config.output_tile_shape[1] if not config.AB_swapped else 64
+    )
+    comptime use_full_c = MMA_M == 256 or config.cta_group == 1
+    comptime c_m = config.output_tile_shape[0] if use_full_c else m128_1
+    comptime c_n = config.output_tile_shape[1] if use_full_c else m128_2
+    comptime c_tma_tile_shape = coord[1, c_m, c_n]
+    comptime fin_1 = (
+        c_m if not config.AB_swapped else c_tma_tile_shape.element_types[
+            1
+        ].static_value
+    )
+    comptime fin_2 = (
+        c_n if not config.AB_swapped else config.c_swizzle.bytes()
+        // size_of[c_type]()
+    )
+    comptime c_tma_tile_shape_final = coord[1, fin_1, fin_2]
     var c_tma_op = create_tma_tile[
         matmul_kernel.CTileLayout,
         matmul_kernel.CDescLayout,
@@ -239,13 +247,13 @@ def _create_tma_and_launch[
     ](ctx, c_3d)
 
     # Scale factors TMA
-    comptime sfa_tma_tile_shape = Index(
+    comptime sfa_tma_tile_shape = coord[
         1,
         BM // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]
     var sfa_tma_op = create_tma_tile[
         matmul_kernel.SFATileLayout,
         matmul_kernel.SFADescLayout,
@@ -253,13 +261,13 @@ def _create_tma_and_launch[
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
     ](ctx, sfa_5d)
 
-    comptime sfb_tma_tile_shape = Index(
+    comptime sfb_tma_tile_shape = coord[
         1,
         align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         SF_ATOM_M[0],
         SF_ATOM_M[1] * SF_ATOM_K,
-    )
+    ]
     var sfb_tma_op = create_tma_tile[
         matmul_kernel.SFBTileLayout,
         matmul_kernel.SFBDescLayout,

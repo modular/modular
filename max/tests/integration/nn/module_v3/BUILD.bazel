@@ -218,3 +218,25 @@ modular_py_test(
         requirement("torch"),
     ],
 )
+
+modular_py_test(
+    name = "linear_fp8_tests",
+    srcs = ["test_linear_fp8_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": ["//:nvidia_gpu"],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/experimental",
+        "//max/python/max/experimental/nn",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)

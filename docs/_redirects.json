@@ -1,5 +1,35 @@
 [
   {
+    "source": "/max/extensibility/custom-op/?",
+    "dest": "/develop/custom-ops/",
+    "status": 302
+  },
+  {
+    "source": "/max/extensibility/graph-custom-op/?",
+    "dest": "/develop/custom-ops/",
+    "status": 302
+  },
+  {
+    "source": "/max/api/?",
+    "dest": "/api/python/",
+    "status": 302
+  },
+  {
+    "source": "/max/api/kernels(/.*)?",
+    "dest": "/api/mojo/",
+    "status": 302
+  },
+  {
+    "source": "/max/deploy/cloud/?",
+    "dest": "https://docs.modular.com/",
+    "status": 302
+  },
+  {
+    "source": "/max/develop/build-an-mlp-block/?",
+    "dest": "/develop/modules/",
+    "status": 302
+  },
+  {
     "source": "/max/(.*)",
     "dest": "/{0}",
     "status": 302
@@ -12,6 +42,11 @@
   {
     "source": "/faq/",
     "dest": "/",
+    "status": 302
+  },
+  {
+    "source": "/serving/?",
+    "dest": "/get-started/",
     "status": 302
   },
   {

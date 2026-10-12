@@ -21,8 +21,6 @@ from std.random import random_float64
 from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 from nn.softmax import softmax_inline
 
-from std.utils import IndexList
-
 
 @inline(.always)
 def top_p_sampling[

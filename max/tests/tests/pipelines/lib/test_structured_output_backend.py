@@ -541,6 +541,207 @@ def test_muse_glimmer_required_grammar_frames_the_call(wire: str) -> None:
         assert consumed < len(wire), "admitted a call without </atem:invoke>"
 
 
+# An argument that is a free-form object: its members' values are unconstrained
+# JSON, so they reach the converter's any-value rule.
+_FREE_FORM_OBJECT_SCHEMA = {
+    "type": "object",
+    "properties": {"meta": {"type": "object"}},
+    "required": ["meta"],
+}
+
+
+def _free_form_wire(framing: str, value: str) -> str:
+    """The on-wire text a model emits for ``meta = value``."""
+    if framing == "kimi":
+        return (
+            "<|tool_calls_section_begin|><|tool_call_begin|>"
+            "functions.tag:0<|tool_call_argument_begin|>"
+            f'{{"meta":{value}}}<|tool_call_end|><|tool_calls_section_end|>'
+        )
+    return _xml_tool_wire(framing, "tag", [("meta", value)])
+
+
+@pytest.mark.parametrize(
+    "framing", ("kimi", "glm_4_7", "minimax"), ids=lambda f: f
+)
+def test_nested_any_value_is_json_not_a_bare_value(framing: str) -> None:
+    """Below an XML argument, an unconstrained value is JSON, so strings are quoted.
+
+    Only a top-level XML argument value is emitted bare. The converter's
+    any-value rule used the bare, marker-delimited string at every depth, so
+    inside a JSON object the grammar admitted ``{"k":v}`` as if ``v`` were a
+    string. ``kimi`` frames arguments as plain JSON and is the control. The
+    tag-keyed ``minimax_m3`` style is XML at every depth, so it has no nested
+    JSON to check.
+    """
+    helper = _make_helper("xgrammar", framing)
+
+    quoted = _free_form_wire(framing, '{"k":"v"}')
+    matcher = _tool_matcher(helper, framing, "tag", _FREE_FORM_OBJECT_SCHEMA)
+    assert _consume_wire(matcher, framing, quoted) == len(quoted), (
+        f"[{framing}] the grammar rejected a quoted nested string"
+    )
+    assert matcher.is_accepting()
+
+    bare = _free_form_wire(framing, '{"k":v}')
+    matcher = _tool_matcher(helper, framing, "tag", _FREE_FORM_OBJECT_SCHEMA)
+    assert _consume_wire(matcher, framing, bare) < len(bare), (
+        f"[{framing}] the grammar admitted an unquoted string inside JSON"
+    )
+
+
+# GLM's argument markers are single special tokens, and a BPE vocabulary fuses a
+# string's closing quote with the container close after it. The grammar walks
+# whole tokens, so both are needed to reproduce what a GLM checkpoint sees.
+_GLM_MULTI_BYTE_TOKENS = (
+    "<tool_call>",
+    "</tool_call>",
+    "<arg_key>",
+    "</arg_key>",
+    "<arg_value>",
+    "</arg_value>",
+    '"}',
+    '"]',
+)
+
+# tau2-bench airline's ``update_reservation_passengers``: each item is either a
+# Passenger or any object. GLM writes object keys in sorted order, which the
+# order-enforcing Passenger branch rejects, so the call rides the free-form
+# branch.
+_TAU2_PASSENGERS_SCHEMA = {
+    "$defs": {
+        "Passenger": {
+            "properties": {
+                "first_name": {"type": "string"},
+                "last_name": {"type": "string"},
+                "dob": {"type": "string"},
+            },
+            "required": ["first_name", "last_name", "dob"],
+            "type": "object",
+        }
+    },
+    "properties": {
+        "reservation_id": {"type": "string"},
+        "passengers": {
+            "type": "array",
+            "items": {
+                "anyOf": [
+                    {"$ref": "#/$defs/Passenger"},
+                    {"additionalProperties": True, "type": "object"},
+                ]
+            },
+        },
+    },
+    "required": ["reservation_id", "passengers"],
+    "type": "object",
+}
+
+
+def _glm_bpe_backend() -> tuple[Any, dict[str, int]]:
+    """An xgrammar backend over a GLM-shaped vocab, and its multi-byte token ids."""
+    vocab = {chr(i): i for i in range(_N_VOCAB)}
+    vocab.update(
+        {tok: _N_VOCAB + n for n, tok in enumerate(_GLM_MULTI_BYTE_TOKENS)}
+    )
+    delegate = PreTrainedTokenizerFast(
+        tokenizer_object=Tokenizer(WordLevel(vocab=vocab, unk_token=chr(1))),
+        eos_token=chr(0),
+        unk_token=chr(1),
+    )
+    backend = structured_output_backend.XgrammarBackend.from_tokenizer_delegate(
+        delegate,
+        len(vocab),
+        stop_token_ids=[0],
+        special_token_ids=structured_output_backend.special_token_ids_for_markers(
+            structured_output_backend.STRUCTURAL_MARKERS_BY_MODEL["glm_4_7"],
+            delegate,
+        ),
+    )
+    return backend, {tok: vocab[tok] for tok in _GLM_MULTI_BYTE_TOKENS}
+
+
+def _greedy_token_ids(text: str, multi_byte: dict[str, int]) -> list[int]:
+    """Tokenizes ``text`` taking the longest multi-byte token at each position."""
+    by_length = sorted(multi_byte, key=len, reverse=True)
+    ids: list[int] = []
+    i = 0
+    while i < len(text):
+        tok = next((t for t in by_length if text.startswith(t, i)), None)
+        if tok is None:
+            ids.append(ord(text[i]))
+            i += 1
+        else:
+            ids.append(multi_byte[tok])
+            i += len(tok)
+    return ids
+
+
+@pytest.mark.parametrize(
+    ("schema", "pairs"),
+    [
+        (_FREE_FORM_OBJECT_SCHEMA, [("meta", '{"k": "v"}')]),
+        (_FREE_FORM_OBJECT_SCHEMA, [("meta", '{"k":"v"}')]),
+        (
+            {
+                "type": "object",
+                "properties": {
+                    "rows": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": True,
+                        },
+                    }
+                },
+                "required": ["rows"],
+            },
+            [("rows", '[{"k": "v"}]')],
+        ),
+        (
+            _TAU2_PASSENGERS_SCHEMA,
+            [
+                ("reservation_id", "3RK2T9"),
+                (
+                    "passengers",
+                    '[{"dob": "1992-11-12", "first_name": "Anya", '
+                    '"last_name": "Garcia"}, {"dob": "1989-12-13", '
+                    '"first_name": "Mei", "last_name": "Garcia"}]',
+                ),
+            ],
+        ),
+    ],
+    ids=["object", "object_compact", "open_object_items", "tau2_passengers"],
+)
+def test_glm_free_form_json_value_can_close_its_argument(
+    schema: dict[str, Any], pairs: list[tuple[str, str]]
+) -> None:
+    """A free-form JSON argument must still end at ``</arg_value>``.
+
+    With the bare-string any-value rule inside JSON, a nested string absorbed the
+    fused ``"}`` token, and every later token too, since the rule stops only at
+    an argument marker and excludes all of them. ``</arg_value>`` was masked from
+    then on and the grammar never reached an accepting state, so EOS stayed
+    masked as well. GLM-5.3 served tau2-bench this way: it closed the call with
+    ``</tool_call>``, the parser dropped the unterminated argument, and the turn
+    ran to ``max_tokens``.
+    """
+    backend, multi_byte = _glm_bpe_backend()
+    tools = [
+        {"type": "function", "function": {"name": "f", "parameters": schema}}
+    ]
+    matcher = backend.create_matcher(
+        structured_output_backend.build_xgrammar_tool_grammar(
+            "glm_4_7", tools, "auto"
+        )
+    )
+    ids = _greedy_token_ids(_xml_tool_wire("glm_4_7", "f", pairs), multi_byte)
+    for n, token in enumerate(ids):
+        assert matcher.try_consume_tokens([token]) == 1, (
+            f"the grammar rejected token {n}/{len(ids)} ({token}) of the call"
+        )
+    assert matcher.is_accepting()
+
+
 # A JSON Schema integer is a number with a zero fractional part, so the
 # exponent forms below are integers and the fractional ones are not. The
 # terminal is shared by every framing, XML or not, so the schema is exercised

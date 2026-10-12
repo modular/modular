@@ -367,8 +367,16 @@ def grouped_matmul_amd_kernel_launcher[
         var b_tile = TileTensor(b_ptr, row_major[N, K]())
         comptime matmul = AMDMatmul[a_type, b_type, c_type, transpose_b, config]
         comptime if has_any_epilogue:
-            matmul._run_at_tile_impl[has_epilogue_fn=True](
-                c_tile, a_tile, b_tile, tile_m, block_idx.x, group_epilogue_fn
+            matmul._run_at_tile_impl[
+                has_epilogue_fn=True, has_compute_fn=False
+            ](
+                c_tile,
+                a_tile,
+                b_tile,
+                tile_m,
+                block_idx.x,
+                group_epilogue_fn,
+                no_compute_fn,
             )
         else:
             matmul.run_at_tile(c_tile, a_tile, b_tile, tile_m, block_idx.x)

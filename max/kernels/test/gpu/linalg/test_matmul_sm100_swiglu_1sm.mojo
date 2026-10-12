@@ -53,7 +53,7 @@ from linalg.matmul.gpu.sm100_structured.fused_swiglu.dispatch import (
     matmul_swiglu_dispatch_sm100,
 )
 
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 

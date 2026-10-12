@@ -131,24 +131,7 @@ _CASES = [
 ]
 
 
-@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
-@pytest.mark.parametrize("case", _CASES, ids=[case.name for case in _CASES])
-def test_batched_matmul_epilogue(
-    session: InferenceSession, case: _Case
-) -> None:
-    gpu = DeviceRef.GPU()
-    with Graph(
-        case.name,
-        input_types=[
-            TensorType(DType.float32, shape, device=gpu)
-            for shape in case.shapes
-        ],
-    ) as graph:
-        graph.output(case.build([value.tensor for value in graph.inputs]))
-
-    model = session.load(graph)
-    device = model.input_devices[0]
-
+def _inputs(case: _Case) -> list[_Array]:
     rng = np.random.default_rng(0)
     # NVIDIA multiplies fp32 through tf32 tensor cores, whose absolute error
     # scales with the result, not with the operands. Scaling the LHS by
@@ -166,17 +149,56 @@ def test_batched_matmul_epilogue(
         else:
             values = rng.standard_normal(shape)
         arrays.append(values.astype(np.float32))
+    return arrays
 
-    outputs = model.execute(
+
+@pytest.fixture(scope="module")
+def outputs(session: InferenceSession) -> dict[str, _Array]:
+    """Runs every case as one output of a single graph.
+
+    One compile instead of one per case: the compiles dominate this file's
+    GPU time. The cases share no inputs, so each output still lowers to its
+    own matmul and epilogue.
+    """
+    gpu = DeviceRef.GPU()
+    with Graph(
+        "batched_matmul_epilogue",
+        input_types=[
+            TensorType(DType.float32, shape, device=gpu)
+            for case in _CASES
+            for shape in case.shapes
+        ],
+    ) as graph:
+        inputs = iter(value.tensor for value in graph.inputs)
+        graph.output(
+            *[
+                case.build([next(inputs) for _ in case.shapes])
+                for case in _CASES
+            ]
+        )
+
+    model = session.load(graph)
+    device = model.input_devices[0]
+    arrays = [array for case in _CASES for array in _inputs(case)]
+    results = model.execute(
         *[md.Buffer.from_numpy(array).to(device) for array in arrays]
     )
-    assert len(outputs) == 1
-    output = outputs[0]
-    assert isinstance(output, md.Buffer)
+    assert len(results) == len(_CASES)
+    by_case: dict[str, _Array] = {}
+    for case, result in zip(_CASES, results, strict=True):
+        assert isinstance(result, md.Buffer)
+        by_case[case.name] = result.to(md.CPU()).to_numpy()
+    return by_case
 
+
+@pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
+@pytest.mark.parametrize("case", _CASES, ids=[case.name for case in _CASES])
+def test_batched_matmul_epilogue(
+    outputs: dict[str, _Array], case: _Case
+) -> None:
     np.testing.assert_allclose(
-        output.to(md.CPU()).to_numpy(),
-        case.reference(arrays),
+        outputs[case.name],
+        case.reference(_inputs(case)),
         rtol=1e-2,
         atol=1e-2,
     )

@@ -40,6 +40,7 @@ from layout import (
     MixedLayout,
     TensorLayout,
     TileTensor,
+    coord,
     row_major,
 )
 from layout.tensor_core_async import (
@@ -95,18 +96,14 @@ def blockscaled_pair_cta_mxfp8[
     c_type: DType,
     a_scales_type: DType,
     b_scales_type: DType,
-    a_tile_rank: Int,
-    a_tile_shape: IndexList[a_tile_rank],
-    a_desc_shape: IndexList[a_tile_rank],
-    b_tile_rank: Int,
-    b_tile_shape: IndexList[b_tile_rank],
-    b_desc_shape: IndexList[b_tile_rank],
-    a_scales_tile_rank: Int,
-    a_scales_tile_shape: IndexList[a_scales_tile_rank],
-    a_scales_desc_shape: IndexList[a_scales_tile_rank],
-    b_scales_tile_rank: Int,
-    b_scales_tile_shape: IndexList[b_scales_tile_rank],
-    b_scales_desc_shape: IndexList[b_scales_tile_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    a_scales_tile_shape: Coord,
+    a_scales_desc_shape: Coord,
+    b_scales_tile_shape: Coord,
+    b_scales_desc_shape: Coord,
     c_layout: TensorLayout,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
@@ -116,17 +113,15 @@ def blockscaled_pair_cta_mxfp8[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     cta_group: Int = 1,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     a_scales_tma_op: TMATensorTile[
         a_scales_type,
-        a_scales_tile_rank,
         a_scales_tile_shape,
         a_scales_desc_shape,
     ],
     b_scales_tma_op: TMATensorTile[
         b_scales_type,
-        b_scales_tile_rank,
         b_scales_tile_shape,
         b_scales_desc_shape,
     ],
@@ -148,10 +143,10 @@ def blockscaled_pair_cta_mxfp8[
     comptime CLUSTER_M = Int(cluster_shape[0])
     comptime CLUSTER_N = Int(cluster_shape[1])
 
-    comptime a_tma_load_size = _idx_product[a_tile_rank, a_desc_shape]()
-    comptime b_tma_load_size = _idx_product[b_tile_rank, b_desc_shape]()
-    comptime a_tma_rows = a_desc_shape[0]
-    comptime b_tma_rows = b_desc_shape[0]
+    comptime a_tma_load_size = _idx_product[a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape.element_types[0].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[0].static_value
 
     comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
@@ -604,14 +599,10 @@ def sm100_blockscaled_mxfp8_cta_pair[
     ), "MMA_M and MMA_N must be divisible by 128"
 
     var a_tma_op = create_tensor_tile[
-        Index(Int32(BM) // cluster_shape[1], BK), swizzle_mode=a_swizzle
+        coord[Int(BM) // Int(cluster_shape[1]), BK], swizzle_mode=a_swizzle
     ](ctx, a)
     var b_tma_op = create_tensor_tile[
-        Index(
-            Int32(BN) // (cluster_shape[0] // Int32(cta_group)), BK
-        ) if transpose_b else Index(
-            BK, Int32(BN) // (cluster_shape[0] // Int32(cta_group))
-        ),
+        coord[Int(BN) // (Int(cluster_shape[0]) // Int(cta_group)), BK],
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -653,23 +644,29 @@ def sm100_blockscaled_mxfp8_cta_pair[
     )
 
     var a_scales_tma_op = create_tensor_tile[
-        Index(
+        coord[
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-        ),
+        ],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_shape=Index(
+        __tile_shape=coord[
             BM // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-        ),
+        ],
     ](ctx, a_scales_4d)
 
     var b_scales_tma_op = create_tensor_tile[
-        Index(
-            MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-        ),
+        coord[
+            MMA_N // SF_MN_GROUP_SIZE,
+            1,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ],
         swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
-        __tile_shape=Index(
-            MMA_N // SF_MN_GROUP_SIZE, 1, SF_ATOM_M[0], SF_ATOM_M[1] * SF_ATOM_K
-        ),
+        __tile_shape=coord[
+            MMA_N // SF_MN_GROUP_SIZE,
+            1,
+            SF_ATOM_M[0],
+            SF_ATOM_M[1] * SF_ATOM_K,
+        ],
     ](ctx, b_scales_4d)
 
     comptime sf_block_atom_size = SF_ATOM_M[0] * SF_ATOM_M[1] * SF_ATOM_K
@@ -688,16 +685,12 @@ def sm100_blockscaled_mxfp8_cta_pair[
         c_type,
         a_scales_type,
         b_scales_type,
-        type_of(a_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(a_tma_op).desc_shape,
-        type_of(b_tma_op).rank,
         type_of(b_tma_op).tile_shape,
         type_of(b_tma_op).desc_shape,
-        type_of(a_scales_tma_op).rank,
         type_of(a_scales_tma_op).tile_shape,
         type_of(a_scales_tma_op).desc_shape,
-        type_of(b_scales_tma_op).rank,
         type_of(b_scales_tma_op).tile_shape,
         type_of(b_scales_tma_op).desc_shape,
         c_layout,

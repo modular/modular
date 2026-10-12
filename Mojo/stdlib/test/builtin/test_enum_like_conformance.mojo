@@ -18,27 +18,8 @@ Each helper names every case so the match fails to compile if
 
 from std.testing import TestSuite, assert_equal
 
-from std._gpu.intrinsics import Scope
 from std.simd import FastMathFlag
 from std.testing.suite import TestResult
-
-
-def _scope_rank(scope: Scope) -> Int:
-    __match scope:
-        case .NONE:
-            return 0
-        case .THREAD:
-            return 1
-        case .WARP:
-            return 2
-        case .BLOCK:
-            return 3
-        case .CLUSTER:
-            return 4
-        case .GPU:
-            return 5
-        case .SYSTEM:
-            return 6
 
 
 def _fast_math_rank(flag: FastMathFlag) -> Int:
@@ -71,20 +52,6 @@ def _test_result_rank(result: TestResult) -> Int:
             return 1
         case .SKIP:
             return 2
-
-
-def test_scope_match() raises:
-    var scopes = List[Scope]()
-    scopes.append(Scope.NONE)
-    scopes.append(Scope.THREAD)
-    scopes.append(Scope.WARP)
-    scopes.append(Scope.BLOCK)
-    scopes.append(Scope.CLUSTER)
-    scopes.append(Scope.GPU)
-    scopes.append(Scope.SYSTEM)
-
-    for i in range(len(scopes)):
-        assert_equal(_scope_rank(scopes[i]), i, "wrong Scope case matched")
 
 
 def test_fast_math_match() raises:

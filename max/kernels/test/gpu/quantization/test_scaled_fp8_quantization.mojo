@@ -90,14 +90,16 @@ def test_dynamic_scaled_fp8_quant[
     scales_dtype: DType,
     MType: CoordLike,
     NType: CoordLike,
+    group_size_or_per_token: Int = -1,
 ](ctx: DeviceContext, m: MType, n: NType) raises:
-    comptime group_size: Int = NType.static_value
+    comptime group_size: Int = NType.static_value if group_size_or_per_token == -1 else group_size_or_per_token
+    comptime num_groups = NType.static_value // group_size
     comptime accum_dtype = get_accum_type[in_dtype]()
 
     var shape = row_major(m, n)
-    var scales_shape = row_major(Idx[NType.static_value // group_size], m)
+    var scales_shape = row_major(Idx[num_groups], m)
     var total_size = Int(m.value()) * Int(n.value())
-    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
+    var scales_size = num_groups * Int(m.value())
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -112,6 +114,9 @@ def test_dynamic_scaled_fp8_quant[
     var scales_device = ctx.enqueue_create_buffer[scales_dtype](scales_size)
 
     random(in_host, -1.0, 1.0)
+    # Only row 0 holds the tensor max, so every block has to see row 0's max.
+    # It sits in the last group, so a reduction that reads only group 0 fails.
+    in_host_ptr[Int(n.value()) - 1] = 2
 
     ctx.enqueue_copy(in_device, in_host_ptr)
 
@@ -127,7 +132,7 @@ def test_dynamic_scaled_fp8_quant[
 
     quantize_tensor_dynamic_scaled_fp8[
         in_dtype=in_dtype,
-        group_size_or_per_token=-1,
+        group_size_or_per_token=group_size_or_per_token,
         num_cols=in_tensor.static_shape[1],
     ](
         input_fn,
@@ -164,10 +169,13 @@ def test_dynamic_scaled_fp8_quant[
     )
     var scale_factor_recip = 1.0 / scale_factor.cast[accum_dtype]()
 
-    assert_equal(
-        scales_host[0, 0].cast[.float32](),
-        scale_factor.cast[.float32](),
-    )
+    for g in range(num_groups):
+        for i in range(Int(m.value())):
+            assert_equal(
+                scales_host[g, i].cast[.float32](),
+                scale_factor.cast[.float32](),
+                msg="At scales[" + String(g) + ", " + String(i) + "]",
+            )
 
     for i in range(Int(m.value())):
         for j in range(Int(n.value())):
@@ -1074,6 +1082,18 @@ def main() raises:
             DType.bfloat16,
             DType.bfloat16,
         ](ctx, Idx[1000], Idx[128])
+        # Enough short rows that the last blocks start after row 0 is done.
+        test_dynamic_scaled_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+        ](ctx, Int(16384), Idx[128])
+        test_dynamic_scaled_fp8_quant[
+            DType.float8_e4m3fn,
+            DType.bfloat16,
+            DType.bfloat16,
+            group_size_or_per_token=128,
+        ](ctx, Int(4), Idx[512])
         test_dynamic_scaled_fp8_quant[
             DType.float8_e4m3fn,
             DType.bfloat16,

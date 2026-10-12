@@ -73,8 +73,6 @@ from layout import (
     row_major,
     stack_allocation as tt_stack_allocation,
 )
-from std.utils import IndexList
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 

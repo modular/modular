@@ -108,6 +108,7 @@ class Qwen3_5MTPProposer:
     carry_dim_names = CarryDimNames()
     step_hidden_mode = ReturnHiddenStates.ALL
     uses_thinking_phase = True
+    supports_zero_draft_rows = False
 
     def __init__(
         self,

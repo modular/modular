@@ -14,10 +14,10 @@
 """Lightweight percentile-metric types.
 
 Carved out of :mod:`max.benchmark.benchmark_shared.metrics` so consumers
-that just need the *type definitions* (e.g. dashboards deserialising
+that just need the *type definitions* (such as dashboards deserialising
 result rows from BigQuery) can import them without pulling in the
 benchmark runner's heavy dependency tree (``max.serve``,
-``max.profiler``, transformers, huggingface-hub, openai, etc.).
+``max.profiler``, transformers, huggingface-hub, openai and so on).
 
 The full ``metrics`` module re-exports everything defined here, so
 existing ``from max.benchmark.benchmark_shared.metrics import …``

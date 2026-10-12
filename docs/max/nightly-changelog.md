@@ -59,7 +59,26 @@ This version is still a work in progress.
   request may instead carry a `video_url` part, which the server resolves and
   rewrites into that form.
 
+- The ModuleV3 Nemotron-H architecture (`NemotronHForCausalLM` with
+  `prefer_module_v3`) no longer expands the quantized modules of an NVFP4
+  checkpoint, such as `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4`,
+  to BF16 at load, which saves about 1.2 GB of device memory on one GPU.
+  Quantized Nemotron-H checkpoints now require B200 (SM100) GPUs, and the
+  NVFP4 checkpoint can't run on eight GPUs, where each GPU's share of an
+  expert would split an NVFP4 block. On MI355 GPUs, or on eight GPUs, use
+  the BF16 checkpoint (`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`).
+
+- Kimi K2.5 MXFP4 checkpoints, such as `amd/Kimi-K2.5-MXFP4`, start up
+  faster on AMD MI355 GPUs. A warm start on eight GPUs dropped from about
+  350 seconds to 48 seconds, and peak host memory during loading from about
+  590 GiB to 13 GiB.
+
 ## MAX framework
+
+- Fixed memory planning on Linux CUDA and HIP GPUs that share physical memory
+  with the CPU. MAX now includes reclaimable filesystem cache in available
+  memory and respects cgroup memory limits, preventing false out-of-memory
+  errors when planning a model.
 
 - Added `max.profiler.oneshot.cuda_profiler_region()`, a context manager that
   brackets a region with `cudaProfilerStart`/`cudaProfilerStop` so `nsys`/`ncu`
@@ -85,6 +104,13 @@ This version is still a work in progress.
   `max warm-cache` treats that as success, so
   `MODULAR_DEBUG=ir-output-dir=<dir>,pre-jit max warm-cache ...` is a quick
   way to get the Mojo a model compiles to.
+
+- `max warm-cache` gained a `--use-dummy-weights` flag. Compilation only
+  needs tensor names, shapes and dtypes, so with the flag set each safetensors
+  shard is stood in by a sparse, zero-filled stub built from the remote file's
+  header instead of being downloaded, making a compile-only run independent of
+  checkpoint size. It requires `--target` (compile-only mode) and a
+  safetensors repo on HuggingFace.
 
 - Added the `uninitialized-read-mode` debug option
   (`MODULAR_DEBUG=uninitialized-read-mode=report`,
@@ -152,6 +178,39 @@ This version is still a work in progress.
   `max.experimental.nn.common_layers.functional_kernels.local_map()` is
   removed: wrap the per-device function in `F.functional()` and claim its
   output's placement with `Tensor.rebind_mapping()`.
+- Added `max.experimental.functional.call_on_mesh()`, which runs a function on
+  each device of a mesh, or on each group of devices along given mesh axes,
+  and returns its outputs as distributed tensors. Use it for code that a
+  sharding rule cannot express, such as a collective kernel. It replaces
+  `max.experimental.functional.per_shard_dispatch()`, which is removed.
+  `to_tensors()`, `map_tensors()`, `tensor_to_layout()` and `any_distributed()`
+  are no longer exported from `max.experimental.functional`; use
+  `Tensor.layout` for a tensor's layout.
+- `max.experimental.functional.allreduce_sum()`, `allgather()` and
+  `reduce_scatter()` accept several mesh axes, by index or name, and run one
+  collective over all the devices those axes span. A tensor axis sharded over
+  several mesh axes is now split once over all those devices, the way a
+  reduce-scatter over them splits it: 10 rows on a 2x2 mesh become 3, 3, 2
+  and 2 rows instead of 3, 2, 3 and 2.
+- `max.experimental.functional.stack()` takes a `device` mapping that places
+  the stack of host tensors directly, so each device receives only its part.
+- A sharding rule in `max.experimental.sharding` now receives the op's own
+  arguments with each tensor replaced by its layout, at any depth, and returns
+  a plain list of `AxisAssignment` rows: one placement per tensor operand and,
+  in `AxisAssignment.outputs` (formerly `output`), one per result. `ActionSet`,
+  its `extras` and `finalize` hooks, `build_action_set` and
+  `force_replicated_action_set` are removed, and rules no longer rewrite
+  non-tensor arguments. `replicated_rows` and `match_operand_placement` build
+  the common cases.
+- `max.experimental.sharding.Partial` always means a pending sum, and
+  `ReduceOp` is removed: no other reduction could be resolved.
+- `reshape`, `broadcast_to` and `rebind` in `max.experimental.functional`
+  take global shapes on a distributed tensor, as on one device. A sharded axis
+  stays sharded on the first axis it splits into, or on the axis it merges
+  into when it is the first of the merged axes, and is gathered otherwise.
+  `split` takes global sizes: along a sharded axis, each device splits its
+  own piece by its share of every size when every size divides evenly, and
+  the axis is gathered otherwise.
 - Promoted pytree utilities out of experimental to stable `max.tree`.
 - `max.experimental.nn.Module` is now a pytree: its attributes are its
   children, so `max.tree` functions such as `tree.map` and `tree.flatten` walk
@@ -177,9 +236,13 @@ This version is still a work in progress.
 - Device graph capture no longer aborts the model worker on AMD GPUs. With
   capture enabled, `max serve` now runs the matmul shapes that fell back to
   hipBLASLt on MAX's own kernels.
-- Setting `MODULAR_DISABLE_VENDOR_FALLBACK=1` in the environment of
-  `max serve` now disables the vendor-BLAS matmul fallback on any GPU.
-  Previously the variable had no effect under `max serve`.
+- `max serve --disable-vendor-blas-fallback` disables the vendor-BLAS matmul
+  fallback on any GPU. Setting `MODULAR_DISABLE_VENDOR_FALLBACK=1` in the
+  environment of `max serve` sets its default. Previously the variable had no
+  effect under `max serve`.
+- `max serve --disable-overlap` keeps the overlap pipeline but synchronizes
+  after every model execution, so device graph capture can run without
+  CPU/GPU overlap. `MAX_DISABLE_OVERLAP=1` sets its default.
 - Hardened decoding of client-supplied images. `Image.open` is now restricted
   to an explicit format allowlist (PNG, JPEG, WEBP, GIF, BMP, PPM, TIFF, TGA,
   and AVIF where the platform provides it), shrinking the native-decoder attack
@@ -240,6 +303,14 @@ This version is still a work in progress.
   are renamed `fraction` and `turn` to match
   `augment_samples_with_response_format`; the `--image-fraction` and
   `--image-turn` flags are unchanged.
+- `max benchmark`'s `--image-fraction` now picks exactly that share of
+  requests or chat sessions, rounding up or down at random when the share
+  isn't whole, instead of drawing each one independently. A run picks no images
+  only when that share is under one item or too few items can carry them.
+- Added `--image-num-turns` to `max benchmark`, which cuts chat sessions that
+  get images to a drawn number of turns, so image-bearing requests can carry
+  as many resent image parts as production's. The image-mixing log now also
+  reports image parts per image-bearing request.
 - `max benchmark` now reports its realized request mix in its own "Request
   Mix" section and `result_groups.request_mix`, rather than among the headline
   metrics in `result_groups.summary`. The group holds the structured-output and
@@ -279,6 +350,24 @@ This version is still a work in progress.
   the boundary it was taken at, and a prompt that has left the device cache
   resumes from the deepest checkpoint the tiers still hold. Configuring
   `--kv-connector-config` beside such a model used to be refused at startup.
+
+- Added `POST /v1/decisions`, which answers typed questions (`choice`,
+  `score`, `yes_no`) about an input with a probability for every option, read
+  from the model's next-token scores at the answer position. No text is
+  generated, and `usage.completion_tokens` is 0. The wire format matches
+  SGLang's `/v1/decisions`. It needs no server flag: any text generation model
+  serves it, and a model with a `decider_config.json` is served in the decider
+  prompt format. See [Decisions](/serve/decisions).
+
+- Added `POST /v1/systemone`, a System One compatible route over the same
+  scoring path as `/v1/decisions`, so System One clients such as
+  `typesafe-sdk` can use a MAX server. See
+  [Decisions](/serve/decisions#system-one-compatible-route).
+
+- Decision models such as `Mapika/decider-2b`, which read a plain
+  state-first prompt and pick an option letter, are served in that format
+  automatically. The Qwen3.5 text-only decider checkpoints load through the
+  existing `qwen3_5` architecture. See [Decisions](/serve/decisions).
 
 - `--draft-proposal sampled` now works with block speculative decoding
   (DFlash, DFlash2 and DSpark drafts). The draft samples each proposal at the
@@ -398,6 +487,10 @@ This version is still a work in progress.
   instead of a fixed width. Takes a list such as `1,3,5`, or `all`. Each
   width adds graph capture time at startup.
 
+- Added `--adaptive-speculative-min-batch-size` to capture narrower adaptive
+  verify widths only from that decode batch size up. Smaller batches verify
+  the widest width, which cuts startup time and graph memory.
+
 - With `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` set, MAX Serve starts an HTTP
   server span for each request except health, version, ping and metrics
   probes, such as `/v1/health`. It continues any inbound `traceparent` and
@@ -417,6 +510,23 @@ This version is still a work in progress.
   `kernel_trace_max_capture_bytes` and `kernel_trace_max_batch_links` fields
   in the `profiling` section of a `max serve --config-file` set its limits of
   64 passes, 20,000 spans, a 64 MiB capture file and 128 links per span.
+
+- A `num_speculative_tokens_per_batch_size` range whose count is `0` now skips
+  the drafter as well as the verification, on the DFlash and EAGLE Llama 3
+  architectures, on DFlash Gemma 4 31B, on Gemma 4 MTP, and on DeepSeek-V3 MTP,
+  including MTP served tensor-parallel or, for DeepSeek-V3, data-parallel, where
+  every replica skips at once. Such a step used to draft tokens that the next
+  step then threw away unverified. The drafter's row count is a runtime input
+  rather than part of the graph, so a skipping step hands it zero rows and its
+  transformer and `lm_head` do not run. No branch is introduced and no second
+  copy of the weights is loaded. Under `device_graph_capture` the drafting and
+  skipping steps are recorded as separate graphs over that one set of weights.
+  DFlash skips its whole draft block, while EAGLE and MTP keep the first draft
+  step, which is fused with the verify pass and maintains the draft state for
+  the tokens the target just accepted, and skip the rest. Every other
+  architecture is unchanged and still drafts at its configured depth. Behavior
+  without a schedule is unchanged. A draft built with
+  `--draft-proposal sampled` skips as well.
 
 ### Server metrics
 
@@ -481,6 +591,29 @@ This version is still a work in progress.
 - Added `max.nn.moe.SigmoidTopKRouter`, the sigmoid top-k router with an
   expert score correction bias (`noaux_tc` with one expert group) that
   MiniMax-M2, HY-V3, and MiMo-V2 share.
+- `max.experimental.nn.Linear` takes a `quant_config`, like `max.nn.Linear`.
+  It supports static per-tensor FP8: an `float8_e4m3fn` weight with a
+  `weight_scale` and an `input_scale`, the layout modelopt FP8 checkpoints
+  use.
+- Added the `QuantConfig.blockscaled_fp8()`, `QuantConfig.mxfp4()`, and
+  `QuantConfig.nvfp4()` constructors in `max.nn.quant_config`, which build
+  the scale specs of block-scaled FP8 (N x N weight blocks, dynamic 1 x N
+  activation blocks), MXFP4 (E8M0 per 32, dynamic activations), and modelopt
+  NVFP4 checkpoints.
+- Added `max.pipelines.weights.read_modelopt_quantized_layers()`, which reads
+  the per-module `quantized_layers` map of a modelopt `MIXED_PRECISION`
+  checkpoint and refuses any module, algorithm, or group size the caller did
+  not declare it can load.
+- `ops.cumsum` now runs on GPU. It previously copied a GPU input to the host,
+  ran there, and copied the result back. On GPU, float32 inputs accumulate in
+  float32 rather than float64.
+- `ops.scatter`, `ops.scatter_add`, `ops.scatter_max`, `ops.scatter_min`,
+  and `ops.scatter_mul` now run on GPU. They no longer copy GPU inputs to the
+  CPU and back, so they also work under
+  `strict_device_placement=DevicePlacementPolicy.Error`. As on CPU, the
+  reductions apply duplicate indices atomically in an unspecified order, and
+  `ops.scatter` keeps an unspecified winner among duplicates. On Apple silicon
+  GPUs, the reductions support only 32-bit dtypes.
 
 ### C API
 
@@ -518,6 +651,16 @@ This version is still a work in progress.
 - `TileTensor` gained `unsafe_ptr()`, returning the raw scalar `Pointer` its
   engine exposes for the tensor's storage. Element loads and stores on the
   tensor go through that pointer.
+
+- Added `TensorTuple` to the `extensibility` package, so a custom kernel can
+  take a variadic output tensor argument and a variadic input tensor argument
+  together. Each is a `TensorTuple[*Ts]` over an infer-only `TypeList` bound by
+  tensor-argument traits, and its elements may differ in dtype and shape. A
+  signature takes at most one tuple per operand list. The tuple holds its
+  elements by value and, when every element is `DevicePassable`, crosses a
+  kernel launch as one argument. Kernel import now rejects a variadic pack of
+  tensor-trait arguments (`*xs: *Ts`) with a diagnostic that points at
+  `TensorTuple`.
 
 - Added `max.nn.kernels.keyed_uniform`, which draws one uniform value in
   `[0, 1)` per row of a seed tensor. Every row is its own Philox key, so a
@@ -593,6 +736,10 @@ This version is still a work in progress.
   default forwards to the destination engine's `copy_from`, so existing
   engines are unaffected. An engine whose storage has no pointer, such as
   `TMemEngine`, overrides it to run its own load loop.
+
+- Upgraded the bundled `libnvptxcompiler` from CUDA 13.3 to CUDA 13.4 Update 1
+  (13.4.92), bringing the latest bug fixes and performance improvements from
+  NVIDIA's PTX compiler.
 
 ## Breaking changes
 
@@ -678,7 +825,28 @@ This version is still a work in progress.
   built on 1.3.0, so disaggregated prefill and decode have to be upgraded
   together.
 
+- The deprecated `max.kv_cache` module is removed. It only re-exported
+  `max.pipelines.kv_cache` and emitted a `DeprecationWarning` on import. Import
+  `PagedKVCacheManager`, `DummyKVCache`, `load_kv_manager`, and the other names
+  it re-exported from `max.pipelines.kv_cache` instead.
+
+- The `sha256_64` value of `kv_cache_hash_algo` is removed, and a config that
+  sets it now fails validation at startup. It kept the first 8 bytes of each
+  block's SHA-256 digest but chained the next block onto the full digest, so a
+  request whose hash chain grew after its first block (decode past a block
+  boundary, chunked prefill) raised an error. Use `sha256` instead. The dKV
+  connector keys `sha256` blocks by the first 8 bytes of the digest, so dKV
+  keys are unchanged.
+
 ## Fixes
+
+- Fixed the paged KV cache overflowing its page budget when memory
+  estimation caps `max_length` to what fits. The pool sized itself without
+  reserving the null block's page, so the first request reserved past the
+  budget and `max serve` failed with `InsufficientBlocksError`. The budget
+  now holds the null block, and a budget too small for it plus one request
+  page fails startup with a clear error instead of advertising a one-token
+  context.
 
 - `ops.floor_div` on mixed integer dtypes such as `uint8 // int16` now
   applies the floor correction for the promoted signed dtype, so `7 // -2`
@@ -790,6 +958,13 @@ This version is still a work in progress.
   literal now keeps its JSON form inside the value markers. The tag-keyed
   formats, which spell an object as nested tags and so have no JSON form to
   fall back on, reject it with an explicit message instead.
+- Fixed GLM and MiniMax-M2 tool calls whose arguments hold free-form JSON
+  (for example a list of objects typed as a model or a plain dict) running to
+  `max_tokens` on `/v1/chat/completions`. The tool-call grammar gave a string
+  nested inside such a value the bare-value rule, which cannot be closed from
+  inside JSON, so the value's close marker and every EOS stayed masked for the
+  rest of the request. The call's argument was dropped and the response ran
+  to the length limit. A nested string is now a quoted JSON string.
 - Fixed a GLM tool-call argument pinned by `const` or `enum` to a string that
   reads as a number or a boolean (`"2.0"`, `"true"`) being reported as that
   number or boolean. GLM emits argument values bare, so the parser recovers the
@@ -858,5 +1033,23 @@ This version is still a work in progress.
   benchmarks on Metal reported enqueue time instead of execution time. They now
   return the GPU time between the start and stop points, as on NVIDIA and AMD
   GPUs.
+
+- Fixed grouped collectives failing to compile when device groups carried
+  different shapes. `ops.allreduce.sum`, `ops.reducescatter.sum`,
+  `ops.allgather_rms_norm` (including its MXFP8 and MXFP6 variants), and
+  `ops.reduce_scatter_rms_norm` with a `group_size` smaller than the device
+  count packed every device's tensor into an array typed from device 0, so
+  a second group with another row count failed graph compilation with "The
+  graph compiler could not elaborate the generated KGEN". The fused RMSNorm
+  ops now also reject groups whose shapes differ outside axis 0 at graph
+  construction, since their kernels size every group from device 0's column
+  count; that case never compiled before.
+
+- Fixed weight discovery treating the nested `checkpoint-<step>/` directories
+  that training repos ship beside their exported weights as extra shards of
+  those weights. Each snapshot repeats every tensor name of the checkpoint
+  above it rather than sharding it, and no index file tells them apart, so a
+  repo laid out this way loaded an arbitrary training step. They are now
+  excluded unless requested explicitly through `subfolder`.
 
 ## Mojo language

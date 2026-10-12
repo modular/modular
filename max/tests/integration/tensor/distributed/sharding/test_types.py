@@ -141,7 +141,7 @@ class TestTensorSpec:
 
     def test_uneven_static_dim_yields_per_rank_distinct_sizes(self) -> None:
         """Uneven static dim is supported: each rank gets its own size
-        from ``_shard_sizes_along_axis`` (e.g. 7 on 4 ranks -> [2,2,2,1])."""
+        from ``even_shard_sizes`` (for example, 7 on 4 ranks -> [2,2,2,1])."""
         mesh = mesh_1d(4)
         dt = TensorLayout(
             DType.float32, [7, 16], DeviceMapping(mesh, (Sharded(0),))

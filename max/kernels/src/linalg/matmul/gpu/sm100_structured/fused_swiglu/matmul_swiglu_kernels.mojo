@@ -68,6 +68,7 @@ import max.gpu.primitives.warp as warp
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 
 from layout import (
+    Coord,
     Layout,
     RowMajorLayout,
     TensorEngine,
@@ -181,12 +182,10 @@ struct _SwiGLUSmem[
 def load_AB[
     a_type: DType,
     b_type: DType,
-    a_rank: Int,
-    a_tile_shape: IndexList[a_rank],
-    a_desc_shape: IndexList[a_rank],
-    b_rank: Int,
-    b_tile_shape: IndexList[b_rank],
-    b_desc_shape: IndexList[b_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
     a_dim0: Int,
     a_dim1: Int,
     a_num_tiles: Int,
@@ -203,8 +202,8 @@ def load_AB[
     cta_group: Int = 1,
     k_group_size: Int = 1,
 ](
-    a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     a_smem_tiles: SMemTileArray2D[
         a_type, a_dim0, a_dim1, a_num_tiles, a_swizzle_bytes
     ],
@@ -224,15 +223,13 @@ def load_AB[
     Parameters:
         a_type: DType of the A operand elements.
         b_type: DType of the B operand elements.
-        a_rank: Number of dimensions in the A TMA tensor map.
         a_tile_shape: Shape of each A tile loaded by TMA, in elements.
         a_desc_shape: Shape of the A TMA descriptor, in elements.
-        b_rank: Number of dimensions in the B TMA tensor map.
         b_tile_shape: Shape of each B tile loaded by TMA, in elements.
         b_desc_shape: Shape of the B TMA descriptor, in elements.
         a_dim0: Row extent of each A SMEM tile, in elements.
         a_dim1: Column extent of each A SMEM tile, in elements.
-        a_num_tiles: Number of A SMEM tiles in the pipeline buffer.
+        a_num_tiles: Number of stages in the A SMEM tile array.
         a_swizzle_bytes: SMEM swizzle granularity for A tiles, in bytes.
         b_dim0: Row extent of each B SMEM tile, in elements.
         b_dim1: Column extent of each B SMEM tile, in elements.
@@ -277,10 +274,10 @@ def load_AB[
         cta_group * (a_expected_bytes + b_expected_bytes)
     ) * k_group_size
 
-    comptime a_tma_load_size = _idx_product[a_rank, a_desc_shape]()
-    comptime b_tma_load_size = _idx_product[b_rank, b_desc_shape]()
-    comptime a_tma_rows = a_desc_shape[1]
-    comptime b_tma_rows = b_desc_shape[1]
+    comptime a_tma_load_size = _idx_product[a_desc_shape]()
+    comptime b_tma_load_size = _idx_product[b_desc_shape]()
+    comptime a_tma_rows = a_desc_shape.element_types[1].static_value
+    comptime b_tma_rows = b_desc_shape.element_types[1].static_value
 
     var stage = load_mma_pipeline.producer_stage()
     var tma_mbar = load_mma_pipeline.producer_mbar(stage)
@@ -860,15 +857,14 @@ def _swiglu_epilogue_smem_tma[
     c_type: DType,
     transpose_b: Bool,
     config: FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b],
-    c_rank: Int,
-    c_tile_shape: IndexList[c_rank],
-    c_desc_shape: IndexList[c_rank],
+    c_tile_shape: Coord,
+    c_desc_shape: Coord,
     num_accum_stages: Int,
 ](
     tmem_offset: UInt32,
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_stages],
     output_stage_index: UInt32,
-    c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
     c_out_smem: UnsafePointer[
         Scalar[c_type], MutAnyOrigin, address_space=.SHARED
     ],
@@ -1478,24 +1474,21 @@ def blackwell_swiglu_warp_specialized_kernel[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_rank: Int,
-    a_tile_shape: IndexList[a_rank],
-    a_desc_shape: IndexList[a_rank],
-    b_rank: Int,
-    b_tile_shape: IndexList[b_rank],
-    b_desc_shape: IndexList[b_rank],
-    c_rank: Int,
-    c_tile_shape: IndexList[c_rank],
-    c_desc_shape: IndexList[c_rank],
+    a_tile_shape: Coord,
+    a_desc_shape: Coord,
+    b_tile_shape: Coord,
+    b_desc_shape: Coord,
+    c_tile_shape: Coord,
+    c_desc_shape: Coord,
     transpose_b: Bool,
     config: FusedSwiGLUMatmulConfig[a_type, b_type, c_type, transpose_b],
     BiasEngine: TensorEngine,
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1),
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    a_tma_op: TMATensorTile[a_type, a_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_rank, b_tile_shape, b_desc_shape],
-    c_tma_op: TMATensorTile[c_type, c_rank, c_tile_shape, c_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
     c_gmem_ptr: UnsafePointer[Scalar[c_type], MutAnyOrigin],
     c_gmem_stride: UInt32,
     bias_1d_tile: OptionalReg[
@@ -1525,15 +1518,12 @@ def blackwell_swiglu_warp_specialized_kernel[
         a_type: Element data type of the A operand.
         b_type: Element data type of the B operand.
         c_type: Element data type of the C output.
-        a_rank: Rank of the A TMA tile and descriptor shapes.
-        a_tile_shape: A TMA tile shape as an ``IndexList``.
-        a_desc_shape: A TMA descriptor shape as an ``IndexList``.
-        b_rank: Rank of the B TMA tile and descriptor shapes.
-        b_tile_shape: B TMA tile shape as an ``IndexList``.
-        b_desc_shape: B TMA descriptor shape as an ``IndexList``.
-        c_rank: Rank of the C TMA tile and descriptor shapes.
-        c_tile_shape: C TMA tile shape as an ``IndexList``.
-        c_desc_shape: C TMA descriptor shape as an ``IndexList``.
+        a_tile_shape: A TMA tile shape as a ``Coord``.
+        a_desc_shape: A TMA descriptor shape as a ``Coord``.
+        b_tile_shape: B TMA tile shape as a ``Coord``.
+        b_desc_shape: B TMA descriptor shape as a ``Coord``.
+        c_tile_shape: C TMA tile shape as a ``Coord``.
+        c_desc_shape: C TMA descriptor shape as a ``Coord``.
         transpose_b: Whether B is transposed (always True for SwiGLU).
         config: Fused SwiGLU matmul config carrying tile shapes and pipeline
             stages.
@@ -1996,7 +1986,6 @@ def blackwell_swiglu_warp_specialized_kernel[
                         c_type,
                         transpose_b,
                         config,
-                        c_rank,
                         c_tile_shape,
                         c_desc_shape,
                         num_accum_pipeline_stages,
@@ -2061,7 +2050,6 @@ def blackwell_swiglu_warp_specialized_kernel[
                         c_type,
                         transpose_b,
                         config,
-                        c_rank,
                         c_tile_shape,
                         c_desc_shape,
                         num_accum_pipeline_stages,

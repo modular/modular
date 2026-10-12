@@ -45,7 +45,7 @@ from nn.attention.gpu.amd_structured.mha_prefill_v2 import (
     mha_prefill_v2,
 )
 from nn.attention.mha_mask import NullMask
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 
 
 comptime Q_BLOCK_SIZE = 32  # per warp
@@ -125,11 +125,11 @@ def test_v2_main_loop[
         dev_out,
         row_major(Int32(BATCH), Int32(SEQ_LEN), Idx[NUM_HEADS], Idx[depth]),
     )
-    # Wrap K/V TileTensors as LayoutTensorMHAOperand for the kernel's
+    # Wrap K/V TileTensors as TileTensorMHAOperand for the kernel's
     # paged-aware signature; the operand infers `buffer_layout` from the
     # passed TileTensor, so pass the existing row-major TileTensors directly.
-    var k_op = LayoutTensorMHAOperand(k_tt)
-    var v_op = LayoutTensorMHAOperand(v_tt)
+    var k_op = TileTensorMHAOperand(k_tt)
+    var v_op = TileTensorMHAOperand(v_tt)
 
     mha_prefill_v2[CONFIG](
         q_tt,

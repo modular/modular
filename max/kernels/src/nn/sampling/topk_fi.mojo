@@ -737,6 +737,10 @@ def _block_reduce_value_count[
             count = count_sram[0],
         }
 
+    # Without this, a warp that starts the caller's next reduction can
+    # overwrite the slots while a lagging warp still reads this one's.
+    barrier()
+
     return result
 
 
@@ -2769,6 +2773,11 @@ def topk_topp_sampling_from_prob[
             if dist_shape[0] != batch_size or dist_shape[1] != d:
                 raise Error("out_dist shape must match probs shape")
             dist_ptr = out_dist.unsafe_value().ptr
+
+        # A speculative-decoding step that skips its drafter samples zero
+        # draft rows, and a zero grid is rejected by `enqueue_function`.
+        if batch_size == 0:
+            return
 
         comptime coop_capable = from_logits and ctx.target.is_amd_gpu()
         var coop = 1

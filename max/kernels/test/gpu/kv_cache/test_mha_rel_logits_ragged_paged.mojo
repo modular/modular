@@ -210,6 +210,33 @@ def main() raises:
             extent=0,
         ]([1], [0], "prefill+empty_extent", ctx)
 
+        # Decode rows and a prompt in one batch, at Inkling's TP2 shapes. The
+        # odd and even query positions cover both pair alignments of the
+        # row-wise bias read.
+        execute_rel_logits_flash_attention_test[
+            CausalMask(),
+            num_q_heads=16,
+            kv_params=KVCacheStaticParams(num_heads=4, head_size=128),
+            page_size=128,
+            extent=1024,
+        ]([1, 1, 1, 300], [700, 1501, 33, 0], "mixed+global+extent1024", ctx)
+
+        execute_rel_logits_flash_attention_test[
+            SlidingWindowCausalMask[512](),
+            num_q_heads=16,
+            kv_params=KVCacheStaticParams(num_heads=4, head_size=128),
+            page_size=128,
+            extent=1024,
+        ]([1, 1, 1, 300], [700, 1501, 33, 0], "mixed+window+extent1024", ctx)
+
+        execute_rel_logits_flash_attention_test[
+            CausalMask(),
+            num_q_heads=16,
+            kv_params=KVCacheStaticParams(num_heads=4, head_size=128),
+            page_size=128,
+            extent=1024,
+        ]([257], [901], "prefill+global+long_prefix", ctx)
+
         # TODO: Investigate MI355
         comptime if ctx.default_device_info == B200:
             execute_rel_logits_flash_attention_test[

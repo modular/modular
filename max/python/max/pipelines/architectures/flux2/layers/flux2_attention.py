@@ -236,7 +236,7 @@ class Flux2PosEmbed(Module):
 
         Args:
             theta: Base frequency for RoPE
-            axes_dim: Tuple of dimensions for each axis (e.g., (32, 32, 32, 32)).
+            axes_dim: Tuple of dimensions for each axis (such as (32, 32, 32, 32)).
         """
         super().__init__()
         self.theta = theta

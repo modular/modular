@@ -34,6 +34,7 @@ from max.nn.kv_cache import (
     PagedCacheValues,
 )
 from max.nn.transformer import ReturnLogits
+from max.pipelines.lib import ModuleV3Outputs
 
 from .layers.attention import Olmo2Attention
 from .layers.rms_norm import Olmo2RMSNorm
@@ -42,7 +43,7 @@ from .model_config import Olmo2Config
 
 
 class Olmo2TextModel(
-    Module[[Tensor, PagedCacheValues, Tensor, Tensor], tuple[Tensor, ...]]
+    Module[[Tensor, PagedCacheValues, Tensor, Tensor], ModuleV3Outputs]
 ):
     """The Olmo2 language model.
 
@@ -138,7 +139,7 @@ class Olmo2TextModel(
         kv_collection: PagedCacheValues,
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         h = self.embed_tokens(tokens)
 
         if self.embedding_multiplier != 1.0:
@@ -186,15 +187,12 @@ class Olmo2TextModel(
             logits = self._compute_logits(self.norm(h))
             offsets = input_row_offsets
 
-        ret_val: tuple[Tensor, ...] = (last_logits,)
-        if offsets is not None:
-            assert logits is not None
-            ret_val += (logits, offsets)
-
-        return ret_val
+        return ModuleV3Outputs(
+            next_token_logits=last_logits, logits=logits, logit_offsets=offsets
+        )
 
 
-class Olmo2(Module[..., tuple[Tensor, ...]]):
+class Olmo2(Module[..., ModuleV3Outputs]):
     """The Olmo2 model."""
 
     def __init__(
@@ -213,7 +211,7 @@ class Olmo2(Module[..., tuple[Tensor, ...]]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *variadic_args,
-    ) -> tuple[Tensor, ...]:
+    ) -> ModuleV3Outputs:
         symbolic_inputs = self.kv_params.unflatten_kv_inputs(
             iter(variadic_args)
         )

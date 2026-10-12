@@ -3,8 +3,10 @@
 One dispatch of
 [`fullAccuracyEval.yaml`](../../../../../.github/workflows/fullAccuracyEval.yaml)
 evaluates the complete accuracy eval suite against a build and produces one
-consolidated `results.json` plus a score table in the run's step summary. It
-also runs itself every Friday evening. MiniMax M3 is the first profile.
+consolidated `results.json` plus a score table in the run's step summary.
+MiniMax M3 is the first profile. The suite runs only when dispatched; scheduled
+accuracy tracking runs in
+[`mcloudEvalConfig.yaml`](../../../../../.github/workflows/mcloudEvalConfig.yaml).
 
 ## Trigger a run
 
@@ -18,33 +20,6 @@ gh workflow run fullAccuracyEval.yaml \
 
 The build under test is the git ref you dispatch on: each eval job builds
 and serves from that ref on its own runner.
-
-## Scheduled runs
-
-The suite runs itself at 04:00 UTC on Saturday, which is Friday 21:00 PDT /
-20:00 PST, so a run starts as the week ends and takes the weekend to finish.
-The whole suite is days of GPU time, so weekly is what the GPU pool affords.
-It is too long, expensive and stochastic to block a PR on, so nothing gates on
-the result; a scheduled run that fails posts to `#accuracy-regressions`.
-
-A scheduled run evaluates every dataset, and takes exactly the defaults a bare
-manual dispatch would. Agent-class stays off, since `consolidate` never waits
-for it and it would hold a GPU for 33h+ without changing the scored result.
-
-Those defaults come from the workflow's `config` job, not from the
-`workflow_dispatch` input defaults, which do not apply to a scheduled run.
-
-GitHub fires `schedule` only from the default branch, so a scheduled run
-always qualifies `main`, and an edit to the cron takes effect only once it is
-merged. To reproduce a scheduled run on another ref, dispatch it with no
-inputs: the two configurations are identical.
-
-```bash
-gh workflow run fullAccuracyEval.yaml --ref <branch-or-sha-to-qualify>
-```
-
-A scheduled run is never cancelled to start a newer one, since a cancel
-mid-eval leaves no score at all. An overrun makes the next fire wait instead.
 
 ## Comparing two runs (branch or backend A/B)
 

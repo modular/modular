@@ -269,6 +269,12 @@ struct Array[T: AnyType, length: Int](
         pair decides the result.
     """
 
+    # Exposes the generic parameters so `test_utils.cabi_check` can recover
+    # an array field's element type and length from a reflected field type,
+    # see `_ArrayMarker` there.
+    comptime _cabi_element_type: AnyType = Self.T
+    comptime _cabi_length: Int = Self.length
+
     comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
     comptime __copy_ctor_is_trivial: Bool = IsTriviallyCopyable[Self.T]
     comptime __move_ctor_is_trivial: Bool = IsTriviallyMovable[Self.T]

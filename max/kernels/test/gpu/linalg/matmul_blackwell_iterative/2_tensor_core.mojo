@@ -27,7 +27,7 @@ from max.gpu.compute.arch.tcgen05 import *
 
 # Additional imports for testing
 from internal_utils import assert_almost_equal
-from layout import Coord, Idx, TensorLayout, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor, coord, row_major
 from layout._host_device_tile_tensor import HostDeviceTileTensor
 from layout.tensor_core_async import tile_layout_k_major_typed
 from layout.tma_async import (
@@ -55,13 +55,11 @@ def kernel_3[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_tma_rank: Int,
-    b_tma_rank: Int,
-    a_tile_shape: IndexList[a_tma_rank],
-    b_tile_shape: IndexList[b_tma_rank],
+    a_tile_shape: Coord,
+    b_tile_shape: Coord,
     c_layout: TensorLayout,
-    a_desc_shape: IndexList[a_tma_rank],
-    b_desc_shape: IndexList[b_tma_rank],
+    a_desc_shape: Coord,
+    b_desc_shape: Coord,
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -70,8 +68,8 @@ def kernel_3[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     num_threads: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
-    b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
+    a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c: TileTensor[c_type, c_layout, MutAnyOrigin],
     num_iters_dev: Int32,
 ):
@@ -339,11 +337,11 @@ def kernel_2[
     # hard coded 64 for BK
 
     # equivalent of cutlass tma atom a, it is a handle that is passed to async_copy, to accurately tell the TMA engine how to copy from global tensor a into smem tile A
-    var a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](
+    var a_tma_op = create_tensor_tile[coord[BM, 64], swizzle_mode=a_swizzle](
         ctx, a
     )
     var b_tma_op = create_tensor_tile[
-        Index(BN, 64) if transpose_b else Index(64, BN),
+        coord[BN, 64],
         swizzle_mode=b_swizzle,
     ](ctx, b)
 
@@ -357,8 +355,6 @@ def kernel_2[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).rank,
-        type_of(b_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(b_tma_op).tile_shape,
         type_of(c).LayoutType,

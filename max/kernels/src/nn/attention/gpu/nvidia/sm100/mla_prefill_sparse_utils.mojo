@@ -22,7 +22,7 @@ BF16-KV kernel (`mla_prefill_sparse.mojo`) and the FP8-KV kernel
 """
 
 from std.sys import size_of
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 from max.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -53,11 +53,8 @@ from max.gpu.host import DeviceContext, FuncAttribute
 from std.ffi import UnsafeUnion
 from max.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from max.gpu.compute.arch.tcgen05 import (
-    tcgen05_alloc,
-    tcgen05_dealloc,
     tcgen05_ld,
     tcgen05_load_wait,
-    tcgen05_release_allocation_lock,
     tcgen05_st,
     tcgen05_cp,
     tcgen05_store_wait,
@@ -102,6 +99,7 @@ from layout import (
     Idx,
     TensorLayout,
     Coord,
+    coord,
     stack_allocation as tt_stack_allocation,
 )
 from layout.swizzle import make_swizzle
@@ -165,7 +163,6 @@ struct MLASparseConfig[
     comptime num_mbars = Self.num_mbars_
     comptime qkv_dtype_size: Int = size_of[Self.qkv_dtype]()
     comptime num_threads: Int = 512
-    comptime sm100_tmem_cols = 512
 
     comptime q_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
     comptime k_swizzle_mode = TensorMapSwizzle.SWIZZLE_128B
@@ -280,7 +277,6 @@ struct MLASparseSharedMemory[config: MLASparseConfig]:
     comptime NUM_KV_VALID_LANES = Self.MASK_BYTES_PER_BUF
     comptime INDICES_PER_LANE = 8
     var is_k_valid: Array[UInt8, Self.num_mbars * Self.MASK_BYTES_PER_BUF]
-    var tmem_addr: Array[UInt32, 1]
 
     # store rowwise max and sum for each threads in a warp group
     var rowwise_max: Array[Float32, WARPGROUP_SIZE]
@@ -479,11 +475,11 @@ struct MLAPrefillSparseCommon[
     # the depth-tile sub-copies are issued manually so each real-head box
     # lands at the PADDED (64-row) depth-tile stride the BMN=64 QK-MMA reads
     # (see the Q-load in `kernel`). NFC at 64/128 (real == padded).
-    comptime q_tile_shape = Index(
+    comptime q_tile_shape = coord[
         1, Self.NUM_Q_HEADS_PER_CTA, Self.config.input_qk_depth
-    )
+    ]
     comptime q_desc_shape = _default_desc_shape[
-        3, Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
+        Self.qkv_dtype, Self.q_tile_shape, Self.config.q_swizzle_mode
     ]()
 
     comptime k_tile_width = Self.config.input_qk_depth
@@ -492,8 +488,8 @@ struct MLAPrefillSparseCommon[
     comptime k_gather_box = _gather4_box_width[
         Self.qkv_dtype, Self.k_tile_width, Self.k_swizzle_mode
     ]()
-    comptime k_tile_shape = Index(Self.k_tile_height, Self.k_gather_box)
-    comptime k_desc_shape = Index(1, Self.k_gather_box)
+    comptime k_tile_shape = coord[Self.k_tile_height, Self.k_gather_box]
+    comptime k_desc_shape = coord[1, Self.k_gather_box]
 
     comptime v_tile_width = Self.V_SMEM_COLS_PER_CTA
     # V uses SWIZZLE_128B; gather4 splits tile_width=128 into 2 col-groups
@@ -508,13 +504,13 @@ struct MLAPrefillSparseCommon[
     comptime v_gather_box = _gather4_box_width[
         Self.qkv_dtype, Self.v_tile_width, Self.v_swizzle_mode
     ]()
-    comptime v_tile_shape = Index(Self.v_tile_height, Self.v_gather_box)
-    comptime v_desc_shape = Index(1, Self.v_gather_box)
+    comptime v_tile_shape = coord[Self.v_tile_height, Self.v_gather_box]
+    comptime v_desc_shape = coord[1, Self.v_gather_box]
 
     # desc_shape inner dim 64×2=128B satisfies the ≤256B SWIZZLE_NONE constraint.
     # SMEM is written in column-group order to match TMA's sub-copy layout.
-    comptime o_tile_shape = Index(Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth)
-    comptime o_desc_shape = Index(Self.NUM_Q_HEADS_PER_CTA, 64)
+    comptime o_tile_shape = coord[Self.NUM_Q_HEADS_PER_CTA, Self.config.v_depth]
+    comptime o_desc_shape = coord[Self.NUM_Q_HEADS_PER_CTA, 64]
 
     # FP8 TMA swizzle modes. SWIZZLE_NONE paired with INT64 packing means one
     # gather4 descriptor covers the full row without inner col-tiling.
@@ -533,10 +529,10 @@ struct MLAPrefillSparseCommon[
         Self.k_tma_tile_width_fp8,
         Self.k_tma_swizzle_fp8,
     ]()
-    comptime k_tma_tile_shape_fp8 = Index(
+    comptime k_tma_tile_shape_fp8 = coord[
         Self.k_tile_height, Self.k_tma_gather_box_fp8
-    )
-    comptime k_tma_desc_shape_fp8 = Index(1, Self.k_tma_gather_box_fp8)
+    ]
+    comptime k_tma_desc_shape_fp8 = coord[1, Self.k_tma_gather_box_fp8]
 
     # FP8 V TMA: INT64-packed, per-atom width (V_BMN_PER_ATOM / 8 INT64 elems).
     # Two gather4 calls per row group (one per SV atom) because the atoms'
@@ -551,10 +547,10 @@ struct MLAPrefillSparseCommon[
     ]()
     # FP8 V loads all B_TOPK rows at once (no key-half split like BF16).
     comptime v_tma_tile_height_fp8 = Self.config.B_TOPK
-    comptime v_tma_tile_shape_fp8 = Index(
+    comptime v_tma_tile_shape_fp8 = coord[
         Self.v_tma_tile_height_fp8, Self.v_tma_gather_box_fp8
-    )
-    comptime v_tma_desc_shape_fp8 = Index(1, Self.v_tma_gather_box_fp8)
+    ]
+    comptime v_tma_desc_shape_fp8 = coord[1, Self.v_tma_gather_box_fp8]
 
     comptime SMemType = MLASparseSharedMemory[Self.config]
     comptime FULL_Q_TYPE = Self.SMemType.FULL_Q_TYPE
@@ -587,7 +583,6 @@ struct MLAPrefillSparseCommon[
         ],
         q_tma_op: TMATensorTile[
             Self.qkv_dtype,
-            3,
             Self.q_tile_shape,
             Self.q_desc_shape,
         ],
@@ -649,7 +644,9 @@ struct MLAPrefillSparseCommon[
                     # multiple of 8, asserted below) lands rows
                     # [0, num_q_heads) at the same swizzled positions a 64-row
                     # box would; the untouched rows stay zeroed above.
-                    comptime Q_SWIZZLE_COLS = Self.q_desc_shape[2]
+                    comptime Q_SWIZZLE_COLS = Self.q_desc_shape.element_types[
+                        2
+                    ].static_value
                     comptime NUM_Q_DEPTH_TILES = (
                         Self.config.input_qk_depth // Q_SWIZZLE_COLS
                     )

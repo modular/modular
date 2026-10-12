@@ -85,7 +85,7 @@ def uint_view_dtype(dtype: DType) -> DType:
     """The same-bit-width unsigned int a dtype is bit-cast to for copying.
 
     Raises:
-        NotImplementedError: For sub-byte dtypes (e.g. ``float4_e2m1fn``), which
+        NotImplementedError: For sub-byte dtypes (such as ``float4_e2m1fn``), which
             pack multiple elements per byte and so cannot be reinterpreted
             element-for-element as a whole-byte unsigned int.
     """

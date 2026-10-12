@@ -62,6 +62,7 @@ class DFlashLlama3Proposer:
     """The DFlash block draft, reusing the target's embedding and head."""
 
     samples_from_anchor = False
+    supports_zero_draft_rows = True
 
     def __init__(
         self,
@@ -121,6 +122,8 @@ class DFlashLlama3Proposer:
     ) -> TensorValue:
         del accepted
         k = self.block_size
-        block_hs_2d = block_hs.reshape(("batch_size", k, self.hidden_size))
+        seqs = batch.num_draft_seqs
+        block_hs = block_hs.rebind([seqs * k, self.hidden_size])
+        block_hs_2d = block_hs.reshape((seqs, k, self.hidden_size))
         draft_logits = self.target.lm_head(block_hs_2d[:, 1:, :])
         return sampler.sample_all(draft_logits)

@@ -17,7 +17,6 @@ import atexit
 import dataclasses
 import json
 import logging
-import logging.handlers
 import math
 import os
 import platform
@@ -311,12 +310,16 @@ HISTOGRAM_BUCKETS_BY_METRIC: dict[str, tuple[float, ...]] = {
     "maxserve.time_per_output_token": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_execution_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.batch_creation_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.di.api_pre_tokenize": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.di.api_submit": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.di.mw_queue_wait": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.decode_admission_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.decode_send_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.dispatch_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.prefill_span": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.reply_rtt": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.prefill_queue_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
+    "maxserve.ce_pool_wait_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.decode_postprocess_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.early_sync_time": HISTOGRAM_LATENCY_BUCKETS_MS,
     "maxserve.di.handoff_to_first_token_time": HISTOGRAM_LATENCY_BUCKETS_MS,
@@ -385,33 +388,6 @@ def get_log_level(settings: Settings) -> int | str | None:
         otlp_level = None
 
     return otlp_level
-
-
-# Create a logger that buffers logs in memory and prints them to the console in batches.
-# The returned logger is a no op if logging has not yet been configured.
-def get_batch_logger(
-    parent_logger: logging.Logger, capacity: int = 10
-) -> logging.Logger:
-    batch_logger = logging.getLogger(parent_logger.name)
-    console_handlers = [
-        h
-        for h in logging.getLogger().handlers
-        if type(h) is logging.StreamHandler
-    ]
-    memory_handler = logging.handlers.MemoryHandler(
-        capacity=capacity,
-        target=console_handlers[0] if len(console_handlers) > 0 else None,
-    )
-    batch_logger.addHandler(memory_handler)
-    batch_logger.propagate = False
-    return batch_logger
-
-
-# Force a flush of the batch given logger.
-def flush_batch_logger(logger: logging.Logger) -> None:
-    for handler in logger.handlers:
-        if type(handler) is logging.handlers.MemoryHandler:
-            handler.flush()
 
 
 COLOR_MAP = {
@@ -992,7 +968,7 @@ _kernel_trace_level = KernelTraceLevel.OFF
 
 
 def batch_spans_enabled() -> bool:
-    """Returns whether ``max.batch`` spans should be emitted, i.e. the model
+    """Returns whether ``max.batch`` spans should be emitted; that is, the model
     worker was configured with ``kernel_trace_level`` at ``batch`` or above."""
     return _kernel_trace_level >= KernelTraceLevel.BATCH
 

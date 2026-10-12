@@ -19,7 +19,7 @@ containers (TMA descriptors, OffsetPosition, pipelines, etc.). A full
 correctness test lives elsewhere; this only proves the variant compiles.
 """
 
-from std.sys import has_nvidia_gpu_accelerator
+from std.sys import default_accelerator
 from max.gpu.host import DeviceContext
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_sparse_kv_fp8 import (
@@ -31,7 +31,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
 
 
 def main() raises:
-    comptime if not has_nvidia_gpu_accelerator():
+    comptime if not default_accelerator().is_nvidia_gpu():
         return
 
     # Trivial reference to the struct — type-level smoke only.

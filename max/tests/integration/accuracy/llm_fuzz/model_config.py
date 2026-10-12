@@ -144,11 +144,6 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
 }
 
 
-def get_model_profile(name: str) -> ModelProfile | None:
-    """Get a model profile by name, or None if not found."""
-    return MODEL_PROFILES.get(name)
-
-
 def fetch_hf_config(model: str, timeout: float = 10.0) -> dict[str, Any]:
     """Fetch config.json from HuggingFace Hub using only stdlib.
 

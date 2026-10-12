@@ -26,6 +26,7 @@ from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
     Layout,
     TileTensor,
+    coord,
     flatten_leading,
 )
 from layout.tma_async import create_tensor_tile
@@ -165,9 +166,9 @@ def grouped_matmul_sm90[
         config.num_pipeline_stages,
         config.k_group_size,
     ]()
-    comptime c_smem_tile = Index(
+    comptime c_smem_tile = coord[
         c_smem_layout.shape[0].value(), c_smem_layout.shape[1].value()
-    )
+    ]
 
     comptime a_swizzle = TensorMapSwizzle.SWIZZLE_128B
     comptime b_swizzle = TensorMapSwizzle.SWIZZLE_128B
@@ -178,13 +179,13 @@ def grouped_matmul_sm90[
     comptime BK = config.block_tile_shape[2]
 
     # Create TMA op for the entire A tensor including all tokens.
-    var a_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=a_swizzle](
+    var a_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=a_swizzle](
         ctx, a
     )
 
     # Flatten B tensor into a 2D TileTensor for easier TMA support.
     var b_flat = flatten_leading(b)
-    var b_tma_op = create_tensor_tile[Index(BN, BK), swizzle_mode=b_swizzle](
+    var b_tma_op = create_tensor_tile[coord[BN, BK], swizzle_mode=b_swizzle](
         ctx, b_flat
     )
 
@@ -200,7 +201,7 @@ def grouped_matmul_sm90[
     comptime if epilogue_owns_stores:
         c_desc_scratch = ctx.enqueue_create_buffer[c_type](1)
         c_desc_ptr = c_desc_scratch.value().unsafe_ptr().as_unsafe_any_origin()
-    var c_tma_op = create_tensor_tile[Index(BM, BK), swizzle_mode=c_swizzle](
+    var c_tma_op = create_tensor_tile[coord[BM, BK], swizzle_mode=c_swizzle](
         ctx, TileTensor(c_desc_ptr, c.layout)
     )
 
@@ -239,9 +240,6 @@ def grouped_matmul_sm90[
         a_offsets_engine=type_of(a_offsets).Engine,
         expert_ids_engine=type_of(expert_ids).Engine,
     ].run_grouped[
-        type_of(a_tma_op).rank,
-        type_of(b_tma_op).rank,
-        type_of(c_tma_op).rank,
         type_of(a_tma_op).tile_shape,
         type_of(b_tma_op).tile_shape,
         type_of(c_tma_op).tile_shape,

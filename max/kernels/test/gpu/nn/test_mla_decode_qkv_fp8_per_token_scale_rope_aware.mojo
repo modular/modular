@@ -24,7 +24,7 @@ This test exercises the complete production dispatch path:
             -> launch_mla_sm100_decode_fp8_per_token_scale_rope_aware
           + combine kernel for split-K reduction
 
-Using a PagedKVCache (not LayoutTensorMHAOperand) because the production
+Using a PagedKVCache (not TileTensorMHAOperand) because the production
 path's create_rope_tma_tile is only implemented for PagedKVCache.
 
 Layout:
@@ -60,7 +60,6 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
 from max.gpu.host.info import B200, _is_sm10x_gpu
-from std.utils.index import Index, IndexList
 
 
 # ===-----------------------------------------------------------------------===#

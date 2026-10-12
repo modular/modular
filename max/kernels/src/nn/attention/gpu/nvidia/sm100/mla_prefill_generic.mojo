@@ -20,6 +20,8 @@ from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     TransientScheduler,
 )
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
+    assert_sm_exclusive_smem,
+    attn_tmem_addr,
     elect,
     expect_bytes_pred,
     KConsumerPipeline,
@@ -41,8 +43,8 @@ from nn.attention.gpu.nvidia.common import (
     NullPointer,
     Pack,
     q_coord,
-    q_tma,
-    QTMATile,
+    q_tma_prefill,
+    QTMATilePrefill,
 )
 from layout.tma_async import RaggedTMA3DTile, SharedMemBarrier
 from layout import TileTensor
@@ -163,7 +165,7 @@ __extension SM100MLA:
         t"sm100_mla_prefill_generic_{Self.qkv_dtype}_{Self.output_dtype}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
     )
     def mla_prefill_kernel_generic(
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             # `BM // num_q` = 128 in both modes (one of two Q halves in
@@ -171,8 +173,6 @@ __extension SM100MLA:
             # folds across the 1Q/2Q configs.
             BM=Self.config.q_tile_rows(),
             depth=Self.config.BK0,
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -278,13 +278,11 @@ __extension SM100MLA:
             # kernel built from both configs; K_nope/K_rope/V shapes are
             # BM-independent), but the parser sees distinct parameter
             # expressions, so `rebind`.
-            comptime Q1Q = QTMATile[
+            comptime Q1Q = QTMATilePrefill[
                 Kernel1Q.KVLUTType.dtype,
                 Kernel1Q.config.qkv_swizzle_mode,
                 BM=Kernel1Q.config.q_tile_rows(),
                 depth=Kernel1Q.config.BK0,
-                group=Kernel1Q.config.group,
-                decoding=False,
             ]
             comptime KNope1Q = KVTMATile[
                 Kernel1Q.KVLUTType.dtype,
@@ -355,13 +353,11 @@ __extension SM100MLA:
     @staticmethod
     @inline(.always)
     def _kernel_impl_generic(
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.q_tile_rows(),
             depth=Self.config.BK0,
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -466,7 +462,6 @@ __extension SM100MLA:
         var rope_smem = rebind[SharedMemPointer[Scalar[KRopeType.dtype]]](
             attn_smem.rope_smem_base()
         )
-        var ptr_tmem_addr = attn_smem.tmem_addr_ptr()
 
         # https://github.com/NVIDIA/cutlass/blob/main/examples/77_blackwell_fmha/kernel/sm100_fmha_fwd_kernel_tma_warpspecialized.hpp
         #
@@ -500,10 +495,6 @@ __extension SM100MLA:
         if warp_idx == 0:
             # Initialize all barriers (S/C/order/Q1Sync/KV/O) in one call
             misc_mbars.init(lane_idx=Int32(thread_idx.x))
-        elif warp_idx == 1:
-            tcgen05_alloc[Self.cta_group](
-                ptr_tmem_addr, Self.config.sm100_tmem_cols
-            )
         elif warp_idx == 2:
             var e = elect()
             if e != 0:
@@ -523,19 +514,17 @@ __extension SM100MLA:
         # Load/MMA warps), so it is the only divergence-free place to honor the
         # contract that *every* CTA signal launch-dependents — otherwise a
         # back-to-back consumer grid's `wait` hangs (see MLA decode).  The
-        # data-independent prologue above (barrier init, tmem alloc, TMA
-        # descriptor prefetch) overlaps the predecessor grid's tail; `wait`
+        # data-independent prologue above (barrier init, TMA descriptor
+        # prefetch) overlaps the predecessor grid's tail; `wait`
         # fences here before the data-dependent Q/K/V loads in `Self.load`;
         # `launch` lets the successor grid's prologue overlap our compute.
         comptime if MLA_PREFILL_PDL_LEVEL > PDLLevel.OFF:
             wait_on_dependent_grids()
             launch_dependent_grids()
 
-        # Read the TMEM base from SMEM ONCE here, post-barrier (alloc + this
-        # barrier publish it), and carry it by register into the shared
-        # fa4_softmax / fa4_correction consumers. See the depth-512 fix: the
-        # consumers must not re-read `tmem_addr_ptr()` in their bodies.
-        var tmem_addr = ptr_tmem_addr[0]
+        # Read the TMEM base once and carry it by register into the shared
+        # fa4_softmax / fa4_correction consumers.
+        var tmem_addr = attn_tmem_addr[cluster_size=1]()
 
         var role = warp_idx_to_role[Self.config.fa4_config.single_o](warp_idx)
 
@@ -560,7 +549,6 @@ __extension SM100MLA:
                 False,
                 Self.MaxSeqLenType,
                 output_nonempty=output_nonempty,
-                single_softmax_wg=Self.config.fa4_config.single_o,
             ](
                 attn_smem,
                 tmem_addr,
@@ -626,16 +614,12 @@ __extension SM100MLA:
             warpgroup_reg_dealloc[num_reg_other]()
 
             if not seq_info.is_valid():
-                tcgen05_release_allocation_lock[Self.cta_group]()
-                tcgen05_dealloc[Self.cta_group](
-                    ptr_tmem_addr[0], Self.config.sm100_tmem_cols
-                )
                 return
             var pos: MLAPositionSummary = MLAPositionSummary.create[
                 _ndbuffer_mha_operand=Self._ndbuffer_mha_operand,
             ](k_rope_lut, seq_info)
             Self.mma(
-                ptr_tmem_addr[0],
+                tmem_addr,
                 misc_mbars,
                 seq_info.prompt_idx,
                 pos.score_row,
@@ -660,13 +644,11 @@ __extension SM100MLA:
         seq_info: SeqInfo,
         max_seq_len: Self.MaxSeqLenType,
         mask: Self.MaskType,
-        q_tma_op: QTMATile[
+        q_tma_op: QTMATilePrefill[
             Self.KVLUTType.dtype,
             Self.config.qkv_swizzle_mode,
             BM=Self.config.q_tile_rows(),
             depth=Self.config.BK0,  # padded depth -> 192
-            group=Self.config.group,
-            decoding=False,
         ],
         k_nope_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
@@ -728,9 +710,15 @@ __extension SM100MLA:
             MutAnyOrigin,
             address_space=.SHARED,
         ]
-        comptime q_elems = type_of(q_tma_op).tile_shape[0] * type_of(
+        comptime q_elems = type_of(q_tma_op).tile_shape.element_types[
+            0
+        ].static_value * type_of(q_tma_op).tile_shape.element_types[
+            1
+        ].static_value * type_of(
             q_tma_op
-        ).tile_shape[1] * type_of(q_tma_op).tile_shape[2]
+        ).tile_shape.element_types[
+            2
+        ].static_value
         comptime QType = SMemTensorLT[q_elems]
 
         var k_rope_head_idx: UInt32 = seq_info.head_idx // UInt32(Self.group)
@@ -2635,13 +2623,11 @@ def mla_sm100_prefill_generic[
         ctx, output.ptr, rows=num_rows_q
     )
 
-    var q_tma_op = q_tma[
+    var q_tma_op = q_tma_prefill[
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.qk_depth,
         q_num_heads=fa4_config.num_q_heads,
-        group=fa4_config.group,
-        decoding=False,
     ](
         ctx,
         q.ptr,
@@ -2724,13 +2710,11 @@ def _mla_prefill_sm100_valid_length_dispatch[
         middle_dim=_,
         tma_blocks_per_op=_,
     ],
-    q_tma_op: QTMATile[
+    q_tma_op: QTMATilePrefill[
         q_type,
         fa4_config.qkv_swizzle_mode,
         BM=fa4_config.q_tile_rows(),
         depth=fa4_config.qk_depth,
-        group=fa4_config.group,
-        decoding=False,
     ],
     k_nope_tma_op: KVTMATile[
         KVType.dtype,
@@ -2838,6 +2822,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
         # dynamic-smem region, so reserve the max of both footprints.
         comptime smem_use = cfg.launch_smem_used()
 
+        assert_sm_exclusive_smem[smem_use]()
         ctx.enqueue_function[kernel](
             q_tma_op,
             k_nope_tma_op,

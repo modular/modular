@@ -20,7 +20,7 @@ and that the combine kernel produces the expected weighted reduction:
 """
 
 from std.random import randint, randn, seed
-from std.sys import has_nvidia_gpu_accelerator, has_amd_gpu_accelerator, size_of
+from std.sys import default_accelerator, size_of
 
 from max.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, Idx, row_major
@@ -344,7 +344,8 @@ def test_skip_a2a[
 
 def main() raises:
     comptime assert (
-        has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator()
+        default_accelerator().is_nvidia_gpu()
+        or default_accelerator().is_amd_gpu()
     ), "Only NVIDIA and AMD GPUs are supported"
 
     var ctx_0 = DeviceContext(device_id=0)

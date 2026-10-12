@@ -39,12 +39,11 @@ from max.gpu.host import DeviceContext, Dim, FuncAttribute
 from max.gpu.host.info import B200
 from max.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, coord, row_major
 from layout.tma_async import create_tensor_tile
 from structured_kernels.tile_types import create_tma_tile, TmaOpType
 from structured_kernels.kernel_common import WarpRole1D1D
 
-from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.fp4_utils import (
@@ -344,19 +343,28 @@ def grouped_matmul_block_scaled[
     # B200 SMEM limit
     comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
 
-    comptime c_tma_tile_shape_mma128 = Index(
-        64, config.output_tile_shape[1]
-    ) if not config.AB_swapped else Index(config.output_tile_shape[0], 64)
-    comptime c_tma_tile_shape = config.output_tile_shape if (
-        MMA_M == 256 or config.cta_group == 1
-    ) else c_tma_tile_shape_mma128
+    comptime g1_m128_m = (
+        64 if not config.AB_swapped else config.output_tile_shape[0]
+    )
+    comptime g1_m128_n = (
+        config.output_tile_shape[1] if not config.AB_swapped else 64
+    )
+    comptime g1_use_full = MMA_M == 256 or config.cta_group == 1
+    comptime g1_c_m = (
+        config.output_tile_shape[0] if g1_use_full else g1_m128_m
+    )
+    comptime g1_c_n = (
+        config.output_tile_shape[1] if g1_use_full else g1_m128_n
+    )
+    comptime c_tma_tile_shape = coord[g1_c_m, g1_c_n]
 
     # When c_swizzle is SWIZZLE_NONE (MMA_N=8), c_swizzle.bytes() is 0.
     # The TMA descriptor dim1 must equal the tile dim1 in that case.
     comptime _c_swizzle_elems = config.c_swizzle.bytes() // size_of[c_type]()
-    comptime c_tma_tile_shape_1 = c_tma_tile_shape[
-        1
-    ] if _c_swizzle_elems == 0 else _c_swizzle_elems
+    comptime c_tma_tile_shape_1 = (
+        c_tma_tile_shape.element_types[1].static_value if _c_swizzle_elems
+        == 0 else _c_swizzle_elems
+    )
 
     # Scale factor TMA — use 4D uint16 with batch=1 to avoid 2× TMA overfetch.
     # SM100 TMA rounds boxDim[0] to 32B min; old innermost=16B caused 2× fetch.
@@ -369,22 +377,22 @@ def grouped_matmul_block_scaled[
         KernelType.SFB_TMA_ROWS * SF_ATOM_M[1] * SF_ATOM_K
     ) // 2
 
-    comptime sfa_tma_tile_shape = Index(
+    comptime sfa_tma_tile_shape = coord[
         1,  # batch dim
         BM // SF_MN_GROUP_SIZE,
         config.num_sf_k_tiles,
         sf_atom_u16,
-    )
+    ]
 
     # SFB TMA tile shape: for MMA_N < 64, reduced tile (1 k-atom, MMA_N rows)
     # loaded by the dedicated SfbTMALoad warp; for MMA_N >= 64, full atom.
     # Derive from kernel struct to keep a single source of truth.
-    comptime sfb_tma_tile_shape = Index(
+    comptime sfb_tma_tile_shape = coord[
         1,  # batch dim
         align_up(MMA_N, SF_MN_GROUP_SIZE) // SF_MN_GROUP_SIZE,
         KernelType.SFB_TMA_K_ATOMS,
         sfb_atom_u16,
-    )
+    ]
 
     # Create 4D uint16 views of scale tensors (same memory, reinterpreted).
     # a_scales: 5D (M_groups, K_groups, SF_ATOM_M[0], SF_ATOM_M[1], SF_ATOM_K)
@@ -483,18 +491,21 @@ def grouped_matmul_block_scaled[
         var a_tma_op = create_tma_tile[
             KernelType.ATileLayout,
             KernelType.ADescLayout,
-            Index(BM // cluster_shape[1], BK),
+            coord[BM // cluster_shape[1], BK],
             swizzle_mode=config.a_swizzle,
             unpack_fp4=b_packed_fp4,
         ](ctx, b_device)
         var b_tma_op = create_tma_tile[
             KernelType.BTileLayout,
             KernelType.BDescLayout,
-            Index(
-                BN // (cluster_shape[0] // config.cta_group), BK
-            ) if transpose_b else Index(
-                BK, BN // (cluster_shape[0] // config.cta_group)
-            ),
+            coord[
+                BN
+                // (
+                    cluster_shape[0] // config.cta_group
+                ) if transpose_b else BK,
+                BK if transpose_b else BN
+                // (cluster_shape[0] // config.cta_group),
+            ],
             swizzle_mode=config.b_swizzle,
             unpack_fp4=a_packed_fp4,
         ](ctx, a_device)
@@ -510,7 +521,10 @@ def grouped_matmul_block_scaled[
             c_tma_op = create_tma_tile[
                 KernelType.CTileLayout,
                 KernelType.CDescLayout,
-                Index(c_tma_tile_shape[0], c_tma_tile_shape_1),
+                coord[
+                    c_tma_tile_shape.element_types[0].static_value,
+                    c_tma_tile_shape_1,
+                ],
                 swizzle_mode=config.c_swizzle,
             ](ctx, c_device)
         # SF TMA: use create_tensor_tile directly with uint16 views.
@@ -567,18 +581,21 @@ def grouped_matmul_block_scaled[
         var a_tma_op = create_tma_tile[
             KernelType.ATileLayout,
             KernelType.ADescLayout,
-            Index(BM // cluster_shape[1], BK),
+            coord[BM // cluster_shape[1], BK],
             swizzle_mode=config.a_swizzle,
             unpack_fp4=a_packed_fp4,
         ](ctx, a_device)
         var b_tma_op = create_tma_tile[
             KernelType.BTileLayout,
             KernelType.BDescLayout,
-            Index(
-                BN // (cluster_shape[0] // config.cta_group), BK
-            ) if transpose_b else Index(
-                BK, BN // (cluster_shape[0] // config.cta_group)
-            ),
+            coord[
+                BN
+                // (
+                    cluster_shape[0] // config.cta_group
+                ) if transpose_b else BK,
+                BK if transpose_b else BN
+                // (cluster_shape[0] // config.cta_group),
+            ],
             swizzle_mode=config.b_swizzle,
             unpack_fp4=b_packed_fp4,
         ](ctx, b_device)
@@ -590,7 +607,7 @@ def grouped_matmul_block_scaled[
             c_tma_op = create_tma_tile[
                 KernelType.CTileLayout,
                 KernelType.CDescLayout,
-                c_tma_tile_shape,
+                coord[g1_c_m, g1_c_n],
                 swizzle_mode=config.c_swizzle,
             ](ctx, c_device)
         # SF TMA: use create_tensor_tile directly with uint16 views.

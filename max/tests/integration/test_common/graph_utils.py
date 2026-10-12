@@ -45,21 +45,6 @@ def gpu_warp_size() -> int:
     return 32 if is_nvidia_gpu() else 64
 
 
-def is_a10() -> bool:
-    """Checks if this is an A10 GPU.
-
-    `sm_86` covers several consumer and datacenter parts; the A10 is the only
-    one of them in our fleet.
-    """
-    return accelerator_architecture_name() == "sm_86"
-
-
-def are_all_tensors_iterable(
-    it: Iterable[Buffer],
-) -> TypeGuard[Iterable[Buffer]]:
-    return all(isinstance(value, Buffer) for value in it)
-
-
 def are_all_tensors_sequence(
     it: Sequence[Buffer],
 ) -> TypeGuard[Sequence[Buffer]]:
@@ -75,10 +60,4 @@ def are_all_buffer_values_sequence(
 def are_all_tensor_values_iterable(
     it: Iterable[Value],  # type: ignore[type-arg]
 ) -> TypeGuard[Iterable[TensorValue]]:
-    return all(isinstance(value, TensorValue) for value in it)
-
-
-def are_all_tensor_values_sequence(
-    it: Sequence[Value],  # type: ignore[type-arg]
-) -> TypeGuard[Sequence[TensorValue]]:
     return all(isinstance(value, TensorValue) for value in it)

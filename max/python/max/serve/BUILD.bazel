@@ -60,7 +60,6 @@ modular_py_library(
             "process_control.py",
             "_tool_call_validation.py",
             "config.py",
-            "debug.py",
             "_exceptions.py",
             "queue.py",
             "scheduler_result.py",
@@ -82,16 +81,5 @@ modular_py_library(
         requirement("fastapi"),
         requirement("prometheus-client"),
         requirement("uvicorn"),
-    ],
-)
-
-modular_py_library(
-    name = "debug",
-    srcs = ["debug.py"],
-    deps = [
-        requirement("fastapi"),
-        requirement("pydantic"),
-        requirement("pydantic-settings"),
-        requirement("pyinstrument"),
     ],
 )

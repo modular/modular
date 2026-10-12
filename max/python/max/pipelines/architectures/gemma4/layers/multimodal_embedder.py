@@ -46,7 +46,7 @@ class Gemma4MultimodalEmbedder(Module):
                 (vision or audio). Corresponds to
                 ``getattr(multimodal_config, "output_proj_dims",
                 multimodal_config.hidden_size)`` in the HF reference.
-            text_hidden_size: Hidden size of the language model (i.e.
+            text_hidden_size: Hidden size of the language model (that is,
                 ``text_config.hidden_size``).
             dtype: Weight and computation dtype.
             device: Device on which the linear projection runs.

@@ -19,6 +19,7 @@ from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
+    assert_raises,
     assert_true,
 )
 
@@ -28,6 +29,7 @@ from max.gpu.host import (
     DeviceGraphBuilder,
     DeviceGraphCache,
     DeviceGraphInput,
+    StableAddr,
 )
 from max.gpu.host.device_graph import DeviceGraphMemoryPool
 from max.runtime.async_value import AnyAsyncValueRef
@@ -1610,6 +1612,114 @@ def test_create_collective_two_graphs(ctx: DeviceContext) raises:
     with out_scale.map_to_host() as host:
         for i in range(length):
             assert_equal(host[i], Float32(length) * scale)
+
+
+def test_create_collective_stable_slots(ctx: DeviceContext) raises:
+    print(
+        "Test DeviceGraph.create_collective installs one cache-owned stable"
+        " slot table on every builder, shared across the collective's graphs"
+        " and across rebuilds with the same identity."
+    )
+    comptime length = 64
+
+    # The buffers which will be placed into the stable slots.
+    var buf0 = ctx.enqueue_create_buffer[.float32](length)
+    var buf1 = ctx.enqueue_create_buffer[.float32](length)
+
+    var source0 = (
+        buf0.unsafe_ptr()
+        .unsafe_bitcast[NoneType]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+    )
+    var source1 = (
+        buf1.unsafe_ptr()
+        .unsafe_bitcast[NoneType]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+    )
+
+    # Slot addresses as observed from each region, for cross-region checks.
+    # Written through an untracked pointer so the build closures can record
+    # into it while the test also reads it between collectives.
+    var seen: List[Int] = [0, 0, 0, 0]
+
+    def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {mut}:
+        var slot0 = builder.get_stable(0)
+        var slot1 = builder.get_stable(1)
+        seen[2 * n] = Int(slot0.ptr)
+        seen[2 * n + 1] = Int(slot1.ptr)
+
+        comptime if n == 0:
+            var placed = builder.place_stable(0, source0)
+            assert_equal(Int(placed.ptr), Int(slot0.ptr))
+            _ = builder.add_memset(buf0, Float32(1.0))
+        else:
+            var placed = builder.place_stable(1, source1)
+            assert_equal(Int(placed.ptr), Int(slot1.ptr))
+            _ = builder.add_memset(buf1, Float32(2.0))
+
+        with assert_raises(contains="out of range"):
+            _ = builder.get_stable(2)
+
+    def key_for[n: Int]() {imm} -> String:
+        return String(t"collective_stable_slots_{n}")
+
+    def key_for_variant[n: Int]() {imm} -> String:
+        return String(t"collective_stable_slots_{n}_variant")
+
+    var cache = DeviceGraphCache()
+    var ctxs: Array[DeviceContext, 2] = [ctx, ctx]
+    var graphs = DeviceGraph.create_collective(
+        ctxs,
+        build_for,
+        key_for,
+        cache=Pointer(to=cache),
+        stable_devices=[0, 0],
+    )
+
+    # Publish into the slots and wait for the writes before any replay, as
+    # the collective execute primitive does.
+    DeviceGraph.replay_collective(graphs, ctxs)
+
+    # Each graph published its source pointer into the slot it placed.
+    def slot_contents(address: Int) raises {imm} -> Int:
+        var view = DeviceBuffer[DType.uint64](
+            ctx,
+            Pointer[Scalar[DType.uint64], MutUntrackedOrigin](
+                unsafe_from_address=address
+            ),
+            1,
+            owning=False,
+        )
+        with view.map_to_host() as host:
+            return Int(host[0])
+
+    assert_equal(slot_contents(seen[0]), Int(source0))
+    assert_equal(slot_contents(seen[1]), Int(source1))
+
+    # Both regions saw the same two slots, and the slots are distinct.
+    assert_not_equal(seen[0], 0)
+    assert_not_equal(seen[1], 0)
+    assert_not_equal(seen[0], seen[1])
+    assert_equal(seen[0], seen[2])
+    assert_equal(seen[1], seen[3])
+
+    # A different variant of the same collective is keyed to the same slots.
+    var first = seen.copy()
+    _ = DeviceGraph.create_collective(
+        ctxs,
+        build_for,
+        key_for_variant,
+        cache=Pointer(to=cache),
+        stable_devices=[0, 0],
+    )
+
+    assert_equal(seen[0], first[0])
+    assert_equal(seen[1], first[1])
+
+    with buf0.map_to_host() as host:
+        assert_equal(host[0], Float32(1.0))
+    with buf1.map_to_host() as host:
+        assert_equal(host[0], Float32(2.0))
 
 
 comptime TestFunc = def(DeviceContext) thin raises -> None

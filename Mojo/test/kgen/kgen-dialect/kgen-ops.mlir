@@ -31,3 +31,24 @@ kgen.generator @compile_offload_without_target_attrs() {
 
   hlcf.return
 }
+
+// A generator's signature prints as its body's view and is rebuilt from that
+// when parsed. A signature that refers to a parameter the body lifts has no
+// such view, so `funcTypeGenerator` is printed with it; one the printed types
+// rebuild is not.
+
+// CHECK-LABEL: kgen.generator @width(
+// CHECK-NOT: funcTypeGenerator
+// CHECK: hlcf.return
+kgen.generator @width(%arg0: !kgen.scalar<index>) -> !kgen.scalar<index> {
+  hlcf.return %arg0 : !kgen.scalar<index>
+}
+
+// CHECK-LABEL: kgen.generator @lifted_signature
+// CHECK-SAME: (%arg0: !kgen.simd<to_builtin(:scalar<index> *"(lifted)apply_0"), ui8>)
+// CHECK-SAME: attributes {funcTypeGenerator = !kgen.generator<<scalar<index>>(!kgen.simd<to_builtin(:scalar<index> apply(:(!kgen.scalar<index>) -> !kgen.scalar<index> @width, *(0,0))), ui8>) -> !kgen.scalar<index>>}
+kgen.generator @lifted_signature<n: scalar<index>>(%arg0: !kgen.simd<to_builtin(:scalar<index> *"(lifted)apply_0"), ui8>) -> !kgen.scalar<index> attributes {funcTypeGenerator = !kgen.generator<<scalar<index>>(!kgen.simd<to_builtin(:scalar<index> apply(:(!kgen.scalar<index>) -> !kgen.scalar<index> @width, *(0,0))), ui8>) -> !kgen.scalar<index>>} {
+  kgen.param.apply *"(lifted)apply_0" = [(!kgen.scalar<index>) -> !kgen.scalar<index>: @width](n)
+  %0 = kgen.param.constant: scalar<index> = <n>
+  hlcf.return %0 : !kgen.scalar<index>
+}

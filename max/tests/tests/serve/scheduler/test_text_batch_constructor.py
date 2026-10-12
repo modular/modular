@@ -13,6 +13,8 @@
 
 import time
 from collections.abc import Mapping, Sequence
+from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock, patch
 
 import numpy as np
@@ -27,9 +29,17 @@ from max.pipelines.kv_cache import InsufficientBlocksError
 from max.pipelines.kv_cache.kv_connector import (
     BlockCount,
     CompletedTransfer,
+    KVConnector,
     KVLoadFailed,
 )
 from max.pipelines.kv_cache.paged_kv_cache import PrefixCacheHits
+from max.pipelines.kv_cache.paged_kv_cache.block_manager import (
+    BlockManager,
+    compute_block_hashes,
+)
+from max.pipelines.kv_cache.paged_kv_cache.cache_manager import (
+    PagedKVCacheManager,
+)
 from max.pipelines.modeling.types import (
     Pipeline,
     RequestID,
@@ -99,10 +109,6 @@ def create_mock_kv_cache() -> Mock:
     """Create a mock paged KV cache manager with minimal interface."""
     cache = Mock()
     cache.chunk_alignment_tokens = 0
-    cache.max_seq_len = 2048
-    cache.page_size = 16
-    cache.get_total_num_pages = Mock(return_value=128)
-    cache.get_free_blocks_pct = Mock(return_value=0.5)
 
     cache.alloc = Mock(return_value=CompletedTransfer())
     cache.claim = Mock()
@@ -343,7 +349,8 @@ def test_text_batch_constructor__batch_construction_no_room_in_cache(
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.pending_transfers_exist = Mock(return_value=False)
-    kv_cache.get_req_blocks = Mock(return_value=[])
+    kv_cache.num_req_blocks = Mock(return_value=0)
+    kv_cache.get_req_blocks_per_leaf = Mock(return_value={"full": []})
     set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
@@ -444,7 +451,8 @@ def _presence_test_setup(
     kv_cache.claim = Mock()
     kv_cache.contains = Mock()
     kv_cache.pending_transfers_exist = Mock(return_value=False)
-    kv_cache.get_req_blocks = Mock(return_value=[])
+    kv_cache.num_req_blocks = Mock(return_value=0)
+    kv_cache.get_req_blocks_per_leaf = Mock(return_value={"full": []})
     set_mock_kv_usage(kv_cache, 0.0)
 
     batch_constructor = TextBatchConstructor(
@@ -604,10 +612,13 @@ def test_text_batch_constructor__tg_insufficient_blocks_preempts_ce_block_holder
         )
     )
     kv_cache.pending_transfers_exist = Mock(return_value=False)
-    kv_cache.get_req_blocks = Mock(
-        side_effect=lambda ctx: (
-            [0] if ctx.request_id == holder.request_id else []
-        )
+    kv_cache.num_req_blocks = Mock(
+        side_effect=lambda ctx: 1 if ctx.request_id == holder.request_id else 0
+    )
+    kv_cache.get_req_blocks_per_leaf = Mock(
+        side_effect=lambda ctx: {
+            "full": [0] if ctx.request_id == holder.request_id else []
+        }
     )
     # A full cache forces TG priority, so the parked prefill is never
     # popped by _add_ce_requests before the decode request's alloc fails.
@@ -2179,6 +2190,22 @@ def test_dp_ce_balance__pools_new_requests_and_binds_when_fleet_idle() -> None:
     assert not batch_constructor._ce_pending
 
 
+def test_dp_ce_balance__binding_records_pool_wait() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context()
+    batch_constructor.enqueue_new_request(ctx)
+    batch_constructor._ce_pending[ctx.request_id].entered_at -= 0.5
+
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        batch_constructor.construct_batch()
+
+    mock_metrics.ce_pool_wait_time.assert_called_once()
+    (wait_ms,) = mock_metrics.ce_pool_wait_time.call_args.args
+    assert 500 <= wait_ms < 1000
+
+
 def test_dp_ce_balance__pooled_request_prefers_replica_with_cached_prefix() -> (
     None
 ):
@@ -2193,6 +2220,78 @@ def test_dp_ce_balance__pooled_request_prefers_replica_with_cached_prefix() -> (
 
     inputs = batch_constructor.construct_batch()
     assert has_request(inputs.batches[1], ctx.request_id)
+
+
+class _LookupOnlyConnector:
+    """A connector written against the protocol from before ``probe``.
+
+    It does not inherit :class:`KVConnector`, so it has no ``probe`` and is
+    priced through ``lookup`` alone.
+    """
+
+    def __init__(self) -> None:
+        self.held: set[bytes] = set()
+        self.lookups = 0
+
+    def lookup(
+        self,
+        block_hashes: Sequence[bytes],
+        replica_idx: int = 0,
+        hint: bytes | None = None,
+    ) -> Mapping[str, Sequence[bool]]:
+        self.lookups += 1
+        return {"full": [h in self.held for h in block_hashes]}
+
+
+def test_dp_ce_balance__a_connector_without_probe_is_priced_by_lookup() -> None:
+    page_size = 16
+    connector = _LookupOnlyConnector()
+    block_manager = BlockManager(
+        total_num_blocks=32,
+        block_size=page_size,
+        connector=cast(KVConnector, connector),
+        enable_prefix_caching=True,
+        num_replicas=2,
+    )
+    ctx = create_lora_context(seq_len=96)
+    hashes = compute_block_hashes(
+        ctx,
+        [],
+        page_size,
+        block_manager.kv_hash_algo,
+        block_manager.kv_hash_seed,
+    )
+    # Unequal device runs over one external continuation: replica 1 holds a
+    # block more on device, so its external run starts a block later.
+    for replica_idx, depth in ((0, 1), (1, 2)):
+        pool = block_manager.device_block_pools[replica_idx]
+        for block_hash in hashes[:depth]:
+            block, _ = pool.alloc_block()
+            pool.commit_into_prefix_cache(block_hash, block)
+    connector.held = set(hashes[1:4])
+    cache = cast(
+        PagedKVCacheManager,
+        SimpleNamespace(
+            params=SimpleNamespace(enable_prefix_caching=True),
+            _replica=[SimpleNamespace(block_manager=block_manager)] * 2,
+        ),
+    )
+
+    hits = PagedKVCacheManager.get_prefix_cache_hit_counts(cache, ctx)
+
+    assert hits == [
+        PrefixCacheHits(device_blocks=1, external_blocks=3),
+        PrefixCacheHits(device_blocks=2, external_blocks=2),
+    ]
+    assert connector.lookups == 1, "the shared tiers answer every replica once"
+    batch_constructor = create_dp_balance_constructor()
+    _mock_kv_cache_of(batch_constructor).get_prefix_cache_hit_counts = Mock(
+        side_effect=lambda c: PagedKVCacheManager.get_prefix_cache_hit_counts(
+            cache, c
+        )
+    )
+    batch_constructor.enqueue_new_request(ctx)
+    assert batch_constructor._ce_pending[ctx.request_id].weights == [32, 32]
 
 
 def test_dp_ce_balance__defers_lone_unexpired_ce_when_tg_available() -> None:
@@ -2257,6 +2356,34 @@ def test_dp_ce_balance__balanced_ce_across_replicas_schedules() -> None:
     assert batch_constructor._ce_deferred_replicas == set()
     assert has_request(inputs.batches[0], ce_ctxs[0].request_id)
     assert has_request(inputs.batches[1], ce_ctxs[1].request_id)
+
+
+def test_dp_ce_balance__pool_fills_step_when_no_replica_has_tg() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    ce_ctxs = [create_lora_context(seq_len=20) for _ in range(8)]
+    for ctx in ce_ctxs:
+        batch_constructor.enqueue_new_request(ctx)
+
+    # A prefill-only worker never has TG work. Once the replicas are level,
+    # no single equal-sized request strictly improves occupancy, but holding
+    # the rest back would only idle the fleet: every request runs now.
+    inputs = batch_constructor.construct_batch()
+    assert not batch_constructor._ce_pending
+    assert [len(batch) for batch in inputs.batches] == [4, 4]
+
+
+def test_dp_ce_balance__pool_waits_for_occupancy_gain_when_tg_runs() -> None:
+    batch_constructor = create_dp_balance_constructor()
+    for replica_idx in range(2):
+        tg_ctx = create_lora_context(is_tg=True)
+        batch_constructor.enqueue_new_request(tg_ctx, replica_idx=replica_idx)
+    for _ in range(4):
+        batch_constructor.enqueue_new_request(create_lora_context(seq_len=20))
+
+    # With TG to run instead, pooled work still binds only where it improves
+    # occupancy: one request per replica levels the step, the rest wait.
+    batch_constructor.construct_batch()
+    assert len(batch_constructor._ce_pending) == 2
 
 
 def test_dp_ce_balance__release_pooled_request() -> None:
@@ -2559,6 +2686,30 @@ def test_dp_ce_balance__bound_requests_are_priced_post_prefix_cache() -> None:
     # reads as 100/60 and the chunk size is cut to 60 for no reason.
     assert batch_constructor._ce_step_quota is None
     assert batch_constructor._ce_deferred_replicas == set()
+
+
+def test_dp_ce_balance__pool_wait_restarts_when_a_preempted_request_returns() -> (
+    None
+):
+    batch_constructor = create_dp_balance_constructor()
+    ctx = create_lora_context(seq_len=50)
+    batch_constructor.enqueue_new_request(ctx, replica_idx=0)
+    # Arrival is the deferral deadline and survives the re-pool on purpose.
+    batch_constructor._ce_arrival[ctx.request_id] = time.monotonic() - 60.0
+
+    batch_constructor._preempt_request(
+        ctx, 0, reason=PreemptionReason.KV_CACHE_MEMORY
+    )
+    with patch(
+        "max.serve.scheduler.batch_constructor.text_batch_constructor.METRICS"
+    ) as mock_metrics:
+        batch_constructor.construct_batch()
+
+    # Only the second stay in the pool counts, not the first wait plus the
+    # encoding that ran before the preemption.
+    mock_metrics.ce_pool_wait_time.assert_called_once()
+    (wait_ms,) = mock_metrics.ce_pool_wait_time.call_args.args
+    assert 0 <= wait_ms < 1000
 
 
 def test_dp_ce_balance__preempted_request_returns_to_the_pool() -> None:
@@ -2907,7 +3058,10 @@ def test_text_batch_constructor__oom_deferred_while_onload_in_flight(
             ]
         )
     )
-    kv_cache.get_req_blocks = Mock(return_value=[0, 1, 2, 3, 4])
+    kv_cache.num_req_blocks = Mock(return_value=5)
+    kv_cache.get_req_blocks_per_leaf = Mock(
+        return_value={"full": [0, 1, 2, 3, 4]}
+    )
     batch_constructor = TextBatchConstructor(
         scheduler_config=_cordon_config(),
         pipeline=pipeline,

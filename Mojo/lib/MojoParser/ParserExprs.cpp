@@ -511,6 +511,7 @@ ParseResult ExprParser::parsePrimaryExpr(ExprNode *&result) {
   case Token::kw_ref:
   case Token::kw_comptime:
   case Token::kw_not: { // u_expr
+    warnIfUnprefixedAsyncSpelling(startTok);
     consumeToken();
     // Get the kind enum and the precedence of the subexpression.
     auto [unaryKind, subExprPrec] = getUnaryOpInfo(startTok.getKind());
@@ -1399,6 +1400,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
   ParsedArgumentList fnSignature;
 
   // Parse the function effects from the leading keyword.
+  warnIfUnprefixedAsyncSpelling(getToken());
   fnSignature.effects.setAsync(consumeIf(Token::kw___async));
   // TODO(26.5): Remove support for 'fn' entirely.
   if (getToken().is(Token::kw_fn)) {

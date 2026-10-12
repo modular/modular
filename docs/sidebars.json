@@ -29,6 +29,7 @@
         "serve/video-generation",
         "serve/audio-generation",
         "serve/embeddings",
+        "serve/decisions",
         "serve/function-calling",
         "serve/chat-templates",
         "serve/reasoning",
@@ -413,6 +414,17 @@
               },
               "items": [
                 "__AUTOGEN:max.nn.kv_cache__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "moe",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.moe"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.moe__"
               ]
             },
             {
@@ -816,6 +828,28 @@
                 "id": "api/python/pipelines.speculative"
               },
               "items": [
+                {
+                  "type": "category",
+                  "label": "adaptive_width",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.adaptive_width"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.adaptive_width__"
+                  ]
+                },
+                {
+                  "type": "category",
+                  "label": "block_driver",
+                  "link": {
+                    "type": "doc",
+                    "id": "api/python/pipelines.speculative.block_driver"
+                  },
+                  "items": [
+                    "__AUTOGEN:max.pipelines.speculative.block_driver__"
+                  ]
+                },
                 {
                   "type": "category",
                   "label": "depth_schedule",

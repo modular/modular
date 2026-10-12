@@ -52,6 +52,38 @@ def test_make_gpu_recorder_host_selects_dcgm(
 
 @patch("max.profiler.gpu.BackgroundRecorder")
 @patch("max.benchmark.benchmark_serving.DCGMBackgroundRecorder")
+@patch("max.benchmark.benchmark_serving.PrometheusGPURecorder")
+def test_make_gpu_recorder_prometheus_wins_over_dcgm(
+    mock_prometheus: MagicMock, mock_dcgm: MagicMock, mock_local: MagicMock
+) -> None:
+    """Prometheus narrows to the engine's GPUs, so it outranks a DCGM host."""
+    recorder = _make_gpu_recorder(
+        collect_gpu_stats=True,
+        gpu_metrics_host="10.0.0.5",
+        gpu_metrics_prometheus_url="http://prom:9090",
+        gpu_metrics_selector='namespace="bench"',
+    )
+
+    mock_prometheus.assert_called_once_with(
+        "http://prom:9090", 'namespace="bench"'
+    )
+    mock_dcgm.assert_not_called()
+    mock_local.assert_not_called()
+    assert recorder is mock_prometheus.return_value
+
+
+def test_make_gpu_recorder_prometheus_requires_a_selector() -> None:
+    """Without a selector the mean would span every GPU Prometheus scrapes."""
+    with pytest.raises(ValueError, match="selector"):
+        _make_gpu_recorder(
+            collect_gpu_stats=True,
+            gpu_metrics_host="",
+            gpu_metrics_prometheus_url="http://prom:9090",
+        )
+
+
+@patch("max.profiler.gpu.BackgroundRecorder")
+@patch("max.benchmark.benchmark_serving.DCGMBackgroundRecorder")
 def test_make_gpu_recorder_empty_host_selects_local(
     mock_dcgm: MagicMock, mock_local: MagicMock
 ) -> None:
@@ -259,6 +291,35 @@ def test_response_format_injection_marks_every_user_turn() -> None:
         by_source[message.source].append(message.response_format)
     assert all(rf is not None for rf in by_source["user"])
     assert all(rf is None for rf in by_source["assistant"])
+
+
+def test_response_format_lands_on_the_last_turn_left_after_a_cut() -> None:
+    session, samples = _one_chat_sample()
+    args = parse_args(
+        [
+            "--model",
+            "myorg/model",
+            "--response-format",
+            '{"type": "json_object"}',
+            "--response-format-turn",
+            "last",
+            "--image-fraction",
+            "1",
+            "--image-num-turns",
+            "1",
+            "--image-long-side",
+            "16",
+        ]
+    )
+
+    with patch(
+        "max.benchmark.benchmark_serving.sample_requests", return_value=samples
+    ):
+        _sample_for_seed(args, "text-generation", None, True, 0)
+
+    user_turns = [m for m in session.messages if m.source == "user"]
+    assert len(user_turns) == 1
+    assert user_turns[0].response_format is not None
 
 
 def test_chat_turns_unmarked_without_a_response_format() -> None:

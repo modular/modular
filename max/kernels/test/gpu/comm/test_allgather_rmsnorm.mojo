@@ -32,11 +32,7 @@ multiply-before-cast, bf16 last):
     `AG_NORM_FUSE_THRESHOLD`, and drives the dispatch routing-invariant check.
 """
 
-from std.sys import (
-    has_amd_gpu_accelerator,
-    simd_width_of,
-    size_of,
-)
+from std.sys import simd_width_of, size_of
 
 from std.math.uutils import ualign_down
 from std.math import rsqrt
@@ -162,7 +158,7 @@ def _run_case[
     # Crossover vs `rms_norm_gpu` was calibrated at simd==8 on AMD (block.sum
     # geometry depends on it); assert so a width change surfaces here, not
     # silently.
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         comptime assert (
             simd_width == 8
         ), "fused-vs-production crossover assumes simd=8 on AMD"
@@ -451,7 +447,7 @@ def _run_case[
         )
     # Residual: bit-identical on AMD; 1-ULP tolerance on NVIDIA (AG is a pure
     # copy either way, but leave headroom for a non-AMD path).
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -869,7 +865,7 @@ def _run_prod_oracle_case[
     )
 
     # sum_out must be bit-identical to a standalone all-gather at every M.
-    comptime if has_amd_gpu_accelerator():
+    comptime if list_of_ctx.T.target.is_amd_gpu():
         if sum_mismatch != 0:
             raise Error(
                 String(
@@ -884,7 +880,7 @@ def _run_prod_oracle_case[
 
     # Routing invariant: the dispatched op must be bit-identical to production at
     # EVERY M (fused below the threshold, two-launch above). AMD-scoped.
-    comptime if use_dispatch and has_amd_gpu_accelerator():
+    comptime if use_dispatch and list_of_ctx.T.target.is_amd_gpu():
         if normed_mismatch != 0:
             raise Error(
                 String(
@@ -1672,7 +1668,7 @@ def _run_grouped_suite[
 
     # `_dispatch_ag_norm_quant` carries its own copy of the verdict and hangs
     # the same way. Its two-launch arm quantizes, so CDNA4 only.
-    if has_amd_gpu_accelerator():
+    if list_of_ctx.T.target.is_amd_gpu():
         _run_asymmetric_fuse_gate_case[
             in_dtype, ngpus, group_size, num_cols, quant=True
         ](256 // group_size, 32 // group_size, list_of_ctx)
@@ -1726,7 +1722,7 @@ def _run_suite[
 
         # Calibration gate: any M the threshold would fuse MUST be bit-identical
         # to production. AMD-scoped (gfx950-calibrated).
-        comptime if has_amd_gpu_accelerator():
+        comptime if list_of_ctx.T.target.is_amd_gpu():
             var full_bytes = num_rows * num_cols * size_of[in_dtype]()
             if full_bytes <= AG_NORM_FUSE_THRESHOLD and mismatch != 0:
                 raise Error(

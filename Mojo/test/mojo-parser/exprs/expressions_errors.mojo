@@ -1349,7 +1349,7 @@ struct Color(ImplicitlyCopyable):
   def __init__(out self):
     pass
 
-def takes_color(c: Color):  # expected-note {{function declared here}}
+def takes_color(c: Color):
   pass
 
 def takes_colors(colors: List[Color]):
@@ -1388,7 +1388,6 @@ def test_inferred_attribute_ref():
   var wrong: Color = .size
 
   # expected-error @below {{cannot implicitly convert 'Int' value to 'Color'}}
-  # expected-error @below {{invalid call to 'takes_color': cannot resolve inferred attribute reference}}
   takes_color(.size)
 
 def test_dtype_error_message():

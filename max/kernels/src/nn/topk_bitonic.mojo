@@ -2357,7 +2357,6 @@ def _hsel_rank_write[
             cnt[j] = hist[top - j]
             local += cnt[j]
     var inclusive = block.prefix_sum[block_size=nthreads](local)
-    barrier()
     # `acc` before the add is the count of keys in strictly higher bins, which is
     # both bin `b`'s first output slot and its cursor's initial value -- so the
     # cursor costs no second pass over the bins and no extra barrier.

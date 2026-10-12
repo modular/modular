@@ -21,10 +21,11 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, TypeVar, get_args
 
 from max.config import ConfigFileModel
-from max.driver import accelerator_api
+from max.driver import SymmetricPool, accelerator_api, load_devices
 from max.engine import InferenceSession
-from max.nn.comm import Signals
+from max.nn.comm import MulticastPool, Signals
 from max.pipelines.diffusion.config import resolve_denoising_cache
+from max.pipelines.kv_cache.config import KVCacheConfig, is_fp4_kv_cache_format
 from max.pipelines.lib._model_components import (
     architecture_name_for,
     updated_component,
@@ -99,7 +100,7 @@ else:
 def _nested_model_class(annotation: Any) -> type[BaseModel] | None:
     """Return the Pydantic model class for a field annotation, if any.
 
-    Unwraps ``Optional``/``Union`` annotations (e.g. ``KVCacheConfig | None``)
+    Unwraps ``Optional``/``Union`` annotations (such as ``KVCacheConfig | None``)
     and returns the first :class:`~pydantic.BaseModel` subclass found. Returns
     ``None`` for non-model annotations such as ``dict[str, Any]`` or ``str``,
     so plain data dicts are never treated as nested config sub-models.
@@ -305,6 +306,24 @@ def _is_eligible_for_overlap_serve_optimizations(
         and not lora
         and model.default_device_spec.device_type != "cpu"
     )
+
+
+def _validate_kv_cache_format(kv_cache: KVCacheConfig, arch: Any) -> None:
+    """Raises when ``arch`` does not implement the requested KV cache format.
+
+    Args:
+        kv_cache: The main model's KV cache config.
+        arch: The main model's resolved architecture.
+
+    Raises:
+        ValueError: If ``kv_cache_format`` is ``float4_e2m1fn`` and ``arch``
+            has not opted in with ``supports_nvfp4_kv_cache``.
+    """
+    fmt = kv_cache.kv_cache_format
+    if is_fp4_kv_cache_format(fmt) and not arch.supports_nvfp4_kv_cache:
+        raise ValueError(
+            f"kv_cache_format '{fmt}' is not supported by {arch.name}."
+        )
 
 
 def _resolve_overlap_and_device_graph_capture(
@@ -686,13 +705,6 @@ def _apply_speculative_target_architecture(
             target_archs[0] = "UnifiedDflashLlama3ForCausalLM"
         else:
             target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
-    # Not a Speculator yet: memory planning would miss the drafter's KV group.
-    if (
-        target_archs[0] == "MiMoV2ForCausalLM"
-        and speculative.is_dflash()
-        and v1_or_eagle
-    ):
-        target_archs[0] = "UnifiedDflashMiMoV2ForCausalLM"
     if target_archs[0] == "KimiK25ForConditionalGeneration" and v1_or_eagle:
         draft_archs = (
             draft_model.huggingface_config.architectures
@@ -1002,7 +1014,7 @@ class PipelineConfig(ConfigFileModel):
         """Normalize dash-keyed dicts from cyclopts CLI parsing to underscores.
 
         When cyclopts parses CLI args like ``--pipeline.models.main.model-path``,
-        it produces nested dicts with dash-separated keys (e.g.
+        it produces nested dicts with dash-separated keys (such as
         ``{"main": {"model-path": "value"}}``).  Pydantic expects underscore-
         separated field names, so we normalise before validation.
 
@@ -1010,12 +1022,12 @@ class PipelineConfig(ConfigFileModel):
         ``--pipeline.models.main.kv-cache.kv-cache-format`` resolve to
         ``{"main": {"kv_cache": {"kv_cache_format": ...}}}``. Recursion is
         schema-aware: it only descends into keys whose field is a Pydantic
-        model, leaving plain data dicts (e.g. ``vision_config_overrides``)
+        model, leaving plain data dicts (such as ``vision_config_overrides``)
         untouched so legitimately-dashed data keys are preserved.
 
         Raises:
             ValueError: If two keys at the same level normalize to the same
-                field name (e.g. mixing ``kv-cache`` and ``kv_cache``), which
+                field name (such as mixing ``kv-cache`` and ``kv_cache``), which
                 would otherwise silently drop one of the values.
         """
 
@@ -1258,7 +1270,8 @@ class PipelineConfig(ConfigFileModel):
         ``_matmul_gpu`` reads ``MODULAR_DISABLE_VENDOR_FALLBACK`` through
         ``get_defined_bool``, so it is a kernel-compile define and an
         environment variable alone never reaches the kernels serve compiles.
-        Forwarding it here is what makes the documented escape hatch work.
+        Forwarding ``runtime.disable_vendor_blas_fallback`` here is what makes
+        the documented escape hatch work.
 
         It is forced on for HIP + device graph capture: the fallback's first
         GEMM constructs the hipBLASLt handle, and ``hipblasLtCreate`` zeroes a
@@ -1267,11 +1280,42 @@ class PipelineConfig(ConfigFileModel):
         returns ``hipErrorStreamCaptureImplicit``, so the model worker dies
         instead of raising. MAX's own kernels cover the same shapes.
         """
-        if self.runtime.device_graph_capture and accelerator_api() == "hip":
-            return True
-        return os.environ.get(
-            "MODULAR_DISABLE_VENDOR_FALLBACK", ""
-        ).lower() in ("1", "true", "on", "yes")
+        return self.runtime.disable_vendor_blas_fallback or bool(
+            self.runtime.device_graph_capture and accelerator_api() == "hip"
+        )
+
+    def multicast_pool_bytes(self) -> int:
+        """Returns the per-device symmetric multicast pool bytes, or ``0``.
+
+        The pool backs NVSwitch (NVLS) allreduce. This is the single place the
+        sizing inputs are read, so the allocation site and the memory estimate
+        cannot disagree; ``0`` means no pool is created and collectives stay
+        peer-to-peer.
+
+        Returns:
+            Per-device pool bytes, or ``0`` when no pool will be allocated.
+        """
+        if not MulticastPool.ENABLED:
+            return 0
+        hidden_size = getattr(self.model.huggingface_config, "hidden_size", 0)
+        if not isinstance(hidden_size, int):
+            return 0
+        capacity = MulticastPool.capacity_bytes(
+            num_devices=len(self.model.device_specs),
+            num_tokens=self.runtime.max_batch_input_tokens,
+            hidden_size=hidden_size,
+        )
+        if capacity == 0:
+            return 0
+        # A multi-GPU box without NVSwitch cannot back a pool; charging for
+        # one the driver will refuse would shrink the KV cache for nothing.
+        devices = load_devices(self.model.device_specs)
+        if not SymmetricPool.is_supported(devices):
+            return 0
+        # The driver rounds the reservation up to its allocation granularity
+        # (2 MiB per GPU on current hardware), well inside the estimate's own
+        # margin, so the request is charged as is.
+        return capacity
 
     def estimate_signal_buffer_memory(
         self, arch_config: ArchConfig | None = None
@@ -1286,6 +1330,9 @@ class PipelineConfig(ConfigFileModel):
         broadcast (see ``rust_kv/kv-tier-connector/src/copy_engine.rs``), so they
         contribute no additional term here.
 
+        The per-GPU symmetric multicast pool backing NVLS allreduce is
+        charged alongside, when :meth:`multicast_pool_bytes` is non-zero.
+
         Returns 0 for single-device pipelines.
 
         Args:
@@ -1298,7 +1345,7 @@ class PipelineConfig(ConfigFileModel):
         ngpus = len(self.model.device_specs)
         if ngpus <= 1:
             return 0
-        return Signals.NUM_BYTES * ngpus
+        return (Signals.NUM_BYTES + self.multicast_pool_bytes()) * ngpus
 
     def _validate_repo_access(self) -> None:
         """Validates that every model's repo was provided and is accessible.
@@ -1601,6 +1648,8 @@ class PipelineConfig(ConfigFileModel):
             )
             if arch_name is not None and arch is None:
                 raise ValueError(f"No architecture found for {arch_name}")
+            if arch is not None:
+                _validate_kv_cache_format(models["main"].kv_cache, arch)
             if arch is not None and speculator is not None:
                 arch = speculator.derive()
 
@@ -1724,26 +1773,6 @@ class PipelineConfig(ConfigFileModel):
     # We still avoid pickling `transformers` objects via `MAXModelConfig`'s
     # custom pickling hooks (it drops `_huggingface_config`), so `PipelineConfig`
     # should rely on the BaseModel implementation.
-
-
-def _parse_flag_bool(value: str, flag_name: str) -> bool:
-    if value.lower() == "true":
-        return True
-    elif value.lower() == "false":
-        return False
-    else:
-        raise ValueError(
-            f"Invalid boolean value: {value} for flag: {flag_name}"
-        )
-
-
-def _parse_flag_int(value: str, flag_name: str) -> int:
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise ValueError(
-            f"Invalid integer value: {value} for flag: {flag_name}"
-        ) from exc
 
 
 PrometheusMetricsMode = Literal[

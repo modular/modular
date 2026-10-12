@@ -168,3 +168,12 @@ class TestReduceWithSymbolicDims:
         layout = _layout(M(MESH_1D, S(0)), ("batch", "seq", 8))
         _, (out,) = pick(linear_reduce_rule, layout, axis=2)
         assert out.placements == (S(0),)
+
+
+class TestScanAndMean:
+    """A prefix scan and a mean over a sharded axis need the whole axis."""
+
+    def test_mean_gathers_the_reduced_axis(self) -> None:
+        layout = _layout(M(MESH_1D, S(0)), (4, 8))
+        _, (out,) = pick(reduce_rule, layout, axis=0)
+        assert out.placements == (R,)

@@ -402,3 +402,23 @@ params:
   CLUSTER_Y: 1
   BLOCK_SWIZZLE_SIZE: 0
   RASTERIZE_ORDER: 1
+# Nemotron-3.5-Lightning TP=2 decode attention qkv (M=64). Its fused epilogue
+# looks up each row's sequence and KV-cache page before storing K and V, and
+# that dominates. The heuristic's 2-SM 128x32 tile puts the 256 K/V columns on
+# 8 CTAs with rows (their pair CTAs hold only rows past M); this 1-SM 64x16
+# tile spreads them over 16. B200 serve, batch 64: 14.07 -> 11.06 us per call.
+- <<: *defaults
+  M: 64
+  M_END: 65
+  N: 2304
+  K: 2688
+  MMA_M: 64
+  MMA_N: 16
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  K_GROUP_SIZE: 2
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0

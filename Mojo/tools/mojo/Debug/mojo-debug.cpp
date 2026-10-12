@@ -13,7 +13,7 @@
 
 #include "mojo-debug.h"
 #if MOJO_COMPILER_ACCELERATOR_SUPPORT
-#include "../Common/internal/CudaGdb.h"
+#include "../Common/mcl/CudaGdb.h"
 #endif
 #include "../Common/LLDB.h"
 #include "Init/Init.h"

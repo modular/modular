@@ -241,7 +241,8 @@ def test_a_failed_onload_recomputes_from_the_device_hit(
     assert ctx.tokens.processed_length == 3
     assert ctx.cached_prefix_length == 3
     assert ctx.cached_prefix_external_length == 0
-    assert kv_manager.get_req_blocks(ctx)[:3] == device_bids
+    (blocks,) = kv_manager.get_req_blocks_per_leaf(ctx).values()
+    assert blocks[:3] == device_bids
     assert not kv_manager.pending_transfers_exist()
     assert all(h not in pool.prefix_cache for h in hashes[3:7]), (
         "a failed copy's pages must not be published"

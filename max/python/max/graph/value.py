@@ -985,7 +985,7 @@ class TensorValue(Value[mo.TensorType]):
         """Reduces the tensor using a variance operation along ``axis``.
 
         The variance is computed as the mean of squared deviations from the mean
-        (population variance, i.e., without Bessel's correction) along the specified axis.
+        (population variance; that is, without Bessel's correction) along the specified axis.
 
         .. code-block:: python
 
@@ -1342,7 +1342,16 @@ StrongTensorValueLike = (
 )
 
 TensorValueLike = StrongTensorValueLike | Numeric
+"""Anything a graph operation accepts where a tensor value is expected.
+
+Covers :class:`TensorValue` and tensor-like objects, plus the numeric
+scalars a graph converts to constants.
+"""
+
 BufferValueLike = BufferValue | HasBufferValue
+"""A :class:`BufferValue` or any object convertible to one through
+``__buffervalue__``.
+"""
 
 # This is needed for python 3.9 compatibility.
 # `isinstance` only works with tuples and not unions in 3.9.
@@ -1350,10 +1359,6 @@ _numeric = (int, float, np.integer, np.floating, np.ndarray)
 _scalar = (int, float, np.integer, np.floating, Dim)
 _strong_tensor_value_like = (_Value[mo.TensorType], TensorValue, Shape, Dim)
 _tensor_value_like = _strong_tensor_value_like + _numeric
-
-
-def _is_numeric(obj: Any) -> TypeGuard[Numeric]:
-    return isinstance(obj, _numeric)
 
 
 def _is_scalar(obj: Any) -> TypeGuard[Scalar]:

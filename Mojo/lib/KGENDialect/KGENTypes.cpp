@@ -1575,13 +1575,21 @@ Type StructType::parse(AsmParser &p) {
                          isParamPack);
 }
 
+static TypedAttr normalizeVariadicForUniquing(MLIRContext *context,
+                                              TypedAttr variadic);
+
 /// Print the StructType.
 void StructType::print(AsmPrinter &p) const {
   p << '<';
 
   TypedAttr variadic = getElementTypesVariadic();
   auto attr = dyn_cast<ParamListAttr>(variadic);
-  if (!attr || !isa<TypeType>(attr.getType().getElementType())) {
+  // The parenthesized form below prints only each element's layout half, and
+  // parses back as elements with no separate type value. Do not print this way
+  // when doing so would discard information.
+  bool printsAsTypes = attr && isa<TypeType>(attr.getType().getElementType()) &&
+                       normalizeVariadicForUniquing(getContext(), attr) == attr;
+  if (!printsAsTypes) {
     // Parametric expression or complex metatype - print without parens.  We
     // print :param_list<Movable> if the elements are not TypeType metatype.
     if (!isa<TypeType>(
